@@ -22,7 +22,7 @@ or an h2 fingerprint (0x00-0x7F) derived from the top 7 bits of the hash.
 """
 
 from std.bit import count_trailing_zeros, next_power_of_two
-from std.hashlib import Hasher, default_hasher
+from std.hash import Hasher, default_hasher
 from std.math import ceildiv
 from std.memory import (
     alloc,
@@ -214,7 +214,7 @@ struct Group(Copyable, Movable):
 struct SwissTableEntry[
     K: KeyElement,
     V: Movable,
-    H: Hasher,
+    H: Hasher & Defaultable & Deinitable,
 ](
     Copyable where conforms_to(K, Copyable) and conforms_to(V, Copyable),
     Deinitable where conforms_to(K, Deinitable) and conforms_to(V, Deinitable),
@@ -316,7 +316,7 @@ struct SwissTableEntry[
 struct SwissTable[
     K: KeyElement,
     V: Movable,
-    H: Hasher = default_hasher,
+    H: Hasher & Defaultable & Deinitable = default_hasher,
 ](
     Copyable where conforms_to(K, Copyable) and conforms_to(V, Copyable),
     Deinitable where conforms_to(K, Deinitable) and conforms_to(V, Deinitable),

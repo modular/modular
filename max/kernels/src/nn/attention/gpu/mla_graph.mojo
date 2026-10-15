@@ -73,8 +73,10 @@ from nn.kv_cache_ragged import (
 from nn.attention.gpu.mla import (
     _k_cache_to_buffer,
     flare_mla_decoding,
+    flare_mla_decoding_rows,
     mla_decode_max_seq_len,
 )
+from nn.attention.mha_operand import KVCacheMHAOperand, SparseRowsMHAOperand
 from nn.attention.gpu.nvidia.sm100.mla_decode_utils import SparseRowLayout
 from nn.attention.mha_mask import PaddingMask
 from nn.attention.mha_utils import (
@@ -1119,8 +1121,8 @@ def quantize_and_bmm_fp8_helper[
     )
 
 
-# AMD sparse MLA decode: gfx950 has no native gather4/TMA sparse kernel, so
-# gather the top-k latent rows into scratch and run the dense AMD decode kernel.
+# AMD sparse MLA decode gathers each token's top-k rows into scratch with the
+# kernel below; prefill reads them in place through `SparseRowsMHAOperand`.
 comptime _AMD_SPARSE_MLA_GATHER_VEC = 16
 # Tokens gathered per pass on the BF16 AMD sparse MLA arm: 256 tokens of
 # 2051 x 576 BF16 rows is ~600 MB of scratch.
@@ -1188,8 +1190,10 @@ def _amd_sparse_mla_row_valid_lengths[
     topk_lengths: UnsafePointer[Int32, MutAnyOrigin],
     valid_lengths: UnsafePointer[UInt32, MutAnyOrigin],
     indices_stride: Int32,
+    zero_row: UnsafePointer[UInt8, MutAnyOrigin],
+    zero_row_bytes: Int32,
 ):
-    """Writes each gathered row's valid prefix length for `PaddingMask`.
+    """Writes each token's valid prefix length for `PaddingMask`.
 
     The caller's `topk_lengths` is the constant `index_topk` (the Python
     graph broadcasts it, which is exact for SM100 -- see
@@ -1203,11 +1207,17 @@ def _amd_sparse_mla_row_valid_lengths[
     zero row, while the first-negative truncates instead. Truncating loses
     keys; admitting a zero row corrupts the softmax denominator.
 
-    The length is also capped at `topk_lengths[row]`, the bound the gather
-    applies, so a slot the gather zero-filled is never admitted even when a
-    caller's lengths stop short of the first `-1`.
+    The length is also capped at `topk_lengths[row]`, so a slot past the
+    caller's top-k length is never admitted even when its index is valid.
+
+    Block 0 also clears `zero_row`, the row `SparseRowsMHAOperand` reads for
+    every slot past a token's valid length, which saves a separate fill
+    launch per layer.
     """
     var row = Int(block_idx.x)
+    if row == 0:
+        for i in range(Int(thread_idx.x), Int(zero_row_bytes), BLOCK_SIZE):
+            zero_row[i] = 0
     var base = row * Int(indices_stride)
 
     # Strided scan: thread `t` examines columns `t, t+BLK, t+2*BLK, ...`
@@ -1663,6 +1673,9 @@ def mla_decode_branch_fp8[
                 as_optional_reg(topk_lengths).value()
             )
 
+        # Unlike prefill, decode gathers first: with one query token per
+        # sequence, reading rows in place runs too few CTAs to hide the
+        # scattered loads (+3.6 us per layer on GLM-5.3, MI355X).
         var scratch_buf = ctx.enqueue_create_buffer[mla_decode_input_dtype](
             batch_size * indices_stride * k_cache_dim
         )
@@ -1738,6 +1751,8 @@ def mla_decode_branch_fp8[
             decode_topk_lengths,
             valid_lengths_buf.unsafe_ptr(),
             Int32(indices_stride),
+            UnsafePointer[UInt8, MutAnyOrigin].unsafe_dangling(),
+            Int32(0),
             grid_dim=(batch_size, 1, 1),
             block_dim=(_AMD_SPARSE_MLA_ROW_VALID_LENGTHS_THREADS, 1, 1),
         )
@@ -1860,12 +1875,11 @@ def mla_prefill_branch_sparse_fp8[
     paged latent cache; the caller (`.fp8.sparse` op) has already remapped
     `d_indices` from logical to physical rows, so they are passed straight
     through. On AMD (no native gather4/TMA sparse prefill kernel), it instead
-    gathers each query token's selected rows into a dense scratch and reuses
-    the validated dense AMD decode kernel over it -- see
-    `mla_decode_branch_fp8`'s AMD arm; `d_indices`/`topk_lengths` are already
-    `[total_q, indices_stride]`/`[total_q]` (per query token, not per
-    sequence), so treating every row of `q` as its own single-token decode
-    batch is exactly the same composition, no prefill-specific kernel needed.
+    runs the dense AMD decode kernel over each query token's selected rows,
+    read in place through `SparseRowsMHAOperand`. `d_indices`/`topk_lengths`
+    are already `[total_q, indices_stride]`/`[total_q]` (per query token, not
+    per sequence), so every row of `q` runs as its own single-token decode
+    batch, with no prefill-specific kernel.
     """
     comptime kv_params = collection_t.kv_params
     comptime assert kv_params.is_mla, "kv_params.is_mla should be true"
@@ -1906,7 +1920,7 @@ def mla_prefill_branch_sparse_fp8[
             )
 
     # Same mixed-precision MMA restriction as the decode arm: stage the absorbed
-    # Q in the cache dtype so the gathered scratch and Q agree.
+    # Q in the cache dtype so the cache rows and Q agree.
     comptime stage_fp8_amd = (
         ctx.target.is_amd_gpu()
         and collection_t.CacheType.dtype == .float8_e4m3fn
@@ -1995,44 +2009,9 @@ def mla_prefill_branch_sparse_fp8[
     var k_cache = kv_collection.get_key_cache(Int(layer_idx))
 
     comptime if ctx.target.is_amd_gpu():
-        # Gather each query token's top-k rows into scratch and run the dense
-        # decode kernel; index buffers are per-token, so each `q` row is S=1.
-        # TODO(anand): scratch is O(total_q * indices_stride * k_cache_dim)
-        # (~2.4 GB/layer at the smoke shape); tile the gather before perf work.
-        # Same packed geometry as the decode gather: 36 lanes x 7 rows/block.
-        comptime GATHER_ROWS_PER_BLOCK = 7
+        # Run the dense decode kernel over each query token's top-k rows, read
+        # in place; index buffers are per-token, so each `q` row is S=1.
         var batch_size = seq_len
-        var scratch_buf = ctx.enqueue_create_buffer[mla_decode_input_dtype](
-            batch_size * indices_stride * k_cache_dim
-        )
-        var k_cache_blocks_base = k_cache.blocks_raw_ptr()
-        ctx.enqueue_function[
-            _amd_sparse_mla_gather_kv_rows[
-                type_of(k_cache), k_cache_dim, GATHER_ROWS_PER_BLOCK
-            ]
-        ](
-            k_cache,
-            k_cache_blocks_base,
-            d_indices,
-            topk_lengths,
-            scratch_buf.unsafe_ptr(),
-            Int32(indices_stride),
-            grid_dim=(
-                ceildiv(indices_stride, GATHER_ROWS_PER_BLOCK),
-                batch_size,
-                1,
-            ),
-            block_dim=(
-                k_cache_dim // _AMD_SPARSE_MLA_GATHER_VEC,
-                GATHER_ROWS_PER_BLOCK,
-                1,
-            ),
-        )
-
-        var k_scratch = TileTensor(
-            scratch_buf,
-            row_major(batch_size, indices_stride, Idx[1], Idx[k_cache_dim]),
-        )
         # View decode input/output as rank-4 [batch,1,heads,depth]; one slot
         # per gathered row (q_seq_len==1), so a size-1 axis, no data movement.
         var q_padded = TileTensor(
@@ -2064,6 +2043,11 @@ def mla_prefill_branch_sparse_fp8[
         var valid_lengths_buf = ctx.enqueue_create_buffer[DType.uint32](
             batch_size
         )
+        # Slots past a token's valid length read this row; the launch below
+        # clears it.
+        var zero_row_buf = ctx.enqueue_create_buffer[type_of(k_cache).dtype](
+            k_cache_dim
+        )
         ctx.enqueue_function[
             _amd_sparse_mla_row_valid_lengths[
                 _AMD_SPARSE_MLA_ROW_VALID_LENGTHS_THREADS
@@ -2073,6 +2057,8 @@ def mla_prefill_branch_sparse_fp8[
             topk_lengths,
             valid_lengths_buf.unsafe_ptr(),
             Int32(indices_stride),
+            zero_row_buf.unsafe_ptr().bitcast[UInt8](),
+            Int32(k_cache_dim * size_of[type_of(k_cache).dtype]()),
             grid_dim=(batch_size, 1, 1),
             block_dim=(_AMD_SPARSE_MLA_ROW_VALID_LENGTHS_THREADS, 1, 1),
         )
@@ -2081,13 +2067,22 @@ def mla_prefill_branch_sparse_fp8[
         )
         var padding_mask = PaddingMask(amd_lengths_tt)
 
-        flare_mla_decoding[
-            config=MHAConfig[mla_decode_input_dtype](num_heads, k_cache_dim),
-            decoding_warp_split_k=False,
+        # Read the selected rows in place instead of gathering a copy.
+        var k_rows = SparseRowsMHAOperand[row_width=k_cache_dim](
+            KVCacheMHAOperand(k_cache),
+            k_cache.blocks_raw_ptr(),
+            zero_row_buf.unsafe_ptr(),
+            d_indices,
+            valid_lengths_buf.unsafe_ptr(),
+            indices_stride,
+        )
+        flare_mla_decoding_rows[
+            config=MHAConfig[mla_decode_input_dtype](num_heads, k_cache_dim)
         ](
             raw_output_padded,
             q_padded,
-            k_scratch,
+            k_rows,
+            indices_stride,
             padding_mask,
             scale,
             ctx,
@@ -2490,7 +2485,7 @@ def mla_prefill_decode_graph_fp8[
     else:
         comptime if sparse_mla:
             # Sparse MLA prefill is implemented for SM100 and (via the
-            # gather-to-scratch decode composition, see
+            # in-place decode composition, see
             # `mla_prefill_branch_sparse_fp8`'s AMD arm) AMD; any other
             # architecture reaching this branch would instantiate SM100-only
             # tcgen05 kernels and fail with an unhelpful message. Fail fast

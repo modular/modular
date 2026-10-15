@@ -317,12 +317,7 @@ TIERED_CONNECTOR_TYPES = frozenset(
     {KVConnectorType.tiered, KVConnectorType.rust_tiered}
 )
 """The host/disk tiered connector types: :attr:`KVConnectorType.rust_tiered`
-and its deprecated alias :attr:`KVConnectorType.tiered`.
-
-Test membership with ``in``: it also accepts the plain strings that
-structural-protocol configs, ``model_copy(update=...)`` and
-``model_construct`` leave in ``type``, since the enum subclasses ``str``.
-"""
+and its deprecated alias :attr:`KVConnectorType.tiered`."""
 
 
 @runtime_checkable
@@ -385,26 +380,6 @@ class KVConnectorConfigInterface(Protocol):
     def block_store_endpoint(self) -> str | None:
         """Endpoint for the co-located dKV service."""
         ...
-
-
-def connector_type(cfg: KVConnectorConfigInterface) -> KVConnectorType:
-    """Returns ``cfg.type`` as a :class:`KVConnectorType`.
-
-    Structural-protocol configs, ``model_copy(update=...)`` and
-    ``model_construct`` can leave a plain string in ``type``. Coercing through
-    the enum gives every reader one type, and routes a removed value such as
-    ``'mojo_tiered'`` to its error instead of a silent fall-through.
-
-    Args:
-        cfg: The connector config to read.
-
-    Returns:
-        The connector type as an enum member.
-
-    Raises:
-        ValueError: If ``cfg.type`` is not a valid connector type.
-    """
-    return KVConnectorType(cfg.type)
 
 
 @dataclass(frozen=True)
@@ -1630,7 +1605,7 @@ class KVCacheParams(KVCacheParamInterface):
             )
 
         # Validate connector configuration
-        connector = connector_type(self.kv_connector_config)
+        connector = self.kv_connector_config.type
         if connector in TIERED_CONNECTOR_TYPES:
             if not self.enable_prefix_caching:
                 raise ValueError(
@@ -1988,7 +1963,7 @@ class KVCacheParams(KVCacheParamInterface):
                 raise ValueError(
                     f"per_layer_buffers requires num_layers >= 1, got {self.num_layers}"
                 )
-            connector = connector_type(self.kv_connector_config)
+            connector = self.kv_connector_config.type
             if (
                 connector in TIERED_CONNECTOR_TYPES
                 or connector == KVConnectorType.dkv

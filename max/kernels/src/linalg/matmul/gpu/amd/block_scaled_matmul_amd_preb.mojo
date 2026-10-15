@@ -71,7 +71,6 @@ from structured_kernels.amd_tile_io import (
 from ....utils import (
     ElementwiseComputeFn,
     ElementwiseEpilogueFn,
-    elementwise_epilogue_type,
     no_compute_fn,
     no_epilogue_fn,
 )
@@ -896,7 +895,6 @@ struct BlockScaledMatmulAMD_PreB[
     scale_group: Int = 1,
     b_addr_split: Bool = False,
     matrix_format: CDNA4F8F6F4MatrixFormat = CDNA4F8F6F4MatrixFormat.FLOAT4_E2M1,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     fuse_swiglu_mxfp8: Bool = False,
     activation: swiglu_activation_type = swiglu[0.0],
 ]:
@@ -980,9 +978,6 @@ struct BlockScaledMatmulAMD_PreB[
         matrix_format: `f8f6f4` operand encoding for A and B. A lane covers
             32 K-elements in every format; the bytes that occupies -- 16
             (FP4), 24 (FP6), 32 (FP8) -- is derived from it.
-        elementwise_lambda_fn: Optional epilogue applied to each output
-            element in registers instead of storing it. The fused QKV ops
-            use it to scatter K/V into the paged cache.
         fuse_swiglu_mxfp8: Folds the gated activation AND the MXFP8
             requantize into the epilogue, so `c` carries HALF the matmul's N as
             packed E4M3 and `sfc_ptr` receives its E8M0 block scales. Requires
@@ -1134,8 +1129,7 @@ struct BlockScaledMatmulAMD_PreB[
     ):
         """Same as `run`, storing the output through `epilogue_fn`.
 
-        Requires `elementwise_lambda_fn` to be unset and
-        `fuse_swiglu_mxfp8=False`.
+        Requires `fuse_swiglu_mxfp8=False`.
 
         Parameters:
             out_dtype: Element type of `c`.
@@ -1211,8 +1205,7 @@ struct BlockScaledMatmulAMD_PreB[
     ):
         """Same as `run`, storing `compute_fn(idx, value)` into `c`.
 
-        Requires `elementwise_lambda_fn` to be unset and
-        `fuse_swiglu_mxfp8=False`.
+        Requires `fuse_swiglu_mxfp8=False`.
 
         Parameters:
             out_dtype: Element type of `c`.
@@ -1923,15 +1916,10 @@ struct BlockScaledMatmulAMD_PreB[
                         sfc_ptr[unsafe_offset=off] = bitcast[DType.uint8](
                             scale[0]
                         )
-        elif (
-            Bool(Self.elementwise_lambda_fn)
-            or has_epilogue_fn
-            or has_compute_fn
-        ):
+        elif has_epilogue_fn or has_compute_fn:
             var c_epilogue = RegTileEpilogue[
                 out_dtype,
                 Self.c_frag_size,
-                elementwise_lambda_fn=Self.elementwise_lambda_fn,
             ](c)
             var lane_group, thread_m = divmod(Int(lane_id()), Self.MMA_M)
             var m_warp_base = m_tile_idx * Self.BM

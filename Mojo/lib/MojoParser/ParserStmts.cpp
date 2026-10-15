@@ -430,13 +430,11 @@ void StmtParser::pushLocalScope(DebugInfo::DIBuilder::ScopeGuard &scopeGuard) {
 }
 
 bool StmtParser::isInTypeBody() const {
-  Operation *parent = parentDecl.getIfOperation();
-  return parent && isa<StructDeclOp, TraitDeclOp, ExtensionDeclOp>(parent);
+  return isa<TypeScopeASTDecl>(parentDecl);
 }
 
 bool StmtParser::isInModuleScope() const {
-  Operation *parent = parentDecl.getIfOperation();
-  return isa_and_nonnull<LIT::FileModuleOp>(parent);
+  return isa<FileModuleASTDecl>(parentDecl);
 }
 
 void StmtParser::emitControlFlowNotInFunctionError(SMLoc loc,
@@ -823,9 +821,8 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
     rejectDecorator(); // Decorators not allowed.
     return parseImportStmt();
   case Token::kw_case:
-    if (auto structOp =
-            dyn_cast_or_null<StructDeclOp>(getParentDecl().getIfOperation());
-        !structOp || !structOp.isEnum())
+    if (auto *structDecl = dyn_cast<StructASTDecl>(&getParentDecl());
+        !structDecl || !structDecl->getOp().isEnum())
       break;
     rejectDecorator(); // Decorators not allowed.
     return parseEnumCaseStmt(stmtIndent);
@@ -877,22 +874,23 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
     return failure();
 
   // We cannot emit general statements unless we're in a function body.
-  if (!isa_and_nonnull<FnOp, UnboundRegionOp>(
-          getParentDecl().getIfOperation())) {
+  auto *otherParent = dyn_cast<OtherOpASTDecl>(&getParentDecl());
+  if (!isa<DefASTDecl>(getParentDecl()) &&
+      !(otherParent && otherParent->isUnboundRegion())) {
     // TODO: Top level expressions will be supported in the future.
-    if (isa_and_nonnull<FileModuleOp>(parentDecl.getIfOperation())) {
+    if (isa<FileModuleASTDecl>(parentDecl)) {
       emitError(startCursor.getToken().getLoc())
           << "expressions must not appear at file scope; move this into a "
              "function body";
-    } else if (isa_and_nonnull<StructDeclOp>(parentDecl.getIfOperation())) {
+    } else if (isa<StructASTDecl>(parentDecl)) {
       emitError(startCursor.getToken().getLoc())
           << "bare expressions must not appear within structs; use 'var' for a "
              "field or move this into a method body";
-    } else if (isa_and_nonnull<TraitDeclOp>(parentDecl.getIfOperation())) {
+    } else if (isa<TraitASTDecl>(parentDecl)) {
       emitError(startCursor.getToken().getLoc())
           << "bare expressions must not appear within traits; use 'comptime' "
              "for an associated type or move this into a method body";
-    } else if (isa_and_nonnull<ExtensionDeclOp>(parentDecl.getIfOperation())) {
+    } else if (isa<ExtensionASTDecl>(parentDecl)) {
       emitError(startCursor.getToken().getLoc())
           << "bare expressions must not appear within extensions; move this "
              "into a method body";
@@ -3227,9 +3225,9 @@ ParseResult StmtParser::parseTryStmt(size_t curIndent) {
 
           // Add an ASTDecl for the error name. TODO: Generalize to an
           // arbitrary pattern.
-          auto &vd = getDeclResolver().addFullyResolvedDecl(
+          auto &vd = cast<VarASTDecl>(getDeclResolver().addFullyResolvedDecl(
               DeclIRValue(errDecl), errDecl.getNameAttr(), errExpr->getLoc(),
-              curDeclScope);
+              curDeclScope));
           getEmitter().shared.notifyListenerOnVariableDecl(vd,
                                                            errExpr->getLoc());
         }
@@ -4240,16 +4238,16 @@ ParseResult StmtParser::parseIf(Location ifLoc, LexerCursor startCursor,
 /// control flow and is rejected. Struct, trait, and extension bodies are also
 /// rejected.
 ParseResult StmtParser::checkImportScope(SMLoc kwLoc) {
-  Operation *parent = getParentDecl().getIfOperation();
   // Module scope is always valid.
-  if (isa_and_nonnull<FileModuleOp>(parent))
+  if (isa<FileModuleASTDecl>(getParentDecl()))
     return success();
   // Within a function, walk up the region chain from the current insertion
   // point to the FnOp. Comptime control-flow ops (HLCF::ComptimeIfOp,
   // HLCF::ComptimeForOp) are transparent — we continue walking through them.
   // Any other op in between (HLCF::IfOp, LIT::LoopOp, etc.) is runtime control
   // flow and the import is rejected.
-  if (isa_and_nonnull<FnOp>(parent)) {
+  if (auto *defDecl = dyn_cast<DefASTDecl>(&getParentDecl());
+      defDecl && defDecl->getOp()) {
     Block *block = builder.getInsertionBlock();
     while (block) {
       Operation *op = block->getParentOp();
@@ -4385,15 +4383,15 @@ ParseResult StmtParser::parseFromImportStmt(FromImportDecorators decorators) {
       // Resolve the module if we haven't yet.
       if (!currentResolvedModule) {
         ASTDecl *curModuleDecl = curDeclScope;
-        while (curModuleDecl &&
-               !isa_and_nonnull<FileModuleOp>(curModuleDecl->getIfOperation()))
+        while (curModuleDecl && !isa<FileModuleASTDecl>(curModuleDecl))
           curModuleDecl = curModuleDecl->getParentDecl();
 
         currentResolvedModule = &shared.importModule(
             modulePath,
-            curModuleDecl
-                ? curModuleDecl->getIfOperation()->getParentOfType<PackageOp>()
-                : PackageOp(),
+            curModuleDecl ? cast<FileModuleASTDecl>(curModuleDecl)
+                                ->getOp()
+                                ->getParentOfType<PackageOp>()
+                          : PackageOp(),
             importLoc);
       }
       return *currentResolvedModule;
@@ -4514,7 +4512,8 @@ static void buildImportChain(ParserBase &p, ASTDecl &dest, OpBuilder builder,
     // one.
     ASTDecl *node = nullptr;
     for (ASTDecl *d : scope->lookupInCurrentScope(segName)) {
-      if (isa_and_nonnull<ImportOp>(d->getIfOperation())) {
+      auto *importDecl = dyn_cast<ImportASTDecl>(d);
+      if (importDecl && importDecl->isResolved()) {
         node = d;
         break;
       }
@@ -4797,7 +4796,7 @@ ParseResult StmtParser::parseDefFnStmt(LexerCursor startCursor,
 
   // Mark this function with an attribute if it's trait method with a non-empty
   // body.
-  if (isa_and_nonnull<TraitDeclOp>(curDeclScope->getIfOperation()))
+  if (isa<TraitASTDecl>(curDeclScope))
     maybeMarkDefaultedTraitMethod(fnOp);
 
   // Skip the body of this definition: go to a token at the start of the next
@@ -4914,7 +4913,7 @@ ParseResult StmtParser::parseVarStmt(LexerCursor startCursor,
                       &identifierLoc, /*forbidStartOfLine=*/true))
     return failure();
 
-  if (isa_and_nonnull<TraitDeclOp>(getParentDecl().getIfOperation())) {
+  if (isa<TraitASTDecl>(getParentDecl())) {
     rejectDecorator();
     emitError(loc, "traits do not support 'var' fields; use 'comptime' to "
                    "declare associated types");
@@ -4922,9 +4921,8 @@ ParseResult StmtParser::parseVarStmt(LexerCursor startCursor,
     return success();
   }
 
-  if (auto structOp =
-          dyn_cast_or_null<StructDeclOp>(getParentDecl().getIfOperation());
-      structOp && structOp.isEnum()) {
+  if (auto *structDecl = dyn_cast<StructASTDecl>(&getParentDecl());
+      structDecl && structDecl->getOp().isEnum()) {
     rejectDecorator();
     emitError(loc, "enums do not support 'var' fields; store state in a case "
                    "payload");
@@ -4937,7 +4935,7 @@ ParseResult StmtParser::parseVarStmt(LexerCursor startCursor,
   auto unresolvedType = UnresolvedType::get(getContext());
   // If we're in a struct, then this is a field declaration.
   Operation *declOp;
-  if (isa_and_nonnull<StructDeclOp>(getParentDecl().getIfOperation())) {
+  if (isa<StructASTDecl>(getParentDecl())) {
     declOp = StructFieldOp::create(builder, loc, name, unresolvedType);
 
     // Skip the body of this definition: go to a token the starts a line at the
@@ -4960,12 +4958,13 @@ ParseResult StmtParser::parseVarStmt(LexerCursor startCursor,
       stmtIndent);
   getDeclResolver().attachDeclToParentNameTable(&decl, name);
 
-  auto varOp = dyn_cast_or_null<VarDeclOp>(decl.getIfOperation());
-  if (!varOp) {
+  auto *varDecl = dyn_cast<VarASTDecl>(&decl);
+  if (!varDecl) {
     // Parse docstrings for struct fields here.
     parseDocString(decl);
     return success();
   }
+  VarDeclOp varOp = varDecl->getOp();
 
   // Local variable declarations inside functions are lexically resolved, so
   // fully resolve the decl now. If an error occurs, skip the declaration and
@@ -5086,10 +5085,9 @@ ParseResult StmtParser::parseAliasDeclStmtBody(LexerCursor startCursor,
 
     // Reject the stmt if it is in a struct/trait, resolving them eagerly can
     // easily lead to parser cycles.
-    if (isa_and_nonnull<StructDeclOp, TraitDeclOp>(
-            parentDecl.getIfOperation())) {
+    if (isa<StructASTDecl, TraitASTDecl>(parentDecl)) {
       emitError(kwLoc,
-                isa<StructDeclOp>(parentDecl.getIfOperation())
+                isa<StructASTDecl>(parentDecl)
                     ? "'comptime' constants inside structs must be declared "
                       "separately; break this into individual declarations"
                     : "a trait's associated types must be declared separately; "
@@ -5132,7 +5130,7 @@ ParseResult StmtParser::parseAliasDeclStmtBody(LexerCursor startCursor,
   // same indent level (or less) as the current definition.
   bool isDefaultedAlias = false;
   llvm::unique_function<bool()> defaultAliasDetector = {};
-  if (isa_and_nonnull<TraitDeclOp>(curDeclScope->getIfOperation())) {
+  if (isa<TraitASTDecl>(curDeclScope)) {
     defaultAliasDetector = [&]() -> bool {
       // if we found one `=`
       if (getToken().is(Token::equal))
@@ -5164,10 +5162,10 @@ ParseResult StmtParser::parseStructStmt(LexerCursor startCursor,
 
   // We don't support non-top level structs (yet?).
   bool nestFailure = false;
-  if (isa_and_nonnull<StructDeclOp>(getParentDecl().getIfOperation())) {
+  if (isa<StructASTDecl>(getParentDecl())) {
     emitTokenError("nested " + kind + " not supported here");
     nestFailure = true;
-  } else if (isa_and_nonnull<TraitDeclOp>(getParentDecl().getIfOperation())) {
+  } else if (isa<TraitASTDecl>(getParentDecl())) {
     emitTokenError("nested " + kind + " in a trait not supported here");
     nestFailure = true;
   } else if (isa<DefASTDecl>(getParentDecl())) {
@@ -5260,7 +5258,7 @@ ParseResult StmtParser::parseEnumCaseStmt(size_t stmtIndent) {
 ParseResult StmtParser::parseTraitStmt(LexerCursor startCursor,
                                        size_t curIndent) {
   // We don't support non-top level traits (yet?).
-  if (!isa_and_nonnull<FileModuleOp>(getParentDecl().getIfOperation()))
+  if (!isa<FileModuleASTDecl>(getParentDecl()))
     emitTokenError("nested trait not supported here");
 
   consumeToken(Token::kw_trait);
@@ -5291,10 +5289,10 @@ ParseResult StmtParser::parseExtensionStmt(LexerCursor startCursor,
   // to enable the user to mimic implicit trait conformance. But this is not
   // that day.
   bool nestFailure = false;
-  if (isa_and_nonnull<StructDeclOp>(getParentDecl().getIfOperation())) {
+  if (isa<StructASTDecl>(getParentDecl())) {
     emitTokenError("nested extension not supported here");
     nestFailure = true;
-  } else if (isa_and_nonnull<TraitDeclOp>(getParentDecl().getIfOperation())) {
+  } else if (isa<TraitASTDecl>(getParentDecl())) {
     emitTokenError("nested extension in a trait not supported here");
     nestFailure = true;
   } else if (isa<DefASTDecl>(getParentDecl())) {

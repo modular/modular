@@ -236,7 +236,13 @@ class MoEQuantized(MoE):
         # `_uses_block_scaled_nv_ep_layout` in `ep_kernels`, which is what
         # produces the offsets. Ungated, AMD MXFP8 read the dispatch's 5 outputs
         # as the NVIDIA 6-tuple and never reached `BlockScaledStrategy`.
-        return self.quant_config.is_mxfp8 and accelerator_api() == "cuda"
+        # MXFP4 takes it on cuda only for local experts, whose activations the
+        # grouped quantize makes MXFP4 (W4A4): no EP dispatch emits it.
+        if self.quant_config.is_mxfp8 or (
+            self.quant_config.is_mxfp4 and self._ep_batch_manager is None
+        ):
+            return accelerator_api() == "cuda"
+        return False
 
     def _can_fuse_swiglu_mxfp8(self) -> bool:
         """Whether gemm1 folds the gated activation and the MXFP8 requantize

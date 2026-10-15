@@ -8,8 +8,8 @@ The sections below describe the contributions we accept today. Before you start
 work, check that the part of the codebase you want to improve is covered here,
 then follow the [contribution process](contribution-process.md).
 
-Keep each pull request inside a single area. See [keep each pull request to one
-contribution](issue-pr-etiquette.md#keep-each-pull-request-to-one-contribution).
+Keep each pull request inside a single area. See
+[keep pull requests small](issue-pr-etiquette.md#keep-pull-requests-small).
 
 ## Compiler
 

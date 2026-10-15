@@ -74,13 +74,14 @@ def _neg_zero_bits() -> Scalar[dtype]:
     return bitcast[dtype, 1](UInt16(0x8000))[0]
 
 
-def _run_rms_norm_unfused(
+def _run_rms_norm_unfused[
+    epsilon: Float32
+](
     in_ptr: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
     out_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
     gamma_ptr: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
     M: Int,
     K: Int,
-    epsilon: Float32,
     ctx: DeviceContext,
 ) raises:
     """Per-device RMSNorm reading [M, K] from `in_ptr` and writing [M, K] to
@@ -112,8 +113,10 @@ def _run_rms_norm_unfused(
         2,  # rank
         input_fn,
         output_fn,
+        epsilon=epsilon,
+        weight_offset=Float32(0),
         multiply_before_cast=True,
-    ](Coord(shape), gamma_view, epsilon, Scalar[dtype](0), ctx)
+    ](Coord(shape), gamma_view, ctx)
 
 
 def rmsnorm_test[
@@ -263,7 +266,7 @@ def rmsnorm_test[
         list_of_ctx[g].synchronize()
 
     for g in range(ngpus):
-        _run_rms_norm_unfused(
+        _run_rms_norm_unfused[EPS](
             rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
                 ar_out[g].unsafe_ptr()
             ),
@@ -275,7 +278,6 @@ def rmsnorm_test[
             ),
             M,
             K,
-            EPS,
             list_of_ctx[g],
         )
     for g in range(ngpus):
@@ -485,7 +487,7 @@ def unsynced_skew_test[
         # rms_norm_gpu on this slice's AR output per device. Pointer-offset
         # into the big buffer (no DeviceBuffer slice API needed).
         for g in range(ngpus):
-            _run_rms_norm_unfused(
+            _run_rms_norm_unfused[EPS](
                 rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
                     ar_big[g].unsafe_ptr() + base
                 ),
@@ -497,7 +499,6 @@ def unsynced_skew_test[
                 ),
                 M,
                 K,
-                EPS,
                 list_of_ctx[g],
             )
         for g in range(ngpus):

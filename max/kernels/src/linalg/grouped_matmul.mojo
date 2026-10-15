@@ -51,7 +51,6 @@ from .matmul.vendor.blas import matmul as vendor_matmul
 from .utils import (
     ElementwiseComputeFn,
     ElementwiseEpilogueFn,
-    elementwise_epilogue_type,
     no_compute_fn,
     lora_qkv_plane_row_offset,
     no_epilogue_fn,
@@ -1244,7 +1243,6 @@ def grouped_matmul_rowwise_scaled_fp8_kernel[
     expert_ids_engine: TensorEngine,
     *,
     transpose_b: Bool = True,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: TileTensor[mut=True, c_type, CLayout, MutAnyOrigin, Engine=c_engine],
     a: TileTensor[mut=False, a_type, ALayout, MutAnyOrigin, Engine=a_engine],
@@ -1343,11 +1341,8 @@ def grouped_matmul_rowwise_scaled_fp8_kernel[
         ).cast[accum_type]()
         accum = accum * a_scale * b_scale
 
-    comptime if case .Some(elementwise_lambda) = elementwise_lambda_fn:
-        elementwise_lambda[c_type, 1]((Int(m_global), n), accum.cast[c_type]())
-    else:
-        var c_by_expert = c.ptr + Int64(a_start_row) * Int64(N)
-        c_by_expert[m * N + n] = accum.cast[c_type]()
+    var c_by_expert = c.ptr + Int64(a_start_row) * Int64(N)
+    c_by_expert[m * N + n] = accum.cast[c_type]()
 
 
 @inline(.always)
@@ -1362,7 +1357,6 @@ def grouped_matmul_rowwise_dynamic_scaled_fp8[
     //,
     transpose_b: Bool = True,
     target: StaticString = "cpu",
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: TileTensor[mut=True, c_type, address_space=.GENERIC, Engine=_, ...],
     a: TileTensor[mut=False, a_type, address_space=.GENERIC, Engine=_, ...],
@@ -1404,8 +1398,6 @@ def grouped_matmul_rowwise_dynamic_scaled_fp8[
         expert_ids_type: Expert-id dtype (``int32``).
         transpose_b: Must be ``True``; ``b`` is ``[E, N, K]``.
         target: Compilation target string.
-        elementwise_lambda_fn: Optional output epilogue applied with the
-            ``(global_row, n)`` index.
 
     Args:
         c: Output ``[total_tokens, N]``.
@@ -1474,7 +1466,6 @@ def grouped_matmul_rowwise_dynamic_scaled_fp8[
         type_of(a_offsets).Engine,
         type_of(expert_ids).Engine,
         transpose_b=transpose_b,
-        elementwise_lambda_fn=elementwise_lambda_fn,
     ]
 
     with Trace[TraceLevel.OP, target=StaticString("gpu")](

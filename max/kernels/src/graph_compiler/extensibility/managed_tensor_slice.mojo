@@ -59,8 +59,6 @@ from layout.int_tuple import _IntTupleToCoordLike, coord_to_int_tuple
 from layout.tile_io import TileCopier
 from layout.tile_layout import Layout as TileLayout, TensorLayout, _RowMajor
 
-from .decorators import register_internal
-
 
 # ===----------------------------------------------------------------------=== #
 # IO direction tag + IOSpec marker
@@ -859,7 +857,6 @@ def _gcd_pow2[a: Int, b: Int]() -> Int:
 #
 # They are set to be inlined further down graph compiler stack.
 @doc_hidden
-@register_internal("simd_store_into_managed_tensor_slice")
 @inline(.always)
 def simd_store_into_managed_tensor_slice[
     dtype: DType,
@@ -933,7 +930,6 @@ def simd_store_into_managed_tensor_slice[
 
 
 @doc_hidden
-@register_internal("simd_store_into_tensor_pointer")
 @inline(.always)
 def simd_store_into_tensor_pointer[
     dtype: DType,
@@ -982,7 +978,6 @@ def simd_store_into_tensor_pointer[
 # ManagedTensorSlice. This avoids capturing ManagedTensorSlice in GPU kernels,
 # which doesn't work correctly due to closure capture limitations.
 @doc_hidden
-@register_internal("simd_load_from_tensor_pointer")
 @inline(.always)
 def simd_load_from_tensor_pointer[
     dtype: DType,
@@ -1029,7 +1024,6 @@ def simd_load_from_tensor_pointer[
 
 
 @doc_hidden
-@register_internal("simd_load_from_managed_tensor_slice")
 @inline(.always)
 def simd_load_from_managed_tensor_slice[
     dtype: DType,

@@ -24,12 +24,6 @@ adapter changes the *storage* of the quantized tensors, which the reference's
   ``float8_e4m3fn`` weight; the ``<proj>.scale`` companion (e8m0, one per
   128x128 block) becomes ``<proj>.weight_scale`` **in float32**, because the
   blockwise fp8 matmul reads float32 scales. ``2 ** (e - 127)`` is exact.
-* ``attn.wo_a`` is the exception: the checkpoint stores it fp8, but the
-  reference declares it bf16 and uses the raw weight in a grouped einsum
-  rather than through ``linear()``, so no activation quantization happens
-  there and the block scale has to be folded in on the host (to bf16, which
-  is exact). Loading it fp8 and dropping the scale is what makes wo_a about
-  2400x too large.
 * routed experts (``ffn.experts.<e>.w{1,2,3}``, e2m1 packed two per int8 byte,
   e8m0 scale per 32 elements) are stacked per layer into the two
   ``[E, N, K/2]`` uint8 tensors of :class:`DeepseekV4RoutedExperts`
@@ -78,10 +72,6 @@ _HC_SITE_TENSOR = re.compile(
 GATE_UP_PROJ = "gate_up_proj"
 DOWN_PROJ = "down_proj"
 
-# Projections stored fp8 that the model runs dequantized (see the module
-# docstring): matched on the module name, so ``mtp.*`` stages come along.
-_HOST_DEQUANT_PROJECTIONS = (".attn.wo_a",)
-
 # bf16 in the checkpoint, float32 in the reference (and here), which upcasts
 # them on load: the compressor's raw projections (it pools in float32), every
 # norm weight (``*norm.weight``) and the head.
@@ -91,8 +81,6 @@ _FLOAT32_WEIGHTS = (
     "norm.weight",
 )
 _FLOAT32_HEAD = "head.weight"
-
-_FP8_WEIGHT_BLOCK = 128
 
 
 def as_uint8(data: DLPackArray) -> np.ndarray:
@@ -106,52 +94,12 @@ def e8m0_to_float32(raw: np.ndarray) -> np.ndarray:
     return np.exp2(raw.astype(np.float32) - 127.0)
 
 
-def _e4m3_table() -> np.ndarray:
-    """The 256 ``float8_e4m3fn`` values, indexed by their byte."""
-    code = np.arange(256, dtype=np.uint8)
-    exponent = ((code >> 3) & 0x0F).astype(np.int32)
-    mantissa = (code & 0x07).astype(np.float32)
-    magnitude = np.where(
-        exponent == 0,
-        mantissa * 2.0**-9,
-        (1.0 + mantissa / 8.0) * np.exp2((exponent - 7).astype(np.float32)),
-    ).astype(np.float32)
-    # e4m3fn has no infinities; the all-ones exponent with a full mantissa is
-    # the only NaN.
-    magnitude[0x7F] = np.nan
-    magnitude[0xFF] = np.nan
-    return np.where(code >> 7 == 1, -magnitude, magnitude).astype(np.float32)
-
-
-_E4M3 = _e4m3_table()
-
-
 def with_dtype(array: np.ndarray, dtype: DType, name: str) -> WeightData:
     """``WeightData`` whose bytes are ``array`` reinterpreted as ``dtype``."""
     buffer = Buffer.from_numpy(np.ascontiguousarray(array))
     if dtype != DType.from_numpy(array.dtype):
         buffer = buffer.view(dtype)
     return WeightData(buffer, name, dtype, Shape(buffer.shape))
-
-
-def dequantize_fp8_blocks(
-    weight: WeightData, scale: WeightData, name: str
-) -> WeightData:
-    """An fp8 weight times its ``[N/128, K/128]`` e8m0 block scale, bfloat16.
-
-    bf16 is what the reference declares for these projections, and it is
-    exact: an e4m3 value (3 mantissa bits) times a power of two fits bf16's
-    7 mantissa bits and f32's exponent range, so dropping the low 16 bits of
-    the float32 product loses nothing.
-    """
-    values = _E4M3[as_uint8(weight.data)]
-    blocks = e8m0_to_float32(as_uint8(scale.data))
-    expanded = np.repeat(
-        np.repeat(blocks, _FP8_WEIGHT_BLOCK, axis=0), _FP8_WEIGHT_BLOCK, axis=1
-    )[: values.shape[0], : values.shape[1]]
-    product = np.ascontiguousarray(values * expanded, dtype=np.float32)
-    bf16_bits = (product.view(np.uint32) >> 16).astype(np.uint16)
-    return with_dtype(bf16_bits, DType.bfloat16, name)
 
 
 def bfloat16_to_float32(weight: WeightData, name: str) -> WeightData:
@@ -250,9 +198,6 @@ def convert_weight_data(
 
         if name.endswith(_SCALE_SUFFIX):
             base = name[: -len(_SCALE_SUFFIX)]
-            if base.endswith(_HOST_DEQUANT_PROJECTIONS):
-                # Folded into the weight below; the module has no scale.
-                continue
             max_name = base + _MAX_SCALE_SUFFIX
             weight = state_dict.get(f"{base}.weight")
             if (
@@ -268,13 +213,6 @@ def convert_weight_data(
                 continue
             new_state_dict[max_name] = data
             continue
-
-        if name.endswith(".weight") and data.dtype == DType.float8_e4m3fn:
-            base = name[: -len(".weight")]
-            scale = state_dict.get(base + _SCALE_SUFFIX)
-            if base.endswith(_HOST_DEQUANT_PROJECTIONS) and scale is not None:
-                new_state_dict[name] = dequantize_fp8_blocks(data, scale, name)
-                continue
 
         if (
             name.endswith(_FLOAT32_WEIGHTS) or name == _FLOAT32_HEAD
@@ -319,8 +257,7 @@ def convert_dspark_safetensor_state_dict(
 ) -> dict[str, WeightData]:
     """The trunk's weights and the DSpark stages', under the same rules.
 
-    The stages' projections need no rule of their own: their ``attn.wo_a``
-    is host-dequantized by the trunk's suffix match, and ``mtp.0.main_proj``
+    The stages' projections need no rule of their own: ``mtp.0.main_proj``
     is an fp8 weight with a 128x128 block scale like the attention
     projections, in the minimized checkpoint as in the real one.
     """

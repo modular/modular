@@ -16,9 +16,8 @@ from __future__ import annotations
 
 from typing import Any, ClassVar, Literal
 
-from max.engine import InferenceSession
-from max.graph import Graph
 from max.pipelines.architectures.llama3.model import LlamaModelBase
+from max.pipelines.lib.graph_specs import GraphRole, GraphSpec
 from typing_extensions import override
 
 from .llama4 import Llama4
@@ -51,13 +50,8 @@ class Llama4Model(LlamaModelBase):
         return model_config
 
     @override
-    def _build_graph_for_compile(
-        self,
-        session: InferenceSession,
-        state_dict: dict[str, Any],
-        model_config: Llama4Config,
-    ) -> tuple[Graph, dict[str, Any]]:
-        del session
+    def graph_specs(self, model_config: Llama4Config) -> dict[str, GraphSpec]:
+        """Returns the single-device decoder."""
         if len(self.devices) > 1:
             raise ValueError(
                 "Llama4 currently supports single-device execution only."
@@ -65,27 +59,16 @@ class Llama4Model(LlamaModelBase):
 
         nn_model = Llama4(model_config)
         nn_model.load_state_dict(
-            state_dict,
+            self.state_dict,
             override_quantization_encoding=True,
             weight_alignment=1,
             strict=False,
         )
-        weights_registry = nn_model.state_dict()
-
-        with Graph(
-            "llama4",
-            input_types=nn_model.input_types(self.kv_params),
-        ) as graph:
-            tokens, input_row_offsets, return_n_logits, *kv_cache_inputs = (
-                graph.inputs
+        return {
+            GraphRole.DECODER: GraphSpec(
+                nn_model,
+                "llama4",
+                nn_model.input_types(self.kv_params),
+                weights=nn_model.state_dict(),
             )
-            kv_collections = self._unflatten_kv_inputs(kv_cache_inputs)
-            outputs = nn_model(
-                tokens.tensor,
-                kv_collections[0],
-                return_n_logits.tensor,
-                input_row_offsets.tensor,
-            )
-            graph.output(*outputs)
-
-        return graph, weights_registry
+        }

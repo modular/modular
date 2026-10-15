@@ -47,6 +47,7 @@ from layout import (
     row_major,
 )
 from linalg.matmul import elementwise_epilogue_type, matmul
+from linalg.utils import ElementwiseEpilogueFn
 from linalg.fp8_quantization import blockwise_scaled_fp8_with_epilogue
 from linalg.block_scaled_quantization import block_scaled_matmul
 from linalg.arch.amd.block_scaled_mma import CDNA4F8F6F4MatrixFormat
@@ -1251,7 +1252,7 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_scale[
             ](Coord(col, 0)).cast[dtype]()
             output_val = val * (scale_a * scale_b)
         else:
-            # blockwise quantization, we need to use the blockwise_scaled_fp8_with_epilogue kernel
+            # Blockwise scaling runs `write_to_cache_blockwise` instead.
             output_val = val
 
         var output_val_out: SIMD[output_dtype, width] = rebind[
@@ -1316,16 +1317,90 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_scale[
             target
         ](), "Blockwise scaled fp8 matmul only works on GPU."
 
+        # TODO(MOCO-4720): `_matmul_common` still takes only the legacy
+        # `write_to_cache`; once it takes a value closure, this one serves both
+        # branches and the legacy closure goes away.
+        @inline(.always)
+        def write_to_cache_blockwise[
+            dtype: DType, width: SIMDLength, *, alignment: Int
+        ](idx: Coord, val: SIMD[dtype, width]) {
+            var output,
+            var input_row_offsets,
+            var k_cache,
+            var v_cache,
+            var q_dim,
+            var qk_offset,
+            var bias,
+        }:
+            comptime assert (
+                idx.rank == 2
+            ), "the matmul epilogue contract is rank 2"
+            var col = Int(idx[1].value())
+            var output_val_out: SIMD[output_dtype, width] = rebind[
+                SIMD[output_dtype, width]
+            ](val.cast[output_dtype]())
+
+            if case .Some(bias) = bias:
+                output_val_out += bias.load[
+                    width=width, alignment=align_of[output_dtype]()
+                ](Coord(col))
+
+            if col < q_dim:
+                output.store[width=width, alignment=align_of[output_dtype]()](
+                    idx,
+                    output_val_out,
+                )
+                return
+
+            var global_token_idx = Int(idx[0].value())
+
+            var batch_idx: Int = get_batch_from_row_offsets(
+                input_row_offsets, global_token_idx
+            )
+
+            var token_idx = Int(
+                UInt32(global_token_idx) - input_row_offsets[batch_idx]
+            )
+
+            var h_idx: Int
+            var hd_idx: Int
+            var cache: cache_t
+
+            comptime if kv_params.is_mla:
+                cache = k_cache
+                h_idx = 0  # in MLA mode we only have one head
+                hd_idx = col - q_dim
+
+            else:
+                if col < qk_offset:
+                    cache = k_cache
+                    h_idx, hd_idx = udivmod(col - q_dim, kv_params.head_size)
+                else:
+                    cache = v_cache.value()
+                    h_idx, hd_idx = udivmod(
+                        col - qk_offset, kv_params.head_size
+                    )
+
+            var cache_length = cache.cache_length(batch_idx)
+            var cache_token_idx = token_idx + cache_length
+            cache.store(
+                batch_idx,
+                h_idx,
+                cache_token_idx,
+                hd_idx,
+                rebind[SIMD[kv_type, width]](output_val_out.cast[kv_type]()),
+            )
+
         _matmul_blockwise_scaled_fp8_common[
             output_dtype=cache_t.dtype,
             target=target,
             scales_granularity_mnk=scales_granularity_mnk,
-            elementwise_lambda_fn=write_to_cache,
         ](
             hidden_state,
             weight,
             input_scale,
             weight_scale,
+            write_to_cache_blockwise,
             context.value(),
         )
     else:
@@ -1409,16 +1484,21 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_scale_float4[
     if batch_size == 0:
         return
 
-    @__parameter
-    @__copy_capture(input_scale, weight_scale, q_dim, qk_offset, batch_size)
     @inline(.always)
     def write_to_cache[
-        dtype: DType, width: SIMDLength, *, alignment: Int = 1
-    ](idx: Coord, val: SIMD[dtype, width]):
+        dtype: DType, width: SIMDLength, *, alignment: Int
+    ](idx: Coord, val: SIMD[dtype, width]) {
+        var output,
+        var input_row_offsets,
+        var k_cache,
+        var v_cache,
+        var q_dim,
+        var qk_offset,
+    }:
         comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
         # Blockwise-scaled matmul epilogue: scatter Q to `output` and K/V into
-        # the paged cache. Runs as the `elementwise_lambda_fn` of the
-        # block-scaled matmul (Mojo kernel when covered, vendor otherwise).
+        # the paged cache. Runs as the `epilogue_fn` of the block-scaled matmul
+        # (Mojo kernel when covered, vendor otherwise).
         var output_val_out: SIMD[output_dtype, width] = rebind[
             SIMD[output_dtype, width]
         ](val.cast[output_dtype]())
@@ -1481,7 +1561,6 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_scale_float4[
         output_dtype=output_dtype,
         target=target,
         SF_VECTOR_SIZE=SF_VECTOR_SIZE,
-        elementwise_lambda_fn=write_to_cache,
         mx_format=mx_format,
         preshuffled_b=preshuffled_b,
     ](
@@ -1490,6 +1569,7 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_scale_float4[
         input_scale,
         weight_scale,
         tensor_sf,
+        write_to_cache,
         context.value(),
     )
 
@@ -1852,17 +1932,21 @@ def _fused_qkv_index_matmul_kv_cache_ragged_impl_scale_float4[
             " a multiple of the scale-block group size for bit-exact fusion."
         )
 
-    @__parameter
-    @__copy_capture(
-        q_end,
-        k_end,
-        v_end,
-        iq_end,
-    )
     @inline(.always)
     def write_to_caches[
-        dtype: DType, width: SIMDLength, *, alignment: Int = 1
-    ](idx: Coord, val: SIMD[dtype, width]):
+        dtype: DType, width: SIMDLength, *, alignment: Int
+    ](idx: Coord, val: SIMD[dtype, width]) {
+        var q_output,
+        var iq_output,
+        var input_row_offsets,
+        var k_cache,
+        var v_cache,
+        var index_k_cache,
+        var q_end,
+        var k_end,
+        var v_end,
+        var iq_end,
+    }:
         comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
         # The block-scaled matmul already applied the scales; the epilogue just
         # routes and casts. `idx[1]` is the column in the concatenated N space.
@@ -1944,7 +2028,6 @@ def _fused_qkv_index_matmul_kv_cache_ragged_impl_scale_float4[
         output_dtype=output_dtype,
         target=target,
         SF_VECTOR_SIZE=SF_VECTOR_SIZE,
-        elementwise_lambda_fn=write_to_caches,
         mx_format=mx_format,
         preshuffled_b=preshuffled_b,
     ](
@@ -1953,6 +2036,7 @@ def _fused_qkv_index_matmul_kv_cache_ragged_impl_scale_float4[
         input_scale,
         weight_scale,
         tensor_sf,
+        write_to_caches,
         context.value(),
     )
 
@@ -2397,11 +2481,11 @@ def _matmul_blockwise_scaled_fp8_common[
     b_type: DType,
     a_scales_type: DType,
     b_scales_type: DType,
+    EpilogueFnType: ElementwiseEpilogueFn,
     //,
     *,
     target: StaticString,
     scales_granularity_mnk: IndexList[3],
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     hidden_state: TileTensor[mut=False, a_type, address_space=.GENERIC, ...],
     weight: TileTensor[mut=False, b_type, address_space=.GENERIC, ...],
@@ -2411,6 +2495,7 @@ def _matmul_blockwise_scaled_fp8_common[
     weight_scale: TileTensor[
         mut=False, b_scales_type, address_space=.GENERIC, ...
     ],
+    epilogue_fn: EpilogueFnType,
     context: DeviceContext,
 ) raises:
     comptime assert is_gpu[
@@ -2421,8 +2506,7 @@ def _matmul_blockwise_scaled_fp8_common[
     comptime N = weight.static_shape[0]
 
     # Allocate an output-typed scratch buffer for the matmul result; the
-    # epilogue lambda reads from it and writes the final values to the KV
-    # cache.
+    # epilogue reads from it and writes the final values to the KV cache.
     var scratch_buffer = context.enqueue_create_buffer[output_dtype](
         TOTAL_SEQ_LEN * N
     )
@@ -2433,8 +2517,8 @@ def _matmul_blockwise_scaled_fp8_common[
 
     blockwise_scaled_fp8_with_epilogue[
         transpose_b=True,
-        elementwise_lambda_fn=elementwise_lambda_fn,
         scales_granularity_mnk=scales_granularity_mnk,
+        has_epilogue_fn=True,
     ](
         c_tt,
         hidden_state,
@@ -2442,6 +2526,7 @@ def _matmul_blockwise_scaled_fp8_common[
         input_scale,
         weight_scale,
         context,
+        epilogue_fn,
     )
 
 
@@ -2455,11 +2540,11 @@ def _matmul_blockwise_scaled_fp4_common[
     b_layout: TensorLayout,
     sfa_layout: TensorLayout,
     sfb_layout: TensorLayout,
+    EpilogueFnType: ElementwiseEpilogueFn,
     //,
     *,
     target: StaticString,
     SF_VECTOR_SIZE: Int = 16,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     mx_format: MXFormat = MXFormat.FP8_E4M3,
     preshuffled_b: Bool = False,
 ](
@@ -2468,6 +2553,7 @@ def _matmul_blockwise_scaled_fp4_common[
     input_scale: TileTensor[scales_dtype, sfa_layout, ImmutAnyOrigin],
     weight_scale: TileTensor[scales_dtype, sfb_layout, ImmutAnyOrigin],
     tensor_sf: Float32,
+    epilogue_fn: EpilogueFnType,
     context: DeviceContext,
 ) raises:
     comptime assert is_gpu[
@@ -2478,7 +2564,7 @@ def _matmul_blockwise_scaled_fp4_common[
     comptime N = type_of(weight).static_shape[0]
 
     # Scratch C for the matmul result. With the fused (in-kernel) epilogue the
-    # SM100 Mojo kernel redirects its stores through `elementwise_lambda_fn` and
+    # SM100 Mojo kernel redirects its stores through `epilogue_fn` and
     # never writes C; the buffer only backs the vendor DISPATCH_MISS fallback.
     #
     # C is built with a STATIC N dim (dynamic M): `block_scaled_matmul` picks its
@@ -2496,7 +2582,7 @@ def _matmul_blockwise_scaled_fp4_common[
     var c_tt = TileTensor(scratch_buffer, row_major(TOTAL_SEQ_LEN, Idx[N]))
 
     # Try MAX's own SM100 Mojo block-scaled kernel first; vendor cuBLASLt only
-    # on DISPATCH_MISS. The K/V-scatter epilogue rides `elementwise_lambda_fn`.
+    # on DISPATCH_MISS. The K/V-scatter epilogue rides `epilogue_fn`.
     #
     # This path runs a single K partition: a B200 microbench of the served
     # decode shapes (M<=16, N in {2304,2560}, K=6144) showed split-K within
@@ -2535,7 +2621,6 @@ def _matmul_blockwise_scaled_fp4_common[
             return mxfp6_block_scaled_matmul_amd[
                 fp6_format=CDNA4F8F6F4MatrixFormat(mx_format),
                 preshuffled_b=preshuffled_b,
-                elementwise_lambda_fn=elementwise_lambda_fn,
                 allow_lds_pingpong=False,
             ](
                 c_tt,
@@ -2543,24 +2628,23 @@ def _matmul_blockwise_scaled_fp4_common[
                 weight.bitcast[.uint8](),
                 input_scale.bitcast[.float8_e8m0fnu](),
                 weight_scale.bitcast[.float8_e8m0fnu](),
+                epilogue_fn,
                 context,
             )
-        return block_scaled_matmul_amd[
-            lane_bytes=lane_bytes,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-        ](
+        return block_scaled_matmul_amd[lane_bytes=lane_bytes](
             c_tt,
             hidden_state.bitcast[.uint8](),
             weight.bitcast[.uint8](),
             input_scale.bitcast[.float8_e8m0fnu](),
             weight_scale.bitcast[.float8_e8m0fnu](),
+            epilogue_fn,
             context,
         )
 
     block_scaled_matmul[
         SF_VECTOR_SIZE=SF_VECTOR_SIZE,
         transpose_b=True,
-        elementwise_lambda_fn=elementwise_lambda_fn,
+        has_epilogue_fn=True,
         target=target,
         pdl_level=PDLLevel.ON,
     ](
@@ -2571,6 +2655,7 @@ def _matmul_blockwise_scaled_fp4_common[
         weight_scale,
         tensor_sf,
         context,
+        epilogue_fn,
     )
 
 
@@ -3181,14 +3266,10 @@ def _matmul_k_cache_ragged_scale_impl[
     comptime assert input_row_offsets.flat_rank == 1
     comptime kv_params = cache_t.kv_params
 
-    var batch_size = Int(input_row_offsets.dim[0]()) - 1
-
-    @__parameter
-    @__copy_capture(input_scale, weight_scale, batch_size)
     @inline(.always)
     def write_to_cache[
-        dtype: DType, width: SIMDLength, *, alignment: Int = 1
-    ](idx: Coord, val: SIMD[dtype, width],):
+        dtype: DType, width: SIMDLength, *, alignment: Int
+    ](idx: Coord, val: SIMD[dtype, width]) {var input_row_offsets, var k_cache}:
         comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
         comptime kv_type = cache_t.dtype
 
@@ -3224,13 +3305,13 @@ def _matmul_k_cache_ragged_scale_impl[
     _matmul_blockwise_scaled_fp8_common[
         output_dtype=cache_t.dtype,
         target=target,
-        elementwise_lambda_fn=write_to_cache,
         scales_granularity_mnk=scales_granularity_mnk,
     ](
         hidden_state,
         weight.bitcast[dtype](),
         input_scale,
         weight_scale,
+        write_to_cache,
         ctx,
     )
 

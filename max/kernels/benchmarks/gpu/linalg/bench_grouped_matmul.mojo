@@ -50,10 +50,8 @@ from linalg.grouped_matmul_sm100_blockwise_fp8 import (
     grouped_matmul_sm100_blockwise_scaled_fp8_persistent,
 )
 from layout import Coord, Idx, TileTensor, row_major
-from linalg.utils import elementwise_epilogue_type
 
 from std.utils import Index, IndexList
-from std.collections import Optional
 
 from linalg.fp4_utils import (
     SF_MN_GROUP_SIZE,
@@ -316,26 +314,6 @@ def bench_grouped_matmul[
     # Move host-initialized data to device
     ctx.enqueue_copy(a_offsets_dev_buffer, a_offsets_host_ptr)
     ctx.enqueue_copy(expert_ids_dev_buffer, expert_ids_host_ptr)
-
-    # The block-scaled FP8 persistent kernel still takes a legacy capturing
-    # epilogue, so keep this `@__parameter` form for that call site.
-    @inline(.always)
-    @__copy_capture(c_dev)
-    @__parameter
-    def epilogue_fn[
-        dtype: DType, width: SIMDLength, *, alignment: Int = 1
-    ](idx: Coord, val: SIMD[dtype, width]) -> None:
-        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
-        var new_val = val
-
-        comptime for i in range(width):
-            new_val[i] = test_epilogue(
-                Int(idx[0].value()), Int(idx[1].value()) + i, val[i]
-            )
-
-        c_dev.store[width=width, alignment=alignment](
-            idx, new_val.cast[out_type]()
-        )
 
     @inline(.always)
     def epilogue_value_fn[
@@ -814,10 +792,7 @@ def bench_grouped_matmul[
                         k_group_size=1,
                     )
                     grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
-                        config=config,
-                        elementwise_lambda_fn=Optional[
-                            elementwise_epilogue_type
-                        ](epilogue_fn) if has_epilogue else None,
+                        config=config
                     ](
                         c_dev,
                         a_dev,

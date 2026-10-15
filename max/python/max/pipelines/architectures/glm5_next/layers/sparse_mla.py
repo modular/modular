@@ -81,11 +81,6 @@ __all__ = [
     "nope_pad_rotary",
 ]
 
-# Attention sink the sparse decode kernel adds for slots a query does not
-# select. Matches DeepSeek-V3.2's value; -1e38 is float32's most negative
-# normal power of ten, so `exp` of it is exactly zero.
-_SPARSE_ATTN_SINK = -1.0e38
-
 
 class _FlatSparseMLA(SparseLatentAttentionWithRopeFp8):
     """The shared sparse-MLA block, holding its checkpoint weight names.
@@ -514,12 +509,10 @@ class Glm5NextSparseMLASublayer(Module):
                 ),
                 (xq.shape[0],),
             ),
-            sparse_attn_sink=ops.broadcast_to(
-                ops.constant(
-                    _SPARSE_ATTN_SINK, dtype=DType.float32, device=xq.device
-                ),
-                (shard.n_heads,),
-            ),
+            # No `sparse_attn_sink`: the checkpoint has none, and the -1e38
+            # constant passed before added exp(-1e38) == 0 to the softmax
+            # denominator, so it never changed the output. The BF16 AMD
+            # sparse arm also rejects any sink operand.
             sparse_indices_stride=self.indexer.selection_width,
             # A k-pool row holds fewer valid entries than its 2051 slots
             # once every pool is selected; the kernel masks the `-1` padding

@@ -11,12 +11,6 @@ mojo_library(
     use_production_compiler_for_asan = True,
     validate_missing_docs = False,
     deps = [
-        "//Kernels/lib/attn_res",
-        "//Kernels/lib/kda",
-        "//Kernels/lib/matmul_rs",
-        "//Kernels/lib/mega_ffn",
-        "//Kernels/lib/msa",
-        "//Kernels/lib/qsa",
         "//max:algorithm",
         "//max:builtin_primitives",
         "//max:comm",

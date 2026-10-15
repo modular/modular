@@ -133,6 +133,17 @@ def current_accelerator() -> type_of(CompilationTarget.current()):
 
 comptime _ANY = "<any>"
 
+comptime _empty_target = __mlir_attr[
+    `#kgen.target<triple = "", `,
+    `arch = "", `,
+    `features = "", `,
+    `data_layout="",`,
+    `index_bit_width = 0,`,
+    `simd_bit_width = 0`,
+    `> : !kgen.target`,
+]
+"""Empty target configuration for when no GPU is available."""
+
 
 struct CompilationTarget[_mlir_value: _TargetType = _current_target(), //](
     TrivialRegisterPassable
@@ -162,6 +173,10 @@ struct CompilationTarget[_mlir_value: _TargetType = _current_target(), //](
         """Initialize a `CompilationTarget` with the default target."""
         self._dummy = 0
 
+    # ===-------------------------------------------------------------------===#
+    # Factory methods
+    # ===-------------------------------------------------------------------===#
+
     comptime current = CompilationTarget[_mlir_value=_current_target()]
     """Get the current compilation target.
 
@@ -178,6 +193,9 @@ struct CompilationTarget[_mlir_value: _TargetType = _current_target(), //](
     Returns:
         A value representing the current compilation target.
     """
+
+    comptime _unknown = CompilationTarget[_mlir_value=_empty_target]
+    """Get an empty target configuration representing an unknown target."""
 
     @staticmethod
     @always_inline("builtin")
@@ -211,6 +229,10 @@ struct CompilationTarget[_mlir_value: _TargetType = _current_target(), //](
         target_arch: StaticString
     ]() -> type_of(get_gpu_target[target_arch]()):
         return {}
+
+    # ===-------------------------------------------------------------------===#
+    # Methods
+    # ===-------------------------------------------------------------------===#
 
     @inline(.nodebug)
     @staticmethod

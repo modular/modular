@@ -355,9 +355,14 @@ class DeepseekV3DecoderLayer(Module):
         nvfp4_enabled = (
             config.quant_config is not None and config.quant_config.is_nvfp4
         )
-        use_fp8_mla = (
-            config.quant_config is not None and not config.quant_config.is_fp4
-        )
+        attn_quant_config = config.attn_quant_config
+        if (
+            attn_quant_config is None
+            and config.quant_config is not None
+            and not config.quant_config.is_fp4
+        ):
+            attn_quant_config = config.quant_config
+        use_fp8_mla = attn_quant_config is not None
 
         if (
             nvfp4_enabled
@@ -379,7 +384,7 @@ class DeepseekV3DecoderLayer(Module):
                 # handled by the EP MoE, so skip the attention all-reduce.
                 mla_kwargs["skip_allreduce"] = True
                 if use_fp8_mla:
-                    mla_kwargs["quant_config"] = config.quant_config
+                    mla_kwargs["quant_config"] = attn_quant_config
                     mla_cls = TensorParallelLatentAttentionWithRopeFp8
                 else:
                     mla_kwargs["dtype"] = DType.bfloat16
@@ -387,14 +392,14 @@ class DeepseekV3DecoderLayer(Module):
             case ParallelismMode.TP_TP:
                 mla_kwargs["skip_allreduce"] = False
                 if use_fp8_mla:
-                    mla_kwargs["quant_config"] = config.quant_config
+                    mla_kwargs["quant_config"] = attn_quant_config
                     mla_cls = TensorParallelLatentAttentionWithRopeFp8
                 else:
                     mla_kwargs["dtype"] = DType.bfloat16
                     mla_cls = TensorParallelLatentAttentionWithRope
             case ParallelismMode.DP_EP:
                 if use_fp8_mla:
-                    mla_kwargs["quant_config"] = config.quant_config
+                    mla_kwargs["quant_config"] = attn_quant_config
                     mla_cls = DataParallelLatentAttentionWithRopeFp8
                 else:
                     mla_kwargs["dtype"] = DType.bfloat16

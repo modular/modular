@@ -216,8 +216,8 @@ class CustomOpLibrary:
         )
 
 
-ParametersDict = Mapping[str, bool | int | str | DType]
-ParameterKey = tuple[str, bool | int | str | DType]
+ParametersDict = Mapping[str, bool | int | float | str | DType]
+ParameterKey = tuple[str, bool | int | float | str | DType]
 
 
 class CustomOp:

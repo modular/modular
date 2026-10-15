@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import os
+from typing import Literal
 
 from max.config import ConfigFileModel
 from max.pipelines.diffusion.config import (
@@ -28,7 +29,7 @@ from max.pipelines.modeling.config_enums import (
 )
 from pydantic import ConfigDict, Field, PrivateAttr
 
-# Default max batch input tokens for chunked prefill and memory estimation.
+#: Default max batch input tokens for chunked prefill and memory estimation.
 DEFAULT_MAX_BATCH_INPUT_TOKENS = 8192
 
 # Sentinel value users can pass to ``reasoning_parser`` / ``tool_parser`` to
@@ -249,14 +250,23 @@ class PipelineRuntimeConfig(ConfigFileModel):
         ),
     )
 
-    eplb_replicas_per_gpu: int = Field(
+    eplb_redundant_experts_per_gpu: int = Field(
         default=0,
         description=(
-            "Number of redundant expert replicas to add per GPU when EPLB is "
-            "active. 0 (default) means no replication. k > 0 adds k extras "
-            "per GPU; total redundant slots = k * ep_size (so num_redundant "
-            "is always a multiple of the device count, which the rebalance "
-            "algorithm requires)."
+            "Extra expert slots per GPU that EPLB fills with copies of hot "
+            "experts, on top of the one slot every expert always has. 0 "
+            "(default) adds none, so EPLB only moves experts between GPUs; k "
+            "adds k * ep_size slots in total."
+        ),
+    )
+
+    eplb_planner: Literal["per_layer", "aggregated"] = Field(
+        default="per_layer",
+        description=(
+            "How EPLB turns a routing snapshot into an expert placement. "
+            "per_layer (default) balances each MoE layer on its own "
+            "histogram; aggregated balances the sum over layers and uses one "
+            "placement for every layer."
         ),
     )
 
@@ -392,15 +402,15 @@ class PipelineRuntimeConfig(ConfigFileModel):
         ),
     )
 
-    enable_overlap_scheduler: bool = Field(
-        default=False,
+    enable_overlap_scheduler: bool | None = Field(
+        default=None,
         description=(
             "Whether to enable the overlap scheduler. This feature allows the scheduler "
             "to run alongside GPU execution. This helps improve GPU utilization. "
             "This is an experimental feature which may crash and burn. "
-            "This feature will be enabled by default for some selected architectures. "
-            "You can forcibly disable this by setting "
-            "``--no-enable-overlap-scheduler --force``."
+            "When unset, the architecture decides, and most turn it on. "
+            "Device graph capture turns it on too. "
+            "You can disable this by setting ``--no-enable-overlap-scheduler``."
         ),
     )
 

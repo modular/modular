@@ -53,7 +53,7 @@ def _check_rms_norm[cols: Int](rows: Int) raises:
     )
     var x_ptr = x.unsafe_ptr()
     var out_ptr = out.unsafe_ptr()
-    comptime eps = Scalar[dtype](1e-5)
+    comptime eps = Float32(1e-5)
 
     @inline(.always)
     def input_fn[
@@ -69,14 +69,12 @@ def _check_rms_norm[cols: Int](rows: Int) raises:
         var i = Int(c[0].value()) * cols + Int(c[1].value())
         out_ptr.unsafe_offset(i).unsafe_store[width=width](v)
 
-    rms_norm[dtype, 2, target="cpu"](
+    rms_norm[dtype, 2, target="cpu", epsilon=eps, weight_offset=Float32(0)](
         input_fn,
         output_fn,
         Coord(Index(rows, cols)),
         cols,
         gamma,
-        eps,
-        Scalar[dtype](0),
     )
 
     for r in range(rows):

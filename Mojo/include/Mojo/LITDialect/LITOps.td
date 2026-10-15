@@ -104,7 +104,11 @@ def LIT_FnOp : LITOp<"fn", [
     DefaultValuedAttr<ArrayAttr, "{}">:$fnAttrs,
     DefaultValuedAttr<ArrayAttr, "{}">:$fnArgAttrs,
     OptionalAttr<AnyAttr>:$thunkKey,
-    UnitAttr:$noDocRequired
+    UnitAttr:$noDocRequired,
+    // The signature with the parameters of the enclosing struct, trait or
+    // extension prepended. Set once the signature is resolved, and only for
+    // functions that have such a parent.
+    OptionalAttr<TypeAttrOf<LIT_FnTypeGeneratorType>>:$resolvedFullSignature
   );
   let regions = (region SizedRegion<1>:$bodyRegion);
 

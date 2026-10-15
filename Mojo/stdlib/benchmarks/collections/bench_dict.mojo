@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.collections.dict import DictEntry
-from std.hashlib import Hasher
+from std.hash import Hasher
 from std.random.random import random_si64, seed
 from std.sys import size_of
 
@@ -282,7 +282,9 @@ def bench_dict_eq[size: Int](mut b: Bencher) raises:
 # ===-----------------------------------------------------------------------===#
 
 
-def total_bytes_used[H: Hasher](items: Dict[Int, Int, H]) -> Int:
+def total_bytes_used[
+    H: Hasher & Defaultable & Deinitable
+](items: Dict[Int, Int, H]) -> Int:
     # The SIMD group width used internally by Dict's Swiss Table.
     comptime _BENCH_GROUP_WIDTH: Int = 16
     # ctrl bytes: capacity + GROUP_WIDTH for SIMD mirroring

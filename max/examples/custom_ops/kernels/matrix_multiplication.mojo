@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# DOC: max/develop/custom-ops-matmul.mdx
+# DOC: develop/custom-ops-matmul.mdx
 
 from std.math import ceildiv
 from std.math.uutils import udivmod

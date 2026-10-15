@@ -23,11 +23,11 @@ import torch
 from max import driver
 from max.driver import Accelerator, LaunchTraceEntry, accelerator_count
 from max.dtype import DType
-from max.experimental.tensor import Tensor
-from max.pipelines.architectures.deepseekV3_modulev3.layers import quant_ops
-from max.pipelines.architectures.deepseekV3_modulev3.layers.quant_tensor import (
+from max.experimental.nn.common_layers import quant_ops
+from max.experimental.nn.common_layers.quant_tensor import (
     FP8BlockTensor,
 )
+from max.experimental.tensor import Tensor
 
 _MOE_DIM = 512
 _GROUP = 128

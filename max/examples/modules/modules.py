@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# DOC: max/develop/modules.mdx
+# DOC: develop/modules.mdx
 
 import numpy as np
 import numpy.typing as npt

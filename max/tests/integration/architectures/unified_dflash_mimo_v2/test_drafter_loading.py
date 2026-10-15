@@ -45,7 +45,6 @@ from max.pipelines.architectures.mimo_v2.model_config import (
     MiMoV2Config,
 )
 from max.pipelines.architectures.unified_dflash_mimo_v2 import (
-    MiMoV2DFlashContextModel,
     UnifiedDflashMiMoV2Model,
 )
 from max.pipelines.architectures.unified_dflash_mimo_v2.drafter import (
@@ -53,7 +52,6 @@ from max.pipelines.architectures.unified_dflash_mimo_v2.drafter import (
 )
 from max.pipelines.architectures.unified_dflash_mimo_v2.model_config import (
     DRAFT,
-    MiMoV2DFlashContextConfig,
     UnifiedDflashMiMoV2Config,
     repo_file,
 )
@@ -74,15 +72,6 @@ REFS = [DeviceRef.GPU(0)]
 MAX_SEQ_LEN = 4096
 K = 5
 SAMPLEABLE = 1000
-WRITER_WEIGHTS = {
-    "fc.weight",
-    "hidden_norm.weight",
-    *(
-        f"layers.{i}.self_attn.{w}.weight"
-        for i in range(2)
-        for w in ("k_proj", "v_proj", "k_norm")
-    ),
-}
 """What the context writer reads of the drafter: its projection, its norm
 and each layer's K/V projections."""
 
@@ -261,45 +250,6 @@ def test_the_fused_model_loads_its_draft_model(
     )
     assert export.num_speculative_tokens == K
     assert export.spec_block_size == DFLASH["block_size"]
-
-
-@pytest.mark.parametrize("subfolder", [None, "text"])
-def test_base_ctx_writes_with_the_checkpoints_own_drafter(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, subfolder: str | None
-) -> None:
-    folder = tmp_path / subfolder if subfolder else tmp_path
-    _write_drafter(folder / "dflash", DFLASH)
-    pipeline_config = _pipeline_config(
-        HuggingFaceRepo(str(tmp_path), subfolder=subfolder), None
-    )
-    model = tiny_configs()
-    kv_params = _kv_params(MiMoV2DFlashContextConfig, pipeline_config, model)
-
-    assert list(kv_params.children) == [SLIDING, FULL, DRAFT]
-    draft_kv = kv_params.children[DRAFT]
-    assert isinstance(draft_kv, KVCacheParams)
-    assert draft_kv.num_draft_tokens == 0
-    assert draft_kv.window_size == DFLASH["sliding_window"]
-
-    _target_from(model, monkeypatch, speculative=False)
-    base_ctx = MiMoV2DFlashContextModel.__new__(MiMoV2DFlashContextModel)
-    base_ctx.pipeline_config = pipeline_config
-    base_ctx.kv_params = kv_params
-    base_ctx.memory_plan = MagicMock(planned_max_length=MAX_SEQ_LEN)
-    base_ctx.return_logits = MagicMock()
-    config = base_ctx._create_model_config({})
-    assert (
-        config.target_layer_ids == DFLASH["dflash_config"]["target_layer_ids"]
-    )
-
-    assert base_ctx._tap_hook(config) is not None
-    assert base_ctx._writer_registry.keys() == {
-        f"{DRAFT}.{name}" for name in WRITER_WEIGHTS
-    }
-    export = base_ctx.drafter_export
-    assert export.directory == folder / "dflash"
-    assert export.num_speculative_tokens is None
-    assert export.spec_block_size is None
 
 
 def test_the_fused_tree_refuses_dkv(tmp_path: Path) -> None:

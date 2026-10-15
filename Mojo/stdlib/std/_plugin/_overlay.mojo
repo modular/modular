@@ -20,10 +20,6 @@ from .metal import MetalPlugin, MetalTargets
 from std._gpu.host.info import TargetAcceleratorCollection
 from std._gpu.host._builtin_targets import BuiltinTargets
 
-comptime STD_PLUGINS = PluginSelector[
-    DefaultPlugin, MetalPlugin, CUDAPlugin, HIPPlugin
-]
-
 comptime TARGETS = TypeList.of[
     Trait=TargetAcceleratorCollection,
     BuiltinTargets,

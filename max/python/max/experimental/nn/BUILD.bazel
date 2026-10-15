@@ -9,11 +9,10 @@ modular_py_library(
     # Several examples compile models; shard to stay under the 800s CI clamp.
     docstring_example_shard_count = 4,
     docstring_example_test_rule = modular_eager_py_test,
-    # numpy, engine, and support are used transitively through max.nn,
-    # not directly imported in experimental/nn files.
+    # numpy and support are used transitively through max.nn, not directly
+    # imported in experimental/nn files.
     ignore_extra_deps = [
         requirement("numpy"),
-        "//max/python/max/engine",
         "//max/python/max/support",
     ],
     test_docstring_examples = True,

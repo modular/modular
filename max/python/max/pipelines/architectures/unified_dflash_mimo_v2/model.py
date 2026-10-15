@@ -17,7 +17,7 @@ from __future__ import annotations
 from typing import Any, ClassVar
 
 from max.driver import Device
-from max.engine import InferenceSession
+from max.engine import InferenceSession, Model
 from max.graph import Graph
 from max.graph.weights import WeightData, Weights, WeightsAdapter
 from max.nn.kv_cache import (
@@ -31,6 +31,7 @@ from max.pipelines.lib import (
     KVCacheConfig,
     PipelineConfig,
 )
+from max.pipelines.lib.graph_specs import GraphRole
 from max.pipelines.lib.memory_estimation import MemoryPlan
 from max.pipelines.lib.pipeline_variants.unified_spec_decode_model import (
     _UnifiedSpecDecodeModelMixin,
@@ -93,6 +94,14 @@ class UnifiedDflashMiMoV2Model(_UnifiedSpecDecodeModelMixin, MiMoV2Model):
             return_logits=ReturnLogits.VARIABLE,
             max_batch_size=max_batch_size,
         )
+
+    def load_graphs(self, session: InferenceSession) -> dict[str, Model]:
+        """Loads the fused graph as the decoder.
+
+        The base registers MiMo's own graph through graph specs; this graph
+        still builds through :meth:`load_model`.
+        """
+        return {GraphRole.DECODER: self.load_model(session)}
 
     def _create_model_config(self, state_dict: dict[str, Any]) -> MiMoV2Config:
         assert isinstance(self.kv_params, MultiKVCacheParams)

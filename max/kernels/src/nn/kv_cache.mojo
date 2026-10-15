@@ -2546,6 +2546,8 @@ def rms_norm_kv_cache_ragged_paged[
     target: StaticString,
     multiply_before_cast: Bool,
     per_head_norm: Bool,
+    epsilon: Float32,
+    weight_offset: Float32,
 ](
     kv_collection: PagedKVCacheCollection[
         cache_dtype,
@@ -2554,8 +2556,6 @@ def rms_norm_kv_cache_ragged_paged[
         ...,
     ],
     gamma: TileTensor[mut=False, dtype, ...],
-    epsilon: Float32,
-    weight_offset: Scalar[dtype],
     layer_idx: UInt32,
     total_seq_len: UInt32,
     input_row_offsets: TileTensor[mut=False, .uint32, ...],
@@ -2698,12 +2698,12 @@ def rms_norm_kv_cache_ragged_paged[
             key_cache_input_fn,
             key_cache_output_fn,
             target=target,
+            epsilon=epsilon,
+            weight_offset=weight_offset,
             multiply_before_cast=multiply_before_cast,
         ](
             Coord(shape),
             gamma,
-            epsilon,
-            weight_offset,
             context,
         )
 
@@ -2717,6 +2717,8 @@ def rms_norm_value_cache_ragged_paged[
     target: StaticString,
     multiply_before_cast: Bool,
     per_head_norm: Bool,
+    epsilon: Float32,
+    weight_offset: Float32,
 ](
     kv_collection: PagedKVCacheCollection[
         cache_dtype,
@@ -2725,8 +2727,6 @@ def rms_norm_value_cache_ragged_paged[
         ...,
     ],
     gamma: TileTensor[mut=False, dtype, ...],
-    epsilon: Float32,
-    weight_offset: Scalar[dtype],
     layer_idx: UInt32,
     total_seq_len: UInt32,
     input_row_offsets: TileTensor[mut=False, .uint32, ...],
@@ -2848,12 +2848,12 @@ def rms_norm_value_cache_ragged_paged[
             value_cache_input_fn,
             value_cache_output_fn,
             target=target,
+            epsilon=epsilon,
+            weight_offset=weight_offset,
             multiply_before_cast=multiply_before_cast,
         ](
             Coord(shape),
             gamma,
-            epsilon,
-            weight_offset,
             context,
         )
 

@@ -2890,11 +2890,12 @@ def fa4_softmax[
                 s0[n] = sn[0]
                 s0[n + 1] = sn[1]
 
-    @__parameter
     @inline(.always)
     def load_mask_max_impl[
         *, mask_strategy: MaskStrategy
-    ](kv_row: UInt32) -> StaticTuple[Float32, max_unroll]:
+    ](kv_row: UInt32) {
+        mut inplace_prod, mut k_scale_off, mut s, imm
+    } -> StaticTuple[Float32, max_unroll]:
         comptime if EnableForcedOrdering:
             order_s_wait.unsafe_value()[].wait(order_phase)
         # break up into sets of 32
@@ -2984,7 +2985,7 @@ def fa4_softmax[
     @inline(.always)
     def init_load_mask_max[
         mask_strategy: MaskStrategy
-    ](kv_row: UInt32) -> Float32:
+    ](kv_row: UInt32) {imm} -> Float32:
         return maximum(load_mask_max_impl[mask_strategy=mask_strategy](kv_row))
 
     @inline(.always)
@@ -3729,9 +3730,8 @@ def fa4_softmax[
         ].cast[accum_dtype]()
 
     var row_max: Float32 = peel_mask[
-        rebind[StaticTuple[MaskStrategy, num_sets]](mask_strategies),
-        init_load_mask_max,
-    ](mask_iters, kv_row)
+        rebind[StaticTuple[MaskStrategy, num_sets]](mask_strategies)
+    ](init_load_mask_max, mask_iters, kv_row)
     var sink_weight: Scalar[accum_dtype]
 
     # Split-K: the sink mass must land in the *cluster-global* sum exactly

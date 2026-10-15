@@ -25,7 +25,7 @@ from std.collections.string.string_span import (
     GraphemeSliceIter,
 )
 from std.builtin.builtin_slice import ContiguousSlice
-from std.hashlib.hasher import Hasher
+from std.hash.hasher import Hasher
 from std.reflection import call_location
 from std.format.tstring import TString
 from std.format._utils import (

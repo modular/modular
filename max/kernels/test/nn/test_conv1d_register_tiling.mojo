@@ -17,7 +17,7 @@ from std.sys import simd_width_of
 
 from layout import Coord, TileTensor, Idx, row_major
 from nn.conv.conv import conv1d_update_wo_tile
-from nn.conv.conv_utils import ConvShape
+from nn.conv.conv_utils import ConvShape, NoConvEpilogue
 from std.testing import assert_equal
 
 from std.utils.index import Index
@@ -98,6 +98,7 @@ def conv1d_register_tiling(
         conv_shape,
         0,
         wo,
+        NoConvEpilogue(),
     )
 
 

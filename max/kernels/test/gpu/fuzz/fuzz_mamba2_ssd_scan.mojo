@@ -61,6 +61,7 @@ def _scan_cpu[
     ssm_pool: TileTensor[mut=True, state_dtype, ...],
     query_start_loc: TileTensor[mut=False, .int32, ...],
     has_initial_state: TileTensor[mut=False, .bool, ...],
+    update_state: TileTensor[mut=False, .bool, ...],
     cache_indices: TileTensor[mut=False, .uint32, ...],
 ):
     """Runs the CPU scan with operand functions that read these tensors."""
@@ -100,6 +101,7 @@ def _scan_cpu[
         ssm_pool,
         query_start_loc,
         has_initial_state,
+        update_state,
         x_fn,
         dt_fn,
         b_fn,
@@ -289,6 +291,9 @@ def run_one_case(
     )
     var qsl_g = TileTensor(qsl_d, row_major(batch + 1))
     var his_g = TileTensor(his_d, row_major(his_len))
+    # Empty: every sequence writes its final state.
+    var us_d = ctx.enqueue_create_buffer[.bool](1)
+    var us_g = TileTensor(us_d, row_major(0))
     var slot_g = TileTensor(slot_d, row_major(batch))
 
     comptime elt = size_of[dtype]()
@@ -330,6 +335,7 @@ def run_one_case(
         pool_g.LayoutType,
         qsl_g.LayoutType,
         his_g.LayoutType,
+        us_g.LayoutType,
         y_g.Engine,
         type_of(x_fn),
         type_of(dt_fn),
@@ -346,6 +352,7 @@ def run_one_case(
         pool_g,
         qsl_g,
         his_g,
+        us_g,
         host_arg=x_fn,
         host_arg2=dt_fn,
         host_arg3=b_fn,
@@ -376,6 +383,7 @@ def run_one_case(
         )
         var qsl_t = TileTensor(qsl_h, row_major(batch + 1))
         var his_t = TileTensor(his_h, row_major(his_len))
+        var us_t = TileTensor(his_h, row_major(0))
         var slot_t = TileTensor(slot_h, row_major(batch))
         _scan_cpu[DSTATE](
             x_t,
@@ -389,6 +397,7 @@ def run_one_case(
             pool_t,
             qsl_t,
             his_t,
+            us_t,
             slot_t,
         )
         ctx.enqueue_copy(y_gpu_h, y_d)
@@ -432,6 +441,7 @@ def run_one_case(
     _ = D_d
     _ = dt_bias_d
     _ = his_d
+    _ = us_d
     _ = qsl_d
     _ = slot_d
     _ = pool_d

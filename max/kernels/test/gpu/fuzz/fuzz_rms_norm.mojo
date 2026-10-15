@@ -96,8 +96,8 @@ def run_one_case(
 
     var data_buf = TileTensor(data_d, row_major(Coord(shape)))
     var gamma = TileTensor(gamma_d, row_major(Coord(Index(cols))))
-    var epsilon = Float32(0.001)
-    var weight_offset = Scalar[rn_type](0.0)
+    comptime epsilon = Float32(0.001)
+    comptime weight_offset = Float32(0.0)
 
     @inline(.always)
     @__copy_capture(data_buf)
@@ -116,8 +116,13 @@ def run_one_case(
         data_buf.raw_store[width=width, alignment=alignment](idx, val)
 
     rms_norm_gpu[
-        rn_rank, input_fn, identity_output_fn, multiply_before_cast=True
-    ](Coord(shape), gamma, epsilon, weight_offset, ctx)
+        rn_rank,
+        input_fn,
+        identity_output_fn,
+        epsilon=epsilon,
+        weight_offset=weight_offset,
+        multiply_before_cast=True,
+    ](Coord(shape), gamma, ctx)
     ctx.synchronize()
 
     if check:

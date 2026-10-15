@@ -47,6 +47,7 @@ def _conv_cpu[
     query_start_loc: TileTensor[mut=False, .int32, ...],
     cache_indices: TileTensor[mut=False, .uint32, ...],
     has_initial_state: TileTensor[mut=False, .bool, ...],
+    update_state: TileTensor[mut=False, .bool, ...],
     conv_states: TileTensor[mut=True, ...],
     output: TileTensor[mut=True, dtype, ...],
 ):
@@ -72,6 +73,7 @@ def _conv_cpu[
         bias,
         query_start_loc,
         has_initial_state,
+        update_state,
         conv_states,
         output,
         x_fn,
@@ -208,6 +210,8 @@ def run_varlen_causal_conv1d_fwd[
         query_start_loc_tt,
         cache_indices_tt,
         has_initial_state_tt,
+        # Empty: every sequence writes its new window.
+        TileTensor(has_initial_state_heap, row_major(0)),
         conv_states_tt,
         output_tt,
     )
@@ -693,6 +697,8 @@ def run_conv_state_writeback[
         query_start_loc_tt,
         cache_indices_tt,
         has_initial_state_tt,
+        # Empty: every sequence writes its new window.
+        TileTensor(has_initial_state_heap, row_major(0)),
         conv_states_tt,
         output_tt,
     )

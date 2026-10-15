@@ -20,7 +20,7 @@ modular_py_test(
     name = "test_kimi_delta_attention",
     srcs = ["test_kimi_delta_attention.py"],
     exec_properties = {
-        "test.resources:gpu-memory": "16",
+        "test.resources:gpu-memory": "3",
     },
     gpu_constraints = ["//:has_gpu"],
     precompile_mefs = True,

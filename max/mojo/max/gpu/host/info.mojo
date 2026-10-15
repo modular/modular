@@ -104,7 +104,6 @@ from std._plugin.metal.metal_targets import (
 )
 
 from std._gpu.host.info import (
-    _empty_target,
     _encode_device_types_with_host_layout,
 )
 

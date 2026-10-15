@@ -285,6 +285,24 @@ def _quantize_rows_for_w4a8(
     return quantized, block_scales_interleave(per_row, FP4_WEIGHT_BLOCK)
 
 
+def local_expert_groups(
+    router_idx: TensorValue, first: int, n_local: int
+) -> tuple[TensorValue, TensorValue]:
+    """Groups slots by the experts ``[first, first + n_local)`` one module holds.
+
+    Returns each slot's group, in ``[0, n_local]``, and whether it is local.
+    Group ``g < n_local`` is expert ``first + g``. Every other id -- another
+    device's expert, or one outside the expert range such as the -1 that GPU
+    ``top_k`` returns for a NaN score row -- goes to the trailing group
+    ``n_local``.
+    """
+    is_local = ops.logical_and(
+        ops.greater_equal(router_idx, first),
+        ops.greater(first + n_local, router_idx),
+    )
+    return ops.where(is_local, router_idx - first, n_local), is_local
+
+
 class DeepseekV4RoutedExperts(Module):
     """The routed experts on the W4A8 grouped kernel (PROBE-B G3-G9).
 
@@ -301,6 +319,9 @@ class DeepseekV4RoutedExperts(Module):
     quantize and the GEMMs touch the slots only, and the padding -- up to
     127 rows per non-empty group -- costs one scale gather.
     """
+
+    # Where ``slot_weight`` multiplies into the gate/up -> down-proj chain.
+    _weight_after_down_proj = False
 
     def __init__(self, config: DeepseekV4Config, device: DeviceRef) -> None:
         super().__init__()
@@ -392,28 +413,45 @@ class DeepseekV4RoutedExperts(Module):
 
         The sum over a token's ``k`` expert outputs, in float32, before the
         shared expert is added (the reference's ``y[idx] += expert(...)``).
-        Expert-parallel (:meth:`keep_local_experts`), only the slots routed to
-        this module's experts contribute; the rest are zero.
+        Only the slots routed to this module's experts contribute; the rest
+        are zero: other devices' experts when expert-parallel, and any id
+        outside the expert range.
         """
         slots = x.shape[0] * self.topk
-        router_idx = ops.reshape(indices, [slots])
-        if self.n_experts == self.n_global_experts:
-            return self._routed(x, weights, router_idx, self.n_experts, None)
-        first = self.expert_offset
-        end = self.expert_offset + self.n_experts
-        is_local = ops.logical_and(
-            ops.greater_equal(router_idx, first), ops.greater(end, router_idx)
+        router_idx, is_local = local_expert_groups(
+            ops.reshape(indices, [slots]), self.expert_offset, self.n_experts
         )
-        # Other devices' slots form one extra trailing group that no GEMM
-        # covers. They cannot simply be left out of range: moe_create_indices
-        # skips such ids, leaving their order/restore entries unwritten.
-        router_idx = ops.where(
-            is_local,
-            router_idx - first,
-            self.n_experts,
-        )
-        return self._routed(
-            x, weights, router_idx, self.n_experts + 1, is_local
+        return self._routed(x, weights, router_idx, is_local)
+
+    def _activate_and_down(
+        self,
+        gate_up: TensorValue,
+        slot_weight: TensorValue,
+        a_offsets: TensorValue,
+        scale_offsets: TensorValue,
+        scale_slot: TensorValue,
+        expert_ids: TensorValue,
+    ) -> TensorValue:
+        """The clamped SwiGLU over ``gate_up``, then the down projection.
+
+        Rows stay in sorted-slot order. ``slot_weight`` multiplies in here
+        only when :attr:`_weight_after_down_proj` is False; otherwise the
+        caller weights the returned rows.
+        """
+        gate, up = ops.split(gate_up, [self.inter, self.inter], axis=1)
+        gate = ops.cast(gate, DType.float32)
+        up = ops.cast(up, DType.float32)
+        if self.swiglu_limit > 0:
+            limit = float(self.swiglu_limit)
+            # Asymmetric on purpose: the reference clamps ``up`` on both sides
+            # but ``gate`` only from above.
+            up = ops.min(ops.max(up, -limit), limit)
+            gate = ops.min(gate, limit)
+        h = ops.silu(gate) * up
+        if not self._weight_after_down_proj:
+            h = h * ops.unsqueeze(slot_weight, -1)
+        return self._grouped(
+            self.down_proj, h, a_offsets, scale_offsets, scale_slot, expert_ids
         )
 
     def _routed(
@@ -421,13 +459,12 @@ class DeepseekV4RoutedExperts(Module):
         x: TensorValue,
         weights: TensorValue,
         router_idx: TensorValue,
-        groups: int,
-        is_local: TensorValue | None,
+        is_local: TensorValue,
     ) -> TensorValue:
-        """:meth:`__call__` over ``router_idx`` in ``[0, groups)``.
+        """:meth:`__call__` over ``router_idx`` in ``[0, n_experts]``.
 
-        Groups past ``self.n_experts`` are not multiplied; ``is_local`` (per
-        slot) masks their rows' output, which the GEMMs leave unwritten.
+        The trailing group ``n_experts`` is not multiplied; ``is_local`` (per
+        slot) masks its rows' output, which the GEMMs leave unwritten.
         """
         device = x.device
         # ``tokens`` is symbolic in the serving graph (the batch's ragged
@@ -435,6 +472,7 @@ class DeepseekV4RoutedExperts(Module):
         # value derived from it is read at run time.
         tokens = x.shape[0]
         slots = tokens * self.topk
+        groups = self.n_experts + 1
         # Scale rows only: every group's scales start on a 128-row tile. Only
         # non-empty groups take tiles, and there are at most min(groups,
         # slots) of them, so a decode step lays out a few tiles, not one per
@@ -464,10 +502,9 @@ class DeepseekV4RoutedExperts(Module):
             aligned_start[0:groups] // SF_ROWS - start[0:groups] // SF_ROWS,
             DType.uint32,
         )
-        if groups != self.n_experts:
-            a_offsets = a_offsets[0 : self.n_experts + 1]
-            scale_offsets = scale_offsets[0 : self.n_experts]
-            expert_ids = expert_ids[0 : self.n_experts]
+        a_offsets = a_offsets[0 : self.n_experts + 1]
+        scale_offsets = scale_offsets[0 : self.n_experts]
+        expert_ids = expert_ids[0 : self.n_experts]
 
         # Scale row r of group g holds sorted slot start[g] + (r -
         # aligned_start[g]) when that is below start[g + 1]; the rest of the
@@ -499,33 +536,27 @@ class DeepseekV4RoutedExperts(Module):
             scale_slot,
             expert_ids,
         )
-        gate, up = ops.split(gate_up, [self.inter, self.inter], axis=1)
-        gate = ops.cast(gate, DType.float32)
-        up = ops.cast(up, DType.float32)
-        if self.swiglu_limit > 0:
-            limit = float(self.swiglu_limit)
-            # Asymmetric on purpose: the reference clamps ``up`` on both sides
-            # but ``gate`` only from above.
-            up = ops.min(ops.max(up, -limit), limit)
-            gate = ops.min(gate, limit)
-        h = ops.silu(gate) * up * ops.unsqueeze(slot_weight, -1)
-        down = self._grouped(
-            self.down_proj, h, a_offsets, scale_offsets, scale_slot, expert_ids
+        down = self._activate_and_down(
+            gate_up,
+            slot_weight,
+            a_offsets,
+            scale_offsets,
+            scale_slot,
+            expert_ids,
         )
+        if self._weight_after_down_proj:
+            down = ops.cast(down, DType.float32) * ops.unsqueeze(
+                slot_weight, -1
+            )
 
         out = ops.gather(down, restore, axis=0)
         out = ops.cast(out, DType.float32)
-        if is_local is not None:
-            # ``where``, not a multiply: the masked rows hold whatever the
-            # GEMM left there, NaN included.
-            out = ops.where(
-                ops.unsqueeze(is_local, -1),
-                out,
-                0.0,
-            )
+        # ``where``, not a multiply: the masked rows hold whatever the GEMM
+        # left there, NaN included.
+        out = ops.where(ops.unsqueeze(is_local, -1), out, 0.0)
         out = ops.reshape(out, [tokens, self.topk, self.hidden])
         routed = ops.squeeze(ops.sum(out, axis=1), axis=1)
-        if is_local is not None:
+        if self.n_experts != self.n_global_experts:
             # Kept float32 for the all-reduce, as the reference's ``y``.
             return routed
         return ops.cast(routed, x.dtype)

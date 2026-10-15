@@ -1,10 +1,12 @@
 load("//bazel:api.bzl", "modular_run_binary_test", "mojo_binary")
+load("//max/kernels/src:deprecations.bzl", "IGNORED_POINTER_DEPRECATIONS_COPTS")
 
 package(default_visibility = ["//visibility:private"])
 
 mojo_binary(
     name = "layout_tensor_examples",
     srcs = ["layout_tensor_examples.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     deps = [
         "//max:layout",
         "@mojo//:std",
@@ -19,6 +21,7 @@ modular_run_binary_test(
 mojo_binary(
     name = "layout_tensor_gpu_examples",
     srcs = ["layout_tensor_gpu_examples.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     target_compatible_with = ["//:has_gpu"],
     deps = [
         "//max:layout",

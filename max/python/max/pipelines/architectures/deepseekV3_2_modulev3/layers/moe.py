@@ -27,8 +27,7 @@ from __future__ import annotations
 from typing import ClassVar
 
 from max.dtype import DType
-
-from ...deepseekV3_modulev3.layers.quant_moe import (
+from max.experimental.nn.common_layers.quant_moe import (
     ExpertParallelMoE,
     QuantizedMoE,
     TensorParallelMoE,

@@ -3,6 +3,8 @@ title: Control flow
 description: Mojo control flow statements.
 ---
 
+<!-- Last updated: 2026-10-15 (adds match, if case, while case) -->
+
 Mojo includes several traditional control flow structures for conditional and
 repeated execution of code blocks.
 
@@ -61,11 +63,6 @@ else:
 ```output
 It is warm.
 ```
-
-:::note
-Mojo doesn't support the equivalent of a Python `match` or C `switch`
-statement for pattern matching and conditional execution.
-:::
 
 ### Short-circuit evaluation
 
@@ -141,6 +138,90 @@ print("The forecast for today is", forecast)
 ```output
 The forecast for today is cool
 ```
+
+## The `match` statement
+
+A `match` statement compares one value against a series of patterns and runs
+the code block for the first pattern that matches. Where an `if`/`elif` chain
+repeats the same comparison on every line, `match` names the value once:
+
+```mojo
+var status_code = 404
+match status_code:
+    case 200:
+        print("OK")
+    case 301 | 302:
+        print("Redirect")
+    case 404:
+        print("Not found")
+    case code if code >= 500:
+        print("Server error", code)
+    case _:
+        print("Unexpected status", status_code)
+```
+
+```output
+Not found
+```
+
+Each `case` holds a pattern:
+
+- A literal, such as `200`, matches an equal value.
+- `|` joins alternatives, so `301 | 302` matches either one.
+- A name, such as `code`, matches any value and binds it for use in the case's
+  block.
+- An `if` after the pattern adds a guard. The case matches only when the guard
+  is also `True`.
+- `_` matches any value without binding it, so it works as a catch-all.
+
+Cases are tested in order. When one matches, its code block runs and no further
+cases are tested, so there's no need for a `break`. If no case matches, no code
+block runs.
+
+### Matching optional values
+
+Patterns can also look inside a value. An `Optional` holds either `.Some(value)`
+or `.None`, and a pattern can match each case and pull out the value it holds:
+
+```mojo
+def forecast(temp_celsius: Optional[Int]) -> String:
+    match temp_celsius:
+        case .Some(temp) if temp > 20:
+            return "warm"
+        case .Some(_):
+            return "cool"
+        case .None:
+            return "no reading"
+
+print(forecast(25), forecast(None))
+```
+
+```output
+warm no reading
+```
+
+When the value's type has a fixed set of cases, like `Optional` or `Bool`, the
+compiler warns if the `match` doesn't cover all of them.
+
+When you only care about one pattern, `if case` tests it without a full
+`match`. The names the pattern binds are available in the `if` block:
+
+```mojo
+var reading: Optional[Int] = 25
+if case .Some(temp) = reading:
+    print("The temperature is", temp)
+else:
+    print("No reading")
+```
+
+```output
+The temperature is 25
+```
+
+Patterns can also match tuples, struct fields, and lists, and `comptime match`
+selects a case at compile time. For the complete set of patterns and binding
+options, see
+[Match statements](/docs/reference/compound-statements#match-statements).
 
 ## The `while` statement
 
@@ -232,6 +313,27 @@ else:
 ```output
 1
 2
+```
+
+A `while case` loop runs as long as a value matches a pattern. The value is
+evaluated again before each iteration. When it stops matching, the loop exits
+normally, so an `else` clause runs:
+
+```mojo
+def next_reading(mut readings: List[Int]) -> Optional[Int]:
+    if readings:
+        return readings.pop()
+    return None
+
+var readings: List[Int] = [18, 22, 25]
+while case .Some(temp) = next_reading(readings):
+    print(temp, end=", ")
+else:
+    print("done")
+```
+
+```output
+25, 22, 18, done
 ```
 
 ## The `for` statement

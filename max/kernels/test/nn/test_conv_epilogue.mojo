@@ -196,8 +196,7 @@ def test[
 
     # Test epilogue
     @inline(.always)
-    @__parameter
-    def epilogue(coords: Coord, f_size: Int):
+    def epilogue(coords: Coord, f_size: Int) {imm}:
         @inline(.always)
         def body1[width: Int](idx: Int) {imm}:
             var f = Int(coords[rank + 1].value()) + idx
@@ -222,8 +221,15 @@ def test[
             dtype,
             True,
             conv_attr,
+            True,
+            type_of(epilogue),
+        ].run(
+            output,
+            input.as_imm(),
+            packed_filter.as_imm(),
+            conv_shape,
             epilogue,
-        ].run(output, input.as_imm(), packed_filter.as_imm(), conv_shape)
+        )
     else:
         ConvDirectNHWC[
             input.LayoutType,
@@ -234,8 +240,9 @@ def test[
             dtype,
             False,
             conv_attr,
-            epilogue,
-        ].run(output, input.as_imm(), filter.as_imm(), conv_shape)
+            True,
+            type_of(epilogue),
+        ].run(output, input.as_imm(), filter.as_imm(), conv_shape, epilogue)
 
     # Check results, return on the first failed comparison.
     for i in range(output_size):

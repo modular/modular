@@ -20,12 +20,14 @@ from collections import deque
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from functools import wraps
 from inspect import signature
+from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
 import numpy as np
 from max import tree
 from max.driver import Buffer, DLPackArray
 from max.dtype import DType
+from max.engine import InferenceSession, Model
 from max.graph import (
     DeviceRef,
     Graph,
@@ -36,6 +38,7 @@ from max.graph import (
     Type,
     Weight,
 )
+from max.graph import Module as GraphModule
 from max.graph.quantization import QuantizationEncoding
 from max.graph.weights import WeightData
 from max.tree import Tree
@@ -353,6 +356,114 @@ class Module(Layer, ABC):
 
         return subgraph
 
+    def trace(
+        self,
+        *input_types: Type[Any],
+        name: str | None = None,
+        module: GraphModule | None = None,
+        custom_extensions: Iterable[Path] = (),
+        is_device_graph: bool = False,
+    ) -> Graph:
+        """Traces this module's ``__call__`` into a graph without compiling it.
+
+        The graph passes one input per entry of ``input_types`` to
+        ``__call__`` positionally, and ``__call__`` returns the graph's
+        outputs: one value, a sequence of values, or ``None``. A subclass
+        whose ``__call__`` takes structured arguments overrides this method
+        to adapt the flat graph inputs to them. Weights keep
+        the names they have when tracing starts. :meth:`load_state_dict` and
+        :meth:`state_dict` name each weight by its attribute path, so call one
+        of them first when the graph's weights registry comes from
+        :meth:`state_dict`.
+
+        The following example traces a linear layer:
+
+        .. code-block:: python
+
+            from max.dtype import DType
+            from max.graph import DeviceRef, TensorType, Weight
+            from max.nn.layer import Module
+
+            class Linear(Module):
+                def __init__(self) -> None:
+                    super().__init__()
+                    self.weight = Weight(
+                        "weight", DType.float32, (4, 4), DeviceRef.CPU()
+                    )
+
+                def __call__(self, x):
+                    return x @ self.weight.T
+
+            graph = Linear().trace(
+                TensorType(DType.float32, [2, 4], device=DeviceRef.CPU())
+            )
+
+        .. invisible-code-block: python
+
+            assert graph.name == "Linear"
+
+        Args:
+            *input_types: The type of each graph input.
+            name: The name of the graph. Defaults to the class's qualified
+                name.
+            module: The MLIR module to add the graph to, so that several
+                graphs compile into one artifact. Defaults to a new module.
+            custom_extensions: Paths to custom kernel libraries the graph
+                uses.
+            is_device_graph: Whether to build a device graph.
+
+        Returns:
+            The traced :class:`~max.graph.Graph`.
+        """
+        return Graph(
+            type(self).__qualname__ if name is None else name,
+            self,
+            input_types=input_types,
+            custom_extensions=list(custom_extensions),
+            module=module,
+            is_device_graph=is_device_graph,
+        )
+
+    def compile(
+        self,
+        *input_types: Type[Any],
+        session: InferenceSession,
+        weights: Mapping[str, DLPackArray] | None = None,
+        name: str | None = None,
+        custom_extensions: Iterable[Path] = (),
+        is_device_graph: bool = False,
+    ) -> Model:
+        """Traces this module, then compiles and initializes the graph.
+
+        The compile goes through ``session``'s precompiled or exported MEFs
+        when the session has them, as :meth:`InferenceSession.load
+        <max.engine.InferenceSession.load>` does.
+
+        Args:
+            *input_types: The type of each graph input.
+            session: The session that compiles and initializes the graph.
+            weights: The weight values, keyed by the graph's weight names.
+                Defaults to :meth:`state_dict`.
+            name: The name of the graph. Defaults to the class's qualified
+                name.
+            custom_extensions: Paths to custom kernel libraries the graph
+                uses.
+            is_device_graph: Whether to build a device graph.
+
+        Returns:
+            The compiled and initialized :class:`~max.engine.Model`.
+        """
+        graph = self.trace(
+            *input_types,
+            name=name,
+            custom_extensions=custom_extensions,
+            is_device_graph=is_device_graph,
+        )
+        return session.load(
+            graph,
+            weights_registry=self.state_dict() if weights is None else weights,
+        )
+
     @property
     def sublayers(self) -> dict[str, Module]:
         return self._sublayers
@@ -539,6 +650,55 @@ class Module(Layer, ABC):
             name: weight for name, weight, _layer in self._iter_named_weights()
         }
 
+    def named_modules(self) -> Iterable[tuple[str, Module]]:
+        """Yields ``(weight prefix, module)`` for every module in the tree.
+
+        The walk is bfs from self and visits each module once,
+        even when it is reachable through several attribute paths. The prefix
+        is the string `raw_state_dict` prepends to the module's own
+        weight names: empty for ``self``, otherwise the attribute path with a
+        trailing ``.`` (e.g. ``layers.3.mlp.``). A sublayer whose
+        :attr:`_omit_module_attr_name` is ``True`` shares its parent's prefix.
+
+        Returns:
+            An iterable of ``(prefix, module)`` pairs.
+        """
+        for _display_name, prefix, module in self._iter_named_modules():
+            yield prefix, module
+
+    def _iter_named_modules(self) -> Iterable[tuple[str, str, Module]]:
+        """Yields ``(display name, weight prefix, module)`` triples.
+
+        ``display_name`` always includes every attribute name on the path,
+        even for name-omitting modules, so error messages can point at the
+        attribute path used in the source.
+        """
+        # We carry the weight prefix explicitly through the walk rather
+        # than re-deriving it from each child's display name; otherwise a
+        # name-omitting child's dropped attribute name would be silently
+        # reintroduced when descending past it.
+        queue: deque[tuple[str, str, Module]] = deque()
+        queue.append(("", "", self))
+        visited = IdentitySet[Module]()
+
+        while queue:
+            display_name, weight_prefix, layer = queue.popleft()
+            if layer in visited:
+                continue
+            visited.add(layer)
+            yield display_name, weight_prefix, layer
+
+            for local_name, child in layer.sublayers.items():
+                if child._omit_module_attr_name:
+                    child_weight_prefix = weight_prefix
+                else:
+                    child_weight_prefix = f"{weight_prefix}{local_name}."
+                if display_name:
+                    child_display = f"{display_name}.{local_name}"
+                else:
+                    child_display = local_name
+                queue.append((child_display, child_weight_prefix, child))
+
     def _iter_named_weights(
         self,
     ) -> Iterable[tuple[str, Weight, Module]]:
@@ -557,24 +717,8 @@ class Module(Layer, ABC):
                 the parent's namespace and a sibling already claims that
                 name.
         """
-        # We carry the weight prefix explicitly through the walk rather
-        # than re-deriving it from each child's display name; otherwise a
-        # name-omitting child's dropped attribute name would be silently
-        # reintroduced when descending past it.
         seen: dict[str, str] = {}
-        # Queue entries are ``(display_name, weight_prefix, layer)``.
-        # ``weight_prefix`` already accounts for any name-omitting ancestors
-        # above ``layer``; ``display_name`` is only used in error messages.
-        queue: deque[tuple[str, str, Module]] = deque()
-        queue.append(("", "", self))
-        visited = IdentitySet[Module]()
-
-        while queue:
-            display_name, weight_prefix, layer = queue.popleft()
-            if layer in visited:
-                continue
-            visited.add(layer)
-
+        for display_name, weight_prefix, layer in self._iter_named_modules():
             for weight_name, weight in layer.layer_weights.items():
                 if weight_name in layer._shared_weights:
                     continue
@@ -604,23 +748,6 @@ class Module(Layer, ABC):
                     )
                 seen[full_name] = display_name or "<root>"
                 yield full_name, weight, layer
-
-            # Enqueue children. A child with ``_omit_module_attr_name``
-            # contributes nothing to the weight prefix; otherwise the
-            # child appends its own attribute name.
-            for local_name, child in layer.sublayers.items():
-                if child._omit_module_attr_name:
-                    child_weight_prefix = weight_prefix
-                else:
-                    child_weight_prefix = f"{weight_prefix}{local_name}."
-                # display_name still includes the attribute name even for
-                # a name-omitting child, so error messages can point at
-                # the actual attribute path used in the source.
-                if display_name:
-                    child_display = f"{display_name}.{local_name}"
-                else:
-                    child_display = local_name
-                queue.append((child_display, child_weight_prefix, child))
 
     @abstractmethod
     def __call__(self, *args, **kwargs):

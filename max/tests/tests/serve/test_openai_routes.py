@@ -66,6 +66,7 @@ from max.pipelines.modeling.types import (
     TextGenerationRequestTool,
     VideoContentPart,
 )
+from max.pipelines.speculative import SpeculativeConfig
 from max.serve.api_server import ServingTokenGeneratorSettings, fastapi_app
 from max.serve.config import APIType, Settings
 from max.serve.mocks.mock_api_requests import simple_openai_request
@@ -1690,6 +1691,102 @@ async def test_non_streaming_cancels_behind_middleware(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "path,body",
+    [
+        pytest.param(
+            "/v1/chat/completions",
+            json.dumps(
+                simple_openai_request(model_name="echo", content="test data")
+                | {"stream": True}
+            ).encode(),
+            id="chat",
+        ),
+        pytest.param(
+            "/v1/completions",
+            json.dumps(
+                {"model": "echo", "prompt": "test data", "stream": True}
+            ).encode(),
+            id="completions",
+        ),
+    ],
+)
+async def test_streaming_cancels_pending_request_behind_middleware(
+    mock_pipeline_config: PipelineConfig,
+    patch_openai_metrics: None,
+    path: str,
+    body: bytes,
+) -> None:
+    """A streaming request whose client leaves before its first token is
+    cancelled. The worker never answers, as for a request still queued
+    behind full batches, so the SSE response never starts and cannot be the
+    one to notice the disconnect."""
+    pipeline, request_queue, cancel_queue = _echo_pipeline()
+    app = FastAPI()
+    app.state.pipeline = pipeline
+    app.state.pipeline_config = mock_pipeline_config
+    app.state.settings = Settings(
+        api_types=[APIType.OPENAI], use_heartbeat=False
+    )
+    register_request(app)
+    app.add_api_route(
+        "/v1/chat/completions",
+        openai_create_chat_completion,
+        methods=["POST"],
+        response_model=None,
+    )
+    app.add_api_route(
+        "/v1/completions",
+        openai_create_completion,
+        methods=["POST"],
+        response_model=None,
+    )
+
+    client_gone = asyncio.Event()
+    messages: list[Message] = [
+        {"type": "http.request", "body": body, "more_body": False}
+    ]
+
+    async def receive() -> Message:
+        if messages:
+            return messages.pop(0)
+        await client_gone.wait()
+        return {"type": "http.disconnect"}
+
+    sent: list[Message] = []
+
+    async def send(message: Message) -> None:
+        sent.append(message)
+
+    scope: Scope = {
+        "type": "http",
+        "asgi": {"version": "3.0"},
+        "http_version": "1.1",
+        "method": "POST",
+        "scheme": "http",
+        "path": path,
+        "raw_path": path.encode(),
+        "query_string": b"",
+        "root_path": "",
+        "headers": [(b"content-type", b"application/json")],
+        "client": ("127.0.0.1", 12345),
+        "server": ("127.0.0.1", 8000),
+        "app": app,
+    }
+    call = asyncio.create_task(app(scope, receive, send))
+    req = await asyncio.wait_for(request_queue.get(), timeout=5.0)
+    client_gone.set()
+
+    try:
+        cancel = await asyncio.wait_for(cancel_queue.get(), timeout=1.0)
+        assert cancel == [req.request_id]
+        await asyncio.wait_for(call, timeout=1.0)
+    finally:
+        call.cancel()
+    assert sent[0]["status"] == 499
+
+
+@pytest.mark.asyncio
 async def test_openai_chat_completion_non_streaming_maps_errors(
     mock_pipeline_config: PipelineConfig,
     patch_openai_metrics: None,
@@ -1974,12 +2071,24 @@ def test_conversation_turn(
     assert _conversation_turn(messages) == expected
 
 
-def test_record_request_end_labels_input_tokens_with_the_turn() -> None:
+def test_record_request_end_labels_token_counts_with_the_turn() -> None:
     with patch("max.serve.router.openai_routes.METRICS") as metrics_mock:
         record_request_end("/v1/chat/completions", 1.0, 3, 10, "later")
 
     metrics_mock.input_tokens.assert_called_once_with(10)
     metrics_mock.input_tokens_per_request.assert_called_once_with(10, "later")
+    metrics_mock.output_tokens.assert_called_once_with(3)
+    metrics_mock.output_tokens_per_request.assert_called_once_with(3, "later")
+
+
+def test_record_request_end_without_a_turn_leaves_token_counts_unlabelled() -> (
+    None
+):
+    with patch("max.serve.router.openai_routes.METRICS") as metrics_mock:
+        record_request_end("/v1/completions", 1.0, 3, 10)
+
+    metrics_mock.input_tokens_per_request.assert_called_once_with(10, None)
+    metrics_mock.output_tokens_per_request.assert_called_once_with(3, None)
 
 
 @pytest.mark.asyncio
@@ -3943,7 +4052,8 @@ async def test_chat_completion_logprobs_with_overlap_scheduler_rejected_by_defau
 
     assert response.status_code == 400
     message = response.json()["error"]["message"]
-    assert "--no-enable-overlap-scheduler --force" in message
+    assert "--no-enable-overlap-scheduler to use logprobs" in message
+    assert "--force" not in message
     assert "--allow-unsupported-logprobs" in message
 
 
@@ -3972,6 +4082,71 @@ async def test_chat_completion_logprobs_with_overlap_scheduler_dropped_when_flag
     assert choice.message.content == "logprobs please"
     # When logprobs is downgraded, the response carries no logprob content.
     assert choice.logprobs is None or not choice.logprobs.content
+
+
+@pytest_asyncio.fixture(scope="function")
+def speculative_app(fixture_tokenizer, mock_pipeline_config: PipelineConfig):  # noqa: ANN001, ANN201
+    pipeline_config = mock_pipeline_config.model_copy(
+        update={
+            "speculative": SpeculativeConfig(
+                speculative_method="eagle", num_speculative_tokens=3
+            )
+        }
+    )
+    serving_settings = ServingTokenGeneratorSettings(
+        model_factory=EchoTokenGenerator,
+        pipeline_config=pipeline_config,
+        tokenizer=EchoPipelineTokenizer(),
+    )
+    return fastapi_app(
+        Settings(api_types=[APIType.OPENAI], use_heartbeat=False),
+        serving_settings,
+    )
+
+
+def _assert_speculative_logprobs_error(response: Any) -> None:
+    assert response.status_code == 400
+    message = response.json()["error"]["message"]
+    assert message.startswith(
+        "Log probabilities are not supported with speculative decoding."
+    )
+    assert "--no-enable-overlap-scheduler" not in message
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "runtime_overrides",
+    [{"enable_overlap_scheduler": False, "allow_unsupported_logprobs": False}],
+    indirect=True,
+)
+async def test_chat_completion_logprobs_with_speculative_decoding_rejected(
+    speculative_app,  # noqa: ANN001
+) -> None:
+    """Speculative decoding runs the overlap pipeline even with overlap off."""
+    async with AsyncTestClient(speculative_app) as client:
+        body = simple_openai_request(model_name="echo", content="hi")
+        body["logprobs"] = True
+        response = await client.post("/v1/chat/completions", json=body)
+
+    _assert_speculative_logprobs_error(response)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "runtime_overrides",
+    [{"enable_overlap_scheduler": False, "allow_unsupported_logprobs": False}],
+    indirect=True,
+)
+async def test_completion_logprobs_with_speculative_decoding_rejected(
+    speculative_app,  # noqa: ANN001
+) -> None:
+    async with AsyncTestClient(speculative_app) as client:
+        response = await client.post(
+            "/v1/completions",
+            json={"model": "echo", "prompt": "hi", "logprobs": 3},
+        )
+
+    _assert_speculative_logprobs_error(response)
 
 
 @pytest.mark.asyncio
@@ -4036,7 +4211,8 @@ async def test_completion_logprobs_with_overlap_scheduler_rejected_by_default(
 
     assert response.status_code == 400
     message = response.json()["error"]["message"]
-    assert "--no-enable-overlap-scheduler --force" in message
+    assert "--no-enable-overlap-scheduler to use logprobs" in message
+    assert "--force" not in message
     assert "--allow-unsupported-logprobs" in message
 
 

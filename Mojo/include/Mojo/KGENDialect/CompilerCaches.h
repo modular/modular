@@ -15,7 +15,10 @@
 #define KGEN_COMPILERCACHES_H
 
 #include "mlir/IR/MLIRContext.h"
+#include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/Hashing.h"
+#include "llvm/ADT/SmallVector.h"
 
 #include <array>
 #include <cstdint>
@@ -29,13 +32,14 @@ namespace M::KGEN {
 /// Thread-safe cache from `KeyT` to the opaque pointer of an attribute or type.
 /// Entries are pure functions of uniqued values, so they never go stale.
 template <typename KeyT>
-class CanonicalCache {
+class ShardedCache {
 public:
   /// Returns null on a miss.
   const void *lookup(const KeyT &key) {
     Shard &shard = getShard(key);
     std::shared_lock<std::shared_mutex> lock(shard.mutex);
-    return shard.map.lookup(key);
+    auto it = shard.map.find(key);
+    return it == shard.map.end() ? nullptr : it->second;
   }
 
   /// Records `value` for `key`; the first entry wins when threads race.
@@ -63,7 +67,7 @@ private:
 /// `IndexDepthAdjuster` results, keyed by the value, `adjustDepth` and
 /// `onlyAdjustIndexRef`.
 using DepthAdjustCache =
-    CanonicalCache<std::tuple<const void *, int64_t, unsigned>>;
+    ShardedCache<std::tuple<const void *, int64_t, unsigned>>;
 
 /// Caches for pure helpers of the parameter machinery. Every parser state on an
 /// `MLIRContext` shares one instance, owned through the `shared_ptr` that
@@ -81,7 +85,7 @@ public:
   getOrCreate(mlir::MLIRContext *context);
 
   /// Canonical forms, keyed by the value's opaque pointer.
-  CanonicalCache<const void *> canonical;
+  ShardedCache<const void *> canonical;
   DepthAdjustCache depthAdjust;
 
 private:

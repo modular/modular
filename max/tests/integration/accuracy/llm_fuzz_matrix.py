@@ -42,12 +42,15 @@ PIPELINES: Final[list[PipelineEntry]] = [
         instance_type="bm.gpu.b200.1",
         timeout=60,
     ),
+    # NVFP4 target with the DSpark draft at TP=2 on 2xB200. The shipped recipe
+    # (nemotron_h_modulev3/recipes/lightning_bf16_dspark.yaml) uses the BF16
+    # target; this lane swaps in the NVFP4 target.
     PipelineEntry(
-        pipeline="nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4",
+        pipeline="nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4__dspark-tp2",
         model_path="nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4",
-        runner="modrunner-b200",
-        gpu_flag="--devices gpu:0",
-        instance_type="bm.gpu.b200.1",
+        runner="modrunner-b200-efa-2x",
+        gpu_flag="--devices gpu:0,1",
+        instance_type="bm.gpu.b200.2",
         timeout=90,
     ),
     PipelineEntry(
@@ -56,7 +59,7 @@ PIPELINES: Final[list[PipelineEntry]] = [
         runner="modrunner-b200",
         gpu_flag="--devices gpu:0",
         instance_type="bm.gpu.b200.1",
-        timeout=60,
+        timeout=90,
     ),
     PipelineEntry(
         pipeline="minimax/MiniMax-M3-MXFP8-ep-tp",

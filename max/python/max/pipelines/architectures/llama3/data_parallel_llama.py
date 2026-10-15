@@ -14,7 +14,9 @@
 from __future__ import annotations
 
 import copy
-from collections.abc import Sequence
+import functools
+from collections.abc import Iterable, Sequence
+from pathlib import Path
 from typing import Any
 
 from max import tree
@@ -25,9 +27,11 @@ from max.graph import (
     Graph,
     TensorType,
     TensorValue,
+    Type,
     Value,
     ops,
 )
+from max.graph import Module as GraphModule
 from max.nn.data_parallelism import split_batch
 from max.nn.kv_cache import KVCacheInputsPerDevice, KVCacheParamInterface
 from max.nn.layer import LayerList, Module
@@ -164,12 +168,56 @@ class DataParallelLlama(Module):
 
         return self(all_model_args)
 
+    def trace(
+        self,
+        *input_types: Type[Any],
+        name: str | None = None,
+        module: GraphModule | None = None,
+        custom_extensions: Iterable[Path] = (),
+        is_device_graph: bool = False,
+    ) -> Graph:
+        """Traces the graph, whose inputs are :meth:`input_types`.
 
-def create_graph(
-    config: Llama3Config,
-    kv_params: KVCacheParamInterface,
-    state_dict: dict[str, Any],
-) -> tuple[Graph, dict[str, Any]]:
+        Adapts the flat graph inputs to :meth:`__call__` through
+        :meth:`_call_flat`.
+
+        Args:
+            *input_types: The graph's input types, as :meth:`input_types`
+                returns them.
+            name: The name of the graph. Defaults to the class's qualified
+                name.
+            module: The MLIR module to add the graph to. Defaults to a new
+                module.
+            custom_extensions: Paths to custom kernel libraries the graph
+                uses.
+            is_device_graph: Whether to build a device graph.
+
+        Returns:
+            The traced :class:`~max.graph.Graph`.
+        """
+        return Graph(
+            type(self).__qualname__ if name is None else name,
+            functools.partial(self._call_flat, self.config.kv_params),
+            input_types=input_types,
+            custom_extensions=list(custom_extensions),
+            module=module,
+            is_device_graph=is_device_graph,
+        )
+
+
+def create_model(
+    config: Llama3Config, state_dict: dict[str, Any]
+) -> DataParallelLlama:
+    """Builds a data-parallel Llama with a replica of the weights per device.
+
+    Args:
+        config: The model config.
+        state_dict: The single-replica weights. Drops ``rope_freqs.weight``,
+            which the model does not use.
+
+    Returns:
+        The model, with its weights loaded.
+    """
     model = DataParallelLlama(config)
 
     state_dict.pop("rope_freqs.weight", None)
@@ -188,8 +236,4 @@ def create_graph(
         weight_alignment=1,
         strict=True,
     )
-    inputs = model.input_types(kv_params)
-    with Graph("llama3", input_types=inputs) as graph:
-        outputs = model._call_flat(kv_params, *graph.inputs)
-        graph.output(*outputs)
-        return graph, model.state_dict()
+    return model

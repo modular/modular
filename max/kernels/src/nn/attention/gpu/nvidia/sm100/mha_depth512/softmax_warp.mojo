@@ -521,11 +521,12 @@ def depth512_softmax[
     # Follows FA4 pattern: double-buffer TMEM loads across batches so that
     # masking + max of batch N overlaps with the TMEM load of batch N+1.
 
-    @__parameter
     @inline(.always)
     def load_mask_max_impl[
         *, mask_strategy: MaskStrategy
-    ](s_tmem: UInt32, kv_row: UInt32) -> StaticTuple[Float32, max_unroll]:
+    ](s_tmem: UInt32, kv_row: UInt32) {mut s, imm} -> StaticTuple[
+        Float32, max_unroll
+    ]:
         """Load effective_bn columns of S from TMEM, apply mask, compute partial
         row_max as a StaticTuple for reduction.
 
@@ -592,11 +593,10 @@ def depth512_softmax[
 
         return vrow_max
 
-    @__parameter
     @inline(.always)
     def init_load_mask_max[
         mask_strategy: MaskStrategy
-    ](kv_row: UInt32) -> Float32:
+    ](kv_row: UInt32) {imm} -> Float32:
         """Load S, mask, return partial max (scalar)."""
         return maximum(
             load_mask_max_impl[mask_strategy=mask_strategy](s_even_tmem, kv_row)
@@ -605,7 +605,7 @@ def depth512_softmax[
     @inline(.always)
     def load_mask_max[
         mask_strategy: MaskStrategy
-    ](s_tmem: UInt32, kv_row: UInt32, old_max: Float32) -> Float32:
+    ](s_tmem: UInt32, kv_row: UInt32, old_max: Float32) {imm} -> Float32:
         """Load S, mask, return partial max combined with old_max."""
         return maximum(
             load_mask_max_impl[mask_strategy=mask_strategy](s_tmem, kv_row),
@@ -735,9 +735,8 @@ def depth512_softmax[
     tcgen05_fence_after()
 
     var partial_max: Float32 = peel_mask[
-        rebind[StaticTuple[MaskStrategy, num_sets]](mask_strategies),
-        init_load_mask_max,
-    ](mask_iters, kv_row)
+        rebind[StaticTuple[MaskStrategy, num_sets]](mask_strategies)
+    ](init_load_mask_max, mask_iters, kv_row)
 
     umma_arrive_leader_cta(pipeline_s_even.consumer_mbar())
     pipeline_s_even.step()

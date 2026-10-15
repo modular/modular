@@ -10,12 +10,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Snapshot-once and accepted-prefix replay for Nemotron's Mamba state.
+"""Accepted-prefix replay for Nemotron's Mamba state.
 
-Verification advances Jenga-owned scratch leaves. The live leaves retain the
-pre-verify state until acceptance is known, then replay consumes only the
-accepted rows of the verification's own conv and SSD inputs. No full state is
-recorded per token and no target projection is repeated.
+Verification runs on the live state pools without advancing them. The conv and
+SSD kernels take an ``update_state`` flag per request, and a verify with drafts
+clears it, so the pools keep their pre-verify state until acceptance is known.
+Replay then consumes only the accepted rows of the verification's own conv and
+SSD inputs and writes the result to the same pools. No full state is recorded
+per token, none is copied, and no target projection is repeated.
 
 A step either verifies drafts or it does not, and the two commit differently:
 
@@ -24,9 +26,9 @@ A step either verifies drafts or it does not, and the two commit differently:
   layer's replay inputs, and replay applies the accepted ``1 + num_accepted``
   of them to the live rows.
 - Without drafts (``K == 0``, a prefill or any batch advancing draft-less),
-  every row of every request is committed, so the scratch state after the
-  verify is the live state after the step, and the commit is a row copy.
-  Replay launches nothing: its offsets are all zero.
+  every row of every request is committed, so the verify sets ``update_state``
+  and advances the live rows itself. Replay launches nothing: its offsets are
+  all zero.
 
 Both ops are in every graph. Each takes its extent from ``K``, and the one that
 does not apply has no rows.
@@ -48,44 +50,32 @@ from ..unified_mtp_qwen3_5.state_rollback import accepted_row_plan
 from .layers.mamba2 import MambaReplayInputs
 
 __all__ = [
-    "commit_state_rows",
     "replay_plan",
     "replay_state_pools",
-    "snapshot_state_pools",
+    "verify_update_state",
     "verify_window",
 ]
 
 
-def snapshot_state_pools(
-    live_pool: BufferValue,
-    shadow_pool: BufferValue,
-    live_rows: TensorValue,
-    shadow_rows: TensorValue,
-) -> None:
-    """Copies active rows once into a Jenga-owned verification scratch leaf.
+def verify_update_state(
+    num_draft_tokens: Dim, batch_size: Dim, device: DeviceRef
+) -> TensorValue:
+    """Returns the verify's ``update_state`` flags: set only without drafts.
+
+    With drafts the verify must leave the live state alone for the replay to
+    start from. Without them nothing can be rejected, so the verify advances
+    the live rows itself and nothing replays.
 
     Args:
-        live_pool: The untouched pre-verification pool.
-        shadow_pool: The scratch pool used by verification.
-        live_rows: Live ``[num_layers, batch_size]`` row ids.
-        shadow_rows: Independently assigned scratch row ids of the same shape.
+        num_draft_tokens: ``K``.
+        batch_size: The batch's request count.
+        device: The device the flags are built on.
+
+    Returns:
+        The ``[batch_size]`` bool flags, all ``K == 0``.
     """
-    if live_pool.dtype != shadow_pool.dtype:
-        raise ValueError("The live and verification state dtypes must match")
-    if live_pool.shape[1:] != shadow_pool.shape[1:]:
-        raise ValueError(
-            "The live and verification state row shapes must match"
-        )
-    ops.inplace_custom(
-        "state_space_copy_rows",
-        live_pool.device,
-        [
-            shadow_pool,
-            live_pool,
-            shadow_rows.cast(DType.uint32),
-            live_rows.cast(DType.uint32),
-        ],
-    )
+    no_drafts = _shape_to_scalar(num_draft_tokens, device) == 0
+    return ops.broadcast_to(no_drafts, [batch_size])
 
 
 def replay_state_pools(
@@ -107,8 +97,8 @@ def replay_state_pools(
 
     Args:
         captures: One capture per Mamba layer, in row-table order.
-        live_conv_pool: Pre-verify convolution state.
-        live_ssm_pool: Pre-verify SSM state.
+        live_conv_pool: Convolution state, as the verify left it.
+        live_ssm_pool: SSM state, as the verify left it.
         conv_rows: Live ``[num_layers, batch_size]`` convolution row ids.
         ssm_rows: Live ``[num_layers, batch_size]`` SSM row ids.
         row_indices: Gather plan returned by :func:`accepted_row_plan`.
@@ -223,51 +213,4 @@ def replay_plan(
     )
     return accepted_row_plan(
         window_offsets, num_accepted, drafts, total_rows, device
-    )
-
-
-def commit_state_rows(
-    live_pool: BufferValue,
-    scratch_pool: BufferValue,
-    live_rows: TensorValue,
-    scratch_rows: TensorValue,
-    num_draft_tokens: Dim,
-    batch_size: Dim,
-) -> None:
-    """Copies the verified scratch rows over the live rows when there are no drafts.
-
-    Launches nothing when there are drafts, since the replay commits those
-    steps.
-
-    Args:
-        live_pool: The pool the live rows address.
-        scratch_pool: The pool the verify advanced.
-        live_rows: Live ``[num_layers, batch_size]`` row ids.
-        scratch_rows: Scratch ``[num_layers, batch_size]`` row ids.
-        num_draft_tokens: ``K``.
-        batch_size: The batch's request count.
-    """
-    cpu = DeviceRef.CPU()
-    k = ops.shape_to_tensor([num_draft_tokens])[0]
-    one = ops.constant(1, DType.int64, device=cpu)
-    no_drafts = ops.max(
-        one - ops.min(k, one), ops.constant(0, DType.int64, device=cpu)
-    )
-    count = ops.shape_to_tensor([batch_size])[0] * no_drafts
-    out_dim = "state_commit_rows"
-    live = ops.slice_tensor(
-        live_rows, [slice(None), (slice(0, count), out_dim)]
-    )
-    scratch = ops.slice_tensor(
-        scratch_rows, [slice(None), (slice(0, count), out_dim)]
-    )
-    ops.inplace_custom(
-        "state_space_copy_rows",
-        live_pool.device,
-        [
-            live_pool,
-            scratch_pool,
-            live.cast(DType.uint32),
-            scratch.cast(DType.uint32),
-        ],
     )

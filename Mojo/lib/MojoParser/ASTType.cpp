@@ -323,12 +323,12 @@ struct ParamDiffer {
         if (isEqualCanon(lhsParam, rhsParam))
           continue;
 
-        // Ok, we found a difference, recursively diff the two parameters.
-        auto structDecl = cast<LIT::StructDeclOp>(lhsDecl->getIfOperation());
-
         // Don't dig into the raw _mlir_origin inside the Origin type.
         if (isa<OriginType>(lhsParam.getType()))
           continue;
+
+        // Ok, we found a difference, recursively diff the two parameters.
+        StructDeclOp structDecl = cast<StructASTDecl>(lhsDecl)->getOp();
 
         accessPath += "." + structDecl.getParams()[idx].getName().str();
         return diff(lhsParam, rhsParam);
@@ -592,7 +592,7 @@ ASTType ASTType::getWithoutParameters(SharedState &shared) const {
 
   if (auto declRef = dyn_cast<StructType>(firstLevelType)) {
     auto unboundType =
-        cast<StructDeclOp>(getDecl(shared)->getIfOperation()).bindReference();
+        cast<StructASTDecl>(getDecl(shared))->getOp().bindReference();
     // Wrap it back to the original meta type.
     if (isa<StructMetaType>(*this))
       return StructMetaType::get(unboundType);
@@ -700,9 +700,9 @@ ASTType ASTType::getNonmaterializableTarget(SharedState &shared) const {
     if (isa<StructMetaMetaType>(extractMetaType()))
       return {};
 
-    if (auto structOp =
-            dyn_cast_or_null<StructDeclOp>(structDecl->getIfOperation()))
-      if (TypeAttr targetMlirType = structOp.getNonmaterializableTargetAttr())
+    if (auto *structASTDecl = dyn_cast<StructASTDecl>(structDecl))
+      if (TypeAttr targetMlirType =
+              structASTDecl->getOp().getNonmaterializableTargetAttr())
         return ASTType(targetMlirType.getValue());
   } else if (auto f = sugarDynCast<FnLiteralTypeGeneratorType>(mlirType)) {
     // A function literal is non-materializable, the nonmaterializable target is
@@ -773,8 +773,7 @@ static TypeConvention getRegisterPassability(ASTType type, llvm::SMLoc loc,
   // when we do, it will not be register-passable. A module reference is an
   // ImportOp; the raw FileModuleOp/PackageOp cases are kept for the underlying
   // decls.
-  if (decl && isa_and_nonnull<FileModuleOp, PackageOp, ImportOp>(
-                  decl->getIfOperation()))
+  if (isa_and_nonnull<FileModuleASTDecl, PackageASTDecl, ImportASTDecl>(decl))
     return TypeConvention::MemoryOnly;
 
   if (checkPR(type, decl, "TrivialRegisterPassable"))
@@ -793,13 +792,9 @@ static TypeConvention getRegisterPassability(ASTType type, llvm::SMLoc loc,
   // pessimistically MemoryOnly (the constraint hasn't been evaluated yet).
   // However, it *might* be register-passable once the constraint is resolved,
   // so return the caller's generic default to keep that possibility open.
-  if (decl) {
-    if (auto structOp =
-            dyn_cast_or_null<StructDeclOp>(decl->getIfOperation())) {
-      if (structOp.getRegisterPassableConstraintAttr())
-        return genericDefault;
-    }
-  }
+  if (auto *structDecl = dyn_cast_if_present<StructASTDecl>(decl))
+    if (structDecl->getOp().getRegisterPassableConstraintAttr())
+      return genericDefault;
 
   return TypeConvention::MemoryOnly;
 }
@@ -992,8 +987,8 @@ TraitType ASTType::getProvidedTrait(SharedState &shared) {
     return trait;
 
   auto structType = cast<StructType>(declDefType);
-  auto structOp = cast<StructDeclOp>(getDecl(shared)->getIfOperation());
-  auto trait = cast<StructDeclOp>(structOp).getCanonicalTrait();
+  StructDeclOp structOp = cast<StructASTDecl>(getDecl(shared))->getOp();
+  auto trait = structOp.getCanonicalTrait();
   if (structType.getParamValues().empty())
     return trait;
 
@@ -1030,13 +1025,11 @@ ConstraintResult ASTType::doesConformToWithDetails(
 std::pair<TriBool, ASTDecl *> ASTType::conformsToBuiltinTrait(
     StringRef traitName, llvm::SMLoc loc, SharedState &shared,
     ArrayRef<ConstraintAttr> callerAssumptions) const {
-  ASTDecl *traitDecl = shared.lookupBuiltinTrait(traitName, loc);
+  TraitASTDecl *traitDecl = shared.lookupBuiltinTrait(traitName, loc);
   if (!traitDecl)
     return {TriBool::no(), {}};
 
-  auto trait = dyn_cast_or_null<TraitDeclOp>(traitDecl->getIfOperation());
-  if (!trait)
-    return {TriBool::no(), {}};
+  TraitDeclOp trait = traitDecl->getOp();
 
   // Micro optimization to avoid creating a canonical trait type for for
   // checking conformance, we only care the root symbol.
@@ -1222,7 +1215,8 @@ ASTType ASTType::getWithUnknownParametersReplaced(SharedState &shared) const {
     }
 
     if (anyBound)
-      return cast<StructDeclOp>(getDecl(shared)->getIfOperation())
+      return cast<StructASTDecl>(getDecl(shared))
+          ->getOp()
           .bindReference(newParams);
   }
 
@@ -1285,7 +1279,7 @@ bool ASTType::isSingleton(SharedState &shared) const {
     assert(decl && "struct decl not found");
     if (failed(shared.declResolver->resolveBody(*decl, decl->getLoc())))
       return false;
-    auto structDecl = cast<StructDeclOp>(decl->getIfOperation());
+    StructDeclOp structDecl = cast<StructASTDecl>(decl)->getOp();
     return structDecl.field_begin() == structDecl.field_end();
   }
 

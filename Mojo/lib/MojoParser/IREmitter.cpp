@@ -82,10 +82,11 @@ static void maybeApplyTypeRefinement(VarDeclOp varOp, ASTDecl &declScope,
   // 3. Look up the ASTDecl registered for this VarDeclOp. With variable
   // shadowing, multiple decls can share a name in the same scope, so
   // disambiguate by matching on the defining Operation*.
-  ASTDecl *varASTDecl = nullptr;
+  VarASTDecl *varASTDecl = nullptr;
   for (ASTDecl *decl : declScope.lookupInCurrentScope(varOp.getNameAttr())) {
-    if (decl->getIfOperation() == varOp.getOperation()) {
-      varASTDecl = decl;
+    auto *candidate = dyn_cast<VarASTDecl>(decl);
+    if (candidate && candidate->getOp() == varOp) {
+      varASTDecl = candidate;
       break;
     }
   }
@@ -1341,18 +1342,13 @@ void IREmitter::emitExpressionWithoutEvaluatingIt(
 // Emission helpers for specific value types.
 
 ASTType IREmitter::emitExprType(const ExprNode *expr, bool allowUnbound) {
-  // We have two ambiguous expressions that can either be types or dynamic
-  // values: an empty tuple () and None.  In a type context, we want to treat
-  // these as types, and not dynamic values.  Sniff these out to see if we have
-  // them.
+  // `None` can be either a type or a dynamic value.  In a type context, we
+  // want to treat it as a type.
   const ExprNode *innerExpr = expr->getWithoutParens();
   if (innerExpr->kind == ExprNode::kNoneLiteral)
     return shared.getNoneType();
-  if (innerExpr->isEmptyTuple())
-    return getBuiltinTupleInstantiation(expr->getLoc(), {});
 
-  // A non-empty tuple literal is never ambiguous: unlike () and None, it has
-  // no valid reading as a type.  Diagnose this directly instead of falling
+  // A tuple literal is never a type. Diagnose this directly instead of falling
   // through to the generic constructor-call machinery below.
   if (isa<TupleNode>(innerExpr)) {
     emitError(
@@ -2114,7 +2110,8 @@ PValue IREmitter::getStdlibOriginOf(TypedAttr litOrigin, SMLoc loc) {
   PValue mutBool = LITStructAttr::get({field}, boolStructType);
 
   ASTDecl *decl = originType.getDecl(shared);
-  auto litStruct = dyn_cast_if_present<StructDeclOp>(decl->getIfOperation());
+  auto *structDecl = dyn_cast_if_present<StructASTDecl>(decl);
+  StructDeclOp litStruct = structDecl ? structDecl->getOp() : nullptr;
   if (!litStruct || litStruct.getParams().size() != 2 ||
       !sugarIsa<OriginType>(litStruct.getParams()[1].getType())) {
     emitError(loc, "malformed Origin type");
@@ -2157,11 +2154,9 @@ PValue IREmitter::getStdlibOriginOf(TypedAttr litOrigin, SMLoc loc) {
 //===--------------------------------------------------------------------===//
 
 ASTDecl *IREmitter::createParametricClosureTrait(SharedState &shared) {
-  OpBuilder b(shared.getTopLevelDecl().getIfOperation());
+  OpBuilder b(shared.getTopLevelDecl().getOp());
   b.setInsertionPointToStart(
-      &cast<ModuleOp>(shared.getTopLevelDecl().getIfOperation())
-           .getBodyRegion()
-           .front());
+      &shared.getTopLevelDecl().getOp().getBodyRegion().front());
   MLIRContext *ctx = b.getContext();
 
   // A illegal name to avoid collisions.
@@ -2177,12 +2172,11 @@ ASTDecl *IREmitter::createParametricClosureTrait(SharedState &shared) {
   SmallVector<TraitSymbolAttr> parents;
   DenseSet<TraitSymbolAttr> immediateParents;
   for (auto traitName : {"AnyType", "Movable", "Deinitable"}) {
-    ASTDecl *traitDecl = shared.lookupBuiltinTrait(traitName, SMLoc());
+    TraitASTDecl *traitDecl = shared.lookupBuiltinTrait(traitName, SMLoc());
     if (traitDecl) { // builtin might be disabled.
       if (failed(shared.declResolver->resolveSignature(*traitDecl, SMLoc())))
         return nullptr; // should this be an assertion?
-      parents.push_back(
-          cast<TraitDeclOp>(traitDecl->getIfOperation()).bindReference({}));
+      parents.push_back(traitDecl->getOp().bindReference({}));
     }
   }
 
@@ -2292,7 +2286,7 @@ private:
 TraitSymbolAttr
 IREmitter::bindParamsToClosureTraitFromSig(FnTypeGeneratorType sig) {
   MLIRContext *ctx = shared.getContext();
-  ASTDecl *closureTraitDecl = shared.getUniversalParametricClosureTrait();
+  TraitASTDecl *closureTraitDecl = shared.getUniversalParametricClosureTrait();
 
   // The universal closure trait prepends a `_Self` parameter and a `mut self`
   // argument/origin, so shift the closure's own parameter and implicit-origin
@@ -2366,7 +2360,7 @@ IREmitter::bindParamsToClosureTraitFromSig(FnTypeGeneratorType sig) {
       PogMetadataAttr::get(StringAttr::get(ctx, ""), PassingKind::PosOnly));
   llvm::append_range(pogArgs, sig.getArgListAttrs().getPogs());
 
-  auto traitDeclOp = cast<TraitDeclOp>(closureTraitDecl->getIfOperation());
+  TraitDeclOp traitDeclOp = closureTraitDecl->getOp();
   return traitDeclOp.bindReference(
       {paramDeclList, argTypeList, resultType, metadata,
        shiftAndQuote(PogListAttr::get(

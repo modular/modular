@@ -16,11 +16,30 @@
 from __future__ import annotations
 
 import functools
-from collections.abc import Sequence
+from collections import OrderedDict
+from collections.abc import Iterable, Sequence
+from pathlib import Path
+from typing import Any
 
+from max import tree
 from max.dtype import DType
-from max.graph import BufferValue, ShardingStrategy, TensorValue, ops
-from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams, PagedCacheValues
+from max.graph import (
+    BufferValue,
+    DeviceRef,
+    Graph,
+    ShardingStrategy,
+    TensorValue,
+    Type,
+    Value,
+    ops,
+)
+from max.graph import Module as GraphModule
+from max.nn.kv_cache import (
+    KVCacheParamInterface,
+    KVCacheParams,
+    MultiKVCacheParams,
+    PagedCacheValues,
+)
 from max.nn.layer import LayerList, MissingLayer, Module
 from max.nn.linear import MLP, ColumnParallelLinear, FusedMLP
 from max.nn.moe import GatedActivation, MoE, MoEQuantized
@@ -31,6 +50,11 @@ from max.nn.transformer.distributed_transformer import (
 )
 from max.pipelines.architectures.gemma3.layers.scaled_word_embedding import (
     ScaledWordEmbedding,
+)
+from max.pipelines.lib.interfaces.batch_processor import (
+    ragged_batch_inputs,
+    signal_inputs,
+    vision_merge_inputs,
 )
 from max.pipelines.lib.vlm_utils import merge_multimodal_embeddings
 
@@ -43,6 +67,38 @@ from .model_config import Gemma4ForConditionalGenerationConfig
 from .weight_adapters import gemma4_uses_fused_projections
 
 
+def language_input_tree(
+    devices: Sequence[DeviceRef],
+    dtype: DType,
+    hidden_size: int,
+    kv_params: KVCacheParamInterface,
+) -> OrderedDict[str, object]:
+    """Names the language graph's inputs; its leaves are its inputs.
+
+    Image embeddings are always inputs: a text-only batch feeds zero rows.
+
+    Args:
+        devices: The devices the graph runs on.
+        dtype: The dtype of the image embeddings.
+        hidden_size: The width of each image embedding row.
+        kv_params: The KV cache parameters.
+
+    Returns:
+        The input types under ``batch``, ``vision``, ``signals`` and ``kv``,
+        in graph order.
+    """
+    return OrderedDict(
+        batch=ragged_batch_inputs(
+            devices[0], ("tokens", "return_n_logits", "row_offsets")
+        ),
+        vision=vision_merge_inputs(
+            devices, dtype, hidden_size, rows_dim="num_image_tokens"
+        ),
+        signals=signal_inputs(list(devices)),
+        kv=kv_params.get_symbolic_inputs(),
+    )
+
+
 class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
     """The Gemma 4 language model."""
 
@@ -50,6 +106,7 @@ class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
         super().__init__()
         text_config = config.text_config
         self.devices = config.devices
+        self._embedding_dtype = config.unquantized_dtype
         # The decoder layers this instance builds, all of them unless it is a
         # pipeline stage. self.layers holds a MissingLayer at every other
         # position, so weight names and layer indices stay global.
@@ -284,6 +341,85 @@ class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
         # Final logit softcapping: matches the reference and bounds logits to
         # (-cap, cap), keeping them finite under float16.
         self.logit_softcapping = text_config.final_logit_softcapping
+
+    def input_tree(self) -> OrderedDict[str, object]:
+        """Names the language graph's inputs; see :func:`language_input_tree`."""
+        return language_input_tree(
+            self.devices, self._embedding_dtype, self.dim, self.kv_params
+        )
+
+    def trace(
+        self,
+        *input_types: Type[Any],
+        name: str | None = None,
+        module: GraphModule | None = None,
+        custom_extensions: Iterable[Path] = (),
+        is_device_graph: bool = False,
+    ) -> Graph:
+        """Traces the language graph, whose inputs are :meth:`input_tree`'s
+        leaves.
+
+        Adapts the flat graph inputs to :meth:`__call__`: stages the row
+        offsets on every device and splits the KV cache into its sliding and
+        global collections.
+
+        Args:
+            *input_types: The graph's input types, the leaves of
+                :meth:`input_tree`.
+            name: The name of the graph. Defaults to the class's qualified
+                name.
+            module: The MLIR module to add the graph to. Defaults to a new
+                module.
+            custom_extensions: Paths to custom kernel libraries the graph
+                uses.
+            is_device_graph: Whether to build a device graph.
+
+        Returns:
+            The traced :class:`~max.graph.Graph`.
+        """
+        # The KV cache comes last, and unflattens through the KV params.
+        head = OrderedDict(
+            (key, types)
+            for key, types in self.input_tree().items()
+            if key != "kv"
+        )
+        head_treedef = tree.flatten(head)[1]
+
+        def forward(*inputs: Value[Any]) -> tuple[TensorValue, ...]:
+            remaining = iter(inputs)
+            named = tree.unflatten(head_treedef, remaining, exact=False)
+            assert isinstance(named, OrderedDict)
+            batch, vision = named["batch"], named["vision"]
+            signal_buffers = [v.buffer for v in named["signals"]["signal"]]
+            sliding_kv, global_kv = self.kv_params.unflatten_basic_kv_tree(
+                remaining
+            )
+            return self(
+                tokens=batch["tokens"].tensor,
+                signal_buffers=signal_buffers,
+                sliding_kv_collections=sliding_kv,
+                global_kv_collections=global_kv,
+                return_n_logits=batch["return_n_logits"].tensor,
+                # Staged once on the first device. A collective rather than
+                # a transfer per device: those sync across streams, which
+                # breaks graph capture.
+                input_row_offsets=ops.distributed_broadcast(
+                    batch["row_offsets"].tensor, signal_buffers
+                ),
+                image_embeddings=[v.tensor for v in vision["image_embeddings"]],
+                image_token_indices=[
+                    v.tensor for v in vision["image_token_indices"]
+                ],
+            )
+
+        return Graph(
+            type(self).__qualname__ if name is None else name,
+            forward,
+            input_types=input_types,
+            custom_extensions=list(custom_extensions),
+            module=module,
+            is_device_graph=is_device_graph,
+        )
 
     def __call__(
         self,

@@ -240,8 +240,8 @@ def _run_case[
     ctx.synchronize()
 
     non_max_suppression[target="gpu"](
-        boxes_dev_t,
-        scores_dev_t,
+        boxes_dev_t.as_imm(),
+        scores_dev_t.as_imm(),
         out_dev_t,
         max_output,
         iou_threshold,

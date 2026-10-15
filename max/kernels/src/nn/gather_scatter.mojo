@@ -476,10 +476,10 @@ def gather[
 
     var end_indices_ptr = indices.ptr.unsafe_offset(indices.num_elements())
 
-    @__parameter
-    @__copy_capture(end_indices_ptr)
     @inline(.always)
-    def prefetch_fn(_input_coords: Coord, indices_coords: Coord):
+    def prefetch_fn(
+        _input_coords: Coord, indices_coords: Coord
+    ) {var end_indices_ptr, var indices, var input}:
         # `input_coords` is written below; arguments are immutable.
         var input_coords = _input_coords
         comptime assert indices_coords.rank == indices.rank
@@ -540,10 +540,10 @@ def gather[
             width=width, alignment=element_alignment * align_of[dtype]()
         ](coords, rebind[SIMD[dtype, width]](val))
 
-    gather[
+    _gather_impl[
         dtype,
         indices_type,
-        prefetch_fn=prefetch_fn,
+        has_prefetch=True,
         target=target,
     ](
         Axis(axis),
@@ -553,6 +553,7 @@ def gather[
         input_fn=input_fn,
         indices_fn=indices_fn,
         output_fn=output_fn,
+        prefetch_fn=prefetch_fn,
         context=context,
     )
 
@@ -616,15 +617,19 @@ def gather_elementwise_fn_wrapper[
     & def[width: SIMDLength, element_alignment: Int](
         Coord, SIMD[dtype, width]
     ) -> None,
+    PrefetchFnType: ImplicitlyCopyable
+    & RegisterPassable
+    & def(Coord, Coord) -> None,
     *,
     simd_width: Int,
-    prefetch_fn: OptionalReg[def(Coord, Coord) capturing -> None] = None,
+    has_prefetch: Bool,
     target: StaticString = "cpu",
     element_alignment: Int = 1,
 ](
     input_fn: InputFnType,
     indices_fn: IndicesFnType,
     output_fn: OutputFnType,
+    prefetch_fn: PrefetchFnType,
     axis: Axis,
     input_shape: IndexList,
     indices_shape: IndexList,
@@ -650,9 +655,10 @@ def gather_elementwise_fn_wrapper[
             from the indices buffer at given coordinates.
         OutputFnType: Function type that stores a SIMD vector into the
             output tensor at given coordinates.
+        PrefetchFnType: Function type of the software index-prefetch
+            callback.
         simd_width: SIMD vector width for the elementwise load and store.
-        prefetch_fn: Optional prefetch callback for software index
-            prefetching (defaults to None).
+        has_prefetch: Whether to call `prefetch_fn` before each load.
         target: Target backend to execute on, such as "cpu" or "cuda"
             (defaults to "cpu").
         element_alignment: Alignment factor for element loads and stores
@@ -662,6 +668,8 @@ def gather_elementwise_fn_wrapper[
         input_fn: Callback that loads values from the input tensor.
         indices_fn: Callback that loads indices from the indices tensor.
         output_fn: Callback that stores values into the output tensor.
+        prefetch_fn: Software index-prefetch callback; ignored unless
+            `has_prefetch`.
         axis: Validated axis along which to gather from the input tensor.
         input_shape: Shape of the input tensor.
         indices_shape: Shape of the indices tensor.
@@ -736,12 +744,17 @@ def gather_elementwise_fn_wrapper[
                 data_indices.replace_dynamic[i](Int64(coords[i].value()))
 
     # Load the data.
-    comptime if case .Some(func) = prefetch_fn:
-        func(data_indices, indices_index)
+    comptime if has_prefetch:
+        prefetch_fn(data_indices, indices_index)
     var data = input_fn[simd_width, element_alignment](data_indices)
 
     # Store it to the original index.
     output_fn[simd_width, element_alignment](coords, data)
+
+
+@inline(.always)
+def _no_prefetch(input_coords: Coord, indices_coords: Coord):
+    pass
 
 
 # TODO: Delete / for testing purposes (test_gather.mojo)
@@ -761,7 +774,6 @@ def gather[
         Coord, SIMD[dtype, width]
     ) -> None,
     *,
-    prefetch_fn: OptionalReg[def(Coord, Coord) capturing -> None] = None,
     target: StaticString = "cpu",
 ](
     axis: Axis,
@@ -788,8 +800,6 @@ def gather[
             the indices buffer at given coordinates.
         OutputFnType: Function type that stores a SIMD vector into the output
             tensor at given coordinates.
-        prefetch_fn: Optional prefetch callback for software index prefetching
-            (defaults to None).
         target: Target backend to execute on, such as "cpu" or "cuda"
             (defaults to "cpu").
 
@@ -803,6 +813,57 @@ def gather[
         output_fn: Callback that stores values into the output tensor.
         context: Device context for execution.
     """
+    _gather_impl[
+        dtype,
+        indices_type,
+        has_prefetch=False,
+        target=target,
+    ](
+        axis,
+        input_shape,
+        indices_shape,
+        output_shape,
+        input_fn=input_fn,
+        indices_fn=indices_fn,
+        output_fn=output_fn,
+        prefetch_fn=_no_prefetch,
+        context=context,
+    )
+
+
+@inline(.always)
+def _gather_impl[
+    dtype: DType,
+    indices_type: DType,
+    InputFnType: ImplicitlyCopyable
+    & RegisterPassable
+    & def[width: Int, element_alignment: Int](Coord) -> SIMD[dtype, width],
+    IndicesFnType: ImplicitlyCopyable
+    & RegisterPassable
+    & def[width: Int](Coord) -> SIMD[indices_type, width],
+    OutputFnType: ImplicitlyCopyable
+    & RegisterPassable
+    & def[width: SIMDLength, element_alignment: Int](
+        Coord, SIMD[dtype, width]
+    ) -> None,
+    PrefetchFnType: ImplicitlyCopyable
+    & RegisterPassable
+    & def(Coord, Coord) -> None,
+    *,
+    has_prefetch: Bool,
+    target: StaticString = "cpu",
+](
+    axis: Axis,
+    input_shape: IndexList,
+    indices_shape: IndexList,
+    output_shape: IndexList,
+    *,
+    input_fn: InputFnType,
+    indices_fn: IndicesFnType,
+    output_fn: OutputFnType,
+    prefetch_fn: PrefetchFnType,
+    context: DeviceContext,
+) raises:
     comptime target_simd_width = (
         simd_width_of[dtype, target=CompilationTarget.current()]() if is_cpu[
             target
@@ -838,19 +899,21 @@ def gather[
             var input_fn,
             var indices_fn,
             var output_fn,
+            var prefetch_fn,
             var error_index_ptr,
         }:
             gather_elementwise_fn_wrapper[
                 dtype,
                 indices_type,
                 simd_width=simd_width,
-                prefetch_fn=prefetch_fn,
+                has_prefetch=has_prefetch,
                 target=target,
                 element_alignment=alignment,
             ](
                 input_fn,
                 indices_fn,
                 output_fn,
+                prefetch_fn,
                 axis,
                 input_shape.canonicalize(),
                 indices_shape.canonicalize(),

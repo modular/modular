@@ -79,7 +79,7 @@ getTraitFunctionSignature(ASTDecl &declScope, FnTypeGeneratorType fullSig,
       traitDecl, llvm::SMLoc());
   assert(result.succeeded() && "failed to resolve signature");
 
-  auto traitDeclOp = cast<TraitDeclOp>(traitDecl.getIfOperation());
+  TraitDeclOp traitDeclOp = cast<TraitASTDecl>(traitDecl).getOp();
   auto trait = traitDeclOp.getCanonicalTrait();
   if (auto eva = populateTraitBindingEvaluator(traitSymbol, traitDeclOp))
     trait = eva->replace(trait);
@@ -386,10 +386,13 @@ static LogicalResult signatureResolveDefaultTraitFnStubs(
 }
 
 LogicalResult
-LIT::verifyAndBuildConformance(StructASTDecl &structDecl,
-                               TraitSymbolAttr parent,
-                               std::optional<MojoInflightDiag> &diag,
-                               ConformanceOp op, ASTDecl &conformanceDecl) {
+LIT::verifyAndBuildConformance(ConformanceASTDecl &conformanceDecl,
+                               std::optional<MojoInflightDiag> &diag) {
+  StructASTDecl &structDecl = conformanceDecl.getStructDecl();
+  ConformanceOp op = conformanceDecl.getOp();
+  TraitSymbolAttr parent = op.getTraitSymbolAttr();
+  assert(parent && "conformance bodies are resolved before `lower-lit` erases "
+                   "the trait reference");
   // If the conformance table already has witnesses, it was pre-built (e.g., for
   // closure wrappers). Skip verification since conformance is already complete.
   if (!op.getBody().front().empty())
@@ -884,16 +887,14 @@ static TraitType getDeclProvidedTrait(ASTDecl *decl) {
   // Collect all the symbols that the type explicitly provides.
   TraitType providedCanonTrait;
 
-  auto declOp = decl->getIfOperation();
-  if (auto structOp = dyn_cast_or_null<StructDeclOp>(declOp)) {
-    providedCanonTrait = structOp.getCanonicalTrait();
-  } else if (auto traitOp = dyn_cast_or_null<TraitDeclOp>(declOp)) {
-    providedCanonTrait = traitOp.getCanonicalTrait();
+  if (auto *structDecl = dyn_cast<StructASTDecl>(decl)) {
+    providedCanonTrait = structDecl->getOp().getCanonicalTrait();
+  } else if (auto *traitDecl = dyn_cast<TraitASTDecl>(decl)) {
+    providedCanonTrait = traitDecl->getOp().getCanonicalTrait();
   } else if (TraitType canonTraitType =
                  dyn_cast_or_null<TraitType>(decl->getIfTypeValue())) {
     providedCanonTrait = canonTraitType;
-  } else if (isa<PackageOp>(declOp) || isa<FileModuleOp>(declOp) ||
-             isa<ImportOp>(declOp)) {
+  } else if (isa<PackageASTDecl, FileModuleASTDecl, ImportASTDecl>(decl)) {
     // A package, module, or import reference provides no trait (and is not a
     // copyable runtime value - using one as a value is diagnosed elsewhere).
     providedCanonTrait = TraitType::get(decl->getContext(), {});
@@ -1027,8 +1028,8 @@ static TriBool doesNominalTypeConformToUncached(
 
   // `where` clauses with messages only live on struct conformance lists, so
   // only a struct can supply diagnostic witnesses.
-  const bool selfIsStruct =
-      isa_and_nonnull<StructDeclOp>(self->getIfOperation());
+  auto *selfStructDecl = dyn_cast<StructASTDecl>(self);
+  const bool selfIsStruct = selfStructDecl != nullptr;
 
   // Set up parameter evaluator if we have parameter bindings for constraint
   // evaluation. Uses the parser's evaluation context needed for folding
@@ -1036,11 +1037,9 @@ static TriBool doesNominalTypeConformToUncached(
   ParameterEvaluator evaluator;
   ArrayRef<TypedAttr> paramBindings =
       concreteType ? concreteType.getParamBindings() : ArrayRef<TypedAttr>{};
-  if (!paramBindings.empty()) {
-    if (auto structOp = dyn_cast_or_null<StructDeclOp>(self->getIfOperation()))
-      evaluator = shared.getParameterEvaluator(structOp.getInputParams(),
-                                               paramBindings);
-  }
+  if (!paramBindings.empty() && selfStructDecl)
+    evaluator = shared.getParameterEvaluator(
+        selfStructDecl->getOp().getInputParams(), paramBindings);
 
   TraitType declProvidedTrait = getDeclProvidedTrait(self);
   // Collect all the symbols that the type explicitly provides, only re-evaluate
@@ -1081,7 +1080,7 @@ static TriBool doesNominalTypeConformToUncached(
     for (auto [i, symbol] : llvm::enumerate(providedSymbolsArr))
       providedConstraints[symbol] = constraints[i];
 
-  if (auto structOp = dyn_cast_or_null<StructDeclOp>(self->getIfOperation())) {
+  if (selfStructDecl) {
     llvm::SmallPtrSet<ASTDecl *, 4> uniqueExtensions;
     // Search for extensions in the struct's parent scope.
     // TODO(MOCO-522): Arcana docs on our orphan rule.
@@ -1102,8 +1101,7 @@ static TriBool doesNominalTypeConformToUncached(
     llvm::SmallVector<ASTDecl *> allExtensions(uniqueExtensions.begin(),
                                                uniqueExtensions.end());
     for (ASTDecl *extDecl : allExtensions) {
-      if (auto extOp =
-              dyn_cast_or_null<ExtensionDeclOp>(extDecl->getIfOperation())) {
+      if (auto *extensionDecl = dyn_cast<ExtensionASTDecl>(extDecl)) {
         // Signature resolve the extension so we can access its canonicalTrait.
         // A failed resolution marks the extension erroneous, and its
         // (non-)contribution may change once the error is diagnosed, so tell
@@ -1121,6 +1119,7 @@ static TriBool doesNominalTypeConformToUncached(
           *sawErroneousExtension = true;
         // Extensions sometimes don't have canonical traits (like in isolated
         // tests).
+        ExtensionDeclOp extOp = extensionDecl->getOp();
         if (!extOp.getCanonicalTrait().has_value())
           continue;
         TraitType extCanonicalTrait = extOp.getCanonicalTrait().value();
@@ -1266,7 +1265,7 @@ void LIT::canonicalizeTraitCompositionSymbols(
   canonicalizeTraitCompositionSymbols(
       symbols, [&](SymbolRefAttr symbol) -> TraitDeclOp {
         ASTDecl &memberDecl = shared.declResolver->getDeclForTypeSymbol(symbol);
-        return cast<TraitDeclOp>(memberDecl.getIfOperation());
+        return cast<TraitASTDecl>(memberDecl).getOp();
       });
 
   sortAndDeduplicateTraitSymbols(symbols);
@@ -1303,7 +1302,7 @@ static std::pair<TraitType, StructDeclOp> extractTraitBound(SharedState &shared,
     return extractTraitBound(shared, shared.getBuiltinStubsMLIRType(SMLoc()));
 
   ASTDecl *decl = type.getDecl(shared);
-  auto structDecl = cast<StructDeclOp>(decl->getIfOperation());
+  StructDeclOp structDecl = cast<StructASTDecl>(decl)->getOp();
   return {structDecl.getCanonicalTrait(), structDecl};
 }
 
@@ -1411,7 +1410,7 @@ LIT::reduceTraitCompositionSymbols(SharedState &shared,
   for (TraitSymbolAttr symbol : symbols) {
     ASTDecl &traitDecl =
         shared.declResolver->getDeclForTypeSymbol(symbol.getSymbol());
-    auto traitOp = cast<TraitDeclOp>(traitDecl.getIfOperation());
+    TraitDeclOp traitOp = cast<TraitASTDecl>(traitDecl).getOp();
     for (TraitSymbolAttr ancestor : traitOp.getCanonicalTrait().getSymbols()) {
       if (ancestor != symbol)
         impliedSymbols.insert(ancestor);
@@ -1476,7 +1475,7 @@ LIT::getTraitBoundFromAssumptions(TypedAttr typeAttr, SharedState &shared,
   return getTraitBoundFromAssumptions(
       typeAttr, assumptions, [&](SymbolRefAttr symbol) -> TraitDeclOp {
         ASTDecl &memberDecl = shared.declResolver->getDeclForTypeSymbol(symbol);
-        return cast<TraitDeclOp>(memberDecl.getIfOperation());
+        return cast<TraitASTDecl>(memberDecl).getOp();
       });
 }
 
@@ -1590,8 +1589,8 @@ FailureOr<TypedAttr> LIT::getUniqueWitnessForTypeIfConforms(
     // This is a MLIR type, so we need to bind it to the builtin stub.
     // Use a special wrapper decl in the builtins as stubs.
     typeDecl = shared.getBuiltinStubsMLIRType(errorLoc).getDecl(shared);
-    if (!typeDecl ||
-        !isa_and_nonnull<StructDeclOp>(typeDecl->getIfOperation())) {
+    auto *structDecl = dyn_cast_if_present<StructASTDecl>(typeDecl);
+    if (!structDecl) {
       shared.emitError(errorLoc, "malformed builtin._stubs.__MLIRType");
       return {};
     }
@@ -1600,8 +1599,7 @@ FailureOr<TypedAttr> LIT::getUniqueWitnessForTypeIfConforms(
         TypeParamAttr::get(type, NonStructTypeType::get(shared.getContext()));
 
     // Need to update the type itself to the wrapper type.
-    type = cast<StructDeclOp>(typeDecl->getIfOperation())
-               .bindReference({typeValue});
+    type = structDecl->getOp().bindReference({typeValue});
   }
 
   if (type.doesConformTo(trait, shared, callerAssumptions).isFalse()) {
@@ -1738,8 +1736,9 @@ PValue IREmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
 std::optional<ParameterEvaluator>
 LIT::populateTraitBindingEvaluator(TraitSymbolAttr traitSymbol,
                                    SharedState &shared) {
-  auto traitDecl = cast<TraitDeclOp>(
-      shared.declResolver->getDeclForTypeSymbol(traitSymbol.getSymbol())
-          .getIfOperation());
+  TraitDeclOp traitDecl =
+      cast<TraitASTDecl>(
+          shared.declResolver->getDeclForTypeSymbol(traitSymbol.getSymbol()))
+          .getOp();
   return populateTraitBindingEvaluator(traitSymbol, traitDecl);
 }

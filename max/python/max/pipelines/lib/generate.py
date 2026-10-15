@@ -15,13 +15,14 @@
 
 This runs a pipeline's forward passes over a batch you choose, with nothing
 added on top of the pipeline API. The caller's list of prompts is the batch:
-it is never split, re-packed, or chunked, and every :meth:`Batch.step` runs
-exactly one ``pipeline.execute`` in the caller's thread. That also makes it
-useful for testing, such as reproducing and localizing kernel and model
-accuracy bugs. Serving features (scheduling and in-flight batching, chunked
-prefill, prefix caching, LoRA, and structured output) are tested through
-``max serve``. Kernels are not batch-invariant, so for bit-exact comparisons
-between MAX runs, use batch size 1 or ``ignore_eos=True``.
+it is never split, re-packed, or chunked, and every
+:meth:`GenerateIterator.step` runs exactly one ``pipeline.execute`` in the
+caller's thread. That also makes it useful for testing, such as reproducing
+and localizing kernel and model accuracy bugs. Serving features (scheduling
+and in-flight batching, chunked prefill, prefix caching, LoRA, and structured
+output) are tested through ``max serve``. Kernels are not batch-invariant, so
+for bit-exact comparisons between MAX runs, use batch size 1 or
+``ignore_eos=True``.
 """
 
 from __future__ import annotations
@@ -61,8 +62,8 @@ from .log_probabilities import _MAX_TOP_LOGPROBS
 from .registry import PIPELINE_REGISTRY
 
 __all__ = [
-    "Batch",
     "BatchPipeline",
+    "GenerateIterator",
     "GenerateResult",
     "generate",
 ]
@@ -150,7 +151,7 @@ class _PipelineModelLimits(Protocol):
 
 
 class BatchPipeline(Protocol):
-    """The pipeline surface :class:`Batch` drives.
+    """The pipeline surface :class:`GenerateIterator` drives.
 
     :class:`~max.pipelines.TextGenerationPipeline` and
     :class:`~max.pipelines.lib.OverlapTextGenerationPipeline` over
@@ -159,9 +160,9 @@ class BatchPipeline(Protocol):
     ``overlap_active`` property, read the way serve's schedulers read it. A
     pipeline that can replay captured device graphs defines a boolean
     ``graph_capture_ready`` property, true once its graphs are captured.
-    Batch also reads the memory plan's max length, batch token limits and
-    LoRA adapters from the private ``_pipeline_model``, the only place they
-    live, so another implementation must define it as well.
+    GenerateIterator also reads the memory plan's max length, batch token
+    limits and LoRA adapters from the private ``_pipeline_model``, the only
+    place they live, so another implementation must define it as well.
     """
 
     @property
@@ -207,11 +208,11 @@ class GenerateResult:
     Hugging Face ``generate``."""
 
     logits: list[npt.NDArray[np.float32]] | None = None
-    """Each row's next-token logits, as :attr:`Batch.logits`, when
+    """Each row's next-token logits, as :attr:`GenerateIterator.logits`, when
     requested."""
 
     log_probs: list[LogProbabilities] | None = None
-    """Each row's log probabilities, as :attr:`Batch.log_probs`, when
+    """Each row's log probabilities, as :attr:`GenerateIterator.log_probs`, when
     requested."""
 
 
@@ -232,9 +233,9 @@ class _LogitsRecorder:
 
 # A pipeline that is not synchronous hands its pending forward's results to
 # whichever batch steps next, so two open batches would trade outputs.
-_open_batches: weakref.WeakKeyDictionary[object, weakref.ref[Batch]] = (
-    weakref.WeakKeyDictionary()
-)
+_open_iterators: weakref.WeakKeyDictionary[
+    object, weakref.ref[GenerateIterator]
+] = weakref.WeakKeyDictionary()
 
 
 def _int_rows(values: Iterable[Sequence[int]], name: str) -> list[list[int]]:
@@ -259,7 +260,8 @@ def _materialize_prompts(
         raise ValueError(
             "attention_mask must have the same shape as input_ids."
         )
-    # Batch runs prompts unpadded, so it drops the positions a zero masks.
+    # GenerateIterator runs prompts unpadded, so it drops the positions a
+    # zero masks.
     return [
         [token for token, keep in zip(prompt, mask, strict=True) if keep]
         for prompt, mask in zip(prompts, masks, strict=True)
@@ -504,8 +506,8 @@ def _check_adapters_active(
 ) -> None:
     """Raises if a context names a loaded LoRA adapter that is not active.
 
-    Serve's scheduler activates a request's adapter. Batch does not, so the
-    row would run the base weights without an error.
+    Serve's scheduler activates a request's adapter. GenerateIterator does
+    not, so the row would run the base weights without an error.
     """
     lora_manager = pipeline._pipeline_model.lora_manager
     if lora_manager is None:
@@ -530,7 +532,7 @@ def _check_adapters_active(
 def _check_graph_capture(
     pipeline: BatchPipeline, dp_degree: int, caller: str = "generate()"
 ) -> None:
-    """Checks Batch against the pipeline's graph capture state.
+    """Checks GenerateIterator against the pipeline's graph capture state.
 
     Raises if replay needs replica padding, and warns once per pipeline if
     capture is on but the pipeline is not warmed up, so a caller that opens
@@ -661,8 +663,8 @@ def _check_batch_fits(
     model = pipeline._pipeline_model
     batch_processor = model.batch_processor
     # The scheduler chunks each replica's prefill to fit its own share of
-    # this budget. Batch does not chunk, and an overflow would otherwise fail
-    # deep in graph input staging.
+    # this budget. GenerateIterator does not chunk, and an overflow would
+    # otherwise fail deep in graph input staging.
     token_budget = (
         None
         if batch_processor is None
@@ -714,16 +716,16 @@ def _check_batch_fits(
             )
 
 
-class Batch:
+class GenerateIterator:
     """Steps a fixed batch of prompts through a pipeline, one execute at a time.
 
-    Batch runs a pipeline's forward passes over exactly the batch you pass,
-    with nothing added on top of the pipeline API, which also makes it
-    useful for reproducing and localizing kernel and model accuracy bugs.
+    GenerateIterator runs a pipeline's forward passes over exactly the batch
+    you pass, with nothing added on top of the pipeline API, which also makes
+    it useful for reproducing and localizing kernel and model accuracy bugs.
     Serving features (scheduling and in-flight batching, chunked prefill,
     prefix caching, LoRA, and structured output) are tested through
-    ``max serve``. Requesting one that Batch cannot run raises an error that
-    gives the matching ``max serve`` command.
+    ``max serve``. Requesting one that GenerateIterator cannot run raises an
+    error that gives the matching ``max serve`` command.
 
     Constructing the batch claims KV cache for every row. Use it as a
     context manager so an exception releases the rows. To run contexts built
@@ -731,8 +733,8 @@ class Batch:
 
     In a batch built from ``input_ids``, row ``i`` samples with
     ``seed + i * 2**32``. Serve deliberately makes requests with the same
-    pinned seed draw identically. Batch instead gives each row its own
-    stream, as Hugging Face users expect, so identical prompts draw
+    pinned seed draw identically. GenerateIterator instead gives each row its
+    own stream, as Hugging Face users expect, so identical prompts draw
     different samples, a rerun reproduces them, and row 0 matches serve for
     the same seed. A prompt's draw still depends on its row index.
     :meth:`from_contexts` keeps each context's own seed, so it draws as
@@ -761,19 +763,19 @@ class Batch:
     On a pipeline that ran ``warmup_graph_capture()``, the first (prefill)
     step runs eagerly and later steps replay captured graphs, as long as
     each replica has at most ``min(max_batch_size, 128)`` rows. Warm up
-    before creating a Batch. With device graph capture on but no warmup,
-    Batch logs a warning and runs every step eagerly. A logits processor
-    receives the captured output buffer, which the next replay overwrites,
-    so it must copy what it keeps. ``output_logits`` copies a float32
-    ``[vocab]`` logits row to host for every generated token, so host
-    memory grows by ``4 * vocab`` bytes per token.
+    before creating a GenerateIterator. With device graph capture on but no
+    warmup, GenerateIterator logs a warning and runs every step eagerly. A
+    logits processor receives the captured output buffer, which the next
+    replay overwrites, so it must copy what it keeps. ``output_logits``
+    copies a float32 ``[vocab]`` logits row to host for every generated
+    token, so host memory grows by ``4 * vocab`` bytes per token.
 
     .. Skipped: the example needs a loaded pipeline.
     .. skip: next
 
     .. code-block:: python
 
-        with Batch(pipeline, input_ids, max_new_tokens=20) as batch:
+        with GenerateIterator(pipeline, input_ids, max_new_tokens=20) as batch:
             for step_tokens in batch:
                 print(step_tokens)
         sequences = batch.sequences
@@ -781,9 +783,9 @@ class Batch:
     Args:
         pipeline: The pipeline to run.
         input_ids: One token-id prompt per row, as lists or a 2D array.
-        attention_mask: Zeros mark padding in ``input_ids``, which Batch
-            drops, since it runs prompts unpadded. A tokenizer returns it
-            with the ids.
+        attention_mask: Zeros mark padding in ``input_ids``, which
+            GenerateIterator drops, since it runs prompts unpadded. A
+            tokenizer returns it with the ids.
         max_new_tokens: The most tokens to generate for each row.
         min_new_tokens: The fewest tokens a row generates before EOS can end
             it. Defaults to the model's generation config.
@@ -813,11 +815,13 @@ class Batch:
         output_logprobs: Records the log probability of each generated token
             and of this many top candidates, for :attr:`log_probs`. A model
             that does not compute log probabilities fails on the first step.
+        caller: What the user called, which errors name, such as
+            ``"AutoPipeline"``.
 
     Raises:
         TypeError: If ``input_ids`` or ``attention_mask`` is not a list of
             integer lists.
-        ValueError: If the request needs a feature Batch leaves to
+        ValueError: If the request needs a feature GenerateIterator leaves to
             ``max serve``: LoRA, device graph capture with ``data_parallel_degree > 1`` on
             a warmed-up pipeline, or a batch that only fits by scheduling or
             chunked prefill (more rows than the planned max batch size, or a
@@ -861,6 +865,7 @@ class Batch:
         seed: int = 0,
         output_logits: bool = False,
         output_logprobs: int = 0,
+        caller: str = "generate()",
     ) -> None:
         prompts = _materialize_prompts(input_ids, attention_mask)
         pipeline_config = pipeline.pipeline_config
@@ -873,7 +878,7 @@ class Batch:
             )
             if value is not None and value != default
         }
-        _check_supported(pipeline_config)
+        _check_supported(pipeline_config, caller)
         if ignore_eos and pipeline_config.speculative is not None:
             raise ValueError(
                 "ignore_eos cannot keep the batch size fixed with speculative "
@@ -914,8 +919,10 @@ class Batch:
         # After the max length check: a too-long prompt also trips these
         # limits, and their advice cannot fix it.
         dp_degree = pipeline_config.model.data_parallel_degree
-        _check_batch_fits(pipeline, [len(p) for p in prompts], dp_degree)
-        _check_graph_capture(pipeline, dp_degree)
+        _check_batch_fits(
+            pipeline, [len(p) for p in prompts], dp_degree, caller
+        )
+        _check_graph_capture(pipeline, dp_degree, caller)
         self._start(pipeline, contexts, dp_degree)
         _check_output_options(
             pipeline, self._synchronous, output_logits, output_logprobs
@@ -948,8 +955,8 @@ class Batch:
         pipeline: BatchPipeline,
         contexts: Iterable[TextContext],
         *,
-        caller: str = "Batch.from_contexts()",
-    ) -> Batch:
+        caller: str = "GenerateIterator.from_contexts()",
+    ) -> GenerateIterator:
         """Claims a batch over contexts already built, one row per context.
 
         Each context keeps its own sampling params, seed, logits processors,
@@ -974,7 +981,7 @@ class Batch:
                 not active, or for device graph capture with
                 ``data_parallel_degree > 1`` on a warmed-up pipeline, or if
                 the batch does not fit the pipeline's plan, as described for
-                :class:`Batch`.
+                :class:`GenerateIterator`.
             RuntimeError: If the pipeline is not synchronous and another
                 batch on it is still open.
         """
@@ -1003,7 +1010,7 @@ class Batch:
             isinstance(pipeline, _OverlapSource) and pipeline.overlap_active
         )
         if not synchronous:
-            open_batch_ref = _open_batches.get(pipeline)
+            open_batch_ref = _open_iterators.get(pipeline)
             open_batch = (
                 open_batch_ref() if open_batch_ref is not None else None
             )
@@ -1026,8 +1033,8 @@ class Batch:
         self._logits_recorders = None
         self._log_probs = None
         # Live rows in input order, mapped to their DP replica. Replicas
-        # need no padding: Batch rejects data parallelism on a warmed-up
-        # pipeline, and eager steps accept unequal replicas.
+        # need no padding: GenerateIterator rejects data parallelism on a
+        # warmed-up pipeline, and eager steps accept unequal replicas.
         self._live: dict[int, int] = {}
 
     def _claim_rows(self) -> None:
@@ -1042,9 +1049,9 @@ class Batch:
             self.close()
             raise
         if not self._synchronous:
-            _open_batches[pipeline] = weakref.ref(self)
+            _open_iterators[pipeline] = weakref.ref(self)
 
-    def __enter__(self) -> Batch:
+    def __enter__(self) -> GenerateIterator:
         return self
 
     def __exit__(
@@ -1096,8 +1103,8 @@ class Batch:
         if self._logits_recorders is None:
             raise RuntimeError(
                 "Build the batch with output_logits=True. A batch from "
-                "Batch.from_contexts records no logits, so read them through "
-                "a logits processor on each context."
+                "GenerateIterator.from_contexts records no logits, so read "
+                "them through a logits processor on each context."
             )
         return [
             np.stack(recorder.logits[: len(tokens)])
@@ -1130,7 +1137,7 @@ class Batch:
         if self._log_probs is None:
             raise RuntimeError(
                 "Build the batch with output_logprobs > 0. A batch from "
-                "Batch.from_contexts records no log probabilities."
+                "GenerateIterator.from_contexts records no log probabilities."
             )
         return [
             LogProbabilities(
@@ -1152,7 +1159,7 @@ class Batch:
 
         Rows the execute reports done are released before this returns. On a
         pipeline that is not synchronous the tokens lag one step, as
-        :class:`Batch` describes.
+        :class:`GenerateIterator` describes.
 
         Returns:
             The tokens the execute reported for each live row, keyed by row
@@ -1165,7 +1172,7 @@ class Batch:
                 probabilities.
         """
         if self.done:
-            raise RuntimeError("Batch has no live rows to step.")
+            raise RuntimeError("GenerateIterator has no live rows to step.")
         pipeline = self._pipeline
         assert pipeline is not None
         # Fresh lists every step: OverlapTextGenerationPipeline keeps a
@@ -1175,8 +1182,8 @@ class Batch:
         for row, replica_idx in self._live.items():
             context = self._contexts[row]
             # A KV connector's onload lands off the forward stream, so the
-            # scheduler holds the row back until the onload lands. Batch
-            # waits instead.
+            # scheduler holds the row back until the onload lands.
+            # GenerateIterator waits instead.
             pipeline.kv_manager.alloc(context).synchronize()
             batches[replica_idx].append(context)
         # Rebuilt each step so decode runs as TG, as under the scheduler.
@@ -1311,12 +1318,13 @@ def generate(
     seed: int = 0,
     output_logits: bool = False,
     output_logprobs: int = 0,
+    caller: str = "generate()",
 ) -> GenerateResult:
     """Generates tokens for a fixed batch of prompts, run as one batch.
 
-    Steps a :class:`Batch` until every row finishes. The arguments and their
-    defaults are the same as for :class:`Batch`, and the sampling arguments
-    match the ``max generate`` flags of the same name.
+    Steps a :class:`GenerateIterator` until every row finishes. The arguments
+    and their defaults are the same as for :class:`GenerateIterator`, and the
+    sampling arguments match the ``max generate`` flags of the same name.
 
     Args:
         pipeline: The pipeline to run.
@@ -1339,9 +1347,10 @@ def generate(
         seed: The sampling seed for row 0. Row ``i`` uses
             ``seed + i * 2**32``.
         output_logits: Returns each row's next-token logits, as
-            :attr:`Batch.logits`.
+            :attr:`GenerateIterator.logits`.
         output_logprobs: Returns the log probabilities of each token and of
-            this many top candidates, as :attr:`Batch.log_probs`.
+            this many top candidates, as :attr:`GenerateIterator.log_probs`.
+        caller: What the user called, which errors name.
 
     Returns:
         Each row's prompt followed by its new tokens, in input order, with
@@ -1350,18 +1359,18 @@ def generate(
     Raises:
         TypeError: If ``input_ids`` or ``attention_mask`` is not a list of
             integer lists.
-        ValueError: If the request needs a feature Batch leaves to
+        ValueError: If the request needs a feature GenerateIterator leaves to
             ``max serve``, such as device graph capture with
             ``data_parallel_degree > 1`` on a warmed-up pipeline, the batch
             does not fit the pipeline's plan, or the pipeline cannot return
-            the requested outputs, as described for :class:`Batch`.
+            the requested outputs, as described for :class:`GenerateIterator`.
         RuntimeError: If the pipeline is not synchronous and another batch
             on it is still open, or if the pipeline returns log
             probabilities or logits rows that do not line up one per
             generated token, as when the model does not compute log
             probabilities.
     """
-    with Batch(
+    with GenerateIterator(
         pipeline,
         input_ids,
         attention_mask,
@@ -1379,6 +1388,7 @@ def generate(
         seed=seed,
         output_logits=output_logits,
         output_logprobs=output_logprobs,
+        caller=caller,
     ) as batch:
         while not batch.done:
             batch.step()

@@ -86,10 +86,8 @@ from .arch.sm100 import MmaOpSM100_SS
 from .utils import (
     ElementwiseComputeFn,
     ElementwiseEpilogueFn,
-    apply_elementwise_epilogue,
     identity_compute_fn,
     no_compute_fn,
-    elementwise_epilogue_type,
     lora_qkv_plane_row_offset,
     no_epilogue_fn,
 )
@@ -819,7 +817,6 @@ def multi_stage_store_C[
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     cta_group: Int = 1,
     num_output_warps: Int = 4,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     EpilogueFnType: ElementwiseEpilogueFn = type_of(no_epilogue_fn),
     has_epilogue_fn: Bool = False,
     ComputeFnType: ElementwiseComputeFn = type_of(identity_compute_fn),
@@ -880,11 +877,9 @@ def multi_stage_store_C[
             dimension (defaults to 1).
         num_output_warps: Number of warps participating in the epilogue
             store (defaults to 4).
-        elementwise_lambda_fn: Optional elementwise epilogue applied to
-            stored C fragments (defaults to None).
         EpilogueFnType: Type of `epilogue_fn`.
-        has_epilogue_fn: Whether `epilogue_fn` stores C in place of
-            `elementwise_lambda_fn` (defaults to False).
+        has_epilogue_fn: Whether `epilogue_fn` stores C in place of the
+            TMA store (defaults to False).
         ComputeFnType: Type of `compute_fn`.
         has_compute_fn: Whether `compute_fn` maps the C fragments in
             registers before they are staged to shared memory, so the TMA
@@ -974,7 +969,7 @@ def multi_stage_store_C[
     comptime frag_width = rep * data_paths * (bits // 32) // WARP_SIZE
 
     comptime assert not (
-        (Bool(elementwise_lambda_fn) or has_epilogue_fn) and has_compute_fn
+        has_epilogue_fn and has_compute_fn
     ), "a store epilogue and a compute epilogue are mutually exclusive"
     comptime if has_compute_fn:
         comptime assert transpose_c and (MMA_M == 256 or cta_group == 1), (
@@ -1122,11 +1117,7 @@ def multi_stage_store_C[
 
         comptime M = c_smem_layout.shape[1].value()
 
-        comptime has_elementwise_lambda = (
-            Bool(elementwise_lambda_fn) or has_epilogue_fn
-        )
-
-        if not has_elementwise_lambda and n_inbound_size >= UInt32(stageN):
+        if not has_epilogue_fn and n_inbound_size >= UInt32(stageN):
             if elect_one_warp and lane == 0:
                 fence_async_view_proxy()
 
@@ -1214,10 +1205,10 @@ def multi_stage_store_C[
                     chunk_idx * UInt32(vec_chunkM) + vec_chunkM_idx
                 ) * UInt32(simd_size)
                 if m < UInt32(cN):
-                    comptime if has_elementwise_lambda:
-                        apply_elementwise_epilogue[
-                            elementwise_lambda_fn, alignment=alignment
-                        ](epilogue_fn, (n, m), val_vec)
+                    comptime if has_epilogue_fn:
+                        epilogue_fn[c_type, simd_size, alignment=alignment](
+                            (n, m), val_vec
+                        )
                     else:
                         (c_ptr + Int(n) * cN + Int(m)).store[
                             alignment=alignment
@@ -1318,7 +1309,6 @@ def zero_output_epilogue[
     c_swizzle: TensorMapSwizzle,
     cta_group: Int,
     num_output_warps: Int,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type],
     EpilogueFnType: ElementwiseEpilogueFn,
     has_epilogue_fn: Bool,
     transpose_c: Bool,
@@ -1329,10 +1319,10 @@ def zero_output_epilogue[
 ):
     """Zero an inactive group's output THROUGH the elementwise epilogue.
 
-    Mirror of the epilogue (unaligned/`elementwise_lambda_fn`) branch of
+    Mirror of the epilogue (unaligned/`epilogue_fn`) branch of
     `multi_stage_store_C`, but with a zero accumulator: for an inactive group
     (`expert_id < 0`) there is no MMA, so this walks the same output-tile
-    coordinate mapping and calls `elementwise_lambda_fn` with a zero vector at
+    coordinate mapping and calls `epilogue_fn` with a zero vector at
     each `(n, m)`. It deliberately does NOT wait on `accum_full_mbar` or read
     TMEM: the main-load and MMA warps skip inactive groups entirely (they never
     arrive on that barrier), so waiting would deadlock. Matches the naive
@@ -1340,8 +1330,6 @@ def zero_output_epilogue[
     `expert == -1` instead of storing zeros directly to C -- so callers whose
     real output lives behind the epilogue (e.g. the LoRA-B QKV expand's
     `route_qkv`) get their `-1` tokens zeroed without a separate memset.
-    With `has_epilogue_fn`, `epilogue_fn` takes the zeros in place of
-    `elementwise_lambda_fn`.
     """
     comptime MMA_M = mma_shape[0]
     comptime MMA_N = mma_shape[1]
@@ -1394,9 +1382,9 @@ def zero_output_epilogue[
                 chunk_idx * UInt32(vec_chunkM) + vec_chunkM_idx
             ) * UInt32(simd_size)
             if m < UInt32(cN):
-                apply_elementwise_epilogue[
-                    elementwise_lambda_fn, alignment=alignment
-                ](epilogue_fn, (n, m), zero_vec)
+                epilogue_fn[c_type, simd_size, alignment=alignment](
+                    (n, m), zero_vec
+                )
 
 
 # Important deviation from the normal SM100 matmul: The coordinate returned by
@@ -1432,7 +1420,6 @@ def blackwell_tma_umma_warp_specialized_kernel[
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     cta_group: Int = 2,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     EpilogueFnType: ElementwiseEpilogueFn = type_of(no_epilogue_fn),
     has_epilogue_fn: Bool = False,
     ComputeFnType: ElementwiseComputeFn = type_of(identity_compute_fn),
@@ -1502,11 +1489,9 @@ def blackwell_tma_umma_warp_specialized_kernel[
             to `SWIZZLE_128B`).
         cta_group: Number of CTAs cooperating per MMA along the M dimension
             (defaults to 2).
-        elementwise_lambda_fn: Optional elementwise epilogue applied to stored
-            C fragments (defaults to None).
         EpilogueFnType: Type of `epilogue_fn`.
-        has_epilogue_fn: Whether `epilogue_fn` stores C in place of
-            `elementwise_lambda_fn` (defaults to False). Launch with
+        has_epilogue_fn: Whether `epilogue_fn` stores C in place of the TMA
+            store (defaults to False). Launch with
             `host_arg=epilogue_fn`.
         ComputeFnType: Type of `compute_fn`.
         has_compute_fn: Whether `compute_fn` maps C in registers ahead of
@@ -1909,7 +1894,7 @@ def blackwell_tma_umma_warp_specialized_kernel[
                 continue
 
             if expert_ids[Int(scheduler.current_group_idx)] < 0:
-                comptime if Bool(elementwise_lambda_fn) or has_epilogue_fn:
+                comptime if has_epilogue_fn:
                     # An epilogue owns every store and `c_ptr` may be dangling,
                     # so zero the inactive group THROUGH the epilogue (accum==0)
                     # rather than storing zeros straight to C. Matches the naive
@@ -1926,7 +1911,6 @@ def blackwell_tma_umma_warp_specialized_kernel[
                         c_swizzle=c_swizzle,
                         cta_group=cta_group,
                         num_output_warps=num_output_warps,
-                        elementwise_lambda_fn=elementwise_lambda_fn,
                         EpilogueFnType=EpilogueFnType,
                         has_epilogue_fn=has_epilogue_fn,
                         transpose_c=transpose_c,
@@ -1970,7 +1954,6 @@ def blackwell_tma_umma_warp_specialized_kernel[
                 c_swizzle=c_swizzle,
                 cta_group=cta_group,
                 num_output_warps=num_output_warps,
-                elementwise_lambda_fn=elementwise_lambda_fn,
                 EpilogueFnType=EpilogueFnType,
                 has_epilogue_fn=has_epilogue_fn,
                 ComputeFnType=ComputeFnType,
@@ -2019,7 +2002,6 @@ def grouped_matmul_sm100_persistent[
     num_pipeline_stages: Optional[Int] = None,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     has_epilogue_fn: Bool = False,
     has_compute_fn: Bool = False,
     a_plane_splits: IndexList[2] = Index(0, 0),
@@ -2063,10 +2045,8 @@ def grouped_matmul_sm100_persistent[
             (defaults to `SWIZZLE_128B`).
         b_swizzle: TMA swizzle mode applied to B shared-memory tiles
             (defaults to `SWIZZLE_128B`).
-        elementwise_lambda_fn: Optional elementwise epilogue applied to
-            stored C fragments (defaults to None).
-        has_epilogue_fn: Whether `epilogue_fn` stores C in place of
-            `elementwise_lambda_fn` (defaults to False).
+        has_epilogue_fn: Whether `epilogue_fn` stores C in place of the
+            TMA store (defaults to False).
         has_compute_fn: Whether `compute_fn` maps C in registers ahead of
             the TMA store (defaults to False).
         a_plane_splits: Per-plane split sizes for fused LoRA QKV A-plane
@@ -2108,7 +2088,6 @@ def grouped_matmul_sm100_persistent[
         transpose_c=True,
         a_swizzle=a_swizzle,
         b_swizzle=b_swizzle,
-        elementwise_lambda_fn=elementwise_lambda_fn,
         has_epilogue_fn=has_epilogue_fn,
         ComputeFnType=ComputeFnType,
         has_compute_fn=has_compute_fn,
@@ -2148,7 +2127,6 @@ def _grouped_matmul_sm100_persistent[
     transpose_c: Bool = True,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     EpilogueFnType: ElementwiseEpilogueFn = type_of(no_epilogue_fn),
     has_epilogue_fn: Bool = False,
     ComputeFnType: ElementwiseComputeFn = type_of(identity_compute_fn),
@@ -2220,10 +2198,9 @@ def _grouped_matmul_sm100_persistent[
     # No-epilogue callers (e.g. MoE `grouped_matmul_ragged`) emit NO extra host
     # op here: `c_desc_scratch` stays `None` and the descriptor uses `c_ptr`
     # directly, exactly as before this change.
-    comptime has_epilogue = Bool(elementwise_lambda_fn) or has_epilogue_fn
     var c_desc_scratch = Optional[DeviceBuffer[c_type]](None)
     var c_desc_ptr = c_ptr
-    comptime if has_epilogue:
+    comptime if has_epilogue_fn:
         c_desc_scratch = ctx.enqueue_create_buffer[c_type](1)
         c_desc_ptr = c_desc_scratch.value().unsafe_ptr().as_unsafe_any_origin()
     var c_device = TileTensor(c_desc_ptr, row_major(M_runtime, Idx[expert_m]))
@@ -2384,7 +2361,6 @@ def _grouped_matmul_sm100_persistent[
         K_actual=K,
         a_gmem_layout=a_gmem_layout,
         b_gmem_layout=b_gmem_layout,
-        elementwise_lambda_fn=elementwise_lambda_fn,
         EpilogueFnType=EpilogueFnType,
         has_epilogue_fn=has_epilogue_fn,
         ComputeFnType=ComputeFnType,
@@ -2429,5 +2405,5 @@ def _grouped_matmul_sm100_persistent[
     # Keep the C-descriptor scratch buffer alive until the kernel launch above
     # has been enqueued (`c_device`/`c_tma_op` alias its pointer when an
     # epilogue owns all stores). Only exists in the epilogue case.
-    comptime if has_epilogue:
+    comptime if has_epilogue_fn:
         _ = c_desc_scratch^

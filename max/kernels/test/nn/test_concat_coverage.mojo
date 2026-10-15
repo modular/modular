@@ -256,27 +256,20 @@ def test_fused_concat_cpu() raises:
             return SIMD[dtype, width](Float32(1000 + flat))
 
     # Output epilogue: multiply by 2
-    @__parameter
     @inline(.always)
-    @__copy_capture(output)
     def output_fn[
         c_type: DType, width: SIMDLength, *, alignment: Int
-    ](coords: Coord, val: SIMD[c_type, width]):
+    ](coords: Coord, val: SIMD[c_type, width]) {var output}:
         comptime assert output.flat_rank >= coords.flat_rank
         output.store[width=width](coords, rebind[SIMD[dtype, width]](val * 2))
 
     var output_dyn = output.make_dynamic[.int64]()
 
-    fused_concat[
-        dtype,
-        rank,
-        input_fn,
-        output_fn,
-        axis=axis,
-        target="cpu",
-    ](
+    fused_concat[dtype, rank, axis=axis, target="cpu"](
         StaticTuple[IndexList[rank], 2](input_shape_0, input_shape_1),
         output_dyn.layout,
+        input_fn,
+        output_fn,
         DeviceContext(api="cpu"),
     )
 

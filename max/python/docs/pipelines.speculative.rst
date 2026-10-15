@@ -11,28 +11,6 @@ max.pipelines.speculative
 
 .. currentmodule:: max.pipelines.speculative
 
-Submodules
-----------
-
-.. autosummary::
-   :nosignatures:
-
-   max.pipelines.speculative.adaptive_width
-   max.pipelines.speculative.block_driver
-   max.pipelines.speculative.depth_schedule
-   max.pipelines.speculative.driver
-   max.pipelines.speculative.spec_target
-
-.. toctree::
-   :maxdepth: 1
-   :hidden:
-
-   pipelines.speculative.adaptive_width
-   pipelines.speculative.block_driver
-   pipelines.speculative.depth_schedule
-   pipelines.speculative.driver
-   pipelines.speculative.spec_target
-
 Configuration
 -------------
 
@@ -45,7 +23,14 @@ Configuration
    SpeculativeMethod
    VerifyWidthRange
 
-Token merging
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/data.rst
+
+   MAGIC_DRAFT_TOKEN_ID
+
+Draft weights
 -------------
 
 .. autosummary::
@@ -53,11 +38,18 @@ Token merging
    :toctree: generated
    :template: autosummary/class.rst
 
-   RaggedTokenMerger
+   DraftAliases
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/data.rst
+
+   NO_ALIASES
 
 .. autosummary::
    :nosignatures:
    :toctree: generated
    :template: autosummary/function.rst
 
-   ragged_token_merger
+   validate_draft_state_dict

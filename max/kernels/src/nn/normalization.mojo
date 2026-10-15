@@ -354,7 +354,9 @@ def _rms_norm_warp_tiling_subkernel[
     return norm_val
 
 
-@__name(t"rms_norm_gpu_warp_tiling_128_{dtype}_{multiply_before_cast}")
+@__name(
+    t"rms_norm_gpu_warp_tiling_128_{dtype}_{epsilon}_{weight_offset}_{multiply_before_cast}"
+)
 def rms_norm_gpu_warp_tiling_128[
     mut: Bool,
     LayoutType: TensorLayout,
@@ -370,12 +372,12 @@ def rms_norm_gpu_warp_tiling_128[
     output_fn: def[width: SIMDLength, alignment: Int](
         row: Int, col: Int, val: SIMD[dtype, width]
     ) capturing -> None,
+    epsilon: Float32,
+    weight_offset: Float32,
     multiply_before_cast: Bool,
     pdl_level: PDLLevel = PDLLevel.ON,
 ](
     gamma: TileTensor[dtype, LayoutType, origin, Engine=Engine],
-    epsilon: Float32,
-    weight_offset: Float32,
     num_rows: Int32,
     num_cols: Int32,
 ):
@@ -387,7 +389,7 @@ def rms_norm_gpu_warp_tiling_128[
     comptime align = align_of[SIMD[dtype, simd_width]]()
     comptime accum_type = get_accum_type[dtype]()
 
-    var weight_offset_accum = weight_offset.cast[accum_type]()
+    var weight_offset_accum = comptime (weight_offset.cast[accum_type]())
 
     var vec_data = SIMD[accum_type, simd_width](0)
     var tid = thread_idx.x
@@ -437,7 +439,7 @@ def rms_norm_gpu_warp_tiling_128[
 #     from L2 and normalize. Handles ragged tails and wider rows. `chunks` is
 #     unused (pass any value, e.g. 1).
 @__name(
-    t"rms_norm_gpu_warp_per_row_{dtype}_{single_pass}_{chunks}_{multiply_before_cast}"
+    t"rms_norm_gpu_warp_per_row_{dtype}_{single_pass}_{chunks}_{epsilon}_{weight_offset}_{multiply_before_cast}"
 )
 def rms_norm_gpu_warp_per_row[
     mut: Bool,
@@ -456,12 +458,12 @@ def rms_norm_gpu_warp_per_row[
     output_fn: def[width: SIMDLength, alignment: Int](
         row: Int, col: Int, val: SIMD[dtype, width]
     ) capturing -> None,
+    epsilon: Float32,
+    weight_offset: Float32,
     multiply_before_cast: Bool,
     pdl_level: PDLLevel = PDLLevel.ON,
 ](
     gamma: TileTensor[dtype, LayoutType, origin, Engine=Engine],
-    epsilon: Float32,
-    weight_offset: Float32,
     num_rows: Int32,
     num_cols: Int32,
 ):
@@ -473,8 +475,8 @@ def rms_norm_gpu_warp_per_row[
     comptime align = align_of[SIMD[dtype, simd_width]]()
     comptime accum_type = get_accum_type[dtype]()
 
-    var eps_accum = epsilon.cast[accum_type]()
-    var weight_offset_accum = weight_offset.cast[accum_type]()
+    var eps_accum = comptime (epsilon.cast[accum_type]())
+    var weight_offset_accum = comptime (weight_offset.cast[accum_type]())
 
     var tid = thread_idx.x
     var warp_in_block = ufloordiv(tid, WARP_SIZE)
@@ -523,7 +525,7 @@ def rms_norm_gpu_warp_per_row[
                         ).cast[dtype]()
                     else:
                         norm_val = (vec_data[c] * norm_factor).cast[dtype]() * (
-                            gamma_val + weight_offset.cast[dtype]()
+                            gamma_val + comptime (weight_offset.cast[dtype]())
                         )
                     output_fn[simd_width, align](row, col, norm_val)
     else:
@@ -559,7 +561,7 @@ def rms_norm_gpu_warp_per_row[
                         norm_val = (v * norm_factor * gamma_accum).cast[dtype]()
                     else:
                         norm_val = (v * norm_factor).cast[dtype]() * (
-                            gamma_val + weight_offset.cast[dtype]()
+                            gamma_val + comptime (weight_offset.cast[dtype]())
                         )
                     output_fn[simd_width, align](row, col, norm_val)
                     col += stride
@@ -629,7 +631,7 @@ struct _RowSpec[element_types: TypeList[Trait=CoordLike, ...]](
 #      (the ISETP/SEL bloat) are dropped at comptime. A guarded variant
 #      (`exact_fit=False`) handles ragged tails.
 @__name(
-    t"rms_norm_gpu_warp_tiling_{dtype}_{chunks_per_thread}_{exact_fit}_{multiply_before_cast}"
+    t"rms_norm_gpu_warp_tiling_{dtype}_{chunks_per_thread}_{exact_fit}_{epsilon}_{weight_offset}_{multiply_before_cast}"
 )
 def rms_norm_gpu_warp_tiling[
     mut: Bool,
@@ -648,13 +650,13 @@ def rms_norm_gpu_warp_tiling[
     output_fn: def[width: SIMDLength, alignment: Int](
         Coord, SIMD[dtype, width]
     ) capturing -> None,
+    epsilon: Float32,
+    weight_offset: Float32,
     multiply_before_cast: Bool,
     pdl_level: PDLLevel = PDLLevel.ON,
 ](
     row_spec: _RowSpec[shape_types],
     gamma: TileTensor[dtype, LayoutType, origin, Engine=Engine],
-    epsilon: Float32,
-    weight_offset: Float32,
 ):
     comptime assert (
         shape_types.length == rank
@@ -666,8 +668,8 @@ def rms_norm_gpu_warp_tiling[
     comptime align = align_of[SIMD[dtype, simd_width]]()
     comptime accum_type = get_accum_type[dtype]()
 
-    var eps_accum = epsilon.cast[accum_type]()
-    var weight_offset_accum = weight_offset.cast[accum_type]()
+    var eps_accum = comptime (epsilon.cast[accum_type]())
+    var weight_offset_accum = comptime (weight_offset.cast[accum_type]())
 
     var tid = thread_idx.x
     var row = block_idx.x
@@ -731,7 +733,7 @@ def rms_norm_gpu_warp_tiling[
                     ]()
                 else:
                     return (vec_data[c] * norm_factor).cast[dtype]() * (
-                        gamma_val[c] + weight_offset.cast[dtype]()
+                        gamma_val[c] + comptime (weight_offset.cast[dtype]())
                     )
 
             comptime if exact_fit:
@@ -812,7 +814,9 @@ def _rms_norm_gpu_block_subkernel[
             output_fn[simd_width, align](row, offset, norm_val)
 
 
-@__name(t"rms_norm_gpu_block_{dtype}_{multiply_before_cast}")
+@__name(
+    t"rms_norm_gpu_block_{dtype}_{epsilon}_{weight_offset}_{multiply_before_cast}"
+)
 def rms_norm_gpu_block[
     mut: Bool,
     LayoutType: TensorLayout,
@@ -828,12 +832,12 @@ def rms_norm_gpu_block[
     output_fn: def[width: SIMDLength, alignment: Int](
         row: Int, col: Int, val: SIMD[dtype, width]
     ) capturing -> None,
+    epsilon: Float32,
+    weight_offset: Float32,
     multiply_before_cast: Bool,
     pdl_level: PDLLevel = PDLLevel.ON,
 ](
     gamma: TileTensor[dtype, LayoutType, origin, Engine=Engine],
-    epsilon: Float32,
-    weight_offset: Float32,
     num_cols: Int32,
 ):
     var _num_cols = Int(num_cols)
@@ -859,7 +863,7 @@ def rms_norm_gpu_block[
             unified_output_fn,
             gamma,
             epsilon,
-            weight_offset.cast[dtype](),
+            comptime (weight_offset.cast[dtype]()),
             _num_cols,
         )
 
@@ -872,13 +876,13 @@ def rms_norm_gpu[
     output_fn: def[width: SIMDLength, alignment: Int](
         Coord, SIMD[dtype, width]
     ) capturing -> None,
+    epsilon: Float32,
+    weight_offset: Float32,
     multiply_before_cast: Bool,
     pdl_level: PDLLevel = PDLLevel.OVERLAP_AT_BEGINNING,
 ](
     shape: Coord,
     gamma: TileTensor[mut=False, dtype, ...],
-    epsilon: Float32,
-    weight_offset: Scalar[dtype],
     ctx: DeviceContext,
 ) raises:
     # `shape` arrives as a `Coord`, with statically-known outer dims encoded in
@@ -1054,14 +1058,14 @@ def rms_norm_gpu[
                 exact_fit,
                 input_fn,
                 output_fn,
+                epsilon=epsilon,
+                weight_offset=weight_offset,
                 multiply_before_cast=multiply_before_cast,
                 pdl_level=pdl_level,
             ]
             ctx.enqueue_function[kernel](
                 _RowSpec[type_of(shape).element_types](shape, Int32(cols)),
                 gamma,
-                epsilon.cast[.float32](),
-                weight_offset.cast[.float32](),
                 grid_dim=rows,
                 block_dim=threads_per_block,
                 attributes=pdl_launch_attributes(pdl_level),
@@ -1094,13 +1098,13 @@ def rms_norm_gpu[
                 warps_per_block,
                 input_fn_2d,
                 output_fn_2d,
+                epsilon=epsilon,
+                weight_offset=weight_offset,
                 multiply_before_cast=multiply_before_cast,
                 pdl_level=pdl_level,
             ]
             ctx.enqueue_function[kernel](
                 gamma,
-                epsilon.cast[.float32](),
-                weight_offset.cast[.float32](),
                 Int32(rows),
                 Int32(cols),
                 grid_dim=grid_dim,
@@ -1143,13 +1147,13 @@ def rms_norm_gpu[
                             cc,
                             input_fn_2d,
                             output_fn_2d,
+                            epsilon=epsilon,
+                            weight_offset=weight_offset,
                             multiply_before_cast=multiply_before_cast,
                             pdl_level=pdl_level,
                         ]
                         ctx.enqueue_function[kernel](
                             gamma,
-                            epsilon.cast[.float32](),
-                            weight_offset.cast[.float32](),
                             Int32(rows),
                             Int32(cols),
                             grid_dim=grid_dim,
@@ -1168,13 +1172,13 @@ def rms_norm_gpu[
                     1,
                     input_fn_2d,
                     output_fn_2d,
+                    epsilon=epsilon,
+                    weight_offset=weight_offset,
                     multiply_before_cast=multiply_before_cast,
                     pdl_level=pdl_level,
                 ]
                 ctx.enqueue_function[kernel](
                     gamma,
-                    epsilon.cast[.float32](),
-                    weight_offset.cast[.float32](),
                     Int32(rows),
                     Int32(cols),
                     grid_dim=grid_dim,
@@ -1228,13 +1232,13 @@ def rms_norm_gpu[
                 max_warps_per_block,
                 input_fn_2d,
                 output_fn_2d,
+                epsilon=epsilon,
+                weight_offset=weight_offset,
                 multiply_before_cast=multiply_before_cast,
                 pdl_level=pdl_level,
             ]
             ctx.enqueue_function[kernel](
                 gamma,
-                epsilon.cast[.float32](),
-                weight_offset.cast[.float32](),
                 Int32(cols),
                 grid_dim=grid_dim,
                 block_dim=block_dim,
@@ -1250,13 +1254,13 @@ def rms_norm_gpu[
             max_warps_per_block,
             input_fn_2d,
             output_fn_2d,
+            epsilon=epsilon,
+            weight_offset=weight_offset,
             multiply_before_cast=multiply_before_cast,
             pdl_level=pdl_level,
         ]
         ctx.enqueue_function[kernel](
             gamma,
-            epsilon.cast[.float32](),
-            weight_offset.cast[.float32](),
             Int32(cols),
             grid_dim=grid_dim,
             block_dim=block_dim,
@@ -1279,13 +1283,13 @@ def rms_norm_cpu[
         Int, Int, SIMD[dtype, width]
     ) -> None,
     //,
+    epsilon: Float32,
+    weight_offset: Float32,
     multiply_before_cast: Bool,
 ](
     input_fn: InputFnType,
     output_fn: OutputFnType,
     gamma: TileTensor[mut=False, dtype, ...],
-    epsilon: Float32,
-    weight_offset: Scalar[dtype],
     out_shape: Coord,
 ):
     comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
@@ -1314,11 +1318,13 @@ def rms_norm_cpu[
             sum_val += input_fn[1](row, col).cast[intermediate_type]() ** 2
 
         var mean_val = _sum_to_mean(sum_val, num_cols)
-        var norm_factor = rsqrt(mean_val + epsilon.cast[intermediate_type]())
+        var norm_factor = rsqrt(
+            mean_val + comptime (epsilon.cast[intermediate_type]())
+        )
 
         def _normalize[
             simd_width: Int
-        ](col: Int) {gamma, weight_offset, imm input_fn, imm output_fn, mut}:
+        ](col: Int) {gamma, imm input_fn, imm output_fn, mut}:
             var input_val = input_fn[simd_width](row, col).cast[
                 intermediate_type
             ]()
@@ -1328,13 +1334,15 @@ def rms_norm_cpu[
             var norm_val: SIMD[dtype, simd_width]
 
             if multiply_before_cast:
-                var gamma_offset = gamma_val + weight_offset.cast[dtype]()
+                var gamma_offset = gamma_val + comptime (
+                    weight_offset.cast[dtype]()
+                )
                 norm_val = (input_val * norm_factor).cast[
                     dtype
                 ]() * gamma_offset
             else:
                 norm_val = (input_val * norm_factor).cast[dtype]() * (
-                    gamma_val + weight_offset.cast[dtype]()
+                    gamma_val + comptime (weight_offset.cast[dtype]())
                 )
 
             output_fn[simd_width, 1](row, col, norm_val)
@@ -1349,14 +1357,14 @@ def rms_norm_cpu[
         Coord, SIMD[dtype, width]
     ) -> None,
     //,
+    epsilon: Float32,
+    weight_offset: Float32,
     multiply_before_cast: Bool,
 ](
     input_fn: InputFnType,
     output_fn: OutputFnType,
     shape: Coord,
     gamma: TileTensor[mut=False, dtype, ...],
-    epsilon: Float32,
-    weight_offset: Scalar[dtype],
     ctx: Optional[DeviceContext.CPU] = None,
 ):
     comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
@@ -1370,14 +1378,7 @@ def rms_norm_cpu[
 
     def task_func(
         thread_id: Int,
-    ) {
-        var chunk_size,
-        var prod_all_but_last_dim,
-        var last_dim,
-        var epsilon,
-        var weight_offset,
-        imm,
-    }:
+    ) {var chunk_size, var prod_all_but_last_dim, var last_dim, imm,}:
         var num_rows = min(
             chunk_size, prod_all_but_last_dim - thread_id * chunk_size
         )
@@ -1407,12 +1408,14 @@ def rms_norm_cpu[
             indices[rank - 1] = col
             return input_fn[simd_width](Coord(indices))
 
-        rms_norm_cpu[multiply_before_cast=multiply_before_cast](
+        rms_norm_cpu[
+            epsilon=epsilon,
+            weight_offset=weight_offset,
+            multiply_before_cast=multiply_before_cast,
+        ](
             input_fn_2d,
             output_fn_2d,
             gamma,
-            epsilon,
-            weight_offset,
             out_shape=Coord(num_rows, last_dim),
         )
 
@@ -1426,12 +1429,12 @@ def rms_norm_cpu[
     output_fn: def[width: SIMDLength, alignment: Int](
         Coord, SIMD[dtype, width]
     ) capturing -> None,
+    epsilon: Float32,
+    weight_offset: Float32,
     multiply_before_cast: Bool,
 ](
     shape: Coord,
     gamma: TileTensor[mut=False, dtype, ...],
-    epsilon: Float32,
-    weight_offset: Scalar[dtype],
     ctx: Optional[DeviceContext.CPU] = None,
 ):
     @inline(.always)
@@ -1444,13 +1447,15 @@ def rms_norm_cpu[
     ](coords: Coord, val: SIMD[dtype, width]):
         output_fn[width, alignment](coords, val)
 
-    rms_norm_cpu[multiply_before_cast=multiply_before_cast](
+    rms_norm_cpu[
+        epsilon=epsilon,
+        weight_offset=weight_offset,
+        multiply_before_cast=multiply_before_cast,
+    ](
         input_fn_value,
         output_fn_value,
         shape,
         gamma,
-        epsilon,
-        weight_offset,
         ctx,
     )
 
@@ -1482,13 +1487,13 @@ def _rms_norm_impl[
         Coord, SIMD[dtype, width]
     ) capturing -> None,
     /,
+    epsilon: Float32,
+    weight_offset: Float32,
     target: StaticString = "cpu",
     multiply_before_cast: Bool = True,
 ](
     shape: Coord,
     gamma: TileTensor[mut=False, dtype, ...],
-    epsilon: Float32,
-    weight_offset: Scalar[dtype],
     ctx: DeviceContext,
 ) raises:
     comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
@@ -1519,12 +1524,12 @@ def _rms_norm_impl[
         rms_norm_cpu[
             input_fn_target,
             output_fn,
+            epsilon=epsilon,
+            weight_offset=weight_offset,
             multiply_before_cast=multiply_before_cast,
         ](
             shape,
             gamma,
-            epsilon,
-            weight_offset,
             Optional(ctx.assert_cpu_target()),
         )
     elif is_gpu[target]():
@@ -1532,12 +1537,12 @@ def _rms_norm_impl[
             rank,
             input_fn_target,
             output_fn,
+            epsilon=epsilon,
+            weight_offset=weight_offset,
             multiply_before_cast=multiply_before_cast,
         ](
             shape,
             gamma,
-            epsilon,
-            weight_offset,
             ctx,
         )
     else:

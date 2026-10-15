@@ -80,7 +80,7 @@ class DSparkAttention(DeepseekV4Attention):
         )
         kv = self.latent(main_x, freqs_cis)
         cache.swa.store(
-            self.layer_index(main_x.device).swa,
+            self.layer_index().swa,
             KEY,
             ops.reshape(kv, [rows.total, self.head_dim]),
             rows.offsets,

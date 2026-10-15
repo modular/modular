@@ -64,10 +64,12 @@ def get_sign(x: StringSlice[_]) -> Tuple[Float64, type_of(x)]:
 
 # Powers of 10 and integers below 2**53 are exactly representable as Float64.
 # Thus any operation done on them must be exact.
+@inline(.always)
 def can_use_clinger_fast_path(w: UInt64, q: Int64) -> Bool:
     return w <= UInt64(2**53) and (Int64(-22) <= q <= Int64(22))
 
 
+@inline(.always)
 def clinger_fast_path(w: UInt64, q: Int64) -> Float64:
     if q >= 0:
         return Float64(w) * global_constant[POWERS_OF_10]()[q]
@@ -75,6 +77,7 @@ def clinger_fast_path(w: UInt64, q: Int64) -> Float64:
         return Float64(w) / global_constant[POWERS_OF_10]()[-q]
 
 
+@inline(.always)
 def full_multiplication(x: UInt64, y: UInt64) -> UInt128Decomposed:
     # Note that there are assembly instructions to
     # do all that on some architectures.
@@ -83,6 +86,7 @@ def full_multiplication(x: UInt64, y: UInt64) -> UInt128Decomposed:
     return UInt128Decomposed(result)
 
 
+@inline(.always)
 def get_128_bit_truncated_product(w: UInt64, q: Int64) -> UInt128Decomposed:
     comptime bit_precision = MANTISSA_EXPLICIT_BITS + 3
     var index = 2 * (q - SMALLEST_POWER_OF_5)
@@ -107,6 +111,7 @@ def create_subnormal_float64(m: UInt64) -> Float64:
     return create_float64(m, -1023)
 
 
+@inline(.always)
 def create_float64(m: UInt64, p: Int64) -> Float64:
     var m_mask = UInt64(2**MANTISSA_EXPLICIT_BITS - 1)
     var p_shifted = UInt64(p + 1023) << MANTISSA_EXPLICIT_BITS
@@ -114,6 +119,7 @@ def create_float64(m: UInt64, p: Int64) -> Float64:
     return std.memory.bitcast[.float64](representation_as_int)
 
 
+@inline(.always)
 def lemire_algorithm(var w: UInt64, var q: Int64) -> Float64:
     # This algorithm has 22 steps described
     # in https://arxiv.org/pdf/2101.11408 (algorithm 1)
@@ -230,6 +236,14 @@ def _is_digit(byte: Byte) -> Bool:
     return byte >= Byte(ord("0")) and byte <= Byte(ord("9"))
 
 
+# Bytes of `word` that are zero get their high bit set (the classic SWAR
+# zero-byte test); everything else is cleared.
+@inline(.always)
+def _zero_byte_mask(word: UInt64) -> UInt64:
+    var partial = (word & 0x7F7F7F7F7F7F7F7F) + 0x7F7F7F7F7F7F7F7F
+    return ~(partial | word | 0x7F7F7F7F7F7F7F7F)
+
+
 # Number of leading bytes of the word (lowest addresses first) that are ASCII
 # digits, 0 to 8. A byte is a digit when `byte - '0'` is at most 9; the mask
 # sets bit 7 of every byte that is not. The subtraction can borrow into the
@@ -251,6 +265,20 @@ def _digit_prefix_length(chunk: UInt64) -> Int:
 # admitted by the range and rejected by the digit tests that follow). Same
 # construction as `_digit_prefix_length`.
 @inline(.always)
+def _number_prefix_length(chunk: UInt64) -> Int:
+    var t = chunk - 0x2D2D2D2D2D2D2D2D
+    var other = (
+        ((t & 0x7F7F7F7F7F7F7F7F) + 0x7373737373737373) | t
+    ) & 0x8080808080808080
+    if other == 0:
+        return 8
+    return Int(std.bit.count_trailing_zeros(other)) >> 3
+
+
+# Value of the first `count` digit bytes of the word (1 to 8). The digits are
+# shifted to the most significant positions and the freed bytes become '0',
+# so the eight-digit fold yields the `count`-digit number.
+@inline(.always)
 def _digit_prefix_value(chunk: UInt64, count: Int) -> UInt64:
     if count == 8:
         return _eight_digits_value(chunk)
@@ -258,6 +286,26 @@ def _digit_prefix_value(chunk: UInt64, count: Int) -> UInt64:
     return _eight_digits_value(
         (chunk << shift) | (0x3030303030303030 >> (UInt64(64) - shift))
     )
+
+
+# Like `_load_eight`, but near the end of the buffer the bytes past the end
+# read as zero, which no digit test accepts, so prefix logic stays correct.
+# A buffer of at least eight bytes uses one overlapping load ending at the
+# buffer end; only shorter buffers assemble the word byte by byte.
+@inline(.always)
+def _load_up_to_eight(bytes: ImmSpan[Byte, _], pos: Int) -> UInt64:
+    var end = len(bytes)
+    if pos >= end:
+        return 0
+    if pos + 8 <= end:
+        return _load_eight(bytes, pos)
+    if end >= 8:
+        return _load_eight(bytes, end - 8) >> UInt64(8 * (pos + 8 - end))
+    var word: UInt64 = 0
+    var ptr = bytes.unsafe_ptr()
+    for j in range(end - pos):
+        word |= UInt64(ptr[unsafe_offset=pos + j]) << UInt64(8 * j)
+    return word
 
 
 @inline(.always)
@@ -397,6 +445,196 @@ struct DecimalParts(TrivialRegisterPassable):
             self.push_digit(byte - ord_0, in_fraction)
             pos += 1
         return pos - start
+
+
+@fieldwise_init
+struct FastDecimal(TrivialRegisterPassable):
+    """The result of `scan_short_decimal`: a mantissa that needed no
+    truncation, so it converts without the bookkeeping of `DecimalParts`.
+    """
+
+    var mantissa: UInt64
+    """The digits as an integer."""
+    var exponent: Int
+    """Power of ten to apply to `mantissa` (minus the fraction length)."""
+    var end: Int
+    """Position just past the mantissa text."""
+    var int_digits: Int
+    """Digits before the point."""
+    var frac_digits: Int
+    """Digits after the point, or -1 when there is no point."""
+    var ok: Bool
+    """Whether the fast path applied; when `False` use `DecimalParts`."""
+    var negative: Bool
+    """Whether the text began with a minus sign."""
+    var terminator: Byte
+    """The byte at `end`, or zero when the text ends there. Saves the caller
+    a dependent load when it looks for an exponent."""
+
+
+comptime _FAST_FAIL = FastDecimal(0, 0, 0, 0, -1, False, False, 0)
+
+
+@inline(.always)
+def scan_short_decimal(bytes: ImmSpan[Byte, _], start: Int) -> FastDecimal:
+    """Scans `[-]digits[.digits]` at `start` when the number is short.
+
+    A number whose digits and point fit in one eight-byte word, the common
+    case, is folded once: the point is cut out of the word and the digits
+    on both sides of it become a single run. Otherwise an integer part
+    under eight digits and a fraction under sixteen with at most nineteen
+    digits in total are read with one word load per run and one
+    multiply-add each. Neither shape needs truncation. Anything longer
+    returns `ok=False` and the caller falls back to
+    `DecimalParts.scan_digits`.
+
+    Args:
+        bytes: The text.
+        start: Where the number begins, at its sign if it has one.
+
+    Returns:
+        The scanned number, or `_FAST_FAIL`.
+    """
+    comptime ord_dot = Byte(ord("."))
+    comptime ord_dash = Byte(ord("-"))
+    var end = len(bytes)
+    if start < 0 or start >= end:
+        return _FAST_FAIL
+    var ptr = bytes.unsafe_ptr()
+    var word = _load_up_to_eight(bytes, start)
+    # The one-word fold applies when the mantissa ends inside the word. Its
+    # length is measured first with one class test, so the next position
+    # depends on a short chain (load, mask, count) and everything else,
+    # the point, the merge and the multiplies, runs off that path. Long
+    # numbers fail the length test and take the general path below.
+    var length = _number_prefix_length(word)
+    if length < 8:
+        # The sign is part of the measured run, so the next position never
+        # waits on it; it is only shifted out of the digits here.
+        var negative = word.cast[DType.uint8]() == ord_dash
+        var digits = word >> 8 if negative else word
+        var count = length - Int(negative)
+        var terminator = (word >> UInt64(8 * length)).cast[DType.uint8]()
+        if count > 0:
+            var keep = ~UInt64(0) >> UInt64(64 - 8 * count)
+            var points = _zero_byte_mask((digits ^ 0x2E2E2E2E2E2E2E2E) | ~keep)
+            var mantissa: UInt64 = 0
+            if points == 0:
+                if _digit_prefix_length(digits) >= count:
+                    mantissa = _digit_prefix_value(digits, count)
+                    return FastDecimal(
+                        mantissa,
+                        0,
+                        start + length,
+                        count,
+                        -1,
+                        True,
+                        negative,
+                        terminator,
+                    )
+            else:
+                var point = Int(std.bit.count_trailing_zeros(points)) >> 3
+                var low = (UInt64(1) << UInt64(8 * point)) - 1
+                var merged = (digits & low) | ((digits >> 8) & ~low)
+                var total = count - 1
+                # Exactly one point, digits everywhere else; anything else
+                # (`1.2.3`, `1/2`, `1-2`) is left to the general path and
+                # its caller.
+                if _digit_prefix_length(merged) >= total:
+                    if total > 0:
+                        mantissa = _digit_prefix_value(merged, total)
+                    var frac_digits = total - point
+                    return FastDecimal(
+                        mantissa,
+                        -frac_digits,
+                        start + length,
+                        point,
+                        frac_digits,
+                        True,
+                        negative,
+                        terminator,
+                    )
+    # A sign shifts the word by a byte, so seven integer digits may hide an
+    # eighth; that case is left to `DecimalParts` like eight digits are.
+    var negative = word.cast[DType.uint8]() == ord_dash
+    var lead = word >> 8 if negative else word
+    var pos = start + Int(negative)
+    var int_digits = _digit_prefix_length(lead)
+    if int_digits == 8 or (negative and int_digits == 7):
+        return _FAST_FAIL
+    var mantissa: UInt64 = 0
+    if int_digits > 0:
+        mantissa = _digit_prefix_value(lead, int_digits)
+    pos += int_digits
+    var frac_digits = -1
+    if pos < end and ptr[unsafe_offset=pos] == ord_dot:
+        pos += 1
+        comptime pow10: Array[UInt64, 9] = [
+            1,
+            10,
+            100,
+            1000,
+            10000,
+            100000,
+            1000000,
+            10000000,
+            100000000,
+        ]
+        var first = _load_up_to_eight(bytes, pos)
+        var count = _digit_prefix_length(first)
+        if count < 8:
+            frac_digits = count
+            if count > 0:
+                mantissa = mantissa * materialize[pow10]()[
+                    count
+                ] + _digit_prefix_value(first, count)
+            pos += count
+        else:
+            mantissa = mantissa * 100000000 + _eight_digits_value(first)
+            pos += 8
+            var second = _load_up_to_eight(bytes, pos)
+            var more = _digit_prefix_length(second)
+            if more == 8:
+                return _FAST_FAIL
+            frac_digits = 8 + more
+            if more > 0:
+                mantissa = mantissa * materialize[pow10]()[
+                    more
+                ] + _digit_prefix_value(second, more)
+            pos += more
+    var fraction = frac_digits if frac_digits > 0 else 0
+    if int_digits + fraction > _MAX_SIGNIFICANT_DIGITS:
+        return _FAST_FAIL
+    var terminator: Byte = 0
+    if pos < end:
+        terminator = ptr[unsafe_offset=pos]
+    return FastDecimal(
+        mantissa,
+        -fraction,
+        pos,
+        int_digits,
+        frac_digits,
+        True,
+        negative,
+        terminator,
+    )
+
+
+@inline(.always)
+def short_decimal_to_float64(mantissa: UInt64, exponent: Int) -> Float64:
+    """Converts an untruncated mantissa and decimal exponent.
+
+    Args:
+        mantissa: The digits as an integer (below `10**19`).
+        exponent: The power of ten to apply.
+
+    Returns:
+        The correctly rounded magnitude.
+    """
+    var q = Int64(exponent)
+    if can_use_clinger_fast_path(mantissa, q):
+        return clinger_fast_path(mantissa, q)
+    return lemire_algorithm(mantissa, q)
 
 
 @inline(.always)
@@ -657,6 +895,29 @@ def _parse_decimal_text(text: StringSpan) raises -> Float64:
             text,
             "' should be a digit or dot to convert it to a float.",
         )
+    # The word path pays off from about sixteen bytes; shorter strings are
+    # cheaper digit by digit.
+    if end >= 16:
+        var fast = scan_short_decimal(bytes, 0)
+        if (
+            fast.ok
+            and not fast.negative
+            and fast.int_digits + max(fast.frac_digits, 0) > 0
+        ):
+            var pos = fast.end
+            var exponent = 0
+            if pos < end:
+                if not (
+                    ptr[unsafe_offset=pos] == ord_e
+                    or ptr[unsafe_offset=pos] == ord_E
+                ):
+                    raise Error(
+                        "Invalid character(s) in the number: '", text, "'"
+                    )
+                exponent = _parse_exponent(text, bytes, pos)
+            return short_decimal_to_float64(
+                fast.mantissa, fast.exponent + exponent
+            )
     var parts = DecimalParts()
     var pos = 0
     var digits = parts.scan_digits(bytes, pos, False)

@@ -158,7 +158,8 @@ __extension DeviceFunction:
             link_options=Self.link_options,
         ]()
         self._capture_sizes = Self._snapshot_capture_sizes(self._func_impl)
-        var debug_level = String(DebugLevel)
+
+        comptime debug_level = DebugLevel.level
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_loadFunction",
@@ -170,7 +171,7 @@ __extension DeviceFunction:
                 CStringSpan[ImmStaticOrigin],
                 c_size_t,
                 Int32,
-                CStringSpan[origin_of(debug_level)],
+                CStringSpan[ImmStaticOrigin],
                 Int32,
             ](
                 Pointer(to=result),

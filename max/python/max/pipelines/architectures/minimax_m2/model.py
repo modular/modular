@@ -22,9 +22,9 @@ from max._core.engine import Model
 from max.driver import Buffer, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import Graph
 from max.nn.comm.ep import EPCommInitializer, EPConfig
 from max.nn.comm.ep.ep_config import calculate_ep_max_tokens_per_rank
+from max.pipelines.lib.graph_specs import GraphRole, GraphSpec
 from max.pipelines.lib.interfaces import AlwaysSignalBuffersMixin
 from typing_extensions import override
 
@@ -203,21 +203,14 @@ class MiniMaxM2Model(AlwaysSignalBuffersMixin, LlamaModelBase):
         )
 
     @override
-    def _build_graph_for_compile(
-        self,
-        session: InferenceSession,
-        state_dict: dict[str, Any],
-        model_config: Any,
-    ) -> tuple[Graph, dict[str, Any]]:
-        del session
+    def graph_specs(self, model_config: Any) -> dict[str, GraphSpec]:
+        """Returns the decoder."""
         assert isinstance(model_config, MiniMaxM2Config)
         nn_model = MiniMaxM2(model_config)
         graph_inputs = nn_model.input_types(self.kv_params)
-        num_devices = len(self.devices)
-        ep_enabled = model_config.ep_config is not None
 
         nn_model.load_state_dict(
-            state_dict,
+            self.state_dict,
             override_quantization_encoding=True,
             weight_alignment=1,
             strict=(
@@ -226,54 +219,11 @@ class MiniMaxM2Model(AlwaysSignalBuffersMixin, LlamaModelBase):
                 )
             ),
         )
-        weights_registry = nn_model.state_dict()
-
-        with Graph("minimax_m2", input_types=graph_inputs) as graph:
-            # Unpack inputs in the exact order declared by
-            # MiniMaxM2.input_types (and produced by MiniMaxM2Inputs.buffers):
-            #   tokens, input_row_offsets, return_n_logits,
-            #   [data_parallel_splits, host_input_row_offsets]  (DP only),
-            #   *signals, *kv, *ep_inputs                       (EP only)
-            graph_inputs_iter = iter(graph.inputs)
-            tokens = next(graph_inputs_iter)
-            input_row_offsets = next(graph_inputs_iter)
-            return_n_logits = next(graph_inputs_iter)
-
-            data_parallel_splits = None
-            host_input_row_offsets = None
-            # Gate on the same predicate input_types used to declare these, so
-            # the declaration and this unpacking stay in lockstep (dp_attention
-            # is equivalent to data_parallel_degree > 1).
-            if nn_model.dp_attention:
-                data_parallel_splits = next(graph_inputs_iter)
-                host_input_row_offsets = next(graph_inputs_iter)
-
-            signal_buffers = [
-                next(graph_inputs_iter).buffer for _ in range(num_devices)
-            ]
-            num_kv_inputs = len(nn_model.kv_params.flattened_kv_inputs())
-            kv_cache_inputs = [
-                next(graph_inputs_iter) for _ in range(num_kv_inputs)
-            ]
-            kv_collections = self._unflatten_kv_inputs(kv_cache_inputs)
-
-            # Remaining inputs (if any) are the EP communication buffers.
-            ep_inputs = list(graph_inputs_iter) if ep_enabled else None
-
-            outputs = nn_model(
-                tokens.tensor,
-                kv_collections,
-                return_n_logits.tensor,
-                input_row_offsets.tensor,
-                signal_buffers,
-                ep_inputs,
-                data_parallel_splits.tensor
-                if data_parallel_splits is not None
-                else None,
-                host_input_row_offsets.tensor
-                if host_input_row_offsets is not None
-                else None,
+        return {
+            GraphRole.DECODER: GraphSpec(
+                nn_model,
+                "minimax_m2",
+                graph_inputs,
+                weights=nn_model.state_dict(),
             )
-
-            graph.output(*outputs)
-            return graph, weights_registry
+        }

@@ -5,7 +5,7 @@ description: "Syntax essentials: the core you reach for first."
 hide_title: true
 hide_table_of_contents: true
 compiler_verified: "2026-10-02, Mojo 1.2.0.dev2026100205 (7791487a)"
-last_updated: "2026-10-10"
+last_updated: "2026-10-15 (restores match)"
 build_version: "1.2.0.dev"
 ---
 
@@ -153,7 +153,7 @@ Cast with `String(...)` to use one elsewhere.
 
 </Panel>
 
-<Panel title="Control flow" summary="Conditional statements in Mojo.">
+<Panel title="Control flow" summary="Conditional statements and pattern matching in Mojo.">
 
 ```mojo
 if x > 0:
@@ -163,9 +163,20 @@ elif x == 0:
 else:
     print("negative")
 
+# Pattern matching syntax
+match x:
+    case 2: # Match equality
+        print("is exactly two")
+    case _ if x.is_power_of_two(): # Match with condition
+        print("power of two")
+    case _:
+        print("not power of two") # Universal catch-all match
+
 # ternary
 var kind = "even" if x % 2 == 0 else "odd"
 ```
+
+Cases are checked top to bottom, and only the first match runs.
 
 </Panel>
 

@@ -56,7 +56,6 @@ from layout import Coord, TileTensor, coord_to_index_list, row_major
 from nn.normalization import rms_norm_fused_fp8
 
 from std.utils import IndexList
-from std.utils.index import Index
 from std.utils.numerics import max_finite
 
 
@@ -85,7 +84,7 @@ def _verify_results[
     var length = num_rows * num_cols
     var ctx0 = list_of_ctx[0]
 
-    var gamma_tensor = TileTensor(gamma_dev, row_major(Coord(Index(num_cols))))
+    var gamma_tensor = TileTensor(gamma_dev, row_major(Coord(num_cols)))
 
     # Fresh output buffers for verification (avoid CacheBustingBuffer
     # size mismatch during D2H copy).
@@ -99,17 +98,17 @@ def _verify_results[
         init_signal_buffer(signal_buffers[i], list_of_ctx[i])
 
     comptime InTensorType = TileTensor[
-        in_dtype, type_of(row_major(Coord(Index(0, num_cols)))), ImmutAnyOrigin
+        in_dtype, type_of(row_major(Coord(0, num_cols))), ImmutAnyOrigin
     ]
     comptime OutTensorType = TileTensor[
-        in_dtype, type_of(row_major(Coord(Index(0, num_cols)))), MutAnyOrigin
+        in_dtype, type_of(row_major(Coord(0, num_cols))), MutAnyOrigin
     ]
     var in_tensors = Array[InTensorType, ngpus](
         fill_with=lambda (i: Int) -> InTensorType: TileTensor(
             rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
                 cb_inputs[i].offset_ptr(0)
             ),
-            row_major(Coord(Index(num_rows, num_cols))),
+            row_major(Coord(num_rows, num_cols)),
         )
     )
     var out_tensors = Array[OutTensorType, ngpus](
@@ -117,7 +116,7 @@ def _verify_results[
             ref ar_out_dev, imm num_rows
         } -> OutTensorType: TileTensor(
             ar_out_dev[i],
-            row_major(Coord(Index(num_rows, num_cols))),
+            row_major(Coord(num_rows, num_cols)),
         ).as_unsafe_any_origin()
     )
     for i in range(ngpus):
@@ -157,7 +156,7 @@ def _verify_results[
         IndexList[2](num_rows, num_cols),
         TileTensor(
             v_fused_fp8_dev,
-            row_major(Coord(Index(num_rows, num_cols))),
+            row_major(Coord(num_rows, num_cols)),
         ),
         gamma_tensor,
         epsilon,
@@ -166,7 +165,7 @@ def _verify_results[
         scale_ub,
         TileTensor(
             v_fused_scales_dev,
-            row_major(Coord(Index(num_rows, 1))),
+            row_major(Coord(num_rows, 1)),
         ),
     )
 
@@ -184,7 +183,7 @@ def _verify_results[
             in_tensors,
             TileTensor(
                 v_ff_fp8_dev,
-                row_major(Coord(Index(num_rows, num_cols))),
+                row_major(Coord(num_rows, num_cols)),
             ),
             gamma_tensor,
             epsilon,
@@ -192,7 +191,7 @@ def _verify_results[
             scale_ub,
             TileTensor(
                 v_ff_scales_dev,
-                row_major(Coord(Index(num_rows, 1))),
+                row_major(Coord(num_rows, 1)),
             ),
             rank_sigs,
             list_of_ctx[i],
@@ -322,7 +321,7 @@ def _verify_add_results[
     var length = num_rows * num_cols
     var ctx0 = list_of_ctx[0]
 
-    var gamma_tensor = TileTensor(gamma_dev, row_major(Coord(Index(num_cols))))
+    var gamma_tensor = TileTensor(gamma_dev, row_major(Coord(num_cols)))
 
     # Fresh output buffers for verification.
     var v_ep_fp8_dev = ctx0.enqueue_create_buffer[out_dtype](length)
@@ -336,10 +335,10 @@ def _verify_add_results[
         init_signal_buffer(signal_buffers[i], list_of_ctx[i])
 
     comptime InTensorType = TileTensor[
-        in_dtype, type_of(row_major(Coord(Index(0, num_cols)))), ImmutAnyOrigin
+        in_dtype, type_of(row_major(Coord(0, num_cols))), ImmutAnyOrigin
     ]
     comptime OutTensorType = TileTensor[
-        in_dtype, type_of(row_major(Coord(Index(0, num_cols)))), MutAnyOrigin
+        in_dtype, type_of(row_major(Coord(0, num_cols))), MutAnyOrigin
     ]
     var in_tensors = Array[InTensorType, ngpus](
         fill_with=lambda (i: Int) {
@@ -348,7 +347,7 @@ def _verify_add_results[
             rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
                 cb_inputs[i].offset_ptr(0)
             ),
-            row_major(Coord(Index(num_rows, num_cols))),
+            row_major(Coord(num_rows, num_cols)),
         )
     )
     var out_tensors = Array[OutTensorType, ngpus](
@@ -356,7 +355,7 @@ def _verify_add_results[
             ref ar_out_dev, imm num_rows
         } -> OutTensorType: TileTensor(
             ar_out_dev[i],
-            row_major(Coord(Index(num_rows, num_cols))),
+            row_major(Coord(num_rows, num_cols)),
         )
     )
     for i in range(ngpus):
@@ -421,7 +420,7 @@ def _verify_add_results[
         IndexList[2](num_rows, num_cols),
         TileTensor(
             v_ep_fp8_dev,
-            row_major(Coord(Index(num_rows, num_cols))),
+            row_major(Coord(num_rows, num_cols)),
         ),
         gamma_tensor,
         epsilon,
@@ -430,7 +429,7 @@ def _verify_add_results[
         scale_ub,
         TileTensor(
             v_ep_scales_dev,
-            row_major(Coord(Index(num_rows, 1))),
+            row_major(Coord(num_rows, 1)),
         ),
     )
 
@@ -447,15 +446,15 @@ def _verify_add_results[
             in_tensors,
             TileTensor(
                 residual_dev,
-                row_major(Coord(Index(num_rows, num_cols))),
+                row_major(Coord(num_rows, num_cols)),
             ),
             TileTensor(
                 v_ff_fp8_dev,
-                row_major(Coord(Index(num_rows, num_cols))),
+                row_major(Coord(num_rows, num_cols)),
             ),
             TileTensor(
                 v_res_out_dev,
-                row_major(Coord(Index(num_rows, num_cols))),
+                row_major(Coord(num_rows, num_cols)),
             ),
             gamma_tensor,
             epsilon,
@@ -463,7 +462,7 @@ def _verify_add_results[
             scale_ub,
             TileTensor(
                 v_ff_scales_dev,
-                row_major(Coord(Index(num_rows, 1))),
+                row_major(Coord(num_rows, 1)),
             ),
             rank_sigs,
             list_of_ctx[i],
@@ -623,17 +622,17 @@ def bench_allreduce_rmsnorm_fp8[
 
     # TileTensor views for allreduce.
     comptime InTensorType = TileTensor[
-        in_dtype, type_of(row_major(Coord(Index(0, num_cols)))), ImmutAnyOrigin
+        in_dtype, type_of(row_major(Coord(0, num_cols))), ImmutAnyOrigin
     ]
     comptime OutTensorType = TileTensor[
-        in_dtype, type_of(row_major(Coord(Index(0, num_cols)))), MutAnyOrigin
+        in_dtype, type_of(row_major(Coord(0, num_cols))), MutAnyOrigin
     ]
     var in_tensors = Array[InTensorType, ngpus](
         fill_with=lambda (i: Int) -> InTensorType: TileTensor(
             rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
                 cb_inputs[i].unsafe_ptr()
             ),
-            row_major(Coord(Index(num_rows, num_cols))),
+            row_major(Coord(num_rows, num_cols)),
         )
     )
     var ar_out_tensors = Array[OutTensorType, ngpus](
@@ -641,7 +640,7 @@ def bench_allreduce_rmsnorm_fp8[
             ref ar_out_dev, imm num_rows
         } -> OutTensorType: TileTensor(
             ar_out_dev[i],
-            row_major(Coord(Index(num_rows, num_cols))),
+            row_major(Coord(num_rows, num_cols)),
         )
     )
     for i in range(ngpus):
@@ -704,7 +703,7 @@ def bench_allreduce_rmsnorm_fp8[
         ]()
     list_of_ctx[0].enqueue_copy(gamma_dev, gamma_host)
 
-    var gamma_tensor = TileTensor(gamma_dev, row_major(Coord(Index(num_cols))))
+    var gamma_tensor = TileTensor(gamma_dev, row_major(Coord(num_cols)))
     var epsilon = Float32(0.001)
     var weight_offset = Scalar[in_dtype](0.0)
     var scale_ub = max_finite[out_dtype]().cast[.float32]()
@@ -788,7 +787,7 @@ def bench_allreduce_rmsnorm_fp8[
                     rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
                         cb_inputs[_j].offset_ptr(cache_iter)
                     ),
-                    row_major(Coord(Index(num_rows, num_cols))),
+                    row_major(Coord(num_rows, num_cols)),
                 )
             allreduce[ngpus=ngpus](
                 in_tensors,
@@ -823,7 +822,7 @@ def bench_allreduce_rmsnorm_fp8[
                         rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
                             cb_inputs[_j].offset_ptr(cache_iter)
                         ),
-                        row_major(Coord(Index(num_rows, num_cols))),
+                        row_major(Coord(num_rows, num_cols)),
                     )
 
                 # Allreduce.
@@ -856,7 +855,7 @@ def bench_allreduce_rmsnorm_fp8[
                     IndexList[2](num_rows, num_cols),
                     TileTensor(
                         fused_fp8_out_ptrs[ctx_idx],
-                        row_major(Coord(Index(num_rows, num_cols))),
+                        row_major(Coord(num_rows, num_cols)),
                     ),
                     gamma_tensor,
                     epsilon,
@@ -865,7 +864,7 @@ def bench_allreduce_rmsnorm_fp8[
                     scale_ub,
                     TileTensor(
                         fused_scales_ptrs[ctx_idx],
-                        row_major(Coord(Index(num_rows, 1))),
+                        row_major(Coord(num_rows, 1)),
                     ),
                 )
 
@@ -897,14 +896,14 @@ def bench_allreduce_rmsnorm_fp8[
                     rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
                         cb_inputs[_j].offset_ptr(cache_iter)
                     ),
-                    row_major(Coord(Index(num_rows, num_cols))),
+                    row_major(Coord(num_rows, num_cols)),
                 )
 
             allreduce_rmsnorm(
                 in_tensors,
                 TileTensor(
                     fully_fused_fp8_out_ptrs[ctx_idx],
-                    row_major(Coord(Index(num_rows, num_cols))),
+                    row_major(Coord(num_rows, num_cols)),
                 ),
                 gamma_tensor,
                 epsilon,
@@ -912,7 +911,7 @@ def bench_allreduce_rmsnorm_fp8[
                 scale_ub,
                 TileTensor(
                     fully_fused_scales_ptrs[ctx_idx],
-                    row_major(Coord(Index(num_rows, 1))),
+                    row_major(Coord(num_rows, 1)),
                 ),
                 rank_sigs,
                 ctx_inner,
@@ -946,7 +945,7 @@ def bench_allreduce_rmsnorm_fp8[
                         rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
                             cb_inputs[_j].offset_ptr(cache_iter)
                         ),
-                        row_major(Coord(Index(num_rows, num_cols))),
+                        row_major(Coord(num_rows, num_cols)),
                     )
 
                 # Step 1: Allreduce with add epilogue (fuses allreduce + add).
@@ -1001,7 +1000,7 @@ def bench_allreduce_rmsnorm_fp8[
                     IndexList[2](num_rows, num_cols),
                     TileTensor(
                         fused_add_fp8_out_ptrs[ctx_idx],
-                        row_major(Coord(Index(num_rows, num_cols))),
+                        row_major(Coord(num_rows, num_cols)),
                     ),
                     gamma_tensor,
                     epsilon,
@@ -1010,7 +1009,7 @@ def bench_allreduce_rmsnorm_fp8[
                     scale_ub,
                     TileTensor(
                         fused_add_scales_ptrs[ctx_idx],
-                        row_major(Coord(Index(num_rows, 1))),
+                        row_major(Coord(num_rows, 1)),
                     ),
                 )
 
@@ -1042,22 +1041,22 @@ def bench_allreduce_rmsnorm_fp8[
                     rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
                         cb_inputs[_j].offset_ptr(cache_iter)
                     ),
-                    row_major(Coord(Index(num_rows, num_cols))),
+                    row_major(Coord(num_rows, num_cols)),
                 )
 
             allreduce_residual_rmsnorm(
                 in_tensors,
                 TileTensor(
                     residual_ptr_base,
-                    row_major(Coord(Index(num_rows, num_cols))),
+                    row_major(Coord(num_rows, num_cols)),
                 ),
                 TileTensor(
                     fused_add_fp8_out_ptrs[ctx_idx],
-                    row_major(Coord(Index(num_rows, num_cols))),
+                    row_major(Coord(num_rows, num_cols)),
                 ),
                 TileTensor(
                     residual_output_ptrs[ctx_idx],
-                    row_major(Coord(Index(num_rows, num_cols))),
+                    row_major(Coord(num_rows, num_cols)),
                 ),
                 gamma_tensor,
                 epsilon,
@@ -1065,7 +1064,7 @@ def bench_allreduce_rmsnorm_fp8[
                 scale_ub,
                 TileTensor(
                     fused_add_scales_ptrs[ctx_idx],
-                    row_major(Coord(Index(num_rows, 1))),
+                    row_major(Coord(num_rows, 1)),
                 ),
                 rank_sigs,
                 ctx_inner,

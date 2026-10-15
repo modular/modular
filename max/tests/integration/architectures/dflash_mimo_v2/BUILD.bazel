@@ -31,7 +31,7 @@ modular_py_test(
     size = "large",
     srcs = ["test_drafter_gpu.py"],
     exec_properties = {
-        "test.resources:gpu-memory": "4",
+        "test.resources:gpu-memory": "2",
     },
     gpu_constraints = ["//:has_gpu"] + select({
         "//:apple_gpu": ["@platforms//:incompatible"],

@@ -253,8 +253,8 @@ def test_rmsnorm_then_matmul[
     ctx.enqueue_copy(b_device, b_host_ptr)
     ctx.enqueue_copy(gamma_device, gamma_host_ptr)
 
-    var epsilon = Float32(0.001)
-    var weight_offset = Scalar[a_type](0.0)
+    comptime epsilon = Float32(0.001)
+    comptime weight_offset = Float32(0.0)
     var norm_shape = Index(M, K)
 
     @inline(.always)
@@ -273,9 +273,14 @@ def test_rmsnorm_then_matmul[
             a_normed_vendor_tensor.layout(coords), val
         )
 
-    rms_norm_gpu[2, input_fn, output_fn_vendor, multiply_before_cast=True](
-        Coord(norm_shape), gamma_tensor, epsilon, weight_offset, ctx
-    )
+    rms_norm_gpu[
+        2,
+        input_fn,
+        output_fn_vendor,
+        epsilon=epsilon,
+        weight_offset=weight_offset,
+        multiply_before_cast=True,
+    ](Coord(norm_shape), gamma_tensor, ctx)
 
     vendor_blas.matmul(
         ctx,
@@ -296,9 +301,14 @@ def test_rmsnorm_then_matmul[
             a_normed_ours_tensor.layout(coords), val
         )
 
-    rms_norm_gpu[2, input_fn, output_fn_ours, multiply_before_cast=True](
-        Coord(norm_shape), gamma_tensor, epsilon, weight_offset, ctx
-    )
+    rms_norm_gpu[
+        2,
+        input_fn,
+        output_fn_ours,
+        epsilon=epsilon,
+        weight_offset=weight_offset,
+        multiply_before_cast=True,
+    ](Coord(norm_shape), gamma_tensor, ctx)
 
     comptime matmul_config = MatmulConfig[a_type, b_type, c_type, transpose_b](
         cluster_shape=Index(

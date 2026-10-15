@@ -16,7 +16,7 @@ improve is [open to receiving contributions](contribution-areas.md).
 
 > [!NOTE]
 > Keep each pull request inside a single area. See
-> [keep each pull request to one contribution](issue-pr-etiquette.md#keep-each-pull-request-to-one-contribution).
+> [keep pull requests small](issue-pr-etiquette.md#keep-pull-requests-small).
 
 ### Signal your intent
 

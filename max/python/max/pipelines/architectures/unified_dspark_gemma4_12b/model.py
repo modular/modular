@@ -22,7 +22,7 @@ from max import tree
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Graph
+from max.graph import DeviceRef
 from max.graph.weights import Weights, WeightsAdapter, load_weights
 from max.nn.kv_cache import (
     KVCacheParamInterface,
@@ -34,15 +34,16 @@ from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.config import cache_dtype_for_encoding
 from max.pipelines.lib import (
-    GraphPipelineModelWithKVCache,
     KVCacheConfig,
     PipelineConfig,
+    PipelineModelWithKVCache,
     UnifiedSpecDecodeInputs,
 )
 from max.pipelines.lib._hf_config import PretrainedConfig
 from max.pipelines.lib.config.model_config import (
     _select_quantization_encoding,
 )
+from max.pipelines.lib.graph_specs import GraphRole, GraphSpec
 from max.pipelines.lib.interfaces.pipeline_model import (
     AlwaysSignalBuffersMixin,
 )
@@ -52,7 +53,6 @@ from max.pipelines.lib.pipeline_variants.unified_spec_decode_model import (
 )
 from max.pipelines.lib.utils import parse_state_dict_from_weights
 
-from ..gemma4.block_spec_adapters import SLIDING_KV
 from ..gemma4.model_config import Gemma4ForConditionalGenerationConfig
 from .batch_processor import UnifiedDSparkGemma4_12BBatchProcessor
 from .model_config import (
@@ -109,7 +109,7 @@ class UnifiedDSparkGemma4_12BInputs(UnifiedSpecDecodeInputs):
 class UnifiedDSparkGemma4_12BModel(
     _UnifiedSpecDecodeModelMixin,
     AlwaysSignalBuffersMixin,
-    GraphPipelineModelWithKVCache[TextContext, UnifiedDSparkGemma4_12BConfig],
+    PipelineModelWithKVCache[TextContext, UnifiedDSparkGemma4_12BConfig, Model],
 ):
     """Unified DSpark Gemma4: target + draft in one compiled graph."""
 
@@ -119,6 +119,7 @@ class UnifiedDSparkGemma4_12BModel(
     ] = UnifiedDSparkGemma4_12BBatchProcessor
 
     model: Model
+    _target_state_dict: dict[str, Any]
     _draft_state_dict: dict[str, Any]
 
     def __init__(
@@ -151,7 +152,14 @@ class UnifiedDSparkGemma4_12BModel(
             max_batch_size=max_batch_size,
             memory_plan=memory_plan,
         )
-        self.model = self.load_model(session)
+        self._models = self.load_graphs(session)
+        self.model = self._models[GraphRole.SPEC_DECODER]
+
+    def graph_specs(
+        self, model_config: UnifiedDSparkGemma4_12BConfig
+    ) -> dict[str, GraphSpec]:
+        """Returns the spec-decode graph."""
+        return {GraphRole.SPEC_DECODER: self._spec_decoder_spec(model_config)}
 
     @classmethod
     def get_kv_params(
@@ -196,6 +204,7 @@ class UnifiedDSparkGemma4_12BModel(
             name: weight.data() for name, weight in draft_weights.items()
         }
 
+        self._target_state_dict = target_state_dict
         return target_state_dict
 
     def _create_model_config(
@@ -255,14 +264,9 @@ class UnifiedDSparkGemma4_12BModel(
 
         return unified_config
 
-    def _build_graph_for_compile(
-        self,
-        session: InferenceSession,
-        state_dict: dict[str, Any],
-        model_config: UnifiedDSparkGemma4_12BConfig,
-    ) -> tuple[Graph, dict[str, Any]]:
-        del session
-
+    def _spec_decoder_spec(
+        self, model_config: UnifiedDSparkGemma4_12BConfig
+    ) -> GraphSpec:
         nn_model = UnifiedDSparkGemma4_12BModule(model_config)
 
         # The DSpark checkpoint ships frozen copies of the target's
@@ -273,7 +277,7 @@ class UnifiedDSparkGemma4_12BModel(
         nn_model.draft.lm_head = nn_model.target.lm_head
 
         unified_state_dict = convert_unified_safetensor_state_dict(
-            state_dict, self._draft_state_dict
+            self._target_state_dict, self._draft_state_dict
         )
 
         # strict=False: the aliased draft.embed_tokens / draft.lm_head have
@@ -290,35 +294,12 @@ class UnifiedDSparkGemma4_12BModel(
             unified_state_dict,
             tied_target_lm_head=model_config.target.tie_word_embeddings,
         )
-        weights_registry = nn_model.state_dict()
-
-        with Graph(
+        return GraphSpec(
+            nn_model,
             "unified_dspark_gemma4_12b",
-            input_types=nn_model.input_types(),
-        ) as graph:
-            graph_inputs = nn_model.decode_inputs(graph.inputs)
-            outputs = nn_model(
-                tokens=graph_inputs.tokens,
-                input_row_offsets=graph_inputs.input_row_offsets,
-                draft_tokens=graph_inputs.draft_tokens,
-                signal_buffers=graph_inputs.signal_buffers,
-                kv_collections=graph_inputs.kv("target", "full_attention"),
-                passthrough_kv={
-                    SLIDING_KV: graph_inputs.kv("target", "sliding_attention")
-                },
-                draft_kv_collections=graph_inputs.kv("draft"),
-                return_n_logits=graph_inputs.return_n_logits,
-                seed=graph_inputs.seed,
-                temperature=graph_inputs.temperature,
-                top_k=graph_inputs.top_k,
-                max_k=graph_inputs.max_k,
-                top_p=graph_inputs.top_p,
-                min_top_p=graph_inputs.min_top_p,
-                draft_probs_full=graph_inputs.draft_probs_full,
-            )
-            graph.output(*outputs)
-
-        return graph, weights_registry
+            nn_model.input_types(),
+            weights=nn_model.state_dict(),
+        )
 
     def _audit_state_dict_names(
         self,

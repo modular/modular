@@ -304,21 +304,6 @@ struct AcceleratorArchitectureFamily(TrivialRegisterPassable):
 # NoGPU
 # ===-----------------------------------------------------------------------===#
 
-
-comptime _empty_target = CompilationTarget[
-    _mlir_value=__mlir_attr[
-        `#kgen.target<triple = "", `,
-        `arch = "", `,
-        `features = "", `,
-        `data_layout="",`,
-        `index_bit_width = 0,`,
-        `simd_bit_width = 0`,
-        `> : !kgen.target`,
-    ]
-]()
-"""Empty target configuration for when no GPU is available."""
-
-
 comptime NoGPU = GPUInfo(
     name="NoGPU",
     api="none",

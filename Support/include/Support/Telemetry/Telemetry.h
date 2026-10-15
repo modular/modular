@@ -71,6 +71,18 @@ constexpr auto kExportTimeout = std::chrono::milliseconds(1000);
 /// request (including connection establishment).
 constexpr auto kOtlpRequestTimeout = std::chrono::milliseconds(3000);
 
+/// Whether `endpoint` is Modular's collector, whose exports must not carry
+/// the operator's OTEL_EXPORTER_OTLP_*HEADERS.
+bool isModularEndpoint(StringRef endpoint);
+
+/// Drops the headers that OTLP HTTP exporter `options` read from the
+/// environment when `endpoint` is Modular's collector.
+template <typename OtlpHttpOptions>
+void dropHeadersForModular(OtlpHttpOptions &options, StringRef endpoint) {
+  if (isModularEndpoint(endpoint))
+    options.http_headers.clear();
+}
+
 /// Emit a one-time warning to stderr when a telemetry export fails. The warned
 /// flag is injectable so that tests can create isolated instances. Production
 /// code shares a single flag across all exporters in TelemetryContext.

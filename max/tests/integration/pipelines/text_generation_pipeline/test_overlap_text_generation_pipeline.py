@@ -55,6 +55,9 @@ from max.pipelines.modeling.types import (
 from max.pipelines.speculative.spec_width_policy import SpecWidthPolicy
 from max.support.math import ceildiv
 
+# Marks a request as constrained; the tests never compile it.
+_SCHEMA = '{"type": "object"}'
+
 
 @pytest.mark.parametrize(
     "content,special_tags,expected",
@@ -1611,6 +1614,7 @@ class TestEnqueuePrevBitmaskCallback:
             request_id=rid,
             max_length=100,
             tokens=TokenBuffer(np.array([1])),
+            json_schema=_SCHEMA,
         )
         # curr_ctx reuses the same request_id so it is a member of the
         # producing batch -- the steady aggregated decode path.
@@ -1709,6 +1713,7 @@ class TestEnqueuePrevBitmaskCallback:
                 request_id=rid,
                 max_length=100,
                 tokens=TokenBuffer(np.array([1])),
+                json_schema=_SCHEMA,
             )
             for rid in prev_rids
         ]
@@ -1888,6 +1893,7 @@ class TestEnqueuePrevBitmaskCallback:
             request_id=rid_a,
             max_length=100,
             tokens=TokenBuffer(np.array([1])),
+            json_schema=_SCHEMA,
         )
         ctx_b = TextContext(
             request_id=rid_b,
@@ -1922,6 +1928,7 @@ class TestEnqueuePrevBitmaskCallback:
             request_id=RequestID("producer"),
             max_length=100,
             tokens=TokenBuffer(np.array([1])),
+            json_schema=_SCHEMA,
         )
         producer.update(new_token=10)
         padding = TextContext(
@@ -1949,6 +1956,75 @@ class TestEnqueuePrevBitmaskCallback:
         assert result is True
         assert mock_spec_state.has_precomputed_bitmask is True
         mock_overlap_state.enqueue_async_callback.assert_called_once()
+
+    def test_skips_callback_when_no_row_is_constrained(self) -> None:
+        """Steady decode with no grammar in either batch: no callback (its
+        host node would stall the stream), so the successor primes an
+        all-valid bitmask instead."""
+        ctx_a = TextContext(
+            request_id=RequestID("a"),
+            max_length=100,
+            tokens=TokenBuffer(np.array([1])),
+        )
+        ctx_a.update(new_token=10)
+        pipeline, mock_spec_state, mock_overlap_state = (
+            self._make_pipeline_with_spec_state([ctx_a])
+        )
+        mock_spec_state.bitmask_callback_enqueued = True
+
+        result = pipeline._enqueue_prev_bitmask_callback(
+            curr_context_batch=[ctx_a], curr_verify_width=2
+        )
+
+        assert result is False
+        mock_overlap_state.enqueue_async_callback.assert_not_called()
+        assert mock_spec_state.has_precomputed_bitmask is False
+        prev = pipeline._prev_batch
+        assert prev is not None and prev.spec_decode is not None
+        assert prev.spec_decode.fsm_advanced_by_callback is False
+        # The previous step's callback is remembered for the prime's signal.
+        assert mock_spec_state.prev_step_enqueued_bitmask_callback is True
+        assert mock_spec_state.bitmask_callback_enqueued is False
+
+    def test_records_enqueued_callback_for_next_step(self) -> None:
+        """An enqueued callback is recorded, and shifts to the previous-step
+        flag on the next call."""
+        ctx_a = TextContext(
+            request_id=RequestID("a"),
+            max_length=100,
+            tokens=TokenBuffer(np.array([1])),
+            json_schema=_SCHEMA,
+        )
+        ctx_a.update(new_token=10)
+        pipeline, mock_spec_state, _ = self._make_pipeline_with_spec_state(
+            [ctx_a]
+        )
+        mock_spec_state.bitmask_callback_enqueued = False
+
+        with patch.object(
+            pipeline, "_build_bitmask_callback", return_value=lambda: None
+        ):
+            assert pipeline._enqueue_prev_bitmask_callback(
+                curr_context_batch=[ctx_a], curr_verify_width=2
+            )
+        assert mock_spec_state.bitmask_callback_enqueued is True
+        assert mock_spec_state.prev_step_enqueued_bitmask_callback is False
+
+        # The constrained request finished; the next batch is unconstrained.
+        ctx_b = TextContext(
+            request_id=RequestID("b"),
+            max_length=100,
+            tokens=TokenBuffer(np.array([1])),
+        )
+        ctx_b.update(new_token=11)
+        pipeline._prev_batch = self._make_prev_batch(
+            [ctx_b], num_draft_to_verify=2, next_draft_k=2
+        )
+        assert not pipeline._enqueue_prev_bitmask_callback(
+            curr_context_batch=[ctx_b], curr_verify_width=2
+        )
+        assert mock_spec_state.bitmask_callback_enqueued is False
+        assert mock_spec_state.prev_step_enqueued_bitmask_callback is True
 
 
 class TestInitializeBitmaskWithGrammar:
@@ -2528,6 +2604,76 @@ class TestAssignBitmaskInputs:
             f"drafts ({realized_drafts.tolist()}); the speculative FSM walk "
             "breaks on the placeholder and bonus/tail slots go unconstrained. "
             "The synchronous fill must feed the realized host drafts."
+        )
+
+    def _unconstrained_ctx(self) -> TextContext:
+        ctx = TextContext(
+            request_id=RequestID("free"),
+            max_length=100,
+            tokens=TokenBuffer(np.array([1])),
+        )
+        ctx.update(new_token=5)
+        return ctx
+
+    def test_unconstrained_cold_start_primes_all_valid(self) -> None:
+        """No constrained row and no callback ran: prime an all-valid bitmask
+        (no per-row compute) and signal the flag."""
+        pipeline, structured_output, spec_state, overlap_state, _ = (
+            self._make_pipeline(
+                callback_request_ids=[], has_precomputed_bitmask=False
+            )
+        )
+        spec_state.prev_step_enqueued_bitmask_callback = False
+
+        pipeline._assign_bitmask_inputs(
+            model_inputs=MagicMock(),
+            context_batch=[self._unconstrained_ctx()],
+            draft_tokens_np=np.zeros((1, self._K), dtype=np.int64),
+            num_draft_tokens_to_verify=self._K,
+        )
+
+        structured_output.compute_speculative_bitmasks.assert_not_called()
+        overlap_state.prime.assert_not_called()
+        overlap_state.prime_all_valid.assert_called_once_with(
+            1, self._NUM_POS, signal=True
+        )
+
+    def test_unconstrained_prime_leaves_flag_to_inflight_callback(
+        self,
+    ) -> None:
+        """The previous step enqueued a callback and its outputs are not
+        synced yet: that callback signals the flag, so the prime must not
+        (an early signal would let the previous graph read rows the callback
+        has not written)."""
+        pipeline, _, spec_state, overlap_state, _ = self._make_pipeline(
+            callback_request_ids=[], has_precomputed_bitmask=False
+        )
+        spec_state.prev_step_enqueued_bitmask_callback = True
+        prev_batch = MagicMock()
+        prev_batch._is_processed = False
+        pipeline._prev_batch = prev_batch
+
+        pipeline._assign_bitmask_inputs(
+            model_inputs=MagicMock(),
+            context_batch=[self._unconstrained_ctx()],
+            draft_tokens_np=np.zeros((1, self._K), dtype=np.int64),
+            num_draft_tokens_to_verify=self._K,
+        )
+        overlap_state.prime_all_valid.assert_called_once_with(
+            1, self._NUM_POS, signal=False
+        )
+
+        # Once the previous batch is synced its callback has retired.
+        overlap_state.prime_all_valid.reset_mock()
+        prev_batch._is_processed = True
+        pipeline._assign_bitmask_inputs(
+            model_inputs=MagicMock(),
+            context_batch=[self._unconstrained_ctx()],
+            draft_tokens_np=np.zeros((1, self._K), dtype=np.int64),
+            num_draft_tokens_to_verify=self._K,
+        )
+        overlap_state.prime_all_valid.assert_called_once_with(
+            1, self._NUM_POS, signal=True
         )
 
 

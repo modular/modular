@@ -24,9 +24,6 @@ from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.kv_cache import MHAKVCacheParams
 from max.pipelines.architectures import hf_config_shims
-from max.pipelines.architectures.mimo_v2.memory_planner import (
-    adapted_weights_size,
-)
 from max.pipelines.architectures.mimo_v2.model_config import (
     FULL,
     SLIDING,
@@ -84,20 +81,13 @@ def _config(**overrides: Any) -> PretrainedConfig:
         attention_bias=False,
         tie_word_embeddings=False,
         attention_projection_layout="fused_qkv",
-        conversion_metadata={"qkv_layout": "global_q_k_v"},
         quantization_config={
-            "quant_method": "modelopt",
-            "quant_algo": "MIXED_PRECISION",
-            "kv_cache_quant_algo": None,
-            "quantized_layers": {
-                f"model.layers.{layer}.mlp.experts.{expert}.{proj}": {
-                    "quant_algo": "W4A16_NVFP4",
-                    "group_size": 16,
-                }
-                for layer in range(1, LAYERS)
-                for expert in range(256)
-                for proj in ("gate_proj", "up_proj", "down_proj")
-            },
+            "quant_method": "fp8",
+            "fmt": "e4m3",
+            "activation_scheme": "dynamic",
+            "weight_block_size": [128, 128],
+            "store_dtype": "mxfp4",
+            "mxfp4_block_size": 32,
         },
     )
     values.update(overrides)
@@ -211,18 +201,6 @@ def test_default_rope_builds(rope: dict[str, Any]) -> None:
 def test_cpu_devices_fail() -> None:
     with pytest.raises(ValueError, match="only on NVIDIA SM100"):
         validate_devices([DeviceSpec.cpu()])
-
-
-def test_adapted_weights_size_of_the_published_config() -> None:
-    # 160.86 GB of MXFP4 experts, 3.22 GB of BF16 o_proj, 2.88 GB of FP8
-    # qkv_proj, 2.50 GB of embedding and head, 0.20 GB of router and 0.20 GB
-    # of dense MLP: 158.2 GiB, against 180.6 GiB of root shards on disk.
-    one = adapted_weights_size(_config(), 1)
-    assert one == 169_862_523_776
-    # A second device holds its own copy of every router and norm.
-    router = 47 * (256 * 4096 + 256) * 4
-    norms = (2 * LAYERS + 1) * 4096 * 2
-    assert adapted_weights_size(_config(), 2) == one + router + norms
 
 
 def test_config_loads_without_remote_code(tmp_path: Path) -> None:

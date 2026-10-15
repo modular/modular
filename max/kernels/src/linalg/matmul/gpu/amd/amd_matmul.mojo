@@ -52,8 +52,6 @@ from std.utils.numerics import get_accum_type
 from ....utils import (
     ElementwiseComputeFn,
     ElementwiseEpilogueFn,
-    apply_elementwise_epilogue,
-    elementwise_epilogue_type,
     no_compute_fn,
     no_epilogue_fn,
 )
@@ -81,7 +79,6 @@ struct AMDMatmul[
     c_type: DType,
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ]:
     """Pure TileTensor structured matmul for AMD GPUs.
 
@@ -96,8 +93,6 @@ struct AMDMatmul[
             `True`.
         config: Tile and warp shapes, MMA shape, and thread count for the
             kernel.
-        elementwise_lambda_fn: Optional epilogue applied elementwise to the
-            output (defaults to `None`).
     """
 
     comptime accum_type = get_accum_type[Self.a_type]()
@@ -219,8 +214,7 @@ struct AMDMatmul[
     ):
         """Same as `run`, storing the output through `epilogue_fn`.
 
-        Launch with `host_arg=epilogue_fn`. Requires
-        `elementwise_lambda_fn` to be unset.
+        Launch with `host_arg=epilogue_fn`.
 
         Parameters:
             c_layout: Tensor layout of the output C tile.
@@ -237,10 +231,6 @@ struct AMDMatmul[
             b: Input B tile of shape `[N, K]`.
             epilogue_fn: Stores each output element.
         """
-        comptime assert not Self.elementwise_lambda_fn, (
-            "run_with_epilogue_fn takes the epilogue as a value; leave"
-            " elementwise_lambda_fn unset"
-        )
         Self._run_at_tile_impl[has_epilogue_fn=True, has_compute_fn=False](
             c, a, b, block_idx.y, block_idx.x, epilogue_fn, no_compute_fn
         )
@@ -270,8 +260,7 @@ struct AMDMatmul[
     ):
         """Same as `run`, storing `compute_fn(idx, value)` into `c`.
 
-        Launch with `host_arg=compute_fn`. Requires
-        `elementwise_lambda_fn` to be unset.
+        Launch with `host_arg=compute_fn`.
 
         Parameters:
             c_layout: Tensor layout of the output C tile.
@@ -289,10 +278,6 @@ struct AMDMatmul[
             compute_fn: Maps each output index and value to the value to
                 store.
         """
-        comptime assert not Self.elementwise_lambda_fn, (
-            "run_with_compute_fn takes the epilogue as a value; leave"
-            " elementwise_lambda_fn unset"
-        )
         Self._run_at_tile_impl[has_epilogue_fn=False, has_compute_fn=True](
             c, a, b, block_idx.y, block_idx.x, no_epilogue_fn, compute_fn
         )
@@ -559,11 +544,7 @@ struct AMDMatmul[
                 return
 
         # === Output ===
-        comptime if (
-            Bool(Self.elementwise_lambda_fn)
-            or has_epilogue_fn
-            or has_compute_fn
-        ):
+        comptime if has_epilogue_fn or has_compute_fn:
             # Epilogue path with OOB masking. Rows are only scalar-aligned
             # when N % BN != 0, so compute-mode stores use scalar alignment.
             comptime scalar_align = align_of[Scalar[Self.c_type]]()
@@ -605,11 +586,11 @@ struct AMDMatmul[
                                             ),
                                         )
                                     else:
-                                        apply_elementwise_epilogue[
-                                            Self.elementwise_lambda_fn,
+                                        epilogue_fn[
+                                            Self.c_type,
+                                            1,
                                             alignment=scalar_align,
                                         ](
-                                            epilogue_fn,
                                             (m, col),
                                             SIMD[Self.c_type, 1](v[e]),
                                         )
@@ -630,12 +611,13 @@ struct AMDMatmul[
                                         ]((m, n), v),
                                     )
                                 else:
-                                    apply_elementwise_epilogue[
-                                        Self.elementwise_lambda_fn,
+                                    epilogue_fn[
+                                        Self.c_type,
+                                        c_frag_size,
                                         alignment=align_of[
                                             SIMD[Self.c_type, c_frag_size]
                                         ](),
-                                    ](epilogue_fn, (m, n), v)
+                                    ]((m, n), v)
         elif N % BN != 0:
             # Boundary path: N not block-aligned, per-element OOB store.
             var lane_group, thread_m = divmod(Int(lane_id()), MMA_M)

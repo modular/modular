@@ -18,7 +18,7 @@ import enum
 import logging
 import math
 from collections.abc import Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from max.driver import DeviceSpec, load_devices
@@ -62,8 +62,6 @@ ATTN_CACHE_KEY = "attn"
 STATE_CACHE_KEY = "state"
 CONV_LEAF_ID = "mamba/conv"
 SSM_LEAF_ID = "mamba/ssm"
-CONV_SCRATCH_LEAF_ID = "mamba/conv_scratch"
-SSM_SCRATCH_LEAF_ID = "mamba/ssm_scratch"
 
 MOE_TP_CHANNEL_ALIGNMENT = 64
 """The multiple each device's share of a routed expert's channels is padded
@@ -241,12 +239,23 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
     return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE
     target_layer_ids: tuple[int, ...] = ()
     fused_router: bool = False
-    """Whether the MoE router runs its gate GEMV, sigmoid and top-k as one
-    fused op instead of a separate float32 matmul."""
+    """Whether the MoE router runs its float32 gate GEMV, sigmoid and top-k
+    as one fused op instead of a separate float32 matmul. Off whenever
+    ``bf16_router_gate`` is on."""
+    bf16_router_gate: bool = False
+    """Whether the MoE router computes its gate scores with a bfloat16
+    tensor-core matmul (float32 accumulation) and keeps its gate weight in
+    bfloat16, instead of a float32 gate GEMV or matmul."""
     capture_mamba_replay: bool = False
     """Whether each Mamba block also returns the inputs of its state updates,
     so that a speculative verify can replay the accepted prefix onto the live
     state afterwards (see :mod:`.state_rollback`)."""
+
+    @property
+    def router_gate_dtype(self) -> DType:
+        """The dtype of the MoE router's gate weight, both in the module and
+        in the state dict it loads."""
+        return DType.bfloat16 if self.bf16_router_gate else DType.float32
 
     def w4a4_mixers(self) -> frozenset[str]:
         """Returns the MoE mixers whose routed experts are NVFP4, run W4A4."""
@@ -384,7 +393,6 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         cache_dtype: DType,
         *,
         allow_kv_head_replication: bool = False,
-        verify_scratch: bool = False,
         speculative_method: SpeculativeMethod | None = None,
         num_draft_tokens: int = 0,
     ) -> MultiKVCacheParams:
@@ -394,11 +402,6 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         the Mamba layers do the same in the state leaves.
 
         Args:
-            verify_scratch: Whether the state also declares one scratch leaf
-                per live leaf, drawn once per request and never published. A
-                speculative verify advances the scratch rows, leaving the live
-                rows at the pre-verify state until the accepted prefix is
-                known.
             speculative_method: The speculative method, which sizes the
                 attention cache's dispatch for the verify width.
             num_draft_tokens: How many drafts a step verifies, which the
@@ -453,19 +456,6 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
                 dtype=DType.float32,
             ),
         ]
-        if verify_scratch:
-            regions += [
-                replace(
-                    region,
-                    leaf_id=scratch_id,
-                    scratch=True,
-                )
-                for region, scratch_id in zip(
-                    regions,
-                    (CONV_SCRATCH_LEAF_ID, SSM_SCRATCH_LEAF_ID),
-                    strict=True,
-                )
-            ]
         state = RecurrentStateParams(
             regions=tuple(regions),
             devices=attn.devices,
@@ -509,11 +499,20 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
             hf, kv_params=kv_params, devices=devices, max_seq_len=max_seq_len
         )
         _check_quantized_runs_on(model_config.device_specs, config.quant_scheme)
-        config.fused_router = _runs_fused_router(
-            model_config.device_specs,
-            num_experts=config.num_experts,
-            num_experts_per_tok=config.num_experts_per_tok,
-            hidden_size=config.hidden_size,
+        config.bf16_router_gate = all(
+            is_sm100(device)
+            for device in load_devices(model_config.device_specs)
+        )
+        # The bf16 gate matmul replaces the fused float32 GEMV, so at most
+        # one of the two flags is on.
+        config.fused_router = (
+            not config.bf16_router_gate
+            and _runs_fused_router(
+                model_config.device_specs,
+                num_experts=config.num_experts,
+                num_experts_per_tok=config.num_experts_per_tok,
+                hidden_size=config.hidden_size,
+            )
         )
         hf_quant_config = resolve_hf_quant_config(hf, {}) or {}
         if hf_quant_config.get("kv_cache_scheme") and kv_cache_format is None:

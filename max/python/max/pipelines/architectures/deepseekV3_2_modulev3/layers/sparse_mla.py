@@ -22,6 +22,7 @@ import numpy as np
 from max.driver import CPU
 from max.dtype import DType
 from max.experimental import functional as F
+from max.experimental.nn.common_layers import quant_ops
 from max.experimental.nn.common_layers.functional_kernels import (
     mla_decode_graph,
     mla_prefill_decode_graph,
@@ -30,16 +31,16 @@ from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
 from max.experimental.nn.common_layers.multi_latent_attention import (
     MLAPrefillMetadata,
 )
+from max.experimental.nn.common_layers.quant_mla import (
+    QuantizedLatentAttention,
+    tensor_parallel_latent_attention_with_rope,
+)
+from max.experimental.nn.common_layers.quant_tensor import FP8BlockTensor
+from max.experimental.sharding import DeviceMapping
 from max.experimental.tensor import Tensor
 from max.nn.attention import MHAMaskVariant
 from max.nn.quant_config import QuantConfig
 
-from ...deepseekV3_modulev3.layers import quant_ops
-from ...deepseekV3_modulev3.layers.quant_mla import (
-    QuantizedLatentAttention,
-    tensor_parallel_latent_attention_with_rope,
-)
-from ...deepseekV3_modulev3.layers.quant_tensor import FP8BlockTensor
 from .indexer import Indexer
 
 logger = logging.getLogger("max.pipelines")
@@ -91,6 +92,18 @@ def _sparse_prefill_head_count_supported(
         DType.bfloat16,
         DType.float8_e4m3fn,
     )
+
+
+def _placed_like(scale: Tensor, weight: Tensor) -> Tensor:
+    """Places a head-major gathered scale with its weight's head sharding.
+
+    ``scale`` and ``weight`` share rank and lead with the head axis, so the
+    weight's mapping hands each device exactly its own heads' scales. A
+    replicated-to-sharded move is a local slice, not a collective.
+    """
+    if weight.mesh.num_devices == 1:
+        return scale
+    return scale.to(weight.mapping)
 
 
 class QuantizedSparseLatentAttentionWithRope(QuantizedLatentAttention):
@@ -184,11 +197,14 @@ class QuantizedSparseLatentAttentionWithRope(QuantizedLatentAttention):
         times so the kernel -- driven at granularity ``g`` -- sees a matching
         block count along the on-disk K axis.
 
-        Returns a ``[H, n_chunks, n_cols_kernel]`` tensor.
+        Returns a ``[H, n_chunks, n_cols_kernel]`` tensor over all ``H`` heads,
+        replicated on the scale's mesh. Under tensor parallelism the caller
+        places it like its weight (see :func:`_placed_like`).
         """
         assert self.weight_block_size is not None
         assert isinstance(self.kv_b_proj, FP8BlockTensor)
         scale = self.kv_b_proj.weight_scale_inv
+        index_mapping = DeviceMapping.replicated(scale.mesh)
 
         g = self._b_scale_granularity
         block_m, block_k = (int(b) for b in self.weight_block_size)
@@ -203,7 +219,7 @@ class QuantizedSparseLatentAttentionWithRope(QuantizedLatentAttention):
         ).reshape(-1)
         gathered = F.gather(
             scale,
-            F.constant(row_indices, DType.int32, device=scale.device),
+            F.constant(row_indices, DType.int32, device=index_mapping),
             axis=0,
         )
 
@@ -217,7 +233,7 @@ class QuantizedSparseLatentAttentionWithRope(QuantizedLatentAttention):
         )
         return F.gather(
             gathered,
-            F.constant(col_indices, DType.int32, device=scale.device),
+            F.constant(col_indices, DType.int32, device=index_mapping),
             axis=2,
         )
 
@@ -232,7 +248,7 @@ class QuantizedSparseLatentAttentionWithRope(QuantizedLatentAttention):
         scale = self._gather_per_head_scale(
             start_row_offset=0, n_rows=self.qk_nope_head_dim
         ).transpose(1, 2)
-        return w_uk, scale
+        return w_uk, _placed_like(scale, w_uk)
 
     @property
     def w_uv(self) -> tuple[Tensor, Tensor | None]:
@@ -245,7 +261,7 @@ class QuantizedSparseLatentAttentionWithRope(QuantizedLatentAttention):
         scale = self._gather_per_head_scale(
             start_row_offset=self.qk_nope_head_dim, n_rows=self.v_head_dim
         )
-        return w_uv, scale
+        return w_uv, _placed_like(scale, w_uv)
 
     @property
     def w_k(self) -> tuple[Tensor, Tensor | None]:
@@ -260,7 +276,7 @@ class QuantizedSparseLatentAttentionWithRope(QuantizedLatentAttention):
         scale = self._gather_per_head_scale(
             start_row_offset=0, n_rows=self.qk_nope_head_dim
         ).reshape((-1, self.kv_lora_rank // self._b_scale_granularity))
-        return w_k, scale
+        return w_k, _placed_like(scale, w_k)
 
     def _effective_graph_mode(self) -> str:
         """Graph mode after the sparse-prefill kernel's head-count gating."""
@@ -300,7 +316,6 @@ class QuantizedSparseLatentAttentionWithRope(QuantizedLatentAttention):
         *,
         sparse_indices: Tensor | None = None,
         sparse_indices_stride: int | None = None,
-        index_share: bool = False,
     ) -> Tensor:
         attn_kwargs: dict[str, Any] = {
             "q": xq,
@@ -365,10 +380,11 @@ class QuantizedSparseLatentAttentionWithRope(QuantizedLatentAttention):
         if sparse_indices is not None:
             sparse_kw = {
                 "sparse_indices": sparse_indices,
+                "physical_indices": True,
                 "sparse_indices_stride": sparse_indices_stride,
-                # Read-once shared-KV fold (KERN-3141); only True when the
-                # caller has a shared top-k across folded MTP positions.
-                "index_share": index_share,
+                # The op always passes a no-op sink; the AMD sparse arms
+                # reject one unless it is declared inert.
+                "sparse_attn_sink_inert": True,
             }
 
         if effective_graph_mode == "decode":
@@ -392,6 +408,7 @@ class QuantizedSparseLatentAttentionWithRope(QuantizedLatentAttention):
         mla_prefill_metadata: MLAPrefillMetadata | None = None,
         prev_topk_indices: Tensor | None = None,
         reuse_prev_topk: bool = False,
+        indexer_layer_idx: Tensor | None = None,
     ) -> tuple[Tensor, Tensor]:
         q_lora_rank = self.q_lora_rank
         assert q_lora_rank is not None  # enforced in __init__
@@ -414,13 +431,17 @@ class QuantizedSparseLatentAttentionWithRope(QuantizedLatentAttention):
                 freqs_cis,
                 input_row_offsets,
                 indexer_kv_collection,
-                layer_idx,
+                # The indexer cache holds only ``full`` layers, so its slot
+                # is this layer's rank among them, not ``layer_idx``.
+                layer_idx if indexer_layer_idx is None else indexer_layer_idx,
+                kv_collection,
                 MHAMaskVariant.CAUSAL_MASK,
             )
         else:
             # ``shared`` layer: reuse the previous full layer's top-k selection
-            # (cross-layer index sharing). The indices are sequence positions,
-            # so they are valid for this layer's own MLA cache.
+            # (cross-layer index sharing). Physical rows name a page and
+            # offset, not a layer, so they are valid for this layer's own MLA
+            # cache too.
             if prev_topk_indices is None:
                 raise ValueError(
                     "Shared (skip_topk) sparse attention layers require top-k "
@@ -428,14 +449,6 @@ class QuantizedSparseLatentAttentionWithRope(QuantizedLatentAttention):
                 )
             topk_indices = prev_topk_indices
 
-        # Read-once shared-index MTP fold (KERN-3141). Enable the fold only for
-        # a *full* indexer layer (``skip_topk`` is False) that reuses a prior
-        # selection: there the reused list is the single shared MTP top-k, so
-        # every folded q position attends one gathered pass. ``skip_topk``
-        # (cross-layer) reuse keeps a per-position list, so it must stay on the
-        # unfolded path. Only the FP8 kernel implements the fold; the graph-API
-        # bf16 class never requests it either.
-        index_share = self.quantized and reuse_prev_topk and not self.skip_topk
         attn_out = self._mla_impl(
             xq,
             kv,
@@ -447,7 +460,6 @@ class QuantizedSparseLatentAttentionWithRope(QuantizedLatentAttention):
             mla_prefill_metadata,
             sparse_indices=topk_indices,
             sparse_indices_stride=self.index_topk,
-            index_share=index_share,
         )
 
         return self.o_proj(attn_out), topk_indices
@@ -463,23 +475,21 @@ def tensor_parallel_sparse_latent_attention_with_rope(
     every device computes the same top-k selection over its own key cache.
 
     Placements are assigned even on a single device (matching the dense base);
-    ``num_devices`` only gates the checks that depend on the head axis really
+    ``num_devices`` only gates the changes that depend on the head axis really
     being split.
     """
-    if num_devices > 1 and layer._ragged_scales:
-        assert layer.weight_block_size is not None
-        # The per-head scale gather indexes the on-disk scale by global head,
-        # but tensor parallelism shards that axis, so each device would read
-        # another device's rows. Fail here rather than serve mis-scaled
-        # attention. TODO(MODELS-1646): make the gather shard-local.
-        raise NotImplementedError(
-            "Tensor-parallel sparse MLA is not supported yet for checkpoints "
-            "whose per-head rows straddle the weight scale block (e.g. "
-            "GLM-5.x, qk_nope + v_head = "
-            f"{layer.qk_nope_head_dim + layer.v_head_dim} against a "
-            f"{layer.weight_block_size[0]}-row block). Run single-device."
-        )
-
     tensor_parallel_latent_attention_with_rope(layer)
+
+    if num_devices > 1 and layer._ragged_scales:
+        # The per-head scale gather indexes ``kv_b_proj``'s scale by global
+        # head, and per-head rows straddle its blocks, so a row shard of the
+        # scale is not a head shard. Keep the (few-dozen-row) scale whole on
+        # every device; the gathered per-head scales are then sharded with
+        # their weights.
+        kv_b_proj = layer.kv_b_proj
+        assert isinstance(kv_b_proj, FP8BlockTensor)
+        kv_b_proj.weight_scale_inv = kv_b_proj.weight_scale_inv.to(
+            DeviceMapping.replicated(kv_b_proj.mesh)
+        )
 
     return layer

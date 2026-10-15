@@ -15,26 +15,19 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
 from max.pipelines import PIPELINE_REGISTRY
-from max.pipelines.architectures.mimo_v2 import memory_planner
 from max.pipelines.architectures.mimo_v2.arch import mimo_v2_arch
 from max.pipelines.architectures.unified_dflash_mimo_v2 import (
-    MiMoV2DFlashContextModel,
     UnifiedDflashMiMoV2Model,
 )
 from max.pipelines.architectures.unified_dflash_mimo_v2.batch_processor import (
     UnifiedDflashMiMoV2BatchProcessor,
 )
-from max.pipelines.architectures.unified_dflash_mimo_v2.memory_planner import (
-    MiMoV2DFlashMemoryPlanner,
-)
 from max.pipelines.architectures.unified_dflash_mimo_v2.model_config import (
-    MiMoV2DFlashContextConfig,
     UnifiedDflashMiMoV2Config,
     mimo_dflash_draft_width,
 )
@@ -44,7 +37,6 @@ from max.pipelines.lib.config.config import (
     _apply_speculative_target_architecture,
 )
 from max.pipelines.speculative.config import SpeculativeConfig
-from max.pipelines.weights import HuggingFaceRepo
 
 DRAFT_HF = {"dflash_config": {"mask_token_id": 151675, "target_layer_ids": [0]}}
 
@@ -66,7 +58,6 @@ def test_the_speculator_derives_the_fused_architecture(draft_arch: str) -> None:
         config=UnifiedDflashMiMoV2Config,
         batching=UnifiedDflashMiMoV2BatchProcessor,
         checkpoint_draft_width=mimo_dflash_draft_width,
-        memory_planner=MiMoV2DFlashMemoryPlanner,
         supports_spec_decode_mixed_batches=True,
     )
     assert (
@@ -75,49 +66,6 @@ def test_the_speculator_derives_the_fused_architecture(draft_arch: str) -> None:
         )
         is None
     )
-
-
-def test_the_context_writer_resolves_by_name() -> None:
-    base_ctx = PIPELINE_REGISTRY.retrieve_architecture(
-        "MiMoV2DFlashContextForCausalLM"
-    )
-    assert base_ctx is not None
-    assert base_ctx.pipeline_model is MiMoV2DFlashContextModel
-    assert base_ctx.config is MiMoV2DFlashContextConfig
-    assert base_ctx.memory_planner is MiMoV2DFlashMemoryPlanner
-    # Both serve the target checkpoint as the base arch does.
-    for arch in (_fused("DFlashDraftModel"), base_ctx):
-        assert arch.tokenizer is mimo_v2_arch.tokenizer
-        assert arch.supported_encodings == mimo_v2_arch.supported_encodings
-        assert arch.multi_gpu_supported
-
-
-def test_the_planner_counts_the_drafter(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(
-        memory_planner, "adapted_weights_size", lambda config, n: 1000 * n
-    )
-    (tmp_path / "dflash").mkdir()
-    (tmp_path / "dflash" / "dflash_draft_model.safetensors").write_bytes(
-        bytes(345)
-    )
-    model = SimpleNamespace(
-        huggingface_config=object(),
-        device_specs=[0, 1],
-        huggingface_weight_repo=HuggingFaceRepo(str(tmp_path)),
-    )
-    planner = MiMoV2DFlashMemoryPlanner(
-        SimpleNamespace(devices=[], get_kv_params=lambda: None)
-    )
-    # The base graph with the context writer reads the target's drafter.
-    base_ctx = SimpleNamespace(model=model, draft_model=None)
-    assert planner.estimate_weights_size(base_ctx) == 2000 + 345
-    # The fused graph loads the draft model's.
-    fused = SimpleNamespace(
-        model=model, draft_model=SimpleNamespace(weights_size=lambda: 678)
-    )
-    assert planner.estimate_weights_size(fused) == 2000 + 678
 
 
 def _selected(

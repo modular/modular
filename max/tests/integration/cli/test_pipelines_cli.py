@@ -209,3 +209,38 @@ def test_pipelines_cli__generate_turns_the_vendor_blas_fallback_off_on_amd(
     [pipeline_args] = seen
     runtime = cli_generate._with_debug_defaults(pipeline_args).runtime
     assert runtime.disable_vendor_blas_fallback is expected
+
+
+class _StopAtPipelineArgs(Exception):
+    pass
+
+
+@pytest.mark.parametrize("command", ["serve", "generate"])
+@pytest.mark.parametrize(
+    ("flags", "expected"),
+    [
+        ([], None),
+        (["--no-enable-overlap-scheduler"], False),
+        (["--enable-overlap-scheduler"], True),
+    ],
+)
+def test_pipelines_cli__overlap_scheduler_unset_unless_passed(
+    tiny_llama_local_path: str,
+    monkeypatch: pytest.MonkeyPatch,
+    command: str,
+    flags: list[str],
+    expected: bool | None,
+) -> None:
+    """Without the flag the field stays unset, so the architecture decides."""
+    seen: list[PipelineArgs] = []
+    from_flat_kwargs = PipelineArgs.from_flat_kwargs
+
+    def record(**kwargs: object) -> PipelineArgs:
+        seen.append(from_flat_kwargs(**kwargs))
+        raise _StopAtPipelineArgs
+
+    monkeypatch.setattr(PipelineArgs, "from_flat_kwargs", record)
+    with pytest.raises(_StopAtPipelineArgs):
+        pipelines.main([command, "--model-path", tiny_llama_local_path, *flags])
+    [pipeline_args] = seen
+    assert pipeline_args.runtime.enable_overlap_scheduler is expected

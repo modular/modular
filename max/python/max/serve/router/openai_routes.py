@@ -281,12 +281,18 @@ _DEFAULT_VALID_TOOL_NAME_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
 # Tool-name length cap; checked by length so it holds even when a parser widens the charset.
 _MAX_TOOL_NAME_LEN = 1024
 
-# Config resolution auto-enables the overlap scheduler for architectures
-# that support it unless ``--force`` is set, so the advice names both flags.
 _OVERLAP_LOGPROBS_ERROR = (
     "Log probabilities are not supported with the overlap scheduler. Start"
-    " the server with --no-enable-overlap-scheduler --force to use logprobs,"
-    " or --allow-unsupported-logprobs to silently ignore the field."
+    " the server with --no-enable-overlap-scheduler to use logprobs, or"
+    " --allow-unsupported-logprobs to silently ignore the field."
+)
+
+# Speculative decoding always runs the overlap pipeline, so no flag turns
+# logprobs on.
+_SPECULATIVE_LOGPROBS_ERROR = (
+    "Log probabilities are not supported with speculative decoding. Start"
+    " the server with --allow-unsupported-logprobs to silently ignore the"
+    " field."
 )
 
 # Standard OpenAI message roles; a tokenizer may allow more via ``extra_chat_roles``.
@@ -398,7 +404,7 @@ def record_request_end(
     METRICS.request_time(elapsed_ms, request_path)
     if output_tokens is not None:
         METRICS.output_tokens(output_tokens)
-        METRICS.output_tokens_per_request(output_tokens)
+        METRICS.output_tokens_per_request(output_tokens, turn)
     if input_tokens is not None:
         METRICS.input_tokens(input_tokens)
         METRICS.input_tokens_per_request(input_tokens, turn)
@@ -721,21 +727,6 @@ class OpenAIChatResponseGenerator(
     async def stream(
         self, request: TextGenerationRequest
     ) -> AsyncGenerator[str | JSONResponse, None]:
-        # Submit the request before returning the response stream. Awaiting
-        # next_token_chunk tokenizes and hands the request off to the model
-        # worker, so a failed submission (e.g. a dead worker) raises here —
-        # before the SSE 200 headers are sent — and the route maps it to an
-        # HTTP error status.
-        token_generator = await self.pipeline.next_token_chunk(request)
-        return self._stream(request, token_generator)
-
-    async def _stream(
-        self,
-        request: TextGenerationRequest,
-        token_generator: AsyncGenerator[TokenGeneratorOutput, None],
-    ) -> AsyncGenerator[str | JSONResponse, None]:
-        self.logger.debug("Streaming: Start: %s", request)
-        record_request_start()
         request_span = _tracer.start_span(
             "max.request",
             context=request_trace_ctx.get(),
@@ -744,6 +735,27 @@ class OpenAIChatResponseGenerator(
                 "max.request_id": str(request.request_id),
             },
         )
+        set_phase_parent(request_span)
+        # Submit the request before returning the response stream. Awaiting
+        # next_token_chunk tokenizes and hands the request off to the model
+        # worker, so a failed submission (e.g. a dead worker) raises here —
+        # before the SSE 200 headers are sent — and the route maps it to an
+        # HTTP error status.
+        try:
+            token_generator = await self.pipeline.next_token_chunk(request)
+        except BaseException:
+            request_span.end()
+            raise
+        return self._stream(request, token_generator, request_span)
+
+    async def _stream(
+        self,
+        request: TextGenerationRequest,
+        token_generator: AsyncGenerator[TokenGeneratorOutput, None],
+        request_span: otel_trace.Span,
+    ) -> AsyncGenerator[str | JSONResponse, None]:
+        self.logger.debug("Streaming: Start: %s", request)
+        record_request_start()
         request_timer = StopWatch(start_ns=request.timestamp_ns)
         n_reasoning_tokens = 0
         n_tokens = 0
@@ -2523,7 +2535,10 @@ async def openai_create_chat_completion(
             _validate_logprobs_count(logprobs_count, "top_logprobs")
 
         runtime_cfg = pipeline_config.runtime
-        if logprobs_count != 0 and runtime_cfg.enable_overlap_scheduler:
+        speculative = pipeline_config.speculative is not None
+        if logprobs_count != 0 and (
+            runtime_cfg.enable_overlap_scheduler or speculative
+        ):
             if runtime_cfg.allow_unsupported_logprobs:
                 logger.warning(
                     "Request %s asked for logprobs but the overlap scheduler "
@@ -2533,7 +2548,11 @@ async def openai_create_chat_completion(
                 )
                 logprobs_count = 0
             else:
-                raise InputError(_OVERLAP_LOGPROBS_ERROR)
+                raise InputError(
+                    _SPECULATIVE_LOGPROBS_ERROR
+                    if speculative
+                    else _OVERLAP_LOGPROBS_ERROR
+                )
 
         # When the orchestrator has already tokenized the prompt for
         # KV cache-aware routing, pass the token IDs directly so MAX Serve
@@ -2571,10 +2590,14 @@ async def openai_create_chat_completion(
 
         if completion_request.stream:
             # Resolve the submit and first chunk before the SSE headers go
-            # out, so a failed handoff is an HTTP error.
-            error, token_stream = await _start_stream(
-                await response_generator.stream(token_request)
-            )
+            # out, so a failed handoff is an HTTP error. The SSE response
+            # watches for a disconnect only once it starts, so watch here
+            # while the request waits in the queue for its first token.
+            async with CancelGroup() as group:
+                group.create_task(raise_on_disconnect(request))
+                error, token_stream = await _start_stream(
+                    await response_generator.stream(token_request)
+                )
             if error is not None:
                 return error
             # We set a large timeout for ping otherwise benchmarking scripts
@@ -3206,23 +3229,6 @@ class OpenAICompletionResponseGenerator(
     async def stream(
         self, request: TextGenerationRequest
     ) -> AsyncGenerator[str | JSONResponse, None]:
-        # Submit the request before returning the response stream. Awaiting
-        # next_token_chunk tokenizes and hands the request off to the model
-        # worker, so a failed submission (e.g. a dead worker) raises here —
-        # before the SSE 200 headers are sent — and the route maps it to an
-        # HTTP error status.
-        token_generator = await self.pipeline.next_token_chunk(
-            request, parse_reasoning=self.parse_reasoning
-        )
-        return self._stream(request, token_generator)
-
-    async def _stream(
-        self,
-        request: TextGenerationRequest,
-        token_generator: AsyncGenerator[TokenGeneratorOutput, None],
-    ) -> AsyncGenerator[str | JSONResponse, None]:
-        logger.debug("Streaming: Start: %s", request)
-        record_request_start()
         request_span = _tracer.start_span(
             "max.request",
             context=request_trace_ctx.get(),
@@ -3231,6 +3237,29 @@ class OpenAICompletionResponseGenerator(
                 "max.request_id": str(request.request_id),
             },
         )
+        set_phase_parent(request_span)
+        # Submit the request before returning the response stream. Awaiting
+        # next_token_chunk tokenizes and hands the request off to the model
+        # worker, so a failed submission (e.g. a dead worker) raises here —
+        # before the SSE 200 headers are sent — and the route maps it to an
+        # HTTP error status.
+        try:
+            token_generator = await self.pipeline.next_token_chunk(
+                request, parse_reasoning=self.parse_reasoning
+            )
+        except BaseException:
+            request_span.end()
+            raise
+        return self._stream(request, token_generator, request_span)
+
+    async def _stream(
+        self,
+        request: TextGenerationRequest,
+        token_generator: AsyncGenerator[TokenGeneratorOutput, None],
+        request_span: otel_trace.Span,
+    ) -> AsyncGenerator[str | JSONResponse, None]:
+        logger.debug("Streaming: Start: %s", request)
+        record_request_start()
         request_timer = StopWatch(start_ns=request.timestamp_ns)
         n_reasoning_tokens = 0
         n_tokens = 0
@@ -3619,10 +3648,13 @@ async def openai_create_completion(
         if completion_request.logprobs is not None:
             _validate_logprobs_count(completion_request.logprobs, "logprobs")
 
+        speculative = pipeline_config.speculative is not None
         if (
             completion_request.logprobs is not None
             and completion_request.logprobs != 0
-            and pipeline_config.runtime.enable_overlap_scheduler
+            and (
+                pipeline_config.runtime.enable_overlap_scheduler or speculative
+            )
         ):
             if pipeline_config.runtime.allow_unsupported_logprobs:
                 logger.warning(
@@ -3633,7 +3665,11 @@ async def openai_create_completion(
                 )
                 completion_request.logprobs = None
             else:
-                raise InputError(_OVERLAP_LOGPROBS_ERROR)
+                raise InputError(
+                    _SPECULATIVE_LOGPROBS_ERROR
+                    if speculative
+                    else _OVERLAP_LOGPROBS_ERROR
+                )
 
         response_generator = OpenAICompletionResponseGenerator(
             pipeline,
@@ -3712,10 +3748,14 @@ async def openai_create_completion(
                     "Streaming responses for multiple prompts is not supported"
                 )
             # Resolve the submit and first chunk before the SSE headers go
-            # out, so a failed handoff is an HTTP error.
-            error, token_stream = await _start_stream(
-                await response_generator.stream(token_requests[0])
-            )
+            # out, so a failed handoff is an HTTP error. The SSE response
+            # watches for a disconnect only once it starts, so watch here
+            # while the request waits in the queue for its first token.
+            async with CancelGroup() as group:
+                group.create_task(raise_on_disconnect(request))
+                error, token_stream = await _start_stream(
+                    await response_generator.stream(token_requests[0])
+                )
             if error is not None:
                 return error
             # We set a large timeout for ping otherwise benchmarking scripts

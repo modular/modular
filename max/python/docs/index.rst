@@ -37,5 +37,5 @@ Modules
    pipelines
    profiler
    serve.media
-   support.image
+   support
    tree

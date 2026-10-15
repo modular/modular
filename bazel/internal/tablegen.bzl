@@ -1,8 +1,61 @@
 """Common tablegen abstraction"""
 
-load("@llvm-project//mlir:tblgen.bzl", "gentbl_cc_library", "gentbl_filegroup", "td_library")
+load("@llvm-project//mlir:tblgen.bzl", _gentbl_cc_library = "gentbl_cc_library", _gentbl_filegroup = "gentbl_filegroup", _td_library = "td_library")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("//bazel:config.bzl", "ALLOW_UNUSED_TAG")
+load(":overlay.bzl", "overlay_includes", "overlay_src", "overlay_srcs")
+
+def td_library(name, srcs = [], includes = [], **kwargs):
+    """Upstream `td_library`, with the package overlay applied to `srcs`.
+
+    Args:
+        name: See td_library docs
+        srcs: See td_library docs
+        includes: See td_library docs
+        **kwargs: Passed through to td_library
+    """
+    _td_library(
+        name = name,
+        srcs = overlay_srcs(srcs),
+        includes = overlay_includes(includes),
+        **kwargs
+    )
+
+def gentbl_filegroup(name, td_file, td_srcs = [], includes = [], **kwargs):
+    """Upstream `gentbl_filegroup`, with the package overlay applied to `td_file`.
+
+    Args:
+        name: See gentbl_filegroup docs
+        td_file: See gentbl_filegroup docs
+        td_srcs: See gentbl_filegroup docs
+        includes: See gentbl_filegroup docs
+        **kwargs: Passed through to gentbl_filegroup
+    """
+    _gentbl_filegroup(
+        name = name,
+        td_file = overlay_src(td_file),
+        td_srcs = overlay_srcs(td_srcs),
+        includes = overlay_includes(includes),
+        **kwargs
+    )
+
+def gentbl_cc_library(name, td_file, td_srcs = [], includes = [], **kwargs):
+    """Upstream `gentbl_cc_library`, with the package overlay applied to `td_file`.
+
+    Args:
+        name: See gentbl_cc_library docs
+        td_file: See gentbl_cc_library docs
+        td_srcs: See gentbl_cc_library docs
+        includes: See gentbl_cc_library docs
+        **kwargs: Passed through to gentbl_cc_library
+    """
+    _gentbl_cc_library(
+        name = name,
+        td_file = overlay_src(td_file),
+        td_srcs = overlay_srcs(td_srcs),
+        includes = overlay_includes(includes),
+        **kwargs
+    )
 
 def driver_option_tablegen(
         name,

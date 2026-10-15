@@ -18,7 +18,7 @@ from std.format._utils import (
     TypeNames,
 )
 from std.memory import MaybeUninit
-from std.hashlib.hasher import Hasher
+from std.hash.hasher import Hasher
 from std.reflection import call_location
 from std.traits import (
     IsTriviallyCopyable,
@@ -60,7 +60,7 @@ trait _VariantStorage(Copyable, Deinitable):
         """Initialize storage with a value of type `U`."""
         ...
 
-    def __init__(out self, *, unsafe_uninitialized: ()):
+    def __init__(out self, *, unsafe_uninitialized: Tuple[]):
         """Create storage whose active-type slot is left uninitialized.
 
         The caller must mark the active type with `unsafe_set_active` and then
@@ -217,7 +217,7 @@ struct _NichedOptionalStorage[
             self = Self()
 
     @inline(.always)
-    def __init__(out self, *, unsafe_uninitialized: ()):
+    def __init__(out self, *, unsafe_uninitialized: Tuple[]):
         self._memory = {}
 
     @inline(.always)
@@ -301,7 +301,7 @@ struct _DefaultVariantStorage[*Ts: AnyType](
     var _impl: Self._mlir_type
 
     @inline(.always)
-    def __init__(out self, *, unsafe_uninitialized: ()):
+    def __init__(out self, *, unsafe_uninitialized: Tuple[]):
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
 
     @inline(.always)
@@ -998,7 +998,7 @@ struct Variant[*Ts: AnyType](
     # `@doc_hidden` because a dunder can't be hidden by an underscore name.
 
     @doc_hidden
-    def __init__(out self, *, unsafe_uninitialized: ()):
+    def __init__(out self, *, unsafe_uninitialized: Tuple[]):
         """Create a variant whose active-type slot is left uninitialized.
 
         Args:

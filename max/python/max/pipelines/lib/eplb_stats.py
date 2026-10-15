@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import logging
 import threading
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any
 
@@ -39,9 +40,15 @@ from .eplb_rebalance import rebalance_experts
 logger = logging.getLogger("max.serve")
 
 __all__ = [
+    "AggregatedEplbPlanner",
+    "EplbPlacement",
+    "EplbPlanner",
     "EplbStatsAccumulator",
     "EplbStatsMetadata",
     "EplbStatsSnapshot",
+    "EplbTopology",
+    "PerLayerEplbPlanner",
+    "eplb_planner_for",
 ]
 
 
@@ -463,66 +470,55 @@ class EplbPlacement:
         ep_size: int,
         n_nodes: int,
         n_groups: int,
-        eplb_replicas_per_gpu: int = 0,
+        eplb_redundant_experts_per_gpu: int = 0,
+        planner: EplbPlanner | None = None,
     ) -> EplbPlacement:
-        """Run the rebalance algorithm on a routing-histogram snapshot.
+        """Plans a placement from a routing-histogram snapshot.
 
-        Subgraph reuse requires that every MoE layer share an identical
-        expert placement: ``MoE.shard`` bakes ``phy2log[layer_idx, ...]``
-        into weight names at Python construction time, but the subgraph
-        is built once using the first MoE layer and then re-invoked for
-        every other layer via prefix substitution. If the per-layer
-        plans differ, the substituted weight name points at the wrong
-        logical expert and the model produces garbage.
+        Args:
+            snap: The routing histogram to balance.
+            ep_size: Number of expert-parallel ranks.
+            n_nodes: Number of nodes the ranks span.
+            n_groups: Number of expert groups the router selects from.
+            eplb_redundant_experts_per_gpu: Redundant expert slots to add per rank.
+            planner: The balancing policy. Defaults to
+                :class:`PerLayerEplbPlanner`.
 
-        We aggregate the per-layer histograms into a single load vector,
-        rebalance once, and broadcast the resulting plan across every
-        MoE layer.
+        Returns:
+            The placement, with one row per histogram row.
         """
         weight_per_layer = np.asarray(snap.histogram, dtype=np.int64)
-        num_layers, num_log = weight_per_layer.shape
-        if num_log % ep_size or num_log % n_groups:
-            raise ValueError(
-                f"num_logical={num_log} must be divisible by "
-                f"ep_size={ep_size} and n_groups={n_groups}"
-            )
-
-        if eplb_replicas_per_gpu < 0:
-            raise ValueError(
-                f"eplb_replicas_per_gpu must be >= 0, got {eplb_replicas_per_gpu}"
-            )
-
-        num_phy = num_log + eplb_replicas_per_gpu * ep_size
-        # Aggregate per-layer histograms; rebalance once on the sum.
-        weight_agg = weight_per_layer.sum(axis=0, keepdims=True)  # [1, num_log]
-
-        phy2log_u, log2phy_u, logcnt_u = rebalance_experts(
-            weight_agg,
-            num_phy,
-            n_groups,
-            n_nodes,
-            ep_size,
+        topology = EplbTopology(
+            ep_size=ep_size,
+            n_nodes=n_nodes,
+            n_groups=n_groups,
+            redundant_experts_per_gpu=eplb_redundant_experts_per_gpu,
         )
-        # phy2log_u: [1, num_phy], log2phy_u: [1, num_log, max_replicas],
-        # logcnt_u: [1, num_log]. Broadcast layer dimension to num_layers.
-        max_replicas = log2phy_u.shape[-1]
-        phy2log = np.broadcast_to(phy2log_u, (num_layers, num_phy)).copy()
-        log2phy = (
-            np.broadcast_to(log2phy_u, (num_layers, num_log, max_replicas))
-            .copy()
-            .astype(np.int32)
+        topology.validate(num_logical=weight_per_layer.shape[1])
+        placement = (planner or PerLayerEplbPlanner()).plan(
+            weight_per_layer, topology
         )
-        logcnt = (
-            np.broadcast_to(logcnt_u, (num_layers, num_log))
-            .copy()
-            .astype(np.int32)
+        cls._log_summary(
+            weight_per_layer, placement.phy2log, placement.logcnt, ep_size
         )
+        return placement
 
-        cls._log_summary(weight_per_layer, phy2log, logcnt, ep_size)
+    @classmethod
+    def from_rebalance(
+        cls, weight: NDArray[np.int64], topology: EplbTopology
+    ) -> EplbPlacement:
+        """Runs the hierarchical rebalance on every row of ``weight``."""
+        phy2log, log2phy, logcnt = rebalance_experts(
+            weight,
+            topology.num_physical(weight.shape[1]),
+            topology.n_groups,
+            topology.n_nodes,
+            topology.ep_size,
+        )
         return cls(
             phy2log=phy2log,
-            log2phy=log2phy,
-            logcnt=logcnt,
+            log2phy=log2phy.astype(np.int32),
+            logcnt=logcnt.astype(np.int32),
         )
 
     @classmethod
@@ -572,3 +568,115 @@ class EplbPlacement:
             before.max() / max(before.min(), 1),
             after.max() / max(after.min(), 1),
         )
+
+
+@dataclass(frozen=True)
+class EplbTopology:
+    """The expert-parallel layout a placement is planned for."""
+
+    ep_size: int
+    """Number of expert-parallel ranks."""
+
+    n_nodes: int
+    """Number of nodes the ranks span."""
+
+    n_groups: int
+    """Number of expert groups the router selects from."""
+
+    redundant_experts_per_gpu: int = 0
+    """Redundant expert slots added per rank."""
+
+    def num_physical(self, num_logical: int) -> int:
+        """Returns the physical slot count for ``num_logical`` experts."""
+        return num_logical + self.redundant_experts_per_gpu * self.ep_size
+
+    def validate(self, num_logical: int) -> None:
+        """Raises ``ValueError`` if ``num_logical`` experts cannot fit."""
+        if num_logical % self.ep_size or num_logical % self.n_groups:
+            raise ValueError(
+                f"num_logical={num_logical} must be divisible by "
+                f"ep_size={self.ep_size} and n_groups={self.n_groups}"
+            )
+        if self.redundant_experts_per_gpu < 0:
+            raise ValueError(
+                "eplb_redundant_experts_per_gpu must be >= 0, got "
+                f"{self.redundant_experts_per_gpu}"
+            )
+
+
+class EplbPlanner(ABC):
+    """Turns a per-layer routing histogram into an expert placement.
+
+    Implementations are free to choose how load is measured and combined, but
+    must return one placement row per histogram row with the same physical
+    slot count in every row, since every MoE layer shares one compiled
+    subgraph.
+    """
+
+    @abstractmethod
+    def plan(
+        self, weight: NDArray[np.int64], topology: EplbTopology
+    ) -> EplbPlacement:
+        """Plans a placement.
+
+        Args:
+            weight: ``[num_layers, num_logical]`` routed-token counts.
+            topology: The layout to plan for.
+
+        Returns:
+            The placement, with ``num_layers`` rows.
+        """
+
+
+class PerLayerEplbPlanner(EplbPlanner):
+    """Balances every layer against its own routing histogram.
+
+    Dense layers have all-zero rows; they get a valid but unused placement.
+    """
+
+    def plan(
+        self, weight: NDArray[np.int64], topology: EplbTopology
+    ) -> EplbPlacement:
+        """Runs the hierarchical rebalance on each layer independently."""
+        return EplbPlacement.from_rebalance(weight, topology)
+
+
+class AggregatedEplbPlanner(EplbPlanner):
+    """Balances the sum of all layers and applies that plan to every layer.
+
+    Stable with fewer profiled tokens than the per-layer planner, but ignores
+    load that differs between layers.
+    """
+
+    def plan(
+        self, weight: NDArray[np.int64], topology: EplbTopology
+    ) -> EplbPlacement:
+        """Rebalances the layer sum once and broadcasts it to every layer."""
+        num_layers = weight.shape[0]
+        once = EplbPlacement.from_rebalance(
+            weight.sum(axis=0, keepdims=True), topology
+        )
+        return EplbPlacement(
+            phy2log=np.repeat(once.phy2log, num_layers, axis=0),
+            log2phy=np.repeat(once.log2phy, num_layers, axis=0),
+            logcnt=np.repeat(once.logcnt, num_layers, axis=0),
+        )
+
+
+_PLANNERS: dict[str, type[EplbPlanner]] = {
+    "per_layer": PerLayerEplbPlanner,
+    "aggregated": AggregatedEplbPlanner,
+}
+
+
+def eplb_planner_for(name: str) -> EplbPlanner:
+    """Returns the planner registered under ``name``.
+
+    Raises:
+        ValueError: If no planner has that name.
+    """
+    if name not in _PLANNERS:
+        raise ValueError(
+            f"Unknown EPLB planner {name!r}; expected one of {sorted(_PLANNERS)}"
+        )
+    return _PLANNERS[name]()

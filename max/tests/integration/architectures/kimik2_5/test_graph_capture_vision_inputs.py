@@ -103,8 +103,6 @@ def _fake_pipeline_model(cls: type[KimiK2_5Model], n_devices: int) -> Any:
 
     model._eplb_stats_accumulator = None
     model.ep_comm_initializer = None
-    model._eplb_log2phy_buffers = []
-    model._eplb_logcnt_buffers = []
 
     batch_processor = MagicMock()
     batch_processor.prepare_initial_token_inputs.return_value = (

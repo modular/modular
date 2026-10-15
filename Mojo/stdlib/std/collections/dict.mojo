@@ -41,7 +41,7 @@ See the `Dict` docs for more details.
 """
 
 from std.builtin.rebind import downcast
-from std.hashlib import Hasher, default_comp_time_hasher, default_hasher
+from std.hash import Hasher, default_comp_time_hasher, default_hasher
 import std.format._utils as fmt
 
 from std.memory import alloc, dealloc, unsafe_memset
@@ -143,7 +143,7 @@ struct _DictEntryIter[
     //,
     K: KeyElement & Copyable,
     V: Copyable,
-    H: Hasher,
+    H: Hasher & Defaultable & Deinitable,
     origin: Origin[mut=mut],
     forward: Bool = True,
 ](ImplicitlyCopyable, Iterable, Iterator):
@@ -219,7 +219,7 @@ struct _DictEntryIter[
 struct _TakeDictEntryIter[
     K: KeyElement & Deinitable,
     V: Movable & Deinitable,
-    H: Hasher,
+    H: Hasher & Defaultable & Deinitable,
     origin: MutOrigin,
 ](Copyable, Iterable, Iterator):
     """Iterator over mutable DictEntry references that moves entries out of the dictionary.
@@ -276,7 +276,7 @@ struct _TakeDictEntryIter[
 struct _DictEntryIterOwned[
     K: KeyElement & Deinitable,
     V: Movable & Deinitable,
-    H: Hasher,
+    H: Hasher & Defaultable & Deinitable,
 ](IterableOwned, Iterator, Movable):
     """An owning iterator over DictEntry values that consumes the dictionary.
 
@@ -330,7 +330,7 @@ struct _DictEntryIterOwned[
 struct _DictKeyIterOwned[
     K: KeyElement & Deinitable,
     V: Movable & Deinitable,
-    H: Hasher,
+    H: Hasher & Defaultable & Deinitable,
 ](IterableOwned, Iterator, Movable):
     """An owning iterator over Dict keys that consumes the dictionary.
 
@@ -364,7 +364,7 @@ struct _DictKeyIter[
     //,
     K: KeyElement & Copyable,
     V: Copyable,
-    H: Hasher,
+    H: Hasher & Defaultable & Deinitable,
     origin: Origin[mut=mut],
     forward: Bool = True,
 ](ImplicitlyCopyable, Iterable, Iterator):
@@ -410,7 +410,7 @@ struct _DictValueIter[
     //,
     K: KeyElement & Copyable,
     V: Copyable,
-    H: Hasher,
+    H: Hasher & Defaultable & Deinitable,
     origin: Origin[mut=mut],
     forward: Bool = True,
 ](ImplicitlyCopyable, Iterable, Iterator):
@@ -470,7 +470,7 @@ struct _DictValueIter[
 struct Dict[
     K: KeyElement,
     V: Movable,
-    H: Hasher = default_hasher,
+    H: Hasher & Defaultable & Deinitable = default_hasher,
 ](
     Boolable,
     Copyable where conforms_to(K, Copyable) and conforms_to(V, Copyable),
@@ -1137,10 +1137,10 @@ struct Dict[
         # entries with similar hashes don't cancel under XOR.
         var combined = UInt64(0)
         for entry in self.items():
-            var entry_hasher = H2()
+            var entry_hasher = Self.H()
             entry.key.__hash__(entry_hasher)
             entry.value.__hash__(entry_hasher)
-            var h = entry_hasher^.finish()
+            var h = entry_hasher.finish()
             h = ((h ^ 89869747) ^ (h << 16)) * 3644798167
             combined ^= h
         hasher._update_with_simd(combined)

@@ -108,6 +108,9 @@ class DeepseekV3Config(ArchConfigWithKVCache):
     correction_bias_dtype: DType | None = None
     max_batch_context_length: int = 131072
     quant_config: QuantConfig | None = None
+    attn_quant_config: QuantConfig | None = None
+    """Quantization of the MLA projections when it differs from
+    ``quant_config``, such as rowwise FP8 attention beside MXFP4 experts."""
     dense_mlp_layers_without_quant: frozenset[int] = frozenset()
     """Dense prefix layers (indices ``< first_k_dense_replace``) that skip MLP quant."""
     ep_config: EPConfig | None = None

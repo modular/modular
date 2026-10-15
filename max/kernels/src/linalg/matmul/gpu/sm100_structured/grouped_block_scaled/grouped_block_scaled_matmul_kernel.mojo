@@ -33,7 +33,6 @@ Key differences from block_scaled_matmul_kernel.mojo:
 5. K-loop uses per-group k_tile_count instead of global K dimension
 """
 
-from std.collections import Optional
 from std.math import align_up, ceildiv
 from std.math.uutils import ufloordiv, umod
 from std.memory import UnsafePointer, Pointer
@@ -74,7 +73,7 @@ from std.utils.static_tuple import StaticTuple
 
 from linalg.arch.sm100 import MmaOpSM100_BlockScaled_SS
 from linalg.fp4_utils import SF_MN_GROUP_SIZE, SF_ATOM_M, SF_ATOM_K
-from linalg.utils import elementwise_compute_lambda_type
+from linalg.utils import ElementwiseComputeFn, no_compute_fn
 from ..structured_kernels.config import (
     BlockScaledMatmulConfig,
     OutputPipelineConfig,
@@ -681,9 +680,8 @@ struct GroupedBlockScaledMatmulKernel[
     # Cluster shape (for LLVM metadata)
     cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1),
     # Epilogue fusion parameters
-    elementwise_compute_lambda_fn: Optional[
-        elementwise_compute_lambda_type
-    ] = None,
+    ComputeFnType: ElementwiseComputeFn = type_of(no_compute_fn),
+    has_compute_fn: Bool = False,
     *,
     group_ptr_engine: TensorEngine,
     problem_sizes_engine: TensorEngine,
@@ -711,8 +709,11 @@ struct GroupedBlockScaledMatmulKernel[
         max_groups: Maximum number of GEMM groups supported at runtime.
         cluster_shape: CTA cluster dimensions as
             `(cluster_m, cluster_n, cluster_k)` (defaults to `(1, 1, 1)`).
-        elementwise_compute_lambda_fn: Optional epilogue fusion
-            lambda applied to accumulated results (defaults to `None`).
+        ComputeFnType: Type of the `compute_fn` argument of `run` and
+            `run_2sm`.
+        has_compute_fn: Whether `compute_fn` maps the accumulated results
+            before they are stored (defaults to False). Launch with
+            `host_arg=compute_fn`.
         group_ptr_engine: Engine of the per-group pointer tiles.
         problem_sizes_engine: Engine of the problem-sizes tile.
     """
@@ -1025,7 +1026,6 @@ struct GroupedBlockScaledMatmulKernel[
         c_smem_dim1=Self.SmemType.Core.OutputN,
         num_output_stages=Self.config.num_output_stages,
         num_output_warps=Self.num_output_warps,
-        elementwise_compute_lambda_fn=Self.elementwise_compute_lambda_fn,
         register_based_epilogue=Self.register_based_epilogue,
         batched=True,
     ]
@@ -1363,10 +1363,7 @@ struct GroupedBlockScaledMatmulKernel[
     @__llvm_arg_metadata(sfb_tma_template, `nvvm.grid_constant`)
     @__name(
         StaticString(Self.config.get_kernel_name())
-        + StaticString(
-            "_fused_compute_epi" if Self.elementwise_compute_lambda_fn
-            is not None else ""
-        ),
+        + StaticString("_compute_fn" if Self.has_compute_fn else ""),
     )
     def run(
         # Template tensormaps for SMEM initialization
@@ -1391,6 +1388,7 @@ struct GroupedBlockScaledMatmulKernel[
         problem_sizes_lt: Self.ProblemSizesTile,
         # Number of active groups
         num_groups: Int32,
+        compute_fn: Self.ComputeFnType,
     ):
         """Grouped block-scaled GEMM kernel entry point.
 
@@ -1431,6 +1429,8 @@ struct GroupedBlockScaledMatmulKernel[
             problem_sizes_lt: Per-group problem sizes as a
                 `(max_groups, 4)` tensor with `[M, N, K, L]` per group.
             num_groups: Number of active GEMM groups to process.
+            compute_fn: Element-wise epilogue applied to each output value;
+                ignored unless `has_compute_fn` is True.
         """
         var _num_groups = Int(num_groups)
         Self.validate_config()
@@ -1699,6 +1699,7 @@ struct GroupedBlockScaledMatmulKernel[
                             (current.m, current.n, UInt32(0)),
                             group_m,
                             group_n,
+                            compute_fn,
                         )
 
         # KERN-3311: hold the cluster together until every CTA is finished.
@@ -1958,6 +1959,7 @@ struct GroupedBlockScaledMatmulKernel[
         work_tile_coord: Tuple[UInt32, UInt32, UInt32],
         M: UInt32,
         N: UInt32,
+        compute_fn: Self.ComputeFnType,
         alpha: Float32 = Float32(1.0),
     ):
         """Execute epilogue to store accumulated results.
@@ -1970,17 +1972,29 @@ struct GroupedBlockScaledMatmulKernel[
                 current group.
             M: Row extent of the current group's output matrix.
             N: Column extent of the current group's output matrix.
+            compute_fn: Element-wise epilogue applied to each output value;
+                ignored unless `has_compute_fn` is True.
             alpha: Scaling factor applied to accumulators before storing
                 (defaults to 1.0).
         """
         var tile_writer = Self.TileWriterType(Pointer(to=c_tma_op))
-        tile_writer.write_batched(
-            c_tiles,
-            stage,
-            work_tile_coord,
-            (M, N),
-            alpha,
-        )
+        comptime if Self.has_compute_fn:
+            tile_writer.write_batched(
+                c_tiles,
+                stage,
+                work_tile_coord,
+                (M, N),
+                compute_fn,
+                alpha,
+            )
+        else:
+            tile_writer.write_batched(
+                c_tiles,
+                stage,
+                work_tile_coord,
+                (M, N),
+                alpha,
+            )
 
     # ========== 2SM Kernel Entry Point ==========
 
@@ -1993,11 +2007,8 @@ struct GroupedBlockScaledMatmulKernel[
     @__llvm_arg_metadata(sfa_tma_template, `nvvm.grid_constant`)
     @__llvm_arg_metadata(sfb_tma_template, `nvvm.grid_constant`)
     @__name(
-        StaticString(
-            Self.config.get_kernel_name()
-            + "_fused_compute_epi" if Self.elementwise_compute_lambda_fn
-            is not None else ""
-        ),
+        StaticString(Self.config.get_kernel_name())
+        + StaticString("_compute_fn" if Self.has_compute_fn else ""),
     )
     def run_2sm(
         # Template tensormaps for SMEM initialization
@@ -2022,6 +2033,7 @@ struct GroupedBlockScaledMatmulKernel[
         problem_sizes_lt: Self.ProblemSizesTile,
         # Number of active groups
         num_groups: Int32,
+        compute_fn: Self.ComputeFnType,
     ):
         """Grouped block-scaled GEMM kernel with 2SM (cta_group=2) support.
 
@@ -2069,6 +2081,8 @@ struct GroupedBlockScaledMatmulKernel[
             problem_sizes_lt: Per-group problem sizes as a
                 `(max_groups, 4)` tensor with `[M, N, K, L]` per group.
             num_groups: Number of active GEMM groups to process.
+            compute_fn: Element-wise epilogue applied to each output value;
+                ignored unless `has_compute_fn` is True.
         """
         var _num_groups = Int(num_groups)
         Self.validate_config()
@@ -2419,6 +2433,7 @@ struct GroupedBlockScaledMatmulKernel[
                             (current.m, current.n, UInt32(0)),
                             group_m,
                             group_n,
+                            compute_fn,
                         )
 
         # KERN-3311: hold the cluster together until every CTA is finished.

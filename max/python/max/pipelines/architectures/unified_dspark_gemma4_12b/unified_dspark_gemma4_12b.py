@@ -14,13 +14,11 @@
 
 from __future__ import annotations
 
-from max.graph import TensorValue
 from max.nn.kv_cache import KVCacheParamInterface, MultiKVCacheParams
-from max.pipelines.speculative.block_driver import BlockDriver
 from max.pipelines.speculative.spec_input_types import SpecDecodeInputTypeSpec
 from typing_extensions import override
 
-from ..gemma4.block_spec_adapters import Gemma4BlockTarget
+from ..gemma4.block_spec_adapters import Gemma4BlockDriver, Gemma4BlockTarget
 from ..gemma4.gemma4 import Gemma4TextModel
 from .dspark_gemma4 import DSparkGemma4
 from .model_config import UnifiedDSparkGemma4_12BConfig
@@ -29,7 +27,7 @@ from .spec_adapters import DSparkGemma4_12BProposer
 __all__ = ["UnifiedDSparkGemma4_12B"]
 
 
-class UnifiedDSparkGemma4_12B(BlockDriver[TensorValue, TensorValue]):
+class UnifiedDSparkGemma4_12B(Gemma4BlockDriver):
     """Spark + Gemma4-12B: the dense block draft on the block driver
 
     DSpark drafts at every block position: the anchor predicts draft 1,

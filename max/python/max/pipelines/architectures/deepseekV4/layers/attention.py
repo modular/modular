@@ -70,7 +70,6 @@ from max.dtype import DType
 from max.graph import DeviceRef, ShardingStrategy, TensorValue, Weight, ops
 from max.nn.kernels import latent_sparse_attention_ragged
 from max.nn.layer import Module
-from max.nn.linear import Linear
 from max.nn.norm.rms_norm import RMSNorm
 
 from ..model_config import DeepseekV4Config
@@ -84,7 +83,7 @@ from .cache import (
 from .compressor import DeepseekV4Compressor
 from .csa import CompressedStream, compressed_stream
 from .indexer import DeepseekV4Indexer
-from .quantization import fp8_qat_quantize, linear_for
+from .quantization import dequantize_fp8_blocks, fp8_qat_quantize, linear_for
 from .ragged import RaggedRows
 from .rope import apply_rope_tail, rope_for_layer
 from .sparse_attention import sparse_attention
@@ -187,15 +186,10 @@ class DeepseekV4Attention(Module):
         self.kv_norm = RMSNorm(
             self.head_dim, DType.float32, config.rms_norm_eps
         )
-        # Not ``linear_for``: the checkpoint stores wo_a fp8, but the reference
-        # declares it ``dtype=torch.bfloat16`` and consumes ``.weight`` raw in
-        # the grouped einsum below, so it never runs the fp8 ``linear()`` path
-        # and its activation is never quantized. The weight adapter
-        # host-dequantizes it for that reason.
-        self.wo_a = Linear(
+        self.wo_a = linear_for(
+            config,
             self.n_heads * self.head_dim // self.o_groups,
             self.o_groups * self.o_lora_rank,
-            config.dtype,
             device,
         )
         self.wo_b = linear_for(
@@ -248,12 +242,10 @@ class DeepseekV4Attention(Module):
         if self.indexer is not None:
             self.indexer.keep_local_heads(num_devices)
 
-    def layer_index(self, device: DeviceRef) -> LayerIndex:
+    def layer_index(self) -> LayerIndex:
         """This layer's place in the leaves, as constants."""
         return LayerIndex.constant(
-            self.swa_layer,
-            self.zone_layer if self.compress_ratio else None,
-            device,
+            self.swa_layer, self.zone_layer if self.compress_ratio else None
         )
 
     def _output_projection(self, o: TensorValue) -> TensorValue:
@@ -262,7 +254,7 @@ class DeepseekV4Attention(Module):
         ``o.view(b, s, n_groups, -1)`` then
         ``einsum("bsgd,grd->bsgr", o, wo_a.view(n_groups, o_lora_rank, -1))``
         then ``wo_b(o.flatten(2))``. ``wo_a`` is used as a raw weight here, not
-        called as a Linear.
+        called as a Linear; an fp8 one is dequantized first.
         """
         b, s = o.shape[0], o.shape[1]
         group_width = self.n_heads * self.head_dim // self.o_groups
@@ -275,9 +267,13 @@ class DeepseekV4Attention(Module):
         grouped = ops.transpose(
             ops.reshape(o, [b * s, self.o_groups, group_width]), 0, 1
         )
+        weight = self.wo_a.weight.to(o.device)
+        if self.wo_a.weight_scale is not None:
+            weight = dequantize_fp8_blocks(
+                weight, self.wo_a.weight_scale, o.dtype
+            )
         wo_a = ops.reshape(
-            self.wo_a.weight,
-            [self.o_groups, self.o_lora_rank, group_width],
+            weight, [self.o_groups, self.o_lora_rank, group_width]
         )
         # [g, b*s, d] @ [g, d, r] -> [g, b*s, r]
         projected = ops.matmul(grouped, ops.transpose(wo_a, -1, -2))
@@ -350,7 +346,7 @@ class DeepseekV4Attention(Module):
         rd = self.rope_head_dim
         positions = rows.positions
         if index is None:
-            index = self.layer_index(device)
+            index = self.layer_index()
         freqs_table = self.rope.freqs_cis_base()
         freqs_cis = ops.gather(freqs_table, positions, axis=0)
 
@@ -531,7 +527,7 @@ class DeepseekV4Attention(Module):
                     kv,
                     ops.reshape(
                         ops.cast(stream.fresh, kv.dtype),
-                        [1, stream.windows.total, head_dim],
+                        [1, stream.fresh.shape[0], head_dim],
                     ),
                 ],
                 axis=1,

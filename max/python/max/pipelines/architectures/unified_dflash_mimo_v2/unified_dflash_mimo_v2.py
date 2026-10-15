@@ -92,6 +92,7 @@ class UnifiedDflashMiMoV2(
                 f" {target_config.vocab_size}-row lm_head."
             )
         target = MiMoV2(target_config)
+        target.subgraph_layer_prefix = "target.layers"
         drafter = DFlashMiMoV2(spec.draft, mask_embedding=mask_embedding)
         super().__init__(
             MiMoV2BlockTarget(

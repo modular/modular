@@ -13,21 +13,30 @@
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
 
+from max import tree
 from max.dtype import DType
 from max.graph import (
     BufferValue,
     DeviceRef,
     Dim,
+    Graph,
     ShardingStrategy,
+    TensorType,
     TensorValue,
     TensorValueLike,
+    Type,
+    Value,
     dtype_promotion,
     ops,
 )
-from max.nn.comm import Allreduce
+from max.graph import Module as GraphModule
+from max.nn.comm import Allreduce, Signals
 from max.nn.layer import LayerList, Module, Shardable
 from max.nn.linear import MLP, Linear
 from max.nn.norm import RMSNorm
@@ -622,6 +631,92 @@ class VisionTransformer(Module):
         )
         self.merger_shards = self.merger.shard(self.devices)
         self.merger_allreduce = Allreduce(num_accelerators=len(self.devices))
+
+    def input_tree(self) -> OrderedDict[str, object]:
+        """Names the vision graph's inputs, keyed by :meth:`__call__`'s
+        arguments.
+
+        Each argument takes one input per device. ``vision_seq_len`` is the
+        number of patches in all images and videos in the batch.
+
+        Returns:
+            The input types, in graph order.
+        """
+
+        def per_device(
+            dtype: DType, shape: list[int | str], on_host: bool = False
+        ) -> tuple[TensorType, ...]:
+            return tuple(
+                TensorType(
+                    dtype,
+                    shape=shape,
+                    device=DeviceRef.CPU() if on_host else device,
+                )
+                for device in self.devices
+            )
+
+        return OrderedDict(
+            pixel_values=per_device(
+                DType.bfloat16, ["vision_seq_len", self.patch_embed.patch_dim]
+            ),
+            rot_pos_ids=per_device(DType.int64, ["vision_seq_len", 2]),
+            window_index=per_device(DType.int64, ["window_seq_len"]),
+            cu_seqlens=per_device(DType.uint32, ["n_seqlens"]),
+            cu_window_seqlens=per_device(DType.uint32, ["n_window_seqlens"]),
+            max_seqlen=per_device(DType.uint32, [1], on_host=True),
+            max_window_seqlen=per_device(DType.uint32, [1], on_host=True),
+            max_grid_size=per_device(DType.int32, [], on_host=True),
+            signal_buffers=tuple(Signals(devices=self.devices).input_types()),
+        )
+
+    def trace(
+        self,
+        *input_types: Type[Any],
+        name: str | None = None,
+        module: GraphModule | None = None,
+        custom_extensions: Iterable[Path] = (),
+        is_device_graph: bool = False,
+    ) -> Graph:
+        """Traces the vision graph, whose inputs are :meth:`input_tree`'s
+        leaves.
+
+        Args:
+            *input_types: The graph's input types, the leaves of
+                :meth:`input_tree`.
+            name: The name of the graph. Defaults to the class's qualified
+                name.
+            module: The MLIR module to add the graph to. Defaults to a new
+                module.
+            custom_extensions: Paths to custom kernel libraries the graph
+                uses.
+            is_device_graph: Whether to build a device graph.
+
+        Returns:
+            The traced :class:`~max.graph.Graph`.
+        """
+        treedef = tree.flatten(self.input_tree())[1]
+
+        def forward(*inputs: Value[Any]) -> Sequence[TensorValue]:
+            named = tree.unflatten(treedef, iter(inputs))
+            assert isinstance(named, OrderedDict)
+            tensors = {
+                key: [v.tensor for v in values]
+                for key, values in named.items()
+                if key != "signal_buffers"
+            }
+            return self(
+                **tensors,
+                signal_buffers=[v.buffer for v in named["signal_buffers"]],
+            )
+
+        return Graph(
+            type(self).__qualname__ if name is None else name,
+            forward,
+            input_types=input_types,
+            custom_extensions=list(custom_extensions),
+            module=module,
+            is_device_graph=is_device_graph,
+        )
 
     def __call__(
         self,

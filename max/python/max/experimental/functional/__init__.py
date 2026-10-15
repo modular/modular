@@ -393,7 +393,7 @@ def custom(
     device: Device | DeviceRef,
     values: Sequence[Any],
     out_types: Sequence[Type[Any]],
-    parameters: Mapping[str, bool | int | str | DType] | None = None,
+    parameters: Mapping[str, bool | int | float | str | DType] | None = None,
     custom_extensions: str | Path | Sequence[str | Path] | None = None,
 ) -> list[Tensor]:
     """Calls a custom op, optionally loading custom Mojo extensions first.
@@ -430,7 +430,7 @@ def inplace_custom(
     device: Device | DeviceRef,
     values: Sequence[Any],
     out_types: Sequence[Type[Any]] | None = None,
-    parameters: dict[str, bool | int | str | DType] | None = None,
+    parameters: Mapping[str, bool | int | float | str | DType] | None = None,
     custom_extensions: str | Path | Sequence[str | Path] | None = None,
 ) -> list[Tensor]:
     """Calls an in-place custom op that mutates one or more of its inputs.

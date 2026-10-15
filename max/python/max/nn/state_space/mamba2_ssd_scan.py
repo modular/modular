@@ -17,13 +17,16 @@
   just a batch of length-1 sequences continuing their pooled state. Per-head
   scalar ``A``, grouped ``B``/``C``, per-head ``dt`` + ``dt_bias`` softplus.
   State resets at each ``query_start_loc`` boundary, and final states are
-  written back into a slot-indexed SSM state pool in place.
+  written back into a slot-indexed SSM state pool in place, unless the
+  per-sequence ``update_state`` flag is false.
 """
 
 from __future__ import annotations
 
 from typing import cast
 
+import numpy as np
+from max.dtype import DType
 from max.graph import BufferValue, TensorType, TensorValue, ops
 
 
@@ -39,6 +42,7 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace(
     query_start_loc: TensorValue,
     has_initial_state: TensorValue,
     cache_indices: TensorValue,
+    update_state: TensorValue | None = None,
 ) -> TensorValue:
     """Performs the Mamba-2 SSD chunked-scan forward, writing final states
     back into the SSM pool in place.
@@ -72,6 +76,13 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace(
             state for each sequence (empty to disable).
         cache_indices: The ``[batch]`` uint32 slot indices into
             ``ssm_pool``, or one ``[1, batch]`` row of a per-layer table.
+        update_state: The ``[batch]`` bool, whether each sequence writes its
+            final state back to ``ssm_pool[cache_indices[b]]``. ``None``
+            writes every sequence's, as before the flag existed. A sequence
+            with the flag false leaves its slot untouched, so the scan reads
+            the pool without advancing it: a speculative verify can run on the
+            live state and a later replay still starts from the pre-verify
+            state.
 
     Returns:
         ``y``, the ``[total_len, nheads, head_dim]`` output (model
@@ -83,6 +94,11 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace(
     head_dim = x.shape[2]
 
     y_type = TensorType(x.dtype, [total_len, nheads, head_dim], device)
+    if update_state is None:
+        # An empty flag tensor means every sequence writes.
+        update_state = ops.constant(
+            np.zeros(0, dtype=np.bool_), DType.bool, device=device
+        )
 
     results = ops.inplace_custom(
         "mamba2_ssd_chunk_scan_varlen_fwd_inplace",
@@ -99,6 +115,7 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace(
             query_start_loc,
             has_initial_state,
             cache_indices,
+            update_state,
         ],
         [y_type],
         parameters={"dt_softplus": True},

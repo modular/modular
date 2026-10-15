@@ -181,12 +181,6 @@ def compiled():  # noqa: ANN201
     # leaf rather than the whole tree.
     kv_params = config.kv_params
     assert isinstance(kv_params, KVCacheParams)
-    kv_manager = PagedKVCacheManager(
-        params=kv_params,
-        total_num_pages=8,
-        session=session,
-        max_batch_size=4,
-    )
 
     signals = Signals(devices=[device])
     tokens_type = TensorType(DType.int64, ["total_seq_len"], device=device)
@@ -229,6 +223,15 @@ def compiled():  # noqa: ANN201
         )
 
     model = session.load(graph, weights_registry=head.state_dict())
+    # Built after the load: the cache allocates on the device, which a
+    # `precompile_mefs` record run refuses, so allocating first would stop
+    # the recording before the graph compiled.
+    kv_manager = PagedKVCacheManager(
+        params=kv_params,
+        total_num_pages=8,
+        session=session,
+        max_batch_size=4,
+    )
     return model, kv_manager, accelerator
 
 

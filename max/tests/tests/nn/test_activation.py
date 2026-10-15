@@ -52,20 +52,20 @@ def test_unrecognized_raises() -> None:
 def test_gated_activation_defaults_to_silu() -> None:
     assert GatedActivation().kernel_parameters() == {
         "activation": "silu",
-        "swiglu_alpha": "0.0",
-        "swiglu_limit": "0.0",
+        "swiglu_alpha": 0.0,
+        "swiglu_limit": 0.0,
     }
 
 
 def test_gated_activation_encodes_constants_exactly() -> None:
-    # Kernel parameters cannot be floats; `repr` must round-trip the double so
-    # the kernel parses back exactly the value the model configured.
+    # The constants ride as f32 kernel parameters; the float32 rounding is
+    # the kernel's, not the encoder's.
     params = GatedActivation(
         "swigluoai", alpha=1.702, limit=7.0
     ).kernel_parameters()
     assert params["activation"] == "swigluoai"
-    assert float(params["swiglu_alpha"]) == 1.702
-    assert float(params["swiglu_limit"]) == 7.0
+    assert params["swiglu_alpha"] == 1.702
+    assert params["swiglu_limit"] == 7.0
 
 
 def test_gated_activation_rejects_unknown_name() -> None:

@@ -138,9 +138,9 @@ def bench_rms_norm_gemm_pdl[
     var a_elems = num_rows * num_cols
     var w_elems = gemm_n * num_cols
     var c_elems = num_rows * gemm_n
-    var epsilon = Float32(1e-5)
+    comptime epsilon = Float32(1e-5)
     # 0.0 matches the plain RMSNorm this pair models (no Gemma-style offset).
-    var weight_offset = Scalar[dtype](0.0)
+    comptime weight_offset = Float32(0.0)
 
     var a_host = List[Scalar[dtype]](unsafe_uninit_length=a_elems)
     rand(a_host.unsafe_ptr(), a_elems)
@@ -224,8 +224,6 @@ def bench_rms_norm_gemm_pdl[
         a_normed: ANormedType,
         mut cb_weights: CBWeightsType,
         gamma: GammaType,
-        epsilon: Float32,
-        weight_offset: Scalar[dtype],
         norm_shape: NormShapeType,
     ) raises {}:
         @inline(.always)
@@ -239,9 +237,11 @@ def bench_rms_norm_gemm_pdl[
                 2,
                 input_fn,
                 output_fn,
+                epsilon=epsilon,
+                weight_offset=weight_offset,
                 multiply_before_cast=True,
                 pdl_level=norm_pdl,
-            ](Coord(norm_shape), gamma, epsilon, weight_offset, ctx_inner)
+            ](Coord(norm_shape), gamma, ctx_inner)
 
         comptime if not norm_only:
             comptime gemm_config = (
@@ -273,8 +273,6 @@ def bench_rms_norm_gemm_pdl[
         a_normed,
         cb_weights,
         gamma,
-        epsilon,
-        weight_offset,
         norm_shape,
     )
     ctx.synchronize()
@@ -295,8 +293,6 @@ def bench_rms_norm_gemm_pdl[
             a_normed,
             cb_weights,
             gamma,
-            epsilon,
-            weight_offset,
             norm_shape,
         )
         ctx.synchronize()
@@ -359,8 +355,6 @@ def bench_rms_norm_gemm_pdl[
             imm a_raw,
             imm a_normed,
             imm gamma,
-            var epsilon,
-            var weight_offset,
             var norm_shape,
         }:
             run_pair[
@@ -377,8 +371,6 @@ def bench_rms_norm_gemm_pdl[
                 a_normed,
                 cb_weights,
                 gamma,
-                epsilon,
-                weight_offset,
                 norm_shape,
             )
 

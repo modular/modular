@@ -12,22 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 """Selects the active `PluginHooks` used by the stdlib.
 
-`CurrentPlugin` is resolved from the registered `STD_PLUGINS`, keyed on the
-target's `stdlib_plugin` field.
-The default build, whose field is `"default"`, resolves to `DefaultPlugin` and
-leaves every hook at its default value.
+`CurrentPlugin` is selected from the current target's opaque plugin payload.
+Targets without a payload use `DefaultPlugin`, which leaves every hook at its
+default value.
 """
 
+from std.sys.info import CompilationTarget
+
 from ._trait import PluginHooks
-from ._overlay import STD_PLUGINS
-from std.sys.info import CompilationTarget, _TargetType
 
-comptime CurrentPlugin: PluginHooks = STD_PLUGINS.current.HookFor[
-    CompilationTarget.current()
-]
+comptime CurrentPlugin: PluginHooks = CompilationTarget.current().stdlib_plugin
 """The active `PluginHooks`."""
-
-comptime PluginForTarget[Target: _TargetType] = STD_PLUGINS.for_target[
-    Target
-].HookFor[CompilationTarget[_mlir_value=Target]()]
-"""The `PluginHooks` to use for the specified kgen.target."""

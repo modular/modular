@@ -87,7 +87,6 @@ def _convert(
     return convert_draft_state_dict(
         state,
         CONFIG,
-        num_devices=1,
         target_embedding=_weight("embed_tokens.weight", target),
     )
 

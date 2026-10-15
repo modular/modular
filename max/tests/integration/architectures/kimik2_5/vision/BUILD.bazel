@@ -23,7 +23,7 @@ modular_py_test(
         ],
     ),
     exec_properties = {
-        "test.resources:gpu-memory": "4",
+        "test.resources:gpu-memory": "3",
     },
     gpu_constraints = ["//:has_gpu"] + select({
         "//:apple_gpu": ["@platforms//:incompatible"],
@@ -102,7 +102,7 @@ modular_py_test(
         "KIMIK2_5_TRANSFORMER_MEF_RLOCATIONS": "$(rlocationpaths :transformer_mefs)",
     },
     exec_properties = {
-        "test.resources:gpu-memory": "4",
+        "test.resources:gpu-memory": "3",
     },
     gpu_constraints = ["//:has_gpu"] + select({
         "//:apple_gpu": ["@platforms//:incompatible"],

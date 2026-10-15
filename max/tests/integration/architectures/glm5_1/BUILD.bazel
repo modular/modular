@@ -50,6 +50,7 @@ modular_py_test(
 modular_py_test(
     name = "test_memory_planner",
     srcs = ["test_memory_planner.py"],
+    tags = ["skip-external-ci"],
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",

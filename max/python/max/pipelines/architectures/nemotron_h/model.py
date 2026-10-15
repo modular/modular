@@ -34,7 +34,7 @@ from max import tree
 from max.driver import Buffer, Device, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import BufferValue, DeviceRef, Graph, TensorValue
+from max.graph import DeviceRef
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn.comm import (
     Signals,  # noqa: F401  (kept for parity; unused single-GPU)
@@ -48,6 +48,7 @@ from max.pipelines.lib import (
     PipelineConfig,
     SupportsSSMStateWarmup,
 )
+from max.pipelines.lib.graph_specs import GraphRole, GraphSpec
 from max.pipelines.lib.memory_estimation import MemoryPlan
 from max.pipelines.modeling.types import RequestID
 from max.profiler import traced
@@ -204,13 +205,11 @@ class NemotronHModel(LlamaModelBase, SupportsSSMStateWarmup):
         return model_config
 
     @override
-    def _build_graph_for_compile(
-        self,
-        session: InferenceSession,
-        state_dict: dict[str, Any],
-        model_config: NemotronHConfig,
-    ) -> tuple[Graph, dict[str, Any]]:
-        del session
+    def graph_specs(
+        self, model_config: NemotronHConfig
+    ) -> dict[str, GraphSpec]:
+        """Returns the single-device decoder."""
+        state_dict = self.state_dict
         # FP8 is per-module: a Linear is FP8 iff its weight_scale is present in
         # the checkpoint. Build the FP8 layer sets + per-tensor static config.
         quant_config = build_fp8_quant_config(
@@ -246,7 +245,6 @@ class NemotronHModel(LlamaModelBase, SupportsSSMStateWarmup):
             weight_alignment=1,
             strict=False,
         )
-        weights_registry = nn_model.state_dict()
 
         # Save dims for state-pool allocation.
         self._num_mamba_layers = nn_model.num_mamba_layers
@@ -257,51 +255,14 @@ class NemotronHModel(LlamaModelBase, SupportsSSMStateWarmup):
         self._dstate = nn_model.dstate
         self._model_dtype = model_config.dtype
 
-        num_mamba = self._num_mamba_layers
-        with Graph(
-            "nemotron_h",
-            input_types=nn_model.input_types(self.kv_params),
-        ) as graph:
-            (
-                tokens,
-                input_row_offsets,
-                return_n_logits,
-                *variadic,
-            ) = graph.inputs
-
-            # KV inputs come first, then slot_idx, conv pools, ssm pools, and
-            # has_initial_state (matching NemotronH.input_types ordering).
-            kv_count = (
-                len(variadic) - 1 - num_mamba * 2 - 1
-            )  # slot_idx + pools + has_initial_state
-            kv_inputs = variadic[:kv_count]
-            kv_collections = self._unflatten_kv_inputs(kv_inputs)
-
-            idx = kv_count
-            slot_idx_g: TensorValue = variadic[idx].tensor
-            idx += 1
-            conv_pools: list[BufferValue] = [
-                variadic[idx + i].buffer for i in range(num_mamba)
-            ]
-            idx += num_mamba
-            ssm_pools: list[BufferValue] = [
-                variadic[idx + i].buffer for i in range(num_mamba)
-            ]
-            idx += num_mamba
-            has_initial_state_g: TensorValue = variadic[idx].tensor
-
-            outputs = nn_model(
-                tokens.tensor,
-                input_row_offsets.tensor,
-                return_n_logits.tensor,
-                kv_collections,
-                slot_idx_g,
-                conv_pools,
-                ssm_pools,
-                has_initial_state_g,
+        return {
+            GraphRole.DECODER: GraphSpec(
+                nn_model,
+                "nemotron_h",
+                nn_model.input_types(self.kv_params),
+                weights=nn_model.state_dict(),
             )
-            graph.output(*outputs)
-            return graph, weights_registry
+        }
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         assert isinstance(model_inputs, NemotronHInputs)

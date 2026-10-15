@@ -70,14 +70,15 @@ comptime _target_address_space = (
 
 
 def _mode_name[direction: Int]() -> String:
-    comptime if direction == 0:
-        return "unidir-push"
-    elif direction == 1:
-        return "unidir-pull"
-    elif direction == 2:
-        return "bidir-push"
-    else:
-        return "bidir-pull"
+    comptime match direction:
+        case 0:
+            return "unidir-push"
+        case 1:
+            return "unidir-pull"
+        case 2:
+            return "bidir-push"
+        case _:
+            return "bidir-pull"
 
 
 @__llvm_metadata(

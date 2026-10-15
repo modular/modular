@@ -899,6 +899,255 @@ def test_text_batch_constructor__batch_construction_without_chunked_prefill_and_
     assert len(batch_constructor.replicas[0].ce_reqs) == 1
 
 
+def _three_decode_rows(
+    pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
+    width: int = 0,
+    enable_chunked_prefill: bool = True,
+) -> TextBatchConstructor:
+    batch_constructor = TextBatchConstructor(
+        scheduler_config=TokenGenerationSchedulerConfig(
+            max_batch_size=10,
+            max_batch_total_tokens=None,
+            enable_in_flight_batching=True,
+            enable_chunked_prefill=enable_chunked_prefill,
+            target_tokens_per_batch_ce=30,
+            spec_decode_mixed_verify_width=width,
+        ),
+        pipeline=pipeline,
+        kv_cache=create_mock_kv_cache(),
+    )
+    for _ in range(3):
+        batch_constructor.enqueue_new_request(
+            TextContext(
+                request_id=RequestID(),
+                tokens=TokenBuffer(np.ones(5, dtype=np.int64)),
+                max_length=100,
+            )
+        )
+    inputs = batch_constructor.construct_batch()
+    for context in inputs.batches[0]:
+        context.update(0)
+    batch_constructor.advance_requests(inputs)
+    assert len(batch_constructor.replicas[0].tg_reqs) == 3
+    return batch_constructor
+
+
+@pytest.mark.parametrize(("width", "prompt_chunk"), [(0, 27), (1, 23), (2, 19)])
+def test_text_batch_constructor__mixed_step_reserves_draft_tokens(
+    pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
+    width: int,
+    prompt_chunk: int,
+) -> None:
+    """A mixed step verifies ``width`` drafts on every row, so the prompt
+    gets what the 3 decode rows and its own drafts leave."""
+    batch_constructor = _three_decode_rows(pipeline, width)
+
+    prompt = TextContext(
+        request_id=RequestID(),
+        tokens=TokenBuffer(np.ones(50, dtype=np.int64)),
+        max_length=100,
+    )
+    batch_constructor.enqueue_new_request(prompt)
+    inputs = batch_constructor.construct_batch()
+
+    assert len(inputs.batches[0]) == 4
+    assert inputs.batches[0][-1].request_id == prompt.request_id
+    assert prompt.tokens.active_length == prompt_chunk
+
+
+@pytest.mark.parametrize("width", [1, 2, 3])
+def test_text_batch_constructor__mixed_step_drafts_fit_budget(
+    pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
+    width: int,
+) -> None:
+    """Prompt rows backfilled into a mixed step carry ``width`` dummy drafts
+    too, so the merged verify forward must stay within the budget."""
+    batch_constructor = _three_decode_rows(pipeline, width)
+    for length in (5, 50):
+        batch_constructor.enqueue_new_request(
+            TextContext(
+                request_id=RequestID(),
+                tokens=TokenBuffer(np.ones(length, dtype=np.int64)),
+                max_length=100,
+            )
+        )
+    rows = batch_constructor.construct_batch().batches[0]
+
+    assert len(rows) == 5
+    merged = sum(ctx.tokens.active_length for ctx in rows) + width * len(rows)
+    assert merged <= 30
+
+
+@pytest.mark.parametrize("width", [1, 2, 3])
+def test_text_batch_constructor__mixed_step_dp_prompt_replica_fits_budget(
+    width: int,
+) -> None:
+    """Decode rows on replica 0 make the whole DP step verify, so the
+    prompt-only replica 1 carries ``width`` dummy drafts per row too."""
+    # The pipeline fixture has a LoRA manager, which DP > 1 refuses.
+    pipeline = Mock(spec=["release"])
+    batch_constructor = TextBatchConstructor(
+        scheduler_config=TokenGenerationSchedulerConfig(
+            max_batch_size=10,
+            max_batch_total_tokens=None,
+            enable_in_flight_batching=True,
+            enable_chunked_prefill=True,
+            target_tokens_per_batch_ce=30,
+            data_parallel_degree=2,
+            spec_decode_mixed_verify_width=width,
+        ),
+        pipeline=pipeline,
+        kv_cache=create_mock_kv_cache(),
+    )
+    for _ in range(3):
+        decode = TextContext(
+            request_id=RequestID(),
+            tokens=TokenBuffer(np.ones(5, dtype=np.int64)),
+            max_length=100,
+        )
+        decode.update(ARBITRARY_TOKEN_ID)
+        batch_constructor.enqueue_new_request(decode, replica_idx=0)
+    batch_constructor.enqueue_new_request(
+        TextContext(
+            request_id=RequestID(),
+            tokens=TokenBuffer(np.ones(50, dtype=np.int64)),
+            max_length=100,
+        ),
+        replica_idx=1,
+    )
+    inputs = batch_constructor.construct_batch()
+
+    assert [len(rows) for rows in inputs.batches] == [3, 1]
+    for rows in inputs.batches:
+        merged = sum(ctx.tokens.active_length for ctx in rows) + width * len(
+            rows
+        )
+        assert merged <= 30
+
+
+def test_text_batch_constructor__mixed_step_defers_unchunkable_prompt(
+    pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
+) -> None:
+    """Without chunked prefill, a prompt too long for a mixed step's room
+    waits for the next step, which prefills it alone without drafts."""
+    batch_constructor = _three_decode_rows(
+        pipeline, width=1, enable_chunked_prefill=False
+    )
+    prompt = TextContext(
+        request_id=RequestID(),
+        tokens=TokenBuffer(np.ones(25, dtype=np.int64)),
+        max_length=100,
+    )
+    batch_constructor.enqueue_new_request(prompt)
+
+    inputs = batch_constructor.construct_batch()
+    rows = inputs.batches[0]
+    assert len(rows) == 3
+    assert sum(ctx.tokens.active_length for ctx in rows) + len(rows) <= 30
+    assert prompt.request_id in batch_constructor.replicas[0].ce_reqs
+
+    for context in rows:
+        context.update(0)
+    batch_constructor.advance_requests(inputs)
+    rows = batch_constructor.construct_batch().batches[0]
+    assert [ctx.request_id for ctx in rows] == [prompt.request_id]
+    assert prompt.tokens.active_length == 25
+
+
+@pytest.mark.parametrize(
+    ("used_fraction", "admitted"), [(0.5, True), (0.9, True), (0.95, False)]
+)
+def test_text_batch_constructor__inflight_backfill_kv_gate(
+    pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
+    used_fraction: float,
+    admitted: bool,
+) -> None:
+    """The in-flight backfill admits a new prompt only at or below the
+    TG-priority KV threshold (90% by default)."""
+    batch_constructor = _three_decode_rows(pipeline)
+    set_mock_kv_usage(cast(Mock, batch_constructor.kv_cache), used_fraction)
+    prompt = TextContext(
+        request_id=RequestID(),
+        tokens=TokenBuffer(np.ones(5, dtype=np.int64)),
+        max_length=100,
+    )
+    batch_constructor.enqueue_new_request(prompt)
+    rows = batch_constructor.construct_batch().batches[0]
+
+    assert has_request(rows, prompt.request_id) == admitted
+    assert len(rows) == 3 + admitted
+    assert (prompt.request_id in batch_constructor.replicas[0].ce_reqs) != (
+        admitted
+    )
+
+
+def test_text_batch_constructor__inflight_backfill_kv_gate_continues_chunked_prefill(
+    pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
+) -> None:
+    """Above the threshold, a prefill that already holds KV keeps going, and
+    a new prompt queued behind it waits."""
+    batch_constructor = _three_decode_rows(pipeline)
+    kv_cache = cast(Mock, batch_constructor.kv_cache)
+    chunked = TextContext(
+        request_id=RequestID(),
+        tokens=TokenBuffer(np.ones(50, dtype=np.int64)),
+        max_length=100,
+    )
+    batch_constructor.enqueue_new_request(chunked)
+    inputs = batch_constructor.construct_batch()
+    for context in inputs.batches[0]:
+        context.update(0)
+    batch_constructor.advance_requests(inputs)
+    assert next(iter(batch_constructor.replicas[0].ce_reqs)) == (
+        chunked.request_id
+    )
+
+    new = TextContext(
+        request_id=RequestID(),
+        tokens=TokenBuffer(np.ones(5, dtype=np.int64)),
+        max_length=100,
+    )
+    batch_constructor.enqueue_new_request(new)
+    set_mock_kv_usage(kv_cache, 0.95)
+    kv_cache.contains = Mock(
+        side_effect=lambda ctx: ctx.request_id == chunked.request_id
+    )
+    rows = batch_constructor.construct_batch().batches[0]
+
+    assert has_request(rows, chunked.request_id)
+    assert not has_request(rows, new.request_id)
+    assert new.request_id in batch_constructor.replicas[0].ce_reqs
+
+
+def test_text_batch_constructor__kv_gate_spares_prefill_only_step(
+    pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
+) -> None:
+    """With no decode rows to drain, in-flight batching still runs prefill
+    above the threshold, as the production path does."""
+    kv_cache = create_mock_kv_cache()
+    set_mock_kv_usage(kv_cache, 0.95)
+    batch_constructor = TextBatchConstructor(
+        scheduler_config=TokenGenerationSchedulerConfig(
+            max_batch_size=10,
+            max_batch_total_tokens=None,
+            enable_in_flight_batching=True,
+            enable_chunked_prefill=True,
+            target_tokens_per_batch_ce=30,
+        ),
+        pipeline=pipeline,
+        kv_cache=kv_cache,
+    )
+    prompt = TextContext(
+        request_id=RequestID(),
+        tokens=TokenBuffer(np.ones(5, dtype=np.int64)),
+        max_length=100,
+    )
+    batch_constructor.enqueue_new_request(prompt)
+    rows = batch_constructor.construct_batch().batches[0]
+
+    assert [ctx.request_id for ctx in rows] == [prompt.request_id]
+
+
 def test_text_batch_constructor__advance_requests_requeues_every_chunked_request(
     pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
 ) -> None:

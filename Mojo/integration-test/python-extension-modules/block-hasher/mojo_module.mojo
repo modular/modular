@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.hashlib import default_comp_time_hasher
+from std.hash import default_comp_time_hasher
 from std.os import abort
 from std.sys import size_of
 

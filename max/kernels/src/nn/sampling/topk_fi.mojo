@@ -1460,8 +1460,8 @@ def _sampling_rejection_loop_coop[
     dtype: DType,
     deterministic: Bool,
     coop_size: Int,
-    load_vec: def(Int) capturing[_] -> SIMD[.float32, vec_size],
-    load_one: def(Int) capturing[_] -> Float32,
+    LoadVecFn: def(Int) -> SIMD[.float32, vec_size],
+    LoadOneFn: def(Int) -> Float32,
 ](
     d: Int,
     k: Int,
@@ -1473,6 +1473,8 @@ def _sampling_rejection_loop_coop[
     coop_table: UnsafePointer[mut=True, Float32, _, address_space=.SHARED],
     vec_begin: Int,
     vec_end: Int,
+    load_vec: LoadVecFn,
+    load_one: LoadOneFn,
 ) -> Tuple[Int, Float32, Float32, Float32]:
     """Draws one token from a row split across blocks.
 
@@ -1641,7 +1643,7 @@ def _topp_budget(p: Float32, z: Float32) -> Float32:
 def _topk_topp_cutoff_search[
     vec_size: Int,
     block_size: Int,
-    load_dist: def(Int) capturing[_] -> SIMD[.float32, vec_size],
+    LoadFn: def(Int) -> SIMD[.float32, vec_size],
     track_count: Bool = True,
     coop_size: Int = 1,
 ](
@@ -1656,6 +1658,7 @@ def _topk_topp_cutoff_search[
     coop_table: UnsafePointer[mut=True, Float32, _, address_space=.SHARED],
     vec_begin: Int,
     vec_end: Int,
+    load_dist: LoadFn,
 ) -> Tuple[Float32, Float32]:
     """Finds the exact constraint-set cutoff and kept mass for joint top-k/top-p.
 
@@ -2026,6 +2029,32 @@ def TopKTopPSamplingFromProbKernel[
                     )
                 return
 
+        comptime if not is_apple_gpu() and not emit_dist and coop_size == 1:
+            # A k=1 draw is the row's first argmax whatever the temperature,
+            # top-p or min-p: the k == 1 block after the search overwrites
+            # whatever the search drew. Take that argmax up front and skip the
+            # softmax passes and the search, which would only be thrown away.
+            # `k` is uniform per block, so the collectives stay legal, and
+            # the branch is decided on the device, so a captured graph keeps
+            # serving each row by its own `k`. Rows with k > 1 run the code
+            # below unchanged. `emit_dist` still needs the distribution, and
+            # split rows (`coop_size > 1`) keep the combined path below.
+            if k == 1:
+                comptime vec_bytes = align_of[SIMD[dtype, vec_size]]()
+                var best = _block_reduce_topk[ascending=True](
+                    _argmaxmin_block_partial[dtype, True, vec_size, 4](
+                        probs_ptr.as_unsafe_any_origin(),
+                        0,
+                        _d,
+                        _d % vec_size == 0 and Int(probs.ptr) % vec_bytes == 0,
+                        Int(tx),
+                        block_size,
+                    )
+                )
+                if tx == 0:
+                    output[bx] = Scalar[out_idx_type](best.p)
+                return
+
         # From-logits mode: resolve per-row temperature / min-p and compute
         # the row max and total unnormalized softmax mass z in two uniform
         # passes. z defaults to 1.0 in from-prob mode so the CDF budget and
@@ -2120,9 +2149,8 @@ def TopKTopPSamplingFromProbKernel[
                         SIMD[.float32, 1](z),
                     )[0]
 
-        @__parameter
         @inline(.always)
-        def load_dist[width: Int](offset: Int) -> SIMD[.float32, width]:
+        def load_dist[width: Int](offset: Int) {imm} -> SIMD[.float32, width]:
             # Load `width` elements of the sampling distribution at `offset`.
             # In from-logits mode this is the unnormalized softmax value with
             # the min-p mask applied inline.
@@ -2257,11 +2285,11 @@ def TopKTopPSamplingFromProbKernel[
             comptime if coop_size > 1:
 
                 @inline(.always)
-                def load_slice(offset: Int) -> SIMD[.float32, vec_size]:
+                def load_slice(offset: Int) {imm} -> SIMD[.float32, vec_size]:
                     return load_dist[vec_size](offset)
 
                 @inline(.always)
-                def load_scalar(offset: Int) -> Float32:
+                def load_scalar(offset: Int) {imm} -> Float32:
                     return load_dist[1](offset)[0]
 
                 var drawn = _sampling_rejection_loop_coop[
@@ -2270,8 +2298,6 @@ def TopKTopPSamplingFromProbKernel[
                     dtype,
                     deterministic,
                     coop_size,
-                    load_slice,
-                    load_scalar,
                 ](
                     _d,
                     k,
@@ -2283,6 +2309,8 @@ def TopKTopPSamplingFromProbKernel[
                     coop_table,
                     vec_begin,
                     vec_end,
+                    load_slice,
+                    load_scalar,
                 )
                 sampled_id = drawn[0]
                 low = drawn[1]
@@ -2451,7 +2479,7 @@ def TopKTopPSamplingFromProbKernel[
                         @inline(.always)
                         def load_dist_vec(
                             offset: Int,
-                        ) -> SIMD[.float32, vec_size]:
+                        ) {imm} -> SIMD[.float32, vec_size]:
                             return load_dist[vec_size](offset)
 
                         # The search needs `mass(> low)` over the masked working
@@ -2464,7 +2492,6 @@ def TopKTopPSamplingFromProbKernel[
                             refined = _topk_topp_cutoff_search[
                                 vec_size,
                                 block_size,
-                                load_dist_vec,
                                 track_count=False,
                                 coop_size=coop_size,
                             ](
@@ -2479,12 +2506,12 @@ def TopKTopPSamplingFromProbKernel[
                                 coop_table,
                                 vec_begin,
                                 vec_end,
+                                load_dist_vec,
                             )
                         else:
                             refined = _topk_topp_cutoff_search[
                                 vec_size,
                                 block_size,
-                                load_dist_vec,
                                 coop_size=coop_size,
                             ](
                                 _d,
@@ -2498,6 +2525,7 @@ def TopKTopPSamplingFromProbKernel[
                                 coop_table,
                                 vec_begin,
                                 vec_end,
+                                load_dist_vec,
                             )
                         cutoff = refined[0]
                         kept_mass = refined[1]
@@ -3401,9 +3429,8 @@ def TopKTopPMaskedProbsKernel[
             coop_ws.unsafe_value(), coop_table, SIMD[.float32, 1](m)
         )[0]
 
-    @__parameter
     @inline(.always)
-    def compute_e(offset: Int) -> SIMD[.float32, vec_size]:
+    def compute_e(offset: Int) {imm} -> SIMD[.float32, vec_size]:
         var v = logits_row.load[width=vec_size]((Idx[0], offset)).cast[
             .float32
         ]()
@@ -3448,9 +3475,8 @@ def TopKTopPMaskedProbsKernel[
         positive_count = Int32(totals[1])
     var p_eff = _topp_budget(p, z)
 
-    @__parameter
     @inline(.always)
-    def load_e(offset: Int) -> SIMD[.float32, vec_size]:
+    def load_e(offset: Int) {imm} -> SIMD[.float32, vec_size]:
         comptime if is_amd_gpu():
             return probs_row.load[width=vec_size]((Idx[0], offset))
         else:
@@ -3464,7 +3490,6 @@ def TopKTopPMaskedProbsKernel[
             refined = _topk_topp_cutoff_search[
                 vec_size,
                 block_size,
-                load_e,
                 track_count=False,
                 coop_size=coop_size,
             ](
@@ -3479,10 +3504,11 @@ def TopKTopPMaskedProbsKernel[
                 coop_table,
                 vec_begin,
                 vec_end,
+                load_e,
             )
         else:
             refined = _topk_topp_cutoff_search[
-                vec_size, block_size, load_e, coop_size=coop_size
+                vec_size, block_size, coop_size=coop_size
             ](
                 _d,
                 Int32(k),
@@ -3495,6 +3521,7 @@ def TopKTopPMaskedProbsKernel[
                 coop_table,
                 vec_begin,
                 vec_end,
+                load_e,
             )
         cut = refined[0]
         mass_s = refined[1]

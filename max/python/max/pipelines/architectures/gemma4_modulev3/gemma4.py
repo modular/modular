@@ -22,6 +22,10 @@ from max.experimental.nn import Module
 from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
 from max.experimental.nn.common_layers.linear import ColumnParallelLinear
 from max.experimental.nn.common_layers.mlp import MLP
+from max.experimental.nn.common_layers.quant_linear import (
+    QuantizedMLP,
+    tensor_parallel_mlp,
+)
 from max.experimental.nn.common_layers.rotary_embedding import RotaryEmbedding
 from max.experimental.nn.sequential import ModuleList
 from max.experimental.sharding import DeviceMapping, DeviceMesh
@@ -57,7 +61,14 @@ class Gemma4TextModel(Module[..., tuple[Tensor, ...]]):
         super().__init__()
         text_config = config.text_config
         self.mesh = mesh
-        self.dtype = config.dtype
+        # Under NVFP4, config.dtype is packed uint8; rope freqs_cis and
+        # the attention path must run in the checkpoint's unquantized
+        # dtype (BF16), matching the graph arch's unquantized_dtype.
+        self.dtype = (
+            config.unquantized_dtype
+            if text_config.quant_config is not None
+            else config.dtype
+        )
         device = mesh.devices[0]
 
         self.rope_local = RotaryEmbedding(
@@ -107,6 +118,7 @@ class Gemma4TextModel(Module[..., tuple[Tensor, ...]]):
             kv_params_by_type[layer_type_key] = kv_params_leaf
 
         layer_type_counts = {"sliding_attention": 0, "full_attention": 0}
+        quant_config = text_config.quant_config
         layers = []
         for i in range(text_config.num_hidden_layers):
             layer_type = text_config.layer_types[i]
@@ -114,14 +126,56 @@ class Gemma4TextModel(Module[..., tuple[Tensor, ...]]):
             layer_idx_in_cache = layer_type_counts[layer_type]
             layer_type_counts[layer_type] += 1
 
+            # Per-layer quantization: modelopt's ignore globs can exempt
+            # individual MLPs or attentions (the first-party NVFP4
+            # checkpoint keeps every self_attn BF16). Quantized MLPs use
+            # the shared ModuleV3 quant layers, whose concat-based gate/up
+            # fusion is exact because modelopt emits one shared global
+            # scale per fused group.
+            nvfp4_config = (
+                quant_config
+                if quant_config is not None and quant_config.is_nvfp4
+                else None
+            )
+            attn_quantized = (
+                nvfp4_config is not None
+                and i in nvfp4_config.attn_quantized_layers
+            )
+
+            mlp: Module[[Tensor], Tensor]
+            if (
+                nvfp4_config is not None
+                and i in nvfp4_config.mlp_quantized_layers
+            ):
+                quantized_mlp = QuantizedMLP(
+                    hidden_dim=text_config.hidden_size,
+                    feed_forward_length=text_config.intermediate_size,
+                    activation_function=text_config.hidden_activation,
+                    quant_config=nvfp4_config,
+                )
+                if mesh.num_devices > 1:
+                    # col_parallel/row_parallel mark the gate/up/down
+                    # weights' sharding intent; QuantizedMLP.forward's
+                    # matmuls pick up the matching sharding rules.
+                    quantized_mlp = tensor_parallel_mlp(quantized_mlp)
+                mlp = quantized_mlp
+            else:
+                mlp = MLP(
+                    hidden_dim=text_config.hidden_size,
+                    feed_forward_length=text_config.intermediate_size,
+                    activation_function=text_config.hidden_activation,
+                )
+
             layers.append(
                 Gemma4TransformerBlock(
                     attention=Gemma4Attention(
                         rope_global=self.rope_global,
                         rope_local=self.rope_local,
                         num_attention_heads=text_config.num_attention_heads,
-                        num_key_value_heads=text_config.num_key_value_heads,
-                        num_global_key_value_heads=text_config.num_global_key_value_heads,
+                        num_key_value_heads=(text_config.num_key_value_heads),
+                        num_global_key_value_heads=(
+                            text_config.num_global_key_value_heads
+                        ),
                         attention_k_eq_v=text_config.attention_k_eq_v,
                         hidden_size=text_config.hidden_size,
                         kv_params=kv_params_by_type[layer_type],
@@ -129,12 +183,9 @@ class Gemma4TextModel(Module[..., tuple[Tensor, ...]]):
                         is_sliding=is_sliding,
                         qk_norm_eps=text_config.rms_norm_eps,
                         local_window_size=text_config.sliding_window,
+                        quant_config=(quant_config if attn_quantized else None),
                     ),
-                    mlp=MLP(
-                        hidden_dim=text_config.hidden_size,
-                        feed_forward_length=text_config.intermediate_size,
-                        activation_function=text_config.hidden_activation,
-                    ),
+                    mlp=mlp,
                     hidden_size=text_config.hidden_size,
                     rms_norm_eps=text_config.rms_norm_eps,
                 )
@@ -177,10 +228,21 @@ class Gemma4TextModel(Module[..., tuple[Tensor, ...]]):
         image_embeddings: Tensor,
         image_token_indices: Tensor,
     ) -> tuple[Tensor, ...]:
-        tokens = tokens.to(self.mesh)
-        input_row_offsets = input_row_offsets.to(self.mesh)
-        image_embeddings = image_embeddings.to(self.mesh)
-        image_token_indices = image_token_indices.to(self.mesh)
+        # Stage on every device with one collective each. A plain transfer
+        # per device lowers to mgp.buffer.device_to_device wrapped in
+        # mgp.device_wait on both sides (a host-enqueued cross-device stream
+        # wait), which is illegal inside device-graph capture
+        # (CUDA_ERROR_STREAM_CAPTURE_MERGE). The broadcast lowers to a
+        # signal-buffer kernel instead. Mirrors the V2 model's staging
+        # (gemma4/model.py:389-394).
+        tokens = F.distributed_broadcast(tokens, self.mesh)
+        input_row_offsets = F.distributed_broadcast(
+            input_row_offsets, self.mesh
+        )
+        image_embeddings = F.distributed_broadcast(image_embeddings, self.mesh)
+        image_token_indices = F.distributed_broadcast(
+            image_token_indices, self.mesh
+        )
         h = self.embed_tokens(tokens)
         self.prepare_freq_cis(self.mesh)
 

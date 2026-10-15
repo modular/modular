@@ -11,8 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std._plugin import PluginForTarget
-
 from std.testing import assert_equal, assert_false, TestSuite
 
 from std.sys.info import CompilationTarget
@@ -48,9 +46,7 @@ def test_payload_plugin_selection() raises:
 
 
 def test_plugin_for_target_specializes_on_target() raises:
-    assert_false(
-        PluginForTarget[_h100_target._mlir_value]._handles_debug_assert
-    )
+    assert_false(_h100_target.stdlib_plugin._handles_debug_assert)
 
 
 def main() raises:

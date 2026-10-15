@@ -14,9 +14,9 @@
 # Test: block-scaled FP4 matmul (sm100, small_bn / 1SM) with weight prefetching.
 #
 # Mirrors test_matmul_sm100_block_scaled_fp4_small_bn.mojo with
-# prefetch_tiles_n=2 added to BlockScaledMatmulConfig.  The raw kernel from
-# block_scaled_matmul_small_bn is called directly since the shared testbed
-# does not expose the prefetch parameter.
+# prefetch_tiles_n=2 added to BlockScaledMatmulConfig.  The matmul is called
+# directly with `is_small_bn=True` since the shared testbed does not expose
+# the prefetch parameter.
 #
 # Tile shapes: mma_n in [8, 16, 24, 32, 48, 64, 96] (1SM, NVFP4 only).
 # Production shapes: Llama-3.1-405B TP8 shapes (k_group_size=2).
@@ -35,11 +35,10 @@ from layout import (
     row_major,
     Idx,
 )
-from linalg.matmul.gpu.sm100.block_scaled_matmul_small_bn import (
+from linalg.matmul.gpu.sm100.block_scaled_matmul import (
     blackwell_block_scaled_matmul_tma_umma_warp_specialized,
 )
 from linalg.matmul.gpu.sm100.config import BlockScaledMatmulConfig
-from linalg.utils import elementwise_epilogue_type
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
 from linalg.fp4_utils import (
@@ -219,39 +218,43 @@ def _test_impl[
         k_group_size=k_group_size,
         num_clc_pipeline_stages=num_clc_pipeline_stages,
         prefetch_tiles_n=prefetch_tiles_n,
+        is_small_bn=True,
     )
 
-    @__parameter
     @inline(.always)
-    @__copy_capture(c_tensor)
-    def epilogue_fn[
-        _dtype: DType,
-        width: SIMDLength,
-        *,
-        alignment: Int = 1,
-    ](idx: Coord, val: SIMD[_dtype, width]) capturing -> None:
+    def store_doubled[
+        _dtype: DType, width: SIMDLength, *, alignment: Int
+    ](idx: Coord, val: SIMD[_dtype, width]) {var c_tensor}:
         comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
         var scaled = rebind[SIMD[c_type, width]](val) * Scalar[c_type](2)
-        c_tensor.store[alignment=alignment * size_of[c_type](),](idx, scaled)
-
-    comptime epi = Optional[elementwise_epilogue_type](
-        epilogue_fn
-    ) if normal_epilogue else None
+        c_tensor.store[alignment=alignment * size_of[c_type]()](idx, scaled)
 
     comptime K_phys = KType.static_value
-    blackwell_block_scaled_matmul_tma_umma_warp_specialized[
-        transpose_b=transpose_b,
-        K=K_phys,
-        config=matmul_config,
-        elementwise_lambda_fn=epi,
-    ](
-        c_tensor,
-        a_tensor,
-        b_tensor,
-        a_scales_tensor,
-        b_scales_tensor,
-        ctx,
-    )
+    comptime if normal_epilogue:
+        # `store_doubled` owns `c_tensor`, so `c_ref_tensor` (written by the
+        # reference below) carries the output shape.
+        blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+            transpose_b=transpose_b, K=K_phys, config=matmul_config
+        ](
+            c_ref_tensor,
+            a_tensor,
+            b_tensor,
+            a_scales_tensor,
+            b_scales_tensor,
+            store_doubled,
+            ctx,
+        )
+    else:
+        blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+            transpose_b=transpose_b, K=K_phys, config=matmul_config
+        ](
+            c_tensor,
+            a_tensor,
+            b_tensor,
+            a_scales_tensor,
+            b_scales_tensor,
+            ctx,
+        )
 
     vendor_blas.matmul(
         ctx,

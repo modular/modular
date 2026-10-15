@@ -405,6 +405,7 @@ class Eagle3KimiK25Model(_UnifiedSpecDecodeModelMixin, KimiK2_5Model):
                 "disabling FP4 config for draft."
             )
             draft_config.quant_config = None
+            draft_config.attn_quant_config = None
             draft_config.dtype = DType.bfloat16
             if draft_config.ep_config is not None:
                 draft_config.ep_config.dispatch_dtype = DType.bfloat16

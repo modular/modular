@@ -33,9 +33,8 @@ from layout import (
     ComptimeInt,
     Coord,
     coord,
+    Idx,
     IntTuple,
-    Layout,
-    LayoutTensor,
     DefaultEngine,
     RuntimeLayout,
     RuntimeTuple,
@@ -270,12 +269,14 @@ struct MHAPosition[
     var prompt_idx: UInt32
 
     comptime q_stride: Int = Self.depth if Self.decoding else Self.depth * Self.q_num_heads
-    comptime q_output_gmem_layout = Layout(
-        IntTuple(Self.BM, Self.depth), IntTuple(Self.q_stride, 1)
-    )
-    comptime split_gmem_layout = Layout(
-        IntTuple(Self.BM // 2, Self.depth), IntTuple(Self.q_stride, 1)
-    )
+    comptime q_output_gmem_layout = InternalLayout[
+        shape_types=Coord[
+            ComptimeInt[Self.BM], ComptimeInt[Self.depth]
+        ].element_types,
+        stride_types=Coord[
+            ComptimeInt[Self.q_stride], ComptimeInt[1]
+        ].element_types,
+    ]
     comptime num_q_heads_per_thread: Int = min(
         2, ceildiv(Self.group, 8)
     ) if Self.decoding else 1
@@ -349,33 +350,36 @@ struct MHAPosition[
     def __ne__(self, other: Self) -> Bool:
         return self.q_out_offset != other.q_out_offset
 
-    # Legacy masked view: runtime row-count + masked semantics feed the
-    # caller's legacy `copy_sram_to_dram`, whose TileTensor counterpart
-    # supports neither masking nor the fp32->half downcast yet.
     @inline(.always)
     def q_out_gmem_tensor[
         dtype: DType
-    ](
-        self,
-        ptr: UnsafePointer[mut=True, Scalar[dtype], _],
-        out gmem_block: LayoutTensor[
-            dtype,
-            Self.q_output_gmem_layout,
-            type_of(ptr).origin,
-            layout_int_type=.int32,
-            linear_idx_type=.int32,
-            masked=True,
-        ],
-    ):
-        gmem_block = {
+    ](self, ptr: UnsafePointer[mut=True, Scalar[dtype], _]) -> TileTensor[
+        dtype, Self.q_output_gmem_layout, type_of(ptr).origin
+    ]:
+        """Views this tile's `BM x depth` output block in global memory.
+
+        The view has the full static `BM` rows; rows past
+        `q_tile_num_rows()` are not valid, so store through it with a masked
+        copy bounded by that count.
+
+        Parameters:
+            dtype: Element type of the output buffer (inferred).
+
+        Args:
+            ptr: Base pointer of the output buffer.
+
+        Returns:
+            A strided `BM x depth` view starting at this tile's output offset.
+        """
+        return TileTensor[
+            dtype, Self.q_output_gmem_layout, type_of(ptr).origin
+        ](
             ptr + self.q_out_offset,
-            type_of(gmem_block.runtime_layout)(
-                type_of(gmem_block.runtime_layout.shape)(
-                    Int(self.q_tile_num_rows()), Self.depth
-                ),
-                type_of(gmem_block.runtime_layout.stride)(Self.q_stride, 1),
+            Self.q_output_gmem_layout(
+                Coord(Idx[Self.BM], Idx[Self.depth]),
+                Coord(Idx[Self.q_stride], Idx[1]),
             ),
-        }
+        )
 
     @inline(.always)
     def mask_status[

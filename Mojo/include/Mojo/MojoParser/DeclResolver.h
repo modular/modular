@@ -29,7 +29,6 @@
 
 namespace M::KGEN {
 class ParamDeclAttr;
-class ConformanceOp;
 class StructGeneratorOp;
 enum class PassingKind : uint32_t;
 } // namespace M::KGEN
@@ -72,6 +71,17 @@ public:
   ASTDecl &addDecl(DeclIRValue irValue, llvm::SMLoc loc, StringAttr baseName,
                    ASTDecl *parentDecl, LexerCursor cursor,
                    LexerCursor endCursor, ssize_t indentation);
+  TopLevelModuleASTDecl &addDecl(ModuleOp op, llvm::SMLoc loc,
+                                 StringAttr baseName, ASTDecl *parentDecl,
+                                 LexerCursor cursor, LexerCursor endCursor,
+                                 ssize_t indentation);
+  ImportASTDecl &addDecl(ImportOp op, llvm::SMLoc loc, StringAttr baseName,
+                         ASTDecl *parentDecl, LexerCursor cursor,
+                         LexerCursor endCursor, ssize_t indentation);
+  ImportASTDecl &addDecl(UnresolvedImportOp op, llvm::SMLoc loc,
+                         StringAttr baseName, ASTDecl *parentDecl,
+                         LexerCursor cursor, LexerCursor endCursor,
+                         ssize_t indentation);
 
   /// Add a declaration that was loaded from bytecode.
   ASTDecl &addBytecodeDecl(Operation *op, StringAttr baseName,
@@ -101,6 +111,14 @@ public:
   ASTDecl &createUnlistedDecl(Operation *decl, llvm::SMLoc loc,
                               ASTDecl *parentDecl, LexerCursor cursor,
                               LexerCursor endCursor, ssize_t indentation);
+  FileModuleASTDecl &createUnlistedDecl(FileModuleOp op, llvm::SMLoc loc,
+                                        ASTDecl *parentDecl, LexerCursor cursor,
+                                        LexerCursor endCursor,
+                                        ssize_t indentation);
+  PackageASTDecl &createUnlistedDecl(PackageOp op, llvm::SMLoc loc,
+                                     ASTDecl *parentDecl, LexerCursor cursor,
+                                     LexerCursor endCursor,
+                                     ssize_t indentation);
 
   /// Create a witness declaration and install it in the trait's scope.
   WitnessASTDecl &
@@ -194,16 +212,9 @@ private:
 public:
   /// Create a resolved ImportOp in \p dest's scope. Only nested ImportOps in
   /// the region gate access to child modules of \p modulePath.
-  ASTDecl &createImportOp(ASTDecl &dest, mlir::OpBuilder &builder,
-                          StringAttr name, ImportPathAttr modulePath,
-                          mlir::Location loc);
-
-  /// Return the absolute module path of a resolved module/package decl
-  /// (e.g. `a.b.c`), derived from its fully-resolved symbol. Used as a
-  /// gate's `modulePath` for imports whose syntactic path is relative
-  /// (`import .foo as z`, `from . import sub`), where there is no absolute name
-  /// to copy from the source. Returns {} if \p moduleDecl has no symbol.
-  ImportPathAttr getAbsoluteModuleName(ASTDecl &moduleDecl);
+  ImportASTDecl &createImportOp(ASTDecl &dest, mlir::OpBuilder &builder,
+                                StringAttr name, ImportPathAttr modulePath,
+                                mlir::Location loc);
 
   /// Import the provided decl from the given module decl, into the provided
   /// destination.
@@ -235,11 +246,6 @@ public:
   LogicalResult resolveBody(ASTDecl &decl, llvm::SMLoc loc) {
     return resolve(decl, DeclResolvedness::body, loc);
   }
-
-  /// For a given package, find the __init__ module, resolve its body, and
-  /// return it. Returns nullptr if the package is not a package or has no
-  /// __init__. Returns failure() if body resolution fails.
-  FailureOr<ASTDecl *> bodyResolvePackageInit(ASTDecl &package, SMLoc loc);
 
   /// Body-resolve the specified declaration and all declarations contained
   /// within it.
@@ -284,9 +290,12 @@ public:
   //===--------------------------------------------------------------------===//
 
   /// Resolve all of the declarations that are defined within or referenced by
-  /// the given container `decl`. If `eraseUnparsedDecls` is true, decls that
-  /// were not referenced at all during parsing are erased.
-  void resolveAllReferencedFrom(ASTDecl &decl, bool eraseUnparsedDecls = true);
+  /// the given container `decl`. Erases any from-import placeholders the
+  /// resolution superseded with a real ImportOp.
+  void resolveAllReferencedFrom(ASTDecl &decl);
+
+  /// Erase placeholder ops for decls left unparsed (never referenced).
+  void eraseUnparsedDecls();
 
   /// Resolve the pending wildcard imports in the scope.
   LogicalResult resolveAllWildcardImports(ASTDecl &scope);
@@ -399,57 +408,27 @@ public:
   };
 
 private:
+  friend class ASTDecl;
+  friend class AliasASTDecl;
+  friend class DefASTDecl;
+  friend class ExtensionASTDecl;
+  friend class StructASTDecl;
+  friend class StructFieldASTDecl;
+  friend class TraitASTDecl;
+  friend class WitnessASTDecl;
+
   /// Iteratively resolve all parsed decls that were referenced outside the
   /// main container (typically stdlib/library declarations). Called by
   /// resolveAllReferencedFrom when no errors have been emitted.
   void resolveReferencedDecls();
 
-  /// The resolveSignature methods are invoked on an operation to parse and type
-  /// check the signature for the operation.  On parse failure, these should
-  /// return a failure, which will cause the driver to mark the decl as invalid
-  /// for further references.
-  LogicalResult resolveSignature(FnOp op, Lexer &lexer, DefASTDecl &decl);
-  ParseResult resolveBody(FnOp op, Lexer &lexer, DefASTDecl &decl);
-  LogicalResult resolveSyntheticBody(FnOp op, DefASTDecl &decl);
-  LogicalResult resolveSyntheticSignature(FnOp op, DefASTDecl &decl);
-  LogicalResult resolveSyntheticSignature(AliasDeclOp op, AliasASTDecl &decl);
-
-  ParseResult resolveBody(LIT::FileModuleOp op, Lexer &lexer, ASTDecl &decl);
-  ParseResult resolveBody(PackageOp op, ASTDecl &decl);
-
-  /// resolveTarget determines whether we also resolve the decl the
-  /// UnresolvedImportOp is referring to.
-  ParseResult resolveSignature(LIT::UnresolvedImportOp op, ASTDecl &decl,
-                               bool resolveTarget = true);
-
-  LogicalResult resolveSignature(StructDeclOp op, Lexer &lexer,
-                                 StructASTDecl &decl);
-  ParseResult resolveBody(StructDeclOp op, Lexer &lexer, StructASTDecl &decl);
-  /// Resolve one case of an enum. `firstByName` maps each case name resolved
-  /// so far to its case; a repeated name is reported and the case removed.
-  LogicalResult
-  resolveEnumCase(ASTDecl &caseDecl,
-                  llvm::SmallDenseMap<StringAttr, ASTDecl *, 8> &firstByName);
-  LogicalResult resolveSignature(EnumCaseOp op, Lexer &lexer, ASTDecl &decl);
-  LogicalResult resolveSignature(StructFieldOp op, Lexer &lexer, ASTDecl &decl);
-  ParseResult resolveBody(StructFieldOp op, Lexer &lexer, ASTDecl &decl);
-  LogicalResult resolveSignature(TraitDeclOp op, Lexer &lexer,
-                                 TraitASTDecl &decl);
-  ParseResult resolveBody(TraitDeclOp op, Lexer &lexer, TraitASTDecl &decl);
-  LogicalResult resolveSignature(AliasDeclOp op, Lexer &lexer,
-                                 AliasASTDecl &decl);
-  ParseResult resolveBody(AliasDeclOp op, Lexer &lexer, AliasASTDecl &decl);
-  LogicalResult resolveSignature(ExtensionDeclOp op, Lexer &lexer,
-                                 ExtensionASTDecl &decl);
-  ParseResult resolveBody(ExtensionDeclOp op, Lexer &lexer,
-                          ExtensionASTDecl &decl);
+  /// Erase from-import placeholders superseded by a real ImportOp. Runs at
+  /// the end of every resolveAllReferencedFrom: the superseding gate is what
+  /// name lookup uses, so the placeholders are dead in every parsing mode.
+  void eraseDeadImportPlaceholders();
 
   ParseResult resolveSignature(TraitType traitType, ASTDecl &decl);
   ParseResult resolveBody(TraitType traitType, ASTDecl &decl);
-  ParseResult resolveSignature(WitnessASTDecl &witness);
-  ParseResult resolveBody(WitnessASTDecl &witness);
-
-  ParseResult resolveBody(ConformanceOp op, ASTDecl &decl);
 
   /// This map tracks the ASTDecl for every MLIR type declaration with a symbol.
   /// This does not include functions, only things that may be referred to by a

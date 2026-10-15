@@ -32,7 +32,6 @@ from max.nn.kv_cache.cache_params import (
     KVCacheMemory,
     KVCacheParamInterface,
     KVConnectorType,
-    connector_type,
 )
 from max.pipelines.kv_cache.kv_connector import KVConnector
 
@@ -80,7 +79,7 @@ def create_connector(
         A connector instance implementing the KVConnector protocol.
     """
     cfg = params.kv_connector_config
-    connector = connector_type(cfg)
+    connector = cfg.type
 
     if connector == KVConnectorType.dkv:
         from .dkv import DKVConnector

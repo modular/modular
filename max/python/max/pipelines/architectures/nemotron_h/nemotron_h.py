@@ -33,20 +33,27 @@ from __future__ import annotations
 import functools
 import math
 from collections.abc import Iterable, Sequence
+from pathlib import Path
+from typing import Any
 
+from max import tree
 from max.driver import accelerator_api
 from max.dtype import DType
 from max.graph import (
     BufferType,
     BufferValue,
     DeviceRef,
+    Graph,
     ShardingStrategy,
     TensorType,
     TensorValue,
     TensorValueLike,
+    Type,
+    Value,
     Weight,
     ops,
 )
+from max.graph import Module as GraphModule
 from max.graph.quantization import QuantizationEncoding
 from max.nn.attention import MHAMaskVariant
 from max.nn.embedding import Embedding
@@ -59,6 +66,7 @@ from max.nn.kernels import (
     store_v_cache_ragged,
 )
 from max.nn.kv_cache import (
+    KVCacheInputsPerDevice,
     KVCacheParamInterface,
     KVCacheParams,
     PagedCacheValues,
@@ -500,6 +508,8 @@ class NemotronHAttention(Module):
         self,
         config: NemotronHConfig,
         kv_layer_idx: int,
+        *,
+        quant_config: QuantConfig | None = None,
     ) -> None:
         super().__init__()
         dev = config.devices[0]
@@ -514,11 +524,32 @@ class NemotronHAttention(Module):
 
         self.q_dim = self.n_heads * self.head_dim
         self.kv_dim = self.n_kv_heads * self.head_dim
-        # Attention projections are bf16 here: the 4B FP8 checkpoint excludes
-        # them from quantization, and the 8B Reasoning checkpoint's per-tensor
-        # FP8 q/k/v/o are dequantized to bf16 at load by the weight adapter. So
-        # no quantization config is wired here.
-        #
+        # ``quant_config`` is set when this layer's q/k/v/o are per-tensor
+        # static FP8 (the 8B Reasoning checkpoint). Each projection has its own
+        # weight and input scale, so they run as separate FP8 Linears.
+        self.qkv_proj: Linear | None = None
+        if quant_config is not None:
+            fp8_linear = functools.partial(
+                Linear,
+                in_dim=config.hidden_size,
+                dtype=DType.float8_e4m3fn,
+                device=dev,
+                has_bias=config.attention_bias,
+                quant_config=quant_config,
+            )
+            self.q_proj = fp8_linear(out_dim=self.q_dim)
+            self.k_proj = fp8_linear(out_dim=self.kv_dim)
+            self.v_proj = fp8_linear(out_dim=self.kv_dim)
+            self.o_proj = Linear(
+                in_dim=self.q_dim,
+                out_dim=config.hidden_size,
+                dtype=DType.float8_e4m3fn,
+                device=dev,
+                has_bias=config.attention_bias,
+                quant_config=quant_config,
+            )
+            return
+        # bf16 (the 4B checkpoint, which leaves attention unquantized).
         # Fused QKV: one matmul over the concatenated [q | k | v] out-dim, then
         # ``ops.split``. The HF checkpoint ships q/k/v as separate weights; the
         # adapter concatenates them (q, then k, then v) into ``qkv_proj.weight``.
@@ -551,10 +582,15 @@ class NemotronHAttention(Module):
         input_row_offsets: TensorValue,
     ) -> TensorValue:
         total_seq_len = x.shape[0]
-        # One fused QKV matmul, then split into q | k | v (sizes q_dim, kv_dim,
-        # kv_dim along the feature axis).
-        qkv = self.qkv_proj(x)
-        q, k, v = ops.split(qkv, [self.q_dim, self.kv_dim, self.kv_dim], axis=1)
+        if self.qkv_proj is None:
+            q, k, v = self.q_proj(x), self.k_proj(x), self.v_proj(x)
+        else:
+            # One fused QKV matmul, then split into q | k | v (sizes q_dim,
+            # kv_dim, kv_dim along the feature axis).
+            qkv = self.qkv_proj(x)
+            q, k, v = ops.split(
+                qkv, [self.q_dim, self.kv_dim, self.kv_dim], axis=1
+            )
         query = ops.reshape(q, [-1, self.n_heads, self.head_dim])
         key = ops.reshape(k, [-1, self.n_kv_heads, self.head_dim])
         value = ops.reshape(v, [-1, self.n_kv_heads, self.head_dim])
@@ -860,7 +896,9 @@ class NemotronHBlock(Module):
         if self.kind == "mamba":
             self.mixer = NemotronHMamba2Mixer(config, quant_config=quant_config)
         elif self.kind == "attention":
-            self.mixer = NemotronHAttention(config, kv_layer_idx)
+            self.mixer = NemotronHAttention(
+                config, kv_layer_idx, quant_config=quant_config
+            )
         elif self.kind == "moe":
             # Non-gated relu2 MoE. ``quant_config`` is set only when this MoE
             # layer is FP8 (the 30B-A3B FP8 checkpoint); it makes the routed +
@@ -938,6 +976,8 @@ class NemotronH(Module):
             elif kind == "mlp" and li in config.fp8_mlp_layers:
                 qc = quant_config
             elif kind == "moe" and li in config.fp8_moe_layers:
+                qc = quant_config
+            elif kind == "attention" and li in config.fp8_attention_layers:
                 qc = quant_config
             blocks.append(NemotronHBlock(config, li, kv_layer, quant_config=qc))
             if kind == "attention":
@@ -1101,4 +1141,74 @@ class NemotronH(Module):
             + conv_pool_types
             + ssm_pool_types
             + [has_initial_state_type]
+        )
+
+    def trace(
+        self,
+        *input_types: Type[Any],
+        name: str | None = None,
+        module: GraphModule | None = None,
+        custom_extensions: Iterable[Path] = (),
+        is_device_graph: bool = False,
+    ) -> Graph:
+        """Traces the graph, whose inputs are :meth:`input_types`.
+
+        Adapts the flat graph inputs to :meth:`__call__`: splits them into
+        the batch, the KV cache, the slot indices, the conv and SSM state
+        pools and ``has_initial_state``.
+
+        Args:
+            *input_types: The graph's input types, as :meth:`input_types`
+                returns them.
+            name: The name of the graph. Defaults to the class's qualified
+                name.
+            module: The MLIR module to add the graph to. Defaults to a new
+                module.
+            custom_extensions: Paths to custom kernel libraries the graph
+                uses.
+            is_device_graph: Whether to build a device graph.
+
+        Returns:
+            The traced :class:`~max.graph.Graph`.
+        """
+        num_mamba = self.num_mamba_layers
+
+        def forward(
+            tokens: Value[Any],
+            input_row_offsets: Value[Any],
+            return_n_logits: Value[Any],
+            *variadic: Value[Any],
+        ) -> tuple[TensorValue, ...]:
+            # The KV inputs come first, then slot_idx, the conv pools, the
+            # SSM pools and has_initial_state.
+            kv_count = len(variadic) - 1 - num_mamba * 2 - 1
+            kv_collections = tree.leaves(
+                self.kv_params.unflatten_kv_inputs(iter(variadic[:kv_count])),
+                leaf=KVCacheInputsPerDevice,
+            )
+            idx = kv_count
+            slot_idx = variadic[idx].tensor
+            idx += 1
+            conv_pools = [variadic[idx + i].buffer for i in range(num_mamba)]
+            idx += num_mamba
+            ssm_pools = [variadic[idx + i].buffer for i in range(num_mamba)]
+            idx += num_mamba
+            return self(
+                tokens.tensor,
+                input_row_offsets.tensor,
+                return_n_logits.tensor,
+                kv_collections,
+                slot_idx,
+                conv_pools,
+                ssm_pools,
+                variadic[idx].tensor,
+            )
+
+        return Graph(
+            type(self).__qualname__ if name is None else name,
+            forward,
+            input_types=input_types,
+            custom_extensions=list(custom_extensions),
+            module=module,
+            is_device_graph=is_device_graph,
         )

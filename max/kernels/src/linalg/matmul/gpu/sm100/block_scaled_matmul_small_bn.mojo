@@ -99,7 +99,12 @@ from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
 
 from ....arch.sm100 import MmaOpSM100_BlockScaled_SS
-from ....utils import elementwise_compute_lambda_type, elementwise_epilogue_type
+from ....utils import (
+    ElementwiseComputeFn,
+    ElementwiseEpilogueFn,
+    no_compute_fn,
+    no_epilogue_fn,
+)
 from .config import BlockScaledMatmulConfig
 from .tile_scheduler import (
     TileScheduler,
@@ -1275,11 +1280,8 @@ def _sfb_cpasync_produce_tile_warpwide[
 @__llvm_arg_metadata(sfa_tma_op, `nvvm.grid_constant`)
 @__name(
     StaticString(config.get_kernel_name())
-    + StaticString(
-        "_fused_compute_epi" if elementwise_compute_lambda_fn
-        is not None else ""
-    )
-    + StaticString("_fused_epi" if elementwise_lambda_fn is not None else ""),
+    + StaticString("_epilogue_fn" if has_epilogue_fn else "")
+    + StaticString("_compute_fn" if has_compute_fn else ""),
 )
 def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     a_type: DType,
@@ -1302,12 +1304,13 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     ],
     # Need because nvvm.cluster_dim only takes StaticTuple
     cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1),
-    elementwise_compute_lambda_fn: Optional[
-        elementwise_compute_lambda_type
-    ] = None,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     pdl_level: PDLLevel = PDLLevel(),
     max_profiled_tiles_per_SM: UInt32 = 0,
+    *,
+    EpilogueFnType: ElementwiseEpilogueFn,
+    ComputeFnType: ElementwiseComputeFn,
+    has_epilogue_fn: Bool,
+    has_compute_fn: Bool,
 ](
     a_tma_op: TMATensorTile[a_type, a_tile_shape, a_desc_shape],
     b_tma_op: TMATensorTile[b_type, b_tile_shape, b_desc_shape],
@@ -1322,6 +1325,8 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     sfb_n_stride: Int32,
     sfb_k_tiles: Int32,
     sfb_n_total: Int32,
+    epilogue_fn: EpilogueFnType,
+    compute_fn: ComputeFnType,
 ):
     var _sfb_batch_stride = Int(sfb_batch_stride)
     var _sfb_n_stride = Int(sfb_n_stride)
@@ -1480,8 +1485,6 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
         c_smem_dim1=OutputN,
         num_output_stages=config.num_output_stages,
         num_output_warps=num_output_warps,
-        elementwise_lambda_fn=elementwise_lambda_fn,
-        elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
         batched=True,
     ]
     comptime OutputStageType = OutputStage[opc]
@@ -2174,13 +2177,32 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
 
                 # TileWriter handles: TMEM load -> alpha scale -> SMEM write
                 # -> TMA store -> AccumBarrier.arrive()
-                tile_writer.write_batched(
-                    c_tiles,
-                    output_stage,
-                    (work_info.m, work_info.n, work_info.k_start),
-                    (mnk[0], mnk[1]),
-                    alpha,
-                )
+                comptime if has_epilogue_fn:
+                    tile_writer.write_batched(
+                        c_tiles,
+                        output_stage,
+                        (work_info.m, work_info.n, work_info.k_start),
+                        (mnk[0], mnk[1]),
+                        epilogue_fn,
+                        alpha,
+                    )
+                elif has_compute_fn:
+                    tile_writer.write_batched(
+                        c_tiles,
+                        output_stage,
+                        (work_info.m, work_info.n, work_info.k_start),
+                        (mnk[0], mnk[1]),
+                        compute_fn,
+                        alpha,
+                    )
+                else:
+                    tile_writer.write_batched(
+                        c_tiles,
+                        output_stage,
+                        (work_info.m, work_info.n, work_info.k_start),
+                        (mnk[0], mnk[1]),
+                        alpha,
+                    )
                 mma_output_pipeline.consumer_step()
 
                 var next_work_info = scheduler.fetch_next_work(
@@ -2208,17 +2230,18 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
 
 
 def _create_tma_and_launch[
+    EpilogueFnType: ElementwiseEpilogueFn,
+    ComputeFnType: ElementwiseComputeFn,
+    //,
     transpose_b: Bool,
     *,
     K: Int,
     config: BlockScaledMatmulConfig[_, _, _, _, _, transpose_b],
-    elementwise_compute_lambda_fn: Optional[
-        elementwise_compute_lambda_type
-    ] = None,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     register_based_epilogue: Bool = True,
     pdl_level: PDLLevel = PDLLevel(),
     max_profiled_tiles_per_SM: Optional[UInt32] = None,
+    has_epilogue_fn: Bool = False,
+    has_compute_fn: Bool = False,
 ](
     a_3d: TileTensor,
     b_3d: TileTensor,
@@ -2227,6 +2250,8 @@ def _create_tma_and_launch[
     sfb_5d_tensor: TileTensor,
     ctx: DeviceContext,
     alpha: Float32,
+    epilogue_fn: EpilogueFnType,
+    compute_fn: ComputeFnType,
 ) raises:
     """Create TMA descriptors and launch the small-BN block-scaled matmul kernel.
 
@@ -2408,10 +2433,12 @@ def _create_tma_and_launch[
             Int32(config.cluster_shape[1]),
             Int32(config.cluster_shape[2]),
         ),
-        elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-        elementwise_lambda_fn=elementwise_lambda_fn,
         pdl_level=pdl_level,
         max_profiled_tiles_per_SM=max_profiled_tiles,
+        EpilogueFnType=EpilogueFnType,
+        ComputeFnType=ComputeFnType,
+        has_epilogue_fn=has_epilogue_fn,
+        has_compute_fn=has_compute_fn,
     ]
 
     # Grid and block dimensions
@@ -2460,6 +2487,8 @@ def _create_tma_and_launch[
         Int32(_sfb_n_stride_val),
         Int32(_sfb_k_tiles),
         Int32(N_maybe_swapped),
+        host_arg=epilogue_fn,
+        host_arg2=compute_fn,
         grid_dim=grid_dim,
         # 1 TMA, 1 SFB_LOAD, 1 MMA, 1 Scheduler, 4 EPILOGUE (+1 SFB_READY for 2CTA)
         block_dim=(
@@ -2494,24 +2523,27 @@ def _create_tma_and_launch[
 
 
 def _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+    EpilogueFnType: ElementwiseEpilogueFn,
+    ComputeFnType: ElementwiseComputeFn,
+    //,
     sfa_dtype: DType,
     sfb_dtype: DType,
     transpose_b: Bool,
     *,
     K: Int,
     config: BlockScaledMatmulConfig[_, _, _, sfa_dtype, sfb_dtype, transpose_b],
-    elementwise_compute_lambda_fn: Optional[
-        elementwise_compute_lambda_type
-    ] = None,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     pdl_level: PDLLevel = PDLLevel(),
     max_profiled_tiles_per_SM: Optional[UInt32] = None,
+    has_epilogue_fn: Bool = False,
+    has_compute_fn: Bool = False,
 ](
     c_tensor: TileTensor,
     a_tensor: TileTensor,
     b_tensor: TileTensor,
     a_scales_tensor: TileTensor[sfa_dtype, ...],
     b_scales_tensor: TileTensor[sfb_dtype, ...],
+    epilogue_fn: EpilogueFnType,
+    compute_fn: ComputeFnType,
     ctx: DeviceContext,
     alpha: Float32 = 1.0,
 ) raises:
@@ -2651,11 +2683,11 @@ def _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         _create_tma_and_launch[
             K=K,
             config=config,
-            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-            elementwise_lambda_fn=elementwise_lambda_fn,
             register_based_epilogue=register_based_epilogue,
             pdl_level=pdl_level,
             max_profiled_tiles_per_SM=max_profiled_tiles_per_SM,
+            has_epilogue_fn=has_epilogue_fn,
+            has_compute_fn=has_compute_fn,
         ](
             a_tensor,
             b_tensor,
@@ -2664,16 +2696,18 @@ def _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
             sfb_5d_tensor,
             ctx,
             alpha,
+            epilogue_fn,
+            compute_fn,
         )
     else:
         _create_tma_and_launch[
             K=K,
             config=config,
-            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-            elementwise_lambda_fn=elementwise_lambda_fn,
             register_based_epilogue=register_based_epilogue,
             pdl_level=pdl_level,
             max_profiled_tiles_per_SM=max_profiled_tiles_per_SM,
+            has_epilogue_fn=has_epilogue_fn,
+            has_compute_fn=has_compute_fn,
         ](
             _to_batched_3d(a_tensor),
             _to_batched_3d(b_tensor),
@@ -2682,6 +2716,8 @@ def _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
             sfb_5d_tensor,
             ctx,
             alpha,
+            epilogue_fn,
+            compute_fn,
         )
 
 
@@ -2692,10 +2728,6 @@ def blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     *,
     K: Int,
     config: BlockScaledMatmulConfig[_, _, _, sfa_dtype, sfb_dtype, transpose_b],
-    elementwise_compute_lambda_fn: Optional[
-        elementwise_compute_lambda_type
-    ] = None,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     pdl_level: PDLLevel = PDLLevel.ON,
     max_profiled_tiles_per_SM: Optional[UInt32] = None,
 ](
@@ -2727,10 +2759,6 @@ def blackwell_block_scaled_matmul_tma_umma_warp_specialized[
             16 and satisfy `ceildiv(K, BK) % k_group_size == 0`.
         config: Kernel configuration controlling tile shapes, pipeline
             stages, cluster geometry, and swizzle modes.
-        elementwise_compute_lambda_fn: Fused elementwise compute lambda
-            applied during the epilogue (defaults to `None`).
-        elementwise_lambda_fn: Fused elementwise epilogue lambda applied
-            to the output tile (defaults to `None`).
         pdl_level: Programmatic dependent launch level controlling
             dependent grid synchronization (defaults to `PDLLevel.ON`).
         max_profiled_tiles_per_SM: Maximum number of tiles to profile per
@@ -2752,7 +2780,51 @@ def blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         alpha: Scalar multiplier applied to the product `A @ B` (defaults
             to 1.0).
     """
+    _blackwell_block_scaled_matmul_small_bn_impl[
+        K=K,
+        config=config,
+        pdl_level=pdl_level,
+        max_profiled_tiles_per_SM=max_profiled_tiles_per_SM,
+        has_epilogue_fn=False,
+        has_compute_fn=False,
+    ](
+        c_tensor,
+        a_tensor,
+        b_tensor,
+        a_scales_tensor,
+        b_scales_tensor,
+        no_epilogue_fn,
+        no_compute_fn,
+        ctx,
+        alpha,
+    )
 
+
+def _blackwell_block_scaled_matmul_small_bn_impl[
+    EpilogueFnType: ElementwiseEpilogueFn,
+    ComputeFnType: ElementwiseComputeFn,
+    //,
+    sfa_dtype: DType,
+    sfb_dtype: DType,
+    transpose_b: Bool,
+    *,
+    K: Int,
+    config: BlockScaledMatmulConfig[_, _, _, sfa_dtype, sfb_dtype, transpose_b],
+    pdl_level: PDLLevel = PDLLevel.ON,
+    max_profiled_tiles_per_SM: Optional[UInt32] = None,
+    has_epilogue_fn: Bool,
+    has_compute_fn: Bool,
+](
+    c_tensor: TileTensor,
+    a_tensor: TileTensor,
+    b_tensor: TileTensor,
+    a_scales_tensor: TileTensor[sfa_dtype, ...],
+    b_scales_tensor: TileTensor[sfb_dtype, ...],
+    epilogue_fn: EpilogueFnType,
+    compute_fn: ComputeFnType,
+    ctx: DeviceContext,
+    alpha: Float32,
+) raises:
     comptime if config.AB_swapped:
         # When both A and B are K-major, C = A @ B'.
         # If we swap A and B: D = B @ A', and D' = (B @ A')' = A @ B' = C.
@@ -2766,16 +2838,18 @@ def blackwell_block_scaled_matmul_tma_umma_warp_specialized[
             transpose_b,
             K=K,
             config=new_config,
-            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-            elementwise_lambda_fn=elementwise_lambda_fn,
             pdl_level=pdl_level,
             max_profiled_tiles_per_SM=max_profiled_tiles_per_SM,
+            has_epilogue_fn=has_epilogue_fn,
+            has_compute_fn=has_compute_fn,
         ](
             c_tensor,
             b_tensor,
             a_tensor,
             b_scales_tensor,
             a_scales_tensor,
+            epilogue_fn,
+            compute_fn,
             ctx,
             alpha,
         )
@@ -2786,16 +2860,18 @@ def blackwell_block_scaled_matmul_tma_umma_warp_specialized[
             transpose_b,
             K=K,
             config=config,
-            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-            elementwise_lambda_fn=elementwise_lambda_fn,
             pdl_level=pdl_level,
             max_profiled_tiles_per_SM=max_profiled_tiles_per_SM,
+            has_epilogue_fn=has_epilogue_fn,
+            has_compute_fn=has_compute_fn,
         ](
             c_tensor,
             a_tensor,
             b_tensor,
             a_scales_tensor,
             b_scales_tensor,
+            epilogue_fn,
+            compute_fn,
             ctx,
             alpha,
         )

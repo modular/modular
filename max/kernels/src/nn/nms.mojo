@@ -704,11 +704,11 @@ def non_max_suppression_gpu[
     ScoresEngine: TensorEngine = DefaultEngine[element_width=1],
     OutputEngine: TensorEngine = DefaultEngine[element_width=1],
 ](
-    boxes: TileTensor[
-        mut=True, dtype, BoxesLayout, MutAnyOrigin, Engine=BoxesEngine
+    boxes: ImmTileTensor[
+        dtype, BoxesLayout, ImmutAnyOrigin, Engine=BoxesEngine
     ],
-    scores: TileTensor[
-        mut=True, dtype, ScoresLayout, MutAnyOrigin, Engine=ScoresEngine
+    scores: ImmTileTensor[
+        dtype, ScoresLayout, ImmutAnyOrigin, Engine=ScoresEngine
     ],
     output: TileTensor[
         mut=True, .int64, OutputLayout, MutAnyOrigin, Engine=OutputEngine
@@ -808,8 +808,8 @@ def non_max_suppression_gpu[
         OutputEngine=OutputEngine,
     ]
     ctx.enqueue_function[kernel](
-        boxes.as_imm(),
-        scores.as_imm(),
+        boxes,
+        scores,
         output,
         Int32(num_boxes),
         Int32(num_classes),
@@ -831,11 +831,11 @@ def non_max_suppression[
     ScoresEngine: TensorEngine = DefaultEngine[element_width=1],
     OutputEngine: TensorEngine = DefaultEngine[element_width=1],
 ](
-    boxes: TileTensor[
-        mut=True, dtype, BoxesLayout, MutAnyOrigin, Engine=BoxesEngine
+    boxes: ImmTileTensor[
+        dtype, BoxesLayout, ImmutAnyOrigin, Engine=BoxesEngine
     ],
-    scores: TileTensor[
-        mut=True, dtype, ScoresLayout, MutAnyOrigin, Engine=ScoresEngine
+    scores: ImmTileTensor[
+        dtype, ScoresLayout, ImmutAnyOrigin, Engine=ScoresEngine
     ],
     output: TileTensor[
         mut=True, .int64, OutputLayout, MutAnyOrigin, Engine=OutputEngine
@@ -959,11 +959,11 @@ def _nms_host_fallback[
     ScoresEngine: TensorEngine = DefaultEngine[element_width=1],
     OutputEngine: TensorEngine = DefaultEngine[element_width=1],
 ](
-    boxes: TileTensor[
-        mut=True, dtype, BoxesLayout, MutAnyOrigin, Engine=BoxesEngine
+    boxes: ImmTileTensor[
+        dtype, BoxesLayout, ImmutAnyOrigin, Engine=BoxesEngine
     ],
-    scores: TileTensor[
-        mut=True, dtype, ScoresLayout, MutAnyOrigin, Engine=ScoresEngine
+    scores: ImmTileTensor[
+        dtype, ScoresLayout, ImmutAnyOrigin, Engine=ScoresEngine
     ],
     output: TileTensor[
         mut=True, .int64, OutputLayout, MutAnyOrigin, Engine=OutputEngine

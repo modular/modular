@@ -21,6 +21,13 @@ Acceptance sampling
 
    AcceptanceSampler
 
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/class.rst
+
+   LogitPenalties
+
 Sampler factories
 -----------------
 

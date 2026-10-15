@@ -19,11 +19,15 @@ The layouts and values are transcribed from `<sys/socket.h>`,
 from std.ffi import c_char, c_int
 from std.sys import size_of
 
-from .inet import in6_addr, in_addr, in_port_t
+from .inet import SockaddrIn, SockaddrIn6, in6_addr, in_addr, in_port_t
 
 comptime sa_family_t = UInt8
 """C `sa_family_t`: the address family (`AF_*`) of a socket address."""
 
+comptime AF_INET: c_int = 2
+"""IPv4 internet protocols."""
+comptime AF_INET6: c_int = 30
+"""IPv6 internet protocols."""
 comptime SO_NOSIGPIPE: c_int = 0x1022
 """Don't raise `SIGPIPE` on write to a closed peer."""
 
@@ -41,7 +45,7 @@ struct sockaddr(Copyable, Writable):
 
 
 @fieldwise_init
-struct sockaddr_in(Copyable, Writable):
+struct sockaddr_in(ImplicitlyCopyable, SockaddrIn, Writable):
     """C `struct sockaddr_in`: an IPv4 socket address."""
 
     var sin_len: UInt8
@@ -55,9 +59,29 @@ struct sockaddr_in(Copyable, Writable):
     var sin_zero: Array[c_char, 8]
     """Padding to the 16-byte `sockaddr` size; always zero."""
 
+    def __init__(out self, *, port: in_port_t, addr: in_addr):
+        self.sin_len = UInt8(size_of[Self]())
+        self.sin_family = AF_INET.cast[sa_family_t.dtype]()
+        self.sin_port = port
+        self.sin_addr = addr
+        self.sin_zero = Array[c_char, 8](fill=0)
+
+    def __init__(out self, *, copy: Self):
+        self.sin_len = copy.sin_len
+        self.sin_family = copy.sin_family
+        self.sin_port = copy.sin_port
+        self.sin_addr = copy.sin_addr
+        self.sin_zero = copy.sin_zero.copy()
+
+    def port(self) -> in_port_t:
+        return self.sin_port
+
+    def addr(self) -> in_addr:
+        return self.sin_addr
+
 
 @fieldwise_init
-struct sockaddr_in6(Copyable, Writable):
+struct sockaddr_in6(ImplicitlyCopyable, SockaddrIn6, Writable):
     """C `struct sockaddr_in6`: an IPv6 socket address."""
 
     var sin6_len: UInt8
@@ -72,6 +96,41 @@ struct sockaddr_in6(Copyable, Writable):
     """The IPv6 address."""
     var sin6_scope_id: UInt32
     """Scope zone index for link-local addresses."""
+
+    def __init__(
+        out self,
+        *,
+        port: in_port_t,
+        var addr: in6_addr,
+        flowinfo: UInt32,
+        scope_id: UInt32,
+    ):
+        self.sin6_len = UInt8(size_of[Self]())
+        self.sin6_family = AF_INET6.cast[sa_family_t.dtype]()
+        self.sin6_port = port
+        self.sin6_flowinfo = flowinfo
+        self.sin6_addr = addr^
+        self.sin6_scope_id = scope_id
+
+    def __init__(out self, *, copy: Self):
+        self.sin6_len = copy.sin6_len
+        self.sin6_family = copy.sin6_family
+        self.sin6_port = copy.sin6_port
+        self.sin6_flowinfo = copy.sin6_flowinfo
+        self.sin6_addr = copy.sin6_addr.copy()
+        self.sin6_scope_id = copy.sin6_scope_id
+
+    def port(self) -> in_port_t:
+        return self.sin6_port
+
+    def addr(self) -> in6_addr:
+        return self.sin6_addr.copy()
+
+    def flowinfo(self) -> UInt32:
+        return self.sin6_flowinfo
+
+    def scope_id(self) -> UInt32:
+        return self.sin6_scope_id
 
 
 comptime _SUN_PATH_LEN = 104

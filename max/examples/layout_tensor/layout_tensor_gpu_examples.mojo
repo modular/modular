@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# DOC: max/layout/tensors.mdx
+# DOC: layout/tensors.mdx
 # Retained as `LayoutTensor` by design: these are the source of the deliberately
 # legacy GPU/copy sections of max/layout/tensors.mdx (compatibility APIs with no
 # TileTensor equivalent yet); see the TileTensor canonical examples in
-# oss/modular/docs/code/tile-tensor/tensors/.
+# max/docs/site/code/tile-tensor/tensors/.
 
 from max.gpu import (
     thread_idx,

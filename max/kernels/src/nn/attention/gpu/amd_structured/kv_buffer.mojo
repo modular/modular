@@ -58,9 +58,10 @@ from structured_kernels.amd_tile_io import (
     SubTileLoaderLDS,
     TiledMmaLoader,
     load_lds_fragment,
+    _IndexedSubTileLayout,
 )
 
-from std.utils import IndexList
+from std.utils import IndexList, StaticTuple
 
 
 struct KVCacheIterator[
@@ -347,11 +348,13 @@ struct KVBuffer[
         Self.BN // Self.warp_tile_rows
     ) * Self._dma_col_groups
     comptime _tiles_per_warp = ceildiv(Self._total_tiles, Self._num_warps)
-    # A nonuniform tile split has no single safe per-wave outstanding count;
-    # zero makes pipelined consumers wait for every wave's DMA to finish.
+    # A nonuniform tile split has no single safe per-wave outstanding count,
+    # and indexed loads issue a different count (row copies plus the next
+    # tile's index reads); zero makes pipelined consumers wait for every
+    # wave's DMA to finish.
     comptime vm_instrs_per_load = UInt32(
-        Self._tiles_per_warp * 2 if Self._total_tiles % Self._num_warps
-        == 0 else 0
+        Self._tiles_per_warp * 2 if Self._total_tiles % Self._num_warps == 0
+        and not Self.kv_t.rows_indexed else 0
     )
 
     comptime _mma_total_rows = Self.num_mmas * Self.num_k_mmas2 * Self._reg_num_k_tiles
@@ -400,6 +403,22 @@ struct KVBuffer[
     ]
 
     var warp_id: UInt32
+
+    # Indexed (`kv_t.rows_indexed`) loads: the source addresses of the next
+    # tile, resolved one load ahead so their index reads overlap a tile of
+    # compute instead of stalling the copies. A single unused slot otherwise.
+    comptime _IndexedLanes = _IndexedSubTileLayout[
+        Self.kv_t.dtype, Self.warp_tile_rows, Self.bk_smem, Self.swizzle
+    ]
+    comptime _indexed_num_srcs = (
+        Self._tiles_per_warp
+        * Self._IndexedLanes.num_strips if Self.kv_t.rows_indexed else 1
+    )
+    var _next_srcs: StaticTuple[
+        UnsafePointer[Scalar[Self.kv_t.dtype], ImmUntrackedOrigin],
+        Self._indexed_num_srcs,
+    ]
+    var _next_srcs_ready: Bool
 
     @inline(.always)
     def _smem_view(self) -> Self.SmemParentType:
@@ -453,9 +472,91 @@ struct KVBuffer[
         )
 
         self.warp_id = warp_id
+        self._next_srcs = type_of(self._next_srcs)()
+        self._next_srcs_ready = False
+
+    @inline(.always)
+    def _resolve_indexed_srcs(
+        self, tile_start_row: Int
+    ) -> type_of(self._next_srcs):
+        """Returns this lane's source address for every strip it copies.
+
+        Branch-free, so all of a tile's index reads issue before any result
+        is used. A warp's surplus slot is clamped to an in-range sub-tile and
+        never copied; a tile past the last key reads in-range indices too.
+        """
+        var cache = self.kv_cache_iter.cache
+        var batch_idx = UInt32(self.kv_cache_iter.batch_idx)
+        var srcs = type_of(self._next_srcs)()
+        comptime for t in range(Self._tiles_per_warp):
+            var warp_tile = min(
+                Int(t) * Self._num_warps + Int(self.warp_id),
+                Self._total_tiles - 1,
+            )
+            var warp_row, warp_col = divmod(warp_tile, Self._dma_col_groups)
+            comptime for strip in range(Self._IndexedLanes.num_strips):
+                var row, col = Self._IndexedLanes.lane_row_col(strip)
+                srcs[t * Self._IndexedLanes.num_strips + strip] = (
+                    cache.indexed_row_ptr(
+                        batch_idx,
+                        UInt32(
+                            tile_start_row
+                            + warp_row * Self.warp_tile_rows
+                            + row
+                        ),
+                    )
+                    + (warp_col * Self.bk_smem + Self.head_dim_offset + col)
+                ).unsafe_origin_cast[ImmUntrackedOrigin]()
+        return srcs
+
+    @inline(.always)
+    def _load_indexed_from_dram[buffer_idx: Int](mut self):
+        """Loads the next tile's rows from per-key addresses.
+
+        Same sub-tile split and LDS image as the full-depth `load_from_dram`
+        path below, so the consumer reads are unchanged; only the source of
+        each row differs (`kv_t.indexed_row_ptr`). The addresses were resolved
+        by the previous call, and this call resolves the following tile's, so
+        each tile's index reads overlap the compute of the tile before it.
+        """
+        comptime assert Self.full_kv, "indexed K rows need a full-depth stage"
+        # `indexed_row_ptr` names a key's row at head 0, which is the whole
+        # row only for a single (absorbed-latent) KV head.
+        comptime assert (
+            Self.kv_num_heads == 1
+        ), "indexed K rows need a single KV head"
+        comptime _stage_block_base = buffer_idx * Self._blocks_per_stage
+
+        var tile_start_row = self.kv_cache_iter.tile_start_row
+        var srcs = self._next_srcs
+        if not self._next_srcs_ready:
+            srcs = self._resolve_indexed_srcs(tile_start_row)
+        self.kv_cache_iter.increment()
+
+        comptime for t in range(Self._tiles_per_warp):
+            var warp_tile = Int(t) * Self._num_warps + Int(self.warp_id)
+            if warp_tile < Self._total_tiles:
+                var warp_row, warp_col = divmod(warp_tile, Self._dma_col_groups)
+                var smem_warp = self.smem_block_tile[Self.warp_tile_rows](
+                    warp_row, _stage_block_base + warp_col
+                )
+                comptime for strip in range(Self._IndexedLanes.num_strips):
+                    Self._IndexedLanes.load_strip(
+                        smem_warp,
+                        strip,
+                        srcs[t * Self._IndexedLanes.num_strips + strip],
+                    )
+
+        self._next_srcs = self._resolve_indexed_srcs(
+            self.kv_cache_iter.tile_start_row
+        )
+        self._next_srcs_ready = True
 
     @inline(.always)
     def load_from_dram[buffer_idx: Int](mut self):
+        comptime if Self.kv_t.rows_indexed:
+            self._load_indexed_from_dram[buffer_idx]()
+            return
         var gmem_tile = self.kv_cache_iter.next_tile()
         var loader = SubTileLoaderLDS[Self.kv_t.dtype, Self.swizzle](gmem_tile)
 

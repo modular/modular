@@ -33,7 +33,7 @@ from std.traits import (
 )
 
 from std.algorithm import vectorize
-from std.hashlib import Hasher
+from std.hash import Hasher
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 import std.format._utils as fmt
 

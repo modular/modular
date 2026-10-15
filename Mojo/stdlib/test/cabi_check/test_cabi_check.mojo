@@ -45,6 +45,11 @@ struct ProbeNested:
     var inner: Probe
 
 
+struct ProbeWide:
+    var seconds: Int64
+    var flags: UInt64
+
+
 def test_preamble() raises:
     var out = preamble(["<errno.h>", "<netinet/in.h>"])
     assert_true(out.startswith("// Generated ABI reference; do not edit."))
@@ -54,6 +59,10 @@ def test_preamble() raises:
     assert_true("#include <stdint.h>\n" in out)
     assert_true("#define MOJO_CHECK_CABI_LAYOUT(name, type)" in out)
     assert_true("#define MOJO_CHECK_CABI_FIELD(name, type, field)" in out)
+    assert_true("#define MOJO_CHECK_CABI_FIELD_INT64(name, type, field)" in out)
+    assert_true(
+        "#define MOJO_CHECK_CABI_FIELD_UINT64(name, type, field)" in out
+    )
     assert_true("#define MOJO_CHECK_CABI_CONST(name)" in out)
     assert_true(
         "#define MOJO_CHECK_CABI_IS_SIGNED(e) ((__typeof__(e))-1 < 0)" in out
@@ -91,6 +100,20 @@ def test_struct_checks_nested_struct_field() raises:
             "MOJO_CHECK_CABI_FIELD(ProbeNested, struct ProbeNested, inner)\n"
             "MOJO_CHECK_CABI_FIELD_TYPE(ProbeNested, struct ProbeNested,"
             " inner, struct Probe *ptr)"
+        ),
+    )
+
+
+def test_struct_checks_64_bit_fields() raises:
+    assert_equal(
+        struct_checks[ProbeWide](),
+        (
+            "MOJO_CHECK_CABI_LAYOUT(ProbeWide, struct ProbeWide)\n"
+            "MOJO_CHECK_CABI_FIELD(ProbeWide, struct ProbeWide, seconds)\n"
+            "MOJO_CHECK_CABI_FIELD_INT64(ProbeWide, struct ProbeWide,"
+            " seconds)\n"
+            "MOJO_CHECK_CABI_FIELD(ProbeWide, struct ProbeWide, flags)\n"
+            "MOJO_CHECK_CABI_FIELD_UINT64(ProbeWide, struct ProbeWide, flags)"
         ),
     )
 

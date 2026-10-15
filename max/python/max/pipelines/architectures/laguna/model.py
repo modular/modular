@@ -19,7 +19,6 @@ from typing import Any, ClassVar, Literal
 from max._core.engine import Model
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import Graph
 from max.nn.comm.ep import EPCommInitializer, EPConfig
 from max.nn.comm.ep.ep_config import (
     calculate_ep_max_tokens_per_rank,
@@ -33,6 +32,7 @@ from max.pipelines.lib import (
 from max.pipelines.lib.config.model_config import (
     _select_quantization_encoding,
 )
+from max.pipelines.lib.graph_specs import GraphRole, GraphSpec
 from max.pipelines.lib.interfaces import AlwaysSignalBuffersMixin
 from max.pipelines.weights.quant import parse_quant_config
 from max.support.human_readable_formatter import to_human_readable_bytes
@@ -174,18 +174,12 @@ class LagunaModel(AlwaysSignalBuffersMixin, LlamaModelBase):
         )
 
     @override
-    def _build_graph_for_compile(
-        self,
-        session: InferenceSession,
-        state_dict: dict[str, Any],
-        model_config: LagunaConfig,
-    ) -> tuple[Graph, dict[str, Any]]:
-        del session
+    def graph_specs(self, model_config: LagunaConfig) -> dict[str, GraphSpec]:
+        """Returns the decoder."""
         nn_model = Laguna(model_config)
         graph_inputs = nn_model.input_types(self.kv_params)
-
         nn_model.load_state_dict(
-            state_dict,
+            self.state_dict,
             override_quantization_encoding=True,
             weight_alignment=1,
             strict=(
@@ -194,44 +188,14 @@ class LagunaModel(AlwaysSignalBuffersMixin, LlamaModelBase):
                 )
             ),
         )
-        weights_registry = nn_model.state_dict()
-
-        num_devices = len(self.devices)
-        with Graph("laguna", input_types=graph_inputs) as graph:
-            inputs_iter = iter(graph.inputs)
-            tokens = next(inputs_iter)
-            input_row_offsets = next(inputs_iter)
-            return_n_logits = next(inputs_iter)
-            if model_config.data_parallel_degree > 1:
-                data_parallel_splits = next(inputs_iter).tensor
-                host_input_row_offsets = next(inputs_iter).tensor
-            else:
-                data_parallel_splits = None
-                host_input_row_offsets = None
-
-            signal_buffers = [
-                next(inputs_iter).buffer for _ in range(num_devices)
-            ]
-
-            num_kv_inputs = len(nn_model.kv_params.flattened_kv_inputs())
-            kv_cache_inputs = [next(inputs_iter) for _ in range(num_kv_inputs)]
-            kv_collections = self._unflatten_kv_inputs(kv_cache_inputs)
-
-            ep_inputs = list(inputs_iter)
-
-            outputs = nn_model(
-                tokens.tensor,
-                kv_collections,
-                return_n_logits.tensor,
-                input_row_offsets.tensor,
-                signal_buffers,
-                ep_inputs,  # type: ignore[arg-type]
-                data_parallel_splits,
-                host_input_row_offsets,
+        return {
+            GraphRole.DECODER: GraphSpec(
+                nn_model,
+                "laguna",
+                graph_inputs,
+                weights=nn_model.state_dict(),
             )
-
-            graph.output(*outputs)
-            return graph, weights_registry
+        }
 
     def _resolve_nvfp4_quant_config(
         self, model_config: LagunaConfig, state_dict: dict[str, Any]

@@ -21,9 +21,9 @@ from max._core.dialects.builtin import BoolAttr, IntegerAttr, IntegerType
 from max.dtype import DType
 
 from ..graph import Graph
-from ..type import DeviceRef, _ChainType
+from ..type import _ChainType
 from ..value import BufferValueLike, TensorType, TensorValue, TensorValueLike
-from .constant import constant
+from .rms_norm import _float32_attr
 from .utils import _buffer_values, _tensor_values
 
 
@@ -199,15 +199,6 @@ def reduce_scatter_rms_norm(
             TensorType(dtype=input_dtype, shape=shard_shape, device=device)
         )
 
-    # epsilon/weight_offset as CPU scalars: the kernel reads them host-side for
-    # launch params. One operand slot per device (SameVariadicOperandSize),
-    # reusing the same host constant.
-    cpu = DeviceRef.CPU()
-    eps_const = constant(epsilon, DType.float32, cpu)
-    weight_offset_const = constant(weight_offset, input_dtype, cpu)
-    epsilons = [eps_const] * num_devices
-    weight_offsets = [weight_offset_const] * num_devices
-
     in_chain = graph.device_chains.merge_for(devices)
 
     # The op's variadic groups must all match in size, so there is no empty
@@ -222,10 +213,10 @@ def reduce_scatter_rms_norm(
         inputs,
         signal_buffers,
         gammas,
-        epsilons,
-        weight_offsets,
         residual_operands,
         in_chain,
+        _float32_attr(epsilon),
+        _float32_attr(weight_offset),
         IntegerAttr(IntegerType(64), group_size),
         BoolAttr(has_residual),
     )

@@ -30,7 +30,7 @@ from ..value import (
     TensorValue,
     TensorValueLike,
 )
-from .constant import constant
+from .rms_norm import _float32_attr
 from .utils import _buffer_values, _tensor_values
 
 # Mirrors the kernels' `MXFP8_SF_VECTOR_SIZE`: elements per MX block scale.
@@ -213,14 +213,6 @@ def allgather_rms_norm(
             TensorType(dtype=input_dtype, shape=full_shape, device=device)
         )
 
-    # epsilon/weight_offset are CPU scalars (kernel reads them host-side); one
-    # slot per device (SameVariadicOperandSize), same constant reused.
-    cpu = DeviceRef.CPU()
-    eps_const = constant(epsilon, DType.float32, cpu)
-    weight_offset_const = constant(weight_offset, input_dtype, cpu)
-    epsilons = [eps_const] * num_devices
-    weight_offsets = [weight_offset_const] * num_devices
-
     in_chain = graph.device_chains.merge_for(devices)
 
     *results, out_chain = graph._add_op_generated(
@@ -231,9 +223,9 @@ def allgather_rms_norm(
         inputs,
         signal_buffers,
         gammas,
-        epsilons,
-        weight_offsets,
         in_chain,
+        _float32_attr(epsilon),
+        _float32_attr(weight_offset),
         IntegerAttr(IntegerType(64), group_size),
     )
 
@@ -333,12 +325,6 @@ def allgather_rms_norm_quant_mxfp8(
             TensorType(dtype=input_dtype, shape=full_shape, device=device)
         )
 
-    cpu = DeviceRef.CPU()
-    eps_const = constant(epsilon, DType.float32, cpu)
-    weight_offset_const = constant(weight_offset, input_dtype, cpu)
-    epsilons = [eps_const] * num_devices
-    weight_offsets = [weight_offset_const] * num_devices
-
     in_chain = graph.device_chains.merge_for(devices)
 
     *results, out_chain = graph._add_op_generated(
@@ -351,9 +337,9 @@ def allgather_rms_norm_quant_mxfp8(
         inputs,
         signal_buffers,
         gammas,
-        epsilons,
-        weight_offsets,
         in_chain,
+        _float32_attr(epsilon),
+        _float32_attr(weight_offset),
         IntegerAttr(IntegerType(64), group_size),
     )
 
@@ -468,12 +454,6 @@ def allgather_rms_norm_quant_mxfp6(
             f"{sorted(_FP6_FORMAT_CODE)}"
         )
 
-    cpu = DeviceRef.CPU()
-    eps_const = constant(epsilon, DType.float32, cpu)
-    weight_offset_const = constant(weight_offset, input_dtype, cpu)
-    epsilons = [eps_const] * num_devices
-    weight_offsets = [weight_offset_const] * num_devices
-
     in_chain = graph.device_chains.merge_for(devices)
 
     *results, out_chain = graph._add_op_generated(
@@ -486,9 +466,9 @@ def allgather_rms_norm_quant_mxfp6(
         inputs,
         signal_buffers,
         gammas,
-        epsilons,
-        weight_offsets,
         in_chain,
+        _float32_attr(epsilon),
+        _float32_attr(weight_offset),
         IntegerAttr(IntegerType(64), group_size),
         IntegerAttr(IntegerType(64), _FP6_FORMAT_CODE[fp6_format]),
     )

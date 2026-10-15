@@ -14,7 +14,7 @@
 from std.sys.info import size_of
 
 from std.compile import compile_info
-from std.hashlib import hash
+from std.hash import hash
 from std.memory import MaybeUninit
 from std.traits import (
     IsTriviallyCopyable,
@@ -119,6 +119,37 @@ def test_array_int() raises:
     ]()
 
     test_init_fill[2048](Int64.MAX)
+
+
+def test_array_getitem_slice() raises:
+    var arr: Array[Int, 5] = [1, 2, 3, 4, 5]
+
+    var middle = arr[1:4]
+    assert_equal(len(middle), 3)
+    assert_equal(middle[0], 2)
+    assert_equal(middle[1], 3)
+    assert_equal(middle[2], 4)
+
+    var prefix = arr[:2]
+    assert_equal(len(prefix), 2)
+    assert_equal(prefix[0], 1)
+    assert_equal(prefix[1], 2)
+
+    var suffix = arr[3:]
+    assert_equal(len(suffix), 2)
+    assert_equal(suffix[0], 4)
+    assert_equal(suffix[1], 5)
+
+    var full = arr[:]
+    assert_equal(len(full), 5)
+    assert_true(full == Span(arr))
+
+    assert_equal(len(arr[2:2]), 0)
+
+    # The span is a mutable view when the array is mutable.
+    var mutable = arr[1:3]
+    mutable[0] = 20
+    assert_equal(arr[1], 20)
 
 
 def test_array_fill_with() raises:

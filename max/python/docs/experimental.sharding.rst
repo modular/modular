@@ -98,6 +98,16 @@ Resharding
    DEFAULT_TRANSITIONS
    Transition
 
+Visualization
+-------------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/function.rst
+
+   visualize
+
 Exceptions
 ----------
 

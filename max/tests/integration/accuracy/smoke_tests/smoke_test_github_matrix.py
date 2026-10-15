@@ -113,8 +113,8 @@ MODELS: Mapping[str, set[str]] = {
     "nvidia/Kimi-K2.7-Code-NVFP4__modulev3": VARIANT | _8xB200,
     "nvidia/Llama-3.1-405B-Instruct-NVFP4": _8xB200,
     "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16__modulev3": NIGHTLY | VARIANT | _1xMI355 | _2xMI355,
-    "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16__modulev3_dspark": NIGHTLY | VARIANT | _1xB200 | _2xB200,
     "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4__modulev3": NIGHTLY | VARIANT | _1xB200 | _2xB200,
+    "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4__modulev3_dspark": NIGHTLY | VARIANT | _1xB200 | _2xB200,
     "openai/gpt-oss-20b": _1xB200 | _1xMI355 | _2xB200,
     "OpenGVLab/InternVL3_5-8B-Instruct": _1xB200 | _1xMI355,
     "Qwen/Qwen2.5-7B-Instruct": _1xB200 | _1xMI355,
@@ -133,6 +133,8 @@ MODELS: Mapping[str, set[str]] = {
     "thinkingmachines/Inkling-Small-NVFP4": NIGHTLY | _2xB200,
     "thinkingmachines/Inkling-Small-NVFP4__mtp": NIGHTLY | VARIANT | _2xB200,
     "zai-org/GLM-5.3-Flash__tpep": NIGHTLY | VARIANT | _8xB200,
+    "zai-org/GLM-5.3-Flash__tpep_mi355": NIGHTLY | VARIANT | _2xMI355,
+    "zai-org/GLM-5.3__fp8_tpep_mi355": NIGHTLY | VARIANT | _8xMI355,
 }
 # fmt: on
 

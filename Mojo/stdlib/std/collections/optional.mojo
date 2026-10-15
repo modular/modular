@@ -41,7 +41,7 @@ from std.builtin.enum_like import EnumLike
 from std.builtin.rebind import downcast, rebind, rebind_var
 from std.builtin.variadics import ParameterList, TypeList, _MLIR
 from std.format._utils import FormatStruct, TypeNames, write_to, write_repr_to
-from std.hashlib import Hasher
+from std.hash import Hasher
 from std.memory import MaybeUninit, forget_deinit
 from std.reflection import call_location, reflect
 from std.utils import StaticTuple

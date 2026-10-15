@@ -36,7 +36,6 @@ fails the full-output NaN scan, whatever the sampled comparison covers.
 
 from std.math import ceildiv
 from std.random import random_float64, random_ui64, seed
-from std.sys import size_of
 from std.utils.numerics import isnan, nan
 
 from max.gpu.host import DeviceContext, HostBuffer
@@ -55,7 +54,7 @@ from linalg.matmul.gpu.sm100.block_scaled_matmul import (
     blackwell_block_scaled_matmul_tma_umma_warp_specialized,
 )
 from linalg.matmul.gpu.sm100.config import BlockScaledMatmulConfig, GEMMKind
-from linalg.utils import elementwise_epilogue_type
+from linalg.utils import _as_compute_fn
 from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from std.simd import _convert_f32_to_float8_ue8m0
 from std.testing import assert_almost_equal, assert_false, assert_true
@@ -138,8 +137,8 @@ def run_w4a8_block_scaled_matmul[
             default for `mma_n`.
         num_clc_pipeline_stages: Cluster-launch-control stages.
         prefetch_tiles_n: Weight tiles loaded before the PDL wait.
-        fused_epilogue: Routes the output through an elementwise lambda that
-            doubles it, so a skipped lambda fails the comparison.
+        fused_epilogue: Routes the output through a compute closure that
+            doubles it, so a skipped closure fails the comparison.
         batch: Batch count; must be 1 unless `batched`.
         batched: Passes rank-3 operands and rank-6 scales.
         realistic_data: Uses continuous A values and a derived error bound
@@ -157,7 +156,7 @@ def run_w4a8_block_scaled_matmul[
     comptime assert batched or batch == 1, "batch > 1 requires batched"
     comptime assert not (
         fused_epilogue and batched
-    ), "the fused-epilogue lambda is written for rank-2 output"
+    ), "the fused-epilogue closure is written for rank-2 output"
     comptime a_type = W4A8_A_DTYPE
     comptime b_type = W4A8_B_DTYPE
     comptime K_PACKED = K // 2
@@ -266,57 +265,61 @@ def run_w4a8_block_scaled_matmul[
         )
     else:
         var c_tensor = TileTensor(c_dev, row_major(Coord(M, Idx[N])))
+        var a_tensor = TileTensor(a_dev, row_major(Coord(M, Idx[K])))
+        var b_tensor = TileTensor(
+            b_dev, row_major(Coord(Idx[N], Idx[K_PACKED]))
+        )
+        var sfa_tensor = TileTensor(
+            sfa_dev,
+            row_major(
+                Coord(
+                    ceildiv(M, SF_MN_GROUP_SIZE),
+                    Idx[k_groups],
+                    Idx[SF_ATOM_M[0]],
+                    Idx[SF_ATOM_M[1]],
+                    Idx[SF_ATOM_K],
+                )
+            ),
+        )
+        var sfb_tensor = TileTensor(
+            sfb_dev,
+            row_major(
+                Coord(
+                    Idx[ceildiv(N, SF_MN_GROUP_SIZE)],
+                    Idx[k_groups],
+                    Idx[SF_ATOM_M[0]],
+                    Idx[SF_ATOM_M[1]],
+                    Idx[SF_ATOM_K],
+                )
+            ),
+        )
 
-        @__copy_capture(c_tensor)
         @inline(.always)
-        def double_and_store[
-            _dtype: DType, width: SIMDLength, *, alignment: Int = 1
-        ](idx: Coord, val: SIMD[_dtype, width]) capturing -> None:
+        def double[
+            _dtype: DType, width: SIMDLength, *, alignment: Int
+        ](idx: Coord, val: SIMD[_dtype, width]) -> SIMD[_dtype, width]:
             comptime assert (
                 idx.rank == 2
             ), "the matmul epilogue contract is rank 2"
-            var doubled = rebind[SIMD[C_DTYPE, width]](val) * Scalar[C_DTYPE](2)
-            c_tensor.store[alignment=alignment * size_of[C_DTYPE]()](
-                idx, doubled
+            return val * 2
+
+        comptime if fused_epilogue:
+            blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+                transpose_b=True, K=K, config=config
+            ](
+                c_tensor,
+                a_tensor,
+                b_tensor,
+                sfa_tensor,
+                sfb_tensor,
+                _as_compute_fn(double),
+                ctx,
+                alpha,
             )
-
-        comptime epilogue = Optional[elementwise_epilogue_type](
-            double_and_store
-        ) if fused_epilogue else None
-
-        blackwell_block_scaled_matmul_tma_umma_warp_specialized[
-            transpose_b=True, K=K, config=config, elementwise_lambda_fn=epilogue
-        ](
-            c_tensor,
-            TileTensor(a_dev, row_major(Coord(M, Idx[K]))),
-            TileTensor(b_dev, row_major(Coord(Idx[N], Idx[K_PACKED]))),
-            TileTensor(
-                sfa_dev,
-                row_major(
-                    Coord(
-                        ceildiv(M, SF_MN_GROUP_SIZE),
-                        Idx[k_groups],
-                        Idx[SF_ATOM_M[0]],
-                        Idx[SF_ATOM_M[1]],
-                        Idx[SF_ATOM_K],
-                    )
-                ),
-            ),
-            TileTensor(
-                sfb_dev,
-                row_major(
-                    Coord(
-                        Idx[ceildiv(N, SF_MN_GROUP_SIZE)],
-                        Idx[k_groups],
-                        Idx[SF_ATOM_M[0]],
-                        Idx[SF_ATOM_M[1]],
-                        Idx[SF_ATOM_K],
-                    )
-                ),
-            ),
-            ctx,
-            alpha,
-        )
+        else:
+            blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+                transpose_b=True, K=K, config=config
+            ](c_tensor, a_tensor, b_tensor, sfa_tensor, sfb_tensor, ctx, alpha)
 
     ctx.enqueue_copy(c_host, c_dev)
     ctx.synchronize()

@@ -873,6 +873,17 @@ def main() raises:
         test_dispatch_dynamic_m[.float8_e4m3fn, .float32, 2048, 2048](ctx, 2048)
 
         # ============================================================
+        # FP8 N=7168 K=1024 (attention out proj, TP=8 shard)
+        # ============================================================
+        # M=17..32 picks a block_n=64 config whose BK=1024 exceeds K / 2.
+        print("\nFP8 - Various M values (N=7168, K=1024):")
+        var fp8_7168_m: List[Int] = [16, 17, 24, 32, 33]
+        for i in range(len(fp8_7168_m)):
+            test_dispatch_dynamic_m[.float8_e4m3fn, .float32, 7168, 1024](
+                ctx, fp8_7168_m[i]
+            )
+
+        # ============================================================
         # OOB diagnostic: detect reads/writes past M
         # ============================================================
         print("\nFP8 - OOB diagnostic (padded buffers):")

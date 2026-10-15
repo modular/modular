@@ -78,9 +78,7 @@ MojoParserContext::~MojoParserContext() {
   (void)impl->sharedState.finalizeImportedBytecodeModules();
 }
 
-ModuleOp MojoParserContext::getModule() {
-  return cast<ModuleOp>(impl->topLevelDecl->getIfOperation());
-}
+ModuleOp MojoParserContext::getModule() { return impl->topLevelDecl->getOp(); }
 
 llvm::SourceMgr &MojoParserContext::getSourceMgr() {
   return impl->sharedState.getSourceMgr();
@@ -170,7 +168,7 @@ static ASTDecl *buildNestedModuleDecl(std::filesystem::path filepath,
   for (const std::string &name : packageNames)
     path.components.push_back(name);
   return &sharedState.importModule(
-      path, cast<PackageOp>(packageDecl.getIfOperation()), SMLoc());
+      path, cast<PackageASTDecl>(packageDecl).getOp(), SMLoc());
 }
 
 /// Create an ASTDecl for the given file module.
@@ -239,8 +237,9 @@ MojoASTDeclRef MojoParserContext::parseFile(unsigned fileId,
   std::filesystem::path filepath(filepathStr.str());
 
   ASTDecl *moduleDecl = buildModuleDecl(filepath, sourceBuf, impl->sharedState);
-  impl->sharedState.declResolver->resolveAllReferencedFrom(*moduleDecl,
-                                                           eraseUnparsedDecls);
+  impl->sharedState.declResolver->resolveAllReferencedFrom(*moduleDecl);
+  if (eraseUnparsedDecls)
+    impl->sharedState.declResolver->eraseUnparsedDecls();
 
   return MojoASTDeclRef(moduleDecl);
 }
@@ -309,9 +308,10 @@ void M::resolveSignaturesForLSP(DeclResolver &resolver) {
     // Wildcard imports cannot be skipped: they may contribute new names to the
     // scope's overload sets, and those names must be visible before any
     // subsequent signature resolution inspects the scope.
-    if (parsedDecl->resolvedness == DeclResolvedness::unparsed &&
-        isa_and_nonnull<LIT::UnresolvedImportOp>(parsedDecl->getIfOperation()))
-      continue;
+    if (parsedDecl->resolvedness == DeclResolvedness::unparsed)
+      if (auto *importDecl = dyn_cast<LIT::ImportASTDecl>(parsedDecl))
+        if (importDecl->isUnresolved())
+          continue;
 
     if (parsedDecl->isLoadedFromBytecode()) {
       // For function ops, resolveSignature suffices for LSP. FnOp bodies are
@@ -357,6 +357,7 @@ MojoParserContext::parseFileOrPackage(const std::filesystem::path &path) {
   if (!moduleDecl)
     return nullptr;
   impl->sharedState.declResolver->resolveAllReferencedFrom(*moduleDecl);
+  impl->sharedState.declResolver->eraseUnparsedDecls();
 
   return MojoASTDeclRef(moduleDecl);
 }
@@ -379,7 +380,7 @@ MojoASTDeclRef MojoParserContext::parseIsolatedFileOrPackage(
     return nullptr;
   }
 
-  bool isPackage = isa<PackageOp>(moduleDecl->getIfOperation());
+  bool isPackage = isa<PackageASTDecl>(moduleDecl);
 
   std::deque<ASTDecl *> worklist({moduleDecl});
   while (!worklist.empty()) {

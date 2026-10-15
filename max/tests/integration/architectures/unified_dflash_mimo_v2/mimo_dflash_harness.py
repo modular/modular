@@ -70,7 +70,6 @@ from max.pipelines.architectures.unified_dflash_mimo_v2 import (
     UnifiedDflashMiMoV2,
     UnifiedDflashMiMoV2Spec,
     fused_graph,
-    prefixed_context_writer,
 )
 from max.pipelines.architectures.unified_dflash_mimo_v2.model_config import (
     DRAFT,
@@ -172,7 +171,7 @@ def random_state(
 
 
 def tiny_target_hf(num_layers: int = 3, experts: int = 32) -> PretrainedConfig:
-    """A small MiMo-V2 in the NVFP4 export's config: full attention with a
+    """A small MiMo-V2 in Xiaomi's config: full attention with a
     dense MLP, then SWA-128 with sinks and MoE, then full attention and MoE.
 
     The router kernel runs a thread per expert in whole warps, so the expert
@@ -218,21 +217,13 @@ def tiny_target_hf(num_layers: int = 3, experts: int = 32) -> PretrainedConfig:
         attention_bias=False,
         tie_word_embeddings=False,
         attention_projection_layout="fused_qkv",
-        conversion_metadata={"qkv_layout": "global_q_k_v"},
         quantization_config={
-            "quant_method": "modelopt",
-            "quant_algo": "MIXED_PRECISION",
-            "kv_cache_quant_algo": None,
-            "quantized_layers": {
-                f"model.layers.{layer}.mlp.experts.{expert}.{proj}": {
-                    "quant_algo": "W4A16_NVFP4",
-                    "group_size": 16,
-                }
-                for layer in range(num_layers)
-                if moe[layer]
-                for expert in range(experts)
-                for proj in ("gate_proj", "up_proj", "down_proj")
-            },
+            "quant_method": "fp8",
+            "fmt": "e4m3",
+            "activation_scheme": "dynamic",
+            "weight_block_size": [128, 128],
+            "store_dtype": "mxfp4",
+            "mxfp4_block_size": 32,
         },
     )
 
@@ -783,12 +774,9 @@ class FusedRunner:
 def base_graph(
     target: MiMoV2Config,
     target_state: Mapping[str, WeightData] | None,
-    *,
-    drafter: DFlashMiMoV2Config | None = None,
-    draft_state: Mapping[str, WeightData] | None = None,
 ) -> tuple[Graph, dict[str, Any], dict[str, KVCacheParams]]:
     """The MiMo-V2 base graph returning every row's logits, in the input
-    order ``MiMoV2Model`` builds; with ``drafter`` the base-ctx build.
+    order ``MiMoV2Model`` builds.
 
     Without weights, the weights are only named, enough to read the
     signature. Returns the graph, its weights registry and its KV groups.
@@ -804,22 +792,13 @@ def base_graph(
         leaf = target_kv.children[name]
         assert isinstance(leaf, KVCacheParams)
         groups[name] = leaf
-    hook = None
-    writer_registry: dict[str, Any] = {}
-    if drafter is not None:
-        config.target_layer_ids = list(drafter.target_layer_ids)
-        hook, writer_registry = prefixed_context_writer(drafter, draft_state)
-        groups[DRAFT] = drafter.kv_params
-    model = MiMoV2(config, tap_hook=hook)
+    model = MiMoV2(config)
     registry: dict[str, Any] = {}
     if target_state is not None:
         model.load_state_dict(
             dict(target_state), weight_alignment=1, strict=True
         )
-        registry = {
-            **model.state_dict(auto_initialize=False),
-            **writer_registry,
-        }
+        registry = model.state_dict(auto_initialize=False)
     else:
         for name, weight in model.raw_state_dict().items():
             weight.name = name
@@ -837,9 +816,7 @@ def base_graph(
     ]
     with Graph("mimo_v2", input_types=input_types) as graph:
         tokens, return_n_logits, *rest = graph.inputs
-        sliding, full, *tail = kv_params.unflatten_basic_kv_tree(
-            iter(rest[2 * n :])
-        )
+        sliding, full = kv_params.unflatten_basic_kv_tree(iter(rest[2 * n :]))
         outputs = model(
             tokens=tokens.tensor,
             signal_buffers=[v.buffer for v in rest[n : 2 * n]],
@@ -847,15 +824,13 @@ def base_graph(
             full_kv_collections=full,
             return_n_logits=return_n_logits.tensor,
             input_row_offsets=[v.tensor for v in rest[:n]],
-            tail_kv_collections=tail[0] if tail else None,
         )
         graph.output(*outputs)
     return graph, registry, groups
 
 
 class BaseRunner:
-    """The MiMo-V2 base graph returning every row's logits, optionally with
-    the drafter's context writer (base-ctx)."""
+    """The MiMo-V2 base graph returning every row's logits."""
 
     def __init__(
         self,
@@ -864,15 +839,11 @@ class BaseRunner:
         devices: Sequence[Device],
         session: InferenceSession,
         *,
-        drafter: DFlashMiMoV2Config | None = None,
-        draft_state: Mapping[str, WeightData] | None = None,
         mef: Path | None = None,
     ) -> None:
         self.devices = list(devices)
         self.vocab = target.vocab_size
-        graph, registry, self.groups = base_graph(
-            target, target_state, drafter=drafter, draft_state=draft_state
-        )
+        graph, registry, self.groups = base_graph(target, target_state)
         self.model = _load(session, graph, registry, mef)
         self.signals = Signals.allocate(self.devices)
 
@@ -1022,8 +993,8 @@ FUSED_GRAPHS: dict[str, tuple[int, bool, TestMutation | None]] = {
 """The tiny model's fused graphs: K, whether acceptance is greedy, and the
 defect built in."""
 
-BASE_GRAPHS = ("base", "base_ctx")
-"""The tiny model's base graph, without and with the context writer."""
+BASE_GRAPHS = ("base",)
+"""The tiny model's base graph."""
 
 
 def named_graph(name: str) -> Graph:
@@ -1033,14 +1004,7 @@ def named_graph(name: str) -> Graph:
     refs = [DeviceRef.GPU(i) for i in range(PRECOMPILED_DEVICES)]
     if name in BASE_GRAPHS:
         graph, _, _ = base_graph(
-            model.target(refs, speculative=False),
-            model.target_state,
-            drafter=(
-                model.drafter(refs, speculative=False)
-                if name == "base_ctx"
-                else None
-            ),
-            draft_state=model.draft_state if name == "base_ctx" else None,
+            model.target(refs, speculative=False), model.target_state
         )
         return graph
     k, greedy, test_mutation = FUSED_GRAPHS[name]
@@ -1088,14 +1052,11 @@ def base_runner(
     """The tiny model's base graph ``name``, precompiled when it can be."""
     assert name in BASE_GRAPHS, name
     refs = [DeviceRef.from_device(d) for d in devices]
-    writer = name == "base_ctx"
     return BaseRunner(
         model.target(refs, speculative=False),
         model.target_state,
         devices,
         session,
-        drafter=model.drafter(refs, speculative=False) if writer else None,
-        draft_state=model.draft_state if writer else None,
         mef=precompiled_mef(name, devices),
     )
 

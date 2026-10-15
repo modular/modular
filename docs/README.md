@@ -1,15 +1,8 @@
-# Modular documentation
+# Modular docs
 
-This directory contains the Markdown files for max.modular.com, but
-you can't build the website from the public repo. The Python API doc
-configuration is in [/max/python/docs/](/max/python/docs).
+All the docs have moved to:
 
-## Other docs
-
-- [`/Mojo/docs`](/Mojo/docs): Source docs for mojolang.org.
-- [`/max/docs`](/max/docs): Docs for developers working in the MAX framework
-  codebase.
-- [`/Mojo/docs/stdlib`](/Mojo/docs/stdlib): Docs for developers working in the
-  Mojo standard library.
-- [`/max/docs/design-docs`](/max/docs/design-docs): Engineering docs that
-  describe how core Modular technologies work.
+- [/max/docs](/max/docs/): Docs for MAX, including
+  [/max/docs/site](/max/docs/site/) for the max.modular.com source docs.
+- [/Mojo/docs](/Mojo/docs/): Docs for Mojo, including
+  [/Mojo/docs/site](/Mojo/docs/site/) for the mojolang.org source docs.

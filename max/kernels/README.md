@@ -24,8 +24,9 @@ to build MAX graphs, see the [`python/max/nn/`](/max/python/max/nn) directory.
 
 ## Contributing
 
-We're accepting kernel contributions. See the [kernels contributing
-guide](./CONTRIBUTING.md) for details.
+We accept bug fixes to the library. See the [kernels contributing
+guide](./CONTRIBUTING.md) and the [MAX contributor
+handbook](/max/docs/contributing/README.md) for details.
 
 ## License
 

@@ -34,17 +34,38 @@ from std.utils.index import Index, IndexList
 # ===----------------------------------------------------------------------=== #
 
 
-# Elementwise epilogue signature
-comptime elementwise_epilogue_type = def(
-    coords: Coord,
-    f_size: Int,
-) capturing -> None
+comptime _conv_epilogue_fn_signature = def(Coord, Int) -> None
+
+comptime ConvEpilogueFn = (
+    ImplicitlyCopyable & RegisterPassable & _conv_epilogue_fn_signature
+)
 """Fused epilogue applied over a whole `f_size`-long run at `coords`.
 
-Distinct from `elementwise_simd_epilogue_type`, which receives the value; this
-one receives only the coordinate and the run length. Rank-N in the output's own
-space; the `Coord` carries its rank, so there is no `rank` parameter.
+Distinct from `ConvSimdEpilogueFn`, which receives the value; this one receives
+only the coordinate and the run length. Rank-N in the output's own space; the
+`Coord` carries its rank, so there is no `rank` parameter.
 """
+
+
+@fieldwise_init
+struct NoConvEpilogue(
+    ImplicitlyCopyable,
+    RegisterPassable,
+    def(Coord, Int) -> None,
+):
+    """Stands in for a `ConvEpilogueFn` argument on code paths that apply no
+    epilogue."""
+
+    @inline(.always)
+    def __call__(self, coords: Coord, f_size: Int):
+        """Does nothing.
+
+        Args:
+            coords: Output coordinates of the run, unused.
+            f_size: Length of the run, unused.
+        """
+        pass
+
 
 comptime elementwise_simd_epilogue_type = def[
     dtype: DType, width: SIMDLength, alignment: Int = 1
@@ -54,6 +75,20 @@ comptime elementwise_simd_epilogue_type = def[
 The coordinate is rank-N in the output's own space (NHWC / NDHWC), unlike
 `linalg.utils.elementwise_epilogue_type`, which is always rank 2. The `Coord`
 carries its own rank.
+"""
+
+comptime _conv_simd_epilogue_fn_signature = def[
+    dtype: DType, width: SIMDLength, alignment: Int = 1
+](Coord, SIMD[dtype, width]) -> None
+
+comptime ConvSimdEpilogueFn = (
+    ImplicitlyCopyable & RegisterPassable & _conv_simd_epilogue_fn_signature
+)
+"""Value-taking counterpart of `elementwise_simd_epilogue_type`.
+
+A unified closure passed as a runtime value carries the origins of its
+captures, so the buffers it writes stay alive until the convolution that calls
+it returns.
 """
 
 

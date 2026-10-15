@@ -17,17 +17,18 @@ length pointer, but each token a Mamba layer reads is already folded into a
 fixed-size state, so a verify that may reject its drafts must not advance the
 live state. Each step therefore runs
 
-1. **snapshot**: copy every request's live conv and SSM rows into its scratch
-   rows;
-2. **verify**: run the target over the anchor and its drafts on the scratch
-   rows, capturing the rows each Mamba layer's two state updates consumed;
-3. **accept**: the driver compares the drafts to the target's samples;
-4. **replay and commit**: advance the live rows by exactly the accepted
-   rows, from the captured inputs, with the kernels the verify ran. A step
-   with no drafts has nothing to reject, and copies the scratch rows over the
-   live ones instead (see :mod:`..nemotron_h_modulev3.state_rollback`).
+1. **verify**: run the target over the anchor and its drafts on the live state
+   pools with their ``update_state`` flag clear, so the live rows keep their
+   pre-verify value, capturing the rows each Mamba layer's two state updates
+   consumed;
+2. **accept**: the driver compares the drafts to the target's samples;
+3. **replay**: advance the live rows by exactly the accepted rows, from the
+   captured inputs, with the kernels the verify ran. A step with no drafts has
+   nothing to reject, so its verify sets the flag and advances the live rows
+   itself, and there is nothing to replay (see
+   :mod:`..nemotron_h_modulev3.state_rollback`).
 
-Step 4 belongs to the proposer's ``materialize``: the first phase after the
+Step 3 belongs to the proposer's ``materialize``: the first phase after the
 accepted count settles, and the last before anything reads the live state.
 """
 
@@ -42,11 +43,13 @@ from max.experimental import functional as F
 from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
 from max.experimental.sharding import DeviceMapping, DeviceMesh
 from max.experimental.tensor import Tensor
-from max.graph import BufferType, TensorType, TensorValue, ops
+from max.graph import BufferType, DeviceRef, TensorType, TensorValue, ops
+from max.nn.kernels import argmax_with_bias
 from max.nn.kv_cache import RecurrentStateInputsPerDevice
 from max.pipelines.speculative._tensor_compat import as_graph_values
 from max.pipelines.speculative.block_driver import (
     Accepted,
+    ArgmaxDraftSampler,
     BlockBatch,
     DraftSampler,
     block_kv_with_dispatch,
@@ -62,10 +65,9 @@ from ..nemotron_h_modulev3.layers.mamba2 import (
 from ..nemotron_h_modulev3.model_config import LayerKind
 from ..nemotron_h_modulev3.nemotron_h import NemotronH, _distributed_state
 from ..nemotron_h_modulev3.state_rollback import (
-    commit_state_rows,
     replay_plan,
     replay_state_pools,
-    snapshot_state_pools,
+    verify_update_state,
     verify_window,
 )
 from .dspark_qwen3 import DSparkQwen3, markov_bias
@@ -79,9 +81,8 @@ __all__ = [
 STATE_EXTRA = "nemotron_state"
 """Key the per-device Mamba state leaves ride under in ``BlockBatch.extra``.
 
-Each device's leaves are the live conv and SSM pools followed by the scratch
-conv and SSM pools, in the order ``NemotronHConfig.construct_kv_params``
-declares them."""
+Each device's leaves are the live conv and SSM pools, in the order
+``NemotronHConfig.construct_kv_params`` declares them."""
 
 
 def _replicate(value: Tensor, mesh: DeviceMesh) -> Tensor:
@@ -114,7 +115,7 @@ class _Verified:
 
 
 class NemotronHBlockTarget:
-    """Nemotron-H verifies on scratch state, then commits the accepted prefix."""
+    """Nemotron-H verifies on read-only live state, then replays the accepted prefix."""
 
     def __init__(self, target: NemotronH) -> None:
         self.target = target
@@ -132,30 +133,27 @@ class NemotronHBlockTarget:
         state = batch.extra[STATE_EXTRA]
         assert len(state) == batch.n_devs
         for device_state in state:
-            if len(device_state.leaves) != 4:
+            if len(device_state.leaves) != 2:
                 raise ValueError(
-                    "Speculative Nemotron-H needs the live and scratch conv"
-                    " and SSM state leaves; the KV cache declares"
-                    f" {len(device_state.leaves)} state leaves."
+                    "Speculative Nemotron-H needs the live conv and SSM state"
+                    f" leaves; the KV cache declares {len(device_state.leaves)}"
+                    " state leaves."
                 )
-        # 1. Snapshot. The live rows keep their pre-verify value from here.
-        for device_state in state:
-            live_conv, live_ssm, scratch_conv, scratch_ssm = device_state.leaves
-            for live, scratch in (
-                (live_conv, scratch_conv),
-                (live_ssm, scratch_ssm),
-            ):
-                snapshot_state_pools(
-                    live.pool,
-                    scratch.pool,
-                    live.live_row_ids,
-                    scratch.live_row_ids,
+        # Drafts are verified without advancing the live rows, which keep
+        # their pre-verify value for the replay.
+        update_state = _from_shards(
+            [
+                verify_update_state(
+                    batch.num_draft_tokens,
+                    device_state.leaves[0].live_row_ids.shape[1],
+                    device_state.leaves[0].live_row_ids.device,
                 )
-
-        # 2. Verify on the scratch leaves, in the live leaves' place.
-        scratch_state = _distributed_state(
-            [RecurrentStateInputsPerDevice(leaves=s.leaves[2:]) for s in state],
-            DeviceMapping.replicated(self.mesh),
+                for device_state in state
+            ],
+            self.mesh,
+        )
+        live_state = _distributed_state(
+            list(state), DeviceMapping.replicated(self.mesh)
         )
         window_rows, window_offsets = verify_window(
             batch.merged_offsets, batch.num_draft_tokens, batch.device0
@@ -167,10 +165,11 @@ class NemotronHBlockTarget:
             kv_collection=PagedCacheValues.from_upstream(
                 batch.kv_collections, DeviceMapping.replicated(self.mesh)
             ),
-            state=scratch_state,
+            state=live_state,
             capture_rows=_replicate(
                 Tensor.from_graph_value(window_rows), self.mesh
             ),
+            update_state=update_state,
         )
         self._verified = _Verified(
             replays=replays,
@@ -187,7 +186,7 @@ class NemotronHBlockTarget:
         )
 
     def roll_forward(self, batch: BlockBatch) -> None:
-        """Commits the verify's accepted prefix onto the live state.
+        """Replays the verify's accepted prefix onto the live state.
 
         Must run after the accepted count is known and before anything reads
         the live pools.
@@ -212,9 +211,7 @@ class NemotronHBlockTarget:
         )
         batch_size = verified.state[0].leaves[0].live_row_ids.shape[1]
         for device in range(batch.n_devs):
-            live_conv, live_ssm, scratch_conv, scratch_ssm = verified.state[
-                device
-            ].leaves
+            live_conv, live_ssm = verified.state[device].leaves
             has_initial_state = ops.broadcast_to(
                 ops.constant(
                     True, DType.bool, device=live_conv.live_row_ids.device
@@ -231,18 +228,6 @@ class NemotronHBlockTarget:
                 offsets_per_device[device],
                 has_initial_state,
             )
-            for live, scratch in (
-                (live_conv, scratch_conv),
-                (live_ssm, scratch_ssm),
-            ):
-                commit_state_rows(
-                    live.pool,
-                    scratch.pool,
-                    live.live_row_ids,
-                    scratch.live_row_ids,
-                    k,
-                    batch_size,
-                )
 
     def _captures(
         self,
@@ -378,7 +363,17 @@ class DSparkNemotronHProposer:
         logits = self.target.target.lm_head(
             drafted.reshape([-1, self.hidden_size])
         )
-        logits = F.allgather(logits, tensor_axis=-1).cast(DType.float32)
+        logits = F.allgather(logits, tensor_axis=-1)
+        # A greedy draft takes each position's argmax of base + bias in one
+        # fused pass that reads the logits in place and adds in float32 in
+        # registers, the same index as an argmax of the float32 sum. The
+        # sampled draft keeps the float32 logits its sampler draws from.
+        fused_argmax = (
+            isinstance(sampler, ArgmaxDraftSampler)
+            and TensorValue(logits.local_shards[0]).device != DeviceRef.CPU()
+        )
+        if not fused_argmax:
+            logits = logits.cast(DType.float32)
         vocab = logits.shape[-1]
         base = TensorValue(logits.local_shards[0]).reshape(
             ("batch_size", drafts, vocab)
@@ -392,8 +387,11 @@ class DSparkNemotronHProposer:
             bias = TensorValue(
                 markov_bias(head, Tensor.from_graph_value(previous))
             )
-            previous = sampler.sample_next(
-                base[:, step, :] + bias.cast(DType.float32), step
-            )
+            if fused_argmax:
+                previous = argmax_with_bias(base, bias, position=step)
+            else:
+                previous = sampler.sample_next(
+                    base[:, step, :] + bias.cast(DType.float32), step
+                )
             sampled.append(ops.unsqueeze(previous, axis=1))
         return ops.concat(sampled, axis=1)

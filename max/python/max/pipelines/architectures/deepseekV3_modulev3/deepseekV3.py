@@ -26,6 +26,9 @@ from max.experimental.nn.common_layers.embedding import VocabParallelEmbedding
 from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
 from max.experimental.nn.common_layers.linear import ColumnParallelLinear
 from max.experimental.nn.common_layers.mesh_axis import DP
+from max.experimental.nn.common_layers.quant_moe import (
+    QuantizedMoE,
+)
 from max.experimental.nn.norm import RMSNorm
 from max.experimental.nn.sequential import ModuleList
 from max.experimental.sharding import (
@@ -41,9 +44,6 @@ from max.nn.comm.ep import EPBatchManager, EPCommBuffers
 from max.nn.data_parallelism import split_batch_replicated
 from max.nn.kv_cache import KVCacheInputsPerDevice, KVCacheParamInterface
 from max.nn.rotary_embedding import DeepseekYarnRopeScalingParams
-from max.pipelines.architectures.deepseekV3_modulev3.layers.quant_moe import (
-    QuantizedMoE,
-)
 from max.pipelines.lib import ModuleV3Outputs
 
 from ..deepseekV2_modulev3.layers.rotary_embedding import (

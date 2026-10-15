@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# DOC: max/gpu/intro-tutorial.mdx
+# DOC: gpu/intro-tutorial.mdx
 
 from std.math import ceildiv
 from std.sys import has_accelerator
