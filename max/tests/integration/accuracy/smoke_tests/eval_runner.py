@@ -67,34 +67,36 @@ _COMPLETION_TOKEN_METRICS = (
     "sglang:generation_tokens_total",  # sglang
 )
 
+_SPEC_DECODE_ACCEPTANCE_LENGTH_METRIC = (
+    "maxserve_spec_decode_avg_acceptance_length"
+)
+
 
 def _inside_bazel() -> bool:
     return os.getenv("BUILD_WORKSPACE_DIRECTORY") is not None
-
-
-def validate_hf_token() -> None:
-    if os.getenv("HF_TOKEN") is None:
-        raise ValueError(
-            "Environment variable `HF_TOKEN` must be set. "
-            "See https://www.notion.so/modularai/HuggingFace-Access-Token-29d1044d37bb809fbe70e37428faf9da"
-        )
 
 
 def resolve_canonical_repo_id(repo_id: str) -> str:
     """HF disk cache is case-sensitive, so do what we can to avoid issues"""
     if os.environ.get("HF_HUB_OFFLINE") == "1":
         return repo_id
-    try:
-        r = requests.get(
-            f"https://huggingface.co/api/models/{repo_id}",
-            headers={"Authorization": f"Bearer {os.environ['HF_TOKEN']}"},
-            timeout=(5, 10),
-        )
-        r.raise_for_status()
-        return r.json()["id"]
-    except Exception as e:
-        logger.warning("Failed repo id lookup for %s: %s", repo_id, e)
-        return repo_id
+    url = f"https://huggingface.co/api/models/{repo_id}"
+    # Private repos need a token; public ones resolve without one, so only
+    # fall back to authenticating when the anonymous lookup fails.
+    token = os.environ.get("HF_TOKEN")
+    attempts: list[dict[str, str]] = [{}]
+    if token:
+        attempts.append({"Authorization": f"Bearer {token}"})
+    error: Exception | None = None
+    for headers in attempts:
+        try:
+            r = requests.get(url, headers=headers, timeout=(5, 10))
+            r.raise_for_status()
+            return r.json()["id"]
+        except Exception as e:
+            error = e
+    logger.warning("Failed repo id lookup for %s: %s", repo_id, error)
+    return repo_id
 
 
 @cache
@@ -136,7 +138,11 @@ def write_github_output(key: str, value: str) -> None:
 
 
 def test_single_request(
-    url: str, model: str, task: str, disable_timeouts: bool
+    url: str,
+    model: str,
+    task: str,
+    disable_timeouts: bool,
+    api_key: str | None = None,
 ) -> None:
     is_vision = task == VISION_TASK
     m = [IMAGE_PROMPT if is_vision else TEXT_PROMPT]
@@ -145,10 +151,12 @@ def test_single_request(
     connect_timeout, read_timeout = (
         (None, None) if disable_timeouts else (30, 180)
     )
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key else None
     r = requests.post(
         url,
         json={"model": model, "messages": m, "max_tokens": 8},
         timeout=(connect_timeout, read_timeout),
+        headers=headers,
     )
     r.raise_for_status()
     resp = r.json()["choices"][0]["message"]["content"]
@@ -164,33 +172,9 @@ def call_eval(
     num_questions: int,
     disable_timeouts: bool,
     metrics_url: str | None = None,
-    model_alias: str | None = None,
     lm_eval_metadata: str | None = None,
 ) -> tuple[EvalResults, EvalSamples]:
-    extra_gen_kwargs = ""
-    # model_alias carries the original recipe key (e.g. "nvidia/Kimi-K2.5-NVFP4__internal")
-    # when model is a local path that doesn't contain the model name keywords.
-    check_name = (model_alias or model).casefold()
-    is_reasoning_model = any(
-        kw in check_name
-        for kw in (
-            "academic-ds",
-            "deepseek-r1",
-            "deepseek-v3",
-            "gemma-4",
-            "gpt-oss",
-            "internvl3_5",
-            "qwen3",
-            "kimi-k2",
-            "minimax-m2",
-            "minimax-m3",
-            "step-3.5",
-            "glm-5",
-        )
-    )
-    # Reasoning models needs extra tokens for .. reasoning
-    if is_reasoning_model:
-        extra_gen_kwargs = ",max_gen_toks=4096"
+    extra_gen_kwargs = ",max_gen_toks=4096"
 
     # GPT-OSS sometimes gets stuck in a reasoning loop. To ensure consistency
     # in CI, we add a repetition penalty which helps prevent the loop
@@ -235,6 +219,11 @@ def call_eval(
         tokens_before = (
             get_num_tokens_generated(metrics_url) if metrics_url else None
         )
+        spec_decode_totals_before = (
+            get_spec_decode_acceptance_totals(metrics_url)
+            if metrics_url
+            else None
+        )
         try:
             check_call(args, timeout=eval_timeout)
         except TimeoutExpired:
@@ -245,12 +234,22 @@ def call_eval(
         tokens_after = (
             get_num_tokens_generated(metrics_url) if metrics_url else None
         )
+        spec_decode_totals_after = (
+            get_spec_decode_acceptance_totals(metrics_url)
+            if metrics_url
+            else None
+        )
 
         results, samples = parse_eval_results(Path(tempdir))
         results["num_tokens_generated"] = (
             tokens_after - tokens_before
             if tokens_before is not None and tokens_after is not None
             else None
+        )
+        results["spec_decode_acceptance_length"] = (
+            _spec_decode_acceptance_length_delta(
+                spec_decode_totals_before, spec_decode_totals_after
+            )
         )
         return results, samples
 
@@ -281,6 +280,52 @@ def get_num_tokens_generated(metrics_url: str) -> int | None:
     return None
 
 
+def get_spec_decode_acceptance_totals(
+    metrics_url: str,
+) -> tuple[float, float] | None:
+    """Reads the cumulative (sum, count) of the spec-decode acceptance-length
+    histogram from Prometheus."""
+    try:
+        r = requests.get(metrics_url, timeout=(5, 30))
+        r.raise_for_status()
+    except requests.RequestException:
+        return None
+
+    total_sum = 0.0
+    total_count = 0.0
+    for line in r.text.splitlines():
+        if not line or line.startswith("#"):
+            continue
+        # A sample line is ``name{labels} value`` or ``name value``.
+        name = line.split("{", 1)[0].split(" ", 1)[0]
+        if not name.startswith(_SPEC_DECODE_ACCEPTANCE_LENGTH_METRIC):
+            continue
+        # Skips the ``_bucket`` rows of the same family.
+        if name.endswith("_sum"):
+            total_sum += float(line.rsplit(" ", 1)[1])
+        elif name.endswith("_count"):
+            total_count += float(line.rsplit(" ", 1)[1])
+
+    return total_sum, total_count
+
+
+def _spec_decode_acceptance_length_delta(
+    before: tuple[float, float] | None,
+    after: tuple[float, float] | None,
+) -> float | None:
+    """Computes the windowed acceptance length from two cumulative
+    (sum, count) snapshots, or None if either snapshot is missing or the
+    count didn't advance (guards the division)."""
+    if before is None or after is None:
+        return None
+    sum_before, count_before = before
+    sum_after, count_after = after
+    count_delta = count_after - count_before
+    if count_delta <= 0:
+        return None
+    return (sum_after - sum_before) / count_delta
+
+
 def parse_eval_results(loc: Path) -> tuple[EvalResults, EvalSamples]:
     samples = []
     for line in open(next(loc.glob("**/samples*.jsonl")), encoding="utf-8"):
@@ -303,6 +348,7 @@ class EvalSummary:
     total_evaluation_time_seconds: float
     task_hash: str
     num_tokens_generated: int | None = None
+    spec_decode_acceptance_length: float | None = None
 
 
 def build_eval_summary(
@@ -347,6 +393,9 @@ def build_eval_summary(
                 total_evaluation_time_seconds=total_secs,
                 task_hash=result["task_hashes"][task],
                 num_tokens_generated=result.get("num_tokens_generated"),
+                spec_decode_acceptance_length=result.get(
+                    "spec_decode_acceptance_length"
+                ),
             )
         )
 

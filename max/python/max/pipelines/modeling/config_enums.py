@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import os
+from enum import Enum
 from typing import Literal
 
 from max.driver import DeviceSpec
@@ -32,10 +33,28 @@ RepoType = Literal["online", "local"]
 
 # Reference: https://github.com/ggerganov/llama.cpp/blob/eb5c3dc64bd967f2e23c87d9dec195f45468de60/src/llama.cpp#L20778
 RopeType = Literal["none", "normal", "neox", "longrope", "yarn"]
+"""The rotary position embedding (RoPE) implementation a model configures."""
 
 
 PipelineRole = Literal["prefill_and_decode", "prefill_only", "decode_only"]
 """Indicates whether the pipeline should do prefill and/or decode."""
+
+
+class EagerValidatorMode(str, Enum):
+    """Configures when the eager usage validator runs."""
+
+    # Move to StrEnum in Python 3.11. This is for Python 3.10 compatibility.
+    __str__ = str.__str__
+
+    ENABLED = "enabled"
+    """Enable validation during model initialization and during every request."""
+
+    DISABLED = "disabled"
+    """Never validate."""
+
+    INIT_ONLY = "init-only"
+    """Validate model initialization only. This is the default behavior, and
+    catches the footguns that are baked in at build time."""
 
 
 SupportedEncoding = Literal[
@@ -47,6 +66,7 @@ SupportedEncoding = Literal[
     "q6_k",
     "float8_e4m3fn",
     "float4_e2m1fnx2",
+    "float6_e2m3fn",
     "gptq",
 ]
 """All possible encodings which may be supported by a particular model."""
@@ -58,6 +78,7 @@ _SUPPORTED_ENCODING_TO_DTYPE: dict[SupportedEncoding, DType] = {
     "bfloat16": DType.bfloat16,
     "float8_e4m3fn": DType.float8_e4m3fn,
     "float4_e2m1fnx2": DType.uint8,
+    "float6_e2m3fn": DType.uint8,
     "q4_k": DType.uint8,
     "q4_0": DType.uint8,
     "q6_k": DType.uint8,
@@ -72,6 +93,7 @@ _SUPPORTED_ENCODING_TO_QUANTIZATION_ENCODING: dict[
     "bfloat16": None,
     "float8_e4m3fn": None,
     "float4_e2m1fnx2": None,
+    "float6_e2m3fn": None,
     "q4_k": QuantizationEncoding.Q4_K,
     "q4_0": QuantizationEncoding.Q4_0,
     "q6_k": QuantizationEncoding.Q6_K,
@@ -85,6 +107,7 @@ _SUPPORTED_DEVICES: dict[SupportedEncoding, tuple[str, ...]] = {
     "bfloat16": ("gpu",),
     "float8_e4m3fn": ("gpu",),
     "float4_e2m1fnx2": ("gpu",),
+    "float6_e2m3fn": ("gpu",),
     "q4_k": ("cpu",),
     "q4_0": ("cpu",),
     "q6_k": ("cpu",),
@@ -147,6 +170,8 @@ def parse_supported_encoding_from_file_name(
     elif "f8" in name or "fp8" in name or "float8" in name:
         # For now, default float8 to e4m3. It is the dtype used for inference.
         return "float8_e4m3fn"
+    elif "fp6" in name or "float6" in name:
+        return "float6_e2m3fn"
     elif "fp4" in name or "f4" in name or "float4" in name or "nvfp4" in name:
         return "float4_e2m1fnx2"
     else:
@@ -172,3 +197,8 @@ def supported_encoding_supported_devices(
 def is_float4_encoding(encoding: SupportedEncoding) -> bool:
     """Returns whether the given encoding is a float4 type."""
     return encoding == "float4_e2m1fnx2"
+
+
+def is_float6_encoding(encoding: SupportedEncoding) -> bool:
+    """Returns whether the given encoding is a float6 type."""
+    return encoding == "float6_e2m3fn"

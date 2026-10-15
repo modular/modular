@@ -47,10 +47,10 @@ from max.pipelines.architectures.qwen3.text_encoder import (
 )
 from max.pipelines.context import PixelContext
 from max.pipelines.diffusion.cache import (
-    DenoisingCacheConfig,
     TaylorSeerBufferState,
     TaylorSeerCache,
 )
+from max.pipelines.diffusion.config import DenoisingCacheConfig
 from max.pipelines.lib import float32_array_to_buffer
 from max.pipelines.lib.compiled_component import CompiledComponent
 from max.pipelines.lib.config.model_config import (
@@ -215,10 +215,6 @@ class Flux2KleinExecutor(
 
     _DEFAULT_VAE_SCALE_FACTOR: int = 8
 
-    _DEFAULT_TAYLORSEER_CACHE_INTERVAL: int = 5
-    _DEFAULT_TAYLORSEER_WARMUP_STEPS: int = 9
-    _DEFAULT_TAYLORSEER_MAX_ORDER: int = 1
-
     def __init__(
         self,
         manifest: ModelManifest,
@@ -231,7 +227,6 @@ class Flux2KleinExecutor(
         self._cache_config: DenoisingCacheConfig = (
             runtime_config.denoising_cache
         )
-        self._resolve_cache_defaults()
 
         vae_config = (
             manifest["vae"].huggingface_config.to_dict()
@@ -364,18 +359,6 @@ class Flux2KleinExecutor(
                 device=self._model_device,
                 session=session,
             )
-
-    def _resolve_cache_defaults(self) -> None:
-        """Fill nullable DenoisingCacheConfig fields with Flux2 defaults."""
-        cc = self._cache_config
-        if cc.taylorseer_cache_interval is None:
-            cc.taylorseer_cache_interval = (
-                self._DEFAULT_TAYLORSEER_CACHE_INTERVAL
-            )
-        if cc.taylorseer_warmup_steps is None:
-            cc.taylorseer_warmup_steps = self._DEFAULT_TAYLORSEER_WARMUP_STEPS
-        if cc.taylorseer_max_order is None:
-            cc.taylorseer_max_order = self._DEFAULT_TAYLORSEER_MAX_ORDER
 
     @traced(message="Flux2KleinExecutor.prepare_inputs")
     def prepare_inputs(

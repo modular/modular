@@ -35,6 +35,7 @@ from max.nn.comm import Signals
 from max.nn.comm.ep import EPBatchManager
 from max.nn.data_parallelism import split_batch_replicated
 from max.nn.embedding import VocabParallelEmbedding
+from max.nn.kernels import mtp_eh_norm
 from max.nn.kv_cache import (
     KVCacheParamInterface,
     PagedCacheValues,
@@ -99,6 +100,19 @@ class DeepseekV3_2NextN(Module):
         self.hnorm.sharding_strategy = ShardingStrategy.replicate(num_devices)
         self.hnorm_shards = self.hnorm.shard(devices)
 
+        # `mtp_eh_norm` implements only the Llama-style arm of `ops.rms_norm`,
+        # and applies one epsilon to both halves.
+        for _norm in (self.enorm, self.hnorm):
+            assert _norm.weight_offset == 0.0, (
+                "mtp_eh_norm assumes weight_offset == 0"
+            )
+            assert not _norm.multiply_before_cast, (
+                "mtp_eh_norm assumes multiply_before_cast is False"
+            )
+        assert self.enorm.eps == self.hnorm.eps, (
+            "mtp_eh_norm applies one epsilon to both normalizations"
+        )
+
         self.eh_proj = Linear(
             config.hidden_size * 2,
             config.hidden_size,
@@ -126,7 +140,7 @@ class DeepseekV3_2NextN(Module):
                     config.qk_rope_head_dim,
                     n_heads=config.num_attention_heads,
                     theta=config.rope_theta,
-                    max_seq_len=config.max_position_embeddings,
+                    max_seq_len=config.max_seq_len,
                     scaling_params=scaling_params,
                 )
             )
@@ -135,7 +149,7 @@ class DeepseekV3_2NextN(Module):
                 dim=config.qk_rope_head_dim,
                 n_heads=config.num_attention_heads,
                 theta=config.rope_theta,
-                max_seq_len=config.max_position_embeddings,
+                max_seq_len=config.max_seq_len,
                 head_dim=config.qk_rope_head_dim,
                 interleaved=config.rope_interleave,
             )
@@ -178,6 +192,11 @@ class DeepseekV3_2NextN(Module):
 
         self.return_logits = config.return_logits
         self.return_hidden_states = config.return_hidden_states
+        # When False, ``deepseek_logits_postprocess`` skips the last-token
+        # lm_head projection and omits ``last_logits`` from the output tuple.
+        # Default True keeps the standalone ragged contract (``last_logits``
+        # at index 0) unchanged.
+        self.emit_last_token_logits = True
         self.logits_scaling = 1.0
 
     def __call__(
@@ -195,6 +214,7 @@ class DeepseekV3_2NextN(Module):
         ep_inputs: list[Value[Any]] | None = None,
         prev_topk_indices: list[TensorValue] | None = None,
         reuse_prev_topk: bool = False,
+        selection_lag: int = 0,
         split_prefix: str = "draft",
     ) -> tuple[TensorValue, ...]:
         if not host_input_row_offsets.device == DeviceRef.CPU():
@@ -208,25 +228,25 @@ class DeepseekV3_2NextN(Module):
         h_embed = self.embed_tokens(tokens, signal_buffers)
 
         hidden_states = list(hidden_state)
-        norm_embed = forward_sharded_layers(self.enorm_shards, h_embed)
-        norm_hidden = forward_sharded_layers(self.hnorm_shards, hidden_states)
         freqs_cis = [self.rope.freqs_cis.to(device) for device in devices]
         input_row_offsets_ = list(input_row_offsets)
         all_logits_input_row_offsets = input_row_offsets_[0]
         if self.use_data_parallel_attention:
             host_offsets_i64 = host_input_row_offsets.cast(DType.int64)
-            norm_embed, input_row_offsets_ = split_batch_replicated(
+            # Splitting before normalizing is equivalent: the split slices
+            # the token axis, and RMSNorm reduces within a row.
+            h_embed, input_row_offsets_ = split_batch_replicated(
                 devices,
-                norm_embed,
+                h_embed,
                 input_row_offsets_,
                 host_offsets_i64,
                 data_parallel_splits,
                 prefix=split_prefix,
             )
 
-            norm_embed = [
+            h_embed = [
                 ops.rebind(
-                    norm_embed[i],
+                    h_embed[i],
                     [
                         f"{split_prefix}_seq_len_device_{i}",
                         self.config.hidden_size,
@@ -234,9 +254,9 @@ class DeepseekV3_2NextN(Module):
                 )
                 for i in range(n_devs)
             ]
-            norm_hidden = [
+            hidden_states = [
                 ops.rebind(
-                    norm_hidden[i],
+                    hidden_states[i],
                     [
                         f"{split_prefix}_seq_len_device_{i}",
                         self.config.hidden_size,
@@ -248,26 +268,39 @@ class DeepseekV3_2NextN(Module):
             # TP or single-device case: use a COMMON dim name so collectives
             # that require matching shapes work in TP mode.
             common_dim = f"{split_prefix}_seq_len"
-            norm_embed = [
+            h_embed = [
                 ops.rebind(
-                    norm_embed[i],
+                    h_embed[i],
                     [common_dim, self.config.hidden_size],
                 )
                 for i in range(n_devs)
             ]
-            norm_hidden = [
+            hidden_states = [
                 ops.rebind(
-                    norm_hidden[i],
+                    hidden_states[i],
                     [common_dim, self.config.hidden_size],
                 )
                 for i in range(n_devs)
             ]
 
         concat_inputs = [
-            ops.concat([norm_embed[i], norm_hidden[i]], axis=-1)
+            mtp_eh_norm(
+                h_embed[i],
+                hidden_states[i],
+                self.enorm_shards[i]
+                .weight.cast(h_embed[i].dtype)
+                .to(h_embed[i].device),
+                self.hnorm_shards[i]
+                .weight.cast(h_embed[i].dtype)
+                .to(h_embed[i].device),
+                self.enorm.eps,
+            )
             for i in range(n_devs)
         ]
         h = forward_sharded_layers(self.eh_proj_shards, concat_inputs)
+        h_norm = forward_sharded_layers(
+            self.decoder_layer.input_layernorm_shards, h
+        )
 
         # Create MLA prefill metadata if not in decode mode.
         mla_prefill_metadata: list[MLAPrefillMetadata] = []
@@ -295,7 +328,9 @@ class DeepseekV3_2NextN(Module):
 
         layer_outs = self.decoder_layer(
             ops.constant(0, DType.uint32, device=DeviceRef.CPU()),
+            ops.constant(0, DType.uint32, device=DeviceRef.CPU()),
             h,
+            h_norm,
             signal_buffers,
             mla_kv_collections,
             indexer_kv_collections,
@@ -305,12 +340,15 @@ class DeepseekV3_2NextN(Module):
             prev_topk_indices if prev_topk_indices is not None else [],
             ep_inputs=ep_inputs,
             reuse_prev_topk=reuse_prev_topk,
+            selection_lag=selection_lag,
         )
 
         # The decoder layer returns ``hidden_states + topk_indices`` (both
-        # per-device lists concatenated).
+        # per-device lists concatenated). The selection is carried as physical
+        # rows in the draft's MLA cache, whose page table later draft steps
+        # share, so they reuse it without a page-table lookup.
         h = layer_outs[:n_devs]
-        topk_indices = layer_outs[n_devs:]
+        topk_indices = layer_outs[n_devs : 2 * n_devs]
 
         postprocess = deepseek_logits_postprocess(
             h=h,
@@ -325,10 +363,13 @@ class DeepseekV3_2NextN(Module):
             return_logits=self.return_logits,
             return_hidden_states=self.return_hidden_states,
             logits_scaling=self.logits_scaling,
+            emit_last_token_logits=self.emit_last_token_logits,
+            unpadded_vocab_size=self.config.unpadded_vocab_size,
+            vocab_size=self.config.vocab_size,
         )
 
-        # Append the per-device top-k selection so the unified MTP module can
-        # gather and reuse it across subsequent draft steps.
+        # Append the per-device physical rows so the unified MTP module can
+        # gather and reuse them across subsequent draft steps.
         return (*postprocess, *topk_indices)
 
     def input_types(

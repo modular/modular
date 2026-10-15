@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.collections import InlineArray
+from std.collections import Array
 from std.sys import (
     get_defined_bool,
     get_defined_dtype,
@@ -28,11 +28,15 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
+from max.benchmark import (
+    bench_multicontext,
+    bencher_iter_custom,
+)
 from comm.sync import enable_p2p
 from comm.reducescatter import reducescatter, ReduceScatterConfig
-from layout import Idx, TileTensor, row_major
-from comm import MAX_GPUS, Signal
-from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
+from layout import TileTensor, row_major
+from comm import Signal
+from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from internal_utils import (
     CacheBustingBuffer,
     arg_parse,
@@ -43,8 +47,7 @@ from internal_utils import (
 from std.testing import assert_almost_equal, assert_true
 
 
-@always_inline
-@parameter
+@inline(.always)
 def _per_gpu_value[
     dtype: DType,
 ](gpu_rank: Int, j: Int) -> Scalar[dtype]:
@@ -133,10 +136,7 @@ def bench_reducescatter_2d[
     var host_buffers = List[List[Scalar[dtype]]](capacity=ngpus)
 
     # Create signal buffers for synchronization.
-    var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
-        uninitialized=True
-    )
+    var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
 
     # Initialize buffers for each GPU.
     comptime for gpu_idx in range(ngpus):
@@ -175,19 +175,15 @@ def bench_reducescatter_2d[
 
         # Create and initialize signal buffers.
         signal_buffers.append(
-            list_of_ctx[gpu_idx].create_buffer_sync[DType.uint8](
-                size_of[Signal]()
-            )
+            list_of_ctx[gpu_idx].create_buffer_sync[.uint8](size_of[Signal]())
         )
-        list_of_ctx[gpu_idx].enqueue_memset[DType.uint8](
-            signal_buffers[gpu_idx], 0
-        )
-        rank_sigs[gpu_idx] = (
-            signal_buffers[gpu_idx]
-            .unsafe_ptr()
-            .bitcast[Signal]()
-            .as_unsafe_any_origin()
-        )
+        list_of_ctx[gpu_idx].enqueue_memset[.uint8](signal_buffers[gpu_idx], 0)
+
+    var rank_sigs = Array[_, ngpus](
+        fill_with_unrolled=lambda [i: Int]() {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
 
     # Create 2D input and output TileTensors.
     comptime OutputTileType = TileTensor[
@@ -196,8 +192,8 @@ def bench_reducescatter_2d[
     comptime InputTileType = TileTensor[
         dtype, type_of(row_major(M, D)), ImmutAnyOrigin
     ]
-    var in_bufs = InlineArray[InputTileType, num_buffers](uninitialized=True)
-    var out_bufs = InlineArray[OutputTileType, ngpus](uninitialized=True)
+    var in_bufs = Array[InputTileType, num_buffers](uninitialized=True)
+    var out_bufs = Array[OutputTileType, ngpus](uninitialized=True)
 
     comptime for i in range(ngpus):
         in_bufs[i if not use_multimem else 0] = InputTileType(
@@ -217,18 +213,23 @@ def bench_reducescatter_2d[
             )
         list_of_ctx[i].synchronize()
 
-    @parameter
-    @always_inline
-    def bench_iter_2d(mut b: Bencher, ctx: DeviceContext, ctx_idx: Int) raises:
-        @parameter
-        @always_inline
-        def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
+    @inline(.always)
+    def bench_iter_2d(
+        mut b: Bencher, ctx: DeviceContext, ctx_idx: Int
+    ) raises {mut in_bufs, imm}:
+        @inline(.always)
+        def call_fn(
+            ctx_inner: DeviceContext, cache_iter: Int
+        ) raises {mut in_bufs, imm}:
             comptime for i in range(num_buffers):
                 in_bufs[i] = InputTileType(
                     cb_inputs[i].offset_ptr(cache_iter).as_unsafe_any_origin(),
                     row_major(M, D),
                 )
 
+            # `reducescatter` takes a world-view output array (every device's
+            # own partition, indexed by global rank); `out_bufs` is already
+            # that array.
             reducescatter[
                 dtype=dtype,
                 ngpus=ngpus,
@@ -236,15 +237,17 @@ def bench_reducescatter_2d[
                 axis=axis,
             ](
                 in_bufs,
-                out_bufs[ctx_idx],
+                out_bufs,
                 rank_sigs,
                 ctx_inner,
                 max_num_blocks,
             )
 
-        b.iter_custom[call_fn](ctx)
+        bencher_iter_custom(b, call_fn, ctx)
 
-    b.bench_multicontext[bench_iter_2d](
+    bench_multicontext(
+        b,
+        bench_iter_2d,
         list_of_ctx,
         BenchId(name),
         [ThroughputMeasure(BenchMetric.bytes, num_bytes)],
@@ -374,10 +377,7 @@ def bench_reducescatter[
     var host_buffers = List[List[Scalar[dtype]]](capacity=ngpus)
 
     # Create signal buffers for synchronization
-    var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
-        uninitialized=True
-    )
+    var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
 
     # Initialize buffers for each GPU
     for gpu_idx in range(ngpus):
@@ -417,19 +417,15 @@ def bench_reducescatter[
 
         # Create and initialize signal buffers
         signal_buffers.append(
-            list_of_ctx[gpu_idx].create_buffer_sync[DType.uint8](
-                size_of[Signal]()
-            )
+            list_of_ctx[gpu_idx].create_buffer_sync[.uint8](size_of[Signal]())
         )
-        list_of_ctx[gpu_idx].enqueue_memset[DType.uint8](
-            signal_buffers[gpu_idx], 0
-        )
-        rank_sigs[gpu_idx] = (
-            signal_buffers[gpu_idx]
-            .unsafe_ptr()
-            .bitcast[Signal]()
-            .as_unsafe_any_origin()
-        )
+        list_of_ctx[gpu_idx].enqueue_memset[.uint8](signal_buffers[gpu_idx], 0)
+
+    var rank_sigs = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
 
     # Create input and output TileTensors
     comptime OutputTileType = TileTensor[
@@ -438,8 +434,8 @@ def bench_reducescatter[
     comptime InputTileType = TileTensor[
         dtype, type_of(row_major(output_lengths[0])), ImmutAnyOrigin
     ]
-    var in_bufs = InlineArray[InputTileType, num_buffers](uninitialized=True)
-    var out_bufs = InlineArray[OutputTileType, ngpus](uninitialized=True)
+    var in_bufs = Array[InputTileType, num_buffers](uninitialized=True)
+    var out_bufs = Array[OutputTileType, ngpus](uninitialized=True)
 
     for i in range(ngpus):
         in_bufs[i if not use_multimem else 0] = InputTileType(
@@ -450,12 +446,14 @@ def bench_reducescatter[
         )
         list_of_ctx[i].synchronize()
 
-    @parameter
-    @always_inline
-    def bench_iter(mut b: Bencher, ctx: DeviceContext, ctx_idx: Int) raises:
-        @parameter
-        @always_inline
-        def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
+    @inline(.always)
+    def bench_iter(
+        mut b: Bencher, ctx: DeviceContext, ctx_idx: Int
+    ) raises {mut in_bufs, imm}:
+        @inline(.always)
+        def call_fn(
+            ctx_inner: DeviceContext, cache_iter: Int
+        ) raises {mut in_bufs, imm}:
             comptime for i in range(num_buffers):
                 in_bufs[i] = InputTileType(
                     cb_inputs[i].offset_ptr(cache_iter).as_unsafe_any_origin(),
@@ -464,15 +462,17 @@ def bench_reducescatter[
 
             reducescatter[dtype=dtype, ngpus=ngpus, use_multimem=use_multimem](
                 in_bufs,
-                out_bufs[ctx_idx],
+                out_bufs,
                 rank_sigs,
                 ctx_inner,
                 max_num_blocks,
             )
 
-        b.iter_custom[call_fn](ctx)
+        bencher_iter_custom(b, call_fn, ctx)
 
-    b.bench_multicontext[bench_iter](
+    bench_multicontext(
+        b,
+        bench_iter,
         list_of_ctx,
         BenchId(name),
         [ThroughputMeasure(BenchMetric.bytes, num_bytes)],
@@ -518,7 +518,7 @@ def bench_reducescatter[
 
 
 def main() raises:
-    comptime dtype = get_defined_dtype["dtype", DType.bfloat16]()
+    comptime dtype = get_defined_dtype["dtype", .bfloat16]()
     comptime num_gpus = get_defined_int["num_gpus", 2]()
     comptime axis = get_defined_int["axis", -1]()
     comptime use_multimem = get_defined_bool["multimem", False]()

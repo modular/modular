@@ -41,18 +41,17 @@ comptime _4x4 = RowMajorLayout[ComptimeInt[4], ComptimeInt[4]]
 
 def test_tile_add_elementwise() raises:
     """`Add.elementwise` sums two tiles in place and returns the result."""
-    var lhs_arr = InlineArray[Float32, 16](uninitialized=True)
-    var rhs_arr = InlineArray[Float32, 16](uninitialized=True)
+    var lhs_arr = Array[Float32, 16](
+        fill_with=lambda (i: Int) -> Float32: Float32(i)
+    )
+    var rhs_arr = Array[Float32, 16](
+        fill_with=lambda (i: Int) -> Float32: Float32(100 + i)
+    )
 
     var lhs = TileTensor(lhs_arr, row_major[4, 4]())
     var rhs = TileTensor(rhs_arr, row_major[4, 4]())
 
-    for i in range(4):
-        for j in range(4):
-            lhs[i, j] = Float32(i * 4 + j)
-            rhs[i, j] = Float32(100 + i * 4 + j)
-
-    var result = Add.elementwise[DType.float32, _4x4](lhs, rhs)
+    var result = Add.elementwise[.float32, _4x4](lhs, rhs)
 
     for i in range(4):
         for j in range(4):
@@ -66,18 +65,17 @@ def test_tile_add_elementwise() raises:
 def test_tile_mul_elementwise() raises:
     """`Mul.elementwise` multiplies two tiles in place and returns the result.
     """
-    var lhs_arr = InlineArray[Float32, 16](uninitialized=True)
-    var rhs_arr = InlineArray[Float32, 16](uninitialized=True)
+    var lhs_arr = Array[Float32, 16](
+        fill_with=lambda (i: Int) -> Float32: Float32(i)
+    )
+    var rhs_arr = Array[Float32, 16](
+        fill_with=lambda (i: Int) -> Float32: Float32(2 + i)
+    )
 
     var lhs = TileTensor(lhs_arr, row_major[4, 4]())
     var rhs = TileTensor(rhs_arr, row_major[4, 4]())
 
-    for i in range(4):
-        for j in range(4):
-            lhs[i, j] = Float32(i * 4 + j)
-            rhs[i, j] = Float32(2 + i * 4 + j)
-
-    var result = Mul.elementwise[DType.float32, _4x4](lhs, rhs)
+    var result = Mul.elementwise[.float32, _4x4](lhs, rhs)
 
     for i in range(4):
         for j in range(4):
@@ -133,11 +131,11 @@ def test_elementwise_fusion_tile_conformance() raises:
 
 def test_get_kernel_tile_shape() raises:
     """`get_kernel_tile_shape` returns a static 2D tile shape per target."""
-    comptime gpu_shape = get_kernel_tile_shape[DType.float32, "gpu"]()
+    comptime gpu_shape = get_kernel_tile_shape[.float32, "gpu"]()
     assert_equal(gpu_shape[0], 16)
     assert_equal(gpu_shape[1], 16)
 
-    comptime cpu_shape = get_kernel_tile_shape[DType.float32, "cpu"]()
+    comptime cpu_shape = get_kernel_tile_shape[.float32, "cpu"]()
     assert_equal(cpu_shape[0], 8)
     assert_equal(cpu_shape[1], 8)
 

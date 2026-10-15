@@ -144,7 +144,7 @@ def test_many_servers_one_client() -> None:
             break
 
     assert len(replies) == len(servers)
-    assert set(replies) == set([-1 * i * 100 for i in range(len(servers))])
+    assert set(replies) == {-1 * i * 100 for i in range(len(servers))}
 
 
 def test_spam_server() -> None:

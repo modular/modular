@@ -73,15 +73,15 @@ class Value(Generic[MlirType]):
 
     .. code-block:: python
 
-        from max.graph import Graph, ops, Value
+        from max.graph import DeviceRef, Graph, ops, Value
         from max.dtype import DType
         import numpy as np
 
         # Create a graph context
         with Graph("value_example") as graph:
             # Create input values
-            a = ops.constant(np.array([1, 2, 3]), dtype=DType.float32, device=DeviceRef.CPU())
-            b = ops.constant(np.array([4, 5, 6]), dtype=DType.float32, device=DeviceRef.CPU())
+            a = ops.constant(np.array([1, 2, 3], dtype=np.float32), dtype=DType.float32, device=DeviceRef.CPU())
+            b = ops.constant(np.array([4, 5, 6], dtype=np.float32), dtype=DType.float32, device=DeviceRef.CPU())
 
             # Use values to perform operations
             c = a + b  # c is a Value representing the addition
@@ -372,7 +372,7 @@ class TensorValue(Value[mo.TensorType]):
 
         import numpy as np
         from max.dtype import DType
-        from max.graph import Graph, ops
+        from max.graph import DeviceRef, Graph, ops
 
         # Create a sample matrix
         matrix = np.array([[1, 2], [3, 4]], dtype=np.float32)
@@ -482,7 +482,7 @@ class TensorValue(Value[mo.TensorType]):
 
             import numpy as np
             from max.dtype import DType
-            from max.graph import Graph, ops
+            from max.graph import DeviceRef, Graph, ops
 
             # Create a 2x2 matrix
             matrix = np.array([[1, 2], [3, 4]], dtype=np.float32)
@@ -512,7 +512,7 @@ class TensorValue(Value[mo.TensorType]):
 
             import numpy as np
             from max.dtype import DType
-            from max.graph import Graph, ops
+            from max.graph import DeviceRef, Graph, ops
 
             # Create a matrix with float32 values
             matrix = np.array([[1, 2], [3, 4]], dtype=np.float32)
@@ -537,7 +537,7 @@ class TensorValue(Value[mo.TensorType]):
 
             import numpy as np
             from max.dtype import DType
-            from max.graph import Graph, ops
+            from max.graph import DeviceRef, Graph, ops
 
             # Create a 2x2 matrix (2-dimensional array)
             matrix = np.array([[1, 2], [3, 4]], dtype=np.float32)
@@ -569,7 +569,7 @@ class TensorValue(Value[mo.TensorType]):
 
             import numpy as np
             from max.dtype import DType
-            from max.graph import Graph, ops
+            from max.graph import DeviceRef, Graph, ops
 
             # Create a 2x2 matrix
             matrix = np.array([[1, 2], [3, 4]], dtype=np.float32)
@@ -605,7 +605,7 @@ class TensorValue(Value[mo.TensorType]):
 
             import numpy as np
             from max.dtype import DType
-            from max.graph import Graph, ops
+            from max.graph import DeviceRef, Graph, ops
 
             # Create a 2x2 matrix
             matrix = np.array([[1, 2], [3, 4]], dtype=np.float32)
@@ -639,7 +639,7 @@ class TensorValue(Value[mo.TensorType]):
 
             import numpy as np
             from max.dtype import DType
-            from max.graph import Graph, ops
+            from max.graph import DeviceRef, Graph, ops
 
             # Create a 2x2 matrix
             matrix = np.array([[1, 2], [3, 4]], dtype=np.float32)
@@ -672,7 +672,7 @@ class TensorValue(Value[mo.TensorType]):
 
             import numpy as np
             from max.dtype import DType
-            from max.graph import Graph, ops
+            from max.graph import DeviceRef, Graph, ops
 
             # Create a matrix with float32 values
             matrix = np.array([[1, 2], [3, 4]], dtype=np.float32)
@@ -762,7 +762,7 @@ class TensorValue(Value[mo.TensorType]):
 
             import numpy as np
             from max.dtype import DType
-            from max.graph import Graph, ops
+            from max.graph import DeviceRef, Graph, ops
 
             # Create a 2x3 matrix
             matrix = np.array([[1, 2, 3], [4, 5, 6]], dtype=np.float32)
@@ -985,7 +985,7 @@ class TensorValue(Value[mo.TensorType]):
         """Reduces the tensor using a variance operation along ``axis``.
 
         The variance is computed as the mean of squared deviations from the mean
-        (population variance, i.e., without Bessel's correction) along the specified axis.
+        (population variance; that is, without Bessel's correction) along the specified axis.
 
         .. code-block:: python
 
@@ -1037,7 +1037,7 @@ class TensorValue(Value[mo.TensorType]):
             index = (index,)
         return ops.slice_tensor(self, index)
 
-    def __eq__(self, rhs: Any) -> TensorValue:  # type: ignore[override]
+    def __eq__(self, rhs: object) -> TensorValue:  # type: ignore[override]
         """Performs element-wise equality comparison.
 
         Args:
@@ -1059,7 +1059,7 @@ class TensorValue(Value[mo.TensorType]):
         """Rounds to the elementwise nearest integer, with ties going towards the nearest even number."""
         return ops.round(self)
 
-    def __ne__(self, rhs: Any) -> TensorValue:  # type: ignore[override]
+    def __ne__(self, rhs: object) -> TensorValue:  # type: ignore[override]
         """Performs element-wise inequality comparison.
 
         Args:
@@ -1184,10 +1184,13 @@ class TensorValue(Value[mo.TensorType]):
     def __floordiv__(self, rhs: TensorValueLike) -> TensorValue:
         """Performs element-wise floor division.
 
+        Matches Python ``//``: see :obj:`~max.graph.ops.floor_div`. Integer
+        operands produce an integer result.
+
         Args:
             rhs: The right-hand side operand for floor division. Must be tensor-like.
         """
-        return ops.floor(ops.div(self, rhs))
+        return ops.floor_div(self, rhs)
 
     def __rfloordiv__(self, lhs: TensorValueLike) -> TensorValue:
         """Performs element-wise floor division with reversed operands.
@@ -1195,7 +1198,7 @@ class TensorValue(Value[mo.TensorType]):
         Args:
             lhs: The left-hand side operand for floor division. Must be tensor-like.
         """
-        return ops.floor(ops.div(lhs, self))
+        return ops.floor_div(lhs, self)
 
     def __mod__(self, rhs: TensorValueLike) -> TensorValue:
         """Performs element-wise modulo operation.
@@ -1339,7 +1342,16 @@ StrongTensorValueLike = (
 )
 
 TensorValueLike = StrongTensorValueLike | Numeric
+"""Anything a graph operation accepts where a tensor value is expected.
+
+Covers :class:`TensorValue` and tensor-like objects, plus the numeric
+scalars a graph converts to constants.
+"""
+
 BufferValueLike = BufferValue | HasBufferValue
+"""A :class:`BufferValue` or any object convertible to one through
+``__buffervalue__``.
+"""
 
 # This is needed for python 3.9 compatibility.
 # `isinstance` only works with tuples and not unions in 3.9.
@@ -1347,10 +1359,6 @@ _numeric = (int, float, np.integer, np.floating, np.ndarray)
 _scalar = (int, float, np.integer, np.floating, Dim)
 _strong_tensor_value_like = (_Value[mo.TensorType], TensorValue, Shape, Dim)
 _tensor_value_like = _strong_tensor_value_like + _numeric
-
-
-def _is_numeric(obj: Any) -> TypeGuard[Numeric]:
-    return isinstance(obj, _numeric)
 
 
 def _is_scalar(obj: Any) -> TypeGuard[Scalar]:

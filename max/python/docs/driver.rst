@@ -24,9 +24,8 @@ Devices
    CPU
    Device
    DeviceEvent
+   DeviceQueue
    DeviceSpec
-   DeviceStream
-   NPU
 
 Buffers
 -------
@@ -37,14 +36,19 @@ Buffers
    :template: autosummary/class.rst
 
    Buffer
-   DevicePinnedBuffer
    DLPackArray
+   HostHazardError
+   Usage
+
+Buffer operations
+-----------------
 
 .. autosummary::
    :nosignatures:
    :toctree: generated
    :template: autosummary/function.rst
 
+   batch_inplace_copy
    load_max_buffer
 
 Device discovery
@@ -62,6 +66,28 @@ Device discovery
    enable_all_peer_access
    load_devices
    scan_available_devices
+
+Launch tracing
+--------------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/class.rst
+
+   LaunchTraceEntry
+
+Launch tracing functions
+------------------------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/function.rst
+
+   begin_launch_trace
+   launch_trace
+   take_launch_trace
 
 Virtual devices
 ---------------

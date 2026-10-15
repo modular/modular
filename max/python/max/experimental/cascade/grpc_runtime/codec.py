@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable, Mapping, Sequence
-from typing import Any, TypeAlias, Union, cast
+from typing import Any, cast
 
 import numpy as np
 from max.experimental.cascade.core import Result, ResultIter, Runtime
@@ -32,20 +32,6 @@ from max.experimental.cascade.core.type_hints import async_elem_type
 from pydantic import BaseModel, TypeAdapter
 
 from . import cascade_runtime_v1_pb2 as pb
-
-# A decoded, hint-free wire value. BaseModels arrive as dicts; Result rebuilds
-# them later once a type is known.
-CascadeValue: TypeAlias = Union[
-    "np.ndarray",
-    bytes,
-    str,
-    float,
-    bool,
-    int,
-    None,
-    dict[str, "CascadeValue"],
-    list["CascadeValue"],
-]
 
 # ---------------------------------------------------------------------------
 # ValueSlot encode / decode

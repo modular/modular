@@ -403,6 +403,42 @@ def _emit_slack_blocks(
     )
 
 
+def _emit_summary_json(
+    summary: FuzzSummary,
+    *,
+    output_path: Path,
+) -> None:
+    """Write machine-readable summary.json consumed by the CI monitor.
+
+    Skipped when the fuzz log was never produced (server crashed before fuzz
+    ran), so the monitor can distinguish a crash from a zero-failure run.
+    """
+    if not summary.log_present:
+        return
+    failures: list[dict[str, str]] = [
+        {
+            "category": scenario,
+            "name": item.name,
+            "reason": item.detail,
+            "kind": status,
+        }
+        for scenario, by_status in sorted(summary.by_scenario.items())
+        for status, items in by_status.items()
+        if status in ("FAIL", "INTERESTING", "ERROR")
+        for item in items
+    ]
+    data: dict[str, object] = {
+        "total": summary.total_tests,
+        "duration": summary.total_duration or 0.0,
+        "pass": summary.counts.get("PASS", 0),
+        "fail": summary.counts.get("FAIL", 0),
+        "interesting": summary.counts.get("INTERESTING", 0),
+        "error": summary.counts.get("ERROR", 0),
+        "failures": failures,
+    }
+    output_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+
 def _run_fuzz_with_crash_detection(
     cmd: list[str],
     *,
@@ -470,6 +506,22 @@ def _run_fuzz_with_crash_detection(
                 proc.wait(timeout=5)
 
 
+def _redacted(cmd: Sequence[str]) -> list[str]:
+    """Return ``cmd`` with the value following --api-key masked.
+
+    Both log sites print the whole argv, and GitHub's secret masking only
+    covers values it already knows; a token supplied any other way would
+    otherwise land in the log verbatim.
+    """
+    out = list(cmd)
+    for i, arg in enumerate(out):
+        if arg == "--api-key" and i + 1 < len(out):
+            out[i + 1] = "***"
+        elif arg.startswith("--api-key="):
+            out[i] = "--api-key=***"
+    return out
+
+
 @click.command()
 @click.option("--pipelines-arg", "pipelines_args", multiple=True)
 @click.option("--pipelines-probe-port", type=int, default=8000)
@@ -494,6 +546,15 @@ def _run_fuzz_with_crash_detection(
 )
 @click.option("--model-profile", type=str)
 @click.option("--scenarios", type=str, default="")
+@click.option(
+    "--exclude",
+    type=str,
+    default="",
+    help=(
+        "Comma-separated scenarios to exclude, forwarded to llm-fuzz"
+        " --exclude. Use scenario:test for a single test."
+    ),
+)
 @click.option("--k2vv-mode", type=str, default="")
 @click.option("--circuit-breaker", type=int, default=None)
 @click.option("--extra-fuzz-arg", "extra_fuzz_args", multiple=True)
@@ -512,6 +573,27 @@ def _run_fuzz_with_crash_detection(
     ),
 )
 @click.option("--pipeline-name", type=str, default="")
+@click.option(
+    "--max-serve-url",
+    type=str,
+    default="",
+    help=(
+        "Fuzz an already-running endpoint at this URL instead of starting"
+        " MAX Serve. Mutually exclusive with --pipelines-arg: nothing is"
+        " launched or supervised, so the crash/hang detection that wraps a"
+        " locally-managed server does not apply and a failure here is the"
+        " endpoint's, not a sitter's."
+    ),
+)
+@click.option(
+    "--api-key",
+    type=str,
+    default="",
+    help=(
+        "Bearer token forwarded to llm-fuzz --api-key. Needed when"
+        " --max-serve-url points at an authenticated gateway."
+    ),
+)
 def main(
     pipelines_args: Sequence[str],
     pipelines_probe_port: int,
@@ -520,14 +602,22 @@ def main(
     model_path: str | None,
     model_profile: str | None,
     scenarios: str,
+    exclude: str,
     k2vv_mode: str,
     circuit_breaker: int | None,
     extra_fuzz_args: Sequence[str],
     output_dir: Path,
     emit_only: bool,
     pipeline_name: str,
+    max_serve_url: str,
+    api_key: str,
 ) -> None:
-    """Manage MAX Serve, run llm-fuzz, summarize, and exit with the fuzz rc."""
+    """Run llm-fuzz, summarize, and exit with the fuzz rc.
+
+    Manages a MAX Serve subprocess for the duration of the run, except
+    under ``--max-serve-url``, which fuzzes an endpoint this process
+    neither starts nor supervises.
+    """
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)s: %(name)s: %(message)s",
@@ -557,11 +647,19 @@ def main(
         )
         sys.exit(2)
 
+    if max_serve_url and pipelines_args:
+        logger.error(
+            "--max-serve-url fuzzes an endpoint this process does not own,"
+            " so the --pipelines-arg values that configure a locally"
+            " launched MAX Serve cannot take effect; pass one or the other"
+        )
+        sys.exit(2)
+
     fuzz_program = _resolve_fuzz_program()
     fuzz_cmd = [
         fuzz_program,
         "--url",
-        f"http://localhost:{pipelines_probe_port}",
+        max_serve_url or f"http://localhost:{pipelines_probe_port}",
         "--model",
         model_path,
         "--model-profile",
@@ -569,8 +667,12 @@ def main(
         "--log-file",
         str(log_path.resolve()),
     ]
+    if api_key:
+        fuzz_cmd.extend(["--api-key", api_key])
     if scenarios:
         fuzz_cmd.extend(["--scenarios", scenarios])
+    if exclude:
+        fuzz_cmd.extend(["--exclude", exclude])
     if k2vv_mode:
         fuzz_cmd.extend(["--k2vv-mode", k2vv_mode])
     if circuit_breaker is not None:
@@ -588,25 +690,38 @@ def main(
     fuzz_rc = 1
     mechanical_failure = True
     try:
-        with PipelineSitter(
-            pipelines_program + list(pipelines_args),
-            extra_env=pipelines_env,
-        ) as sitter:
-            sitter.wait_for_alive(
-                probe_port=pipelines_probe_port,
-                timeout=pipelines_probe_timeout,
+        if max_serve_url:
+            # Nothing to launch or supervise: the endpoint outlives this
+            # process, so there is no sitter to correlate a crash against and
+            # mechanical_failure stays False. A non-zero rc here is the fuzz
+            # suite's own verdict on a server somebody else owns.
+            logger.info(
+                "Running llm-fuzz against %s: %s",
+                max_serve_url,
+                _redacted(fuzz_cmd),
             )
-            health_url = (
-                f"http://127.0.0.1:{pipelines_probe_port}/health"
-                if pipelines_health_timeout > 0
-                else None
-            )
-            logger.info("Running llm-fuzz: %s", fuzz_cmd)
-            fuzz_rc, mechanical_failure = _run_fuzz_with_crash_detection(
-                fuzz_cmd,
-                sitter=sitter,
-                health_probe_url=health_url,
-            )
+            fuzz_rc = subprocess.run(fuzz_cmd, check=False).returncode
+            mechanical_failure = False
+        else:
+            with PipelineSitter(
+                pipelines_program + list(pipelines_args),
+                extra_env=pipelines_env,
+            ) as sitter:
+                sitter.wait_for_alive(
+                    probe_port=pipelines_probe_port,
+                    timeout=pipelines_probe_timeout,
+                )
+                health_url = (
+                    f"http://127.0.0.1:{pipelines_probe_port}/health"
+                    if pipelines_health_timeout > 0
+                    else None
+                )
+                logger.info("Running llm-fuzz: %s", _redacted(fuzz_cmd))
+                fuzz_rc, mechanical_failure = _run_fuzz_with_crash_detection(
+                    fuzz_cmd,
+                    sitter=sitter,
+                    health_probe_url=health_url,
+                )
     finally:
         # Always summarize whatever JSONL we have, even on failure.
         summary = _summarize_jsonl(log_path)
@@ -622,14 +737,14 @@ def main(
             model_path=model_path,
             output_path=output_dir / "slack-blocks.json",
         )
+        _emit_summary_json(
+            summary,
+            output_path=output_dir / "summary.json",
+        )
 
-    # llm-fuzz's own non-zero exit means "found failures" — that's a
-    # signal about the endpoint, not a workflow problem. Propagate
-    # non-zero only when we had to kill the subprocess because serve
-    # died or hung.
-    if mechanical_failure:
-        sys.exit(fuzz_rc or 1)
-    sys.exit(0)
+    # Propagate fuzz exit code so the job conclusion reflects failures.
+    # Mechanical failures (serve crashed/hung) always exit non-zero.
+    sys.exit(fuzz_rc if not mechanical_failure else (fuzz_rc or 1))
 
 
 if __name__ == "__main__":

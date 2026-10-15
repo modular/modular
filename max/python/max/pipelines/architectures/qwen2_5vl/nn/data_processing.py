@@ -115,7 +115,7 @@ def get_window_index(
     Args:
 
         grid_thw: spatial and temporal coordinated of patches in images.
-        window_size: Size of attention window. E.g.  window size of 112x112 corresponds to 8x8 patches of size 14.
+        window_size: Size of attention window. For example, a window size of 112x112 corresponds to 8x8 patches of size 14.
         spatial_merge_size: number of patches to merge together.
         patch_size: Size of each patch in the image.
         spatial_merge_unit:

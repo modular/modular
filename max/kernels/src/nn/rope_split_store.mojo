@@ -18,29 +18,26 @@ K/V to the paged KV cache, and writes roped Q to the output buffer, all
 in a single GPU kernel to eliminate intermediate tensor round-trips.
 """
 
-from std.algorithm.functional import elementwise
+from max.algorithm.functional import elementwise
 from std.collections import OptionalReg
-from std.gpu.host import DeviceContext, get_gpu_target
-from std.gpu.host.info import is_cpu, is_gpu
+from max.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host.info import is_cpu, is_gpu
 from std.math import gcd
 from std.sys import align_of
-from std.sys.info import _current_target, simd_width_of
+from std.sys.info import CompilationTarget, simd_width_of
 
 from internal_utils.fp8_utils import cast_saturating
 from kv_cache.types import KVCacheT, PagedKVCacheCollection
 from layout import (
     Coord,
     CoordLike,
-    Idx,
     RowMajorLayout,
     TensorLayout,
     TileTensor,
-    coord_to_index_list,
 )
 from nn._ragged_utils import get_batch_from_row_offsets
 from nn.fused_qk_rope import rope_value
 from nn.rope import get_safetensors_idx
-from std.utils.index import IndexList
 
 
 # ===-----------------------------------------------------------------------===#
@@ -56,24 +53,25 @@ from std.utils.index import IndexList
 # exclusivity check is a stopgap workaround; the proper fix is to give the k/v
 # views provably-disjoint origins instead of sharing the collection's.
 @__unsafe_nested_origins_read_only
-@always_inline
+@inline(.always)
 def _rope_split_store_ragged_impl[
     dtype: DType,
     freq_dtype: DType,
     cache_t: KVCacheT,
     q_out_dtype: DType,
+    FuncType: ImplicitlyCopyable & RegisterPassable & def(Int, Int, Int) -> Int,
     //,
     *,
     target: StaticString,
     interleaved: Bool = True,
-    get_freq_pos: def(Int, Int, Int) capturing -> Int,
 ](
     qkv: TileTensor[mut=False, dtype, ...],
-    input_row_offsets: TileTensor[mut=False, DType.uint32, ...],
+    input_row_offsets: TileTensor[mut=False, .uint32, ...],
     freqs_cis: TileTensor[mut=False, freq_dtype, ...],
     k_cache: cache_t,
     v_cache: OptionalReg[cache_t],
     q_output: TileTensor[mut=True, q_out_dtype, ...],
+    get_freq_pos: FuncType,
     context: Optional[DeviceContext],
 ) raises:
     """Read flat QKV buffer, apply RoPE to Q and K, store K/V to cache.
@@ -83,6 +81,11 @@ def _rope_split_store_ragged_impl[
     coefficients. Callers swap in different closures to get
     cache-derived positions vs. explicit position-ID lookups.
 
+    Parameters:
+        FuncType: Type of the ``get_freq_pos`` callback.
+        target: Compile target backend, for example ``"gpu"`` or ``"cpu"``.
+        interleaved: Whether RoPE uses the interleaved real/imag layout.
+
     Args:
         qkv: Flat matmul output [total_seq_len, q_dim + k_dim + v_dim].
         input_row_offsets: [batch_size + 1] ragged offsets.
@@ -90,6 +93,8 @@ def _rope_split_store_ragged_impl[
         k_cache: Key cache to store roped K.
         v_cache: Value cache to store V.
         q_output: Output buffer for roped Q [total_seq_len, q_dim].
+        get_freq_pos: Maps ``(dim_idx, global_token_idx, cache_pos)`` to
+            the ``freqs_cis`` row used for RoPE coefficients.
         context: DeviceContext for GPU.
     """
     comptime kv_params = cache_t.kv_params
@@ -124,31 +129,26 @@ def _rope_split_store_ragged_impl[
     var combined_dim = Int(qkv.dim[1]())
     var qk_offset = q_dim + k_dim
 
-    # TODO: This elementwise body captures KV cache views (`CacheType`), which
-    # fail codegen when stored into a unified closure ('pop.store' pointer
-    # element-type verification). Keep using the deprecated parameter-closure
-    # overload until cache captures in unified closures are supported.
-    @parameter
-    @__copy_capture(
-        q_dim,
-        qk_offset,
-        combined_dim,
-        batch_size,
-        freqs_ptr,
-        freqs_stride0,
-        qkv_ptr,
-        q_out_ptr,
-        k_cache,
-        v_cache,
-        input_row_offsets,
-    )
     def rope_split_store_fn[
-        simd_width: Int, alignment: Int = 1
-    ](idx_arg: Coord):
+        width: Int, alignment: Int = 1
+    ](idx_arg: Coord) {
+        var q_dim,
+        var qk_offset,
+        var combined_dim,
+        var batch_size,
+        var freqs_ptr,
+        var freqs_stride0,
+        var qkv_ptr,
+        var q_out_ptr,
+        var k_cache,
+        var v_cache,
+        var input_row_offsets,
+        var get_freq_pos,
+    }:
+        comptime simd_width = width
         comptime assert idx_arg.rank == 2
-        var idx = rebind[IndexList[2]](coord_to_index_list(idx_arg))
-        var global_token_idx = idx[0]
-        var col = idx[1]
+        var global_token_idx = Int(idx_arg[0].value())
+        var col = Int(idx_arg[1].value())
 
         # Guard: simd_width >= 2 is guaranteed by the comptime assert after
         # this function. We wrap in comptime if because elementwise
@@ -202,7 +202,7 @@ def _rope_split_store_ragged_impl[
                     )
                 else:
                     # Non-interleaved: gather re/im halves, rope, scatter.
-                    comptime width_2 = SIMDSize(simd_width) / 2
+                    comptime width_2 = SIMDLength(simd_width) / 2
                     comptime align_qkv_2 = align_of[
                         SIMD[dtype, width_2]
                     ]() if is_gpu[target]() else align_of[SIMD[dtype, 1]]()
@@ -276,7 +276,7 @@ def _rope_split_store_ragged_impl[
                 else:
                     # Non-interleaved K: gather re/im, rope, deinterleave,
                     # store.
-                    comptime width_2 = SIMDSize(simd_width) / 2
+                    comptime width_2 = SIMDLength(simd_width) / 2
                     comptime align_qkv_2 = align_of[
                         SIMD[dtype, width_2]
                     ]() if is_gpu[target]() else align_of[SIMD[dtype, 1]]()
@@ -344,10 +344,11 @@ def _rope_split_store_ragged_impl[
             )
 
     var launch_shape = (total_seq_len, combined_dim)
-    comptime compile_target = _current_target() if is_cpu[
-        target
-    ]() else get_gpu_target()
-    comptime target_simd_width = simd_width_of[dtype, target=compile_target]()
+    comptime target_simd_width = (
+        simd_width_of[dtype, target=CompilationTarget.current()]() if is_cpu[
+            target
+        ]() else simd_width_of[dtype, target=get_gpu_target()]()
+    )
     comptime kernel_simd_width = gcd(target_simd_width, head_size)
     comptime assert (
         kernel_simd_width >= 2
@@ -357,11 +358,9 @@ def _rope_split_store_ragged_impl[
     ), "head_size must be divisible by simd_width"
 
     var device_ctx = context.value() if context else DeviceContext(api="cpu")
-    elementwise[
-        func=rope_split_store_fn,
-        simd_width=kernel_simd_width,
-        target=target,
-    ](launch_shape, device_ctx)
+    elementwise[simd_width=kernel_simd_width, target=target](
+        rope_split_store_fn, launch_shape, device_ctx
+    )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -374,7 +373,7 @@ def _rope_split_store_ragged_impl[
 # impl, so it inherits the same false-positive aliasing rejection. See
 # `_rope_split_store_ragged_impl` for the full rationale. Stopgap workaround.
 @__unsafe_nested_origins_read_only
-@always_inline
+@inline(.always)
 def _rope_split_store_ragged[
     dtype: DType,
     freq_dtype: DType,
@@ -386,7 +385,7 @@ def _rope_split_store_ragged[
     interleaved: Bool = True,
 ](
     qkv: TileTensor[mut=False, dtype, ...],
-    input_row_offsets: TileTensor[mut=False, DType.uint32, ...],
+    input_row_offsets: TileTensor[mut=False, .uint32, ...],
     freqs_cis: TileTensor[mut=False, freq_dtype, ...],
     k_cache: cache_t,
     v_cache: OptionalReg[cache_t],
@@ -405,7 +404,6 @@ def _rope_split_store_ragged[
         context: DeviceContext for GPU.
     """
 
-    @parameter
     def get_freq_pos(
         dim_idx: Int, global_token_idx: Int, cache_pos: Int
     ) -> Int:
@@ -414,7 +412,6 @@ def _rope_split_store_ragged[
     return _rope_split_store_ragged_impl[
         target=target,
         interleaved=interleaved,
-        get_freq_pos=get_freq_pos,
     ](
         qkv,
         input_row_offsets,
@@ -422,11 +419,12 @@ def _rope_split_store_ragged[
         k_cache,
         v_cache,
         q_output,
+        get_freq_pos,
         context,
     )
 
 
-@always_inline
+@inline(.always)
 def rope_split_store_paged_ragged[
     dtype: DType,
     freq_dtype: DType,
@@ -435,7 +433,7 @@ def rope_split_store_paged_ragged[
     interleaved: Bool = True,
 ](
     qkv: TileTensor[mut=False, dtype, ...],
-    input_row_offsets: TileTensor[mut=False, DType.uint32, ...],
+    input_row_offsets: TileTensor[mut=False, .uint32, ...],
     freqs_cis: TileTensor[mut=False, freq_dtype, ...],
     kv_collection: PagedKVCacheCollection,
     layer_idx: UInt32,
@@ -492,11 +490,12 @@ def rope_split_store_paged_ragged[
 # impl, so it inherits the same false-positive aliasing rejection. See
 # `_rope_split_store_ragged_impl` for the full rationale. Stopgap workaround.
 @__unsafe_nested_origins_read_only
-@always_inline
+@inline(.always)
 def _rope_split_store_ragged_with_position_ids[
     dtype: DType,
     freq_dtype: DType,
     cache_t: KVCacheT,
+    q_out_dtype: DType = dtype,
     //,
     *,
     target: StaticString,
@@ -510,14 +509,12 @@ def _rope_split_store_ragged_with_position_ids[
     ],
 ](
     qkv: TileTensor[mut=False, dtype, ...],
-    input_row_offsets: TileTensor[mut=False, DType.uint32, ...],
+    input_row_offsets: TileTensor[mut=False, .uint32, ...],
     freqs_cis: TileTensor[mut=False, freq_dtype, ...],
     k_cache: cache_t,
     v_cache: OptionalReg[cache_t],
-    position_ids: TileTensor[
-        mut=False, DType.uint32, PositionIdsLayoutType, ...
-    ],
-    q_output: TileTensor[mut=True, dtype, ...],
+    position_ids: TileTensor[mut=False, .uint32, PositionIdsLayoutType, ...],
+    q_output: TileTensor[mut=True, q_out_dtype, ...],
     context: Optional[DeviceContext],
 ) raises:
     """Read flat QKV buffer, apply rope (with explicit position IDs) to Q and K,
@@ -543,29 +540,28 @@ def _rope_split_store_ragged_with_position_ids[
     # Validate mrope_section alignment with kernel SIMD width.
     comptime kv_params = cache_t.kv_params
     comptime head_size = kv_params.head_size
-    comptime compile_target = _current_target() if is_cpu[
-        target
-    ]() else get_gpu_target()
-    comptime target_simd_width = simd_width_of[dtype, target=compile_target]()
+    comptime target_simd_width = (
+        simd_width_of[dtype, target=CompilationTarget.current()]() if is_cpu[
+            target
+        ]() else simd_width_of[dtype, target=get_gpu_target()]()
+    )
     comptime kernel_simd_width = gcd(target_simd_width, head_size)
-    comptime if mrope_section:
-        comptime for i in range(len(mrope_section.value())):
+    comptime if case .Some(sections) = mrope_section:
+        comptime for i in range(len(sections)):
             comptime assert (
-                Int(mrope_section.value()[i].value()) % kernel_simd_width == 0
+                Int(sections[i].value()) % kernel_simd_width == 0
             ), "mrope_section must be divisible by rope kernel simd_width"
 
     var pos_ids_ptr = position_ids.ptr
     var pos_ids_stride = Int(position_ids.dim[1]())
 
-    @parameter
-    @__copy_capture(pos_ids_ptr, pos_ids_stride)
     def get_freq_pos(
         dim_idx: Int, global_token_idx: Int, cache_pos: Int
-    ) -> Int:
-        comptime if mrope_section:
+    ) {var pos_ids_ptr, var pos_ids_stride} -> Int:
+        comptime if case .Some(sections) = mrope_section:
             var section_idx = 0
-            comptime for i in range(len(mrope_section.value())):
-                comptime val = Int(mrope_section.value()[i].value())
+            comptime for i in range(len(sections)):
+                comptime val = Int(sections[i].value())
                 if dim_idx < val:
                     section_idx = i
                     break
@@ -578,7 +574,6 @@ def _rope_split_store_ragged_with_position_ids[
     return _rope_split_store_ragged_impl[
         target=target,
         interleaved=interleaved,
-        get_freq_pos=get_freq_pos,
     ](
         qkv,
         input_row_offsets,
@@ -586,14 +581,16 @@ def _rope_split_store_ragged_with_position_ids[
         k_cache,
         v_cache,
         q_output,
+        get_freq_pos,
         context,
     )
 
 
-@always_inline
+@inline(.always)
 def rope_split_store_paged_ragged_with_position_ids[
     dtype: DType,
     freq_dtype: DType,
+    q_out_dtype: DType = dtype,
     target: StaticString = "cpu",
     interleaved: Bool = True,
     mrope_types: TypeList[Trait=CoordLike, ...] = TypeList.of[
@@ -605,14 +602,12 @@ def rope_split_store_paged_ragged_with_position_ids[
     ],
 ](
     qkv: TileTensor[mut=False, dtype, ...],
-    input_row_offsets: TileTensor[mut=False, DType.uint32, ...],
+    input_row_offsets: TileTensor[mut=False, .uint32, ...],
     freqs_cis: TileTensor[mut=False, freq_dtype, ...],
     kv_collection: PagedKVCacheCollection,
-    position_ids: TileTensor[
-        mut=False, DType.uint32, PositionIdsLayoutType, ...
-    ],
+    position_ids: TileTensor[mut=False, .uint32, PositionIdsLayoutType, ...],
     layer_idx: UInt32,
-    q_output: TileTensor[mut=True, dtype, ...],
+    q_output: TileTensor[mut=True, q_out_dtype, ...],
     ctx: DeviceContext,
 ) raises:
     """Rope+split+store with paged KV cache and explicit position IDs.
@@ -621,6 +616,9 @@ def rope_split_store_paged_ragged_with_position_ids[
         dtype: Element type of the QKV input buffer.
         freq_dtype: Element type of the ``freqs_cis`` RoPE frequency
             table.
+        q_out_dtype: Element type of the roped Q output. Defaults to
+            ``dtype``; an FP8 KV cache sets it to the cache dtype so
+            flash attention sees a Q matching its cache.
         target: Compile target backend, for example ``"gpu"`` or
             ``"cpu"`` (defaults to ``"cpu"``).
         interleaved: Whether RoPE uses the interleaved real/imag layout

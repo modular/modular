@@ -20,21 +20,24 @@ import pytest
 from max.driver import CPU
 from max.dtype import DType
 from max.experimental.sharding import (
-    Action,
     AxisAssignment,
     DeviceMapping,
     DeviceMesh,
-    P,
     Partial,
-    R,
     Replicated,
     Sharded,
+    ShardingError,
     TensorLayout,
-    build_action_set,
-    force_replicated_action_set,
+    Unknown,
+    match_operand_placement,
+    replicated_rows,
 )
+from max.experimental.sharding._auto_reshard import pick_reshard_action
+from max.experimental.sharding.action import Action
 from max.experimental.sharding.cost import (
-    pair_transition_cost,
+    P,
+    R,
+    feasible_rows_at_axis,
     tensor_byte_count,
     transition_cost,
 )
@@ -70,117 +73,61 @@ class TestTensorByteCount:
         assert tensor_byte_count(layout(mesh, (), (Replicated(),))) == 4.0
 
 
-class TestBuildActionSet:
-    def test_appends_missing_fallback(self) -> None:
-        mesh = mesh_1d(2)
-        lay = layout(mesh, (4,), (Replicated(),))
-        s = build_action_set(
-            [AxisAssignment((Sharded(0),), Sharded(0))], layouts=(lay,)
-        )
-        assert s.axis_assignments[-1] == AxisAssignment(
-            (Replicated(),), Replicated()
-        )
-
-    def test_does_not_duplicate_existing_fallback(self) -> None:
-        mesh = mesh_1d(2)
-        lay = layout(mesh, (4,), (Replicated(),))
-        s = build_action_set(
-            [AxisAssignment((Replicated(),), Replicated())], layouts=(lay,)
-        )
-        assert s.axis_assignments == (
-            AxisAssignment((Replicated(),), Replicated()),
-        )
-
-    def test_filters_sharded_row_on_size_one_axis(self) -> None:
-        mesh = mesh_1d(2)
-        lay = layout(mesh, (1, 8), (Replicated(),))
-        s = build_action_set(
-            [AxisAssignment((Sharded(0),), Sharded(0))], layouts=(lay,)
-        )
-        assert (
-            AxisAssignment((Sharded(0),), Sharded(0)) not in s.axis_assignments
-        )
-
-    def test_threads_layouts_mesh_extras_finalize(self) -> None:
-        mesh = mesh_1d(2)
-        lay = layout(mesh, (4,), (Replicated(),))
-        extras = (uniform_sentinel := object(),)
-
-        def finalize(action: Action) -> Action:
-            return action
-
-        s = build_action_set(
-            [], layouts=(lay,), extras=extras, finalize=finalize
-        )
-        assert s.layouts == (lay,)
-        assert s.mesh is mesh
-        assert s.extras == (uniform_sentinel,)
-        assert s.finalize is finalize
+def pick(
+    rows: list[AxisAssignment], layouts: tuple[TensorLayout, ...]
+) -> Action:
+    return pick_reshard_action(
+        rows, layouts, op_name="custom_op", operand_names=()
+    )
 
 
-class TestForceReplicatedActionSet:
+class TestRuleRows:
+    """What the picker checks about the rows a rule returns."""
+
+    def test_rejects_no_rows(self) -> None:
+        lay = layout(mesh_1d(2), (4,), (Replicated(),))
+        with pytest.raises(ShardingError, match="at least one"):
+            pick([], (lay,))
+
+    def test_rejects_incomplete_input_rows(self) -> None:
+        lay = layout(mesh_1d(2), (4,), (Replicated(),))
+        with pytest.raises(ShardingError, match="every tensor operand"):
+            pick([AxisAssignment((R,), (R,))], (lay, lay))
+
+    def test_rejects_inconsistent_result_counts(self) -> None:
+        lay = layout(mesh_1d(2), (4,), (Replicated(),))
+        with pytest.raises(ShardingError, match="same tensor outputs"):
+            pick(
+                [AxisAssignment((R,), (R,)), AxisAssignment((P,), (P, P))],
+                (lay,),
+            )
+
+
+class TestReplicatedRows:
     def test_emits_a_single_all_replicated_row(self) -> None:
         mesh = mesh_1d(2)
         a = layout(mesh, (4,), (Replicated(),))
         b = layout(mesh, (4,), (Replicated(),))
-        s = force_replicated_action_set(a, b)
-        assert s.axis_assignments == (
-            AxisAssignment((Replicated(), Replicated()), Replicated()),
-        )
+        assert replicated_rows(a, b, 3) == [
+            AxisAssignment((Replicated(), Replicated()), (Replicated(),))
+        ]
 
     def test_requires_at_least_one_layout(self) -> None:
         with pytest.raises(ValueError):
-            force_replicated_action_set()
+            replicated_rows()
 
 
-class TestPairTransitionCost:
-    def test_matching_placements_are_free(self) -> None:
-        mesh = mesh_1d(4)
-        cost = pair_transition_cost(
-            producer_placements=[Sharded(0)],
-            consumer_placements=[Sharded(0)],
-            tensor_bytes=1024.0,
-            mesh=mesh,
-        )
-        assert cost == 0.0
+class TestMatchOperandPlacement:
+    def test_results_take_the_named_operand_placement(self) -> None:
+        def op(values: object, offsets: object) -> None: ...
 
-    def test_replicated_to_sharded_uses_local_slice(self) -> None:
-        mesh = mesh_1d(4)
-        assert (
-            pair_transition_cost(
-                [Replicated()],
-                [Sharded(0)],
-                tensor_bytes=1024.0,
-                mesh=mesh,
-            )
-            == 0.0
-        )
-
-    def test_partial_to_replicated_is_twice_partial_to_sharded(self) -> None:
-        mesh = mesh_1d(4)
-        ar = pair_transition_cost(
-            [Partial()],
-            [Replicated()],
-            tensor_bytes=1024.0,
-            mesh=mesh,
-        )
-        rs = pair_transition_cost(
-            [Partial()],
-            [Sharded(0)],
-            tensor_bytes=1024.0,
-            mesh=mesh,
-        )
-        assert math.isclose(ar, 2.0 * rs)
-
-    def test_infeasible_transition_is_infinite(self) -> None:
-        mesh = mesh_1d(4)
-        cost = pair_transition_cost(
-            [Replicated()],
-            [Partial()],
-            tensor_bytes=1024.0,
-            mesh=mesh,
-        )
-        assert math.isinf(cost)
+        rule = match_operand_placement(op, "offsets", output_count=2)
+        mesh = mesh_1d(2)
+        values = layout(mesh, (4, 8), (Replicated(),))
+        offsets = layout(mesh, (4,), (Sharded(0),))
+        assert rule(values, offsets) == [
+            AxisAssignment((Replicated(), Sharded(0)), (Sharded(0),) * 2)
+        ]
 
 
 def _ring_factor(n: int) -> float:
@@ -206,14 +153,21 @@ class TestTransitionCost:
     def test_replicated_to_sharded_is_local_slice(self) -> None:
         mesh = mesh_1d(4)
         assert (
-            transition_cost(
+            0.0
+            < transition_cost(
                 Replicated(),
                 Sharded(0),
                 message_bytes=1024.0,
                 mesh=mesh,
                 axis_index=0,
             )
-            == 0.0
+            < transition_cost(
+                Sharded(0),
+                Replicated(),
+                message_bytes=1024.0,
+                mesh=mesh,
+                axis_index=0,
+            )
         )
 
     def test_sharded_to_replicated_matches_ring_allgather(self) -> None:
@@ -264,9 +218,9 @@ class TestTransitionCost:
                 == 0.0
             )
 
-    def test_replicated_to_partial_is_infeasible(self) -> None:
+    def test_replicated_to_partial_keeps_one_copy(self) -> None:
         mesh = mesh_1d(4)
-        assert math.isinf(
+        assert not math.isinf(
             transition_cost(
                 Replicated(),
                 Partial(),
@@ -297,3 +251,78 @@ class TestTransitionCost:
         assert math.isclose(on_dp, 1024.0 * _ring_factor(2))
         assert math.isclose(on_tp, 1024.0 * _ring_factor(8))
         assert on_tp > on_dp
+
+
+class TestUnknownOperand:
+    """A rule takes an Unknown operand only through a row that names it."""
+
+    def test_a_row_not_naming_unknown_is_infeasible(self) -> None:
+        mesh = mesh_1d(2)
+        unknown = layout(mesh, (8, 8), (Unknown(),))
+        rows = feasible_rows_at_axis(
+            [AxisAssignment((R,), (R,))],
+            (unknown,),
+            mesh,
+            0,
+            [unknown.placements],
+        )
+        assert rows == ()
+
+    def test_a_row_naming_unknown_takes_it(self) -> None:
+        mesh = mesh_1d(2)
+        rows_by_device = layout(mesh, (8, 8), (Sharded(0),))
+        offsets = layout(mesh, (8,), (Unknown(),))
+        named = AxisAssignment((Sharded(0), Unknown()), (Sharded(0),))
+        rows = feasible_rows_at_axis(
+            [AxisAssignment((R, R), (R,)), named],
+            (rows_by_device, offsets),
+            mesh,
+            0,
+            [rows_by_device.placements, offsets.placements],
+        )
+        assert rows == (named,)
+
+    def test_a_row_naming_unknown_moves_no_operand(self) -> None:
+        mesh = mesh_1d(2)
+        rows_whole = layout(mesh, (8, 8), (R,))
+        offsets = layout(mesh, (8,), (Unknown(),))
+        rows = feasible_rows_at_axis(
+            [AxisAssignment((Sharded(0), Unknown()), (Sharded(0),))],
+            (rows_whole, offsets),
+            mesh,
+            0,
+            [rows_whole.placements, offsets.placements],
+        )
+        assert rows == ()
+
+    def test_a_row_naming_unknown_keeps_one_device_whole(self) -> None:
+        mesh = DeviceMesh.single(CPU())
+        split = layout(mesh, (8, 8), (Sharded(0),))
+        whole = layout(mesh, (8, 8), (R,))
+        offsets = layout(mesh, (8,), (Unknown(),))
+
+        def feasible(
+            row: AxisAssignment, rows_layout: TensorLayout
+        ) -> tuple[AxisAssignment, ...]:
+            return feasible_rows_at_axis(
+                [row],
+                (rows_layout, offsets),
+                mesh,
+                0,
+                [rows_layout.placements, offsets.placements],
+            )
+
+        assert (
+            feasible(
+                AxisAssignment((Sharded(0), Unknown()), (Sharded(0),)), split
+            )
+            == ()
+        )
+        whole_row = AxisAssignment((R, Unknown()), (R,))
+        assert feasible(whole_row, whole) == (whole_row,)
+
+    def test_no_row_naming_unknown_raises(self) -> None:
+        mesh = mesh_1d(2)
+        unknown = layout(mesh, (8, 8), (Unknown(),))
+        with pytest.raises(ShardingError, match="no feasible plan"):
+            pick([AxisAssignment((R,), (R,))], (unknown,))

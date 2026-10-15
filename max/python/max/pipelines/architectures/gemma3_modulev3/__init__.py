@@ -13,7 +13,8 @@
 """Gemma 3 transformer architecture for text generation."""
 
 from .arch import gemma3_modulev3_arch
-from .model import Gemma3Inputs, Gemma3Model
+from .inputs import Gemma3Inputs
+from .model import Gemma3Model
 from .model_config import Gemma3Config
 
 __all__ = [

@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from max.pipelines.lib import PipelineConfig
+from max.pipelines.lib import MemoryPlan, PipelineConfig
 
 
 @dataclass
@@ -24,8 +24,6 @@ class TokenGenerationSchedulerConfig:
 
     max_batch_size: int
     """The maximum number of requests that can be in the token generation batch."""
-
-    """The number of tokens to generate for each request in the token generation iteration."""
 
     target_tokens_per_batch_ce: int
     """The target total number of tokens to encode in the context encoding batch."""
@@ -47,8 +45,33 @@ class TokenGenerationSchedulerConfig:
     with no legal cut point within the remaining budget are left unsplit for
     a later step. 0 disables the floor."""
 
+    max_request_input_tokens: int = 0
+    """Ceiling, in tokens, on how much of one request is encoded in a single
+    batch. Applied by chunking. 0 disables the cap."""
+
     enable_in_flight_batching: bool = False
     """When enabled, prioritizes token generation by batching it with context encoding requests."""
+
+    prefill_coalesce_min_pending: int = 0
+    """Minimum pending fresh prefills, summed across the data-parallel group,
+    before in-flight batching mixes them into a decode step. Every mixed step
+    forfeits device graph capture for all of its decode rows, on every
+    replica. A held prefill is admitted after at most this many decode steps
+    unless ``prefill_coalesce_max_held_steps`` overrides that deadline.
+    0 admits immediately (the default behavior)."""
+
+    prefill_coalesce_max_held_steps: int = 0
+    """Ceiling on consecutive prefill-admitting steps a held prefill waits
+    before it is admitted regardless of queue depth. With
+    ``prefill_schedule_interval`` > 1 only cadence-open steps count, so the
+    worst-case wait is the product of the two. 0 falls back to
+    ``prefill_coalesce_min_pending`` (the default behavior)."""
+
+    prefill_schedule_interval: int = 1
+    """Admit prefill work only on every Nth scheduler step. Data-parallel
+    ranks advance in lockstep, so prefill on any rank stalls the whole
+    group; confining it to a shared cadence leaves the steps in between
+    entirely to decode. 1 admits every step (the default behavior)."""
 
     data_parallel_degree: int = 1
     """Data-parallelism parameter. The degree to which the model is replicated
@@ -59,9 +82,6 @@ class TokenGenerationSchedulerConfig:
 
     If speculative decoding is disabled, this should be 0.
     """
-
-    kvcache_ce_watermark: float = 0.95
-    """The maximum percentage of total KVCache memory that can be used after allocating a CE request. This parameter was found empirically."""
 
     decode_stall_timeout_s: float | None = None
     """Seconds of no-batch-activity after which the decode worker exits to trigger a pod restart. None disables the watchdog."""
@@ -87,6 +107,13 @@ class TokenGenerationSchedulerConfig:
     0-1) at or above which CE work is scheduled without further deferral.
     Only consulted when ``dp_ce_balance_timeout_ms`` > 0."""
 
+    dp_ce_balance_enable_dynamic_chunk_size: bool = False
+    """Whether a below-threshold CE step with work on 2+ replicas runs
+    immediately with each replica's chunk size reduced to the balance level
+    (deferring only the excess). When False, such steps are held whole until
+    the threshold is met, a deadline expires, or there is nothing else to
+    run."""
+
     def __post_init__(self) -> None:
         if self.max_batch_size <= 0:
             raise ValueError(
@@ -108,6 +135,22 @@ class TokenGenerationSchedulerConfig:
                 "`chunked_prefill_min_chunk_size` must be non-negative, found"
                 f" {self.chunked_prefill_min_chunk_size}"
             )
+        if self.max_request_input_tokens < 0:
+            raise ValueError(
+                "`max_request_input_tokens` must be non-negative, found"
+                f" {self.max_request_input_tokens}"
+            )
+        if (
+            self.max_request_input_tokens > 0
+            and self.chunked_prefill_min_chunk_size
+            > self.max_request_input_tokens
+        ):
+            raise ValueError(
+                "`chunked_prefill_min_chunk_size` must not exceed "
+                "`max_request_input_tokens`, found "
+                f"{self.chunked_prefill_min_chunk_size} > "
+                f"{self.max_request_input_tokens}"
+            )
         if (
             self.max_batch_total_tokens is not None
             and self.max_seq_len is not None
@@ -125,28 +168,71 @@ class TokenGenerationSchedulerConfig:
                 "`dp_ce_balance_threshold` must be in [0, 1], found"
                 f" {self.dp_ce_balance_threshold}"
             )
+        if self.prefill_coalesce_min_pending < 0:
+            raise ValueError(
+                "`prefill_coalesce_min_pending` must be non-negative, found"
+                f" {self.prefill_coalesce_min_pending}"
+            )
+        if self.prefill_coalesce_max_held_steps < 0:
+            raise ValueError(
+                "`prefill_coalesce_max_held_steps` must be non-negative, found"
+                f" {self.prefill_coalesce_max_held_steps}"
+            )
+        if self.prefill_schedule_interval < 1:
+            raise ValueError(
+                "`prefill_schedule_interval` must be at least 1, found"
+                f" {self.prefill_schedule_interval}"
+            )
 
     @classmethod
     def from_pipeline_config(
-        cls, pipeline_config: PipelineConfig, max_batch_size: int
+        cls,
+        pipeline_config: PipelineConfig,
+        max_batch_size: int,
+        memory_plan: MemoryPlan | None,
     ) -> TokenGenerationSchedulerConfig:
+        """Builds the scheduler config from the pipeline config and memory plan.
+
+        ``memory_plan`` carries the planned sequence length and batch token
+        budget; ``None`` only for pipelines sized without a plan (test echoes).
+        """
         assert pipeline_config.model is not None
 
         return cls(
             max_batch_size=max_batch_size,
             target_tokens_per_batch_ce=pipeline_config.runtime.max_batch_input_tokens,
-            max_seq_len=pipeline_config.model.max_length,
-            max_batch_total_tokens=pipeline_config.runtime.max_batch_total_tokens,
+            max_seq_len=(
+                memory_plan.planned_max_length
+                if memory_plan is not None
+                else None
+            ),
+            max_batch_total_tokens=(
+                memory_plan.planned_max_batch_total_tokens
+                if memory_plan is not None
+                else None
+            ),
             enable_chunked_prefill=pipeline_config.runtime.enable_chunked_prefill,
             chunked_prefill_min_chunk_size=pipeline_config.runtime.chunked_prefill_min_chunk_size,
+            max_request_input_tokens=pipeline_config.runtime.max_request_input_tokens,
             enable_in_flight_batching=pipeline_config.runtime.enable_in_flight_batching,
+            prefill_coalesce_min_pending=(
+                pipeline_config.runtime.prefill_coalesce_min_pending
+            ),
+            prefill_coalesce_max_held_steps=(
+                pipeline_config.runtime.prefill_coalesce_max_held_steps
+            ),
+            prefill_schedule_interval=(
+                pipeline_config.runtime.prefill_schedule_interval
+            ),
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
-            kvcache_ce_watermark=pipeline_config.runtime.kvcache_ce_watermark,
             decode_stall_timeout_s=pipeline_config.runtime.decode_stall_timeout_s,
             decode_request_ttl_s=pipeline_config.runtime.decode_request_ttl_s,
             dp_ce_balance_timeout_ms=pipeline_config.runtime.dp_ce_balance_timeout_ms,
             dp_ce_balance_threshold=pipeline_config.runtime.dp_ce_balance_threshold,
-            num_speculative_tokens=pipeline_config.speculative.num_speculative_tokens
+            dp_ce_balance_enable_dynamic_chunk_size=pipeline_config.runtime.dp_ce_balance_enable_dynamic_chunk_size,
+            num_speculative_tokens=(
+                pipeline_config.speculative.num_speculative_tokens or 0
+            )
             if pipeline_config.speculative is not None
             else 0,
         )

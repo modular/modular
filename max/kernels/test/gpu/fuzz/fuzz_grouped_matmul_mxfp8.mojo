@@ -44,19 +44,18 @@
 # so a token's result must not depend on what it is co-batched with. A failure
 # would mean someone added M-keyed dispatch or a cross-partition reduction.
 
-from std.builtin.simd import _convert_f32_to_float8_ue8m0
+from std.simd import _convert_f32_to_float8_ue8m0
 from std.math import align_up, ceildiv, max, min
 from std.random import rand, random_ui64, seed
 from std.sys import size_of
 from std.sys.defines import get_defined_int
 
 import linalg.matmul.vendor.blas as vendor_blas
-from std.gpu.host import DeviceContext, HostBuffer
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from max.gpu.host import DeviceContext, HostBuffer
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from std.utils.index import Index
-from std.utils.static_tuple import StaticTuple
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Idx, TileTensor, row_major
 from linalg.matmul.gpu.sm100.config import GEMMKind
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
     grouped_matmul_block_scaled,
@@ -164,9 +163,9 @@ def run_one_case(
     for i in range(len(num_tokens_by_expert)):
         total_num_tokens += num_tokens_by_expert[i]
 
-    var a_shape = row_major(Coord(total_num_tokens, Idx[K]))
-    var b_shape = row_major(Coord(Idx[num_experts], Idx[N], Idx[K]))
-    var c_shape = row_major(Coord(total_num_tokens, Idx[N]))
+    var a_shape = row_major(total_num_tokens, Idx[K])
+    var b_shape = row_major(Idx[num_experts], Idx[N], Idx[K])
+    var c_shape = row_major(total_num_tokens, Idx[N])
 
     var a_size = total_num_tokens * K
     var b_size = num_experts * N * K
@@ -188,38 +187,36 @@ def run_one_case(
     var c_device_ref = ctx.enqueue_create_buffer[out_dtype](c_size)
     var c_ref_tensor = TileTensor(c_device_ref, c_shape)
 
-    var a_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
+    var a_offsets_device = ctx.enqueue_create_buffer[.uint32](
         num_active_experts + 1
     )
     var a_offsets_tensor = TileTensor(
-        a_offsets_device, row_major(Coord(num_active_experts + 1))
+        a_offsets_device, row_major(num_active_experts + 1)
     )
-    var a_scale_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
+    var a_scale_offsets_device = ctx.enqueue_create_buffer[.uint32](
         num_active_experts
     )
     var a_scale_offsets_tensor = TileTensor(
-        a_scale_offsets_device, row_major(Coord(num_active_experts))
+        a_scale_offsets_device, row_major(num_active_experts)
     )
-    var expert_ids_device = ctx.enqueue_create_buffer[DType.int32](
+    var expert_ids_device = ctx.enqueue_create_buffer[.int32](
         num_active_experts
     )
     var expert_ids_tensor = TileTensor(
-        expert_ids_device, row_major(Coord(num_active_experts))
+        expert_ids_device, row_major(num_active_experts)
     )
-    var expert_scales_device = ctx.enqueue_create_buffer[DType.float32](
-        num_experts
-    )
+    var expert_scales_device = ctx.enqueue_create_buffer[.float32](num_experts)
 
-    var a_offsets_host_ptr = ctx.enqueue_create_host_buffer[DType.uint32](
+    var a_offsets_host_ptr = ctx.enqueue_create_host_buffer[.uint32](
         num_active_experts + 1
     )
-    var a_scale_offsets_ptr = ctx.enqueue_create_host_buffer[DType.uint32](
+    var a_scale_offsets_ptr = ctx.enqueue_create_host_buffer[.uint32](
         num_active_experts
     )
-    var expert_ids_host_ptr = ctx.enqueue_create_host_buffer[DType.int32](
+    var expert_ids_host_ptr = ctx.enqueue_create_host_buffer[.int32](
         num_active_experts
     )
-    var expert_scales_host_ptr = ctx.enqueue_create_host_buffer[DType.float32](
+    var expert_scales_host_ptr = ctx.enqueue_create_host_buffer[.float32](
         num_experts
     )
     for i in range(num_experts):
@@ -239,23 +236,19 @@ def run_one_case(
         expert_ids_host_ptr[i] = Int32(expert_ids[i])
 
     var a_scales_shape = row_major(
-        Coord(
-            a_scale_dim0,
-            Idx[k_groups],
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1]],
-            Idx[SF_ATOM_K],
-        )
+        a_scale_dim0,
+        Idx[k_groups],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
     var b_scales_shape = row_major(
-        Coord(
-            Idx[num_experts],
-            Idx[n_groups],
-            Idx[k_groups],
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1]],
-            Idx[SF_ATOM_K],
-        )
+        Idx[num_experts],
+        Idx[n_groups],
+        Idx[k_groups],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
 
     var a_scales_host_ptr = ctx.enqueue_create_host_buffer[scales_dtype](
@@ -276,12 +269,12 @@ def run_one_case(
     )
     var b_scales_tensor = TileTensor(b_scales_device, b_scales_shape)
 
-    rand(a_host.ptr, a_host.num_elements())
-    rand(b_host.ptr, b_host.num_elements())
+    rand(a_host.as_span())
+    rand(b_host.as_span())
 
     # A scales: zero everything, then fill the in-range region per active expert.
     for i in range(a_scales_host.num_elements()):
-        a_scales_host.ptr[i] = Scalar[scales_dtype](0.0)
+        a_scales_host._storage[i] = Scalar[scales_dtype](0.0)
     for i in range(num_active_experts):
         var start = Int(a_offsets_host_ptr[i])
         var actual_start = (
@@ -294,7 +287,7 @@ def run_one_case(
             ):
                 if idx1 < K:
                     var sv = _convert_f32_to_float8_ue8m0[scales_dtype](
-                        (1 << random_ui64(0, 2)).cast[DType.float32]()
+                        (1 << random_ui64(0, 2)).cast[.float32]()
                     )
                     set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
                         a_scales_host, idx0, idx1, sv
@@ -308,13 +301,11 @@ def run_one_case(
         var b_slice = TileTensor(
             b_scales_host_ptr.unsafe_ptr() + e * b_expert_scale_count,
             row_major(
-                Coord(
-                    Idx[n_groups],
-                    Idx[k_groups],
-                    Idx[SF_ATOM_M[0]],
-                    Idx[SF_ATOM_M[1]],
-                    Idx[SF_ATOM_K],
-                )
+                Idx[n_groups],
+                Idx[k_groups],
+                Idx[SF_ATOM_M[0]],
+                Idx[SF_ATOM_M[1]],
+                Idx[SF_ATOM_K],
             ),
         )
         for idx0 in range(align_up(N, SF_MN_GROUP_SIZE)):
@@ -323,7 +314,7 @@ def run_one_case(
             ):
                 if idx0 < N and idx1 < K:
                     var sv = _convert_f32_to_float8_ue8m0[scales_dtype](
-                        (1 << random_ui64(0, 2)).cast[DType.float32]()
+                        (1 << random_ui64(0, 2)).cast[.float32]()
                     )
                     set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
                         b_slice, idx0, idx1, sv
@@ -358,30 +349,26 @@ def run_one_case(
     var a_scales_tt = TileTensor(
         a_scales_device,
         row_major(
-            Coord(
-                a_scale_dim0,
-                Idx[k_groups],
-                Idx[SF_ATOM_M[0]],
-                Idx[SF_ATOM_M[1]],
-                Idx[SF_ATOM_K],
-            )
+            a_scale_dim0,
+            Idx[k_groups],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         ),
     ).as_unsafe_any_origin()
     var b_scales_tt = TileTensor(
         b_scales_device,
         row_major(
-            Coord(
-                Idx[num_experts],
-                Idx[n_groups],
-                Idx[k_groups],
-                Idx[SF_ATOM_M[0]],
-                Idx[SF_ATOM_M[1]],
-                Idx[SF_ATOM_K],
-            )
+            Idx[num_experts],
+            Idx[n_groups],
+            Idx[k_groups],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         ),
     ).as_unsafe_any_origin()
     var expert_scales_tt = TileTensor(
-        expert_scales_device, row_major(Coord(Idx[num_experts]))
+        expert_scales_device, row_major(Idx[num_experts])
     ).as_unsafe_any_origin()
 
     grouped_matmul_block_scaled[transpose_b=transpose_b, config=matmul_config](
@@ -446,7 +433,8 @@ def run_one_case(
             var expert_id = Int(expert_ids_host_ptr[i])
 
             var c_slice = TileTensor(
-                c_ref_tensor.ptr + start * N, row_major((end - start, Idx[N]))
+                c_ref_tensor.ptr + start * N,
+                row_major((end - start, Idx[N])),
             )
             var a_slice = TileTensor(
                 a_tensor.ptr + start * K, row_major((end - start, Idx[K]))
@@ -458,13 +446,11 @@ def run_one_case(
             var b_scales_slice = TileTensor(
                 b_scales_tensor.ptr + expert_id * b_expert_scale_count,
                 row_major(
-                    Coord(
-                        Idx[n_groups],
-                        Idx[k_groups],
-                        Idx[SF_ATOM_M[0]],
-                        Idx[SF_ATOM_M[1]],
-                        Idx[SF_ATOM_K],
-                    )
+                    Idx[n_groups],
+                    Idx[k_groups],
+                    Idx[SF_ATOM_M[0]],
+                    Idx[SF_ATOM_M[1]],
+                    Idx[SF_ATOM_K],
                 ),
             )
             var a_scales_start = start // SF_MN_GROUP_SIZE + Int(
@@ -473,13 +459,11 @@ def run_one_case(
             var a_scales_slice = TileTensor(
                 a_scales_tensor.ptr + a_scales_start * a_scales_row_stride,
                 row_major(
-                    Coord(
-                        ceildiv(end - start, SF_MN_GROUP_SIZE),
-                        Idx[k_groups],
-                        Idx[SF_ATOM_M[0]],
-                        Idx[SF_ATOM_M[1]],
-                        Idx[SF_ATOM_K],
-                    )
+                    ceildiv(end - start, SF_MN_GROUP_SIZE),
+                    Idx[k_groups],
+                    Idx[SF_ATOM_M[0]],
+                    Idx[SF_ATOM_M[1]],
+                    Idx[SF_ATOM_K],
                 ),
             )
             vendor_blas.matmul(
@@ -579,9 +563,9 @@ def _run_batch_composition(
     for i in range(len(counts)):
         total_num_tokens += counts[i]
 
-    var a_shape = row_major(Coord(total_num_tokens, Idx[K]))
-    var b_shape = row_major(Coord(Idx[num_experts], Idx[N], Idx[K]))
-    var c_shape = row_major(Coord(total_num_tokens, Idx[N]))
+    var a_shape = row_major(total_num_tokens, Idx[K])
+    var b_shape = row_major(Idx[num_experts], Idx[N], Idx[K])
+    var c_shape = row_major(total_num_tokens, Idx[N])
 
     var a_size = total_num_tokens * K
     var b_size = num_experts * N * K
@@ -600,38 +584,36 @@ def _run_batch_composition(
     var c_device = ctx.enqueue_create_buffer[out_dtype](c_size)
     var c_tensor = TileTensor(c_device, c_shape)
 
-    var a_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
+    var a_offsets_device = ctx.enqueue_create_buffer[.uint32](
         num_active_experts + 1
     )
     var a_offsets_tensor = TileTensor(
-        a_offsets_device, row_major(Coord(num_active_experts + 1))
+        a_offsets_device, row_major(num_active_experts + 1)
     )
-    var a_scale_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
+    var a_scale_offsets_device = ctx.enqueue_create_buffer[.uint32](
         num_active_experts
     )
     var a_scale_offsets_tensor = TileTensor(
-        a_scale_offsets_device, row_major(Coord(num_active_experts))
+        a_scale_offsets_device, row_major(num_active_experts)
     )
-    var expert_ids_device = ctx.enqueue_create_buffer[DType.int32](
+    var expert_ids_device = ctx.enqueue_create_buffer[.int32](
         num_active_experts
     )
     var expert_ids_tensor = TileTensor(
-        expert_ids_device, row_major(Coord(num_active_experts))
+        expert_ids_device, row_major(num_active_experts)
     )
-    var expert_scales_device = ctx.enqueue_create_buffer[DType.float32](
-        num_experts
-    )
+    var expert_scales_device = ctx.enqueue_create_buffer[.float32](num_experts)
 
-    var a_offsets_host_ptr = ctx.enqueue_create_host_buffer[DType.uint32](
+    var a_offsets_host_ptr = ctx.enqueue_create_host_buffer[.uint32](
         num_active_experts + 1
     )
-    var a_scale_offsets_ptr = ctx.enqueue_create_host_buffer[DType.uint32](
+    var a_scale_offsets_ptr = ctx.enqueue_create_host_buffer[.uint32](
         num_active_experts
     )
-    var expert_ids_host_ptr = ctx.enqueue_create_host_buffer[DType.int32](
+    var expert_ids_host_ptr = ctx.enqueue_create_host_buffer[.int32](
         num_active_experts
     )
-    var expert_scales_host_ptr = ctx.enqueue_create_host_buffer[DType.float32](
+    var expert_scales_host_ptr = ctx.enqueue_create_host_buffer[.float32](
         num_experts
     )
     for i in range(num_experts):
@@ -651,23 +633,19 @@ def _run_batch_composition(
         expert_ids_host_ptr[i] = Int32(ids[i])
 
     var a_scales_shape = row_major(
-        Coord(
-            a_scale_dim0,
-            Idx[k_groups],
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1]],
-            Idx[SF_ATOM_K],
-        )
+        a_scale_dim0,
+        Idx[k_groups],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
     var b_scales_shape = row_major(
-        Coord(
-            Idx[num_experts],
-            Idx[n_groups],
-            Idx[k_groups],
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1]],
-            Idx[SF_ATOM_K],
-        )
+        Idx[num_experts],
+        Idx[n_groups],
+        Idx[k_groups],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
 
     var a_scales_host_ptr = ctx.enqueue_create_host_buffer[scales_dtype](
@@ -688,7 +666,7 @@ def _run_batch_composition(
 
     # B weights + B scales: seeded from `b_seed` (identical across compositions).
     seed(b_seed)
-    rand(b_host.ptr, b_host.num_elements())
+    rand(b_host.as_span())
     comptime b_expert_scale_count = (
         n_groups * k_groups * SF_ATOM_M[0] * SF_ATOM_M[1] * SF_ATOM_K
     )
@@ -696,13 +674,11 @@ def _run_batch_composition(
         var b_slice = TileTensor(
             b_scales_host_ptr.unsafe_ptr() + e * b_expert_scale_count,
             row_major(
-                Coord(
-                    Idx[n_groups],
-                    Idx[k_groups],
-                    Idx[SF_ATOM_M[0]],
-                    Idx[SF_ATOM_M[1]],
-                    Idx[SF_ATOM_K],
-                )
+                Idx[n_groups],
+                Idx[k_groups],
+                Idx[SF_ATOM_M[0]],
+                Idx[SF_ATOM_M[1]],
+                Idx[SF_ATOM_K],
             ),
         )
         for idx0 in range(align_up(N, SF_MN_GROUP_SIZE)):
@@ -711,7 +687,7 @@ def _run_batch_composition(
             ):
                 if idx0 < N and idx1 < K:
                     var sv = _convert_f32_to_float8_ue8m0[scales_dtype](
-                        (1 << random_ui64(0, 2)).cast[DType.float32]()
+                        (1 << random_ui64(0, 2)).cast[.float32]()
                     )
                     set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
                         b_slice, idx0, idx1, sv
@@ -724,14 +700,14 @@ def _run_batch_composition(
     # A rows: the probe rows [0, m_probe*K) from `probe_seed`, the fillers after
     # from `filler_seed`. The probe rows are byte-identical across compositions.
     seed(probe_seed)
-    rand(a_host.ptr, m_probe * K)
+    rand(a_host._storage, m_probe * K)
     if total_num_tokens > m_probe:
         seed(filler_seed)
-        rand(a_host.ptr + m_probe * K, (total_num_tokens - m_probe) * K)
+        rand(a_host._storage + m_probe * K, (total_num_tokens - m_probe) * K)
 
     # A scales: zero, then fill fillers (filler_seed) and the probe (probe_seed).
     for i in range(a_scales_host.num_elements()):
-        a_scales_host.ptr[i] = Scalar[scales_dtype](0.0)
+        a_scales_host._storage[i] = Scalar[scales_dtype](0.0)
 
     # Fillers (slots 1..) from the filler stream.
     seed(filler_seed)
@@ -747,7 +723,7 @@ def _run_batch_composition(
             ):
                 if idx1 < K:
                     var sv = _convert_f32_to_float8_ue8m0[scales_dtype](
-                        (1 << random_ui64(0, 2)).cast[DType.float32]()
+                        (1 << random_ui64(0, 2)).cast[.float32]()
                     )
                     set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
                         a_scales_host, idx0, idx1, sv
@@ -762,7 +738,7 @@ def _run_batch_composition(
         ):
             if idx1 < K:
                 var sv = _convert_f32_to_float8_ue8m0[scales_dtype](
-                    (1 << random_ui64(0, 2)).cast[DType.float32]()
+                    (1 << random_ui64(0, 2)).cast[.float32]()
                 )
                 set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
                     a_scales_host, idx0, idx1, sv
@@ -793,30 +769,26 @@ def _run_batch_composition(
     var a_scales_tt = TileTensor(
         a_scales_device,
         row_major(
-            Coord(
-                a_scale_dim0,
-                Idx[k_groups],
-                Idx[SF_ATOM_M[0]],
-                Idx[SF_ATOM_M[1]],
-                Idx[SF_ATOM_K],
-            )
+            a_scale_dim0,
+            Idx[k_groups],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         ),
     ).as_unsafe_any_origin()
     var b_scales_tt = TileTensor(
         b_scales_device,
         row_major(
-            Coord(
-                Idx[num_experts],
-                Idx[n_groups],
-                Idx[k_groups],
-                Idx[SF_ATOM_M[0]],
-                Idx[SF_ATOM_M[1]],
-                Idx[SF_ATOM_K],
-            )
+            Idx[num_experts],
+            Idx[n_groups],
+            Idx[k_groups],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         ),
     ).as_unsafe_any_origin()
     var expert_scales_tt = TileTensor(
-        expert_scales_device, row_major(Coord(Idx[num_experts]))
+        expert_scales_device, row_major(Idx[num_experts])
     ).as_unsafe_any_origin()
 
     grouped_matmul_block_scaled[transpose_b=transpose_b, config=matmul_config](

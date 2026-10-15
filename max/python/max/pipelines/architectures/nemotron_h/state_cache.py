@@ -24,9 +24,6 @@ passed into the model graph as mutable ``BufferType`` inputs:
   ``slot_idx[batch_item]`` — the kernel reads initial state from
   ``ssm_pool[slot]`` and writes the updated final state back to the same slot
   directly (no graph-side gather/scatter_nd/buffer_store whole-pool RMW).
-
-This mirrors :class:`GatedDeltaNetStateCache` (qwen3_5); both pools are now
-fully in-place slot-indexed.
 """
 
 from __future__ import annotations
@@ -34,7 +31,11 @@ from __future__ import annotations
 import logging
 
 import numpy as np
-from max.driver import Buffer, Device, DevicePinnedBuffer
+from max.driver import (
+    Buffer,
+    Device,
+    Usage,
+)
 from max.dtype import DType
 from max.pipelines.modeling.types import RequestID
 from max.support.human_readable_formatter import to_human_readable_bytes
@@ -118,12 +119,15 @@ class NemotronHStateCache:
         # fall back to a plain Buffer on CPU (host) devices where pinned
         # memory is unavailable but also unnecessary.
         if device.is_host:
-            self._pinned_slot_idx: Buffer | DevicePinnedBuffer = Buffer.zeros(
+            self._pinned_slot_idx: Buffer = Buffer.zeros(
                 [max_slots], DType.uint32, device
             )
         else:
-            self._pinned_slot_idx = DevicePinnedBuffer(
-                shape=(max_slots,), dtype=DType.uint32, device=device
+            self._pinned_slot_idx = Buffer(
+                shape=(max_slots,),
+                dtype=DType.uint32,
+                device=device,
+                usage=Usage.STAGING | Usage.UNTRACKED,
             )
 
         conv_bytes = (

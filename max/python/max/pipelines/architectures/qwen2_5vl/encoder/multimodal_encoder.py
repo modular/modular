@@ -128,9 +128,7 @@ class Qwen25VLMultimodalEncoderModel:
         for key, value in weights.items():
             wd = value.data()
             if wd.dtype.is_float() and not wd.dtype.is_float8():
-                is_scale = key.endswith(".weight_scale") or key.endswith(
-                    ".input_scale"
-                )
+                is_scale = key.endswith((".weight_scale", ".input_scale"))
                 if not is_scale:
                     wd = wd.astype(DType.bfloat16)
 

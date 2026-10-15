@@ -18,7 +18,8 @@ deepseek-v2-commons: &deepseek-v2-commons
   $num_heads: 12
   $num_kv_heads: 12
   $head_dim: 128
-  engine: ["flashinfer", "modular_max"]
+  # TODO: modular_max fails on B200 with graph compilation error; disabled until fixed
+  engine: ["flashinfer"]
   model: "deepseek-v2"
 
 params:

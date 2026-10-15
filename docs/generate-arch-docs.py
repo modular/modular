@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 # ===----------------------------------------------------------------------=== #
 # Copyright (c) 2026, Modular Inc. All rights reserved.
 #
@@ -251,7 +250,7 @@ def sync_sidebars_json(
 
     1. Inside the ``max.pipelines`` category, as a child with label
        ``"architectures"``. This is the preferred location.
-    2. As a top-level sibling under ``"Python"`` with label
+    2. As a top-level sibling under ``"Model library (Python)"`` with label
        ``"max.pipelines.architectures"`` (legacy placement).
 
     If neither exists, inserts a nested child under ``max.pipelines``.
@@ -262,32 +261,34 @@ def sync_sidebars_json(
     if not isinstance(data, dict):
         raise RuntimeError("sidebars.json: root value must be a JSON object")
 
-    max_ref = data.get("maxReferenceSidebar")
+    max_ref = data.get("modelDevSidebar")
     if not isinstance(max_ref, list):
         raise RuntimeError(
-            "sidebars.json: maxReferenceSidebar missing or not a list"
+            "sidebars.json: modelDevSidebar missing or not a list"
         )
 
     python_cat: dict[str, object] | None = None
     for entry in max_ref:
         if (
             isinstance(entry, dict)
-            and entry.get("label") == "Python"
+            and entry.get("label") == "Model library (Python)"
             and entry.get("type") == "category"
         ):
             python_cat = entry
             break
     if python_cat is None:
         raise RuntimeError(
-            'sidebars.json: category with label "Python" not found'
+            'sidebars.json: category with label "Model library (Python)" not found'
         )
 
     py_items = python_cat.get("items")
     if not isinstance(py_items, list):
-        raise RuntimeError('sidebars.json: Python category "items" not a list')
+        raise RuntimeError(
+            'sidebars.json: Model library (Python) category "items" not a list'
+        )
 
     new_doc_ids = [
-        f"max/api/python/pipelines.architectures.{d}" for d in sorted(dir_names)
+        f"api/python/pipelines.architectures.{d}" for d in sorted(dir_names)
     ]
 
     arch_cat: dict[str, object] | None = None
@@ -326,7 +327,7 @@ def sync_sidebars_json(
             "label": "architectures",
             "link": {
                 "type": "doc",
-                "id": "max/api/python/pipelines.architectures",
+                "id": "api/python/pipelines.architectures",
             },
             "items": new_doc_ids,
         }

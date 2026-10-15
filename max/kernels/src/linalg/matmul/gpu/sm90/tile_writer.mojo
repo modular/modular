@@ -37,6 +37,7 @@ from layout import (
     IntTuple,
     Layout,
     MixedLayout,
+    DefaultEngine,
     RuntimeLayout,
     RuntimeTuple,
     TensorLayout,
@@ -44,20 +45,25 @@ from layout import (
     UNKNOWN_VALUE,
     row_major,
 )
-from layout.tensor_storage import TensorStorage
+from layout.tensor_engine import TensorEngine
 from layout.tile_io import copy_sram_to_dram
-from std.gpu.memory import fence_async_view_proxy
+from max.gpu.memory import fence_async_view_proxy
 from std.collections import OptionalReg
 from ....structuring import RegTile
 from structured_kernels.smem_types import reg_tile_to_tile_tensor
 from layout.swizzle import Swizzle
-from std.gpu import lane_id
-from std.gpu.globals import WARP_SIZE, WARPGROUP_SIZE
+from max.gpu import lane_id
+from max.gpu.globals import WARP_SIZE, WARPGROUP_SIZE
 
-from std.gpu.compute.mma import st_matrix
+from max.gpu.compute.mma import st_matrix
 from std.memory import bitcast
 from layout.tensor_core_async import st_matrix_n_layout, st_matrix_m_layout
-from ....utils import elementwise_epilogue_type, elementwise_compute_lambda_type
+from ....utils import (
+    ElementwiseComputeFn,
+    ElementwiseEpilogueFn,
+    no_compute_fn,
+    no_epilogue_fn,
+)
 from std.utils.index import IndexList
 from std.sys import align_of, size_of
 from layout.tile_io import copy_local_to_dram
@@ -88,7 +94,7 @@ struct ThreadInfo(TrivialRegisterPassable):
         self.lane_row = lane_row
         self.lane_col = lane_col
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def from_warp_group_idx(warp_group_thread_idx: Int) -> ThreadInfo:
         """Create ThreadInfo from a warp group thread index.
@@ -115,7 +121,7 @@ struct TileCoordinates(TrivialRegisterPassable):
     var corner: IndexList[2]
     var split: IndexList[2]
 
-    @always_inline
+    @inline(.always)
     def __init__(out self, corner: IndexList[2], split: IndexList[2]):
         """Initialize tile coordinates.
 
@@ -126,7 +132,7 @@ struct TileCoordinates(TrivialRegisterPassable):
         self.corner = corner
         self.split = split
 
-    @always_inline
+    @inline(.always)
     def adjust(self, base_coords: IndexList[2]) -> IndexList[2]:
         """Add corner and split offsets to base coordinates.
 
@@ -151,15 +157,10 @@ trait SMemTileWriter(TrivialRegisterPassable):
 
     comptime _dtype: DType
 
-    @always_inline
+    @inline(.always)
     def write_tile(
         self,
-        src: TileTensor[
-            mut=True,
-            dtype=Self._dtype,
-            address_space=AddressSpace.SHARED,
-            ...,
-        ],
+        src: TileTensor[mut=True, Self._dtype, address_space=.SHARED, ...],
         coords: Tuple[Int, Int],
     ):
         """Write a tile from shared memory to global memory.
@@ -174,9 +175,8 @@ trait SMemTileWriter(TrivialRegisterPassable):
 struct TileWriterTMA[
     tma_origin: ImmOrigin,
     dtype: DType,
-    tma_rank: Int,
-    tile_shape: IndexList[tma_rank],
-    desc_shape: IndexList[tma_rank],
+    tile_shape: Coord,
+    desc_shape: Coord,
     //,
 ](SMemTileWriter, TrivialRegisterPassable):
     """TMA-based tile writer for hardware-accelerated memory transfers.
@@ -187,7 +187,6 @@ struct TileWriterTMA[
     Parameters:
         tma_origin: Origin type for the TMA operation.
         dtype: Data type of the elements being written.
-        tma_rank: Rank of the TMA tile (number of dimensions).
         tile_shape: Shape of the TMA tile for async store operations.
         desc_shape: Shape described by the TMA descriptor.
     """
@@ -195,14 +194,12 @@ struct TileWriterTMA[
     comptime _dtype = Self.dtype
 
     comptime TMATensorTilePtr = Pointer[
-        TMATensorTile[
-            Self.dtype, Self.tma_rank, Self.tile_shape, Self.desc_shape
-        ],
+        TMATensorTile[Self.dtype, Self.tile_shape, Self.desc_shape],
         Self.tma_origin,
     ]
     var tma_op: Self.TMATensorTilePtr
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self,
         tma_op: Self.TMATensorTilePtr,
@@ -214,15 +211,10 @@ struct TileWriterTMA[
         """
         self.tma_op = tma_op
 
-    @always_inline
+    @inline(.always)
     def write_tile(
         self,
-        src: TileTensor[
-            mut=True,
-            dtype=Self._dtype,
-            address_space=AddressSpace.SHARED,
-            ...,
-        ],
+        src: TileTensor[mut=True, Self._dtype, address_space=.SHARED, ...],
         coords: Tuple[Int, Int],
     ):
         """Write a tile using TMA hardware acceleration.
@@ -252,7 +244,7 @@ struct TileWriterThreadwise[
     dtype: DType,
     dst_layout: TensorLayout,
     dst_origin: MutOrigin,
-    dst_storage: TensorStorage,
+    dst_engine: TensorEngine,
     dst_linear_idx_type: DType,
     //,
     thread_layout: MixedLayout,
@@ -271,7 +263,7 @@ struct TileWriterThreadwise[
         dtype: Data type of the source and destination tiles (inferred).
         dst_layout: Layout of the destination global tensor (inferred).
         dst_origin: Origin type of the destination global tensor (inferred).
-        dst_storage: Storage type of the destination global tensor (inferred).
+        dst_engine: Engine of the destination global tensor (inferred).
         dst_linear_idx_type: Linear index type for the destination tensor
             (inferred).
         thread_layout: Layout mapping threads across the tile for vectorized
@@ -287,17 +279,17 @@ struct TileWriterThreadwise[
 
     comptime DstType = TileTensor[
         mut=True,
-        dtype=Self.dtype,
+        Self.dtype,
         LayoutType=Self.dst_layout,
         origin=Self.dst_origin,
-        Storage=Self.dst_storage,
-        address_space=AddressSpace.GENERIC,
+        Engine=Self.dst_engine,
+        address_space=.GENERIC,
         linear_idx_type=Self.dst_linear_idx_type,
     ]
     var dst: Self.DstType
     var thread_idx: Int
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self,
         dst: Self.DstType,
@@ -312,15 +304,10 @@ struct TileWriterThreadwise[
         self.dst = dst
         self.thread_idx = thread_idx
 
-    @always_inline
+    @inline(.always)
     def write_tile(
         self,
-        src: TileTensor[
-            mut=True,
-            dtype=Self._dtype,
-            address_space=AddressSpace.SHARED,
-            ...,
-        ],
+        src: TileTensor[mut=True, Self._dtype, address_space=.SHARED, ...],
         coords: Tuple[Int, Int],
     ):
         """Write a tile using thread-distributed stores.
@@ -351,9 +338,9 @@ struct TileWriterThreadwise[
                 comptime dst_width = Self.dst_layout.static_shape[1]
 
                 # Slice both source and destination to half height internally
-                var masked_src = src.slice((0, dst_height), (0, dst_width))
+                var masked_src = src[:dst_height, :dst_width]
 
-                var masked_dst = self.dst.slice((0, dst_height), (0, dst_width))
+                var masked_dst = self.dst[:dst_height, :dst_width]
 
                 var casted_thread_idx = self.thread_idx
 
@@ -384,9 +371,9 @@ struct TileWriterThreadwise[
                 comptime dst_width = Self.dst_layout.static_shape[1] // 2
 
                 # Slice both source and destination to half width internally
-                var masked_src = src.slice((0, dst_height), (0, dst_width))
+                var masked_src = src[:dst_height, :dst_width]
 
-                var masked_dst = self.dst.slice((0, dst_height), (0, dst_width))
+                var masked_dst = self.dst[:dst_height, :dst_width]
 
                 # Compute half-width thread layout
                 comptime half_thread_layout = row_major[
@@ -422,7 +409,7 @@ trait RegTileWriter(TrivialRegisterPassable):
     (either shared memory or global memory).
     """
 
-    @always_inline
+    @inline(.always)
     def write_tile(
         self,
         c_reg_tile: RegTile,
@@ -484,8 +471,8 @@ struct FragmentToSMemWriter[
 
     comptime st_matrix_rt_layout_type = RuntimeLayout[
         Self.st_matrix_layout_regular if not Self.swapAB else Self.st_matrix_layout_transpose,
-        element_type=DType.int32,
-        linear_idx_type=DType.int32,
+        element_type=.int32,
+        linear_idx_type=.int32,
     ]
 
     comptime st_matrix_tile_layout_regular = row_major[
@@ -498,24 +485,24 @@ struct FragmentToSMemWriter[
     @__allow_legacy_any_origin_fields
     var c_tile: TileTensor[
         mut=True,
-        dtype=Self.c_type,
+        Self.c_type,
         LayoutType=Self.c_tile_layout,
         origin=MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]
     var warp_group_thread_idx: Int
     var local_warp_group_idx: Int
     var st_matrix_rt_layout: Self.st_matrix_rt_layout_type
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self,
         c_tile: TileTensor[
             mut=True,
-            dtype=Self.c_type,
+            Self.c_type,
             LayoutType=Self.c_tile_layout,
             origin=MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ],
         warp_group_thread_idx: Int,
         local_warp_group_idx: Int,
@@ -532,7 +519,7 @@ struct FragmentToSMemWriter[
         self.local_warp_group_idx = local_warp_group_idx
         self.st_matrix_rt_layout = Self.st_matrix_rt_layout_type()
 
-    @always_inline
+    @inline(.always)
     def _compute_swizzled_offset[n_frag: Int, m_frag: Int](self) -> Int32:
         """Compute swizzled offset for st.matrix to avoid bank conflicts.
 
@@ -557,7 +544,7 @@ struct FragmentToSMemWriter[
         var linear_idx = self.st_matrix_rt_layout(layout_coords)
         return self.st_matrix_swizzle(linear_idx)
 
-    @always_inline
+    @inline(.always)
     def _store_fragment[
         elements_per_op: Int,  # 8 for normal mode, 4 for x2 mode
         m_frag: Int,
@@ -566,9 +553,10 @@ struct FragmentToSMemWriter[
         self,
         smem_tile: TileTensor[
             mut=True,
-            dtype=Self.c_type,
+            Self.c_type,
             origin=MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
+            Engine=DefaultEngine[element_width=1],
             ...,
         ],
         data: SIMD[Self.c_type, elements_per_op],
@@ -587,17 +575,17 @@ struct FragmentToSMemWriter[
         comptime packed_width = elements_per_op // 2  # BF16 pairs packed as float32
 
         # Pack BF16 pairs into float32 (hardware requirement)
-        var packed_data = bitcast[DType.float32, packed_width](data)
+        var packed_data = bitcast[.float32, packed_width](data)
 
         # Get swizzled offset for bank conflict avoidance
         var swizzled_offset = self._compute_swizzled_offset[n_frag, m_frag]()
 
         # Execute st.matrix hardware instruction
         st_matrix[simd_width=packed_width, transpose=Self.swapAB](
-            smem_tile.ptr + swizzled_offset, packed_data
+            smem_tile._storage + swizzled_offset, packed_data
         )
 
-    @always_inline
+    @inline(.always)
     def write_tile(
         self,
         c_reg_tile: RegTile,
@@ -622,12 +610,12 @@ struct FragmentToSMemWriter[
         comptime flat_tile_layout = row_major[1, elements_per_tile]()
         var dest_tile_flat = TileTensor[
             mut=True,
-            dtype=Self.c_type,
+            Self.c_type,
             LayoutType=type_of(flat_tile_layout),
             origin=MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ](
-            self.c_tile.ptr + tile_linear_idx * elements_per_tile,
+            self.c_tile._storage + tile_linear_idx * elements_per_tile,
             flat_tile_layout,
         )
 
@@ -695,14 +683,12 @@ struct RegisterToGMemWriter[
     c_type: DType,
     dst_layout: TensorLayout,
     dst_origin: MutOrigin,
-    dst_storage: TensorStorage,
+    dst_engine: TensorEngine,
     dst_linear_idx_type: DType,
     //,
     wgmma_shape: IndexList[3],
     num_consumer: Int,
     N: Int,  # Matrix N dimension
-    epilogue_fn: Optional[elementwise_epilogue_type] = None,
-    compute_lambda_fn: Optional[elementwise_compute_lambda_type] = None,
     check_runtime_bounds: Bool = False,  # New parameter for N-dimension bounds checking
     swapAB: Bool = False,
 ](RegTileWriter):
@@ -716,17 +702,13 @@ struct RegisterToGMemWriter[
         c_type: Output data type.
         dst_layout: Layout of the destination tensor.
         dst_origin: Origin type of the destination tensor.
-        dst_storage: Storage type of the destination tensor.
+        dst_engine: Engine of the destination tensor.
         dst_linear_idx_type: Linear index type for destination tensor.
         wgmma_shape: Shape of the WGMMA operation [M, N, K].
         num_consumer: Number of consumer warp groups.
         N: Matrix N dimension.
-        epilogue_fn: Optional epilogue function (mutates value in place).
-        compute_lambda_fn: Optional compute lambda function (returns new value).
         check_runtime_bounds: Whether to perform bounds checking on N dimension.
         swapAB: Whether to swap the A and B matrices.
-    Note:
-        At most one of epilogue_fn or compute_lambda_fn should be set.
     """
 
     comptime c_frag_size = Self.wgmma_shape[0] * Self.wgmma_shape[
@@ -740,11 +722,11 @@ struct RegisterToGMemWriter[
 
     comptime DstType = TileTensor[
         mut=True,
-        dtype=Self.c_type,
+        Self.c_type,
         LayoutType=Self.dst_layout,
         origin=Self.dst_origin,
-        Storage=Self.dst_storage,
-        address_space=AddressSpace.GENERIC,
+        Engine=Self.dst_engine,
+        address_space=.GENERIC,
         linear_idx_type=Self.dst_linear_idx_type,
     ]
     var dst: Self.DstType
@@ -752,7 +734,7 @@ struct RegisterToGMemWriter[
     var tile_coords: OptionalReg[TileCoordinates]
     var max_row: OptionalReg[UInt32]
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self,
         dst: Self.DstType,
@@ -770,10 +752,6 @@ struct RegisterToGMemWriter[
             tile_coords: Optional tile coordinates for epilogue processing.
             max_row: Optional maximum valid M coordinate (for epilogue).
         """
-        comptime assert (Self.epilogue_fn is None) or (
-            Self.compute_lambda_fn is None
-        ), "Only one of epilogue_fn or compute_lambda_fn should be set"
-
         # Store destination tensor
         self.dst = dst
         self.num_m_mmas = num_m_mmas
@@ -783,7 +761,7 @@ struct RegisterToGMemWriter[
         # Extract thread information
         self.thread_info = ThreadInfo.from_warp_group_idx(warp_group_thread_idx)
 
-    @always_inline
+    @inline(.always)
     def _get_mma_id(self, m_mma: Int, n_mma: Int) -> Int:
         """Calculate MMA tile ID from M and N indices.
 
@@ -796,7 +774,7 @@ struct RegisterToGMemWriter[
         """
         return n_mma * self.num_m_mmas + m_mma
 
-    @always_inline
+    @inline(.always)
     def write_tile(
         self,
         c_reg_tile: RegTile,
@@ -808,21 +786,58 @@ struct RegisterToGMemWriter[
             c_reg_tile: Register tile containing accumulator values.
             coords: Tile coordinates (row, column) in the destination matrix.
         """
+        self._write_tile[has_epilogue_fn=False](
+            c_reg_tile, coords, no_epilogue_fn
+        )
+
+    @inline(.always)
+    def _write_tile[
+        EpilogueFnType: ElementwiseEpilogueFn,
+        ComputeFnType: ElementwiseComputeFn = type_of(no_compute_fn),
+        //,
+        *,
+        has_epilogue_fn: Bool,
+        has_compute_fn: Bool = False,
+    ](
+        self,
+        c_reg_tile: RegTile,
+        coords: Tuple[Int, Int],
+        value_epilogue_fn: EpilogueFnType,
+        value_compute_fn: ComputeFnType = no_compute_fn,
+    ):
         var m_mma = coords[0]
         var n_mma = coords[1]
         var mma_id = self._get_mma_id(m_mma, n_mma)
 
         comptime if Self.check_runtime_bounds or Self.swapAB:
             # Element-by-element with runtime bounds checking
-            self._write_with_runtime_bounds(c_reg_tile, m_mma, n_mma, mma_id)
-        elif Self.epilogue_fn is not None or Self.compute_lambda_fn is not None:
+            self._write_with_runtime_bounds[
+                has_epilogue_fn=has_epilogue_fn, has_compute_fn=has_compute_fn
+            ](
+                c_reg_tile,
+                m_mma,
+                n_mma,
+                mma_id,
+                value_epilogue_fn,
+                value_compute_fn,
+            )
+        elif has_epilogue_fn or has_compute_fn:
             # Vectorized with epilogue/compute_lambda
-            self._write_with_transform(c_reg_tile, m_mma, n_mma, mma_id)
+            self._write_with_transform[
+                has_epilogue_fn=has_epilogue_fn, has_compute_fn=has_compute_fn
+            ](
+                c_reg_tile,
+                m_mma,
+                n_mma,
+                mma_id,
+                value_epilogue_fn,
+                value_compute_fn,
+            )
         else:
             # Direct vectorized copy
             self._write_direct_vectorized(c_reg_tile, m_mma, n_mma, mma_id)
 
-    @always_inline
+    @inline(.always)
     def _write_direct_vectorized(
         self,
         c_reg_tile: RegTile,
@@ -845,13 +860,22 @@ struct RegisterToGMemWriter[
             reg_tile_to_tile_tensor(c_frag).vectorize[1, 2](),
         )
 
-    @always_inline
-    def _write_with_transform(
+    @inline(.always)
+    def _write_with_transform[
+        EpilogueFnType: ElementwiseEpilogueFn,
+        ComputeFnType: ElementwiseComputeFn,
+        //,
+        *,
+        has_epilogue_fn: Bool,
+        has_compute_fn: Bool,
+    ](
         self,
         c_reg_tile: RegTile,
         m_mma: Int,
         n_mma: Int,
         mma_id: Int,
+        value_epilogue_fn: EpilogueFnType,
+        value_compute_fn: ComputeFnType,
     ):
         """Vectorized write with epilogue or compute_lambda transformation."""
         # Get warp tile and coordinates
@@ -890,53 +914,88 @@ struct RegisterToGMemWriter[
 
             # Bounds check and apply transformation
             if m < Int(max_row) and n < Self.N:
-                Self._apply_transform_and_store[frag_idx](
-                    gmem_frag, c_reg_frag, mma_id, m, n
+                Self._apply_transform_and_store[
+                    frag_idx,
+                    has_epilogue_fn=has_epilogue_fn,
+                    has_compute_fn=has_compute_fn,
+                ](
+                    gmem_frag,
+                    c_reg_frag,
+                    mma_id,
+                    m,
+                    n,
+                    value_epilogue_fn,
+                    value_compute_fn,
                 )
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def _apply_transform_and_store[
-        frag_idx: Int
+        EpilogueFnType: ElementwiseEpilogueFn,
+        ComputeFnType: ElementwiseComputeFn,
+        //,
+        frag_idx: Int,
+        *,
+        has_epilogue_fn: Bool,
+        has_compute_fn: Bool,
     ](
         gmem_frag: TileTensor[mut=True, Self.c_type, ...],
         c_reg_frag: RegTile,
         mma_id: Int,
         m: Int,
         n: Int,
+        value_epilogue_fn: EpilogueFnType,
+        value_compute_fn: ComputeFnType,
     ) capturing:
         """Apply epilogue or compute_lambda and store result."""
-        comptime alignment = align_of[SIMD[Self.c_type, 2]]()
+        comptime value_alignment = 2
 
-        comptime if Self.epilogue_fn:
-            comptime epilogue = Self.epilogue_fn.value()
-            epilogue[alignment=alignment](
-                (m, n),
-                c_reg_frag[mma_id, frag_idx].cast[Self.c_type](),
-            )
-        else:  # compute_lambda
-            comptime compute_lambda = Self.compute_lambda_fn.value()
-            var reg_val = compute_lambda[alignment=alignment](
-                (m, n),
-                c_reg_frag[mma_id, frag_idx].cast[Self.c_type](),
-            )
+        var frag_val = c_reg_frag[mma_id, frag_idx].cast[Self.c_type]()
+        comptime if has_epilogue_fn:
+            value_epilogue_fn[
+                Self.c_type, type_of(frag_val).length, alignment=value_alignment
+            ]((m, n), frag_val)
+        elif has_compute_fn:
+            var reg_val = value_compute_fn[
+                Self.c_type, type_of(frag_val).length, alignment=value_alignment
+            ]((m, n), frag_val)
             gmem_frag.store(Coord(Idx[frag_idx], Idx[0]), reg_val)
 
-    @always_inline
-    def _write_with_runtime_bounds(
+    @inline(.always)
+    def _write_with_runtime_bounds[
+        EpilogueFnType: ElementwiseEpilogueFn,
+        ComputeFnType: ElementwiseComputeFn,
+        //,
+        *,
+        has_epilogue_fn: Bool,
+        has_compute_fn: Bool,
+    ](
         self,
         c_reg_tile: RegTile,
         m_mma: Int,
         n_mma: Int,
         mma_id: Int,
+        value_epilogue_fn: EpilogueFnType,
+        value_compute_fn: ComputeFnType,
     ):
         """Element-by-element with full runtime bounds checking.
+
+        Parameters:
+            EpilogueFnType: Type of `value_epilogue_fn` (inferred).
+            ComputeFnType: Type of `value_compute_fn` (inferred).
+            has_epilogue_fn: Whether `value_epilogue_fn` stores the output.
+            has_compute_fn: Whether `value_compute_fn` maps each output
+                before it is stored.
 
         Args:
             c_reg_tile: Register tile containing accumulator values.
             m_mma: MMA tile index in M dimension.
             n_mma: MMA tile index in N dimension.
             mma_id: Linearized MMA tile ID.
+            value_epilogue_fn: Stores each output element when
+                `has_epilogue_fn`.
+            value_compute_fn: Maps each output element when
+                `has_compute_fn`.
         """
 
         comptime warp_tile_size_m = Self.wgmma_shape[
@@ -959,8 +1018,8 @@ struct RegisterToGMemWriter[
         ](Coord(coord_0, coord_1))
 
         var warp_tile_coords = rebind[IndexList[2]](warp_tile_coords_raw)
-        if self.tile_coords:
-            warp_tile_coords = self.tile_coords.value().adjust(warp_tile_coords)
+        if case .Some(tile_coords) = self.tile_coords:
+            warp_tile_coords = tile_coords.adjust(warp_tile_coords)
 
         # Process fragment matrices
         comptime for m_frag, n_frag in std.itertools.product(
@@ -997,8 +1056,7 @@ struct RegisterToGMemWriter[
                         Self.c_type
                     ]()
 
-                    @parameter
-                    def epilogue_coordinates() -> Tuple[Int, Int]:
+                    def epilogue_coordinates() {imm} -> Tuple[Int, Int]:
                         comptime if Self.swapAB:
                             # In swapAB mode, coordinates are transposed
                             return (
@@ -1029,18 +1087,18 @@ struct RegisterToGMemWriter[
                                 ),
                             )
 
-                    comptime if Self.epilogue_fn:
-                        comptime epilogue = Self.epilogue_fn.value()
+                    comptime if has_epilogue_fn:
                         var frag_m, frag_n = epilogue_coordinates()
-                        epilogue[alignment=align_of[Scalar[Self.c_type]]()](
-                            (frag_m, frag_n), reg_val
-                        )
+                        value_epilogue_fn[
+                            Self.c_type, type_of(reg_val).length, alignment=1
+                        ]((frag_m, frag_n), reg_val)
                     else:
-                        comptime if Self.compute_lambda_fn:
-                            comptime compute_lambda = Self.compute_lambda_fn.value()
+                        comptime if has_compute_fn:
                             var frag_m, frag_n = epilogue_coordinates()
-                            reg_val = compute_lambda[
-                                alignment=align_of[Scalar[Self.c_type]]()
+                            reg_val = value_compute_fn[
+                                Self.c_type,
+                                type_of(reg_val).length,
+                                alignment=1,
                             ]((frag_m, frag_n), reg_val)
 
                         # Store coordinates

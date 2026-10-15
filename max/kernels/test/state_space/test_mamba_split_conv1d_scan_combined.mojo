@@ -15,8 +15,6 @@ from std.math import ceildiv, exp, exp2, log, rsqrt
 
 from layout import (
     Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
     UNKNOWN_VALUE,
     row_major,
@@ -27,13 +25,11 @@ from state_space.selective_scan import (
 )
 from std.testing import TestSuite, assert_almost_equal
 
-from std.utils.index import Index
-
 comptime MAX_DSTATE = 16
 comptime LOG2E = 1.4426950408889634
 
 
-@always_inline
+@inline(.always)
 def softplus_ref(val: Float32) -> Float32:
     """Reference softplus: log(1 + exp(x)) with numerical stability."""
     if val > 20.0:
@@ -41,7 +37,7 @@ def softplus_ref(val: Float32) -> Float32:
     return log(Float32(1.0) + exp(val))
 
 
-@always_inline
+@inline(.always)
 def silu_ref(val: Float32) -> Float32:
     """Reference SiLU: x * sigmoid(x) = x / (1 + exp(-x))."""
     if val < -20.0:
@@ -198,9 +194,9 @@ def run_mamba_split_conv1d_scan_combined[
         random(rmsnorm_weight_h)
         # Make positive
         for i in range(dim):
-            rmsnorm_weight_h.ptr[i] = abs(rmsnorm_weight_h.ptr[i]) + Scalar[
-                dtype
-            ](0.1)
+            rmsnorm_weight_h._storage[i] = abs(
+                rmsnorm_weight_h._storage[i]
+            ) + Scalar[dtype](0.1)
     if has_outproj:
         random(outproj_weight_h)
         random(outproj_bias_h)
@@ -227,6 +223,7 @@ def run_mamba_split_conv1d_scan_combined[
         rmsnorm_weight_h.LayoutType,
         outproj_weight_h.LayoutType,
         outproj_bias_h.LayoutType,
+        zxbcdt_h.Engine,
     ](
         batch,
         seqlen,
@@ -280,26 +277,26 @@ def run_mamba_split_conv1d_scan_combined[
             var group_id = h // ngroups if ngroups > 1 else 0
 
             # Pre-load A value (same for all DSTATE entries within a head)
-            var A_val_raw = Float32(A_h.ptr[h])
-            var A_ref = SIMD[DType.float32, MAX_DSTATE](0.0)
+            var A_val_raw = Float32(A_h._storage[h])
+            var A_ref = SIMD[.float32, MAX_DSTATE](0.0)
             for n in range(dstate):
                 A_ref[n] = A_val_raw * LOG2E
 
             # Load D value: D is (nheads, headdim)
             var D_val = Float32(0)
             if has_D:
-                D_val = Float32(D_h.ptr[h * headdim + p])
+                D_val = Float32(D_h._storage[h * headdim + p])
 
             # Load dt_bias for this head
-            var dt_bias_val = Float32(dt_bias_h.ptr[h])
+            var dt_bias_val = Float32(dt_bias_h._storage[h])
 
             # Load rmsnorm weight for this dim
             var rmsnorm_w = Float32(0)
             if has_rmsnorm:
-                rmsnorm_w = Float32(rmsnorm_weight_h.ptr[d_idx])
+                rmsnorm_w = Float32(rmsnorm_weight_h._storage[d_idx])
 
             # Initialize state for selective scan
-            var state_ref = SIMD[DType.float32, MAX_DSTATE](0.0)
+            var state_ref = SIMD[.float32, MAX_DSTATE](0.0)
 
             for t in range(seqlen):
                 # --- Step 1: Load z from zxbcdt ---
@@ -308,7 +305,7 @@ def run_mamba_split_conv1d_scan_combined[
                     + t * zxbcdt_channels
                     + (z_start + d_idx)
                 )
-                var z_val = Float32(zxbcdt_h.ptr[z_offset])
+                var z_val = Float32(zxbcdt_h._storage[z_offset])
 
                 # --- Step 2: Load dt, apply bias and softplus ---
                 var dt_offset = (
@@ -316,14 +313,14 @@ def run_mamba_split_conv1d_scan_combined[
                     + t * zxbcdt_channels
                     + (dt_start_ch + h)
                 )
-                var dt_val = Float32(zxbcdt_h.ptr[dt_offset])
+                var dt_val = Float32(zxbcdt_h._storage[dt_offset])
                 dt_val += dt_bias_val
                 if delta_softplus:
                     dt_val = softplus_ref(dt_val)
 
                 # --- Step 3: Causal conv1d for x channel ---
                 var x_channel = d_idx  # channel in xBC space
-                var conv_sum_x = Float32(conv_bias_h.ptr[x_channel])
+                var conv_sum_x = Float32(conv_bias_h._storage[x_channel])
                 for w in range(width):
                     var input_t = t - (width - 1 - w)
                     if input_t >= 0:
@@ -333,18 +330,18 @@ def run_mamba_split_conv1d_scan_combined[
                             + (xBC_start + x_channel)
                         )
                         var wt_off = x_channel * width + w
-                        conv_sum_x += Float32(zxbcdt_h.ptr[xbc_off]) * Float32(
-                            conv_weight_h.ptr[wt_off]
-                        )
+                        conv_sum_x += Float32(
+                            zxbcdt_h._storage[xbc_off]
+                        ) * Float32(conv_weight_h._storage[wt_off])
                 var x_val = silu_ref(conv_sum_x)
 
                 # --- Step 4: Causal conv1d for B and C channels ---
-                var B_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
-                var C_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
+                var B_vals = SIMD[.float32, MAX_DSTATE](0.0)
+                var C_vals = SIMD[.float32, MAX_DSTATE](0.0)
                 for n in range(dstate):
                     # B channel: dim + group_id * dstate + n (in xBC space)
                     var B_ch = dim + group_id * dstate + n
-                    var B_conv = Float32(conv_bias_h.ptr[B_ch])
+                    var B_conv = Float32(conv_bias_h._storage[B_ch])
                     for w in range(width):
                         var input_t = t - (width - 1 - w)
                         if input_t >= 0:
@@ -354,14 +351,14 @@ def run_mamba_split_conv1d_scan_combined[
                                 + (xBC_start + B_ch)
                             )
                             var wt_off = B_ch * width + w
-                            B_conv += Float32(zxbcdt_h.ptr[xbc_off]) * Float32(
-                                conv_weight_h.ptr[wt_off]
-                            )
+                            B_conv += Float32(
+                                zxbcdt_h._storage[xbc_off]
+                            ) * Float32(conv_weight_h._storage[wt_off])
                     B_vals[n] = silu_ref(B_conv)
 
                     # C channel: dim + ngroups*dstate + group_id*dstate + n
                     var C_ch = dim + ngroups * dstate + group_id * dstate + n
-                    var C_conv = Float32(conv_bias_h.ptr[C_ch])
+                    var C_conv = Float32(conv_bias_h._storage[C_ch])
                     for w in range(width):
                         var input_t = t - (width - 1 - w)
                         if input_t >= 0:
@@ -371,9 +368,9 @@ def run_mamba_split_conv1d_scan_combined[
                                 + (xBC_start + C_ch)
                             )
                             var wt_off = C_ch * width + w
-                            C_conv += Float32(zxbcdt_h.ptr[xbc_off]) * Float32(
-                                conv_weight_h.ptr[wt_off]
-                            )
+                            C_conv += Float32(
+                                zxbcdt_h._storage[xbc_off]
+                            ) * Float32(conv_weight_h._storage[wt_off])
                     C_vals[n] = silu_ref(C_conv)
 
                 # --- Step 5: Selective scan ---
@@ -410,7 +407,7 @@ def run_mamba_split_conv1d_scan_combined[
     # Compare kernel output vs reference
     for i in range(output_ref_size):
         assert_almost_equal(
-            output_h.ptr[i],
+            output_h._storage[i],
             output_ref_heap[i],
             rtol=rtol,
         )
@@ -432,6 +429,28 @@ def test_mamba_combined_basic() raises:
         dim=4,
         nheads=2,
         headdim=2,
+        ngroups=1,
+        width=4,
+        chunk_size=4,
+    )
+
+
+def test_mamba_combined_headdim1_multi_head_D() raises:
+    """With headdim == 1, D is (nheads, 0); each head needs its own D."""
+    run_mamba_split_conv1d_scan_combined[
+        DType.float32,
+        4,  # DSTATE
+        has_D=True,
+        has_rmsnorm=False,
+        has_outproj=False,
+        norm_before_gate=True,
+        delta_softplus=True,
+    ](
+        batch=2,
+        seqlen=8,
+        dim=4,
+        nheads=4,
+        headdim=1,
         ngroups=1,
         width=4,
         chunk_size=4,

@@ -19,18 +19,13 @@ symmetric-heap buffers. Use `shmem_launch` to run a per-GPU function across
 all attached GPUs.
 """
 
-from std.algorithm import parallelize
+from max.algorithm import parallelize
 from std.collections.optional import OptionalReg
 from std.os import abort
 from std.builtin.device_passable import DevicePassable
-from std.sys import (
-    CompilationTarget,
-    argv,
-    has_amd_gpu_accelerator,
-    has_nvidia_gpu_accelerator,
-)
+from std.sys import CompilationTarget, argv, default_accelerator
 
-from std.gpu.host import (
+from max.gpu.host import (
     ConstantMemoryMapping,
     DeviceAttribute,
     DeviceContext,
@@ -40,8 +35,8 @@ from std.gpu.host import (
     FuncAttribute,
     LaunchAttribute,
 )
-from std.gpu.host.device_context import _DumpPath
-from std.gpu.host.launch_attribute import (
+from max.gpu.host.device_context import _DumpPath
+from max.gpu.host.launch_attribute import (
     LaunchAttributeID,
     LaunchAttributeValue,
 )
@@ -71,7 +66,7 @@ def shmem_launch[func: def(ctx: SHMEMContext) thin raises]() raises:
 
     ```mojo
     def simple_shift(ctx: SHMEMContext) raises:
-        var destination = ctx.enqueue_create_buffer[DType.int32](1)
+        var destination = ctx.enqueue_create_buffer[.int32](1)
 
         ctx.enqueue_function[simple_shift_kernel](
             destination, grid_dim=1, block_dim=1
@@ -80,7 +75,7 @@ def shmem_launch[func: def(ctx: SHMEMContext) thin raises]() raises:
         ctx.barrier_all()
 
         var msg = Int32(0)
-        destination.enqueue_copy_to(UnsafePointer(to=msg))
+        destination.enqueue_copy_to(Pointer(to=msg))
 
         ctx.synchronize()
 
@@ -103,9 +98,9 @@ def shmem_launch[func: def(ctx: SHMEMContext) thin raises]() raises:
         If SHMEM initialization or the launched function fails.
     """
 
-    comptime if has_nvidia_gpu_accelerator():
+    comptime if default_accelerator().is_nvidia_gpu():
         _shmem_launch_mpi[func]()
-    elif has_amd_gpu_accelerator():
+    elif default_accelerator().is_amd_gpu():
         _shmem_launch_tcp[func]()
     else:
         CompilationTarget.unsupported_target_error[
@@ -321,7 +316,7 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
         """
         return self^
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         """Context manager exit method.
 
         Automatically finalizes SHMEM when exiting the context.
@@ -373,8 +368,7 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
         """
         return SHMEMBuffer[dtype](self._ctx, size)
 
-    @always_inline
-    @parameter
+    @inline(.always)
     def enqueue_function[
         declared_arg_types: TypeList[Trait=AnyType, ...],
         //,
@@ -460,8 +454,7 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
 
         shmem_module_finalize(gpu_kernel)
 
-    @always_inline
-    @parameter
+    @inline(.always)
     def enqueue_function_collective_checked[
         declared_arg_types: TypeList[Trait=AnyType, ...],
         //,
@@ -514,7 +507,7 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
         compiling it first:
 
         ```mojo
-        from std.gpu.host import DeviceContext
+        from max.gpu.host import DeviceContext
 
         def kernel():
             print("hello from the GPU")
@@ -535,9 +528,9 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
             ctx.synchronize()
         ```
         """
-        comptime assert (
-            has_nvidia_gpu_accelerator()
-        ), "only available on NVIDIA GPUs"
+        comptime assert type_of(
+            self._ctx
+        ).target.is_nvidia_gpu(), "only available on NVIDIA GPUs"
         var gpu_kernel = self._ctx.compile_function[
             func,
             dump_asm=dump_asm,
@@ -548,9 +541,7 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
         shmem_module_init(gpu_kernel)
 
         var block_size = block_dim[0] * block_dim[1] * block_dim[2]
-        var shared_mem_bytes_val = (
-            shared_mem_bytes.value() if shared_mem_bytes else 0
-        )
+        var shared_mem_bytes_val = shared_mem_bytes.or_else(0)
         var max_blocks_sm = (
             gpu_kernel.occupancy_max_active_blocks_per_multiprocessor(
                 block_size, shared_mem_bytes_val
@@ -616,7 +607,7 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
         self._main_stream.enqueue_wait_for(self._end_event)
         shmem_module_finalize(gpu_kernel)
 
-    @always_inline
+    @inline(.always)
     def synchronize(self) raises:
         """Blocks until all asynchronous calls on the stream associated with
         this device context have completed.
@@ -627,7 +618,7 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
         # const char * AsyncRT_DeviceContext_synchronize(const DeviceContext *ctx)
         self._ctx.synchronize()
 
-    @always_inline
+    @inline(.always)
     def get_device_context(self) -> DeviceContext:
         """Returns the device context associated with this SHMEMContext.
 
@@ -637,7 +628,7 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
         return self._ctx
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def number_of_devices(
         *, api: String = String(DeviceContext.default_device_info.api)
     ) -> Int:

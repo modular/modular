@@ -11,12 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.math import ceildiv, isclose
+from std.math import isclose
 from std.random import rand
-from std.sys.info import num_physical_cores, simd_width_of
+from std.sys.info import simd_width_of
 
-from layout import Layout, LayoutTensor, RuntimeLayout
-from layout import lt_to_tt
+from layout import Coord, TileTensor, row_major
 from nn.conv.conv import (
     ConvDirectNHWC,
     ConvInfoStatic,
@@ -26,8 +25,6 @@ from nn.conv.conv import (
 )
 from nn.conv.conv_utils import (
     ConvShape,
-    get_conv_num_partitions,
-    get_conv_num_tasks,
     get_direct_conv_micro_kernel_height,
     get_direct_conv_micro_kernel_width,
 )
@@ -64,16 +61,16 @@ def test[
 
     var conv_shape = ConvShape[2](
         n=N,
-        input_dims=Index(H, W),
-        output_dims=Index(HO, WO),
-        filter_dims=Index(R, S),
+        input_dims=Coord(Index(H, W)),
+        output_dims=Coord(Index(HO, WO)),
+        filter_dims=Coord(Index(R, S)),
         c=C,
         f=F,
-        stride=stride,
-        dilation=dilation,
-        pad_d=Index(0, 0),
-        pad_h=pad_h,
-        pad_w=pad_w,
+        stride=Coord(stride),
+        dilation=Coord(dilation),
+        pad_d=Coord(Index(0, 0)),
+        pad_h=Coord(pad_h),
+        pad_w=Coord(pad_w),
         num_groups=num_groups,
     )
 
@@ -89,34 +86,26 @@ def test[
     comptime micro_kernel_height = get_direct_conv_micro_kernel_height()
     comptime micro_kernel_width = get_direct_conv_micro_kernel_width()
 
-    comptime layout_4d = Layout.row_major[4]()
-    comptime layout_5d = Layout.row_major[5]()
-    var input = LayoutTensor[dtype, layout_4d](
-        input_ptr, RuntimeLayout[layout_4d].row_major(Index(N, H, W, C))
+    var input = TileTensor(Span(input_ptr), row_major(Coord(Index(N, H, W, C))))
+    var filter = TileTensor(
+        Span(filter_ptr), row_major(Coord(Index(R, S, C // num_groups, F)))
     )
-    var filter = LayoutTensor[dtype, layout_4d](
-        filter_ptr,
-        RuntimeLayout[layout_4d].row_major(Index(R, S, C // num_groups, F)),
-    )
-    var packed_filter_shape = pack_conv_filter_shape(
-        lt_to_tt(filter), num_groups
-    )
+    var packed_filter_shape = pack_conv_filter_shape(filter, num_groups)
     var packed_filter_ptr = List(
         length=packed_filter_shape.flattened_length(), fill=Scalar[dtype](0)
     )
-    var packed_filter = LayoutTensor[dtype, layout_5d](
-        packed_filter_ptr,
-        RuntimeLayout[layout_5d].row_major(packed_filter_shape),
+    var packed_filter = TileTensor(
+        Span(packed_filter_ptr), row_major(Coord(packed_filter_shape))
     )
-    var output = LayoutTensor[dtype, layout_4d](
-        output_ptr, RuntimeLayout[layout_4d].row_major(Index(N, HO, WO, F))
+    var output = TileTensor(
+        Span(output_ptr), row_major(Coord(Index(N, HO, WO, F)))
     )
-    var output_ref = LayoutTensor[dtype, layout_4d](
-        output_ref_ptr, RuntimeLayout[layout_4d].row_major(Index(N, HO, WO, F))
+    var output_ref = TileTensor(
+        Span(output_ref_ptr), row_major(Coord(Index(N, HO, WO, F)))
     )
 
     comptime if filter_packed:
-        pack_filter(lt_to_tt(filter), lt_to_tt(packed_filter), num_groups)
+        pack_filter(filter, packed_filter, num_groups)
 
     # Reference: naive conv
     Naive2dConvolution[
@@ -143,31 +132,26 @@ def test[
 
     comptime if filter_packed:
         ConvDirectNHWC[
-            layout_4d,
-            layout_5d,
-            layout_4d,
+            input.LayoutType,
+            packed_filter.LayoutType,
+            output.LayoutType,
             dtype,
             dtype,
             dtype,
             True,
             conv_attr,
-        ].run(
-            output,
-            input,
-            packed_filter,
-            conv_shape,
-        )
+        ].run(output, input.as_imm(), packed_filter.as_imm(), conv_shape)
     else:
         ConvDirectNHWC[
-            layout_4d,
-            layout_4d,
-            layout_4d,
+            input.LayoutType,
+            filter.LayoutType,
+            output.LayoutType,
             dtype,
             dtype,
             dtype,
             False,
             conv_attr,
-        ].run(output, input, filter, conv_shape)
+        ].run(output, input.as_imm(), filter.as_imm(), conv_shape)
 
     # Check results, return on the first failed comparison.
     for n in range(N):
@@ -201,7 +185,7 @@ def test[
 def main() raises:
     """It only includes shapes where F is multiple simd_size."""
     # No packing or padding.
-    test[DType.float32, False](
+    test[.float32, False](
         1,  # N
         6,  # H
         5,  # W
@@ -216,7 +200,7 @@ def main() raises:
         1,  # num_groups
     )
 
-    test[DType.float32, False](
+    test[.float32, False](
         1,  # N
         12,  # H
         12,  # W
@@ -231,7 +215,7 @@ def main() raises:
         1,  # num_groups
     )
 
-    test[DType.float32, False](
+    test[.float32, False](
         1,  # N
         13,  # H
         13,  # W
@@ -246,7 +230,7 @@ def main() raises:
         1,  # num_groups
     )
 
-    test[DType.float32, False](
+    test[.float32, False](
         1,  # N
         7,  # H
         7,  # W
@@ -261,7 +245,7 @@ def main() raises:
         1,  # num_groups
     )
 
-    test[DType.float32, False](
+    test[.float32, False](
         1,  # N
         17,  # H
         17,  # W
@@ -276,7 +260,7 @@ def main() raises:
         1,  # num_groups
     )
 
-    test[DType.float32, False](
+    test[.float32, False](
         5,  # N
         7,  # H
         7,  # W
@@ -292,7 +276,7 @@ def main() raises:
     )
 
     # likely partition in F or both
-    test[DType.float32, False](
+    test[.float32, False](
         1,  # N
         7,  # H
         7,  # W
@@ -307,7 +291,7 @@ def main() raises:
         1,  # num_groups
     )
 
-    test[DType.float32, False](
+    test[.float32, False](
         1,  # N
         7,  # H
         7,  # W
@@ -324,7 +308,7 @@ def main() raises:
 
     # Pre-packed test w/o padding.
 
-    test[DType.float32, True](
+    test[.float32, True](
         1,  # N
         12,  # H
         12,  # W
@@ -339,7 +323,7 @@ def main() raises:
         1,  # num_groups
     )
 
-    test[DType.float32, True](
+    test[.float32, True](
         1,  # N
         13,  # H
         13,  # W
@@ -354,7 +338,7 @@ def main() raises:
         1,  # num_groups
     )
 
-    test[DType.float32, True](
+    test[.float32, True](
         1,  # N
         7,  # H
         7,  # W
@@ -369,7 +353,7 @@ def main() raises:
         1,  # num_groups
     )
 
-    test[DType.float32, True](
+    test[.float32, True](
         1,  # N
         17,  # H
         17,  # W
@@ -384,7 +368,7 @@ def main() raises:
         1,  # num_groups
     )
 
-    test[DType.float32, True](
+    test[.float32, True](
         5,  # N
         12,  # H
         12,  # W
@@ -399,7 +383,7 @@ def main() raises:
         1,  # num_groups
     )
 
-    test[DType.float32, True](
+    test[.float32, True](
         1,  # N
         7,  # H
         7,  # W
@@ -414,7 +398,7 @@ def main() raises:
         1,  # num_groups
     )
 
-    test[DType.float32, True](
+    test[.float32, True](
         1,  # N
         7,  # H
         7,  # W
@@ -431,7 +415,7 @@ def main() raises:
 
     # No packing, w/ padding, and F not multiple of simd_size.
 
-    test[DType.float32, False](
+    test[.float32, False](
         1,  # N
         5,  # H
         5,  # W
@@ -446,7 +430,7 @@ def main() raises:
         1,  # num_groups
     )
 
-    test[DType.float32, False](
+    test[.float32, False](
         2,  # N
         12,  # H
         11,  # W
@@ -461,7 +445,7 @@ def main() raises:
         1,  # num_groups
     )
 
-    test[DType.float32, False](
+    test[.float32, False](
         1,  # N
         8,  # H
         12,  # W
@@ -476,7 +460,7 @@ def main() raises:
         1,  # num_groups
     )
 
-    test[DType.float32, False](
+    test[.float32, False](
         1,  # N
         9,  # H
         7,  # W
@@ -491,7 +475,7 @@ def main() raises:
         1,  # num_groups
     )
 
-    test[DType.float32, False](
+    test[.float32, False](
         1,  # N
         10,  # H
         5,  # W
@@ -508,7 +492,7 @@ def main() raises:
 
     # Pre-packed, F not multiple of simd_size
 
-    test[DType.float32, True](
+    test[.float32, True](
         1,  # N
         5,  # H
         5,  # W
@@ -523,7 +507,7 @@ def main() raises:
         1,  # num_groups
     )
 
-    test[DType.float32, True](
+    test[.float32, True](
         1,  # N
         7,  # H
         7,  # W
@@ -538,7 +522,7 @@ def main() raises:
         1,  # num_groups
     )
 
-    test[DType.float32, True](
+    test[.float32, True](
         1,  # N
         23,  # H
         23,  # W
@@ -553,7 +537,7 @@ def main() raises:
         1,  # num_groups
     )
 
-    test[DType.float32, True](
+    test[.float32, True](
         1,  # N
         5,  # H
         11,  # W
@@ -568,7 +552,7 @@ def main() raises:
         1,  # num_groups
     )
 
-    test[DType.float32, True](
+    test[.float32, True](
         1,  # N
         7,  # H
         9,  # W
@@ -583,7 +567,7 @@ def main() raises:
         1,  # num_groups
     )
 
-    test[DType.float32, True](
+    test[.float32, True](
         1,  # N
         11,  # H
         7,  # W
@@ -599,7 +583,7 @@ def main() raises:
     )
     # Top resnet shapes, all pre-packed w/ padding.
 
-    test[DType.float32, True](
+    test[.float32, True](
         1,  # N
         224,  # H
         224,  # W
@@ -614,7 +598,7 @@ def main() raises:
         1,  # num_groups
     )
 
-    test[DType.float32, True](
+    test[.float32, True](
         1,  # N
         56,  # H
         56,  # W
@@ -629,7 +613,7 @@ def main() raises:
         1,  # num_groups
     )
 
-    test[DType.float32, True](
+    test[.float32, True](
         1,  # N
         56,  # H
         56,  # W
@@ -644,7 +628,7 @@ def main() raises:
         1,  # num_groups
     )
 
-    test[DType.float32, True](
+    test[.float32, True](
         1,  # N
         28,  # H
         28,  # W
@@ -659,7 +643,7 @@ def main() raises:
         1,  # num_groups
     )
 
-    test[DType.float32, True](
+    test[.float32, True](
         1,  # N
         14,  # H
         14,  # W
@@ -674,7 +658,7 @@ def main() raises:
         1,  # num_groups
     )
 
-    test[DType.float32, True](
+    test[.float32, True](
         1,  # N
         14,  # H
         14,  # W
@@ -689,7 +673,7 @@ def main() raises:
         1,  # num_groups
     )
 
-    test[DType.float32, True](
+    test[.float32, True](
         1,  # N
         7,  # H
         7,  # W
@@ -704,7 +688,7 @@ def main() raises:
         1,  # num_groups
     )
 
-    test[DType.float32, True](
+    test[.float32, True](
         19,  # N
         7,  # H
         7,  # W
@@ -719,7 +703,7 @@ def main() raises:
         1,  # num_groups
     )
 
-    test[DType.float32, True](
+    test[.float32, True](
         13,  # N
         14,  # H
         14,  # W
@@ -736,7 +720,7 @@ def main() raises:
 
     # MaskRCNN shapes.
 
-    test[DType.float32, True](
+    test[.float32, True](
         2,  # N
         19,  # H
         19,  # W
@@ -751,7 +735,7 @@ def main() raises:
         1,  # num_groups
     )
 
-    test[DType.float32, True](
+    test[.float32, True](
         2,  # N
         19,  # H
         19,  # W
@@ -766,7 +750,7 @@ def main() raises:
         1,  # num_groups
     )
 
-    test[DType.float32, True](
+    test[.float32, True](
         2,  # N
         19,  # H
         19,  # W
@@ -781,7 +765,7 @@ def main() raises:
         1,  # num_groups
     )
 
-    test[DType.float32, True](
+    test[.float32, True](
         2,  # N
         19,  # H
         19,  # W
@@ -796,7 +780,7 @@ def main() raises:
         1,  # num_groups
     )
 
-    test[DType.float32, True](
+    test[.float32, True](
         2,  # N
         19,  # H
         19,  # W
@@ -811,7 +795,7 @@ def main() raises:
         1,  # num_groups
     )
 
-    test[DType.float32, True](
+    test[.float32, True](
         2,  # N
         19,  # H
         19,  # W
@@ -826,7 +810,7 @@ def main() raises:
         1,  # num_groups
     )
 
-    test[DType.float32, True](
+    test[.float32, True](
         1,  # N
         129,  # H
         129,  # W
@@ -841,7 +825,7 @@ def main() raises:
         1,  # num_groups
     )
 
-    test[DType.float32, True](
+    test[.float32, True](
         1,  # N
         129,  # H
         129,  # W
@@ -856,7 +840,7 @@ def main() raises:
         1,  # num_groups
     )
 
-    test[DType.float32, True](
+    test[.float32, True](
         1,  # N
         1025,  # H
         1025,  # W
@@ -873,7 +857,7 @@ def main() raises:
 
     # grouped conv tests
     # focus on C, F, and num_groups since grouped conv is independent of spatial dims
-    test[DType.float32, True](
+    test[.float32, True](
         1,  # N
         1,  # H
         1,  # W
@@ -888,7 +872,7 @@ def main() raises:
         2,  # num_groups
     )
 
-    test[DType.float32, True](
+    test[.float32, True](
         1,  # N
         1,  # H
         1,  # W
@@ -903,7 +887,7 @@ def main() raises:
         5,  # num_groups
     )
 
-    test[DType.float32, True](
+    test[.float32, True](
         1,  # N
         1,  # H
         1,  # W
@@ -918,7 +902,7 @@ def main() raises:
         2,  # num_groups
     )
 
-    test[DType.float32, True](
+    test[.float32, True](
         1,  # N
         1,  # H
         1,  # W
@@ -933,7 +917,7 @@ def main() raises:
         2,  # num_groups
     )
 
-    test[DType.float32, True](
+    test[.float32, True](
         1,  # N
         1,  # H
         1,  # W
@@ -948,7 +932,7 @@ def main() raises:
         2,  # num_groups
     )
 
-    test[DType.float32, True](
+    test[.float32, True](
         1,  # N
         13,  # H
         13,  # W
@@ -963,7 +947,7 @@ def main() raises:
         4,  # num_groups
     )
 
-    test[DType.float32, True](
+    test[.float32, True](
         1,  # N
         1,  # H
         1,  # W
@@ -978,7 +962,7 @@ def main() raises:
         2,  # num_groups
     )
 
-    test[DType.float32, True](
+    test[.float32, True](
         1,  # N
         3,  # H
         3,  # W
@@ -993,7 +977,7 @@ def main() raises:
         3,  # num_groups
     )
 
-    test[DType.float32, True](
+    test[.float32, True](
         1,  # N
         11,  # H
         7,  # W
@@ -1008,7 +992,7 @@ def main() raises:
         3,  # num_groups
     )
 
-    test[DType.float32, True](
+    test[.float32, True](
         3,  # N
         11,  # H
         17,  # W
@@ -1023,7 +1007,7 @@ def main() raises:
         3,  # num_groups
     )
 
-    test[DType.float32, True](
+    test[.float32, True](
         1,  # N
         11,  # H
         17,  # W
@@ -1039,7 +1023,7 @@ def main() raises:
     )
 
     # depthwise conv
-    test[DType.float32, True](
+    test[.float32, True](
         1,  # N
         11,  # H
         7,  # W
@@ -1055,7 +1039,7 @@ def main() raises:
     )
 
     # 1D edge case
-    test[DType.float32, True](
+    test[.float32, True](
         2,  # N
         1,  # H
         49,  # W

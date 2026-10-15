@@ -49,7 +49,7 @@ class DFlashKimiK25DraftConfig:
 
     Held separate from ``DeepseekV3Config`` because the DFlash draft is
     MHA/GQA with its own KV geometry; the target's MLA-specific fields
-    (``kv_lora_rank``, ``v_head_dim``, etc.) don't apply.
+    (``kv_lora_rank``, ``v_head_dim`` and so on) don't apply.
     """
 
     hidden_size: int

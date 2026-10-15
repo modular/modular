@@ -123,7 +123,7 @@ class BlockDiffusionTextGenerationPipeline(TextGenerationPipeline[TextContext]):
         host = Buffer.from_numpy(np.zeros((rows * cols,), dtype=np.uint16))
         return host.view(DType.bfloat16, [rows, cols]).to(self._devices[0])
 
-    def execute(
+    def _execute(
         self, inputs: TextGenerationInputs[TextContext]
     ) -> dict[RequestID, TextGenerationOutput]:
         """Runs one canvas: encoder commit, denoising loop, finalize."""
@@ -153,7 +153,8 @@ class BlockDiffusionTextGenerationPipeline(TextGenerationPipeline[TextContext]):
             res = self._generate_canvas(canvas_batch)
 
         # Commit prefix-cache bookkeeping after context updates.
-        self._kv_manager.step(inputs.batches)
+        for ctx in inputs.flat_batch:
+            self._kv_manager.step(ctx)
         return res
 
     def _sample_canvas(
@@ -201,7 +202,7 @@ class BlockDiffusionTextGenerationPipeline(TextGenerationPipeline[TextContext]):
         entropy = entropy_d.to_numpy().reshape(batch, canvas_len)
         # Host categorical over the device top-64 (renormalized); the
         # truncated tail mass is negligible at schedule temperatures and
-        # avoids a [N, vocab] cumsum that has no GPU kernel.
+        # avoids a cumsum over the full [N, vocab] distribution.
         topk_p = topk_p_d.to_numpy().reshape(n_tokens, -1)
         topk_i = topk_i_d.to_numpy().reshape(n_tokens, -1)
         cdf = np.cumsum(topk_p / topk_p.sum(axis=-1, keepdims=True), axis=-1)
@@ -293,7 +294,7 @@ class BlockDiffusionTextGenerationPipeline(TextGenerationPipeline[TextContext]):
             for i, ctx in enumerate(canvas_batch)
         ]
         for view in views:
-            self._kv_manager.alloc(cast(TextContext, view), replica_idx=0)
+            self._kv_manager.alloc(cast(TextContext, view))
 
         row_offsets = Buffer.from_numpy(
             np.arange(0, n_tokens + 1, canvas_len, dtype=np.uint32)

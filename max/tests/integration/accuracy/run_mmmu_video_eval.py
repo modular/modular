@@ -659,8 +659,12 @@ def main(
 
     # No client timeout: a request must only ever end by the server
     # hitting max_tokens, never by a client-side deadline.
+    # An unconditional api_key would shadow OPENAI_API_KEY and 401 against an
+    # authenticated endpoint.
     client = OpenAI(
-        base_url=base_url.rstrip("/"), api_key="dummy", timeout=None
+        base_url=base_url.rstrip("/"),
+        api_key=os.environ.get("OPENAI_API_KEY") or "dummy",
+        timeout=None,
     )
 
     video_index = prepare_videos()
@@ -735,20 +739,20 @@ def main(
         f"mean_out_tok={mean_output_tokens:.1f} p50_out_tok={p50_output_tokens:.1f}"
     )
 
-    (output_dir / "summary.json").write_text(
-        json.dumps(
-            {
-                "accuracy": accuracy,
-                "accuracy_excluding_errors": accuracy_excluding_errors,
-                "correct": correct,
-                "total": total,
-                "errors": errors,
-                "mean_output_tokens": mean_output_tokens,
-                "p50_output_tokens": p50_output_tokens,
-            },
-            indent=2,
-        )
-    )
+    summary = {
+        "accuracy": accuracy,
+        "accuracy_excluding_errors": accuracy_excluding_errors,
+        "correct": correct,
+        "total": total,
+        "errors": errors,
+        "mean_output_tokens": mean_output_tokens,
+        "p50_output_tokens": p50_output_tokens,
+    }
+    (output_dir / "summary.json").write_text(json.dumps(summary, indent=2))
+    # collect_scores.py (the suite-level collector) only globs for score.json;
+    # writing it here — identical to summary.json — is what puts MMMU-Video in
+    # the full-accuracy-eval suite's consolidated results.json and score table.
+    (output_dir / "score.json").write_text(json.dumps(summary, indent=2))
 
     # Fail on a broken harness (no successful inferences / mostly errors) so
     # data or plumbing regressions surface loudly instead of silently scoring

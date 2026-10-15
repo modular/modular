@@ -29,16 +29,7 @@ buffers, and the persistent grid consumes them. Tested standalone by
 """
 
 from std.collections import List
-
-
-def ceil_div(x: Int32, y: Int32) -> Int32:
-    """Computes the ceiling of `x` divided by `y` for signed 32-bit integers.
-
-    Args:
-        x: The numerator of the division.
-        y: The denominator of the division; must be nonzero.
-    """
-    return (x + y - 1) // y
+from std.math import ceildiv
 
 
 def pack_dword(low_part: Int32, high_part: Int32) -> Int32:
@@ -190,7 +181,7 @@ def kn_generate_ps_metadata(
                 )
             else:
                 effective_kv_length = kv_length
-            var num_units = ceil_div(effective_kv_length, kvlen_granularity)
+            var num_units = ceildiv(effective_kv_length, kvlen_granularity)
             query_tiles.append(
                 QTile(
                     Int32(batch_idx),
@@ -203,8 +194,7 @@ def kn_generate_ps_metadata(
             total_units += num_units
 
     # --- Step 2: distribute split units evenly across TGs. ---
-    var average = total_units // available_tgs
-    var remainder = total_units % available_tgs
+    var average, remainder = divmod(total_units, available_tgs)
 
     var result = PsMetadata()
     result.work_indptr.append(0)  # work_indptr[0] = 0

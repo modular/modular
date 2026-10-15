@@ -33,8 +33,7 @@ here would lower to `ds_bpermute_b32` (LDS-routed), so we go through
 `permlane_swap` directly.
 """
 
-from std.gpu.intrinsics import permlane_swap
-from std.gpu.primitives.warp import vote as warp_vote
+from max.gpu.intrinsics import permlane_swap
 from std.math import exp2 as math_exp2, recip
 from std.sys.intrinsics import unlikely
 
@@ -48,7 +47,7 @@ from structured_kernels.amd_tile_io import RegTile
 # ===----------------------------------------------------------------------=== #
 
 
-struct OnlineSoftmax[att_dtype: DType = DType.float32](ImplicitlyCopyable):
+struct OnlineSoftmax[att_dtype: DType = .float32](ImplicitlyCopyable):
     """Online softmax row-state bundle for `MhaPrefillV2`.
 
     Parametrized on `att_dtype`: the dtype of the `att_block`
@@ -119,7 +118,7 @@ struct OnlineSoftmax[att_dtype: DType = DType.float32](ImplicitlyCopyable):
 
     # ---- Lifecycle ----
 
-    @always_inline
+    @inline(.always)
     def __init__(out self):
         """No-sink init: `max_vec`/`max_vec_prev`/`norm_vec` to 0,
         `scale_vec` to 1 so the epilogue's unconditional
@@ -130,7 +129,7 @@ struct OnlineSoftmax[att_dtype: DType = DType.float32](ImplicitlyCopyable):
         self.max_vec = Float32(0.0)
         self.max_vec_prev = Float32(0.0)
 
-    @always_inline
+    @inline(.always)
     def reseed_with_sink(mut self, sw_log2: Float32):
         """Re-init for the sink path: pre-seed the recurrence with the
         virtual sink token's contribution.
@@ -155,7 +154,7 @@ struct OnlineSoftmax[att_dtype: DType = DType.float32](ImplicitlyCopyable):
     # ---- Reduction helpers (static methods) ----
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def _col_reduce_at_j[
         layout: TensorLayout,
         //,
@@ -198,9 +197,9 @@ struct OnlineSoftmax[att_dtype: DType = DType.float32](ImplicitlyCopyable):
 
         var lane_val: Float32
         comptime if op == "max":
-            lane_val = simd_accum.reduce_max().cast[DType.float32]()
+            lane_val = simd_accum.reduce_max().cast[.float32]()
         else:
-            lane_val = simd_accum.reduce_add().cast[DType.float32]()
+            lane_val = simd_accum.reduce_add().cast[.float32]()
 
         # Combine the two half-warps sharing each column.
         var swapped = permlane_swap[32](lane_val, lane_val)
@@ -210,7 +209,7 @@ struct OnlineSoftmax[att_dtype: DType = DType.float32](ImplicitlyCopyable):
             return swapped[0] + swapped[1]
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def _col_max_scalar_v3max[
         layout: TensorLayout,
         //,
@@ -258,8 +257,8 @@ struct OnlineSoftmax[att_dtype: DType = DType.float32](ImplicitlyCopyable):
         # then fold every remaining pair as `max3(s[p], s[p+1], acc)`.
         var simd_0 = src_v[0, 0, 0]
         var acc = max(
-            simd_0[0].cast[DType.float32](),
-            simd_0[1].cast[DType.float32](),
+            simd_0[0].cast[.float32](),
+            simd_0[1].cast[.float32](),
         )
         comptime for i in range(src_height):
             var simd_row = src_v[i, 0, 0]
@@ -267,8 +266,8 @@ struct OnlineSoftmax[att_dtype: DType = DType.float32](ImplicitlyCopyable):
             comptime for p in range(start, base_tile_elts, 2):
                 acc = max(
                     max(
-                        simd_row[p].cast[DType.float32](),
-                        simd_row[p + 1].cast[DType.float32](),
+                        simd_row[p].cast[.float32](),
+                        simd_row[p + 1].cast[.float32](),
                     ),
                     acc,
                 )
@@ -277,7 +276,7 @@ struct OnlineSoftmax[att_dtype: DType = DType.float32](ImplicitlyCopyable):
         return max(swapped[0], swapped[1])
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def _col_max_scalar[
         layout: TensorLayout,
         //,
@@ -290,7 +289,7 @@ struct OnlineSoftmax[att_dtype: DType = DType.float32](ImplicitlyCopyable):
         return Self._col_reduce_at_j["max", j=0](src)
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def _col_sum_scalar[
         layout: TensorLayout,
         //,
@@ -303,7 +302,7 @@ struct OnlineSoftmax[att_dtype: DType = DType.float32](ImplicitlyCopyable):
         return Self._col_reduce_at_j["add", j=0](src)
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def _sub_scalar_inplace[
         layout: TensorLayout,
         //,
@@ -331,7 +330,7 @@ struct OnlineSoftmax[att_dtype: DType = DType.float32](ImplicitlyCopyable):
             dst_v[i, 0, 0] = dst_v[i, 0, 0] - v_simd
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def _fms_scalar_inplace[
         layout: TensorLayout,
         //,
@@ -369,7 +368,7 @@ struct OnlineSoftmax[att_dtype: DType = DType.float32](ImplicitlyCopyable):
             dst_v[i, 0, 0] = dst_v[i, 0, 0] * mul_simd - sub_simd
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def _mul_scalar_inplace[
         dtype: DType
     ](mut dst: RegTile[dtype, ...], scalar: Float32,):
@@ -393,9 +392,9 @@ struct OnlineSoftmax[att_dtype: DType = DType.float32](ImplicitlyCopyable):
             dst_v[i, 0, 0] = dst_v[i, 0, 0] * v_simd
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def _div_scalar_inplace(
-        mut dst: RegTile[DType.float32, ...],
+        mut dst: RegTile[.float32, ...],
         scalar: Float32,
     ):
         """`dst /= scalar` per element: final `o_reg /= norm_vec`.
@@ -422,7 +421,7 @@ struct OnlineSoftmax[att_dtype: DType = DType.float32](ImplicitlyCopyable):
 
     # ---- Recurrence steps ----
 
-    @always_inline
+    @inline(.always)
     def seed_tile0[
         layout: TensorLayout,
         //,
@@ -452,7 +451,7 @@ struct OnlineSoftmax[att_dtype: DType = DType.float32](ImplicitlyCopyable):
         self.max_vec_prev = self.max_vec
         Self._sub_scalar_inplace(att_block, self.max_vec)
 
-    @always_inline
+    @inline(.always)
     def col_max_acc[
         layout: TensorLayout,
         //,
@@ -480,7 +479,7 @@ struct OnlineSoftmax[att_dtype: DType = DType.float32](ImplicitlyCopyable):
         """
         self.max_vec = max(self.max_vec_prev, Self._col_max_scalar(att_block))
 
-    @always_inline
+    @inline(.always)
     def sub_max[
         layout: TensorLayout,
         //,
@@ -502,7 +501,7 @@ struct OnlineSoftmax[att_dtype: DType = DType.float32](ImplicitlyCopyable):
         """
         Self._sub_scalar_inplace(att_block, self.max_vec)
 
-    @always_inline
+    @inline(.always)
     def seed_tile0_scaled[
         layout: TensorLayout,
         //,
@@ -531,7 +530,7 @@ struct OnlineSoftmax[att_dtype: DType = DType.float32](ImplicitlyCopyable):
         self.max_vec_prev = self.max_vec
         Self._fms_scalar_inplace(att_block, log2_scale, self.max_vec)
 
-    @always_inline
+    @inline(.always)
     def col_max_acc_scaled[
         layout: TensorLayout,
         //,
@@ -571,7 +570,7 @@ struct OnlineSoftmax[att_dtype: DType = DType.float32](ImplicitlyCopyable):
             log2_scale * Self._col_max_scalar_v3max(att_block),
         )
 
-    @always_inline
+    @inline(.always)
     def sub_max_scaled[
         layout: TensorLayout,
         //,
@@ -599,12 +598,12 @@ struct OnlineSoftmax[att_dtype: DType = DType.float32](ImplicitlyCopyable):
         """
         Self._fms_scalar_inplace(att_block, log2_scale, self.max_vec)
 
-    @always_inline
+    @inline(.always)
     def lazy_rescale_decision[
         att_full_dtype: DType
     ](
         mut self,
-        mut o_reg: RegTile[DType.float32, _, MutUntrackedOrigin],
+        mut o_reg: RegTile[.float32, _, MutUntrackedOrigin],
         mut att_bf16_full: RegTile[att_full_dtype, _, MutUntrackedOrigin],
         threshold: Float32,
     ) -> Bool:
@@ -617,8 +616,11 @@ struct OnlineSoftmax[att_dtype: DType = DType.float32](ImplicitlyCopyable):
         clusters), rolls back `max_vec` to `max_vec_prev` and resets
         `scale_vec` to 1.
 
-        Wave-AND reduce via 64-bit ballot against full-exec mask
-        (`attend_ker` always runs all 64 lanes active).
+        Per-lane decision (each lane's column of the col_l rt_32x32
+        fragment is an independent Q row; see this struct's docstring),
+        not a wave-wide AND -- a warp-vote here would let one row's
+        growth force a rescale onto a sibling row whose own growth
+        didn't warrant it.
 
         SCALE_VEC INVARIANT: `scale_vec` is exactly 1 whenever no
         rescale fired in the most recent C2/C6. The else-branch reset
@@ -645,9 +647,15 @@ struct OnlineSoftmax[att_dtype: DType = DType.float32](ImplicitlyCopyable):
                 before a rescale fires. When `max_vec - max_vec_prev`
                 exceeds this, the rescale is applied.
         """
+        # Per-lane predicate, not a warp vote: the col_l rt_32x32 fragment
+        # gives each lane an INDEPENDENT Q row (one column of the 32x32
+        # tile, per this struct's own docstring), so an AND across the
+        # wavefront would let one row's growth force a rescale (a real,
+        # non-identity `exp2` multiply of `o_reg`/`att_bf16_full`, plus a
+        # `max_vec` state change that persists into later clusters) onto a
+        # sibling row whose own growth didn't warrant it.
         var lane_ok = (self.max_vec - self.max_vec_prev) <= threshold
-        var ballot = warp_vote[DType.uint64](lane_ok)
-        var all_ok = ballot == UInt64(0xFFFFFFFFFFFFFFFF)
+        var all_ok = lane_ok
         var pending_scale = False
         if unlikely(not all_ok):
             self.scale_vec = math_exp2(self.max_vec_prev - self.max_vec)
@@ -667,7 +675,7 @@ struct OnlineSoftmax[att_dtype: DType = DType.float32](ImplicitlyCopyable):
             self.scale_vec = Float32(1.0)
         return pending_scale
 
-    @always_inline
+    @inline(.always)
     def update_scale_unconditional(mut self):
         """UNCONDITIONAL rescale: `scale_vec = exp2(max_prev - max_new)`,
         then `max_vec_prev = max_vec`.
@@ -681,10 +689,10 @@ struct OnlineSoftmax[att_dtype: DType = DType.float32](ImplicitlyCopyable):
         self.scale_vec = math_exp2(self.max_vec_prev - self.max_vec)
         self.max_vec_prev = self.max_vec
 
-    @always_inline
+    @inline(.always)
     def rescale_output(
         mut self,
-        mut o_reg: RegTile[DType.float32, _, MutUntrackedOrigin],
+        mut o_reg: RegTile[.float32, _, MutUntrackedOrigin],
     ):
         """`o_reg *= scale_vec` per element.
 
@@ -698,7 +706,7 @@ struct OnlineSoftmax[att_dtype: DType = DType.float32](ImplicitlyCopyable):
         """
         Self._mul_scalar_inplace(o_reg, self.scale_vec)
 
-    @always_inline
+    @inline(.always)
     def apply_norm_rescale_if_pending(mut self, pending_scale: Bool):
         """`if pending_scale: norm_vec *= scale_vec`.
 
@@ -713,7 +721,7 @@ struct OnlineSoftmax[att_dtype: DType = DType.float32](ImplicitlyCopyable):
         if pending_scale:
             self.norm_vec = self.norm_vec * self.scale_vec
 
-    @always_inline
+    @inline(.always)
     def apply_unconditional_norm_rescale(mut self):
         """UNCONDITIONAL `norm_vec *= scale_vec`.
 
@@ -722,7 +730,7 @@ struct OnlineSoftmax[att_dtype: DType = DType.float32](ImplicitlyCopyable):
         (`lazy_rescale_decision` maintains this on the skip branch)."""
         self.norm_vec = self.norm_vec * self.scale_vec
 
-    @always_inline
+    @inline(.always)
     def col_sum_acc[
         layout: TensorLayout,
         //,
@@ -743,10 +751,10 @@ struct OnlineSoftmax[att_dtype: DType = DType.float32](ImplicitlyCopyable):
         """
         self.norm_vec = self.norm_vec + Self._col_sum_scalar(att_block)
 
-    @always_inline
+    @inline(.always)
     def normalize_output(
         mut self,
-        mut o_reg: RegTile[DType.float32, _, MutUntrackedOrigin],
+        mut o_reg: RegTile[.float32, _, MutUntrackedOrigin],
     ):
         """Final `o_reg /= norm_vec` in place.
 

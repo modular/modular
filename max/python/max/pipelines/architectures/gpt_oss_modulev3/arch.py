@@ -33,10 +33,8 @@ gpt_oss_modulev3_arch = SupportedArchitecture(
         # "openai/gpt-oss-120b",
         "unsloth/gpt-oss-20b-BF16",
     ],
-    default_encoding="bfloat16",
-    supported_encodings={
-        "bfloat16",
-    },
+    default_encoding=GptOssConfig.DEFAULT_ENCODING,
+    supported_encodings=GptOssConfig.SUPPORTED_ENCODINGS,
     pipeline_model=GptOssModel,
     task=PipelineTask.TEXT_GENERATION,
     tokenizer=TextTokenizer,

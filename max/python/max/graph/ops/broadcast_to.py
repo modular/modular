@@ -40,13 +40,24 @@ def broadcast_to(
     .. code-block:: python
 
         import numpy as np
-        x = ops.constant(np.ones((3, 1)), DType.float32, device=device)
-        result = ops.broadcast_to(x, [3, 4])
-        # result has shape (3, 4)
+        from max.dtype import DType
+        from max.graph import DeviceRef, Graph, ops
 
-        # Add a new leading dimension
-        result = ops.broadcast_to(x, [2, 3, 4])
-        # result has shape (2, 3, 4)
+        device = DeviceRef.CPU()
+        with Graph("broadcast_to", input_types=[]) as graph:
+            x = ops.constant(
+                np.ones((3, 1), dtype=np.float32), DType.float32, device=device
+            )
+            result = ops.broadcast_to(x, [3, 4])
+            # result has shape (3, 4)
+
+            # Add a new leading dimension
+            result = ops.broadcast_to(x, [2, 3, 4])
+            # result has shape (2, 3, 4)
+
+    .. invisible-code-block: python
+
+            assert result.type.shape == [2, 3, 4]
 
     Args:
         x: The input symbolic tensor to broadcast. Must not contain any
@@ -59,7 +70,7 @@ def broadcast_to(
             symbolic output type); ignored otherwise.
 
     Returns:
-        A symbolic tensor with the same elements as the input but with the
+        A ``TensorValue`` with the same elements as the input but with the
         target shape.
 
     Raises:

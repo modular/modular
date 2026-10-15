@@ -25,10 +25,12 @@ Examples:
 
 .. code-block:: python
 
+    from max.pipelines.context.logit_processors_type import ProcessorInputs
+
     # Example 1:
     def logits_processor(inputs: ProcessorInputs) -> None:
         logits = inputs.logits
-        ...
+        logits[-1, 0] = -10000
 
     # Example 2:
     class SuppressBeginToken:
@@ -69,6 +71,11 @@ class ProcessorInputs:
 
 
 LogitsProcessor: TypeAlias = Callable[[ProcessorInputs], None]
+"""Callback that rewrites logits for a single sequence before sampling.
+
+Implementations mutate the ``logits`` buffer in place, for example to
+suppress tokens or apply a bias.
+"""
 
 
 @dataclass
@@ -94,3 +101,8 @@ class BatchProcessorInputs:
 
 
 BatchLogitsProcessor: TypeAlias = Callable[[BatchProcessorInputs], None]
+"""Callback that rewrites logits for a whole batch before sampling.
+
+Implementations mutate the ``logits`` buffer in place, using
+``logit_offsets`` to locate each sequence's slice.
+"""

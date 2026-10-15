@@ -118,6 +118,9 @@ class TestValuePropertyDefaults:
     def test_ir_output_dir_default(self) -> None:
         assert InferenceSession.debug.ir_output_dir == ""
 
+    def test_uninitialized_read_mode_default(self) -> None:
+        assert InferenceSession.debug.uninitialized_read_mode == ""
+
 
 class TestValuePropertySetters:
     """Value properties should accept and return the assigned value."""
@@ -139,98 +142,63 @@ class TestValuePropertySetters:
         InferenceSession.debug.ir_output_dir = dir_path
         assert InferenceSession.debug.ir_output_dir == dir_path
 
+    def test_uninitialized_read_mode_set(self) -> None:
+        InferenceSession.debug.uninitialized_read_mode = "report"
+        assert InferenceSession.debug.uninitialized_read_mode == "report"
+
 
 # ---------------------------------------------------------------------------
-# libkineto / HTA / Dynolog profiler knobs (MXTOOLS-190)
+# Uninitialized-read mode wiring into InferenceSession
 # ---------------------------------------------------------------------------
 
 
-class TestProfilingPropertyDefaults:
-    """Profiling debug properties should match the ProfilingConfig pydantic defaults."""
+def _session_mojo_defines(
+    monkeypatch: pytest.MonkeyPatch,
+) -> dict[str, bool | int | str]:
+    """Builds a session and returns the Mojo defines its constructor set."""
+    # The check appends to this env var; delenv restores it on teardown.
+    monkeypatch.delenv("MODULAR_DEBUG_DEVICE_ALLOCATOR", raising=False)
+    defines: dict[str, bool | int | str] = {}
 
-    def test_profiling_enabled_default(self) -> None:
-        assert InferenceSession.debug.profiling_enabled is False
+    def record(
+        self: InferenceSession, key: str, value: bool | int | str
+    ) -> None:
+        defines[key] = value
 
-    def test_profiling_output_path_default(self) -> None:
-        assert InferenceSession.debug.profiling_output_path == ""
-
-    def test_profiling_dynolog_enabled_default(self) -> None:
-        assert InferenceSession.debug.profiling_dynolog_enabled is True
-
-    def test_profiling_warmup_steps_default(self) -> None:
-        assert InferenceSession.debug.profiling_warmup_steps == 0
-
-    def test_profiling_active_steps_default(self) -> None:
-        assert InferenceSession.debug.profiling_active_steps == 10
-
-    def test_profiling_periodic_flush_seconds_default(self) -> None:
-        assert InferenceSession.debug.profiling_periodic_flush_seconds == 60
+    monkeypatch.setattr(InferenceSession, "_set_mojo_define", record)
+    InferenceSession()
+    return defines
 
 
-class TestProfilingPropertySetters:
-    """Profiling knobs should round-trip through Config via setter and getter."""
+class TestUninitializedReadMode:
+    """The mode is validated and mapped to a Mojo define when a session is built."""
 
-    def test_profiling_enabled_set(self) -> None:
-        InferenceSession.debug.profiling_enabled = True
-        assert InferenceSession.debug.profiling_enabled is True
+    @pytest.mark.parametrize(
+        ("mode", "define"),
+        [("", "true"), ("abort", "true"), ("report", "report")],
+    )
+    def test_mode_maps_to_mojo_define(
+        self, monkeypatch: pytest.MonkeyPatch, mode: str, define: str
+    ) -> None:
+        InferenceSession.debug.uninitialized_read_check = True
+        InferenceSession.debug.uninitialized_read_mode = mode
+        defines = _session_mojo_defines(monkeypatch)
+        assert defines["MOJO_STDLIB_SIMD_UNINIT_CHECK"] == define
 
-    def test_profiling_output_path_set(self, tmp_path: Path) -> None:
-        # This is the one knob with a live consumer today:
-        # Range.cpp::disable() reads `max-debug.profiling-output-path` from
-        # Config and uses it as the trace destination.
-        trace_path = str(tmp_path / "trace.json")
-        InferenceSession.debug.profiling_output_path = trace_path
-        assert InferenceSession.debug.profiling_output_path == trace_path
+    def test_mode_ignored_without_check(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        InferenceSession.debug.uninitialized_read_mode = "report"
+        defines = _session_mojo_defines(monkeypatch)
+        assert "MOJO_STDLIB_SIMD_UNINIT_CHECK" not in defines
 
-    def test_profiling_dynolog_enabled_disable(self) -> None:
-        InferenceSession.debug.profiling_dynolog_enabled = False
-        assert InferenceSession.debug.profiling_dynolog_enabled is False
-
-    def test_profiling_warmup_steps_set(self) -> None:
-        InferenceSession.debug.profiling_warmup_steps = 5
-        assert InferenceSession.debug.profiling_warmup_steps == 5
-
-    def test_profiling_active_steps_set(self) -> None:
-        InferenceSession.debug.profiling_active_steps = 20
-        assert InferenceSession.debug.profiling_active_steps == 20
-
-    def test_profiling_periodic_flush_seconds_set(self) -> None:
-        InferenceSession.debug.profiling_periodic_flush_seconds = 30
-        assert InferenceSession.debug.profiling_periodic_flush_seconds == 30
-
-
-class TestProfilingPropertyBounds:
-    """Integer knobs must enforce the same lower bounds as ProfilingConfig
-    (``warmup >= 0``, ``active >= 1``, ``flush >= 1``) so the Python-config and
-    ``session.debug`` surfaces agree on what's valid."""
-
-    def test_warmup_steps_rejects_negative(self) -> None:
-        with pytest.raises(ValueError):
-            InferenceSession.debug.profiling_warmup_steps = -1
-
-    def test_warmup_steps_allows_zero(self) -> None:
-        InferenceSession.debug.profiling_warmup_steps = 0
-        assert InferenceSession.debug.profiling_warmup_steps == 0
-
-    def test_active_steps_rejects_zero(self) -> None:
-        with pytest.raises(ValueError):
-            InferenceSession.debug.profiling_active_steps = 0
-
-    def test_active_steps_rejects_negative(self) -> None:
-        with pytest.raises(ValueError):
-            InferenceSession.debug.profiling_active_steps = -5
-
-    def test_active_steps_allows_one(self) -> None:
-        InferenceSession.debug.profiling_active_steps = 1
-        assert InferenceSession.debug.profiling_active_steps == 1
-
-    def test_periodic_flush_seconds_rejects_zero(self) -> None:
-        with pytest.raises(ValueError):
-            InferenceSession.debug.profiling_periodic_flush_seconds = 0
-
-    def test_periodic_flush_seconds_allows_one(self) -> None:
-        InferenceSession.debug.profiling_periodic_flush_seconds = 1
-        assert InferenceSession.debug.profiling_periodic_flush_seconds == 1
+    def test_invalid_mode_rejected(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        InferenceSession.debug.uninitialized_read_check = True
+        InferenceSession.debug.uninitialized_read_mode = "warn"
+        with pytest.raises(ValueError, match="Invalid uninitialized read mode"):
+            _session_mojo_defines(monkeypatch)
 
 
 def _run_with_env(
@@ -246,62 +214,6 @@ def _run_with_env(
         env=env,
         timeout=60,
     )
-
-
-class TestProfilingEnvVarRoute:
-    """The MODULAR_MAX_DEBUG_PROFILING_* env vars are a parallel route into the
-    same Config keys; a non-numeric value falls back to the default, and a
-    Python setter overrides the env var (setGlobalValue precedence)."""
-
-    def test_active_steps_env_var(self) -> None:
-        result = _run_with_env(
-            {"MODULAR_MAX_DEBUG_PROFILING_ACTIVE_STEPS": "7"},
-            """\
-            from max.engine import InferenceSession
-            got = InferenceSession.debug.profiling_active_steps
-            assert got == 7, f"expected 7 from env var, got {got}"
-            print("PASS")
-            """,
-        )
-        assert result.returncode == 0, (
-            f"Script failed.\nstdout: {result.stdout}\nstderr: {result.stderr}"
-        )
-        assert "PASS" in result.stdout
-
-    def test_non_numeric_env_var_falls_back_to_default(self) -> None:
-        # readInt64() returns the default on a non-numeric value rather than
-        # raising, so a fat-fingered env var degrades gracefully.
-        result = _run_with_env(
-            {"MODULAR_MAX_DEBUG_PROFILING_ACTIVE_STEPS": "ten"},
-            """\
-            from max.engine import InferenceSession
-            got = InferenceSession.debug.profiling_active_steps
-            assert got == 10, f"expected default 10 for bad env var, got {got}"
-            print("PASS")
-            """,
-        )
-        assert result.returncode == 0, (
-            f"Script failed.\nstdout: {result.stdout}\nstderr: {result.stderr}"
-        )
-        assert "PASS" in result.stdout
-
-    def test_setter_overrides_env_var(self) -> None:
-        # setGlobalValue takes precedence over env vars (see Configuration.h),
-        # so a Python-side write wins even when the env var is set.
-        result = _run_with_env(
-            {"MODULAR_MAX_DEBUG_PROFILING_ACTIVE_STEPS": "7"},
-            """\
-            from max.engine import InferenceSession
-            InferenceSession.debug.profiling_active_steps = 3
-            got = InferenceSession.debug.profiling_active_steps
-            assert got == 3, f"expected setter to override env var, got {got}"
-            print("PASS")
-            """,
-        )
-        assert result.returncode == 0, (
-            f"Script failed.\nstdout: {result.stdout}\nstderr: {result.stderr}"
-        )
-        assert "PASS" in result.stdout
 
 
 # ---------------------------------------------------------------------------

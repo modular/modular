@@ -31,14 +31,21 @@ from .openai_tool_call_schema import (
 )
 from .structural_tag import (
     AnyTextFormat,
+    AnyTokensFormat,
     ConstStringFormat,
+    Format,
     JSONSchemaFormat,
     OptionalFormat,
+    OrFormat,
+    PlusFormat,
     RegexFormat,
     SequenceFormat,
+    StarFormat,
     StructuralTag,
     TagFormat,
     TagsWithSeparatorFormat,
+    TokenFormat,
+    TokenTriggeredTagsFormat,
     TriggeredTagsFormat,
 )
 
@@ -51,6 +58,7 @@ def get_model_structural_tag(
     tool_choice: Union[ToolChoiceOptionParam, dict, None] = "auto",
     reasoning: bool = True,
     force_reasoning: bool = False,
+    reject_unsupported: bool = False,
 ) -> StructuralTag:
     r"""Get a structural tag for a model's reasoning and tool-call output format.
 
@@ -202,6 +210,9 @@ def get_model_structural_tag(
         Deprecated. Control whether to keep the reasoning part but leave its content empty.
         Now we will embed the model's specific behavior into the structural tag function, so
         only controlling ``reasoning`` is enough.
+    reject_unsupported : bool
+        Whether to raise an error during grammar compilation when a tool's schema
+        cannot be enforced. Otherwise, the schema is enforced best-effort.
 
     Notes
     -----
@@ -229,7 +240,13 @@ def get_model_structural_tag(
         tools, tool_choice
     )
 
-    return func(function_tools, builtin_tools, simplified_tool_choice, reasoning)
+    return func(
+        function_tools,
+        builtin_tools,
+        simplified_tool_choice,
+        reasoning,
+        reject_unsupported=reject_unsupported,
+    )
 
 
 # ---------- Helper Functions And Constants ----------
@@ -477,7 +494,7 @@ def register_model_structural_tag(name: str):
         @register_model_structural_tag("my_model")
         def get_my_model_structural_tag(
             tools=None, builtin_tools=None, tool_choice="auto",
-            reasoning=True, **kwargs,
+            reasoning=True, reject_unsupported=False, **kwargs,
         ):
             ...
     """
@@ -498,6 +515,7 @@ def get_llama_structural_tag(
     builtin_tools: Optional[List[BuiltinToolParam]] = None,
     tool_choice: Literal["auto", "required", "forced"] = "auto",
     reasoning: bool = True,
+    reject_unsupported: bool = False,
     **kwargs: Any,
 ) -> StructuralTag:
     """Get Llama style structural tag format.
@@ -543,7 +561,9 @@ def get_llama_structural_tag(
             tags.append(
                 TagFormat(
                     begin=(TOOL_OBJECT_BEGIN_PREFIX + name + TOOL_OBJECT_PARAMETERS_PREFIX),
-                    content=JSONSchemaFormat(json_schema=parameters),
+                    content=JSONSchemaFormat(
+                        json_schema=parameters, reject_unsupported=reject_unsupported
+                    ),
                     end="}",
                 )
             )
@@ -561,7 +581,10 @@ def get_llama_structural_tag(
         function = tools[0].function
         suffix_tag = TagFormat(
             begin=(TOOL_NAME_PREFIX + function.name + PARAMETERS_FIELD_PREFIX),
-            content=JSONSchemaFormat(json_schema=_get_function_parameters(function)),
+            content=JSONSchemaFormat(
+                json_schema=_get_function_parameters(function),
+                reject_unsupported=reject_unsupported,
+            ),
             end="}",
         )
 
@@ -574,7 +597,9 @@ def get_llama_structural_tag(
             tags.append(
                 TagFormat(
                     begin=(TOOL_OBJECT_BEGIN_PREFIX + name + TOOL_OBJECT_PARAMETERS_PREFIX),
-                    content=JSONSchemaFormat(json_schema=parameters),
+                    content=JSONSchemaFormat(
+                        json_schema=parameters, reject_unsupported=reject_unsupported
+                    ),
                     end="}",
                 )
             )
@@ -590,6 +615,7 @@ def get_kimi_structural_tag(
     builtin_tools: Optional[List[BuiltinToolParam]] = None,
     tool_choice: Literal["auto", "required", "forced"] = "auto",
     reasoning: bool = True,
+    reject_unsupported: bool = False,
     **kwargs: Any,
 ) -> StructuralTag:
     """Get Kimi-K2 style structural tag format.
@@ -642,7 +668,12 @@ def get_kimi_structural_tag(
                         elements=[
                             RegexFormat(pattern=r"\d+"),
                             ConstStringFormat(value=TOOL_CALL_ARGUMENT_BEGIN),
-                            JSONSchemaFormat(json_schema=parameters),
+                            JSONSchemaFormat(
+                                json_schema=parameters,
+                                reject_unsupported=reject_unsupported,
+                                max_whitespace_cnt=1,
+                                strict_mode=False,
+                            ),
                         ]
                     ),
                     end=TOOL_CALL_END,
@@ -675,7 +706,12 @@ def get_kimi_structural_tag(
                         elements=[
                             RegexFormat(pattern=r"\d+"),
                             ConstStringFormat(value=TOOL_CALL_ARGUMENT_BEGIN),
-                            JSONSchemaFormat(json_schema=_get_function_parameters(function)),
+                            JSONSchemaFormat(
+                                json_schema=_get_function_parameters(function),
+                                reject_unsupported=reject_unsupported,
+                                max_whitespace_cnt=1,
+                                strict_mode=False,
+                            ),
                         ]
                     ),
                     end=TOOL_CALL_END,
@@ -696,7 +732,12 @@ def get_kimi_structural_tag(
                         elements=[
                             RegexFormat(pattern=r"\d+"),
                             ConstStringFormat(value=TOOL_CALL_ARGUMENT_BEGIN),
-                            JSONSchemaFormat(json_schema=parameters),
+                            JSONSchemaFormat(
+                                json_schema=parameters,
+                                reject_unsupported=reject_unsupported,
+                                max_whitespace_cnt=1,
+                                strict_mode=False,
+                            ),
                         ]
                     ),
                     end=TOOL_CALL_END,
@@ -738,6 +779,7 @@ def get_deepseek_r1_structural_tag(
     builtin_tools: Optional[List[BuiltinToolParam]] = None,
     tool_choice: Literal["auto", "required", "forced"] = "auto",
     reasoning: bool = True,
+    reject_unsupported: bool = False,
     **kwargs: Any,
 ) -> StructuralTag:
     """Get DeepSeek-R1 style structural tag format.
@@ -772,7 +814,9 @@ def get_deepseek_r1_structural_tag(
             tags.append(
                 TagFormat(
                     begin=f"{TOOL_CALL_BEGIN}function{TOOL_SEP}{name}{JSON_RENDER_BEGIN}",
-                    content=JSONSchemaFormat(json_schema=parameters),
+                    content=JSONSchemaFormat(
+                        json_schema=parameters, reject_unsupported=reject_unsupported
+                    ),
                     end=f"{JSON_RENDER_END}{TOOL_CALL_END}",
                 )
             )
@@ -795,7 +839,9 @@ def get_deepseek_r1_structural_tag(
         parameters = _get_function_parameters(function)
         suffix_tag = TagFormat(
             begin=f"{TOOL_CALLS_BEGIN}{TOOL_CALL_BEGIN}function{TOOL_SEP}{function.name}{JSON_RENDER_BEGIN}",
-            content=JSONSchemaFormat(json_schema=parameters),
+            content=JSONSchemaFormat(
+                json_schema=parameters, reject_unsupported=reject_unsupported
+            ),
             end=f"{JSON_RENDER_END}{TOOL_CALL_END}{TOOL_CALLS_END}",
         )
 
@@ -808,7 +854,9 @@ def get_deepseek_r1_structural_tag(
             tags.append(
                 TagFormat(
                     begin=f"{TOOL_CALL_BEGIN}function{TOOL_SEP}{name}{JSON_RENDER_BEGIN}",
-                    content=JSONSchemaFormat(json_schema=parameters),
+                    content=JSONSchemaFormat(
+                        json_schema=parameters, reject_unsupported=reject_unsupported
+                    ),
                     end=f"{JSON_RENDER_END}{TOOL_CALL_END}",
                 )
             )
@@ -831,6 +879,7 @@ def get_deepseek_v3_1_structural_tag(
     builtin_tools: Optional[List[BuiltinToolParam]] = None,
     tool_choice: Literal["auto", "required", "forced"] = "auto",
     reasoning: bool = True,
+    reject_unsupported: bool = False,
     **kwargs: Any,
 ) -> StructuralTag:
     """Get DeepSeek-V3.1 style structural tag format.
@@ -863,7 +912,9 @@ def get_deepseek_v3_1_structural_tag(
             tags.append(
                 TagFormat(
                     begin=f"{TOOL_CALL_BEGIN}{name}{TOOL_SEP}",
-                    content=JSONSchemaFormat(json_schema=parameters),
+                    content=JSONSchemaFormat(
+                        json_schema=parameters, reject_unsupported=reject_unsupported
+                    ),
                     end=TOOL_CALL_END,
                 )
             )
@@ -886,7 +937,9 @@ def get_deepseek_v3_1_structural_tag(
         parameters = _get_function_parameters(function)
         suffix_tag = TagFormat(
             begin=f"{TOOL_CALLS_BEGIN}{TOOL_CALL_BEGIN}{function.name}{TOOL_SEP}",
-            content=JSONSchemaFormat(json_schema=parameters),
+            content=JSONSchemaFormat(
+                json_schema=parameters, reject_unsupported=reject_unsupported
+            ),
             end=f"{TOOL_CALL_END}{TOOL_CALLS_END}",
         )
 
@@ -899,7 +952,9 @@ def get_deepseek_v3_1_structural_tag(
             tags.append(
                 TagFormat(
                     begin=f"{TOOL_CALL_BEGIN}{name}{TOOL_SEP}",
-                    content=JSONSchemaFormat(json_schema=parameters),
+                    content=JSONSchemaFormat(
+                        json_schema=parameters, reject_unsupported=reject_unsupported
+                    ),
                     end=TOOL_CALL_END,
                 )
             )
@@ -923,6 +978,7 @@ def get_qwen_3_5_structural_tag(
     builtin_tools: Optional[List[BuiltinToolParam]] = None,
     tool_choice: Literal["auto", "required", "forced"] = "auto",
     reasoning: bool = True,
+    reject_unsupported: bool = False,
     **kwargs: Any,
 ) -> StructuralTag:
     """Get Qwen XML tool-call structural tag format.
@@ -969,7 +1025,11 @@ def get_qwen_3_5_structural_tag(
             tags.append(
                 TagFormat(
                     begin=f"{TOOL_CALL_BEGIN_PREFIX}{name}{TOOL_CALL_BEGIN_SUFFIX}",
-                    content=JSONSchemaFormat(json_schema=parameters, style="qwen_xml"),
+                    content=JSONSchemaFormat(
+                        json_schema=parameters,
+                        style="qwen_xml",
+                        reject_unsupported=reject_unsupported,
+                    ),
                     end=TOOL_CALL_END,
                 )
             )
@@ -988,7 +1048,9 @@ def get_qwen_3_5_structural_tag(
         suffix_tag = TagFormat(
             begin=f"{TOOL_CALL_BEGIN_PREFIX}{function.name}{TOOL_CALL_BEGIN_SUFFIX}",
             content=JSONSchemaFormat(
-                json_schema=_get_function_parameters(function), style="qwen_xml"
+                json_schema=_get_function_parameters(function),
+                style="qwen_xml",
+                reject_unsupported=reject_unsupported,
             ),
             end=TOOL_CALL_END,
         )
@@ -1002,7 +1064,11 @@ def get_qwen_3_5_structural_tag(
             tags.append(
                 TagFormat(
                     begin=f"{TOOL_CALL_BEGIN_PREFIX}{name}{TOOL_CALL_BEGIN_SUFFIX}",
-                    content=JSONSchemaFormat(json_schema=parameters, style="qwen_xml"),
+                    content=JSONSchemaFormat(
+                        json_schema=parameters,
+                        style="qwen_xml",
+                        reject_unsupported=reject_unsupported,
+                    ),
                     end=TOOL_CALL_END,
                 )
             )
@@ -1032,6 +1098,7 @@ def get_qwen_3_structural_tag(
     builtin_tools: Optional[List[BuiltinToolParam]] = None,
     tool_choice: Literal["auto", "required", "forced"] = "auto",
     reasoning: bool = True,
+    reject_unsupported: bool = False,
     **kwargs: Any,
 ) -> StructuralTag:
     """Get Qwen3 style structural tag format.
@@ -1078,7 +1145,9 @@ def get_qwen_3_structural_tag(
             tags.append(
                 TagFormat(
                     begin=(TOOL_CALL_BEGIN_PREFIX + name + ARGUMENTS_FIELD_PREFIX),
-                    content=JSONSchemaFormat(json_schema=parameters),
+                    content=JSONSchemaFormat(
+                        json_schema=parameters, reject_unsupported=reject_unsupported
+                    ),
                     end=TOOL_CALL_END,
                 )
             )
@@ -1095,7 +1164,10 @@ def get_qwen_3_structural_tag(
         function = tools[0].function
         suffix_tag = TagFormat(
             begin=(TOOL_CALL_BEGIN_PREFIX + function.name + ARGUMENTS_FIELD_PREFIX),
-            content=JSONSchemaFormat(json_schema=_get_function_parameters(function)),
+            content=JSONSchemaFormat(
+                json_schema=_get_function_parameters(function),
+                reject_unsupported=reject_unsupported,
+            ),
             end=TOOL_CALL_END,
         )
 
@@ -1108,7 +1180,9 @@ def get_qwen_3_structural_tag(
             tags.append(
                 TagFormat(
                     begin=(TOOL_CALL_BEGIN_PREFIX + name + ARGUMENTS_FIELD_PREFIX),
-                    content=JSONSchemaFormat(json_schema=parameters),
+                    content=JSONSchemaFormat(
+                        json_schema=parameters, reject_unsupported=reject_unsupported
+                    ),
                     end=TOOL_CALL_END,
                 )
             )
@@ -1134,6 +1208,7 @@ def get_harmony_structural_tag(
     builtin_tools: Optional[List[BuiltinToolParam]] = None,
     tool_choice: Literal["auto", "required", "forced"] = "auto",
     reasoning: bool = True,
+    reject_unsupported: bool = False,
     **kwargs: Any,
 ) -> StructuralTag:
     """Get harmony(gpt-oss) style structural tag format.
@@ -1171,7 +1246,9 @@ def get_harmony_structural_tag(
 
     def _function_tool_tags(name, parameters):
         """Generate tags for all supported harmony function tool call formats."""
-        content = JSONSchemaFormat(json_schema=parameters)
+        content = JSONSchemaFormat(
+            json_schema=parameters, reject_unsupported=reject_unsupported
+        )
         return [
             TagFormat(
                 begin=f"<|channel|>commentary to=functions.{name}<|constrain|>json<|message|>",
@@ -1192,7 +1269,9 @@ def get_harmony_structural_tag(
 
     def _builtin_tool_tags(name, parameters):
         """Generate tags for supported harmony builtin tool call formats."""
-        content = JSONSchemaFormat(json_schema=parameters)
+        content = JSONSchemaFormat(
+            json_schema=parameters, reject_unsupported=reject_unsupported
+        )
         return [
             TagFormat(
                 begin=f"<|channel|>commentary to={name} code<|message|>",
@@ -1264,6 +1343,7 @@ def get_deepseek_v3_2_structural_tag(
     builtin_tools: Optional[List[BuiltinToolParam]] = None,
     tool_choice: Literal["auto", "required", "forced"] = "auto",
     reasoning: bool = True,
+    reject_unsupported: bool = False,
     **kwargs: Any,
 ) -> StructuralTag:
     """Get DeepSeek-V3.2 style structural tag format.
@@ -1302,7 +1382,11 @@ def get_deepseek_v3_2_structural_tag(
             tags.append(
                 TagFormat(
                     begin=(INVOKE_BEGIN_PREFIX + name + INVOKE_BEGIN_SUFFIX),
-                    content=JSONSchemaFormat(json_schema=parameters, style=XML_STYLE),
+                    content=JSONSchemaFormat(
+                        json_schema=parameters,
+                        style=XML_STYLE,
+                        reject_unsupported=reject_unsupported,
+                    ),
                     end=INVOKE_END,
                 )
             )
@@ -1337,7 +1421,9 @@ def get_deepseek_v3_2_structural_tag(
                 TagFormat(
                     begin=(INVOKE_BEGIN_PREFIX + function.name + INVOKE_BEGIN_SUFFIX),
                     content=JSONSchemaFormat(
-                        json_schema=_get_function_parameters(function), style=XML_STYLE
+                        json_schema=_get_function_parameters(function),
+                        style=XML_STYLE,
+                        reject_unsupported=reject_unsupported,
                     ),
                     end=INVOKE_END,
                 ),
@@ -1353,7 +1439,11 @@ def get_deepseek_v3_2_structural_tag(
             tags.append(
                 TagFormat(
                     begin=(INVOKE_BEGIN_PREFIX + name + INVOKE_BEGIN_SUFFIX),
-                    content=JSONSchemaFormat(json_schema=parameters, style=XML_STYLE),
+                    content=JSONSchemaFormat(
+                        json_schema=parameters,
+                        style=XML_STYLE,
+                        reject_unsupported=reject_unsupported,
+                    ),
                     end=INVOKE_END,
                 )
             )
@@ -1381,6 +1471,7 @@ def get_minimax_structural_tag(
     builtin_tools: Optional[List[BuiltinToolParam]] = None,
     tool_choice: Literal["auto", "required", "forced"] = "auto",
     reasoning: bool = True,
+    reject_unsupported: bool = False,
     **kwargs: Any,
 ) -> StructuralTag:
     """Get MiniMax-M2.5 style structural tag format.
@@ -1408,6 +1499,12 @@ def get_minimax_structural_tag(
     EMPTY_THINK_CONTENT = "\n</think>\n\n"
     THINK_EXCLUDE_TOKENS = ["<think>", "</think>"]
     XML_STYLE = "minimax_xml"
+    JSON_CONFIG: dict[str, Any] = {
+        "style": XML_STYLE,
+        "max_whitespace_cnt": 1,
+        "strict_mode": False,
+        "require_object_root": True,
+    }
 
     tools = tools or []
     builtin_tools = builtin_tools or []
@@ -1420,7 +1517,11 @@ def get_minimax_structural_tag(
             tags.append(
                 TagFormat(
                     begin=(INVOKE_BEGIN_PREFIX + name + INVOKE_BEGIN_SUFFIX),
-                    content=JSONSchemaFormat(json_schema=parameters, style=XML_STYLE),
+                    content=JSONSchemaFormat(
+                        json_schema=parameters,
+                        reject_unsupported=reject_unsupported,
+                        **JSON_CONFIG,
+                    ),
                     end=INVOKE_END,
                 )
             )
@@ -1453,7 +1554,9 @@ def get_minimax_structural_tag(
                 TagFormat(
                     begin=(INVOKE_BEGIN_PREFIX + function.name + INVOKE_BEGIN_SUFFIX),
                     content=JSONSchemaFormat(
-                        json_schema=_get_function_parameters(function), style=XML_STYLE
+                        json_schema=_get_function_parameters(function),
+                        reject_unsupported=reject_unsupported,
+                        **JSON_CONFIG,
                     ),
                     end=INVOKE_END,
                 ),
@@ -1469,7 +1572,11 @@ def get_minimax_structural_tag(
             tags.append(
                 TagFormat(
                     begin=(INVOKE_BEGIN_PREFIX + name + INVOKE_BEGIN_SUFFIX),
-                    content=JSONSchemaFormat(json_schema=parameters, style=XML_STYLE),
+                    content=JSONSchemaFormat(
+                        json_schema=parameters,
+                        reject_unsupported=reject_unsupported,
+                        **JSON_CONFIG,
+                    ),
                     end=INVOKE_END,
                 )
             )
@@ -1493,12 +1600,125 @@ def get_minimax_structural_tag(
     )
 
 
+@register_model_structural_tag("muse_glimmer")
+def get_muse_glimmer_structural_tag(
+    tools: Optional[List[FunctionToolParam]] = None,
+    builtin_tools: Optional[List[BuiltinToolParam]] = None,
+    tool_choice: Literal["auto", "required", "forced"] = "auto",
+    reasoning: bool = True,
+    **kwargs: Any,
+) -> StructuralTag:
+    """Get Muse Glimmer ATEM style structural tag format.
+
+    Each tool call is its own assistant message,
+    ``<|start|>assistant to=NAME<|message|>`` followed by
+    ``<atem:function_calls><atem:invoke name="NAME">``
+    ``<atem:parameter name="KEY">VALUE</atem:parameter>``
+    ``</atem:invoke></atem:function_calls>``, with one optional newline
+    after each tag.
+
+    Corresponding model key: ``"muse_glimmer"``.
+
+    Values are raw text (lists and objects as JSON) that no XML style can
+    spell, so the grammar constrains the envelope and, for a closed schema,
+    the parameter names, not the values.
+
+    Reasoning is a ``to=self`` message closed by ``<|eom|>``, which is where
+    MAX's thinking region ends, so ``reasoning`` is inert. Under
+    ``required`` and a named tool the header is optional: the section may
+    also start right after ``<|eom|>``, or at the ``<atem:function_calls>``
+    marker, which MAX feeds to the matcher when the model opens a call
+    inside its reasoning.
+
+    Builtin tools have no ATEM wire format and are ignored.
+
+    Returns
+    -------
+    StructuralTag
+        A structural tag for Muse Glimmer function calling format.
+    """
+    SECTION_BEGIN = "<atem:function_calls>"
+    SECTION_END = "</atem:function_calls>"
+    PARAMETER_BEGIN = '<atem:parameter name="'
+    PARAMETER_END = "</atem:parameter>"
+    newline = OptionalFormat(content=ConstStringFormat(value="\n"))
+
+    def _parameters(parameters: Union[Dict[str, Any], bool]) -> Format:
+        keys = []
+        if isinstance(parameters, dict) and parameters.get("additionalProperties") is False:
+            keys = list(parameters.get("properties", {}))
+        if not keys:
+            return TagFormat(
+                begin=PARAMETER_BEGIN,
+                content=SequenceFormat(
+                    elements=[
+                        RegexFormat(pattern=r'[^"<>]+'),
+                        ConstStringFormat(value='">'),
+                        AnyTextFormat(),
+                    ]
+                ),
+                end=PARAMETER_END,
+            )
+        return OrFormat(
+            elements=[
+                TagFormat(
+                    begin=f'{PARAMETER_BEGIN}{key}">', content=AnyTextFormat(), end=PARAMETER_END
+                )
+                for key in keys
+            ]
+        )
+
+    def _invoke(tool: FunctionToolParam) -> TagFormat:
+        parameter = _parameters(_get_function_parameters(tool.function))
+        return TagFormat(
+            begin=f'<atem:invoke name="{tool.function.name}">',
+            content=SequenceFormat(
+                elements=[newline, StarFormat(content=SequenceFormat(elements=[parameter, newline]))]
+            ),
+            end="</atem:invoke>",
+        )
+
+    def _section(calls: List[FunctionToolParam]) -> TagFormat:
+        invoke = OrFormat(elements=[_invoke(tool) for tool in calls])
+        return TagFormat(
+            begin=SECTION_BEGIN,
+            content=SequenceFormat(
+                elements=[newline, PlusFormat(content=SequenceFormat(elements=[invoke, newline]))]
+            ),
+            end=SECTION_END,
+        )
+
+    tools = tools or []
+    if tool_choice == "auto":
+        if not tools:
+            return StructuralTag(format=AnyTextFormat())
+        return StructuralTag(
+            format=TriggeredTagsFormat(triggers=[SECTION_BEGIN], tags=[_section(tools)])
+        )
+
+    if not tools:
+        raise ValueError(f"Tool choice {tool_choice!r} requires at least one function tool.")
+    messages: List[Format] = [
+        SequenceFormat(
+            elements=[
+                TokenFormat(token="<|start|>"),
+                ConstStringFormat(value=f"assistant to={tool.function.name}"),
+                TokenFormat(token="<|message|>"),
+                _section([tool]),
+            ]
+        )
+        for tool in tools
+    ]
+    return StructuralTag(format=OrFormat(elements=[*messages, _section(tools)]))
+
+
 @register_model_structural_tag("glm_4_7")
 def get_glm_4_7_structural_tag(
     tools: Optional[List[FunctionToolParam]] = None,
     builtin_tools: Optional[List[BuiltinToolParam]] = None,
     tool_choice: Literal["auto", "required", "forced"] = "auto",
     reasoning: bool = True,
+    reject_unsupported: bool = False,
     **kwargs: Any,
 ) -> StructuralTag:
     """Get GLM-4.7/GLM-5 style structural tag format.
@@ -1534,6 +1754,15 @@ def get_glm_4_7_structural_tag(
     THINK_TAG_END = "</think>"
     THINK_EXCLUDE_TOKENS = ["<think>", "</think>"]
     XML_STYLE = "glm_xml"
+    # Shared JSONSchemaFormat config for every tool's argument schema: GLM emits
+    # bare (glm_xml) values and compiles fail-closed (an object root, plus
+    # unenforceable JSON Schema keywords rejected rather than silently dropped).
+    JSON_CONFIG: dict[str, Any] = {
+        "style": XML_STYLE,
+        "strict_mode": False,
+        "require_object_root": True,
+        "max_whitespace_cnt": 1,
+    }
 
     tools = tools or []
     builtin_tools = builtin_tools or []
@@ -1546,7 +1775,11 @@ def get_glm_4_7_structural_tag(
             tags.append(
                 TagFormat(
                     begin=f"{TOOL_CALL_BEGIN_PREFIX}{name}",
-                    content=JSONSchemaFormat(json_schema=parameters, style=XML_STYLE),
+                    content=JSONSchemaFormat(
+                        json_schema=parameters,
+                        reject_unsupported=reject_unsupported,
+                        **JSON_CONFIG,
+                    ),
                     end=TOOL_CALL_END,
                 )
             )
@@ -1565,7 +1798,9 @@ def get_glm_4_7_structural_tag(
         suffix_tag = TagFormat(
             begin=f"{TOOL_CALL_BEGIN_PREFIX}{function.name}",
             content=JSONSchemaFormat(
-                json_schema=_get_function_parameters(function), style=XML_STYLE
+                json_schema=_get_function_parameters(function),
+                reject_unsupported=reject_unsupported,
+                **JSON_CONFIG,
             ),
             end=TOOL_CALL_END,
         )
@@ -1578,7 +1813,11 @@ def get_glm_4_7_structural_tag(
             tags.append(
                 TagFormat(
                     begin=f"{TOOL_CALL_BEGIN_PREFIX}{name}",
-                    content=JSONSchemaFormat(json_schema=parameters, style=XML_STYLE),
+                    content=JSONSchemaFormat(
+                        json_schema=parameters,
+                        reject_unsupported=reject_unsupported,
+                        **JSON_CONFIG,
+                    ),
                     end=TOOL_CALL_END,
                 )
             )
@@ -1593,14 +1832,13 @@ def get_glm_4_7_structural_tag(
     return StructuralTag(format=SequenceFormat(elements=[prefix_tag, suffix_tag]))
 
 
-# TODO: We are dropping Gemma support because its parameter format is special and not supported
-# yet: the string are wrapped by <|"|> instead of ". We will support it later and get it back.
-# @register_model_structural_tag("gemma_4")
-def _get_gemma_4_structural_tag(
+@register_model_structural_tag("gemma_4")
+def get_gemma_4_structural_tag(
     tools: Optional[List[FunctionToolParam]] = None,
     builtin_tools: Optional[List[BuiltinToolParam]] = None,
     tool_choice: Literal["auto", "required", "forced"] = "auto",
     reasoning: bool = True,
+    reject_unsupported: bool = False,
     **kwargs: Any,
 ) -> StructuralTag:
     """Get Gemma 4 style structural tag format.
@@ -1639,67 +1877,357 @@ def _get_gemma_4_structural_tag(
     StructuralTag
         A structural tag for Gemma 4 function calling format.
     """
-    TOOL_CALL_BEGIN_PREFIX = "<|tool_call>call:"
-    TOOL_CALL_END = "<tool_call|>"
-    TOOL_CALL_TRIGGER = "<|tool_call>"
-    THINK_TAG_BEGIN = "<|channel>thought\n"
-    THINK_TAG_END = "<channel|>"
-    GEMMA4_EXCLUDE_TOKENS = ["<|channel>", "<channel|>"]
+    # The tool-call section markers and the string-value delimiter are emitted as
+    # single tokens by the Gemma tokenizer. They are referenced by token ID
+    # (TokenFormat begin/end, token-triggered dispatch, and the string
+    # delimiter/exclude config) so the grammar keeps matching the model's natural
+    # tokens even after they are marked special (masked out of byte-level string
+    # content). The "call:" literal that follows the begin marker moves into the
+    # tag content so the marker stays a standalone token reference.
+    TOOL_CALL_BEGIN_MARKER = "<|tool_call>"
+    TOOL_CALL_CONTENT_PREFIX = "call:"
+    TOOL_CALL_END_MARKER = "<tool_call|>"
+    # The reasoning-channel markers are single Gemma tokens too, so -- like the
+    # tool-call markers -- they are referenced by token ID (TokenFormat begin/end
+    # and id-resolved exclude_tokens) rather than byte literals. That keeps them
+    # emittable at their structural positions after they are marked special
+    # (masked out of byte-level content). The "thought\n" text that follows the
+    # begin marker moves into the tag content so the marker stays a standalone
+    # token reference.
+    THINK_CHANNEL_BEGIN_MARKER = "<|channel>"
+    THINK_CHANNEL_CONTENT_PREFIX = "thought\n"
+    THINK_CHANNEL_END_MARKER = "<channel|>"
+    EXCLUDE_TOKENS = [THINK_CHANNEL_BEGIN_MARKER, THINK_CHANNEL_END_MARKER]
+    JSON_CONFIG: dict[str, Any] = {
+        "style": "json",
+        "string_value_delimiter_token": '<|"|>',
+        "string_value_forbidden_tokens": ["<|tool_call>", "<tool_call|>"],
+        "additional_bare_key_terminal": r"[a-zA-Z_][-a-zA-Z0-9_.]*",
+        "bare_key_literal_forbidden": r":{},\x00-\x20\x7f",
+        "bare_key_pattern_forbidden": r" \t\n\r\f:{},\"\\\x00-\x1f",
+        "max_whitespace_cnt": 1,
+        "strict_mode": False,
+        "require_object_root": True,
+    }
+
+    def _tool_call_tag(name: str, parameters: dict[str, Any]) -> TagFormat:
+        return TagFormat(
+            begin=TokenFormat(token=TOOL_CALL_BEGIN_MARKER),
+            content=SequenceFormat(
+                elements=[
+                    ConstStringFormat(value=TOOL_CALL_CONTENT_PREFIX + name),
+                    JSONSchemaFormat(
+                        json_schema=parameters,
+                        reject_unsupported=reject_unsupported,
+                        **JSON_CONFIG,
+                    ),
+                ]
+            ),
+            end=TokenFormat(token=TOOL_CALL_END_MARKER),
+        )
 
     tools = tools or []
     builtin_tools = builtin_tools or []
     if tool_choice == "auto":
-        tags = []
-        for tool in tools:
-            function = tool.function
-            parameters = _get_function_parameters(function)
-            name = function.name
-            tags.append(
-                TagFormat(
-                    begin=TOOL_CALL_BEGIN_PREFIX + name,
-                    content=JSONSchemaFormat(json_schema=parameters),
-                    end=TOOL_CALL_END,
-                )
+        tags = [
+            _tool_call_tag(
+                tool.function.name, _get_function_parameters(tool.function)
             )
+            for tool in tools
+        ]
 
         if len(tags) > 0:
-            suffix_tag = TriggeredTagsFormat(
-                triggers=[TOOL_CALL_TRIGGER], tags=tags, excludes=GEMMA4_EXCLUDE_TOKENS
+            suffix_tag = TokenTriggeredTagsFormat(
+                trigger_tokens=[TOOL_CALL_BEGIN_MARKER],
+                tags=tags,
+                exclude_tokens=EXCLUDE_TOKENS,
             )
         else:
-            suffix_tag = AnyTextFormat(excludes=GEMMA4_EXCLUDE_TOKENS)
+            suffix_tag = AnyTextFormat(excludes=EXCLUDE_TOKENS)
 
     elif tool_choice == "forced":
         if not tools:
-            raise ValueError("Forced tool choice must resolve to exactly one tool.")
+            raise ValueError(
+                "Forced tool choice must resolve to exactly one tool."
+            )
         function = tools[0].function
-        suffix_tag = TagFormat(
-            begin=TOOL_CALL_BEGIN_PREFIX + function.name,
-            content=JSONSchemaFormat(json_schema=_get_function_parameters(function)),
-            end=TOOL_CALL_END,
+        suffix_tag = _tool_call_tag(
+            function.name, _get_function_parameters(function)
         )
 
     elif tool_choice == "required":
-        tags = []
-        for tool in tools:
-            function = tool.function
-            parameters = _get_function_parameters(function)
-            name = function.name
-            tags.append(
-                TagFormat(
-                    begin=TOOL_CALL_BEGIN_PREFIX + name,
-                    content=JSONSchemaFormat(json_schema=parameters),
-                    end=TOOL_CALL_END,
-                )
+        tags = [
+            _tool_call_tag(
+                tool.function.name, _get_function_parameters(tool.function)
             )
+            for tool in tools
+        ]
         assert len(tags) > 0
-        suffix_tag = TagsWithSeparatorFormat(tags=tags, separator="", at_least_one=True)
+        suffix_tag = TagsWithSeparatorFormat(
+            tags=tags, separator="", at_least_one=True
+        )
 
     if not reasoning:
         return StructuralTag(format=suffix_tag)
 
-    prefix_tag = TagFormat(begin=THINK_TAG_BEGIN, content=AnyTextFormat(), end=THINK_TAG_END)
-    return StructuralTag(format=SequenceFormat(elements=[prefix_tag, suffix_tag]))
+    prefix_tag = TagFormat(
+        begin=TokenFormat(token=THINK_CHANNEL_BEGIN_MARKER),
+        content=SequenceFormat(
+            elements=[
+                ConstStringFormat(value=THINK_CHANNEL_CONTENT_PREFIX),
+                AnyTextFormat(),
+            ]
+        ),
+        end=TokenFormat(token=THINK_CHANNEL_END_MARKER),
+    )
+    return StructuralTag(
+        format=SequenceFormat(elements=[prefix_tag, suffix_tag])
+    )
+
+
+_INKLING_MESSAGE_MODEL_MARKER = "<|message_model|>"
+_INKLING_TOOL_CALL_JSON_MARKER = "<|content_invoke_tool_json|>"
+_INKLING_END_MESSAGE_MARKER = "<|end_message|>"
+_INKLING_THINKING_MARKER = "<|content_thinking|>"
+_INKLING_TEXT_MARKER = "<|content_text|>"
+
+
+def _inkling_message(content_marker: str, content: Format) -> TagFormat:
+    """One Inkling message: a content marker, a body, then ``<|end_message|>``.
+
+    The opening ``<|message_model|>`` is excluded, since a turn's first message
+    inherits the one the generation prompt ends with.
+    """
+    return TagFormat(
+        begin=TokenFormat(token=content_marker),
+        content=content,
+        end=TokenFormat(token=_INKLING_END_MESSAGE_MARKER),
+    )
+
+
+def get_inkling_response_format_branch(json_branch: Format) -> Format:
+    """Frames a ``response_format`` JSON answer as a well-formed Inkling turn.
+
+    The JSON becomes the body of a ``<|content_text|>`` message, optionally
+    preceded by a thinking message so the model can still reason first.
+    """
+    return SequenceFormat(
+        elements=[
+            OptionalFormat(
+                content=SequenceFormat(
+                    elements=[
+                        _inkling_message(_INKLING_THINKING_MARKER, AnyTextFormat()),
+                        TokenFormat(token=_INKLING_MESSAGE_MODEL_MARKER),
+                    ]
+                )
+            ),
+            _inkling_message(_INKLING_TEXT_MARKER, json_branch),
+        ]
+    )
+
+
+_INKLING_MAX_SCHEMA_DEPTH = 32
+
+# Keywords whose values are literal instance data, not subschemas: recursing
+# would reorder an object the model has to emit verbatim.
+_INKLING_INSTANCE_KEYS = frozenset({"const", "default", "enum", "examples"})
+
+
+def _inkling_sorted_properties(
+    node: Any, depth: int = 0
+) -> Any:
+    """Re-inserts every ``properties`` mapping in sorted key order.
+
+    The model emits argument keys alphabetically while the JSON schema
+    converter enforces declaration order; sorting makes the two agree.
+    """
+    if depth >= _INKLING_MAX_SCHEMA_DEPTH:
+        return node
+    if isinstance(node, list):
+        return [_inkling_sorted_properties(item, depth + 1) for item in node]
+    if not isinstance(node, dict):
+        return node
+
+    result: Dict[str, Any] = {}
+    for key, value in node.items():
+        if key in _INKLING_INSTANCE_KEYS:
+            result[key] = value
+        elif key == "properties" and isinstance(value, dict):
+            result[key] = {
+                name: _inkling_sorted_properties(value[name], depth + 1)
+                for name in sorted(value)
+            }
+        else:
+            result[key] = _inkling_sorted_properties(value, depth + 1)
+    return result
+
+
+@register_model_structural_tag("inkling")
+def get_inkling_structural_tag(
+    tools: Optional[List[FunctionToolParam]] = None,
+    builtin_tools: Optional[List[BuiltinToolParam]] = None,
+    tool_choice: Literal["auto", "required", "forced"] = "auto",
+    reasoning: bool = True,
+    reject_unsupported: bool = False,
+    **kwargs: Any,
+) -> StructuralTag:
+    """Get Inkling style structural tag format.
+
+    Inkling splits an assistant turn into messages, each opened by
+    ``<|message_model|>`` and closed by ``<|end_message|>``:
+
+    - Thinking: ``<|message_model|><|content_thinking|>...<|end_message|>``
+    - Text: ``<|message_model|><|content_text|>...<|end_message|>``
+    - Tool call: ``<|message_model|>NAME<|content_invoke_tool_json|>``
+      ``{"name":"NAME","args":{...}}<|end_message|>``
+
+    Corresponding model key: ``"inkling"``.
+
+    The generation prompt ends at a bare ``<|message_model|>``, so the first
+    generated call omits it and every later one emits it. The turn ends with
+    ``<|content_model_end_sampling|>``, the model's EOS.
+
+    The function name appears twice per call, bare ahead of the marker and
+    again inside the payload. Under ``auto`` only the payload name is
+    constrained, and that is the one the parser reports, so tool selection
+    still holds.
+
+    Under ``required`` and a named tool the grammar also admits the model's
+    canonical preamble -- a thinking message, then optionally a text message --
+    since ``<|end_message|>`` closes every message type and so leaves no
+    reasoning end token to suspend enforcement on. ``reasoning`` is therefore
+    inert: the preamble is admitted either way.
+
+    Builtin tools have no Inkling wire format and are ignored.
+
+    Returns
+    -------
+    StructuralTag
+        A structural tag for Inkling function calling format.
+    """
+    # Every marker is a special token, emittable only where the grammar names
+    # it by token id, so boundaries use TokenFormat rather than literals.
+    CALL_NAME_PREFIX = '{"name":"'
+    ARGS_FIELD_PREFIX = '","args":'
+    JSON_CONFIG: dict[str, Any] = {
+        "style": "json",
+        # Bounded rather than forbidden: forbidding whitespace also drops the
+        # repetition an object with more than one undeclared key needs.
+        "max_whitespace_cnt": 1,
+        # additionalProperties defaults to true in JSON Schema, so strict mode
+        # would mask keys the schema meant to allow.
+        "strict_mode": False,
+        # require_object_root stays off: it would reject any schema without
+        # an object root.
+    }
+
+    def _call_tag(name: str, parameters: Union[Dict[str, Any], bool]) -> TagFormat:
+        return TagFormat(
+            begin=TokenFormat(token=_INKLING_TOOL_CALL_JSON_MARKER),
+            content=SequenceFormat(
+                elements=[
+                    ConstStringFormat(value=CALL_NAME_PREFIX + name + ARGS_FIELD_PREFIX),
+                    JSONSchemaFormat(
+                        json_schema=_inkling_sorted_properties(parameters),
+                        reject_unsupported=reject_unsupported,
+                        **JSON_CONFIG,
+                    ),
+                    ConstStringFormat(value="}"),
+                ]
+            ),
+            end=TokenFormat(token=_INKLING_END_MESSAGE_MARKER),
+        )
+
+    def _call_unit(name: str, parameters: Union[Dict[str, Any], bool]) -> SequenceFormat:
+        # Pins the bare name ahead of the marker to the tool's own name, so it
+        # cannot disagree with the payload name.
+        return SequenceFormat(
+            elements=[
+                ConstStringFormat(value=name),
+                _call_tag(name, parameters),
+            ]
+        )
+
+    tools = tools or []
+    if tool_choice == "auto":
+        tags = [
+            _call_tag(tool.function.name, _get_function_parameters(tool.function))
+            for tool in tools
+        ]
+        if not tags:
+            return StructuralTag(format=AnyTokensFormat())
+        # Nothing is excluded from the region between calls: enforcement never
+        # disarms, so that region has to pass the markers framing the
+        # surrounding messages.
+        return StructuralTag(
+            format=TokenTriggeredTagsFormat(
+                trigger_tokens=[_INKLING_TOOL_CALL_JSON_MARKER],
+                tags=tags,
+                exclude_tokens=[],
+            )
+        )
+
+    if not tools:
+        raise ValueError(
+            f"Tool choice {tool_choice!r} requires at least one function tool."
+        )
+
+    units = [
+        _call_unit(tool.function.name, _get_function_parameters(tool.function))
+        for tool in tools
+    ]
+    unit = OrFormat(elements=units)
+
+    # A thinking message, then optionally a text message, or a lone text
+    # message. Two is the cap: a repeatable preamble would let the model talk
+    # until the token budget ran out without ever calling.
+    text_message = _inkling_message(_INKLING_TEXT_MARKER, AnyTextFormat())
+    preamble = OrFormat(
+        elements=[
+            SequenceFormat(
+                elements=[
+                    _inkling_message(_INKLING_THINKING_MARKER, AnyTextFormat()),
+                    OptionalFormat(
+                        content=SequenceFormat(
+                            elements=[
+                                TokenFormat(token=_INKLING_MESSAGE_MODEL_MARKER),
+                                text_message,
+                            ]
+                        )
+                    ),
+                ]
+            ),
+            text_message,
+        ]
+    )
+    start = OrFormat(
+        elements=[
+            unit,
+            SequenceFormat(
+                elements=[
+                    preamble,
+                    TokenFormat(token=_INKLING_MESSAGE_MODEL_MARKER),
+                    unit,
+                ]
+            ),
+        ]
+    )
+
+    if tool_choice == "forced":
+        return StructuralTag(format=start)
+
+    return StructuralTag(
+        format=SequenceFormat(
+            elements=[
+                start,
+                StarFormat(
+                    content=SequenceFormat(
+                        elements=[TokenFormat(token=_INKLING_MESSAGE_MODEL_MARKER), unit]
+                    )
+                ),
+            ]
+        )
+    )
 
 
 @register_model_structural_tag("deepseek_v4")
@@ -1708,6 +2236,7 @@ def get_deepseek_v4_structural_tag(
     builtin_tools: Optional[List[BuiltinToolParam]] = None,
     tool_choice: Literal["auto", "required", "forced"] = "auto",
     reasoning: bool = True,
+    reject_unsupported: bool = False,
     **kwargs: Any,
 ) -> StructuralTag:
     """Get DeepSeek-V4 style structural tag format.
@@ -1744,7 +2273,11 @@ def get_deepseek_v4_structural_tag(
             tags.append(
                 TagFormat(
                     begin=(INVOKE_BEGIN_PREFIX + name + INVOKE_BEGIN_SUFFIX),
-                    content=JSONSchemaFormat(json_schema=parameters, style=XML_STYLE),
+                    content=JSONSchemaFormat(
+                        json_schema=parameters,
+                        style=XML_STYLE,
+                        reject_unsupported=reject_unsupported,
+                    ),
                     end=INVOKE_END,
                 )
             )
@@ -1779,7 +2312,9 @@ def get_deepseek_v4_structural_tag(
                 TagFormat(
                     begin=(INVOKE_BEGIN_PREFIX + function.name + INVOKE_BEGIN_SUFFIX),
                     content=JSONSchemaFormat(
-                        json_schema=_get_function_parameters(function), style=XML_STYLE
+                        json_schema=_get_function_parameters(function),
+                        style=XML_STYLE,
+                        reject_unsupported=reject_unsupported,
                     ),
                     end=INVOKE_END,
                 ),
@@ -1795,7 +2330,11 @@ def get_deepseek_v4_structural_tag(
             tags.append(
                 TagFormat(
                     begin=(INVOKE_BEGIN_PREFIX + name + INVOKE_BEGIN_SUFFIX),
-                    content=JSONSchemaFormat(json_schema=parameters, style=XML_STYLE),
+                    content=JSONSchemaFormat(
+                        json_schema=parameters,
+                        style=XML_STYLE,
+                        reject_unsupported=reject_unsupported,
+                    ),
                     end=INVOKE_END,
                 )
             )
@@ -1815,6 +2354,365 @@ def get_deepseek_v4_structural_tag(
 
     sequence_format = SequenceFormat(elements=[prefix_tag, suffix_tag])
     return StructuralTag(format=sequence_format)
+
+
+# Characters backslash-escaped to stand for themselves in an xgrammar regex.
+# ``-`` is included so the same escape is safe inside a character class.
+_M3_REGEX_META = frozenset('\\^$.|?*+()[]{}/"-')
+
+# Body of the negated character class a generated tool name is drawn from.
+# Excluding the envelope's own punctuation keeps a name the model invents from
+# spelling ``]<]minimax[>[``, so it cannot close the invoke, close or reopen the
+# tool-call section, or run past the parser's ``name=([^>]+)>`` capture.
+_M3_INVOKE_NAME_CLASS_BODY = '^"<>\\[\\]\\n\\r'
+
+
+# Longest declared name the escape hatch will build a complement for. The
+# pattern nests one group per character, and xgrammar's EBNF parser rejects one
+# built from a name of ~1024 (600 still compiles). A tool name is
+# caller-supplied and its length is never checked, so without this a long one
+# would fail the request from inside the handler. Real names are far shorter --
+# OpenAI caps a function name at 64.
+_M3_UNKNOWN_HATCH_MAX_NAME_LEN = 256
+
+
+# Where a JSON Schema nests subschemas, by the shape holding them. Only these
+# are walked: every other value is data (a ``default``, an ``enum``) or, under
+# ``properties``, a map keyed by name, where a property that happens to be
+# called ``const`` is not a literal.
+_M3_SUBSCHEMA_KEYWORDS = frozenset(
+    {
+        "items",
+        "additionalItems",
+        "contains",
+        "additionalProperties",
+        "unevaluatedProperties",
+        "unevaluatedItems",
+        "propertyNames",
+        "not",
+        "if",
+        "then",
+        "else",
+    }
+)
+_M3_SUBSCHEMA_LIST_KEYWORDS = frozenset({"anyOf", "allOf", "oneOf", "prefixItems"})
+_M3_SUBSCHEMA_MAP_KEYWORDS = frozenset(
+    {"properties", "patternProperties", "$defs", "definitions", "dependentSchemas"}
+)
+
+
+def _m3_is_container(value: Any) -> bool:
+    return isinstance(value, (dict, list))
+
+
+def _m3_literal_schema(value: Any) -> Dict[str, Any]:
+    """Returns the schema admitting exactly *value*, without container literals.
+
+    M3's tag-keyed XML spells an object as nested tags and an array as
+    ``<item>`` children, so a container literal has no wire text of its own and
+    the converter rejects it. The same constraint holds structurally: each
+    member pinned to its own literal, and nothing else admitted.
+    """
+    if isinstance(value, dict):
+        return {
+            "type": "object",
+            "properties": {k: _m3_literal_schema(v) for k, v in value.items()},
+            "required": list(value),
+            "additionalProperties": False,
+        }
+    if isinstance(value, list):
+        return {
+            "type": "array",
+            "prefixItems": [_m3_literal_schema(v) for v in value],
+            "items": False,
+            "minItems": len(value),
+            "maxItems": len(value),
+        }
+    return {"const": value}
+
+
+def _m3_expand_subschemas(key: str, value: Any) -> Any:
+    """Applies :func:`_m3_expand_container_literals` to the subschemas a
+    keyword holds, returning any other value unchanged."""
+    if key in _M3_SUBSCHEMA_KEYWORDS:
+        return _m3_expand_container_literals(value)
+    if key in _M3_SUBSCHEMA_LIST_KEYWORDS and isinstance(value, list):
+        return [_m3_expand_container_literals(v) for v in value]
+    if key in _M3_SUBSCHEMA_MAP_KEYWORDS and isinstance(value, dict):
+        return {k: _m3_expand_container_literals(v) for k, v in value.items()}
+    return value
+
+
+def _m3_expand_container_literals(schema: Any) -> Any:
+    """Rewrites container ``const``/``enum`` literals into structural schemas.
+
+    Each becomes an ``anyOf`` with one branch per container literal, plus one
+    ``enum`` branch for the scalars an ``enum`` mixes in. A schema without
+    container literals comes back equal to *schema*, so it compiles as before.
+    """
+    if not isinstance(schema, dict):
+        return schema
+    out = {k: _m3_expand_subschemas(k, v) for k, v in schema.items()}
+    literal_sets = [
+        (key, literals)
+        for key, literals in (
+            ("const", [out.get("const")]),
+            ("enum", out.get("enum")),
+        )
+        if key in out
+        and isinstance(literals, list)
+        and any(map(_m3_is_container, literals))
+    ]
+    for key, literals in literal_sets:
+        del out[key]
+        scalars = [v for v in literals if not _m3_is_container(v)]
+        branches = [_m3_literal_schema(v) for v in literals if _m3_is_container(v)]
+        branches += [{"enum": scalars}] if scalars else []
+        # A schema's own anyOf stays, and the literal is required beside it.
+        if "anyOf" in out:
+            out.setdefault("allOf", []).append({"anyOf": branches})
+            continue
+        out["anyOf"] = branches
+    return out
+
+
+def _m3_escape_regex_literal(text: str) -> str:
+    """Escapes *text* so an xgrammar regex matches it literally."""
+    return "".join("\\" + c if c in _M3_REGEX_META else c for c in text)
+
+
+def _m3_regex_excluding(names: List[str], negated_class_body: str) -> str:
+    """Builds a regex for a nonempty run of *negated_class_body* not in *names*.
+
+    *negated_class_body* must be the body of a *negated* class (leading ``^``):
+    a diverging character is spelled by appending to that body, which subtracts
+    only because the class is negated.
+
+    xgrammar's converter rejects lookahead (``regex_converter.cc``: "Lookahead
+    is not supported yet"), so the complement of a finite literal set is spelled
+    out from a trie over it. At each prefix the match may diverge to a character
+    no candidate continues with, descend into one that does, or -- when the
+    prefix is not itself a candidate -- stop there. A candidate's strict
+    extensions stay admissible, so with ``set_alarm`` excluded ``set_alarm_v2``
+    still matches while ``set_alarm`` does not.
+    """
+    any_char = f"[{negated_class_body}]"
+    candidates = {n for n in names if n}
+    if not candidates:
+        return any_char + "+"
+
+    # prefix -> the characters some candidate continues it with.
+    continuations: Dict[str, set[str]] = {}
+    for name in candidates:
+        for i in range(len(name)):
+            continuations.setdefault(name[:i], set()).add(name[i])
+
+    # Built bottom-up, and the branches nest rather than being flattened into
+    # one alternation per trie node. Nesting writes a shared prefix once, which
+    # keeps the pattern linear in the total name length rather than quadratic;
+    # the explicit ordering keeps a caller-supplied name from recursing this
+    # once per character and exhausting the stack. Both matter because this
+    # compiles on the request path.
+    patterns: Dict[str, str] = {}
+    for prefix in sorted(continuations, key=len, reverse=True):
+        nexts = continuations[prefix]
+        blocked = "".join(_m3_escape_regex_literal(c) for c in sorted(nexts))
+        alternatives = [f"[{negated_class_body}{blocked}]{any_char}*"]
+        for char in sorted(nexts):
+            # A node nothing extends is a candidate, so its run must continue
+            # to land outside the set.
+            descent = patterns.get(prefix + char, any_char + "+")
+            alternatives.append(_m3_escape_regex_literal(char) + descent)
+        group = "(" + "|".join(alternatives) + ")"
+        # Stopping here is only outside the set if the prefix is not itself a
+        # candidate. The empty prefix is excluded because a name is nonempty.
+        patterns[prefix] = (
+            group if not prefix or prefix in candidates else group + "?"
+        )
+
+    return patterns[""]
+
+
+@register_model_structural_tag("minimax_m3")
+def get_minimax_m3_structural_tag(
+    tools: Optional[List[FunctionToolParam]] = None,
+    builtin_tools: Optional[List[BuiltinToolParam]] = None,
+    tool_choice: Literal["auto", "required", "forced"] = "auto",
+    reasoning: bool = True,
+    reject_unsupported: bool = False,
+    **kwargs: Any,
+) -> StructuralTag:
+    """Get MiniMax-M3 style structural tag format.
+
+    Corresponding model key: ``"minimax_m3"``.
+
+    The MiniMax-M3 tool calling format uses tag-prefixed XML:
+
+    ``]<]minimax[>[<tool_call>``
+    ``]<]minimax[>[<invoke name="get_weather">]<]minimax[>[<location>Beijing]<]minimax[>[</location>]<]minimax[>[</invoke>``
+    ``]<]minimax[>[</tool_call>``
+
+    Supported models:
+
+    - MiniMax-M3
+    """
+    SECTION_SEPARATOR = "\n"
+    TAG_PREFIX = "]<]minimax[>["
+    INVOKE_BEGIN_PREFIX = TAG_PREFIX + '<invoke name="'
+    INVOKE_BEGIN_SUFFIX = '">'
+    INVOKE_END = TAG_PREFIX + "</invoke>"
+    INVOKE_SEPARATOR = "\n"
+    TOOL_CALL_BEGIN = "<tool_call>"
+    TOOL_CALL_END = "</tool_call>"
+    THINK_BEGIN = "<mm:think>"
+    THINK_END = "</mm:think>"
+
+    tools = tools or []
+    builtin_tools = builtin_tools or []
+
+    def _invoke_tag(name: str, parameters: Any) -> TagFormat:
+        return TagFormat(
+            begin=INVOKE_BEGIN_PREFIX + name + INVOKE_BEGIN_SUFFIX,
+            content=JSONSchemaFormat(
+                json_schema=_m3_expand_container_literals(parameters),
+                style="minimax_m3_xml",
+                xml_tag_prefix=TAG_PREFIX,
+                reject_unsupported=reject_unsupported,
+                max_whitespace_cnt=1,
+                strict_mode=False,
+                require_object_root=True,
+            ),
+            end=INVOKE_END,
+        )
+
+    def _unknown_invoke_tags(known_names: List[str]) -> List[TagFormat]:
+        """Builds the invoke admitting a name not among the request's tools.
+
+        The model may follow a tool-usage pattern established by the chat
+        history even when the request declared a different inventory, so an
+        unrecognized name is admitted with a free-form body -- no schema is
+        known for it. The name excludes ``known_names`` so this never shadows
+        the typed branches above: a declared tool still gets its
+        schema-enforced body, and it is drawn from a class that cannot spell
+        the envelope's own markers.
+
+        Returns nothing when a declared name is too long to build a complement
+        for. This only widens what is admissible, so declining it falls back to
+        the declared names alone rather than failing the request.
+        """
+        if any(
+            len(name) > _M3_UNKNOWN_HATCH_MAX_NAME_LEN for name in known_names
+        ):
+            return []
+        return [
+            TagFormat(
+                begin=INVOKE_BEGIN_PREFIX,
+                content=SequenceFormat(
+                    elements=[
+                        RegexFormat(
+                            pattern=_m3_regex_excluding(
+                                known_names, _M3_INVOKE_NAME_CLASS_BODY
+                            )
+                        ),
+                        ConstStringFormat(value=INVOKE_BEGIN_SUFFIX),
+                        AnyTextFormat(
+                            excludes=[
+                                INVOKE_END,
+                                TAG_PREFIX + TOOL_CALL_END,
+                                TAG_PREFIX + TOOL_CALL_BEGIN,
+                            ]
+                        ),
+                    ]
+                ),
+                end=INVOKE_END,
+            )
+        ]
+
+    def _forced_or_required_section(invokes: Format) -> SequenceFormat:
+        return SequenceFormat(
+            elements=[
+                ConstStringFormat(value=TAG_PREFIX),
+                TagFormat(
+                    begin=TokenFormat(token=TOOL_CALL_BEGIN),
+                    content=SequenceFormat(
+                        elements=[
+                            ConstStringFormat(value=SECTION_SEPARATOR),
+                            invokes,
+                            ConstStringFormat(value=SECTION_SEPARATOR + TAG_PREFIX),
+                        ]
+                    ),
+                    end=TokenFormat(token=TOOL_CALL_END),
+                ),
+            ]
+        )
+
+    if tool_choice == "auto":
+        tags = [
+            _invoke_tag(t.function.name, _get_function_parameters(t.function))
+            for t in tools
+        ]
+        if tags:
+            tags.extend(
+                _unknown_invoke_tags([t.function.name for t in tools])
+            )
+            invokes = TagsWithSeparatorFormat(
+                tags=tags, separator=INVOKE_SEPARATOR, at_least_one=True
+            )
+            suffix_tag = TriggeredTagsFormat(
+                triggers=[TAG_PREFIX],
+                tags=[
+                    TagFormat(
+                        begin=TAG_PREFIX,
+                        content=SequenceFormat(
+                            elements=[
+                                TokenFormat(token=TOOL_CALL_BEGIN),
+                                ConstStringFormat(value=SECTION_SEPARATOR),
+                                invokes,
+                                ConstStringFormat(value=SECTION_SEPARATOR + TAG_PREFIX),
+                            ]
+                        ),
+                        end=TokenFormat(token=TOOL_CALL_END),
+                    )
+                ],
+                excludes=[THINK_BEGIN, THINK_END],
+            )
+        else:
+            suffix_tag = AnyTextFormat(excludes=[THINK_BEGIN, THINK_END])
+
+    elif tool_choice == "forced":
+        if not tools:
+            raise ValueError("Forced tool choice must resolve to exactly one tool.")
+        function = tools[0].function
+        suffix_tag = _forced_or_required_section(
+            _invoke_tag(function.name, _get_function_parameters(function))
+        )
+
+    elif tool_choice == "required":
+        tags = [
+            _invoke_tag(t.function.name, _get_function_parameters(t.function))
+            for t in tools
+        ]
+        assert len(tags) > 0
+        tags.extend(_unknown_invoke_tags([t.function.name for t in tools]))
+        suffix_tag = _forced_or_required_section(
+            TagsWithSeparatorFormat(
+                tags=tags, separator=INVOKE_SEPARATOR, at_least_one=True
+            )
+        )
+
+    if not reasoning:
+        return StructuralTag(format=suffix_tag)
+
+    prefix_tag = TagFormat(
+        begin=THINK_BEGIN,
+        content=AnyTextFormat(excludes=[TAG_PREFIX + TOOL_CALL_BEGIN]),
+        end=THINK_END,
+    )
+    return StructuralTag(
+        format=SequenceFormat(
+            elements=[OptionalFormat(content=prefix_tag), suffix_tag]
+        )
+    )
 
 
 # Backward-compatible alias

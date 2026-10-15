@@ -22,7 +22,7 @@ The test conftest pre-loads those libraries, but only in the MAIN pytest
 process. A ``spawn``-ed child re-imports everything fresh and does NOT inherit
 the parent's ``RTLD_GLOBAL`` handles, so the child must perform the preload
 itself. ``KVTransferEngine`` does this in-library via
-``_preload_nixl_plugin_deps`` (transfer_engine.py). This test stands up a
+``preload_nixl_plugin_deps`` (``_nixl_plugin_deps.py``). This test stands up a
 ``KVTransferEngine`` inside a ``spawn`` child to prove that path works WITHOUT
 relying on the conftest preload.
 
@@ -44,6 +44,8 @@ def _construct_engine_in_child(result_queue: mp.Queue) -> None:  # type: ignore[
     # main-process RTLD_GLOBAL preload is NOT in effect here. Importing inside
     # the child mirrors the real serve worker, which is also spawn-ed.
     try:
+        from max.dtype import DType
+        from max.nn.kv_cache.cache_params import KVCacheMemory
         from max.pipelines.kv_cache import KVTransferEngine
 
         device = Accelerator(0)
@@ -55,10 +57,18 @@ def _construct_engine_in_child(result_queue: mp.Queue) -> None:  # type: ignore[
         # KVTransferEngine.__init__ -> create_agent -> get_plugin_params("UCX")
         # which is the line that raises NIXL_ERR_NOT_FOUND if the plugin's CUDA
         # deps were not pre-loaded RTLD_GLOBAL in this process.
+        bytes_per_page = (
+            blocks.num_elements * blocks.dtype.size_in_bytes // total_num_pages
+        )
+        group = KVCacheMemory(
+            replicated=False,
+            buffers=[
+                blocks.view(DType.uint8, [total_num_pages, bytes_per_page])
+            ],
+        )
         engine = KVTransferEngine(
             "spawn_preload_engine",
-            [[blocks]],
-            total_num_pages=total_num_pages,
+            [[group]],
         )
         engine.cleanup()
         result_queue.put(("ok", ""))

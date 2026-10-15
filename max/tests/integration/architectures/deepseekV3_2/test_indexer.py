@@ -21,6 +21,7 @@ import conftest as _deepseek_v32_torch
 import numpy as np
 import pytest
 import torch
+from max import tree
 from max.driver import Accelerator, Buffer, accelerator_api
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -38,7 +39,6 @@ from max.nn.attention.mask_config import MHAMaskVariant
 from max.nn.kv_cache import (
     KVCacheQuantizationConfig,
     MHAKVCacheParams,
-    PagedCacheValues,
 )
 from max.nn.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
@@ -182,8 +182,8 @@ def run_max_indexer(
         slice_freqs_cis: If True, slice ``rope.freqs_cis`` to ``[:seq_len]``
             before passing it to the indexer.  This is the buggy codepath
             that triggers a timing-sensitive OOB in the mo.slice +
-            mo.rope.ragged fusion (see ``test_indexer_race_demo`` and
-            TODO(GEX-3777)).  Production code (``deepseekV3_2.py:504``)
+            mo.composite.rope.ragged fusion (see ``test_indexer_race_demo``
+            and TODO(GEX-3777)).  Production code (``deepseekV3_2.py:504``)
             passes the full tensor, so this defaults to False.
     """
     device = Accelerator()
@@ -314,28 +314,23 @@ def run_max_indexer(
         qr_in = graph.inputs[1].tensor
         input_row_offsets_in = graph.inputs[2].tensor
 
-        indexer_k_collection = PagedCacheValues(
-            kv_blocks=graph.inputs[3].buffer,
-            cache_lengths=graph.inputs[4].tensor,
-            lookup_table=graph.inputs[5].tensor,
-            max_prompt_length=graph.inputs[6].tensor,
-            max_cache_length=graph.inputs[7].tensor,
-            kv_scales=graph.inputs[8].buffer,
-        )
+        indexer_k_collection = kv_params.unflatten_kv_inputs(
+            iter(graph.inputs[3:])
+        )[0]
 
         layer_idx = ops.constant(0, DType.uint32, device=DeviceRef.CPU())
 
         # Pass the full freqs_cis (matching production usage in
         # deepseekV3_2.py:504).  Slicing freqs_cis to [:seq_len] before
         # passing it in triggers a timing-sensitive OOB inside the
-        # mo.slice + mo.rope.ragged fusion under noisy-neighbor host
-        # jitter on BuildBuddy remote-b200; production never slices.
+        # mo.slice + mo.composite.rope.ragged fusion under noisy-neighbor
+        # host jitter on BuildBuddy remote-b200; production never slices.
         # TODO(GEX-3777): when the fusion bug is fixed, drop
         # ``slice_freqs_cis`` and just pass ``rope.freqs_cis``.
         freqs_cis_arg = (
             rope.freqs_cis if not slice_freqs_cis else rope.freqs_cis[:seq_len]
         )
-        result = indexer(
+        result, _ = indexer(
             x_in,
             qr_in,
             freqs_cis_arg,
@@ -343,7 +338,9 @@ def run_max_indexer(
             indexer_k_collection,
             layer_idx,
             mask_variant,
+            write_logical=True,
         )
+        assert result is not None
 
         graph.output(result)
 
@@ -355,11 +352,11 @@ def run_max_indexer(
     batch_contexts = []
     for prompt_len in prompt_lens:
         context = create_text_context(np.empty(prompt_len, dtype=np.int64))
-        kv_manager.claim(context.request_id, replica_idx=0)
-        kv_manager.alloc(context, replica_idx=0)
+        kv_manager.claim(context)
+        kv_manager.alloc(context)
         batch_contexts.append(context)
 
-    kv_inputs = kv_manager.runtime_inputs_for_leaf([batch_contexts]).inputs[0]
+    kv_inputs = kv_manager.runtime_inputs_for_leaf([batch_contexts])[0]
 
     # Prepare input tensors - flatten batch dimension for ragged format
     x_flat = x.view(-1, dim)
@@ -386,7 +383,7 @@ def run_max_indexer(
         x_device,
         qr_device,
         input_row_offsets_device,
-        *kv_inputs.flatten(),
+        *tree.leaves(kv_inputs),
     )
 
     # Verify output is not all zeros
@@ -511,8 +508,13 @@ def test_indexer_causal_mask(
 # This test is gated on the ``DSV32_RUN_RACE_DEMO`` env var so CI
 # stays green, but is preserved as a minimal reproducer for the
 # underlying kernel-level bug.  TODO(GEX-3777): once the
-# mo.slice + mo.rope.ragged fusion is fixed, delete this test (and
-# the ``slice_freqs_cis`` kwarg on ``run_max_indexer``).
+# mo.slice + mo.composite.rope.ragged fusion is fixed, delete this test
+# (and the ``slice_freqs_cis`` kwarg on ``run_max_indexer``).
+#
+# NOTE: the op was renamed from the ``mo.rope.ragged`` custom op to the
+# typed ``mo.composite.rope.ragged`` op; the captured crash trace below
+# predates that rename and still shows the old ``custom__mo.rope.ragged``
+# dispatch-summary name. A fresh repro will show the new op name instead.
 #
 # Run manually with::
 #
@@ -524,7 +526,7 @@ def test_indexer_causal_mask(
 @pytest.mark.skipif(
     not os.environ.get("DSV32_RUN_RACE_DEMO"),
     reason="Race demo: triggers CUDA_ERROR_ILLEGAL_ADDRESS under host "
-    "jitter via the mo.slice + mo.rope.ragged fusion.  Set "
+    "jitter via the mo.slice + mo.composite.rope.ragged fusion.  Set "
     "DSV32_RUN_RACE_DEMO=1 to opt in.  See TODO(GEX-3777).",
 )
 def test_indexer_race_demo(

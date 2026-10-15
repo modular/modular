@@ -23,6 +23,7 @@ from std.sys._build import is_debug_build
 from std.sys.info import CompilationTarget, simd_width_of, size_of
 
 from layout import IntTuple, TileTensor, UNKNOWN_VALUE
+from layout.coord import Coord, DynamicCoord, coord, coord_to_index_list
 from linalg.utils import partition_work
 
 from std.utils.index import Index, IndexList
@@ -34,14 +35,26 @@ from std.utils.index import Index, IndexList
 
 
 # Elementwise epilogue signature
-comptime elementwise_epilogue_type = def[rank: Int](
-    coords: IndexList[rank],
+comptime elementwise_epilogue_type = def(
+    coords: Coord,
     f_size: Int,
 ) capturing -> None
+"""Fused epilogue applied over a whole `f_size`-long run at `coords`.
+
+Distinct from `elementwise_simd_epilogue_type`, which receives the value; this
+one receives only the coordinate and the run length. Rank-N in the output's own
+space; the `Coord` carries its rank, so there is no `rank` parameter.
+"""
 
 comptime elementwise_simd_epilogue_type = def[
-    dtype: DType, rank: Int, width: SIMDSize, alignment: Int = 1
-](IndexList[rank], SIMD[dtype, width]) capturing -> None
+    dtype: DType, width: SIMDLength, alignment: Int = 1
+](Coord, SIMD[dtype, width]) capturing -> None
+"""Fused elementwise epilogue for convolution: `(coord, value) -> None`.
+
+The coordinate is rank-N in the output's own space (NHWC / NDHWC), unlike
+`linalg.utils.elementwise_epilogue_type`, which is always rank 2. The `Coord`
+carries its own rank.
+"""
 
 
 # ===----------------------------------------------------------------------=== #
@@ -49,7 +62,6 @@ comptime elementwise_simd_epilogue_type = def[
 # ===----------------------------------------------------------------------=== #
 
 
-@fieldwise_init
 struct ConvShape[rank: Int](TrivialRegisterPassable):
     """A shape struct describing the convolution dimensions.
 
@@ -59,112 +71,180 @@ struct ConvShape[rank: Int](TrivialRegisterPassable):
 
     var n: Int  # Input batch size.
 
-    var input_dims: IndexList[Self.rank]  # Ex H and W for 2D
-    var output_dims: IndexList[Self.rank]  # Ex HO and WO for 2D.
-    var filter_dims: IndexList[Self.rank]  # Ex R and S for 2D.
+    var input_dims: DynamicCoord[.int64, Self.rank]  # Ex H and W for 2D
+    var output_dims: DynamicCoord[
+        DType.int64, Self.rank
+    ]  # Ex HO and WO for 2D.
+    var filter_dims: DynamicCoord[.int64, Self.rank]  # Ex R and S for 2D.
 
     var c: Int  # Input channel.
     var f: Int  # Output channel.
 
-    var stride: IndexList[Self.rank]
+    var stride: DynamicCoord[.int64, Self.rank]
 
-    var dilation: IndexList[Self.rank]
+    var dilation: DynamicCoord[.int64, Self.rank]
 
     # TODO: change paddings to
-    # pad_lower: IndexList[rank]
-    # pad_upper: IndexList[rank]
-    var pad_d: IndexList[2]
-    var pad_h: IndexList[2]
-    var pad_w: IndexList[2]
+    # pad_lower: DynamicCoord[DType.int64, rank]
+    # pad_upper: DynamicCoord[DType.int64, rank]
+    var pad_d: DynamicCoord[.int64, 2]
+    var pad_h: DynamicCoord[.int64, 2]
+    var pad_w: DynamicCoord[.int64, 2]
 
     var num_groups: Int
 
-    @always_inline
+    @inline(.always)
+    def __init__(
+        out self,
+        n: Int,
+        input_dims: DynamicCoord[.int64, Self.rank],
+        output_dims: DynamicCoord[.int64, Self.rank],
+        filter_dims: DynamicCoord[.int64, Self.rank],
+        c: Int,
+        f: Int,
+        stride: DynamicCoord[.int64, Self.rank],
+        dilation: DynamicCoord[.int64, Self.rank],
+        pad_d: DynamicCoord[.int64, 2],
+        pad_h: DynamicCoord[.int64, 2],
+        pad_w: DynamicCoord[.int64, 2],
+        num_groups: Int,
+    ):
+        self.n = n
+        self.input_dims = input_dims
+        self.output_dims = output_dims
+        self.filter_dims = filter_dims
+        self.c = c
+        self.f = f
+        self.stride = stride
+        self.dilation = dilation
+        self.pad_d = pad_d
+        self.pad_h = pad_h
+        self.pad_w = pad_w
+        self.num_groups = num_groups
+
+    @inline(.always)
     def d(self) -> Int:
         """Input depth."""
 
         comptime if Self.rank >= 3:
-            return self.input_dims[Self.rank - 3]
+            return Int(self.input_dims[Self.rank - 3].value())
         else:
             return 1
 
-    @always_inline
+    @inline(.always)
     def h(self) -> Int:
         """Input height."""
 
         comptime if Self.rank >= 2:
-            return self.input_dims[Self.rank - 2]
+            return Int(self.input_dims[Self.rank - 2].value())
         else:
             return 1
 
-    @always_inline
+    @inline(.always)
     def w(self) -> Int:
         """Input width."""
-        return self.input_dims[Self.rank - 1]
+        return Int(self.input_dims[Self.rank - 1].value())
 
-    @always_inline
+    @inline(.always)
     def do(self) -> Int:
         """Output depth."""
 
         comptime if Self.rank >= 3:
-            return self.output_dims[Self.rank - 3]
+            return Int(self.output_dims[Self.rank - 3].value())
         else:
             return 1
 
-    @always_inline
+    @inline(.always)
     def ho(self) -> Int:
         """Output height."""
 
         comptime if Self.rank >= 2:
-            return self.output_dims[Self.rank - 2]
+            return Int(self.output_dims[Self.rank - 2].value())
         else:
             return 1
 
-    @always_inline
+    @inline(.always)
     def wo(self) -> Int:
         """Output width."""
-        return self.output_dims[Self.rank - 1]
+        return Int(self.output_dims[Self.rank - 1].value())
 
-    @always_inline
+    @inline(.always)
     def q(self) -> Int:
         """Filter window depth."""
 
         comptime if Self.rank >= 3:
-            return self.filter_dims[Self.rank - 3]
+            return Int(self.filter_dims[Self.rank - 3].value())
         else:
             return 1
 
-    @always_inline
+    @inline(.always)
     def r(self) -> Int:
         """Filter window height."""
 
         comptime if Self.rank >= 2:
-            return self.filter_dims[Self.rank - 2]
+            return Int(self.filter_dims[Self.rank - 2].value())
         else:
             return 1
 
-    @always_inline
+    @inline(.always)
     def s(self) -> Int:
         """Filter window width."""
-        return self.filter_dims[Self.rank - 1]
+        return Int(self.filter_dims[Self.rank - 1].value())
 
-    @always_inline
+    @inline(.always)
+    def stride_at[axis: Int](self) -> Int:
+        """Stride along `axis`.
+
+        Parameters:
+            axis: Spatial axis to read.
+        """
+        return Int(self.stride[axis].value())
+
+    @inline(.always)
+    def dilation_at[axis: Int](self) -> Int:
+        """Dilation along `axis`.
+
+        Parameters:
+            axis: Spatial axis to read.
+        """
+        return Int(self.dilation[axis].value())
+
+    @inline(.always)
+    def pad_d_lower(self) -> Int:
+        """Depth padding before the first input point."""
+        return Int(self.pad_d[0].value())
+
+    @inline(.always)
+    def pad_h_lower(self) -> Int:
+        """Height padding above the first input row."""
+        return Int(self.pad_h[0].value())
+
+    @inline(.always)
+    def pad_w_lower(self) -> Int:
+        """Width padding left of the first input column."""
+        return Int(self.pad_w[0].value())
+
+    @inline(.always)
     def filter_window_flat_size(self) -> Int:
-        return self.filter_dims.flattened_length()
+        return Int(self.filter_dims.product())
 
-    @always_inline
+    @inline(.always)
     def input_image_flat_size(self) -> Int:
-        return self.input_dims.flattened_length()
+        return Int(self.input_dims.product())
 
-    @always_inline
+    @inline(.always)
     def output_image_flat_size(self) -> Int:
-        return self.output_dims.flattened_length()
+        return Int(self.output_dims.product())
 
-    @always_inline
+    @inline(.always)
     def output_space_dims(self) -> IndexList[Self.rank]:
-        return self.output_dims
+        # The compiler types the result as `IndexList[Int(len(tabulate(rank)))]`
+        # and cannot prove that length equals `rank`, so reconcile the two.
+        return rebind[IndexList[Self.rank]](
+            coord_to_index_list(self.output_dims)
+        )
 
-    @always_inline
+    @inline(.always)
     def output_flat_coord_to_input_offset(
         self, n: Int, output_flat_coord: Int
     ) -> Int:
@@ -172,72 +252,75 @@ struct ConvShape[rank: Int](TrivialRegisterPassable):
             Self.rank == 1 or Self.rank == 2 or Self.rank == 3
         ), "Only support 1d, 2d, and 3d convolution."
 
-        comptime if Self.rank == 1:
-            var w = output_flat_coord * self.stride[0] - self.pad_w[0]
+        comptime match Self.rank:
+            case 1:
+                var w = (
+                    output_flat_coord * self.stride_at[0]() - self.pad_w_lower()
+                )
 
-            return self.c * w
+                return self.c * w
 
-        elif Self.rank == 2:
-            # Unpack output coordinates
-            var ho, wo = divmod(output_flat_coord, self.wo())
+            case 2:
+                # Unpack output coordinates
+                var ho, wo = divmod(output_flat_coord, self.wo())
 
-            # Input coordinates
-            var h = ho * self.stride[0] - self.pad_h[0]
-            var w = wo * self.stride[1] - self.pad_w[0]
+                # Input coordinates
+                var h = ho * self.stride_at[0]() - self.pad_h_lower()
+                var w = wo * self.stride_at[1]() - self.pad_w_lower()
 
-            return self.c * (w + self.w() * (h + n * self.h()))
+                return self.c * (w + self.w() * (h + n * self.h()))
 
-        elif Self.rank == 3:
-            # Unpack output coordinates
-            var doho, wo = divmod(output_flat_coord, self.wo())
-            var do, ho = divmod(doho, self.ho())
+            case 3:
+                # Unpack output coordinates
+                var doho, wo = divmod(output_flat_coord, self.wo())
+                var do, ho = divmod(doho, self.ho())
 
-            # Input coordinates
-            var d = do * self.stride[0] - self.pad_d[0]
-            var h = ho * self.stride[1] - self.pad_h[0]
-            var w = wo * self.stride[2] - self.pad_w[0]
+                # Input coordinates
+                var d = do * self.stride_at[0]() - self.pad_d_lower()
+                var h = ho * self.stride_at[1]() - self.pad_h_lower()
+                var w = wo * self.stride_at[2]() - self.pad_w_lower()
 
-            return self.c * (
-                w + self.w() * (h + self.h() * (d + self.d() * self.n))
-            )
+                return self.c * (
+                    w + self.w() * (h + self.h() * (d + self.d() * self.n))
+                )
 
-        else:
-            # Pass compile.
-            return -1
+            case _:
+                # Pass compile.
+                return -1
 
-    @always_inline
+    @inline(.always)
     def matmul_M(self) -> Int:
-        return self.n * self.output_dims.flattened_length() * self.num_groups
+        return self.n * self.output_image_flat_size() * self.num_groups
 
-    @always_inline
+    @inline(.always)
     def matmul_N(self) -> Int:
         return self.f // self.num_groups
 
-    @always_inline
+    @inline(.always)
     def matmul_K(self) -> Int:
-        return self.c * self.filter_dims.flattened_length() // self.num_groups
+        return self.c * self.filter_window_flat_size() // self.num_groups
 
-    @always_inline
+    @inline(.always)
     def padded(self) -> Bool:
         return (
-            self.pad_w != Index(0, 0)
-            or self.pad_h != Index(0, 0)
-            or self.pad_d != Index(0, 0)
+            self.pad_w != coord[0, 0]
+            or self.pad_h != coord[0, 0]
+            or self.pad_d != coord[0, 0]
         )
 
-    @always_inline
+    @inline(.always)
     def c_per_group(self) -> Int:
         """Returns the number of channels per group. Channel count must be divisible by group size.
         """
         return self.c // self.num_groups
 
-    @always_inline
+    @inline(.always)
     def f_per_group(self) -> Int:
         """Returns the number of filters per group. Filter count must be divisible by group size.
         """
         return self.f // self.num_groups
 
-    @always_inline
+    @inline(.always)
     def f_to_group(self, f_idx: Int) -> Int:
         """Given a global filter idx, returns the group idx of the group the filter belongs to.
 
@@ -246,7 +329,7 @@ struct ConvShape[rank: Int](TrivialRegisterPassable):
         """
         return f_idx // self.f_per_group()
 
-    @always_inline
+    @inline(.always)
     def c_to_group(self, c_idx: Int) -> Int:
         """Given a global channel idx, returns the group idx of the group the channel belongs to.
 
@@ -255,7 +338,7 @@ struct ConvShape[rank: Int](TrivialRegisterPassable):
         """
         return c_idx // self.c_per_group()
 
-    @always_inline
+    @inline(.always)
     def f_in_group(self, f_idx: Int) -> Int:
         """Given a global filter idx, returns the offset of the filter in its group.
 
@@ -264,7 +347,7 @@ struct ConvShape[rank: Int](TrivialRegisterPassable):
         """
         return f_idx % self.f_per_group()
 
-    @always_inline
+    @inline(.always)
     def c_in_group(self, c_idx: Int) -> Int:
         """Given a global channel idx, returns the offset of the channel in its group.
 
@@ -274,7 +357,7 @@ struct ConvShape[rank: Int](TrivialRegisterPassable):
         return c_idx % self.c_per_group()
 
 
-@always_inline
+@inline(.always)
 def get_conv_shape[
     rank: Int,
     filter_packed: Bool,
@@ -310,18 +393,26 @@ def get_conv_shape[
     Returns:
         A populated `ConvShape` describing the convolution dimensions.
     """
-    var output_dims = IndexList[rank](0)
-    var input_dims = IndexList[rank](0)
-    var filter_dims = IndexList[rank](0)
+    var output_dims = DynamicCoord[.int64, rank]()
+    var input_dims = DynamicCoord[.int64, rank]()
+    var filter_dims = DynamicCoord[.int64, rank]()
 
     comptime for i in range(rank):
-        output_dims[i] = Int(output.dim[i + 1]())
-        input_dims[i] = Int(input.dim[i + 1]())
+        output_dims[i] = rebind[output_dims.element_types[i]](
+            Int64(output.dim[i + 1]())
+        )
+        input_dims[i] = rebind[input_dims.element_types[i]](
+            Int64(input.dim[i + 1]())
+        )
 
         comptime if filter_packed:
-            filter_dims[i] = Int(filter.dim[i + 1]())
+            filter_dims[i] = rebind[filter_dims.element_types[i]](
+                Int64(filter.dim[i + 1]())
+            )
         else:
-            filter_dims[i] = Int(filter.dim[i]())
+            filter_dims[i] = rebind[filter_dims.element_types[i]](
+                Int64(filter.dim[i]())
+            )
 
     return ConvShape[rank](
         n=Int(input.dim[0]()),
@@ -330,16 +421,16 @@ def get_conv_shape[
         filter_dims=filter_dims,
         c=Int(input.dim[rank + 1]()),
         f=Int(output.dim[rank + 1]()),
-        stride=stride,
-        dilation=dilation,
-        pad_d=pad_d,
-        pad_h=pad_h,
-        pad_w=pad_w,
+        stride=Coord(stride),
+        dilation=Coord(dilation),
+        pad_d=Coord(pad_d),
+        pad_h=Coord(pad_h),
+        pad_w=Coord(pad_w),
         num_groups=num_groups,
     )
 
 
-@always_inline
+@inline(.always)
 def get_conv_tile_size[dtype: DType]() -> Int:
     """Returns the convolution L2 cache tile size in elements for the target.
 
@@ -368,7 +459,7 @@ def get_conv_tile_size[dtype: DType]() -> Int:
     return 288 * KB // size_of[dtype]()
 
 
-@always_inline
+@inline(.always)
 def get_conv_tile_shape[
     dtype: DType,
 ](c: Int, filter_window_size: Int, micro_kernel_width: Int,) -> IndexList[2]:
@@ -413,7 +504,7 @@ def get_conv_tile_shape[
     return Index(c_tile_size, f_tile_size)
 
 
-@always_inline
+@inline(.always)
 def extend_shape[
     rank: Int
 ](in_shape: IndexList[rank], first: Int, last: Int) -> IndexList[rank + 2]:
@@ -437,7 +528,7 @@ def extend_shape[
     return out_shape
 
 
-@always_inline
+@inline(.always)
 def append_shape[
     rank: Int
 ](in_shape: IndexList[rank], last2nd: Int, last: Int) -> IndexList[rank + 2]:
@@ -461,7 +552,7 @@ def append_shape[
     return out_shape
 
 
-@always_inline
+@inline(.always)
 def reorder_padding[rank: Int](pad: IntTuple) -> IntTuple:
     """Reorders padding entries into `(lower, upper)` pairs per dimension.
 
@@ -475,12 +566,13 @@ def reorder_padding[rank: Int](pad: IntTuple) -> IntTuple:
     Returns:
         Flattened padding tuple ordered as per-dimension `(lower, upper)` pairs.
     """
-    comptime if rank == 1:
-        return IntTuple(pad).flatten()
-    elif rank == 2:
-        return IntTuple(pad[0], pad[2], pad[1], pad[3])
-    else:
-        return IntTuple(pad[0], pad[2], pad[4], pad[1], pad[3], pad[5])
+    comptime match rank:
+        case 1:
+            return IntTuple(pad).flatten()
+        case 2:
+            return IntTuple(pad[0], pad[2], pad[1], pad[3])
+        case _:
+            return IntTuple(pad[0], pad[2], pad[4], pad[1], pad[3], pad[5])
 
 
 struct ConvInfoStatic[rank: Int](Defaultable):
@@ -510,7 +602,7 @@ struct ConvInfoStatic[rank: Int](Defaultable):
         self.dilation = IntTuple(dilation).flatten()
         self.num_groups = num_groups
 
-    @always_inline
+    @inline(.always)
     def __init__(out self):
         self.pad = IntTuple(num_elems=Self.rank * 2)
         _ = self.pad._fill(UNKNOWN_VALUE)
@@ -520,7 +612,7 @@ struct ConvInfoStatic[rank: Int](Defaultable):
         _ = self.dilation._fill(UNKNOWN_VALUE)
         self.num_groups = UNKNOWN_VALUE
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self,
         pad: IntTuple,
@@ -542,7 +634,7 @@ struct ConvInfoStatic[rank: Int](Defaultable):
         self.dilation = IntTuple(dilation).flatten()
         self.num_groups = num_groups
 
-    @always_inline
+    @inline(.always)
     def all_known(self) -> Bool:
         return (
             self.pad.all_known()
@@ -551,21 +643,21 @@ struct ConvInfoStatic[rank: Int](Defaultable):
             and self.num_groups != UNKNOWN_VALUE
         )
 
-    @always_inline
+    @inline(.always)
     def pad_left(self) -> Int:
         # TODO: extend to 1d/3d.
         return Int(self.pad[1])
 
-    @always_inline
+    @inline(.always)
     def pad_bottom(self) -> Int:
         # TODO: extend to 1d/3d.
         return Int(self.pad[0])
 
-    @always_inline
+    @inline(.always)
     def strides(self) -> IndexList[2]:
         return Index(self.stride[0], self.stride[1])
 
-    @always_inline
+    @inline(.always)
     def dilations(self) -> IndexList[2]:
         return Index(self.dilation[0], self.dilation[1])
 
@@ -725,7 +817,7 @@ struct ConvPartition(TrivialRegisterPassable):
     var c_offset: Int
     var c_size: Int
 
-    @always_inline
+    @inline(.always)
     def empty(self) -> Bool:
         # fmt: off
         return self.ng_size <= 0 or \
@@ -735,7 +827,7 @@ struct ConvPartition(TrivialRegisterPassable):
         # fmt: on
 
 
-@always_inline
+@inline(.always)
 def get_conv_num_tasks(num_threads: Int, conv_shape: ConvShape) -> Int:
     """Returns the number of tasks to partition the convolution into.
 
@@ -862,7 +954,7 @@ def get_conv_num_partitions[
     )
 
 
-@always_inline
+@inline(.always)
 def get_partition(
     task_id: Int,
     num_partitions: IndexList[4],
@@ -946,11 +1038,11 @@ struct ConvAlgorithm(TrivialRegisterPassable):
         2
     )  # TF filter layout for channels last input.
 
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def __eq__(self, rhs: ConvAlgorithm) -> Bool:
         return self.value == rhs.value
 
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def __ne__(self, rhs: ConvAlgorithm) -> Bool:
         return self.value != rhs.value
 
@@ -960,7 +1052,7 @@ struct ConvAlgorithm(TrivialRegisterPassable):
 # ===----------------------------------------------------------------------=== #
 
 
-@always_inline
+@inline(.always)
 def align_down_residual(value: Int, alignment: Int) -> Int:
     """Returns the remainder after aligning down value to alignment.
 

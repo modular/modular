@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import socket
 import tempfile
@@ -28,16 +29,15 @@ from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from max.pipelines.context import BaseContext
-from max.pipelines.lib import PIPELINE_REGISTRY, PipelineConfig
-from max.pipelines.lib.pipeline_variants.structured_output_backend import (
-    make_grammar_validator,
-)
+from max.pipelines.lib import PIPELINE_REGISTRY, MemoryPlan, PipelineConfig
 from max.pipelines.modeling.types import (
     PipelineOutput,
     PipelinesFactory,
     PipelineTask,
     PipelineTokenizer,
 )
+from max.serve._body_size_limit import RequestBodySizeLimitMiddleware
+from max.serve._error_envelope import openai_error_body
 from max.serve.config import APIType, MetricRecordingMethod, Settings
 from max.serve.media import GeneratedMediaStore
 from max.serve.pipelines.eplb_stats_rpc import (
@@ -53,25 +53,34 @@ from max.serve.recordreplay.jsonl import JSONLFileRecorder
 from max.serve.recordreplay.middleware import RecorderMiddleware
 from max.serve.request import register_request
 from max.serve.router import (
+    _decisions_routes,
+    _systemone_routes,
     kserve_routes,
     openai_routes,
     openresponses_routes,
     sagemaker_routes,
 )
-from max.serve.schemas.openai import Error, ErrorResponse
-from max.serve.telemetry.common import send_telemetry_log
+from max.serve.router._decision_format import detect_decision_format
+from max.serve.router._image_resolution import fetch_media_data_uri
+from max.serve.telemetry.common import (
+    _telemetry_disabled,
+    send_telemetry_log,
+)
 from max.serve.telemetry.metrics import METRICS
+from max.serve.telemetry.ttft_join import announce_enabled
 from max.serve.worker_interface import RequestQueueFull
 from max.serve.worker_interface._zmq_queue import generate_zmq_ipc_path
 from max.serve.worker_interface.lora_queue import LoRAQueue
 from max.serve.worker_interface.zmq_interface import ZmqModelWorkerInterface
 from uvicorn import Config
 
+# /v1/decisions and /v1/systemone are OpenAI-style extensions served beside
+# /v1/chat/*.
 ROUTES = {
-    APIType.KSERVE: kserve_routes,
-    APIType.OPENAI: openai_routes,
-    APIType.SAGEMAKER: sagemaker_routes,
-    APIType.OPENRESPONSES: openresponses_routes,
+    APIType.KSERVE: (kserve_routes,),
+    APIType.OPENAI: (openai_routes, _decisions_routes, _systemone_routes),
+    APIType.SAGEMAKER: (sagemaker_routes,),
+    APIType.OPENRESPONSES: (openresponses_routes,),
 }
 
 logger = logging.getLogger("max.serve")
@@ -100,6 +109,9 @@ class ServingTokenGeneratorSettings:
     reasoning_parser_name: str | None = None
     temperature: float | None = None
     thinking_temperature: float | None = None
+    memory_plan: MemoryPlan | None = None
+    """Memory plan the pipeline was sized against; ``None`` only for test
+    servers built without one (e.g. echo pipelines)."""
 
 
 @asynccontextmanager
@@ -110,7 +122,7 @@ async def lifespan(
     zmq_endpoint_base: str,
 ) -> AsyncGenerator[None]:
     try:
-        if not settings.disable_telemetry:
+        if not _telemetry_disabled(settings):
             send_telemetry_log(
                 serving_settings.pipeline_config.models.model_name
             )
@@ -123,6 +135,7 @@ async def lifespan(
         )
 
     logger.info("Starting server...")
+    announce_enabled()
 
     async with AsyncExitStack() as exit_stack:
         media_root = Path(
@@ -169,6 +182,7 @@ async def lifespan(
                 metric_client,
                 model_worker_interface=model_worker_interface,
                 zmq_endpoint_base=zmq_endpoint_base,
+                memory_plan=serving_settings.memory_plan,
             )
         )
 
@@ -207,6 +221,14 @@ async def lifespan(
                 model_worker=model_worker,
                 lora_queue=lora_queue,
             ),
+            # Audio generation serves /v1/audio/speech and /v1/responses, both
+            # of which go through GeneralPipelineHandler.
+            PipelineTask.AUDIO_GENERATION: lambda: GeneralPipelineHandler(
+                model_name=serving_settings.pipeline_config.models.model_name,
+                tokenizer=serving_settings.tokenizer,
+                model_worker=model_worker,
+                lora_queue=lora_queue,
+            ),
         }[serving_settings.task]()
 
         # Store pipeline (may be GeneralPipelineHandler or modality-specific wrapper)
@@ -214,25 +236,26 @@ async def lifespan(
         # OpenResponses API uses GeneralPipelineHandler
         app.state.pipeline = pipeline
         app.state.pipeline_config = serving_settings.pipeline_config
-
-        # Admission-time grammar validator (text generation only). Rejects a
-        # response_format / tool schema the active backend cannot compile with a
-        # 400 up front.
-        app.state.grammar_validator = None
-        if serving_settings.task == PipelineTask.TEXT_GENERATION and hasattr(
-            serving_settings.tokenizer, "delegate"
-        ):
-            delegate = serving_settings.tokenizer.delegate
-            app.state.grammar_validator = make_grammar_validator(
-                serving_settings.pipeline_config.sampling.structured_output_backend,
-                delegate,
-                len(delegate),
+        app.state.memory_plan = serving_settings.memory_plan
+        # The served task, for routes that only mean something for one of them:
+        # every API type is mounted regardless, so a route with no counterpart
+        # in the served model has to refuse the request itself.
+        app.state.task = serving_settings.task
+        if serving_settings.task == PipelineTask.TEXT_GENERATION:
+            # Probes the checkpoint (a Hub request for a repo id), so keep it
+            # off the event loop.
+            app.state.decision_format = await asyncio.to_thread(
+                detect_decision_format,
+                serving_settings.pipeline_config.models["main"].model_path,
             )
 
         # Also store as handler for OpenResponses API route compatibility
-        # For pixel generation, this is the same as pipeline
+        # For the media tasks, this is the same as pipeline
         # For other tasks, we also create a separate handler instance
-        if serving_settings.task == PipelineTask.PIXEL_GENERATION:
+        if serving_settings.task in (
+            PipelineTask.PIXEL_GENERATION,
+            PipelineTask.AUDIO_GENERATION,
+        ):
             app.state.handler = pipeline
         else:
             app.state.handler = GeneralPipelineHandler(
@@ -277,36 +300,13 @@ def make_metrics_app() -> Callable[..., Any]:
     return make_asgi_app()
 
 
-_OPENAI_ERROR_TYPES: dict[int, str] = {
-    400: "invalid_request_error",
-    401: "authentication_error",
-    403: "permission_error",
-    404: "not_found_error",
-    409: "conflict_error",
-    422: "invalid_request_error",
-    429: "rate_limit_error",
-}
-
-
-def _openai_error_body(status_code: int, message: str) -> dict[str, Any]:
-    error_type = _OPENAI_ERROR_TYPES.get(
-        status_code,
-        "invalid_request_error" if status_code < 500 else "api_error",
-    )
-    return ErrorResponse(
-        error=Error(
-            code=str(status_code), message=message, param="", type=error_type
-        )
-    ).model_dump()
-
-
 async def _openai_http_exception_handler(
     request: Request, exc: Exception
 ) -> JSONResponse:
     assert isinstance(exc, HTTPException)
     return JSONResponse(
         status_code=exc.status_code,
-        content=_openai_error_body(exc.status_code, str(exc.detail)),
+        content=openai_error_body(exc.status_code, str(exc.detail)),
         headers=getattr(exc, "headers", None),
     )
 
@@ -315,7 +315,7 @@ async def _openai_validation_exception_handler(
     request: Request, exc: Exception
 ) -> JSONResponse:
     return JSONResponse(
-        status_code=422, content=_openai_error_body(422, str(exc))
+        status_code=422, content=openai_error_body(422, str(exc))
     )
 
 
@@ -335,7 +335,7 @@ async def _request_queue_full_exception_handler(
     logger.warning("Request queue full for request %s", request_id)
     return JSONResponse(
         status_code=429,
-        content=_openai_error_body(
+        content=openai_error_body(
             429, "Server is at capacity. Please retry later."
         ),
         headers={"Retry-After": "1"},
@@ -362,6 +362,12 @@ def fastapi_app(
     app = FastAPI(title="MAX Serve", lifespan=lifespan_wrap)
     app.state.zmq_endpoint_base = zmq_endpoint_base
 
+    if settings.max_request_bytes > 0:
+        app.add_middleware(
+            RequestBodySizeLimitMiddleware,
+            max_bytes=settings.max_request_bytes,
+        )
+
     if settings.transaction_recording_file is not None:
         transaction_recording_file = settings.transaction_recording_file
         app.add_middleware(
@@ -372,6 +378,8 @@ def fastapi_app(
             include_responses=settings.transaction_recording_include_responses,
         )
 
+    # Deliberately the raw setting, not _telemetry_disabled: /metrics is a
+    # local pull surface, not egress, so OTEL_SDK_DISABLED must not remove it.
     if (
         not settings.disable_telemetry
         and settings.metric_recording == MetricRecordingMethod.ASYNCIO
@@ -442,10 +450,22 @@ def fastapi_app(
         "/max_internal/eplb_stats_reset", eplb_stats_reset, methods=["POST"]
     )
     for api_type in settings.api_types:
-        app.include_router(ROUTES[api_type].router)
+        for route_module in ROUTES[api_type]:
+            app.include_router(route_module.router)
 
     app.state.settings = settings
-    register_request(app)
+
+    # The /v1/responses input schema takes data: URIs only, so a client-supplied
+    # http(s) image must be fetched and inlined before the body validates. The
+    # request library cannot do that itself (it does not depend on max.serve, and
+    # a second downloader there would be a second SSRF surface), so hand it the
+    # shared resolver, which carries the byte caps and host validation.
+    async def fetch_media_data_uri_for_app(url: str) -> str:
+        return await fetch_media_data_uri(url, settings)
+
+    app.state.media_data_uri_fetcher = fetch_media_data_uri_for_app
+
+    register_request(app, structured_logging=settings.structured_logging)
 
     app.add_exception_handler(HTTPException, _openai_http_exception_handler)
     app.add_exception_handler(
@@ -466,6 +486,10 @@ def fastapi_config(app: FastAPI, server_settings: Settings) -> Config:
         host=server_settings.host,
         port=server_settings.port,
         timeout_graceful_shutdown=server_settings.graceful_shutdown_timeout_s,
+        # uvicorn defaults to closing idle connections after 5s, far below the
+        # idle timeout of a pooling client, which makes the server the side
+        # that closes and turns the race into client-visible TCP resets.
+        timeout_keep_alive=server_settings.http_keepalive_timeout_s,
         # The serving lifespan (model worker, pipeline, telemetry) is entered
         # explicitly by the entrypoint around `server.serve()` so that a worker
         # crash cancels the serving task directly. Keep uvicorn out of the

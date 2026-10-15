@@ -28,9 +28,12 @@ from uuid import uuid4
 import aiofiles
 import numpy as np
 from max.pipelines.request.open_responses import (
+    OutputAudioContent,
     OutputImageContent,
     OutputVideoContent,
 )
+
+from .audio import WAV_MEDIA_TYPE, encode_wav_bytes
 
 logger = logging.getLogger("max.serve")
 
@@ -42,7 +45,8 @@ class StoredMediaAsset:
     asset_id: str
     """Stable identifier used in MAX's generated-media download routes."""
     kind: str
-    """Media category, currently ``"image"`` or ``"video"``."""
+    """The media category of the stored asset, one of ``"image"``,
+    ``"video"``, or ``"audio"``."""
     path: Path
     """Absolute path to the saved file on local disk."""
     media_type: str
@@ -62,7 +66,21 @@ class GeneratedMediaStorageLimitExceeded(RuntimeError):
 
 
 class GeneratedMediaStore:
-    """Stores generated media files for later download via HTTP."""
+    """Stores generated media files for later download via HTTP.
+
+    Creating a store sets up the per-category media directories and the
+    cache accounting that backs eviction.
+
+    Args:
+        root_dir: The root directory under which the per-category media
+            subdirectories are created.
+        max_storage_bytes: The maximum total size of stored assets, in
+            bytes, defaulting to 512 MiB. Older assets are evicted to make
+            room for new ones.
+
+    Raises:
+        ValueError: If ``max_storage_bytes`` is not greater than zero.
+    """
 
     def __init__(
         self,
@@ -70,16 +88,18 @@ class GeneratedMediaStore:
         *,
         max_storage_bytes: int = 512 * 1024 * 1024,
     ) -> None:
-        """Initialize per-process media directories and cache accounting."""
         if max_storage_bytes <= 0:
             raise ValueError("max_storage_bytes must be greater than zero.")
 
         self._images_dir = root_dir / "images"
         self._videos_dir = root_dir / "videos"
+        self._audio_dir = root_dir / "audio"
         self._images_dir.mkdir(parents=True, exist_ok=True)
         self._videos_dir.mkdir(parents=True, exist_ok=True)
+        self._audio_dir.mkdir(parents=True, exist_ok=True)
         self._images: dict[str, StoredMediaAsset] = {}
         self._videos: dict[str, StoredMediaAsset] = {}
+        self._audio: dict[str, StoredMediaAsset] = {}
         self._max_storage_bytes = max_storage_bytes
         self._total_size_bytes = 0
 
@@ -91,17 +111,24 @@ class GeneratedMediaStore:
         """Return a stored video asset by id if it still exists on disk."""
         return self._get_asset(self._videos, video_id)
 
+    def get_audio(self, audio_id: str) -> StoredMediaAsset | None:
+        """Return a stored audio asset by id if it still exists on disk."""
+        return self._get_asset(self._audio, audio_id)
+
     async def save_image_content(
         self, content: OutputImageContent
     ) -> StoredMediaAsset:
         """Persist inline image content to disk and register it in the cache."""
         image_bytes = _decode_output_image_bytes(content)
         image_format = (content.format or "png").lower()
+        # The extension, not the format string, names the type: a request that
+        # says "jpg" still gets served as image/jpeg.
+        guessed = mimetypes.guess_type(f"image.{image_format}")[0]
         return await self._save_payload(
             kind="image",
             directory=self._images_dir,
             extension=image_format,
-            default_media_type=f"image/{image_format}",
+            media_type=guessed or f"image/{image_format}",
             payload=image_bytes,
         )
 
@@ -116,8 +143,37 @@ class GeneratedMediaStore:
             kind="video",
             directory=self._videos_dir,
             extension="mp4",
-            default_media_type="video/mp4",
+            media_type="video/mp4",
             payload=video_bytes,
+        )
+
+    async def save_audio_content(
+        self, content: OutputAudioContent
+    ) -> StoredMediaAsset:
+        """Encode a raw waveform to WAV bytes and persist the result.
+
+        Raises:
+            ValueError: If the content carries no raw samples, or names a
+                container this store cannot write.
+        """
+        if content.samples is None or content.sample_rate is None:
+            raise ValueError(
+                "Cannot persist audio content without raw samples."
+            )
+        audio_format = (content.format or "wav").lower()
+        if audio_format != "wav":
+            raise ValueError(
+                f"Cannot write '{audio_format}' audio; only WAV is supported."
+            )
+        return await self._save_payload(
+            kind="audio",
+            directory=self._audio_dir,
+            extension="wav",
+            # Named rather than guessed: the platform mimetypes database
+            # answers "audio/x-wav" for .wav, and this has to be the type
+            # /v1/audio/speech returns for the same bytes.
+            media_type=WAV_MEDIA_TYPE,
+            payload=encode_wav_bytes(content.samples, content.sample_rate),
         )
 
     def encode_video_content(
@@ -155,7 +211,7 @@ class GeneratedMediaStore:
         kind: str,
         directory: Path,
         extension: str,
-        default_media_type: str,
+        media_type: str,
         payload: bytes,
     ) -> StoredMediaAsset:
         """Evict if needed, write a payload to disk, and track the saved asset.
@@ -182,7 +238,7 @@ class GeneratedMediaStore:
             kind=kind,
             directory=directory,
             extension=extension,
-            default_media_type=default_media_type,
+            media_type=media_type,
             size_bytes=size_bytes,
         )
         try:
@@ -191,10 +247,18 @@ class GeneratedMediaStore:
             asset.path.unlink(missing_ok=True)
             raise
 
-        target_store = self._images if kind == "image" else self._videos
-        target_store[asset.asset_id] = asset
+        self._store_for(kind)[asset.asset_id] = asset
         self._total_size_bytes += asset.size_bytes
         return asset
+
+    def _store_for(self, kind: str) -> dict[str, StoredMediaAsset]:
+        """Returns the tracking dict for one media category."""
+        stores = {
+            "image": self._images,
+            "video": self._videos,
+            "audio": self._audio,
+        }
+        return stores[kind]
 
     def _get_asset(
         self,
@@ -226,15 +290,12 @@ class GeneratedMediaStore:
         kind: str,
         directory: Path,
         extension: str,
-        default_media_type: str,
+        media_type: str,
         size_bytes: int,
     ) -> StoredMediaAsset:
         """Create metadata for a future on-disk asset with a fresh id."""
         asset_id = uuid4().hex
         output_path = directory / f"{asset_id}.{extension}"
-        media_type = (
-            mimetypes.guess_type(output_path.name)[0] or default_media_type
-        )
         now = time.time()
         return StoredMediaAsset(
             asset_id=asset_id,
@@ -271,10 +332,10 @@ class GeneratedMediaStore:
     def _oldest_asset(
         self,
     ) -> tuple[dict[str, StoredMediaAsset], str, StoredMediaAsset] | None:
-        """Return the oldest tracked asset across image and video stores."""
+        """Return the oldest tracked asset across every media store."""
         candidates = [
             (store, asset_id, asset)
-            for store in (self._images, self._videos)
+            for store in (self._images, self._videos, self._audio)
             for asset_id, asset in store.items()
         ]
         if not candidates:
@@ -311,7 +372,7 @@ class GeneratedMediaStore:
         """Recalculate aggregate cache usage from tracked asset metadata."""
         self._total_size_bytes = sum(
             asset.size_bytes
-            for store in (self._images, self._videos)
+            for store in (self._images, self._videos, self._audio)
             for asset in store.values()
         )
 
@@ -326,7 +387,7 @@ def _decode_output_image_bytes(content: OutputImageContent) -> bytes:
 
 
 def encode_video_bytes_b64(video_bytes: bytes) -> str:
-    """Encode an MP4 byte payload as a base64 response string."""
+    """Encodes an MP4 byte payload as a base64 response string."""
     return base64.b64encode(video_bytes).decode("utf-8")
 
 

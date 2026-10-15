@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Pipeline DSL: ScheduleEntry, EntryBuilder, Pipe, pipe, annotate_pipe."""
 
-from std.collections import InlineArray
+from std.collections import Array
 
 from .dependency_graph import LoopBody, OpNode
 from .types import (
@@ -39,7 +39,7 @@ struct ScheduleEntry(ImplicitlyCopyable, Movable):
     """Whether this op is only emitted when a next iteration exists
     (conditional on `k < K - 2*BK`)."""
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self,
         *,
@@ -66,24 +66,24 @@ struct EntryBuilder[N: Int, phase: Phase]:
     pattern, auto-tracking the write position and phase.
     """
 
-    var entries: InlineArray[ScheduleEntry, Self.N]
+    var entries: Array[ScheduleEntry, Self.N]
     var pos: Int
 
-    @always_inline
+    @inline(.always)
     def __init__(out self, pos: Int = 0):
         """Constructs an empty builder at the given write position."""
-        self.entries = InlineArray[ScheduleEntry, Self.N](uninitialized=True)
+        self.entries = Array[ScheduleEntry, Self.N](uninitialized=True)
         self.pos = pos
 
-    @always_inline
+    @inline(.always)
     def __init__(
-        out self, entries: InlineArray[ScheduleEntry, Self.N], pos: Int = 0
+        out self, var entries: Array[ScheduleEntry, Self.N], pos: Int = 0
     ):
         """Wrap an existing entries array (e.g. from a caller)."""
-        self.entries = entries
+        self.entries = entries^
         self.pos = pos
 
-    @always_inline
+    @inline(.always)
     def emit(mut self, op: OpDesc, prefetch: Bool = False):
         """Append one entry and advance the position."""
         self.entries[self.pos] = ScheduleEntry(
@@ -94,13 +94,13 @@ struct EntryBuilder[N: Int, phase: Phase]:
         )
         self.pos += 1
 
-    @always_inline
+    @inline(.always)
     def emit_if(mut self, op: OpDesc, prefetch: Bool = False):
         """Emit only if op is present (not the NONE sentinel)."""
         if op.is_present():
             self.emit(op, prefetch)
 
-    @always_inline
+    @inline(.always)
     def emit_flag(mut self, op: OpDesc, flag: Bool):
         """Emit only if flag is True."""
         if flag:
@@ -112,7 +112,7 @@ struct EntryBuilder[N: Int, phase: Phase]:
 # =============================================================================
 
 
-struct Pipe[N: Int](ImplicitlyCopyable, Movable):
+struct Pipe[N: Int](Copyable, Movable):
     """A compile-time sequence of N pipeline operations.
 
     Build sequences using the >> operator to chain ops into a pipeline:
@@ -134,13 +134,13 @@ struct Pipe[N: Int](ImplicitlyCopyable, Movable):
     ```
     """
 
-    var ops: InlineArray[OpDesc, Self.N]
+    var ops: Array[OpDesc, Self.N]
 
-    @always_inline
+    @inline(.always)
     def __init__(out self):
-        self.ops = InlineArray[OpDesc, Self.N](uninitialized=True)
+        self.ops = Array[OpDesc, Self.N](uninitialized=True)
 
-    @always_inline
+    @inline(.always)
     def __rshift__(self, op: OpDesc) -> Pipe[Self.N + 1]:
         """Append a single op: pipe >> op -> Pipe[N+1]."""
         var result = Pipe[Self.N + 1]()
@@ -149,7 +149,7 @@ struct Pipe[N: Int](ImplicitlyCopyable, Movable):
         result.ops[Self.N] = op
         return result^
 
-    @always_inline
+    @inline(.always)
     def __rshift__[M: Int](self, other: Pipe[M]) -> Pipe[Self.N + M]:
         """Concatenate two pipes: Pipe[N] >> Pipe[M] -> Pipe[N+M]."""
         var result = Pipe[Self.N + M]()
@@ -159,40 +159,38 @@ struct Pipe[N: Int](ImplicitlyCopyable, Movable):
             result.ops[Self.N + i] = other.ops[i]
         return result^
 
-    @always_inline
-    def as_schedule[phase: Phase](self) -> InlineArray[ScheduleEntry, Self.N]:
+    @inline(.always)
+    def as_schedule[phase: Phase](self) -> Array[ScheduleEntry, Self.N]:
         """Convert to schedule entries with sequential time slots."""
-        var entries = InlineArray[ScheduleEntry, Self.N](uninitialized=True)
-        for i in range(Self.N):
-            entries[i] = ScheduleEntry(
+        return Array[_, Self.N](
+            fill_with=lambda (i: Int) {
+                imm self
+            } -> ScheduleEntry: ScheduleEntry(
                 op=self.ops[i],
                 time_slot=i,
                 phase=phase,
                 is_prefetch=False,
             )
-        return entries^
+        )
 
-    @always_inline
+    @inline(.always)
     def as_schedule[
         phase: Phase
-    ](self, offset: Int) -> InlineArray[ScheduleEntry, Self.N]:
+    ](self, offset: Int) -> Array[ScheduleEntry, Self.N]:
         """Convert to schedule entries with time slots starting at offset."""
-        var entries = InlineArray[ScheduleEntry, Self.N](uninitialized=True)
-        for i in range(Self.N):
-            entries[i] = ScheduleEntry(
+        return Array[_, Self.N](
+            fill_with=lambda (i: Int) {imm} -> ScheduleEntry: ScheduleEntry(
                 op=self.ops[i],
                 time_slot=offset + i,
                 phase=phase,
                 is_prefetch=False,
             )
-        return entries^
+        )
 
-    @always_inline
+    @inline(.always)
     def emit_into[
         MaxN: Int, phase: Phase
-    ](
-        self, mut entries: InlineArray[ScheduleEntry, MaxN], offset: Int = 0
-    ) -> Int:
+    ](self, mut entries: Array[ScheduleEntry, MaxN], offset: Int = 0) -> Int:
         """Write ops into a larger schedule array starting at offset.
 
         Returns the new offset (offset + N), allowing chained writes.
@@ -206,7 +204,7 @@ struct Pipe[N: Int](ImplicitlyCopyable, Movable):
             )
         return offset + Self.N
 
-    @always_inline
+    @inline(.always)
     def emit_into_body(
         self,
         mut body: LoopBody,
@@ -221,7 +219,7 @@ struct Pipe[N: Int](ImplicitlyCopyable, Movable):
         return offset + Self.N
 
 
-@always_inline
+@inline(.always)
 def pipe(op: OpDesc) -> Pipe[1]:
     """Create a single-element pipe. Use as the start of a >> chain."""
     var p = Pipe[1]()

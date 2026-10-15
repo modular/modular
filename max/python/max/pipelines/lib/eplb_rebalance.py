@@ -27,13 +27,9 @@ max/tests/tests/serve/test_eplb_rebalance.py.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
 
 import numpy as np
 from numpy.typing import NDArray
-
-if TYPE_CHECKING:
-    pass
 
 logger = logging.getLogger("max.serve")
 

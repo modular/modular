@@ -160,6 +160,7 @@ def make_test_config() -> DeepseekV3_2Config:
         norm_topk_prob=hf_config.norm_topk_prob,
         hidden_act=hf_config.hidden_act,
         max_position_embeddings=hf_config.max_position_embeddings,
+        max_seq_len=hf_config.max_position_embeddings,
         rms_norm_eps=hf_config.rms_norm_eps,
         tie_word_embeddings=hf_config.tie_word_embeddings,
         rope_theta=get_rope_theta(hf_config),

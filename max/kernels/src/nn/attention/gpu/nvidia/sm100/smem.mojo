@@ -26,7 +26,6 @@ Non-shared-mode memory layout (low to high address):
     [q_scale: BM * scale_dtype (0 when scale_dtype is invalid)]
     [k_scale: num_k_scale_bufs * BN * scale_dtype (0 when invalid)]
     [mbars: FA4MiscMBars.size SharedMemBarriers]
-    [tmem_addr: 1 UInt32]
 
 All K stages are contiguous, followed by all V stages contiguous.
 
@@ -39,7 +38,6 @@ Shared-KV-mode memory layout (low to high address):
     [q_scale: BM * scale_dtype (0 when scale_dtype is invalid)]
     [k_scale: num_k_scale_bufs * BN * scale_dtype (0 when invalid)]
     [mbars: FA4MiscMBars.size SharedMemBarriers]
-    [tmem_addr: 1 UInt32]
 
 In shared mode, K_nope and V alternate in the same buffer, and rope data is
 stored separately at half the staging rate. k_smem_base() and v_smem_base()
@@ -60,9 +58,9 @@ q-aliased o_smem region, then TMA-store it to gmem. Output partials remain
 in TMEM throughout the combine.
 """
 
-from std.sys import size_of
-from std.gpu.globals import WARPGROUP_SIZE
-from std.gpu.memory import AddressSpace, external_memory
+from std.sys import size_of, get_defined_bool
+from max.gpu.globals import WARPGROUP_SIZE
+from max.gpu.memory import external_memory
 from layout.tma_async import SharedMemBarrier
 from nn.attention.gpu.nvidia.sm100.attention import (
     FA4Config,
@@ -88,7 +86,7 @@ struct SM100AttentionSMem[
     """Shared memory layout manager for SM100 Flash Attention kernels.
 
     Stores a base pointer into dynamic shared memory and provides accessor
-    methods for each region (Q, K, V, correction, mbarriers, tmem address).
+    methods for each region (Q, K, V, correction, mbarriers).
     All byte-offset arithmetic is comptime so the accessors compile down to a
     single pointer add + bitcast.
 
@@ -143,9 +141,11 @@ struct SM100AttentionSMem[
     # `BN x (shared_kv_cols // num_qk_stages)` sub-tiles ("Convention B"): one KV
     # ring slot holds ONE such sub-tile, not a full-depth K/V tile. This matches
     # the launch reservation `config.smem_used` (attention.mojo `__init__` WS
-    # branch: `bytes_per_subtile = BN * sub_depth * qkv_dt`), so the struct total
-    # reconciles with it — the reservation must EQUAL this struct or the mbar /
-    # tmem_addr regions laid out after KV spill past it (OOB __shared__). rope and
+    # branch: `bytes_per_subtile = BN * sub_depth * qkv_dt + 2 * mbar_size` --
+    # the two per-slot barriers are part of the slot and must NOT be dropped
+    # from this reconciliation), so the struct total
+    # reconciles with it — the reservation must EQUAL this struct or the mbar
+    # region laid out after KV spills past it (OOB __shared__). rope and
     # scale are 0 on the WS MHA path (enforced by `supported()`), so a sub-tile is
     # pure K/V data. `use_ws == False` folds to the byte-identical non-WS path.
     comptime ws_subtile_bytes: Int = (
@@ -209,7 +209,7 @@ struct SM100AttentionSMem[
     # 1Q, `BM` for 2Q) only happens to be correct when BM==128/256. For the
     # warp-specialized MMA_M=32 path (BM=32) a BM-derived size would allocate
     # only 64 slots while `tid` reaches 255 -> OOB __shared__ writes that
-    # corrupt the trailing mbar/tmem regions and spill past the allocation.
+    # corrupt the trailing mbar region and spill past the allocation.
     comptime correction_byte_offset: Int = Self.kv_byte_offset + Self.kv_bytes
     comptime correction_bytes: Int = (
         2 * WARPGROUP_SIZE * size_of[DType.float32]()
@@ -233,9 +233,29 @@ struct SM100AttentionSMem[
         Self.q_scale_byte_offset + Self.q_scale_bytes
     )
 
+    # ---- shared-key regions (0 bytes unless `config.ws_shared_key`) ----------
+    # Placed AFTER the KV ring, not before it: the epilogue staging aliases
+    # `o_smem` onto the Q base and deliberately spills forward into the live KV
+    # ring (`fa4_softmax`'s WS epilogue carve), so anything the epilogue must
+    # not clobber has to sit past KV. `ws_exchange` in particular: it is written
+    # per KV tile, while Q and the ring are still live, so it could not survive
+    # inside the arena at all. Keeping them here also leaves the
+    # `q_bytes + kv_bytes` staging bound untouched.
+    #
+    # Sizes come from `FA4Config`, not re-derived: it charges the same two
+    # numbers into `smem_used`, and the MLA blockscale sibling asserts
+    # `smem_size() == smem_used` exactly.
+    comptime p_bytes: Int = Self.config.p_smem_bytes()
+    comptime p_byte_offset: Int = Self.k_scale_byte_offset + Self.k_scale_bytes
+
+    comptime ws_exchange_bytes: Int = Self.config.ws_exchange_bytes()
+    comptime ws_exchange_byte_offset: Int = Self.p_byte_offset + Self.p_bytes
+
     # Mbarrier region.
+    # Both shared-key regions fold to 0 off-mode, so this is arithmetically
+    # `k_scale_byte_offset + k_scale_bytes` there.
     comptime mbar_byte_offset: Int = (
-        Self.k_scale_byte_offset + Self.k_scale_bytes
+        Self.ws_exchange_byte_offset + Self.ws_exchange_bytes
     )
 
     comptime MiscMBarsType = FA4MiscMBars[
@@ -249,16 +269,23 @@ struct SM100AttentionSMem[
         splitk_partitions=Self.config.splitk_partitions,
         BM=Self.config.BM,
         use_ws=Self.config.use_ws,
+        crossp=Self.config.crossp_on(),
     ]
 
     comptime mbar_bytes: Int = Int(Self.MiscMBarsType.num_mbars()) * size_of[
         SharedMemBarrier
     ]()
 
-    # tmem_addr: 1 UInt32, immediately after the barriers.
-    comptime tmem_addr_byte_offset: Int = (
+    # BLASST (arXiv 2512.12087) per-warp skip-vote region, placed after
+    # the barriers so it's 0 bytes (byte-identical layout) when off. Slot =
+    # (wg*2+phase)*4+warp_in_wg; double-buffered on phase since softmax can run
+    # one block ahead of the MMA's P@V consumption.
+    comptime _enable_blasst: Bool = get_defined_bool["ENABLE_BLASST", False]()
+    comptime blasst_vote_slots: Int = 2 * 2 * 4 if Self._enable_blasst else 0
+    comptime blasst_vote_byte_offset: Int = (
         Self.mbar_byte_offset + Self.mbar_bytes
     )
+    comptime blasst_vote_bytes: Int = Self.blasst_vote_slots * size_of[UInt8]()
 
     # ---- element-count offsets (for compatibility with existing callers) ------
 
@@ -280,46 +307,46 @@ struct SM100AttentionSMem[
 
     # ---- storage -------------------------------------------------------------
     @__allow_legacy_any_origin_fields
-    var base: SharedMemPointer[Scalar[DType.uint8]]
+    var base: SharedMemPointer[UInt8]
 
     # ---- construction --------------------------------------------------------
 
-    @always_inline
+    @inline(.always)
     def __init__(out self):
         """Obtain the base pointer from the kernel's dynamic shared memory."""
 
         comptime assert Self.rope_dtype_ or Self.rope_depth == 0
         self.base = external_memory[
-            Scalar[DType.uint8],
-            address_space=AddressSpace.SHARED,
+            UInt8,
+            address_space=.SHARED,
             alignment=128,
             name="mha_dynamic_shared_memory",
         ]().as_unsafe_any_origin()
 
     # ---- accessors -----------------------------------------------------------
 
-    @always_inline
+    @inline(.always)
     def misc_mbars(self) -> Self.MiscMBarsType:
         """Return the FA4MiscMBars wrapper over the mbarrier region."""
         return Self.MiscMBarsType(
             (self.base + Self.mbar_byte_offset).bitcast[SharedMemBarrier]()
         )
 
-    @always_inline
+    @inline(.always)
     def q_smem(self) -> SharedMemPointer[Scalar[Self.qkv_dtype]]:
         """Base of the Q region (offset 0)."""
         return (self.base + Self.q_byte_offset).bitcast[
             Scalar[Self.qkv_dtype]
         ]()
 
-    @always_inline
+    @inline(.always)
     def q_rope_smem(self) -> SharedMemPointer[Scalar[Self.rope_dtype]]:
         """Base of the Q rope region (after Q nope in smem)."""
         return (self.base + Self.q_rope_byte_offset).bitcast[
             Scalar[Self.rope_dtype]
         ]()
 
-    @always_inline
+    @inline(.always)
     def o_smem[
         output_type: DType
     ](self) -> SharedMemPointer[Scalar[output_type]]:
@@ -330,14 +357,14 @@ struct SM100AttentionSMem[
         """
         return (self.base + Self.q_byte_offset).bitcast[Scalar[output_type]]()
 
-    @always_inline
+    @inline(.always)
     def k_smem_base(self) -> SharedMemPointer[Scalar[Self.qkv_dtype]]:
         """Base of the K region (first stage, offset = kv_byte_offset)."""
         return (self.base + Self.kv_byte_offset).bitcast[
             Scalar[Self.qkv_dtype]
         ]()
 
-    @always_inline
+    @inline(.always)
     def v_smem_base(self) -> SharedMemPointer[Scalar[Self.qkv_dtype]]:
         """Base of the V region (stage 0).
 
@@ -350,39 +377,79 @@ struct SM100AttentionSMem[
             Scalar[Self.qkv_dtype]
         ]()
 
-    @always_inline
+    @inline(.always)
     def rope_smem_base(self) -> SharedMemPointer[Scalar[Self.rope_dtype]]:
         """Base of the rope region (shared mode only)."""
         return (self.base + Self.rope_byte_offset).bitcast[
             Scalar[Self.rope_dtype]
         ]()
 
-    @always_inline
+    @inline(.always)
     def correction_smem(self) -> SharedMemPointer[Float32]:
         """Base of the correction region (BM Float32 elements)."""
         return (self.base + Self.correction_byte_offset).bitcast[Float32]()
 
-    @always_inline
+    @inline(.always)
     def q_scale_smem(self) -> SharedMemPointer[Scalar[Self.scale_dtype]]:
         """Base of the q_scale region (BM elements)."""
         return (self.base + Self.q_scale_byte_offset).bitcast[
             Scalar[Self.scale_dtype]
         ]()
 
-    @always_inline
+    @inline(.always)
     def k_scale_smem(self) -> SharedMemPointer[Scalar[Self.scale_dtype]]:
         """Base of the k_scale region (num_k_scale_bufs * BN elements)."""
         return (self.base + Self.k_scale_byte_offset).bitcast[
             Scalar[Self.scale_dtype]
         ]()
 
-    @always_inline
-    def tmem_addr_ptr(self) -> SharedMemPointer[UInt32]:
-        """Pointer to the single UInt32 storing the TMEM address."""
-        return (self.base + Self.tmem_addr_byte_offset).bitcast[UInt32]()
+    @inline(.always)
+    def p_smem(self) -> SharedMemPointer[Scalar[Self.qkv_dtype]]:
+        """Base of the shared-key P staging region (0-sized when off).
+
+        Two `BM x BN` tiles, one per softmax warpgroup; warpgroup `wg` owns
+        `p_smem() + wg * BM * BN`. Only written under `config.ws_shared_key`,
+        where the P@V MMA takes P as an SMEM A operand.
+        """
+        # The P@V A-descriptor is built over this base, and
+        # `MMASmemDescriptorPair.create` encodes the address as `(ptr >> 4)`
+        # masked to 14 bits -- it SILENTLY TRUNCATES a base that is not 16 B
+        # aligned. The offset is 16 B aligned today only as an arithmetic
+        # consequence of the regions ahead of it (`correction_bytes`,
+        # `q_scale_bytes`, `k_scale_bytes`), and until the SS P@V nothing read
+        # this region through a descriptor, so nothing depended on it. Checked
+        # here rather than at the offset because only a caller can be
+        # instantiated, and the only callers are the shared-key producer and
+        # consumer.
+        comptime assert Self.p_byte_offset % 16 == 0, (
+            "the shared-key P region must be 16 B aligned; the P@V"
+            " A-descriptor truncates a misaligned base instead of failing"
+        )
+        return (self.base + Self.p_byte_offset).bitcast[
+            Scalar[Self.qkv_dtype]
+        ]()
+
+    @inline(.always)
+    def ws_exchange_smem(self) -> SharedMemPointer[Float32]:
+        """Base of the shared-key cross-warp exchange region (0-sized off).
+
+        `2 * 2 * WARPGROUP_SIZE` Float32 slots. Warpgroup `wg` at iteration
+        parity `p` owns `[(wg*2 + p) * WARPGROUP_SIZE, +WARPGROUP_SIZE)`;
+        `fa4_ws_exchange4` does that indexing.
+        """
+        return (self.base + Self.ws_exchange_byte_offset).bitcast[Float32]()
+
+    @inline(.always)
+    def blasst_vote_smem(self) -> SharedMemPointer[UInt8]:
+        """Base of the BLASST per-warp skip-vote region (0-sized when off).
+
+        Slot `(wg*2 + phase)*4 + warp_in_wg` holds softmax warp `warp_in_wg`'s
+        skip vote for warp group `wg` at S-consumer phase `phase`.
+        """
+        return (self.base + Self.blasst_vote_byte_offset).bitcast[UInt8]()
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def smem_size() -> Int:
         """Total dynamic shared memory bytes required."""
-        return Self.tmem_addr_byte_offset + size_of[UInt32]()
+        return Self.blasst_vote_byte_offset + Self.blasst_vote_bytes

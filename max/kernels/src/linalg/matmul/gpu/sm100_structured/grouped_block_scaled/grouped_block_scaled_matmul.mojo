@@ -28,11 +28,11 @@ Callers must provide template tensors in the correct shapes:
   SF_ATOM_M[1] * SF_ATOM_K)
 
 Usage:
-    # Per-group pointers as TileTensor[DType.uint64, ...]
+    # Per-group pointers as TileTensor[.uint64, ...]
     var a_ptrs = TileTensor(ptr, tile_row_major[num_groups, 1]())
     ...
 
-    # Problem sizes as TileTensor[DType.int32, ...]
+    # Problem sizes as TileTensor[.int32, ...]
     var problem_sizes = TileTensor(ptr, tile_row_major[num_groups, 4]())
 
     # 3D template TileTensors for TMA descriptor creation
@@ -51,13 +51,12 @@ from std.collections import Optional
 from std.math import align_up
 from std.sys import size_of
 
-from std.gpu.host import DeviceContext, FuncAttribute
-from std.gpu.host.info import B200
-from layout import TileTensor
+from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host.info import B200
+from layout import TileTensor, coord
 
 from structured_kernels.tile_types import create_tma_tile
 
-from std.utils.index import Index
 from std.utils.static_tuple import StaticTuple
 
 from linalg.utils import elementwise_compute_lambda_type
@@ -149,13 +148,13 @@ def grouped_block_scaled_matmul[
     ] = None,
 ](
     # Per-group tensor pointers (max_groups, 1) TileTensors
-    a_ptrs: TileTensor[DType.uint64, ...],
-    b_ptrs: TileTensor[DType.uint64, ...],
-    c_ptrs: TileTensor[DType.uint64, ...],
-    sfa_ptrs: TileTensor[DType.uint64, ...],
-    sfb_ptrs: TileTensor[DType.uint64, ...],
+    a_ptrs: TileTensor[.uint64, ...],
+    b_ptrs: TileTensor[.uint64, ...],
+    c_ptrs: TileTensor[.uint64, ...],
+    sfa_ptrs: TileTensor[.uint64, ...],
+    sfb_ptrs: TileTensor[.uint64, ...],
     # Per-group problem sizes: (max_groups, 4) with [M, N, K, L]
-    problem_sizes: TileTensor[DType.int32, ...],
+    problem_sizes: TileTensor[.int32, ...],
     # Number of active groups (runtime)
     num_groups: Int,
     # Total tiles across all groups (computed by caller on host)
@@ -233,6 +232,8 @@ def grouped_block_scaled_matmul[
         transpose_b,
         config=config,
         max_groups=max_groups,
+        group_ptr_engine=type_of(a_ptrs).Engine,
+        problem_sizes_engine=type_of(problem_sizes).Engine,
         cluster_shape=StaticTuple[Int32, 3](
             Int32(config.cluster_shape[0]),
             Int32(config.cluster_shape[1]),
@@ -245,7 +246,7 @@ def grouped_block_scaled_matmul[
     # ===== Create template TMA descriptors using kernel-derived layouts =====
 
     # A matrix TMA
-    comptime a_tma_tile_shape = Index(1, BM // cluster_shape[1], BK)
+    comptime a_tma_tile_shape = coord[1, BM // cluster_shape[1], BK]
     var a_tma_op = create_tma_tile[
         KernelType.ATileLayout,
         KernelType.ADescLayout,
@@ -254,9 +255,9 @@ def grouped_block_scaled_matmul[
     ](ctx, a_template)
 
     # B matrix TMA
-    comptime b_tma_tile_shape = Index(
+    comptime b_tma_tile_shape = coord[
         1, BN // (cluster_shape[0] // config.cta_group), BK
-    )
+    ]
     var b_tma_op = create_tma_tile[
         KernelType.BTileLayout,
         KernelType.BDescLayout,
@@ -265,9 +266,9 @@ def grouped_block_scaled_matmul[
     ](ctx, b_template)
 
     # C matrix TMA
-    comptime c_tma_tile_shape = Index(
+    comptime c_tma_tile_shape = coord[
         1, config.output_tile_shape[0], config.output_tile_shape[1]
-    )
+    ]
     var c_tma_op = create_tma_tile[
         KernelType.CTileLayout,
         KernelType.CDescLayout,
@@ -276,26 +277,26 @@ def grouped_block_scaled_matmul[
     ](ctx, c_template)
 
     # Scaling factors TMA
-    comptime sfa_tma_tile_shape = Index(
+    comptime sfa_tma_tile_shape = coord[
         1,
         BM // SF_MN_GROUP_SIZE,
         config.num_sf_k_tiles,
         SF_ATOM_M[0],
         SF_ATOM_M[1] * SF_ATOM_K,
-    )
+    ]
     var sfa_tma_op = create_tma_tile[
         KernelType.SFATileLayout,
         KernelType.SFADescLayout,
         sfa_tma_tile_shape,
     ](ctx, sfa_template)
 
-    comptime sfb_tma_tile_shape = Index(
+    comptime sfb_tma_tile_shape = coord[
         1,
-        MMA_N // SF_MN_GROUP_SIZE,
+        align_up(MMA_N, SF_MN_GROUP_SIZE) // SF_MN_GROUP_SIZE,
         config.num_sf_k_tiles,
         SF_ATOM_M[0],
         SF_ATOM_M[1] * SF_ATOM_K,
-    )
+    ]
     var sfb_tma_op = create_tma_tile[
         KernelType.SFBTileLayout,
         KernelType.SFBDescLayout,
@@ -313,19 +314,19 @@ def grouped_block_scaled_matmul[
     # For 2SM, grid size = total_tiles * cluster_shape[0] (each cluster = 1 tile)
     comptime TMA_DESC_SIZE = 128
     var num_blocks = total_tiles * cluster_shape[0]  # Actual grid size
-    var device_tensormaps_a = ctx.enqueue_create_buffer[DType.uint8](
+    var device_tensormaps_a = ctx.enqueue_create_buffer[.uint8](
         TMA_DESC_SIZE * num_blocks
     )
-    var device_tensormaps_b = ctx.enqueue_create_buffer[DType.uint8](
+    var device_tensormaps_b = ctx.enqueue_create_buffer[.uint8](
         TMA_DESC_SIZE * num_blocks
     )
-    var device_tensormaps_sfa = ctx.enqueue_create_buffer[DType.uint8](
+    var device_tensormaps_sfa = ctx.enqueue_create_buffer[.uint8](
         TMA_DESC_SIZE * num_blocks
     )
-    var device_tensormaps_sfb = ctx.enqueue_create_buffer[DType.uint8](
+    var device_tensormaps_sfb = ctx.enqueue_create_buffer[.uint8](
         TMA_DESC_SIZE * num_blocks
     )
-    var device_tensormaps_c = ctx.enqueue_create_buffer[DType.uint8](
+    var device_tensormaps_c = ctx.enqueue_create_buffer[.uint8](
         TMA_DESC_SIZE * num_blocks
     )
 
@@ -345,19 +346,19 @@ def grouped_block_scaled_matmul[
     # We copy the template descriptor to all block slots, then copy to device.
 
     # Create host buffers for tensormap initialization
-    var host_buf_a = ctx.enqueue_create_host_buffer[DType.uint8](
+    var host_buf_a = ctx.enqueue_create_host_buffer[.uint8](
         TMA_DESC_SIZE * num_blocks
     )
-    var host_buf_b = ctx.enqueue_create_host_buffer[DType.uint8](
+    var host_buf_b = ctx.enqueue_create_host_buffer[.uint8](
         TMA_DESC_SIZE * num_blocks
     )
-    var host_buf_sfa = ctx.enqueue_create_host_buffer[DType.uint8](
+    var host_buf_sfa = ctx.enqueue_create_host_buffer[.uint8](
         TMA_DESC_SIZE * num_blocks
     )
-    var host_buf_sfb = ctx.enqueue_create_host_buffer[DType.uint8](
+    var host_buf_sfb = ctx.enqueue_create_host_buffer[.uint8](
         TMA_DESC_SIZE * num_blocks
     )
-    var host_buf_c = ctx.enqueue_create_host_buffer[DType.uint8](
+    var host_buf_c = ctx.enqueue_create_host_buffer[.uint8](
         TMA_DESC_SIZE * num_blocks
     )
 
@@ -436,7 +437,7 @@ def grouped_block_scaled_matmul[
             sfb_ptrs,
             # Problem sizes and group count
             problem_sizes,
-            num_groups,
+            Int32(num_groups),
             grid_dim=grid_dim,
             block_dim=num_threads,
             shared_mem_bytes=smem_size,
@@ -467,7 +468,7 @@ def grouped_block_scaled_matmul[
             sfb_ptrs,
             # Problem sizes and group count
             problem_sizes,
-            num_groups,
+            Int32(num_groups),
             grid_dim=grid_dim,
             block_dim=num_threads,
             shared_mem_bytes=smem_size,

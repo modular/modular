@@ -15,7 +15,7 @@
 
 import extensibility
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from extensibility import InputTensor, OutputTensor, foreach
 
 from std.utils.coord import Coord, coord_to_index_list
@@ -30,8 +30,8 @@ struct Grayscale:
     def execute[
         target: StaticString,  # "cpu" or "gpu"
     ](
-        img_out: OutputTensor[dtype=DType.uint8, rank=2, ...],
-        img_in: InputTensor[dtype=DType.uint8, rank=3, ...],
+        img_out: OutputTensor[dtype=.uint8, rank=2, ...],
+        img_in: InputTensor[dtype=.uint8, rank=3, ...],
         ctx: DeviceContext,
     ) raises:
         """Execute grayscale conversion on the input image tensor.
@@ -42,11 +42,10 @@ struct Grayscale:
             ctx: Device context for execution.
         """
 
-        @parameter
-        @always_inline
+        @inline(.always)
         def color_to_grayscale[
             simd_width: Int
-        ](idx: Coord) -> SIMD[DType.uint8, simd_width]:
+        ](idx: Coord) {var} -> SIMD[.uint8, simd_width]:
             """Convert RGB pixel to grayscale using perceptual weighting.
 
             Args:
@@ -56,27 +55,26 @@ struct Grayscale:
                 Grayscale value as SIMD vector.
             """
 
-            @parameter
             def load(
                 idx: IndexList[img_in.rank],
-            ) -> SIMD[DType.float32, simd_width]:
-                return img_in.load[simd_width](idx).cast[DType.float32]()
+            ) {var} -> SIMD[.float32, simd_width]:
+                return img_in.load[simd_width](idx).cast[.float32]()
 
             var idx_l = coord_to_index_list(idx)
             var row = idx_l[0]
             var col = idx_l[1]
 
             # Load RGB values from input tensor
-            var r = load(IndexList[3](row, col, 0))
-            var g = load(IndexList[3](row, col, 1))
-            var b = load(IndexList[3](row, col, 2))
+            var r = load((row, col, 0))
+            var g = load((row, col, 1))
+            var b = load((row, col, 2))
 
             # Apply standard grayscale conversion formula
             # These weights are based on human visual perception
             var gray = 0.21 * r + 0.71 * g + 0.07 * b
 
             # Clamp to valid uint8 range and convert back
-            return min(gray, 255).cast[DType.uint8]()
+            return min(gray, 255).cast[.uint8]()
 
         # Execute the conversion using parallel foreach
-        foreach[color_to_grayscale, target=target, simd_width=1](img_out, ctx)
+        foreach[target=target, simd_width=1](color_to_grayscale, img_out, ctx)

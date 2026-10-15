@@ -27,12 +27,14 @@
 # `//max/kernels/test/gpu/...` wildcard expansion -- it must never run (and
 # "fail") in the normal GPU suite or the nightly sanitizer lane.
 
-from std.gpu import thread_idx
-from std.gpu.host import DeviceContext
+from max.gpu import thread_idx
+from max.gpu.host import DeviceContext
 
 
-def oob_global_write(dst: UnsafePointer[Float32, MutAnyOrigin], n: Int):
-    var thread_id = Int(thread_idx.x)
+def oob_global_write(dst: MutPointer[Float32, MutAnyOrigin], n_dev: Int32):
+    # `Int` is not device-passable; widen the fixed-width arg.
+    var n = Int(n_dev)
+    var thread_id = thread_idx.x
     # In-bounds write first: an observable side effect that guarantees the
     # kernel is launched and not elided.
     dst[thread_id] = Float32(thread_id)
@@ -48,10 +50,10 @@ def oob_global_write(dst: UnsafePointer[Float32, MutAnyOrigin], n: Int):
 def main() raises:
     with DeviceContext() as ctx:
         var n = 16
-        var dst = ctx.enqueue_create_buffer[DType.float32](n)
+        var dst = ctx.enqueue_create_buffer[.float32](n)
         ctx.enqueue_function[oob_global_write](
             dst,
-            n,
+            Int32(n),
             grid_dim=(1,),
             block_dim=(n,),
         )

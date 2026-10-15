@@ -73,6 +73,20 @@ _HARDCODED_FINFO: dict[DType, _FInfoData] = {
         min=-6.0,
         tiny=1.0,
     ),
+    DType.float6_e2m3fn: _FInfoData(
+        bits=6,
+        eps=2**-3,  # 0.125
+        max=7.5,
+        min=-7.5,
+        tiny=1.0,
+    ),
+    DType.float6_e3m2fn: _FInfoData(
+        bits=6,
+        eps=2**-2,  # 0.25
+        max=28.0,
+        min=-28.0,
+        tiny=2**-2,  # 0.25
+    ),
 }
 
 
@@ -92,11 +106,22 @@ class finfo:
     """
 
     bits: int
+    """Number of bits used to store one value of this dtype."""
+
     eps: float
+    """Smallest number that satisfies ``1.0 + eps != 1.0``."""
+
     max: float
+    """Largest representable finite value."""
+
     min: float
+    """Most negative representable finite value."""
+
     tiny: float
+    """Smallest positive normal value."""
+
     dtype: DType
+    """The floating-point dtype these properties describe."""
 
     def __init__(self, dtype: DType):
         if not dtype.is_float():

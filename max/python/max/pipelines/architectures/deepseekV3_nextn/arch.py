@@ -31,12 +31,8 @@ deepseekV3_nextn_arch = SupportedArchitecture(
     example_repo_ids=[
         "SGLang/DeepSeek-V3-NextN",
     ],
-    default_encoding="bfloat16",
-    supported_encodings={
-        "bfloat16",
-        "float8_e4m3fn",
-        "float4_e2m1fnx2",
-    },
+    default_encoding=DeepseekV3NextNConfig.DEFAULT_ENCODING,
+    supported_encodings=DeepseekV3NextNConfig.SUPPORTED_ENCODINGS,
     multi_gpu_supported=True,
     pipeline_model=DeepseekV3NextNModel,
     tokenizer=TextTokenizer,

@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from typing import get_args
+
 import numpy as np
 import pytest
 from max.driver import CPU
@@ -24,7 +26,25 @@ from max.nn.kv_cache import (
     MHAKVCacheParams,
     MLAAttnKey,
     MLAKVCacheParams,
+    PagedKVLeafRegion,
 )
+from max.nn.kv_cache.cache_params import (
+    SpeculativeMethod as CacheSpeculativeMethod,
+)
+from max.pipelines.speculative import SpeculativeMethod
+
+
+def test_speculative_methods_match_the_pipeline_literal() -> None:
+    """``cache_params`` hand-copies the pipeline literal; pin the two together.
+
+    The copy exists because ``max.pipelines.speculative`` depends on
+    ``max.nn``, so importing back would cycle in bazel. Nothing but this
+    assertion stops the copy from going stale, and a method missing here
+    reaches :meth:`num_draft_tokens_per_step` as an unrecognized value.
+    """
+    assert set(get_args(CacheSpeculativeMethod)) == set(
+        get_args(SpeculativeMethod)
+    )
 
 
 def test_single_device_compatible() -> None:
@@ -351,6 +371,147 @@ def test_kv_cache_quantization_config() -> None:
     assert params.kvcache_quant_config is not None
     assert params.kvcache_quant_config.quantization_granularity == 64
     assert params.quantized_kv_cache
+
+
+# ==================== NVFP4 Tests ====================
+
+
+def _nvfp4_params(
+    granularity: int = 16, n_kv_heads: int = 4, tp: int = 4
+) -> MHAKVCacheParams:
+    return MHAKVCacheParams(
+        dtype=DType.uint8,
+        n_kv_heads=n_kv_heads,
+        head_dim=128,
+        num_layers=3,
+        page_size=128,
+        devices=[DeviceRef.GPU(i) for i in range(tp)],
+        kvcache_quant_config=KVCacheQuantizationConfig(
+            scale_dtype=DType.float8_e4m3fn,
+            quantization_granularity=granularity,
+        ),
+    )
+
+
+def test_nvfp4_kv_cache_packs_two_elements_per_byte() -> None:
+    """head_dim stays logical; the stored row and the scale columns follow
+    from it."""
+    params = _nvfp4_params()
+    assert params.is_nvfp4_kv_cache
+    assert params.quantized_kv_cache
+    assert params.head_dim == 128
+    assert params.storage_head_dim == 64
+    assert params.shape_per_block == [2, 3, 128, 1, 64]
+    assert params.shape_per_scale_block == [2, 3, 128, 1, 8]
+    assert params.row_bytes == 64
+    assert params.scale_row_bytes == 8
+    assert params.dtype_shorthand == "nvfp4"
+
+
+def test_nvfp4_kv_cache_is_0_5625_of_fp8() -> None:
+    """64 packed bytes plus 8 E4M3 scales per 128-element row, against 128."""
+    nvfp4 = _nvfp4_params()
+    fp8 = MHAKVCacheParams(
+        dtype=DType.float8_e4m3fn,
+        n_kv_heads=4,
+        head_dim=128,
+        num_layers=3,
+        page_size=128,
+        devices=[DeviceRef.GPU(i) for i in range(4)],
+    )
+    assert nvfp4.bytes_per_block * 16 == fp8.bytes_per_block * 9
+    assert nvfp4.bytes_per_scale_block * 8 == nvfp4.bytes_per_value_block
+
+
+def test_nvfp4_kv_cache_leaves_carry_scales() -> None:
+    leaves = _nvfp4_params().leaves()
+    assert any(name.endswith("scales") for name in leaves)
+
+
+def test_nvfp4_kv_cache_rejects_other_granularity() -> None:
+    with pytest.raises(ValueError, match="one scale per 16 elements"):
+        _nvfp4_params(granularity=32)
+
+
+def test_uint8_without_e4m3_scales_is_not_nvfp4() -> None:
+    params = MHAKVCacheParams(
+        dtype=DType.uint8,
+        n_kv_heads=1,
+        head_dim=128,
+        num_layers=1,
+        page_size=128,
+        devices=[DeviceRef.GPU()],
+    )
+    assert not params.is_nvfp4_kv_cache
+    assert not params.quantized_kv_cache
+    assert params.storage_head_dim == 128
+
+
+# ==================== slots_per_page Tests ====================
+
+
+def _mla_params(
+    *,
+    slots_per_page: int | None = None,
+    dtype: DType = DType.bfloat16,
+    kvcache_quant_config: KVCacheQuantizationConfig | None = None,
+) -> MLAKVCacheParams:
+    return MLAKVCacheParams(
+        dtype=dtype,
+        head_dim=576,
+        num_layers=4,
+        devices=[DeviceRef.GPU()],
+        page_size=128,
+        num_q_heads=128,
+        slots_per_page=slots_per_page,
+        kvcache_quant_config=kvcache_quant_config,
+    )
+
+
+def test_slots_per_page_defaults_to_page_size() -> None:
+    """Unset, a page stores one slot per token."""
+    params = _mla_params()
+    assert params.slots_per_page == 128
+    assert params.shape_per_block == [1, 4, 128, 1, 576]
+
+
+def test_slots_per_page_sets_the_slot_dimension() -> None:
+    """A compressed cache stores fewer slots than the tokens a page covers."""
+    params = _mla_params(slots_per_page=4)
+    assert params.shape_per_block == [1, 4, 4, 1, 576]
+    assert params.shape_per_layer_block == [1, 1, 4, 1, 576]
+    # The block shrinks with the slot count; the tokens it covers do not.
+    assert params.bytes_per_block == _mla_params().bytes_per_block // 32
+    assert params.page_size == 128
+
+
+def test_slots_per_page_leaves_block_allocation_in_tokens() -> None:
+    """The pool still pages by token: only the leaf's byte footprint moves."""
+    compressed = _mla_params(slots_per_page=4)
+    leaf = compressed.leaves()["full_group"]
+    assert isinstance(leaf, PagedKVLeafRegion)
+    assert leaf.page_size == 128
+    assert leaf.bytes_per_page == compressed.bytes_per_value_block
+
+
+def test_slots_per_page_applies_to_scale_blocks() -> None:
+    """A quantized cache's scales are addressed by the same slots."""
+    params = _mla_params(
+        dtype=DType.float8_e4m3fn,
+        slots_per_page=32,
+        kvcache_quant_config=KVCacheQuantizationConfig(
+            quantization_granularity=64
+        ),
+    )
+    assert params.shape_per_scale_block == [1, 4, 32, 1, 576 // 64]
+    assert params.shape_per_layer_scale_block[2] == 32
+
+
+@pytest.mark.parametrize("slots_per_page", [48, 256, 0, -4])
+def test_slots_per_page_must_divide_page_size(slots_per_page: int) -> None:
+    """A page that would end mid-slot is rejected at construction."""
+    with pytest.raises(ValueError, match="must be a positive divisor"):
+        _mla_params(slots_per_page=slots_per_page)
 
 
 # ==================== AttnKey Tests ====================

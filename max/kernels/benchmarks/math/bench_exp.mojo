@@ -27,10 +27,16 @@ from std.benchmark import (
     ThroughputMeasure,
     keep,
 )
-from layout import Coord, TileTensor, row_major
+from layout import TileTensor, row_major
 from std.builtin.range import _StridedRange
 from std.compile import compile_info
-from std.memory import bitcast, stack_allocation
+from std.memory import (
+    Alignment,
+    Layout as AllocLayout,
+    bitcast,
+    dealloc,
+    unsafe_stack_allocation,
+)
 
 
 def _ri(v: Int) -> Int64:
@@ -38,7 +44,7 @@ def _ri(v: Int) -> Int64:
 
 
 def apply[
-    func: def[dtype: DType, width: SIMDSize](SIMD[dtype, width]) thin -> SIMD[
+    func: def[dtype: DType, width: SIMDLength](SIMD[dtype, width]) thin -> SIMD[
         dtype, width
     ],
     dtype: DType,
@@ -56,59 +62,64 @@ def apply[
 
 
 def bench_unary[
-    func: def[dtype: DType, width: SIMDSize](SIMD[dtype, width]) thin -> SIMD[
+    func: def[dtype: DType, width: SIMDLength](SIMD[dtype, width]) thin -> SIMD[
         dtype, width
     ],
     dtype: DType,
-](mut m: Bench, size_range: _StridedRange, op_name: String) raises:
+](mut m: Bench, size_range: _StridedRange[.int], op_name: String) raises:
     for i in size_range:
         bench_unary[func, dtype](m, i, op_name)
 
 
 def bench_unary[
-    func: def[dtype: DType, width: SIMDSize](SIMD[dtype, width]) thin -> SIMD[
+    func: def[dtype: DType, width: SIMDLength](SIMD[dtype, width]) thin -> SIMD[
         dtype, width
     ],
     dtype: DType,
 ](mut m: Bench, size: Int, op_name: String) raises:
-    comptime alignment = 64
-    var input_ptr = alloc[Scalar[dtype],](size, alignment=alignment)
-    var output_ptr = alloc[Scalar[dtype],](size, alignment=alignment)
+    comptime alignment = Alignment.of_bytes[64]()
+    var input_ptr_alloc = alloc(
+        AllocLayout[Scalar[dtype], alignment=alignment](count=size)
+    ).into_managed()
+    var input_ptr = input_ptr_alloc.unsafe_ptr()
+    var output_ptr_alloc = alloc(
+        AllocLayout[Scalar[dtype], alignment=alignment](count=size)
+    ).into_managed()
+    var output_ptr = output_ptr_alloc.unsafe_ptr()
 
     var linspace = range(0x3000_0000, 0x42B0_0000, 1)
     for i in range(size):
         var f = bitcast[dtype](UInt32(linspace[i % len(linspace)]))
-        input_ptr[i] = f
+        input_ptr.unsafe_offset(i).write(f)
 
-    @parameter
-    def bench(mut b: Bencher, size: Int) raises:
-        @parameter
-        def iter_fn():
+    def bench(mut b: Bencher, size: Int) raises {imm}:
+        def iter_fn() {imm}:
             apply[func](
-                TileTensor(input_ptr, row_major(Coord(_ri(size)))),
-                TileTensor(output_ptr, row_major(Coord(_ri(size)))),
+                TileTensor(input_ptr, row_major(_ri(size))),
+                TileTensor(output_ptr, row_major(_ri(size))),
             )
             keep(output_ptr)
 
-        b.iter[iter_fn]()
+        b.iter(iter_fn)
 
     var elements = ThroughputMeasure(
         BenchMetric.elements, size * size_of[dtype]()
     )
-    m.bench_with_input[Int, bench](
+    m.bench_with_input(
+        bench,
         BenchId(op_name, String(size)),
         size,
         # TODO: Pick relevant benchmetric.
         [elements],
     )
 
-    input_ptr.free()
-    output_ptr.free()
+    dealloc(input_ptr_alloc^)
+    dealloc(output_ptr_alloc^)
 
 
 def ldexp2kf_opt[
-    dtype: DType, simd_width: SIMDSize
-](x_in: SIMD[dtype, simd_width], q_in: SIMD[DType.int32, simd_width]) -> SIMD[
+    dtype: DType, simd_width: SIMDLength
+](x_in: SIMD[dtype, simd_width], q_in: SIMD[.int32, simd_width]) -> SIMD[
     dtype, simd_width
 ]:
     var m = q_in >> 31
@@ -127,29 +138,25 @@ def ldexp2kf_opt[
     var u = bitcast[dtype, simd_width](m << 23)
     var x = x_in * u * u * u * u
     #   u = intBitsToFloat(((int32_t)(q + 0x7f)) << 23);
-    var xu = (
-        (q + SIMD[DType.int32, simd_width](0x7F)).cast[DType.int32]()
-    ) << 23
+    var xu = ((q + SIMD[.int32, simd_width](0x7F)).cast[.int32]()) << 23
     return x * xu.cast[dtype]()
 
 
 def pow2if[
-    simd_width: SIMDSize
-](q: SIMD[DType.int32, simd_width]) -> SIMD[DType.float32, simd_width]:
-    var x = (
-        ((q + SIMD[DType.int32, simd_width](0x7F)).cast[DType.int32]())
-    ) << 23
-    return bitcast[DType.float32, simd_width](x)
+    simd_width: SIMDLength
+](q: SIMD[.int32, simd_width]) -> SIMD[.float32, simd_width]:
+    var x = (((q + SIMD[.int32, simd_width](0x7F)).cast[.int32]())) << 23
+    return bitcast[.float32, simd_width](x)
 
 
 def ldexp2kf[
-    dtype: DType, simd_width: SIMDSize
-](d: SIMD[dtype, simd_width], e: SIMD[DType.int32, simd_width]) -> SIMD[
+    dtype: DType, simd_width: SIMDLength
+](d: SIMD[dtype, simd_width], e: SIMD[.int32, simd_width]) -> SIMD[
     dtype, simd_width
 ]:
     # return d * (pow2if[simd_width](e >> 1) * pow2if[simd_width](e - (e >> 1))).cast[dtype]();
     var result = d * (pow2if[simd_width](e)).cast[dtype]()
-    var y = bitcast[DType.int32, simd_width](result)
+    var y = bitcast[.int32, simd_width](result)
 
     var msb = y
     for _ in range(32):
@@ -165,9 +172,19 @@ def ldexp2kf[
     return result
 
 
-@always_inline
+# `bench_unary` takes an unconstrained function, so the stdlib `exp` reaches it
+# through a wrapper that states no obligation of its own.
+@inline(.always)
+def exp_mojo[
+    dtype: DType, simd_width: SIMDLength
+](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
+    comptime assert dtype.is_floating_point(), "must be a floating point value"
+    return exp(x)
+
+
+@inline(.always)
 def exp_libm[
-    dtype: DType, simd_width: SIMDSize
+    dtype: DType, simd_width: SIMDLength
 ](arg: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     var res = SIMD[dtype, simd_width]()
 
@@ -176,10 +193,10 @@ def exp_libm[
     return res
 
 
-@always_inline
+@inline(.always)
 def ldexp_libm[
-    dtype: DType, simd_width: SIMDSize
-](arg: SIMD[dtype, simd_width], e: SIMD[DType.int32, simd_width]) -> SIMD[
+    dtype: DType, simd_width: SIMDLength
+](arg: SIMD[dtype, simd_width], e: SIMD[.int32, simd_width]) -> SIMD[
     dtype, simd_width
 ]:
     var res = SIMD[dtype, simd_width]()
@@ -190,7 +207,7 @@ def ldexp_libm[
 
 
 def exp_sleef[
-    dtype: DType, simd_width: SIMDSize
+    dtype: DType, simd_width: SIMDLength
 ](d: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     comptime inv_lg2 = SIMD[dtype, simd_width](1.4426950408889634)
     comptime lg2it = SIMD[dtype, simd_width](0.6931471805599453)
@@ -212,12 +229,12 @@ def exp_sleef[
     u = u.fma(s, 0.5)
     u = s * s * u + s
 
-    return q.eq(0).select(u, ldexp2kf(u + 1, q.cast[DType.int32]()) - 1)
+    return q.eq(0).select(u, ldexp2kf(u + 1, q.cast[.int32]()) - 1)
 
 
-@always_inline
+@inline(.always)
 def _exp_taylor0[
-    dtype: DType, simd_width: SIMDSize
+    dtype: DType, simd_width: SIMDLength
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     comptime coefficients: List[Scalar[dtype]] = [
         1.0,
@@ -232,9 +249,9 @@ def _exp_taylor0[
     return polynomial_evaluate[coefficients](x)
 
 
-@always_inline
+@inline(.always)
 def exp_mojo_opt[
-    dtype: DType, simd_width: SIMDSize
+    dtype: DType, simd_width: SIMDLength
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     comptime assert dtype.is_floating_point(), "must be a floating point value"
     comptime neg_ln2 = -0.69314718055966295651160180568695068359375
@@ -254,15 +271,15 @@ def exp_mojo_opt[
     var r = k.fma(neg_ln2, xc)
     # var r = k.fma(-L2Lf, k.fma(-L2Uf, xc))
     var taylor_result = _exp_taylor0(r.cast[im_type]()).cast[dtype]()
-    var expr = ldexp(taylor_result, k.cast[DType.int32]())
+    var expr = ldexp(taylor_result, k.cast[.int32]())
     return expr
     # var val1 = (expr > min_val).select(expr, SIMD[dtype,simd_width](0))
     # return (val1 < max_val).select(val1, SIMD[dtype,simd_width](inf[dtype]()))
 
 
-@always_inline
+@inline(.always)
 def exp_mojo_opt2[
-    dtype: DType, simd_width: SIMDSize
+    dtype: DType, simd_width: SIMDLength
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     comptime assert dtype.is_floating_point(), "must be a floating point value"
     comptime inv_lg2 = 1.44269504088896340736  # 1/log(2)
@@ -281,13 +298,13 @@ def exp_mojo_opt2[
 
     var taylor_result = _exp_taylor(r)
 
-    var expr = ldexp(taylor_result, k.cast[DType.int32]())
+    var expr = ldexp(taylor_result, k.cast[.int32]())
     return expr
 
 
-@always_inline
+@inline(.always)
 def _exp_taylor3[
-    dtype: DType, simd_width: SIMDSize
+    dtype: DType, simd_width: SIMDLength
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     comptime coefficients: List[Scalar[dtype]] = [
         0.5,
@@ -300,9 +317,9 @@ def _exp_taylor3[
     return polynomial_evaluate[coefficients](x)
 
 
-@always_inline
+@inline(.always)
 def exp_mojo_opt3[
-    dtype: DType, simd_width: SIMDSize
+    dtype: DType, simd_width: SIMDLength
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     comptime assert dtype.is_floating_point(), "must be a floating point value"
     comptime inv_lg2 = 1.44269504088896340736  # 1/log(2)
@@ -324,9 +341,9 @@ def exp_mojo_opt3[
     return expr
 
 
-@always_inline
+@inline(.always)
 def _exp_taylor_mlas[
-    dtype: DType, simd_width: SIMDSize
+    dtype: DType, simd_width: SIMDLength
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     return polynomial_evaluate[
         [
@@ -341,9 +358,9 @@ def _exp_taylor_mlas[
     ](x)
 
 
-@always_inline
+@inline(.always)
 def exp_mlas[
-    dtype: DType, simd_width: SIMDSize
+    dtype: DType, simd_width: SIMDLength
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     comptime assert dtype.is_floating_point(), "must be a floating point value"
     comptime neg_ln2 = -0.69314718055966295651160180568695068359375
@@ -359,21 +376,21 @@ def exp_mlas[
     var k = floor(xc.fma(inv_lg2, 0.5))
     var r = k.fma(neg_ln2_hi, xc)
     var rr = k.fma(neg_ln2_lo, r)
-    return max(ldexp(_exp_taylor_mlas(rr), k.cast[DType.int32]()), xc)
+    return max(ldexp(_exp_taylor_mlas(rr), k.cast[.int32]()), xc)
 
 
-@always_inline
+@inline(.always)
 def llvm_ldexp[
-    dtype: DType, simd_width: SIMDSize
-](x: SIMD[dtype, simd_width], exp: SIMD[DType.int32, simd_width]) -> SIMD[
+    dtype: DType, simd_width: SIMDLength
+](x: SIMD[dtype, simd_width], exp: SIMD[.int32, simd_width]) -> SIMD[
     dtype, simd_width
 ]:
     return llvm_intrinsic["llvm.ldexp", type_of(x)](x, exp)
 
 
-@always_inline
+@inline(.always)
 def mlas_llvm_ldexp[
-    dtype: DType, simd_width: SIMDSize
+    dtype: DType, simd_width: SIMDLength
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     comptime assert dtype.is_floating_point(), "must be a floating point value"
     comptime neg_ln2 = -0.69314718055966295651160180568695068359375
@@ -389,7 +406,7 @@ def mlas_llvm_ldexp[
     var k = floor(xc.fma(inv_lg2, 0.5))
     var r = k.fma(neg_ln2_hi, xc)
     var rr = k.fma(neg_ln2_lo, r)
-    return max(llvm_ldexp(_exp_taylor_mlas(rr), k.cast[DType.int32]()), xc)
+    return max(llvm_ldexp(_exp_taylor_mlas(rr), k.cast[.int32]()), xc)
 
 
 def accuracy_test() raises:
@@ -397,18 +414,18 @@ def accuracy_test() raises:
     comptime delta_max = 15
     comptime delta_range = delta_max - delta_min + 1
 
-    var deltas_ptr = stack_allocation[delta_range, DType.int32]()
+    var deltas_ptr = unsafe_stack_allocation[delta_range, DType.int32]()
     var deltas = TileTensor(deltas_ptr, row_major[delta_range]())
-    _ = deltas.fill(Scalar[DType.int32](0))
+    _ = deltas.fill(Int32(0))
 
     for i in range(0x3000_0000, 0x42B0_0000, 1):
-        var f = bitcast[DType.float32, 1](UInt32(i))
+        var f = bitcast[.float32, 1](UInt32(i))
 
         var r1 = exp_mojo_opt3(f)
         var r2 = exp_libm(f)
 
-        var i1 = bitcast[DType.int32, 1](r1)
-        var i2 = bitcast[DType.int32, 1](r2)
+        var i1 = bitcast[.int32, 1](r1)
+        var i2 = bitcast[.int32, 1](r2)
 
         var diff = i1 - i2
         var id = Int(diff.clamp(delta_min, delta_max))
@@ -425,12 +442,12 @@ def main() raises:
     var args = argv()
     for arg in args:
         if arg == "-c":
-            print(compile_info[llvm_ldexp[DType.float32, 4]]())
+            print(compile_info[llvm_ldexp[.float32, 4]]())
             return
 
     var m = Bench()
     var problem_size = range(1 << 24, 1 << 26, 1 << 25)
-    bench_unary[exp, DType.float32](m, problem_size, "mojo")
+    bench_unary[exp_mojo, DType.float32](m, problem_size, "mojo")
     bench_unary[exp_mojo_opt, DType.float32](m, problem_size, "mojo_opt")
     bench_unary[exp_mojo_opt2, DType.float32](m, problem_size, "mojo_opt2")
     bench_unary[exp_mojo_opt3, DType.float32](m, problem_size, "mojo_opt3")

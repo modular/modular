@@ -14,21 +14,18 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from max.driver import Buffer
-from max.nn.kv_cache import KVCacheInputsInterface
+from max.nn.kv_cache import KVCacheInputs
 from max.pipelines.context import TextContext
 from max.pipelines.lib.interfaces.batch_processor import (
     ModuleV3SingleReplicaBatchProcessor,
 )
 
-if TYPE_CHECKING:
-    from .model import Gemma3Inputs
+from .inputs import Gemma3Inputs
 
 
 class Gemma3ModuleV3BatchProcessor(
-    ModuleV3SingleReplicaBatchProcessor[TextContext, "Gemma3Inputs"]
+    ModuleV3SingleReplicaBatchProcessor[TextContext, Gemma3Inputs]
 ):
     """Ragged batching for Gemma3 ModuleV3 models (single GPU, no signals)."""
 
@@ -38,10 +35,8 @@ class Gemma3ModuleV3BatchProcessor(
         tokens: Buffer,
         input_row_offsets: Buffer,
         return_n_logits: Buffer,
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer],
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer],
     ) -> Gemma3Inputs:
-        from .model import Gemma3Inputs
-
         return Gemma3Inputs(
             tokens=tokens,
             input_row_offsets=input_row_offsets,

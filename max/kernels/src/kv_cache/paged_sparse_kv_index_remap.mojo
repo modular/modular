@@ -38,10 +38,11 @@ If the LUT entry is ``>= invalid_block_id`` (runtime sentinel ``total_num_pages`
 the output slot is written ``-1``.
 """
 
+from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.math import ceildiv
-from std.gpu import block_dim, block_idx, thread_idx
-from std.gpu.host import DeviceContext
-from std.gpu.host.info import is_cpu
+from max.gpu import block_dim, block_idx, thread_idx
+from max.gpu.host import DeviceContext
+from max.gpu.host.info import is_cpu
 from std.memory import UnsafePointer
 
 from extensibility import InputTensor
@@ -50,7 +51,7 @@ from extensibility import (
 )
 
 
-@always_inline
+@inline(.always)
 def _remap_one(
     log_t: Int32,
     batch_u32: UInt32,
@@ -77,7 +78,196 @@ def _remap_one(
     return Int32(Int(block_id) * page_size + tok_in_page)
 
 
-@always_inline
+trait SparseIndexRemap(DevicePassable, TrivialRegisterPassable):
+    """A second output a sparse-index producer writes beside each logical slot.
+
+    Lets the kernel that selects the logical indices also emit what a
+    consumer would otherwise derive from them in a separate pass.
+    """
+
+    comptime enabled: Bool
+    """Whether `store` writes anything; `False` lets callers skip the batch
+    lookup it would need."""
+
+    def offset(self, slots: Int) -> Self:
+        """Returns this remap with its output advanced by `slots` slots.
+
+        Args:
+            slots: Flat slots to advance by.
+
+        Returns:
+            The advanced remap.
+        """
+        ...
+
+    def store(self, idx: Int, batch: Int, logical: Int32):
+        """Writes the remapped value of output slot `idx`.
+
+        Args:
+            idx: Flat output slot.
+            batch: Batch entry the slot's row belongs to.
+            logical: The slot's logical token position, or `-1`.
+        """
+        ...
+
+
+struct NoRemap(SparseIndexRemap):
+    """Writes nothing: the producer emits logical indices only."""
+
+    comptime device_type: AnyType = Self
+    """Device-side type alias; the struct is trivially device-passable."""
+
+    comptime enabled = False
+    """Nothing is written."""
+
+    @inline(.always)
+    def __init__(out self):
+        """Creates the empty remap."""
+        pass
+
+    @inline(.always)
+    def offset(self, slots: Int) -> Self:
+        """Returns `self`; there is no output to advance.
+
+        Args:
+            slots: Ignored.
+
+        Returns:
+            `self`.
+        """
+        return self
+
+    @inline(.always)
+    def store(self, idx: Int, batch: Int, logical: Int32):
+        """Does nothing.
+
+        Args:
+            idx: Ignored.
+            batch: Ignored.
+            logical: Ignored.
+        """
+        pass
+
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode_fields[Self](self, target)
+
+    @staticmethod
+    def get_type_name() -> String:
+        """Returns the type name for runtime diagnostics.
+
+        Returns:
+            Always `"NoRemap"`.
+        """
+        return "NoRemap"
+
+
+struct PagedKVRemap[page_size: Int](SparseIndexRemap):
+    """Writes each slot's physical paged-cache row, as the remap kernel would.
+
+    The value written for slot `idx` is exactly what
+    `paged_sparse_kv_index_remap` produces for it, so a consumer can take this
+    buffer in place of running that kernel.
+
+    Parameters:
+        page_size: Tokens per page of the cache `lut` indexes.
+    """
+
+    comptime device_type: AnyType = Self
+    """Device-side type alias; the struct is trivially device-passable."""
+
+    comptime enabled = True
+    """Physical rows are written."""
+
+    var physical_out: UnsafePointer[Int32, MutUntrackedOrigin]
+    """Flat output buffer, laid out like the logical indices."""
+    var lut: UnsafePointer[UInt32, ImmUntrackedOrigin]
+    """Row-major `[lut_rows, lut_cols]` page lookup table."""
+    var lut_cols: Int32
+    """Logical pages per batch entry."""
+    var lut_rows: Int32
+    """Batch entries in `lut`."""
+    var invalid_block_id: UInt32
+    """Block ids at or above this (the page count) are invalid."""
+
+    @inline(.always)
+    def __init__(
+        out self,
+        physical_out: UnsafePointer[mut=True, Int32, _],
+        lut: UnsafePointer[UInt32, _],
+        lut_cols: Int,
+        lut_rows: Int,
+        invalid_block_id: UInt32,
+    ):
+        """Describes the cache to remap into and where to write.
+
+        Args:
+            physical_out: Flat output buffer, laid out like the logical
+                indices.
+            lut: Row-major `[lut_rows, lut_cols]` page lookup table.
+            lut_cols: Logical pages per batch entry.
+            lut_rows: Batch entries in `lut`.
+            invalid_block_id: Block ids at or above this are invalid; the
+                cache's page count.
+        """
+        self.physical_out = physical_out.unsafe_origin_cast[
+            MutUntrackedOrigin
+        ]()
+        self.lut = lut.as_imm().unsafe_origin_cast[ImmUntrackedOrigin]()
+        self.lut_cols = Int32(lut_cols)
+        self.lut_rows = Int32(lut_rows)
+        self.invalid_block_id = invalid_block_id
+
+    @inline(.always)
+    def offset(self, slots: Int) -> Self:
+        """Returns this remap with `physical_out` advanced by `slots`.
+
+        Args:
+            slots: Flat slots to advance by.
+
+        Returns:
+            The advanced remap.
+        """
+        var r = self
+        r.physical_out = self.physical_out.unsafe_offset(slots)
+        return r
+
+    @inline(.always)
+    def store(self, idx: Int, batch: Int, logical: Int32):
+        """Writes `physical_out[idx]` for logical position `logical`.
+
+        Args:
+            idx: Flat output slot.
+            batch: Batch entry the slot's row belongs to.
+            logical: The slot's logical token position, or `-1`.
+        """
+        self.physical_out[idx] = _remap_one(
+            logical,
+            UInt32(batch),
+            self.lut,
+            Int(self.lut_cols),
+            Int(self.lut_rows),
+            Self.page_size,
+            self.invalid_block_id,
+        )
+
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode_fields[Self](self, target)
+
+    @staticmethod
+    def get_type_name() -> String:
+        """Returns the type name for runtime diagnostics.
+
+        Returns:
+            Always `"PagedKVRemap"`.
+        """
+        return "PagedKVRemap"
+
+
+@inline(.always)
 def _find_batch_for_row(
     r: Int,
     row_offsets: UnsafePointer[mut=False, UInt32, _],
@@ -94,34 +284,42 @@ def _find_batch_for_row(
 
 @__name(t"paged_sparse_kv_index_remap_row_offs_kernel")
 def _paged_sparse_kv_index_remap_row_offs_kernel(
-    logical: UnsafePointer[Int32, MutAnyOrigin],
+    logical: UnsafePointer[Int32, ImmutAnyOrigin],
     row_offsets: UnsafePointer[UInt32, ImmutAnyOrigin],
-    lut: UnsafePointer[UInt32, MutAnyOrigin],
+    lut: UnsafePointer[UInt32, ImmutAnyOrigin],
     physical_out: UnsafePointer[Int32, MutAnyOrigin],
-    num_indices: Int,
-    lut_cols: Int,
-    lut_rows: Int,
-    page_size: Int,
+    num_indices: Int32,
+    lut_cols: Int32,
+    lut_rows: Int32,
+    page_size: Int32,
     invalid_block_id: UInt32,
-    indices_stride: Int,
-    num_batches: Int,
-    logical_stride0: Int,
-    logical_stride1: Int,
+    indices_stride: Int32,
+    num_batches: Int32,
+    logical_stride0: Int32,
+    logical_stride1: Int32,
 ):
+    var _num_indices = Int(num_indices)
+    var _lut_cols = Int(lut_cols)
+    var _lut_rows = Int(lut_rows)
+    var _page_size = Int(page_size)
+    var _indices_stride = Int(indices_stride)
+    var _num_batches = Int(num_batches)
+    var _logical_stride0 = Int(logical_stride0)
+    var _logical_stride1 = Int(logical_stride1)
     var tid = block_idx.x * block_dim.x + thread_idx.x
-    if tid >= num_indices:
+    if tid >= _num_indices:
         return
-    var r = tid // indices_stride
-    var c = tid - r * indices_stride
-    var loff = r * logical_stride0 + c * logical_stride1
-    var batch_u32 = _find_batch_for_row(r, row_offsets, num_batches)
+    var r = tid // _indices_stride
+    var c = tid - r * _indices_stride
+    var loff = r * _logical_stride0 + c * _logical_stride1
+    var batch_u32 = _find_batch_for_row(r, row_offsets, _num_batches)
     physical_out[tid] = _remap_one(
         logical[loff],
         batch_u32,
         lut,
-        lut_cols,
-        lut_rows,
-        page_size,
+        _lut_cols,
+        _lut_rows,
+        _page_size,
         invalid_block_id,
     )
 
@@ -131,9 +329,9 @@ def paged_sparse_kv_logical_to_physical_indices_from_row_offsets_dispatch[
     page_size: Int,
 ](
     physical_out: UnsafePointer[mut=True, Int32, _],
-    logical: UnsafePointer[mut=True, Int32, _],
-    input_row_offsets: UnsafePointer[mut=True, UInt32, _],
-    lut: UnsafePointer[mut=True, UInt32, _],
+    logical: UnsafePointer[mut=False, Int32, _],
+    input_row_offsets: UnsafePointer[mut=False, UInt32, _],
+    lut: UnsafePointer[mut=False, UInt32, _],
     num_indices: Int,
     lut_cols: Int,
     lut_rows: Int,
@@ -200,21 +398,21 @@ def paged_sparse_kv_logical_to_physical_indices_from_row_offsets_dispatch[
             input_row_offsets,
             lut,
             physical_out,
-            num_indices,
-            lut_cols,
-            lut_rows,
-            page_size,
+            Int32(num_indices),
+            Int32(lut_cols),
+            Int32(lut_rows),
+            Int32(page_size),
             invalid_block_id,
-            indices_stride,
-            num_batches,
-            logical_stride0,
-            logical_stride1,
+            Int32(indices_stride),
+            Int32(num_batches),
+            Int32(logical_stride0),
+            Int32(logical_stride1),
             grid_dim=grid,
             block_dim=BLOCK,
         )
 
 
-@always_inline
+@inline(.always)
 def paged_sparse_kv_index_remap[
     target: StaticString,
     page_size: Int,
@@ -222,9 +420,9 @@ def paged_sparse_kv_index_remap[
     cache_dtype: DType,
 ](
     physical_out: UnsafePointer[mut=True, Int32, _],
-    sparse_indices: InputTensor[dtype=DType.int32, rank=2, ...],
-    input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
-    kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+    sparse_indices: InputTensor[dtype=.int32, rank=2, ...],
+    input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+    kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
     kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
     ctx: DeviceContext,
 ) raises:
@@ -250,21 +448,21 @@ def paged_sparse_kv_index_remap[
             block id sentinel.
         ctx: Device context used to enqueue the GPU kernel.
     """
-    var si_lt = sparse_indices.to_layout_tensor()
+    var si_tt = sparse_indices.to_tile_tensor()
     var num_batches = input_row_offsets.dim_size(0) - 1
     var invalid_block_id = UInt32(kv_blocks.dim_size(0))
-    var log_stride0 = Int(si_lt.runtime_layout.stride.value[0])
-    var log_stride1 = Int(si_lt.runtime_layout.stride.value[1])
+    var log_stride0 = Int(si_tt.layout.stride[0]().value())
+    var log_stride1 = Int(si_tt.layout.stride[1]().value())
     paged_sparse_kv_logical_to_physical_indices_from_row_offsets_dispatch[
         target, page_size
     ](
         physical_out,
-        rebind[UnsafePointer[Int32, MutAnyOrigin]](si_lt.ptr),
+        rebind[UnsafePointer[Int32, MutAnyOrigin]](si_tt.ptr),
         rebind[UnsafePointer[UInt32, MutAnyOrigin]](
-            input_row_offsets.to_layout_tensor().ptr,
+            input_row_offsets.to_tile_tensor().ptr,
         ),
         rebind[UnsafePointer[UInt32, MutAnyOrigin]](
-            kv_lookup_table.to_layout_tensor().ptr,
+            kv_lookup_table.to_tile_tensor().ptr,
         ),
         sparse_indices.size(),
         kv_lookup_table.dim_size(1),

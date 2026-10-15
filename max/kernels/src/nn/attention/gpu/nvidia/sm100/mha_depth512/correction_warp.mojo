@@ -25,30 +25,27 @@ All 128 threads participate, processing o_cols physical columns per phase.
 """
 
 from std.sys import size_of
-from std.gpu.compute.arch.tcgen05 import (
+from max.gpu.compute.arch.tcgen05 import (
     tcgen05_ld,
     tcgen05_st,
     tcgen05_store_wait,
     tcgen05_fence_before,
     tcgen05_fence_after,
 )
-from std.gpu.primitives.warp import _vote_nvidia_helper
-from std.gpu.sync import umma_arrive_leader_cta
+from max.gpu.primitives.warp import _vote_nvidia_helper
+from max.gpu.sync import umma_arrive_leader_cta
 from linalg.matmul.gpu.sm100_structured.structured_kernels.tmem import (
     TmemAddress,
 )
-from std.gpu import thread_idx
-from nn.attention.gpu.nvidia.sm100.attention_utils import (
-    SharedMemPointer,
-    mul_ftz,
-)
+from max.gpu import thread_idx
+from nn.attention.gpu.nvidia.sm100.attention_utils import mul_ftz
 from nn.attention.mha_mask import MHAMask
 from .barriers import Depth512MBars
 from .config import Depth512SM100Config
 from .smem import Depth512AttentionSMem
 
 
-@always_inline
+@inline(.always)
 def depth512_correction[
     MaskType: MHAMask,
     qkv_dtype: DType,
@@ -107,16 +104,14 @@ def depth512_correction[
     var row: UInt32 = tid % 128
     var m_row = row % UInt32(BM)
 
-    # `tmem_addr` passed in by register (read once post-`cluster_sync` in the
-    # kernel prologue); do NOT re-read `smem.tmem_addr_ptr()` here.
     var o_tmem = TmemAddress(tmem_addr + UInt32(config.TMEM_O))
     var o_hi_tmem = TmemAddress(tmem_addr + UInt32(config.TMEM_O_hi))
 
     var correction_smem = smem.correction_smem() + m_row
 
-    pipeline_c = mbars.consumer_c()
-    pipeline_o_lo = mbars.consumer_o_lo()
-    pipeline_o_hi = mbars.consumer_o_hi()
+    var pipeline_c = mbars.consumer_c()
+    var pipeline_o_lo = mbars.consumer_o_lo()
+    var pipeline_o_hi = mbars.consumer_o_hi()
 
     var iter_count: UInt32 = (
         mask.total_iters[PairBM_mask, BN, page_size](
@@ -137,12 +132,11 @@ def depth512_correction[
 
     # ---- Rescale helper (inlined for O_lo and O_hi) --------------------------
 
-    @parameter
-    @always_inline
-    def rescale_o(o_tmem: TmemAddress, c_pair: SIMD[DType.float32, 2]):
+    @inline(.always)
+    def rescale_o(o_tmem: TmemAddress, c_pair: SIMD[.float32, 2]):
         """Double-buffered TMEM load/scale/store over o_cols columns."""
-        var o_b0: InlineArray[Scalar[accum_type], batch_size]
-        var o_b1: InlineArray[Scalar[accum_type], batch_size]
+        var o_b0: Array[Scalar[accum_type], batch_size]
+        var o_b1: Array[Scalar[accum_type], batch_size]
         o_b0 = tcgen05_ld[
             datapaths=32,
             bits=32,
@@ -164,13 +158,13 @@ def depth512_correction[
                 pack=False,
                 width=batch_size,
             ]((o_tmem + b1_offset).addr)
-            var o_b0_scaled = InlineArray[Scalar[accum_type], batch_size](
+            var o_b0_scaled = Array[Scalar[accum_type], batch_size](
                 uninitialized=True
             )
 
             comptime for _i in range(0, batch_size, 2):
                 var pair = mul_ftz(
-                    SIMD[DType.float32, 2](
+                    SIMD[.float32, 2](
                         o_b0[_i],
                         o_b0[_i + 1],
                     ),
@@ -194,13 +188,13 @@ def depth512_correction[
                     pack=False,
                     width=batch_size,
                 ]((o_tmem + b0_offset1).addr)
-            var o_b1_scaled = InlineArray[Scalar[accum_type], batch_size](
+            var o_b1_scaled = Array[Scalar[accum_type], batch_size](
                 uninitialized=True
             )
 
             comptime for _i in range(0, batch_size, 2):
                 var pair = mul_ftz(
-                    SIMD[DType.float32, 2](
+                    SIMD[.float32, 2](
                         o_b1[_i],
                         o_b1[_i + 1],
                     ),
@@ -217,13 +211,13 @@ def depth512_correction[
 
         comptime if load_remainder > 0:
             comptime offset = 2 * batch_size * load_iters
-            var o_b0_scaled_rem = InlineArray[
-                Scalar[accum_type], load_remainder
-            ](uninitialized=True)
+            var o_b0_scaled_rem = Array[Scalar[accum_type], load_remainder](
+                uninitialized=True
+            )
 
             comptime for _i in range(0, load_remainder, 2):
                 var pair = mul_ftz(
-                    SIMD[DType.float32, 2](
+                    SIMD[.float32, 2](
                         o_b0[_i],
                         o_b0[_i + 1],
                     ),
@@ -249,14 +243,14 @@ def depth512_correction[
         pipeline_c.wait()
         var c_scalar: Scalar[accum_type] = correction_smem[0]
 
-        change = _vote_nvidia_helper(c_scalar < 1.0) != 0
+        var change = _vote_nvidia_helper(c_scalar < 1.0) != 0
 
         comptime if config.split_o:
             # Phase 1: rescale O_lo (all 128 threads, o_cols cols each).
             pipeline_o_lo.wait()
             if change:
                 tcgen05_fence_after()
-                var c_pair = SIMD[DType.float32, 2](c_scalar, c_scalar)
+                var c_pair = SIMD[.float32, 2](c_scalar, c_scalar)
                 rescale_o(o_tmem, c_pair)
                 umma_arrive_leader_cta(pipeline_o_lo.consumer_mbar())
                 pipeline_o_lo.step()
@@ -277,7 +271,7 @@ def depth512_correction[
             pipeline_o_lo.wait()
             if change:
                 tcgen05_fence_after()
-                var c_pair = SIMD[DType.float32, 2](c_scalar, c_scalar)
+                var c_pair = SIMD[.float32, 2](c_scalar, c_scalar)
                 rescale_o(o_tmem, c_pair)
 
             umma_arrive_leader_cta(pipeline_o_lo.consumer_mbar())

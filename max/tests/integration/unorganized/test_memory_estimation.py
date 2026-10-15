@@ -13,22 +13,28 @@
 
 from __future__ import annotations
 
+import dataclasses
 import logging
+from typing import Any
 from unittest.mock import MagicMock, PropertyMock, patch
 
 import pytest
 from max.driver import CPU, DeviceSpec, load_devices
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.comm import Signals
+from max.nn.comm import MulticastPool, Signals
 from max.nn.kv_cache import MHAKVCacheParams, MultiKVCacheParams
 from max.nn.kv_cache.cache_params import KVConnectorType
 from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
-from max.pipelines.lib import MemoryEstimator
+from max.pipelines.lib import (
+    KVCacheConfig,
+    MemoryEstimator,
+)
 from max.pipelines.lib.interfaces import (
     ArchConfigWithKVCache,
 )
 from max.pipelines.lib.memory_estimation import (
+    MemoryPlan,
     _kv_params_per_layer_depth,
     _max_per_layer_buffer_count,
 )
@@ -37,6 +43,9 @@ from test_common.pipeline_model_dummy import (
     DUMMY_LLAMA_ARCH,
     DummyLlamaPipelineModel,
 )
+
+GIB = 1024**3
+_CONFIG = "max.pipelines.lib.config.config"
 
 
 def _mha_params(num_layers: int, per_layer_buffers: bool) -> MHAKVCacheParams:
@@ -96,11 +105,6 @@ def test_memory_estimation__raise_oom_error_weights_size_exceeds_available_memor
     None
 ):
     with (
-        patch.object(
-            DummyLlamaPipelineModel,
-            "calculate_max_seq_len",
-            return_value=100000,
-        ),
         patch(
             "max.driver.Device.stats", new_callable=PropertyMock
         ) as device_mock,
@@ -112,14 +116,16 @@ def test_memory_estimation__raise_oom_error_weights_size_exceeds_available_memor
             mock_config = DummyPipelineConfig(
                 model_path="modularai/Llama-3.1-8B-Instruct-GGUF",
                 max_batch_size=None,
-                max_length=None,
+                max_length=4096,
                 device_specs=[],
                 quantization_encoding=DUMMY_LLAMA_ARCH.default_encoding,
             )
 
             devices = load_devices(mock_config.model.device_specs)
-            arch_config = DUMMY_LLAMA_ARCH.config.initialize(mock_config)
-            MemoryEstimator.estimate_memory_footprint(
+            arch_config = DUMMY_LLAMA_ARCH.config.initialize(
+                mock_config, max_seq_len=mock_config.model.max_length or 4096
+            )
+            MemoryEstimator.plan_from_sizes(
                 mock_config,
                 mock_config.model,
                 arch_config,
@@ -136,6 +142,263 @@ def test_memory_estimation__infer_optimal_batch_size() -> None:
         devices=[CPU()],
     )
     assert inferred_batch_size == 1
+
+
+def _dummy_llama_config(
+    max_length: int | None, max_batch_total_tokens: int | None = None
+) -> DummyPipelineConfig:
+    """A dummy config whose mocked HF config carries concrete KV-sizing ints."""
+    config = DummyPipelineConfig(
+        model_path="modularai/Llama-3.1-8B-Instruct-GGUF",
+        max_batch_size=None,
+        max_length=max_length,
+        device_specs=[DeviceSpec.cpu()],
+        quantization_encoding=DUMMY_LLAMA_ARCH.default_encoding,
+        max_batch_total_tokens=max_batch_total_tokens,
+    )
+    hf_config = config.model.huggingface_config
+    hf_config.max_position_embeddings = 4096
+    hf_config.num_key_value_heads = 8
+    hf_config.hidden_size = 1024
+    hf_config.num_hidden_layers = 4
+    return config
+
+
+def _set_kv_connector(
+    cfg: DummyPipelineConfig, kv_connector: KVConnectorType
+) -> DummyPipelineConfig:
+    kv = cfg.model.kv_cache
+    return cfg.model_copy(
+        update={
+            "models": cfg.models.with_override(
+                "main",
+                kv_cache=kv.model_copy(
+                    update={
+                        "kv_connector_config": kv.kv_connector_config.model_copy(
+                            update={"type": kv_connector}
+                        )
+                    }
+                ),
+            )
+        }
+    )
+
+
+def _estimate(config: DummyPipelineConfig, **kwargs: Any) -> MemoryPlan:
+    """Runs a successful estimate against ample mocked device memory."""
+    with patch(
+        "max.driver.Device.stats", new_callable=PropertyMock
+    ) as device_mock:
+        device_mock.return_value = {"free_memory": 100 * GIB}
+        arch_config = DUMMY_LLAMA_ARCH.config.initialize(
+            config, max_seq_len=config.model.max_length or 4096
+        )
+        estimate = MemoryEstimator.plan_from_sizes(
+            config,
+            config.model,
+            arch_config,
+            [CPU()],
+            GIB,
+            0,
+            **kwargs,
+        )
+        assert isinstance(estimate, MemoryPlan)
+        return estimate
+
+
+def test_estimate__requires_resolved_max_length() -> None:
+    """Planning consumes the construction-resolved max_length; it no longer
+    runs the architecture policy, so an unresolved config is an error."""
+    config = _dummy_llama_config(max_length=None)
+    with pytest.raises(ValueError, match="max_length is unresolved"):
+        _estimate(config)
+
+
+def test_estimate__carries_user_max_length() -> None:
+    config = _dummy_llama_config(max_length=512)
+    estimate = _estimate(config)
+    assert estimate.planned_max_length == 512
+    assert config.model.max_length == 512
+
+
+def test_for_pipeline__defaults_max_batch_total_tokens_when_arch_requires() -> (
+    None
+):
+    arch = dataclasses.replace(
+        DUMMY_LLAMA_ARCH, requires_max_batch_context_length=True
+    )
+    with (
+        patch(
+            "max.pipelines.lib.memory_estimation.load_devices",
+            return_value=[CPU()],
+        ),
+        patch(
+            "max.driver.Device.stats", new_callable=PropertyMock
+        ) as device_mock,
+    ):
+        device_mock.return_value = {"free_memory": 100 * GIB}
+        config = _dummy_llama_config(max_length=512)
+        plan = MemoryEstimator.plan(config, arch)
+        assert (
+            plan.planned_max_batch_total_tokens
+            == plan.planned_max_length
+            == 512
+        )
+        # The plan carries a user-set cap unchanged instead.
+        config = _dummy_llama_config(
+            max_length=512, max_batch_total_tokens=2048
+        )
+        plan = MemoryEstimator.plan(config, arch)
+        assert plan.planned_max_batch_total_tokens == 2048
+
+
+def test_plan__leaves_config_unchanged() -> None:
+    """Planning resolves effective values onto the plan; the config keeps
+    carrying the construction-resolved ``max_length`` unchanged."""
+    config = _dummy_llama_config(max_length=4096)
+    with (
+        patch(
+            "max.pipelines.lib.memory_estimation.load_devices",
+            return_value=[CPU()],
+        ),
+        patch(
+            "max.driver.Device.stats", new_callable=PropertyMock
+        ) as device_mock,
+    ):
+        device_mock.return_value = {"free_memory": 100 * GIB}
+        plan = MemoryEstimator.plan(config, DUMMY_LLAMA_ARCH)
+    assert plan.planned_max_length == 4096
+    assert config.model.max_length == 4096
+    assert config.runtime.max_batch_total_tokens is None
+    assert plan.device_specs == (DeviceSpec.cpu(),)
+
+
+MIB = 1024**2
+
+
+def _overcommitted_llama_config(
+    max_length: int | None,
+) -> DummyPipelineConfig:
+    """A dummy config whose KV byte budget overcommits free device memory.
+
+    The paged KV size is capped at the budget ``free_memory *
+    device_memory_utilization - static``, so with the (unbounded) utilization
+    above 1 the planner's total can exceed free memory -- the only way to
+    reach the shrink-to-fit branch of ``plan_from_sizes``.
+    """
+    config = _dummy_llama_config(max_length=max_length)
+    return config.model_copy(
+        update={
+            "models": config.models.with_override(
+                "main",
+                kv_cache=KVCacheConfig(device_memory_utilization=1.5),
+            )
+        }
+    )
+
+
+def test_shrink_to_fit__runs_for_resolved_default_max_length(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Construction resolves ``model.max_length`` for every config, so
+    planning cannot infer user intent from the field being set; it must read
+    the intent bit captured before resolution. Without ``--max-length``, an
+    oversized default is shrunk on the plan instead of raising an OOM error,
+    and the config keeps the construction-resolved value."""
+    config = _overcommitted_llama_config(max_length=None)
+    # Mirror PipelineConfig._resolve_max_length: intent was captured at
+    # construction (None -> not user provided); the policy value is then
+    # stored on the config.
+    config = config.model_copy(
+        update={"models": config.models.with_override("main", max_length=4096)}
+    )
+
+    with patch(
+        "max.driver.Device.stats", new_callable=PropertyMock
+    ) as device_mock:
+        device_mock.return_value = {"free_memory": 64 * MIB}
+        arch_config = DUMMY_LLAMA_ARCH.config.initialize(
+            config, max_seq_len=config.model.max_length or 4096
+        )
+        with caplog.at_level(logging.WARNING):
+            plan = MemoryEstimator.plan_from_sizes(
+                config,
+                config.model,
+                arch_config,
+                [CPU()],
+                10 * MIB,
+                40 * MIB,
+            )
+
+    assert "Truncated model's default max_length" in caplog.text
+    # Budget int(64 MiB * 1.5) - 50 MiB static = 46 MiB -> 23 pages of the
+    # dummy's 2 MiB page. The dummy is served by Jenga, which spends one page
+    # on the null block -> 22 * 128 tokens.
+    assert plan.planned_max_length == 2816
+    assert config.model.max_length == 4096
+
+
+def test_shrink_to_fit__skipped_for_user_provided_max_length() -> None:
+    """A user-provided ``--max-length`` is a hard cap: planning raises
+    instead of silently shrinking it."""
+    config = _overcommitted_llama_config(max_length=4096)
+
+    with patch(
+        "max.driver.Device.stats", new_callable=PropertyMock
+    ) as device_mock:
+        device_mock.return_value = {"free_memory": 64 * MIB}
+        arch_config = DUMMY_LLAMA_ARCH.config.initialize(
+            config, max_seq_len=config.model.max_length or 4096
+        )
+        with pytest.raises(RuntimeError, match="exceeds available memory"):
+            MemoryEstimator.plan_from_sizes(
+                config,
+                config.model,
+                arch_config,
+                [CPU()],
+                10 * MIB,
+                40 * MIB,
+            )
+
+
+def test_plan__kv_clamp_bounds_plan_not_config() -> None:
+    """The KV-capacity clamp lowers ``planned_max_length``, not the config.
+
+    With 64 MiB of device memory, the KV budget is ``int(0.9 * 64 MiB) - 1000``
+    weight bytes, which holds 28 pages of the dummy's 2 MiB page (2 KV tensors
+    x 4 layers x 128 tokens x 8 heads x 128 head_dim x 2 bytes). The dummy is
+    served by Jenga, which spends one page on the null block, so the clamp
+    bounds a request to 27 x 128 = 3456 tokens -- below the
+    construction-resolved 4096 (the model's ``max_position_embeddings``),
+    which stays on the config untouched.
+    """
+    arch = dataclasses.replace(
+        DUMMY_LLAMA_ARCH, requires_max_batch_context_length=True
+    )
+    config = _dummy_llama_config(max_length=4096)
+    with (
+        patch(
+            "max.pipelines.lib.memory_estimation.load_devices",
+            return_value=[CPU()],
+        ),
+        patch(
+            "max.driver.Device.stats", new_callable=PropertyMock
+        ) as device_mock,
+    ):
+        device_mock.return_value = {"free_memory": 64 * 1024 * 1024}
+        plan = MemoryEstimator.plan(config, arch)
+    assert plan.planned_max_length == 3456
+    assert plan.planned_max_batch_total_tokens == 3456
+    assert config.model.max_length == 4096
+    assert config.runtime.max_batch_total_tokens is None
+
+
+def test_estimate__draft_bound_lowers_plan_max_length() -> None:
+    """A draft model's own sequence limit bounds the plan, not the config."""
+    config = _dummy_llama_config(max_length=4096)
+    estimate = _estimate(config, draft_max_seq_len=1500)
+    assert estimate.planned_max_length == 1500
+    assert config.model.max_length == 4096
 
 
 @pytest.mark.skip("TODO: AITLIB-238")
@@ -159,8 +422,10 @@ def test_memory_estimation__raise_oom_error_all_defaults_no_valid_solution() -> 
                 quantization_encoding=DUMMY_LLAMA_ARCH.default_encoding,
             )
             devices = load_devices(mock_config.model.device_specs)
-            arch_config = DUMMY_LLAMA_ARCH.config.initialize(mock_config)
-            MemoryEstimator.estimate_memory_footprint(
+            arch_config = DUMMY_LLAMA_ARCH.config.initialize(
+                mock_config, max_seq_len=mock_config.model.max_length or 4096
+            )
+            MemoryEstimator.plan_from_sizes(
                 mock_config,
                 mock_config.model,
                 arch_config,
@@ -189,8 +454,10 @@ def test_memory_estimation__raise_oom_error_all_defaults(
                 quantization_encoding=DUMMY_LLAMA_ARCH.default_encoding,
             )
             devices = load_devices(mock_config.model.device_specs)
-            arch_config = DUMMY_LLAMA_ARCH.config.initialize(mock_config)
-            MemoryEstimator.estimate_memory_footprint(
+            arch_config = DUMMY_LLAMA_ARCH.config.initialize(
+                mock_config, max_seq_len=mock_config.model.max_length or 4096
+            )
+            MemoryEstimator.plan_from_sizes(
                 mock_config,
                 mock_config.model,
                 arch_config,
@@ -222,8 +489,10 @@ def test_memory_estimation__raise_oom_error_max_length_set() -> None:
                 quantization_encoding=DUMMY_LLAMA_ARCH.default_encoding,
             )
             devices = load_devices(mock_config.model.device_specs)
-            arch_config = DUMMY_LLAMA_ARCH.config.initialize(mock_config)
-            MemoryEstimator.estimate_memory_footprint(
+            arch_config = DUMMY_LLAMA_ARCH.config.initialize(
+                mock_config, max_seq_len=mock_config.model.max_length or 4096
+            )
+            MemoryEstimator.plan_from_sizes(
                 mock_config,
                 mock_config.model,
                 arch_config,
@@ -253,8 +522,10 @@ def test_memory_estimation__raise_oom_error_max_batch_size_set() -> None:
                 quantization_encoding=DUMMY_LLAMA_ARCH.default_encoding,
             )
             devices = load_devices(mock_config.model.device_specs)
-            arch_config = DUMMY_LLAMA_ARCH.config.initialize(mock_config)
-            MemoryEstimator.estimate_memory_footprint(
+            arch_config = DUMMY_LLAMA_ARCH.config.initialize(
+                mock_config, max_seq_len=mock_config.model.max_length or 4096
+            )
+            MemoryEstimator.plan_from_sizes(
                 mock_config,
                 mock_config.model,
                 arch_config,
@@ -283,8 +554,10 @@ def test_memory_estimation__raise_oom_error_max_batch_size_set_and_max_length_se
                 quantization_encoding=DUMMY_LLAMA_ARCH.default_encoding,
             )
             devices = load_devices(mock_config.model.device_specs)
-            arch_config = DUMMY_LLAMA_ARCH.config.initialize(mock_config)
-            MemoryEstimator.estimate_memory_footprint(
+            arch_config = DUMMY_LLAMA_ARCH.config.initialize(
+                mock_config, max_seq_len=mock_config.model.max_length or 4096
+            )
+            MemoryEstimator.plan_from_sizes(
                 mock_config,
                 mock_config.model,
                 arch_config,
@@ -316,23 +589,24 @@ def test_memory_estimation__raise_oom_error_max_batch_size_set_and_max_length_se
             KVConnectorType.null,
             1,
         ),
-        # KV-offload adds BlockOffloadEngine's set.
+        # KV connectors fan MLA-replicated blocks out via plain P2P copies
+        # (see rust_kv/kv-tier-connector/src/copy_engine.rs), not a signal-buffer
+        # broadcast, so none of them add an extra set.
         (
             [DeviceSpec.accelerator(id=i) for i in range(2)],
             KVConnectorType.tiered,
-            2,
+            1,
         ),
         (
             [DeviceSpec.accelerator(id=i) for i in range(4)],
-            KVConnectorType.local,
-            2,
+            KVConnectorType.rust_tiered,
+            1,
         ),
         (
             [DeviceSpec.accelerator(id=i) for i in range(8)],
             KVConnectorType.tiered,
-            2,
+            1,
         ),
-        # dkv connector doesn't allocate BlockOffloadEngine.
         (
             [DeviceSpec.accelerator(id=i) for i in range(2)],
             KVConnectorType.dkv,
@@ -354,7 +628,7 @@ def test_estimate_signal_buffer_memory__default(
         max_length=1024,
         device_specs=device_specs,
     )
-    cfg.model.kv_cache.kv_connector = kv_connector
+    cfg = _set_kv_connector(cfg, kv_connector)
 
     expected = Signals.NUM_BYTES * expected_count_per_gpu * len(device_specs)
     assert cfg.estimate_signal_buffer_memory() == expected
@@ -367,8 +641,8 @@ def test_estimate_signal_buffer_memory__default(
         (1, KVConnectorType.null, 1),
         # Multi-GPU: mixin matches the default.
         (2, KVConnectorType.null, 1),
-        (4, KVConnectorType.tiered, 2),
-        (8, KVConnectorType.local, 2),
+        (4, KVConnectorType.tiered, 1),
+        (8, KVConnectorType.rust_tiered, 1),
     ],
 )
 def test_estimate_signal_buffer_memory__always_signal_buffers_mixin(
@@ -386,9 +660,11 @@ def test_estimate_signal_buffer_memory__always_signal_buffers_mixin(
         max_length=1024,
         device_specs=device_specs,
     )
-    cfg.model.kv_cache.kv_connector = kv_connector
+    cfg = _set_kv_connector(cfg, kv_connector)
 
-    arch_config = DUMMY_LLAMA_ARCH.config.initialize(cfg)
+    arch_config = DUMMY_LLAMA_ARCH.config.initialize(
+        cfg, max_seq_len=cfg.model.max_length or 4096
+    )
     planner_cls = PagedMemoryPlanner.with_activation_reservation(
         0, always_signal_buffers=True
     )
@@ -398,36 +674,207 @@ def test_estimate_signal_buffer_memory__always_signal_buffers_mixin(
     assert got == expected
 
 
+_ALLREDUCE = "max.nn.comm.allreduce"
+
+
 @pytest.mark.parametrize(
-    "replicates_kv_across_tp,expected_count_per_gpu",
+    "num_devices,num_tokens,hidden_size,expected",
     [
-        # BlockOffloadEngine only allocates signal buffers when the KV cache
-        # is replicated across TP (is_mla AND dp==1 AND n_devices>1).
-        (True, 2),  # main model + BCE
-        (False, 1),  # main model only, BCE skips signal-buffer setup
+        # Below the rank floor: no pool regardless of payload.
+        (2, 8192, 8192, 0),
+        # Exactly num_tokens x hidden_size x bf16.
+        (4, 8192, 4096, 8192 * 4096 * 2),
+        (8, 8192, 8192, 8192 * 8192 * 2),
+        # Unaligned payloads are returned as is; the driver does the rounding.
+        (4, 1000, 4096, 1000 * 4096 * 2),
+        # Past the ceiling the pool is disabled outright, not truncated.
+        (8, 8192, 65536, 0),
+        # An architecture reporting no hidden width or no token budget gets
+        # no pool.
+        (8, 8192, 0, 0),
+        (8, 0, 4096, 0),
     ],
 )
-def test_estimate_signal_buffer_memory__bce_gated_by_kv_params(
-    replicates_kv_across_tp: bool,
-    expected_count_per_gpu: int,
+def test_multicast_pool_capacity_bytes(
+    num_devices: int, num_tokens: int, hidden_size: int, expected: int
 ) -> None:
-    """With an ``arch_config`` exposing :class:`KVCacheParamInterface`,
-    the BCE term is gated on ``replicates_kv_across_tp``."""
-    device_specs = [DeviceSpec.accelerator(id=i) for i in range(4)]
+    """``capacity_bytes`` is the single sizing authority for the NVLS pool."""
+    assert (
+        MulticastPool.capacity_bytes(
+            num_devices=num_devices,
+            num_tokens=num_tokens,
+            hidden_size=hidden_size,
+        )
+        == expected
+    )
+
+
+def _gpu_config(
+    num_devices: int, hidden_size: int | str | None
+) -> DummyPipelineConfig:
     cfg = DummyPipelineConfig(
         model_path="dummy",
         quantization_encoding=DUMMY_LLAMA_ARCH.default_encoding,
         max_batch_size=1,
         max_length=1024,
-        device_specs=device_specs,
+        device_specs=[DeviceSpec.accelerator(id=i) for i in range(num_devices)],
     )
-    cfg.model.kv_cache.kv_connector = KVConnectorType.tiered
+    if hidden_size is not None:
+        cfg.model.huggingface_config.hidden_size = hidden_size
+    return cfg
 
-    arch_config = MagicMock(spec=ArchConfigWithKVCache)
-    arch_config.get_kv_params.return_value.replicates_kv_across_tp = (
-        replicates_kv_across_tp
+
+def _driver_pool(supported: bool = True) -> MagicMock:
+    driver_pool = MagicMock()
+    driver_pool.is_supported.return_value = supported
+    return driver_pool
+
+
+@pytest.fixture
+def multicast_pool_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(MulticastPool, "ENABLED", True)
+
+
+def test_multicast_pool_bytes__disabled_by_default() -> None:
+    """Until a kernel consumes the pool, serving neither charges nor sizes it:
+    the driver is not even asked."""
+    assert MulticastPool.ENABLED is False
+    cfg = _gpu_config(8, hidden_size=4096)
+    driver_pool = _driver_pool()
+    with (
+        patch(f"{_CONFIG}.load_devices", return_value=[]) as load,
+        patch(f"{_CONFIG}.SymmetricPool", driver_pool),
+    ):
+        assert cfg.multicast_pool_bytes() == 0
+    load.assert_not_called()
+    driver_pool.is_supported.assert_not_called()
+
+
+@pytest.mark.usefixtures("multicast_pool_enabled")
+def test_multicast_pool_bytes__charges_the_capacity() -> None:
+    """The charge is the sized capacity once the driver confirms support."""
+    cfg = _gpu_config(8, hidden_size=4096)
+    capacity = MulticastPool.capacity_bytes(
+        8, cfg.runtime.max_batch_input_tokens, 4096
     )
+    assert capacity > 0
+    driver_pool = _driver_pool()
+    with (
+        patch(f"{_CONFIG}.load_devices", return_value=[]),
+        patch(f"{_CONFIG}.SymmetricPool", driver_pool),
+    ):
+        assert cfg.multicast_pool_bytes() == capacity
+    driver_pool.is_supported.assert_called_once_with([])
 
-    got = cfg.estimate_signal_buffer_memory(arch_config)
-    expected = Signals.NUM_BYTES * expected_count_per_gpu * len(device_specs)
-    assert got == expected
+
+@pytest.mark.usefixtures("multicast_pool_enabled")
+def test_multicast_pool_bytes__unsupported_devices_is_zero() -> None:
+    """A box the driver cannot back a pool on is not charged for one."""
+    cfg = _gpu_config(8, hidden_size=4096)
+    driver_pool = _driver_pool(supported=False)
+    with (
+        patch(f"{_CONFIG}.load_devices", return_value=[]),
+        patch(f"{_CONFIG}.SymmetricPool", driver_pool),
+    ):
+        assert cfg.multicast_pool_bytes() == 0
+
+
+@pytest.mark.usefixtures("multicast_pool_enabled")
+@pytest.mark.parametrize(
+    "num_devices,hidden_size",
+    [
+        # Below the rank floor.
+        (2, 4096),
+        # No integer hidden width: a MagicMock attribute, or a string.
+        (8, None),
+        (8, "4096"),
+        # Payload past the ceiling.
+        (8, 65536),
+    ],
+)
+def test_multicast_pool_bytes__sizing_rejections_skip_the_driver(
+    num_devices: int, hidden_size: int | str | None
+) -> None:
+    """Sizing rejects before the driver is consulted."""
+    cfg = _gpu_config(num_devices, hidden_size=hidden_size)
+    driver_pool = _driver_pool()
+    with (
+        patch(f"{_CONFIG}.load_devices", return_value=[]) as load,
+        patch(f"{_CONFIG}.SymmetricPool", driver_pool),
+    ):
+        assert cfg.multicast_pool_bytes() == 0
+    load.assert_not_called()
+    driver_pool.is_supported.assert_not_called()
+
+
+@pytest.mark.parametrize("enabled", [True, False])
+def test_estimate_signal_buffer_memory__multicast_pool(
+    enabled: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The planner charges the pool per GPU alongside the signal buffers,
+    and only while the pool is enabled."""
+    monkeypatch.setattr(MulticastPool, "ENABLED", enabled)
+    cfg = _gpu_config(8, hidden_size=4096)
+    arch_config = DUMMY_LLAMA_ARCH.config.initialize(
+        cfg, max_seq_len=cfg.model.max_length or 4096
+    )
+    planner = PagedMemoryPlanner(arch_config)
+    ngpus = len(cfg.model.device_specs)
+
+    with (
+        patch(f"{_CONFIG}.load_devices", return_value=[]),
+        patch(f"{_CONFIG}.SymmetricPool", _driver_pool()),
+    ):
+        got = planner.estimate_signal_buffer_memory(cfg)
+
+    capacity = MulticastPool.capacity_bytes(
+        ngpus, cfg.runtime.max_batch_input_tokens, 4096
+    )
+    pool_bytes = capacity if enabled else 0
+    assert got == (Signals.NUM_BYTES + pool_bytes) * ngpus
+
+
+def test_multicast_pool_allocate__zero_bytes_skips_the_driver() -> None:
+    """A zero charge means no pool: the driver is neither queried nor asked
+    to allocate."""
+    driver_pool = MagicMock()
+    with patch(f"{_ALLREDUCE}.DriverSymmetricPool", driver_pool):
+        assert MulticastPool.allocate([MagicMock()], 0) is None
+    driver_pool.lookup.assert_not_called()
+    driver_pool.allocate.assert_not_called()
+
+
+def test_multicast_pool_allocate__reuses_the_registered_pool() -> None:
+    """A second model over the same devices gets the existing pool instead
+    of a failing second allocation."""
+    driver_pool = MagicMock()
+    existing = object()
+    driver_pool.lookup.return_value = existing
+    with (
+        patch(f"{_ALLREDUCE}.is_virtual_device_mode", return_value=False),
+        patch(f"{_ALLREDUCE}.DriverSymmetricPool", driver_pool),
+    ):
+        assert MulticastPool.allocate([MagicMock()], 4096) is existing
+    driver_pool.allocate.assert_not_called()
+
+
+def test_multicast_pool_allocate__failure_falls_back_with_a_warning(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A failed allocation is a fallback, but a warned one: the estimate has
+    already reserved the bytes and they now go unused."""
+    driver_pool = MagicMock()
+    driver_pool.lookup.return_value = None
+    driver_pool.allocate.side_effect = RuntimeError("cuMulticastCreate failed")
+    with (
+        patch(f"{_ALLREDUCE}.is_virtual_device_mode", return_value=False),
+        patch(f"{_ALLREDUCE}.DriverSymmetricPool", driver_pool),
+        caplog.at_level(logging.WARNING, logger=_ALLREDUCE),
+    ):
+        assert MulticastPool.allocate([MagicMock()], 4096) is None
+    assert any(
+        record.levelno == logging.WARNING
+        and "cuMulticastCreate failed" in record.getMessage()
+        and "4096" in record.getMessage()
+        for record in caplog.records
+    )

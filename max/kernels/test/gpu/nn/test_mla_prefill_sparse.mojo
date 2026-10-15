@@ -35,28 +35,16 @@ from std.math import ceildiv, exp2, sqrt
 from std.math.constants import log2e
 from std.memory import UnsafePointer, alloc
 from std.random import randn
-from std.sys import has_nvidia_gpu_accelerator, size_of
 
-from std.gpu import *
-from std.gpu.host import DeviceBuffer, DeviceContext
-from std.gpu.host.info import _is_sm10x_gpu
+from max.gpu import *
+from max.gpu.host import DeviceContext
+from max.gpu.host.info import _is_sm10x_gpu
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
-from layout import (
-    Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-    TileTensor,
-    UNKNOWN_VALUE,
-    row_major,
-)
-from nn.attention.mha_mask import NullMask
-from nn.attention.mha_utils import DynamicInt
+from layout import Idx, TileTensor, row_major
 from nn.attention.gpu.nvidia.sm100.mla_prefill_sparse_utils import (
     MLASparseConfig,
 )
 from nn.attention.gpu.nvidia.sm100.mla_prefill_sparse import mla_prefill_sparse
-from std.utils.index import Index, IndexList
 from std.utils.numerics import min_or_neg_inf
 
 
@@ -164,7 +152,7 @@ def host_reference[
                 var bs = b * seq_len + s
                 var q_base = bs * num_heads * qk_depth + h * qk_depth
 
-                var mi = Float64(min_or_neg_inf[DType.float32]())
+                var mi = Float64(min_or_neg_inf[.float32]())
                 var s_buf = alloc[Float64](n_valid)
 
                 for k in range(n_valid):
@@ -172,8 +160,8 @@ def host_reference[
                     var dot = Float64(0)
                     for d in range(qk_depth):
                         dot += (
-                            q_ptr[q_base + d].cast[DType.float64]()
-                            * kv_sparse_ptr[kv_base + d].cast[DType.float64]()
+                            q_ptr[q_base + d].cast[.float64]()
+                            * kv_sparse_ptr[kv_base + d].cast[.float64]()
                         )
                     # Match kernel's `cur_pi_max *= scale_log2e` step.
                     s_buf[k] = dot * scale_log2e
@@ -215,7 +203,7 @@ def host_reference[
                         var kv_base = (bs * topk + k) * qk_depth
                         acc += (
                             s_buf[k]
-                            * kv_sparse_ptr[kv_base + d].cast[DType.float64]()
+                            * kv_sparse_ptr[kv_base + d].cast[.float64]()
                         )
                     output_ptr[o_base + d] = acc.cast[q_type]()
 
@@ -316,14 +304,6 @@ def run_test_prefill_sparse[
     var total_pages = batch_size * ceildiv(num_kv_tokens, PAGE_SIZE)
     var max_pages_per_batch = ceildiv(num_kv_tokens, PAGE_SIZE)
 
-    var block_shape = IndexList[6](
-        total_pages,
-        kv_dim2,
-        num_layers,
-        PAGE_SIZE,
-        kv_params.num_heads,
-        kv_params.head_size,
-    )
     var block_elems = (
         total_pages
         * kv_dim2
@@ -385,8 +365,7 @@ def run_test_prefill_sparse[
     )
     for bi in range(batch_size):
         for t in range(num_kv_tokens):
-            var page_idx = t // PAGE_SIZE
-            var tok_in_page = t % PAGE_SIZE
+            var page_idx, tok_in_page = divmod(t, PAGE_SIZE)
             var block_id = Int(
                 lookup_table_host[bi * max_pages_per_batch + page_idx]
             )
@@ -480,12 +459,10 @@ def run_test_prefill_sparse[
     for bi in range(batch_size):
         cache_lengths_host[bi] = UInt32(num_kv_tokens)
 
-    var cache_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
-        batch_size
-    )
+    var cache_lengths_device = ctx.enqueue_create_buffer[.uint32](batch_size)
     ctx.enqueue_copy(cache_lengths_device, cache_lengths_host)
 
-    var lookup_table_device = ctx.enqueue_create_buffer[DType.uint32](lut_size)
+    var lookup_table_device = ctx.enqueue_create_buffer[.uint32](lut_size)
     ctx.enqueue_copy(lookup_table_device, lookup_table_host)
 
     var q_device = ctx.enqueue_create_buffer[q_type](q_elems)
@@ -507,8 +484,7 @@ def run_test_prefill_sparse[
             for i in range(topk):
                 if i < valid_topk:
                     var t = selected_tokens[bs * topk + i]
-                    var page_idx = t // PAGE_SIZE
-                    var tok_in_page = t % PAGE_SIZE
+                    var page_idx, tok_in_page = divmod(t, PAGE_SIZE)
                     var block_id = Int(
                         lookup_table_host[bi * max_pages_per_batch + page_idx]
                     )
@@ -521,7 +497,7 @@ def run_test_prefill_sparse[
                     # in the k-valid producer and gets masked out.
                     h_indices[bs * topk + i] = UInt32(0xFFFFFFFF)
 
-    var indices_device = ctx.enqueue_create_buffer[DType.uint32](total_indices)
+    var indices_device = ctx.enqueue_create_buffer[.uint32](total_indices)
     ctx.enqueue_copy(indices_device, h_indices)
 
     # topk_lengths is per-query (not per-batch): the kernel reads
@@ -537,9 +513,7 @@ def run_test_prefill_sparse[
     for i in range(total_q_tokens):
         h_topk_lengths[i] = UInt32(reported_topk_length)
 
-    var topk_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
-        total_q_tokens
-    )
+    var topk_lengths_device = ctx.enqueue_create_buffer[.uint32](total_q_tokens)
     ctx.enqueue_copy(topk_lengths_device, h_topk_lengths)
 
     ctx.synchronize()
@@ -547,47 +521,40 @@ def run_test_prefill_sparse[
     # -----------------------------------------------------------------------
     # Build PagedKVCacheCollection on device
     # -----------------------------------------------------------------------
-    var blocks_lt = LayoutTensor[q_type, Layout.row_major[6]()](
-        blocks_device.unsafe_ptr(),
-        RuntimeLayout[Layout.row_major[6]()].row_major(block_shape),
-    )
-
-    comptime cl_layout = Layout(UNKNOWN_VALUE)
-    var cache_lengths_lt = LayoutTensor[DType.uint32, cl_layout](
-        cache_lengths_device.unsafe_ptr(),
-        RuntimeLayout[cl_layout].row_major(IndexList[1](batch_size)),
-    )
-
-    comptime lt_layout_2d = Layout.row_major[2]()
-    var lookup_table_lt = LayoutTensor[DType.uint32, lt_layout_2d](
-        lookup_table_device.unsafe_ptr(),
-        RuntimeLayout[lt_layout_2d].row_major(
-            IndexList[2](batch_size, max_pages_per_batch)
+    var blocks_tt = TileTensor(
+        blocks_device,
+        row_major(
+            Int64(total_pages),
+            Idx[1],
+            Int64(num_layers),
+            Idx[PAGE_SIZE],
+            Idx[kv_params.num_heads],
+            Idx[kv_params.head_size],
         ),
     )
 
-    var kv_collection = PagedKVCacheCollection[q_type, kv_params, PAGE_SIZE](
-        LayoutTensor[q_type, Layout.row_major[6]()](
-            blocks_lt.ptr,
-            RuntimeLayout[Layout.row_major[6]()](
-                blocks_lt.runtime_layout.shape.value,
-                blocks_lt.runtime_layout.stride.value,
-            ),
-        ),
-        LayoutTensor[mut=False, DType.uint32, cl_layout](
-            cache_lengths_lt.ptr,
-            RuntimeLayout[cl_layout](
-                cache_lengths_lt.runtime_layout.shape.value,
-                cache_lengths_lt.runtime_layout.stride.value,
-            ),
-        ),
-        LayoutTensor[mut=False, DType.uint32, lt_layout_2d](
-            lookup_table_lt.ptr,
-            RuntimeLayout[lt_layout_2d](
-                lookup_table_lt.runtime_layout.shape.value,
-                lookup_table_lt.runtime_layout.stride.value,
-            ),
-        ),
+    var cache_lengths_tt = TileTensor(
+        cache_lengths_device, row_major(Int64(batch_size))
+    )
+
+    var lookup_table_tt = TileTensor(
+        lookup_table_device,
+        row_major(Int64(batch_size), Int64(max_pages_per_batch)),
+    )
+
+    comptime Collection = PagedKVCacheCollection[
+        q_type,
+        kv_params,
+        PAGE_SIZE,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
+    ]
+    var kv_collection = Collection(
+        rebind[Collection.blocks_tt_type](blocks_tt.as_unsafe_any_origin()),
+        cache_lengths_tt.as_imm().as_unsafe_any_origin(),
+        lookup_table_tt.as_imm().as_unsafe_any_origin(),
         UInt32(seq_len),
         UInt32(num_kv_tokens),
     )
@@ -598,22 +565,22 @@ def run_test_prefill_sparse[
     # Build TileTensors for Q, output, indices, and topk_lengths.
     # -----------------------------------------------------------------------
     var q_tt = TileTensor(
-        q_device.unsafe_ptr(),
+        q_device,
         row_major((total_q_tokens, Idx[num_heads], Idx[QK_DEPTH])),
     )
 
     var out_tt = TileTensor(
-        out_device.unsafe_ptr(),
+        out_device,
         row_major((total_q_tokens, Idx[num_heads], Idx[V_DEPTH])),
     )
 
     var indices_tt = TileTensor(
-        indices_device.unsafe_ptr(),
+        indices_device,
         row_major(total_indices),
     )
 
     var topk_lengths_tt = TileTensor(
-        topk_lengths_device.unsafe_ptr(),
+        topk_lengths_device,
         row_major(total_q_tokens),
     )
 
@@ -644,7 +611,7 @@ def run_test_prefill_sparse[
     # padded-row guard reading sink[num_heads..63] is a real OOB.
     var attn_sink_ptr = Optional[UnsafePointer[Float32, ImmutAnyOrigin]](None)
     var sink_len = len(sink_values) if len(sink_values) > 0 else 1
-    var sink_device = ctx.enqueue_create_buffer[DType.float32](sink_len)
+    var sink_device = ctx.enqueue_create_buffer[.float32](sink_len)
     if len(sink_values) > 0:
         var sink_host = alloc[Float32](len(sink_values))
         for i in range(len(sink_values)):
@@ -725,8 +692,8 @@ def run_test_prefill_sparse[
                         + h * V_DEPTH
                         + d
                     )
-                    var ref_val = ref_host[idx].cast[DType.float64]()
-                    var actual_val = out_host[idx].cast[DType.float64]()
+                    var ref_val = ref_host[idx].cast[.float64]()
+                    var actual_val = out_host[idx].cast[.float64]()
                     var err = abs(actual_val - ref_val)
                     if actual_val != actual_val:
                         nan_actual += 1
@@ -806,9 +773,9 @@ def run_test_prefill_sparse[
                 " d=",
                 d,
                 " out=",
-                out_host[idx].cast[DType.float64](),
+                out_host[idx].cast[.float64](),
                 " ref=",
-                ref_host[idx].cast[DType.float64](),
+                ref_host[idx].cast[.float64](),
             )
 
     # Fail hard on ANY non-finite output/reference. This is the check the
@@ -931,7 +898,7 @@ def run_test_prefill_sparse[
 
 def main() raises:
     with DeviceContext() as ctx:
-        comptime if has_nvidia_gpu_accelerator() and _is_sm10x_gpu(
+        comptime if ctx.target.is_nvidia_gpu() and _is_sm10x_gpu(
             ctx.default_device_info
         ):
             # ===============================================================
@@ -971,7 +938,7 @@ def main() raises:
                 sink_prod_h64.append(Float32(-1.0e38))
 
             # h8 (GLM TP8) late-token: 32 fully-valid blocks, peaked + sink.
-            run_test_prefill_sparse[DType.bfloat16, 8, 2048](
+            run_test_prefill_sparse[.bfloat16, 8, 2048](
                 "b1_s8_h8_len2048_valid2048_peaked_sink",
                 1,
                 8,
@@ -983,7 +950,7 @@ def main() raises:
                 sink_values=sink_prod_h8,
             )
             # h8 early-token: 2 valid blocks + 30 all-sentinel skip_tma blocks.
-            run_test_prefill_sparse[DType.bfloat16, 8, 2048](
+            run_test_prefill_sparse[.bfloat16, 8, 2048](
                 "b1_s8_h8_len2048_valid96_peaked_sink",
                 1,
                 8,
@@ -996,7 +963,7 @@ def main() raises:
             )
             # h8 all-invalid: all 32 blocks sentinel (skip_tma throughout) =>
             # O=0 via the have_valid_indices vote at constant length 2048.
-            run_test_prefill_sparse[DType.bfloat16, 8, 2048](
+            run_test_prefill_sparse[.bfloat16, 8, 2048](
                 "b1_s8_h8_len2048_valid0",
                 1,
                 8,
@@ -1007,7 +974,7 @@ def main() raises:
             )
             # h8 diffuse deep: 32-block fold with a flat softmax (complements
             # the peaked cases above; O-rescale rarely fires here).
-            run_test_prefill_sparse[DType.bfloat16, 8, 2048](
+            run_test_prefill_sparse[.bfloat16, 8, 2048](
                 "b1_s8_h8_len2048_valid2048_diffuse",
                 1,
                 8,
@@ -1018,7 +985,7 @@ def main() raises:
             )
             # h8 large cache: valid keys scattered across an 8k-row cache =>
             # large physical gather4 indices (128 pages), peaked.
-            run_test_prefill_sparse[DType.bfloat16, 8, 2048](
+            run_test_prefill_sparse[.bfloat16, 8, 2048](
                 "b1_s8_h8_len2048_bigcache8k_peaked",
                 1,
                 8,
@@ -1030,7 +997,7 @@ def main() raises:
             )
             # h64 (GLM unsharded) late-token: 32 fully-valid blocks, peaked +
             # sink — confirms the landed 64-head path shares the h8 result.
-            run_test_prefill_sparse[DType.bfloat16, 64, 2048](
+            run_test_prefill_sparse[.bfloat16, 64, 2048](
                 "b1_s8_h64_len2048_valid2048_peaked_sink",
                 1,
                 8,
@@ -1042,7 +1009,7 @@ def main() raises:
                 sink_values=sink_prod_h64,
             )
             # h64 early-token: 2 valid blocks + 30 all-sentinel skip_tma tail.
-            run_test_prefill_sparse[DType.bfloat16, 64, 2048](
+            run_test_prefill_sparse[.bfloat16, 64, 2048](
                 "b1_s8_h64_len2048_valid96_peaked_sink",
                 1,
                 8,
@@ -1062,7 +1029,7 @@ def main() raises:
             # mask (see padded test cases below).
 
             # Single k-block: topk == B_TOPK.
-            run_test_prefill_sparse[DType.bfloat16, 128, 128](
+            run_test_prefill_sparse[.bfloat16, 128, 128](
                 "b1_s32_h128_kv512_topk128",
                 1,
                 32,
@@ -1071,7 +1038,7 @@ def main() raises:
             )
 
             # Multi-batch, single k-block.
-            run_test_prefill_sparse[DType.bfloat16, 128, 128](
+            run_test_prefill_sparse[.bfloat16, 128, 128](
                 "b4_s16_h128_kv256_topk128",
                 4,
                 16,
@@ -1081,7 +1048,7 @@ def main() raises:
 
             # Multi-block: topk=256 = 2 * B_TOPK exercises the cross-block
             # online-softmax state (mi/li updates between k iters).
-            run_test_prefill_sparse[DType.bfloat16, 128, 256](
+            run_test_prefill_sparse[.bfloat16, 128, 256](
                 "b1_s32_h128_kv512_topk256",
                 1,
                 32,
@@ -1094,7 +1061,7 @@ def main() raises:
             # DSv3.2 uses topk=2048; the kernel paths exercised here
             # (multi-block, multi-warpgroup pipeline, full epilogue) are
             # the same.
-            run_test_prefill_sparse[DType.bfloat16, 128, 256](
+            run_test_prefill_sparse[.bfloat16, 128, 256](
                 "b1_s64_h128_kv1024_topk256_prodlike",
                 1,
                 64,
@@ -1109,7 +1076,7 @@ def main() raises:
             # Single-block padded: B_TOPK=128 with the last 64 indices
             # masked out — exercises the producer's `abs_pos <
             # top_k_length` check on positions inside one k-block.
-            run_test_prefill_sparse[DType.bfloat16, 128, 128](
+            run_test_prefill_sparse[.bfloat16, 128, 128](
                 "b1_s32_h128_kv512_topk128_valid64",
                 1,
                 32,
@@ -1122,7 +1089,7 @@ def main() raises:
             # entirely padded — exercises the all-invalid k-block
             # fast-path in load_k's `skip_tma` and the producer's
             # whole-block mask=0 case.
-            run_test_prefill_sparse[DType.bfloat16, 128, 256](
+            run_test_prefill_sparse[.bfloat16, 128, 256](
                 "b1_s32_h128_kv512_topk256_valid128",
                 1,
                 32,
@@ -1134,7 +1101,7 @@ def main() raises:
             # Multi-block padded with partial second block:
             # valid_topk=192 covers the full first block + 64 keys of
             # the second block — the mask must fire mid-block.
-            run_test_prefill_sparse[DType.bfloat16, 128, 256](
+            run_test_prefill_sparse[.bfloat16, 128, 256](
                 "b1_s32_h128_kv512_topk256_valid192",
                 1,
                 32,
@@ -1151,7 +1118,7 @@ def main() raises:
             # ---------------------------------------------------------------
 
             # Exact 1 k-block, num_q_rows=1 (smallest grid).
-            run_test_prefill_sparse[DType.bfloat16, 64, 64](
+            run_test_prefill_sparse[.bfloat16, 64, 64](
                 "b1_s1_h64_kv256_topk64",
                 1,
                 1,
@@ -1160,7 +1127,7 @@ def main() raises:
             )
 
             # Exact 1 k-block, small num_q_rows.
-            run_test_prefill_sparse[DType.bfloat16, 64, 64](
+            run_test_prefill_sparse[.bfloat16, 64, 64](
                 "b1_s32_h64_kv256_topk64",
                 1,
                 32,
@@ -1169,7 +1136,7 @@ def main() raises:
             )
 
             # Multi-batch, exact 1 k-block (num_q_rows = 4*16 = 64).
-            run_test_prefill_sparse[DType.bfloat16, 64, 64](
+            run_test_prefill_sparse[.bfloat16, 64, 64](
                 "b4_s16_h64_kv256_topk64",
                 4,
                 16,
@@ -1178,7 +1145,7 @@ def main() raises:
             )
 
             # Exact 2 k-blocks (cross-block online-softmax state).
-            run_test_prefill_sparse[DType.bfloat16, 64, 128](
+            run_test_prefill_sparse[.bfloat16, 64, 128](
                 "b1_s32_h64_kv512_topk128",
                 1,
                 32,
@@ -1188,7 +1155,7 @@ def main() raises:
 
             # Ragged tail < B_TOPK: topk=64, valid_topk=40 — k-valid mask
             # poisons positions [40..64) inside the single block.
-            run_test_prefill_sparse[DType.bfloat16, 64, 64](
+            run_test_prefill_sparse[.bfloat16, 64, 64](
                 "b1_s32_h64_kv256_topk64_valid40",
                 1,
                 32,
@@ -1199,7 +1166,7 @@ def main() raises:
 
             # Multi-block ragged: 2 blocks, valid_topk=96 fires mid second
             # block.
-            run_test_prefill_sparse[DType.bfloat16, 64, 128](
+            run_test_prefill_sparse[.bfloat16, 64, 128](
                 "b1_s32_h64_kv512_topk128_valid96",
                 1,
                 32,
@@ -1210,7 +1177,7 @@ def main() raises:
 
             # Prime valid_topk (37) in a single block: the mask boundary
             # lands at a non-aligned offset inside [0, 64).
-            run_test_prefill_sparse[DType.bfloat16, 64, 64](
+            run_test_prefill_sparse[.bfloat16, 64, 64](
                 "b1_s32_h64_kv256_topk64_valid37",
                 1,
                 32,
@@ -1222,7 +1189,7 @@ def main() raises:
 
             # Prime valid_topk (97) across 2 blocks: full first block plus a
             # non-aligned 33-key tail in the second.
-            run_test_prefill_sparse[DType.bfloat16, 64, 128](
+            run_test_prefill_sparse[.bfloat16, 64, 128](
                 "b1_s32_h64_kv512_topk128_valid97",
                 1,
                 32,
@@ -1233,7 +1200,7 @@ def main() raises:
             )
 
             # Prime num_q_rows (13): exercises a partial query tile.
-            run_test_prefill_sparse[DType.bfloat16, 64, 64](
+            run_test_prefill_sparse[.bfloat16, 64, 64](
                 "b1_s13_h64_kv256_topk64",
                 1,
                 13,
@@ -1243,7 +1210,7 @@ def main() raises:
             )
 
             # Large: 16 k-blocks (topk=1024) exercises the deep k loop.
-            run_test_prefill_sparse[DType.bfloat16, 64, 1024](
+            run_test_prefill_sparse[.bfloat16, 64, 1024](
                 "b1_s8_h64_kv1024_topk1024",
                 1,
                 8,
@@ -1264,7 +1231,7 @@ def main() raises:
 
             # --- 8 heads (GLM TP=8) ---
             # Exact 1 k-block, num_q_rows=1 (smallest grid).
-            run_test_prefill_sparse[DType.bfloat16, 8, 64](
+            run_test_prefill_sparse[.bfloat16, 8, 64](
                 "b1_s1_h8_kv256_topk64",
                 1,
                 1,
@@ -1273,7 +1240,7 @@ def main() raises:
             )
 
             # Exact 1 k-block, small num_q_rows.
-            run_test_prefill_sparse[DType.bfloat16, 8, 64](
+            run_test_prefill_sparse[.bfloat16, 8, 64](
                 "b1_s32_h8_kv256_topk64",
                 1,
                 32,
@@ -1282,7 +1249,7 @@ def main() raises:
             )
 
             # Multi-batch, exact 1 k-block (num_q_rows = 4*16 = 64).
-            run_test_prefill_sparse[DType.bfloat16, 8, 64](
+            run_test_prefill_sparse[.bfloat16, 8, 64](
                 "b4_s16_h8_kv256_topk64",
                 4,
                 16,
@@ -1291,7 +1258,7 @@ def main() raises:
             )
 
             # Exact 2 k-blocks (cross-block online-softmax state).
-            run_test_prefill_sparse[DType.bfloat16, 8, 128](
+            run_test_prefill_sparse[.bfloat16, 8, 128](
                 "b1_s32_h8_kv512_topk128",
                 1,
                 32,
@@ -1300,7 +1267,7 @@ def main() raises:
             )
 
             # Multi-block: 4 k-blocks (topk=256).
-            run_test_prefill_sparse[DType.bfloat16, 8, 256](
+            run_test_prefill_sparse[.bfloat16, 8, 256](
                 "b1_s32_h8_kv1024_topk256",
                 1,
                 32,
@@ -1310,7 +1277,7 @@ def main() raises:
 
             # Ragged tail < B_TOPK: topk=64, valid_topk=40 — k-valid mask
             # poisons positions [40..64) inside the single block.
-            run_test_prefill_sparse[DType.bfloat16, 8, 64](
+            run_test_prefill_sparse[.bfloat16, 8, 64](
                 "b1_s32_h8_kv256_topk64_valid40",
                 1,
                 32,
@@ -1321,7 +1288,7 @@ def main() raises:
 
             # Multi-block ragged: 2 blocks, valid_topk=96 fires mid second
             # block.
-            run_test_prefill_sparse[DType.bfloat16, 8, 128](
+            run_test_prefill_sparse[.bfloat16, 8, 128](
                 "b1_s32_h8_kv512_topk128_valid96",
                 1,
                 32,
@@ -1332,7 +1299,7 @@ def main() raises:
 
             # --- 16 heads (GLM TP=4) ---
             # Exact 1 k-block, small num_q_rows.
-            run_test_prefill_sparse[DType.bfloat16, 16, 64](
+            run_test_prefill_sparse[.bfloat16, 16, 64](
                 "b1_s32_h16_kv256_topk64",
                 1,
                 32,
@@ -1341,7 +1308,7 @@ def main() raises:
             )
 
             # Multi-block: 4 k-blocks (topk=256).
-            run_test_prefill_sparse[DType.bfloat16, 16, 256](
+            run_test_prefill_sparse[.bfloat16, 16, 256](
                 "b1_s32_h16_kv1024_topk256",
                 1,
                 32,
@@ -1350,7 +1317,7 @@ def main() raises:
             )
 
             # Multi-block ragged: 2 blocks, valid_topk=96.
-            run_test_prefill_sparse[DType.bfloat16, 16, 128](
+            run_test_prefill_sparse[.bfloat16, 16, 128](
                 "b1_s32_h16_kv512_topk128_valid96",
                 1,
                 32,
@@ -1364,7 +1331,7 @@ def main() raises:
 
             # topk-1 boundary: valid_topk = topk-1 (63) inside one B_TOPK=64
             # block — the k-valid mask poisons exactly the last position.
-            run_test_prefill_sparse[DType.bfloat16, 8, 64](
+            run_test_prefill_sparse[.bfloat16, 8, 64](
                 "b1_s32_h8_kv256_topk64_valid63",
                 1,
                 32,
@@ -1374,7 +1341,7 @@ def main() raises:
             )
 
             # (1, 64): single batch, 64 query rows (grid = 64 CTAs).
-            run_test_prefill_sparse[DType.bfloat16, 8, 64](
+            run_test_prefill_sparse[.bfloat16, 8, 64](
                 "b1_s64_h8_kv256_topk64",
                 1,
                 64,
@@ -1386,7 +1353,7 @@ def main() raises:
             # the epilogue's have_valid_indices vote is false and the real row
             # resets to real_mi=-inf -> O=0. Confirms the zeroed padded rows
             # don't flip the vote for a fully-invalid real row at nqh<64.
-            run_test_prefill_sparse[DType.bfloat16, 8, 64](
+            run_test_prefill_sparse[.bfloat16, 8, 64](
                 "b1_s32_h8_kv256_topk64_valid0",
                 1,
                 32,
@@ -1397,7 +1364,7 @@ def main() raises:
 
             # Deep: 16 k-blocks (topk=1024) at 8 heads — the deep
             # online-softmax k loop under the sub-64 padded M-tile.
-            run_test_prefill_sparse[DType.bfloat16, 8, 1024](
+            run_test_prefill_sparse[.bfloat16, 8, 1024](
                 "b1_s8_h8_kv1024_topk1024",
                 1,
                 8,
@@ -1419,7 +1386,7 @@ def main() raises:
                 1.5,
                 2.0,
             ]
-            run_test_prefill_sparse[DType.bfloat16, 8, 64](
+            run_test_prefill_sparse[.bfloat16, 8, 64](
                 "b1_s32_h8_kv256_topk64_sink_finite",
                 1,
                 32,
@@ -1434,10 +1401,8 @@ def main() raises:
             # to confirm no read of sink[8..63].
             var sink_bf16_h8_neginf = List[Float32]()
             for _ in range(8):
-                sink_bf16_h8_neginf.append(
-                    Float32(min_or_neg_inf[DType.float32]())
-                )
-            run_test_prefill_sparse[DType.bfloat16, 8, 64](
+                sink_bf16_h8_neginf.append(Float32(min_or_neg_inf[.float32]()))
+            run_test_prefill_sparse[.bfloat16, 8, 64](
                 "b1_s32_h8_kv256_topk64_sink_neginf",
                 1,
                 32,
@@ -1448,7 +1413,7 @@ def main() raises:
 
             # --- 32 heads (GLM TP=2) ---
             # Exact 1 k-block.
-            run_test_prefill_sparse[DType.bfloat16, 32, 64](
+            run_test_prefill_sparse[.bfloat16, 32, 64](
                 "b1_s32_h32_kv256_topk64",
                 1,
                 32,
@@ -1457,7 +1422,7 @@ def main() raises:
             )
 
             # Multi-block: 4 k-blocks (topk=256).
-            run_test_prefill_sparse[DType.bfloat16, 32, 256](
+            run_test_prefill_sparse[.bfloat16, 32, 256](
                 "b1_s32_h32_kv1024_topk256",
                 1,
                 32,
@@ -1466,7 +1431,7 @@ def main() raises:
             )
 
             # Multi-block ragged: 2 blocks, valid_topk=96.
-            run_test_prefill_sparse[DType.bfloat16, 32, 128](
+            run_test_prefill_sparse[.bfloat16, 32, 128](
                 "b1_s32_h32_kv512_topk128_valid96",
                 1,
                 32,
@@ -1479,7 +1444,7 @@ def main() raises:
             # Proves the sub-64 mechanism generalizes to ANY multiple of 8 in
             # (0, 64], not just {8, 16, 32}. 24 % 8 == 0 satisfies the
             # SWIZZLE_128B 8-row core-matrix constraint the assert enforces.
-            run_test_prefill_sparse[DType.bfloat16, 24, 64](
+            run_test_prefill_sparse[.bfloat16, 24, 64](
                 "b1_s32_h24_kv256_topk64",
                 1,
                 32,
@@ -1504,7 +1469,7 @@ def main() raises:
             # in load_k / v_tma_gather4_load / load_{k,v}_fp8_tma);
             # `layer_idx=0` at num_layers=2 is the control that the
             # multi-layer path is still correct at the base layer.
-            run_test_prefill_sparse[DType.bfloat16, 8, 128](
+            run_test_prefill_sparse[.bfloat16, 8, 128](
                 "b1_s32_h8_kv512_topk128_L2_layer1",
                 1,
                 32,
@@ -1513,7 +1478,7 @@ def main() raises:
                 num_layers=2,
                 layer_idx=1,
             )
-            run_test_prefill_sparse[DType.bfloat16, 8, 128](
+            run_test_prefill_sparse[.bfloat16, 8, 128](
                 "b1_s32_h8_kv512_topk128_L2_layer0_control",
                 1,
                 32,
@@ -1522,7 +1487,7 @@ def main() raises:
                 num_layers=2,
                 layer_idx=0,
             )
-            run_test_prefill_sparse[DType.bfloat16, 64, 128](
+            run_test_prefill_sparse[.bfloat16, 64, 128](
                 "b1_s32_h64_kv512_topk128_L2_layer1",
                 1,
                 32,

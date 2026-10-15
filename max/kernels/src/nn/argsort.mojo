@@ -16,39 +16,49 @@
 from std.math import ceildiv, iota
 from std.sys.info import simd_width_of
 
-from std.algorithm import elementwise
+from max.algorithm import elementwise
 from std.bit import next_power_of_two
-from std.gpu import (
+from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
-    barrier,
     block_idx,
     global_idx,
     thread_idx,
 )
-import std.gpu.primitives.warp as warp
-from std.gpu.host import DeviceContext, get_gpu_target
-from std.gpu.host.info import is_cpu
-from std.gpu.memory import AddressSpace
-from std.memory import stack_allocation
-from layout import Idx, TensorLayout, TileTensor, row_major
-from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext
+from max.gpu.host.info import is_cpu
+from std.memory import unsafe_stack_allocation
+from layout import (
+    DefaultEngine,
+    TensorLayout,
+    TensorEngine,
+    TileTensor,
+    row_major,
+)
+from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id
 
 from std.utils.coord import Coord
-from std.utils.index import IndexList, StaticTuple
+from std.utils.index import StaticTuple
 
 
 def _argsort_cpu[
     *,
     ascending: Bool = True,
+    IndicesEngine: TensorEngine = DefaultEngine[element_width=1],
+    InputEngine: TensorEngine = DefaultEngine[element_width=1],
 ](
-    indices: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    input: TileTensor[mut=False, ...],
+    indices: TileTensor[
+        mut=True, address_space=.GENERIC, Engine=IndicesEngine, ...
+    ],
+    input: TileTensor[mut=False, Engine=InputEngine, ...],
 ) raises:
     """
     Performs argsort on CPU.
 
     Parameters:
         ascending: Sort direction (True for ascending, False for descending).
+        IndicesEngine: Engine of the indices tile.
+        InputEngine: Engine of the input tile.
 
     Args:
         indices: Output buffer to store sorted indices.
@@ -70,8 +80,9 @@ def _argsort_cpu[
         DeviceContext(api="cpu"),
     )
 
-    @parameter
-    def cmp_fn(a: Scalar[indices.dtype], b: Scalar[indices.dtype]) -> Bool:
+    def cmp_fn(
+        a: Scalar[indices.dtype], b: Scalar[indices.dtype]
+    ) {input} -> Bool:
         comptime assert a.dtype.is_integral()
         comptime assert b.dtype.is_integral()
         comptime if ascending:
@@ -79,15 +90,16 @@ def _argsort_cpu[
         else:
             return input[a] > input[b]
 
-    sort[cmp_fn](
+    sort(
         Span[
             Scalar[indices.dtype],
             indices.origin,
-        ](ptr=indices.ptr, length=indices.num_elements())
+        ](unsafe_ptr=indices.ptr, length=indices.num_elements()),
+        cmp_fn,
     )
 
 
-@always_inline
+@inline(.always)
 def _sentinel_val[dtype: DType, ascending: Bool]() -> Scalar[dtype]:
     """
     Returns a sentinel value based on sort direction.
@@ -114,41 +126,54 @@ def _bitonic_local_sort_kernel[
     ascending: Bool,
     IndicesLayoutType: TensorLayout,
     InputLayoutType: TensorLayout,
+    IndicesEngine: TensorEngine = DefaultEngine[element_width=1],
+    InputEngine: TensorEngine = DefaultEngine[element_width=1],
 ](
     indices_arg: TileTensor[
-        mut=True, indices_dtype, IndicesLayoutType, MutAnyOrigin
+        mut=True,
+        indices_dtype,
+        IndicesLayoutType,
+        MutAnyOrigin,
+        Engine=IndicesEngine,
     ],
-    input_arg: TileTensor[mut=True, input_dtype, InputLayoutType, MutAnyOrigin],
-    n_arg: Int,
+    input_arg: TileTensor[
+        mut=True,
+        input_dtype,
+        InputLayoutType,
+        MutAnyOrigin,
+        Engine=InputEngine,
+    ],
+    n_arg: Int32,
 ):
     """GPU kernel: local bitonic sort using shared memory.
 
-    Each block independently sorts 256 elements. Fuses all stages from 1 to
-    log2(256)=8 into a single kernel launch.
+    Each block sorts 256 elements, with adjacent blocks finishing in opposite
+    directions. Fuses all stages from 1 to log2(256)=8 into one kernel launch.
     """
+    var _n_arg = Int(n_arg)
     comptime BLOCK_SIZE = 256
     var tid = thread_idx.x
     var gid: Int = block_idx.x * BLOCK_SIZE + tid
     var vals = input_arg.ptr
     var idxs = indices_arg.ptr
 
-    var shared_vals = stack_allocation[
+    var shared_vals = unsafe_stack_allocation[
         BLOCK_SIZE,
         Scalar[input_dtype],
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
-    var shared_idxs = stack_allocation[
+    var shared_idxs = unsafe_stack_allocation[
         BLOCK_SIZE,
         Scalar[indices_dtype],
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
-    if gid < n_arg:
-        shared_vals[tid] = vals[gid]
-        shared_idxs[tid] = idxs[gid]
+    if gid < _n_arg:
+        shared_vals.unsafe_store(tid, vals.unsafe_load(gid))
+        shared_idxs.unsafe_store(tid, idxs.unsafe_load(gid))
     else:
-        shared_vals[tid] = _sentinel_val[input_dtype, ascending]()
-        shared_idxs[tid] = Scalar[indices_dtype](-1)
+        shared_vals.unsafe_store(tid, _sentinel_val[input_dtype, ascending]())
+        shared_idxs.unsafe_store(tid, Scalar[indices_dtype](-1))
 
     var k = 2
     while k <= BLOCK_SIZE:
@@ -157,8 +182,8 @@ def _bitonic_local_sort_kernel[
             barrier()
             var partner = tid ^ j
             if partner > tid:
-                var vi = shared_vals[tid]
-                var vp = shared_vals[partner]
+                var vi = shared_vals.unsafe_load(tid)
+                var vp = shared_vals.unsafe_load(partner)
 
                 var cmp_val: Bool
                 comptime if ascending:
@@ -166,20 +191,23 @@ def _bitonic_local_sort_kernel[
                 else:
                     cmp_val = vi < vp
 
-                var direction = (tid & k) == 0
+                # Global merges require adjacent blocks to form bitonic runs.
+                var direction = (gid & k) == 0
                 if cmp_val == direction:
-                    shared_vals[tid] = vp
-                    shared_vals[partner] = vi
-                    var ii = shared_idxs[tid]
-                    shared_idxs[tid] = shared_idxs[partner]
-                    shared_idxs[partner] = ii
+                    shared_vals.unsafe_store(tid, vp)
+                    shared_vals.unsafe_store(partner, vi)
+                    var ii = shared_idxs.unsafe_load(tid)
+                    shared_idxs.unsafe_store(
+                        tid, shared_idxs.unsafe_load(partner)
+                    )
+                    shared_idxs.unsafe_store(partner, ii)
             j >>= 1
         k <<= 1
 
     barrier()
-    if gid < n_arg:
-        vals[gid] = shared_vals[tid]
-        idxs[gid] = shared_idxs[tid]
+    if gid < _n_arg:
+        vals.unsafe_store(gid, shared_vals.unsafe_load(tid))
+        idxs.unsafe_store(gid, shared_idxs.unsafe_load(tid))
 
 
 @__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](256))
@@ -192,13 +220,25 @@ def _bitonic_merge_local_kernel[
     ascending: Bool,
     IndicesLayoutType: TensorLayout,
     InputLayoutType: TensorLayout,
+    IndicesEngine: TensorEngine = DefaultEngine[element_width=1],
+    InputEngine: TensorEngine = DefaultEngine[element_width=1],
 ](
     indices_arg: TileTensor[
-        mut=True, indices_dtype, IndicesLayoutType, MutAnyOrigin
+        mut=True,
+        indices_dtype,
+        IndicesLayoutType,
+        MutAnyOrigin,
+        Engine=IndicesEngine,
     ],
-    input_arg: TileTensor[mut=True, input_dtype, InputLayoutType, MutAnyOrigin],
-    n_arg: Int,
-    stage: Int,
+    input_arg: TileTensor[
+        mut=True,
+        input_dtype,
+        InputLayoutType,
+        MutAnyOrigin,
+        Engine=InputEngine,
+    ],
+    n_arg: Int32,
+    stage: Int32,
 ):
     """GPU kernel: fused local merge using shared memory.
 
@@ -206,33 +246,34 @@ def _bitonic_merge_local_kernel[
     Each block loads 256 contiguous elements, performs all local merge
     steps, then writes back.
     """
+    var _stage = Int(stage)
     comptime BLOCK_SIZE = 256
     var tid = thread_idx.x
     var gid: Int = block_idx.x * BLOCK_SIZE + tid
     var vals = input_arg.ptr
     var idxs = indices_arg.ptr
 
-    var shared_vals = stack_allocation[
+    var shared_vals = unsafe_stack_allocation[
         BLOCK_SIZE,
         Scalar[input_dtype],
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
-    var shared_idxs = stack_allocation[
+    var shared_idxs = unsafe_stack_allocation[
         BLOCK_SIZE,
         Scalar[indices_dtype],
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
-    shared_vals[tid] = vals[gid]
-    shared_idxs[tid] = idxs[gid]
+    shared_vals.unsafe_store(tid, vals.unsafe_load(gid))
+    shared_idxs.unsafe_store(tid, idxs.unsafe_load(gid))
 
     var j = BLOCK_SIZE >> 1
     while j > 0:
         barrier()
         var partner = tid ^ j
         if partner > tid:
-            var vi = shared_vals[tid]
-            var vp = shared_vals[partner]
+            var vi = shared_vals.unsafe_load(tid)
+            var vp = shared_vals.unsafe_load(partner)
 
             var cmp_val: Bool
             comptime if ascending:
@@ -240,26 +281,28 @@ def _bitonic_merge_local_kernel[
             else:
                 cmp_val = vi < vp
 
-            var direction = (gid & stage) == 0
+            var direction = (gid & _stage) == 0
             if cmp_val == direction:
-                shared_vals[tid] = vp
-                shared_vals[partner] = vi
-                var ii = shared_idxs[tid]
-                shared_idxs[tid] = shared_idxs[partner]
-                shared_idxs[partner] = ii
+                shared_vals.unsafe_store(tid, vp)
+                shared_vals.unsafe_store(partner, vi)
+                var ii = shared_idxs.unsafe_load(tid)
+                shared_idxs.unsafe_store(tid, shared_idxs.unsafe_load(partner))
+                shared_idxs.unsafe_store(partner, ii)
         j >>= 1
 
     barrier()
-    vals[gid] = shared_vals[tid]
-    idxs[gid] = shared_idxs[tid]
+    vals.unsafe_store(gid, shared_vals.unsafe_load(tid))
+    idxs.unsafe_store(gid, shared_idxs.unsafe_load(tid))
 
 
 def _argsort_gpu_impl[
     *,
     ascending: Bool = True,
+    IndicesEngine: TensorEngine = DefaultEngine[element_width=1],
+    InputEngine: TensorEngine = DefaultEngine[element_width=1],
 ](
-    indices: TileTensor[mut=True, ...],
-    input: TileTensor[mut=True, ...],
+    indices: TileTensor[mut=True, Engine=IndicesEngine, ...],
+    input: TileTensor[mut=True, Engine=InputEngine, ...],
     ctx: DeviceContext,
 ) raises:
     """
@@ -276,6 +319,8 @@ def _argsort_gpu_impl[
 
     Parameters:
         ascending: Sort direction (True for ascending, False for descending).
+        IndicesEngine: Engine of the indices tile.
+        InputEngine: Engine of the input tile.
 
     Args:
         indices: Output buffer to store sorted indices.
@@ -291,33 +336,43 @@ def _argsort_gpu_impl[
     comptime BLOCK_SIZE = 256
 
     # Global merge step kernel (nested: simple enough, no shared memory).
-    @parameter
     @__llvm_metadata(
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](BLOCK_SIZE)
     )
     @__name(t"bitonic_global_step_{ascending}")
     def bitonic_global_step(
         indices_arg: TileTensor[
-            indices.dtype, indices.LayoutType, indices.origin
+            indices.dtype,
+            indices.LayoutType,
+            indices.origin,
+            Engine=indices.Engine,
         ],
-        input_arg: TileTensor[input.dtype, input.LayoutType, input.origin],
-        n_arg: Int,
-        step: Int,
-        stage: Int,
+        input_arg: TileTensor[
+            input.dtype,
+            input.LayoutType,
+            input.origin,
+            Engine=input.Engine,
+        ],
+        n_arg: Int32,
+        step: Int32,
+        stage: Int32,
     ):
+        var _n_arg = Int(n_arg)
+        var _step = Int(step)
+        var _stage = Int(stage)
         var i = global_idx.x
-        if i >= n_arg:
+        if i >= _n_arg:
             return
 
-        var partner = i ^ step
-        if partner > i and partner < n_arg:
+        var partner = i ^ _step
+        if partner > i and partner < _n_arg:
             var cmp_val: Bool
             comptime if ascending:
                 cmp_val = input_arg[i] > input_arg[partner]
             else:
                 cmp_val = input_arg[i] < input_arg[partner]
 
-            var bitonic_merge_direction = (i & stage) == 0
+            var bitonic_merge_direction = (i & _stage) == 0
             if cmp_val == bitonic_merge_direction:
                 swap(input_arg[i], input_arg[partner])
                 swap(indices_arg[i], indices_arg[partner])
@@ -332,11 +387,13 @@ def _argsort_gpu_impl[
         ascending=ascending,
         IndicesLayoutType=indices.LayoutType,
         InputLayoutType=input.LayoutType,
+        IndicesEngine=IndicesEngine,
+        InputEngine=InputEngine,
     ]
     ctx.enqueue_function[local_sort_kernel](
         indices,
         input,
-        n,
+        Int32(n),
         block_dim=BLOCK_SIZE,
         grid_dim=ceildiv(n, BLOCK_SIZE),
     )
@@ -351,9 +408,9 @@ def _argsort_gpu_impl[
             ctx.enqueue_function[global_step_kernel](
                 indices,
                 input,
-                n,
-                j,
-                k,
+                Int32(n),
+                Int32(j),
+                Int32(k),
                 block_dim=BLOCK_SIZE,
                 grid_dim=ceildiv(n, BLOCK_SIZE),
             )
@@ -366,12 +423,14 @@ def _argsort_gpu_impl[
             ascending=ascending,
             IndicesLayoutType=indices.LayoutType,
             InputLayoutType=input.LayoutType,
+            IndicesEngine=IndicesEngine,
+            InputEngine=InputEngine,
         ]
         ctx.enqueue_function[merge_local_kernel](
             indices,
             input,
-            n,
-            k,
+            Int32(n),
+            Int32(k),
             block_dim=BLOCK_SIZE,
             grid_dim=ceildiv(n, BLOCK_SIZE),
         )
@@ -381,9 +440,11 @@ def _argsort_gpu_impl[
 def _argsort_gpu[
     *,
     ascending: Bool = True,
+    IndicesEngine: TensorEngine = DefaultEngine[element_width=1],
+    InputEngine: TensorEngine = DefaultEngine[element_width=1],
 ](
-    indices: TileTensor[mut=True, ...],
-    input: TileTensor[mut=False, ...],
+    indices: TileTensor[mut=True, Engine=IndicesEngine, ...],
+    input: TileTensor[mut=False, Engine=InputEngine, ...],
     ctx: DeviceContext,
 ) raises:
     """
@@ -391,6 +452,8 @@ def _argsort_gpu[
 
     Parameters:
         ascending: Sort direction (True for ascending, False for descending).
+        IndicesEngine: Engine of the indices tile.
+        InputEngine: Engine of the input tile.
 
     Args:
         indices: Output buffer to store sorted indices.
@@ -417,13 +480,13 @@ def _argsort_gpu[
                 iota[indices.dtype, width](Scalar[indices.dtype](i)),
             )
             input_copy.raw_store[alignment=simd_width_of[input_copy.dtype]()](
-                i, input.ptr.load[width=width](i)
+                i, input.ptr.unsafe_load[width=width](i)
             )
 
         elementwise[
             simd_width=min(
-                simd_width_of[indices.dtype, target=get_gpu_target()](),
-                simd_width_of[input.dtype, target=get_gpu_target()](),
+                simd_width_of[indices.dtype, target=ctx.target](),
+                simd_width_of[input.dtype, target=ctx.target](),
             ),
             target="gpu",
             _trace_description="argsort_fill_indices",
@@ -491,7 +554,7 @@ def _argsort_gpu[
 
     # Extract the unpadded indices from the padded indices.
     elementwise[
-        simd_width=simd_width_of[indices.dtype, target=get_gpu_target()](),
+        simd_width=simd_width_of[indices.dtype, target=ctx.target](),
         target="gpu",
         _trace_description="argsort_extract_indices",
     ](extract_indices, Coord(n), ctx)
@@ -501,8 +564,12 @@ def _argsort_gpu[
     _ = padded_indices_buffer^
 
 
-def _validate_argsort(
-    input: TileTensor[mut=False, ...], output: TileTensor[mut=False, ...]
+def _validate_argsort[
+    IndicesEngine: TensorEngine = DefaultEngine[element_width=1],
+    InputEngine: TensorEngine = DefaultEngine[element_width=1],
+](
+    input: TileTensor[mut=False, Engine=InputEngine, ...],
+    output: TileTensor[mut=False, Engine=IndicesEngine, ...],
 ) raises:
     """
     Validates input and output buffers for argsort operation.
@@ -523,9 +590,13 @@ def argsort[
     *,
     ascending: Bool = True,
     target: StaticString = "cpu",
+    IndicesEngine: TensorEngine = DefaultEngine[element_width=1],
+    InputEngine: TensorEngine = DefaultEngine[element_width=1],
 ](
-    output: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    input: TileTensor[mut=False, ...],
+    output: TileTensor[
+        mut=True, address_space=.GENERIC, Engine=IndicesEngine, ...
+    ],
+    input: TileTensor[mut=False, Engine=InputEngine, ...],
     ctx: DeviceContext,
 ) raises:
     """
@@ -534,6 +605,8 @@ def argsort[
     Parameters:
         ascending: Sort direction (True for ascending, False for descending).
         target: Target device ("cpu" or "gpu").
+        IndicesEngine: Engine of the output (indices) tile.
+        InputEngine: Engine of the input tile.
 
     Args:
         output: Buffer to store sorted indices.
@@ -546,7 +619,7 @@ def argsort[
         "argsort",
         task_id=get_safe_task_id(ctx),
     ):
-        _validate_argsort(input, output)
+        _validate_argsort[IndicesEngine, InputEngine](input, output)
 
         comptime if is_cpu[target]():
             return _argsort_cpu[ascending=ascending](output, input)
@@ -555,16 +628,22 @@ def argsort[
 
 
 def argsort[
-    ascending: Bool = True
+    ascending: Bool = True,
+    IndicesEngine: TensorEngine = DefaultEngine[element_width=1],
+    InputEngine: TensorEngine = DefaultEngine[element_width=1],
 ](
-    output: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    input: TileTensor[mut=False, ...],
+    output: TileTensor[
+        mut=True, address_space=.GENERIC, Engine=IndicesEngine, ...
+    ],
+    input: TileTensor[mut=False, Engine=InputEngine, ...],
 ) raises:
     """
     CPU-only version of argsort.
 
     Parameters:
         ascending: Sort direction (True for ascending, False for descending).
+        IndicesEngine: Engine of the output (indices) tile.
+        InputEngine: Engine of the input tile.
 
     Args:
         output: Buffer to store sorted indices.
@@ -574,5 +653,5 @@ def argsort[
     comptime assert output.flat_rank == 1
     comptime assert output.dtype.is_integral()
     with Trace[TraceLevel.OP]("argsort"):
-        _validate_argsort(input, output)
+        _validate_argsort[IndicesEngine, InputEngine](input, output)
         _argsort_cpu[ascending=ascending](output, input)

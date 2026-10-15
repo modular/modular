@@ -75,6 +75,26 @@ class LogitVerificationPipelineConfig(BaseModel):
     tags: list[str] = Field(default_factory=list)
     pregenerated_torch_goldens: PregeneratedTorchGoldens | None = None
 
+    torch_reference_is_unquantized_source: bool = False
+    """Whether this quantized pipeline's oracle points torch at the bf16 model
+    the checkpoint was quantized from.
+
+    A quantized encoding normally cannot produce a torch golden locally, since
+    ``transformers`` cannot load the checkpoint. When the oracle sets
+    ``torch_model_path`` (see ``create_pipelines.py``) it can: the reference is
+    the unquantized source model, and the tolerances then carry the
+    quantization error itself."""
+
+    verify_target: str | None = None
+    """Bazel target that can verify this pipeline, when the default cannot.
+
+    ``//max/tests/integration/accuracy:verify_pipelines`` links every public
+    architecture. A private one is registered by a guarded import that only
+    succeeds when its module is in the runfiles, so such a pipeline needs a
+    wrapper target that depends on it -- see
+    ``//max_private/minimax_m3:verify_minimax_m3``. ``None`` means the default
+    driver."""
+
     absolute_tolerance: float | None = None
     relative_tolerance: float | None = None
     cos_dist_threshold: float | None = None

@@ -13,11 +13,11 @@
 
 from std.os import abort
 from std.pathlib import Path
-from std.ffi import _CPointer, _find_dylib
+from std.ffi import _find_dylib
 from std.ffi import _get_dylib_function as _ffi_get_dylib_function
 from std.ffi import _Global, OwnedDLHandle
 
-from std.gpu.host._nvidia_cuda import _CUstream_st
+from max.gpu.host._nvidia_cuda import _CUstream_st
 
 from std.utils import StaticTuple
 
@@ -26,7 +26,7 @@ from .dtype import DataType, Property
 from .result import Result
 
 
-comptime cublasLtHandle_t = OptionalUnsafePointer[NoneType, _]
+comptime cublasLtHandle_t = OptionalPointer[NoneType, _]
 
 # ===-----------------------------------------------------------------------===#
 # Library Load
@@ -69,7 +69,7 @@ def _init_dylib() -> OwnedDLHandle:
     )
 
 
-@always_inline
+@inline(.always)
 def _get_dylib_function[
     func_name: StaticString, result_type: TrivialRegisterPassable
 ]() raises -> result_type:
@@ -187,7 +187,7 @@ struct Order(TrivialRegisterPassable, Writable):
     def __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
-    @no_inline
+    @inline(.never)
     def write_to(self, mut writer: Some[Writer]):
         if self == Self.COL:
             writer.write_string("COL")
@@ -412,114 +412,115 @@ struct ClusterShape(TrivialRegisterPassable, Writable):
     def __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
-    @no_inline
+    @inline(.never)
     def write_to(self, mut writer: Some[Writer]):
-        if self == Self.SHAPE_AUTO:
-            writer.write_string("SHAPE_AUTO")
-        elif self == Self.SHAPE_1x1x1:
-            writer.write_string("SHAPE_1x1x1")
-        elif self == Self.SHAPE_2x1x1:
-            writer.write_string("SHAPE_2x1x1")
-        elif self == Self.SHAPE_4x1x1:
-            writer.write_string("SHAPE_4x1x1")
-        elif self == Self.SHAPE_1x2x1:
-            writer.write_string("SHAPE_1x2x1")
-        elif self == Self.SHAPE_2x2x1:
-            writer.write_string("SHAPE_2x2x1")
-        elif self == Self.SHAPE_4x2x1:
-            writer.write_string("SHAPE_4x2x1")
-        elif self == Self.SHAPE_1x4x1:
-            writer.write_string("SHAPE_1x4x1")
-        elif self == Self.SHAPE_2x4x1:
-            writer.write_string("SHAPE_2x4x1")
-        elif self == Self.SHAPE_4x4x1:
-            writer.write_string("SHAPE_4x4x1")
-        elif self == Self.SHAPE_8x1x1:
-            writer.write_string("SHAPE_8x1x1")
-        elif self == Self.SHAPE_1x8x1:
-            writer.write_string("SHAPE_1x8x1")
-        elif self == Self.SHAPE_8x2x1:
-            writer.write_string("SHAPE_8x2x1")
-        elif self == Self.SHAPE_2x8x1:
-            writer.write_string("SHAPE_2x8x1")
-        elif self == Self.SHAPE_16x1x1:
-            writer.write_string("SHAPE_16x1x1")
-        elif self == Self.SHAPE_1x16x1:
-            writer.write_string("SHAPE_1x16x1")
-        elif self == Self.SHAPE_3x1x1:
-            writer.write_string("SHAPE_3x1x1")
-        elif self == Self.SHAPE_5x1x1:
-            writer.write_string("SHAPE_5x1x1")
-        elif self == Self.SHAPE_6x1x1:
-            writer.write_string("SHAPE_6x1x1")
-        elif self == Self.SHAPE_7x1x1:
-            writer.write_string("SHAPE_7x1x1")
-        elif self == Self.SHAPE_9x1x1:
-            writer.write_string("SHAPE_9x1x1")
-        elif self == Self.SHAPE_10x1x1:
-            writer.write_string("SHAPE_10x1x1")
-        elif self == Self.SHAPE_11x1x1:
-            writer.write_string("SHAPE_11x1x1")
-        elif self == Self.SHAPE_12x1x1:
-            writer.write_string("SHAPE_12x1x1")
-        elif self == Self.SHAPE_13x1x1:
-            writer.write_string("SHAPE_13x1x1")
-        elif self == Self.SHAPE_14x1x1:
-            writer.write_string("SHAPE_14x1x1")
-        elif self == Self.SHAPE_15x1x1:
-            writer.write_string("SHAPE_15x1x1")
-        elif self == Self.SHAPE_3x2x1:
-            writer.write_string("SHAPE_3x2x1")
-        elif self == Self.SHAPE_5x2x1:
-            writer.write_string("SHAPE_5x2x1")
-        elif self == Self.SHAPE_6x2x1:
-            writer.write_string("SHAPE_6x2x1")
-        elif self == Self.SHAPE_7x2x1:
-            writer.write_string("SHAPE_7x2x1")
-        elif self == Self.SHAPE_1x3x1:
-            writer.write_string("SHAPE_1x3x1")
-        elif self == Self.SHAPE_2x3x1:
-            writer.write_string("SHAPE_2x3x1")
-        elif self == Self.SHAPE_3x3x1:
-            writer.write_string("SHAPE_3x3x1")
-        elif self == Self.SHAPE_4x3x1:
-            writer.write_string("SHAPE_4x3x1")
-        elif self == Self.SHAPE_5x3x1:
-            writer.write_string("SHAPE_5x3x1")
-        elif self == Self.SHAPE_3x4x1:
-            writer.write_string("SHAPE_3x4x1")
-        elif self == Self.SHAPE_1x5x1:
-            writer.write_string("SHAPE_1x5x1")
-        elif self == Self.SHAPE_2x5x1:
-            writer.write_string("SHAPE_2x5x1")
-        elif self == Self.SHAPE_3x5x1:
-            writer.write_string("SHAPE_3x5x1")
-        elif self == Self.SHAPE_1x6x1:
-            writer.write_string("SHAPE_1x6x1")
-        elif self == Self.SHAPE_2x6x1:
-            writer.write_string("SHAPE_2x6x1")
-        elif self == Self.SHAPE_1x7x1:
-            writer.write_string("SHAPE_1x7x1")
-        elif self == Self.SHAPE_2x7x1:
-            writer.write_string("SHAPE_2x7x1")
-        elif self == Self.SHAPE_1x9x1:
-            writer.write_string("SHAPE_1x9x1")
-        elif self == Self.SHAPE_1x10x1:
-            writer.write_string("SHAPE_1x10x1")
-        elif self == Self.SHAPE_1x11x1:
-            writer.write_string("SHAPE_1x11x1")
-        elif self == Self.SHAPE_1x12x1:
-            writer.write_string("SHAPE_1x12x1")
-        elif self == Self.SHAPE_1x13x1:
-            writer.write_string("SHAPE_1x13x1")
-        elif self == Self.SHAPE_1x14x1:
-            writer.write_string("SHAPE_1x14x1")
-        elif self == Self.SHAPE_1x15x1:
-            writer.write_string("SHAPE_1x15x1")
-        elif self == Self.SHAPE_END:
-            writer.write_string("SHAPE_END")
-        else:
-            abort("invalid ClusterShape entry")
+        match self:
+            case .SHAPE_AUTO:
+                writer.write_string("SHAPE_AUTO")
+            case .SHAPE_1x1x1:
+                writer.write_string("SHAPE_1x1x1")
+            case .SHAPE_2x1x1:
+                writer.write_string("SHAPE_2x1x1")
+            case .SHAPE_4x1x1:
+                writer.write_string("SHAPE_4x1x1")
+            case .SHAPE_1x2x1:
+                writer.write_string("SHAPE_1x2x1")
+            case .SHAPE_2x2x1:
+                writer.write_string("SHAPE_2x2x1")
+            case .SHAPE_4x2x1:
+                writer.write_string("SHAPE_4x2x1")
+            case .SHAPE_1x4x1:
+                writer.write_string("SHAPE_1x4x1")
+            case .SHAPE_2x4x1:
+                writer.write_string("SHAPE_2x4x1")
+            case .SHAPE_4x4x1:
+                writer.write_string("SHAPE_4x4x1")
+            case .SHAPE_8x1x1:
+                writer.write_string("SHAPE_8x1x1")
+            case .SHAPE_1x8x1:
+                writer.write_string("SHAPE_1x8x1")
+            case .SHAPE_8x2x1:
+                writer.write_string("SHAPE_8x2x1")
+            case .SHAPE_2x8x1:
+                writer.write_string("SHAPE_2x8x1")
+            case .SHAPE_16x1x1:
+                writer.write_string("SHAPE_16x1x1")
+            case .SHAPE_1x16x1:
+                writer.write_string("SHAPE_1x16x1")
+            case .SHAPE_3x1x1:
+                writer.write_string("SHAPE_3x1x1")
+            case .SHAPE_5x1x1:
+                writer.write_string("SHAPE_5x1x1")
+            case .SHAPE_6x1x1:
+                writer.write_string("SHAPE_6x1x1")
+            case .SHAPE_7x1x1:
+                writer.write_string("SHAPE_7x1x1")
+            case .SHAPE_9x1x1:
+                writer.write_string("SHAPE_9x1x1")
+            case .SHAPE_10x1x1:
+                writer.write_string("SHAPE_10x1x1")
+            case .SHAPE_11x1x1:
+                writer.write_string("SHAPE_11x1x1")
+            case .SHAPE_12x1x1:
+                writer.write_string("SHAPE_12x1x1")
+            case .SHAPE_13x1x1:
+                writer.write_string("SHAPE_13x1x1")
+            case .SHAPE_14x1x1:
+                writer.write_string("SHAPE_14x1x1")
+            case .SHAPE_15x1x1:
+                writer.write_string("SHAPE_15x1x1")
+            case .SHAPE_3x2x1:
+                writer.write_string("SHAPE_3x2x1")
+            case .SHAPE_5x2x1:
+                writer.write_string("SHAPE_5x2x1")
+            case .SHAPE_6x2x1:
+                writer.write_string("SHAPE_6x2x1")
+            case .SHAPE_7x2x1:
+                writer.write_string("SHAPE_7x2x1")
+            case .SHAPE_1x3x1:
+                writer.write_string("SHAPE_1x3x1")
+            case .SHAPE_2x3x1:
+                writer.write_string("SHAPE_2x3x1")
+            case .SHAPE_3x3x1:
+                writer.write_string("SHAPE_3x3x1")
+            case .SHAPE_4x3x1:
+                writer.write_string("SHAPE_4x3x1")
+            case .SHAPE_5x3x1:
+                writer.write_string("SHAPE_5x3x1")
+            case .SHAPE_3x4x1:
+                writer.write_string("SHAPE_3x4x1")
+            case .SHAPE_1x5x1:
+                writer.write_string("SHAPE_1x5x1")
+            case .SHAPE_2x5x1:
+                writer.write_string("SHAPE_2x5x1")
+            case .SHAPE_3x5x1:
+                writer.write_string("SHAPE_3x5x1")
+            case .SHAPE_1x6x1:
+                writer.write_string("SHAPE_1x6x1")
+            case .SHAPE_2x6x1:
+                writer.write_string("SHAPE_2x6x1")
+            case .SHAPE_1x7x1:
+                writer.write_string("SHAPE_1x7x1")
+            case .SHAPE_2x7x1:
+                writer.write_string("SHAPE_2x7x1")
+            case .SHAPE_1x9x1:
+                writer.write_string("SHAPE_1x9x1")
+            case .SHAPE_1x10x1:
+                writer.write_string("SHAPE_1x10x1")
+            case .SHAPE_1x11x1:
+                writer.write_string("SHAPE_1x11x1")
+            case .SHAPE_1x12x1:
+                writer.write_string("SHAPE_1x12x1")
+            case .SHAPE_1x13x1:
+                writer.write_string("SHAPE_1x13x1")
+            case .SHAPE_1x14x1:
+                writer.write_string("SHAPE_1x14x1")
+            case .SHAPE_1x15x1:
+                writer.write_string("SHAPE_1x15x1")
+            case .SHAPE_END:
+                writer.write_string("SHAPE_END")
+            case _:
+                abort("invalid ClusterShape entry")
 
     def __int__(self) -> Int:
         return Int(self._value)
@@ -667,52 +668,53 @@ struct MatmulAlgorithmCapability(TrivialRegisterPassable, Writable):
     def __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
-    @no_inline
+    @inline(.never)
     def write_to(self, mut writer: Some[Writer]):
-        if self == Self.SPLITK_SUPPORT:
-            writer.write_string("SPLITK_SUPPORT")
-        elif self == Self.REDUCTION_SCHEME_MASK:
-            writer.write_string("REDUCTION_SCHEME_MASK")
-        elif self == Self.CTA_SWIZZLING_SUPPORT:
-            writer.write_string("CTA_SWIZZLING_SUPPORT")
-        elif self == Self.STRIDED_BATCH_SUPPORT:
-            writer.write_string("STRIDED_BATCH_SUPPORT")
-        elif self == Self.OUT_OF_PLACE_RESULT_SUPPORT:
-            writer.write_string("OUT_OF_PLACE_RESULT_SUPPORT")
-        elif self == Self.UPLO_SUPPORT:
-            writer.write_string("UPLO_SUPPORT")
-        elif self == Self.TILE_IDS:
-            writer.write_string("TILE_IDS")
-        elif self == Self.CUSTOM_OPTION_MAX:
-            writer.write_string("CUSTOM_OPTION_MAX")
-        elif self == Self.CUSTOM_MEMORY_ORDER:
-            writer.write_string("CUSTOM_MEMORY_ORDER")
-        elif self == Self.POINTER_MODE_MASK:
-            writer.write_string("POINTER_MODE_MASK")
-        elif self == Self.EPILOGUE_MASK:
-            writer.write_string("EPILOGUE_MASK")
-        elif self == Self.STAGES_IDS:
-            writer.write_string("STAGES_IDS")
-        elif self == Self.LD_NEGATIVE:
-            writer.write_string("LD_NEGATIVE")
-        elif self == Self.NUMERICAL_IMPL_FLAGS:
-            writer.write_string("NUMERICAL_IMPL_FLAGS")
-        elif self == Self.MIN_ALIGNMENT_A_BYTES:
-            writer.write_string("MIN_ALIGNMENT_A_BYTES")
-        elif self == Self.MIN_ALIGNMENT_B_BYTES:
-            writer.write_string("MIN_ALIGNMENT_B_BYTES")
-        elif self == Self.MIN_ALIGNMENT_C_BYTES:
-            writer.write_string("MIN_ALIGNMENT_C_BYTES")
-        elif self == Self.MIN_ALIGNMENT_D_BYTES:
-            writer.write_string("MIN_ALIGNMENT_D_BYTES")
-        elif self == Self.ATOMIC_SYNC:
-            writer.write_string("ATOMIC_SYNC")
-        elif self == Self.POINTER_ARRAY_BATCH_SUPPORT:
-            writer.write_string("POINTER_ARRAY_BATCH_SUPPORT")
-        elif self == Self.FLOATING_POINT_EMULATION_SUPPORT:
-            writer.write_string("FLOATING_POINT_EMULATION_SUPPORT")
-        else:
-            abort("invalid MatmulAlgorithmCapability entry")
+        match self:
+            case .SPLITK_SUPPORT:
+                writer.write_string("SPLITK_SUPPORT")
+            case .REDUCTION_SCHEME_MASK:
+                writer.write_string("REDUCTION_SCHEME_MASK")
+            case .CTA_SWIZZLING_SUPPORT:
+                writer.write_string("CTA_SWIZZLING_SUPPORT")
+            case .STRIDED_BATCH_SUPPORT:
+                writer.write_string("STRIDED_BATCH_SUPPORT")
+            case .OUT_OF_PLACE_RESULT_SUPPORT:
+                writer.write_string("OUT_OF_PLACE_RESULT_SUPPORT")
+            case .UPLO_SUPPORT:
+                writer.write_string("UPLO_SUPPORT")
+            case .TILE_IDS:
+                writer.write_string("TILE_IDS")
+            case .CUSTOM_OPTION_MAX:
+                writer.write_string("CUSTOM_OPTION_MAX")
+            case .CUSTOM_MEMORY_ORDER:
+                writer.write_string("CUSTOM_MEMORY_ORDER")
+            case .POINTER_MODE_MASK:
+                writer.write_string("POINTER_MODE_MASK")
+            case .EPILOGUE_MASK:
+                writer.write_string("EPILOGUE_MASK")
+            case .STAGES_IDS:
+                writer.write_string("STAGES_IDS")
+            case .LD_NEGATIVE:
+                writer.write_string("LD_NEGATIVE")
+            case .NUMERICAL_IMPL_FLAGS:
+                writer.write_string("NUMERICAL_IMPL_FLAGS")
+            case .MIN_ALIGNMENT_A_BYTES:
+                writer.write_string("MIN_ALIGNMENT_A_BYTES")
+            case .MIN_ALIGNMENT_B_BYTES:
+                writer.write_string("MIN_ALIGNMENT_B_BYTES")
+            case .MIN_ALIGNMENT_C_BYTES:
+                writer.write_string("MIN_ALIGNMENT_C_BYTES")
+            case .MIN_ALIGNMENT_D_BYTES:
+                writer.write_string("MIN_ALIGNMENT_D_BYTES")
+            case .ATOMIC_SYNC:
+                writer.write_string("ATOMIC_SYNC")
+            case .POINTER_ARRAY_BATCH_SUPPORT:
+                writer.write_string("POINTER_ARRAY_BATCH_SUPPORT")
+            case .FLOATING_POINT_EMULATION_SUPPORT:
+                writer.write_string("FLOATING_POINT_EMULATION_SUPPORT")
+            case _:
+                abort("invalid MatmulAlgorithmCapability entry")
 
     def __int__(self) -> Int:
         return Int(self._value)
@@ -759,20 +761,21 @@ struct PointerMode(TrivialRegisterPassable, Writable):
     def __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
-    @no_inline
+    @inline(.never)
     def write_to(self, mut writer: Some[Writer]):
-        if self == Self.HOST:
-            writer.write_string("HOST")
-        elif self == Self.DEVICE:
-            writer.write_string("DEVICE")
-        elif self == Self.DEVICE_VECTOR:
-            writer.write_string("DEVICE_VECTOR")
-        elif self == Self.ALPHA_DEVICE_VECTOR_BETA_ZERO:
-            writer.write_string("ALPHA_DEVICE_VECTOR_BETA_ZERO")
-        elif self == Self.ALPHA_DEVICE_VECTOR_BETA_HOST:
-            writer.write_string("ALPHA_DEVICE_VECTOR_BETA_HOST")
-        else:
-            abort("invalid PointerMode entry")
+        match self:
+            case .HOST:
+                writer.write_string("HOST")
+            case .DEVICE:
+                writer.write_string("DEVICE")
+            case .DEVICE_VECTOR:
+                writer.write_string("DEVICE_VECTOR")
+            case .ALPHA_DEVICE_VECTOR_BETA_ZERO:
+                writer.write_string("ALPHA_DEVICE_VECTOR_BETA_ZERO")
+            case .ALPHA_DEVICE_VECTOR_BETA_HOST:
+                writer.write_string("ALPHA_DEVICE_VECTOR_BETA_HOST")
+            case _:
+                abort("invalid PointerMode entry")
 
     def __int__(self) -> Int:
         return Int(self._value)
@@ -813,9 +816,7 @@ def cublasLtMatmulDescGetAttribute(
 
 # Opaque descriptor for matrix memory layout
 # .
-comptime cublasLtMatrixLayout_t = OptionalUnsafePointer[
-    MatrixLayout, MutAnyOrigin
-]
+comptime cublasLtMatrixLayout_t = OptionalPointer[MatrixLayout, MutAnyOrigin]
 
 # Opaque descriptor for cublasLtMatrixTransform() operation details
 # .
@@ -919,30 +920,31 @@ struct Search(TrivialRegisterPassable, Writable):
     def __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
-    @no_inline
+    @inline(.never)
     def write_to(self, mut writer: Some[Writer]):
-        if self == Self.BEST_FIT:
-            writer.write_string("BEST_FIT")
-        elif self == Self.LIMITED_BY_ALGO_ID:
-            writer.write_string("LIMITED_BY_ALGO_ID")
-        elif self == Self.RESERVED_02:
-            writer.write_string("RESERVED_02")
-        elif self == Self.RESERVED_03:
-            writer.write_string("RESERVED_03")
-        elif self == Self.RESERVED_04:
-            writer.write_string("RESERVED_04")
-        elif self == Self.RESERVED_05:
-            writer.write_string("RESERVED_05")
-        elif self == Self.RESERVED_06:
-            writer.write_string("RESERVED_06")
-        elif self == Self.RESERVED_07:
-            writer.write_string("RESERVED_07")
-        elif self == Self.RESERVED_08:
-            writer.write_string("RESERVED_08")
-        elif self == Self.RESERVED_09:
-            writer.write_string("RESERVED_09")
-        else:
-            abort("invalid Search entry")
+        match self:
+            case .BEST_FIT:
+                writer.write_string("BEST_FIT")
+            case .LIMITED_BY_ALGO_ID:
+                writer.write_string("LIMITED_BY_ALGO_ID")
+            case .RESERVED_02:
+                writer.write_string("RESERVED_02")
+            case .RESERVED_03:
+                writer.write_string("RESERVED_03")
+            case .RESERVED_04:
+                writer.write_string("RESERVED_04")
+            case .RESERVED_05:
+                writer.write_string("RESERVED_05")
+            case .RESERVED_06:
+                writer.write_string("RESERVED_06")
+            case .RESERVED_07:
+                writer.write_string("RESERVED_07")
+            case .RESERVED_08:
+                writer.write_string("RESERVED_08")
+            case .RESERVED_09:
+                writer.write_string("RESERVED_09")
+            case _:
+                abort("invalid Search entry")
 
     def __int__(self) -> Int:
         return Int(self._value)
@@ -980,20 +982,21 @@ struct ReductionScheme(TrivialRegisterPassable, Writable):
     def __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
-    @no_inline
+    @inline(.never)
     def write_to(self, mut writer: Some[Writer]):
-        if self == Self.NONE:
-            writer.write_string("NONE")
-        elif self == Self.INPLACE:
-            writer.write_string("INPLACE")
-        elif self == Self.COMPUTE_TYPE:
-            writer.write_string("COMPUTE_TYPE")
-        elif self == Self.OUTPUT_TYPE:
-            writer.write_string("OUTPUT_TYPE")
-        elif self == Self.MASK:
-            writer.write_string("MASK")
-        else:
-            abort("invalid ReductionScheme entry")
+        match self:
+            case .NONE:
+                writer.write_string("NONE")
+            case .INPLACE:
+                writer.write_string("INPLACE")
+            case .COMPUTE_TYPE:
+                writer.write_string("COMPUTE_TYPE")
+            case .OUTPUT_TYPE:
+                writer.write_string("OUTPUT_TYPE")
+            case .MASK:
+                writer.write_string("MASK")
+            case _:
+                abort("invalid ReductionScheme entry")
 
     def __int__(self) -> Int:
         return Int(self._value)
@@ -1411,98 +1414,103 @@ struct cublasLtMatmulDescAttributes_t(TrivialRegisterPassable, Writable):
     def __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
-    @no_inline
+    @inline(.never)
     def write_to(self, mut writer: Some[Writer]):
-        if self == Self.CUBLASLT_MATMUL_DESC_COMPUTE_TYPE:
-            writer.write_string("CUBLASLT_MATMUL_DESC_COMPUTE_TYPE")
-        elif self == Self.CUBLASLT_MATMUL_DESC_SCALE_TYPE:
-            writer.write_string("CUBLASLT_MATMUL_DESC_SCALE_TYPE")
-        elif self == Self.CUBLASLT_MATMUL_DESC_POINTER_MODE:
-            writer.write_string("CUBLASLT_MATMUL_DESC_POINTER_MODE")
-        elif self == Self.CUBLASLT_MATMUL_DESC_TRANSA:
-            writer.write_string("CUBLASLT_MATMUL_DESC_TRANSA")
-        elif self == Self.CUBLASLT_MATMUL_DESC_TRANSB:
-            writer.write_string("CUBLASLT_MATMUL_DESC_TRANSB")
-        elif self == Self.CUBLASLT_MATMUL_DESC_TRANSC:
-            writer.write_string("CUBLASLT_MATMUL_DESC_TRANSC")
-        elif self == Self.CUBLASLT_MATMUL_DESC_FILL_MODE:
-            writer.write_string("CUBLASLT_MATMUL_DESC_FILL_MODE")
-        elif self == Self.CUBLASLT_MATMUL_DESC_EPILOGUE:
-            writer.write_string("CUBLASLT_MATMUL_DESC_EPILOGUE")
-        elif self == Self.CUBLASLT_MATMUL_DESC_BIAS_POINTER:
-            writer.write_string("CUBLASLT_MATMUL_DESC_BIAS_POINTER")
-        elif self == Self.CUBLASLT_MATMUL_DESC_BIAS_BATCH_STRIDE:
-            writer.write_string("CUBLASLT_MATMUL_DESC_BIAS_BATCH_STRIDE")
-        elif self == Self.CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_POINTER:
-            writer.write_string("CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_POINTER")
-        elif self == Self.CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_LD:
-            writer.write_string("CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_LD")
-        elif self == Self.CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_BATCH_STRIDE:
-            writer.write_string(
-                "CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_BATCH_STRIDE"
-            )
-        elif self == Self.CUBLASLT_MATMUL_DESC_ALPHA_VECTOR_BATCH_STRIDE:
-            writer.write_string(
-                "CUBLASLT_MATMUL_DESC_ALPHA_VECTOR_BATCH_STRIDE"
-            )
-        elif self == Self.CUBLASLT_MATMUL_DESC_SM_COUNT_TARGET:
-            writer.write_string("CUBLASLT_MATMUL_DESC_SM_COUNT_TARGET")
-        elif self == Self.CUBLASLT_MATMUL_DESC_A_SCALE_POINTER:
-            writer.write_string("CUBLASLT_MATMUL_DESC_A_SCALE_POINTER")
-        elif self == Self.CUBLASLT_MATMUL_DESC_B_SCALE_POINTER:
-            writer.write_string("CUBLASLT_MATMUL_DESC_B_SCALE_POINTER")
-        elif self == Self.CUBLASLT_MATMUL_DESC_C_SCALE_POINTER:
-            writer.write_string("CUBLASLT_MATMUL_DESC_C_SCALE_POINTER")
-        elif self == Self.CUBLASLT_MATMUL_DESC_D_SCALE_POINTER:
-            writer.write_string("CUBLASLT_MATMUL_DESC_D_SCALE_POINTER")
-        elif self == Self.CUBLASLT_MATMUL_DESC_AMAX_D_POINTER:
-            writer.write_string("CUBLASLT_MATMUL_DESC_AMAX_D_POINTER")
-        elif self == Self.CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_DATA_TYPE:
-            writer.write_string("CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_DATA_TYPE")
-        elif self == Self.CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_SCALE_POINTER:
-            writer.write_string(
-                "CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_SCALE_POINTER"
-            )
-        elif self == Self.CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_AMAX_POINTER:
-            writer.write_string(
-                "CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_AMAX_POINTER"
-            )
-        elif self == Self.CUBLASLT_MATMUL_DESC_FAST_ACCUM:
-            writer.write_string("CUBLASLT_MATMUL_DESC_FAST_ACCUM")
-        elif self == Self.CUBLASLT_MATMUL_DESC_BIAS_DATA_TYPE:
-            writer.write_string("CUBLASLT_MATMUL_DESC_BIAS_DATA_TYPE")
-        elif self == Self.CUBLASLT_MATMUL_DESC_ATOMIC_SYNC_NUM_CHUNKS_D_ROWS:
-            writer.write_string(
-                "CUBLASLT_MATMUL_DESC_ATOMIC_SYNC_NUM_CHUNKS_D_ROWS"
-            )
-        elif self == Self.CUBLASLT_MATMUL_DESC_ATOMIC_SYNC_NUM_CHUNKS_D_COLS:
-            writer.write_string(
-                "CUBLASLT_MATMUL_DESC_ATOMIC_SYNC_NUM_CHUNKS_D_COLS"
-            )
-        elif self == Self.CUBLASLT_MATMUL_DESC_ATOMIC_SYNC_IN_COUNTERS_POINTER:
-            writer.write_string(
-                "CUBLASLT_MATMUL_DESC_ATOMIC_SYNC_IN_COUNTERS_POINTER"
-            )
-        elif self == Self.CUBLASLT_MATMUL_DESC_ATOMIC_SYNC_OUT_COUNTERS_POINTER:
-            writer.write_string(
-                "CUBLASLT_MATMUL_DESC_ATOMIC_SYNC_OUT_COUNTERS_POINTER"
-            )
-        elif self == Self.CUBLASLT_MATMUL_DESC_A_SCALE_MODE:
-            writer.write_string("CUBLASLT_MATMUL_DESC_A_SCALE_MODE")
-        elif self == Self.CUBLASLT_MATMUL_DESC_B_SCALE_MODE:
-            writer.write_string("CUBLASLT_MATMUL_DESC_B_SCALE_MODE")
-        elif self == Self.CUBLASLT_MATMUL_DESC_C_SCALE_MODE:
-            writer.write_string("CUBLASLT_MATMUL_DESC_C_SCALE_MODE")
-        elif self == Self.CUBLASLT_MATMUL_DESC_D_SCALE_MODE:
-            writer.write_string("CUBLASLT_MATMUL_DESC_D_SCALE_MODE")
-        elif self == Self.CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_SCALE_MODE:
-            writer.write_string("CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_SCALE_MODE")
-        elif self == Self.CUBLASLT_MATMUL_DESC_D_OUT_SCALE_POINTER:
-            writer.write_string("CUBLASLT_MATMUL_DESC_D_OUT_SCALE_POINTER")
-        elif self == Self.CUBLASLT_MATMUL_DESC_D_OUT_SCALE_MODE:
-            writer.write_string("CUBLASLT_MATMUL_DESC_D_OUT_SCALE_MODE")
-        else:
-            abort("invalid cublasLtMatmulDescAttributes_t entry")
+        match self:
+            case .CUBLASLT_MATMUL_DESC_COMPUTE_TYPE:
+                writer.write_string("CUBLASLT_MATMUL_DESC_COMPUTE_TYPE")
+            case .CUBLASLT_MATMUL_DESC_SCALE_TYPE:
+                writer.write_string("CUBLASLT_MATMUL_DESC_SCALE_TYPE")
+            case .CUBLASLT_MATMUL_DESC_POINTER_MODE:
+                writer.write_string("CUBLASLT_MATMUL_DESC_POINTER_MODE")
+            case .CUBLASLT_MATMUL_DESC_TRANSA:
+                writer.write_string("CUBLASLT_MATMUL_DESC_TRANSA")
+            case .CUBLASLT_MATMUL_DESC_TRANSB:
+                writer.write_string("CUBLASLT_MATMUL_DESC_TRANSB")
+            case .CUBLASLT_MATMUL_DESC_TRANSC:
+                writer.write_string("CUBLASLT_MATMUL_DESC_TRANSC")
+            case .CUBLASLT_MATMUL_DESC_FILL_MODE:
+                writer.write_string("CUBLASLT_MATMUL_DESC_FILL_MODE")
+            case .CUBLASLT_MATMUL_DESC_EPILOGUE:
+                writer.write_string("CUBLASLT_MATMUL_DESC_EPILOGUE")
+            case .CUBLASLT_MATMUL_DESC_BIAS_POINTER:
+                writer.write_string("CUBLASLT_MATMUL_DESC_BIAS_POINTER")
+            case .CUBLASLT_MATMUL_DESC_BIAS_BATCH_STRIDE:
+                writer.write_string("CUBLASLT_MATMUL_DESC_BIAS_BATCH_STRIDE")
+            case .CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_POINTER:
+                writer.write_string("CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_POINTER")
+            case .CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_LD:
+                writer.write_string("CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_LD")
+            case .CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_BATCH_STRIDE:
+                writer.write_string(
+                    "CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_BATCH_STRIDE"
+                )
+            case .CUBLASLT_MATMUL_DESC_ALPHA_VECTOR_BATCH_STRIDE:
+                writer.write_string(
+                    "CUBLASLT_MATMUL_DESC_ALPHA_VECTOR_BATCH_STRIDE"
+                )
+            case .CUBLASLT_MATMUL_DESC_SM_COUNT_TARGET:
+                writer.write_string("CUBLASLT_MATMUL_DESC_SM_COUNT_TARGET")
+            case .CUBLASLT_MATMUL_DESC_A_SCALE_POINTER:
+                writer.write_string("CUBLASLT_MATMUL_DESC_A_SCALE_POINTER")
+            case .CUBLASLT_MATMUL_DESC_B_SCALE_POINTER:
+                writer.write_string("CUBLASLT_MATMUL_DESC_B_SCALE_POINTER")
+            case .CUBLASLT_MATMUL_DESC_C_SCALE_POINTER:
+                writer.write_string("CUBLASLT_MATMUL_DESC_C_SCALE_POINTER")
+            case .CUBLASLT_MATMUL_DESC_D_SCALE_POINTER:
+                writer.write_string("CUBLASLT_MATMUL_DESC_D_SCALE_POINTER")
+            case .CUBLASLT_MATMUL_DESC_AMAX_D_POINTER:
+                writer.write_string("CUBLASLT_MATMUL_DESC_AMAX_D_POINTER")
+            case .CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_DATA_TYPE:
+                writer.write_string(
+                    "CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_DATA_TYPE"
+                )
+            case .CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_SCALE_POINTER:
+                writer.write_string(
+                    "CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_SCALE_POINTER"
+                )
+            case .CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_AMAX_POINTER:
+                writer.write_string(
+                    "CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_AMAX_POINTER"
+                )
+            case .CUBLASLT_MATMUL_DESC_FAST_ACCUM:
+                writer.write_string("CUBLASLT_MATMUL_DESC_FAST_ACCUM")
+            case .CUBLASLT_MATMUL_DESC_BIAS_DATA_TYPE:
+                writer.write_string("CUBLASLT_MATMUL_DESC_BIAS_DATA_TYPE")
+            case .CUBLASLT_MATMUL_DESC_ATOMIC_SYNC_NUM_CHUNKS_D_ROWS:
+                writer.write_string(
+                    "CUBLASLT_MATMUL_DESC_ATOMIC_SYNC_NUM_CHUNKS_D_ROWS"
+                )
+            case .CUBLASLT_MATMUL_DESC_ATOMIC_SYNC_NUM_CHUNKS_D_COLS:
+                writer.write_string(
+                    "CUBLASLT_MATMUL_DESC_ATOMIC_SYNC_NUM_CHUNKS_D_COLS"
+                )
+            case .CUBLASLT_MATMUL_DESC_ATOMIC_SYNC_IN_COUNTERS_POINTER:
+                writer.write_string(
+                    "CUBLASLT_MATMUL_DESC_ATOMIC_SYNC_IN_COUNTERS_POINTER"
+                )
+            case .CUBLASLT_MATMUL_DESC_ATOMIC_SYNC_OUT_COUNTERS_POINTER:
+                writer.write_string(
+                    "CUBLASLT_MATMUL_DESC_ATOMIC_SYNC_OUT_COUNTERS_POINTER"
+                )
+            case .CUBLASLT_MATMUL_DESC_A_SCALE_MODE:
+                writer.write_string("CUBLASLT_MATMUL_DESC_A_SCALE_MODE")
+            case .CUBLASLT_MATMUL_DESC_B_SCALE_MODE:
+                writer.write_string("CUBLASLT_MATMUL_DESC_B_SCALE_MODE")
+            case .CUBLASLT_MATMUL_DESC_C_SCALE_MODE:
+                writer.write_string("CUBLASLT_MATMUL_DESC_C_SCALE_MODE")
+            case .CUBLASLT_MATMUL_DESC_D_SCALE_MODE:
+                writer.write_string("CUBLASLT_MATMUL_DESC_D_SCALE_MODE")
+            case .CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_SCALE_MODE:
+                writer.write_string(
+                    "CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_SCALE_MODE"
+                )
+            case .CUBLASLT_MATMUL_DESC_D_OUT_SCALE_POINTER:
+                writer.write_string("CUBLASLT_MATMUL_DESC_D_OUT_SCALE_POINTER")
+            case .CUBLASLT_MATMUL_DESC_D_OUT_SCALE_MODE:
+                writer.write_string("CUBLASLT_MATMUL_DESC_D_OUT_SCALE_MODE")
+            case _:
+                abort("invalid cublasLtMatmulDescAttributes_t entry")
 
     def __int__(self) -> Int:
         return Int(self._value)
@@ -1536,11 +1544,11 @@ def cublasLtMatrixLayoutDestroy(
 
 # Opaque descriptor for cublasLtMatmul() operation details
 # .
-comptime cublasLtMatmulDesc_t = OptionalUnsafePointer[Descriptor, MutAnyOrigin]
+comptime cublasLtMatmulDesc_t = OptionalPointer[Descriptor, MutAnyOrigin]
 
 # Opaque descriptor for cublasLtMatmulAlgoGetHeuristic() configuration
 # .
-comptime cublasLtMatmulPreference_t = OptionalUnsafePointer[
+comptime cublasLtMatmulPreference_t = OptionalPointer[
     PreferenceOpaque, MutAnyOrigin
 ]
 
@@ -1551,12 +1559,12 @@ def cublasLtMatmul(
     alpha: OpaquePointer[ImmutAnyOrigin],
     _a: OpaquePointer[ImmutAnyOrigin],
     _adesc: cublasLtMatrixLayout_t,
-    _b: _CPointer[NoneType, ImmutAnyOrigin],
+    _b: OptionalPointer[NoneType, ImmutAnyOrigin],
     _bdesc: cublasLtMatrixLayout_t,
     beta: OpaquePointer[ImmutAnyOrigin],
-    _c: _CPointer[NoneType, ImmutAnyOrigin],
+    _c: OptionalPointer[NoneType, ImmutAnyOrigin],
     _cdesc: cublasLtMatrixLayout_t,
-    _d: _CPointer[NoneType, MutAnyOrigin],
+    _d: OptionalPointer[NoneType, MutAnyOrigin],
     _ddesc: cublasLtMatrixLayout_t,
     algo: UnsafePointer[MatmulAlgorithm, ImmutAnyOrigin],
     workspace: OpaquePointer[MutAnyOrigin],
@@ -1836,28 +1844,29 @@ struct Preference(TrivialRegisterPassable, Writable):
     def __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
-    @no_inline
+    @inline(.never)
     def write_to(self, mut writer: Some[Writer]):
-        if self == Self.SEARCH_MODE:
-            writer.write_string("SEARCH_MODE")
-        elif self == Self.MAX_WORKSPACE_BYTES:
-            writer.write_string("MAX_WORKSPACE_BYTES")
-        elif self == Self.REDUCTION_SCHEME_MASK:
-            writer.write_string("REDUCTION_SCHEME_MASK")
-        elif self == Self.MIN_ALIGNMENT_A_BYTES:
-            writer.write_string("MIN_ALIGNMENT_A_BYTES")
-        elif self == Self.MIN_ALIGNMENT_B_BYTES:
-            writer.write_string("MIN_ALIGNMENT_B_BYTES")
-        elif self == Self.MIN_ALIGNMENT_C_BYTES:
-            writer.write_string("MIN_ALIGNMENT_C_BYTES")
-        elif self == Self.MIN_ALIGNMENT_D_BYTES:
-            writer.write_string("MIN_ALIGNMENT_D_BYTES")
-        elif self == Self.MAX_WAVES_COUNT:
-            writer.write_string("MAX_WAVES_COUNT")
-        elif self == Self.IMPL_MASK:
-            writer.write_string("IMPL_MASK")
-        else:
-            abort("invalid Preference entry")
+        match self:
+            case .SEARCH_MODE:
+                writer.write_string("SEARCH_MODE")
+            case .MAX_WORKSPACE_BYTES:
+                writer.write_string("MAX_WORKSPACE_BYTES")
+            case .REDUCTION_SCHEME_MASK:
+                writer.write_string("REDUCTION_SCHEME_MASK")
+            case .MIN_ALIGNMENT_A_BYTES:
+                writer.write_string("MIN_ALIGNMENT_A_BYTES")
+            case .MIN_ALIGNMENT_B_BYTES:
+                writer.write_string("MIN_ALIGNMENT_B_BYTES")
+            case .MIN_ALIGNMENT_C_BYTES:
+                writer.write_string("MIN_ALIGNMENT_C_BYTES")
+            case .MIN_ALIGNMENT_D_BYTES:
+                writer.write_string("MIN_ALIGNMENT_D_BYTES")
+            case .MAX_WAVES_COUNT:
+                writer.write_string("MAX_WAVES_COUNT")
+            case .IMPL_MASK:
+                writer.write_string("IMPL_MASK")
+            case _:
+                abort("invalid Preference entry")
 
     def __int__(self) -> Int:
         return Int(self._value)
@@ -1950,28 +1959,29 @@ struct AlgorithmConfig(TrivialRegisterPassable, Writable):
     def __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
-    @no_inline
+    @inline(.never)
     def write_to(self, mut writer: Some[Writer]):
-        if self == Self.ID:
-            writer.write_string("ID")
-        elif self == Self.TILE_ID:
-            writer.write_string("TILE_ID")
-        elif self == Self.SPLITK_NUM:
-            writer.write_string("SPLITK_NUM")
-        elif self == Self.REDUCTION_SCHEME:
-            writer.write_string("REDUCTION_SCHEME")
-        elif self == Self.CTA_SWIZZLING:
-            writer.write_string("CTA_SWIZZLING")
-        elif self == Self.CUSTOM_OPTION:
-            writer.write_string("CUSTOM_OPTION")
-        elif self == Self.STAGES_ID:
-            writer.write_string("STAGES_ID")
-        elif self == Self.INNER_SHAPE_ID:
-            writer.write_string("INNER_SHAPE_ID")
-        elif self == Self.CLUSTER_SHAPE_ID:
-            writer.write_string("CLUSTER_SHAPE_ID")
-        else:
-            abort("invalid AlgorithmConfig entry")
+        match self:
+            case .ID:
+                writer.write_string("ID")
+            case .TILE_ID:
+                writer.write_string("TILE_ID")
+            case .SPLITK_NUM:
+                writer.write_string("SPLITK_NUM")
+            case .REDUCTION_SCHEME:
+                writer.write_string("REDUCTION_SCHEME")
+            case .CTA_SWIZZLING:
+                writer.write_string("CTA_SWIZZLING")
+            case .CUSTOM_OPTION:
+                writer.write_string("CUSTOM_OPTION")
+            case .STAGES_ID:
+                writer.write_string("STAGES_ID")
+            case .INNER_SHAPE_ID:
+                writer.write_string("INNER_SHAPE_ID")
+            case .CLUSTER_SHAPE_ID:
+                writer.write_string("CLUSTER_SHAPE_ID")
+            case _:
+                abort("invalid AlgorithmConfig entry")
 
     def __int__(self) -> Int:
         return Int(self._value)
@@ -2078,22 +2088,23 @@ struct InnerShape(TrivialRegisterPassable, Writable):
     def __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
-    @no_inline
+    @inline(.never)
     def write_to(self, mut writer: Some[Writer]):
-        if self == Self.UNDEFINED:
-            writer.write_string("UNDEFINED")
-        elif self == Self.MMA884:
-            writer.write_string("MMA884")
-        elif self == Self.MMA1684:
-            writer.write_string("MMA1684")
-        elif self == Self.MMA1688:
-            writer.write_string("MMA1688")
-        elif self == Self.MMA16816:
-            writer.write_string("MMA16816")
-        elif self == Self.END:
-            writer.write_string("END")
-        else:
-            abort("invalid InnerShape entry")
+        match self:
+            case .UNDEFINED:
+                writer.write_string("UNDEFINED")
+            case .MMA884:
+                writer.write_string("MMA884")
+            case .MMA1684:
+                writer.write_string("MMA1684")
+            case .MMA1688:
+                writer.write_string("MMA1688")
+            case .MMA16816:
+                writer.write_string("MMA16816")
+            case .END:
+                writer.write_string("END")
+            case _:
+                abort("invalid InnerShape entry")
 
     def __int__(self) -> Int:
         return Int(self._value)
@@ -2143,24 +2154,25 @@ struct cublasLtMatmulMatrixScale_t(TrivialRegisterPassable, Writable):
     def __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
-    @no_inline
+    @inline(.never)
     def write_to(self, mut writer: Some[Writer]):
-        if self == Self.MATRIX_SCALE_SCALAR_32F:
-            writer.write_string("MATRIX_SCALE_SCALAR_32F")
-        elif self == Self.MATRIX_SCALE_VEC16_UE4M3:
-            writer.write_string("MATRIX_SCALE_VEC16_UE4M3")
-        elif self == Self.MATRIX_SCALE_VEC32_UE8M0:
-            writer.write_string("MATRIX_SCALE_VEC32_UE8M0")
-        elif self == Self.MATRIX_SCALE_OUTER_VEC_32F:
-            writer.write_string("MATRIX_SCALE_OUTER_VEC_32F")
-        elif self == Self.MATRIX_SCALE_VEC128_32F:
-            writer.write_string("MATRIX_SCALE_VEC128_32F")
-        elif self == Self.MATRIX_SCALE_BLK128x128_32F:
-            writer.write_string("MATRIX_SCALE_BLK128x128_32F")
-        elif self == Self.MATRIX_SCALE_END:
-            writer.write_string("MATRIX_SCALE_END")
-        else:
-            abort("invalid MatmulMatrixScale entry")
+        match self:
+            case .MATRIX_SCALE_SCALAR_32F:
+                writer.write_string("MATRIX_SCALE_SCALAR_32F")
+            case .MATRIX_SCALE_VEC16_UE4M3:
+                writer.write_string("MATRIX_SCALE_VEC16_UE4M3")
+            case .MATRIX_SCALE_VEC32_UE8M0:
+                writer.write_string("MATRIX_SCALE_VEC32_UE8M0")
+            case .MATRIX_SCALE_OUTER_VEC_32F:
+                writer.write_string("MATRIX_SCALE_OUTER_VEC_32F")
+            case .MATRIX_SCALE_VEC128_32F:
+                writer.write_string("MATRIX_SCALE_VEC128_32F")
+            case .MATRIX_SCALE_BLK128x128_32F:
+                writer.write_string("MATRIX_SCALE_BLK128x128_32F")
+            case .MATRIX_SCALE_END:
+                writer.write_string("MATRIX_SCALE_END")
+            case _:
+                abort("invalid MatmulMatrixScale entry")
 
     def __int__(self) -> Int:
         return Int(self._value)
@@ -2190,7 +2202,7 @@ struct cublasLtBatchMode_t(TrivialRegisterPassable, Writable):
     def __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
-    @no_inline
+    @inline(.never)
     def write_to(self, mut writer: Some[Writer]):
         if self == Self.STRIDED:
             writer.write_string("BATCH_MODE_STRIDED")
@@ -2286,28 +2298,29 @@ struct LayoutAttribute(TrivialRegisterPassable, Writable):
     def __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
-    @no_inline
+    @inline(.never)
     def write_to(self, mut writer: Some[Writer]):
-        if self == Self.TYPE:
-            writer.write_string("TYPE")
-        elif self == Self.ORDER:
-            writer.write_string("ORDER")
-        elif self == Self.ROWS:
-            writer.write_string("ROWS")
-        elif self == Self.COLS:
-            writer.write_string("COLS")
-        elif self == Self.LD:
-            writer.write_string("LD")
-        elif self == Self.BATCH_COUNT:
-            writer.write_string("BATCH_COUNT")
-        elif self == Self.STRIDED_BATCH_OFFSET:
-            writer.write_string("STRIDED_BATCH_OFFSET")
-        elif self == Self.PLANE_OFFSET:
-            writer.write_string("PLANE_OFFSET")
-        elif self == Self.BATCH_MODE:
-            writer.write_string("BATCH_MODE")
-        else:
-            abort("invalid LayoutAttribute entry")
+        match self:
+            case .TYPE:
+                writer.write_string("TYPE")
+            case .ORDER:
+                writer.write_string("ORDER")
+            case .ROWS:
+                writer.write_string("ROWS")
+            case .COLS:
+                writer.write_string("COLS")
+            case .LD:
+                writer.write_string("LD")
+            case .BATCH_COUNT:
+                writer.write_string("BATCH_COUNT")
+            case .STRIDED_BATCH_OFFSET:
+                writer.write_string("STRIDED_BATCH_OFFSET")
+            case .PLANE_OFFSET:
+                writer.write_string("PLANE_OFFSET")
+            case .BATCH_MODE:
+                writer.write_string("BATCH_MODE")
+            case _:
+                abort("invalid LayoutAttribute entry")
 
     def __int__(self) -> Int:
         return Int(self._value)
@@ -2477,84 +2490,85 @@ struct Stages(TrivialRegisterPassable, Writable):
     def __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
-    @no_inline
+    @inline(.never)
     def write_to(self, mut writer: Some[Writer]):
-        if self == Self.STAGES_UNDEFINED:
-            writer.write_string("STAGES_UNDEFINED")
-        elif self == Self.STAGES_16x1:
-            writer.write_string("STAGES_16x1")
-        elif self == Self.STAGES_16x2:
-            writer.write_string("STAGES_16x2")
-        elif self == Self.STAGES_16x3:
-            writer.write_string("STAGES_16x3")
-        elif self == Self.STAGES_16x4:
-            writer.write_string("STAGES_16x4")
-        elif self == Self.STAGES_16x5:
-            writer.write_string("STAGES_16x5")
-        elif self == Self.STAGES_16x6:
-            writer.write_string("STAGES_16x6")
-        elif self == Self.STAGES_32x1:
-            writer.write_string("STAGES_32x1")
-        elif self == Self.STAGES_32x2:
-            writer.write_string("STAGES_32x2")
-        elif self == Self.STAGES_32x3:
-            writer.write_string("STAGES_32x3")
-        elif self == Self.STAGES_32x4:
-            writer.write_string("STAGES_32x4")
-        elif self == Self.STAGES_32x5:
-            writer.write_string("STAGES_32x5")
-        elif self == Self.STAGES_32x6:
-            writer.write_string("STAGES_32x6")
-        elif self == Self.STAGES_64x1:
-            writer.write_string("STAGES_64x1")
-        elif self == Self.STAGES_64x2:
-            writer.write_string("STAGES_64x2")
-        elif self == Self.STAGES_64x3:
-            writer.write_string("STAGES_64x3")
-        elif self == Self.STAGES_64x4:
-            writer.write_string("STAGES_64x4")
-        elif self == Self.STAGES_64x5:
-            writer.write_string("STAGES_64x5")
-        elif self == Self.STAGES_64x6:
-            writer.write_string("STAGES_64x6")
-        elif self == Self.STAGES_128x1:
-            writer.write_string("STAGES_128x1")
-        elif self == Self.STAGES_128x2:
-            writer.write_string("STAGES_128x2")
-        elif self == Self.STAGES_128x3:
-            writer.write_string("STAGES_128x3")
-        elif self == Self.STAGES_128x4:
-            writer.write_string("STAGES_128x4")
-        elif self == Self.STAGES_128x5:
-            writer.write_string("STAGES_128x5")
-        elif self == Self.STAGES_128x6:
-            writer.write_string("STAGES_128x6")
-        elif self == Self.STAGES_32x10:
-            writer.write_string("STAGES_32x10")
-        elif self == Self.STAGES_8x4:
-            writer.write_string("STAGES_8x4")
-        elif self == Self.STAGES_16x10:
-            writer.write_string("STAGES_16x10")
-        elif self == Self.STAGES_8x5:
-            writer.write_string("STAGES_8x5")
-        elif self == Self.STAGES_8x3:
-            writer.write_string("STAGES_8x3")
-        elif self == Self.STAGES_8xAUTO:
-            writer.write_string("STAGES_8xAUTO")
-        elif self == Self.STAGES_16xAUTO:
-            writer.write_string("STAGES_16xAUTO")
-        elif self == Self.STAGES_32xAUTO:
-            writer.write_string("STAGES_32xAUTO")
-        elif self == Self.STAGES_64xAUTO:
-            writer.write_string("STAGES_64xAUTO")
-        elif self == Self.STAGES_128xAUTO:
-            writer.write_string("STAGES_128xAUTO")
-        elif self == Self.STAGES_256xAUTO:
-            writer.write_string("STAGES_256xAUTO")
-        elif self == Self.STAGES_END:
-            writer.write_string("STAGES_END")
-        else:
-            abort("invalid Stages entry")
+        match self:
+            case .STAGES_UNDEFINED:
+                writer.write_string("STAGES_UNDEFINED")
+            case .STAGES_16x1:
+                writer.write_string("STAGES_16x1")
+            case .STAGES_16x2:
+                writer.write_string("STAGES_16x2")
+            case .STAGES_16x3:
+                writer.write_string("STAGES_16x3")
+            case .STAGES_16x4:
+                writer.write_string("STAGES_16x4")
+            case .STAGES_16x5:
+                writer.write_string("STAGES_16x5")
+            case .STAGES_16x6:
+                writer.write_string("STAGES_16x6")
+            case .STAGES_32x1:
+                writer.write_string("STAGES_32x1")
+            case .STAGES_32x2:
+                writer.write_string("STAGES_32x2")
+            case .STAGES_32x3:
+                writer.write_string("STAGES_32x3")
+            case .STAGES_32x4:
+                writer.write_string("STAGES_32x4")
+            case .STAGES_32x5:
+                writer.write_string("STAGES_32x5")
+            case .STAGES_32x6:
+                writer.write_string("STAGES_32x6")
+            case .STAGES_64x1:
+                writer.write_string("STAGES_64x1")
+            case .STAGES_64x2:
+                writer.write_string("STAGES_64x2")
+            case .STAGES_64x3:
+                writer.write_string("STAGES_64x3")
+            case .STAGES_64x4:
+                writer.write_string("STAGES_64x4")
+            case .STAGES_64x5:
+                writer.write_string("STAGES_64x5")
+            case .STAGES_64x6:
+                writer.write_string("STAGES_64x6")
+            case .STAGES_128x1:
+                writer.write_string("STAGES_128x1")
+            case .STAGES_128x2:
+                writer.write_string("STAGES_128x2")
+            case .STAGES_128x3:
+                writer.write_string("STAGES_128x3")
+            case .STAGES_128x4:
+                writer.write_string("STAGES_128x4")
+            case .STAGES_128x5:
+                writer.write_string("STAGES_128x5")
+            case .STAGES_128x6:
+                writer.write_string("STAGES_128x6")
+            case .STAGES_32x10:
+                writer.write_string("STAGES_32x10")
+            case .STAGES_8x4:
+                writer.write_string("STAGES_8x4")
+            case .STAGES_16x10:
+                writer.write_string("STAGES_16x10")
+            case .STAGES_8x5:
+                writer.write_string("STAGES_8x5")
+            case .STAGES_8x3:
+                writer.write_string("STAGES_8x3")
+            case .STAGES_8xAUTO:
+                writer.write_string("STAGES_8xAUTO")
+            case .STAGES_16xAUTO:
+                writer.write_string("STAGES_16xAUTO")
+            case .STAGES_32xAUTO:
+                writer.write_string("STAGES_32xAUTO")
+            case .STAGES_64xAUTO:
+                writer.write_string("STAGES_64xAUTO")
+            case .STAGES_128xAUTO:
+                writer.write_string("STAGES_128xAUTO")
+            case .STAGES_256xAUTO:
+                writer.write_string("STAGES_256xAUTO")
+            case .STAGES_END:
+                writer.write_string("STAGES_END")
+            case _:
+                abort("invalid Stages entry")
 
     def __int__(self) -> Int:
         return Int(self._value)
@@ -2779,42 +2793,43 @@ struct Epilogue(TrivialRegisterPassable, Writable):
     def __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
-    @no_inline
+    @inline(.never)
     def write_to(self, mut writer: Some[Writer]):
-        if self == Self.DEFAULT:
-            writer.write_string("DEFAULT")
-        elif self == Self.RELU:
-            writer.write_string("RELU")
-        elif self == Self.RELU_AUX:
-            writer.write_string("RELU_AUX")
-        elif self == Self.BIAS:
-            writer.write_string("BIAS")
-        elif self == Self.RELU_BIAS:
-            writer.write_string("RELU_BIAS")
-        elif self == Self.RELU_AUX_BIAS:
-            writer.write_string("RELU_AUX_BIAS")
-        elif self == Self.DRELU:
-            writer.write_string("DRELU")
-        elif self == Self.DRELU_BGRAD:
-            writer.write_string("DRELU_BGRAD")
-        elif self == Self.GELU:
-            writer.write_string("GELU")
-        elif self == Self.GELU_AUX:
-            writer.write_string("GELU_AUX")
-        elif self == Self.GELU_BIAS:
-            writer.write_string("GELU_BIAS")
-        elif self == Self.GELU_AUX_BIAS:
-            writer.write_string("GELU_AUX_BIAS")
-        elif self == Self.DGELU:
-            writer.write_string("DGELU")
-        elif self == Self.DGELU_BGRAD:
-            writer.write_string("DGELU_BGRAD")
-        elif self == Self.BGRADA:
-            writer.write_string("BGRADA")
-        elif self == Self.BGRADB:
-            writer.write_string("BGRADB")
-        else:
-            abort("invalid Epilogue entry")
+        match self:
+            case .DEFAULT:
+                writer.write_string("DEFAULT")
+            case .RELU:
+                writer.write_string("RELU")
+            case .RELU_AUX:
+                writer.write_string("RELU_AUX")
+            case .BIAS:
+                writer.write_string("BIAS")
+            case .RELU_BIAS:
+                writer.write_string("RELU_BIAS")
+            case .RELU_AUX_BIAS:
+                writer.write_string("RELU_AUX_BIAS")
+            case .DRELU:
+                writer.write_string("DRELU")
+            case .DRELU_BGRAD:
+                writer.write_string("DRELU_BGRAD")
+            case .GELU:
+                writer.write_string("GELU")
+            case .GELU_AUX:
+                writer.write_string("GELU_AUX")
+            case .GELU_BIAS:
+                writer.write_string("GELU_BIAS")
+            case .GELU_AUX_BIAS:
+                writer.write_string("GELU_AUX_BIAS")
+            case .DGELU:
+                writer.write_string("DGELU")
+            case .DGELU_BGRAD:
+                writer.write_string("DGELU_BGRAD")
+            case .BGRADA:
+                writer.write_string("BGRADA")
+            case .BGRADB:
+                writer.write_string("BGRADB")
+            case _:
+                abort("invalid Epilogue entry")
 
     def __int__(self) -> Int:
         return Int(self._value)
@@ -2877,18 +2892,19 @@ struct PointerModeMask(TrivialRegisterPassable, Writable):
         return not (self == other)
 
     def write_to(self, mut writer: Some[Writer]):
-        if self == Self.HOST:
-            writer.write_string("HOST")
-        elif self == Self.DEVICE:
-            writer.write_string("DEVICE")
-        elif self == Self.DEVICE_VECTOR:
-            writer.write_string("DEVICE_VECTOR")
-        elif self == Self.ALPHA_DEVICE_VECTOR_BETA_ZERO:
-            writer.write_string("ALPHA_DEVICE_VECTOR_BETA_ZERO")
-        elif self == Self.ALPHA_DEVICE_VECTOR_BETA_HOST:
-            writer.write_string("ALPHA_DEVICE_VECTOR_BETA_HOST")
-        else:
-            abort("invalid PointerModeMask entry")
+        match self:
+            case .HOST:
+                writer.write_string("HOST")
+            case .DEVICE:
+                writer.write_string("DEVICE")
+            case .DEVICE_VECTOR:
+                writer.write_string("DEVICE_VECTOR")
+            case .ALPHA_DEVICE_VECTOR_BETA_ZERO:
+                writer.write_string("ALPHA_DEVICE_VECTOR_BETA_ZERO")
+            case .ALPHA_DEVICE_VECTOR_BETA_HOST:
+                writer.write_string("ALPHA_DEVICE_VECTOR_BETA_HOST")
+            case _:
+                abort("invalid PointerModeMask entry")
 
     def __int__(self) -> Int:
         return Int(self._value)
@@ -3576,84 +3592,85 @@ struct Tile(TrivialRegisterPassable, Writable):
     def __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
-    @no_inline
+    @inline(.never)
     def write_to(self, mut writer: Some[Writer]):
-        if self == Self.TILE_UNDEFINED:
-            writer.write_string("TILE_UNDEFINED")
-        elif self == Self.TILE_8x8:
-            writer.write_string("TILE_8x8")
-        elif self == Self.TILE_8x16:
-            writer.write_string("TILE_8x16")
-        elif self == Self.TILE_16x8:
-            writer.write_string("TILE_16x8")
-        elif self == Self.TILE_8x32:
-            writer.write_string("TILE_8x32")
-        elif self == Self.TILE_16x16:
-            writer.write_string("TILE_16x16")
-        elif self == Self.TILE_32x8:
-            writer.write_string("TILE_32x8")
-        elif self == Self.TILE_8x64:
-            writer.write_string("TILE_8x64")
-        elif self == Self.TILE_16x32:
-            writer.write_string("TILE_16x32")
-        elif self == Self.TILE_32x16:
-            writer.write_string("TILE_32x16")
-        elif self == Self.TILE_64x8:
-            writer.write_string("TILE_64x8")
-        elif self == Self.TILE_32x32:
-            writer.write_string("TILE_32x32")
-        elif self == Self.TILE_32x64:
-            writer.write_string("TILE_32x64")
-        elif self == Self.TILE_64x32:
-            writer.write_string("TILE_64x32")
-        elif self == Self.TILE_32x128:
-            writer.write_string("TILE_32x128")
-        elif self == Self.TILE_64x64:
-            writer.write_string("TILE_64x64")
-        elif self == Self.TILE_128x32:
-            writer.write_string("TILE_128x32")
-        elif self == Self.TILE_64x128:
-            writer.write_string("TILE_64x128")
-        elif self == Self.TILE_128x64:
-            writer.write_string("TILE_128x64")
-        elif self == Self.TILE_64x256:
-            writer.write_string("TILE_64x256")
-        elif self == Self.TILE_128x128:
-            writer.write_string("TILE_128x128")
-        elif self == Self.TILE_256x64:
-            writer.write_string("TILE_256x64")
-        elif self == Self.TILE_64x512:
-            writer.write_string("TILE_64x512")
-        elif self == Self.TILE_128x256:
-            writer.write_string("TILE_128x256")
-        elif self == Self.TILE_256x128:
-            writer.write_string("TILE_256x128")
-        elif self == Self.TILE_512x64:
-            writer.write_string("TILE_512x64")
-        elif self == Self.TILE_64x96:
-            writer.write_string("TILE_64x96")
-        elif self == Self.TILE_96x64:
-            writer.write_string("TILE_96x64")
-        elif self == Self.TILE_96x128:
-            writer.write_string("TILE_96x128")
-        elif self == Self.TILE_128x160:
-            writer.write_string("TILE_128x160")
-        elif self == Self.TILE_160x128:
-            writer.write_string("TILE_160x128")
-        elif self == Self.TILE_192x128:
-            writer.write_string("TILE_192x128")
-        elif self == Self.TILE_128x192:
-            writer.write_string("TILE_128x192")
-        elif self == Self.TILE_128x96:
-            writer.write_string("TILE_128x96")
-        elif self == Self.TILE_32x256:
-            writer.write_string("TILE_32x256")
-        elif self == Self.TILE_256x32:
-            writer.write_string("TILE_256x32")
-        elif self == Self.TILE_END:
-            writer.write_string("TILE_END")
-        else:
-            abort("invalid Tile entry")
+        match self:
+            case .TILE_UNDEFINED:
+                writer.write_string("TILE_UNDEFINED")
+            case .TILE_8x8:
+                writer.write_string("TILE_8x8")
+            case .TILE_8x16:
+                writer.write_string("TILE_8x16")
+            case .TILE_16x8:
+                writer.write_string("TILE_16x8")
+            case .TILE_8x32:
+                writer.write_string("TILE_8x32")
+            case .TILE_16x16:
+                writer.write_string("TILE_16x16")
+            case .TILE_32x8:
+                writer.write_string("TILE_32x8")
+            case .TILE_8x64:
+                writer.write_string("TILE_8x64")
+            case .TILE_16x32:
+                writer.write_string("TILE_16x32")
+            case .TILE_32x16:
+                writer.write_string("TILE_32x16")
+            case .TILE_64x8:
+                writer.write_string("TILE_64x8")
+            case .TILE_32x32:
+                writer.write_string("TILE_32x32")
+            case .TILE_32x64:
+                writer.write_string("TILE_32x64")
+            case .TILE_64x32:
+                writer.write_string("TILE_64x32")
+            case .TILE_32x128:
+                writer.write_string("TILE_32x128")
+            case .TILE_64x64:
+                writer.write_string("TILE_64x64")
+            case .TILE_128x32:
+                writer.write_string("TILE_128x32")
+            case .TILE_64x128:
+                writer.write_string("TILE_64x128")
+            case .TILE_128x64:
+                writer.write_string("TILE_128x64")
+            case .TILE_64x256:
+                writer.write_string("TILE_64x256")
+            case .TILE_128x128:
+                writer.write_string("TILE_128x128")
+            case .TILE_256x64:
+                writer.write_string("TILE_256x64")
+            case .TILE_64x512:
+                writer.write_string("TILE_64x512")
+            case .TILE_128x256:
+                writer.write_string("TILE_128x256")
+            case .TILE_256x128:
+                writer.write_string("TILE_256x128")
+            case .TILE_512x64:
+                writer.write_string("TILE_512x64")
+            case .TILE_64x96:
+                writer.write_string("TILE_64x96")
+            case .TILE_96x64:
+                writer.write_string("TILE_96x64")
+            case .TILE_96x128:
+                writer.write_string("TILE_96x128")
+            case .TILE_128x160:
+                writer.write_string("TILE_128x160")
+            case .TILE_160x128:
+                writer.write_string("TILE_160x128")
+            case .TILE_192x128:
+                writer.write_string("TILE_192x128")
+            case .TILE_128x192:
+                writer.write_string("TILE_128x192")
+            case .TILE_128x96:
+                writer.write_string("TILE_128x96")
+            case .TILE_32x256:
+                writer.write_string("TILE_32x256")
+            case .TILE_256x32:
+                writer.write_string("TILE_256x32")
+            case .TILE_END:
+                writer.write_string("TILE_END")
+            case _:
+                abort("invalid Tile entry")
 
     def __int__(self) -> Int:
         return Int(self._value)
@@ -3935,18 +3952,19 @@ struct TransformDescriptor(TrivialRegisterPassable, Writable):
     def __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
-    @no_inline
+    @inline(.never)
     def write_to(self, mut writer: Some[Writer]):
-        if self == Self.SCALE_TYPE:
-            writer.write_string("SCALE_TYPE")
-        elif self == Self.POINTER_MODE:
-            writer.write_string("POINTER_MODE")
-        elif self == Self.TRANSA:
-            writer.write_string("TRANSA")
-        elif self == Self.TRANSB:
-            writer.write_string("TRANSB")
-        else:
-            abort("invalid TransformDescriptor entry")
+        match self:
+            case .SCALE_TYPE:
+                writer.write_string("SCALE_TYPE")
+            case .POINTER_MODE:
+                writer.write_string("POINTER_MODE")
+            case .TRANSA:
+                writer.write_string("TRANSA")
+            case .TRANSB:
+                writer.write_string("TRANSB")
+            case _:
+                abort("invalid TransformDescriptor entry")
 
     def __int__(self) -> Int:
         return Int(self._value)

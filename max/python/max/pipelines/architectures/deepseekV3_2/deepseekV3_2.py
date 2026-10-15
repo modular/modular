@@ -15,8 +15,12 @@
 from __future__ import annotations
 
 import functools
-from typing import Any
+import os
+from collections import OrderedDict
+from collections.abc import Sequence
+from typing import Any, cast
 
+from max import tree
 from max._core.driver import is_virtual_device_mode
 from max.dtype import DType
 from max.graph import (
@@ -30,7 +34,6 @@ from max.graph import (
     ops,
 )
 from max.nn.attention.multi_latent_attention import MLAPrefillMetadata
-from max.nn.comm import Signals
 from max.nn.comm.ep import EPBatchManager
 from max.nn.data_parallelism import split_batch_replicated
 from max.nn.embedding import VocabParallelEmbedding
@@ -39,7 +42,7 @@ from max.nn.kv_cache import (
     MultiKVCacheParams,
     PagedCacheValues,
 )
-from max.nn.layer import LayerList, Module, SubgraphInput
+from max.nn.layer import LayerList, Module
 from max.nn.linear import ColumnParallelLinear
 from max.nn.moe import MoE
 from max.nn.moe.expert_parallel import forward_moe_sharded_layers
@@ -53,8 +56,12 @@ from max.nn.transformer import forward_sequential_layers
 from max.nn.transformer.distributed_transformer import (
     forward_sharded_layers,
 )
+from max.tree import Tree
 
-from ..deepseekV3.deepseekV3 import deepseek_logits_postprocess
+from ..deepseekV3.deepseekV3 import (
+    deepseek_logits_postprocess,
+    deepseekV3_input_tree,
+)
 from .layers import DeepseekV3_2MLP, DeepseekV3_2MoE, DeepseekV3_2TopKRouter
 from .layers.sparse_mla import (
     DataParallelSparseLatentAttentionWithRope,
@@ -62,7 +69,14 @@ from .layers.sparse_mla import (
     TensorParallelSparseLatentAttentionWithRope,
     TensorParallelSparseLatentAttentionWithRopeFp8,
 )
-from .model_config import DeepseekV3_2Config
+from .model_config import DeepseekV3_2Config, indexer_cache_layer_map
+
+# Opt-in dual-carry + fused AG+RMSNorm. Default (unset / any other value) is
+# the baseline path: consumer-side ``input_layernorm``, plain post-MLP
+# all-gather. Unfused dual-carry still regresses large-CE TTFT/util.
+_FUSE_AG_RMS_NORM = (
+    os.environ.get("MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM") == "0"
+)
 
 
 def _validate_parallelism_config(config: DeepseekV3_2Config) -> None:
@@ -102,6 +116,52 @@ def _validate_indexer_types(config: DeepseekV3_2Config) -> None:
         )
 
 
+def apply_initial_input_layernorm(
+    layers: Sequence[DeepseekV3_2DecoderLayer],
+    hidden_states: list[TensorValue],
+) -> list[TensorValue]:
+    """Apply layer 0 ``input_layernorm`` after token embedding.
+
+    Dual-carry Pre-LN: the first decoder block expects a separate normalized
+    stream for attention while residuals keep the raw embed output.
+    """
+    if not layers:
+        return hidden_states
+    return forward_sharded_layers(
+        layers[0].input_layernorm_shards, hidden_states
+    )
+
+
+def apply_input_layernorm_at_layer_entry(
+    layer: DeepseekV3_2DecoderLayer,
+    hidden_states: list[TensorValue],
+) -> list[TensorValue]:
+    """Apply ``input_layernorm`` outside a decoder subgraph call.
+
+    Used on the non-carry path (and as the shared primitive behind
+    :func:`apply_initial_input_layernorm`). Attention consumes the normalized
+    tensor; residuals use the raw hidden-state stream.
+    """
+    return forward_sharded_layers(layer.input_layernorm_shards, hidden_states)
+
+
+def next_input_layernorm_gammas(
+    next_layer: DeepseekV3_2DecoderLayer,
+    hidden_states: list[TensorValue],
+) -> list[TensorValue]:
+    """Cast/place ``next_layer.input_layernorm`` weights as graph inputs.
+
+    Threaded into the producer block so subgraph weight-prefix rebinding cannot
+    mis-bind the *next* layer's gamma to the current layer's prefix.
+    """
+    return [
+        shard.weight.cast(h.dtype).to(h.device)
+        for shard, h in zip(
+            next_layer.input_layernorm_shards, hidden_states, strict=True
+        )
+    ]
+
+
 class DeepseekV3_2DecoderLayer(Module):
     """Decoder layer for DeepseekV3.2."""
 
@@ -136,25 +196,26 @@ class DeepseekV3_2DecoderLayer(Module):
             and config.indexer_types[layer_idx] == "shared"
         )
 
-        sparse_attn_kwargs: dict[str, Any] = dict(
-            rope=rope,
-            num_attention_heads=config.num_attention_heads,
-            num_key_value_heads=config.num_key_value_heads,
-            hidden_size=config.hidden_size,
-            kv_params=mla_kv_params,
-            q_lora_rank=config.q_lora_rank,
-            kv_lora_rank=config.kv_lora_rank,
-            qk_nope_head_dim=config.qk_nope_head_dim,
-            qk_rope_head_dim=config.qk_rope_head_dim,
-            v_head_dim=config.v_head_dim,
-            devices=config.devices,
-            graph_mode=config.graph_mode,
-            buffer_size=config.max_batch_context_length,
-            index_n_heads=config.index_n_heads,
-            index_head_dim=config.index_head_dim,
-            index_topk=config.index_topk,
-            skip_topk=skip_topk,
-        )
+        sparse_attn_kwargs: dict[str, Any] = {
+            "rope": rope,
+            "num_attention_heads": config.num_attention_heads,
+            "num_key_value_heads": config.num_key_value_heads,
+            "hidden_size": config.hidden_size,
+            "kv_params": mla_kv_params,
+            "q_lora_rank": config.q_lora_rank,
+            "kv_lora_rank": config.kv_lora_rank,
+            "qk_nope_head_dim": config.qk_nope_head_dim,
+            "qk_rope_head_dim": config.qk_rope_head_dim,
+            "v_head_dim": config.v_head_dim,
+            "devices": config.devices,
+            "graph_mode": config.graph_mode,
+            "buffer_size": config.max_batch_context_length,
+            "index_n_heads": config.index_n_heads,
+            "index_head_dim": config.index_head_dim,
+            "index_topk": config.index_topk,
+            "skip_topk": skip_topk,
+            "indexer_rope_interleave": config.indexer_rope_interleave,
+        }
 
         self.tp_attention = num_devices > 1 and config.data_parallel_degree == 1
         self.self_attn: (
@@ -169,6 +230,7 @@ class DeepseekV3_2DecoderLayer(Module):
                     skip_allreduce=True,
                     norm_dtype=config.norm_dtype,
                     quant_config=config.quant_config,
+                    kv_b_proj_dtype=config.kv_b_proj_dtype,
                     **sparse_attn_kwargs,
                 )
             else:
@@ -183,6 +245,7 @@ class DeepseekV3_2DecoderLayer(Module):
             self.self_attn = DataParallelSparseLatentAttentionWithRopeFp8(
                 norm_dtype=config.norm_dtype,
                 quant_config=config.quant_config,
+                kv_b_proj_dtype=config.kv_b_proj_dtype,
                 **sparse_attn_kwargs,
             )
         else:
@@ -200,26 +263,40 @@ class DeepseekV3_2DecoderLayer(Module):
         else:
             self.mlp_shards = [self.mlp]
 
-        # Create normalization layers
-        create_norm = functools.partial(
-            RMSNorm,
+        # Fused AG+RMSNorm requires mbc=True. Baseline (no fuse flag) keeps
+        # Llama-style mbc=False. post-attn stays mbc=False either way.
+        self.input_layernorm = RMSNorm(
             dim=config.hidden_size,
             dtype=config.norm_dtype,
             eps=config.rms_norm_eps,
-            multiply_before_cast=False,
+            multiply_before_cast=_FUSE_AG_RMS_NORM,
         )
-        self.input_layernorm = create_norm()
         self.input_layernorm.sharding_strategy = ShardingStrategy.replicate(
             num_devices
         )
         self.input_layernorm_shards = self.input_layernorm.shard(config.devices)
 
-        self.post_attention_layernorm = create_norm()
+        self.post_attention_layernorm = RMSNorm(
+            dim=config.hidden_size,
+            dtype=config.norm_dtype,
+            eps=config.rms_norm_eps,
+            multiply_before_cast=False,
+        )
         self.post_attention_layernorm.sharding_strategy = (
             ShardingStrategy.replicate(num_devices)
         )
         self.post_attention_layernorm_shards = (
             self.post_attention_layernorm.shard(config.devices)
+        )
+
+        # Dual-carry + fused AG+RMSNorm only when opted in via
+        # ``MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM=0``. Otherwise baseline
+        # consumer-side input norm (see ``apply_input_layernorm_at_layer_entry``).
+        self.carry_next_input_norm = (
+            _FUSE_AG_RMS_NORM
+            and self.tp_attention
+            and config.ep_config is not None
+            and not config.ep_config.use_allreduce
         )
 
     def _get_mlp(
@@ -255,13 +332,13 @@ class DeepseekV3_2DecoderLayer(Module):
             else:
                 ep_size = 1
 
-            moe_kwargs: dict[str, Any] = dict(
-                devices=config.devices,
-                hidden_dim=config.hidden_size,
-                num_experts=config.n_routed_experts,
-                num_experts_per_token=config.num_experts_per_tok,
-                moe_dim=config.moe_intermediate_size,
-                gate_cls=functools.partial(
+            moe_kwargs: dict[str, Any] = {
+                "devices": config.devices,
+                "hidden_dim": config.hidden_size,
+                "num_experts": config.n_routed_experts,
+                "num_experts_per_token": config.num_experts_per_tok,
+                "moe_dim": config.moe_intermediate_size,
+                "gate_cls": functools.partial(
                     DeepseekV3_2TopKRouter,
                     routed_scaling_factor=config.routed_scaling_factor,
                     scoring_func=config.scoring_func,
@@ -273,21 +350,20 @@ class DeepseekV3_2DecoderLayer(Module):
                     gate_dtype=DType.bfloat16,
                     correction_bias_dtype=config.correction_bias_dtype,
                 ),
-                mlp_cls=DeepseekV3_2MLP,
-                has_shared_experts=True,
-                shared_experts_dim=config.n_shared_experts
+                "mlp_cls": DeepseekV3_2MLP,
+                "has_shared_experts": True,
+                "shared_experts_dim": config.n_shared_experts
                 * config.moe_intermediate_size,
-                dtype=mlp_dtype,
-                ep_size=ep_size,
-                apply_router_weight_first=False,
-                ep_batch_manager=self.ep_manager,
-                quant_config=layer_quant_config,
-                shared_experts_dtype=(
+                "dtype": mlp_dtype,
+                "ep_size": ep_size,
+                "ep_batch_manager": self.ep_manager,
+                "quant_config": layer_quant_config,
+                "shared_experts_dtype": (
                     quant_cfg.shared_experts_dtype(mlp_dtype)
                     if quant_cfg is not None
                     else DType.bfloat16
                 ),
-            )
+            }
 
             moe: DeepseekV3_2MoE | MoE
             if mlp_quantized:
@@ -323,7 +399,9 @@ class DeepseekV3_2DecoderLayer(Module):
     def __call__(
         self,
         layer_idx: TensorValue,
-        xs: list[TensorValue],
+        indexer_layer_idx: TensorValue,
+        xs_raw: list[TensorValue],
+        xs_norm: list[TensorValue],
         signal_buffers: list[BufferValue],
         mla_kv_collections: list[PagedCacheValues],
         indexer_kv_collections: list[PagedCacheValues],
@@ -332,9 +410,18 @@ class DeepseekV3_2DecoderLayer(Module):
         input_row_offsets: list[TensorValue],
         prev_topk_indices: list[TensorValue],
         ep_inputs: list[Value[Any]] | None = None,
+        # Next block's input-norm gamma (graph input). Empty on the last block
+        # and when ``carry_next_input_norm`` is off.
+        next_input_gamma: list[TensorValue] | None = None,
         # Note: this is only used for MTP iterations after step 0.
         reuse_prev_topk: bool = False,
+        # Positions between the token the reused selection was computed for
+        # and this step's token.
+        selection_lag: int = 0,
     ) -> list[TensorValue]:
+        # Dual-carry Pre-LN: attention uses ``xs_norm``; residuals use ``xs_raw``.
+        apply_next = bool(next_input_gamma)
+
         # Re-pack flat MLA inputs into MLAPrefillMetadata dataclasses
         num_devices = len(mla_kv_collections)
         mla_prefill_metadata: list[MLAPrefillMetadata] = []
@@ -347,15 +434,12 @@ class DeepseekV3_2DecoderLayer(Module):
                 )
             )
 
-        # Apply input layer norm to each shard
-        norm_xs = forward_sharded_layers(self.input_layernorm_shards, xs)
-
         # ``prev_topk_indices`` may arrive empty (first layer, before any full
         # layer has produced a selection); ``full`` layers ignore it.
         prev_topk = prev_topk_indices if prev_topk_indices is not None else None
         attn_outs, topk_indices = self.self_attn(
             layer_idx,
-            norm_xs,
+            xs_norm,
             signal_buffers,
             mla_kv_collections,
             indexer_kv_collections,
@@ -364,14 +448,38 @@ class DeepseekV3_2DecoderLayer(Module):
             mla_prefill_metadata=mla_prefill_metadata,
             prev_topk_indices=prev_topk,
             reuse_prev_topk=reuse_prev_topk,
+            selection_lag=selection_lag,
+            indexer_layer_idx=indexer_layer_idx,
         )
 
-        hs = self._post_attention(xs, attn_outs, signal_buffers)
-
-        # Post-attention norm (per-device)
-        norm_outs = forward_sharded_layers(
-            self.post_attention_layernorm_shards, hs
-        )
+        ep_config = self.config.ep_config
+        if (
+            self.tp_attention
+            and ep_config is not None
+            and not ep_config.use_allreduce
+        ):
+            # Fused reduce-scatter + post-attention norm: eliminates the
+            # separate reduce-scatter collective and a global-memory norm
+            # round-trip by keeping the partial sums in float32 registers.
+            hs_partial = [xs_raw[0] + attn_outs[0], *attn_outs[1:]]
+            gammas = [
+                shard.weight.cast(DType.bfloat16).to(x.device)
+                for shard, x in zip(
+                    self.post_attention_layernorm_shards, xs_raw, strict=True
+                )
+            ]
+            norm_outs, hs = ops.reduce_scatter_rms_norm(
+                hs_partial,
+                signal_buffers,
+                gammas,
+                self.config.rms_norm_eps,
+            )
+        else:
+            hs = self._post_attention(xs_raw, attn_outs, signal_buffers)
+            # Post-attention norm (per-device)
+            norm_outs = forward_sharded_layers(
+                self.post_attention_layernorm_shards, hs
+            )
 
         if self.config.ep_config is not None:
             assert ep_inputs is not None
@@ -380,12 +488,30 @@ class DeepseekV3_2DecoderLayer(Module):
 
         mlp_outs = forward_moe_sharded_layers(self.mlp_shards, norm_outs)
 
+        if apply_next:
+            assert next_input_gamma is not None
+            # Producer-side next input norm after all-gather (fused op).
+            hs_raw, hs_norm = self._post_mlp_with_next_input_norm(
+                hs, mlp_outs, signal_buffers, next_input_gamma
+            )
+            hs_raw = [
+                ops.rebind(h, x.shape)
+                for h, x in zip(hs_raw, xs_raw, strict=True)
+            ]
+            hs_norm = [
+                ops.rebind(n, x.shape)
+                for n, x in zip(hs_norm, xs_raw, strict=True)
+            ]
+            return hs_raw + hs_norm + topk_indices
+
         hs = self._post_mlp(hs, mlp_outs, signal_buffers)
 
         # In TP mode the reduce-scatter/all-gather round trip can lose the
         # static shape; rebind to the original per-device input shape.
         if self.tp_attention:
-            hs = [ops.rebind(h, x.shape) for h, x in zip(hs, xs, strict=True)]
+            hs = [
+                ops.rebind(h, x.shape) for h, x in zip(hs, xs_raw, strict=True)
+            ]
 
         # Subgraphs require the outputs to be a single list of TensorValue,
         # which is why the returned lists are concatenated.
@@ -428,6 +554,29 @@ class DeepseekV3_2DecoderLayer(Module):
 
         hs = [h + m for h, m in zip(hs, mlp_outs, strict=True)]
         return ops.allgather(hs, signal_buffers, axis=0)
+
+    def _post_mlp_with_next_input_norm(
+        self,
+        hs: list[TensorValue],
+        mlp_outs: list[TensorValue],
+        signal_buffers: list[BufferValue],
+        next_input_gamma: list[TensorValue],
+    ) -> tuple[list[TensorValue], list[TensorValue]]:
+        """Residual add + fused all-gather + next layer's ``input_layernorm``.
+
+        Only used when ``carry_next_input_norm`` is set (requires
+        ``MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM=0``). Returns
+        ``(residual_full, norm_full)`` for dual-carry into the next block.
+        """
+        hs_in = [h + m for h, m in zip(hs, mlp_outs, strict=True)]
+        norm_full, residual_full = ops.allgather_rms_norm(
+            hs_in,
+            signal_buffers,
+            next_input_gamma,
+            epsilon=self.input_layernorm.eps,
+            weight_offset=self.input_layernorm.weight_offset,
+        )
+        return residual_full, norm_full
 
 
 class DeepseekV3_2(Module):
@@ -477,7 +626,7 @@ class DeepseekV3_2(Module):
                     config.qk_rope_head_dim,
                     n_heads=config.num_attention_heads,
                     theta=config.rope_theta,
-                    max_seq_len=config.max_position_embeddings,
+                    max_seq_len=config.max_seq_len,
                     scaling_params=scaling_params,
                 )
             )
@@ -486,7 +635,7 @@ class DeepseekV3_2(Module):
                 dim=config.qk_rope_head_dim,
                 n_heads=config.num_attention_heads,
                 theta=config.rope_theta,
-                max_seq_len=config.max_position_embeddings,
+                max_seq_len=config.max_seq_len,
                 head_dim=config.qk_rope_head_dim,
                 interleaved=config.rope_interleave,
             )
@@ -524,6 +673,17 @@ class DeepseekV3_2(Module):
             quantization_encoding=None,
         )
 
+        # Carry next-layer input norm after post-MLP all-gather on the TP+EP
+        # path (see DecoderLayer.carry_next_input_norm). Uniform across layers.
+        first_layer = (
+            cast(DeepseekV3_2DecoderLayer, self.layers[0])
+            if self.layers
+            else None
+        )
+        self.carry_next_input_norm = bool(
+            first_layer and first_layer.carry_next_input_norm
+        )
+
         if config.use_subgraphs:
             # ``full`` and ``shared`` layers differ structurally (shared layers
             # have no indexer weights), so they cannot share a subgraph. Split
@@ -544,10 +704,23 @@ class DeepseekV3_2(Module):
             self.subgraph_layer_groups = [
                 g for g in (full_group, shared_group) if g
             ]
+            # Last block returns residual(+topk) only; interior carry blocks
+            # also emit the next input-norm. Peel so subgraph arity stays
+            # uniform.
+            if self.carry_next_input_norm:
+                last = config.num_hidden_layers - 1
+                self.subgraph_layer_groups = [
+                    [i for i in g if i != last]
+                    for g in self.subgraph_layer_groups
+                ]
+                self.subgraph_layer_groups = [
+                    g for g in self.subgraph_layer_groups if g
+                ]
         else:
             self.subgraph_layer_groups = []
         self.return_logits = config.return_logits
         self.return_hidden_states = config.return_hidden_states
+        self.emit_last_token_logits = True
         self.logits_scaling = 1.0
 
     def __call__(
@@ -587,6 +760,17 @@ class DeepseekV3_2(Module):
                 data_parallel_splits,
             )
 
+        layers_list = [
+            cast(DeepseekV3_2DecoderLayer, layer) for layer in self.layers
+        ]
+        num_devices = len(devices)
+        last_layer = self.config.num_hidden_layers - 1
+
+        # Layer 0 input norm after embeddings (dual-carry: raw residual kept).
+        initial_input_norm: list[TensorValue] | None = None
+        if self.carry_next_input_norm:
+            initial_input_norm = apply_initial_input_layernorm(layers_list, h)
+
         # Create MLA prefill metadata if not in decode mode
         if self.config.graph_mode != "decode":
             mla_prefill_metadata = self.layers[
@@ -613,24 +797,66 @@ class DeepseekV3_2(Module):
                 ]
             )
 
-        num_devices = len(devices)
+        indexer_cache_layers = indexer_cache_layer_map(
+            self.config.indexer_types, len(self.layers)
+        )
 
-        def inputs_for_layer(
-            idx: int, h: list[TensorValue]
-        ) -> list[SubgraphInput]:
-            # Each decoder layer returns ``hidden_states + topk_indices`` (both
-            # per-device lists), so ``h`` carries the previous layer's top-k
-            # selection after its first ``num_devices`` entries. The very first
-            # layer receives only hidden states (no prior selection yet).
-            if len(h) > num_devices:
-                hidden = h[:num_devices]
-                prev_topk: list[TensorValue] = h[num_devices:]
+        def inputs_for_layer(idx: int, h: list[TensorValue]) -> list[Tree[Any]]:
+            # Layout of ``h``:
+            # - carry_next_input_norm, idx==0: residual only (embeddings);
+            #   norm comes from ``apply_initial_input_layernorm`` above
+            # - carry_next_input_norm, idx>0: residual + norm + topk
+            # - else: residual [+ topk]
+            next_input_gamma: list[TensorValue] | None = None
+            if self.carry_next_input_norm:
+                if idx == 0:
+                    hidden_raw = h
+                    prev_topk: list[TensorValue] = []
+                    assert initial_input_norm is not None
+                    hidden_norm = initial_input_norm
+                else:
+                    assert len(h) >= 2 * num_devices, (
+                        f"carry block {idx - 1} returned {len(h)} tensors, "
+                        f"expected at least {2 * num_devices} (residual+norm)"
+                    )
+                    hidden_raw = h[:num_devices]
+                    hidden_norm = h[num_devices : 2 * num_devices]
+                    prev_topk = h[2 * num_devices :]
+                if idx < last_layer:
+                    next_layer = layers_list[idx + 1]
+                    cur_norm = layers_list[idx].input_layernorm
+                    assert (
+                        next_layer.input_layernorm.eps == cur_norm.eps
+                        and next_layer.input_layernorm.weight_offset
+                        == cur_norm.weight_offset
+                        and next_layer.input_layernorm.multiply_before_cast
+                        == cur_norm.multiply_before_cast
+                    ), (
+                        "carry_next_input_norm assumes uniform input-norm "
+                        "eps/weight_offset/mbc across layers"
+                    )
+                    next_input_gamma = next_input_layernorm_gammas(
+                        next_layer, hidden_raw
+                    )
             else:
-                hidden = h
-                prev_topk = []
-            values: list[SubgraphInput] = [
+                if len(h) > num_devices:
+                    hidden_raw = h[:num_devices]
+                    prev_topk = h[num_devices:]
+                else:
+                    hidden_raw = h
+                    prev_topk = []
+                hidden_norm = apply_input_layernorm_at_layer_entry(
+                    layers_list[idx], hidden_raw
+                )
+            values: list[Tree[Any]] = [
                 ops.constant(idx, DType.uint32, device=DeviceRef.CPU()),
-                hidden,
+                ops.constant(
+                    indexer_cache_layers[idx],
+                    DType.uint32,
+                    device=DeviceRef.CPU(),
+                ),
+                hidden_raw,
+                hidden_norm,
                 signal_buffers,
                 mla_kv_collections,
                 indexer_kv_collections,
@@ -641,6 +867,9 @@ class DeepseekV3_2(Module):
             ]
             if ep_inputs is not None:
                 values.append(ep_inputs)
+            # Trailing gamma list when carrying end-norm (empty on last block).
+            if self.carry_next_input_norm:
+                values.append(next_input_gamma or [])
             return values
 
         h = forward_sequential_layers(
@@ -652,7 +881,7 @@ class DeepseekV3_2(Module):
             initial_hidden_states=h,
         )
 
-        # Strip the trailing top-k selection carried alongside hidden states.
+        # Residual is always the leading per-device group.
         h = h[:num_devices]
 
         return deepseek_logits_postprocess(
@@ -668,63 +897,23 @@ class DeepseekV3_2(Module):
             return_logits=self.return_logits,
             return_hidden_states=self.return_hidden_states,
             logits_scaling=self.logits_scaling,
+            emit_last_token_logits=self.emit_last_token_logits,
+            unpadded_vocab_size=self.config.unpadded_vocab_size,
+            vocab_size=self.config.vocab_size,
+        )
+
+    def input_tree(
+        self, kv_params: KVCacheParamInterface
+    ) -> OrderedDict[str, object]:
+        """Names the graph's inputs; its leaves are the graph's inputs."""
+        return deepseekV3_input_tree(
+            kv_params=kv_params,
+            device_refs=list(self.config.devices),
+            data_parallel_degree=self.config.data_parallel_degree,
+            ep_config=self.config.ep_config,
         )
 
     def input_types(
         self, kv_params: KVCacheParamInterface
     ) -> tuple[TensorType | BufferType, ...]:
-        # TODO: Move input symbol computation from the manager classes.
-        # It should be possible to compute the input symbols from the model
-        # config.
-        device_ref = self.config.devices[0]
-
-        # Construct Graph Inputs
-        tokens_type = TensorType(
-            DType.int64, shape=["total_seq_len"], device=device_ref
-        )
-        device_input_row_offsets_type = TensorType(
-            DType.uint32,
-            shape=["input_row_offsets_len"],
-            device=device_ref,
-        )
-
-        # Add host input row offsets type, this is used to split the
-        # concatenated DP inputs.
-        host_input_row_offsets_type = TensorType(
-            DType.uint32,
-            shape=["input_row_offsets_len"],
-            device=DeviceRef.CPU(),
-        )
-        return_n_logits_type = TensorType(
-            DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
-        )
-        data_parallel_splits_type = TensorType(
-            DType.int64,
-            shape=[self.config.data_parallel_degree + 1],
-            device=DeviceRef.CPU(),
-        )
-
-        signals = Signals(devices=self.config.devices)
-        signal_buffer_types: list[BufferType] = signals.input_types()
-
-        all_input_types: list[TensorType | BufferType] = [
-            tokens_type,
-            device_input_row_offsets_type,
-            host_input_row_offsets_type,
-            return_n_logits_type,
-            data_parallel_splits_type,
-        ]
-        all_input_types.extend(signal_buffer_types)
-        all_input_types.extend(kv_params.flattened_kv_inputs())
-
-        # Add batch context lengths
-        batch_context_length_type = TensorType(
-            DType.int32, shape=[1], device=DeviceRef.CPU()
-        )
-        all_input_types.extend(
-            [batch_context_length_type for _ in range(len(self.config.devices))]
-        )
-
-        if self.ep_manager is not None:
-            all_input_types.extend(self.ep_manager.input_types())
-        return tuple(all_input_types)
+        return tuple(tree.leaves(self.input_tree(kv_params)))

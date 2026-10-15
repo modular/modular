@@ -61,24 +61,29 @@ register-cliff optimum (KB `apple-m5-gpu-perf-model`); do NOT exceed 4
 accumulators.
 """
 
-from std.gpu import WARP_SIZE, block_idx, thread_idx
-from std.gpu.host import DeviceContext
+from max.gpu import WARP_SIZE, block_idx, warp_id
+from max.gpu.host import DeviceContext
 from std.math import ceildiv
 from std.sys import align_of
 
-from layout import Idx, TileTensor
+from layout import Idx, TensorEngine, TileTensor
 from layout.coord import Coord
 from layout.tile_layout import Layout, TensorLayout
 
 from linalg.arch.apple.mma import MmaOpApple
 from linalg.matmul.gpu.apple.matmul2d_fp4 import _require_apple_m5
 from linalg.matmul.gpu.apple.matmul_kernel import AppleM5MatMul
-from linalg.utils import elementwise_epilogue_type
+from linalg.utils import (
+    ElementwiseComputeFn,
+    ElementwiseEpilogueFn,
+    no_compute_fn,
+    no_epilogue_fn,
+)
+from std.utils import IndexList
 
 
 struct Matmul2dFp8[
-    c_type: DType = DType.float32,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    c_type: DType = .float32,
     block_m: Int = 64,
     block_n: Int = 64,
     block_k: Int = 16,
@@ -95,9 +100,6 @@ struct Matmul2dFp8[
 
     Parameters:
         c_type: Output element type (fp16, bf16, fp32). Accumulation is fp32.
-        elementwise_lambda_fn: Optional fused epilogue (AMD's `(row, col)`
-            contract). Currently unused on the interior store; the launcher routes
-            fused-epilogue shapes elsewhere.
         block_m: Threadgroup block rows `BM` (multiple of `SG_M`).
         block_n: Threadgroup block cols `BN` (multiple of `SG_N`).
         block_k: K-strip depth `BK` per accumulate step (multiple of 16).
@@ -130,20 +132,25 @@ struct Matmul2dFp8[
         b_type=Self.b_type,
     ]
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def _gemm_body[
         c_layout: TensorLayout,
         a_layout: TensorLayout,
         w_layout: TensorLayout,
+        EpilogueFnType: ElementwiseEpilogueFn,
+        //,
+        *,
+        has_epilogue_fn: Bool,
     ](
-        c: TileTensor[Self.c_type, c_layout, MutAnyOrigin],
-        a: TileTensor[Self.in_type, a_layout, ImmutAnyOrigin],
-        weight: TileTensor[Self.b_type, w_layout, ImmutAnyOrigin],
+        c: TileTensor[Self.c_type, c_layout, MutAnyOrigin, Engine=_],
+        a: TileTensor[Self.in_type, a_layout, ImmutAnyOrigin, Engine=_],
+        weight: TileTensor[Self.b_type, w_layout, ImmutAnyOrigin, Engine=_],
         M: Int,
         N: Int,
         K: Int,
-        active: Bool = True,
+        active: Bool,
+        epilogue_fn: EpilogueFnType,
     ):
         """Shared per-threadgroup-tile GEMM body: C `(M, N)` = A `(M, K)` @ W
         `(N, K)`^T for ONE contiguous `(M, K)` A slab / `(N, K)` weight slab.
@@ -159,28 +166,22 @@ struct Matmul2dFp8[
         zeros for the group's rows -- matching `naive_grouped_matmul_kernel`.
         The tiling is driven by `block_idx.y`/`block_idx.x`; `block_idx.z` (the
         group) is resolved by the caller into the base views.
-        """
-        # The tiled store does NOT apply a fused epilogue -- dispatch routes
-        # fused-epilogue shapes off this path (the grouped launcher hardcodes
-        # None). Fail loud so a future caller wiring a lambda can't have it
-        # silently dropped.
-        comptime assert not Self.elementwise_lambda_fn, (
-            "matmul2d_fp8: elementwise_lambda_fn is not applied by the tiled"
-            " store"
-        )
 
+        With `has_epilogue_fn`, each output goes to `epilogue_fn` at its
+        `(row, col)` in `c` instead of being stored; an inactive group passes
+        it zeros.
+        """
         comptime BM = Self.BM
         comptime BN = Self.BN
         comptime BK = Self.BK
         comptime SG_M = Self.SG_M
         comptime SG_N = Self.SG_N
 
-        var tile_m = Int(block_idx.y)
-        var tile_n = Int(block_idx.x)
+        var tile_m = block_idx.y
+        var tile_n = block_idx.x
 
-        var sg_id = Int(thread_idx.x) // WARP_SIZE
-        var sg_m_idx = sg_id // Self.NUM_SG_N
-        var sg_n_idx = sg_id % Self.NUM_SG_N
+        var sg_id = warp_id()
+        var sg_m_idx, sg_n_idx = divmod(sg_id, Self.NUM_SG_N)
 
         var row_base = tile_m * BM + sg_m_idx * SG_M
         var col_base = tile_n * BN + sg_n_idx * SG_N
@@ -276,21 +277,39 @@ struct Matmul2dFp8[
         # needs a base-pointer rebind to fp32 (as the dense `_fast_path_store`
         # does), which the TileTensor-idioms-only rule forbids here. `_write4`
         # reaches the same 2-vector-store result.
-        @always_inline
-        @parameter
-        def _apply_epilogue[bounded: Bool]():
+        @inline(.always)
+        def _apply_epilogue[bounded: Bool]() {imm}:
             var c_sub = c.tile[SG_M, SG_N](Int(sg_row_idx), Int(sg_col_idx))
             # 4 contiguous out cols = one SIMD unit; element alignment only (the
             # row stride N is odd for odd N -- a full-vector alignment faults).
             comptime elem_align = align_of[Scalar[Self.c_type]]()
             var c_vec = c_sub.vectorize[1, 4]()
 
-            @always_inline
-            @parameter
+            @inline(.always)
             def _write4(
-                lrow: Int, lcol: Int, acol: Int, v: SIMD[DType.float32, 4]
-            ):
+                lrow: Int, lcol: Int, acol: Int, v: SIMD[.float32, 4]
+            ) {imm}:
                 var y = v.cast[Self.c_type]()
+                comptime if has_epilogue_fn:
+                    var arow = row_base + lrow
+                    # The epilogue's alignment is in elements; odd-width rows
+                    # only guarantee one.
+                    comptime if bounded:
+                        if acol + 3 < N:
+                            epilogue_fn[Self.c_type, 4, alignment=elem_align](
+                                (arow, acol), y
+                            )
+                        else:
+                            for e in range(min(4, N - acol)):
+                                epilogue_fn[Self.c_type, 1, alignment=1](
+                                    (arow, acol + e),
+                                    SIMD[Self.c_type, 1](y[e]),
+                                )
+                    else:
+                        epilogue_fn[Self.c_type, 4, alignment=elem_align](
+                            (arow, acol), y
+                        )
+                    return
                 comptime if bounded:
                     if acol + 3 < N:
                         c_vec.store[alignment=elem_align](
@@ -336,14 +355,29 @@ struct Matmul2dFp8[
         b_layout: TensorLayout,
         ao_layout: TensorLayout,
         ei_layout: TensorLayout,
+        c_engine: TensorEngine,
+        a_engine: TensorEngine,
+        b_engine: TensorEngine,
+        ao_engine: TensorEngine,
+        ei_engine: TensorEngine,
+        EpilogueFnType: ElementwiseEpilogueFn,
+        has_epilogue_fn: Bool,
+        ComputeFnType: ElementwiseComputeFn,
+        has_compute_fn: Bool,
     ](
-        c: TileTensor[Self.c_type, c_layout, MutAnyOrigin],
-        a: TileTensor[Self.in_type, a_layout, ImmutAnyOrigin],
-        b: TileTensor[Self.b_type, b_layout, ImmutAnyOrigin],
-        a_offsets: TileTensor[mut=False, DType.uint32, ao_layout, MutAnyOrigin],
-        expert_ids: TileTensor[mut=False, DType.int32, ei_layout, MutAnyOrigin],
-        N: Int,
-        K: Int,
+        c: TileTensor[Self.c_type, c_layout, MutAnyOrigin, Engine=c_engine],
+        a: TileTensor[Self.in_type, a_layout, ImmutAnyOrigin, Engine=a_engine],
+        b: TileTensor[Self.b_type, b_layout, ImmutAnyOrigin, Engine=b_engine],
+        a_offsets: TileTensor[
+            mut=False, .uint32, ao_layout, MutAnyOrigin, Engine=ao_engine
+        ],
+        expert_ids: TileTensor[
+            mut=False, .int32, ei_layout, MutAnyOrigin, Engine=ei_engine
+        ],
+        N_arg: Int32,
+        K_arg: Int32,
+        epilogue_fn: EpilogueFnType,
+        compute_fn: ComputeFnType,
     ):
         """Grouped (MoE) W8A16 kernel entry: one expert group per `block_idx.z`.
 
@@ -360,17 +394,21 @@ struct Matmul2dFp8[
         Grid `(ceil(N/BN), ceil(max_tokens_per_expert/BM), num_active_experts)`.
         Per-group ragged M is `a_offsets[z+1] - a_offsets[z]`; empty groups
         (M == 0) and fully-OOB M-tiles early-return in `_gemm_body`. An inactive
-        LoRA group (`expert_ids[z] == -1`) writes zeros for its rows.
+        LoRA group (`expert_ids[z] == -1`) writes zeros for its rows. With
+        `has_epilogue_fn`, outputs go to `epilogue_fn` at their `(row, col)` in
+        `c` instead, and with `has_compute_fn`, `compute_fn` maps each output
+        before it is stored.
 
-        The per-group base views use a base-pointer offset (`a.ptr + a_start*K`,
-        `b.ptr + expert*N*K`) -- the ragged-group addressing idiom shared by every
-        grouped matmul kernel in the tree (`naive_grouped_matmul_kernel`,
-        `grouped_matmul_amd_kernel_launcher`); TileTensor has no runtime-offset
-        ragged-slice primitive that keeps the inner `(., K)` dims static. All
-        element access inside `_gemm_body` is TileTensor-indexed (MMA fragment
-        loaders + guarded `c.store`).
+        The per-group base views are ragged row slices of `a`/`c` at this
+        group's `a_offsets` window and the expert slab of `b` (index clamped
+        when the LoRA group is inactive) -- the ragged-group addressing idiom
+        shared by every grouped matmul kernel in the tree. All element access
+        inside `_gemm_body` is TileTensor-indexed (MMA fragment loaders +
+        guarded `c.store`).
         """
-        var z = Int(block_idx.z)
+        var N = Int(N_arg)
+        var K = Int(K_arg)
+        var z = block_idx.z
         var a_start = Int(a_offsets[z])
         var M = Int(a_offsets[z + 1]) - a_start
         var expert = Int(expert_ids[z])
@@ -379,35 +417,58 @@ struct Matmul2dFp8[
         # base view is not built from a negative offset.
         var w_expert = max(expert, 0)
 
-        var c_group = TileTensor(
-            c.ptr + Int64(a_start) * Int64(N),
-            Layout(Coord(M, N), Coord(N, Idx[1])),
+        var c_group = c[a_start : a_start + M, :]
+        var a_group = a[a_start : a_start + M, :]
+        var w_group = b[w_expert, :, :]
+        # `c_group` indexes this group's rows from 0; the epilogues take rows
+        # of all of `c`.
+        var c_ptr = c.ptr
+
+        @inline(.always)
+        def group_epilogue_fn[
+            dtype: DType, width: SIMDLength, *, alignment: Int
+        ](idx: Coord, val: SIMD[dtype, width]) {
+            var epilogue_fn, var compute_fn, var c_ptr, var a_start, var N
+        }:
+            comptime assert (
+                idx.rank == 2
+            ), "the matmul epilogue contract is rank 2"
+            var row = a_start + Int(idx[0].value())
+            var col = Int(idx[1].value())
+            var row_idx = Coord(row, col)
+            comptime if has_compute_fn:
+                (c_ptr + row * N + col).store[alignment=alignment](
+                    rebind[SIMD[Self.c_type, width]](
+                        compute_fn[dtype, width, alignment=alignment](
+                            row_idx, val
+                        )
+                    )
+                )
+            else:
+                epilogue_fn[dtype, width, alignment=alignment](row_idx, val)
+
+        Self._gemm_body[has_epilogue_fn=has_epilogue_fn or has_compute_fn](
+            c_group, a_group, w_group, M, N, K, active, group_epilogue_fn
         )
-        var a_group = TileTensor(
-            a.ptr + Int64(a_start) * Int64(K),
-            Layout(Coord(M, K), Coord(K, Idx[1])),
-        )
-        var w_group = TileTensor(
-            b.ptr + Int64(w_expert) * Int64(N) * Int64(K),
-            Layout(Coord(N, K), Coord(K, Idx[1])),
-        )
-        Self._gemm_body(c_group, a_group, w_group, M, N, K, active)
 
 
-@always_inline
+@inline(.always)
 def enqueue_matmul2d_fp8[
-    c_type: DType = DType.float32,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    EpilogueFnType: ElementwiseEpilogueFn = type_of(no_epilogue_fn),
+    //,
+    c_type: DType = .float32,
     block_m: Int = 64,
     block_n: Int = 64,
     block_k: Int = 16,
     sg_m: Int = 32,
     sg_n: Int = 32,
+    has_epilogue_fn: Bool = False,
 ](
     c: TileTensor[mut=True, c_type, ...],
-    a: TileTensor[DType.bfloat16, ...],
-    weight: TileTensor[DType.float8_e4m3fn, ...],
+    a: TileTensor[.bfloat16, ...],
+    weight: TileTensor[.float8_e4m3fn, ...],
     ctx: DeviceContext,
+    epilogue_fn: EpilogueFnType = no_epilogue_fn,
 ) raises:
     """Enqueue the tiled W8A16 GEMM: `out = a @ W_fp8^T` (raw, unscaled).
 
@@ -424,22 +485,22 @@ def enqueue_matmul2d_fp8[
     a tile, not the per-tile K accumulation). Single-pass launch: fp8 is not
     wired to split-K (its partial kernels are the bf16 family).
 
+    With `has_epilogue_fn`, `epilogue_fn` stores each output at its
+    `(row, col)` in `c` instead.
+
     Raises:
         If the attached GPU is not Apple M5 (`compute_capability == 5`).
     """
     _require_apple_m5(ctx)
 
     comptime assert (
-        c_type == DType.float16
-        or c_type == DType.bfloat16
-        or c_type == DType.float32
+        c_type == .float16 or c_type == .bfloat16 or c_type == .float32
     ), "enqueue_matmul2d_fp8: c_type must be one of {fp16, bf16, fp32}"
 
     comptime MM = AppleM5MatMul[
         DType.bfloat16,
         c_type,
         transpose_b=True,
-        elementwise_lambda_fn=elementwise_lambda_fn,
         block_m=block_m,
         block_n=block_n,
         block_k=block_k,
@@ -478,42 +539,70 @@ def enqueue_matmul2d_fp8[
         side_n *= 2
         log2_n += 1
 
-    comptime kernel = MM.run[
-        type_of(c).LayoutType,
-        type_of(a).LayoutType,
-        type_of(weight).LayoutType,
-        type_of(c).Storage,
-        type_of(a).Storage,
-        type_of(weight).Storage,
-    ]
-    ctx.enqueue_function[kernel](
-        c,
-        a.as_immut(),
-        weight.as_immut(),
-        log2_m,
-        log2_n,
-        grid_dim=(side_m * side_n),
-        block_dim=(MM.THREADS_PER_BLOCK),
-    )
+    comptime if has_epilogue_fn:
+        comptime kernel = MM.run_with_epilogue_fn[
+            type_of(c).LayoutType,
+            type_of(a).LayoutType,
+            type_of(weight).LayoutType,
+            type_of(c).Engine,
+            type_of(a).Engine,
+            type_of(weight).Engine,
+            EpilogueFnType,
+        ]
+        ctx.enqueue_function[kernel](
+            c,
+            a.as_imm(),
+            weight.as_imm(),
+            log2_m,
+            log2_n,
+            host_arg=epilogue_fn,
+            grid_dim=(side_m * side_n),
+            block_dim=(MM.THREADS_PER_BLOCK),
+        )
+    else:
+        comptime kernel = MM.run[
+            type_of(c).LayoutType,
+            type_of(a).LayoutType,
+            type_of(weight).LayoutType,
+            type_of(c).Engine,
+            type_of(a).Engine,
+            type_of(weight).Engine,
+        ]
+        ctx.enqueue_function[kernel](
+            c,
+            a.as_imm(),
+            weight.as_imm(),
+            log2_m,
+            log2_n,
+            grid_dim=(side_m * side_n),
+            block_dim=(MM.THREADS_PER_BLOCK),
+        )
 
 
-@always_inline
+@inline(.always)
 def enqueue_grouped_matmul2d_fp8[
-    c_type: DType = DType.float32,
+    EpilogueFnType: ElementwiseEpilogueFn = type_of(no_epilogue_fn),
+    ComputeFnType: ElementwiseComputeFn = type_of(no_compute_fn),
+    //,
+    c_type: DType = .float32,
     block_m: Int = 64,
     block_n: Int = 64,
     block_k: Int = 16,
     sg_m: Int = 32,
     sg_n: Int = 32,
+    has_epilogue_fn: Bool = False,
+    has_compute_fn: Bool = False,
 ](
     c: TileTensor[mut=True, c_type, ...],
-    a: TileTensor[DType.bfloat16, ...],
-    b: TileTensor[DType.float8_e4m3fn, ...],
-    a_offsets: TileTensor[mut=False, DType.uint32, ...],
-    expert_ids: TileTensor[mut=False, DType.int32, ...],
+    a: TileTensor[.bfloat16, ...],
+    b: TileTensor[.float8_e4m3fn, ...],
+    a_offsets: TileTensor[mut=False, .uint32, ...],
+    expert_ids: TileTensor[mut=False, .int32, ...],
     max_num_tokens_per_expert: Int,
     num_active_experts: Int,
     ctx: DeviceContext,
+    epilogue_fn: EpilogueFnType = no_epilogue_fn,
+    compute_fn: ComputeFnType = no_compute_fn,
 ) raises:
     """Enqueue the tiled grouped (MoE) W8A16 GEMM (`transpose_b`), raw/unscaled.
 
@@ -527,20 +616,21 @@ def enqueue_grouped_matmul2d_fp8[
     MMA, direct DRAM B feed (no SMEM). The per-expert `weight_scale` folds
     post-matmul (graph lowering), matching the dense Apple FP8 Linear.
 
+    With `has_epilogue_fn`, `epilogue_fn` stores each output at its
+    `(row, col)` in `c` instead; an inactive group passes it zeros. With
+    `has_compute_fn`, `compute_fn` maps each output before it is stored.
+
     Raises:
         If the attached GPU is not Apple M5 (`compute_capability == 5`).
     """
     _require_apple_m5(ctx)
 
     comptime assert (
-        c_type == DType.float16
-        or c_type == DType.bfloat16
-        or c_type == DType.float32
+        c_type == .float16 or c_type == .bfloat16 or c_type == .float32
     ), "enqueue_grouped_matmul2d_fp8: c_type must be one of {fp16, bf16, fp32}"
 
     comptime MM = Matmul2dFp8[
         c_type,
-        None,
         block_m,
         block_n,
         block_k,
@@ -566,15 +656,26 @@ def enqueue_grouped_matmul2d_fp8[
         type_of(b).LayoutType,
         type_of(a_offsets).LayoutType,
         type_of(expert_ids).LayoutType,
+        type_of(c).Engine,
+        type_of(a).Engine,
+        type_of(b).Engine,
+        type_of(a_offsets).Engine,
+        type_of(expert_ids).Engine,
+        EpilogueFnType,
+        has_epilogue_fn,
+        ComputeFnType,
+        has_compute_fn,
     ]
     ctx.enqueue_function[kernel](
         c,
-        a.as_immut(),
-        b.as_immut(),
+        a.as_imm(),
+        b.as_imm(),
         a_offsets,
         expert_ids,
-        n,
-        k,
+        Int32(n),
+        Int32(k),
+        host_arg=epilogue_fn,
+        host_arg2=compute_fn,
         grid_dim=(grid_n, grid_m, num_active_experts),
         block_dim=(MM.THREADS_PER_BLOCK),
     )

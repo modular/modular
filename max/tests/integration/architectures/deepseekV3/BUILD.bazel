@@ -9,12 +9,7 @@ package(default_visibility = [
 modular_py_test(
     name = "deepseekV3",
     size = "large",
-    srcs = glob(
-        ["*.py"],
-        exclude = [
-            "test_tool_parser.py",
-        ],
-    ),
+    srcs = ["test_modulev3_grouped_silu.py"],
     exec_properties = {
         "test.resources:gpu-memory": "1",
     },
@@ -26,6 +21,24 @@ modular_py_test(
     tags = [
         "gpu",
     ],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/pipelines/architectures/deepseekV3_modulev3",
+        requirement("torch"),
+    ],
+)
+
+modular_py_test(
+    name = "deepseekV3_cpu",
+    srcs = [
+        "test_deepseekv3_config_validation.py",
+        "test_deepseekv3_memory_estimation.py",
+        "test_logits_postprocess.py",
+        "test_weight_adapter.py",
+    ],
+    imports = ["."],
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",

@@ -29,7 +29,7 @@ from max.nn.quant_config import QuantConfig
 from typing_extensions import Self
 
 from . import quant_ops
-from .quant_ops import QuantAwareTensor
+from .quant_tensor import QuantAwareTensor
 
 
 class QuantizedLinear(Module[[Tensor], Tensor]):

@@ -21,7 +21,9 @@ from sybil_collect import (
     _extra_docstrings,
     _private_spans,
     _string_inner_span,
+    example_group_keys,
     is_private_name,
+    shard_assignments,
 )
 
 
@@ -88,3 +90,33 @@ def test_string_inner_span_strips_quotes_and_prefix() -> None:
     span = _string_inner_span(source, LineNumberOffsets(source), node)
     assert span is not None
     assert source[span[0] : span[1]] == "abc"
+
+
+def test_shard_assignments_balances_and_covers_all_shards() -> None:
+    counts = {"big.py": 90, "mid.py": 30, "small.py": 10, "tiny.py": 5}
+    assignment = shard_assignments(counts, 3)
+    assert set(assignment) == set(counts)
+    assert set(assignment.values()) == {0, 1, 2}
+    big_shard = assignment["big.py"]
+    assert [f for f, s in assignment.items() if s == big_shard] == ["big.py"]
+
+
+def test_example_group_keys_bind_checks_and_skips_to_their_example() -> None:
+    entries = [
+        ("a.py", "skip"),  # guards the example after it
+        ("a.py", "code-block"),
+        ("a.py", "invisible-code-block"),
+        ("a.py", "code-block"),
+        ("b.py", "code-block"),
+    ]
+    keys = example_group_keys(entries)
+    assert keys[0] == keys[1] == keys[2] == "a.py::0"
+    assert keys[3] == "a.py::1"
+    assert keys[4] == "b.py::0"
+
+
+def test_shard_assignments_is_deterministic() -> None:
+    counts = {f"file{i}.py": (i * 7) % 13 + 1 for i in range(20)}
+    assert shard_assignments(counts, 4) == shard_assignments(
+        dict(reversed(counts.items())), 4
+    )

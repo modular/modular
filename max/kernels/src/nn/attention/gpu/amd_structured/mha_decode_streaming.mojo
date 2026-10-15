@@ -19,12 +19,11 @@ Uses DecodeStreamingKVBuffer for single-buffer, per-strip DRAM→SMEM staging
 (no KVCacheIterator; strips are sub-tiled from an external DRAM tile).
 """
 
-from std.math import ceildiv
 from std.sys.intrinsics import readfirstlane
-from std.gpu import barrier, block_idx
-from std.gpu import warp_id as get_warp_id
+from max.gpu import block_idx
+from max.gpu.sync import barrier
+from max.gpu import warp_id as get_warp_id
 from std.memory import bitcast
-from std.utils import IndexList
 from std.utils.numerics import get_accum_type
 
 from layout.swizzle import Swizzle
@@ -36,7 +35,7 @@ from .mma import TiledMmaOp
 
 
 __extension Attention:
-    @always_inline
+    @inline(.always)
     def mha_decode_streaming(
         mut self,
         exp_sum_ptr: UnsafePointer[
@@ -72,7 +71,7 @@ __extension Attention:
         comptime k_swizzle = Swizzle(2, 0, 2)
 
         var warp_id = UInt32(
-            readfirstlane(bitcast[DType.int32](UInt32(get_warp_id())))
+            readfirstlane(bitcast[.int32](UInt32(get_warp_id())))
         )
 
         # QK MMA op.
@@ -92,7 +91,7 @@ __extension Attention:
         ]
 
         # Split-K range for this block.
-        start, end = get_start_and_end_for_partitions[Self.BN](
+        var start, end = get_start_and_end_for_partitions[Self.BN](
             self.num_keys, num_partitions, block_idx.x
         )
 
@@ -209,8 +208,8 @@ __extension Attention:
                 barrier()
 
         # Epilogue: softmax denominator, partition info, output store.
-        self.out_reg_buffer.apply_softmax_denominator(
-            self.softmax.rowsum_tensor
-        )
+        self.out_reg_buffer.apply_softmax_denominator[
+            p_scale_log2=type_of(self.p_reg_buffer).p_scale_log2
+        ](self.softmax.rowsum_tensor)
         self.store_partition_info(num_partitions, exp_sum_ptr, qk_max_ptr)
         self.store_output()

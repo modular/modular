@@ -100,6 +100,8 @@ def _symlink_files(
                         *dependency_base_dir.parts[1:]
                     )
                     _create_symlink(path, destination)
+                elif dependency_base_dir.parts[0] == "include":
+                    _create_symlink(path, venv_path / dependency_base_dir)
                 else:
                     raise FileNotFoundError(
                         f"error: not sure where to link '{actual_file}' please report this"
@@ -110,7 +112,7 @@ def _symlink_files(
         assert not src.is_dir(), (
             f"error: data_files cannot be directories: '{src}'"
         )
-        if src.suffix in (".mojoc", ".mojopkg"):
+        if src.suffix == ".mojoc":
             _create_symlink(src, venv_path / "lib/mojo" / src.name)
         elif _is_shared_lib(src):
             _create_symlink(src, venv_path / "lib" / src.name)
@@ -119,8 +121,6 @@ def _symlink_files(
             continue
         else:
             _create_symlink(src, venv_path / "bin" / src.name)
-            if src.name == "mojo-compiler-only":
-                _create_symlink(src, venv_path / "bin/mojo")
 
 
 def _create_venv(manifest: dict[str, Any], venv_path: Path) -> None:

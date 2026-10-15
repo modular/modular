@@ -26,17 +26,20 @@ The test builds the FP8 layer at GLM dims, runs a forward pass on B200 through
 import numpy as np
 import pytest
 import torch
+from max import tree
 from max.driver import Accelerator, Buffer, accelerator_api
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, Shape, TensorType, ops
 from max.graph.weights import WeightData
-from max.kv_cache import PagedKVCacheManager
 from max.nn.attention.multi_latent_attention import LatentAttentionWithRope
 from max.nn.attention.multi_latent_attention_fp8 import (
     LatentAttentionWithRopeFp8,
 )
-from max.nn.kv_cache import KVCacheParams, MLAKVCacheParams
+from max.nn.kv_cache import (
+    KVCacheParams,
+    MLAKVCacheParams,
+)
 from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
@@ -49,6 +52,7 @@ from max.nn.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
     DeepseekYarnRotaryEmbedding,
 )
+from max.pipelines.kv_cache import PagedKVCacheManager
 from test_common.context_utils import create_text_context
 from torch.utils.dlpack import from_dlpack
 
@@ -257,11 +261,7 @@ def _run_layer(
     ) as graph:
         hidden_states = graph.inputs[0].tensor
         input_row_offsets = graph.inputs[1].tensor
-        kv_collection = (
-            kv_params.get_symbolic_inputs()
-            .unflatten(iter(graph.inputs[2:]))
-            .inputs[0]
-        )
+        kv_collection = kv_params.unflatten_kv_inputs(iter(graph.inputs[2:]))[0]
         result = layer(
             ops.constant(0, DType.uint32, device=DeviceRef.CPU()),
             hidden_states,
@@ -276,9 +276,9 @@ def _run_layer(
         params=kv_params, total_num_pages=8, session=session, max_batch_size=4
     )
     ctx = create_text_context(np.empty(SEQ_LEN))
-    kv_manager.claim(ctx.request_id, replica_idx=0)
-    kv_manager.alloc(ctx, replica_idx=0)
-    kv_inputs = kv_manager.runtime_inputs_for_leaf([[ctx]]).inputs[0]
+    kv_manager.claim(ctx)
+    kv_manager.alloc(ctx)
+    kv_inputs = kv_manager.runtime_inputs_for_leaf([[ctx]])[0]
     row_offsets_buf = Buffer(DType.uint32, [2])
     row_offsets_buf[0] = 0
     row_offsets_buf[1] = SEQ_LEN
@@ -289,7 +289,9 @@ def _run_layer(
         .to(device0)
     )
     max_output = compiled.execute(
-        input_dev, row_offsets_buf.to(device0), *kv_inputs.flatten()
+        input_dev,
+        row_offsets_buf.to(device0),
+        *tree.leaves(kv_inputs),
     )
     return from_dlpack(max_output[0]).to(torch.bfloat16).to("cpu")
 

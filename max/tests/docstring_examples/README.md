@@ -24,21 +24,32 @@ opt a module in, in one PR:
    examples import a runtime dependency the library itself can't carry (for
    example `max.engine`, which depends on `graph`), add it to
    `docstring_example_deps` on that target.
+3. For a package with many examples, set `docstring_example_shard_count`:
+   each example compiles its own graph, and CI clamps every test to 800s.
+   Sharding is per example (a visible code block plus the invisible checks
+   and skips attached to it), which is why every example must be
+   self-contained.
 
 Run the generated test the same way as any other, for example
 `./bazelw test //max/python/max/<pkg>:<name>.docstring_examples`. The test fails
 if the target collects zero examples, so a scoping or dependency bug can't pass
-silently.
+silently. It also runs offline (`HF_HUB_OFFLINE=1`), so an example that
+downloads models fails on your machine the same way it would in CI.
 
 ## Skipping an example
 
 Skip an example that can't run in CI, such as pseudo-code or one that needs
 files, weights, or a running server (`max serve` and `generate` are too slow
-for CI). Explain the reason in a comment above the skip:
+for CI). Explain the reason in a `#` comment at the top of the skipped block:
 
 ```text
-.. Skipped: needs a running server, too slow for CI.
 .. skip: next
+
+.. code-block:: python
+
+    # Illustrative fragment: needs a running server, so it isn't runnable
+    # standalone.
+    response = client.chat.completions.create(...)
 ```
 
 ## Write testable examples
@@ -70,10 +81,28 @@ blocks, sharing one namespace; Sphinx renders only the first:
 
     import numpy as np
 
-    assert np.allclose(result.to_numpy(), [4.0, 6.0])
+    np.testing.assert_allclose(result.to_numpy(), [4.0, 6.0])
 ```
 
 Sybil runs `assert` statements in a visible `code-block` too, so a check the
 reader can see is fine. Use `invisible-code-block` only when the check should be
 verified but not rendered. Import every name the example uses: the example is
 the rendered documentation, so it must run as-is if a reader copies it.
+
+Avoid backslash escapes such as `\n` or `\t` in example code. The docstring is
+a regular string, so Python resolves the escape when the module loads — a `\n`
+inside `"page_size: 256\n"` becomes a real newline, and Sybil then extracts a
+broken example (typically an unterminated string literal). Write the literal
+without the escape (many APIs don't need the trailing newline), split it across
+real lines, or make the whole docstring raw (`r"""`).
+
+An example is documentation first and a test second:
+
+- Show only public API, written the way its maintainer would write it. If an
+  example can't run without private helpers or scaffolding that buries the
+  point, skip it honestly instead of forcing it.
+- Compare floats with `np.testing.assert_allclose`, not `==`. Exact equality
+  happens to hold for small integer-valued examples, then flakes in every
+  example copied from them.
+- The visible block teaches; the invisible block verifies. Keep test
+  scaffolding out of the API call the reader came for.

@@ -62,15 +62,14 @@
 #   num_rows, num_blocks, k, block_dim, dist, force (0/1), seed.
 
 from std.collections import Set
-from std.gpu import block_idx
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu import block_idx
+from max.gpu.host import DeviceBuffer, DeviceContext
 from std.math import max, min
-from std.random import rand, random_ui64, seed as set_seed
+from std.random import random_ui64, seed as set_seed
 from std.sys.defines import get_defined_int
-from std.utils.index import Index
 from std.utils.numerics import min_or_neg_inf
 
-from layout import TensorLayout, TileTensor, row_major
+from layout import Coord, TensorLayout, TileTensor, row_major
 
 from nn.attention.gpu.sparse_indexer_common import block_select_topk
 
@@ -245,19 +244,16 @@ def _select_test_kernel[
 ](
     scores: TileTensor[score_type, ScoresLT, MutAnyOrigin],
     out_idxs: TileTensor[out_idx_type, OutLT, MutAnyOrigin],
-    num_blocks: Int,
-    k: Int,
+    num_blocks_dev: Int32,
+    k_dev: Int32,
 ):
     comptime assert scores.flat_rank == 2 and out_idxs.flat_rank == 2
+    # `Int` is not device-passable; widen the fixed-width args.
+    var num_blocks = Int(num_blocks_dev)
+    var k = Int(k_dev)
     var row = block_idx.x
-    var s_lt = scores.to_layout_tensor()
-    var o_lt = out_idxs.to_layout_tensor()
-    var scores_row = rebind[UnsafePointer[Scalar[score_type], MutAnyOrigin]](
-        s_lt.ptr_at_offset(Index(row, 0))
-    )
-    var out_row = rebind[UnsafePointer[Scalar[out_idx_type], MutAnyOrigin]](
-        o_lt.ptr_at_offset(Index(row, 0))
-    )
+    var scores_row = scores.ptr_at_offset(Coord(row, 0))
+    var out_row = out_idxs.ptr_at_offset(Coord(row, 0))
     block_select_topk[score_type, out_idx_type](
         scores_row, num_blocks, k, out_row
     )
@@ -269,7 +265,7 @@ def _select_test_kernel[
 
 
 def _fill_scores(
-    scores_host: UnsafePointer[mut=True, Scalar[score_type], _],
+    scores_host: MutPointer[Scalar[score_type], _],
     num_rows: Int,
     num_blocks: Int,
     k: Int,
@@ -277,7 +273,7 @@ def _fill_scores(
     contract: Bool,
 ):
     var n = num_rows * num_blocks
-    var span = Span(ptr=scores_host, length=n)
+    var span = Span(unsafe_ptr=scores_host, length=n)
     if contract:
         # contract oracle: heavy NaN/Inf/+-0/+-max coverage over every row.
         fill_with_specials(span, density=0.35)
@@ -367,8 +363,8 @@ def run_one_case(
     ctx.enqueue_function[kernel](
         scores_t,
         out_t,
-        num_blocks,
-        k,
+        Int32(num_blocks),
+        Int32(k),
         grid_dim=num_rows,
         block_dim=_snap_block_dim(spec.block_dim),
     )
@@ -527,8 +523,8 @@ def run_schedule_case(ctx: DeviceContext, spec: CaseSpec, repeats: Int) raises:
         ctx.enqueue_function[kernel](
             scores_t,
             out_t,
-            num_blocks,
-            k,
+            Int32(num_blocks),
+            Int32(k),
             grid_dim=num_rows,
             block_dim=bd,
         )
@@ -543,8 +539,7 @@ def run_schedule_case(ctx: DeviceContext, spec: CaseSpec, repeats: Int) raises:
         else:
             for i in range(n_out):
                 if out_host[i] != ref_out[i]:
-                    var row = i // k
-                    var pos = i % k
+                    var row, pos = divmod(i, k)
                     print(
                         "FUZZ_NUMERIC_FAIL kind=width_nondeterminism width=",
                         bd,
@@ -571,8 +566,8 @@ def run_schedule_case(ctx: DeviceContext, spec: CaseSpec, repeats: Int) raises:
 
 def _apply_inject(
     inject: Int,
-    out_host: UnsafePointer[mut=True, Scalar[out_idx_type], _],
-    scores_host: UnsafePointer[mut=True, Scalar[score_type], _],
+    out_host: MutPointer[Scalar[out_idx_type], _],
+    scores_host: MutPointer[Scalar[score_type], _],
     num_blocks: Int,
     k: Int,
     force_idx: Int,
@@ -604,7 +599,7 @@ def _apply_inject(
 
 
 def _check_topk_invariant(
-    scores_host: UnsafePointer[mut=True, Scalar[score_type], _],
+    scores_host: MutPointer[Scalar[score_type], _],
     base: Int,
     num_blocks: Int,
     got: Set[Int],

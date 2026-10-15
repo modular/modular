@@ -14,30 +14,31 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
-from functools import cached_property
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from huggingface_hub import constants as hf_hub_constants
 from max.config import ConfigFileModel
-from max.driver import DeviceSpec
-from max.dtype import DType
-from max.graph.quantization import QuantizationEncoding
+from max.driver import DeviceSpec, is_virtual_device_mode
 from max.graph.weights import (
     WeightsFormat,
     load_weights,
     weights_format,
 )
-from max.nn.kv_cache.cache_params import KVConnectorType
 from max.pipelines.context import SamplingParamsGenerationConfigDefaults
-from max.pipelines.kv_cache.config import KVCacheConfig
+from max.pipelines.kv_cache.config import (
+    KVCacheConfig,
+    cache_dtype_for_encoding,
+)
 from max.pipelines.lib._hf_config import load_huggingface_config
 from max.pipelines.lib.device_specs import (
     _default_device_specs,
     coerce_device_specs_input,
 )
+from max.pipelines.lib.pipeline_stage import PipelineStage
 from max.pipelines.lib.weight_loader import (
     WeightLoader,
     _loader_over_weights,
@@ -47,22 +48,22 @@ from max.pipelines.modeling.config_enums import (
     RopeType,
     SupportedEncoding,
     parse_supported_encoding_from_file_name,
-    supported_encoding_quantization,
     supported_encoding_supported_devices,
     supported_encoding_supported_on,
 )
 from max.pipelines.weights.hf_utils import (
     HuggingFaceRepo,
     download_weight_files,
+    header_only_weight_files,
     try_to_load_from_cache,
     validate_hf_repo_access,
 )
 from max.pipelines.weights.weight_path_parser import WeightPathParser
-from max.support.human_readable_formatter import to_human_readable_bytes
 from pydantic import (
     ConfigDict,
     Field,
     PrivateAttr,
+    TypeAdapter,
     computed_field,
     field_validator,
 )
@@ -144,6 +145,53 @@ def _parse_weight_and_model_paths(
     return weight_path, model_path, weights_repo_id
 
 
+_MODEL_PATH_ADAPTER = TypeAdapter(str)
+_WEIGHT_PATH_ADAPTER = TypeAdapter(list[Path])
+_SUBFOLDER_ADAPTER: TypeAdapter[str | None] = TypeAdapter(str | None)
+
+_ModelConfigT = TypeVar("_ModelConfigT", bound="MAXModelConfig")
+
+
+def _build_model_config(
+    config_cls: type[_ModelConfigT], **data: Any
+) -> _ModelConfigT:
+    """Constructs a model config carrying its resolved values.
+
+    The weight and model paths derive from each other and the subfolder,
+    so they are computed first -- from inputs validated with the same
+    types as the fields -- and the config is constructed once with the
+    results. The already-loaded HuggingFace state may be seeded through
+    ``_huggingface_config`` and ``_weights_repo_id``; whatever is not
+    seeded is loaded here, so the result is fully specified.
+
+    Plain construction (``MAXModelConfig(...)``) validates the given
+    fields and nothing more; the config layer builds models through this
+    function.
+    """
+    seeded_huggingface_config = data.pop("_huggingface_config", None)
+    seeded_weights_repo_id = data.pop("_weights_repo_id", None)
+    weight_path, model_path, weights_repo_id = _parse_weight_and_model_paths(
+        model_path=_MODEL_PATH_ADAPTER.validate_python(
+            data.get("model_path") or ""
+        ),
+        weight_path=_WEIGHT_PATH_ADAPTER.validate_python(
+            data.get("weight_path") or []
+        ),
+        subfolder=_SUBFOLDER_ADAPTER.validate_python(data.get("subfolder")),
+        weights_repo_id=seeded_weights_repo_id,
+    )
+    model = config_cls(
+        **{**data, "weight_path": weight_path, "model_path": model_path}
+    )
+    if seeded_huggingface_config is not None:
+        model._huggingface_config = seeded_huggingface_config
+    model._weights_repo_id = weights_repo_id
+    model._populate_repo_handles()
+    model._populate_hf_config()
+    model._populate_generation_config()
+    return model
+
+
 def _resolve_dtype_cast(
     *,
     from_encoding: SupportedEncoding,
@@ -218,15 +266,35 @@ def _infer_quantization_encoding(
             len(supported) > 1
             and config.default_device_spec.device_type != "cpu"
         ):
-            # GPU preference: most-specific quantized format first,
-            # matching _validate_and_resolve_without_given_quantization_encoding.
+            # GPU preference: most-specific quantized format first.
             if "float4_e2m1fnx2" in supported:
                 encoding = "float4_e2m1fnx2"
+            elif "float6_e2m3fn" in supported:
+                encoding = "float6_e2m3fn"
             elif "float8_e4m3fn" in supported:
                 encoding = "float8_e4m3fn"
             elif "bfloat16" in supported:
                 encoding = "bfloat16"
             # else: ambiguous — leave as None for architecture to resolve.
+
+    # Never infer a GPU-only encoding for a CPU target (e.g. a bfloat16
+    # checkpoint requested on CPU): drop it so the caller falls back to the
+    # device-valid architecture default. This keeps inference device-valid and
+    # stable regardless of whether weight_path defaults have been discovered
+    # yet — the filename/repo branches above otherwise disagree with the
+    # supported-encodings branch on which encoding to pick. Scoped to the CPU
+    # target only: a CPU-only encoding on a GPU target is handled by the CPU
+    # override in _resolve_weights_and_encoding, and an explicit user
+    # encoding is validated separately.
+    if (
+        config.quantization_encoding is None
+        and encoding is not None
+        and config.default_device_spec.device_type == "cpu"
+        and not supported_encoding_supported_on(
+            encoding, config.default_device_spec
+        )
+    ):
+        encoding = None
 
     # On GPU, cast float32 → bfloat16 (the natural GPU dtype).
     if (
@@ -251,9 +319,9 @@ def _infer_weight_path(
     """Best-effort discovery of weight files without architecture info.
 
     Takes *encoding* (and optionally *cast_from*) explicitly rather than
-    reading ``config.quantization_encoding``/``config._applied_dtype_cast_from``
-    so this can be called on a config those fields were never written to
-    (e.g. a diffusion component resolved on demand at consumption time,
+    reading ``config.quantization_encoding`` so this can be called on a
+    config those fields were never written to
+    (such as a diffusion component resolved on demand at consumption time,
     without going through architecture-level resolution).
 
     Prefers safetensors format as default.
@@ -283,14 +351,10 @@ def _infer_weight_path(
         #
         # Scoped to diffuser sub-components (``subfolder`` set): they skip
         # architecture validation, so this best-effort pass is their only
-        # resolution step. Architecture-validated models (LLMs and
-        # speculative-decoding draft models) must NOT bind weight_path to
-        # the float32 checkpoint here -- the downstream given-encoding
+        # resolution step. Architecture-validated models must NOT bind
+        # weight_path to the float32 checkpoint here -- the given-encoding
         # validation would then flip quantization_encoding to float32 and
-        # drop the requested bfloat16 (breaking e.g. Kimi-K2.6 Eagle3). For
-        # those, the identical float32->bfloat16 fallback in
-        # ``_resolve_weight_path`` runs after the cast bookkeeping is
-        # recorded and resolves it correctly.
+        # drop the requested bfloat16 (broke Kimi-K2.6 Eagle3).
         weight_files = config.huggingface_weight_repo.files_for_encoding(
             encoding="float32"
         )
@@ -311,11 +375,11 @@ def _resolve_component_encoding_and_weights(
 
     Read-only: does not mutate *config*. Intended for callers that consume
     a ``MAXModelConfig`` directly without going through architecture-level
-    resolution -- e.g. a diffusion per-component builder -- so they get the
+    resolution -- for example, a diffusion per-component builder -- so they get the
     same best-effort inference diffuser sub-components rely on, without
     depending on mutation having happened first.
 
-    Safe to call even when *config* is already fully resolved (e.g. an LLM
+    Safe to call even when *config* is already fully resolved (such as an LLM
     component whose ``quantization_encoding``/``weight_path`` were set during
     architecture validation): both steps are no-ops once those are set.
 
@@ -324,7 +388,7 @@ def _resolve_component_encoding_and_weights(
         (``None`` / ``[]``) if ambiguous.
     """
     encoding = config.quantization_encoding
-    cast_from = config._applied_dtype_cast_from
+    cast_from: SupportedEncoding | None = None
     weight_path = config.weight_path
 
     if not encoding:
@@ -349,6 +413,300 @@ def _resolve_component_encoding_and_weights(
     return encoding, weight_path
 
 
+def _resolve_given_quantization_encoding(
+    config: MAXModelConfig,
+) -> tuple[
+    SupportedEncoding,
+    SupportedEncoding | None,
+    SupportedEncoding | None,
+]:
+    """Resolves a user-provided ``quantization_encoding`` and any dtype cast.
+
+    Pure counterpart of the old
+    ``_validate_and_resolve_with_given_quantization_encoding``: when the
+    requested encoding differs from what the weight files actually carry (and
+    both are float32/bfloat16), it records a load-time cast and returns the
+    file's encoding. Read-only -- does not mutate *config*.
+
+    Returns:
+        ``(encoding, applied_dtype_cast_from, applied_dtype_cast_to)``.
+    """
+    assert config.quantization_encoding is not None
+    encoding = config.quantization_encoding
+
+    if config.weight_path:
+        # Prefer a filename hint (works for local and remote paths, and
+        # disambiguates repos that mix dtypes, e.g. NVFP4 with float32 norms).
+        file_encoding = parse_supported_encoding_from_file_name(
+            str(config.weight_path[0])
+        )
+        if file_encoding is None and not os.path.exists(config.weight_path[0]):
+            file_encoding = config.huggingface_weight_repo.encoding_for_file(
+                config.weight_path[0], preferred_encoding=encoding
+            )
+        if (
+            file_encoding
+            and file_encoding in _ALLOWED_CAST_ENCODINGS
+            and encoding in _ALLOWED_CAST_ENCODINGS
+        ):
+            cast_from, cast_to = _resolve_dtype_cast(
+                from_encoding=encoding,
+                to_encoding=file_encoding,
+                default_device_spec=config.default_device_spec,
+            )
+            if cast_from is not None:
+                assert cast_to is not None
+                return cast_to, cast_from, cast_to
+        return encoding, None, None
+
+    # No weight_path: if the repo carries a single castable encoding whose
+    # files exist, record a cast from it to the requested encoding.
+    for from_encoding in config.huggingface_weight_repo.supported_encodings:
+        if not (
+            from_encoding in _ALLOWED_CAST_ENCODINGS
+            and encoding in _ALLOWED_CAST_ENCODINGS
+        ):
+            continue
+        if config.huggingface_weight_repo.files_for_encoding(
+            encoding=from_encoding
+        ):
+            cast_from, cast_to = _resolve_dtype_cast(
+                from_encoding=from_encoding,
+                to_encoding=encoding,
+                default_device_spec=config.default_device_spec,
+            )
+            if cast_from is not None:
+                return encoding, cast_from, cast_to
+            break
+    return encoding, None, None
+
+
+def _select_encoding_and_dtype_cast(
+    config: MAXModelConfig,
+    default_encoding: SupportedEncoding,
+) -> tuple[
+    SupportedEncoding,
+    SupportedEncoding | None,
+    SupportedEncoding | None,
+]:
+    """Resolves the encoding a model will run with plus any load-time cast.
+
+    Arch-aware sibling of :func:`_infer_quantization_encoding`: the consumer
+    calls this with the architecture's ``default_encoding`` to obtain the
+    effective ``quantization_encoding`` plus any float32<->bfloat16 load-time
+    cast. Read-only -- does not mutate *config*.
+
+    Prefer :func:`_select_quantization_encoding` (encoding only) or
+    :func:`_select_dtype_cast` (cast only); this helper backs both.
+
+    Returns:
+        ``(encoding, cast_from, cast_to)``. The cast fields are ``None`` unless
+        a cast was resolved.
+    """
+    # Gate on isinstance, not `is not None`: objects that bypass __init__
+    # lack the PrivateAttr and MagicMock auto-attributes are truthy
+    # non-tuples; both must fall through to derivation.
+    resolved_cast = getattr(config, "_resolved_dtype_cast", None)
+    if isinstance(resolved_cast, tuple):
+        assert config.quantization_encoding is not None
+        cast_from, cast_to = resolved_cast
+        return config.quantization_encoding, cast_from, cast_to
+
+    if config.quantization_encoding is not None:
+        return _resolve_given_quantization_encoding(config)
+
+    encoding, cast_from, cast_to = _infer_quantization_encoding(config)
+    if encoding is None:
+        encoding = default_encoding
+
+    # On GPU, cast float32 -> bfloat16 (the natural GPU dtype). _infer already
+    # applies this to inferred encodings; re-apply so the default fallback is
+    # covered too. Idempotent (no-op once encoding is not float32 / on CPU).
+    if (
+        encoding == "float32"
+        and config.default_device_spec.device_type != "cpu"
+    ):
+        cast_from, cast_to = _resolve_dtype_cast(
+            from_encoding="float32",
+            to_encoding="bfloat16",
+            default_device_spec=config.default_device_spec,
+        )
+        assert cast_to is not None
+        encoding = cast_to
+
+    return encoding, cast_from, cast_to
+
+
+def _select_quantization_encoding(
+    config: MAXModelConfig,
+    default_encoding: SupportedEncoding,
+) -> SupportedEncoding:
+    """Resolves the encoding a model will run with, against its architecture.
+
+    The consumer (an ``ArchConfig``) calls this with the architecture's
+    ``default_encoding`` to obtain the effective ``quantization_encoding``.
+    Read-only -- does not mutate *config*.
+    """
+    return _select_encoding_and_dtype_cast(config, default_encoding)[0]
+
+
+def _select_dtype_cast(
+    config: MAXModelConfig,
+    default_encoding: SupportedEncoding,
+) -> tuple[SupportedEncoding | None, SupportedEncoding | None]:
+    """Resolves the load-time weight dtype cast for a model, if any.
+
+    Returns ``(cast_from, cast_to)`` describing a float32<->bfloat16 cast
+    applied when loading weights against the resolved encoding, or
+    ``(None, None)`` when no cast applies. Read-only -- does not mutate
+    *config*.
+    """
+    _, cast_from, cast_to = _select_encoding_and_dtype_cast(
+        config, default_encoding
+    )
+    return cast_from, cast_to
+
+
+def _interleaved_rope_weights(config: MAXModelConfig) -> bool:
+    """Returns whether RoPE weights use the GGUF interleaved layout.
+
+    GGUF checkpoints store rotary weights interleaved; other formats
+    (safetensors, pytorch) store them split. An unset ``rope_type`` means
+    the model default, which is ``normal``; only a non-``normal`` override
+    opts a GGUF checkpoint out of the interleaved layout. Read-only --
+    does not mutate *config*.
+    """
+    return (
+        weights_format(config.weight_path) == WeightsFormat.gguf
+        and (config.rope_type or "normal") == "normal"
+    )
+
+
+def _device_specs_for_encoding(
+    device_specs: list[DeviceSpec],
+    quantization_encoding: SupportedEncoding,
+    warn: bool = False,
+) -> list[DeviceSpec]:
+    """Returns the device specs an encoding can actually run on.
+
+    An encoding that cannot run on GPU (GGUF q4) overrides all-GPU
+    *device_specs* and runs on CPU: returns ``[DeviceSpec.cpu()]``. Any
+    other combination is returned unchanged (an invalid one, for example, a
+    GPU-only encoding on CPU, is rejected by the caller's compatibility
+    check). Read-only.
+
+    Set *warn* only where the downcast is applied
+    (:func:`_resolve_weights_and_encoding`) so it fires once per model.
+    """
+    if supported_encoding_supported_devices(quantization_encoding) == (
+        "cpu",
+    ) and all(d.device_type == "gpu" for d in device_specs):
+        if warn:
+            logger.warning(
+                f"Encoding '{quantization_encoding}' is only supported on CPU. Switching device_specs to CPU."
+            )
+        return [DeviceSpec.cpu()]
+    return device_specs
+
+
+def _discover_default_weight_paths(
+    weight_repo: HuggingFaceRepo,
+    quantization_encoding: SupportedEncoding,
+    applied_dtype_cast_from: SupportedEncoding | None,
+    default_weights_format: WeightsFormat,
+) -> list[Path]:
+    """Discovers the default weight files for an encoding in *weight_repo*.
+
+    Mirrors the fallback chain used when a config provides no explicit
+    ``weight_path``: the resolved encoding, then the load-time cast source, then
+    float32 (a float16/bfloat16 graph can load float32 weights cast at load
+    time). Prefers *default_weights_format*, else any available format. Returns
+    ``[]`` when nothing matches (the caller decides whether that is an error).
+    Read-only -- does not mutate any config.
+    """
+    weight_files = weight_repo.files_for_encoding(
+        encoding=quantization_encoding
+    )
+    if not weight_files and applied_dtype_cast_from:
+        # We allow ourselves to load float32 safetensors weights as bfloat16.
+        weight_files = weight_repo.files_for_encoding(
+            encoding=applied_dtype_cast_from
+        )
+    if not weight_files and quantization_encoding in ("float16", "bfloat16"):
+        # A float16/bfloat16 graph can load float32 weights cast at load time by
+        # the architecture's weight adapter.
+        weight_files = weight_repo.files_for_encoding(encoding="float32")
+
+    if default_weight_files := weight_files.get(default_weights_format, []):
+        return default_weight_files
+    if weight_files:
+        # Load any available weight file.
+        return next(iter(weight_files.values()))
+    return []
+
+
+def _resolve_weights_and_encoding(
+    config: MAXModelConfig,
+    *,
+    default_encoding: SupportedEncoding,
+    supported_encodings: set[SupportedEncoding],
+    default_weights_format: WeightsFormat,
+) -> tuple[
+    SupportedEncoding,
+    tuple[SupportedEncoding | None, SupportedEncoding | None],
+    list[Path],
+    list[DeviceSpec],
+]:
+    """Resolves encoding, weight paths, and devices for an architecture.
+
+    Discovers default weight files when no explicit ``weight_path`` was
+    given, and resolves any load-time dtype cast. The effective
+    ``device_specs`` downcast all-GPU devices to CPU for a CPU-only
+    encoding, warning once per model. Reads the config without writing it.
+
+    Returns:
+        An ``(encoding, dtype_cast, weight_path, device_specs)`` tuple.
+
+    Raises:
+        ValueError: If the resolved encoding is unsupported by the
+            architecture or the effective devices, or no compatible weight
+            files exist in the repo.
+    """
+    encoding, cast_from, cast_to = _select_encoding_and_dtype_cast(
+        config, default_encoding
+    )
+    if encoding not in supported_encodings:
+        raise ValueError(
+            f"quantization_encoding of '{encoding}' not supported by MAX engine."
+        )
+    weight_path = config.weight_path
+    if not weight_path:
+        weight_path = _discover_default_weight_paths(
+            config.huggingface_weight_repo,
+            encoding,
+            cast_from,
+            default_weights_format,
+        )
+        if not weight_path:
+            raise ValueError(
+                f"compatible weights cannot be found for '{encoding}', in the provided repo: '{config.huggingface_weight_repo.repo_id}'"
+            )
+    config._validate_final_architecture_model_path_weight_path(weight_path)
+    device_specs = _device_specs_for_encoding(
+        config.device_specs, encoding, warn=True
+    )
+    for spec in device_specs:
+        if not supported_encoding_supported_on(encoding, spec):
+            raise ValueError(
+                f"The encoding '{encoding}' is not compatible with the selected device type '{spec.device_type}'.\n\n"
+                f"You have two options to resolve this:\n"
+                f"1. Use a different device\n"
+                f"2. Use a different encoding (encodings available for this model: {', '.join(sorted(str(e) for e in supported_encodings))})\n\n"
+                f"Please use the --help flag for more information."
+            )
+    return encoding, (cast_from, cast_to), weight_path, device_specs
+
+
 class MAXModelConfigBase(ConfigFileModel):
     """Abstract base class for MAX model configuration.
 
@@ -363,6 +721,8 @@ class MAXModelConfigBase(ConfigFileModel):
 
 class MAXModelConfig(MAXModelConfigBase):
     """Configuration for a pipeline model."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True, frozen=True)
 
     use_subgraphs: bool = Field(
         default=True,
@@ -392,8 +752,9 @@ class MAXModelConfig(MAXModelConfigBase):
         default=None,
         description=(
             "Maximum sequence length the model can process. If not specified, "
-            "defaults to the model's ``max_position_embeddings``. May be clamped "
-            "during resolution based on available memory."
+            "defaults to the model's ``max_position_embeddings``. Resolved to "
+            "the architecture's policy value at construction; memory planning "
+            "may lower it for VRAM on the memory plan only, never here."
         ),
     )
     """The maximum sequence length the model can process."""
@@ -405,6 +766,23 @@ class MAXModelConfig(MAXModelConfigBase):
         if v is not None and v < 0:
             raise ValueError("max_length must be non-negative")
         return v
+
+    @property
+    def pipeline_stage(self) -> PipelineStage | None:
+        """The pipeline stage this config builds, or ``None`` if every layer."""
+        return self._pipeline_stage
+
+    @property
+    def max_length_is_user_provided(self) -> bool:
+        """Whether the user set ``max_length``, rather than the architecture.
+
+        Memory planning may shrink a resolved default to fit device memory,
+        but never a length the user asked for.
+        """
+        captured = getattr(self, "_max_length_user_provided", None)
+        if captured is not None:
+            return captured
+        return self.max_length is not None
 
     # NOTE: model_path is made a str of "" by default, to avoid having
     # it be Optional to check for None and then littering the codebase with
@@ -508,6 +886,19 @@ class MAXModelConfig(MAXModelConfigBase):
     )
     """Whether to force download a file even if it's already in the local cache."""
 
+    header_only_weights: bool = Field(
+        default=False,
+        description=(
+            "Stand in header-only, zero-filled sparse copies of the safetensors "
+            "checkpoint, built from the remote files' headers, instead of "
+            "downloading the weights. Compilation only needs tensor names, "
+            "shapes and dtypes, so this makes ``warm-cache --target`` "
+            "independent of checkpoint size. Only valid with ``--target`` "
+            "(compile-only mode); safetensors repos only."
+        ),
+    )
+    """Whether to stand in header-only stubs for the checkpoint (compile-only)."""
+
     vision_config_overrides: dict[str, Any] = Field(
         default_factory=dict,
         description=(
@@ -546,10 +937,9 @@ class MAXModelConfig(MAXModelConfigBase):
     chat_template: Path | None = Field(
         default=None,
         description=(
-            "Optional custom chat template to override the one shipped with the "
-            "Hugging Face model config. If a path is provided, the file is "
-            "read lazily by the registry when building the tokenizer. If "
-            "``None``, the model's default chat template is used."
+            "Path to a custom chat template that overrides the one from "
+            "the Hugging Face model (the default). The file is either a Jinja template "
+            "or a JSON object with a ``chat_template`` key. "
         ),
     )
     """An optional custom chat template to override the one shipped with the model."""
@@ -559,14 +949,6 @@ class MAXModelConfig(MAXModelConfigBase):
         description="The ``KVCacheConfig`` instance.",
     )
     """The KV cache configuration."""
-
-    _applied_dtype_cast_from: SupportedEncoding | None = PrivateAttr(
-        default=None
-    )
-    """Property to track the dtype that safetensor weights were casted from. None means no casting was applied. This should only be set by internal code."""
-
-    _applied_dtype_cast_to: SupportedEncoding | None = PrivateAttr(default=None)
-    """Property to track the dtype that safetensor weights were casted to. None means no casting was applied. This should only be set by internal code."""
 
     _huggingface_config: PretrainedConfig | None = PrivateAttr(default=None)
     """Hugging Face config. This should only be set by internal code."""
@@ -582,45 +964,36 @@ class MAXModelConfig(MAXModelConfigBase):
     """Cached HuggingFaceRepo for the model. Avoids recreating instances
     (and redundant HF API calls) on every property access."""
 
+    _generation_config: GenerationConfig | None = PrivateAttr(default=None)
+    """Hugging Face ``GenerationConfig``, loaded once at construction."""
+
+    _resolved_dtype_cast: (
+        tuple[SupportedEncoding | None, SupportedEncoding | None] | None
+    ) = PrivateAttr(default=None)
+    """Dtype cast ``(cast_from, cast_to)`` recorded at construction;
+    ``None`` when never resolved, ``(None, None)`` when resolved with no
+    cast. Persisted because re-deriving against the populated
+    ``weight_path`` gives a different answer for casted checkpoints."""
+
+    _pipeline_stage: PipelineStage | None = PrivateAttr(default=None)
+    """The pipeline stage of the main model this config builds, or ``None``
+    for the whole model. A private attr (not a field) because only
+    :func:`~max.pipelines.lib.pipeline_parallel.stage_pipeline_config` sets
+    it, for an exporter that builds one stage, so it never surfaces as a CLI
+    flag or a config-file key."""
+
+    _max_length_user_provided: bool | None = PrivateAttr(default=None)
+    """Whether ``max_length`` was explicitly supplied, captured before the
+    architecture's sequence-length policy overwrites the field at
+    construction. A private attr (not a field) because it is derived state:
+    it must never surface as a CLI flag or a config-file key. ``None`` on
+    paths that bypass capture (e.g. ``model_construct``); readers fall back
+    to the field's presence via :attr:`max_length_is_user_provided`."""
+
     _config_file_section_name: str = PrivateAttr(default="model_config")
     """The section name to use when loading this config from a MAXConfig file.
     This is used to differentiate between different config sections in a single
     MAXConfig file."""
-
-    # TODO(SERVSYS-1083): This should just be a temporary fix until we can figure out a
-    # better way to inject custom PrivateAttrs without relying on a custom
-    # constructor.
-    # NOTE: We intentionally hide this constructor override from static type
-    # checkers so we preserve pydantic's generated `__init__` signature (or the
-    # project's mypy plugin behavior) for normal call sites.
-    if not TYPE_CHECKING:
-
-        def __init__(self, **data: Any) -> None:
-            """Initialize, seeding private attrs and resolving the weight path.
-
-            Private attributes (``PrivateAttr``) aren't accepted as constructor
-            kwargs by default, so we pop the seeded ones
-            (``_huggingface_config``, ``_weights_repo_id``) here, then resolve
-            the weight-path identity eagerly.
-            """
-            seeded_huggingface_config = data.pop("_huggingface_config", None)
-            seeded_weights_repo_id = data.pop("_weights_repo_id", None)
-            super().__init__(**data)
-            if seeded_huggingface_config is not None:
-                self._huggingface_config = seeded_huggingface_config
-            if seeded_weights_repo_id is not None:
-                self._weights_repo_id = seeded_weights_repo_id
-
-            # Resolve weight-path identity eagerly so the config is fully
-            # specified once constructed.
-            self.weight_path, self.model_path, self._weights_repo_id = (
-                _parse_weight_and_model_paths(
-                    model_path=self.model_path,
-                    weight_path=self.weight_path,
-                    subfolder=self.subfolder,
-                    weights_repo_id=self._weights_repo_id,
-                )
-            )
 
     # TODO(SERVSYS-1085): Figure out a better way to avoid having to roll our
     # own custom __getstate__/__setstate__ methods.
@@ -644,6 +1017,7 @@ class MAXModelConfig(MAXModelConfigBase):
             # (weight_files, info, etc.) that may not be picklable.
             private_state["_cached_weight_repo"] = None
             private_state["_cached_model_repo"] = None
+            private_state["_generation_config"] = None
             state["__pydantic_private__"] = private_state
         return state
 
@@ -660,26 +1034,133 @@ class MAXModelConfig(MAXModelConfigBase):
         # Restore pydantic private attrs (and fill any missing defaults).
         private_state.setdefault("_huggingface_config", None)
         private_state.setdefault("_weights_repo_id", None)
-        private_state.setdefault("_applied_dtype_cast_from", None)
-        private_state.setdefault("_applied_dtype_cast_to", None)
         private_state.setdefault("_cached_weight_repo", None)
         private_state.setdefault("_cached_model_repo", None)
+        private_state.setdefault("_generation_config", None)
+        private_state.setdefault("_resolved_dtype_cast", None)
+        private_state.setdefault("_pipeline_stage", None)
         private_state.setdefault("_config_file_section_name", "model_config")
         object.__setattr__(self, "__pydantic_private__", private_state)
+
+        # Rebuild the derived HF state from the restored identity fields.
+        # __getstate__ drops it (repo handles may cache non-picklable HF API
+        # responses; the HF config may hold remote-code-derived classes), so
+        # an unpickled config -- e.g. in a worker process -- gets it here
+        # rather than via a lazy write-back on first access. Reloading in the
+        # worker also correctly re-resolves trust_remote_code dynamic classes.
+        self._populate_repo_handles()
+        self._populate_hf_config()
+        self._populate_generation_config()
+
+    def _populate_repo_handles(self) -> None:
+        """Build the HuggingFace repo handles from the config's identity fields.
+
+        Called at construction (and on unpickle) to consolidate repo setup in
+        one place. Placeholder configs (no ``model_path`` and no external
+        weights repo) have no repo to build and are left unset.
+        """
+        if self.model_path:
+            self._cached_model_repo = self._make_model_repo()
+        if self.huggingface_weight_repo_id:
+            self._cached_weight_repo = self._make_weight_repo()
+
+    def _populate_hf_config(self) -> None:
+        """Load the HuggingFace config once, at construction (and on unpickle).
+
+        Skipped when already seeded (an explicit ``_huggingface_config`` passed
+        to the constructor, or one preserved across ``with_override``), for
+        placeholder configs with no ``model_path``, and for repos that carry no
+        loadable model config -- for example, diffusion-manifest components such as the
+        feature extractor or scheduler, which ship only a preprocessor/
+        scheduler config. Those keep the lazy getter, which stays a no-op
+        unless the config is actually accessed.
+        """
+        if (
+            self._huggingface_config is None
+            and self.model_path
+            and self._has_loadable_hf_config()
+        ):
+            self._huggingface_config = load_huggingface_config(
+                self.huggingface_model_repo
+            )
+
+    def _populate_generation_config(self) -> None:
+        """Load the ``GenerationConfig`` once, at construction (and on unpickle).
+
+        Skipped for placeholder configs (no ``model_path``). Loading failures
+        are tolerated (a default ``GenerationConfig`` is used), so this never
+        raises at construction.
+        """
+        if self._generation_config is None and self.model_path:
+            self._generation_config = self._make_generation_config()
+
+    def _has_loadable_hf_config(self) -> bool:
+        """Whether the model repo exposes a loadable HuggingFace config.
+
+        Mirrors :func:`load_huggingface_config`'s lookup (``config.json``, then
+        the diffusers ``scheduler_config.json`` fallback) so eager loading is
+        skipped -- not raised -- for config-less components.
+        """
+        repo = self.huggingface_model_repo
+        prefix = f"{repo.subfolder}/" if repo.subfolder is not None else ""
+        return any(
+            repo.file_exists(f"{prefix}{name}")
+            for name in ("config.json", "scheduler_config.json")
+        )
+
+    def _make_model_repo(self) -> HuggingFaceRepo:
+        """Construct the model repo handle from the config's identity fields."""
+        return HuggingFaceRepo(
+            repo_id=self.model_path,
+            revision=self.huggingface_model_revision,
+            trust_remote_code=self.trust_remote_code,
+            subfolder=self.subfolder,
+        )
+
+    def _weight_repo_identity(self) -> tuple[str, str, str | None]:
+        """Return the ``(repo_id, revision, subfolder)`` weight-repo identity.
+
+        Weights served from an external repo have their own layout and
+        revision, distinct from the model repo.
+        """
+        weights_repo_id = self.huggingface_weight_repo_id
+        # When weights come from an external repo, don't apply the component
+        # subfolder -- the external repo has its own layout.
+        weights_from_external_repo = (
+            self._weights_repo_id is not None
+            and self._weights_repo_id != self.model_path
+        )
+        subfolder = None if weights_from_external_repo else self.subfolder
+        # A weight revision copied from the model revision names a commit in
+        # the model repo, not the external weights repo -- fall back to default.
+        revision = self.huggingface_weight_revision
+        if (
+            weights_from_external_repo
+            and revision == self.huggingface_model_revision
+        ):
+            revision = hf_hub_constants.DEFAULT_REVISION
+        return weights_repo_id, revision, subfolder
+
+    def _make_weight_repo(self) -> HuggingFaceRepo:
+        """Construct the weight repo handle from the config's identity fields."""
+        repo_id, revision, subfolder = self._weight_repo_identity()
+        return HuggingFaceRepo(
+            repo_id=repo_id,
+            revision=revision,
+            trust_remote_code=self.trust_remote_code,
+            subfolder=subfolder,
+        )
 
     @classmethod
     def from_pipeline_args(cls, args: PipelineArgs) -> Self:
         """Builds a :class:`MAXModelConfig` from a :class:`PipelineArgs`'s flat fields.
 
         Returns a new object on every call -- ``args`` holds no live handle
-        back to it, so mutating the returned object (e.g.
+        back to it, so mutating the returned object (such as
         ``MAXModelConfig.from_pipeline_args(args).foo = x``) has no effect on
         a subsequent call with the same ``args``. Set the corresponding field
         on ``args`` itself instead.
         """
-        # Seed ``_weights_repo_id`` (a PrivateAttr) so __init__'s weight-path
-        # resolution sees it. Passed via a kwargs dict because the
-        # private-attr-seeding __init__ is hidden from type checkers.
         init_kwargs: dict[str, Any] = dict(
             model_path=args.model_path,
             served_model_name=args.served_model_name,
@@ -691,6 +1172,7 @@ class MAXModelConfig(MAXModelConfigBase):
             subfolder=args.subfolder,
             device_specs=list(args.device_specs),
             force_download=args.force_download,
+            header_only_weights=args.header_only_weights,
             vision_config_overrides=dict(args.vision_config_overrides),
             rope_type=args.rope_type,
             sliding_window=args.sliding_window,
@@ -703,7 +1185,7 @@ class MAXModelConfig(MAXModelConfigBase):
             kv_cache=args.kv_cache.model_copy(deep=True),
             _weights_repo_id=args._weights_repo_id,
         )
-        return cls(**init_kwargs)
+        return _build_model_config(cls, **init_kwargs)
 
     def validate_repo_access(self) -> None:
         """Validates that the model's Hugging Face repo is accessible.
@@ -734,23 +1216,6 @@ class MAXModelConfig(MAXModelConfigBase):
             return self.served_model_name
         return self.model_path
 
-    @property
-    def graph_quantization_encoding(self) -> QuantizationEncoding | None:
-        """Converts the CLI encoding to a MAX Graph quantization encoding.
-
-        Returns:
-            The graph quantization encoding corresponding to the CLI encoding.
-
-        Raises:
-            ValueError: If no CLI encoding was specified.
-        """
-        if self.quantization_encoding is None:
-            raise ValueError(
-                "can't convert `None` CLI encoding to graph quantization encoding"
-            )
-
-        return supported_encoding_quantization(self.quantization_encoding)
-
     def weights_size(self) -> int:
         """Calculates the total size in bytes of all weight files in ``weight_path``.
 
@@ -764,6 +1229,9 @@ class MAXModelConfig(MAXModelConfigBase):
            If not found in the cache, it falls back to querying the Hugging Face
            Hub API via :obj:`HuggingFaceRepo.size_of()`.
 
+        Under ``header_only_weights`` the stubs are sized like the files they
+        stand in for, so their sizes are read straight off disk instead.
+
         Returns:
             The total size of all weight files in bytes.
 
@@ -776,12 +1244,23 @@ class MAXModelConfig(MAXModelConfigBase):
                 not available or API error).
             RuntimeError: If the determined ``repo_type`` is unexpected.
         """
+        if self.header_only_weights:
+            # A stub is sized like the file it stands in for, so one stat per
+            # shard replaces one Hugging Face HEAD request per shard.
+            return sum(
+                path.stat().st_size for path in self.resolved_weight_paths()
+            )
+
         total_weights_size = 0
         repo = self.huggingface_weight_repo
 
+        repo_root = (
+            repo.local_path if repo.repo_type == "local" else repo.repo_id
+        )
+
         for file_path in self.weight_path:
             file_path_str = str(file_path)
-            full_file_path = Path(repo.repo_id) / file_path
+            full_file_path = Path(repo_root) / file_path
 
             # 1. Check if the file exists locally (direct path, local repo, or cache)
             if local_file_location := self._local_weight_path(full_file_path):
@@ -792,7 +1271,7 @@ class MAXModelConfig(MAXModelConfigBase):
             if repo.repo_type == "local":
                 if not self._local_weight_path(full_file_path):
                     raise FileNotFoundError(
-                        f"Weight file '{file_path_str}' not found within the local repository path '{repo.repo_id}'"
+                        f"Weight file '{file_path_str}' not found within the local repository path '{repo_root}'"
                     )
             # If it was an online repo, we need to check the API.
             elif repo.repo_type == "online":
@@ -819,72 +1298,33 @@ class MAXModelConfig(MAXModelConfigBase):
         # `_weights_repo_id` is a PrivateAttr. Some construction paths (notably
         # unpickling) can bypass __init__, so the PrivateAttr may be absent.
         weights_repo_id: str | None = getattr(self, "_weights_repo_id", None)
-        return weights_repo_id if weights_repo_id else self.model_path
+        return weights_repo_id or self.model_path
 
     @computed_field  # type: ignore[prop-decorator]
     @property
     def huggingface_weight_repo(self) -> HuggingFaceRepo:
         """Returns the Hugging Face repo handle for weight files.
 
-        The result is cached in a PrivateAttr to avoid recreating
-        ``HuggingFaceRepo`` instances (and triggering redundant HF API
-        calls for file listing, encoding detection, etc.) on every
-        access.  The cache is invalidated when the underlying config
-        fields change (e.g. after ``model_copy()``).
+        Built once at construction (see :meth:`_populate_repo_handles`) and
+        stored in a PrivateAttr; this getter returns it. Falls back to
+        building a fresh handle only for a never-populated config (such as a
+        placeholder with no ``model_path``) and never writes back.
         """
-        weights_repo_id = self.huggingface_weight_repo_id
-        # When weights come from an external repo, don't apply the
-        # component subfolder — the external repo has its own layout.
-        weights_from_external_repo = (
-            self._weights_repo_id is not None
-            and self._weights_repo_id != self.model_path
-        )
-        subfolder = None if weights_from_external_repo else self.subfolder
-
         cached = self._cached_weight_repo
-        if (
-            cached is not None
-            and cached.repo_id == weights_repo_id
-            and cached.revision == self.huggingface_weight_revision
-            and cached.subfolder == subfolder
-        ):
-            return cached
-
-        repo = HuggingFaceRepo(
-            repo_id=weights_repo_id,
-            revision=self.huggingface_weight_revision,
-            trust_remote_code=self.trust_remote_code,
-            subfolder=subfolder,
-        )
-        self._cached_weight_repo = repo
-        return repo
+        return cached if cached is not None else self._make_weight_repo()
 
     @computed_field  # type: ignore[prop-decorator]
     @property
     def huggingface_model_repo(self) -> HuggingFaceRepo:
         """Returns the Hugging Face repo handle for the model.
 
-        The result is cached in a PrivateAttr to avoid recreating
-        ``HuggingFaceRepo`` instances on every access.  The cache is
-        invalidated when the underlying config fields change.
+        Built once at construction (see :meth:`_populate_repo_handles`) and
+        stored in a PrivateAttr; this getter returns it. Falls back to
+        building a fresh handle only for a never-populated config and never
+        writes back.
         """
         cached = self._cached_model_repo
-        if (
-            cached is not None
-            and cached.repo_id == self.model_path
-            and cached.revision == self.huggingface_model_revision
-            and cached.subfolder == self.subfolder
-        ):
-            return cached
-
-        repo = HuggingFaceRepo(
-            repo_id=self.model_path,
-            revision=self.huggingface_model_revision,
-            trust_remote_code=self.trust_remote_code,
-            subfolder=self.subfolder,
-        )
-        self._cached_model_repo = repo
-        return repo
+        return cached if cached is not None else self._make_model_repo()
 
     @property
     def architecture_name(self) -> str | None:
@@ -902,37 +1342,43 @@ class MAXModelConfig(MAXModelConfigBase):
 
     @property
     def huggingface_config(self) -> PretrainedConfig:
-        """Returns the Hugging Face model config (loaded on first access).
+        """Returns the Hugging Face model config.
 
-        For transformers models, returns the ``AutoConfig`` subclass.  For
-        non-transformers models (e.g. diffusers components), falls back to
-        loading the raw ``config.json`` and wrapping it in a
-        ``PretrainedConfig``.
+        Loaded once at construction (see :meth:`_populate_hf_config`) and
+        stored in a PrivateAttr; this getter returns it. Falls back to loading
+        on demand -- without caching -- for a never-populated config (such as a
+        placeholder with no ``model_path``).
+
+        For transformers models this is the ``AutoConfig`` subclass; for
+        non-transformers models (such as diffusers components) it is the raw
+        ``config.json`` wrapped in a ``PretrainedConfig``.
 
         Raises:
             FileNotFoundError: If no ``config.json`` can be found for the
                 model repo/subfolder.
         """
-        # Note: For multiprocessing, __getstate__ clears _huggingface_config
-        # before pickling. Each worker process reloads fresh, which correctly
-        # handles trust_remote_code dynamic class loading.
         if self._huggingface_config is None:
-            self._huggingface_config = load_huggingface_config(
-                self.huggingface_model_repo
-            )
+            return load_huggingface_config(self.huggingface_model_repo)
         return self._huggingface_config
 
-    @cached_property
+    @property
     def generation_config(self) -> GenerationConfig:
-        """Retrieves the Hugging Face ``GenerationConfig`` for this model.
+        """Returns the Hugging Face ``GenerationConfig`` for this model.
 
-        Lazily loads the ``GenerationConfig`` from the model repository
-        and caches it to avoid repeated remote fetches.
+        Loaded once at construction (see :meth:`_populate_generation_config`)
+        and stored in a PrivateAttr; this getter returns it, falling back to
+        loading on demand for a never-populated config (such as a placeholder).
+        Loading failures yield a default ``GenerationConfig``.
+        """
+        if self._generation_config is None:
+            return self._make_generation_config()
+        return self._generation_config
 
-        Returns:
-            The ``GenerationConfig`` for the model, containing generation parameters
-            including ``max_length``, ``temperature``, and ``top_p``. If loading
-            fails, returns a default ``GenerationConfig``.
+    def _make_generation_config(self) -> GenerationConfig:
+        """Load the ``GenerationConfig`` from the model repo (default on error).
+
+        Contains generation parameters including ``max_length``,
+        ``temperature``, and ``top_p``.
         """
         try:
             kwargs: dict[str, Any] = {
@@ -954,7 +1400,7 @@ class MAXModelConfig(MAXModelConfigBase):
             return GenerationConfig()
 
     @computed_field  # type: ignore[prop-decorator]
-    @cached_property
+    @property
     def sampling_params_defaults(
         self,
     ) -> SamplingParamsGenerationConfigDefaults:
@@ -987,323 +1433,14 @@ class MAXModelConfig(MAXModelConfigBase):
                 f"Multiple GPU inference is currently not supported for {self.model_path}."
             )
 
-    def validate_and_resolve_quantization_encoding_weight_path(
-        self, default_encoding: SupportedEncoding
+    def _validate_final_architecture_model_path_weight_path(
+        self, weight_path: list[Path]
     ) -> None:
-        """Verifies that the quantization encoding and weight path are consistent.
-
-        Args:
-            weight_path: The path to the weight file.
-            default_encoding: The default encoding to use if no encoding is provided.
-        """
-        try:
-            curr_weights_format = weights_format(self.weight_path)
-        except ValueError:
-            curr_weights_format = None
-
-        if self.quantization_encoding:
-            self._validate_and_resolve_with_given_quantization_encoding(
-                weights_format=curr_weights_format
-            )
-        else:
-            self._validate_and_resolve_without_given_quantization_encoding(
-                weights_format=curr_weights_format,
-                default_encoding=default_encoding,
-            )
-
-    def validate_lora_compatibility(self) -> None:
-        """Validates that LoRA configuration is compatible with model settings.
-
-        Raises:
-            ValueError: If LoRA is enabled but incompatible with current model configuration.
-        """
-        if self.kv_cache.enable_prefix_caching:
-            raise ValueError(
-                "LoRA is not compatible with prefix caching. "
-                "Please disable prefix caching by using the --no-enable-prefix-caching flag."
-            )
-
-    def validate_and_resolve_with_resolved_quantization_encoding(
-        self,
-        supported_encodings: set[SupportedEncoding],
-        default_weights_format: WeightsFormat,
-    ) -> None:
-        """Validates model path and weight path against resolved quantization encoding.
-
-        Args:
-            supported_encodings: A dictionary of supported encodings and their corresponding KV cache strategies.
-            default_weights_format: The default weights format to use if no weights format is provided.
-        """
-        assert self.quantization_encoding, "quantization_encoding must be set."
-
-        # TODO: This call may be redundant since we do device compatibility
-        # validation as they're being set?
-        self._validate_quantization_encoding_device_compatibility(
-            supported_encodings_list=list(supported_encodings)
-        )
-        self._resolve_weight_path(default_weights_format=default_weights_format)
-        self._validate_final_architecture_model_path_weight_path()
-
-    def _validate_and_resolve_dtype_casting(
-        self, from_encoding: SupportedEncoding, to_encoding: SupportedEncoding
-    ) -> None:
-        """Validates dtype casting and resolves quantization_encoding if needed.
-
-        Updates the quantization_encoding to the desired encoding. No-op if
-        source and target encodings are the same. We currently only support
-        float32 <-> bfloat16 weight type casting.
-
-        Args:
-            from_encoding: The current encoding to cast from.
-            to_encoding: The desired encoding to cast to.
-
-        Raises:
-            ValueError: If the dtype casting is not allowed.
-        """
-        cast_from, cast_to = _resolve_dtype_cast(
-            from_encoding=from_encoding,
-            to_encoding=to_encoding,
-            default_device_spec=self.default_device_spec,
-        )
-        if cast_from is None:
-            return
-        self._applied_dtype_cast_from = cast_from
-        self._applied_dtype_cast_to = cast_to
-        self.quantization_encoding = cast_to
-
-    def _validate_and_resolve_with_given_quantization_encoding(
-        self, weights_format: WeightsFormat | None
-    ) -> None:
-        """Validates quantization encoding when it is provided by the user."""
-        assert self.quantization_encoding, (
-            "quantization_encoding must be set (given by user)."
-        )
-
-        if self.weight_path:
-            # Get the encoding of the first weight path file.
-            # Try filename-based detection first — it works for both
-            # local and remote paths and avoids ambiguity when a repo
-            # has multiple dtypes (e.g. NVFP4 repos with F32 norms).
-            file_encoding = parse_supported_encoding_from_file_name(
-                str(self.weight_path[0])
-            )
-            if file_encoding is None:
-                if os.path.exists(self.weight_path[0]):
-                    # Local file with no encoding hint in the name.
-                    file_encoding = None
-                else:
-                    file_encoding = (
-                        self.huggingface_weight_repo.encoding_for_file(
-                            self.weight_path[0],
-                            preferred_encoding=self.quantization_encoding,
-                        )
-                    )
-
-            if file_encoding and (
-                file_encoding in _ALLOWED_CAST_ENCODINGS
-                and self.quantization_encoding in _ALLOWED_CAST_ENCODINGS
-            ):
-                self._validate_and_resolve_dtype_casting(
-                    from_encoding=self.quantization_encoding,
-                    to_encoding=file_encoding,
-                )
-        else:
-            # Check if the repo only has one quantization_encoding.
-            supported_encodings = (
-                self.huggingface_weight_repo.supported_encodings
-            )
-            to_encoding = self.quantization_encoding
-            for supported_encoding in supported_encodings:
-                from_encoding = supported_encoding
-
-                if not (
-                    from_encoding in _ALLOWED_CAST_ENCODINGS
-                    and to_encoding in _ALLOWED_CAST_ENCODINGS
-                ):
-                    continue
-
-                weight_files = self.huggingface_weight_repo.files_for_encoding(
-                    encoding=supported_encoding
-                )
-                if weight_files:
-                    self._validate_and_resolve_dtype_casting(
-                        from_encoding=from_encoding,
-                        to_encoding=to_encoding,
-                    )
-                    return
-
-    def _validate_and_resolve_without_given_quantization_encoding(
-        self,
-        weights_format: WeightsFormat | None,
-        default_encoding: SupportedEncoding,
-    ) -> None:
-        """Validates and resolves quantization encoding when not specified by user."""
-        assert self.quantization_encoding is None, (
-            "quantization_encoding must be None (not specified by user)."
-        )
-
-        # If weight path is not None, infer the quantization_encoding from the weight_path.
-        if self.weight_path:
-            if os.path.exists(self.weight_path[0]):
-                # Try a filename hint first (mirrors the best-effort pass,
-                # which infers from the filename regardless of local/remote).
-                if encoding := parse_supported_encoding_from_file_name(
-                    str(self.weight_path[0])
-                ):
-                    msg = f"encoding inferred from weights file: {encoding}"
-                    logger.debug(msg)
-                    self.quantization_encoding = encoding
-                elif self.weight_path[0].suffix == ".safetensors":
-                    # No hint in the name and no header inspection for local
-                    # safetensors files: the user must specify explicitly.
-                    raise ValueError(
-                        "If a local safetensors file is provided, please provide a quantization_encoding."
-                    )
-
-            else:
-                if encoding := self.huggingface_weight_repo.encoding_for_file(
-                    self.weight_path[0]
-                ):
-                    msg = f"encoding inferred from weights file: {encoding}"
-                    logger.debug(msg)
-                    self.quantization_encoding = encoding
-                else:
-                    raise ValueError(
-                        f"encoding cannot be inferred from weights file: {self.weight_path[0]}, please pass a quantization_encoding explicitly."
-                    )
-        else:
-            # Check if the repo only has one quantization_encoding.
-            supported_encodings = (
-                self.huggingface_weight_repo.supported_encodings
-            )
-            if len(supported_encodings) == 1:
-                msg = f"huggingface repo only has '{supported_encodings[0]}' weights, using '{supported_encodings[0]}'"
-                logger.debug(msg)
-                self.quantization_encoding = supported_encodings[0]
-            elif (
-                self.default_device_spec.device_type != "cpu"
-                and len(supported_encodings) > 1
-            ):
-                # TODO(AITLIB-137): replace this with more full featured logic.
-                # If we are running on an accelerator and the quantization encoding is not set, override to bfloat16.
-                if "float4_e2m1fnx2" in supported_encodings:
-                    self.quantization_encoding = "float4_e2m1fnx2"
-                elif "float8_e4m3fn" in supported_encodings:
-                    self.quantization_encoding = "float8_e4m3fn"
-                elif "bfloat16" in supported_encodings:
-                    self.quantization_encoding = "bfloat16"
-            else:
-                msg = f"encoding not provided, using default encoding of {default_encoding}"
-                logger.debug(msg)
-                self.quantization_encoding = default_encoding
-
-        # On GPU, cast float32 -> bfloat16 (the natural GPU dtype). Mirrors
-        # the equivalent step in the best-effort pass
-        # (_infer_quantization_encoding), which normally applies this cast
-        # before architecture resolution ever runs. This is a backstop for
-        # cases where quantization_encoding is still unresolved here --
-        # e.g. the earlier encoding-inference pass didn't run, or the
-        # best-effort pass silently failed -- so architecture validation is
-        # self-sufficient rather than depending on the earlier pass.
-        if (
-            self.quantization_encoding == "float32"
-            and self.default_device_spec.device_type != "cpu"
-        ):
-            self._validate_and_resolve_dtype_casting(
-                from_encoding="float32", to_encoding="bfloat16"
-            )
-
-    def _validate_quantization_encoding_device_compatibility(
-        self,
-        supported_encodings_list: list[SupportedEncoding],
-    ) -> None:
-        """Validates that the quantization encoding is supported on the specified devices.
-
-        Should only be called after the quantization encoding has been set.
-        """
-        assert self.quantization_encoding, (
-            "quantization_encoding must be set by now."
-        )
-        # If the current encoding is only supported on CPU, and all devices are
-        # GPU, switch to CPU automatically. This "downcast" is possible. Going
-        # the other way (CPU -> GPU) is not supported and will error out in the
-        # loop check below.
-        if supported_encoding_supported_devices(self.quantization_encoding) == (
-            "cpu",
-        ) and all(d.device_type == "gpu" for d in self.device_specs):
-            logger.warning(
-                f"Encoding '{self.quantization_encoding}' is only supported on CPU. Switching device_specs to CPU."
-            )
-            self.device_specs = [DeviceSpec.cpu()]
-        # Check that the quantization encoding is supported on the specified
-        # devices.
-        for device_spec in self.device_specs:
-            if not supported_encoding_supported_on(
-                self.quantization_encoding, device_spec
-            ):
-                raise ValueError(
-                    f"The encoding '{self.quantization_encoding}' is not compatible with the selected device type '{device_spec.device_type}'.\n\n"
-                    f"You have two options to resolve this:\n"
-                    f"1. Use a different device\n"
-                    f"2. Use a different encoding (encodings available for this model: {', '.join(str(enc) for enc in supported_encodings_list)})\n\n"
-                    f"Please use the --help flag for more information."
-                )
-
-    def _resolve_weight_path(
-        self, default_weights_format: WeightsFormat
-    ) -> None:
-        """Resolves the weight path.
-
-        This method should only be called after the quantization encoding has
-        been set.
-
-        Args:
-            default_weights_format: The default weights format to use if no weight_path is provided.
-        """
-        assert self.quantization_encoding, "quantization_encoding must be set."
-
-        # If no weight_path is provided, we should grab the default.
-        if not self.weight_path:
-            # Retrieve the default files for each weights format.
-            weight_files = self.huggingface_weight_repo.files_for_encoding(
-                encoding=self.quantization_encoding
-            )
-
-            if not weight_files and self._applied_dtype_cast_from:
-                # We allow ourselves to load float32 safetensors weights as bfloat16.
-                weight_files = self.huggingface_weight_repo.files_for_encoding(
-                    encoding=self._applied_dtype_cast_from
-                )
-
-            if not weight_files and self.quantization_encoding in (
-                "float16",
-                "bfloat16",
-            ):
-                # A float16/bfloat16 graph can load float32 weights cast at
-                # load time by the architecture's weight adapter.
-                weight_files = self.huggingface_weight_repo.files_for_encoding(
-                    encoding="float32"
-                )
-
-            if default_weight_files := weight_files.get(
-                default_weights_format, []
-            ):
-                self.weight_path = default_weight_files
-            elif weight_files:
-                # Load any available weight file.
-                self.weight_path = next(iter(weight_files.values()))
-
-        if not self.weight_path:
-            raise ValueError(
-                f"compatible weights cannot be found for '{self.quantization_encoding}', in the provided repo: '{self.huggingface_weight_repo.repo_id}'"
-            )
-
-    def _validate_final_architecture_model_path_weight_path(self) -> None:
         # Assume at this point, an architecture,
         # a model_path and weight_paths are available.
-        assert self.weight_path, "weight_path must be provided."
+        assert weight_path, "weight_path must be provided."
         repo = self.huggingface_weight_repo
-        for path in self.weight_path:
+        for path in weight_path:
             path_str = str(path)
             # Check if file exists locally (direct, local repo, or cache).
             if self._local_weight_path(path):
@@ -1312,10 +1449,10 @@ class MAXModelConfig(MAXModelConfigBase):
 
             # File not found locally.
             if repo.repo_type == "local":
-                if not self._local_weight_path(Path(repo.repo_id) / path):
+                if not self._local_weight_path(Path(repo.local_path) / path):
                     # Helper returning None for local repo means not found.
                     raise FileNotFoundError(
-                        f"weight file '{path_str}' not found within the local repository path '{repo.repo_id}'"
+                        f"weight file '{path_str}' not found within the local repository path '{repo.local_path}'"
                     )
             elif repo.repo_type == "online":
                 # Verify that it exists on Huggingface.
@@ -1385,19 +1522,59 @@ class MAXModelConfig(MAXModelConfigBase):
             )
             return None
 
+    def _header_only_weight_paths(self, weight_path: list[Path]) -> list[Path]:
+        """Resolve weight paths to header-only stubs, fetching headers if needed.
+
+        Args:
+            weight_path: Weight files to resolve, relative to the repo.
+
+        Returns:
+            Absolute paths to header-only stubs on disk.
+
+        Raises:
+            ValueError: If the run is not compile-only, if the repo is not an
+                online Hugging Face repo, or if the weights are not safetensors.
+        """
+        if not is_virtual_device_mode():
+            raise ValueError(
+                "header_only_weights is only valid in compile-only mode "
+                "(``--target``). Its stub weights are zero-filled, so they "
+                "must never reach a real device."
+            )
+        weight_repo = self.huggingface_weight_repo
+        if weight_repo.repo_type != "online":
+            raise ValueError(
+                "header_only_weights reads the safetensors headers from an "
+                f"online Hugging Face repo, but '{weight_repo.repo_id}' is a "
+                f"{weight_repo.repo_type} repo."
+            )
+        if weights_format(weight_path) != WeightsFormat.safetensors:
+            raise ValueError(
+                "header_only_weights only supports safetensors checkpoints, "
+                f"but '{weight_repo.repo_id}' carries "
+                f"{weights_format(weight_path).value} weights."
+            )
+        return header_only_weight_files(
+            huggingface_model_id=weight_repo.repo_id,
+            filenames=[str(x) for x in weight_path],
+            revision=weight_repo.revision,
+        )
+
     def resolved_weight_paths(
         self, weight_path: list[Path] | None = None
     ) -> list[Path]:
         """Resolve weight paths to absolute local paths, downloading if needed.
 
         For online repos, downloads weight files from HuggingFace Hub.
-        For local repos, constructs absolute paths from the repo root.
+        For local repos, constructs absolute paths from the repo root. Under
+        ``header_only_weights`` the download is replaced by header-only stubs
+        (see :meth:`_header_only_weight_paths`).
 
         Args:
             weight_path: Weight files to resolve, relative to the repo.
                 Defaults to ``self.weight_path``. Pass an explicit,
                 already-resolved list for a config whose ``weight_path``
-                was never populated during resolution (e.g. a diffusion
+                was never populated during resolution (such as a diffusion
                 component resolved on demand at consumption time -- see
                 :func:`_resolve_component_encoding_and_weights`).
 
@@ -1409,16 +1586,21 @@ class MAXModelConfig(MAXModelConfigBase):
         if not weight_path:
             return []
 
+        if self.header_only_weights:
+            return self._header_only_weight_paths(weight_path)
+
         weight_repo = self.huggingface_weight_repo
         if weight_repo.repo_type == "online":
             return download_weight_files(
                 huggingface_model_id=weight_repo.repo_id,
                 filenames=[str(x) for x in weight_path],
-                revision=self.huggingface_weight_revision,
+                # Download at the repo handle's revision (see
+                # huggingface_weight_repo), not the raw config field.
+                revision=weight_repo.revision,
                 force_download=self.force_download,
             )
         else:
-            local_path = Path(weight_repo.repo_id)
+            local_path = Path(weight_repo.local_path)
             return [local_path / x for x in weight_path]
 
     def loader(self) -> WeightLoader:
@@ -1465,104 +1647,13 @@ class MAXModelConfig(MAXModelConfigBase):
         """
         return self.device_specs[0]
 
-    def create_kv_cache_config(self, **kv_cache_kwargs) -> None:
-        """Creates and sets the KV cache configuration with the given parameters.
-
-        Creates a new :class:`~max.pipelines.lib.config.KVCacheConfig` from the provided keyword arguments
-        and automatically sets the cache_dtype based on the model's quantization
-        encoding (or any explicit override in kv_cache_kwargs).
-
-        Args:
-            **kv_cache_kwargs: Keyword arguments to pass to the :class:`~max.pipelines.lib.config.KVCacheConfig` constructor.
-                Common options include:
-                - kv_cache_page_size: Number of tokens per page for paged cache
-                - enable_prefix_caching: Whether to enable prefix caching
-                - device_memory_utilization: Fraction of device memory to use
-                - cache_dtype: Override for the cache data type
-        """
-        self.kv_cache = KVCacheConfig(**kv_cache_kwargs)
-        # Note: the quantization_encoding is possibly not set yet here, so we first check for an explicit override.
-        if cache_dtype := self._get_cache_override():
-            # Handled by `create_kv_cache_config` but we set it again here to ensure it takes precedence over quantization encoding.
-            self.kv_cache._cache_dtype = cache_dtype
-
-    def set_cache_dtype_given_quantization_encoding(
-        self,
-    ) -> None:
-        """Determines the KV cache dtype based on quantization encoding configuration.
-
-        The dtype is determined in the following priority order:
-
-        1. Explicit override from ``kv_cache.kv_cache_format`` (if set).
-        2. Derived from the model's ``quantization_encoding``.
-        3. Falls back to ``float32`` if no encoding is specified.
-        """
-        # First check for an explicit override.
-        if cache_dtype := self._get_cache_override():
-            self.kv_cache._cache_dtype = cache_dtype
-            return
-
-        # If there's no quantization encoding return a default value.
-        if not self.quantization_encoding:
-            self.kv_cache._cache_dtype = DType.float32
-            return
-
-        # Otherwise select the default KV cache dtype based on the quantization encoding.
-        supported_encoding_to_cache_dtype = {
-            "float32": DType.float32,
-            "float16": DType.float16,
-            "bfloat16": DType.bfloat16,
-            "float8_e4m3fn": DType.bfloat16,
-            "float4_e2m1fnx2": DType.bfloat16,
-            "q4_k": DType.float32,
-            "q4_0": DType.float32,
-            "q6_k": DType.float32,
-            "gptq": DType.bfloat16,
-        }
-        if self.quantization_encoding in supported_encoding_to_cache_dtype:
-            self.kv_cache._cache_dtype = supported_encoding_to_cache_dtype[
-                self.quantization_encoding
-            ]
-            return
-        else:
-            raise ValueError(
-                f"Unsupported quantization encoding for KV cache dtype resolution: {self.quantization_encoding}"
-            )
-
-    def _get_cache_override(self) -> DType | None:
-        """Check for an explicit KV cache dtype override from kv_cache_format.
-
-        Parses the kv_cache.kv_cache_format string (if set) and converts it
-        to the corresponding DType.
-
-        Returns:
-            The DType corresponding to the override string, or None if no
-            override is set or the string is not recognized. Supported values
-            are 'float32', 'bfloat16', and 'float8_e4m3fn' (case-insensitive).
-        """
-        if self.kv_cache.kv_cache_format is None:
-            return None
-
-        dtype_str = self.kv_cache.kv_cache_format.lower()
-        cache_format_to_dtype = {
-            "float32": DType.float32,
-            "bfloat16": DType.bfloat16,
-            "float8_e4m3fn": DType.float8_e4m3fn,
-        }
-        if dtype_str in cache_format_to_dtype:
-            return cache_format_to_dtype[dtype_str]
-        else:
-            raise ValueError(
-                f"Unrecognized kv_cache_format override: '{self.kv_cache.kv_cache_format}'. "
-                "Supported values are 'float32', 'bfloat16', and 'float8_e4m3fn'."
-            )
-
-    def log_model_info(self, role: str) -> None:
+    def log_model_info(self, role: str, *, uses_kv_cache: bool = True) -> None:
         """Logs model configuration information for this config.
 
         Args:
-            role: The semantic role of this model (e.g. ``"main"``,
+            role: The semantic role of this model (such as ``"main"``,
                 ``"draft"``, ``"vae"``).
+            uses_kv_cache: Whether the pipeline uses a KV cache.
         """
         logger.info("")
         logger.info("  Model: %s", role)
@@ -1574,11 +1665,6 @@ class MAXModelConfig(MAXModelConfigBase):
         )
 
         quantization_encoding_str = str(self.quantization_encoding)
-        if self._applied_dtype_cast_from:
-            quantization_encoding_str = (
-                f"{quantization_encoding_str}"
-                f" (cast from {self._applied_dtype_cast_from})"
-            )
 
         entries: list[tuple[str, Any]] = [
             ("model_path", self.model_path),
@@ -1606,8 +1692,8 @@ class MAXModelConfig(MAXModelConfigBase):
         for line in _format_config_entries(entries, indent="    "):
             logger.info(line)
 
-        # KVCache configuration
-        self._log_kvcache_info()
+        if uses_kv_cache:
+            self._log_kvcache_info()
 
     def _log_kvcache_info(self) -> None:
         """Logs KV cache configuration details for this model config."""
@@ -1616,34 +1702,20 @@ class MAXModelConfig(MAXModelConfigBase):
         logger.info("  %s KV Cache %s", sub_separator, sub_separator)
 
         entries: list[tuple[str, Any]] = [
-            ("cache_dtype", kv_config.cache_dtype),
+            (
+                "cache_dtype",
+                cache_dtype_for_encoding(
+                    self.quantization_encoding, kv_config.kv_cache_format
+                ),
+            ),
             ("page_size", f"{kv_config.kv_cache_page_size} tokens"),
             ("prefix_caching", kv_config.enable_prefix_caching),
-            ("kv_connector", kv_config.kv_connector or "null"),
-        ]
-        cfg = kv_config.kv_connector_config
-        if (
-            kv_config.kv_connector
-            in (KVConnectorType.local, KVConnectorType.tiered)
-            and cfg
-        ):
-            entries.append(
-                ("host_swap_space", f"{cfg.host_kvcache_swap_space_gb} GB")
-            )
-        entries.append(
+            ("kv_connector", kv_config.kv_connector_config.type.value),
             (
                 "memory_utilization",
                 f"{kv_config.device_memory_utilization:.1%}",
-            )
-        )
-
-        if kv_config._available_cache_memory is not None:
-            entries.append(
-                (
-                    "available_cache_memory",
-                    to_human_readable_bytes(kv_config._available_cache_memory),
-                )
-            )
+            ),
+        ]
 
         for line in _format_config_entries(entries, indent="    "):
             logger.info(line)
@@ -1695,3 +1767,89 @@ def _format_config_entries(
     """
     max_key_len = max(len(key) for key, _ in entries)
     return [f"{indent}{key:<{max_key_len}} : {value}" for key, value in entries]
+
+
+def _parse_model_override(override_str: str) -> tuple[str, str, Any]:
+    """Parse ``component.field=value`` into ``(component, field, value)``.
+
+    The value is coerced to the target field's type via Pydantic's
+    ``TypeAdapter`` (JSON-first, raw-string fallback for scalars).
+
+    Raises:
+        ValueError: if the string is malformed or names an unknown
+            ``MAXModelConfig`` field.
+    """
+    dot_pos = override_str.find(".")
+    if dot_pos < 1:
+        raise ValueError(
+            f"Invalid --model-override format: {override_str!r}. "
+            f"Expected 'component.field=value'."
+        )
+    eq_pos = override_str.find("=", dot_pos)
+    if eq_pos < dot_pos + 2:
+        raise ValueError(
+            f"Invalid --model-override format: {override_str!r}. "
+            f"Expected 'component.field=value'."
+        )
+    component = override_str[:dot_pos]
+    field_name = override_str[dot_pos + 1 : eq_pos]
+    raw_value = override_str[eq_pos + 1 :]
+
+    if field_name not in MAXModelConfig.model_fields:
+        raise ValueError(
+            f"Unknown MAXModelConfig field: {field_name!r}. "
+            f"Valid fields: {sorted(MAXModelConfig.model_fields.keys())}"
+        )
+
+    # For compound types (list, dict) the raw CLI string is JSON, so try
+    # json.loads first; fall back to the raw string for plain scalars.
+    field_info = MAXModelConfig.model_fields[field_name]
+    adapter: TypeAdapter[Any] = TypeAdapter(field_info.annotation)
+    try:
+        parsed_value = json.loads(raw_value)
+    except (json.JSONDecodeError, ValueError):
+        parsed_value = raw_value
+    return component, field_name, adapter.validate_python(parsed_value)
+
+
+def _parse_component_overrides(
+    override_strs: list[str],
+) -> dict[str, dict[str, Any]]:
+    """Group parsed ``--model-override`` entries by target component."""
+    component_overrides: dict[str, dict[str, Any]] = {}
+    for override_str in override_strs:
+        component, field_name, value = _parse_model_override(override_str)
+        component_overrides.setdefault(component, {})[field_name] = value
+    return component_overrides
+
+
+def _strip_default_model_kwargs(
+    model_kwargs: dict[str, Any],
+) -> dict[str, Any]:
+    """Return *model_kwargs* with entries that match MAXModelConfig defaults removed.
+
+    Fields declared with ``default_factory`` have ``field.default`` set to
+    ``PydanticUndefined``, so we must invoke the factory to obtain the
+    comparable default value.
+    """
+    from pydantic_core import PydanticUndefined
+
+    fields = MAXModelConfig.model_fields
+    non_default: dict[str, Any] = {}
+    for k, v in model_kwargs.items():
+        field = fields.get(k)
+        if field is None:
+            # Not a MAXModelConfig field — keep it.
+            non_default[k] = v
+            continue
+        if field.default is not PydanticUndefined:
+            if v == field.default:
+                continue
+        elif field.default_factory is not None:
+            try:
+                if v == field.default_factory():  # type: ignore[call-arg]
+                    continue
+            except Exception:
+                pass
+        non_default[k] = v
+    return non_default

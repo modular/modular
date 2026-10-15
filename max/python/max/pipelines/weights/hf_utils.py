@@ -25,6 +25,7 @@ import random
 import re
 import struct
 import time
+from collections import Counter
 from dataclasses import dataclass, field
 from functools import cached_property, lru_cache
 from pathlib import Path
@@ -32,6 +33,12 @@ from typing import Any, BinaryIO, cast
 
 import huggingface_hub
 from huggingface_hub import errors as hf_hub_errors
+from huggingface_hub.file_download import repo_folder_name
+from huggingface_hub.utils import (
+    build_hf_headers,
+    get_session,
+    hf_raise_for_status,
+)
 from huggingface_hub.utils import tqdm as hf_tqdm
 from max.graph.weights import WeightsFormat
 from max.pipelines.modeling.config_enums import (
@@ -47,6 +54,7 @@ __all__ = [
     "HuggingFaceRepo",
     "download_weight_files",
     "generate_local_model_path",
+    "header_only_weight_files",
     "is_diffusion_pipeline",
     "try_to_load_from_cache",
     "validate_hf_repo_access",
@@ -205,6 +213,29 @@ def _hf_tqdm_using_threading_only_lock():  # noqa: ANN202
         delattr(hf_tqdm, "_lock")
 
 
+# Mirrored by ``max.benchmark.benchmark_shared.datasets._hf_download``;
+# duplicated to keep ``benchmark_shared`` decoupled from the pipelines package.
+def _hf_hub_download_with_retry(**kwargs: Any) -> str:
+    """Calls ``hf_hub_download``, retrying past a racy ``.incomplete`` entry.
+
+    A concurrent download or an evicted cache can delete the ``.incomplete``
+    temp before ``hf_hub_download`` renames it, raising ``FileNotFoundError``;
+    a clean re-fetch repairs it. An offline/uncached miss is not retryable.
+    """
+    try:
+        return huggingface_hub.hf_hub_download(**kwargs)
+    except hf_hub_errors.LocalEntryNotFoundError:
+        raise  # offline/uncached miss, not retryable
+    except FileNotFoundError:
+        _logger.warning(
+            "Retrying download of %s with force_download.",
+            kwargs.get("filename", kwargs.get("repo_id")),
+        )
+        return huggingface_hub.hf_hub_download(
+            **{**kwargs, "force_download": True}
+        )
+
+
 def download_weight_files(
     huggingface_model_id: str,
     filenames: list[str],
@@ -275,9 +306,9 @@ def download_weight_files(
         weight_paths = list(
             thread_map(
                 lambda filename: Path(
-                    huggingface_hub.hf_hub_download(
-                        huggingface_model_id,
-                        filename,
+                    _hf_hub_download_with_retry(
+                        repo_id=huggingface_model_id,
+                        filename=filename,
                         revision=revision,
                         force_download=force_download,
                     )
@@ -294,6 +325,236 @@ def download_weight_files(
     )
 
     return weight_paths
+
+
+# Empirically 97% of safetensors headers on the Hub fit in 100 kB, so one
+# ranged GET of that size usually avoids a second round trip. Mirrors
+# ``huggingface_hub.HfApi.parse_safetensors_file_metadata``.
+_HEADER_PREFETCH_BYTES = 100_000
+
+
+def _header_only_weights_dir() -> Path:
+    """Returns the directory holding header-only safetensors stubs.
+
+    Deliberately outside the HuggingFace hub cache: a stub carries a real
+    file's name and size but no weight bytes, so it must never be reachable
+    through :func:`try_to_load_from_cache`.
+    """
+    return (
+        Path(huggingface_hub.constants.HF_HOME) / "modular-header-only-weights"
+    )
+
+
+def _fetch_safetensors_header(
+    repo_id: str, filename: str, revision: str
+) -> bytes:
+    """Fetches a remote safetensors file's leading header bytes.
+
+    Args:
+        repo_id: The Hugging Face repo id holding the file.
+        filename: The file's path relative to the repo root.
+        revision: The Hugging Face revision to read.
+
+    Returns:
+        The first ``8 + header_length`` bytes of the file: the little-endian
+        header length followed by the header JSON, verbatim.
+
+    Raises:
+        ValueError: If the bytes do not start with a safetensors header
+            whose JSON parses to an object.
+    """
+    url = huggingface_hub.hf_hub_url(repo_id, filename, revision=revision)
+    headers = build_hf_headers()
+    session = get_session()
+
+    response = session.get(
+        url,
+        headers={**headers, "Range": f"bytes=0-{_HEADER_PREFETCH_BYTES}"},
+    )
+    hf_raise_for_status(response)
+    content = response.content
+    if len(content) < 8:
+        raise ValueError(
+            f"'{filename}' in {repo_id} is too small to be a safetensors "
+            "file: it carries no 8-byte header length."
+        )
+
+    header_length: int = struct.unpack("<Q", content[:8])[0]
+    if 8 + header_length > len(content):
+        response = session.get(
+            url,
+            headers={**headers, "Range": f"bytes=8-{header_length + 7}"},
+        )
+        hf_raise_for_status(response)
+        content = content[:8] + response.content
+
+    prefix = content[: 8 + header_length]
+    if len(prefix) != 8 + header_length:
+        raise ValueError(
+            f"'{filename}' in {repo_id} declares a {header_length}-byte "
+            f"safetensors header but only {len(prefix) - 8} bytes were served."
+        )
+    try:
+        parsed = json.loads(prefix[8:])
+    except json.JSONDecodeError as e:
+        raise ValueError(
+            f"'{filename}' in {repo_id} does not have a valid safetensors "
+            f"header: {e}"
+        ) from e
+    if not isinstance(parsed, dict):
+        raise ValueError(
+            f"'{filename}' in {repo_id} has a safetensors header that is "
+            f"not a JSON object, but a {type(parsed).__name__}."
+        )
+    return prefix
+
+
+def _header_only_file_size(header: bytes) -> int:
+    """Returns the full on-disk size of the file a header came from.
+
+    Args:
+        header: The leading bytes returned by
+            :func:`_fetch_safetensors_header`.
+
+    Returns:
+        ``8 + header_length + end of the last tensor's data``, which is the
+        size the complete safetensors file has on the Hub.
+    """
+    header_length: int = struct.unpack("<Q", header[:8])[0]
+    parsed = json.loads(header[8 : 8 + header_length])
+    data_end = max(
+        (
+            entry["data_offsets"][1]
+            for name, entry in parsed.items()
+            if name != "__metadata__"
+        ),
+        default=0,
+    )
+    return 8 + header_length + data_end
+
+
+def _write_header_only_safetensors(path: Path, header: bytes) -> None:
+    """Writes a header-only stub standing in for a full safetensors file.
+
+    The stub is a sparse file: the real header followed by a hole the size
+    of the tensor data, so it reads back as the right names, dtypes, shapes
+    and file length while occupying almost no disk.
+
+    Args:
+        path: Where to write the stub. Parent directories are created.
+        header: The leading bytes returned by
+            :func:`_fetch_safetensors_header`.
+    """
+    size = _header_only_file_size(header)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    # Write then rename so an interrupted run cannot leave a short stub
+    # behind, which would be reused as if it were complete.
+    incomplete = path.with_name(path.name + ".incomplete")
+    with open(incomplete, "wb") as f:
+        f.write(header)
+        f.truncate(size)
+    os.replace(incomplete, path)
+
+
+def _resolve_commit_sha(repo_id: str, revision: str) -> str:
+    """Resolves a Hugging Face revision to the commit sha it names.
+
+    Raises:
+        ValueError: If the Hub reports no sha for the revision.
+    """
+    sha = huggingface_hub.HfApi().model_info(repo_id, revision=revision).sha
+    if not sha:
+        raise ValueError(
+            f"Hugging Face reported no commit sha for {repo_id} at revision "
+            f"'{revision}'."
+        )
+    return sha
+
+
+def header_only_weight_files(
+    huggingface_model_id: str,
+    filenames: list[str],
+    revision: str | None = None,
+    max_workers: int = 8,
+) -> list[Path]:
+    """Stands in header-only stubs for a model's safetensors files.
+
+    Fetches each remote file's header and writes a sparse stub of the full
+    file size, instead of downloading the weights. Compilation reads only
+    tensor names, shapes, dtypes and the file-level ``__metadata__``, all of
+    which the header carries, so a compile-only run never needs the bytes.
+
+    Args:
+        huggingface_model_id: The Hugging Face model identifier, that is,
+            ``MiniMaxAI/MiniMax-M3-MXFP8``.
+        filenames: Safetensors file paths relative to the root of the
+            Hugging Face repo.
+        revision: The Hugging Face revision to read headers from. Defaults
+            to the Hub's default revision.
+        max_workers: The number of worker threads to concurrently fetch
+            headers.
+
+    Returns:
+        Absolute stub paths, in the order of ``filenames``.
+
+    Raises:
+        ValueError: If any filename is not a safetensors file.
+    """
+    unsupported = [
+        filename
+        for filename in filenames
+        if not filename.endswith(".safetensors")
+    ]
+    if unsupported:
+        raise ValueError(
+            "Header-only weights only support safetensors checkpoints, but "
+            f"{huggingface_model_id} carries {unsupported}."
+        )
+
+    resolved_revision = (
+        revision
+        if revision is not None
+        else huggingface_hub.constants.DEFAULT_REVISION
+    )
+    # Key stubs by commit sha, not by the given revision: a branch ref moves,
+    # and a stub whose header predates the move would describe the wrong
+    # checkpoint.
+    repo_dir = (
+        _header_only_weights_dir()
+        / repo_folder_name(repo_id=huggingface_model_id, repo_type="model")
+        / _resolve_commit_sha(huggingface_model_id, resolved_revision)
+    )
+
+    def stub_for(filename: str) -> Path:
+        stub = repo_dir / filename
+        if stub.exists():
+            return stub
+        _write_header_only_safetensors(
+            stub,
+            _fetch_safetensors_header(
+                huggingface_model_id, filename, resolved_revision
+            ),
+        )
+        return stub
+
+    start_time = datetime.datetime.now()
+    _logger.info(f"Fetching safetensors headers for: {huggingface_model_id}")
+    with _hf_tqdm_using_threading_only_lock():
+        stub_paths = list(
+            thread_map(
+                stub_for,
+                filenames,
+                max_workers=max_workers,
+                tqdm_class=hf_tqdm,
+            )
+        )
+
+    _logger.info(
+        f"Finished fetching safetensors headers for: {huggingface_model_id} "
+        f"in {(datetime.datetime.now() - start_time).total_seconds():.1f}s."
+    )
+
+    return stub_paths
 
 
 def _repo_exists_with_retry(repo_id: str, revision: str) -> bool:
@@ -363,6 +624,9 @@ def _repo_exists_with_retry(repo_id: str, revision: str) -> bool:
     )
 
 
+_TRAINING_CHECKPOINT_DIR = re.compile(r"(?:^|/)checkpoint-\d+/")
+
+
 @dataclass(frozen=True)
 class HuggingFaceRepo:
     """Handle for interacting with a Hugging Face repository (remote or local)."""
@@ -377,37 +641,34 @@ class HuggingFaceRepo:
     trust_remote_code: bool = False
     """Whether to trust remote code."""
 
-    repo_type: RepoType | None = None
-    """The type of repo. This is inferred from the repo_id."""
-
     subfolder: str | None = None
     """Optional subdirectory within the repo to scope weight discovery to."""
 
-    _hub_repo_id: str | None = field(default=None, compare=False, repr=False)
-    """Original Hugging Face hub id, preserved only when ``repo_id`` is
-    rewritten to a local snapshot directory under ``HF_HUB_OFFLINE``. Used by
-    :attr:`config_repo_id`; not part of equality/hashing."""
+    repo_type: RepoType = field(init=False)
+    """The type of repo, inferred from ``repo_id``."""
+
+    _local_path: str | None = field(
+        default=None, init=False, compare=False, repr=False
+    )
+    """Cache snapshot directory resolved under ``HF_HUB_OFFLINE``. Used by
+    :attr:`local_path`; not part of equality/hashing."""
 
     def __post_init__(self) -> None:
         # Get repo type.
-        if not self.repo_type:
-            if os.path.exists(self.repo_id):
-                object.__setattr__(self, "repo_type", "local")
-            elif huggingface_hub.constants.HF_HUB_OFFLINE:
-                # Respect HF_HUB_OFFLINE, resolve from local cache. Preserve the
-                # original hub id first: transformers 5.12's trust_remote_code
-                # loader breaks when handed a local HF-cache snapshot directory
-                # (it resolves the snapshot symlink into ``blobs/`` and then
-                # cannot find sibling relative imports), so config loading uses
-                # the hub id instead via `config_repo_id`.
-                object.__setattr__(self, "_hub_repo_id", self.repo_id)
-                local_path = generate_local_model_path(
-                    self.repo_id, self.revision
-                )
-                object.__setattr__(self, "repo_id", local_path)
-                object.__setattr__(self, "repo_type", "local")
-            else:
-                object.__setattr__(self, "repo_type", "online")
+        if os.path.exists(self.repo_id):
+            object.__setattr__(self, "repo_type", "local")
+        elif huggingface_hub.constants.HF_HUB_OFFLINE:
+            # Respect HF_HUB_OFFLINE, resolve from local cache. Resolution
+            # stays eager so an uncached repo raises FileNotFoundError at
+            # construction, which _repo_exists_with_retry relies on.
+            object.__setattr__(
+                self,
+                "_local_path",
+                generate_local_model_path(self.repo_id, self.revision),
+            )
+            object.__setattr__(self, "repo_type", "local")
+        else:
+            object.__setattr__(self, "repo_type", "online")
 
         if self.repo_type == "online":
             validate_hf_repo_access(
@@ -432,17 +693,22 @@ class HuggingFaceRepo:
         )
 
     @property
-    def config_repo_id(self) -> str:
-        """Identifier to pass to transformers ``*.from_pretrained``.
+    def local_path(self) -> str:
+        """Returns the filesystem directory backing this local repo.
 
-        For repos resolved from the offline HF cache, ``repo_id`` was rewritten
-        to a local snapshot directory; this returns the original hub id instead,
-        keeping transformers on its hub/cache code path. transformers 5.12's
-        ``trust_remote_code`` loader otherwise resolves the snapshot symlink into
-        ``blobs/`` and fails to find sibling relative imports. For all other
-        repos this is just ``repo_id``.
+        For a hub id resolved under ``HF_HUB_OFFLINE`` this is the local
+        cache snapshot directory; otherwise it is the on-disk path itself.
+
+        Raises:
+            ValueError: If the repo is online.
         """
-        return self._hub_repo_id or self.repo_id
+        if self.repo_type != "local":
+            raise ValueError(
+                f"local_path is not available for online repo '{self.repo_id}'."
+            )
+        if self._local_path is not None:
+            return self._local_path
+        return self.repo_id
 
     @cached_property
     def info(self) -> huggingface_hub.ModelInfo:
@@ -463,24 +729,24 @@ class HuggingFaceRepo:
         """Returns weight file paths grouped by format (safetensors, gguf).
 
         When ``subfolder`` is set, only files within that subdirectory are
-        returned. The returned paths are relative to the repo root (i.e. they
+        returned. The returned paths are relative to the repo root (that is, they
         include the subfolder prefix) so that they can be passed directly to
         ``hf_hub_download`` and local file resolution without further
-        adjustment.
+        adjustment. Files under a nested ``checkpoint-<step>/`` directory are
+        excluded unless that directory is the requested ``subfolder``.
         """
         safetensor_search_pattern = "**/*.safetensors"
         gguf_search_pattern = "**/*.gguf"
 
-        # Scope search to subfolder when set.
-        if self.subfolder is not None:
-            local_base = os.path.join(self.repo_id, self.subfolder)
-            remote_base = f"{self.repo_id}/{self.subfolder}"
-        else:
-            local_base = self.repo_id
-            remote_base = self.repo_id
-
         weight_files = {}
         if self.repo_type == "local":
+            # Scope search to subfolder when set.
+            local_root = self.local_path
+            local_base = (
+                os.path.join(local_root, self.subfolder)
+                if self.subfolder is not None
+                else local_root
+            )
             safetensor_paths = glob.glob(
                 os.path.join(local_base, safetensor_search_pattern),
                 recursive=True,
@@ -489,7 +755,14 @@ class HuggingFaceRepo:
                 os.path.join(local_base, gguf_search_pattern),
                 recursive=True,
             )
+            # Strip the globbed root so paths are repo-relative.
+            strip_prefix = f"{local_root}/"
         elif self.repo_type == "online":
+            remote_base = (
+                f"{self.repo_id}/{self.subfolder}"
+                if self.subfolder is not None
+                else self.repo_id
+            )
             fs = huggingface_hub.HfFileSystem()
             safetensor_paths = cast(
                 list[str],
@@ -498,11 +771,13 @@ class HuggingFaceRepo:
             gguf_paths = cast(
                 list[str], fs.glob(f"{remote_base}/{gguf_search_pattern}")
             )
+            strip_prefix = f"{self.repo_id}/"
         else:
             raise ValueError(f"Unsupported repo type: {self.repo_type}")
 
-        # Strip the repo_id prefix so paths are repo-relative.
-        strip_prefix = f"{self.repo_id}/"
+        # An explicitly requested subfolder is part of the search base, so
+        # nesting is judged below it and the request itself is never filtered.
+        base_prefix = f"{self.subfolder}/" if self.subfolder is not None else ""
 
         if safetensor_paths:
             if len(safetensor_paths) == 1:
@@ -511,12 +786,23 @@ class HuggingFaceRepo:
                     safetensor_paths[0].removeprefix(strip_prefix)
                 ]
             else:
-                # If there is more than one weight, ignore consolidated tensors.
-                weight_files[WeightsFormat.safetensors] = [
-                    f.removeprefix(strip_prefix)
-                    for f in safetensor_paths
-                    if "consolidated" not in f
-                ]
+                safetensor_files: list[str] = []
+                for f in safetensor_paths:
+                    # If there is more than one weight, ignore consolidated
+                    # tensors.
+                    if "consolidated" in f:
+                        continue
+                    relative_path = f.removeprefix(strip_prefix)
+                    # Likewise ignore the per-step snapshots training repos ship
+                    # in `checkpoint-<step>/` directories: those repeat every
+                    # tensor name of the weights above them instead of sharding
+                    # them, and there is no index file to tell them apart.
+                    if _TRAINING_CHECKPOINT_DIR.search(
+                        relative_path.removeprefix(base_prefix)
+                    ):
+                        continue
+                    safetensor_files.append(relative_path)
+                weight_files[WeightsFormat.safetensors] = safetensor_files
 
         if gguf_paths:
             weight_files[WeightsFormat.gguf] = [
@@ -572,15 +858,15 @@ class HuggingFaceRepo:
                 )
 
             # Workaround for FP8/FP4 models that don't have proper
-            # safetensors metadata.  Check the path for fp8/fp4 hints
-            # (works for both local paths and HF cache paths since cache
-            # paths preserve the model name: models--org--model-FP8/...).
+            # safetensors metadata.  Check the repo id for fp8/fp4 hints;
+            # hub ids and user-provided paths carry the model name.
             # Some repos like "RedHatAI/Llama-3.3-70B-Instruct-FP8-dynamic"
             # do not have safetensors metadata populated.
             if safetensors_info is None:
-                if re.search(r"FP8|fp8", self.repo_id, re.IGNORECASE):
+                repo_name = os.path.basename(self.repo_id.rstrip("/"))
+                if re.search(r"fp8", repo_name, re.IGNORECASE):
                     supported_encodings.add("float8_e4m3fn")
-                elif re.search(r"FP4|fp4", self.repo_id, re.IGNORECASE):
+                elif re.search(r"fp4", repo_name, re.IGNORECASE):
                     supported_encodings.add("float4_e2m1fnx2")
 
             # Check quantization_config for gptq/mxfp8 (both local and online).
@@ -590,15 +876,35 @@ class HuggingFaceRepo:
                 elif quant_config.get("quant_method") == "mxfp8":
                     # MXFP8 checkpoints store block scales as uint8, which the
                     # tensor-header scan above misidentifies as float4_e2m1fnx2.
-                    # Discard that false-positive and keep float8_e4m3fn.
-                    supported_encodings.discard("float4_e2m1fnx2")
+                    # Discard that false-positive and keep float8_e4m3fn --
+                    # unless the quantizer overrode the routed experts to packed
+                    # NVFP4 or MXFP4, where the uint8 really is FP4 and the
+                    # architecture decides which half of the checkpoint each
+                    # encoding covers.
+                    if quant_config.get("moe_quant_algo") not in (
+                        "NVFP4",
+                        "MXFP4",
+                    ):
+                        supported_encodings.discard("float4_e2m1fnx2")
                     supported_encodings.add("float8_e4m3fn")
+                elif quant_config.get("quant_method") == "mxfp6":
+                    # MXFP6 packs both weights and scales as uint8, so the scan
+                    # above cannot tell it from MXFP4 -- on disk the two differ
+                    # only by this config entry.
+                    supported_encodings.discard("float4_e2m1fnx2")
+                    supported_encodings.add("float6_e2m3fn")
 
         return list(supported_encodings)
 
     def _get_safetensors_encoding(
         self, file: BinaryIO
-    ) -> set[SupportedEncoding]:
+    ) -> tuple[set[SupportedEncoding], list[tuple[str, str]]]:
+        """Maps a shard header's dtypes onto encodings.
+
+        Returns:
+            The encodings this shard's dtypes map to, and the
+            ``(dtype, tensor name)`` pairs whose dtype maps to none.
+        """
         # Read the first 8 bytes of the file
         length_bytes = file.read(8)
         # Interpret the bytes as a little-endian unsigned 64-bit integer
@@ -609,7 +915,10 @@ class HuggingFaceRepo:
         header = json.loads(header_bytes)
 
         supported_encodings: set[SupportedEncoding] = set()
-        for weight_value in header.values():
+        unknown: list[tuple[str, str]] = []
+        for weight_name, weight_value in header.items():
+            if weight_name == "__metadata__":
+                continue
             if weight_dtype := weight_value.get("dtype", None):
                 if weight_dtype == "F32":
                     supported_encodings.add("float32")
@@ -622,16 +931,16 @@ class HuggingFaceRepo:
                 elif weight_dtype == "U8":
                     supported_encodings.add("float4_e2m1fnx2")
                 else:
-                    _logger.warning(
-                        f"unknown dtype found in safetensors file: {weight_dtype}"
-                    )
-        return supported_encodings
+                    unknown.append((weight_dtype, weight_name))
+        return supported_encodings, unknown
 
     def _detect_safetensors_encodings_from_files(
         self,
     ) -> set[SupportedEncoding]:
         """Detect encodings by reading headers of all safetensors weight files."""
         encodings: set[SupportedEncoding] = set()
+        unknown_counts: Counter[str] = Counter()
+        unknown_examples: dict[str, str] = {}
         fs = (
             huggingface_hub.HfFileSystem()
             if self.repo_type == "online"
@@ -641,17 +950,36 @@ class HuggingFaceRepo:
             try:
                 if self.repo_type == "local":
                     with open(
-                        os.path.join(self.repo_id, weight_file), "rb"
+                        os.path.join(self.local_path, weight_file), "rb"
                     ) as f:
-                        encodings.update(self._get_safetensors_encoding(f))
+                        shard_encodings, unknown = (
+                            self._get_safetensors_encoding(f)
+                        )
                 elif fs is not None:
                     with fs.open(f"{self.repo_id}/{weight_file}", "rb") as f:
-                        encodings.update(self._get_safetensors_encoding(f))
+                        shard_encodings, unknown = (
+                            self._get_safetensors_encoding(f)
+                        )
+                else:
+                    continue
+                encodings.update(shard_encodings)
+                for dtype, tensor_name in unknown:
+                    unknown_counts[dtype] += 1
+                    unknown_examples.setdefault(dtype, tensor_name)
             except Exception:
                 _logger.debug(
                     "Failed to read safetensors header from %s",
                     weight_file,
                 )
+        for dtype, count in sorted(unknown_counts.items()):
+            _logger.warning(
+                "unknown dtype found in safetensors file: %s (%d tensor%s,"
+                " e.g. %r); ignored for encoding detection",
+                dtype,
+                count,
+                "" if count == 1 else "s",
+                unknown_examples[dtype],
+            )
         return encodings
 
     def _get_quantization_config(self) -> dict[str, object] | None:
@@ -661,10 +989,11 @@ class HuggingFaceRepo:
                 if config := self.info.config:
                     return config.get("quantization_config")
             elif self.repo_type == "local":
-                config_path = os.path.join(self.repo_id, "config.json")
+                local_root = self.local_path
+                config_path = os.path.join(local_root, "config.json")
                 if self.subfolder is not None:
                     config_path = os.path.join(
-                        self.repo_id, self.subfolder, "config.json"
+                        local_root, self.subfolder, "config.json"
                     )
                 if os.path.isfile(config_path):
                     with open(config_path) as f:
@@ -724,7 +1053,7 @@ class HuggingFaceRepo:
     def file_exists(self, filename: str) -> bool:
         """Returns whether the given file exists in the repo."""
         if self.repo_type == "local":
-            return os.path.exists(os.path.join(self.repo_id, filename))
+            return os.path.exists(os.path.join(self.local_path, filename))
         return huggingface_hub.file_exists(self.repo_id, filename)
 
     @property
@@ -743,7 +1072,7 @@ class HuggingFaceRepo:
             file: The weight file path.
             preferred_encoding: If set and present in the repo's supported
                 encodings, return it directly. Useful for multi-encoding
-                safetensors repos (e.g. FP4 repos that also contain BF16
+                safetensors repos (such as FP4 repos that also contain BF16
                 norm weights).
         """
         if str(file).endswith(".safetensors"):
@@ -755,6 +1084,7 @@ class HuggingFaceRepo:
             if len(supported) > 1:
                 for candidate in (
                     "float4_e2m1fnx2",
+                    "float6_e2m3fn",
                     "float8_e4m3fn",
                     "bfloat16",
                     "float32",
@@ -797,7 +1127,7 @@ def is_diffusion_pipeline(repo: HuggingFaceRepo) -> bool:
         return False
 
 
-def generate_local_model_path(repo_id: str, revision: str) -> str:
+def generate_local_model_path(repo_id: str, revision: str = "main") -> str:
     """Generates the local filesystem path where a Hugging Face model repo is cached.
 
     This function resolves the model from the local Hugging Face cache only.
@@ -806,8 +1136,10 @@ def generate_local_model_path(repo_id: str, revision: str) -> str:
 
     Args:
         repo_id: The Hugging Face repository ID in the format "org/model"
-                (e.g. "HuggingFaceTB/SmolLM2-135M")
-        revision: The specific model revision hash to use, typically from a repo lock file
+                (such as "HuggingFaceTB/SmolLM2-135M")
+        revision: The model revision to resolve. Defaults to ``main``, which on
+            CI runners resolves through the cache populator's ``refs/main`` to
+            the revision pinned in ``hf-repo-lock.tsv``.
 
     Returns:
         str: The absolute path to the cached model files for the specified revision.

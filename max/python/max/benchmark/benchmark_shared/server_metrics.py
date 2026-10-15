@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 # ===----------------------------------------------------------------------=== #
 # Copyright (c) 2026, Modular Inc. All rights reserved.
 #
@@ -24,11 +23,11 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
-import requests
 from prometheus_client.parser import text_string_to_metric_families
 
 from .config import Backend
 from .metrics import SpecDecodeMetrics
+from .prometheus_fetch import fetch_metrics
 
 if TYPE_CHECKING:
     from prometheus_client.metrics_core import Metric
@@ -102,8 +101,8 @@ class ParsedMetrics:
         """Get a histogram by name and optional labels.
 
         Args:
-            metric_name: Base metric name (e.g., "maxserve_batch_execution_time_milliseconds")
-            labels: Optional dictionary of labels (e.g., {"batch_type": "CE"})
+            metric_name: Base metric name (such as "maxserve_batch_execution_time_milliseconds")
+            labels: Optional dictionary of labels (such as {"batch_type": "CE"})
 
         Returns:
             HistogramData if found, None otherwise
@@ -149,7 +148,7 @@ def get_metrics_url(backend: Backend, base_url: str) -> str:
 
     Args:
         backend: Backend name (Backend enum)
-        base_url: Base API URL (e.g., 'http://localhost:8000')
+        base_url: Base API URL (such as 'http://localhost:8000')
 
     Returns:
         Metrics endpoint URL for the backend
@@ -171,28 +170,6 @@ def get_metrics_url(backend: Backend, base_url: str) -> str:
         metrics_port = parsed_url.port or 8000
 
     return f"http://{host}:{metrics_port}/metrics"
-
-
-def fetch_metrics(url: str) -> str:
-    """Fetch raw metrics text from a Prometheus endpoint.
-
-    Args:
-        url: Prometheus metrics endpoint URL
-
-    Returns:
-        Raw Prometheus text format
-
-    Raises:
-        requests.HTTPError: If the response status is not 200
-        requests.RequestException: For network/connection errors
-    """
-    response = requests.get(url, timeout=2)
-    if response.status_code != 200:
-        raise requests.HTTPError(
-            f"Failed to fetch metrics: {response.status_code}",
-            response=response,
-        )
-    return response.text
 
 
 def _format_metric_key(metric_name: str, labels: dict[str, str]) -> str:
@@ -247,8 +224,8 @@ def parse_metrics(raw_text: str) -> ParsedMetrics:
         ParsedMetrics object containing all parsed metrics
 
     Note:
-        - Counters: Monotonically increasing values (e.g., total requests)
-        - Gauges: Values that can increase or decrease (e.g., current memory usage)
+        - Counters: Monotonically increasing values (such as total requests)
+        - Gauges: Values that can increase or decrease (such as current memory usage)
         - Histograms: Distribution data with buckets, sum, and count
     """
     counters: dict[str, float] = {}
@@ -307,7 +284,7 @@ def fetch_and_parse_metrics(backend: Backend, base_url: str) -> ParsedMetrics:
 
     Args:
         backend: Backend name (Backend enum)
-        base_url: Base API URL (e.g., 'http://localhost:8000')
+        base_url: Base API URL (such as 'http://localhost:8000')
 
     Returns:
         ParsedMetrics object containing all parsed metrics
@@ -375,47 +352,6 @@ def compute_metrics_delta(
         histograms=delta_histograms,
         raw_text="",  # Delta doesn't have raw text
     )
-
-
-def collect_server_metrics(
-    backend: Backend,
-    base_url: str,
-    baseline: ParsedMetrics | None = None,
-) -> ParsedMetrics:
-    """Fetch server metrics and optionally compute delta from baseline.
-
-    Convenience function that fetches metrics from the server's Prometheus endpoint
-    and optionally computes the delta from a baseline measurement.
-
-    Args:
-        backend: Backend type (e.g., "modular")
-        base_url: Server base URL (e.g., 'http://localhost:8000')
-        baseline: Optional baseline metrics to compute delta from. If provided,
-            returns the delta between baseline and current metrics. If None,
-            returns the current metrics as-is.
-
-    Returns:
-        ParsedMetrics object (delta if baseline provided, current otherwise).
-
-    Raises:
-        requests.RequestException: If fetching metrics fails.
-
-    Examples:
-        >>> # Capture baseline before benchmark
-        >>> baseline = collect_server_metrics("modular", "http://localhost:8000")
-        >>>
-        >>> # ... run benchmark ...
-        >>>
-        >>> # Capture final metrics and compute delta
-        >>> delta = collect_server_metrics(
-        ...     "modular", "http://localhost:8000", baseline
-        ... )
-    """
-    final = fetch_and_parse_metrics(backend=backend, base_url=base_url)
-
-    if baseline is not None:
-        return compute_metrics_delta(baseline=baseline, final=final)
-    return final
 
 
 def collect_benchmark_metrics(
@@ -562,8 +498,8 @@ def fetch_spec_decode_metrics(
 
     Args:
         backend: Backend type (``vllm`` / ``vllm-chat``, ``modular`` /
-            ``modular-chat``, etc.).
-        base_url: Server base URL (e.g., ``http://localhost:8000``).
+            ``modular-chat`` and so on).
+        base_url: Server base URL (such as ``http://localhost:8000``).
         metrics_urls: Explicit Prometheus metrics endpoint URLs, keyed by
             label. When empty, a single endpoint is derived from *backend*
             and *base_url*.

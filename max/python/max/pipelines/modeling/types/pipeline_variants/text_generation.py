@@ -41,6 +41,8 @@ from typing import (
     TypedDict,
 )
 
+from typing_extensions import NotRequired
+
 if TYPE_CHECKING:
     from PIL.Image import Image as PILImage
 
@@ -65,6 +67,14 @@ class TextGenerationRequestFunction(TypedDict):
 
     parameters: dict[str, Any]
     """A dictionary describing the function's parameters, typically following a JSON schema."""
+
+    strict: NotRequired[bool | None]
+    """Whether constrained decoding enforces ``parameters`` for this tool.
+
+    ``False`` constrains only the tool-call envelope and leaves the arguments
+    free-form; ``True`` enforces the full argument schema. The default value,
+    and any potential override, depends on the server's tool-call policy.
+    """
 
 
 class TextGenerationRequestTool(TypedDict):
@@ -147,6 +157,7 @@ class VideoContentPart(_MessageContentPart):
 
 
 MessageContent = TextContentPart | ImageContentPart | VideoContentPart
+"""One part of a chat message: text, an image, or a video."""
 
 # ``root`` is a vendor role; supporting chat templates order it above ``system``.
 _MessageRole = Literal[
@@ -359,7 +370,7 @@ class TextGenerationRequest:
     A list of video byte arrays that can be included as part of the request.
     Each video is decoded into frames during preprocessing.
     """
-    decoded_images: list[PILImage] = field(default_factory=list)
+    decoded_images: list[PILImage | None] = field(default_factory=list)
     """
     Decoded ``PIL.Image`` objects corresponding 1:1 to :attr:`images`, decoded
     once at request admission (the API server validates images by fully
@@ -368,6 +379,20 @@ class TextGenerationRequest:
     the worker boundary, so it must stay populated only for the in-process
     tokenization step. Empty when images were not pre-decoded (offline/test
     callers); tokenizers fall back to decoding :attr:`images` in that case.
+    An individual entry is ``None`` when the admission decode was skipped
+    because the tokenizer already holds that image's preprocessed tensor --
+    the same per-index fallback to :attr:`images` applies.
+    """
+    max_decoded_bytes: int | None = None
+    """
+    Decoded (in-memory) bytes each of this request's videos may retain: an
+    equal share of the ``Settings.max_media_bytes`` budget left after every
+    encoded image and video and every decoded image is accounted for. A video
+    is decoded later, in the tokenizer, so the allowance travels with the
+    request to bound how many frames that decode may keep. Because the shares
+    sum to what remains, the videos cannot jointly exceed the budget.
+    API-process-only, like :attr:`decoded_images`.
+    ``None`` means unbounded (offline/test callers, or the limit disabled).
     """
     tools: list[TextGenerationRequestTool] | None = None
     """
@@ -421,20 +446,20 @@ class TextGenerationRequest:
     dkv_cache_hint: dict[str, Any] | None = None
     """Cache hint from the Orchestrator for distributed KV cache.
 
-    When present, the serving layer converts this into
-    ``TextContext.external_block_metadata`` so the DKVConnector can
-    fetch cached blocks before the forward pass.
+    The serving layer never reads it: it re-serializes the object onto
+    ``TextContext.dkv_cache_hint`` and hands those bytes to the dKV connector,
+    which parses them in Rust to route each block to the instance that holds
+    it. See ``dkv/docs/cache-hint.md``.
     """
     cache_salt: str | None = None
     """Optional per-request salt that isolates this prompt's prefix-cache
-
     entries from other requests sharing the same tokens.
-    Combined with the cluster-level ``kv_cache_hash_seed`` via XOR inside
-    ``BlockManager`` to derive the root parent hash. Has effect only when
-    ``kv_cache_hash_algo`` is ``sha256`` or ``sha256_64``; under
-    ``ahash64`` the salt is dropped with a one-time warning.
 
-    Capped at 512 chars at the OpenAI schema layer.
+    Combined with ``kv_cache_hash_seed`` via XOR to seed the block hash.
+    Works under any ``kv_cache_hash_algo``: a cryptographic guarantee
+    under ``sha256`` (64-bit key separation on the dKV external tier),
+    best-effort under ``ahash64``. Capped at 512 chars at the OpenAI
+    schema layer.
     """
 
     def __str__(self) -> str:
@@ -448,8 +473,21 @@ class TextGenerationRequest:
         for offline and test callers. Tokenizers consume images through this so
         the decode-once policy lives in one place rather than being repeated at
         every per-model decode site.
+
+        The fallback is per index, not per request: the API server skips the
+        admission decode for an image whose preprocessed tensor the tokenizer
+        already holds, leaving a ``None`` in that slot. Such an image is only
+        decoded if the tokenizer actually needs its pixels, which a cache hit
+        means it does not.
         """
-        return self.decoded_images or self.images
+        if not self.decoded_images:
+            return list(self.images)
+        return [
+            raw if decoded is None else decoded
+            for decoded, raw in zip(
+                self.decoded_images, self.images, strict=True
+            )
+        ]
 
     def __post_init__(self) -> None:
         """Validates mutual exclusivity, image-messaging constraints, and message-image consistency after object initialization."""
@@ -552,6 +590,53 @@ class CompletedBatchStats:
     """Output tokens produced by the completed batch, when known (currently
     only reported by speculative decoding). ``None`` otherwise."""
 
+    draft_tokens_generated: int = 0
+    """Draft tokens generated by the completed batch (speculative decoding)."""
+
+    draft_tokens_accepted: int = 0
+    """Draft tokens accepted by the completed batch (speculative decoding)."""
+
+    avg_acceptance_length: float = 0.0
+    """Average acceptance length for the completed batch (speculative
+    decoding)."""
+
+    max_acceptance_length: int = 0
+    """Maximum possible acceptance length, i.e. the configured number of
+    speculative tokens (speculative decoding)."""
+
+    acceptance_rate_per_position: list[float] = field(default_factory=list)
+    """Per-position draft acceptance rates for the completed batch
+    (speculative decoding)."""
+
+    early_sync_duration_s: float | None = None
+    """Wall-clock time spent in the early-sync guard's blocking
+    ``sync_and_process_outputs()`` call (see
+    ``_should_early_sync_prev_batch``), when it fired for this batch.
+    ``None`` when the guard did not fire."""
+
+    @property
+    def prompt_throughput(self) -> float:
+        """Prompt-side throughput of the completed batch in tokens/second."""
+        if self.execution_time_s <= 0.0:
+            return 0.0
+        return self.num_input_tokens / self.execution_time_s
+
+    @property
+    def generation_throughput(self) -> float:
+        """Generation throughput of the completed batch in tokens/second.
+
+        Uses the known output-token count when available (speculative
+        decoding, TG batches); otherwise counts one token per request.
+        """
+        if self.execution_time_s <= 0.0:
+            return 0.0
+        if (
+            self.num_output_tokens is not None
+            and self.batch_type == BatchType.TG
+        ):
+            return self.num_output_tokens / self.execution_time_s
+        return self.batch_size / self.execution_time_s
+
 
 @dataclass(eq=True)
 class TextGenerationInputs(PipelineInputs, Generic[TextGenerationContextType]):
@@ -612,6 +697,13 @@ class TextGenerationInputs(PipelineInputs, Generic[TextGenerationContextType]):
     def flat_batch(self) -> list[TextGenerationContextType]:
         """Flattened list of contexts across all replicas."""
         return [context for batch in self.batches for context in batch]
+
+    @property
+    def batch_size(self) -> int:
+        """Number of requests in the batch."""
+        return sum(
+            1 for context in self.flat_batch if not context._is_padding_ctx
+        )
 
     def __bool__(self) -> bool:
         return len(self.flat_batch) > 0

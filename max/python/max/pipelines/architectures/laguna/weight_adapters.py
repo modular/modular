@@ -87,7 +87,7 @@ def convert_safetensor_state_dict(
     for hf_name, value in state_dict.items():
         # FP8 KV-cache scales: the graph uses a bf16 KV cache, so these are
         # unused (strict load would reject them as unexpected). Drop them.
-        if hf_name.endswith(".k_scale") or hf_name.endswith(".v_scale"):
+        if hf_name.endswith((".k_scale", ".v_scale")):
             continue
         max_name = hf_name
         for before, after in LAGUNA_SAFETENSOR_MAP.items():
@@ -102,9 +102,7 @@ def convert_safetensor_state_dict(
         # them through unchanged inflates every weight ~5504x → gibberish.
         # Reciprocate the two F32 scalar globals. The per-group ``weight_scale``
         # (e4m3) is identical in both conventions — do NOT touch it.
-        if max_name.endswith(".weight_scale_2") or max_name.endswith(
-            ".input_scale"
-        ):
+        if max_name.endswith((".weight_scale_2", ".input_scale")):
             arr = np.from_dlpack(data)
             # np.reciprocal on a 0-d array returns a numpy *scalar* (no
             # __dlpack__); force a 0-d ndarray so to_buffer() works downstream.

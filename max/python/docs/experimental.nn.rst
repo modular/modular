@@ -14,9 +14,18 @@ max.experimental.nn
 Submodules
 ----------
 
+.. autosummary::
+   :nosignatures:
+
+   max.experimental.nn.common_layers.functional_kernels
+   max.experimental.nn.norm
+   max.experimental.nn.rope
+
 .. toctree::
    :maxdepth: 1
+   :hidden:
 
+   experimental.nn.common_layers.functional_kernels
    experimental.nn.norm
    experimental.nn.rope
 
@@ -28,7 +37,6 @@ Base classes
    :toctree: generated
    :template: autosummary/class.rst
 
-   CompiledModel
    Module
    ModuleList
    PinnedDeviceTensor
@@ -46,6 +54,16 @@ Linear layers
    Embedding
    Linear
 
+Hyper-connection
+----------------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/class.rst
+
+   HyperConnection
+
 Functions
 ---------
 
@@ -54,6 +72,6 @@ Functions
    :toctree: generated
    :template: autosummary/function.rst
 
+   as_subgraph
    module_dataclass
-   subgraphable
 

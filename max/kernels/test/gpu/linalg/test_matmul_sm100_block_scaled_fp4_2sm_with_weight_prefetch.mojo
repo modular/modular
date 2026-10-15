@@ -20,15 +20,13 @@
 # ===----------------------------------------------------------------------=== #
 from std.math import align_up, ceildiv
 from std.sys import size_of
-from std.gpu.host import DeviceContext
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.memory import alloc
+from max.gpu.host import DeviceContext
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.random import rand
 
 from internal_utils import assert_almost_equal
 from layout import (
     TileTensor,
-    Coord,
     CoordLike,
     row_major,
     Idx,
@@ -48,7 +46,7 @@ from linalg.fp4_utils import (
     set_scale_factor,
 )
 import linalg.matmul.vendor.blas as vendor_blas
-from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 
 def _test_impl[
@@ -96,11 +94,11 @@ def _test_impl[
         t" prefetch_tiles_n={prefetch_tiles_n}"
     )
 
-    var a_shape = row_major(Coord(m, Idx[KType.static_value // 2]))
+    var a_shape = row_major(m, Idx[KType.static_value // 2])
     var b_shape = row_major(
-        Coord(Idx[NType.static_value], Idx[KType.static_value // 2])
+        Idx[NType.static_value], Idx[KType.static_value // 2]
     )
-    var c_shape = row_major(Coord(m, Idx[NType.static_value]))
+    var c_shape = row_major(m, Idx[NType.static_value])
 
     var a_size = Int(m.value()) * (KType.static_value // 2)
     var b_size = Int(n.value()) * (KType.static_value // 2)
@@ -125,22 +123,18 @@ def _test_impl[
     var c_ref_tensor = TileTensor(c_device_ref, c_shape)
 
     var a_scales_shape = row_major(
-        Coord(
-            ceildiv(Int(m.value()), SF_MN_GROUP_SIZE),
-            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1]],
-            Idx[SF_ATOM_K],
-        )
+        ceildiv(Int(m.value()), SF_MN_GROUP_SIZE),
+        Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
     var b_scales_shape = row_major(
-        Coord(
-            Idx[ceildiv(NType.static_value, SF_MN_GROUP_SIZE)],
-            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1]],
-            Idx[SF_ATOM_K],
-        )
+        Idx[ceildiv(NType.static_value, SF_MN_GROUP_SIZE)],
+        Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
 
     var a_scales_total = a_scales_shape.product()
@@ -164,10 +158,10 @@ def _test_impl[
     )
     var b_scales_tensor = TileTensor(b_scales_device, b_scales_shape)
 
-    rand(a_host.ptr, a_host.num_elements(), min=0, max=255)
-    rand(b_host.ptr, b_host.num_elements(), min=0, max=255)
-    rand(a_scales_host.ptr, a_scales_host.num_elements())
-    rand(b_scales_host.ptr, b_scales_host.num_elements())
+    rand(a_host.as_span(), min=0, max=255)
+    rand(b_host.as_span(), min=0, max=255)
+    rand(a_scales_host.as_span())
+    rand(b_scales_host.as_span())
 
     for idx0 in range(align_up(Int(m.value()), SF_MN_GROUP_SIZE)):
         for idx1 in range(
@@ -195,12 +189,6 @@ def _test_impl[
     ctx.enqueue_copy(b_device, b_host_ptr)
     ctx.enqueue_copy(a_scales_device, a_scales_host_ptr)
     ctx.enqueue_copy(b_scales_device, b_scales_host_ptr)
-
-    var a_lt = a_tensor.to_layout_tensor()
-    var b_lt = b_tensor.to_layout_tensor()
-    var a_scales_lt = a_scales_tensor.to_layout_tensor()
-    var b_scales_lt = b_scales_tensor.to_layout_tensor()
-    var c_ref_tensor_lt = c_ref_tensor.to_layout_tensor()
 
     comptime matmul_config = BlockScaledMatmulConfig[
         a_type, b_type, c_type, scales_dtype, scales_dtype, transpose_b
@@ -237,11 +225,11 @@ def _test_impl[
 
     vendor_blas.matmul(
         ctx,
-        c_ref_tensor_lt.as_unsafe_any_origin(),
-        a_lt,
-        b_lt,
-        a_scales=a_scales_lt.get_immutable().as_unsafe_any_origin(),
-        b_scales=b_scales_lt.get_immutable().as_unsafe_any_origin(),
+        c_ref_tensor,
+        a_tensor,
+        b_tensor,
+        a_scales=a_scales_tensor,
+        b_scales=b_scales_tensor,
         transpose_b=transpose_b,
         c_row_major=True,
         alpha=alpha,
@@ -254,8 +242,8 @@ def _test_impl[
     ctx.synchronize()
 
     assert_almost_equal(
-        c_host.ptr,
-        c_host_ref.ptr,
+        c_host._storage,
+        c_host_ref._storage,
         c_host.num_elements(),
         atol=1e-2,
         rtol=1e-2,
@@ -284,8 +272,7 @@ def run_matmul_sm100_block_scaled_fp4_2sm_prefetch_suite[
         comptime BK = (swizzle.bytes() // size_of[dtype]())
         comptime MMA_K = 32
 
-        @parameter
-        @always_inline
+        @inline(.always)
         def run[
             MType: CoordLike,
             NType: CoordLike,

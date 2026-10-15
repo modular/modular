@@ -18,26 +18,23 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 import numpy as np
-from max.driver import Buffer, DevicePinnedBuffer, copy_pinned_to_destinations
-from max.dtype import DType
+from max import tree
+from max.driver import Buffer
 from max.graph import BufferType, DeviceRef, TensorType
-from max.nn.kv_cache import KVCacheInputsInterface
+from max.nn.kv_cache import KVCacheInputs
 from max.nn.kv_cache.cache_params import KVCacheParamInterface
+from max.pipelines.lib.interfaces.arch_config import ArchConfig
 from max.pipelines.lib.interfaces.batch_processor import (
+    RAGGED_INPUT_ROW_OFFSETS,
+    RAGGED_INPUT_TOKENS,
     BatchProcessor,
+    BatchProcessorRuntime,
     process_ragged_kv_outputs,
-    ragged_kv_symbolic_inputs,
+    ragged_token_descriptors,
 )
 from max.pipelines.lib.interfaces.pipeline_model import ModelOutputs
-from max.pipelines.lib.vision_encoder_cache import VisionEncoderCache
 from max.profiler import traced
 
-from .batch_vision_inputs import (
-    build_image_inputs,
-    build_video_inputs,
-    create_empty_embeddings,
-    create_empty_indices,
-)
 from .context import Gemma4Context
 from .model_config import Gemma4ForConditionalGenerationConfig
 
@@ -51,22 +48,28 @@ class Gemma4BatchProcessor(
     """Ragged batching with optional vision inputs for Gemma4 models."""
 
     _config: Gemma4ForConditionalGenerationConfig | None = None
-    _ve_cache: VisionEncoderCache[Gemma4Context] | None = None
+
+    def __init__(
+        self,
+        config: ArchConfig,
+        runtime: BatchProcessorRuntime,
+    ) -> None:
+        super().__init__(config, runtime, ragged_token_descriptors(runtime))
 
     def bind_model_state(
         self,
         *,
         config: Gemma4ForConditionalGenerationConfig,
-        ve_cache: VisionEncoderCache[Gemma4Context],
     ) -> None:
-        """Wire model config and vision encoder cache from ``load_model``.
+        """Wire the model config from ``load_model``.
+
+        Images go through the pipeline-owned ``VisionEncoderCache``; this
+        processor only builds tokens/offsets and video inputs.
 
         Args:
             config: Fully-initialised Gemma4 model configuration.
-            ve_cache: Shared vision encoder result cache for this pipeline.
         """
         self._config = config
-        self._ve_cache = ve_cache
 
     def get_symbolic_inputs(
         self,
@@ -74,17 +77,14 @@ class Gemma4BatchProcessor(
         kv_params: KVCacheParamInterface,
         device_refs: list[DeviceRef],
     ) -> list[TensorType | BufferType]:
-        return ragged_kv_symbolic_inputs(
-            kv_params=kv_params,
-            device_refs=device_refs,
-            include_signal_buffers=True,
-        )
+        assert self.input_tree is not None, "the model binds its inputs first"
+        return tree.leaves(self.input_tree)
 
     @traced
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[Gemma4Context]],
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> Gemma3MultiModalModelInputs:
         """Prepare inputs for the first execution pass."""
@@ -94,116 +94,32 @@ class Gemma4BatchProcessor(
             raise ValueError("Model does not support DP>1")
         context_batch = replica_batches[0]
 
-        assert self._config is not None, (
-            "config must be bound before prepare_initial_token_inputs(); "
-            "call bind_model_state() in load_model()"
-        )
-        assert self._ve_cache is not None, (
-            "ve_cache must be bound before prepare_initial_token_inputs(); "
-            "call bind_model_state() in load_model()"
-        )
         assert kv_cache_inputs is not None
-
-        devices = self.runtime.devices
-        dev = devices[0]
-        pinned = not dev.is_host
 
         batch_size = len(context_batch)
         total_seq_len = sum(ctx.tokens.active_length for ctx in context_batch)
 
-        # Fresh pinned host staging every step (never reused) so the next
-        # overlap step's host writes can't clobber the in-flight H2D copy.
-        # Device buffers are cached and reused so captured graphs replay in
-        # place.
-        host_buffer_cls = DevicePinnedBuffer if pinned else Buffer
-        host_tokens: Buffer = host_buffer_cls(
-            dtype=DType.int64, shape=(total_seq_len,), device=dev
-        )
-        host_row_offsets: Buffer = host_buffer_cls(
-            dtype=DType.uint32, shape=(batch_size + 1,), device=dev
-        )
-
-        device_tokens = self._device_input_allocator.alloc(
-            name="ragged_input_tokens",
-            dtype=DType.int64,
-            shape=(total_seq_len,),
-            device=dev,
-        )
-        device_row_offsets = [
-            self._device_input_allocator.alloc(
-                name="ragged_input_row_offsets",
-                dtype=DType.uint32,
-                shape=(batch_size + 1,),
-                device=device,
+        with self._stager.stage() as staging:
+            host_tokens, (device_tokens,) = staging.get(
+                RAGGED_INPUT_TOKENS, (total_seq_len,)
             )
-            for device in devices
-        ]
+            host_row_offsets, (device_row_offsets,) = staging.get(
+                RAGGED_INPUT_ROW_OFFSETS, (batch_size + 1,)
+            )
+            np.cumsum(
+                [0] + [ctx.tokens.active_length for ctx in context_batch],
+                dtype=np.uint32,
+                out=host_row_offsets.to_numpy(),
+            )
+            if context_batch:
+                np.concatenate(
+                    [ctx.tokens.active for ctx in context_batch],
+                    out=host_tokens.to_numpy(),
+                )
 
         return_n_logits_buf = Buffer.from_numpy(
             np.array([return_n_logits], dtype=np.int64)
         )
-
-        row_offsets_np = host_row_offsets.to_numpy()
-        np.cumsum(
-            [0] + [ctx.tokens.active_length for ctx in context_batch],
-            dtype=np.uint32,
-            out=row_offsets_np,
-        )
-
-        tokens_np = host_tokens.to_numpy()
-        if context_batch:
-            np.concatenate(
-                [ctx.tokens.active for ctx in context_batch],
-                out=tokens_np,
-            )
-
-        copy_pinned_to_destinations(host_tokens, [device_tokens])
-        copy_pinned_to_destinations(host_row_offsets, device_row_offsets)
-
-        needs_images = (
-            any(
-                getattr(ctx, "needs_vision_encoding", False)
-                for ctx in context_batch
-            )
-            if context_batch
-            else False
-        )
-        k = (
-            self._config.vision_config.pooling_kernel_size
-            if self._config.vision_config is not None
-            else 1
-        )
-        if needs_images:
-            uncached = self._ve_cache.get_uncached_contexts(context_batch)
-            image_inputs = build_image_inputs(
-                context_batch=context_batch,
-                uncached=uncached,
-                devices=devices,
-                pooling_kernel_size=k,
-                ve_cache=self._ve_cache,
-                empty_embeddings=self._empty_embeddings(),
-                dtype=self._config.unquantized_dtype,
-            )
-        else:
-            image_inputs = None
-
-        needs_video = (
-            any(
-                getattr(ctx, "needs_video_encoding", False)
-                for ctx in context_batch
-            )
-            if context_batch
-            else False
-        )
-        if needs_video:
-            video_inputs = build_video_inputs(
-                context_batch=context_batch,
-                devices=devices,
-                pooling_kernel_size=k,
-                dtype=self._config.unquantized_dtype,
-            )
-        else:
-            video_inputs = None
 
         return Gemma3MultiModalModelInputs(
             tokens=device_tokens,
@@ -211,28 +127,7 @@ class Gemma4BatchProcessor(
             return_n_logits=return_n_logits_buf,
             signal_buffers=list(self.runtime.signal_buffers),
             kv_cache_inputs=kv_cache_inputs,
-            images=image_inputs,
-            video=video_inputs,
-            combined_embeds=self._empty_embeddings(),
-            combined_indices=self._empty_indices(),
         )
-
-    def _empty_embeddings(self) -> list[Buffer]:
-        assert self._config is not None
-        if not hasattr(self, "_cached_empty_embeddings"):
-            self._cached_empty_embeddings = create_empty_embeddings(
-                self.runtime.devices,
-                self._config.text_config.hidden_size,
-                self._config.unquantized_dtype,
-            )
-        return self._cached_empty_embeddings
-
-    def _empty_indices(self) -> list[Buffer]:
-        if not hasattr(self, "_cached_empty_indices"):
-            self._cached_empty_indices = create_empty_indices(
-                self.runtime.devices
-            )
-        return self._cached_empty_indices
 
     def process_outputs(
         self, outputs: Sequence[Buffer | object]

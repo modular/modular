@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -227,7 +227,7 @@ class Qwen3TextEncoderModel(ComponentModel):
     ) -> Buffer:
         """Execute the compiled encoder with an already-built attention bias.
 
-        Use this when the caller has pre-computed the additive bias (e.g.,
+        Use this when the caller has pre-computed the additive bias (such as
         to share bias construction across positive and negative CFG
         streams). ``tokens`` may be 1D ``(S,)`` or 2D ``(1, S)``; 2D
         tokens are squeezed. ``attention_bias`` must be shape

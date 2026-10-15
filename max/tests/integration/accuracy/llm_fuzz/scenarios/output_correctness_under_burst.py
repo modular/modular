@@ -332,11 +332,7 @@ def _diagnostic_body(prompt: str, resp: RawResponse) -> str:
     parts = [f"REQUEST: {prompt[:400]}"]
     if reasoning:
         parts.append(f"REASONING: {reasoning[:300]}")
-    reply = (
-        content
-        if content
-        else (reasoning[:500] if reasoning else resp.body[:500])
-    )
+    reply = content or (reasoning[:500] if reasoning else resp.body[:500])
     parts.append(f"RESPONSE: {reply[:500]}")
     return "\n".join(parts)
 
@@ -817,9 +813,7 @@ class OutputCorrectnessUnderBurstScenario(BaseScenario):
             diag_parts = [f"REQUEST: {prompt[:400]}"]
             if reasoning:
                 diag_parts.append(f"REASONING: {reasoning[:300]}")
-            reply = (
-                content if content else (reasoning[:500] if reasoning else "")
-            )
+            reply = content or (reasoning[:500] if reasoning else "")
             diag_parts.append(f"RESPONSE: {reply[:500]}")
             results.append(
                 self.make_result(

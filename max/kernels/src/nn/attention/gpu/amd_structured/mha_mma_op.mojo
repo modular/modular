@@ -28,11 +28,10 @@ Supports two MFMA flavors on gfx950, comptime-selected on `T`:
   dtype-generic; `gpu_mma` dispatches on SIMD operand sizes.
 """
 
-from std.gpu import lane_id
-from std.gpu.compute.mma import mma as gpu_mma
-from std.gpu.intrinsics import ds_read_tr8_b64
+from max.gpu import lane_id
+from max.gpu.compute.mma import mma as gpu_mma
+from max.gpu.intrinsics import ds_read_tr8_b64
 from std.math import exp2 as math_exp2
-from std.memory import AddressSpace
 from std.sys import size_of
 from std.utils import IndexList
 
@@ -54,7 +53,7 @@ from structured_kernels.amd_tile_io import (
 # `[0, 16)`: four stripes of four rows, spaced 8 rows apart, with the
 # high half-warp shifted by 4. Hardware-determined; consumers needing to
 # map per-lane fragment indices to matrix rows should read this table.
-comptime ACC_ROW_OFFSETS_32x32 = SIMD[DType.int32, 16](
+comptime ACC_ROW_OFFSETS_32x32 = SIMD[.int32, 16](
     0, 1, 2, 3, 8, 9, 10, 11, 16, 17, 18, 19, 24, 25, 26, 27
 )
 
@@ -130,8 +129,8 @@ struct MhaConfigV2(ImplicitlyCopyable, Movable):
         num_kv_heads: Int,
         num_warps: Int = 8,
         rescale_threshold: Float32 = 8.0,
-        dtype: DType = DType.bfloat16,
-        output_dtype: DType = DType.float32,
+        dtype: DType = .bfloat16,
+        output_dtype: DType = .float32,
         fp8_mma_k_128: Bool = False,
     ):
         self.q_block_size = q_block_size
@@ -247,8 +246,8 @@ struct MlaConfigV2(ImplicitlyCopyable, Movable):
         rope_cache_offset: Int,
         num_warps: Int = 8,
         rescale_threshold: Float32 = 8.0,
-        dtype: DType = DType.bfloat16,
-        output_dtype: DType = DType.float32,
+        dtype: DType = .bfloat16,
+        output_dtype: DType = .float32,
         fp8_mma_k_128: Bool = False,
     ):
         self.q_block_size = q_block_size
@@ -266,7 +265,7 @@ struct MlaConfigV2(ImplicitlyCopyable, Movable):
         self.cache_depth = cache_depth
         self.rope_cache_offset = rope_cache_offset
 
-    @always_inline
+    @inline(.always)
     def d_nope(self) -> Int:
         """Returns the non-RoPE segment depth (= `depth` = `d_pv`).
 
@@ -277,7 +276,7 @@ struct MlaConfigV2(ImplicitlyCopyable, Movable):
         """
         return self.depth
 
-    @always_inline
+    @inline(.always)
     def mha(self) -> MhaConfigV2:
         """Returns an `MhaConfigV2` derived from `Self` for sharing
         the `MhaMmaOp[T, ...]` machinery.
@@ -521,7 +520,7 @@ struct MhaMmaOp[T: DType, config: MhaConfigV2]:
     # FP32 SMEM (unused here) would take the identity branch.
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def _swizzle_K_sub(r: Int, c: Int) -> Int:
         """Returns the byte offset of `(r, c)` within a K sub-block,
         with a two-XOR same-distance swizzle applied for BF16 and FP8.
@@ -555,14 +554,14 @@ struct MhaMmaOp[T: DType, config: MhaConfigV2]:
             return offset
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def load_K[
         layout_dst: TensorLayout,
         layout_src: TensorLayout,
         //,
     ](
         mut dst: RegTile[Self.T, layout_dst, MutUntrackedOrigin],
-        src: SMemTile[Self.T, layout_src, MutAnyOrigin],
+        src: SMemTile[Self.T, layout_src, MutAnyOrigin, _],
     ):
         """Loads the whole `(KV_BLOCK, DEPTH)` K tile from SMEM into the
         row_l register tile (32×MMA_K base tiles), unswizzling on the way.
@@ -592,7 +591,7 @@ struct MhaMmaOp[T: DType, config: MhaConfigV2]:
             src: Source SMEM tile holding the swizzled K block.
         """
         comptime assert (
-            Self.T == DType.bfloat16 or Self.T.is_float8()
+            Self.T == .bfloat16 or Self.T.is_float8()
         ), "MhaMmaOp.load_K: BF16 or FP8 only"
         comptime assert (
             layout_dst.static_shape[2] == Self.FRAG_ELTS
@@ -613,7 +612,7 @@ struct MhaMmaOp[T: DType, config: MhaConfigV2]:
         var dst_v = dst.vectorize[1, 1, Self.FRAG_ELTS]()
         comptime assert dst_v.flat_rank == 3
 
-        comptime if Self.T == DType.bfloat16:
+        comptime if Self.T == .bfloat16:
             # Per-cell body: each `(register_row, register_col)` reads
             # `subtile.ptr + swizzled_elts` directly. Kept distinct from
             # the FP8 hoist-once + `typed_imm_offset` form below, which
@@ -643,7 +642,7 @@ struct MhaMmaOp[T: DType, config: MhaConfigV2]:
                         swizzled_elts_odd if is_odd_col else swizzled_elts_even
                     )
                     var smem_at_lane = (subtile.ptr + swizzled_elts).bitcast[
-                        Scalar[DType.bfloat16]
+                        BFloat16
                     ]()
                     var frag = _load_from_lds[width=Self.FRAG_ELTS](
                         smem_at_lane
@@ -772,14 +771,14 @@ struct MhaMmaOp[T: DType, config: MhaConfigV2]:
                     ](frag)
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def load_V[
         layout_dst: TensorLayout,
         layout_src: TensorLayout,
         //,
     ](
         mut dst: RegTile[Self.T, layout_dst, MutUntrackedOrigin],
-        src: SMemTile[Self.T, layout_src, MutAnyOrigin],
+        src: SMemTile[Self.T, layout_src, MutAnyOrigin, _],
     ):
         """Loads the whole V tile from SMEM into the col_l register tile.
 
@@ -823,7 +822,7 @@ struct MhaMmaOp[T: DType, config: MhaConfigV2]:
                 `SubTileLoaderLDS_st_8x32` in sub-tile-major order.
         """
         comptime assert (
-            Self.T == DType.bfloat16 or Self.T.is_float8()
+            Self.T == .bfloat16 or Self.T.is_float8()
         ), "MhaMmaOp.load_V: BF16 or FP8 only"
         comptime assert (
             layout_dst.static_shape[2] == Self.FRAG_ELTS
@@ -835,7 +834,7 @@ struct MhaMmaOp[T: DType, config: MhaConfigV2]:
         var dst_v = dst.vectorize[1, 1, Self.FRAG_ELTS]()
         comptime assert dst_v.flat_rank == 3
 
-        comptime if Self.T == DType.bfloat16:
+        comptime if Self.T == .bfloat16:
             comptime subtiles_per_row = width
             comptime mma_shape = IndexList[3](
                 Self.MMA_M, Self.MMA_N, Self.MMA_K
@@ -934,8 +933,7 @@ struct MhaMmaOp[T: DType, config: MhaConfigV2]:
 
             var lid = Int(lane_id())
             var lane_in_row = lid % 16
-            var pair_idx = lane_in_row // 2
-            var is_odd = lane_in_row % 2
+            var pair_idx, is_odd = divmod(lane_in_row, 2)
             var row_in_warp = lid // 16
             var is_hw1 = lid // 32
             var rel_key = (pair_idx % 4) + (pair_idx // 4) * 8
@@ -964,9 +962,8 @@ struct MhaMmaOp[T: DType, config: MhaConfigV2]:
                     comptime _sub_col = _depth_offset // _V_SUB_COLS_
                     comptime _d_in_sub = _depth_offset % _V_SUB_COLS_
 
-                    @always_inline
-                    @parameter
-                    def _load_keys[key_base: Int]() -> SIMD[Self.T, 8]:
+                    @inline(.always)
+                    def _load_keys[key_base: Int]() {imm} -> SIMD[Self.T, 8]:
                         # Comptime per-cell offset, derived from
                         # B = _row_offset + key_base (multiple of 16):
                         #   ((B // V_SUB_ROWS) * subtiles_per_row +
@@ -1030,15 +1027,13 @@ struct MhaMmaOp[T: DType, config: MhaConfigV2]:
                     comptime _row_offset = i * _MMA_K_
                     comptime _depth_offset = j * _MMA_M_
                     var depth_in_v = _depth_offset + lane_row
-                    var sub_col = depth_in_v // _V_SUB_COLS_
-                    var col_in_sub = depth_in_v % _V_SUB_COLS_
+                    var sub_col, col_in_sub = divmod(depth_in_v, _V_SUB_COLS_)
                     var key_start = _row_offset + lane_k_group * 32
 
                     var vals = SIMD[Self.T, Self.FRAG_ELTS]()
                     for f in range(Self.FRAG_ELTS):
                         var key_idx = key_start + f
-                        var sub_row = key_idx // _V_SUB_ROWS_
-                        var row_in_sub = key_idx % _V_SUB_ROWS_
+                        var sub_row, row_in_sub = divmod(key_idx, _V_SUB_ROWS_)
                         var sub_id = sub_row * _subtiles_per_row + sub_col
                         var slot_row = sub_id * _V_SUB_ROWS_ + row_in_sub
                         var byte_offset = slot_row * _V_SUB_COLS_ + col_in_sub
@@ -1048,7 +1043,7 @@ struct MhaMmaOp[T: DType, config: MhaConfigV2]:
     # MMA dispatch — MFMA over RegTile, named by attention semantic.
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def mma_QK[
         T_att: DType,
         layout_att: TensorLayout,
@@ -1083,7 +1078,7 @@ struct MhaMmaOp[T: DType, config: MhaConfigV2]:
             q: Q register tile, the B-operand of the MFMA (N-outer).
         """
         comptime assert (
-            Self.T == DType.bfloat16 or Self.T == DType.float8_e4m3fn
+            Self.T == .bfloat16 or Self.T == .float8_e4m3fn
         ), "MhaMmaOp.mma_QK: T must be bfloat16 or float8_e4m3fn"
         comptime ATT_h = layout_att.static_shape[0]
         comptime ATT_w = layout_att.static_shape[1]
@@ -1114,7 +1109,7 @@ struct MhaMmaOp[T: DType, config: MhaConfigV2]:
                 att_v[n, m, 0] = d_simd
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def mma_PV[
         T_o: DType,
         layout_o: TensorLayout,
@@ -1151,7 +1146,7 @@ struct MhaMmaOp[T: DType, config: MhaConfigV2]:
                 JIT-cast to `Self.T` from `att_block`).
         """
         comptime assert (
-            Self.T == DType.bfloat16 or Self.T == DType.float8_e4m3fn
+            Self.T == .bfloat16 or Self.T == .float8_e4m3fn
         ), "MhaMmaOp.mma_PV: T must be bfloat16 or float8_e4m3fn"
         comptime O_h = layout_o.static_shape[0]
         comptime O_w = layout_o.static_shape[1]
@@ -1182,7 +1177,7 @@ struct MhaMmaOp[T: DType, config: MhaConfigV2]:
                 o_v[n, m, 0] = d_simd
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def exp2_inplace_range[
         T_att: DType,
         layout: TensorLayout,
@@ -1301,13 +1296,13 @@ struct MlaMmaOp[T: DType, config: MhaConfigV2]:
     # --- Shared swizzle / MFMA / softmax methods: delegate to `MhaMmaOp`.
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def _swizzle_K_sub(r: Int, c: Int) -> Int:
         """K sub-block byte swizzle: delegates to `MhaMmaOp`."""
         return Self._Shared._swizzle_K_sub(r, c)
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def mma_QK[
         T_att: DType,
         layout_att: TensorLayout,
@@ -1341,7 +1336,7 @@ struct MlaMmaOp[T: DType, config: MhaConfigV2]:
         Self._Shared.mma_QK(att, k, q)
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def mma_PV[
         T_o: DType,
         layout_o: TensorLayout,
@@ -1376,7 +1371,7 @@ struct MlaMmaOp[T: DType, config: MhaConfigV2]:
         Self._Shared.mma_PV(o, v, p)
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def exp2_inplace_range[
         T_att: DType,
         layout: TensorLayout,
@@ -1409,10 +1404,14 @@ struct MlaMmaOp[T: DType, config: MhaConfigV2]:
     # --- FP8 32x32x64 fragment loaders (MLA-only). ---
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def load_K_frag[
         sub_id: Int,
-    ](src: SMemTile[Self.T, _, MutAnyOrigin],) -> SIMD[Self.T, Self.FRAG_ELTS]:
+    ](
+        src: SMemTile[Self.T, _, MutAnyOrigin, _],
+    ) -> SIMD[
+        Self.T, Self.FRAG_ELTS
+    ]:
         """Loads ONE K MFMA fragment (`sub_id`) from the K SMEM sub-view
         `src` and returns it as a SIMD value: the single-fragment
         factoring of the FP8 32x32x64 K-load inner loop.
@@ -1472,7 +1471,7 @@ struct MlaMmaOp[T: DType, config: MhaConfigV2]:
         return rebind[SIMD[Self.T, Self.FRAG_ELTS]](lo.join(hi))
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def precompute_v_lane_base[
         origin: Origin,
         //,
@@ -1480,11 +1479,9 @@ struct MlaMmaOp[T: DType, config: MhaConfigV2]:
         v227_layout: Bool = False,
     ](
         v_slot_ptr: UnsafePointer[
-            Scalar[Self.T], origin, address_space=AddressSpace.SHARED
+            Scalar[Self.T], origin, address_space=.SHARED
         ],
-    ) -> UnsafePointer[
-        Scalar[Self.T], origin, address_space=AddressSpace.SHARED
-    ]:
+    ) -> UnsafePointer[Scalar[Self.T], origin, address_space=.SHARED]:
         """Computes the per-lane V LDS base pointer for the FP8 32x32x64
         path ONCE per V SMEM slot (caller passes `v_smem_<stage>.ptr`).
         Hoisting this base out of the per-fragment readout collapses the
@@ -1543,8 +1540,7 @@ struct MlaMmaOp[T: DType, config: MhaConfigV2]:
 
         var lid = Int(lane_id())
         var lane_in_row = lid % 16
-        var pair_idx = lane_in_row // 2
-        var is_odd = lane_in_row % 2
+        var pair_idx, is_odd = divmod(lane_in_row, 2)
         var row_in_warp = lid // 16
         var is_hw1 = lid // 32
         var rel_key = (pair_idx % 4) + (pair_idx // 4) * 8
@@ -1598,7 +1594,7 @@ struct MlaMmaOp[T: DType, config: MhaConfigV2]:
                 )
                 v_lane_base_offset = Int(
                     crd2idx(
-                        Scalar[DType.int32](lid),
+                        Int32(lid),
                         _V227_BASE_SHAPE,
                         _V227_BASE_STRIDE,
                     )
@@ -1619,14 +1615,12 @@ struct MlaMmaOp[T: DType, config: MhaConfigV2]:
         return v_slot_ptr + v_lane_base_offset
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def load_V_from_lane_base[
         layout_dst: TensorLayout,
     ](
         mut dst: RegTile[Self.T, layout_dst, MutUntrackedOrigin],
-        v_lane_base: UnsafePointer[
-            Scalar[Self.T], _, address_space=AddressSpace.SHARED
-        ],
+        v_lane_base: UnsafePointer[Scalar[Self.T], _, address_space=.SHARED],
     ):
         """FP8 32x32x64 V load consuming a pre-computed per-lane base
         pointer (hoisted by the caller). Each call site adds ONLY
@@ -1683,9 +1677,8 @@ struct MlaMmaOp[T: DType, config: MhaConfigV2]:
                 comptime _sub_col = _depth_offset // _V_SUB_COLS_
                 comptime _d_in_sub = _depth_offset % _V_SUB_COLS_
 
-                @always_inline
-                @parameter
-                def _load_keys[key_base: Int]() -> SIMD[Self.T, 8]:
+                @inline(.always)
+                def _load_keys[key_base: Int]() {imm} -> SIMD[Self.T, 8]:
                     comptime _B = _row_offset + key_base
                     comptime _comptime_cell_offset = (
                         (_B // _V_SUB_ROWS_) * _v_block_stride
@@ -1702,15 +1695,13 @@ struct MlaMmaOp[T: DType, config: MhaConfigV2]:
                 dst_v[i, j, 0] = rebind[dst_v.ElementType](frag)
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def load_V_frag[
         i_strip: Int,
         j_depth: Int,
         v_full_v227: Bool = False,
     ](
-        v_lane_base: UnsafePointer[
-            Scalar[Self.T], _, address_space=AddressSpace.SHARED
-        ],
+        v_lane_base: UnsafePointer[Scalar[Self.T], _, address_space=.SHARED],
     ) -> SIMD[Self.T, Self.FRAG_ELTS]:
         """Loads ONE V MFMA fragment `(i_strip, j_depth)` from the
         pre-computed per-lane V LDS base and returns it as a SIMD value:
@@ -1784,9 +1775,8 @@ struct MlaMmaOp[T: DType, config: MhaConfigV2]:
         comptime _sub_col = _depth_offset // _V_SUB_COLS_
         comptime _d_in_sub = _depth_offset % _V_SUB_COLS_
 
-        @always_inline
-        @parameter
-        def _load_keys[key_base: Int]() -> SIMD[Self.T, 8]:
+        @inline(.always)
+        def _load_keys[key_base: Int]() {imm} -> SIMD[Self.T, 8]:
             comptime _B = _row_offset + key_base
             # Reference FULL-v227 V adapter READ cell offset (the `R` of
             # the `W∘R` pair). The per-lane base `v_lane_base` is already

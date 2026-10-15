@@ -15,20 +15,22 @@
 
 from __future__ import annotations
 
+from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib.config import PipelineConfig
+from max.pipelines.lib.config.model_config import _select_quantization_encoding
 from transformers import AutoConfig
 
-_GRAPH_CAPTURE_HEADROOM_BYTES = 2 * 1024**3
+from .model_config import Gemma4ForConditionalGenerationConfig
 
 
 class Gemma4MemoryPlanner(PagedMemoryPlanner):
     """Memory planner for Gemma4 (vision-language) models.
 
     Reserves a per-device activation budget (a base sized from the KV cache
-    dtype, plus optional graph-capture headroom), scaled by the device count to
-    match the total-across-devices budget in
-    :meth:`MemoryEstimator.estimate_memory_footprint`.  Also provides vision
+    dtype), scaled by the device count to match the total-across-devices
+    budget in
+    :meth:`MemoryEstimator.plan_from_sizes`.  Also provides vision
     cache entry byte estimation for the KV-and-vision-cache reservation path.
     """
 
@@ -56,47 +58,13 @@ class Gemma4MemoryPlanner(PagedMemoryPlanner):
         # based on available blocks, so it targets larger concurrent batches
         # whose activation tensors need proportionally more headroom.
         # TODO(MODELS-1544): investigate high activation memory estimates
-        base = (
-            30 // pipeline_config.model.kv_cache.cache_dtype.size_in_bytes
-        ) * 1024**3
-        if pipeline_config.runtime.device_graph_capture:
-            base += _GRAPH_CAPTURE_HEADROOM_BYTES
+        quantization_encoding = _select_quantization_encoding(
+            pipeline_config.model,
+            Gemma4ForConditionalGenerationConfig.DEFAULT_ENCODING,
+        )
+        cache_dtype = cache_dtype_for_encoding(
+            quantization_encoding,
+            pipeline_config.model.kv_cache.kv_cache_format,
+        )
+        base = (30 // cache_dtype.size_in_bytes) * 1024**3
         return base * len(pipeline_config.model.device_specs)
-
-    def estimate_vision_cache_entry_bytes(
-        self,
-        huggingface_config: AutoConfig,
-    ) -> int:
-        """Estimates per-entry bytes for the Gemma4 vision encoder cache.
-
-        Worst-case tokens per image is
-        ``position_embedding_size / pooling_kernel_size²``, stored at the text
-        hidden size in bfloat16.
-
-        Args:
-            huggingface_config: HuggingFace model configuration.
-
-        Returns:
-            Estimated bytes per vision cache entry.
-
-        Raises:
-            ValueError: If the required vision or text config is absent.
-        """
-        vision_config = getattr(huggingface_config, "vision_config", None)
-        if vision_config is None:
-            raise ValueError(
-                "Gemma4 requires a vision_config in the HuggingFace config"
-            )
-        text_config = getattr(huggingface_config, "text_config", None)
-        if text_config is None:
-            raise ValueError(
-                "Gemma4 requires a text_config in the HuggingFace config"
-            )
-        if getattr(huggingface_config, "model_type", None) == "gemma4_unified":
-            # These checkpoints are served text-only (different vision
-            # schema); no vision cache is needed.
-            return 0
-        k = vision_config.pooling_kernel_size
-        max_tokens = vision_config.position_embedding_size // (k * k)
-        hidden = text_config.hidden_size
-        return max_tokens * hidden * 2  # bfloat16

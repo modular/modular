@@ -99,24 +99,22 @@ default-True path for the FP8 KV=128 target shape, every reused
 primitive exercises the exact codegen this kernel ships.
 """
 
-from std.gpu import (
+from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     block_idx,
     lane_id,
     warp_id,
 )
-from std.gpu.compute.mma import mma as gpu_mma
-from std.gpu.host import DeviceContext
-from std.gpu.host.compile import CompilationTarget
-from std.gpu.sync import s_waitcnt
+from max.gpu.compute.mma import mma as gpu_mma
+from max.gpu.host import DeviceContext
+from max.gpu.sync import s_waitcnt
 from std.math import ceildiv
-from std.memory import AddressSpace
 from std.sys import get_defined_bool, get_defined_int, size_of
 from std.sys.intrinsics import readfirstlane
 from std.utils import StaticTuple
 
-from layout import TensorLayout, TileTensor
+from layout import TensorEngine, TensorLayout, TileTensor
 from layout.coord import Coord, Idx
 from layout.tile_layout import row_major
 from layout._utils import make_amd_buffer_resource
@@ -413,7 +411,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
     # plus the prologue stagger on the upper wave-half (the conserved-
     # offset ping-pong keystone).
     @staticmethod
-    @always_inline
+    @inline(.always)
     def _load_q_lds_exact[
         layout: TensorLayout,
     ](
@@ -453,7 +451,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
             the DRAM path at the call site.
         """
         comptime assert (
-            Self.config.dtype == DType.float8_e4m3fn
+            Self.config.dtype == .float8_e4m3fn
         ), "MlaPrefillV2._load_q_lds_exact: FP8 e4m3 only"
 
         comptime _BK = Self._MmaOp.MMA_K
@@ -499,7 +497,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
                     UnsafePointer[
                         Scalar[Self.config.dtype],
                         MutAnyOrigin,
-                        address_space=AddressSpace.SHARED,
+                        address_space=.SHARED,
                     ]
                 ](q_slot.tile[1, Self.D_QK](r, 0).ptr)
             )
@@ -559,25 +557,26 @@ struct MlaPrefillV2[config: MlaConfigV2]:
             comptime for h in range(_H):
                 comptime for w in range(_W):
                     q_v[h, w, 0] = (
-                        q_v[h, w, 0].cast[DType.float32]() * scale_log2e
+                        q_v[h, w, 0].cast[.float32]() * scale_log2e
                     ).cast[Self.config.dtype]()
 
         return q_reg
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def _attend_exact[
         k_t: MHAOperand,
         v_t: MHAOperand,
         mask_t: MHAMask,
         out_dtype: DType,
         o_layout: TensorLayout,
+        o_engine: TensorEngine,
         //,
     ](
         mut q_reg: RegTile[
             Self.config.dtype, Self._Q_LAYOUT_MLA_T, MutUntrackedOrigin
         ],
-        mut o_reg: RegTile[DType.float32, Self._O_LAYOUT_T, MutUntrackedOrigin],
+        mut o_reg: RegTile[.float32, Self._O_LAYOUT_T, MutUntrackedOrigin],
         mut softmax: OnlineSoftmax[Self._SOFTMAX_DTYPE],
         mask_functor: mask_t,
         mut att_block: RegTile[
@@ -587,7 +586,9 @@ struct MlaPrefillV2[config: MlaConfigV2]:
         v_ring: SMemTile[Self.config.dtype, _, MutUntrackedOrigin, ...],
         k_op: k_t,
         v_op: v_t,
-        o_warp_2d: TileTensor[out_dtype, o_layout, MutAnyOrigin],
+        o_warp_2d: TileTensor[
+            out_dtype, o_layout, MutAnyOrigin, Engine=o_engine
+        ],
         num_tiles: Int,
         max_num_tiles_local: Int,
         tile_idx: Int,
@@ -626,9 +627,8 @@ struct MlaPrefillV2[config: MlaConfigV2]:
         # cluster-boundary drains.)
         var w_remap = w_id & 3
 
-        @parameter
-        @always_inline
-        def _dma_k_into(slot: Int, t: Int):
+        @inline(.always)
+        def _dma_k_into(slot: Int, t: Int) {imm}:
             var kp = _MlaKDmaPair[Self.config](
                 k_op, batch_idx_u32, kv_head_idx_u32, t
             )
@@ -638,9 +638,8 @@ struct MlaPrefillV2[config: MlaConfigV2]:
             kp.dma(k_slot, w_remap, l_id)
             kp.dma(k_slot, w_remap + 4, l_id)
 
-        @parameter
-        @always_inline
-        def _dma_v_into(slot: Int, t: Int):
+        @inline(.always)
+        def _dma_v_into(slot: Int, t: Int) {imm}:
             var v_slot = v_ring.tile[Self._V_SLOT_ROWS, Self._V_SUB_COLS](
                 slot, 0
             )
@@ -657,9 +656,8 @@ struct MlaPrefillV2[config: MlaConfigV2]:
                 l_id,
             )
 
-        @parameter
-        @always_inline
-        def _dma_kv_split(k_slot_idx: Int, v_slot_idx: Int, t: Int):
+        @inline(.always)
+        def _dma_kv_split(k_slot_idx: Int, v_slot_idx: Int, t: Int) {imm}:
             # Reference work-split: phase-lagged upper half (waves 4-7)
             # produces V, lower half (waves 0-3) produces K. K and V use
             # DECOUPLED ring depths (K depth-2, V depth-4), so the producing
@@ -886,9 +884,17 @@ struct MlaPrefillV2[config: MlaConfigV2]:
         # reorder-fenced so the cadence survives codegen at the boundary, and
         # the cluster interior stays free of `lgkmcnt(0)` / `sched_barrier(0)`
         # walls.
-        @parameter
-        @always_inline
-        def _one_tile_exact[is_upper: Bool](t32_arg: Int32):
+        @inline(.always)
+        def _one_tile_exact[
+            is_upper: Bool
+        ](t32_arg: Int32) {
+            mut softmax,
+            mut o_reg,
+            mut att_block,
+            mut _nxt_kf0,
+            mut _nxt_kf1,
+            imm,
+        }:
             # Reference-faithful non-materialized V (the lean band layout):
             # V is streamed fragment-at-a-time through the (post-QK dead) K
             # band instead of materializing the whole 64-VGPR `V_LAYOUT`
@@ -1039,9 +1045,8 @@ struct MlaPrefillV2[config: MlaConfigV2]:
             var f3 = _FRAG(0)
 
             # Load fragment `i` from SMEM (the rope sub-view for rope cols).
-            @parameter
-            @always_inline
-            def _load_frag[i: Int]() -> _FRAG:
+            @inline(.always)
+            def _load_frag[i: Int]() {imm} -> _FRAG:
                 comptime if _is_rope(i):
                     return Self._MmaOp.load_K_frag[_sub_id(i)](k_rope_smem)
                 else:
@@ -1049,30 +1054,30 @@ struct MlaPrefillV2[config: MlaConfigV2]:
 
             # Write fragment value into ring slot `s` (comptime dispatch to
             # one of the 4 distinct SSA values).
-            @parameter
-            @always_inline
-            def _put[s: Int](var v: _FRAG):
-                comptime if s == 0:
-                    f0 = v
-                elif s == 1:
-                    f1 = v
-                elif s == 2:
-                    f2 = v
-                else:
-                    f3 = v
+            @inline(.always)
+            def _put[s: Int](var v: _FRAG) {mut f0, mut f1, mut f2, mut f3}:
+                comptime match s:
+                    case 0:
+                        f0 = v
+                    case 1:
+                        f1 = v
+                    case 2:
+                        f2 = v
+                    case _:
+                        f3 = v
 
             # Read ring slot `s`.
-            @parameter
-            @always_inline
-            def _get[s: Int]() -> _FRAG:
-                comptime if s == 0:
-                    return f0
-                elif s == 1:
-                    return f1
-                elif s == 2:
-                    return f2
-                else:
-                    return f3
+            @inline(.always)
+            def _get[s: Int]() {imm} -> _FRAG:
+                comptime match s:
+                    case 0:
+                        return f0
+                    case 1:
+                        return f1
+                    case 2:
+                        return f2
+                    case _:
+                        return f3
 
             # PROLOGUE: prime the first `_RING` slots (no MFMA yet).
             # CADENCE: for the first `_PF_NEXT_K` slots, consume the K fragment
@@ -1111,9 +1116,8 @@ struct MlaPrefillV2[config: MlaConfigV2]:
             comptime _PF_K_AT = (2, 4, 6, 8)  # K sub-call -> MFMA iter
             comptime _PF_V_AT = (2, 6)  # V sub-call -> MFMA iter
 
-            @parameter
-            @always_inline
-            def _pf_spread_step[i_mfma: Int]():
+            @inline(.always)
+            def _pf_spread_step[i_mfma: Int]() {imm}:
                 comptime if is_upper:
                     # V producer: 2 halves at _PF_V_AT.
                     comptime for vj in range(len(_PF_V_AT)):
@@ -1276,7 +1280,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
             # `ds_read_b64_tr_b8` = 3 fragments × 4 reads; ref asm QK-tail
             # L2245-2272). Default (`_V_QKTAIL=False`) the prologue stays in
             # C_PV_MFMA below, so the hoist is SSA-neutral (the band vars are
-            # dead until C_PV; the `@parameter @always_inline` helpers emit
+            # dead until C_PV; the `@inline(.always)` helpers emit
             # nothing until called). The hoist is the lean-V design's mirror:
             # lean-V reads ALL 32 V in C_PV; `v_qktail` moves 12 up to match
             # the reference 12/20 placement, at the cost of holding 24 VGPR
@@ -1293,22 +1297,19 @@ struct MlaPrefillV2[config: MlaConfigV2]:
             comptime _VRING = 4  # reference 4-slot rotating V band (v[28:59])
             comptime _VAHEAD = 3  # 3 slots in flight (see C_PV_MFMA notes)
 
-            @parameter
-            @always_inline
+            @inline(.always)
             def _vstrip(i: Int) -> Int:
                 return i // _N_DEPTH
 
-            @parameter
-            @always_inline
+            @inline(.always)
             def _vdepth(i: Int) -> Int:
                 return i % _N_DEPTH
 
             # Load V fragment `i` from the per-lane V LDS base (4
             # `ds_read_tr8_b64` joined to one SIMD; `v_lane_base` CSEs to a
             # single base across the unrolled stream — the reference `v227`).
-            @parameter
-            @always_inline
-            def _vload[i: Int]() -> _VFRAG:
+            @inline(.always)
+            def _vload[i: Int]() {imm} -> _VFRAG:
                 return rebind[_VFRAG](
                     Self._MmaOp.load_V_frag[
                         _vstrip(i),
@@ -1326,29 +1327,31 @@ struct MlaPrefillV2[config: MlaConfigV2]:
             var vf2 = _VFRAG(0)
             var vf3 = _VFRAG(0)
 
-            @parameter
-            @always_inline
-            def _vput[s: Int](var v: _VFRAG):
-                comptime if s == 0:
-                    vf0 = v
-                elif s == 1:
-                    vf1 = v
-                elif s == 2:
-                    vf2 = v
-                else:
-                    vf3 = v
+            @inline(.always)
+            def _vput[
+                s: Int
+            ](var v: _VFRAG) {mut vf0, mut vf1, mut vf2, mut vf3}:
+                comptime match s:
+                    case 0:
+                        vf0 = v
+                    case 1:
+                        vf1 = v
+                    case 2:
+                        vf2 = v
+                    case _:
+                        vf3 = v
 
-            @parameter
-            @always_inline
-            def _vget[s: Int]() -> _VFRAG:
-                comptime if s == 0:
-                    return vf0
-                elif s == 1:
-                    return vf1
-                elif s == 2:
-                    return vf2
-                else:
-                    return vf3
+            @inline(.always)
+            def _vget[s: Int]() {imm} -> _VFRAG:
+                comptime match s:
+                    case 0:
+                        return vf0
+                    case 1:
+                        return vf1
+                    case 2:
+                        return vf2
+                    case _:
+                        return vf3
 
             # QK-TAIL V PREFETCH (reference 12/20 split, OPT-IN). Prime the
             # first `_VAHEAD` V fragments HERE (C_V_PREFETCH, ref asm L411-429),
@@ -1678,12 +1681,9 @@ struct MlaPrefillV2[config: MlaConfigV2]:
         softmax.normalize_output(o_reg)
 
         comptime _o_view_layout = Self._MmaOp.O_T_LAYOUT
-        var o_normalized_view = TileTensor[
-            DType.float32,
-            type_of(_o_view_layout),
-            MutUntrackedOrigin,
-            address_space=AddressSpace.LOCAL,
-        ](o_reg.ptr, _o_view_layout)
+        # Zero-cost re-tag of `o_reg` (O_LAYOUT, col_l) as its transposed
+        # row_l view (O_T_LAYOUT) over the same per-lane storage.
+        var o_normalized_view = o_reg.reshape(_o_view_layout)
         var epilogue_writer = RegTileEpilogue[out_dtype, 1](o_warp_2d)
         # int32 clamp: `seq_len`/`block_tile_idx`/`w_id` originate as Int32
         # (`q.dim[1]`, `block_idx.y`/`w_qo_start//BM`, `warp_id()`) and the
@@ -1772,28 +1772,26 @@ struct MlaPrefillV2[config: MlaConfigV2]:
         output_dtype: DType,
         q_layout: TensorLayout,
         o_layout: TensorLayout,
+        q_engine: TensorEngine,
+        o_engine: TensorEngine,
         ragged: Bool = False,
     ](
-        q: TileTensor[q_dtype, q_layout, ImmutAnyOrigin],
+        q: TileTensor[q_dtype, q_layout, ImmutAnyOrigin, Engine=q_engine],
         k_nope_op: k_nope_t,
         k_rope_op: k_rope_t,
         v_op: v_t,
-        o: TileTensor[output_dtype, o_layout, MutAnyOrigin],
+        o: TileTensor[output_dtype, o_layout, MutAnyOrigin, Engine=o_engine],
         mask_functor: mask_t,
         scale: Float32,
-        num_keys: Int,
-        start_pos: Int,
-        work_indptr_ptr: UnsafePointer[
-            Scalar[DType.int32], ImmutAnyOrigin
-        ] = UnsafePointer[
-            Scalar[DType.int32], ImmutAnyOrigin
+        num_keys_dev: Int32,
+        start_pos_dev: Int32,
+        work_indptr_ptr: UnsafePointer[Int32, ImmutAnyOrigin] = UnsafePointer[
+            Int32, ImmutAnyOrigin
         ].unsafe_dangling(),
-        work_info_ptr: UnsafePointer[
-            Scalar[DType.int32], ImmutAnyOrigin
-        ] = UnsafePointer[
-            Scalar[DType.int32], ImmutAnyOrigin
+        work_info_ptr: UnsafePointer[Int32, ImmutAnyOrigin] = UnsafePointer[
+            Int32, ImmutAnyOrigin
         ].unsafe_dangling(),
-        num_works: Int = 0,
+        num_works_dev: Int32 = 0,
     ):
         """Multi-block 8-warp MLA forward: reference integrated cadence.
 
@@ -1816,6 +1814,8 @@ struct MlaPrefillV2[config: MlaConfigV2]:
                 equal `config.output_dtype`.
             q_layout: Memory layout of the Q tile tensor.
             o_layout: Memory layout of the output tile tensor.
+            q_engine: Engine of the Q tile tensor.
+            o_engine: Engine of the output tile tensor.
             ragged: Whether the batch uses ragged variable-length
                 sequences (defaults to `False`).
 
@@ -1835,8 +1835,8 @@ struct MlaPrefillV2[config: MlaConfigV2]:
             o: Output tile tensor at d_pv = depth.
             mask_functor: Per-tile mask predicate (causal / null / ...).
             scale: Softmax scale (`1/sqrt(d_qk)`).
-            num_keys: Runtime length of the K/V sequence.
-            start_pos: Position of the first Q row in the global
+            num_keys_dev: Runtime length of the K/V sequence.
+            start_pos_dev: Position of the first Q row in the global
                 sequence.
             work_indptr_ptr: Persistent-prefill work partition
                 prefix-sum `[num_cu+1]` (device). Threaded for the S2
@@ -1844,9 +1844,12 @@ struct MlaPrefillV2[config: MlaConfigV2]:
             work_info_ptr: Persistent-prefill flat `WorkInfo`
                 array `[num_works*8]` int32 (device). Threaded for S2;
                 unused by the current static grid.
-            num_works: Total number of work-tiles in `work_info_ptr`.
+            num_works_dev: Total number of work-tiles in `work_info_ptr`.
                 Threaded for S2; unused by the current static grid.
         """
+        var num_keys = Int(num_keys_dev)
+        var start_pos = Int(start_pos_dev)
+        var num_works = Int(num_works_dev)
         comptime assert Self._IS_DSV_MLA_SHAPE, (
             "MlaPrefillV2: only the FP8 / KV>=128 / 32x32x64 shape is"
             " supported in Phase 1 (the reference integrated cadence target)."
@@ -1866,14 +1869,14 @@ struct MlaPrefillV2[config: MlaConfigV2]:
         _ = num_works
 
         var q_typed = rebind[
-            TileTensor[Self.config.dtype, q_layout, ImmutAnyOrigin]
+            TileTensor[
+                Self.config.dtype, q_layout, ImmutAnyOrigin, Engine=q_engine
+            ]
         ](q)
 
         var seq_len = Int(readfirstlane(Int32(q.dim[1]())))
         var num_tiles = Int(
-            readfirstlane(
-                Int32((num_keys + Self.KV_BLOCK - 1) // Self.KV_BLOCK)
-            )
+            readfirstlane(Int32(ceildiv(num_keys, Self.KV_BLOCK)))
         )
         comptime assert (
             Self.NUM_HEADS % Self.NUM_KV_HEADS == 0
@@ -1927,14 +1930,13 @@ struct MlaPrefillV2[config: MlaConfigV2]:
         # x 16 head). The static grid and the reference persistent work-loop
         # drive this SAME body; they differ only in how (head_idx,
         # block_tile_idx, batch_idx) are sourced (block_idx vs WorkInfo).
-        @parameter
-        @always_inline
+        @inline(.always)
         def _run_one_work(
             head_idx: Int,
             block_tile_idx: Int,
             batch_idx: Int,
             is_first: Bool,
-        ):
+        ) {imm}:
             var kv_head_idx = head_idx // _GROUP
             var tile_idx = block_tile_idx * Self.NUM_WARPS + w_id
 
@@ -1958,21 +1960,12 @@ struct MlaPrefillV2[config: MlaConfigV2]:
             var max_q_end_pos_i32 = (
                 max_tile_idx_local_i32 + 1
             ) * _QBS_I32 + Int32(start_pos)
-            var max_num_tiles_calc_i32 = (
-                max_q_end_pos_i32 + _KVB_I32 - 1
-            ) // _KVB_I32
+            var max_num_tiles_calc_i32 = ceildiv(max_q_end_pos_i32, _KVB_I32)
             var max_num_tiles_local: Int
             comptime if mask_t == CausalMask:
-                var capped_i32 = (
-                    max_num_tiles_calc_i32 if max_num_tiles_calc_i32
-                    < num_tiles_i32 else num_tiles_i32
-                )
-                var floor4_i32 = (
-                    Int32(4) if num_tiles_i32 >= 4 else num_tiles_i32
-                )
-                max_num_tiles_local = Int(
-                    floor4_i32 if capped_i32 < floor4_i32 else capped_i32
-                )
+                var capped_i32 = min(max_num_tiles_calc_i32, num_tiles_i32)
+                var floor4_i32 = min(Int32(4), num_tiles_i32)
+                max_num_tiles_local = Int(max(capped_i32, floor4_i32))
             else:
                 max_num_tiles_local = num_tiles
 
@@ -2018,7 +2011,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
 
             # ---- Per-work-item register state ----------------------------
             # The reference footprint: Q(24) + att(64 FP32) + o_reg(64 FP32).
-            var o_reg = reg_alloc[DType.float32](Self._MmaOp.O_LAYOUT)
+            var o_reg = reg_alloc[.float32](Self._MmaOp.O_LAYOUT)
             var softmax = OnlineSoftmax[Self._SOFTMAX_DTYPE]()
             _ = o_reg.fill(0)
             var att_block = reg_alloc[Self._SOFTMAX_DTYPE](
@@ -2141,9 +2134,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
         output_ptr: UnsafePointer[Scalar[output_dtype], MutAnyOrigin],
         mask_functor: mask_t,
         scale: Float32,
-        input_row_offsets_ptr: UnsafePointer[
-            Scalar[DType.uint32], ImmutAnyOrigin
-        ],
+        input_row_offsets_ptr: UnsafePointer[UInt32, ImmutAnyOrigin],
     ):
         """Ragged-batch GPU kernel entry. Per-sequence setup mirrors
         `MlaPrefillV2Core.ragged_kernel` (self-attention; `num_keys =
@@ -2182,7 +2173,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
         var end_of_seq = Int(input_row_offsets_ptr[batch_idx + 1])
         var seq_len = end_of_seq - start_of_seq
 
-        if Int(block_idx.y) * Self.BM >= seq_len:
+        if block_idx.y * Self.BM >= seq_len:
             return
 
         var start_pos = Int(k_nope_op.cache_length(batch_idx))
@@ -2196,10 +2187,10 @@ struct MlaPrefillV2[config: MlaConfigV2]:
         )
 
         var q_ragged_layout = row_major(
-            Coord(1, seq_len, Self.config.num_heads, Self.config.d_qk)
+            1, seq_len, Self.config.num_heads, Self.config.d_qk
         )
         var o_ragged_layout = row_major(
-            Coord(1, seq_len, Self.config.num_heads, Self.config.depth)
+            1, seq_len, Self.config.num_heads, Self.config.depth
         )
         var q_tt = TileTensor(q_ptr + q_batch_offset, q_ragged_layout)
         var o_tt = TileTensor(output_ptr + o_batch_offset, o_ragged_layout)
@@ -2213,6 +2204,8 @@ struct MlaPrefillV2[config: MlaConfigV2]:
             output_dtype,
             type_of(q_tt).LayoutType,
             type_of(o_tt).LayoutType,
+            type_of(q_tt).Engine,
+            type_of(o_tt).Engine,
             ragged=True,
         ](
             q_tt,
@@ -2222,12 +2215,12 @@ struct MlaPrefillV2[config: MlaConfigV2]:
             o_tt,
             mask_functor,
             scale,
-            num_keys,
-            start_pos,
+            Int32(num_keys),
+            Int32(start_pos),
         )
 
 
-@always_inline
+@inline(.always)
 def mla_prefill_v2_ragged[
     k_nope_t: MHAOperand,
     k_rope_t: MHAOperand,
@@ -2237,9 +2230,9 @@ def mla_prefill_v2_ragged[
     output_dtype: DType,
     //,
     config: MlaConfigV2,
-    compile_options: StaticString = CompilationTarget[
-        DeviceContext.default_device_info.target()
-    ].default_compile_options(),
+    compile_options: StaticString = (
+        DeviceContext.target.default_compile_options()
+    ),
 ](
     q_ptr: UnsafePointer[Scalar[qkv_dtype], ImmutAnyOrigin],
     k_nope: k_nope_t,
@@ -2248,7 +2241,7 @@ def mla_prefill_v2_ragged[
     output_ptr: UnsafePointer[Scalar[output_dtype], MutAnyOrigin],
     mask_functor: mask_t,
     scale: Float32,
-    input_row_offsets_ptr: UnsafePointer[Scalar[DType.uint32], ImmutAnyOrigin],
+    input_row_offsets_ptr: UnsafePointer[UInt32, ImmutAnyOrigin],
     max_prompt_len: Int,
     batch_size: Int,
     ctx: DeviceContext,

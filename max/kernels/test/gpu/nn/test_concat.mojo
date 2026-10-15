@@ -11,16 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.collections import Optional
 from std.math import ceildiv
 from std.sys import size_of
 
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from layout import Coord, TileTensor, row_major
 from nn.concat import (
     _concat_gpu,
     _concat_inner_most_single_dim,
-    elementwise_epilogue_type,
+    _no_epilogue,
 )
 from std.testing import assert_equal, assert_true
 
@@ -120,15 +119,17 @@ def test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
 
     comptime B_SIZE = 32
 
-    @parameter
-    @always_inline
-    @__copy_capture(output_dyn)
+    # The timing closures below copy `output_dyn` as well, so the epilogue
+    # writes through an origin-erased view to keep the closure fields from
+    # aliasing one another.
+    var output_any = output_dyn.as_unsafe_any_origin()
+
+    @inline(.always)
     def epilogue_plus_one[
-        c_type: DType, _rank: Int, width: SIMDSize, *, alignment: Int
-    ](indices: IndexList[_rank], val: SIMD[c_type, width]):
-        var coord = Coord(indices)
-        comptime assert output_dyn.flat_rank >= coord.flat_rank
-        output_dyn.store[width=width](
+        c_type: DType, width: SIMDLength, *, alignment: Int
+    ](coord: Coord, val: SIMD[c_type, width]) {var output_any}:
+        comptime assert output_any.flat_rank >= coord.flat_rank
+        output_any.store[width=width](
             coord,
             rebind[SIMD[dtype, width]](val + 1),
         )
@@ -136,44 +137,45 @@ def test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
     comptime kernel = _concat_inner_most_single_dim[
         OutputLayoutType=output_dyn.LayoutType,
         output_origin=MutAnyOrigin,
-        OutputStorage=output_dyn.Storage,
+        OutputEngine=output_dyn.Engine,
         InputLayoutType=input_0_dyn.LayoutType,
         input_origin=ImmutAnyOrigin,
-        InputStorage=input_0_dyn.Storage,
+        InputEngine=input_0_dyn.Engine,
         dtype=dtype,
         num_inputs=4,
         block_size=B_SIZE,
-        epilogue_fn=Optional[elementwise_epilogue_type](
-            epilogue_plus_one
-        ) if test_epilogue else None,
+        has_epilogue=test_epilogue,
+        EpilogueFnType=type_of(epilogue_plus_one),
     ]
 
-    @always_inline
-    @__copy_capture(
-        output_dyn,
-        input_0_dyn,
-        input_1_dyn,
-        input_2_dyn,
-        input_3_dyn,
-    )
-    @parameter
-    def run_concat_inner_most_single_dim(ctx: DeviceContext) raises:
+    @inline(.always)
+    def run_concat_inner_most_single_dim(
+        ctx: DeviceContext,
+    ) raises {
+        var output_dyn,
+        var input_0_dyn,
+        var input_1_dyn,
+        var input_2_dyn,
+        var input_3_dyn,
+        imm,
+    }:
         ctx.enqueue_function[kernel](
             output_dyn.as_unsafe_any_origin(),
             StaticTuple[
                 TileTensor[dtype, input_0_dyn.LayoutType, ImmutAnyOrigin],
                 4,
             ](
-                input_0_dyn.as_unsafe_any_origin().as_immut(),
-                input_1_dyn.as_unsafe_any_origin().as_immut(),
-                input_2_dyn.as_unsafe_any_origin().as_immut(),
-                input_3_dyn.as_unsafe_any_origin().as_immut(),
+                input_0_dyn.as_unsafe_any_origin().as_imm(),
+                input_1_dyn.as_unsafe_any_origin().as_imm(),
+                input_2_dyn.as_unsafe_any_origin().as_imm(),
+                input_3_dyn.as_unsafe_any_origin().as_imm(),
             ),
+            host_arg=epilogue_plus_one,
             grid_dim=(d0 * d1 * d2 * d3 * d4 // B_SIZE),
             block_dim=(B_SIZE),
         )
 
-    var nstime_kernel = ctx.execution_time[run_concat_inner_most_single_dim](1)
+    var nstime_kernel = ctx.execution_time(run_concat_inner_most_single_dim, 1)
     print(
         "concat_inner_most_single_dim time = ",
         Float64(nstime_kernel) * 1e-6,
@@ -222,37 +224,35 @@ def test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
 
     validate_results()
 
-    @always_inline
-    @__copy_capture(
-        output_dyn,
-        input_0_dyn,
-        input_1_dyn,
-        input_2_dyn,
-        input_3_dyn,
-    )
-    @parameter
-    def run_concat_gpu(ctx: DeviceContext) raises:
+    @inline(.always)
+    def run_concat_gpu(
+        ctx: DeviceContext,
+    ) raises {
+        var output_dyn,
+        var input_0_dyn,
+        var input_1_dyn,
+        var input_2_dyn,
+        var input_3_dyn,
+        imm,
+    }:
         # uses default stream
-        _concat_gpu[
-            epilogue_fn=Optional[elementwise_epilogue_type](
-                epilogue_plus_one
-            ) if test_epilogue else None
-        ](
+        _concat_gpu[has_epilogue=test_epilogue](
             output_dyn.as_unsafe_any_origin(),
             4,
             StaticTuple[
                 TileTensor[dtype, input_0_dyn.LayoutType, ImmutAnyOrigin],
                 4,
             ](
-                input_0_dyn.as_unsafe_any_origin().as_immut(),
-                input_1_dyn.as_unsafe_any_origin().as_immut(),
-                input_2_dyn.as_unsafe_any_origin().as_immut(),
-                input_3_dyn.as_unsafe_any_origin().as_immut(),
+                input_0_dyn.as_unsafe_any_origin().as_imm(),
+                input_1_dyn.as_unsafe_any_origin().as_imm(),
+                input_2_dyn.as_unsafe_any_origin().as_imm(),
+                input_3_dyn.as_unsafe_any_origin().as_imm(),
             ),
+            epilogue_plus_one,
             ctx,
         )
 
-    var nstime = ctx.execution_time[run_concat_gpu](1)
+    var nstime = ctx.execution_time(run_concat_gpu, 1)
     print("concat_gpu time = ", Float64(nstime) * 1e-6, " ms")
     print(
         "transfer rate = ",
@@ -325,36 +325,36 @@ def test_inner_most_single_dim_static_vs_dynamic(ctx: DeviceContext) raises:
     # Static-layout tensors (fold fires).
     comptime StaticInLayout = type_of(input_layout)
     var out_static = TileTensor(out_static_dev, static_output_layout)
-    # Name the input tile type so the kernel's `InputStorage` param matches the
+    # Name the input tile type so the kernel's `InputEngine` param matches the
     # `DeviceBuffer` constructor's storage exactly (the tuple elements are built
     # from the same expression); the tuple can't be indexed at comptime.
     comptime StaticInTile = type_of(
-        TileTensor(in_dev[0], input_layout).as_unsafe_any_origin().as_immut()
+        TileTensor(in_dev[0], input_layout).as_unsafe_any_origin().as_imm()
     )
     var ins_static = StaticTuple[StaticInTile, num_inputs]()
 
     comptime for n in range(num_inputs):
         ins_static[n] = (
-            TileTensor(in_dev[n], input_layout)
-            .as_unsafe_any_origin()
-            .as_immut()
+            TileTensor(in_dev[n], input_layout).as_unsafe_any_origin().as_imm()
         )
 
     comptime kernel_static = _concat_inner_most_single_dim[
         OutputLayoutType=out_static.LayoutType,
         output_origin=MutAnyOrigin,
-        OutputStorage=out_static.Storage,
+        OutputEngine=out_static.Engine,
         InputLayoutType=StaticInLayout,
         input_origin=ImmutAnyOrigin,
-        InputStorage=StaticInTile.Storage,
+        InputEngine=StaticInTile.Engine,
         dtype=dtype,
         num_inputs=num_inputs,
         block_size=B_SIZE,
-        epilogue_fn=None,
+        has_epilogue=False,
+        EpilogueFnType=type_of(_no_epilogue),
     ]
     ctx.enqueue_function[kernel_static](
         out_static.as_unsafe_any_origin(),
         ins_static,
+        host_arg=_no_epilogue,
         grid_dim=(ceildiv(n_rows, B_SIZE)),
         block_dim=(B_SIZE),
     )
@@ -369,7 +369,7 @@ def test_inner_most_single_dim_static_vs_dynamic(ctx: DeviceContext) raises:
     comptime DynInTile = type_of(
         TileTensor(in_dev[0], row_major(Coord(dyn_in_shape)))
         .as_unsafe_any_origin()
-        .as_immut()
+        .as_imm()
     )
     var ins_dynamic = StaticTuple[
         TileTensor[dtype, DynInLayout, ImmutAnyOrigin], num_inputs
@@ -379,24 +379,26 @@ def test_inner_most_single_dim_static_vs_dynamic(ctx: DeviceContext) raises:
         ins_dynamic[n] = (
             TileTensor(in_dev[n], row_major(Coord(dyn_in_shape)))
             .as_unsafe_any_origin()
-            .as_immut()
+            .as_imm()
         )
 
     comptime kernel_dynamic = _concat_inner_most_single_dim[
         OutputLayoutType=out_dynamic.LayoutType,
         output_origin=MutAnyOrigin,
-        OutputStorage=out_dynamic.Storage,
+        OutputEngine=out_dynamic.Engine,
         InputLayoutType=DynInLayout,
         input_origin=ImmutAnyOrigin,
-        InputStorage=DynInTile.Storage,
+        InputEngine=DynInTile.Engine,
         dtype=dtype,
         num_inputs=num_inputs,
         block_size=B_SIZE,
-        epilogue_fn=None,
+        has_epilogue=False,
+        EpilogueFnType=type_of(_no_epilogue),
     ]
     ctx.enqueue_function[kernel_dynamic](
         out_dynamic.as_unsafe_any_origin(),
         ins_dynamic,
+        host_arg=_no_epilogue,
         grid_dim=(ceildiv(n_rows, B_SIZE)),
         block_dim=(B_SIZE),
     )

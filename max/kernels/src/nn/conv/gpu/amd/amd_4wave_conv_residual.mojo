@@ -34,13 +34,12 @@ residual FMA, and `elementwise_lambda_fn` (post-residual: void
 store-site lambda) fires after with the fused value.
 """
 
-from std.gpu import global_idx
-from std.gpu.host import DeviceContext
+from max.gpu import global_idx
+from max.gpu.host import DeviceContext
 from std.math import ceildiv
 from std.sys import align_of
 
 from layout import Coord, Idx, TileTensor, row_major
-from std.utils import IndexList
 
 from linalg.utils import (
     elementwise_compute_lambda_type,
@@ -62,28 +61,31 @@ def _kpad_filter_frsc[
 ](
     src_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
     dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    K_real: Int,
-    K_padded: Int,
-    F: Int,
+    K_real: Int32,
+    K_padded: Int32,
+    F: Int32,
 ):
     """Copy `[F, K_real]` -> `[F, K_padded]` with zero-filled trailing K.
 
     KRSC flattens to `[C_out, R*S*C_in]` row-major. We just need to
     copy each row to a wider stride and zero-pad the tail.
     """
-    var total = F * K_padded
+    var _K_real = Int(K_real)
+    var _K_padded = Int(K_padded)
+    var _F = Int(F)
+    var total = _F * _K_padded
     var tid = global_idx.x
     if tid >= total:
         return
-    var f = tid // K_padded
-    var k = tid - f * K_padded
-    if k >= K_real:
+    var f = tid // _K_padded
+    var k = tid - f * _K_padded
+    if k >= _K_real:
         dst_ptr.store(tid, Scalar[dtype](0))
         return
-    dst_ptr.store(tid, src_ptr.load(f * K_real + k))
+    dst_ptr.store(tid, src_ptr.load(f * _K_real + k))
 
 
-@always_inline
+@inline(.always)
 def amd_4wave_conv_fprop_with_residual[
     act_type: DType,
     filter_type: DType,
@@ -128,11 +130,11 @@ def amd_4wave_conv_fprop_with_residual[
             matches `act_type` otherwise.
         elementwise_lambda_fn: Optional void epilogue lambda applied
             at the store site, *after* the residual add. Signature:
-            `def(IndexList[2], SIMD) -> None`. Responsible for the
+            `def(Coord, SIMD) -> None`. Responsible for the
             output store when set.
         elementwise_compute_lambda_fn: Optional value-transforming
             lambda applied *before* the residual add. Signature:
-            `def(IndexList[2], SIMD) -> SIMD`. Use for bias / ReLU /
+            `def(Coord, SIMD) -> SIMD`. Use for bias / ReLU /
             SiLU / GELU fusion in the SM100 ordering.
         has_residual: If True, fuse residual add. If False, `source`
             is ignored and this routes through plain `amd_4wave_conv`.
@@ -202,7 +204,7 @@ def amd_4wave_conv_fprop_with_residual[
     # the alloc + zero-pad entirely.
     comptime K_padded = ((K_real + 255) // 256) * 256
     comptime _needs_kpad = K_padded != K_real
-    var output_2d = TileTensor(output.ptr, row_major(Coord(M, Idx[_C_out])))
+    var output_2d = output.reshape(row_major(M, Idx[_C_out]))
 
     # The 2D residual view's row stride is `C_out` (NHWC contiguous).
     var _source_row_stride = _C_out
@@ -235,18 +237,17 @@ def amd_4wave_conv_fprop_with_residual[
         ctx.enqueue_function[_kpad_filter_frsc[filter_type]](
             filter.ptr,
             filter_padded_buf,
-            K_real,
-            K_padded,
-            _C_out,
+            Int32(K_real),
+            Int32(K_padded),
+            Int32(_C_out),
             grid_dim=_kpad_grid,
             block_dim=_kpad_block,
         )
         comptime _filter_2d_layout = row_major[_C_out, K_padded]()
         var filter_2d = TileTensor(filter_padded_buf, _filter_2d_layout)
 
-        @parameter
-        @always_inline
-        def _launch_kpad[stride_v: Int, pad_v: Int]() raises:
+        @inline(.always)
+        def _launch_kpad[stride_v: Int, pad_v: Int]() raises {imm}:
             amd_4wave_conv[
                 has_residual=True,
                 elementwise_lambda_fn=elementwise_lambda_fn,
@@ -273,29 +274,29 @@ def amd_4wave_conv_fprop_with_residual[
 
         var s = problem.stride_h
         var p = problem.pad_h
-        if s == 1 and p == 0:
-            _launch_kpad[1, 0]()
-        elif s == 1 and p == 1:
-            _launch_kpad[1, 1]()
-        elif s == 1 and p == 2:
-            _launch_kpad[1, 2]()
-        elif s == 2 and p == 0:
-            _launch_kpad[2, 0]()
-        elif s == 2 and p == 1:
-            _launch_kpad[2, 1]()
-        elif s == 2 and p == 2:
-            _launch_kpad[2, 2]()
-        else:
-            raise Error(
-                "unsupported (stride, pad) combination for amd_4wave_conv"
-            )
+        match (s, p):
+            case (1, 0):
+                _launch_kpad[1, 0]()
+            case (1, 1):
+                _launch_kpad[1, 1]()
+            case (1, 2):
+                _launch_kpad[1, 2]()
+            case (2, 0):
+                _launch_kpad[2, 0]()
+            case (2, 1):
+                _launch_kpad[2, 1]()
+            case (2, 2):
+                _launch_kpad[2, 2]()
+            case _:
+                raise Error(
+                    "unsupported (stride, pad) combination for amd_4wave_conv"
+                )
     else:
         comptime _filter_2d_layout_no_pad = row_major[_C_out, K_real]()
-        var filter_2d_no_pad = TileTensor(filter.ptr, _filter_2d_layout_no_pad)
+        var filter_2d_no_pad = filter.reshape(_filter_2d_layout_no_pad)
 
-        @parameter
-        @always_inline
-        def _launch_no_pad[stride_v: Int, pad_v: Int]() raises:
+        @inline(.always)
+        def _launch_no_pad[stride_v: Int, pad_v: Int]() raises {imm}:
             amd_4wave_conv[
                 has_residual=True,
                 elementwise_lambda_fn=elementwise_lambda_fn,
@@ -322,22 +323,23 @@ def amd_4wave_conv_fprop_with_residual[
 
         var s = problem.stride_h
         var p = problem.pad_h
-        if s == 1 and p == 0:
-            _launch_no_pad[1, 0]()
-        elif s == 1 and p == 1:
-            _launch_no_pad[1, 1]()
-        elif s == 1 and p == 2:
-            _launch_no_pad[1, 2]()
-        elif s == 2 and p == 0:
-            _launch_no_pad[2, 0]()
-        elif s == 2 and p == 1:
-            _launch_no_pad[2, 1]()
-        elif s == 2 and p == 2:
-            _launch_no_pad[2, 2]()
-        else:
-            raise Error(
-                "unsupported (stride, pad) combination for amd_4wave_conv"
-            )
+        match (s, p):
+            case (1, 0):
+                _launch_no_pad[1, 0]()
+            case (1, 1):
+                _launch_no_pad[1, 1]()
+            case (1, 2):
+                _launch_no_pad[1, 2]()
+            case (2, 0):
+                _launch_no_pad[2, 0]()
+            case (2, 1):
+                _launch_no_pad[2, 1]()
+            case (2, 2):
+                _launch_no_pad[2, 2]()
+            case _:
+                raise Error(
+                    "unsupported (stride, pad) combination for amd_4wave_conv"
+                )
 
 
 # ----------------------------------------------------------------------
@@ -345,7 +347,7 @@ def amd_4wave_conv_fprop_with_residual[
 # ----------------------------------------------------------------------
 
 
-@always_inline
+@inline(.always)
 def _launch_plain_conv[
     act_type: DType,
     filter_type: DType,
@@ -375,7 +377,7 @@ def _launch_plain_conv[
     comptime K_real = _R * _S * _C_in
     comptime K_padded = ((K_real + 255) // 256) * 256
     comptime _needs_kpad = K_padded != K_real
-    var output_2d = TileTensor(output.ptr, row_major(Coord(M, Idx[_C_out])))
+    var output_2d = output.reshape(row_major(M, Idx[_C_out]))
 
     if problem.stride_h != problem.stride_w or problem.pad_h != problem.pad_w:
         raise Error(
@@ -390,22 +392,22 @@ def _launch_plain_conv[
     var W_out = problem.out_width()
     var HW_out = H_out * W_out
 
-    @parameter
-    @always_inline
+    @__parameter
+    @inline(.always)
     @__copy_capture(output, H_out, W_out, HW_out)
     def composed_epilogue[
         _dtype: DType,
-        width: SIMDSize,
+        width: SIMDLength,
         *,
         alignment: Int = align_of[SIMD[_dtype, width]](),
-    ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
-        comptime if Bool(elementwise_lambda_fn):
-            comptime _user_lambda = elementwise_lambda_fn.value()
+    ](idx: Coord, val: SIMD[_dtype, width]) capturing -> None:
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
+        comptime if case .Some(_user_lambda) = elementwise_lambda_fn:
             _user_lambda[alignment=alignment](idx, val)
         else:
             # No user lambda — store directly.
-            var m = idx[0]
-            var n = idx[1]
+            var m = Int(idx[0].value())
+            var n = Int(idx[1].value())
             var batch_idx = m // HW_out
             var rem = m - batch_idx * HW_out
             var h_idx = rem // W_out
@@ -429,18 +431,17 @@ def _launch_plain_conv[
         ctx.enqueue_function[_kpad_filter_frsc[filter_type]](
             filter.ptr,
             filter_padded_buf,
-            K_real,
-            K_padded,
-            _C_out,
+            Int32(K_real),
+            Int32(K_padded),
+            Int32(_C_out),
             grid_dim=_kpad_grid,
             block_dim=_kpad_block,
         )
         comptime _filter_2d_layout = row_major[_C_out, K_padded]()
         var filter_2d = TileTensor(filter_padded_buf, _filter_2d_layout)
 
-        @parameter
-        @always_inline
-        def _launch_kpad[stride_v: Int, pad_v: Int]() raises:
+        @inline(.always)
+        def _launch_kpad[stride_v: Int, pad_v: Int]() raises {imm}:
             comptime if Bool(elementwise_lambda_fn):
                 amd_4wave_conv[
                     elementwise_lambda_fn=composed_epilogue,
@@ -469,29 +470,29 @@ def _launch_plain_conv[
 
         var s = problem.stride_h
         var p = problem.pad_h
-        if s == 1 and p == 0:
-            _launch_kpad[1, 0]()
-        elif s == 1 and p == 1:
-            _launch_kpad[1, 1]()
-        elif s == 1 and p == 2:
-            _launch_kpad[1, 2]()
-        elif s == 2 and p == 0:
-            _launch_kpad[2, 0]()
-        elif s == 2 and p == 1:
-            _launch_kpad[2, 1]()
-        elif s == 2 and p == 2:
-            _launch_kpad[2, 2]()
-        else:
-            raise Error(
-                "unsupported (stride, pad) combination for amd_4wave_conv"
-            )
+        match (s, p):
+            case (1, 0):
+                _launch_kpad[1, 0]()
+            case (1, 1):
+                _launch_kpad[1, 1]()
+            case (1, 2):
+                _launch_kpad[1, 2]()
+            case (2, 0):
+                _launch_kpad[2, 0]()
+            case (2, 1):
+                _launch_kpad[2, 1]()
+            case (2, 2):
+                _launch_kpad[2, 2]()
+            case _:
+                raise Error(
+                    "unsupported (stride, pad) combination for amd_4wave_conv"
+                )
     else:
         comptime _filter_2d_layout_no_pad = row_major[_C_out, K_real]()
-        var filter_2d_no_pad = TileTensor(filter.ptr, _filter_2d_layout_no_pad)
+        var filter_2d_no_pad = filter.reshape(_filter_2d_layout_no_pad)
 
-        @parameter
-        @always_inline
-        def _launch_no_pad[stride_v: Int, pad_v: Int]() raises:
+        @inline(.always)
+        def _launch_no_pad[stride_v: Int, pad_v: Int]() raises {imm}:
             comptime if Bool(elementwise_lambda_fn):
                 amd_4wave_conv[
                     elementwise_lambda_fn=composed_epilogue,
@@ -520,19 +521,20 @@ def _launch_plain_conv[
 
         var s = problem.stride_h
         var p = problem.pad_h
-        if s == 1 and p == 0:
-            _launch_no_pad[1, 0]()
-        elif s == 1 and p == 1:
-            _launch_no_pad[1, 1]()
-        elif s == 1 and p == 2:
-            _launch_no_pad[1, 2]()
-        elif s == 2 and p == 0:
-            _launch_no_pad[2, 0]()
-        elif s == 2 and p == 1:
-            _launch_no_pad[2, 1]()
-        elif s == 2 and p == 2:
-            _launch_no_pad[2, 2]()
-        else:
-            raise Error(
-                "unsupported (stride, pad) combination for amd_4wave_conv"
-            )
+        match (s, p):
+            case (1, 0):
+                _launch_no_pad[1, 0]()
+            case (1, 1):
+                _launch_no_pad[1, 1]()
+            case (1, 2):
+                _launch_no_pad[1, 2]()
+            case (2, 0):
+                _launch_no_pad[2, 0]()
+            case (2, 1):
+                _launch_no_pad[2, 1]()
+            case (2, 2):
+                _launch_no_pad[2, 2]()
+            case _:
+                raise Error(
+                    "unsupported (stride, pad) combination for amd_4wave_conv"
+                )

@@ -17,14 +17,13 @@ from std.math import ceildiv
 from std.sys import bit_width_of
 
 from std.builtin.dtype import _uint_type_of_width
-from std.gpu import WARP_SIZE, barrier, block_idx, thread_idx
-import std.gpu.primitives.warp as warp
-from std.gpu.host import DeviceContext, DeviceBuffer
-from std.gpu.host.dim import Dim
-from std.sys.info import has_apple_gpu_accelerator
+from max.gpu import WARP_SIZE, block_idx, thread_idx
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext, DeviceBuffer
+from max.gpu.host import Dim
 from std.random import Random
-from layout import Coord, Idx, TileTensor, row_major
-from std.memory import bitcast, stack_allocation
+from layout import Coord, TileTensor, row_major
+from std.memory import bitcast, unsafe_stack_allocation
 from nn.softmax import _softmax_gpu
 from nn.topk import (
     TopK_2,
@@ -48,9 +47,9 @@ def topk_wrapper[
     largest: Bool = True,
     _test_sort: Bool = False,
 ](
-    K: Int,
-    num_elements: Int,
-    num_blocks_per_input: Int,
+    K: Int32,
+    num_elements: Int32,
+    num_blocks_per_input: Int32,
     in_buffer: UnsafePointer[Scalar[input_type], ImmUntrackedOrigin],
     local_topk_vals: UnsafePointer[
         Scalar[input_type], MutUntrackedOrigin
@@ -59,7 +58,7 @@ def topk_wrapper[
         Scalar[index_type], MutUntrackedOrigin
     ],  # Output buffer of size num_blocks_per_input * K
     p_threshold: UnsafePointer[Scalar[input_type], MutUntrackedOrigin],
-    skip_sort: UnsafePointer[Scalar[DType.bool], MutUntrackedOrigin],
+    skip_sort: UnsafePointer[Scalar[.bool], MutUntrackedOrigin],
 ):
     """
     Copy of `Kernels/mojo/nn/topk.mojo:_topk_stage1` with the addition of
@@ -78,37 +77,40 @@ def topk_wrapper[
         K: Int - Number of top elements to select per block
         num_elements: Int - Size of last dimension of input buffer (vocab size)
         num_blocks_per_input: Int - Number of blocks used to process the input data
-        in_buffer: UnsafePointer[Scalar[input_type]] - Input buffer containing the elements to process
-        local_topk_vals: UnsafePointer[Scalar[input_type]] - Output buffer to store the local top-K values
-        local_topk_idxs: UnsafePointer[Scalar[index_type]] - Output buffer to store the indices of local top-K elements
-        p_threshold: UnsafePointer[Scalar[input_type]] - Threshold for top-p sampling if is_top_p is True else min-p coefficient
-        skip_sort: UnsafePointer[Scalar[DType.bool]] - Output buffer to store whether sorting is needed
+        in_buffer: Pointer[Scalar[input_type]] - Input buffer containing the elements to process
+        local_topk_vals: Pointer[Scalar[input_type]] - Output buffer to store the local top-K values
+        local_topk_idxs: Pointer[Scalar[index_type]] - Output buffer to store the indices of local top-K elements
+        p_threshold: Pointer[Scalar[input_type]] - Threshold for top-p sampling if is_top_p is True else min-p coefficient
+        skip_sort: Pointer[Scalar[.bool]] - Output buffer to store whether sorting is needed
     """
+    var _K = Int(K)
+    var _num_elements = Int(num_elements)
+    var _num_blocks_per_input = Int(num_blocks_per_input)
     var tid = thread_idx.x
     var bid = block_idx.x
 
-    var batch_id, block_lane = divmod(bid, num_blocks_per_input)
+    var batch_id, block_lane = divmod(bid, _num_blocks_per_input)
 
-    var _in_buffer = in_buffer + batch_id * num_elements
+    var _in_buffer = in_buffer + batch_id * _num_elements
 
     # # Allocate shared memory for the values and indices
-    var topk_sram = stack_allocation[
+    var topk_sram = unsafe_stack_allocation[
         block_size,
         TopK_2[input_type, largest],
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     # Pack the topk_vals and topk_idxs into shared memory
     var block_offset = block_lane * block_size
-    var stride = block_size * num_blocks_per_input
+    var stride = block_size * _num_blocks_per_input
     topk_sram[tid] = TopK_2[input_type, largest]()
-    for i in range(tid + block_offset, num_elements, stride):
+    for i in range(tid + block_offset, _num_elements, stride):
         topk_sram[tid].insert(_in_buffer[i], i)
 
     barrier()
 
-    # Prepare for K iterations to find the local top-K elements
-    for k in range(K):
+    # Prepare for _K iterations to find the local top-_K elements
+    for k in range(_K):
         # Initialize each thread with its own TopK_2 value and index
         var partial = topk_sram[tid]
 
@@ -116,12 +118,10 @@ def topk_wrapper[
         var total = _block_reduce_topk[ascending=largest](partial)
 
         if tid == 0:
-            # Store the local top-K values and indices in global memory
+            # Store the local top-_K values and indices in global memory
             var vector_idx = total.p
-            local_topk_vals[bid * K + k] = total.u
-            local_topk_idxs[bid * K + k] = Scalar[DType.int](vector_idx).cast[
-                index_type
-            ]()
+            local_topk_vals[bid * _K + k] = total.u
+            local_topk_idxs[bid * _K + k] = Int(vector_idx).cast[index_type]()
 
             comptime if is_top_p:
                 # In top-p sampling, we check if the highest probability token exceeds
@@ -149,7 +149,7 @@ def topk_wrapper[
         barrier()
 
 
-@always_inline
+@inline(.always)
 def normalize(value: BFloat16) -> UInt16:
     """
     Normalizes a bfloat16 value to an unsigned 16-bit integer for radix sort
@@ -157,15 +157,15 @@ def normalize(value: BFloat16) -> UInt16:
     values.
     """
 
-    @always_inline
+    @inline(.always)
     def reinterpret(value: BFloat16) -> UInt16:
         # For unsigned integral types: No conversion needed, return as-is
-        return bitcast[DType.uint16, 1](value)
+        return bitcast[.uint16, 1](value)
 
     # Normalize bf16 values by flipping the sign bit for positive and fully
     # inverting negative numbers
     var bits = reinterpret(value)
-    comptime sign_bit_mask = 0b1 << (bit_width_of[DType.bfloat16]() - 1)
+    comptime sign_bit_mask = 0b1 << (bit_width_of[BFloat16]() - 1)
     if bits & UInt16(sign_bit_mask):
         # For negative numbers, flip all bits (two's complement behavior)
         return ~bits
@@ -174,7 +174,7 @@ def normalize(value: BFloat16) -> UInt16:
         return bits ^ UInt16(sign_bit_mask)
 
 
-@always_inline
+@inline(.always)
 def normalize_u32(value: UInt32) -> UInt32:
     """
     Returns a uint32 value unchanged since unsigned integers already sort
@@ -183,28 +183,28 @@ def normalize_u32(value: UInt32) -> UInt32:
     return value
 
 
-@always_inline
+@inline(.always)
 def normalize(value: Int32) -> UInt32:
     """
     Normalizes a signed 32-bit integer to unsigned by flipping the most
     significant bit so negative values sort before positive ones.
     """
 
-    @always_inline
+    @inline(.always)
     def reinterpret(value: Int32) -> UInt32:
         # For signed integral types: Convert to unsigned int to ensure proper
         # comparison
-        return value.cast[DType.uint32]()
+        return value.cast[.uint32]()
 
     # For signed integers: Flip the most significant bit to ensure correct ordering
     # This makes negative numbers appear "smaller" than positive numbers in
     # unsigned comparison
-    comptime sign_bit_mask = 0b1 << (bit_width_of[DType.int32]() - 1)
+    comptime sign_bit_mask = 0b1 << (bit_width_of[Int32]() - 1)
 
     return reinterpret(value) ^ UInt32(sign_bit_mask)
 
 
-@always_inline
+@inline(.always)
 def normalize(value: UInt16) -> UInt16:
     """
     Returns a uint16 value unchanged since unsigned integers already sort
@@ -213,28 +213,28 @@ def normalize(value: UInt16) -> UInt16:
     return value
 
 
-@always_inline
+@inline(.always)
 def normalize(value: Float32) -> UInt32:
     """
     Normalizes a float32 value to an unsigned 32-bit integer for radix sort
     by reinterpreting its bit pattern and flipping bits for negative values.
     """
 
-    @always_inline
+    @inline(.always)
     def reinterpret(value: Float32) -> UInt32:
         # For floating-point types: Reinterpret the bit pattern as an unsigned int
         # This allows for comparison of floating-point values based on their binary
         # representation
-        return bitcast[DType.uint32, 1](value)
+        return bitcast[.uint32, 1](value)
 
     var bits = reinterpret(value)
-    comptime sign_bit = bit_width_of[DType.float32]() - 1
+    comptime sign_bit = bit_width_of[Float32]() - 1
     # Flip all bits if the value is negative (sign bit is 1)
     # This makes more negative numbers appear "smaller" in unsigned comparison
     return bits ^ ((-(bits >> UInt32(sign_bit))) | UInt32(0b1 << sign_bit))
 
 
-@always_inline
+@inline(.always)
 def normalize(
     value: Scalar,
     out result: Scalar[_uint_type_of_width[bit_width_of[value.dtype]()]()],
@@ -245,24 +245,25 @@ def normalize(
     """
     comptime dtype = value.dtype
 
-    comptime if dtype == DType.int32:
-        return normalize(rebind[Int32](value)).cast[result.dtype]()
-    elif dtype == DType.uint32:
-        return normalize(rebind[UInt32](value)).cast[result.dtype]()
-    elif dtype == DType.float32:
-        return normalize(rebind[Float32](value)).cast[result.dtype]()
-    # TODO: These below don't return uint32 so must generalize and fix
-    elif dtype == DType.uint16:
-        return normalize(rebind[UInt16](value)).cast[result.dtype]()
-    elif dtype == DType.float16:
-        return normalize(rebind[Float16](value)).cast[result.dtype]()
-    elif dtype == DType.bfloat16:
-        return normalize(rebind[BFloat16](value)).cast[result.dtype]()
-    else:
-        comptime assert False, "unhandled normalize type"
+    comptime match dtype:
+        case .int32:
+            return normalize(rebind[Int32](value)).cast[result.dtype]()
+        case .uint32:
+            return normalize(rebind[UInt32](value)).cast[result.dtype]()
+        case .float32:
+            return normalize(rebind[Float32](value)).cast[result.dtype]()
+        # TODO: These below don't return uint32 so must generalize and fix
+        case .uint16:
+            return normalize(rebind[UInt16](value)).cast[result.dtype]()
+        case .float16:
+            return normalize(rebind[Float16](value)).cast[result.dtype]()
+        case .bfloat16:
+            return normalize(rebind[BFloat16](value)).cast[result.dtype]()
+        case _:
+            comptime assert False, "unhandled normalize type"
 
 
-@always_inline
+@inline(.always)
 @__name(t"radix_sort_pairs_{dtype}_{out_idx_type}_{ascending}")
 def radix_sort_pairs_kernel[
     dtype: DType,
@@ -280,8 +281,8 @@ def radix_sort_pairs_kernel[
         Scalar[out_idx_type], MutUntrackedOrigin
     ],  # modifies input
     output_key_ids_: UnsafePointer[Scalar[out_idx_type], MutUntrackedOrigin],
-    num_keys: Int,
-    skip_sort: UnsafePointer[Scalar[DType.bool], MutUntrackedOrigin],
+    num_keys: Int32,
+    skip_sort: UnsafePointer[Scalar[.bool], MutUntrackedOrigin],
 ):
     """
     Radix pair sort kernel for (default) descending order.
@@ -306,55 +307,56 @@ def radix_sort_pairs_kernel[
     AMD. Introduction to GPU Radix Sort. GPUOpen, 2017. Available at:
     https://gpuopen.com/download/publications/Introduction_to_GPU_Radix_Sort.pdf.
     """
+    var _num_keys = Int(num_keys)
 
     var tid = thread_idx.x
     var batch_id = block_idx.x
-    var elems_per_thread = ceildiv(num_keys, BLOCK_SIZE)
+    var elems_per_thread = ceildiv(_num_keys, BLOCK_SIZE)
     comptime NUM_BUCKETS = 2**NUM_BITS_PER_PASS
 
-    var input_keys = input_keys_ + batch_id * num_keys
-    var output_keys = output_keys_ + batch_id * num_keys
-    var input_key_ids = input_key_ids_ + batch_id * num_keys
-    var output_key_ids = output_key_ids_ + batch_id * num_keys
+    var input_keys = input_keys_ + batch_id * _num_keys
+    var output_keys = output_keys_ + batch_id * _num_keys
+    var input_key_ids = input_key_ids_ + batch_id * _num_keys
+    var output_key_ids = output_key_ids_ + batch_id * _num_keys
 
     if skip_sort[batch_id]:
         return
 
     # Shared mem declarations
-    var s_counts = stack_allocation[
+    var s_counts = unsafe_stack_allocation[
         BLOCK_SIZE * NUM_BUCKETS,
         Int32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
-    var total_counts = stack_allocation[
+    var total_counts = unsafe_stack_allocation[
         NUM_BUCKETS,
         Int32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
-    var total_offsets = stack_allocation[
+    var total_offsets = unsafe_stack_allocation[
         (NUM_BUCKETS + 1),  # +1 extended size for descending
         Int32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
-    var total_offsets_descending = stack_allocation[
+    var total_offsets_descending = unsafe_stack_allocation[
         NUM_BUCKETS,
         Int32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
-    var s_thread_offsets = stack_allocation[
+    var s_thread_offsets = unsafe_stack_allocation[
         BLOCK_SIZE * NUM_BUCKETS,
         Int32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     # Initialize counts[NUM_BUCKETS]
-    var counts_stack = InlineArray[Int32, NUM_BUCKETS](uninitialized=True)
-    var counts_buf = TileTensor(counts_stack, row_major[NUM_BUCKETS]()).fill(0)
+    var counts_stack = Array[Int32, NUM_BUCKETS](fill=0)
+    var counts_buf = TileTensor(counts_stack, row_major[NUM_BUCKETS]())
     var counts = counts_buf.ptr
 
     # Process elements and compute counts for each thread
     for index in range(tid * elems_per_thread, (tid + 1) * elems_per_thread):
-        if index < num_keys:
+        if index < _num_keys:
             var key = input_keys[index]
             var normalized_key = normalize(key)
             comptime KeyType = type_of(normalized_key)
@@ -371,7 +373,7 @@ def radix_sort_pairs_kernel[
     # Compute total_counts[NUM_BUCKETS] by summing counts[NUM_BUCKETS] across threads
     if tid < NUM_BUCKETS:
         var sum = Int32(0)
-        bucket_offset = tid
+        var bucket_offset = tid
 
         comptime for t in range(BLOCK_SIZE):
             sum += s_counts[t * NUM_BUCKETS + bucket_offset]
@@ -434,17 +436,15 @@ def radix_sort_pairs_kernel[
         barrier()
 
     # Each thread initializes local_offsets[NUM_BUCKETS] = 0
-    var local_offsets_stack = InlineArray[Int32, NUM_BUCKETS](
-        uninitialized=True
-    )
+    var local_offsets_stack = Array[Int32, NUM_BUCKETS](fill=0)
     var local_offsets_buf = TileTensor(
         local_offsets_stack, row_major[NUM_BUCKETS]()
-    ).fill(0)
+    )
     var local_offsets = local_offsets_buf.ptr
 
     # Now, each thread processes its elements, computes destination index, write to output
     for index in range(tid * elems_per_thread, (tid + 1) * elems_per_thread):
-        if index < num_keys:
+        if index < _num_keys:
             var key = input_keys[index]
             var normalized_key = normalize(key)
             comptime KeyType = type_of(normalized_key)
@@ -489,7 +489,7 @@ struct DoubleBuffer[dtype: DType](ImplicitlyCopyable):
     between them.
     """
 
-    var _d_buffers: InlineArray[
+    var _d_buffers: Array[
         Optional[UnsafePointer[Scalar[Self.dtype], MutUntrackedOrigin]], 2
     ]
     var _selection: Int32
@@ -515,36 +515,36 @@ struct DoubleBuffer[dtype: DType](ImplicitlyCopyable):
         self._selection = copy._selection
         self._size = copy._size
 
-    @always_inline
+    @inline(.always)
     def current(self, ctx: DeviceContext) -> DeviceBuffer[Self.dtype]:
-        if self._d_buffers[self._selection]:
+        if case .Some(ptr) = self._d_buffers[self._selection]:
             return DeviceBuffer[Self.dtype](
                 ctx,
-                self._d_buffers[self._selection].unsafe_value(),
+                ptr,
                 self._size,
                 owning=False,
             )
         else:
             return DeviceBuffer[Self.dtype].empty(ctx)
 
-    @always_inline
+    @inline(.always)
     def alternate(self, ctx: DeviceContext) -> DeviceBuffer[Self.dtype]:
-        if self._d_buffers[self._selection ^ 1]:
+        if case .Some(ptr) = self._d_buffers[self._selection ^ 1]:
             return DeviceBuffer[Self.dtype](
                 ctx,
-                self._d_buffers[self._selection ^ 1].unsafe_value(),
+                ptr,
                 self._size,
                 owning=False,
             )
         else:
             return DeviceBuffer[Self.dtype].empty(ctx)
 
-    @always_inline
+    @inline(.always)
     def swap(mut self):
         self._selection ^= 1
 
 
-@always_inline
+@inline(.always)
 def run_radix_sort_pairs_gpu[
     dtype: DType,
     out_idx_type: DType,
@@ -555,7 +555,7 @@ def run_radix_sort_pairs_gpu[
     ctx: DeviceContext,
     mut keys: DoubleBuffer[dtype, ...],
     mut key_ids: DoubleBuffer[out_idx_type, ...],
-    skip_sort: UnsafePointer[mut=True, Scalar[DType.bool], _],
+    skip_sort: UnsafePointer[mut=True, Scalar[.bool], _],
     in_shape: IndexList,
 ) raises:
     """
@@ -573,13 +573,13 @@ def run_radix_sort_pairs_gpu[
         ctx: DeviceContext - The GPU device context for enqueuing kernels.
         keys: DoubleBuffer[dtype] - Double buffer holding the keys to sort, swapped each pass.
         key_ids: DoubleBuffer[out_idx_type] - Double buffer holding the key indices, swapped each pass.
-        skip_sort: UnsafePointer[Scalar[DType.bool]] - Per-batch flag indicating whether sorting is skipped.
+        skip_sort: Pointer[Scalar[.bool]] - Per-batch flag indicating whether sorting is skipped.
         in_shape: IndexList - Shape of the input tensor as [batch_size, vocab_size].
     """
     var batch_size = in_shape[0]
     var vocab_size = in_shape[1]
 
-    var skip_sort_device = DeviceBuffer[DType.bool](
+    var skip_sort_device = DeviceBuffer[.bool](
         ctx,
         skip_sort,
         batch_size,
@@ -598,7 +598,7 @@ def run_radix_sort_pairs_gpu[
             keys.alternate(ctx),
             key_ids.current(ctx),
             key_ids.alternate(ctx),
-            vocab_size,
+            Int32(vocab_size),
             skip_sort_device,
             grid_dim=Dim(batch_size),
             block_dim=Dim(BLOCK_SIZE),
@@ -607,7 +607,7 @@ def run_radix_sort_pairs_gpu[
         key_ids.swap()
 
 
-@always_inline
+@inline(.always)
 @__name(t"topp_minp_sampling_{dtype}_{out_idx_type}_{is_top_p}")
 def topp_minp_sampling_kernel[
     dtype: DType,
@@ -618,8 +618,8 @@ def topp_minp_sampling_kernel[
     sorted_probs_: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     sorted_ids_: UnsafePointer[Scalar[out_idx_type], MutUntrackedOrigin],
     out_token_ids: UnsafePointer[Scalar[out_idx_type], MutUntrackedOrigin],
-    skip_sort: UnsafePointer[Scalar[DType.bool], MutUntrackedOrigin],
-    vocab_size: Int,
+    skip_sort: UnsafePointer[Scalar[.bool], MutUntrackedOrigin],
+    vocab_size: Int32,
 ):
     """
     Top P-Min P sampling kernel.
@@ -637,6 +637,7 @@ def topp_minp_sampling_kernel[
         vocab_size: Number of tokens in the vocabulary per batch, used to
             iterate over the sorted probability and id buffers.
     """
+    var _vocab_size = Int(vocab_size)
     var tid = thread_idx.x
     var batch_id = block_idx.x
 
@@ -645,18 +646,18 @@ def topp_minp_sampling_kernel[
         return
 
     var p_threshold = p_thresholds_[batch_id]
-    var sorted_probs = sorted_probs_ + batch_id * vocab_size
-    var sorted_ids = sorted_ids_ + batch_id * vocab_size
+    var sorted_probs = sorted_probs_ + batch_id * _vocab_size
+    var sorted_ids = sorted_ids_ + batch_id * _vocab_size
 
     comptime if is_top_p:
         if tid == 0:
             var rng_state = Random(seed=SEED)
             var rng = rng_state.step_uniform()
             var r = p_threshold * rng[0].cast[dtype]()
-            for i in range(vocab_size):
+            for i in range(_vocab_size):
                 r -= sorted_probs[i]
 
-                if r <= 0.0 or i == vocab_size - 1:
+                if r <= 0.0 or i == _vocab_size - 1:
                     comptime if DEBUG_FILE:
                         print("sorted_probs[i]: ", sorted_probs[i])
                         print("r: ", r)
@@ -673,7 +674,7 @@ def topp_minp_sampling_kernel[
             # Step 1: Filter out tokens with probabilities less than the min-p threshold
             var sum_filtered_probs = Scalar[dtype](0.0)
             var num_filtered_tokens = 0
-            for i in range(vocab_size):
+            for i in range(_vocab_size):
                 if sorted_probs[i] >= p_threshold:
                     sum_filtered_probs += sorted_probs[i]
                     num_filtered_tokens += 1
@@ -686,7 +687,7 @@ def topp_minp_sampling_kernel[
             for i in range(num_filtered_tokens):
                 r -= sorted_probs[i]
 
-                if r <= 0.0 or i == vocab_size - 1:
+                if r <= 0.0 or i == _vocab_size - 1:
                     out_token_ids[batch_id] = sorted_ids[i]
 
                     comptime if DEBUG_FILE:
@@ -696,7 +697,7 @@ def topp_minp_sampling_kernel[
                     break
 
 
-@always_inline
+@inline(.always)
 def _is_supported_dtype[dtype: DType]() -> Bool:
     """
     Check if the type is supported by the radix sort kernel.
@@ -710,7 +711,7 @@ def _is_supported_dtype[dtype: DType]() -> Bool:
     return False
 
 
-@always_inline
+@inline(.always)
 def _topp_minp_sampling_gpu[
     dtype: DType,
     out_idx_type: DType,
@@ -720,9 +721,9 @@ def _topp_minp_sampling_gpu[
 ](
     ctx: DeviceContext,
     p_thresholds: TileTensor[dtype, ...],
-    input_logits: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
+    input_logits: TileTensor[dtype, address_space=.GENERIC, ...],
     out_token_ids: TileTensor[
-        mut=True, out_idx_type, address_space=AddressSpace.GENERIC, ...
+        mut=True, out_idx_type, address_space=.GENERIC, ...
     ],
     temperature: Scalar[dtype] = 1,
 ) raises:
@@ -777,7 +778,7 @@ def _topp_minp_sampling_gpu[
         "Unsupported dtype: ", dtype
     )
 
-    comptime BLOCK_SIZE = WARP_SIZE if has_apple_gpu_accelerator() else 256
+    comptime BLOCK_SIZE = WARP_SIZE if ctx.target.is_apple_gpu() else 256
 
     # Step 1; Apply temperature scaling to the logits and apply
     # softmax to get probabilities
@@ -787,7 +788,7 @@ def _topp_minp_sampling_gpu[
     var batch_size = input_shape[0]
     var vocab_size = input_shape[1]
 
-    @parameter
+    @__parameter
     @__copy_capture(input_logits)
     def apply_temperature[
         _simd_width: Int
@@ -816,7 +817,7 @@ def _topp_minp_sampling_gpu[
     #   begin_offset_buf[bi] = offset_buf[bi]
     # materialize a vals buffer
     var max_vals = ctx.enqueue_create_buffer[dtype](batch_size)
-    var skip_sort = ctx.enqueue_create_buffer[DType.bool](batch_size)
+    var skip_sort = ctx.enqueue_create_buffer[.bool](batch_size)
 
     comptime K = 1
     comptime num_blocks_per_input = 1
@@ -829,9 +830,9 @@ def _topp_minp_sampling_gpu[
     ]
 
     ctx.enqueue_function[topk_kernel](
-        K,
-        vocab_size,
-        num_blocks_per_input,
+        Int32(K),
+        Int32(vocab_size),
+        Int32(num_blocks_per_input),
         probs_buf,
         max_vals,
         out_token_ids.to_device_buffer(ctx),
@@ -885,7 +886,7 @@ def _topp_minp_sampling_gpu[
         ids_buf,
         out_token_ids.to_device_buffer(ctx),
         skip_sort,
-        vocab_size,
+        Int32(vocab_size),
         grid_dim=Dim(batch_size),
         block_dim=Dim(BLOCK_SIZE),
     )
@@ -895,7 +896,7 @@ def _topp_minp_sampling_gpu[
     _ = ids_buf^
 
 
-@always_inline
+@inline(.always)
 def top_p_sampling_gpu[
     dtype: DType,
     out_idx_type: DType,
@@ -904,9 +905,9 @@ def top_p_sampling_gpu[
 ](
     ctx: DeviceContext,
     top_ps: TileTensor[dtype, ...],
-    input_logits: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
+    input_logits: TileTensor[dtype, address_space=.GENERIC, ...],
     out_token_ids: TileTensor[
-        mut=True, out_idx_type, address_space=AddressSpace.GENERIC, ...
+        mut=True, out_idx_type, address_space=.GENERIC, ...
     ],
     temperature: Scalar[dtype] = 1,
 ) raises:
@@ -926,7 +927,7 @@ def top_p_sampling_gpu[
     )
 
 
-@always_inline
+@inline(.always)
 def min_p_sampling_gpu[
     dtype: DType,
     out_idx_type: DType,
@@ -934,10 +935,10 @@ def min_p_sampling_gpu[
     _test_sort: Bool = False,
 ](
     ctx: DeviceContext,
-    min_ps: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
-    input_logits: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
+    min_ps: TileTensor[dtype, address_space=.GENERIC, ...],
+    input_logits: TileTensor[dtype, address_space=.GENERIC, ...],
     out_token_ids: TileTensor[
-        mut=True, out_idx_type, address_space=AddressSpace.GENERIC, ...
+        mut=True, out_idx_type, address_space=.GENERIC, ...
     ],
     temperature: Scalar[dtype] = 1,
 ) raises:

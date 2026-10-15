@@ -27,7 +27,7 @@ Shape sources:
 """
 
 from std.benchmark import keep
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.random import rand
 from std.sys import get_defined_dtype
 from std.time import perf_counter_ns
@@ -36,6 +36,7 @@ from layout import TileTensor, row_major
 
 from linalg.matmul.gpu.amd.amd_4wave_matmul import structured_4wave_matmul
 from nn.conv.gpu.amd.amd_4wave_conv import amd_4wave_conv
+from std.math import align_up
 
 
 def _host_im2col_general[
@@ -55,8 +56,8 @@ def _host_im2col_general[
     stride_w: Int,
     K_padded: Int,
 ](
-    input_host_ptr: UnsafePointer[Scalar[a_type], ImmutAnyOrigin],
-    im2col_host_ptr: UnsafePointer[Scalar[a_type], MutAnyOrigin],
+    input_host_ptr: ImmPointer[Scalar[a_type], ImmutAnyOrigin],
+    im2col_host_ptr: MutPointer[Scalar[a_type], MutAnyOrigin],
 ):
     for n in range(N):
         for ho in range(H_out):
@@ -75,10 +76,6 @@ def _host_im2col_general[
                                 im2col_host_ptr[
                                     m * K_padded + k
                                 ] = input_host_ptr[in_idx]
-
-
-def _round_up(x: Int, mod: Int) -> Int:
-    return ((x + mod - 1) // mod) * mod
 
 
 def _bench_one[
@@ -104,7 +101,7 @@ def _bench_one[
     comptime W_out = (W + 2 * pad_w - S) // stride_w + 1
     comptime M_total = N_batch * H_out * W_out
     comptime K_real = R * S * C_in
-    comptime K_padded = _round_up(K_real, 256)
+    comptime K_padded = align_up(K_real, 256)
     comptime flops = 2 * M_total * K_real * C_out
 
     # Path classification (matches the comptime branches inside
@@ -168,9 +165,8 @@ def _bench_one[
     # conv-vs-matmul ratio compares apples-to-apples (the conv path
     # also routes through the framework body for all dtypes). Use
     # `structured_4wave_matmul` for all dtypes.
-    @parameter
-    @always_inline
-    def _ref_matmul() raises:
+    @inline(.always)
+    def _ref_matmul() raises {imm}:
         structured_4wave_matmul(im2col_2d, filter, output, ctx)
 
     # Warmup (DVFS, allocator).
@@ -420,7 +416,7 @@ def _run_suite[a_type: DType, c_type: DType](ctx: DeviceContext) raises:
 def main() raises:
     # Pick the input dtype via `-D DTYPE=<dtype>`. Output dtype mirrors
     # the matmul: FP8 → BF16, BF16 → BF16, FP16 → FP16. Default = FP8.
-    comptime a_type = get_defined_dtype["DTYPE", DType.float8_e4m3fn]()
+    comptime a_type = get_defined_dtype["DTYPE", .float8_e4m3fn]()
     comptime c_type = (
         DType.bfloat16 if a_type == DType.float8_e4m3fn else a_type
     )

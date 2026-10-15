@@ -105,7 +105,12 @@ every other metric) are `None` when there are no measured requests:
 
 - Every request failed, so `completed` is 0.
 - Every successful request was excluded by `skip_first_n_requests` and
-  `skip_last_n_requests` together. The producer emits a warning in this case.
+  `skip_last_n_requests` together. The producer emits a warning in this case,
+  and `excluded_successful` records how many successes the trim dropped. When
+  `completed == 0` with `excluded_successful > 0`, `validate_metrics()` reports
+  a single insufficient-data error instead of one error per degenerate metric.
+  The server completed requests -- the run just yielded too few samples to
+  measure. This distinguishes "not enough data" from "the server did nothing".
 
 ### No decode data: only the decode-phase metrics are `None`
 
@@ -150,8 +155,12 @@ metric with no samples avoids this: the field serializes to a single `null`, and
 consumers whose schemas mark the metric optional accept it and render an empty
 value.
 
-For the same reason, an unbounded `request_rate` is serialized as `None` at the
-results-publication boundary rather than as `inf`.
+An unbounded `request_rate` is serialized as the JSON string `"inf"` at the
+results-publication boundary rather than as a Python `inf`. Both
+`model_dump_json()` and BigQuery rewrite a non-finite float to `null`, which
+would collapse unbounded into the same token as a missing field. Legacy rows
+that already stored `null` stay `null`; treat both `"inf"` and `null` as
+unbounded when reading.
 
 ## Adding or changing a metric
 

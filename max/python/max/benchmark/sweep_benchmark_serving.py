@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 # ===----------------------------------------------------------------------=== #
 # Copyright (c) 2026, Modular Inc. All rights reserved.
 #
@@ -12,28 +11,19 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Run a suite of sweep serving benchmarks.
-
-A thin orchestration layer on top of :func:`benchmark_serving.main_with_parsed_args`
-that adds a log directory, a CSV writer, and an optional caller-supplied
-:class:`SweepUploader` for per-iteration result-JSON upload.  The actual
-range iteration, workload YAML loading, ``num_iters`` / median selection,
-and prefix-cache flushing are all handled inside ``benchmark_serving``.
-"""
+"""Run a suite of sweep serving benchmarks."""
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
-from collections.abc import Callable, Sequence
+import sys
+from collections.abc import Callable, Generator, Iterable, Sequence
 from datetime import datetime
 from pathlib import Path
 
-import yaml
-from max.benchmark.benchmark_serving import (
-    BenchmarkRunResult,
-    save_result_json,
-)
+from max.benchmark.benchmark_serving import BenchmarkRunResult
 from max.benchmark.benchmark_serving import (
     main_with_parsed_args as benchmark_serving_main,
 )
@@ -41,39 +31,21 @@ from max.benchmark.benchmark_serving import (
     parse_args as _parse_serving_args,
 )
 from max.benchmark.benchmark_shared.config import (
-    PIXEL_GENERATION_TASKS,
     ServingBenchmarkConfig,
 )
+from max.benchmark.benchmark_shared.model_csv import CsvStreamWriter
+from max.benchmark.benchmark_shared.serving_result_output import (
+    save_output_lengths,
+    save_result_json,
+)
 from max.benchmark.sweep_benchmark_serving_result_utils import (
-    LLMBenchmarkResult,
-    LLMBenchmarkResultWriter,
-    SweepServingBenchmarkResult,
     SweepUploader,
-    TextToImageBenchmarkResult,
-    TextToImageBenchmarkResultWriter,
     validate_sweep_serving_percentiles,
 )
 
 DESCRIPTION = "Run a suite of sweep serving benchmarks."
 
 logger = logging.getLogger("sweep-benchmark-serving")
-
-
-def _build_sweep_result(
-    result: BenchmarkRunResult,
-    percentiles: list[int],
-    *,
-    is_pixel_gen: bool = False,
-) -> SweepServingBenchmarkResult:
-    """Convert a :class:`BenchmarkRunResult` to the CSV-writable form."""
-    if result.result is None:
-        if is_pixel_gen:
-            return TextToImageBenchmarkResult.zeros(percentiles)
-        return LLMBenchmarkResult.zeros(percentiles)
-    metrics = result.result
-    if metrics.task_type == "pixel":
-        return TextToImageBenchmarkResult.from_metrics(metrics, percentiles)
-    return LLMBenchmarkResult.from_metrics(metrics, percentiles)
 
 
 def parse_args(
@@ -136,13 +108,7 @@ def run_sweep(
     report_result: Callable[[BenchmarkRunResult], None] | None = None,
     server_liveness: Callable[[], bool] | None = None,
 ) -> list[BenchmarkRunResult]:
-    """Set up CSV + upload infrastructure and delegate benchmarking to the library.
-
-    The actual range iteration, workload YAML loading, num_iters / median
-    selection, and prefix-cache flushing are all handled by
-    :func:`benchmark_serving.main_with_parsed_args`.  This function provides
-    the thin orchestration layer on top: log directory, CSV writer, and
-    optional uploader invocation.
+    """Runs a sweep and persists it.
 
     Args:
         config: Parsed :class:`ServingBenchmarkConfig`.
@@ -164,10 +130,50 @@ def run_sweep(
             bring-up instead of polling until the timeout.
 
     Returns:
-        The per-iteration :class:`BenchmarkRunResult` list produced by
-        :func:`benchmark_serving.main_with_parsed_args`, so legacy callers
-        that haven't migrated to ``report_result`` can still iterate the
-        whole sweep at once.
+        The per-iteration :class:`BenchmarkRunResult` list returned by
+        :func:`persist_sweep`, so legacy callers that haven't migrated to
+        ``report_result`` can still iterate the whole sweep at once.
+    """
+    return persist_sweep(
+        config,
+        benchmark_serving_main(config, server_liveness=server_liveness),
+        uploader=uploader,
+        report_result=report_result,
+    )
+
+
+def persist_sweep(
+    config: ServingBenchmarkConfig,
+    iterations: Iterable[BenchmarkRunResult],
+    *,
+    uploader: SweepUploader | None = None,
+    report_result: Callable[[BenchmarkRunResult], None] | None = None,
+) -> list[BenchmarkRunResult]:
+    """Persists and reports each iteration of a sweep as it is produced.
+
+    For each iteration with a result, writes ``config.result_filename``, the
+    output lengths, a per-concurrency result JSON, a CSV row, and the
+    optional upload, then invokes ``report_result``. An iteration that
+    failed validation ends the process with exit code 1 after it is
+    persisted and reported. ``iterations`` is closed whenever the sweep
+    stops early, so a generator's ``with`` blocks unwind before the exit.
+
+    Args:
+        config: The sweep's configuration. A missing ``log_dir`` is created
+            and recorded on it before the first iteration is drawn, so a
+            lazy ``iterations`` can write under it.
+        iterations: The sweep's iterations, typically a generator, so each
+            is persisted as soon as it completes.
+        uploader: Invoked with each iteration's result JSON path when
+            ``config.upload_results`` is set.
+        report_result: Invoked with each iteration's result as soon as it is
+            produced.
+
+    Returns:
+        Every iteration's result.
+
+    Raises:
+        SystemExit: If an iteration did not pass validation.
     """
     if config.upload_results and config.cluster_information_path is None:
         logger.warning("Warning: uploading results without cluster information")
@@ -196,98 +202,92 @@ def run_sweep(
     ]
     validate_sweep_serving_percentiles(percentiles)
 
-    # Peek at workload YAML for task type (needed to choose the CSV writer
-    # class before the benchmark runs).
-    is_pixel_gen = False
-    if config.workload_config:
-        with open(config.workload_config) as f:
-            wl = yaml.safe_load(f)
-        is_pixel_gen = wl.get("benchmark-task") in PIXEL_GENERATION_TASKS
-
-    upload_active = uploader is not None and config.upload_results
-
     # ---- CSV output + upload ----
-    # Stream per-iteration: ``benchmark_serving_main`` yields one result per
-    # ``(max_concurrency, request_rate)`` step, and we drive CSV writes,
-    # upload side effects, and the optional ``report_result`` callback as
-    # each yields. Don't materialize the iterator here — batching at end
-    # would defeat the streaming guarantees of
+    # Stream per-iteration: each iteration is persisted, uploaded, and
+    # reported as it is drawn. Don't materialize the iterator here — batching
+    # at end would defeat the streaming guarantees of
     # ``utils/benchmarking/results_publication`` (live BigQuery rows during
     # the run + partial results surviving a mid-sweep crash).
     results: list[BenchmarkRunResult] = []
-
-    # No log directory configured (dry-run without --log-dir): skip CSV
-    # and per-result JSON output but still drive the benchmarks.
-    if log_dir is None:
-        for result in benchmark_serving_main(
-            config, server_liveness=server_liveness
-        ):
-            results.append(result)
-            if report_result is not None:
-                report_result(result)
-        return results
-
-    results_csv_path = log_dir / "results.csv"
-    writer_cls = (
-        TextToImageBenchmarkResultWriter
-        if is_pixel_gen
-        else LLMBenchmarkResultWriter
-    )
-    result_writer = writer_cls(
-        results_csv_path,
-        percentiles=percentiles,
-        collect_gpu_stats=config.collect_gpu_stats,
-        uploader=uploader if upload_active else None,
-    )
-
-    with result_writer:
-        for result in benchmark_serving_main(
-            config, server_liveness=server_liveness
-        ):
-            results.append(result)
-            # Save per-concurrency JSON with full metrics.
-            json_path: str | None = None
-            if result.result is not None:
-                assert config.model is not None
-                json_path = str(
-                    log_dir / f"results-{result.max_concurrency}-median.json"
+    with contextlib.ExitStack() as stack:
+        if isinstance(iterations, Generator):
+            stack.enter_context(contextlib.closing(iterations))
+        # results.csv streams one row per iteration (all columns) as that
+        # iteration's JSON blob is written, so a crash mid-sweep still leaves
+        # the completed rows on disk. The per-concurrency JSON blobs remain
+        # the source of truth; the authoritative all-columns superset can be
+        # regenerated from them via results_to_csv if a later iteration
+        # surfaces new columns. Without a log directory (a dry run without
+        # --log-dir) there is no CSV, per-concurrency JSON, or upload.
+        csv_writer: CsvStreamWriter | None = None
+        if log_dir is not None:
+            csv_writer = stack.enter_context(
+                CsvStreamWriter(log_dir / "results.csv")
+            )
+        for run in iterations:
+            results.append(run)
+            save_iteration_result(config, run)
+            if (
+                log_dir is not None
+                and csv_writer is not None
+                and run.result is not None
+            ):
+                json_path = (
+                    log_dir / f"results-{run.max_concurrency}-median.json"
                 )
                 save_result_json(
-                    json_path,
-                    config,
-                    result.result,
-                    benchmark_task=config.benchmark_task,
-                    model_id=config.model,
-                    tokenizer_id=config.tokenizer or config.model,
-                    request_rate=result.request_rate,
-                    record_max_concurrency=result.max_concurrency,
+                    str(json_path),
+                    run.labels,
+                    run.result,
+                    request_rate=run.request_rate,
+                    record_max_concurrency=run.max_concurrency,
                 )
+                csv_writer.write_result(json_path)
+                if config.upload_results and uploader is not None:
+                    uploader.upload(str(json_path))
 
-            sweep_result = _build_sweep_result(
-                result, percentiles, is_pixel_gen=is_pixel_gen
-            )
-            if upload_active:
-                sweep_result.result_filename = json_path
-
-            result_writer.write_row(
-                max_concurrency=result.max_concurrency,
-                request_rate=result.request_rate,
-                num_prompts=result.num_prompts,
-                result=sweep_result,
-            )
-
-            # Stream the row to the results-publication reporter, if the
-            # caller wired one in. Fires here — after CSV/upload side
-            # effects, before the next iteration begins — so a crash
-            # mid-sweep still leaves rows 1..N-1 published downstream.
+            # Stream the row to the results-publication reporter, if the caller
+            # wired one in — so a crash mid-sweep still leaves rows 1..N-1
+            # published downstream.
             if report_result is not None:
-                report_result(result)
+                report_result(run)
+            if run.status != "pass":
+                sys.exit(1)
 
-    result_file_path = results_csv_path.resolve()
-    logger.info(
-        f"All concurrency sweep results have been written to: {result_file_path}"
-    )
+    if log_dir is not None:
+        result_file_path = (log_dir / "results.csv").resolve()
+        logger.info(
+            f"All concurrency sweep results have been written to: {result_file_path}"
+        )
     return results
+
+
+def save_iteration_result(
+    config: ServingBenchmarkConfig, run: BenchmarkRunResult
+) -> None:
+    """Writes an iteration's ``config.result_filename`` and output lengths.
+
+    Writes nothing for an iteration without a result.
+
+    Args:
+        config: The sweep's configuration, naming the files to write.
+        run: The iteration to persist.
+    """
+    if run.result is None:
+        return
+    save_result_json(
+        config.result_filename,
+        run.labels,
+        run.result,
+        request_rate=run.request_rate,
+        record_max_concurrency=run.max_concurrency,
+    )
+    save_output_lengths(
+        config,
+        run.result,
+        run.labels.benchmark_task,
+        iteration_config=(run.max_concurrency, run.request_rate),
+    )
 
 
 if __name__ == "__main__":

@@ -23,9 +23,8 @@ from kv_cache.types import KVCacheT
 from nn.attention.mha_operand import MHAOperand
 from nn.attention.mha_utils import MHAConfig, OptionallyStaticInt
 from nn.attention.mha_mask import MHAMask
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import TileTensor
-from std.gpu.memory import AddressSpace
 from .mla_prefill_generic import mla_sm100_prefill_generic
 from .mla_prefill_blockscale import mla_sm100_prefill_blockscale
 from .mla_prefill_sparse_utils import MLASparseConfig
@@ -33,7 +32,7 @@ from .mla_prefill_sparse import mla_prefill_sparse
 from .mla_prefill_sparse_kv_fp8 import mla_prefill_sparse_fp8
 
 
-@always_inline
+@inline(.always)
 def mla_sm100_prefill[
     output_type: DType,
     q_type: DType,
@@ -52,15 +51,13 @@ def mla_sm100_prefill[
     # -1 => V width == nope width (DeepSeek); resolved in `MLAConfig.__init__`.
     v_depth: Int = -1,
 ](
-    output: TileTensor[output_type, address_space=AddressSpace.GENERIC, ...],
-    q: TileTensor[q_type, address_space=AddressSpace.GENERIC, ...],
+    output: TileTensor[output_type, address_space=.GENERIC, ...],
+    q: TileTensor[q_type, address_space=.GENERIC, ...],
     k: KVType,
     v: VType,
     k_rope: KRopeType,
     mask_functor: MaskType,
-    valid_length: TileTensor[
-        DType.uint32, address_space=AddressSpace.GENERIC, ...
-    ],
+    valid_length: TileTensor[.uint32, address_space=.GENERIC, ...],
     max_prompt_len: MaxPromptLenType,
     scale: Float32,
     batch_size: Int,
@@ -107,7 +104,7 @@ def mla_sm100_prefill[
         ctx: GPU device context.
     """
     comptime assert (
-        output_type == DType.bfloat16
+        output_type == .bfloat16
     ), "Only support bfloat16 output for SM100 MLA prefill"
     comptime assert (
         KVType.dtype == VType.dtype
@@ -163,7 +160,7 @@ def mla_sm100_prefill[
         )
 
 
-@always_inline
+@inline(.always)
 def mla_sm100_prefill_sparse[
     output_type: DType,
     q_type: DType,
@@ -174,13 +171,11 @@ def mla_sm100_prefill_sparse[
     v_depth: Int,
     indices_stride: Int,
 ](
-    output: TileTensor[output_type, address_space=AddressSpace.GENERIC, ...],
-    q: TileTensor[q_type, address_space=AddressSpace.GENERIC, ...],
+    output: TileTensor[output_type, address_space=.GENERIC, ...],
+    q: TileTensor[q_type, address_space=.GENERIC, ...],
     kv_cache: cache_t,
-    indices: TileTensor[DType.uint32, address_space=AddressSpace.GENERIC, ...],
-    topk_lengths: TileTensor[
-        DType.uint32, address_space=AddressSpace.GENERIC, ...
-    ],
+    indices: TileTensor[.uint32, address_space=.GENERIC, ...],
+    topk_lengths: TileTensor[.uint32, address_space=.GENERIC, ...],
     attn_sink_ptr: Optional[UnsafePointer[Float32, ImmutAnyOrigin]],
     scale: Float32,
     ctx: DeviceContext,
@@ -258,15 +253,15 @@ def mla_sm100_prefill_sparse[
     )
 
 
-# SM100 host launch wrapper. Deliberately NOT `@always_inline`: this wrapper's
+# SM100 host launch wrapper. Deliberately NOT `@inline(.always)`: this wrapper's
 # transitively-inlined FP8 host launch path (the INT64-packed gather4 K+V TMA
 # descriptor construction, `mla_prefill_sparse_fp8` below) is a large store
 # chain. If it inlines into the model's giant fused host `region_0`, LLVM's SLP
 # vectorizer goes quadratic (`BoUpSLP::calculateDependencies` O(n^2) alias
 # queries) and the GLM-5.2 FP8-cache model compile blows up (~66 min vs ~15 for
-# bf16-cache). `@no_inline` keeps the store chain in its own small function
+# bf16-cache). `@inline(.never)` keeps the store chain in its own small function
 # where SLP is cheap. Host-side only — the device kernel body is unchanged.
-@no_inline
+@inline(.never)
 def mla_sm100_prefill_sparse_fp8[
     output_type: DType,
     q_type: DType,
@@ -278,13 +273,11 @@ def mla_sm100_prefill_sparse_fp8[
     indices_stride: Int,
     scale_block_size: Int,
 ](
-    output: TileTensor[output_type, address_space=AddressSpace.GENERIC, ...],
-    q: TileTensor[q_type, address_space=AddressSpace.GENERIC, ...],
+    output: TileTensor[output_type, address_space=.GENERIC, ...],
+    q: TileTensor[q_type, address_space=.GENERIC, ...],
     kv_cache: cache_t,
-    indices: TileTensor[DType.uint32, address_space=AddressSpace.GENERIC, ...],
-    topk_lengths: TileTensor[
-        DType.uint32, address_space=AddressSpace.GENERIC, ...
-    ],
+    indices: TileTensor[.uint32, address_space=.GENERIC, ...],
+    topk_lengths: TileTensor[.uint32, address_space=.GENERIC, ...],
     attn_sink_ptr: Optional[UnsafePointer[Float32, ImmutAnyOrigin]],
     scales_ptr: UnsafePointer[Float32, ImmutAnyOrigin],
     scale: Float32,

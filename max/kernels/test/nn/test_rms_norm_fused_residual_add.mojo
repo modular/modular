@@ -13,11 +13,12 @@
 
 from std.sys.info import simd_width_of
 
-from std.algorithm.functional import elementwise
-from std.gpu.host import DeviceContext
-from layout import Coord, Idx, TileTensor, coord_to_index_list, row_major
+from max.algorithm.functional import elementwise
+from max.gpu.host import DeviceContext
+from layout import Coord, TileTensor, row_major
 from layout._fillers import random
-from nn.normalization import rms_norm_cpu, rms_norm_fused_residual_add_cpu
+from nn.normalization import rms_norm_cpu
+from builtin_kernels.rowwise_normalization import rms_norm_fused_residual_add
 from std.testing import assert_almost_equal
 
 from std.utils.index import Index, IndexList
@@ -65,6 +66,13 @@ def run_rms_norm_fused_residual_add_gpu[
     var _ = Index(cols)
 
     var data_buf = data_h
+    # Separate residual buffer (a copy of the input): the fused kernel's two
+    # input loaders are distinct value-closure args and must reference distinct
+    # buffer origins. Copying keeps residual == input numerically.
+    var residual_heap = List(length=rows * cols, fill=Scalar[dtype](0))
+    var data_buf_res = TileTensor(residual_heap, row_major(Coord(shape)))
+    for i in range(rows * cols):
+        residual_heap[i] = data_heap[i]
     var gamma1 = gamma1_h
     var gamma2 = gamma2_h
     var result_fused_buf = result_fused_h
@@ -77,78 +85,91 @@ def run_rms_norm_fused_residual_add_gpu[
     var weight_offset2 = Scalar[dtype](0.0)
 
     # Test fused operation
-    @__copy_capture(data_buf)
-    @always_inline
-    @parameter
+    @inline(.always)
     def input_fn[
-        width: Int, _rank: Int
-    ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
-        var idx = data_buf.layout(Coord(coords))
+        width: Int
+    ](coords: Coord) {var data_buf} -> SIMD[dtype, width]:
+        var idx = data_buf.layout(coords)
         return data_buf.raw_load[width=width](idx)
 
-    @parameter
-    @always_inline
+    @inline(.always)
     def residual_input_fn[
-        width: Int, _rank: Int
-    ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
-        var idx = data_buf.layout(Coord(coords))
-        return data_buf.raw_load[width=width](idx)
+        width: Int
+    ](coords: Coord) {var data_buf_res} -> SIMD[dtype, width]:
+        var idx = data_buf_res.layout(coords)
+        return data_buf_res.raw_load[width=width](idx)
 
-    @always_inline
-    @__copy_capture(result_fused_buf)
-    @parameter
+    @inline(.always)
     def fused_output_fn[
-        width: SIMDSize, alignment: Int
-    ](coords: IndexList[rank], val: SIMD[dtype, width]) -> None:
-        var idx = result_fused_buf.layout(Coord(coords))
+        width: SIMDLength, alignment: Int
+    ](coords: Coord, val: SIMD[dtype, width]) {var result_fused_buf} -> None:
+        var idx = result_fused_buf.layout(coords)
         result_fused_buf.raw_store[width=width, alignment=alignment](idx, val)
 
-    @always_inline
-    @__copy_capture(residual_fused_output_buf)
-    @parameter
+    @inline(.always)
     def fused_residual_output_fn[
-        width: SIMDSize, alignment: Int
-    ](coords: IndexList[rank], val: SIMD[dtype, width]) -> None:
-        var idx = residual_fused_output_buf.layout(Coord(coords))
+        width: SIMDLength, alignment: Int
+    ](coords: Coord, val: SIMD[dtype, width]) {
+        var residual_fused_output_buf
+    } -> None:
+        var idx = residual_fused_output_buf.layout(coords)
         residual_fused_output_buf.raw_store[width=width, alignment=alignment](
             idx, val
         )
 
     # Call fused kernel
-    rms_norm_fused_residual_add_cpu[
+    rms_norm_fused_residual_add[
+        dtype,
+        rank,
+        target="cpu",
+        multiply_before_cast=True,
+    ](
         input_fn,
         residual_input_fn,
         fused_output_fn,
         fused_residual_output_fn,
-        multiply_before_cast=True,
-    ](
-        shape,
+        Coord(shape),
+        Int(cols),
         gamma1,
-        epsilon1,
+        epsilon1.cast[dtype](),
         weight_offset1,
         gamma2,
-        epsilon2,
+        epsilon2.cast[dtype](),
         weight_offset2,
     )
 
     # Test unfused operations for comparison
-    @always_inline
+    @inline(.always)
     @__copy_capture(unfused_intermediate_buf)
-    @parameter
     def unfused_output_fn[
-        width: SIMDSize, alignment: Int
-    ](coords: IndexList[rank], val: SIMD[dtype, width]) -> None:
-        var idx = unfused_intermediate_buf.layout(Coord(coords))
+        width: SIMDLength, alignment: Int
+    ](coords: Coord, val: SIMD[dtype, width]) {imm} -> None:
+        var idx = unfused_intermediate_buf.layout(coords)
         unfused_intermediate_buf.raw_store[width=width, alignment=alignment](
             idx, val
         )
 
+    # Legacy `rms_norm_cpu` still takes a comptime `capturing` closure, so the
+    # unfused reference uses its own comptime input loader (the fused kernel's
+    # `input_fn` is now a value closure and cannot bind a comptime parameter).
+    @inline(.always)
+    def rms_input_fn[
+        width: Int
+    ](coords: Coord) {var data_buf} -> SIMD[dtype, width]:
+        var idx = data_buf.layout(coords)
+        return data_buf.raw_load[width=width](idx)
+
     # Step 1: First RMS norm
-    rms_norm_cpu[input_fn, unfused_output_fn, multiply_before_cast=True](
-        shape, gamma1, epsilon1, weight_offset1
+    rms_norm_cpu[multiply_before_cast=True](
+        rms_input_fn,
+        unfused_output_fn,
+        Coord(shape),
+        gamma1,
+        epsilon1,
+        weight_offset1,
     )
 
-    @always_inline
+    @inline(.always)
     def sum_fn[width: Int, alignment: Int = 1](coords: Coord) {var}:
         var data_buf_idx = data_buf.layout(coords)
         var residual_val = data_buf.raw_load[width=width](data_buf_idx)
@@ -170,30 +191,30 @@ def run_rms_norm_fused_residual_add_gpu[
         DeviceContext(api="cpu"),
     )
 
-    @parameter
-    @always_inline
-    @__copy_capture(unfused_intermediate_buf)
+    @inline(.always)
     def unfused_input2_fn[
-        width: Int, rank: Int
-    ](coords: IndexList[rank]) -> SIMD[dtype, width]:
-        var idx = unfused_intermediate_buf.layout(Coord(coords))
+        width: Int
+    ](coords: Coord) {var unfused_intermediate_buf} -> SIMD[dtype, width]:
+        var idx = unfused_intermediate_buf.layout(coords)
         return unfused_intermediate_buf.raw_load[width=width](idx)
 
     # Test unfused operations for comparison
-    @always_inline
+    @inline(.always)
     @__copy_capture(result_unfused_buf)
-    @parameter
     def unfused_output2_fn[
-        width: SIMDSize, alignment: Int
-    ](coords: IndexList[rank], val: SIMD[dtype, width]) -> None:
-        var idx = result_unfused_buf.layout(Coord(coords))
+        width: SIMDLength, alignment: Int
+    ](coords: Coord, val: SIMD[dtype, width]) {imm} -> None:
+        var idx = result_unfused_buf.layout(coords)
         result_unfused_buf.raw_store[width=width, alignment=alignment](idx, val)
 
-    rms_norm_cpu[
+    rms_norm_cpu[multiply_before_cast=True](
         unfused_input2_fn,
         unfused_output2_fn,
-        multiply_before_cast=True,
-    ](shape, gamma2, epsilon2, weight_offset2)
+        Coord(shape),
+        gamma2,
+        epsilon2,
+        weight_offset2,
+    )
 
     var flattened_size = rows * cols
     for i in range(flattened_size):
@@ -218,16 +239,16 @@ def run_rms_norm_fused_residual_add_gpu[
 
 def main() raises:
     # Test various shapes similar to test_rms_norm.mojo
-    run_rms_norm_fused_residual_add_gpu[DType.float32](Index(5))
-    run_rms_norm_fused_residual_add_gpu[DType.float32](Index(3, 4, 10, 20, 8))
-    run_rms_norm_fused_residual_add_gpu[DType.float32](Index(1, 5, 6, 10, 128))
-    run_rms_norm_fused_residual_add_gpu[DType.float32](Index(2, 5))
-    run_rms_norm_fused_residual_add_gpu[DType.float32](Index(2, 55))
-    run_rms_norm_fused_residual_add_gpu[DType.float32](Index(7, 557))
-    run_rms_norm_fused_residual_add_gpu[DType.float32](Index(2, 8191))
-    run_rms_norm_fused_residual_add_gpu[DType.float32](Index(2, 8192))
-    run_rms_norm_fused_residual_add_gpu[DType.float32](Index(2, 16384))
-    run_rms_norm_fused_residual_add_gpu[DType.float32](Index(2, 16385))
+    run_rms_norm_fused_residual_add_gpu[.float32](Index(5))
+    run_rms_norm_fused_residual_add_gpu[.float32](Index(3, 4, 10, 20, 8))
+    run_rms_norm_fused_residual_add_gpu[.float32](Index(1, 5, 6, 10, 128))
+    run_rms_norm_fused_residual_add_gpu[.float32](Index(2, 5))
+    run_rms_norm_fused_residual_add_gpu[.float32](Index(2, 55))
+    run_rms_norm_fused_residual_add_gpu[.float32](Index(7, 557))
+    run_rms_norm_fused_residual_add_gpu[.float32](Index(2, 8191))
+    run_rms_norm_fused_residual_add_gpu[.float32](Index(2, 8192))
+    run_rms_norm_fused_residual_add_gpu[.float32](Index(2, 16384))
+    run_rms_norm_fused_residual_add_gpu[.float32](Index(2, 16385))
 
-    run_rms_norm_fused_residual_add_gpu[DType.float32](Index(2, 16384))
-    run_rms_norm_fused_residual_add_gpu[DType.float32](Index(2, 16385))
+    run_rms_norm_fused_residual_add_gpu[.float32](Index(2, 16384))
+    run_rms_norm_fused_residual_add_gpu[.float32](Index(2, 16385))

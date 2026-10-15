@@ -16,8 +16,7 @@ from std.random import rand
 from std.sys.info import simd_width_of
 
 from std.algorithm.functional import vectorize
-from layout import Layout, LayoutTensor, RuntimeLayout
-from layout import lt_to_tt
+from layout import Coord, TileTensor, row_major
 from nn.conv.conv import (
     ConvDirectNHWC,
     ConvInfoStatic,
@@ -79,16 +78,16 @@ def test[
 
     var conv_shape = ConvShape[rank](
         n=N,
-        input_dims=input_dims,
-        output_dims=output_dims,
-        filter_dims=filter_dims,
+        input_dims=Coord(input_dims),
+        output_dims=Coord(output_dims),
+        filter_dims=Coord(filter_dims),
         c=C,
         f=F,
-        stride=stride,
-        dilation=dilation,
-        pad_d=pad_d,
-        pad_h=pad_h,
-        pad_w=pad_w,
+        stride=Coord(stride),
+        dilation=Coord(dilation),
+        pad_d=Coord(pad_d),
+        pad_h=Coord(pad_h),
+        pad_w=Coord(pad_w),
         num_groups=num_groups,
     )
 
@@ -120,80 +119,59 @@ def test[
     # var rounded_F = ceildiv(F, micro_kernel_f_size) * micro_kernel_f_size
 
     # Input buffer.
-    comptime layout_p2 = Layout.row_major[rank + 2]()
-    comptime layout_p3 = Layout.row_major[rank + 3]()
+
     var input_shape = extend_shape(input_dims, N, C)
-    var input = LayoutTensor[dtype, layout_p2](
-        input_ptr, RuntimeLayout[layout_p2].row_major(input_shape)
-    )
+    var input = TileTensor(Span(input_ptr), row_major(Coord(input_shape)))
 
     # Filter buffer.
     var filter_shape = append_shape(filter_dims, C_per_group, F)
-    var filter = LayoutTensor[dtype, layout_p2](
-        filter_ptr, RuntimeLayout[layout_p2].row_major(filter_shape)
-    )
+    var filter = TileTensor(Span(filter_ptr), row_major(Coord(filter_shape)))
 
-    var packed_filter_shape = pack_conv_filter_shape(
-        lt_to_tt(filter), num_groups
-    )
+    var packed_filter_shape = pack_conv_filter_shape(filter, num_groups)
     var packed_filter_ptr = List(
         length=packed_filter_shape.flattened_length(), fill=Scalar[dtype](0)
     )
-    var packed_filter = LayoutTensor[dtype, layout_p3](
-        packed_filter_ptr,
-        RuntimeLayout[layout_p3].row_major(packed_filter_shape),
+    var packed_filter = TileTensor(
+        Span(packed_filter_ptr), row_major(Coord(packed_filter_shape))
     )
 
     var output_shape = extend_shape(output_dims, N, F)
-    var output = LayoutTensor[dtype, layout_p2](
-        output_ptr, RuntimeLayout[layout_p2].row_major(output_shape)
-    )
-    var output_ref = LayoutTensor[dtype, layout_p2](
-        output_ref_ptr, RuntimeLayout[layout_p2].row_major(output_shape)
+    var output = TileTensor(Span(output_ptr), row_major(Coord(output_shape)))
+    var output_ref = TileTensor(
+        Span(output_ref_ptr), row_major(Coord(output_shape))
     )
 
     comptime if filter_packed:
-        pack_filter(lt_to_tt(filter), lt_to_tt(packed_filter), num_groups)
+        pack_filter(filter, packed_filter, num_groups)
 
     comptime conv_attr = ConvInfoStatic[rank]()
 
-    @always_inline
-    @parameter
-    def null_epilogue[rank: Int](coords: IndexList[rank], f_size: Int):
+    @inline(.always)
+    def null_epilogue(coords: Coord, f_size: Int):
         pass
 
     comptime if filter_packed:
         ConvDirectNHWC[
-            layout_p2,
-            layout_p3,
-            layout_p2,
+            input.LayoutType,
+            packed_filter.LayoutType,
+            output_ref.LayoutType,
             dtype,
             dtype,
             dtype,
             True,
             conv_attr,
-        ].run(
-            output_ref,
-            input,
-            packed_filter,
-            conv_shape,
-        )
+        ].run(output_ref, input.as_imm(), packed_filter.as_imm(), conv_shape)
     else:
         ConvDirectNHWC[
-            layout_p2,
-            layout_p2,
-            layout_p2,
+            input.LayoutType,
+            filter.LayoutType,
+            output_ref.LayoutType,
             dtype,
             dtype,
             dtype,
             False,
             conv_attr,
-        ].run(
-            output_ref,
-            input,
-            filter,
-            conv_shape,
-        )
+        ].run(output_ref, input.as_imm(), filter.as_imm(), conv_shape)
 
     # Add bias and activatiion separately.
     var output_image_size = output_dims.flattened_length()
@@ -203,7 +181,7 @@ def test[
                 i + output_image_size * n
             )
 
-            @always_inline
+            @inline(.always)
             def body0[width: Int](offset: Int) {var}:
                 output_ref_ptr.store(
                     offset,
@@ -217,58 +195,47 @@ def test[
             vectorize[simd_size](F, body0)
 
     # Test epilogue
-    @always_inline
-    @parameter
-    def epilogue[_rank: Int](coords: IndexList[_rank], f_size: Int):
-        @always_inline
+    @inline(.always)
+    @__parameter
+    def epilogue(coords: Coord, f_size: Int):
+        @inline(.always)
         def body1[width: Int](idx: Int) {imm}:
-            var curr_coords = rebind[IndexList[rank + 2]](coords)
-            curr_coords[rank + 1] += idx
+            var f = Int(coords[rank + 1].value()) + idx
+            var curr_coords = coords
+            curr_coords.replace_dynamic[rank + 1](f)
 
             var vec = output.load[width=width](curr_coords)
 
             output.store(
-                curr_coords,
-                10.0
-                * (vec + bias_ptr.load[width=width](curr_coords[rank + 1])),
+                curr_coords, 10.0 * (vec + bias_ptr.load[width=width](f))
             )
 
         vectorize[simd_size](f_size, body1)
 
     comptime if filter_packed:
         ConvDirectNHWC[
-            layout_p2,
-            layout_p3,
-            layout_p2,
+            input.LayoutType,
+            packed_filter.LayoutType,
+            output.LayoutType,
             dtype,
             dtype,
             dtype,
             True,
             conv_attr,
             epilogue,
-        ].run(
-            output,
-            input,
-            packed_filter,
-            conv_shape,
-        )
+        ].run(output, input.as_imm(), packed_filter.as_imm(), conv_shape)
     else:
         ConvDirectNHWC[
-            layout_p2,
-            layout_p2,
-            layout_p2,
+            input.LayoutType,
+            filter.LayoutType,
+            output.LayoutType,
             dtype,
             dtype,
             dtype,
             False,
             conv_attr,
             epilogue,
-        ].run(
-            output,
-            input,
-            filter,
-            conv_shape,
-        )
+        ].run(output, input.as_imm(), filter.as_imm(), conv_shape)
 
     # Check results, return on the first failed comparison.
     for i in range(output_size):
@@ -300,7 +267,7 @@ def test[
 
 def main() raises:
     # No packing or padding.
-    test[2, DType.float32, False](
+    test[2, .float32, False](
         1,  # N
         Index(6, 5),  # H, W
         1,  # C
@@ -312,7 +279,7 @@ def main() raises:
         1,  # num_groups
     )
 
-    test[3, DType.float32, False](
+    test[3, .float32, False](
         1,  # N
         Index(4, 8, 13),
         16,  # C
@@ -324,7 +291,7 @@ def main() raises:
         1,  # num_groups
     )
 
-    test[1, DType.float32, False](
+    test[1, .float32, False](
         1,  # N
         Index(14),
         7,  # C
@@ -338,7 +305,7 @@ def main() raises:
 
     # Pre-packed test w/o padding.
 
-    test[2, DType.float32, True](
+    test[2, .float32, True](
         1,  # N
         Index(12, 12),
         12,  # C
@@ -350,7 +317,7 @@ def main() raises:
         1,  # num_groups
     )
 
-    test[3, DType.float32, True](
+    test[3, .float32, True](
         5,  # N
         Index(9, 12, 11),
         8,  # C
@@ -362,7 +329,7 @@ def main() raises:
         1,  # num_groups
     )
 
-    test[1, DType.float32, True](
+    test[1, .float32, True](
         1,  # N
         Index(17),
         11,  # C
@@ -376,7 +343,7 @@ def main() raises:
 
     # No packing, w/ padding, and F not multiple of simd_size.
 
-    test[2, DType.float32, False](
+    test[2, .float32, False](
         1,  # N
         Index(5, 5),
         3,  # C
@@ -388,7 +355,7 @@ def main() raises:
         1,  # num_groups
     )
 
-    test[3, DType.float32, False](
+    test[3, .float32, False](
         1,  # N
         Index(9, 10, 5),
         2,  # C
@@ -401,7 +368,7 @@ def main() raises:
     )
 
     # Pre-packed, F not multiple of simd_size
-    test[2, DType.float32, True](
+    test[2, .float32, True](
         1,  # N
         Index(7, 7),
         2,  # C
@@ -413,7 +380,7 @@ def main() raises:
         1,  # num_groups
     )
 
-    test[1, DType.float32, True](
+    test[1, .float32, True](
         1,  # N
         Index(11),
         2,  # C
@@ -425,7 +392,7 @@ def main() raises:
         1,  # num_groups
     )
 
-    test[3, DType.float32, True](
+    test[3, .float32, True](
         1,  # N
         Index(7, 7, 9),
         2,  # C
@@ -437,7 +404,7 @@ def main() raises:
         1,  # num_groups
     )
 
-    test[2, DType.float32, True](
+    test[2, .float32, True](
         1,  # N
         Index(14, 14),
         3,  # C
@@ -450,7 +417,7 @@ def main() raises:
     )
 
     # grouped conv tests
-    test[2, DType.float32, True](
+    test[2, .float32, True](
         1,  # N
         Index(3, 3),
         18,  # C
@@ -462,7 +429,7 @@ def main() raises:
         3,  # num_groups
     )
 
-    test[2, DType.float32, True](
+    test[2, .float32, True](
         3,  # N
         Index(11, 17),
         36,  # C
@@ -474,7 +441,7 @@ def main() raises:
         3,  # num_groups
     )
 
-    test[2, DType.float32, True](
+    test[2, .float32, True](
         1,  # N
         Index(11, 17),
         36,  # C
@@ -487,7 +454,7 @@ def main() raises:
     )
 
     # depthwise conv
-    test[2, DType.float32, True](
+    test[2, .float32, True](
         1,  # N
         Index(11, 7),
         33,  # C
@@ -500,7 +467,7 @@ def main() raises:
     )
 
     # 1D edge case
-    test[1, DType.float32, True](
+    test[1, .float32, True](
         2,  # N
         Index(49),  # W
         1024,  # C

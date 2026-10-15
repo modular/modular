@@ -16,16 +16,16 @@ This module provides a dtype-safe dispatch function that gates SM100
 conv2d kernel instantiation to supported dtypes (bf16/fp16) only.
 Importing this module does NOT trigger kernel compilation -- the kernel
 is only compiled when `dispatch_sm100_conv2d` is called with a supported
-dtype inside a @parameter if guard.
+dtype inside a comptime if guard.
 """
 
 from std.collections import OptionalReg
 from std.math import ceildiv
 from std.sys import size_of
-from std.gpu import global_idx
-from std.gpu.host import DeviceContext
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from layout import Idx, TileTensor, row_major
+from max.gpu import global_idx
+from max.gpu.host import DeviceContext
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
+from layout import TileTensor, row_major
 from std.utils.index import IndexList
 from linalg.utils import elementwise_epilogue_type
 
@@ -41,20 +41,24 @@ def _transpose_rscf_to_krsc[
 ](
     src_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
     dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    R: Int,
-    S: Int,
-    C: Int,
-    F: Int,
+    R: Int32,
+    S: Int32,
+    C: Int32,
+    F: Int32,
 ):
     """GPU kernel: transpose filter RSCF [R,S,C,F] -> KRSC [K,R,S,C]."""
+    var _R = Int(R)
+    var _S = Int(S)
+    var _C = Int(C)
+    var _F = Int(F)
     var tid = global_idx.x
-    if tid >= R * S * C * F:
+    if tid >= _R * _S * _C * _F:
         return
-    var k, rem = divmod(tid, R * S * C)
+    var k, rem = divmod(tid, _R * _S * _C)
     var r: Int
-    r, rem = divmod(rem, S * C)
-    var s, c = divmod(rem, C)
-    var src_idx = r * S * C * F + s * C * F + c * F + k
+    r, rem = divmod(rem, _S * _C)
+    var s, c = divmod(rem, _C)
+    var src_idx = r * _S * _C * _F + s * _C * _F + c * _F + k
     dst_ptr.store(tid, src_ptr.load(src_idx))
 
 
@@ -64,20 +68,24 @@ def _transpose_fcrs_to_krsc[
 ](
     src_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
     dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    F: Int,
-    C: Int,
-    R: Int,
-    S: Int,
+    F: Int32,
+    C: Int32,
+    R: Int32,
+    S: Int32,
 ):
     """GPU kernel: transpose filter FCRS [F,C,R,S] -> KRSC [K,R,S,C]."""
+    var _F = Int(F)
+    var _C = Int(C)
+    var _R = Int(R)
+    var _S = Int(S)
     var tid = global_idx.x
-    if tid >= F * C * R * S:
+    if tid >= _F * _C * _R * _S:
         return
-    var k, rem = divmod(tid, R * S * C)
+    var k, rem = divmod(tid, _R * _S * _C)
     var r: Int
-    r, rem = divmod(rem, S * C)
-    var s, c = divmod(rem, C)
-    var src_idx = k * C * R * S + c * R * S + r * S + s
+    r, rem = divmod(rem, _S * _C)
+    var s, c = divmod(rem, _C)
+    var src_idx = k * _C * _R * _S + c * _R * _S + r * _S + s
     dst_ptr.store(tid, src_ptr.load(src_idx))
 
 
@@ -86,7 +94,7 @@ def _transpose_fcrs_to_krsc[
 # =========================================================================
 
 
-@always_inline
+@inline(.always)
 def test_alignment_sm100_conv2d[
     input_type: DType, output_type: DType
 ](in_channels: Int, out_channels: Int) -> Bool:
@@ -122,7 +130,7 @@ def dispatch_sm100_conv2d[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     has_residual: Bool = False,
 ](
-    input: TileTensor[input_type, ...],
+    input: TileTensor[mut=True, input_type, address_space=.GENERIC, ...],
     filter: TileTensor[filter_type, ...],
     output: TileTensor[mut=True, output_type, ...],
     symmetric_padding: IndexList[2],
@@ -134,7 +142,7 @@ def dispatch_sm100_conv2d[
 ) raises:
     """Dispatch to SM100 structured conv2d with filter transpose.
 
-    This function gates the SM100 kernel import behind @parameter if
+    This function gates the SM100 kernel import behind comptime if
     on dtype, so the kernel is never compiled for unsupported dtypes.
 
     Parameters:
@@ -143,7 +151,7 @@ def dispatch_sm100_conv2d[
         output_type: Data type of the output tensor.
         filter_is_fcrs: If True, filter is FCRS layout; otherwise RSCF.
         elementwise_lambda_fn: Optional void epilogue lambda applied after
-            output write. Signature: `def(IndexList[2], SIMD) -> None`.
+            output write. Signature: `def(Coord, SIMD) -> None`.
         has_residual: If True, fuse residual add D = Conv(A,B) + beta*C.
 
     Args:
@@ -163,7 +171,7 @@ def dispatch_sm100_conv2d[
     comptime assert filter.flat_rank == 4, "filter must be rank 4"
     comptime assert output.flat_rank == 4, "output must be rank 4 (NHWC)"
 
-    comptime if input_type == DType.bfloat16:
+    comptime if input_type == .bfloat16:
         from .conv2d import conv2d_fprop, conv2d_fprop_with_residual
         from .conv_config import Conv2dConfig, Conv2dProblemShape
 
@@ -202,10 +210,10 @@ def dispatch_sm100_conv2d[
             ctx.enqueue_function[_transpose_fcrs_to_krsc[filter_type]](
                 filter.ptr,
                 filter_krsc_ptr,
-                F,
-                C,
-                R,
-                S,
+                Int32(F),
+                Int32(C),
+                Int32(R),
+                Int32(S),
                 grid_dim=grid,
                 block_dim=transpose_block,
             )
@@ -217,10 +225,10 @@ def dispatch_sm100_conv2d[
             ctx.enqueue_function[_transpose_rscf_to_krsc[filter_type]](
                 filter.ptr,
                 filter_krsc_ptr,
-                R,
-                S,
-                C,
-                F,
+                Int32(R),
+                Int32(S),
+                Int32(C),
+                Int32(F),
                 grid_dim=grid,
                 block_dim=transpose_block,
             )
@@ -238,18 +246,12 @@ def dispatch_sm100_conv2d[
             pad_w=symmetric_padding[1],
         )
 
-        var act_tt = TileTensor(
-            input.ptr,
-            row_major(batch, in_h, in_w, in_c),
-        )
+        var act_tt = input.reshape(row_major(batch, in_h, in_w, in_c))
         var filter_tt = TileTensor(
             filter_krsc_ptr,
             row_major(out_c, fh, fw, in_c),
         )
-        var out_tt = TileTensor(
-            output.ptr,
-            row_major(batch, out_h, out_w, out_c),
-        )
+        var out_tt = output.reshape(row_major(batch, out_h, out_w, out_c))
 
         # Pick activation/filter swizzle based on C_in alignment. SWIZZLE_128B
         # requires the inner C-row to be 128B-aligned; SWIZZLE_64B relaxes that
@@ -257,12 +259,11 @@ def dispatch_sm100_conv2d[
         # compiles a separately-instantiated kernel.
         var in_c_bytes = in_c * size_of[input_type]()
 
-        @parameter
-        @always_inline
+        @inline(.always)
         def _launch[
             swizzle: TensorMapSwizzle,
             num_pipeline_stages_override: Int = 0,
-        ]() raises:
+        ]() raises {imm}:
             comptime config = Conv2dConfig[
                 input_type, filter_type, output_type
             ].default_bf16_1sm[

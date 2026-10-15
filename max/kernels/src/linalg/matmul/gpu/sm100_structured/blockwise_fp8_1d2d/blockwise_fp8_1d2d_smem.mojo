@@ -24,8 +24,6 @@ standard BlockwiseFP8Smem:
 Tile storage is shared via BlockwiseFP8TileCore from blockwise_fp8_smem.mojo.
 """
 
-from std.gpu.memory import AddressSpace
-
 from ..blockwise_fp8.blockwise_fp8_smem import BlockwiseFP8TileCore
 from ..structured_kernels.config import MatmulConfig
 from structured_kernels.pipeline_storage import SmemPipelineBundleNoClc
@@ -76,22 +74,22 @@ struct BlockwiseFP8_1D2DSmem[
     var pipelines: Self.Pipelines
 
     # ========== Tile Accessors (forwarding) ==========
-    @always_inline
+    @inline(.always)
     def a_tiles(ref[AddressSpace.SHARED] self) -> Self.Core.ATileArray:
         """Get A tile array accessor."""
         return self.core.a_tiles()
 
-    @always_inline
+    @inline(.always)
     def b_tiles(ref[AddressSpace.SHARED] self) -> Self.Core.BTileArray:
         """Get B tile array accessor."""
         return self.core.b_tiles()
 
-    @always_inline
+    @inline(.always)
     def c_tiles(ref[AddressSpace.SHARED] self) -> Self.Core.CTileArray:
         """Get C tile array accessor."""
         return self.core.c_tiles()
 
-    @always_inline
+    @inline(.always)
     def a_scales_tiles(
         ref[AddressSpace.SHARED] self,
     ) -> Self.Core.AScalesTileArray:
@@ -100,26 +98,26 @@ struct BlockwiseFP8_1D2DSmem[
 
     # ========== Size Utilities (forwarding) ==========
     @staticmethod
-    @always_inline
+    @inline(.always)
     def ab_pipeline_size() -> Int:
         """Total size of A+B tiles for all pipeline stages (in elements)."""
         return Self.Core.ab_pipeline_size()
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def a_scales_pipeline_size() -> Int:
         """Total size of A-scales tiles for all pipeline stages (in elements).
         """
         return Self.Core.a_scales_pipeline_size()
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def c_output_size() -> Int:
         """Size of C tiles for all output stages (in elements)."""
         return Self.Core.c_output_size()
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def total_tile_size() -> Int:
         """Total tile storage size (A+B+A-scales+C) in elements."""
         return Self.Core.total_tile_size()

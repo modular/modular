@@ -10,263 +10,300 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""GPU-resident slot pool for Qwen3.5 GatedDeltaNet linear attention states.
+"""The shape of a Qwen3.5 Gated DeltaNet state, and how a layer reaches it.
 
-The conv and recurrent state pools are passed directly into the model graph
-as mutable ``BufferType`` inputs; the slot-indexed SSM kernels mutate them
-in place at slot ``slot_idx[batch_item]`` using pointer arithmetic — no
-gather/scatter copies, no per-step pool allocation. This matches vLLM's
-``selective_state_update`` design and replaces the previous per-row Python
-``inplace_copy_from`` loop, collapsing
-``num_layers * batch * 2 directions`` D2D launches per decode step into a
-single tiny H2D for ``slot_idx``.
-
-Memory note: the pool occupies permanent GPU memory at the model's native
-dtype (typically bfloat16). The kernel reads/writes slot
-``slot_idx[batch_item]`` directly, so there are no working copies — peak
-footprint is ``max_batch x per_req`` bytes.
+Both the pool's leaves and the graph's input types are sized from the
+geometry, so it is derived here once. The per-layer access built on top of it
+belongs here too: it is the only reader of the order the leaves are declared
+in, and keeping the two apart would put that order in two files.
 """
 
 from __future__ import annotations
 
-import logging
+import math
+from collections.abc import Sequence
 
-import numpy as np
-from max.driver import Buffer, Device, DevicePinnedBuffer
+from max import tree
 from max.dtype import DType
-from max.pipelines.modeling.types import RequestID
-from max.support.human_readable_formatter import to_human_readable_bytes
+from max.graph import BufferValue, TensorValue
+from max.nn.kv_cache import (
+    KVCacheParamInterface,
+    KVCacheParams,
+    MHAKVCacheParams,
+    MultiKVCacheParams,
+    RecurrentStateInputsPerDevice,
+    RecurrentStateRegion,
+)
 
-logger = logging.getLogger("max.pipelines")
+ATTN_CACHE_KEY = "attn"
+STATE_CACHE_KEY = "state"
+"""The two children of a Qwen3.5 cache tree."""
+
+CONV_LEAF_ID = "linear_attn/conv"
+RECURRENT_LEAF_ID = "linear_attn/recurrent"
+"""The two leaves one Gated DeltaNet state spans.
+
+Separate leaves because the kernels want each as its own uniformly-strided
+tensor. They are allocated, published and evicted together.
+"""
+
+RING_LEAF_ID = "linear_attn/ring"
+"""The scratch leaf of a speculative verify ring.
+
+A scratch-group leaf of the state cache. Each request draws one block when it
+is admitted and holds it until it is released, and it is never published.
+"""
+
+_LEAF_IDS = (CONV_LEAF_ID, RECURRENT_LEAF_ID)
+"""Declaration order of the leaves every Gated DeltaNet state has.
+
+:func:`linear_state_regions` checks its leading regions against this. The ring
+leaf, when declared, comes after these.
+"""
+
+_CONV_LEAF = _LEAF_IDS.index(CONV_LEAF_ID)
+_RECURRENT_LEAF = _LEAF_IDS.index(RECURRENT_LEAF_ID)
+_RING_LEAF = len(_LEAF_IDS)
+"""Where a speculative verify's ring follows the live leaves."""
+
+RING_DTYPE = DType.float32
+"""Dtype of the ring pool. Float32 keeps the fold bit-exact against a
+forward over the accepted prefix alone."""
+
+COMPILED_RING_LENS = (2, 4, 8)
+"""Ring lengths the ring kernels are compiled for."""
+
+_RING_RECORD_ALIGN = 32
+"""Elements a ring record's stride is a multiple of, one 128-byte line."""
 
 
-class GatedDeltaNetStateCache:
-    """GPU-resident slot pool for Qwen3.5 GatedDeltaNet conv and recurrent states.
+def ring_len_for_window(window: int) -> int:
+    """Returns the shortest compiled ring length that fits ``window``.
 
-    Two sets of per-layer ``Buffer`` objects are pre-allocated on the GPU at
-    construction time:
+    Args:
+        window: Tokens one verify advances a request by, ``K + 1``.
 
-    * ``conv_pool[l]``: ``[max_slots, conv_dim, conv_kernel-1]``
-    * ``rec_pool[l]``:  ``[max_slots, num_v_heads, key_dim, val_dim]``
+    Returns:
+        The smallest entry of :data:`COMPILED_RING_LENS` that is at least
+        ``window``.
 
-    Pools are exposed via :attr:`conv_pools` / :attr:`rec_pools` and passed
-    into the model graph as mutable ``BufferType`` inputs; the slot-indexed
-    SSM kernels read and write the pool directly at slot
-    ``slot_idx[batch_item]``. There is no Python-side gather/scatter: the
-    only per-step host-to-device transfer is the small ``slot_idx`` tensor
-    built by :meth:`slot_idx_for`.
+    Raises:
+        ValueError: If no compiled ring length is long enough.
+    """
+    for compiled in COMPILED_RING_LENS:
+        if window <= compiled:
+            return compiled
+    raise ValueError(
+        f"a {window}-token verify window needs a ring longer than any the "
+        f"gated-delta ring kernels are compiled for ({COMPILED_RING_LENS}); "
+        "add the length to both the kernel dispatch and COMPILED_RING_LENS"
+    )
 
-    Lifecycle:
-        1. :meth:`claim` — register a request, zero its pool rows
-        2. :meth:`slot_idx_for` — write the batch's slot indices into a
-           caller-owned ``[max_batch_size]`` uint32 prealloc and return a
-           ``[B]`` view
-        3. (model.execute consumes pools + slot_idx; the kernels mutate the
-           pools in place — no graph outputs to handle)
-        4. :meth:`release` — free the slot
+
+@tree.dataclass(frozen=True)
+class GatedDeltaRingAccess:
+    """One linear layer's verify ring, on one device."""
+
+    pool: BufferValue
+    row_id: TensorValue
+
+
+@tree.dataclass(frozen=True)
+class GatedDeltaStateAccess:
+    """One linear layer's state access, on one device.
+
+    Each pool travels with the row id it is indexed by, already reduced to
+    this layer's column by :func:`layer_state_access`.
     """
 
-    def __init__(
-        self,
-        num_layers: int,
-        conv_dim: int,
-        conv_kernel_size: int,
-        num_v_heads: int,
-        key_head_dim: int,
-        value_head_dim: int,
-        max_slots: int,
-        device: Device,
-        dtype: DType = DType.float32,
-    ) -> None:
-        self._num_layers = num_layers
-        self._conv_dim = conv_dim
-        self._conv_kernel = conv_kernel_size - 1  # K-1 (state window size)
-        self._num_v_heads = num_v_heads
-        self._key_head_dim = key_head_dim
-        self._value_head_dim = value_head_dim
-        self._max_slots = max_slots
-        self._device = device
-        self._dtype = dtype
+    conv_pool: BufferValue
+    conv_row_id: TensorValue
+    recurrent_pool: BufferValue
+    recurrent_row_id: TensorValue
+    ring: GatedDeltaRingAccess | None = None
+    """The verify's ring, or ``None`` outside a verify."""
 
-        # Pre-allocate GPU state pools (zero-initialised).
-        # conv_pool[l]: [max_slots, conv_dim, K-1]
-        # rec_pool[l]:  [max_slots, num_v_heads, key_head_dim, val_head_dim]
-        self._conv_pool: list[Buffer] = [
-            Buffer.zeros(
-                [max_slots, conv_dim, conv_kernel_size - 1],
-                dtype,
-                device,
-            )
-            for _ in range(num_layers)
-        ]
-        self._rec_pool: list[Buffer] = [
-            Buffer.zeros(
-                [max_slots, num_v_heads, key_head_dim, value_head_dim],
-                dtype,
-                device,
-            )
-            for _ in range(num_layers)
-        ]
 
-        # Pre-allocated zero buffers used to wipe a slot on claim().
-        self._zero_conv = Buffer.zeros(
-            [1, conv_dim, conv_kernel_size - 1], dtype, device
+def layer_state_access(
+    state: Sequence[RecurrentStateInputsPerDevice[TensorValue, BufferValue]],
+    layer: int,
+) -> list[GatedDeltaStateAccess]:
+    """Selects one linear layer's state row out of each device's leaves.
+
+    Call this where a layer's inputs are assembled, never from inside a
+    block body: the linear layers share one compiled subgraph.
+
+    Args:
+        state: Per-device recurrent-state inputs, leaves in declaration order.
+        layer: The layer's index among the linear-attention layers, which is
+            the row of ``live_row_ids`` it owns.
+
+    Returns:
+        One access per device, in the order ``state`` came in.
+    """
+
+    def ring(
+        inputs: RecurrentStateInputsPerDevice[TensorValue, BufferValue],
+    ) -> GatedDeltaRingAccess | None:
+        assert len(inputs.leaves) in (len(_LEAF_IDS), _RING_LEAF + 1), (
+            "expected the live leaves alone or with a ring, got"
+            f" {len(inputs.leaves)} leaves"
         )
-        self._zero_rec = Buffer.zeros(
-            [1, num_v_heads, key_head_dim, value_head_dim],
-            dtype,
-            device,
+        if len(inputs.leaves) == len(_LEAF_IDS):
+            return None
+        leaf = inputs.leaves[_RING_LEAF]
+        return GatedDeltaRingAccess(
+            pool=leaf.pool, row_id=leaf.live_row_id(layer)
         )
 
-        self._free_slots: set[int] = set(range(max_slots))
-        self._request_to_slot: dict[RequestID, int] = {}
-
-        # Reusable host-pinned staging buffer for the per-step slot_idx H2D.
-        # Sized at max_slots since batch_size is bounded by the number of
-        # claimable slots; allocated once here so slot_idx_for() doesn't
-        # allocate on the per-step path.
-        self._pinned_slot_idx = DevicePinnedBuffer(
-            shape=(max_slots,), dtype=DType.uint32, device=device
+    return [
+        GatedDeltaStateAccess(
+            conv_pool=inputs.leaves[_CONV_LEAF].pool,
+            conv_row_id=inputs.leaves[_CONV_LEAF].live_row_id(layer),
+            recurrent_pool=inputs.leaves[_RECURRENT_LEAF].pool,
+            recurrent_row_id=inputs.leaves[_RECURRENT_LEAF].live_row_id(layer),
+            ring=ring(inputs),
         )
+        for inputs in state
+    ]
 
-        elem_bytes = dtype.size_in_bytes
-        conv_bytes = (
-            num_layers
-            * max_slots
-            * conv_dim
-            * (conv_kernel_size - 1)
-            * elem_bytes
+
+def linear_conv_dim(
+    *,
+    key_head_dim: int,
+    num_key_heads: int,
+    value_head_dim: int,
+    num_value_heads: int,
+) -> int:
+    """Returns the width of the causal convolution, unsharded.
+
+    The conv kernel indexes a Q and a K over every key head, then a V over
+    every value head.
+    """
+    return key_head_dim * num_key_heads * 2 + value_head_dim * num_value_heads
+
+
+def linear_state_regions(
+    *,
+    num_linear_layers: int,
+    key_head_dim: int,
+    num_key_heads: int,
+    value_head_dim: int,
+    num_value_heads: int,
+    conv_kernel_dim: int,
+    dtype: DType,
+    num_devices: int,
+    ring_len: int = 0,
+) -> tuple[RecurrentStateRegion, ...]:
+    """Returns the pool leaves one request's state occupies, per device.
+
+    Sharded here: a device holds only its own slice of the heads.
+
+    Args:
+        ring_len: Record capacity of the speculative verify ring, or zero to
+            declare no ring. One of :data:`COMPILED_RING_LENS`.
+
+    Raises:
+        ValueError: If ``ring_len`` is neither zero nor a compiled length.
+    """
+    if ring_len and ring_len not in COMPILED_RING_LENS:
+        raise ValueError(
+            f"ring_len must be zero or one of {COMPILED_RING_LENS}, got "
+            f"{ring_len}"
         )
-        rec_bytes = (
-            num_layers
-            * max_slots
-            * num_v_heads
-            * key_head_dim
-            * value_head_dim
-            * elem_bytes
+    conv_dim = (
+        linear_conv_dim(
+            key_head_dim=key_head_dim,
+            num_key_heads=num_key_heads,
+            value_head_dim=value_head_dim,
+            num_value_heads=num_value_heads,
         )
-        logger.info(
-            f"GatedDeltaNet state pool: {max_slots} slots x {num_layers} layers"
-            f" — conv {to_human_readable_bytes(conv_bytes)}"
-            f" + rec {to_human_readable_bytes(rec_bytes)}"
-            f" = {to_human_readable_bytes(conv_bytes + rec_bytes)} on {device}"
-        )
+        // num_devices
+    )
+    regions = (
+        RecurrentStateRegion(
+            leaf_id=CONV_LEAF_ID,
+            num_layers=num_linear_layers,
+            row_shape=(conv_dim, conv_kernel_dim - 1),
+            dtype=dtype,
+        ),
+        RecurrentStateRegion(
+            leaf_id=RECURRENT_LEAF_ID,
+            num_layers=num_linear_layers,
+            row_shape=(
+                num_value_heads // num_devices,
+                key_head_dim,
+                value_head_dim,
+            ),
+            dtype=dtype,
+        ),
+    )
+    assert tuple(region.leaf_id for region in regions) == _LEAF_IDS
+    if not ring_len:
+        return regions
 
-    @property
-    def num_free_slots(self) -> int:
-        """Number of available (unclaimed) slots."""
-        return len(self._free_slots)
+    num_key_heads_per_device = num_key_heads // num_devices
+    ring_row_records = num_key_heads_per_device * ring_len
+    record_stride = _ring_record_stride(
+        record_elements=key_head_dim
+        + (num_value_heads // num_key_heads) * (value_head_dim + 1),
+        bytes_per_element=num_linear_layers
+        * ring_row_records
+        * RING_DTYPE.size_in_bytes,
+        page_multiple_of=math.lcm(
+            *(region.bytes_per_page for region in regions)
+        ),
+    )
+    ring = RecurrentStateRegion(
+        leaf_id=RING_LEAF_ID,
+        num_layers=num_linear_layers,
+        row_shape=(num_key_heads_per_device, ring_len, record_stride),
+        dtype=RING_DTYPE,
+        scratch=True,
+    )
+    return (*regions, ring)
 
-    @property
-    def num_active_slots(self) -> int:
-        """Number of currently claimed slots."""
-        return len(self._request_to_slot)
 
-    @property
-    def max_slots(self) -> int:
-        """Maximum number of concurrent requests supported."""
-        return self._max_slots
+def _ring_record_stride(
+    *, record_elements: int, bytes_per_element: int, page_multiple_of: int
+) -> int:
+    """Returns the padded stride of one ring record.
 
-    @property
-    def conv_pools(self) -> list[Buffer]:
-        """Per-layer conv pool buffers, shape ``[max_slots, conv_dim, K-1]``."""
-        return self._conv_pool
+    A huge block is the least common multiple of every leaf's page, so the
+    ring's page is padded to divide ``page_multiple_of``, the live leaves'
+    least common multiple, and never enlarges it. The kernels lay a record
+    out as ``gated_delta_ring_record_elements`` does, the raw key and then
+    each value head's delta row and decay, which ``record_elements`` counts.
 
-    @property
-    def rec_pools(self) -> list[Buffer]:
-        """Per-layer recurrent pool buffers, shape ``[max_slots, ...]``."""
-        return self._rec_pool
+    Args:
+        record_elements: Elements one record holds before padding.
+        bytes_per_element: Page bytes one element of stride costs.
+        page_multiple_of: Bytes the ring's page must divide.
 
-    def claim(self, request_id: RequestID) -> int:
-        """Assign a slot to a request, zeroing its pool rows on the GPU.
+    Returns:
+        The smallest aligned stride whose page divides ``page_multiple_of``,
+        or the aligned record itself when no stride that small does.
+    """
+    aligned = -(-record_elements // _RING_RECORD_ALIGN) * _RING_RECORD_ALIGN
+    for stride in range(
+        aligned,
+        page_multiple_of // bytes_per_element + 1,
+        _RING_RECORD_ALIGN,
+    ):
+        if page_multiple_of % (stride * bytes_per_element) == 0:
+            return stride
+    return aligned
 
-        If the request is already claimed, returns the existing slot
-        (idempotent — state is preserved for chunked-prefill continuations).
 
-        Args:
-            request_id: The unique identifier for the request.
+def attn_cache(params: KVCacheParamInterface) -> KVCacheParams:
+    """Returns the attention half of a Qwen3.5 cache.
 
-        Returns:
-            The slot index assigned to this request.
-
-        Raises:
-            RuntimeError: If no free slots are available.
-        """
-        if request_id in self._request_to_slot:
-            return self._request_to_slot[request_id]
-        if not self._free_slots:
-            raise RuntimeError(
-                f"No free GatedDeltaNet state cache slots"
-                f" ({self._max_slots} slots in use). "
-                "Increase max_batch_size or reduce concurrent requests."
-            )
-        slot = self._free_slots.pop()
-        self._request_to_slot[request_id] = slot
-        # Zero the slot rows in both pools via GPU-to-GPU copy.
-        for l in range(self._num_layers):
-            self._conv_pool[l][slot, :, :].inplace_copy_from(self._zero_conv)
-            self._rec_pool[l][slot, :, :, :].inplace_copy_from(self._zero_rec)
-        return slot
-
-    def release(self, request_id: RequestID) -> None:
-        """Free a slot, making it available for future requests.
-
-        Args:
-            request_id: The unique identifier for the request to release.
-        """
-        if request_id not in self._request_to_slot:
-            return
-        slot = self._request_to_slot.pop(request_id)
-        self._free_slots.add(slot)
-
-    def contains(self, request_id: RequestID) -> bool:
-        """Returns True if a slot is claimed for this request."""
-        return request_id in self._request_to_slot
-
-    def slot_idx_for(
-        self, request_ids: list[RequestID], prealloc: Buffer
-    ) -> Buffer:
-        """Populate ``prealloc[:B]`` with this batch's slot indices.
-
-        Writes the slot for each request into the front of a caller-owned
-        device buffer using a host-pinned staging buffer + ``inplace_copy_from``,
-        so no fresh device buffer is allocated on the per-step path. The
-        returned slice is what graph callers should pass as the ``slot_idx``
-        kernel input.
-
-        Args:
-            request_ids: Ordered list of request IDs forming the batch.
-            prealloc: Device-resident uint32 buffer of shape ``[max_slots]``
-                (or larger), allocated once at model load time.
-
-        Returns:
-            View into ``prealloc[:len(request_ids)]`` containing the slot
-            indices for this batch.
-
-        Raises:
-            ValueError: If ``request_ids`` is empty or larger than
-                ``prealloc``.
-            KeyError: If any request ID has no claimed slot.
-        """
-        batch_size = len(request_ids)
-        if batch_size == 0:
-            raise ValueError("request_ids must not be empty")
-        if batch_size > prealloc.shape[0]:
-            raise ValueError(
-                f"slot_idx_for: batch_size {batch_size} exceeds prealloc "
-                f"capacity {prealloc.shape[0]}"
-            )
-        for rid in request_ids:
-            if rid not in self._request_to_slot:
-                raise KeyError(
-                    f"Request {rid} not found in GatedDeltaNet state cache. "
-                    "Call claim() before slot_idx_for()."
-                )
-        self._pinned_slot_idx.to_numpy()[:batch_size] = np.fromiter(
-            (self._request_to_slot[rid] for rid in request_ids),
-            dtype=np.uint32,
-            count=batch_size,
-        )
-        view = prealloc[:batch_size]
-        view.inplace_copy_from(self._pinned_slot_idx[:batch_size])
-        return view
+    A cache with no linear-attention layers is already that leaf.
+    """
+    if isinstance(params, KVCacheParams):
+        return params
+    assert isinstance(params, MultiKVCacheParams), (
+        "A Qwen3.5 cache is either an attention leaf or a tree holding one,"
+        f" got {type(params).__name__}"
+    )
+    return params.child(ATTN_CACHE_KEY, MHAKVCacheParams)

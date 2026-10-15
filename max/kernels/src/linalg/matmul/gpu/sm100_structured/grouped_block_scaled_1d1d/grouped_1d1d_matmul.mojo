@@ -34,16 +34,15 @@ Usage:
 from std.math import align_up, ceildiv
 from std.sys import size_of
 
-from std.gpu.host import DeviceContext, Dim, FuncAttribute
-from std.gpu.host.info import B200
-from std.gpu.host.nvidia.tma import TensorMapSwizzle, TMADescriptor
-from std.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
-from layout import Coord, Idx, TileTensor, row_major
+from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from max.gpu.host import DeviceContext, Dim, FuncAttribute
+from max.gpu.host.info import B200
+from max.gpu.host.nvidia.tma import TensorMapSwizzle, TMADescriptor
+from max.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
+from layout import Coord, Idx, TileTensor, coord, row_major
 from layout.tma_async import create_tensor_tile
 from structured_kernels.tile_types import create_tma_tile, TmaOpType
-from structured_kernels.kernel_common import WarpRole1D1D
 
-from std.utils.index import Index
 from std.utils.static_tuple import StaticTuple
 
 from linalg.fp4_utils import (
@@ -53,6 +52,7 @@ from linalg.fp4_utils import (
     NVFP4_SF_DTYPE,
     MXFP4_SF_DTYPE,
     MXFP8_SF_DTYPE,
+    _is_packed_fp4,
 )
 from structured_kernels.trace_buf import NullTrace, TraceBuf
 from ..structured_kernels.config import BlockScaledMatmulConfig
@@ -61,6 +61,7 @@ from .grouped_1d1d_matmul_kernel import (
     NullSwiGLUOutput,
     SwiGLUOutput,
 )
+from ..structured_kernels.row_scales import NullRowScales, RowScales
 from std.memory import UnsafePointer
 
 
@@ -90,6 +91,8 @@ def grouped_matmul_block_scaled[
     swiglu_enable_trace: Bool = False,
     TraceBufT: TraceBuf = NullTrace,
     swiglu_use_inplace: Bool = False,
+    swiglu_inplace_token_per_lane: Bool = False,
+    RowScalesT: RowScales = NullRowScales,
 ](
     c_device: TileTensor,
     a_device: TileTensor,
@@ -104,6 +107,7 @@ def grouped_matmul_block_scaled[
     ctx: DeviceContext,
     swiglu_out: SwiGLUOutputT = NullSwiGLUOutput[](),
     trace_buf: TraceBufT = NullTrace(),
+    row_scales: RowScalesT = NullRowScales(),
 ) raises:
     """Launch grouped 1D-1D block-scaled matmul kernel.
 
@@ -143,6 +147,12 @@ def grouped_matmul_block_scaled[
         swiglu_use_inplace: When `True`, the SwiGLU epilogue writes
             packed output in place via `store_packed_word` instead of
             a separate store path (defaults to `False`).
+        swiglu_inplace_token_per_lane: Enables experimental token-per-lane
+            staging for NVFP4 when `swiglu_use_inplace=True`. Each lane
+            quantizes and stores one token's scale-factor block. Ignored
+            for MXFP8. Defaults to `False`.
+        RowScalesT: Per-row output scales type. Defaults to the no-op
+            `NullRowScales`.
 
     Args:
         c_device: Output tensor (total_tokens, N).
@@ -160,7 +170,21 @@ def grouped_matmul_block_scaled[
             NVFP4 + E4M3 SF tile). `NullSwiGLUOutput()` otherwise.
         trace_buf: Per-CTA timestamp buffer when `swiglu_enable_trace=True`.
             `NullTrace()` otherwise.
+        row_scales: Per-row output scales, one per `a_device` row, applied
+            with `expert_scales`. `NullRowScales()` for none.
     """
+    # Early-exit for empty inputs to avoid creating invalid TMA descriptors: a
+    # tensor map rejects `globalDim == 0` (while accepting
+    # `globalDim < boxDim`), so a zero-row token operand fails the launch with
+    # CUDA_ERROR_INVALID_VALUE instead of computing nothing. Mirrors the SM90
+    # grouped matmul's guard. The graph wrappers test only
+    # `num_active_experts == 0`, which misses the reachable case: a rank whose
+    # expert slots are all published but hold no tokens. C's extent is
+    # deliberately not tested -- a zero-element C is legitimate wherever the
+    # local output store has been elided.
+    if num_active_experts == 0 or Int(a_device.layout.shape[0]().value()) == 0:
+        return
+
     comptime assert transpose_b, "Only support transposed B"
 
     comptime assert (
@@ -201,16 +225,56 @@ def grouped_matmul_block_scaled[
     comptime num_experts = type_of(_b_device).static_shape[0]
     comptime N = type_of(c_device).static_shape[1]
     comptime expert_n = N
-    comptime K = type_of(a_device).static_shape[1]
+    # W4A8 stores the weights nibble-packed, so their row is half as many
+    # bytes as the activations'. The FP4 TMA copy unpacks them on the way into
+    # shared memory, so every K extent the kernel sees is in ELEMENTS and the
+    # two operands agree again; only the weights' GMEM row stays halved.
+    comptime a_packed_fp4 = _is_packed_fp4[a_device.dtype, _b_device.dtype]()
+    comptime b_packed_fp4 = _is_packed_fp4[_b_device.dtype, a_device.dtype]()
+    # Under `kind::mxf8f6f4` a `uint8` operand is read padded, and only the
+    # W4A8 pair gets the padded TMA copy that produces that layout. Two `uint8`
+    # operands encode a legal descriptor under this kind but leave both copies
+    # dense, so the tensor cores would read one nibble-packed byte per element
+    # and the K arithmetic below would count bytes as elements. The FP4-only
+    # kinds want exactly that dense layout, hence the kind guard.
+    comptime assert config.scaling_kind != UMMAKind.KIND_MXF8F6F4 or (
+        (a_device.dtype != .uint8 or a_packed_fp4)
+        and (_b_device.dtype != .uint8 or b_packed_fp4)
+    ), String(
+        (
+            "kind::mxf8f6f4 accepts a nibble-packed operand only as the W4A8"
+            " pair (E4M3 activations, E2M1 weights), but got a="
+        ),
+        a_device.dtype,
+        " b=",
+        _b_device.dtype,
+    )
+    comptime K = type_of(a_device).static_shape[1] * (2 if a_packed_fp4 else 1)
+    comptime K_WEIGHT_BYTES = type_of(_b_device).static_shape[2]
+    comptime assert K_WEIGHT_BYTES * (2 if b_packed_fp4 else 1) == K, (
+        "activations and weights must span the same number of K elements, but"
+        " got "
+        + String(K)
+        + " and "
+        + String(K_WEIGHT_BYTES * (2 if b_packed_fp4 else 1))
+    )
     comptime assert K % 16 == 0, (
-        "Due to TMA limitations, K must be a multiple of 16 bytes"
+        "Due to TMA limitations, K must be a multiple of 16 elements"
         + " but got K = "
         + String(K)
     )
+    # `cuTensorMapEncodeTiled` rejects an ALIGN16B packed-FP4 descriptor whose
+    # innermost extent is not a multiple of 128. The descriptor helper only
+    # `debug_assert`s that, which is compiled out at the default assert level,
+    # so gate it here where K is comptime.
+    comptime assert not (a_packed_fp4 or b_packed_fp4) or K % 128 == 0, (
+        "packed FP4 requires K to be a multiple of 128 elements but got K = "
+        + String(K)
+    )
 
-    # Reshape B from (num_experts, N, K) to (num_experts * N, K)
+    # Reshape B from (num_experts, N, K bytes) to (num_experts * N, K bytes)
     var b_device = _b_device.reshape(
-        row_major(Coord(Idx[num_experts * N], Idx[K]))
+        row_major(Idx[num_experts * N], Idx[K_WEIGHT_BYTES])
     )
 
     comptime if config.cta_group == 2:
@@ -267,6 +331,13 @@ def grouped_matmul_block_scaled[
         swiglu_enable_trace=swiglu_enable_trace,
         TraceBufT=TraceBufT,
         swiglu_use_inplace=swiglu_use_inplace,
+        swiglu_inplace_token_per_lane=swiglu_inplace_token_per_lane,
+        c_device_engine=type_of(c_device).Engine,
+        offsets_engine=type_of(a_offsets).Engine,
+        a_scale_offsets_engine=type_of(a_scale_offsets).Engine,
+        expert_ids_engine=type_of(expert_ids).Engine,
+        expert_scales_engine=type_of(expert_scales).Engine,
+        RowScalesT=RowScalesT,
     ]
     comptime KernelType = type_of(matmul_kernel)
 
@@ -277,19 +348,28 @@ def grouped_matmul_block_scaled[
     # B200 SMEM limit
     comptime b200_smem = B200.shared_memory_per_multiprocessor - 1024
 
-    comptime c_tma_tile_shape_mma128 = Index(
-        64, config.output_tile_shape[1]
-    ) if not config.AB_swapped else Index(config.output_tile_shape[0], 64)
-    comptime c_tma_tile_shape = config.output_tile_shape if (
-        MMA_M == 256 or config.cta_group == 1
-    ) else c_tma_tile_shape_mma128
+    comptime g1_m128_m = (
+        64 if not config.AB_swapped else config.output_tile_shape[0]
+    )
+    comptime g1_m128_n = (
+        config.output_tile_shape[1] if not config.AB_swapped else 64
+    )
+    comptime g1_use_full = MMA_M == 256 or config.cta_group == 1
+    comptime g1_c_m = (
+        config.output_tile_shape[0] if g1_use_full else g1_m128_m
+    )
+    comptime g1_c_n = (
+        config.output_tile_shape[1] if g1_use_full else g1_m128_n
+    )
+    comptime c_tma_tile_shape = coord[g1_c_m, g1_c_n]
 
     # When c_swizzle is SWIZZLE_NONE (MMA_N=8), c_swizzle.bytes() is 0.
     # The TMA descriptor dim1 must equal the tile dim1 in that case.
     comptime _c_swizzle_elems = config.c_swizzle.bytes() // size_of[c_type]()
-    comptime c_tma_tile_shape_1 = c_tma_tile_shape[
-        1
-    ] if _c_swizzle_elems == 0 else _c_swizzle_elems
+    comptime c_tma_tile_shape_1 = (
+        c_tma_tile_shape.element_types[1].static_value if _c_swizzle_elems
+        == 0 else _c_swizzle_elems
+    )
 
     # Scale factor TMA — use 4D uint16 with batch=1 to avoid 2× TMA overfetch.
     # SM100 TMA rounds boxDim[0] to 32B min; old innermost=16B caused 2× fetch.
@@ -302,28 +382,26 @@ def grouped_matmul_block_scaled[
         KernelType.SFB_TMA_ROWS * SF_ATOM_M[1] * SF_ATOM_K
     ) // 2
 
-    comptime sfa_tma_tile_shape = Index(
+    comptime sfa_tma_tile_shape = coord[
         1,  # batch dim
         BM // SF_MN_GROUP_SIZE,
         config.num_sf_k_tiles,
         sf_atom_u16,
-    )
+    ]
 
     # SFB TMA tile shape: for MMA_N < 64, reduced tile (1 k-atom, MMA_N rows)
     # loaded by the dedicated SfbTMALoad warp; for MMA_N >= 64, full atom.
     # Derive from kernel struct to keep a single source of truth.
-    comptime sfb_tma_tile_shape = Index(
+    comptime sfb_tma_tile_shape = coord[
         1,  # batch dim
         align_up(MMA_N, SF_MN_GROUP_SIZE) // SF_MN_GROUP_SIZE,
         KernelType.SFB_TMA_K_ATOMS,
         sfb_atom_u16,
-    )
+    ]
 
     # Create 4D uint16 views of scale tensors (same memory, reinterpreted).
     # a_scales: 5D (M_groups, K_groups, SF_ATOM_M[0], SF_ATOM_M[1], SF_ATOM_K)
     #        -> 4D uint16 (1, M_groups, K_groups, sf_atom_u16)
-    from std.memory import UnsafePointer as Ptr
-
     var sfa_4d_shape = Coord(
         Idx[1],
         a_scales.layout.shape[0](),
@@ -331,8 +409,16 @@ def grouped_matmul_block_scaled[
         Idx[sf_atom_u16],
     )
     var sfa_4d_layout = row_major(sfa_4d_shape)
-    var sfa_4d = TileTensor[DType.uint16, type_of(sfa_4d_layout), MutAnyOrigin](
-        rebind[Ptr[Scalar[DType.uint16], MutAnyOrigin]](a_scales.ptr),
+    var sfa_4d = TileTensor[
+        .uint16,
+        type_of(sfa_4d_layout),
+        MutAnyOrigin,
+        Engine=a_scales.Engine,
+        address_space=a_scales.address_space,
+    ](
+        a_scales._unsafe_storage_cast[
+            to_dtype=.uint16, to_origin=MutAnyOrigin
+        ](),
         sfa_4d_layout,
     )
 
@@ -348,8 +434,16 @@ def grouped_matmul_block_scaled[
         Idx[sf_atom_u16],
     )
     var sfb_4d_layout = row_major(sfb_4d_shape)
-    var sfb_4d = TileTensor[DType.uint16, type_of(sfb_4d_layout), MutAnyOrigin](
-        rebind[Ptr[Scalar[DType.uint16], MutAnyOrigin]](_b_scales.ptr),
+    var sfb_4d = TileTensor[
+        .uint16,
+        type_of(sfb_4d_layout),
+        MutAnyOrigin,
+        Engine=_b_scales.Engine,
+        address_space=_b_scales.address_space,
+    ](
+        _b_scales._unsafe_storage_cast[
+            to_dtype=.uint16, to_origin=MutAnyOrigin
+        ](),
         sfb_4d_layout,
     )
 
@@ -380,34 +474,45 @@ def grouped_matmul_block_scaled[
 
     def _to_1d[
         target_type: DType,
-    ](t: TileTensor) -> TileTensor[target_type, GMEMLayout1D, MutAnyOrigin]:
+    ](t: TileTensor) -> TileTensor[
+        target_type,
+        GMEMLayout1D,
+        MutAnyOrigin,
+        Engine=t.Engine,
+        address_space=t.address_space,
+    ]:
         var shape = Coord(Int64(t.layout.shape[0]().value()))
         var stride = Coord(Idx[1])
-        return TileTensor[target_type, GMEMLayout1D, MutAnyOrigin](
-            ptr=Ptr[Scalar[target_type], MutAnyOrigin](
-                unsafe_from_address=Int(t.ptr)
-            ),
-            layout=GMEMLayout1D(shape, stride),
-        )
+        return {
+            t._unsafe_storage_cast[
+                to_dtype=target_type, to_origin=MutAnyOrigin
+            ](),
+            GMEMLayout1D(shape, stride),
+        }
 
     # When AB_swapped, swap A/B operands and their scale factors for TMA
-    # and kernel launch. The @parameter if ensures compile-time branching.
+    # and kernel launch. The comptime if ensures compile-time branching.
     comptime if config.AB_swapped:
         var a_tma_op = create_tma_tile[
             KernelType.ATileLayout,
             KernelType.ADescLayout,
-            Index(BM // cluster_shape[1], BK),
+            coord[BM // cluster_shape[1], BK],
             swizzle_mode=config.a_swizzle,
+            unpack_fp4=b_packed_fp4,
         ](ctx, b_device)
         var b_tma_op = create_tma_tile[
             KernelType.BTileLayout,
             KernelType.BDescLayout,
-            Index(
-                BN // (cluster_shape[0] // config.cta_group), BK
-            ) if transpose_b else Index(
-                BK, BN // (cluster_shape[0] // config.cta_group)
-            ),
+            coord[
+                BN
+                // (
+                    cluster_shape[0] // config.cta_group
+                ) if transpose_b else BK,
+                BK if transpose_b else BN
+                // (cluster_shape[0] // config.cta_group),
+            ],
             swizzle_mode=config.b_swizzle,
+            unpack_fp4=a_packed_fp4,
         ](ctx, a_device)
         # C TMA descriptor is only consumed on the non-fused (BF16 store)
         # path. When `fuse_swiglu`, the epilogue writes through `swiglu_out`
@@ -421,7 +526,10 @@ def grouped_matmul_block_scaled[
             c_tma_op = create_tma_tile[
                 KernelType.CTileLayout,
                 KernelType.CDescLayout,
-                Index(c_tma_tile_shape[0], c_tma_tile_shape_1),
+                coord[
+                    c_tma_tile_shape.element_types[0].static_value,
+                    c_tma_tile_shape_1,
+                ],
                 swizzle_mode=config.c_swizzle,
             ](ctx, c_device)
         # SF TMA: use create_tensor_tile directly with uint16 views.
@@ -447,21 +555,22 @@ def grouped_matmul_block_scaled[
             c_tma_op,
             sfa_tma_op,
             sfb_tma_op,
-            _to_1d[DType.uint32](a_offsets),
-            _to_1d[DType.uint32](a_scale_offsets),
-            _to_1d[DType.int32](expert_ids),
-            _to_1d[DType.float32](expert_scales),
+            _to_1d[.uint32](a_offsets),
+            _to_1d[.uint32](a_scale_offsets),
+            _to_1d[.int32](expert_ids),
+            _to_1d[.float32](expert_scales),
             c_device,
-            num_active_experts,
+            Int32(num_active_experts),
             UInt32(K),
             # AB_swapped: SFB data comes from a_scales.
             rebind[UnsafePointer[Scalar[sfa_dtype], ImmutAnyOrigin]](
                 a_scales.ptr
             ),
-            Int(a_scales.layout.shape[1]().value()) * _sfb_K_TILE_ELEMS,
-            Int(a_scales.layout.shape[1]().value()),
+            Int32(Int(a_scales.layout.shape[1]().value()) * _sfb_K_TILE_ELEMS),
+            Int32(Int(a_scales.layout.shape[1]().value())),
             swiglu_out,
             trace_buf,
+            row_scales,
             grid_dim=grid_dim,
             block_dim=block_threads,
             cluster_dim=Dim(
@@ -477,18 +586,23 @@ def grouped_matmul_block_scaled[
         var a_tma_op = create_tma_tile[
             KernelType.ATileLayout,
             KernelType.ADescLayout,
-            Index(BM // cluster_shape[1], BK),
+            coord[BM // cluster_shape[1], BK],
             swizzle_mode=config.a_swizzle,
+            unpack_fp4=a_packed_fp4,
         ](ctx, a_device)
         var b_tma_op = create_tma_tile[
             KernelType.BTileLayout,
             KernelType.BDescLayout,
-            Index(
-                BN // (cluster_shape[0] // config.cta_group), BK
-            ) if transpose_b else Index(
-                BK, BN // (cluster_shape[0] // config.cta_group)
-            ),
+            coord[
+                BN
+                // (
+                    cluster_shape[0] // config.cta_group
+                ) if transpose_b else BK,
+                BK if transpose_b else BN
+                // (cluster_shape[0] // config.cta_group),
+            ],
             swizzle_mode=config.b_swizzle,
+            unpack_fp4=b_packed_fp4,
         ](ctx, b_device)
         # See the AB_swapped branch: the C TMA op is unused on the fused path.
         var c_tma_op = TmaOpType[
@@ -498,7 +612,7 @@ def grouped_matmul_block_scaled[
             c_tma_op = create_tma_tile[
                 KernelType.CTileLayout,
                 KernelType.CDescLayout,
-                c_tma_tile_shape,
+                coord[g1_c_m, g1_c_n],
                 swizzle_mode=config.c_swizzle,
             ](ctx, c_device)
         # SF TMA: use create_tensor_tile directly with uint16 views.
@@ -520,21 +634,22 @@ def grouped_matmul_block_scaled[
             c_tma_op,
             sfa_tma_op,
             sfb_tma_op,
-            _to_1d[DType.uint32](a_offsets),
-            _to_1d[DType.uint32](a_scale_offsets),
-            _to_1d[DType.int32](expert_ids),
-            _to_1d[DType.float32](expert_scales),
+            _to_1d[.uint32](a_offsets),
+            _to_1d[.uint32](a_scale_offsets),
+            _to_1d[.int32](expert_ids),
+            _to_1d[.float32](expert_scales),
             c_device,
-            num_active_experts,
+            Int32(num_active_experts),
             UInt32(K),
             # Non-swapped: SFB data comes from _b_scales.
             rebind[UnsafePointer[Scalar[sfb_dtype], ImmutAnyOrigin]](
                 _b_scales.ptr
             ),
-            Int(_b_scales.layout.shape[2]().value()) * _sfb_K_TILE_ELEMS,
-            Int(_b_scales.layout.shape[2]().value()),
+            Int32(Int(_b_scales.layout.shape[2]().value()) * _sfb_K_TILE_ELEMS),
+            Int32(Int(_b_scales.layout.shape[2]().value())),
             swiglu_out,
             trace_buf,
+            row_scales,
             grid_dim=grid_dim,
             block_dim=block_threads,
             cluster_dim=Dim(

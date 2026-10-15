@@ -32,12 +32,8 @@ qwen3vl_moe_arch = SupportedArchitecture(
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=True,
     input_modalities={InputModality.TEXT, InputModality.IMAGE},
-    default_encoding="bfloat16",
-    supported_encodings={
-        "float32",
-        "bfloat16",
-        "float8_e4m3fn",
-    },
+    default_encoding=Qwen3VLConfig.DEFAULT_ENCODING,
+    supported_encodings=Qwen3VLConfig.SUPPORTED_ENCODINGS,
     weight_adapters={
         WeightsFormat.safetensors: convert_qwen3vl_model_state_dict,
     },
@@ -65,12 +61,8 @@ qwen3vl_arch = SupportedArchitecture(
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=True,
     input_modalities={InputModality.TEXT, InputModality.IMAGE},
-    default_encoding="bfloat16",
-    supported_encodings={
-        "float32",
-        "bfloat16",
-        "float8_e4m3fn",
-    },
+    default_encoding=Qwen3VLConfig.DEFAULT_ENCODING,
+    supported_encodings=Qwen3VLConfig.SUPPORTED_ENCODINGS,
     weight_adapters={
         WeightsFormat.safetensors: convert_qwen3vl_model_state_dict,
     },

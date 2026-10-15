@@ -18,19 +18,11 @@
 # pivot). Memory-safety oracle (memcheck / redzone); values are irrelevant.
 
 from std.math import exp
-from std.random import rand, random_ui64, seed
+from std.random import random_ui64, seed
 from std.sys.defines import get_defined_int
 
-from std.gpu.host import DeviceContext
-from layout import (
-    Coord,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-    TileTensor,
-    coord_to_index_list,
-    row_major,
-)
+from max.gpu.host import DeviceContext
+from layout import Coord, TileTensor, row_major
 from nn.softmax import _softmax_gpu
 from std.utils import IndexList
 from std.utils.numerics import isinf, isnan
@@ -98,16 +90,16 @@ def _softmax_ref(
     """FP64 CPU softmax over the inner axis (the higher-precision oracle)."""
     for r in range(rows):
         var base = r * inner
-        var m = src[base].cast[DType.float64]()
+        var m = src[base].cast[.float64]()
         for c in range(1, inner):
-            var v = src[base + c].cast[DType.float64]()
+            var v = src[base + c].cast[.float64]()
             if v > m:
                 m = v
         var s = Float64(0)
         for c in range(inner):
-            s += exp(src[base + c].cast[DType.float64]() - m)
+            s += exp(src[base + c].cast[.float64]() - m)
         for c in range(inner):
-            var e = exp(src[base + c].cast[DType.float64]() - m)
+            var e = exp(src[base + c].cast[.float64]() - m)
             dst[base + c] = (e / s).cast[sm_type]()
 
 
@@ -152,17 +144,14 @@ def run_one_case(
     var out_dev = ctx.enqueue_create_buffer[sm_type](length)
     ctx.enqueue_copy(in_dev, in_host)
 
-    comptime layout_dyn = Layout.row_major[sm_rank]()
-    var in_tt = LayoutTensor[sm_type, layout_dyn](
-        in_dev.unsafe_ptr(), RuntimeLayout[layout_dyn].row_major(shape)
-    )
+    var in_tt = TileTensor(in_dev.unsafe_ptr(), row_major(Coord(shape)))
 
-    @parameter
+    @__parameter
     @__copy_capture(in_tt)
     def input_fn_device[
         _simd_width: Int
     ](coords: Coord) -> SIMD[sm_type, _simd_width]:
-        return in_tt.load[width=_simd_width](coord_to_index_list(coords))
+        return in_tt.load[width=_simd_width](coords)
 
     _softmax_gpu[sm_type, 1, sm_rank, input_fn_device](
         Coord(shape),

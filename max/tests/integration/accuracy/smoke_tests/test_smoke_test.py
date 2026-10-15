@@ -11,84 +11,24 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from hf_repo_lock import load_db
 from pytest import MonkeyPatch
 from smoke_tests import smoke_test
 from smoke_tests.smoke_test import MODEL_RECIPES
 
 
-def test_hf_repo_lock_tsv_reachable() -> None:
-    assert len(load_db()) > 0, "hf-repo-lock.tsv not found or empty"
-
-
-def _custom_recipe_keys() -> list[str]:
-    return [key for key in MODEL_RECIPES if "__" in key]
-
-
-def test_model_aliases_contain_exactly_one_double_underscore() -> None:
-    for alias in _custom_recipe_keys():
-        count = alias.count("__")
+def test_variants_contain_exactly_one_double_underscore() -> None:
+    for variant in (key for key in MODEL_RECIPES if "__" in key):
+        count = variant.count("__")
         assert count == 1, (
-            f"Model alias {alias!r} must contain exactly one '__'"
+            f"Model variant {variant!r} must contain exactly one '__'"
             f" (found {count})"
         )
 
 
-def test_all_alias_hf_model_paths_in_hf_repo_lock() -> None:
-    """Every custom recipe key's hf_model_path prefix must be pinned."""
-    lock = load_db()
-    missing = [
-        alias
-        for alias in _custom_recipe_keys()
-        if alias.rsplit("__", 1)[0] not in lock
-    ]
-    assert not missing, (
-        f"custom recipe hf_model_path prefixes missing from hf-repo-lock.tsv: {missing}"
-    )
-
-
-def test_all_recipe_hf_model_paths_in_hf_repo_lock() -> None:
-    lock = {repo.casefold() for repo in load_db()}
-    missing = []
-    for recipe_path in MODEL_RECIPES.values():
-        recipe = smoke_test._load_recipe(recipe_path)
-        model_path = recipe.model.model_path
-        assert model_path is not None
-        # Local filesystem paths (e.g. pre-staged weights on a dedicated
-        # runner) can't be pinned in hf-repo-lock.tsv.
-        if model_path.startswith(("/", "./", "../")):
-            continue
-        if model_path.casefold() not in lock:
-            missing.append((recipe_path, model_path))
-
-    assert not missing, (
-        f"MODEL_RECIPES model paths missing from hf-repo-lock.tsv: {missing}"
-    )
-
-
-def test_all_recipe_draft_model_paths_in_hf_repo_lock() -> None:
-    lock = {repo.casefold() for repo in load_db()}
-    missing = []
-    for recipe_path in MODEL_RECIPES.values():
-        recipe = smoke_test._load_recipe(recipe_path)
-        if recipe.draft_model is None:
-            continue
-        model_path = recipe.draft_model.model_path
-        assert model_path is not None
-        if model_path.startswith(("/", "./", "../")):
-            continue
-        if model_path.casefold() not in lock:
-            missing.append((recipe_path, model_path))
-
-    assert not missing, (
-        f"recipe draft_model paths missing from hf-repo-lock.tsv: {missing}"
-    )
-
-
 def test_all_model_recipes_load() -> None:
-    for alias, recipe_path in MODEL_RECIPES.items():
+    for variant, recipe_path in MODEL_RECIPES.items():
         recipe = smoke_test._load_recipe(recipe_path)
-        assert recipe.model.model_path is not None, alias
+        assert recipe.model.model_path is not None, variant
 
 
 def test_hf_repos_for_model_includes_draft_model() -> None:
@@ -96,41 +36,31 @@ def test_hf_repos_for_model_includes_draft_model() -> None:
     repos = smoke_test.hf_repos_for_model(
         "meta-llama/Llama-3.1-8B-Instruct__eagle"
     )
-    paths = [repo for repo, _ in repos]
-    assert "meta-llama/Llama-3.1-8B-Instruct" in paths
-    assert "atomicapple0/EAGLE-LLaMA3.1-Instruct-8B" in paths
+    assert "meta-llama/Llama-3.1-8B-Instruct" in repos
+    assert "atomicapple0/EAGLE-LLaMA3.1-Instruct-8B" in repos
 
 
 def test_hf_repos_for_model_prefers_recipe_casing() -> None:
-    """A lowercased alias still resolves to the recipe's canonical casing.
+    """A lowercased variant still resolves to the recipe's canonical casing.
 
     The cache is case-sensitive, so the prefetch script's offline probe
     only hits if the repo name matches the cached snapshot exactly. The
-    helper adds the recipe-derived `model.model_path` before the alias
+    helper adds the recipe-derived `model.model_path` before the variant
     prefix so the casefold dedup keeps the canonical casing.
     """
     repos = smoke_test.hf_repos_for_model(
         "meta-llama/llama-3.1-8b-instruct__eagle"
     )
-    assert repos[0][0] == "meta-llama/Llama-3.1-8B-Instruct"
+    assert repos[0] == "meta-llama/Llama-3.1-8B-Instruct"
 
 
-def test_hf_repos_for_model_revisions_pinned() -> None:
-    """Every returned repo has a pinned revision from hf-repo-lock.tsv."""
-    for alias in MODEL_RECIPES:
-        for repo, revision in smoke_test.hf_repos_for_model(alias):
-            assert revision, (
-                f"alias={alias!r} repo={repo!r} has no locked revision"
-            )
-
-
-def test_model_aliases_lookup_is_case_insensitive() -> None:
+def test_variant_lookup_is_case_insensitive() -> None:
     for key in MODEL_RECIPES:
         assert MODEL_RECIPES.get(key.lower()) is not None
         assert MODEL_RECIPES.get(key.upper()) is not None
 
 
-def test_recipe_aliases_preserve_key_model_path_and_speculation() -> None:
+def test_variants_preserve_key_model_path_and_speculation() -> None:
     mtp_recipe = smoke_test._load_recipe(
         MODEL_RECIPES["nvidia/DeepSeek-V3.1-NVFP4__mtp"]
     )
@@ -138,11 +68,9 @@ def test_recipe_aliases_preserve_key_model_path_and_speculation() -> None:
     assert mtp_recipe.speculative.num_speculative_tokens == 3
 
     kimi_recipe = smoke_test._load_recipe(
-        MODEL_RECIPES[
-            "nvidia/Kimi-K2.5-NVFP4__eagle_tiered_kvconnector_tpep_ar"
-        ]
+        MODEL_RECIPES["nvidia/Kimi-K2.7-Code-NVFP4"]
     )
-    assert kimi_recipe.model.model_path == "nvidia/Kimi-K2.5-NVFP4"
+    assert kimi_recipe.model.model_path == "nvidia/Kimi-K2.7-Code-NVFP4"
     assert kimi_recipe.speculative is not None
     assert kimi_recipe.speculative.num_speculative_tokens == 3
 
@@ -189,11 +117,10 @@ def test_8x_recipe_auto_reduces_on_4_gpu_machine(
 ) -> None:
     """Regression: an 8-GPU recipe on a 4-GPU runner scales down to 4."""
     monkeypatch.setattr(smoke_test, "_inside_bazel", lambda: False)
-    monkeypatch.setattr(smoke_test, "_load_hf_repo_lock", lambda: {})
 
-    # amd/MiniMax-M2.7-MXFP4 pins device_specs [0..7] and ep_size 8.
+    # amd/Kimi-K2.7-Code-MXFP4 pins device_specs [0..7] and ep_size 8.
     cmd, _ = smoke_test.get_server_cmd(
-        "max", "amd/MiniMax-M2.7-MXFP4", gpu_spec=("AMD MI355X", 4)
+        "max", "amd/Kimi-K2.7-Code-MXFP4", gpu_spec=("AMD MI355X", 4)
     )
 
     assert cmd[cmd.index("--devices") + 1] == "gpu:0,1,2,3"
@@ -203,11 +130,10 @@ def test_8x_recipe_auto_reduces_on_4_gpu_machine(
 def test_no_autoscale_devices_honors_recipe(monkeypatch: MonkeyPatch) -> None:
     """With autoscale off, the recipe's device_specs are left untouched."""
     monkeypatch.setattr(smoke_test, "_inside_bazel", lambda: False)
-    monkeypatch.setattr(smoke_test, "_load_hf_repo_lock", lambda: {})
 
     cmd, _ = smoke_test.get_server_cmd(
         "max",
-        "amd/MiniMax-M2.7-MXFP4",
+        "amd/Kimi-K2.7-Code-MXFP4",
         autoscale_devices=False,
         gpu_spec=("AMD MI355X", 4),
     )
@@ -216,14 +142,35 @@ def test_no_autoscale_devices_honors_recipe(monkeypatch: MonkeyPatch) -> None:
     assert "--ep-size" not in cmd
 
 
+def test_max_enables_vmm_on_amd_up_to_4_gpus(monkeypatch: MonkeyPatch) -> None:
+    monkeypatch.setattr(smoke_test, "_inside_bazel", lambda: False)
+
+    def vmm(gpu_spec: tuple[str, int]) -> str | None:
+        _, env = smoke_test.get_server_cmd(
+            "max", "Qwen/Qwen3-8B", gpu_spec=gpu_spec
+        )
+        return env.get("MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM")
+
+    assert vmm(("AMD MI355X", 1)) == "1"
+    assert vmm(("AMD MI355X", 4)) == "1"
+    assert vmm(("AMD MI355X", 8)) is None
+    assert vmm(("NVIDIA B200", 4)) is None
+
+
 def test_vllm_minimax_keeps_flashinfer_workaround(
     monkeypatch: MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(smoke_test, "_inside_bazel", lambda: False)
-    monkeypatch.setattr(smoke_test, "_load_hf_repo_lock", lambda: {})
 
-    cmd, env = smoke_test.get_server_cmd(
-        "vllm", "MiniMaxAI/MiniMax-M2.7", gpu_spec=("NVIDIA B200", 8)
+    # MiniMaxAI/MiniMax-M2.7 has no MODEL_RECIPES entry anymore (retired from
+    # CI), but the "minimax-m2" vLLM workaround this test targets is specific
+    # to that architecture family, so pass the still-present recipe directly.
+    cmd, _ = smoke_test.get_server_cmd(
+        "vllm",
+        "MiniMaxAI/MiniMax-M2.7",
+        recipe_path="max/pipelines/architectures/minimax_m2/recipes/minimax_m2_8x_b200.yaml",
+        serve_image="vllm/vllm-openai:v0.27.1",
+        gpu_spec=("NVIDIA B200", 8),
     )
 
     assert "--enable-expert-parallel" in cmd
@@ -233,18 +180,39 @@ def test_vllm_minimax_keeps_flashinfer_workaround(
     assert "--data-parallel-size=8" in cmd
     assert "--attention-backend" in cmd
     assert "FLASH_ATTN" in cmd
-    assert env["VLLM_USE_FLASHINFER_MOE_FP8"] == "0"
+    assert "VLLM_USE_FLASHINFER_MOE_FP8=0" in cmd
+
+
+def test_container_args_per_vendor(monkeypatch: MonkeyPatch) -> None:
+    monkeypatch.setattr(smoke_test, "_inside_bazel", lambda: False)
+    monkeypatch.setenv("HF_TOKEN", "hf_secret")
+
+    for image, wanted, unwanted in (
+        ("vllm/vllm-openai:v0.27.1", "nvidia.com/gpu=all", "/dev/kfd"),
+        ("vllm/vllm-openai-rocm:v0.27.1", "/dev/kfd", "nvidia.com/gpu=all"),
+    ):
+        cmd, _ = smoke_test.get_server_cmd(
+            "vllm",
+            "meta-llama/Llama-3.1-8B-Instruct",
+            serve_image=image,
+            gpu_spec=("NVIDIA B200", 1),
+        )
+
+        assert wanted in cmd
+        assert unwanted not in cmd
+        assert "hf_secret" not in " ".join(cmd)
+        assert any(a.endswith("/root/.cache/huggingface/hub:ro") for a in cmd)
 
 
 def test_vllm_uses_tp_for_recipe_default_data_parallel_degree(
     monkeypatch: MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(smoke_test, "_inside_bazel", lambda: False)
-    monkeypatch.setattr(smoke_test, "_load_hf_repo_lock", lambda: {})
 
     cmd, _ = smoke_test.get_server_cmd(
         "vllm",
         "nvidia/DeepSeek-V3.1-NVFP4__tpep",
+        serve_image="vllm/vllm-openai:v0.27.1",
         gpu_spec=("NVIDIA B200", 8),
     )
 
@@ -257,11 +225,11 @@ def test_sglang_uses_tp_for_recipe_with_tensor_parallel_attention(
     monkeypatch: MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(smoke_test, "_inside_bazel", lambda: False)
-    monkeypatch.setattr(smoke_test, "_load_hf_repo_lock", lambda: {})
 
     cmd, _ = smoke_test.get_server_cmd(
         "sglang",
         "nvidia/DeepSeek-V3.1-NVFP4__tpep",
+        serve_image="lmsysorg/sglang:v0.5.18",
         gpu_spec=("NVIDIA B200", 8),
     )
 
@@ -278,11 +246,11 @@ def test_sglang_uses_data_parallel_attention_for_recipe_dp(
     monkeypatch: MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(smoke_test, "_inside_bazel", lambda: False)
-    monkeypatch.setattr(smoke_test, "_load_hf_repo_lock", lambda: {})
 
     cmd, _ = smoke_test.get_server_cmd(
         "sglang",
         "nvidia/DeepSeek-V3.1-NVFP4__fp8kv",
+        serve_image="lmsysorg/sglang:v0.5.18",
         gpu_spec=("NVIDIA B200", 8),
     )
 
@@ -297,11 +265,11 @@ def test_sglang_uses_data_parallel_attention_for_recipe_dp(
 
 def test_sglang_uses_recipe_memory_cap(monkeypatch: MonkeyPatch) -> None:
     monkeypatch.setattr(smoke_test, "_inside_bazel", lambda: False)
-    monkeypatch.setattr(smoke_test, "_load_hf_repo_lock", lambda: {})
 
     cmd, _ = smoke_test.get_server_cmd(
         "sglang",
-        "nvidia/Kimi-K2.5-NVFP4__eagle_tiered_kvconnector_tpep_ar",
+        "meta-llama/Llama-3.1-8B-Instruct__dflash",
+        serve_image="lmsysorg/sglang:v0.5.18",
         gpu_spec=("NVIDIA B200", 8),
     )
 
@@ -309,28 +277,25 @@ def test_sglang_uses_recipe_memory_cap(monkeypatch: MonkeyPatch) -> None:
     assert "0.75" in cmd
 
 
-def test_max_get_server_cmd_recipe_alias_resolves_yaml(
+def test_max_get_server_cmd_variant_resolves_yaml(
     monkeypatch: MonkeyPatch,
 ) -> None:
     """``get_server_cmd`` must load built-in recipe YAML without importing ``max``.
 
     Serve smoke CI runs the driver under ``uv run`` without the Modular package;
     this path used to fail with ``ModuleNotFoundError: max`` when resolving
-    ``MODEL_RECIPES`` aliases.
+    ``MODEL_RECIPES`` variants.
     """
     monkeypatch.setattr(smoke_test, "_inside_bazel", lambda: False)
-    monkeypatch.setattr(smoke_test, "_load_hf_repo_lock", lambda: {})
 
-    alias = "microsoft/phi-4__modulev3"
-    recipe_path = MODEL_RECIPES[alias]
+    variant = "microsoft/phi-4__modulev3"
+    recipe_path = MODEL_RECIPES[variant]
     cmd, _ = smoke_test.get_server_cmd(
-        "max", alias, gpu_spec=("NVIDIA L40S", 1)
+        "max", variant, gpu_spec=("NVIDIA L40S", 1)
     )
 
-    assert cmd[:5] == [
-        ".venv-serve/bin/python",
-        "-m",
-        "max._entrypoints.pipelines",
+    assert cmd[:3] == [
+        ".venv-serve/bin/max",
         "serve",
         "--pretty-print-config",
     ]
@@ -340,3 +305,83 @@ def test_max_get_server_cmd_recipe_alias_resolves_yaml(
     cfg_idx = cmd.index("--config-file")
     assert cmd[cfg_idx + 1] == recipe_path
     assert "--trust-remote-code" not in cmd
+
+
+def test_max_ci_validates_every_request(monkeypatch: MonkeyPatch) -> None:
+    """A smoke run built from the checkout validates requests, not just init."""
+    monkeypatch.setattr(smoke_test, "_inside_bazel", lambda: True)
+
+    cmd, _ = smoke_test.get_server_cmd(
+        "max-ci", "microsoft/phi-4__modulev3", gpu_spec=("NVIDIA B200", 1)
+    )
+
+    assert "--eager-usage-validator" in cmd
+    assert cmd[cmd.index("--eager-usage-validator") + 1] == "enabled"
+
+
+def test_released_max_does_not_get_eager_usage_validator(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    """The flag is newer than the wheels ``max`` installs, so it stays off."""
+    monkeypatch.setattr(smoke_test, "_inside_bazel", lambda: False)
+
+    cmd, _ = smoke_test.get_server_cmd(
+        "max", "microsoft/phi-4__modulev3", gpu_spec=("NVIDIA B200", 1)
+    )
+
+    assert "--eager-usage-validator" not in cmd
+
+
+def test_merge_serve_extra_args_appends_when_absent() -> None:
+    args = ["prog", "model", "--framework", "max-ci"]
+    merged = smoke_test.merge_serve_extra_args(
+        args, "--kv-connector-config=tiered.json"
+    )
+    assert merged == args + [
+        "--serve-extra-args",
+        "--kv-connector-config=tiered.json",
+    ]
+
+
+def test_merge_serve_extra_args_splices_into_two_token_form() -> None:
+    merged = smoke_test.merge_serve_extra_args(
+        ["prog", "--serve-extra-args", "--max-batch-size=16"],
+        "--kv-connector-config=tiered.json",
+    )
+    assert merged == [
+        "prog",
+        "--serve-extra-args",
+        "--kv-connector-config=tiered.json --max-batch-size=16",
+    ]
+
+
+def test_merge_serve_extra_args_splices_into_equals_form() -> None:
+    merged = smoke_test.merge_serve_extra_args(
+        ["prog", "--serve-extra-args=--max-batch-size=16"],
+        "--kv-connector-config=tiered.json",
+    )
+    assert merged == [
+        "prog",
+        "--serve-extra-args=--kv-connector-config=tiered.json --max-batch-size=16",
+    ]
+
+
+def test_merge_serve_extra_args_caller_value_goes_last_so_it_wins() -> None:
+    """The caller's value lands after the merged-in one, so the serve CLI's
+    last-wins parsing gives an explicit caller override of the same flag
+    precedence."""
+    merged = smoke_test.merge_serve_extra_args(
+        ["prog", "--serve-extra-args", "--kv-connector-config=null.json"],
+        "--kv-connector-config=tiered.json",
+    )
+    assert (
+        merged[2]
+        == "--kv-connector-config=tiered.json --kv-connector-config=null.json"
+    )
+
+
+def test_merge_serve_extra_args_does_not_mutate_input() -> None:
+    args = ["prog", "--serve-extra-args", "--max-batch-size=16"]
+    snapshot = list(args)
+    smoke_test.merge_serve_extra_args(args, "--kv-connector-config=tiered.json")
+    assert args == snapshot

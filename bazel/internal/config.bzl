@@ -11,8 +11,8 @@ GPU_TEST_ENV = {
 }
 
 RUNTIME_SANITIZER_DATA = select({
-    "@@//:asan_linux_x86_64": ["@clang-linux-x86_64//:lib/clang/22/lib/x86_64-unknown-linux-gnu/libclang_rt.asan.so"],
-    "@@//:asan_linux_aarch64": ["@clang-linux-aarch64//:lib/clang/22/lib/aarch64-unknown-linux-gnu/libclang_rt.asan.so"],
+    "@@//:asan_linux_x86_64": ["@clang-linux-x86_64//:lib/clang/23/lib/x86_64-unknown-linux-gnu/libclang_rt.asan.so"],
+    "@@//:asan_linux_aarch64": ["@clang-linux-aarch64//:lib/clang/23/lib/aarch64-unknown-linux-gnu/libclang_rt.asan.so"],
     "//conditions:default": [],
 }) + select({
     "@@//:asan": ["@@//bazel/internal:lsan-suppressions.txt"],
@@ -29,10 +29,10 @@ def runtime_sanitizer_env(*, preload = True, location_specifier = "location"):
     if preload:
         env |= select({
             "@@//:asan_linux_x86_64": {
-                "LD_PRELOAD": "$({} @clang-linux-x86_64//:lib/clang/22/lib/x86_64-unknown-linux-gnu/libclang_rt.asan.so)".format(location_specifier),
+                "LD_PRELOAD": "$({} @clang-linux-x86_64//:lib/clang/23/lib/x86_64-unknown-linux-gnu/libclang_rt.asan.so)".format(location_specifier),
             },
             "@@//:asan_linux_aarch64": {
-                "LD_PRELOAD": "$({} @clang-linux-aarch64//:lib/clang/22/lib/aarch64-unknown-linux-gnu/libclang_rt.asan.so)".format(location_specifier),
+                "LD_PRELOAD": "$({} @clang-linux-aarch64//:lib/clang/23/lib/aarch64-unknown-linux-gnu/libclang_rt.asan.so)".format(location_specifier),
             },
             "//conditions:default": {},
         })
@@ -279,28 +279,47 @@ def env_for_available_tools(
     for label, key in _TOOLS.items():
         env[key] = build_path(label, lambda x: x)
 
+    # Silence buildifier warnings here, since these are accessed from external repos.
+
     os_specifics = select({
         "@platforms//os:linux": {"LLDB_DEBUGSERVER_PATH": build_path(Label("@llvm-project//lldb:lldb-server"), lambda x: x)},
         "@platforms//os:macos": {"LLDB_DEBUGSERVER_PATH": build_path(Label("@llvm-project//lldb:debugserver"), lambda x: x)},
     }) | select({
-        "@//:linux_aarch64": {"MODULAR_MOJO_MAX_PACKAGE_ROOT": build_path(Label("@@+rebuild_wheel+module_platlib_linux_aarch64//:modular"), lambda x: x)},
-        "@//:linux_x86_64": {"MODULAR_MOJO_MAX_PACKAGE_ROOT": build_path(Label("@@+rebuild_wheel+module_platlib_linux_x86_64//:modular"), lambda x: x)},
-        "@platforms//os:macos": {"MODULAR_MOJO_MAX_PACKAGE_ROOT": build_path(Label("@@+rebuild_wheel+module_platlib_macos_arm64//:modular"), lambda x: x)},
+        # buildifier: disable=canonical-repository
+        "@@//:use_prebuilt_mojo_toolchain_disabled": {},
+        # buildifier: disable=canonical-repository
+        "@@//:linux_aarch64_prebuilt_mojo_toolchain_enabled": {"MODULAR_MOJO_MAX_PACKAGE_ROOT": build_path(Label("@@+rebuild_wheel+module_platlib_linux_aarch64//:modular"), lambda x: x)},
+        # buildifier: disable=canonical-repository
+        "@@//:linux_x86_64_prebuilt_mojo_toolchain_enabled": {"MODULAR_MOJO_MAX_PACKAGE_ROOT": build_path(Label("@@+rebuild_wheel+module_platlib_linux_x86_64//:modular"), lambda x: x)},
+        # buildifier: disable=canonical-repository
+        "@@//:macos_prebuilt_mojo_toolchain_enabled": {"MODULAR_MOJO_MAX_PACKAGE_ROOT": build_path(Label("@@+rebuild_wheel+module_platlib_macos_arm64//:modular"), lambda x: x)},
     })
     if os == "linux_x86_64":
         os_specifics = {
             "LLDB_DEBUGSERVER_PATH": build_path(Label("@llvm-project//lldb:lldb-server"), lambda x: x),
-            "MODULAR_MOJO_MAX_PACKAGE_ROOT": build_path(Label("@@+rebuild_wheel+module_platlib_linux_x86_64//:modular"), lambda x: x),
-        }
+        } | select({
+            # buildifier: disable=canonical-repository
+            "@@//:use_prebuilt_mojo_toolchain_disabled": {},
+            # buildifier: disable=canonical-repository
+            "@@//conditions:default": {"MODULAR_MOJO_MAX_PACKAGE_ROOT": build_path(Label("@@+rebuild_wheel+module_platlib_linux_x86_64//:modular"), lambda x: x)},
+        })
     elif os == "linux_aarch64":
         os_specifics = {
             "LLDB_DEBUGSERVER_PATH": build_path(Label("@llvm-project//lldb:lldb-server"), lambda x: x),
-            "MODULAR_MOJO_MAX_PACKAGE_ROOT": build_path(Label("@@+rebuild_wheel+module_platlib_linux_aarch64//:modular"), lambda x: x),
-        }
+        } | select({
+            # buildifier: disable=canonical-repository
+            "@@//:use_prebuilt_mojo_toolchain_disabled": {},
+            # buildifier: disable=canonical-repository
+            "@@//conditions:default": {"MODULAR_MOJO_MAX_PACKAGE_ROOT": build_path(Label("@@+rebuild_wheel+module_platlib_linux_aarch64//:modular"), lambda x: x)},
+        })
     elif os == "macos":
         os_specifics = {
             "LLDB_DEBUGSERVER_PATH": build_path(Label("@llvm-project//lldb:debugserver"), lambda x: x),
-            "MODULAR_MOJO_MAX_PACKAGE_ROOT": build_path(Label("@@+rebuild_wheel+module_platlib_macos_arm64//:modular"), lambda x: x),
-        }
+        } | select({
+            # buildifier: disable=canonical-repository
+            "@@//:use_prebuilt_mojo_toolchain_disabled": {},
+            # buildifier: disable=canonical-repository
+            "@@//conditions:default": {"MODULAR_MOJO_MAX_PACKAGE_ROOT": build_path(Label("@@+rebuild_wheel+module_platlib_macos_arm64//:modular"), lambda x: x)},
+        })
 
     return env | os_specifics

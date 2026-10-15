@@ -17,7 +17,7 @@ OpCost, TargetCostModel, OpDesc, DepKind, DepEdge, EdgeRule, and
 the annotate_ops helper.
 """
 
-from std.collections import InlineArray
+from std.collections import Array
 from std.collections import List
 
 # =============================================================================
@@ -56,20 +56,21 @@ struct ResourceKind(Equatable, ImplicitlyCopyable, Movable, Writable):
     """Vector ALU: parallel with MMA on CDNA architectures."""
     comptime NONE = Self(255)  # No-op sentinel
 
-    @always_inline
+    @inline(.always)
     def write_to(self, mut writer: Some[Writer]):
-        if self == Self.GLOBAL_MEM:
-            writer.write("GLOBAL_MEM")
-        elif self == Self.LDS:
-            writer.write("LDS")
-        elif self == Self.MMA_UNIT:
-            writer.write("MMA_UNIT")
-        elif self == Self.VALU:
-            writer.write("VALU")
-        elif self == Self.SCALAR:
-            writer.write("SCALAR")
-        else:
-            writer.write("NONE")
+        match self:
+            case .GLOBAL_MEM:
+                writer.write("GLOBAL_MEM")
+            case .LDS:
+                writer.write("LDS")
+            case .MMA_UNIT:
+                writer.write("MMA_UNIT")
+            case .VALU:
+                writer.write("VALU")
+            case .SCALAR:
+                writer.write("SCALAR")
+            case _:
+                writer.write("NONE")
 
 
 # =============================================================================
@@ -122,13 +123,60 @@ trait ScheduleOps(Equatable):
 
 
 @fieldwise_init
-struct _Ops(ScheduleOps):
+struct _Ops(EnumLike, ScheduleOps):
     """Framework-internal concrete ScheduleOps for accessing default tag values.
 
     Kernels should not use this; define your own conforming struct instead.
     """
 
     var value: Int
+
+    # Op tags are open-ended Ints (`OpDesc.tag` interchange): a tag value
+    # outside the named cases must stay reachable, so the enum is not
+    # exhaustive and unknown tags map to discriminant -1.
+    comptime _enum_is_exhaustive = False
+
+    comptime _enum_case_names = ParameterList.of[
+        "BARRIER".value,
+        "WAIT_VM".value,
+        "WAIT_LGKM".value,
+        "SET_PRIO".value,
+        "SCHEDULE_BARRIER".value,
+        "SCHED_GROUP_BARRIER".value,
+        "NONE".value,
+    ].values
+
+    comptime _enum_case_types = TypeList.splat[
+        ParameterList[Self._enum_case_names].size, NoneType
+    ].values
+
+    @inline(.always)
+    def _get_enum_discriminant(self) -> Int:
+        match self.value:
+            case Self.BARRIER.value:
+                return 0
+            case Self.WAIT_VM.value:
+                return 1
+            case Self.WAIT_LGKM.value:
+                return 2
+            case Self.SET_PRIO.value:
+                return 3
+            case Self.SCHEDULE_BARRIER.value:
+                return 4
+            case Self.SCHED_GROUP_BARRIER.value:
+                return 5
+            case Self.NONE.value:
+                return 6
+            case _:
+                return -1
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        comptime assert False, "_Ops has no payload"
 
 
 # =============================================================================
@@ -152,7 +200,7 @@ struct KOffsetKind(Equatable, ImplicitlyCopyable, Movable):
     comptime K_PREV = Self(3)  # k - 1*BK (previous iteration's stage 1)
     comptime NONE = Self(255)  # Not applicable (non-load ops)
 
-    @always_inline
+    @inline(.always)
     def signed_bk_multiple(self) -> Int:
         """Return the signed BK multiplier (K_PREV=3 maps to -1)."""
         return -1 if self.bk_multiple == 3 else self.bk_multiple
@@ -164,7 +212,7 @@ struct KOffsetKind(Equatable, ImplicitlyCopyable, Movable):
 
 
 @fieldwise_init
-struct Phase(Equatable, ImplicitlyCopyable, Movable):
+struct Phase(EnumLike, Equatable, ImplicitlyCopyable, Movable):
     """Which phase of the pipeline an entry belongs to."""
 
     var _value: Int
@@ -173,6 +221,28 @@ struct Phase(Equatable, ImplicitlyCopyable, Movable):
     comptime KERNEL = Self(1)
     comptime EPILOGUE = Self(2)
 
+    comptime _enum_case_names = ParameterList.of[
+        "PROLOGUE".value,
+        "KERNEL".value,
+        "EPILOGUE".value,
+    ].values
+
+    comptime _enum_case_types = TypeList.splat[
+        ParameterList[Self._enum_case_names].size, NoneType
+    ].values
+
+    @inline(.always)
+    def _get_enum_discriminant(self) -> Int:
+        return Int(self._value)
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        comptime assert False, "Phase has no payload"
+
 
 # =============================================================================
 # Operation Role
@@ -180,11 +250,12 @@ struct Phase(Equatable, ImplicitlyCopyable, Movable):
 
 
 @fieldwise_init
-struct OpRole(Equatable, ImplicitlyCopyable, Movable):
+struct OpRole(EnumLike, Equatable, ImplicitlyCopyable, Movable):
     """Role of an operation in the pipeline data flow.
 
     Classifies ops for automatic phase derivation (prologue, epilogue, etc.).
-    Set at OpDesc construction time by factory methods.
+    Set at OpDesc construction time by factory methods. Conforms to
+    `EnumLike` so ops can be dispatched with `match` over `.CASE` arms.
     """
 
     var _value: Int
@@ -198,6 +269,37 @@ struct OpRole(Equatable, ImplicitlyCopyable, Movable):
     comptime VALU_COMPUTE = Self(6)  # VALU compute (softmax, exp2, reductions)
     """Vector ALU compute (softmax, exp2, reductions)."""
     comptime NONE = Self(255)  # sentinel
+
+    # Arbitrary backing values (and the 255 sentinel) exist outside the
+    # named cases, so the enum is not exhaustive.
+    comptime _enum_is_exhaustive = False
+
+    comptime _enum_case_names = ParameterList.of[
+        "GLOBAL_LOAD".value,
+        "SHARED_STORE".value,
+        "FRAGMENT_LOAD".value,
+        "COMPUTE".value,
+        "SYNC".value,
+        "FENCE".value,
+        "VALU_COMPUTE".value,
+        "NONE".value,
+    ].values
+
+    comptime _enum_case_types = TypeList.splat[
+        ParameterList[Self._enum_case_names].size, NoneType
+    ].values
+
+    @inline(.always)
+    def _get_enum_discriminant(self) -> Int:
+        return 7 if self._value == 255 else self._value
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        comptime assert False, "OpRole has no payload"
 
 
 # =============================================================================
@@ -224,7 +326,7 @@ struct OpCost(ImplicitlyCopyable, Movable):
     var vgpr_kill: Int
     """VGPRs this op releases (last use of some register buffer)."""
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self,
         resource: ResourceKind,
@@ -276,10 +378,13 @@ struct TargetCostModel(ImplicitlyCopyable, Movable):
     ```
     """
 
-    var _costs: InlineArray[OpCost, 128]
+    var _costs: Array[OpCost, 128]
 
     def __init__(out self):
-        self._costs = InlineArray[OpCost, 128](fill=OpCost.none())
+        self._costs = Array[OpCost, 128](fill=OpCost.none())
+
+    def __init__(out self, *, copy: Self):
+        self._costs = copy._costs.copy()
 
     def set_cost(mut self, tag: Int, cost: OpCost):
         """Register a cost annotation for a kernel op tag (0-127).
@@ -337,7 +442,7 @@ struct OpDesc(ImplicitlyCopyable, Movable):
     var vgpr_kill: Int
     """VGPRs this op releases (last use of some register buffer)."""
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self,
         *,
@@ -369,7 +474,7 @@ struct OpDesc(ImplicitlyCopyable, Movable):
         self.vgpr_def = vgpr_def
         self.vgpr_kill = vgpr_kill
 
-    @always_inline
+    @inline(.always)
     def is_present(self) -> Bool:
         """True if this is a real op (not the NONE sentinel)."""
         return self.tag != _Ops.NONE.value
@@ -377,7 +482,7 @@ struct OpDesc(ImplicitlyCopyable, Movable):
     # --- Kernel op factory ---
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def op(
         tag: Int,
         resource: ResourceKind,
@@ -444,7 +549,7 @@ struct OpDesc(ImplicitlyCopyable, Movable):
     # --- Logical op factory (for use with TargetCostModel) ---
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def logical(
         tag: Int,
         *,
@@ -664,7 +769,7 @@ struct DepEdge(ImplicitlyCopyable, Movable):
     var loop_distance: Int
     """Loop iterations between producer and consumer (`0` = same iteration)."""
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self,
         producer_idx: Int,

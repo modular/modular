@@ -13,21 +13,20 @@
 
 import extensibility
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.math import iota
 from std.sys import align_of, size_of
 
-from std.algorithm import parallelize_over_rows
+from max.algorithm import parallelize_over_rows
 from std.bit import log2_floor
-from std.gpu import (
+from max.gpu import (
     WARP_SIZE,
-    barrier,
-    block_dim,
     block_idx,
     thread_idx,
 )
-from std.gpu.primitives import warp
-from std.gpu.memory import AddressSpace, external_memory
+from max.gpu.sync import barrier
+from max.gpu.primitives import warp
+from max.gpu.memory import external_memory
 from std.collections import Span
 
 from extensibility import InputTensor, OutputTensor
@@ -37,15 +36,18 @@ from std.utils.numerics import min_or_neg_inf
 
 @fieldwise_init
 struct TopKElement[T: DType](Comparable, TrivialRegisterPassable):
-    """Stores the value with it's index."""
+    """Stores a value, its index, and whether it remains eligible."""
 
     var idx: Int32
     var val: Scalar[Self.T]
+    var active: UInt32
 
     def __eq__(self, rhs: Self) -> Bool:
-        return self.val == rhs.val
+        return self.active == rhs.active and self.val == rhs.val
 
     def __lt__(self, rhs: Self) -> Bool:
+        if self.active != rhs.active:
+            return self.active < rhs.active
         return self.val < rhs.val
 
 
@@ -67,7 +69,7 @@ struct TopK:
         target: StaticString,
     ](
         out_vals: OutputTensor[dtype=dtype, rank=rank, ...],
-        out_idxs: OutputTensor[dtype=DType.int32, rank=rank, ...],
+        out_idxs: OutputTensor[dtype=.int32, rank=rank, ...],
         in_vals: InputTensor[dtype=dtype, rank=rank, ...],
         ctx: DeviceContext,
     ) raises:
@@ -80,11 +82,10 @@ struct TopK:
         var batch_size = shape[0]
         var dev_ctx = ctx
 
-        var out_vals_tensor = out_vals.to_layout_tensor()
-        var out_idxs_tensor = out_idxs.to_layout_tensor()
-        var in_vals_tensor = in_vals.to_layout_tensor()
+        var out_vals_tensor = out_vals.to_tile_tensor()
+        var out_idxs_tensor = out_idxs.to_tile_tensor()
+        var in_vals_tensor = in_vals.to_tile_tensor().as_imm()
 
-        @parameter
         def top_k_gpu[
             K: Int,
         ](
@@ -92,23 +93,35 @@ struct TopK:
             out_idxs: type_of(out_idxs_tensor),
             in_vals: type_of(in_vals_tensor),
         ):
+            comptime assert out_vals.flat_rank == 2
+            comptime assert out_idxs.flat_rank == 2
+            comptime assert in_vals.flat_rank == 2
             var bid = block_idx.x
             var tid = thread_idx.x
 
             # Get a pointer to shared memory for the indices and values
             var top_k_sram = external_memory[
                 TopKElement[dtype],
-                address_space=AddressSpace.SHARED,
+                address_space=.SHARED,
                 alignment=align_of[TopKElement[dtype]](),
             ]()
 
-            # Threads put their corresponding index and value into shared memory
-            top_k_sram[tid] = TopKElement(Int32(tid), in_vals[bid, tid][0])
+            # Every lane participates in the full-warp shuffle, but only K
+            # lanes contain candidates. Eligibility is separate from the value
+            # so legitimate negative infinity remains selectable.
+            var value = min_or_neg_inf[dtype]()
+            var active = UInt32(0)
+            if tid < K:
+                value = in_vals[bid, tid][0]
+                active = 1
+            top_k_sram[unsafe_offset=tid] = TopKElement(
+                Int32(tid), value, active
+            )
             # Finish packing the values across threads in this block
             barrier()
 
             comptime for i in range(K):
-                var reduced = top_k_sram[tid]
+                var reduced = top_k_sram[unsafe_offset=tid]
                 comptime limit = log2_floor(WARP_SIZE)
 
                 # TODO(KERN-1544): `gpu.shuffle.warp_max` support index/value
@@ -120,8 +133,10 @@ struct TopK:
                     var shuffled = TopKElement(
                         warp.shuffle_down(reduced.idx, UInt32(offset)),
                         warp.shuffle_down(reduced.val, UInt32(offset)),
+                        warp.shuffle_down(reduced.active, UInt32(offset)),
                     )
-                    reduced = max(reduced, shuffled)
+                    if tid + offset < WARP_SIZE:
+                        reduced = max(reduced, shuffled)
 
                 # Wait for all threads to finish reducing their values
                 barrier()
@@ -133,8 +148,10 @@ struct TopK:
                     out_idxs[bid, i] = reduced.idx
 
                     # Remove found maximum from consideration in the next iter
-                    var index = reduced.idx % Int32(block_dim.x)
-                    top_k_sram[index].val = min_or_neg_inf[dtype]()
+                    top_k_sram[unsafe_offset=reduced.idx].active = 0
+
+                # Retirement must be visible before the next candidate reload.
+                barrier()
 
         comptime if target == "gpu":
             dev_ctx.enqueue_function[top_k_gpu[K]](
@@ -142,30 +159,36 @@ struct TopK:
                 out_idxs_tensor,
                 in_vals_tensor,
                 grid_dim=batch_size,  # One block per batch
-                block_dim=K,  # One thread per K
-                shared_mem_bytes=K * size_of[TopKElement[dtype]](),
+                block_dim=WARP_SIZE,
+                shared_mem_bytes=WARP_SIZE * size_of[TopKElement[dtype]](),
             )
         else:
 
-            @parameter
-            def top_k_cpu(start_idx: Int, end_idx: Int):
+            def top_k_cpu(start_idx: Int, end_idx: Int) {imm}:
                 for row_idx in range(start_idx, end_idx):
                     var offset = row_idx * K
-                    iota(out_idxs.unsafe_ptr() + offset, K)
+                    iota(out_idxs.unsafe_ptr().unsafe_offset(offset), K)
 
-                    @parameter
-                    def val_greater_than(lhs: Int32, rhs: Int32) -> Bool:
+                    def val_greater_than(
+                        lhs: Int32, rhs: Int32
+                    ) {in_vals, row_idx} -> Bool:
                         return (
                             in_vals[row_idx, Int(lhs)]
                             > in_vals[row_idx, Int(rhs)]
                         )
 
-                    sort[val_greater_than](
-                        Span(ptr=out_idxs.unsafe_ptr() + offset, length=K)
+                    sort(
+                        Span(
+                            unsafe_ptr=out_idxs.unsafe_ptr().unsafe_offset(
+                                offset
+                            ),
+                            length=K,
+                        ),
+                        val_greater_than,
                     )
 
                     for i in range(K):
                         var sorted_idx = Int(out_idxs[row_idx, i])
                         out_vals[row_idx, i] = in_vals[row_idx, sorted_idx]
 
-            parallelize_over_rows[top_k_cpu](shape, axis=1, grain_size=1)
+            parallelize_over_rows(top_k_cpu, shape, axis=1, grain_size=1)

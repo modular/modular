@@ -21,7 +21,7 @@ encode/decode/session-build tasks for the lifetime of the `TokenizerPool`.
 
 Use as a context manager so the pool is closed and joined deterministically
 on exit. Worker processes are created lazily on the first encode/decode/map
-call, so constructing a `TokenizerPool` you never use (e.g. when a dry-run
+call, so constructing a `TokenizerPool` you never use (such as when a dry-run
 test mocks out the dataset method) is free.
 """
 
@@ -34,6 +34,7 @@ import os
 from collections.abc import Callable, Iterable
 from typing import TypeVar
 
+from tqdm import tqdm
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
 _T = TypeVar("_T")
@@ -43,6 +44,11 @@ _R = TypeVar("_R")
 # spawned worker process starts. Reads via `worker_tokenizer()` from inside
 # worker callables (e.g. the multiturn session builder).
 _WORKER_TOK: PreTrainedTokenizerBase | None = None
+
+# Architectures resolved once in the parent and forwarded to each worker via
+# `_init_encoder`, so `_default_loader` can skip the redundant (and noisy)
+# per-worker `AutoConfig` Hub lookup. `None` means "resolve in the worker".
+_WORKER_ARCHITECTURES: list[str] | None = None
 
 
 def _default_loader(
@@ -59,6 +65,7 @@ def _default_loader(
         revision=revision,
         model_max_length=model_max_length,
         trust_remote_code=trust_remote_code,
+        architectures=_WORKER_ARCHITECTURES,
     )
 
 
@@ -72,6 +79,7 @@ def _init_encoder(
     model_max_length: int | None,
     trust_remote_code: bool,
     revision: str | None,
+    architectures: list[str] | None,
     loader: _LoaderFn,
     log_queue: mp.Queue[logging.LogRecord],
     log_level: int,
@@ -85,10 +93,27 @@ def _init_encoder(
     root.setLevel(log_level)
     root.handlers.clear()
     root.addHandler(logging.handlers.QueueHandler(log_queue))
+    global _WORKER_ARCHITECTURES
+    _WORKER_ARCHITECTURES = architectures
     global _WORKER_TOK
-    _WORKER_TOK = loader(
-        name_or_path, model_max_length, trust_remote_code, revision
-    )
+    try:
+        _WORKER_TOK = loader(
+            name_or_path, model_max_length, trust_remote_code, revision
+        )
+    except Exception as exc:
+        # A worker's tokenizer load can fail under HF_HUB_OFFLINE (e.g. a
+        # remote-code file this worker's cache race didn't pick up in time).
+        # The pool's worker-handler thread already tolerates a dead worker
+        # by spawning a replacement while survivors drain the task queue, so
+        # let this worker exit -- but via `SystemExit`, which
+        # `BaseProcess._bootstrap` handles without dumping a raw traceback
+        # to stderr, unlike a plain exception escaping the initializer.
+        logging.getLogger(__name__).warning(
+            "Worker failed to load tokenizer %r, exiting worker: %s",
+            name_or_path,
+            exc,
+        )
+        raise SystemExit(1) from None
 
 
 def _encode_len(text: str) -> int:
@@ -114,7 +139,7 @@ def _decode_text(ids: list[int]) -> str:
 def worker_tokenizer() -> PreTrainedTokenizerBase:
     """Return the tokenizer loaded inside the current worker process.
 
-    Worker callables that need direct tokenizer access (e.g. the multiturn
+    Worker callables that need direct tokenizer access (such as the multiturn
     session builder) call this to read the worker-local tokenizer instance.
     """
     assert _WORKER_TOK is not None
@@ -136,6 +161,9 @@ class TokenizerPool:
 
     Worker processes are spawned lazily on the first encode/decode/map
     call. Constructing a pool you never use is free.
+
+    Each encode/decode/map call shows a progress bar on stderr unless
+    `disable_tqdm` is set.
     """
 
     def __init__(
@@ -143,8 +171,10 @@ class TokenizerPool:
         tokenizer: PreTrainedTokenizerBase,
         *,
         loader: _LoaderFn | None = None,
+        disable_tqdm: bool = False,
     ) -> None:
         self.tokenizer = tokenizer
+        self._disable_tqdm = disable_tqdm
         # Make sure to always leave at least one core free for the main thread.
         # If the core count is unknown, limit to 1 core only.
         cpu_count = os.cpu_count()
@@ -201,6 +231,12 @@ class TokenizerPool:
             )
             self._log_listener.start()
             revision = getattr(self.tokenizer, "_resolved_revision", None)
+            # Forward the parent's resolved architectures so workers skip the
+            # redundant (and, when the Hub is unreachable, noisy) AutoConfig
+            # probe. `None` leaves each worker to resolve them itself.
+            architectures = getattr(
+                self.tokenizer, "_resolved_architectures", None
+            )
             # huggingface_hub caches HF_HUB_OFFLINE at import time, so set it
             # before spawning workers (not inside the initializer — too late).
             # Restore the parent's env afterward so we don't leak this global
@@ -216,6 +252,7 @@ class TokenizerPool:
                         self.tokenizer.model_max_length,
                         True,
                         revision,
+                        architectures,
                         self._loader,
                         log_queue,
                         root.level,
@@ -229,32 +266,52 @@ class TokenizerPool:
         return self._pool
 
     def _chunksize(self, n: int) -> int:
-        return max(1, n // (self._workers * 4))
+        # Capped so the progress bar advances steadily instead of in a few
+        # large jumps; 64 items per chunk already amortizes the IPC cost.
+        return max(1, min(n // (self._workers * 4), 64))
 
-    def encode_lens(self, texts: list[str]) -> list[int]:
+    def encode_lens(
+        self, texts: list[str], desc: str = "tokenizing"
+    ) -> list[int]:
         """Encode each text and return only its token count.
 
         Workload is fanned out across the pool's workers.
         """
-        return self.map(_encode_len, texts)
+        return self.map(_encode_len, texts, desc=desc)
 
-    def decode_texts(self, id_lists: list[list[int]]) -> list[str]:
+    def decode_texts(
+        self, id_lists: list[list[int]], desc: str = "detokenizing"
+    ) -> list[str]:
         """Decode each token-id list to text.
 
         Workload is fanned out across the pool's workers.
         """
-        return self.map(_decode_text, id_lists)
+        return self.map(_decode_text, id_lists, desc=desc)
 
-    def map(self, fn: Callable[[_T], _R], items: Iterable[_T]) -> list[_R]:
+    def map(
+        self,
+        fn: Callable[[_T], _R],
+        items: Iterable[_T],
+        desc: str | None = None,
+    ) -> list[_R]:
         """Run `fn` across the pool for every element of `items`.
 
-        Used by coarser per-task workers (e.g. session builders) that
-        access their tokenizer via `worker_tokenizer()`.
+        Used by coarser per-task workers (such as session builders) that
+        access their tokenizer via `worker_tokenizer()`. Results keep the
+        order of `items`; `desc` labels the progress bar.
         """
         items_list = list(items)
         if not items_list:
             return []
         pool = self._ensure_pool()
-        return pool.map(
+        results = pool.imap(
             fn, items_list, chunksize=self._chunksize(len(items_list))
+        )
+        return list(
+            tqdm(
+                results,
+                total=len(items_list),
+                desc=desc,
+                disable=self._disable_tqdm,
+            )
         )

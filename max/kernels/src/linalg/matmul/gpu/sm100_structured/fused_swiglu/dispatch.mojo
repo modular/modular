@@ -18,10 +18,9 @@ etc.).
 """
 
 from std.math import align_up
-from std.gpu.host import DeviceContext
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.primitives.grid_controls import PDLLevel
-from layout import Coord, Idx, TileTensor, row_major
+from max.gpu.host import DeviceContext
+from max.gpu.primitives.grid_controls import PDLLevel
+from layout import Idx, TileTensor, row_major
 from std.collections import OptionalReg
 
 from std.utils.index import Index
@@ -42,13 +41,11 @@ def matmul_swiglu_dispatch_sm100[
     config: FusedSwiGLUMatmulConfig[_, _, _, True],
     pdl_level: PDLLevel = PDLLevel(0),
 ](
-    c_out: TileTensor[mut=True, DType.bfloat16, ...],
-    a: TileTensor[mut=False, DType.bfloat16, ...],
-    b: TileTensor[mut=False, DType.bfloat16, ...],
+    c_out: TileTensor[mut=True, .bfloat16, ...],
+    a: TileTensor[mut=False, .bfloat16, ...],
+    b: TileTensor[mut=False, .bfloat16, ...],
     ctx: DeviceContext,
-    bias_ptr: OptionalReg[
-        UnsafePointer[Scalar[DType.bfloat16], ImmutAnyOrigin]
-    ] = None,
+    bias_ptr: OptionalReg[UnsafePointer[BFloat16, ImmutAnyOrigin]] = None,
 ) raises:
     """Dispatch fused GEMM+SwiGLU to SM100 kernel with given config.
 
@@ -73,7 +70,8 @@ def matmul_swiglu_dispatch_sm100[
         bias_ptr: Optional [N=2H] BF16 bias (interleaved gate/up pairs).
               Ignored when ``config.use_bias`` is False.
     """
-    # When config.use_bias=False, c_out.ptr is a valid dummy (bias never accessed).
+    # When config.use_bias=False, c_out.ptr is a valid dummy (bias never
+    # accessed).
     var bias_ptr_c = rebind[
         UnsafePointer[Scalar[config.c_type], ImmutAnyOrigin]
     ](c_out.ptr)
@@ -81,7 +79,7 @@ def matmul_swiglu_dispatch_sm100[
         bias_ptr_c = rebind[
             UnsafePointer[Scalar[config.c_type], ImmutAnyOrigin]
         ](bias_ptr.value())
-    var bias_tile = TileTensor(bias_ptr_c, row_major(Coord(Int(b.dim[0]()))))
+    var bias_tile = TileTensor(bias_ptr_c, row_major(Int(b.dim[0]())))
     comptime if config.AB_swapped:
         # Swap inputs so the kernel sees A = W (b) and B = X (a). The
         # inner implementation reads kernel-frame M from a_device.dim[0]
@@ -107,9 +105,7 @@ def matmul_swiglu_dispatch_sm100_bf16[
     a: TileTensor[...],
     b: TileTensor[...],
     ctx: DeviceContext,
-    bias_ptr: OptionalReg[
-        UnsafePointer[Scalar[DType.bfloat16], ImmutAnyOrigin]
-    ] = None,
+    bias_ptr: OptionalReg[UnsafePointer[BFloat16, ImmutAnyOrigin]] = None,
 ) raises:
     """Auto-dispatch fused GEMM+SwiGLU on SM100 using shape-based tuning table.
 
@@ -140,23 +136,20 @@ def matmul_swiglu_dispatch_sm100_bf16[
     comptime static_N = b.static_shape[0]
     comptime static_K = b.static_shape[1]
     # When has_bias=False, c_out.ptr is a valid dummy (bias never accessed).
-    var bias_base = rebind[
-        UnsafePointer[Scalar[DType.bfloat16], ImmutAnyOrigin]
-    ](c_out.ptr)
+    var bias_base = rebind[UnsafePointer[BFloat16, ImmutAnyOrigin]](c_out.ptr)
     comptime if has_bias:
         bias_base = bias_ptr.value()
-    var bias_tile = TileTensor(bias_base, row_major(Coord(Idx[static_N])))
+    var bias_tile = TileTensor(bias_base, row_major(Idx[static_N]))
     comptime assert static_N % 2 == 0, "N must be even for SwiGLU gate/up split"
 
     comptime tuning_table = Table(
         _get_tuning_list_swiglu_bf16(), "swiglu_bf16_tuning"
     )
 
-    @always_inline
-    def rule_nk(x: TuningConfigSwiGLU) {} -> Bool:
-        return x.N == static_N and x.K == static_K
-
-    comptime nk_configs = tuning_table.find(rule=rule_nk)
+    comptime nk_configs = tuning_table.find(
+        rule=lambda (x: TuningConfigSwiGLU) -> Bool: x.N == static_N
+        and x.K == static_K
+    )
 
     comptime for tc in nk_configs:
         if m >= tc.M and m < tc.M_end:

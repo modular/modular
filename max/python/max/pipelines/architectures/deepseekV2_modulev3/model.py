@@ -15,18 +15,15 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
-from dataclasses import dataclass, field
-from typing import Any, ClassVar, cast
+from typing import Any, ClassVar
 
-from max.driver import Buffer, Device, DeviceSpec
+from max import tree
+from max.driver import Device, DeviceSpec
 from max.dtype import DType
 from max.engine.api import InferenceSession
 from max.graph import DeviceRef
 from max.graph.weights import SafetensorWeights, Weights, WeightsAdapter
-from max.nn.kv_cache import (
-    KVCacheParamInterface,
-)
+from max.nn.kv_cache import KVCacheParamInterface
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
@@ -35,27 +32,18 @@ from max.pipelines.lib import (
     ModelOutputs,
     ModuleV3PipelineModelWithKVCache,
     PipelineConfig,
-    upper_bounded_default,
 )
 from max.pipelines.lib.log_probabilities import LogProbabilitiesMixin
+from max.pipelines.lib.memory_estimation import MemoryPlan
 from transformers import AutoConfig
 from typing_extensions import override
 
 from .batch_processor import DeepseekV2ModuleV3BatchProcessor
 from .deepseekV2 import DeepseekV2
+from .inputs import DeepseekV2Inputs
 from .model_config import DeepseekV2Config
 
 logger = logging.getLogger("max.pipelines")
-
-
-@dataclass
-class DeepseekV2Inputs(ModelInputs):
-    """Inputs for the DeepseekV2 model."""
-
-    tokens: Buffer
-    input_row_offsets: Buffer
-
-    return_n_logits: Buffer = field(kw_only=True)
 
 
 class DeepseekV2Model(
@@ -66,8 +54,6 @@ class DeepseekV2Model(
         DeepseekV2ModuleV3BatchProcessor
     )
 
-    model: Callable[..., Any]
-
     def __init__(
         self,
         pipeline_config: PipelineConfig,
@@ -75,6 +61,8 @@ class DeepseekV2Model(
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
+        *,
+        memory_plan: MemoryPlan,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.ALL,
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
@@ -89,13 +77,12 @@ class DeepseekV2Model(
             devices,
             kv_cache_config,
             weights,
-            adapter,
-            return_logits,
-            return_hidden_states,
+            adapter=adapter,
+            return_logits=return_logits,
+            return_hidden_states=return_hidden_states,
             max_batch_size=max_batch_size,
+            memory_plan=memory_plan,
         )
-
-        self.model = self.load_model()
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         assert isinstance(model_inputs, DeepseekV2Inputs)
@@ -106,18 +93,9 @@ class DeepseekV2Model(
             model_inputs.tokens,
             model_inputs.return_n_logits,
             model_inputs.input_row_offsets,
-            *curr_kv_cache_inputs.flatten(),
+            *tree.leaves(curr_kv_cache_inputs),
         )
-        if len(model_outputs) == 3:
-            return ModelOutputs(
-                logits=cast(Buffer, model_outputs[1].driver_tensor),
-                next_token_logits=cast(Buffer, model_outputs[0].driver_tensor),
-                logit_offsets=cast(Buffer, model_outputs[2].driver_tensor),
-            )
-        return ModelOutputs(
-            logits=cast(Buffer, model_outputs[0].driver_tensor),
-            next_token_logits=cast(Buffer, model_outputs[0].driver_tensor),
-        )
+        return self._to_model_outputs(model_outputs)
 
     @classmethod
     def get_kv_params(
@@ -136,23 +114,6 @@ class DeepseekV2Model(
             cache_dtype=cache_dtype,
         )
 
-    @classmethod
-    def calculate_max_seq_len(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        try:
-            return upper_bounded_default(
-                upper_bound=huggingface_config.max_position_embeddings,
-                default=pipeline_config.model.max_length,
-            )
-        except ValueError as e:
-            raise ValueError(
-                "Unable to infer max_length for DeepseekV2, the provided "
-                f"max_length ({pipeline_config.model.max_length}) exceeds the "
-                f"model's max_seq_len "
-                f"({huggingface_config.max_position_embeddings})."
-            ) from e
-
     @override
     def _load_state_dict(self) -> dict[str, Any]:
         if not isinstance(self.weights, SafetensorWeights):
@@ -164,9 +125,11 @@ class DeepseekV2Model(
     @override
     def _create_model_config(self, state_dict: dict[str, Any]) -> Any:
         del state_dict
-        model_config = DeepseekV2Config.initialize(self.pipeline_config)
+        model_config = DeepseekV2Config.initialize(
+            self.pipeline_config, max_seq_len=self.max_seq_len
+        )
         model_config.max_batch_context_length = (
-            self.pipeline_config.runtime.max_batch_total_tokens
+            self.planned_max_batch_total_tokens
             or model_config.max_batch_context_length
         )
         return model_config

@@ -16,12 +16,11 @@ from std.math import erf
 from std.math.uutils import ufloordiv, udivmod
 from std.sys.info import is_nvidia_gpu, simd_width_of
 
-import std.gpu.primitives.warp as warp
-from std.algorithm.functional import elementwise
+import max.gpu.primitives.warp as warp
+from max.algorithm.functional import elementwise
 from std.bit import log2_floor
-from std.gpu import (
+from max.gpu import (
     WARP_SIZE,
-    barrier,
     thread_idx,
     block_dim,
     block_idx,
@@ -29,13 +28,13 @@ from std.gpu import (
     lane_id,
     warp_id,
 )
-from std.gpu.host import DeviceContext, get_gpu_target
-from std.gpu.host.compile import _compile_code
-from std.memory import memset_zero, stack_allocation
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host.compile import _compile_code
+from std.memory import unsafe_memset_zero, unsafe_stack_allocation
 from std.testing import *
 
 from std.utils.coord import Coord
-from std.utils.index import IndexList
 
 # ===-----------------------------------------------------------------------===#
 # Check parameterization
@@ -54,17 +53,21 @@ def parameterized_on_cuda() -> Int:
         return -1
 
 
-@always_inline
+@inline(.always)
 def _verify_parameterized_on_cuda(asm: StringSlice) raises -> None:
     assert_true("test_cuda_target_parameterized" in asm)
 
     # Now make sure that we have something like this:
     #     st.param.b64 	[func_retval0], 42;
-    instruction_start_loc = asm.find("st.param.b64")
+    # PTX ISA 8.3+ spells the function-param state space explicitly, so newer
+    # targets emit `st.param::func.b64` for the same store.
+    var instruction_start_loc = asm.find("st.param.b64")
+    if instruction_start_loc < 0:
+        instruction_start_loc = asm.find("st.param::func.b64")
     assert_true(instruction_start_loc >= 0)  # Assert it's present
-    instruction_end_loc = asm.find(";", instruction_start_loc)
+    var instruction_end_loc = asm.find(";", instruction_start_loc)
     assert_true(instruction_end_loc >= 0)
-    instruction_str = asm[byte=instruction_start_loc:instruction_end_loc]
+    var instruction_str = asm[byte=instruction_start_loc:instruction_end_loc]
     # Make sure 42 appears somewhere in the instruction
     assert_true("42" in instruction_str)
 
@@ -92,7 +95,7 @@ def hello_mojo():
     _printf["Hello"]()
 
 
-@always_inline
+@inline(.always)
 def _verify_hello(asm: StringSlice) raises -> None:
     assert_true("test_cuda_target_hello_mojo" in asm)
     assert_true("vprintf" in asm)
@@ -114,13 +117,13 @@ def test_hello_mojo_sm90() raises:
 
 
 def erf_elementwise(
-    buf: UnsafePointer[Float32, MutAnyOrigin], len: Int, ctx: DeviceContext
+    buf: MutPointer[Float32, MutAnyOrigin], len: Int, ctx: DeviceContext
 ) raises:
     # Each thread will process 4 * simd_width elements.
     comptime granularity = 4 * simd_width_of[DType.float32]()
     var tid = granularity * global_idx.x
 
-    @always_inline
+    @inline(.always)
     def func[simd_width: Int, alignment: Int = 1](idx: Coord) {var}:
         var offset = tid + Int(idx[0].value())
         if offset >= len:
@@ -158,7 +161,7 @@ def test_erf_elementwise_sm90() raises:
 # ===-----------------------------------------------------------------------===#
 
 
-def erf_kernel(buf: UnsafePointer[Float32, MutAnyOrigin], len: Int):
+def erf_kernel(buf: MutPointer[Float32, MutAnyOrigin], len: Int):
     var tid = thread_idx.x + block_dim.y * block_idx.y
 
     if tid >= len:
@@ -167,7 +170,7 @@ def erf_kernel(buf: UnsafePointer[Float32, MutAnyOrigin], len: Int):
     buf[tid] = erf(buf[tid])
 
 
-@always_inline
+@inline(.always)
 def _verify_erf_kernel(asm: StringSlice) raises -> None:
     assert_true("erf_kernel" in asm)
     assert_true("tid.x" in asm)
@@ -191,14 +194,12 @@ def test_erf_kernel_sm90() raises:
 
 
 def test_shared_stack_allocation() -> (
-    UnsafePointer[Int8, MutUntrackedOrigin, address_space=AddressSpace.SHARED]
+    MutPointer[Int8, MutUntrackedOrigin, address_space=.SHARED]
 ):
-    return stack_allocation[
-        999, DType.int8, 8, address_space=AddressSpace.SHARED
-    ]()
+    return unsafe_stack_allocation[999, DType.int8, 8, address_space=.SHARED]()
 
 
-@always_inline
+@inline(.always)
 def _verify_shared_stack_allocation(asm: StringSlice) raises -> None:
     assert_true("test_cuda_target_test_shared_" in asm)
     assert_true(".shared .align 8 .b8" in asm)
@@ -227,7 +228,7 @@ def test_barrier():
     barrier()
 
 
-@always_inline
+@inline(.always)
 def _verify_barrier(asm: StringSlice) raises -> None:
     assert_true("barrier" in asm)
     assert_true("bar.sync 	0" in asm)
@@ -253,9 +254,9 @@ def test_barrier_sm90() raises:
 
 
 def gemm(
-    c: UnsafePointer[Float32, MutAnyOrigin],
-    a: UnsafePointer[Float32, ImmutAnyOrigin],
-    b: UnsafePointer[Float32, ImmutAnyOrigin],
+    c: MutPointer[Float32, MutAnyOrigin],
+    a: ImmPointer[Float32, ImmutAnyOrigin],
+    b: ImmPointer[Float32, ImmutAnyOrigin],
     m: Int,
     n: Int,
     k: Int,
@@ -274,26 +275,23 @@ def gemm(
     comptime TILE_SZ_RATIO = TILE_SZ_A // TILE_SZ_B
 
     # Utilities for accessing flattened matrices.
-    @always_inline
-    @parameter
-    def get_a(row: Int, col: Int) -> Float32:
+    @inline(.always)
+    def get_a(row: Int, col: Int) {imm} -> Float32:
         return a.load(row + m * col)
 
-    @always_inline
-    @parameter
-    def get_b(row: Int, col: Int) -> Float32:
+    @inline(.always)
+    def get_b(row: Int, col: Int) {imm} -> Float32:
         return b.load(row * n + col)
 
-    @always_inline
-    @parameter
-    def set_c(row: Int, col: Int, val: Float32):
+    @inline(.always)
+    def set_c(row: Int, col: Int, val: Float32) {imm}:
         c[row + col * m] = val
 
     # Allocate B array into shared memory for tiling.
-    var b_shared = stack_allocation[
+    var b_shared = unsafe_stack_allocation[
         TILE_SZ_RATIO * TILE_SZ_B,
         DType.float32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     # Thread indexing offsets.
@@ -301,9 +299,9 @@ def gemm(
     var col = block_idx.y * TILE_SZ_B
 
     # Privatization of the C matrix.
-    var c_reg = stack_allocation[TILE_SZ_B, DType.float32]()
+    var c_reg = unsafe_stack_allocation[TILE_SZ_B, DType.float32]()
 
-    memset_zero(c_reg, TILE_SZ_B)
+    unsafe_memset_zero(c_reg, TILE_SZ_B)
 
     # Loop over each input tile.
     for tile_idx in range((k - 1) // TILE_SZ_RATIO + 1):
@@ -374,7 +372,7 @@ def test_warp_shuffle_up(val: Float32) -> Float32:
     return res
 
 
-@always_inline
+@inline(.always)
 def _verify_warp_shuffle_up(asm: StringSlice) raises -> None:
     assert_true("test_warp_shuf" in asm)
     assert_true("shfl.sync.up.b32" in asm)
@@ -404,7 +402,7 @@ def test_warp_shuffle_down(val: Int32) -> Int32:
     return res
 
 
-@always_inline
+@inline(.always)
 def _verify_warp_shuffle_down(asm: StringSlice) raises -> None:
     assert_true("test_warp_shuf" in asm)
     assert_true("shfl.sync.down.b32" in asm)
@@ -439,7 +437,7 @@ def warp_sum_reduce(val: Float32) -> Float32:
     return res
 
 
-@always_inline
+@inline(.always)
 def _verify_warp_sum_reduce(asm: StringSlice) raises -> None:
     assert_true("warp_sum_" in asm)
     assert_true("shfl.sync.bfly.b32" in asm)
@@ -460,8 +458,8 @@ def test_warp_sum_reduce_sm90() raises:
 
 
 def block_reduce(val: Float32) -> Float32:
-    var shared = stack_allocation[
-        WARP_SIZE, DType.float32, address_space=AddressSpace.SHARED
+    var shared = unsafe_stack_allocation[
+        WARP_SIZE, DType.float32, address_space=.SHARED
     ]()
 
     comptime warp_shift = log2_floor(WARP_SIZE)
@@ -482,7 +480,7 @@ def block_reduce(val: Float32) -> Float32:
     )
 
 
-@always_inline
+@inline(.always)
 def _verify_block_reduce(asm: StringSlice) raises -> None:
     assert_true("block_reduce" in asm)
     assert_true("mov.u32" in asm)

@@ -16,6 +16,11 @@ custom_op_example_py_binary(
 )
 
 custom_op_example_py_binary(
+    name = "elementwise_addition",
+    srcs = ["elementwise_addition.py"],
+)
+
+custom_op_example_py_binary(
     name = "parametric_addition",
     srcs = ["parametric_addition.py"],
 )
@@ -44,6 +49,7 @@ custom_op_example_py_binary(
     srcs = ["eager_vector_addition.py"],
     extra_deps = [
         "//max/python/max:tensor",
+        "//max/python/max/_interpreter_ops",
     ],
     # FIXME: MOCO-3663 — consistently times out on remote macOS workers
     target_compatible_with = select({
@@ -108,6 +114,7 @@ mojo_library(
     deps = [
         "//max:extensibility",
         "//max:layout",
+        "//max:max_mojo",
         "@mojo//:std",
     ],
 )

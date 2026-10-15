@@ -36,9 +36,9 @@ from std.sys import get_defined_bool
 from std.sys.intrinsics import readfirstlane
 from std.math import ceildiv
 from std.math.uutils import umod, ufloordiv
-from std.gpu import block_idx
-from std.gpu import warp_id as get_warp_id
-from std.gpu.sync import s_waitcnt
+from max.gpu import block_idx
+from max.gpu import warp_id as get_warp_id
+from max.gpu.sync import s_waitcnt
 from std.memory import bitcast
 from std.utils.numerics import get_accum_type, min_or_neg_inf
 
@@ -53,7 +53,7 @@ from .kv_buffer import KVBuffer, _get_k_swizzle
 
 
 __extension Attention:
-    @always_inline
+    @inline(.always)
     def mha_decode(
         mut self,
         exp_sum_ptr: UnsafePointer[
@@ -80,11 +80,11 @@ __extension Attention:
         comptime k_swizzle = _get_k_swizzle[Self.mma_shape[0], Self.BK]()
 
         var warp_id = UInt32(
-            readfirstlane(bitcast[DType.int32](UInt32(get_warp_id())))
+            readfirstlane(bitcast[.int32](UInt32(get_warp_id())))
         )
 
         # Split-K: compute this partition's key range.
-        start, end = get_start_and_end_for_partitions[Self.BN](
+        var start, end = get_start_and_end_for_partitions[Self.BN](
             self.num_keys, num_partitions, block_idx.x
         )
 
@@ -230,9 +230,8 @@ __extension Attention:
             transpose_b=True,
         ]
 
-        @always_inline
-        @parameter
-        def mma_qk():
+        @inline(.always)
+        def mma_qk() {imm}:
             self.zero_p_buffer[0]()
             comptime for i in range(Self.depth // Self.BK):
                 comptime for k_mma in range(Self.num_k_mmas2):
@@ -242,9 +241,8 @@ __extension Attention:
                         self.p_reg_buffer.stage_tile[0](),
                     )
 
-        @always_inline
-        @parameter
-        def mma_pv():
+        @inline(.always)
+        def mma_pv() {imm}:
             # Each warp's v_buffer holds only depth_per_warp tiles
             # (loaded from the warp's LDS depth offset), so mma_subtile
             # directly gives the warp's depth range.
@@ -269,9 +267,8 @@ __extension Attention:
             Self.mask_t.check_mask_during_decoding
         )
 
-        @always_inline
-        @parameter
-        def prefetch_next[slot: Int]():
+        @inline(.always)
+        def prefetch_next[slot: Int]() {mut k_buffer, mut v_dma_buffer}:
             """Prefetch next K (and V if not shared_kv) after current LDS
             reads have drained."""
             s_waitcnt[lgkmcnt=0]()
@@ -285,9 +282,10 @@ __extension Attention:
             comptime if not shared_kv:
                 _ = v_dma_buffer.load_from_dram[0]()
 
-        @always_inline
-        @parameter
-        def process_tile[slot: Int, has_next: Bool]():
+        @inline(.always)
+        def process_tile[
+            slot: Int, has_next: Bool
+        ]() {mut self, mut v_dma_buffer, imm}:
             """Process one KV tile.
 
             K[slot] is already in LDS when called.  If not shared_kv, V
@@ -332,10 +330,13 @@ __extension Attention:
                 self.online_softmax_step_0_fma[0]()
                 self.online_softmax_step_1_fma[0]()
 
-            # Write P to shared memory so all warps can read it for PV.
-            self.p_reg_buffer.copy_to_shared()
-            s_waitcnt[lgkmcnt=0]()
-            barrier()
+            # Write P to shared memory so all warps can read it for PV. The
+            # wide-MMA fold keeps P in registers, so it skips this and the
+            # barrier that ordered it; `shared_kv` re-syncs on its own below.
+            comptime if Self._p_shared_memory_backed:
+                self.p_reg_buffer.copy_to_shared()
+                s_waitcnt[lgkmcnt=0]()
+                barrier()
 
             comptime if shared_kv:
                 # K consumed + P synced.  Load V into shared SMEM
@@ -356,11 +357,11 @@ __extension Attention:
 
             # Iter-end drain + barrier.  The entry barrier at the next
             # iteration is not sufficient on its own: without this
-            # explicit full drain, mma_pv's pipelined P SMEM ds_reads (and
-            # prefetch_next's in-flight DMA) can overlap with iter N+1's
-            # copy_to_shared writes and K LDS reads.  Waitcnt-only and
-            # barrier-only are both empirically insufficient — both are
-            # required.
+            # explicit full drain, prefetch_next's in-flight DMA (and, on
+            # the SMEM-backed P path, mma_pv's pipelined P ds_reads) can
+            # overlap with iter N+1's K LDS reads and copy_to_shared
+            # writes.  Waitcnt-only and barrier-only are both empirically
+            # insufficient — both are required.
             s_waitcnt[vmcnt=0, lgkmcnt=0]()
             barrier()
 
@@ -399,8 +400,8 @@ __extension Attention:
             if num_tiles > 0:
                 process_tile[0, False]()
 
-        self.out_reg_buffer.apply_softmax_denominator(
-            self.softmax.rowsum_tensor
-        )
+        self.out_reg_buffer.apply_softmax_denominator[
+            p_scale_log2=type_of(self.p_reg_buffer).p_scale_log2
+        ](self.softmax.rowsum_tensor)
         self.store_partition_info(num_partitions, exp_sum_ptr, qk_max_ptr)
         self.store_output()

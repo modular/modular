@@ -18,51 +18,181 @@ A thin :class:`~max.pipelines.kv_cache.kv_connector.KVConnector` shim over the
 owns the NIXL agent, all block transfers, the control-plane RPCs, inline
 reconnection, and metrics; this shim only adapts the MAX-side types (device
 ``KVCacheMemory``, ``KVCacheMetrics``) to the client's API.
-
-Block-hash contract: the dkv wire format carries a ``uint64 seq_hash`` and is
-unchanged by this shim. Callers may pass either the 8-byte canonical encoding
-used by ``ahash64`` / ``sha256_64`` or the 32-byte canonical encoding used by
-full ``sha256``; in the 32-byte case the shim truncates to the first 8 bytes
-at the boundary. Truncation is byte-identical to the existing ``sha256_64``
-algorithm, so configuring MAX with ``sha256`` or ``sha256_64`` yields the
-same dkv key for the same logical digest.
 """
 
 from __future__ import annotations
 
-import functools
 import hashlib
 import logging
 import math
 import os
-import sys
-import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
+from typing import Any, Protocol
 
-import msgspec
 from max.driver import Buffer, Device
+from max.nn.kv_cache import KVCacheGroupId
 from max.nn.kv_cache.cache_params import (
     KVCacheMemory,
     KVCacheParamInterface,
     KVCacheParams,
-    KVHashAlgo,
     MultiKVCacheParams,
-    ReplicatedKVCacheMemory,
 )
 from max.nn.kv_cache.data_parallelism_utils import split_into_groups
 from max.nn.kv_cache.metrics import KVCacheMetrics
+from max.pipelines.kv_cache._nixl_backend import (
+    NIXL_BACKEND_ENV_VAR,
+    SUPPORTED_NIXL_BACKENDS,
+    NixlBackendType,
+    validate_nixl_backend,
+)
+from max.pipelines.kv_cache._nixl_plugin_deps import preload_nixl_plugin_deps
+from max.pipelines.kv_cache.kv_connector import (
+    KVConnector,
+    KVConnectorTransfer,
+    KVLoadFailed,
+    KVLoadRefused,
+    KVTransfer,
+)
 from max.profiler import traced
 
 _logger = logging.getLogger("max.pipelines")
 
-# dKV keys every block under a composite (tp_shard_id, group_id, seq_hash). MAX's
-# paged KV cache is single-group (full attention) today; SWA/hybrid groups are not
-# yet wired through this connector (block_manager has no group dimension), so we key
-# all load/offload under the full-attention group. REVISIT when windowed-KV groups
-# land. Mirrors GroupId::FullAttention (== 1) in the dkv proto
-# (dkv/dkv-proto/src/gen/modular.dkv.v1.rs). GroupId::Unspecified (== 0) is rejected
-# server-side (no geometry), so 0 is never a valid substitute.
-_DKV_GROUP_FULL_ATTENTION = 1
+
+class _DkvClient(Protocol):
+    """The ``dkv_connector.DkvConnector`` surface this shim drives.
+
+    The concrete class is a pyo3 extension type imported lazily inside
+    :meth:`DKVConnector.__init__`, so this is the only place the FFI surface is
+    written down. One client owns one leaf's buffers and that leaf's store
+    namespace; ``group_id`` selects the leaf on every call.
+    """
+
+    def prepare_load(
+        self,
+        *,
+        group_id: int,
+        block_hashes: Sequence[int],
+        hint: bytes | None = ...,
+    ) -> Sequence[bool]: ...
+
+    def load_prepared(
+        self,
+        *,
+        group_id: int,
+        block_ids: Sequence[int],
+        end: int,
+        num_blocks: int,
+    ) -> tuple[int, KVTransfer]: ...
+
+    def abandon_prepared(self) -> None: ...
+
+    def is_healthy(self) -> bool: ...
+
+    def lookup(
+        self,
+        *,
+        group_ids: Sequence[int],
+        block_hashes: Sequence[int],
+        hint: bytes | None = ...,
+    ) -> Sequence[Sequence[bool]]: ...
+
+    def offload(
+        self,
+        *,
+        group_id: int,
+        block_ids: Sequence[int],
+        block_hashes: Sequence[int],
+    ) -> KVTransfer: ...
+
+    def touch(self, *, group_id: int, block_hashes: Sequence[int]) -> None: ...
+
+    def poll_transfers(self) -> None: ...
+
+    def metrics(self) -> Mapping[str, Any]: ...
+
+    def take_metrics(self) -> Mapping[str, Any]: ...
+
+    def broadcast_peer_count(self) -> int: ...
+
+
+_DKV_RECENCY_FULL_SEQUENCE = 1
+_DKV_RECENCY_SLIDING_WINDOW = 2
+
+
+def _validate_dkv_leaves(leaves: Mapping[str, KVCacheGroupId]) -> None:
+    """Rejects leaf trees the dKV connector cannot serve.
+
+    Called once, from ``DKVConnector.__init__``. Every caller reaches the
+    connector through that constructor, so neither ``create_connector`` nor a
+    cache manager repeats the check -- a cache manager especially should not,
+    since it would have to know which connector is configured.
+
+    The single-window restriction is :meth:`touch`'s, not :meth:`load`'s. The
+    cache manager sizes each leaf's share off that leaf's own group, so
+    differing widths are fine by the time they reach here. ``touch`` still
+    windows every sliding leaf by the one ``_window_blocks`` it reads off
+    ``_sliding_leaf_ids[0]``, so a second width would silently refresh the
+    wrong range. Lifting this gate means fixing ``touch`` first.
+
+    Args:
+        leaves: Leaf id to attention group, as ``params.leaves()`` names them.
+
+    Raises:
+        ValueError: If the tree is empty, holds a group that is neither full
+            attention nor sliding window, or mixes sliding-window leaves with
+            different ``window_size`` values.
+    """
+    if not leaves:
+        raise ValueError("DKVConnector requires at least one KV cache leaf")
+    if not all(
+        group_id.is_full() or group_id.is_sliding_window()
+        for group_id in leaves.values()
+    ):
+        raise ValueError(
+            "DKVConnector supports full-attention and sliding-window leaves "
+            f"only. Found: {leaves}"
+        )
+    windows = {
+        group_id.window_size
+        for group_id in leaves.values()
+        if group_id.is_sliding_window()
+    }
+    if len(windows) > 1:
+        raise ValueError(
+            "DKVConnector requires all sliding-window leaves to share one "
+            f"window_size; found {windows} in {leaves}"
+        )
+
+
+def _leaf_wire_ids(leaves: Mapping[str, KVCacheGroupId]) -> dict[str, int]:
+    """Dense unique store ids in ``leaves()`` order, starting at 1.
+
+    Positional, and safe to be positional: the id only has to mean the same
+    leaf to everyone sharing a store, and a store is keyed by
+    ``(tenant_id, kv_config_hash, kv_shard_id)``. :func:`_layout_fields` folds
+    every child's INDEX AND NAME into ``kv_config_hash``, so adding, removing
+    or reordering a leaf flips the fingerprint and dKV purges and rebuilds the
+    share instead of reattaching. A reader therefore can never resolve id 2 to
+    a different leaf than the writer meant -- across a restart, across DP
+    replicas, or across instances a cache hint names -- because a leaf set that
+    would renumber cannot present the same hash.
+
+    Ids must fit ``u16``: ``StoreFacade::negotiate_groups`` narrows to one and
+    rejects anything wider, because a truncated id silently aliases two leaves
+    onto one store namespace. Numbering from 1 also keeps 0 --
+    ``GROUP_ID_UNSPECIFIED``, which names no leaf -- off the wire, and makes a
+    single-leaf tree present the same id (1 == ``GroupId::FullAttention``) that
+    every pre-per-leaf client sent. Recency is independent of the id, so extra
+    SWA leaves (values and scales) can all slide without the id encoding the
+    kind.
+    """
+    return {leaf_id: i for i, leaf_id in enumerate(leaves, start=1)}
+
+
+def _group_recency(group_id: KVCacheGroupId) -> int:
+    if group_id.is_sliding_window():
+        return _DKV_RECENCY_SLIDING_WINDOW
+    return _DKV_RECENCY_FULL_SEQUENCE
 
 
 def _to_dkv_u64(h: bytes) -> int:
@@ -71,10 +201,9 @@ def _to_dkv_u64(h: bytes) -> int:
     The dkv proto stays ``uint64 seq_hash``. Accepts the canonical bytes
     forms the block hasher produces:
 
-    * 8 bytes (``ahash64`` / ``sha256_64``): used as-is, big-endian unsigned.
+    * 8 bytes (``ahash64``): used as-is, big-endian unsigned.
     * 32 bytes (full ``sha256``): truncated to the first 8 bytes (big-endian
-      unsigned). Byte-identical to ``sha256_64`` of the same digest, so the
-      same logical block collapses to the same dkv key under either algo.
+      unsigned), because the dkv wire key is 64 bits wide.
 
     Args:
         h: Canonical block-hash bytes, length 8 or 32.
@@ -104,38 +233,27 @@ def _buffer_nbytes(buffer: Buffer) -> int:
 def _group_units_by_shard(
     kv_memory: Sequence[KVCacheMemory],
 ) -> tuple[list[tuple[int, list[tuple[int, int]]]], bool]:
-    """Groups one replica's flat KV memory units into per-shard unit lists.
+    """Groups one replica's KV memory units into per-shard unit lists.
 
-    ``kv_memory`` is the flat ``to_memory()`` output: one unit per logical
-    buffer (target values, FP8 scales, indexer, draft, and so on), where a
-    quantized or multi-cache model contributes several units. The Rust client
-    concatenates each shard's units, in this order, into one dKV block, which
-    makes the stored bytes match the CPU block the local and tiered connectors
-    build from the same units.
-
-    Two layouts exist:
-
-    * Replicated (MLA with TP > 1): every unit is a
-      :class:`ReplicatedKVCacheMemory` whose rank-0 buffer plus peers span the
-      same device topology. Shard ``s`` takes each unit's buffer for rank
-      ``s``, so every shard carries the full unit list and holds identical
-      bytes.
-    * Sharded (everything else): each unit is a plain buffer on one device,
-      and a shard is a device. Units group under their device in flat order,
-      which is the shard-restricted subsequence of the canonical unit order.
+    Each unit carries every TP shard, so shard ``s`` is ``mem.buffers[s]``
+    whether the unit is replicated or sharded; the two layouts need no separate
+    handling. The Rust client concatenates each shard's units in this order
+    into one dKV block. That block matches the CPU block the tiered connector
+    builds only when every unit is sharded, because the tiered connector
+    stores a replicated unit once while dKV stores it once per shard.
 
     Args:
         kv_memory: One replica's offload-ready KV memory units.
 
     Returns:
-        A ``(shards, is_mla)`` pair, where ``shards`` has one
+        A ``(shards, shards_are_identical)`` pair, where ``shards`` has one
         ``(device_id, [(ptr, nbytes), ...])`` entry per TP shard in canonical
-        device order.
+        device order, and ``shards_are_identical`` reports whether every unit
+        is replicated.
 
     Raises:
-        NotImplementedError: If replicated and non-replicated units are mixed.
-        ValueError: If unit page counts or per-shard unit counts disagree, or
-            if replicated units span different device topologies.
+        ValueError: If unit page counts disagree, or if units span different
+            device topologies.
     """
     if not kv_memory:
         raise ValueError("kv_memory must contain at least one unit")
@@ -149,65 +267,36 @@ def _group_units_by_shard(
             f"{unique_total_num_pages}"
         )
 
-    replicated = [
-        mem for mem in kv_memory if isinstance(mem, ReplicatedKVCacheMemory)
-    ]
-    is_mla = bool(replicated)
+    # every unit replicated makes each shard's block byte-identical, so the
+    # client may store shard 0 alone; one sharded unit makes them differ.
+    shards_are_identical = all(mem.replicated for mem in kv_memory)
 
-    if is_mla:
-        if len(replicated) != len(kv_memory):
-            raise NotImplementedError(
-                "the dKV connector cannot mix replicated (MLA) and "
-                "non-replicated KV memory units in one replica; every unit "
-                "must be replicated across the same TP shards"
-            )
-
-        # every replicated unit must span the same device topology so shard s
-        # names the same device in every unit (mirrors BlockOffloadEngine)
-        topologies = {
-            tuple(buffer.device.id for buffer in mem.all_buffers)
-            for mem in kv_memory
-        }
-        if len(topologies) > 1:
-            raise ValueError(
-                "all replicated KVCacheMemory units must share the same TP "
-                f"device topology; got {sorted(topologies)}"
-            )
-
-        topology = next(iter(topologies))
-        shards = [
-            (
-                device_id,
-                [
-                    (
-                        mem.all_buffers[rank]._data_ptr(),
-                        _buffer_nbytes(mem.all_buffers[rank]),
-                    )
-                    for mem in kv_memory
-                ],
-            )
-            for rank, device_id in enumerate(topology)
-        ]
-        return shards, True
-
-    # sharded layout: group the flat units under their device, preserving the
-    # canonical to_memory() order within each shard
-    units_by_device: dict[int, list[tuple[int, int]]] = {}
-    for mem in kv_memory:
-        buffer = mem.buffer
-        units_by_device.setdefault(buffer.device.id, []).append(
-            (buffer._data_ptr(), _buffer_nbytes(buffer))
-        )
-
-    unit_counts = {len(units) for units in units_by_device.values()}
-    if len(unit_counts) > 1:
+    # every unit must span the same device topology so shard s names the same
+    # device in every unit (mirrors BlockOffloadEngine)
+    topologies = {
+        tuple(buffer.device.id for buffer in mem.buffers) for mem in kv_memory
+    }
+    if len(topologies) > 1:
         raise ValueError(
-            "every dKV shard must carry the same number of KV memory units; "
-            f"got counts {sorted(unit_counts)} across devices "
-            f"{sorted(units_by_device)}"
+            "all KVCacheMemory units must share the same TP device topology; "
+            f"got {sorted(topologies)}"
         )
 
-    return list(units_by_device.items()), False
+    topology = next(iter(topologies))
+    shards = [
+        (
+            device_id,
+            [
+                (
+                    mem.buffers[rank]._data_ptr(),
+                    _buffer_nbytes(mem.buffers[rank]),
+                )
+                for mem in kv_memory
+            ],
+        )
+        for rank, device_id in enumerate(topology)
+    ]
+    return shards, shards_are_identical
 
 
 def _shard_unit_strides(kv_memory: Sequence[KVCacheMemory]) -> list[int]:
@@ -216,11 +305,10 @@ def _shard_unit_strides(kv_memory: Sequence[KVCacheMemory]) -> list[int]:
     A dKV block holds one shard's buffer units concatenated, so the layout
     fingerprint folds the strides of a single shard's unit list rather than
     the flat per-physical-buffer list. This keeps the folded shape identical
-    between replicated (MLA) and sharded layouts, where the flat list would
+    between replicated and sharded layouts, where the flat list would
     otherwise repeat each unit once per shard. Shard 0 stands in for every
-    shard because :func:`_group_units_by_shard` validates a uniform unit
-    count per shard and the Rust config validates that the stride vectors
-    match.
+    shard because each shard carries one entry per unit by construction and
+    the Rust config validates that the stride vectors match.
 
     Args:
         kv_memory: One replica's offload-ready KV memory units.
@@ -241,18 +329,187 @@ def _shard_unit_strides(kv_memory: Sequence[KVCacheMemory]) -> list[int]:
 
 # Default wall-clock budget for admitting (connect + handshake) one per-replica
 # dKV client. dKV is co-located and usually up within seconds, but a still-
-# starting server (connection refused) or a cold slab warm-up (deferred region
-# carve) can take longer; admission retries transient failures until this budget
-# is spent, then fails model load. Override via MODULAR_DKV_ADMISSION_TIMEOUT_S.
-_DEFAULT_ADMISSION_TIMEOUT_S = 120.0
-_ADMISSION_INITIAL_BACKOFF_S = 1.0
-_ADMISSION_MAX_BACKOFF_S = 10.0
+# starting server (connection refused), a cold slab warm-up (deferred region
+# carve), or a node with no room until a departed tenant's pages drain can all
+# take much longer; admission retries transient failures until this budget is
+# spent, then fails model load. Override via MODULAR_DKV_ADMISSION_TIMEOUT_S.
+#
+# Sized above a worst-case cold carve, which budgets to roughly 600s for a
+# 1.6 TiB slab. A single attempt does not have to cover that carve, because the
+# server builds a share single-flight and a retry blocks on the in-flight build
+# rather than starting a second one, so what matters is that the budget spans
+# enough attempts to outlast it.
+_DEFAULT_ADMISSION_TIMEOUT_S = 600.0
+
+# The Rust client's default per-attempt handshake bound, mirrored from
+# DEFAULT_HANDSHAKE_REQUEST_TIMEOUT in dkv-connector/src/transport.rs, purely to
+# size the admission floor below.
+#
+# Deliberately the constant and not MODULAR_DKV_HANDSHAKE_TIMEOUT_S. That
+# variable belongs to the transport, which reads it permissively (anything
+# unparsable, non-positive, or above its 3600s cap silently falls back), and a
+# second parser here would disagree with it in both directions: rejecting values
+# the transport accepts, and sizing the floor off values the transport ignores.
+_DEFAULT_HANDSHAKE_TIMEOUT_S = 60.0
+
+# An admission budget has to cover several whole attempts. At or just above the
+# per-attempt timeout it is spent inside the first attempt and retries nothing,
+# so a refusal that would clear in seconds fails model load instead. That is the
+# shape of CLIN-1842.
+#
+# The floor is computed against the DEFAULT per-attempt timeout, not the
+# configured one. An operator raising the handshake timeout is covering one long
+# cold carve, not asking for a proportionally longer budget: a retry blocks on
+# the in-flight single-flight build rather than starting a second one, so the
+# per-attempt bound does not multiply the work. Scaling the floor by it would
+# reject configurations that raise both together, which is exactly what the
+# in-tree kimi26 deployment and transport.rs both instruct.
+_MIN_ADMISSION_ATTEMPTS = 4
+
+
+# Env-var overrides for the Rust client's background heartbeat poller, mapped to
+# the constructor keywords they feed. Every one is optional: an unset variable is
+# omitted from the call so the Rust default applies, which keeps the poller on the
+# timings it has always used. A shorter interval detects a dKV restart sooner at
+# the cost of one more probe per interval from every replica.
+_HEARTBEAT_ENV_KWARGS = {
+    "MODULAR_DKV_HEARTBEAT_INTERVAL_MS": "heartbeat_interval_ms",
+    "MODULAR_DKV_HEARTBEAT_REQUEST_TIMEOUT_MS": "heartbeat_request_timeout_ms",
+    "MODULAR_DKV_HEARTBEAT_RECONNECT_TIMEOUT_MS": "heartbeat_reconnect_timeout_ms",
+    "MODULAR_DKV_HEARTBEAT_RECONNECT_COOLDOWN_MS": (
+        "heartbeat_reconnect_cooldown_ms"
+    ),
+    "MODULAR_DKV_HEARTBEAT_MAX_FAILURES": "heartbeat_max_failures",
+    "MODULAR_DKV_HEARTBEAT_DEGRADED_WARN_EVERY": (
+        "heartbeat_degraded_warn_every"
+    ),
+}
+
+
+def _heartbeat_overrides() -> dict[str, int]:
+    """Collects the heartbeat-poller overrides set in the environment.
+
+    Returns:
+        The Rust client constructor keywords for the variables in
+        :data:`_HEARTBEAT_ENV_KWARGS` that are set, keyed by keyword name. An
+        unset variable is absent, leaving the Rust default in place.
+
+    Raises:
+        ValueError: If a variable is set to something other than a non-negative
+            integer. Failing model load beats silently polling on an unintended
+            cadence, and a negative value is worth catching here rather than at
+            the extension, whose keywords are unsigned and so reject it with an
+            ``OverflowError`` about converting a negative int that names no
+            variable. Which non-negative values are meaningful is deliberately
+            not checked here, because that is per-field and belongs to
+            ``HeartbeatConfig::validate`` on the Rust side, where the reasons
+            live: a zero cooldown means no spacing between reconnects and is
+            legitimate, while a zero interval would spin the poll loop.
+    """
+    overrides: dict[str, int] = {}
+    for env_var, keyword in _HEARTBEAT_ENV_KWARGS.items():
+        raw = os.getenv(env_var, "").strip()
+        if not raw:
+            continue
+        try:
+            value = int(raw)
+        except ValueError as exc:
+            raise ValueError(
+                f"{env_var} must be an integer number, got {raw!r}"
+            ) from exc
+        if value < 0:
+            raise ValueError(f"{env_var} must not be negative, got {value}")
+
+        overrides[keyword] = value
+
+    return overrides
+
+
+def _required_nixl_backend() -> NixlBackendType:
+    """The validated NIXL transfer backend this connector must use.
+
+    Reads ``MODULAR_NIXL_TRANSFER_BACKEND``, which is mandatory: dKV has no
+    auto-select mode, so there is nothing for an unset variable to mean. An
+    unset, empty, or unknown value fails model load naming the variable and
+    the accepted set, rather than surfacing later as a handshake mismatch or a
+    transfer against a transport that cannot do the job. ``auto`` reaches the
+    validator like any other unknown name — it was the dKV server's own
+    spelling for the mode that was removed, so an operator mirroring
+    ``DKV_MEMXFER_BACKEND`` gets a clear error instead of a silent fallback.
+
+    This deliberately differs from the KV transfer engine, which assumes
+    ``"ucx"`` when the variable is unset. The two consumers share the
+    validator, not the default.
+
+    Returns:
+        The transport to hand the Rust client, normalized to lowercase.
+
+    Raises:
+        ValueError: If the variable is unset, empty, or not a supported
+            backend.
+    """
+    raw = os.getenv(NIXL_BACKEND_ENV_VAR, "").strip()
+    if not raw:
+        raise ValueError(
+            f"{NIXL_BACKEND_ENV_VAR} must be set to the NIXL transport this "
+            "host's fabric needs (libfabric on EFA, ucx on InfiniBand). The "
+            "dKV connector has no auto-select mode, so there is no default. "
+            f"Supported backends: {sorted(SUPPORTED_NIXL_BACKENDS)}"
+        )
+    return validate_nixl_backend(raw)
+
+
+def _required_operator_env() -> tuple[NixlBackendType, str]:
+    """The operator-injected settings dKV refuses to start without.
+
+    Both the NIXL transport and the tenant identity are the deployment
+    operator's to set, and a pod missing one is usually missing both, so they
+    are validated in one pass: an operator learns every missing variable from
+    a single model load instead of discovering the next one after fixing the
+    first. A lone problem is reported on its own, so the common
+    one-variable-missing message stays as direct as it was.
+
+    Returns:
+        The transport to hand the Rust client and the tenant identity.
+
+    Raises:
+        ValueError: If either variable is unset or empty, or the transport is
+            not a supported backend, naming every problem found.
+    """
+    problems: list[str] = []
+
+    backend: NixlBackendType | None = None
+    try:
+        backend = _required_nixl_backend()
+    except ValueError as exc:
+        problems.append(str(exc))
+
+    # MODULAR_DKV_TENANT_ID is injected by the operator (the trust boundary —
+    # not a user-facing override flag, which would be forgeable). It is
+    # REQUIRED: dKV has no default/legacy single-tenant path, so an unset or
+    # empty value fails model load rather than silently keying an unfenced
+    # shared store. Every DP replica handshakes the same per-tenant identity
+    # (kv_shard_id/replica_id zeroed), so the server keys ONE region-sharded
+    # store per tenant_id (backend dedup).
+    tenant_id = os.getenv("MODULAR_DKV_TENANT_ID", "")
+    if not tenant_id:
+        problems.append(
+            "dKV requires MODULAR_DKV_TENANT_ID to be set to a non-empty "
+            "tenant identity (the operator injects it); the legacy "
+            "empty-tenant default path has been removed."
+        )
+
+    if problems:
+        raise ValueError(" ".join(problems))
+
+    assert backend is not None  # no problems recorded means it parsed
+    return backend, tenant_id
 
 
 def _dtype_tag(dtype: object) -> str:
     """Returns a stable, restart-invariant text tag for a ``DType``.
 
-    Uses the enum member ``name`` (e.g. ``"bfloat16"``) when present, else
+    Uses the enum member ``name`` (such as ``"bfloat16"``) when present, else
     ``str(dtype)``. Never uses Python's per-process-randomized ``hash``, so the
     fingerprint it feeds is identical across process restarts.
     """
@@ -268,9 +525,9 @@ def _layout_fields(
     :class:`MultiKVCacheParams` tree contributes a ``multi`` marker, its child
     count, and each child's fields recursively, prefixed by the child's index
     and name in the tree's insertion order. That order is deterministic for a
-    fixed model config and matches the ``to_memory()`` unit order the
-    concatenated block (and thus ``unit_strides``) follows, so folding the index
-    and name makes any child add/remove/reorder flip the fingerprint.
+    fixed model config and matches the declared leaf order the concatenated
+    block (and thus ``unit_strides``) follows, so folding the index and name
+    makes any child add/remove/reorder flip the fingerprint.
 
     Excludes the contract version and the concatenated ``unit_strides``, which
     :func:`_kv_config_hash` owns at the top level so a multi-cache tree folds
@@ -309,6 +566,22 @@ def _layout_fields(
         ("tensor_parallel_degree", str(params.tensor_parallel_degree)),
         ("quant", quant_desc),
         ("block_value_bytes", str(block_value_bytes)),
+        # Folded because it is what makes this leaf windowed, and so what
+        # decides the GroupRecency it advertises (`_group_recency` reads the
+        # same windowing off the leaf's `KVCacheGroupId`). Recency is NOT part
+        # of the negotiated geometry the reattach path compares -- so without
+        # it two configs differing only in whether a leaf is windowed hash
+        # identically while advertising a different eviction policy for the
+        # same id. A share built under the other one keeps its GroupKind forever
+        # (`build_loaded` never re-runs), and a FullAttention share handed a
+        # tail-anchored window reverse-walks it, making the NEWEST in-window
+        # block the coldest. That is an inversion, not a degradation. Free to
+        # add here because v=3 already purges every share. A real
+        # `KVCacheParams` always carries the field -- `None` on a full leaf, an
+        # int on a sliding one -- so the `getattr` default is reached only by a
+        # params stand-in that predates it, which is why it is not `None`: the
+        # fold has to stay a stable string for whatever a caller hands over.
+        ("window_size", str(getattr(params, "window_size", -1))),
     ]
 
 
@@ -329,8 +602,7 @@ def _kv_config_hash(
     unsigned integer — the same 64-bit convention as the dkv ``seq_hash`` and
     :func:`_to_dkv_u64`:
 
-    * ``v`` — contract version (``2``; bumped when the block layout became the
-      concatenation of every buffer unit rather than the value buffer alone).
+    * ``v`` — contract version (``3``; see the bump note below).
     * the cache geometry from :func:`_layout_fields`: for a single-group leaf,
       its dtype/kv_dim/head_dim/num_layers/page_size/head-count/TP/quant/value
       bytes (unchanged from the ``v=2`` leaf encoding, so single-group
@@ -338,13 +610,13 @@ def _kv_config_hash(
       (speculative draft+target, quantized values+scales), a ``multi`` marker
       plus each child's fields folded recursively under its index and name.
     * ``unit_strides`` — comma-joined per-page byte stride of one shard's
-      buffer units in canonical ``to_memory()`` order (values, quant scales,
-      indexer, draft, and so on), derived by :func:`_shard_unit_strides`. A
+      buffer units in declared leaf order (values, quant scales, indexer,
+      draft, and so on), derived by :func:`_shard_unit_strides`. A
       shard's dKV block is these strides concatenated across the WHOLE cache
       tree, so any change to the unit set or its ordering makes stored blocks
       byte-incompatible and must flip the hash. Folding one shard's subsequence
       rather than the flat physical buffer list keeps the folded shape identical
-      between replicated (MLA) and sharded layouts; the shard count is already
+      between replicated and sharded layouts; the shard count is already
       pinned by ``tensor_parallel_degree``.
 
     Model/weights identity is deliberately NOT folded here: a different model is
@@ -354,10 +626,36 @@ def _kv_config_hash(
     threaded from the pipeline config — a documented follow-up, out of scope for
     this handshake.
 
-    Multi-group support was added without a ``v`` bump: the leaf encoding is
-    byte-identical to ``v=2`` (no single-group share is invalidated), and the
-    multi-group path previously raised, so no multi-group share could have been
-    persisted under an earlier contract.
+    ``v=3`` marks the per-leaf group geometry. Before it, a shard advertised no
+    groups and the server fell back to ``ShardBuffers::bytes_per_page``, so a
+    values+scales tree stored ONE group of ``V+S`` bytes; now it advertises
+    ``[(1, V), (2, S)]`` and stores one group per leaf. ``_layout_fields`` and
+    ``unit_strides`` do not move under that change -- both encode the same
+    per-unit strides either way -- so without the bump a live share would take
+    the matching-hash reattach branch in ``prepare_share_slot``, find a
+    different geometry, and return ``StorageError::Config``. That surfaces as a
+    ``ValueError``, which admission does not retry, so the pod would crashloop
+    rather than rebuild the share. (``v=2`` was itself the bump for the block
+    layout becoming the concatenation of every buffer unit rather than the
+    value buffer alone.)
+
+    The bump invalidates EVERY share, not only the multi-unit trees whose
+    geometry actually moved: ``v`` is folded for every config, so a
+    single-full-leaf llama share is purged and rebuilt too even though it
+    advertises byte-identically before and after. That is the intended trade --
+    purge and cold-start beats crashloop, and a per-field bump would have to be
+    read by a server that does not have one -- but it means the rollout cost is
+    one cold start per TENANT, not per hybrid model.
+
+    Rollout note for a deployment with G2 enabled: ``build_g2`` handles a stamp
+    mismatch with an inline ``remove_dir_all(disk_dir)`` ON THE HANDSHAKE PATH,
+    which is exactly the work ``unlink_condemned_g2`` exists to keep off it
+    ("releasing the extents of a preallocated pool is far too slow to hold up a
+    restart"). Every tenant's first post-upgrade handshake pays that delete
+    synchronously, against an admission budget sized for a 1.6 TiB carve rather
+    than for deleting a multi-TiB pool. Clearing the G2 subtree before rolling
+    this out removes the delete entirely, since the ``fallocate`` was going to
+    happen either way.
 
     Args:
         params: The KV-cache parameters for this deployment — a single-group
@@ -369,7 +667,7 @@ def _kv_config_hash(
         The 64-bit layout fingerprint.
     """
     fields = [
-        ("v", "2"),
+        ("v", "3"),
         *_layout_fields(params),
         ("unit_strides", ",".join(str(s) for s in unit_strides)),
     ]
@@ -435,123 +733,209 @@ def _resolve_replica_identities(
     return _kv_config_hash(params, unit_strides), [(0, 0)] * num_replicas
 
 
-# Exception types that always signal a permanent config or programming bug in
-# the admission path, never a transient/connection failure. Retrying these just
-# burns the whole admission budget before a real bug surfaces, so they
-# short-circuit the retry loop. ``ValueError`` also covers the pyo3
-# ``ConnectorError::Config`` mapping and this module's own argument validation;
-# the rest are the shapes a bug inside ``_make_client`` raises (a bad attribute,
-# wrong call signature, undefined name, missing key, or a failed import).
-_PERMANENT_ADMISSION_EXC_TYPES: tuple[type[BaseException], ...] = (
-    ValueError,
-    TypeError,
-    AttributeError,
-    NameError,
-    KeyError,
-    ImportError,
-)
+def _resolve_admission_timeout_s(env: Mapping[str, str] | None = None) -> float:
+    """Resolves the admission retry budget, raising it to cover several attempts.
 
-
-def _is_permanent_admission_error(exc: Exception) -> bool:
-    """Returns whether an admission failure will not recover on retry.
-
-    Retrying is worthwhile for a still-starting dKV (connection refused),
-    ``NotReady`` timeouts, and transient transport errors; it is pointless for a
-    caller/config bug or a programming bug. A permanent failure is one of
-    :data:`_PERMANENT_ADMISSION_EXC_TYPES` — a config error (the pyo3
-    ``ConnectorError::Config`` maps to :class:`ValueError`) or a programming bug
-    such as :class:`AttributeError` / :class:`TypeError` raised inside
-    ``_make_client`` — or a runtime error the Rust layer tagged
-    ``[retriable=false]``. Everything else (including an untagged "failed to
-    connect to dKV" error) is treated as transient and retried.
-    """
-    if isinstance(exc, _PERMANENT_ADMISSION_EXC_TYPES):
-        return True
-    return "[retriable=false]" in str(exc)
-
-
-def _admit_with_retry(
-    factory: Callable[[], object],
-    *,
-    timeout_s: float,
-    label: str = "",
-    initial_backoff_s: float = _ADMISSION_INITIAL_BACKOFF_S,
-    max_backoff_s: float = _ADMISSION_MAX_BACKOFF_S,
-    monotonic: Callable[[], float] = time.monotonic,
-    sleep: Callable[[float], None] = time.sleep,
-) -> object:
-    """Calls ``factory`` until it succeeds, retrying transient failures.
-
-    Retries with exponential backoff (capped at ``max_backoff_s``) until
-    ``factory`` returns, a permanent error surfaces
-    (:func:`_is_permanent_admission_error`), or ``timeout_s`` is exhausted (the
-    last exception is then re-raised — the readiness gate: model load fails if a
-    replica never admits). ``monotonic`` and ``sleep`` are injectable for tests.
+    A budget too small to retry is corrected with a warning rather than
+    rejected. The point of the floor is to guarantee that a transient refusal is
+    retried; failing model load at construction would trade one broken outcome
+    for another, and would do it to deployments that merely pinned the old
+    default.
 
     Args:
-        factory: Zero-arg callable performing one admission attempt.
-        timeout_s: Total wall-clock retry budget.
-        label: Short identifier for the retry log line (e.g. ``"replica 3"``).
-        initial_backoff_s: First backoff, doubled each retry.
-        max_backoff_s: Backoff ceiling.
-        monotonic: Monotonic clock source (injectable).
-        sleep: Sleep function (injectable).
+        env: Environment to read; defaults to :data:`os.environ`. Injectable for
+            tests.
 
     Returns:
-        Whatever ``factory`` returns on success.
+        The admission budget in seconds, never below the floor.
+
+    Raises:
+        ValueError: If ``MODULAR_DKV_ADMISSION_TIMEOUT_S`` is set but not a
+            positive, finite number. This shim is its only reader, so there is
+            no permissive parser to mirror and a typo is worth surfacing.
     """
-    deadline = monotonic() + timeout_s
-    backoff = initial_backoff_s
-    attempt = 0
-    while True:
-        attempt += 1
+    env = os.environ if env is None else env
+
+    raw = env.get("MODULAR_DKV_ADMISSION_TIMEOUT_S")
+    if raw is None:
+        admission_s = _DEFAULT_ADMISSION_TIMEOUT_S
+    else:
         try:
-            return factory()
-        except Exception as exc:
-            if _is_permanent_admission_error(exc):
-                raise
-            remaining = deadline - monotonic()
-            if remaining <= 0:
-                raise
-            _logger.warning(
-                "dKV admission%s attempt %d failed (%s); retrying",
-                f" ({label})" if label else "",
-                attempt,
-                exc,
+            admission_s = float(raw)
+        except ValueError:
+            raise ValueError(
+                f"MODULAR_DKV_ADMISSION_TIMEOUT_S={raw!r} is not a number"
+            ) from None
+        if not (0 < admission_s < float("inf")):
+            raise ValueError(
+                f"MODULAR_DKV_ADMISSION_TIMEOUT_S={raw!r} must be a positive, "
+                f"finite number"
             )
-            sleep(min(backoff, max_backoff_s, remaining))
-            backoff *= 2
+
+    minimum = _MIN_ADMISSION_ATTEMPTS * _DEFAULT_HANDSHAKE_TIMEOUT_S
+    if admission_s < minimum:
+        _logger.warning(
+            "dKV admission budget %gs is below %.0fs, the time %d handshake "
+            "attempts can take, so a transient refusal would fail model load "
+            "instead of being retried; using %.0fs. Set "
+            "MODULAR_DKV_ADMISSION_TIMEOUT_S at or above %.0fs to silence this.",
+            admission_s,
+            minimum,
+            _MIN_ADMISSION_ATTEMPTS,
+            minimum,
+            minimum,
+        )
+        return minimum
+    return admission_s
 
 
-class DKVExternalBlockMetadata(
-    msgspec.Struct, tag=True, kw_only=True, omit_defaults=True
-):
-    """Marker that a block hash is referenced by the orchestrator hint.
+def _drain(transfers: Sequence[KVTransfer]) -> None:
+    """Waits for every transfer in ``transfers``, draining all of them.
 
-    The slim hint only carries ``seq_hash``; the dKV server resolves slab
-    location and length when the connector reads the block. We still wrap the
-    hash in a typed struct so the context payload survives the
-    API-server -> model-worker process boundary via msgspec's tagged-struct
-    serialization.
+    Guarded per transfer with the first failure re-raised at the END rather
+    than immediately: this is what stands between a short delivery and the
+    caller freeing a page with an H2D still landing in it, so one leaf's
+    transport error must not skip the leaves after it.
 
-    The struct is intentionally retained even though it degenerates to a single
-    ``seq_hash`` field today. The orchestrator's hint shape is expected to evolve
-    to mix blocks from multiple source dKV instances in a single hint (per-block
-    ``instance_name`` for routing); keeping the per-block container in place now
-    lets that land without re-introducing a context-side data structure.
+    ``synchronize`` takes its handles out, so draining the same transfer twice
+    is a no-op and the unwind path can drain blindly.
+    """
+    first: BaseException | None = None
+    for transfer in transfers:
+        try:
+            transfer.synchronize()
+        except BaseException as err:
+            if first is None:
+                first = err
+            else:
+                _logger.exception("dkv transfer synchronize failed")
+    if first is not None:
+        raise first
+
+
+def _as_load_failure(err: BaseException) -> BaseException:
+    """Types a transport error from the client as :class:`KVLoadFailed`.
+
+    The binding raises a plain ``RuntimeError`` for a transport or transfer
+    condition and ``ValueError`` for a caller bug. Anything else comes back
+    unchanged, a ``RuntimeError`` subclass included, so a bug in the shim or
+    the binding still crashes rather than reading as a copy the manager can
+    recompute.
+    """
+    if type(err) is not RuntimeError:
+        return err
+    failure = KVLoadFailed(str(err))
+    failure.__cause__ = err
+    return failure
+
+
+class _DkvBatchTransfer:
+    """One :class:`DKVConnector` call's transfers, polled as one.
+
+    One per leaf that posted, because a leaf's transfer settles that leaf's
+    own lease or writes. The manager pins the device blocks and defers what
+    depends on the copy -- committing an onloaded prefix, freeing an offload's
+    source -- until this reads complete, and the scheduler holds an onloading
+    request out of the batch meanwhile, so the GPU runs other ready work while
+    the copy drains.
+
+    ``g0_blocks_per_leaf`` is what an offload took; a load is handed the exact
+    blocks to fill and reports nothing back.
     """
 
-    seq_hash: int
+    def __init__(
+        self,
+        transfers: Sequence[KVTransfer],
+        g0_blocks_per_leaf: Mapping[str, Sequence[int]] | None = None,
+    ) -> None:
+        self._pending = list(transfers)
+        self._g0_blocks_per_leaf: Mapping[str, Sequence[int]] = (
+            g0_blocks_per_leaf or {}
+        )
+        # A terminal failure, kept so every later poll reports it too. The
+        # scheduler's cordon sweep and the block manager poll the SAME object,
+        # in either order: if the failure were consumed by the first, the
+        # second would read complete and commit blocks the copy never filled
+        # into the device prefix cache.
+        self._failure: BaseException | None = None
+
+    @property
+    def g0_blocks_per_leaf(self) -> Mapping[str, Sequence[int]]:
+        """The device blocks this transfer pins until it completes, per leaf."""
+        return self._g0_blocks_per_leaf
+
+    def is_complete(self) -> bool:
+        """Whether every leaf's copy has landed. Never blocks.
+
+        Polls every outstanding leaf rather than stopping at the first one
+        still in flight, since settling is what releases a read's reader pin
+        and marks a write readable. A read whose transfer failed raises
+        :class:`KVLoadFailed` rather than reading complete, because its
+        destination blocks hold garbage; a write's failure is kept local,
+        since the engine cannot remediate a batch that was not cached.
+
+        A failure is sticky: it is re-raised to every later caller, so a
+        transfer cannot report failure to one poller and completion to the
+        next.
+        """
+        if self._failure is not None:
+            raise self._failure
+        if not self._pending:
+            return True
+        pending = self._pending
+        self._pending = []
+        first: BaseException | None = None
+        for transfer in pending:
+            try:
+                if not transfer.is_complete():
+                    self._pending.append(transfer)
+            except BaseException as err:
+                if first is None:
+                    first = err
+                else:
+                    _logger.exception("dkv transfer poll failed")
+        if first is not None:
+            # The caller unpins this transfer's blocks on the failure, so a
+            # leaf still in flight has to be waited out first or its copy
+            # lands in a page that has been freed and reused.
+            self._failure = _as_load_failure(first)
+            still_flying = self._pending
+            self._pending = []
+            try:
+                _drain(still_flying)
+            except BaseException:
+                _logger.exception(
+                    "draining the surviving leaves of a failed dkv load failed"
+                )
+            raise self._failure
+        return not self._pending
+
+    def synchronize(self) -> None:
+        """Blocks until every leaf's copy has landed. Drain and teardown only.
+
+        Idempotent in what it waits on: a drained transfer keeps no handle, so
+        a second call waits on nothing. A failure still surfaces every time,
+        for the same reason :meth:`is_complete` re-raises it.
+        """
+        pending = self._pending
+        self._pending = []
+        try:
+            _drain(pending)
+        except BaseException as err:
+            if self._failure is None:
+                self._failure = _as_load_failure(err)
+        if self._failure is not None:
+            raise self._failure
 
 
-class DKVConnector:
+class DKVConnector(KVConnector):
     """``KVConnector`` backed by the ``dkv_connector`` Rust client.
 
     A single instance serves every DP replica. The underlying Rust client is
     inherently per-endpoint (its ``load``/``offload`` reference block ids into
     one registered device-buffer set and carry no replica/group key), so this
-    shim owns ONE client per DP replica in ``self._clients`` and routes each call
-    to ``self._clients[replica_idx]`` for the request's processing replica.
+    shim owns one client per leaf per DP replica in ``self._clients`` and routes
+    each call to the matching leaf client for the request's processing replica.
 
     Under backend dedup there is one client per DP replica. Each client
     registers its replica's FULL TP GPU set (so MLA keeps
@@ -568,7 +952,8 @@ class DKVConnector:
     @traced
     def __init__(
         self,
-        replica_kv_memory: Sequence[Sequence[KVCacheMemory]],
+        leaves: Mapping[str, KVCacheGroupId],
+        replica_kv_memory: Sequence[Mapping[str, KVCacheMemory]],
         local_block_store_endpoint: str,
         devices: Sequence[Device],
         params: KVCacheParamInterface,
@@ -576,29 +961,63 @@ class DKVConnector:
         """Constructs and admits one dKV Rust client per DP replica.
 
         Args:
-            replica_kv_memory: Per-replica offload-ready KV memory.
+            leaves: Mapping from leaf identity to attention group.
+            replica_kv_memory: Per-replica offload-ready KV memory by leaf.
             local_block_store_endpoint: Co-located dKV control-plane endpoint.
             devices: The pipeline's flat, ordered device list across replicas.
             params: KV-cache parameters, folded into the tenant store's layout
                 ``kv_config_hash``.
 
         Raises:
-            ValueError: If ``MODULAR_DKV_TENANT_ID`` is unset or empty — dKV has
-                no default/legacy single-tenant path, so it fails model load
-                rather than silently keying an unfenced shared store.
+            ValueError: If either operator-injected variable is missing —
+                ``MODULAR_NIXL_TRANSFER_BACKEND`` (dKV auto-selects no
+                transport) or ``MODULAR_DKV_TENANT_ID`` (dKV has no
+                default/legacy single-tenant path, so it fails model load
+                rather than silently keying an unfenced shared store). Both are
+                checked in one pass, so a pod missing both is told about both.
         """
-        # Deferred so importing this module (e.g. for DKVExternalBlockMetadata,
-        # or by non-dKV pipelines) does not require the optional, runtime-
-        # provided dkv_connector extension to be installed.
+        # First, and before the deferred import below: this is a pure check on
+        # the leaf tree, it is the cheapest thing here, and an unsupported tree
+        # is a config error nothing further can make serviceable. Running it
+        # ahead of the import also means a bad tree reports itself as such on a
+        # host where the optional extension is missing, rather than as a
+        # confusing ModuleNotFoundError. The ONLY place the tree is validated:
+        # every caller builds through this constructor, so neither
+        # create_connector nor a cache manager repeats it.
+        _validate_dkv_leaves(leaves)
+
+        # Deferred so importing this module (e.g. by a non-dKV pipeline) does
+        # not require the optional, runtime-provided dkv_connector extension to
+        # be installed.
         from dkv_connector import DkvConnector as _DkvConnectorClient
+
+        # The Rust client creates a NIXL agent, which dlopens the transport
+        # plugin RTLD_LOCAL; the UCX flavors carry unresolved CUDA/NVML (and,
+        # for the verbs flavors, rdma-core) symbols that must already be
+        # RTLD_GLOBAL in this process or the plugin faults as it loads. The
+        # libfabric flavor links its stack and needs none of this, but the
+        # preload skips absent libraries, so it stays backend-agnostic here
+        # rather than duplicating the backend dispatch.
+        preload_nixl_plugin_deps()
 
         if not replica_kv_memory or not all(replica_kv_memory):
             raise ValueError(
                 "DKVConnector requires at least one KV cache buffer per replica"
             )
+        if any(set(memory) != set(leaves) for memory in replica_kv_memory):
+            raise ValueError(
+                "DKVConnector leaf mapping must match every replica's KV memory"
+            )
+        self._leaves = dict(leaves)
+        self._wire_ids = _leaf_wire_ids(self._leaves)
+        self._page_size = params.page_size
+        self._derive_leaf_shape()
 
         listen_port = int(os.getenv("MODULAR_DKV_NIXL_LISTEN_PORT", "0"))
-        backend = os.getenv("MODULAR_NIXL_TRANSFER_BACKEND") or None
+        # Both operator-injected variables at once, so a pod missing both is
+        # told about both (CLIN-1730 made the transport required alongside the
+        # tenant identity, and reading them separately reported only the first).
+        backend, tenant_id = _required_operator_env()
 
         # Kill-switch (CLIN-1534): a G0 prefix-cache hit refreshes dKV recency
         # via touch(). Set MODULAR_DKV_DISABLE_G0_TOUCH to make touch() a no-op
@@ -615,27 +1034,29 @@ class DKVConnector:
             "y",
         )
 
-        # Tenant deployment identity (CLIN-1477). MODULAR_DKV_TENANT_ID is
-        # injected by the operator (the trust boundary — not a user-facing
-        # override flag, which would be forgeable). It is REQUIRED: dKV has no
-        # default/legacy single-tenant path, so an unset or empty value fails
-        # model load rather than silently keying an unfenced shared store. Every
-        # DP replica handshakes the same per-tenant identity (kv_shard_id/
-        # replica_id zeroed), so the server keys ONE region-sharded store per
-        # tenant_id (backend dedup).
-        tenant_id = os.getenv("MODULAR_DKV_TENANT_ID", "")
-        if not tenant_id:
-            raise ValueError(
-                "dKV requires MODULAR_DKV_TENANT_ID to be set to a non-empty "
-                "tenant identity (the operator injects it); the legacy "
-                "empty-tenant default path has been removed."
-            )
         num_replicas = len(replica_kv_memory)
         # one shard's per-unit page strides in canonical order, from replica 0
         # because every DP replica runs the same model and config and so the
         # same layout; folded into the layout hash because a shard's dKV block
         # is these strides concatenated
-        unit_strides = _shard_unit_strides(replica_kv_memory[0])
+        unit_strides = [
+            stride
+            for leaf_id in leaves
+            for stride in _shard_unit_strides([replica_kv_memory[0][leaf_id]])
+        ]
+        # No mixed replicated/sharded warning here any more: with one client
+        # per leaf, ``_group_units_by_shard`` computes ``shards_are_identical``
+        # over a single leaf, so a replicated leaf gets its own ``is_mla=True``
+        # client and is stored once rather than once per TP shard. A mixed tree
+        # no longer rides the per-shard path, so the footprint multiplier the
+        # warning described is gone.
+        #
+        # That is a pure win only where the NVLink broadcast arms. ``is_mla``
+        # makes the client mint one key per hash and fill device buffer 0; the
+        # other shards are filled by the broadcast, which needs a same-host
+        # endpoint, peer access and tp >= 2, and which the Rust side arms
+        # best-effort. Where it does not arm, shards 1..tp-1 keep stale KV --
+        # the loop after admission warns on exactly that combination.
         kv_config_hash, replica_identities = _resolve_replica_identities(
             num_replicas, params, unit_strides
         )
@@ -662,99 +1083,153 @@ class DKVConnector:
         # than a restatement of it.
         devices_per_replica = split_into_groups(list(devices), num_replicas)
 
-        admission_timeout_s = float(
-            os.getenv(
-                "MODULAR_DKV_ADMISSION_TIMEOUT_S",
-                str(_DEFAULT_ADMISSION_TIMEOUT_S),
-            )
-        )
+        admission_timeout_s = _resolve_admission_timeout_s()
 
-        # Each client's connect + handshake ("admission") is retried on transient
-        # failures (dKV still starting); model readiness is gated on ALL clients
-        # admitting, so a client whose retry budget is exhausted raises here and
-        # fails model load rather than serving with a partial dKV. ``self._clients``
-        # holds one client per DP replica: ``load`` / ``offload`` route by
-        # ``replica_idx`` to ``self._clients[replica_idx]``, and the client-wide
-        # fan-outs (wait_for_*, metrics, reset_metrics) iterate the whole list.
-        self._clients = []
-        # Backend dedup: one client per DP replica, each registering that
-        # replica's FULL TP GPU set (its flat units concatenated per shard by
-        # _make_client). For MLA this restores device_buffers.len() == tp, so the
-        # Rust client's NVLink broadcast + NUMA-local first hop re-engage
-        # (the CLIN-1512 per-GPU split had made them inert). The store key stays
-        # per-tenant — replica_identities zeros kv_shard_id/replica_id, so every
-        # DP replica of a tenant resolves to ONE store — and the per-block
-        # BlockKey tp_shard_id carries the MHA/GQA-vs-MLA distinction.
-        for idx, (
-            kv_memory,
+        heartbeat_overrides = _heartbeat_overrides()
+        if heartbeat_overrides:
+            _logger.info(
+                "dKV heartbeat poller overridden from the environment: %s",
+                heartbeat_overrides,
+            )
+
+        # Each client retries its own connect and handshake ("admission") on
+        # transient failures within ``admission_timeout_s``, on the one NIXL
+        # agent it builds; model readiness is gated on ALL clients admitting, so
+        # a client whose budget runs out raises here and fails model load rather
+        # than serving with a partial dKV.
+        # ``self._clients[replica_idx][leaf_id]`` is one client per leaf per DP
+        # replica: ``load`` / ``offload`` / ``touch`` index both, and the
+        # client-wide fan-outs (wait_for_*, metrics, take_metrics) iterate
+        # every client of every replica.
+        self._clients: list[dict[str, _DkvClient]] = []
+        # Per replica, the candidate its outstanding lookup leased, as depths:
+        # dkv hash -> how many blocks of the candidate end at it. `load` reads
+        # it to turn the manager's per-leaf hashes back into the depth
+        # `load_prepared` wants, and every path out of `load` pops it.
+        # One entry per replica at most: a replica's lookup is answered before
+        # the next one is asked, on the one scheduler thread.
+        self._leased_depths: dict[int, dict[int, int]] = {}
+        # Each client registers its replica's FULL TP GPU set (that leaf's units
+        # concatenated per shard by _make_client). For MLA this restores
+        # device_buffers.len() == tp, so the Rust client's NVLink broadcast +
+        # NUMA-local first hop re-engage (the CLIN-1512 per-GPU split had made
+        # them inert). The store key stays per-tenant — replica_identities zeros
+        # kv_shard_id/replica_id, so every DP replica of a tenant resolves to
+        # ONE store — and the per-block BlockKey tp_shard_id carries the
+        # MHA/GQA-vs-MLA distinction.
+        for (
+            replica_memory,
             replica_devices,
             (kv_shard_id, replica_id),
-        ) in enumerate(
-            zip(
-                replica_kv_memory,
-                devices_per_replica,
-                replica_identities,
-                strict=True,
-            )
+        ) in zip(
+            replica_kv_memory,
+            devices_per_replica,
+            replica_identities,
+            strict=True,
         ):
-            factory = functools.partial(
-                self._make_client,
-                _DkvConnectorClient,
-                kv_memory,
-                local_block_store_endpoint,
-                listen_port,
-                backend,
-                replica_devices,
-                tenant_id=tenant_id,
-                kv_config_hash=kv_config_hash,
-                kv_shard_id=kv_shard_id,
-                replica_id=replica_id,
-                tenant_gpu_count=tenant_gpu_count,
-                tenant_gpu_device_ids=tenant_gpu_device_ids,
-            )
-            self._clients.append(
-                _admit_with_retry(
-                    factory,
-                    timeout_s=admission_timeout_s,
-                    label=f"replica {idx}",
+            clients_for_replica: dict[str, _DkvClient] = {}
+            # One geometry per leaf so dKV pages are lcm(each leaf's
+            # block_bytes), not lcm of concatenated values+scales. Each entry is
+            # the whole triple (id, block bytes, recency) -- the shape
+            # ``dkv_connector::GroupSpec`` carries end to end, so nothing
+            # downstream re-joins a recency to an id by index.
+            group_specs = [
+                (
+                    self._wire_ids[leaf_id],
+                    sum(_shard_unit_strides([replica_memory[leaf_id]])),
+                    recency,
                 )
-            )
-        # One client per DP replica is the backend-dedup invariant that lets
-        # load/offload index self._clients[replica_idx] directly, with no
-        # per-replica shard-client fan-out. #91376's divergent-load drain was a
-        # cross-CLIENT concern; one client per replica cannot produce cross-client
-        # divergence (the single Rust client owns its own multi-GPU ordering), so
-        # that drain is gone. Guard the invariant fail-loud: a future change that
-        # rebuilds multiple clients per replica trips here rather than silently
-        # reindexing the wrong client or skipping the removed drain.
-        if len(self._clients) != num_replicas:
+                for leaf_id, recency in zip(
+                    self._leaves, self._group_recencies, strict=True
+                )
+            ]
+            for leaf_id in self._leaves:
+                clients_for_replica[leaf_id] = self._make_client(
+                    _DkvConnectorClient,
+                    [replica_memory[leaf_id]],
+                    local_block_store_endpoint,
+                    listen_port,
+                    backend,
+                    replica_devices,
+                    groups=group_specs if self._advertise_groups else [],
+                    owner_group_id=self._wire_ids[leaf_id],
+                    tenant_id=tenant_id,
+                    kv_config_hash=kv_config_hash,
+                    kv_shard_id=kv_shard_id,
+                    replica_id=replica_id,
+                    tenant_gpu_count=tenant_gpu_count,
+                    tenant_gpu_device_ids=tenant_gpu_device_ids,
+                    heartbeat_overrides=heartbeat_overrides,
+                    admission_timeout_s=admission_timeout_s,
+                )
+            self._clients.append(clients_for_replica)
+        # One client per leaf per DP replica. load/offload index
+        # self._clients[replica_idx][leaf_id]; each Rust client owns one leaf's
+        # buffers and that leaf's store namespace. Guard the mapping fail-loud.
+        if len(self._clients) != num_replicas or any(
+            set(clients) != set(self._leaves) for clients in self._clients
+        ):
             raise RuntimeError(
-                f"dKV backend dedup expects one client per DP replica; built "
-                f"{len(self._clients)} clients for {num_replicas} replica(s)"
+                "dKV connector client topology does not match its leaf mapping"
             )
 
         # Surface the Rust connector's MLA NVLink-broadcast status to the serve
-        # process: the Rust side logs it via ``tracing``, which has no subscriber
-        # under MAX. ``broadcast_peer_count`` is ``tp - 1`` once the broadcast
-        # armed at handshake, and 0 for a non-MLA model, a single device, or a
-        # topology without peer access, so log only when it engaged.
-        for idx, client in enumerate(self._clients):
-            peers = client.broadcast_peer_count()
-            if peers:
-                _logger.info(
-                    "dKV MLA NVLink broadcast enabled: replica %d "
-                    "broadcast_peer_count=%d",
-                    idx,
-                    peers,
-                )
+        # process: the Rust side logs it through ``tracing`` at ``info``, and the
+        # subscriber the connector now installs defaults to ``warn``, so it stays
+        # quiet unless ``RUST_LOG`` raises it. ``broadcast_peer_count`` is
+        # ``tp - 1`` once the broadcast armed at handshake, and 0 for a non-MLA
+        # model, a single device, or a topology without peer access, so log only
+        # when it engaged.
+        for idx, clients in enumerate(self._clients):
+            for leaf_id, client in clients.items():
+                peers = client.broadcast_peer_count()
+                if peers:
+                    _logger.info(
+                        "dKV MLA NVLink broadcast enabled: replica %d, leaf %s "
+                        "broadcast_peer_count=%d",
+                        idx,
+                        leaf_id,
+                        peers,
+                    )
+                elif (
+                    params.tensor_parallel_degree > 1
+                    and replica_kv_memory[idx][leaf_id].replicated
+                ):
+                    # A replicated leaf takes the is_mla path, which mints ONE
+                    # key per hash and fills device buffer 0. Shards 1..tp-1
+                    # are filled by the NVLink broadcast -- and only by it. The
+                    # Rust side arms that best-effort: a peer-access or stream
+                    # failure warns and leaves the connector on
+                    # source-device-only behavior without failing the
+                    # handshake. So this combination (replicated leaf, TP>1, no
+                    # broadcast) is the one where shard 0 is the only shard
+                    # that gets real KV, and every other shard reads whatever
+                    # was in its buffer. Loud, because nothing downstream can
+                    # tell.
+                    _logger.warning(
+                        "dKV replicated leaf %s on replica %d has "
+                        "broadcast_peer_count=0 at tensor_parallel_degree=%d: "
+                        "loads fill device buffer 0 only and shards 1..%d keep "
+                        "stale KV. Requires a same-host (ipc://) endpoint and "
+                        "a full peer-access mesh; check the connector's "
+                        "broadcast-setup warnings.",
+                        leaf_id,
+                        idx,
+                        params.tensor_parallel_degree,
+                        params.tensor_parallel_degree - 1,
+                    )
 
         _logger.info(
             "dKV admitted all %d handshake(s) across %d replica(s) for "
             "tenant %r",
-            len(self._clients),
+            sum(len(clients) for clients in self._clients),
             num_replicas,
             tenant_id,
         )
+
+    @property
+    def leaves(self) -> Mapping[str, KVCacheGroupId]:
+        return self._leaves
 
     @staticmethod
     def _make_client(
@@ -765,21 +1240,27 @@ class DKVConnector:
         backend: str | None,
         expected_devices: Sequence[Device],
         *,
+        groups: Sequence[tuple[int, int, int]],
+        owner_group_id: int,
         tenant_id: str,
         kv_config_hash: int,
         kv_shard_id: int,
         replica_id: int,
         tenant_gpu_count: int,
         tenant_gpu_device_ids: Sequence[int],
-    ) -> object:
-        # Group the flat to_memory() units into one (device_id, units) entry
+        heartbeat_overrides: Mapping[str, int],
+        admission_timeout_s: float,
+    ) -> _DkvClient:
+        # Group the per-leaf units into one (device_id, units) entry
         # per TP shard. The Rust client concatenates each shard's units, in
         # this order, into one dKV block, so a quantized cache's scale buffers
         # and a multi-cache buffer's extra caches (speculative draft and
-        # target) all land inside the block rather than being dropped, and the
-        # stored bytes are identical to the shard's portion of the CPU block
-        # the local and tiered connectors build (CLIN-1460).
-        shards, is_mla = _group_units_by_shard(kv_memory)
+        # target) all land inside the block rather than being dropped. The
+        # stored bytes are the shard's portion of the CPU block the local and
+        # tiered connectors build (CLIN-1460) only for an all-sharded tree;
+        # those connectors keep one copy of a replicated unit, dKV one per
+        # shard.
+        shards, shards_are_identical = _group_units_by_shard(kv_memory)
 
         # MAX's compute stream per device ordinal, so the same-host offload can
         # order each device's D2H after the forward pass that wrote its blocks
@@ -789,9 +1270,9 @@ class DKVConnector:
         # CPU stream) maps to 0, which routes that device's transfers over NIXL.
         compute_streams: dict[int, int] = {}
         for mem in kv_memory:
-            for buffer in mem.all_buffers:
+            for buffer in mem.buffers:
                 compute_streams[buffer.device.id] = (
-                    buffer.device.default_stream.native_stream_handle
+                    buffer.device.default_queue.native_stream_handle
                 )
 
         # Bind ``tp_shard_id`` to device identity rather than to registration
@@ -799,8 +1280,8 @@ class DKVConnector:
         # seq_hash)`` key, so its shard ids must line up with ours by device
         # rank. ``expected_devices`` is the replica's device order sourced from
         # the pipeline config, so comparing it against the shard order the
-        # grouping derived catches a future ``to_memory`` change that reorders
-        # buffers before it silently shifts every key.
+        # grouping derived catches a future change that reorders buffers
+        # before it silently shifts every key.
         registered_order = [device_id for device_id, _ in shards]
         expected_order = [device.id for device in expected_devices]
         if registered_order != expected_order:
@@ -825,85 +1306,461 @@ class DKVConnector:
             0,  # page_size (tokens): unused by the Rust client
             total_num_pages,
             len(shards),
-            is_mla,
+            # the client's parameter is still named ``is_mla``, but
+            # replication is not MLA-specific: M3's index-K cache replicates.
+            shards_are_identical,
             listen_port=listen_port,
             backend=backend,
             compute_streams=compute_streams,
+            groups=list(groups),
+            owner_group_id=owner_group_id,
             tenant_id=tenant_id,
             kv_config_hash=kv_config_hash,
             kv_shard_id=kv_shard_id,
             replica_id=replica_id,
             tenant_gpu_count=tenant_gpu_count,
             tenant_gpu_device_ids=list(tenant_gpu_device_ids),
+            admission_timeout_s=admission_timeout_s,
+            **heartbeat_overrides,
         )
 
     @property
     def name(self) -> str:
         return "dkv"
 
-    def load(
+    def _derive_leaf_shape(self) -> None:
+        """Caches what ``load`` and ``touch`` need from the leaf tree.
+
+        Everything here depends only on ``_leaves``, ``_wire_ids`` and
+        ``_page_size``, all fixed for the life of the connector, so deriving it
+        per admission would put two comprehensions and a ``ceildiv`` on the
+        scheduler's hot path for values that cannot change (SERVOPT-1526).
+
+        Called from ``__init__`` once those three are bound. Tests that
+        construct through ``__new__`` bind them by hand and call this, so the
+        derived shape cannot drift from the real one.
+        """
+        # Reset here rather than only in __init__: this is the hook a test
+        # that bypasses __init__ calls to finish construction, and `lookup`
+        # and `load` both assume it exists.
+        self._leased_depths = {}
+        self._full_leaf_ids = [
+            leaf_id
+            for leaf_id, group_id in self._leaves.items()
+            if group_id.is_full()
+        ]
+        self._sliding_leaf_ids = [
+            leaf_id
+            for leaf_id, group_id in self._leaves.items()
+            if group_id.is_sliding_window()
+        ]
+        # :meth:`probe` asks one leaf and its masks are read as a
+        # full-attention run, which only a full leaf answers.
+        self._probe_leaf_id: str | None = (
+            self._full_leaf_ids[0] if self._full_leaf_ids else None
+        )
+        # One window for every sliding leaf (``_validate_dkv_leaves`` rejects a
+        # tree with two), so resolve it once. 0 only when there is no sliding
+        # leaf at all, per the note below.
+        self._window_blocks = (
+            self._leaves[self._sliding_leaf_ids[0]].blocks_in_window(
+                self._page_size
+            )
+            if self._sliding_leaf_ids
+            else 0
+        )
+        # A sliding leaf always spans a whole block: ``KVCacheGroupId``
+        # refuses ``window_size <= 1`` (SERVOPT-1627), and every window above
+        # that leaves at least one block once the query token's own page comes
+        # off. That is what the leased path needs -- a leaf spanning none
+        # would take a lease and hand it straight back on every request
+        # without ever posting a block, because
+        # the sliding-window rule would return the whole candidate unread and
+        # :func:`max._kv_core.blocks_held_of_hit` would then make its share 0.
+        # Recency is a property of the leaf's attention group, so it is fixed
+        # here rather than rebuilt inside the per-replica admission loop.
+        self._group_recencies = [
+            _group_recency(group_id) for group_id in self._leaves.values()
+        ]
+        # A single sliding leaf must still advertise, or the server sees no
+        # recency, infers from wire id 1 (== GroupId::FullAttention) and gives a
+        # pure-SWA model full-sequence LRU. A lone full leaf keeps the
+        # pre-existing empty-groups wire shape.
+        self._advertise_groups = len(self._leaves) > 1 or bool(
+            self._sliding_leaf_ids
+        )
+
+    def lookup(
         self,
-        device_block_ids: list[int],
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
-    ) -> int:
-        """Loads external blocks into ``replica_idx``'s device memory by hash.
+        hint: bytes | None = None,
+    ) -> Mapping[str, Sequence[bool]]:
+        """Reports which of ``block_hashes`` dkv holds, per leaf, under a lease.
 
-        Each ``block_hashes`` element must be canonical bytes: 8 bytes for
-        ``ahash64`` / ``sha256_64`` or 32 bytes for full ``sha256``. 32-byte
-        digests are truncated to their first 8 bytes at the dkv boundary (see
-        :func:`_to_dkv_u64`).
+        One leased read per leaf, because the lease has to live on the client
+        that will post the transfer. That is what lets :meth:`load` re-read
+        nothing, so a leaf falling short there is a fault rather than a race.
 
-        Routes to the processing replica's single client (backend dedup: one
-        client per DP replica, registering that replica's full TP GPU set). The
-        client returns the loaded-block count; the block manager frees
-        ``blocks[num_loaded:]`` past it (in
-        ``_get_full_blocks_from_host_prefix_cache``). The Rust client owns the
-        freed-page ordering across its own GPUs, so there is no shard-client
-        fan-out or cross-client drain at this layer.
+        The lease is ours, not the caller's: the protocol has no release. A
+        lookup no load follows leaves one candidate's pins outstanding until
+        the next lookup abandons them, or the client's ``plan_ttl`` (10 s)
+        expires them. Bounded, and never a correctness problem.
+
+        ``hint`` routes the read to the peer that may hold the blocks;
+        :meth:`load` inherits it from the lease. See :meth:`_usable_hint`.
         """
+        # `prepare_load` may well supersede its own plan, but that is the Rust
+        # client's business and not written down on this side of the FFI.
+        self._abandon_leases(replica_idx)
+        if not block_hashes:
+            return {leaf_id: [] for leaf_id in self._leaves}
         dkv_hashes = [_to_dkv_u64(h) for h in block_hashes]
-        return self._clients[replica_idx].load(
-            group_id=_DKV_GROUP_FULL_ATTENTION,
-            device_block_ids=device_block_ids,
+        leaf_ids = list(self._leaves)
+        clients = self._clients[replica_idx]
+        resident = {
+            leaf_id: clients[leaf_id].prepare_load(
+                group_id=self._wire_ids[leaf_id],
+                block_hashes=dkv_hashes,
+                hint=self._usable_hint(hint),
+            )
+            for leaf_id in leaf_ids
+        }
+        # O(leaves), not O(blocks): the manager indexes these masks
+        # positionally, so a mis-sized one has to fail here rather than as an
+        # IndexError inside a serving request.
+        short_mask = {
+            leaf_id: len(mask)
+            for leaf_id, mask in resident.items()
+            if len(mask) != len(dkv_hashes)
+        }
+        if short_mask:
+            self._abandon_leases(replica_idx)
+            raise ValueError(
+                f"dkv prepare_load answered {short_mask} blocks wide over "
+                f"{len(dkv_hashes)} blocks"
+            )
+        # `load_prepared` addresses the lease by DEPTH, and the manager hands
+        # `load` a suffix instead. See :meth:`_leased_end`.
+        self._leased_depths[replica_idx] = {
+            dkv_hash: depth for depth, dkv_hash in enumerate(dkv_hashes, 1)
+        }
+        return resident
+
+    def probe(
+        self,
+        block_hashes: Sequence[bytes],
+        replica_idxs: Sequence[int],
+    ) -> list[Mapping[str, Sequence[bool]]]:
+        """Reports what each replica could load of ``block_hashes``.
+
+        One lookup of the first full-attention leaf, for pricing a request
+        before it is bound: every replica of a tenant shares one store, so one
+        healthy replica's client answers for every replica that can load. It
+        costs two RPCs, a ``read_blocks`` that pins and a ``release_blocks``
+        before it returns, and the read bumps that leaf's read tally on the
+        server. A replica with a degraded leaf client loads nothing until it
+        reconnects, so it answers all misses. A tree with no full-attention
+        leaf raises ``ValueError``: a sliding leaf's mask cannot price a run. Holds no pin past the call,
+        takes no hint, which would dial peers, and leaves every replica's
+        outstanding lease alone.
+        """
+        # TODO(CLIN-2044): this pinned read bumps read_ref_tally on this leaf
+        # alone and stages G2 inside read_blocks, so at diskWriteThreshold >= 2
+        # this leaf turns disk-eligible first; a presence-only lookup fixes both.
+        probe_leaf_id = self._probe_leaf_id
+        if probe_leaf_id is None:
+            raise ValueError("dkv probe needs a full-attention leaf")
+        misses: Mapping[str, Sequence[bool]] = {
+            probe_leaf_id: [False] * len(block_hashes)
+        }
+        able = [r for r in replica_idxs if self._can_load(r)]
+        if not block_hashes or not able:
+            return [misses for _ in replica_idxs]
+        dkv_hashes = [_to_dkv_u64(h) for h in block_hashes]
+        (mask,) = self._clients[able[0]][probe_leaf_id].lookup(
+            group_ids=[self._wire_ids[probe_leaf_id]],
             block_hashes=dkv_hashes,
         )
+        if len(mask) != len(dkv_hashes):
+            raise ValueError(
+                f"dkv lookup answered {len(mask)} blocks wide over "
+                f"{len(dkv_hashes)} blocks"
+            )
+        resident: Mapping[str, Sequence[bool]] = {probe_leaf_id: mask}
+        return [resident if r in able else misses for r in replica_idxs]
+
+    def _can_load(self, replica_idx: int) -> bool:
+        """Whether every leaf client of ``replica_idx`` is serving."""
+        return all(
+            client.is_healthy()
+            for client in self._clients[replica_idx].values()
+        )
+
+    def _abandon_leases(self, replica_idx: int) -> None:
+        """Hands back whatever leases this replica is still holding.
+
+        Runs at the top of every :meth:`lookup` and on every raising path out
+        of :meth:`lookup` and :meth:`load`. ``abandon_prepared`` is a no-op on
+        a client holding nothing, so this runs blindly over the tree; guarded
+        per leaf so one failure strands nothing after it.
+        """
+        self._leased_depths.pop(replica_idx, None)
+        for leaf_id, client in self._clients[replica_idx].items():
+            try:
+                client.abandon_prepared()
+            except BaseException:
+                _logger.exception(
+                    "dkv abandon_prepared failed for leaf %s; its pins wait "
+                    "on the lease TTL",
+                    leaf_id,
+                )
+
+    def _usable_hint(self, hint: bytes | None) -> bytes | None:
+        """The hint to put on the wire, which a hybrid tree cannot carry.
+
+        A v2 hint is group-major and names the producer's ids, so a peer
+        predating per-leaf ids has no id for a sliding leaf. On a hybrid tree
+        a hinted full leaf would read remotely while the sliding leaf reads
+        locally and misses, throwing the result away. Until a hint can name
+        per-leaf ids (SERVOPT-1617), a hybrid tree stays local on every leaf.
+        """
+        return None if self._sliding_leaf_ids else hint
+
+    @staticmethod
+    def _leased_end(
+        depths: Mapping[int, int],
+        block_hashes: Mapping[str, Sequence[bytes]],
+    ) -> int:
+        """How deep into the leased candidate the rows reach.
+
+        ``load_prepared`` takes the depth, not the hashes: it moves
+        ``num_blocks`` ending at ``end`` out of the plan its own
+        ``prepare_load`` built. The manager hands out a suffix per leaf
+        instead, so the depth comes back off the last hash of a row, which is
+        the block sitting at it.
+
+        Every non-empty row ends at the same depth, because the groups splice
+        them onto rows that stay in lockstep. Disagreement is a manager bug
+        worth failing on rather than loading through: the leaves would come
+        back holding KV from different prefixes, which no later check catches.
+        """
+        ends = {
+            leaf_id: depths[_to_dkv_u64(hashes[-1])]
+            for leaf_id, hashes in block_hashes.items()
+            if hashes
+        }
+        if len(set(ends.values())) > 1:
+            raise ValueError(
+                f"DKVConnector.load rows end at different depths: {ends}. "
+                "Every leaf's row has to end where the joint hit does."
+            )
+        return next(iter(ends.values()), 0)
+
+    def load(
+        self,
+        block_ids: Mapping[str, Sequence[int]],
+        block_hashes: Mapping[str, Sequence[bytes]],
+        replica_idx: int = 0,
+        hint: bytes | None = None,
+    ) -> KVTransfer:
+        """Moves each leaf's share out of the lease its :meth:`lookup` took.
+
+        One ``load_prepared`` per leaf, reading out of the locations that
+        leaf's own lookup already found. Which hashes each leaf gets -- the
+        whole prefix for a full leaf, the window for a windowed one -- the
+        cache manager settled from the lookup's masks; this only has to find
+        where they sit in the leased candidate.
+
+        ``hint`` is ignored: it rode in on the lease, and honouring a different
+        one here would mean re-reading, which is what the lease exists to
+        avoid. The manager passes the same one either way.
+
+        Consumes the lease however this exits, raising included.
+
+        Returns:
+            A :class:`_DkvBatchTransfer` over the posted READs. It polls
+            complete once every leaf's H2D has landed, so the manager pins the
+            destination blocks and the scheduler holds the request out of the
+            batch until then, rather than ordering the copies on a pre-forward
+            barrier that stalls batch construction.
+
+        Raises:
+            ValueError: If the rows do not match the leaf tree one block per
+                hash, if no lookup leased this replica, or if the rows
+                disagree about where they end.
+            KVLoadRefused: If a leaf delivered less than its own lease
+                promised.
+            KVLoadFailed: If posting a leaf's copy failed, or a copy that a
+                short delivery drained did. Every leaf that posted has been
+                drained by then.
+        """
+        clients = self._clients[replica_idx]
+        leaf_ids = list(self._leaves)
+        depths = self._leased_depths.pop(replica_idx, None)
+        # Transfers of the leaves whose `load_prepared` posted, in call order.
+        # Filled as it goes, because an H2D landing in a staging row the caller
+        # is about to free has to be waited on however this returns.
+        posted_transfers: list[KVTransfer] = []
+        try:
+            wanted = {
+                leaf_id: len(hashes) for leaf_id, hashes in block_hashes.items()
+            }
+            if set(wanted) != set(self._leaves) or any(
+                len(block_ids[leaf_id]) != n
+                for leaf_id, n in wanted.items()
+                if leaf_id in block_ids
+            ):
+                raise ValueError(
+                    "DKVConnector.load needs one destination block per hash "
+                    f"on every leaf of {sorted(self._leaves)}; got blocks "
+                    f"{ {k: len(v) for k, v in block_ids.items()} } and "
+                    f"hashes {wanted}"
+                )
+            if depths is None:
+                raise ValueError(
+                    "DKVConnector.load ran without a lease on replica "
+                    f"{replica_idx}; every load reads out of the plan its own "
+                    "lookup built."
+                )
+            end = self._leased_end(depths, block_hashes)
+
+            posted = {}
+            for leaf_id in leaf_ids:
+                share = wanted[leaf_id]
+                if not share:
+                    # Unreachable: `_derive_leaf_shape` asserts every sliding
+                    # leaf spans a whole block, so a share of a non-zero hit
+                    # cannot be 0. Kept because the alternative is posting
+                    # `num_blocks=0` against a live lease.
+                    clients[leaf_id].abandon_prepared()
+                    posted[leaf_id] = 0
+                    continue
+                posted[leaf_id], transfer = clients[leaf_id].load_prepared(
+                    group_id=self._wire_ids[leaf_id],
+                    block_ids=list(block_ids[leaf_id]),
+                    end=end,
+                    num_blocks=share,
+                )
+                # A zero post is exact: that leaf released its plan before
+                # anything went in flight, so its transfer holds nothing and
+                # collecting it would only cost a poll per scheduler iteration.
+                if posted[leaf_id]:
+                    posted_transfers.append(transfer)
+            if posted != wanted:
+                short_leaves = [
+                    leaf_id
+                    for leaf_id in leaf_ids
+                    if posted[leaf_id] != wanted[leaf_id]
+                ]
+                # Not an eviction race: the lease held across both halves.
+                # What is left is a fault -- degraded mid-request, an expired
+                # lease, or a hinted peer leaving the table. Drain the
+                # leaves that posted, and only those: each transfer covers one
+                # request's own reads, so this waits on nothing else. They
+                # come off the list first so the unwind does not drain them
+                # again, since a failed transfer re-raises on every drain.
+                drained, posted_transfers = posted_transfers, []
+                _drain(drained)
+                raise KVLoadRefused(
+                    "dkv load_prepared fell short of its own lease: leaves "
+                    f"{short_leaves} delivered "
+                    f"{[posted[leaf_id] for leaf_id in short_leaves]} of "
+                    f"{[wanted[leaf_id] for leaf_id in short_leaves]}. The "
+                    "connector degraded, the lease expired mid-request, or a "
+                    "hinted peer left the table."
+                )
+            return _DkvBatchTransfer(posted_transfers)
+        except BaseException as err:
+            # Every leaf leased before anything was decided, so any raise
+            # above has to hand those pins back rather than wait for the TTL.
+            self._abandon_leases(replica_idx)
+            # A leaf that posted has reads landing into rows the caller frees
+            # as soon as this raises. Swallowing: the original exception is
+            # the one worth propagating.
+            try:
+                _drain(posted_transfers)
+            except BaseException:
+                _logger.exception(
+                    "dkv transfer drain failed while unwinding a load; its "
+                    "reads may still be landing"
+                )
+            failure = _as_load_failure(err)
+            if failure is err:
+                raise
+            raise failure from err
 
     def offload(
         self,
-        block_ids: list[int],
-        block_hashes: Sequence[bytes],
-        parent_seq_hash: bytes | None = None,
+        block_ids: Mapping[str, Sequence[int]],
+        block_hashes: Mapping[str, Sequence[bytes]],
         replica_idx: int = 0,
-    ) -> None:
+    ) -> KVConnectorTransfer:
         """Offloads ``replica_idx``'s device blocks to the dkv service by hash.
 
-        Each ``block_hashes`` element follows the same 8-or-32 byte
-        contract as :meth:`load` (truncated to its first 8 bytes at the
-        dkv boundary; see :func:`_to_dkv_u64`).
+        Each hash follows the same 8-or-32 byte contract as :meth:`load`
+        (truncated to its first 8 bytes at the dkv boundary; see
+        :func:`_to_dkv_u64`).
 
-        ``parent_seq_hash`` is accepted for ``KVConnector`` protocol
-        compatibility but no longer forwarded: the dKV store now dedups
-        by composite key ``(tp_shard_id, group, seq_hash)`` and does not
-        chain blocks under a parent, so the Rust client builds the keys
-        (and the NUMA striping plan) from the hashes alone.
+        The dKV store dedups by composite key ``(tp_shard_id, group,
+        seq_hash)`` and does not chain blocks under a parent, so the Rust
+        client builds the keys (and the NUMA striping plan) from the hashes
+        alone.
 
-        Routes to the processing replica's single client (backend dedup: one
-        client per DP replica, registering that replica's full TP GPU set).
+        Routes to the processing replica's per-leaf clients, one call per leaf.
+
+        Returns:
+            A :class:`_DkvBatchTransfer` over the posted WRITEs, reporting
+            ``block_ids`` as the device sources it pins. dKV marks a block
+            readable only when its write settles, so the manager holds the
+            source out of the eviction path until this reads complete rather
+            than letting a D2H drain into a page that has been reused.
         """
-        dkv_hashes = [_to_dkv_u64(h) for h in block_hashes]
-        self._clients[replica_idx].offload(
-            group_id=_DKV_GROUP_FULL_ATTENTION,
-            block_ids=block_ids,
-            block_hashes=dkv_hashes,
-        )
+        if set(block_ids) != set(self._leaves) or set(block_hashes) != set(
+            self._leaves
+        ):
+            raise ValueError(
+                "DKVConnector.offload block IDs and hashes must match its leaf "
+                f"mapping. Expected {self._leaves}, got {block_ids} and "
+                f"{block_hashes}"
+            )
+        # Ids and hashes pair positionally within a leaf, so a leaf given a
+        # different number of each would write blocks under the wrong keys.
+        ragged = {
+            leaf_id: (len(ids), len(block_hashes[leaf_id]))
+            for leaf_id, ids in block_ids.items()
+            if len(ids) != len(block_hashes[leaf_id])
+        }
+        if ragged:
+            raise ValueError(
+                "DKVConnector.offload needs one block per hash on every leaf; "
+                f"got (blocks, hashes) of {ragged}"
+            )
+        clients = self._clients[replica_idx]
+        # Offload every block in the run for every leaf, sliding ones included.
+        # The caller hands us one newly committed run (BlockManager slices
+        # ``req_hashes[first:last]``), NOT the sequence from its root, so a
+        # run-local ``[-blocks_in_window:]`` tail is not the sequence's window:
+        # it drops blocks a later request with a shorter shared prefix needs,
+        # and that request then misses its window and discards the full leaf's
+        # hit with it. Capacity is the server's job -- GROUP_RECENCY_SLIDING_WINDOW
+        # is what makes dKV evict slid-out blocks first.
+        posted = [
+            clients[leaf_id].offload(
+                group_id=self._wire_ids[leaf_id],
+                block_ids=list(block_ids[leaf_id]),
+                block_hashes=[_to_dkv_u64(h) for h in block_hashes[leaf_id]],
+            )
+            for leaf_id in self._leaves
+        ]
+        return _DkvBatchTransfer(posted, block_ids)
 
     def touch(
         self,
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
     ) -> None:
-        """Refreshes ``replica_idx``'s dkv recency for device-served blocks.
+        """Refreshes ``replica_idx``'s dkv recency for blocks it served.
 
         A block served from MAX's on-device (G0) prefix cache issues no other
         dkv traffic, so its dkv LRU recency can freeze and dkv can evict it
@@ -911,56 +1768,91 @@ class DKVConnector:
         hashes to the Rust client's ``touch``, which the server treats as an
         access that bumps recency.
 
-        Touch contract: pass the full root-anchored sequence (full sequence for
-        a full-attention group, full active window for SWA); never a
-        root-omitting slice. See :meth:`KVConnector.touch` and the dKV
-        ``RegionLru::touch`` canonical contract.
+        Touch contract: the CALLER passes the full root-anchored sequence, and
+        this narrows it per leaf before it goes on the wire.
+        ``RegionLru::touch`` forward-touches exactly the keys it is handed and
+        states that obligation (``region_lru.rs``, ``GroupKind::Sliding``), so:
+
+        * a full-attention leaf takes the whole sequence, which the server
+          walks in REVERSE so the shared prefix ends most-recently-used, and
+        * a sliding leaf takes only its active window, which the server walks
+          FORWARD so the window ends most-recently-used and slid-out blocks
+          age toward eviction.
+
+        Handing a sliding leaf the whole chain would bump every slid-out block
+        back to MRU on each admission and erase the pressure
+        ``GROUP_RECENCY_SLIDING_WINDOW`` exists to create -- roughly 780 blocks
+        touched to protect 8 for gemma-4 at 100k tokens with a 1k window. The
+        offload path leaves capacity to the server precisely because that
+        pressure exists, so the two have to agree.
 
         Each ``block_hashes`` element follows the same 8-or-32 byte contract as
         :meth:`load` (truncated to its first 8 bytes at the dkv boundary; see
         :func:`_to_dkv_u64`). Best-effort and fire-and-forget: the Rust client
-        spawns the touch RPC and returns immediately, so this never blocks the
-        caller and a missed touch costs at most a later refetch, never
-        correctness. A no-op when ``MODULAR_DKV_DISABLE_G0_TOUCH`` is set (the
-        kill-switch, read once at construction).
+        queues the touch RPC behind the settles queued before it and returns
+        immediately, so this never blocks the caller and a missed touch costs
+        at most a later refetch, never correctness. A no-op when
+        ``MODULAR_DKV_DISABLE_G0_TOUCH`` is set (the kill-switch, read once at
+        construction).
 
-        Routes to the processing replica's single client (backend dedup: one
-        client per DP replica, registering that replica's full TP GPU set).
+        Not chunked. ``shard_keys`` mints one key per TP shard, so a long
+        sequence on a full leaf is a large request (TP=8 over 780 blocks is
+        ~6k keys). Touches run in the order they are sent, so chunks would
+        land in order, but splitting here costs a Python call and a queued
+        RPC per chunk; chunking belongs in ``Toucher::send``, which queues the
+        whole walk (SERVOPT-1615). Windowing the sliding leaves removes the
+        pathological case (a 1k window is 8 blocks however long the sequence
+        is).
+
+        Routes to the processing replica's per-leaf clients, one call per leaf.
         """
         if self._g0_touch_disabled:
             return
         # Honor the KVConnector.touch contract ("never raises into the caller").
-        # This runs on the scheduler thread BEFORE the Rust client's fire-and-
-        # forget spawn, so a bad hash length (_to_dkv_u64 -> ValueError) or an
+        # This runs on the scheduler thread BEFORE the Rust client queues the
+        # touch, so a bad hash length (_to_dkv_u64 -> ValueError) or an
         # out-of-range replica_idx (IndexError) would otherwise propagate here.
         # A missed recency touch is never a correctness issue, so swallow and
         # log at debug (matches offload's swallow posture; design section 4).
         try:
             dkv_hashes = [_to_dkv_u64(h) for h in block_hashes]
-            self._clients[replica_idx].touch(
-                group_id=_DKV_GROUP_FULL_ATTENTION,
-                block_hashes=dkv_hashes,
+            clients = self._clients[replica_idx]
+            # The whole root-anchored chain: the reverse walk over all of it is
+            # what protects a shared prefix, so this one cannot be truncated.
+            for leaf_id in self._full_leaf_ids:
+                clients[leaf_id].touch(
+                    group_id=self._wire_ids[leaf_id],
+                    block_hashes=dkv_hashes,
+                )
+            # The active window only, per the contract above. The window is the
+            # sequence TAIL, and dkv_hashes is root-anchored, so the last
+            # ``_window_blocks`` entries are it. Guarded because ``[-0:]`` is
+            # the whole list, which is the bug this fixes.
+            window = (
+                dkv_hashes[-self._window_blocks :]
+                if self._window_blocks
+                else []
             )
+            for leaf_id in self._sliding_leaf_ids:
+                clients[leaf_id].touch(
+                    group_id=self._wire_ids[leaf_id],
+                    block_hashes=window,
+                )
         except Exception as exc:
             _logger.debug("dKV touch skipped: %s", exc)
 
-    def count_cached_prefix(
-        self, block_hashes: Sequence[bytes]
-    ) -> tuple[int, int]:
-        """Returns ``(0, 0)``: block presence is tracked by the remote dKV
-        service, so there is no cheap local index to consult synchronously.
-        Callers treat dKV-resident blocks as misses for counting purposes;
-        the ``load`` path still fetches them normally.
+    def poll_transfers(self) -> None:
+        """Drains what each leaf's settled transfers left behind.
+
+        One call per leaf client, because each owns its own connector: a
+        transfer dropped before it settled defers its reader-pin release onto
+        that client's orphan queue, which nothing else in a MAX worker drains,
+        and a settled one records its throughput sample off to the side for a
+        live caller to land.
         """
-        return (0, 0)
-
-    def wait_for_loads(self) -> None:
-        for client in self._clients:
-            client.wait_for_loads()
-
-    def wait_for_offloads(self) -> None:
-        for client in self._clients:
-            client.wait_for_offloads()
+        for clients in self._clients:
+            for client in clients.values():
+                client.poll_transfers()
 
     def shutdown(self) -> None:
         # No-op: the Rust client releases its NIXL agent, heartbeat poller, and
@@ -974,55 +1866,92 @@ class DKVConnector:
         pass
 
     @property
-    def num_host_blocks(self) -> int:
-        # BlockManager gates the load path on num_host_blocks > 0. dKV capacity
-        # is managed externally by the dKV service.
-        return sys.maxsize
-
-    @property
-    def num_used_host_blocks(self) -> int:
-        return 0
-
-    @property
-    def num_disk_blocks(self) -> int:
-        return 0
-
-    @property
-    def num_used_disk_blocks(self) -> int:
-        return 0
-
-    def reset_metrics(self) -> None:
-        """Clear Rust-side transfer counters after the scheduler samples a batch."""
-        for client in self._clients:
-            client.reset_metrics()
-
-    @property
     def metrics(self) -> KVCacheMetrics:
+        return self._aggregate_metrics(lambda client: client.metrics())
+
+    def take_metrics(self) -> KVCacheMetrics:
+        return self._aggregate_metrics(lambda client: client.take_metrics())
+
+    def _aggregate_metrics(
+        self, snapshot: Callable[[_DkvClient], Mapping[str, Any]]
+    ) -> KVCacheMetrics:
         total = KVCacheMetrics()
-        for client in self._clients:
-            m = client.metrics()
+        for clients in self._clients:
+            leaf_clients = list(clients.values())
+            # One snapshot per client. It crosses into Rust and the scheduler
+            # calls this every batch, so reading twice would double the FFI cost
+            # and could straddle a reconnect, pairing a connected flag with
+            # transfer counts from a different moment.
+            snapshots = [snapshot(client) for client in leaf_clients]
+            # dkv_total_clients counts DP REPLICAS, not leaf clients. It
+            # predates the per-leaf split and the scheduler reports it as "how
+            # many replicas are up"; counting leaves instead would multiply
+            # every deployment's reading by its leaf count and silently move
+            # anything alerting on the ratio. A replica is up only when every
+            # leaf it owns is up, because one dead leaf cannot serve a block.
+            replica_connected = all(m["connected"] for m in snapshots)
+            # dkv_reconnect_attempts is per REPLICA for the same reason
+            # dkv_total_clients is: summing it over leaves would multiply every
+            # deployment's reading by its leaf count and move anything alerting
+            # on the current shape. A replica's leaves share one server and one
+            # network path, so they lose and recover it together; the max is
+            # "how many times this replica had to reconnect".
             total = total + KVCacheMetrics(
-                nixl_read_blocks=m["read_blocks"],
-                nixl_write_blocks=m["write_blocks"],
-                nixl_read_bytes=m["read_bytes"],
-                nixl_write_bytes=m["write_bytes"],
-                nixl_read_latency_total_ms=m["read_transfer_latency_total_ms"],
-                nixl_read_latency_count=m["read_transfer_latency_count"],
-                nixl_write_latency_total_ms=m[
-                    "write_transfer_latency_total_ms"
-                ],
-                nixl_write_latency_count=m["write_transfer_latency_count"],
+                dkv_connected_clients=1 if replica_connected else 0,
+                dkv_total_clients=1,
+                dkv_reconnect_attempts=max(
+                    m["reconnect_attempts"] for m in snapshots
+                ),
             )
+            for m in snapshots:
+                # Transfer volume is a per-client sum: every leaf moves its own
+                # bytes.
+                total = total + KVCacheMetrics(
+                    nixl_read_blocks=m["read_blocks"],
+                    nixl_write_blocks=m["write_blocks"],
+                    nixl_read_bytes=m["read_bytes"],
+                    nixl_write_bytes=m["write_bytes"],
+                    nixl_read_latency_total_ms=m[
+                        "read_transfer_latency_total_ms"
+                    ],
+                    nixl_read_latency_count=m["read_transfer_latency_count"],
+                    nixl_read_latency_max_ms=m["read_transfer_latency_max_ms"],
+                    # The lookup RPCs, which the transfer pairs above exclude by
+                    # construction: they bracket the copies, these bracket the
+                    # round trip that finds and pins the blocks. Unfed until
+                    # CLIN-1844, which is why the scheduler log used to print
+                    # "acquire 0.0ms, pin 0.0ms" on every line.
+                    rpc_read_latency_total_ms=m["rpc_read_latency_total_ms"],
+                    rpc_read_latency_count=m["rpc_read_latency_count"],
+                    rpc_acquire_latency_total_ms=m[
+                        "rpc_acquire_latency_total_ms"
+                    ],
+                    rpc_acquire_latency_count=m["rpc_acquire_latency_count"],
+                    nixl_write_latency_total_ms=m[
+                        "write_transfer_latency_total_ms"
+                    ],
+                    nixl_write_latency_count=m["write_transfer_latency_count"],
+                    # Cross-node pull. Ordinary per-window deltas that
+                    # take_metrics clears, unlike the health keys above, so
+                    # they fold in the same way as the transfer keys: per leaf
+                    # client, because each leaf pulls its own bytes from its
+                    # own peers. The dict also carries attached_peers, a level
+                    # neither engine exports yet.
+                    dkv_peer_attaches=m["peer_attaches"],
+                    dkv_peer_attach_failures=m["peer_attach_failures"],
+                    dkv_peers_dropped=m["peers_dropped"],
+                    dkv_peer_loads=m["peer_loads"],
+                    dkv_peer_load_failures=m["peer_load_failures"],
+                    dkv_hints_rejected=m["hints_rejected"],
+                    dkv_hints_rejected_by_reason=dict(
+                        m["hints_rejected_by_reason"]
+                    ),
+                    # Per-call counters: summed per leaf client, since each
+                    # client issues its own RPCs on its own socket and lock.
+                    dkv_rpc_calls=dict(m["rpc_calls"]),
+                    dkv_rpc_time_ms=dict(m["rpc_time_ms"]),
+                    dkv_rpc_socket_wait_ms=dict(m["rpc_socket_wait_ms"]),
+                    dkv_lock_waits=dict(m["lock_waits"]),
+                    dkv_lock_wait_ms=dict(m["lock_wait_ms"]),
+                )
         return total
-
-    @property
-    def supported_hash_algos(self) -> frozenset[KVHashAlgo]:
-        """Algos this connector accepts in :meth:`load` / :meth:`offload`.
-
-        Accepts the full ahash64-family set plus 32-byte ``sha256``: 32-byte
-        digests are truncated to their first 8 bytes at the boundary, which
-        is byte-identical to the ``sha256_64`` algo (see :func:`_to_dkv_u64`
-        and the module docstring). The dkv wire format stays ``uint64
-        seq_hash``.
-        """
-        return frozenset({"ahash64", "sha256", "sha256_64"})

@@ -154,6 +154,19 @@ index 3476cf29f099..4bd2c8aef07d 100644
  
  } // namespace lldb_private
  #endif
+diff --git a/lldb/include/lldb/Utility/FileSpec.h b/lldb/include/lldb/Utility/FileSpec.h
+index c5e5151590f0..833e8f7b283f 100644
+--- a/lldb/include/lldb/Utility/FileSpec.h
++++ b/lldb/include/lldb/Utility/FileSpec.h
+@@ -53,7 +53,7 @@ namespace lldb_private {
+ /// are already split up, it makes it easy for us to compare only the
+ /// basenames of a lot of file specifications without having to split up the
+ /// file path each time to get to the basename.
+-class FileSpec {
++class __attribute__((visibility("default"))) FileSpec {
+ public:
+   using Style = llvm::sys::path::Style;
+
 diff --git a/lldb/include/lldb/Utility/LLDBAssert.h b/lldb/include/lldb/Utility/LLDBAssert.h
 index e76dac46b94f..c7bec7ce023a 100644
 --- a/lldb/include/lldb/Utility/LLDBAssert.h

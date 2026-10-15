@@ -22,14 +22,9 @@
 
 import std.itertools
 
-from std.gpu.host import DeviceContext
-from std.gpu.host.info import _is_sm10x_gpu
-from layout import (
-    Coord,
-    Idx,
-    TileTensor,
-    row_major,
-)
+from max.gpu.host import DeviceContext
+from max.gpu.host.info import _is_sm10x_gpu
+from layout import Idx, TileTensor, row_major
 from layout._fillers import random
 from linalg.grouped_matmul import naive_grouped_matmul
 from linalg.lora import expand_qkv_sm100
@@ -97,15 +92,15 @@ def test[
     var b_host_ptr = ctx.enqueue_create_host_buffer[b_type](b_size)
     var q_host_ptr = ctx.enqueue_create_host_buffer[out_q_type](q_size)
     var kv_host_ptr = ctx.enqueue_create_host_buffer[out_kv_type](kv_size)
-    var a_offsets_host_ptr = ctx.enqueue_create_host_buffer[DType.uint32](
+    var a_offsets_host_ptr = ctx.enqueue_create_host_buffer[.uint32](
         num_experts + 1
     )
-    var expert_ids_host_ptr = ctx.enqueue_create_host_buffer[DType.int32](
+    var expert_ids_host_ptr = ctx.enqueue_create_host_buffer[.int32](
         num_experts
     )
 
     # Host views (only used to fill P and B and read back).
-    var p_host = TileTensor(p_host_ptr, row_major(Coord(Idx[3], M, Idx[R])))
+    var p_host = TileTensor(p_host_ptr, row_major(Idx[3], M, Idx[R]))
     var b_host = TileTensor(b_host_ptr, row_major[num_experts, D_total, R]())
 
     # Offsets / ids.
@@ -124,27 +119,25 @@ def test[
     var b_dev_buffer = ctx.enqueue_create_buffer[b_type](b_size)
     var q_dev_buffer = ctx.enqueue_create_buffer[out_q_type](q_size)
     var kv_dev_buffer = ctx.enqueue_create_buffer[out_kv_type](kv_size)
-    var a_offsets_dev_buffer = ctx.enqueue_create_buffer[DType.uint32](
+    var a_offsets_dev_buffer = ctx.enqueue_create_buffer[.uint32](
         num_experts + 1
     )
-    var expert_ids_dev_buffer = ctx.enqueue_create_buffer[DType.int32](
-        num_experts
-    )
+    var expert_ids_dev_buffer = ctx.enqueue_create_buffer[.int32](num_experts)
 
     # The planar P, viewed both as [3, M, R] and as three [M, R] planes for the
     # oracle (planes are contiguous so plane `t` starts at offset t*M*R).
-    var p_dev = TileTensor(p_dev_buffer, row_major(Coord(Idx[3], M, Idx[R])))
+    var p_dev = TileTensor(p_dev_buffer, row_major(Idx[3], M, Idx[R]))
     var p_plane_q = TileTensor(
         p_dev_buffer.unsafe_ptr(),
-        row_major(Coord(M, Idx[R])),
+        row_major(M, Idx[R]),
     )
     var p_plane_k = TileTensor(
         p_dev_buffer.unsafe_ptr() + M * R,
-        row_major(Coord(M, Idx[R])),
+        row_major(M, Idx[R]),
     )
     var p_plane_v = TileTensor(
         p_dev_buffer.unsafe_ptr() + 2 * M * R,
-        row_major(Coord(M, Idx[R])),
+        row_major(M, Idx[R]),
     )
 
     # Fused weight [G, D_total, R]. The oracle runs naive_grouped_matmul three
@@ -159,24 +152,18 @@ def test[
     var ref_q_full_buffer = ctx.enqueue_create_buffer[out_q_type](M * D_total)
     var ref_k_full_buffer = ctx.enqueue_create_buffer[out_kv_type](M * D_total)
     var ref_v_full_buffer = ctx.enqueue_create_buffer[out_kv_type](M * D_total)
-    var ref_q_full = TileTensor(
-        ref_q_full_buffer, row_major(Coord(M, Idx[D_total]))
-    )
-    var ref_k_full = TileTensor(
-        ref_k_full_buffer, row_major(Coord(M, Idx[D_total]))
-    )
-    var ref_v_full = TileTensor(
-        ref_v_full_buffer, row_major(Coord(M, Idx[D_total]))
-    )
+    var ref_q_full = TileTensor(ref_q_full_buffer, row_major(M, Idx[D_total]))
+    var ref_k_full = TileTensor(ref_k_full_buffer, row_major(M, Idx[D_total]))
+    var ref_v_full = TileTensor(ref_v_full_buffer, row_major(M, Idx[D_total]))
 
-    var q_dev = TileTensor(q_dev_buffer, row_major(Coord(M, Idx[q_dim])))
-    var kv_dev = TileTensor(kv_dev_buffer, row_major(Coord(2 * M, Idx[kv_dim])))
+    var q_dev = TileTensor(q_dev_buffer, row_major(M, Idx[q_dim]))
+    var kv_dev = TileTensor(kv_dev_buffer, row_major(2 * M, Idx[kv_dim]))
 
     var a_offsets_dev = TileTensor(
-        a_offsets_dev_buffer, row_major(Coord(num_experts + 1))
+        a_offsets_dev_buffer, row_major(num_experts + 1)
     )
     var expert_ids_dev = TileTensor(
-        expert_ids_dev_buffer, row_major(Coord(num_experts))
+        expert_ids_dev_buffer, row_major(num_experts)
     )
 
     ctx.enqueue_copy(p_dev_buffer, p_host_ptr)
@@ -189,10 +176,10 @@ def test[
     # A = plane 0 -> ref_q_full[m, j] = dot(B[g, j, :], P[0, m, :]).
     naive_grouped_matmul(
         ref_q_full,
-        p_plane_q.as_immut(),
-        b_dev.as_immut(),
-        a_offsets_dev.as_immut(),
-        expert_ids_dev.as_immut(),
+        p_plane_q.as_imm(),
+        b_dev.as_imm(),
+        a_offsets_dev.as_imm(),
+        expert_ids_dev.as_imm(),
         max_num_tokens_by_expert,
         num_active_experts,
         ctx,
@@ -200,10 +187,10 @@ def test[
     # A = plane 1.
     naive_grouped_matmul(
         ref_k_full,
-        p_plane_k.as_immut(),
-        b_dev.as_immut(),
-        a_offsets_dev.as_immut(),
-        expert_ids_dev.as_immut(),
+        p_plane_k.as_imm(),
+        b_dev.as_imm(),
+        a_offsets_dev.as_imm(),
+        expert_ids_dev.as_imm(),
         max_num_tokens_by_expert,
         num_active_experts,
         ctx,
@@ -211,10 +198,10 @@ def test[
     # A = plane 2.
     naive_grouped_matmul(
         ref_v_full,
-        p_plane_v.as_immut(),
-        b_dev.as_immut(),
-        a_offsets_dev.as_immut(),
-        expert_ids_dev.as_immut(),
+        p_plane_v.as_imm(),
+        b_dev.as_imm(),
+        a_offsets_dev.as_imm(),
+        expert_ids_dev.as_imm(),
         max_num_tokens_by_expert,
         num_active_experts,
         ctx,
@@ -251,7 +238,7 @@ def test[
     ctx.enqueue_copy(ref_v_host_full, ref_v_full_buffer)
     ctx.synchronize()
 
-    rtol = 1e-2
+    var rtol = 1e-2
 
     # q_out[m, j] vs ref_q_full[m, j] for j in [0, q_dim).
     for m, j in std.itertools.product(range(M), range(q_dim)):
@@ -309,8 +296,8 @@ def main() raises:
 
         # Single group, GQA (q_dim != kv_dim), small R, aligned tokens.
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=1,
             q_dim=256,
             kv_dim=64,
@@ -319,8 +306,8 @@ def main() raises:
 
         # Single group, GQA, unaligned token count, R=32.
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=1,
             q_dim=256,
             kv_dim=64,
@@ -329,8 +316,8 @@ def main() raises:
 
         # q_dim == kv_dim case, R=64.
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=1,
             q_dim=128,
             kv_dim=128,
@@ -340,8 +327,8 @@ def main() raises:
         # Multiple active adapters with routing (expert_ids select a subset),
         # GQA, mixed aligned/unaligned token counts.
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=6,
             q_dim=512,
             kv_dim=128,
@@ -351,8 +338,8 @@ def main() raises:
         # Routing with an inactive adapter in the middle (expert id -1): output
         # for that group must be zero. Place -1 as the second active group.
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=4,
             q_dim=256,
             kv_dim=64,
@@ -361,8 +348,8 @@ def main() raises:
 
         # Larger token counts to exercise multiple M-tiles per group.
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=2,
             q_dim=512,
             kv_dim=128,
@@ -377,8 +364,8 @@ def main() raises:
 
         # Single group, GQA, aligned dims, small R.
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=1,
             q_dim=512,
             kv_dim=256,
@@ -388,8 +375,8 @@ def main() raises:
         # Multiple active adapters with routing (subset) + an inactive id (-1),
         # aligned dims, R=32, mixed aligned/unaligned token counts.
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=6,
             q_dim=768,
             kv_dim=256,
@@ -399,8 +386,8 @@ def main() raises:
         # Larger token counts to exercise multiple token-tiles per group on the
         # SM100 path, aligned dims, R=64.
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=2,
             q_dim=512,
             kv_dim=256,
@@ -411,8 +398,8 @@ def main() raises:
         # output-D tile is 128: dims that are 128-aligned (but not 256-aligned)
         # still take the SM100 path. Exercises the tighter `128 * cta_group` gate.
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=1,
             q_dim=384,
             kv_dim=128,
@@ -425,8 +412,8 @@ def main() raises:
         # c_type != float32) to the naive fallback. Direct kernel-level regression for
         # that dispatch fix; also checks route_qkv + a_plane_splits under fp32.
         test[
-            DType.float32,
-            DType.float32,
+            .float32,
+            .float32,
             num_experts=1,
             q_dim=512,
             kv_dim=256,

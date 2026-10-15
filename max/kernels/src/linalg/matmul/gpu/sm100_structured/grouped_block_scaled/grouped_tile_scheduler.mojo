@@ -35,9 +35,10 @@ Usage:
 from std.math import ceildiv
 from std.math.uutils import ufloordiv
 
-from std.gpu import block_idx, grid_dim
-from std.gpu.primitives.cluster import elect_one_sync
-from std.gpu.memory import fence_async_view_proxy
+from max.gpu import block_idx, grid_dim
+from max.gpu.primitives.cluster import elect_one_sync
+from max.gpu.memory import fence_async_view_proxy
+from layout import TensorEngine
 from layout.tma_async import PipelineState, SharedMemBarrier
 from .grouped_block_scaled_matmul_kernel import _ProblemSizesTile
 
@@ -82,7 +83,7 @@ struct GroupedWorkInfo(
     var group_changed: Bool
     """True if group changed since last tile (triggers tensormap update)."""
 
-    @always_inline
+    @inline(.always)
     def __init__(out self):
         """Create an invalid/empty work info."""
         self.m = 0
@@ -93,17 +94,17 @@ struct GroupedWorkInfo(
         self.k_tile_count = 0
         self.group_changed = False
 
-    @always_inline
+    @inline(.always)
     def is_valid(self) -> Bool:
         """Check if this work tile is valid."""
         return self.is_valid_tile
 
-    @always_inline
+    @inline(.always)
     def coord(self) -> Tuple[Int, Int]:
         """Get (m, n) tile coordinates as a tuple."""
         return (Int(self.m), Int(self.n))
 
-    @no_inline
+    @inline(.never)
     def write_to(self, mut writer: Some[Writer]):
         writer.write(
             "GroupedWorkInfo(m=",
@@ -135,6 +136,8 @@ struct GroupedWorkIterator[
     tile_k: Int,
     max_groups: Int,
     cta_group: Int = 1,
+    *,
+    problem_sizes_engine: TensorEngine,
 ](Copyable, Iterable, Iterator, RegisterPassable):
     """Per-warp work iterator for grouped GEMM using __next__-style iteration.
 
@@ -151,6 +154,7 @@ struct GroupedWorkIterator[
         tile_k: K dimension of input tiles.
         max_groups: Maximum number of groups.
         cta_group: Number of CTAs cooperating per tile (1 or 2 for 2SM).
+        problem_sizes_engine: Engine of the problem-sizes tile.
 
     Usage:
         var work_iter = scheduler.work_iterator()
@@ -187,10 +191,12 @@ struct GroupedWorkIterator[
     var num_groups: UInt32
     """Number of active groups."""
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self,
-        problem_sizes: _ProblemSizesTile[Self.max_groups],
+        problem_sizes: _ProblemSizesTile[
+            Self.max_groups, Self.problem_sizes_engine
+        ],
         num_groups: Int,
         grid_size: UInt32,
     ):
@@ -254,11 +260,11 @@ struct GroupedWorkIterator[
         self.work_info = self._delinearize_to_group(self.linear_tile_idx)
         self.work_info.group_changed = True  # First tile always triggers update
 
-    @always_inline
+    @inline(.always)
     def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
 
-    @always_inline
+    @inline(.always)
     def __next__(mut self) raises StopIteration -> GroupedWorkInfo:
         """Return current work item, deferring advance to next call.
 
@@ -283,7 +289,7 @@ struct GroupedWorkIterator[
 
         return current
 
-    @always_inline
+    @inline(.always)
     def _delinearize_to_group(self, linear_idx: UInt32) -> GroupedWorkInfo:
         """Map linear tile index to group + local coordinates.
 
@@ -345,6 +351,8 @@ struct GroupedTileScheduler[
     max_groups: Int,
     num_stages: Int = 0,
     cta_group: Int = 1,
+    *,
+    problem_sizes_engine: TensorEngine,
 ](TrivialRegisterPassable):
     """Tile scheduler for grouped block-scaled GEMM.
 
@@ -358,19 +366,24 @@ struct GroupedTileScheduler[
         max_groups: Maximum number of groups.
         num_stages: Pipeline stages (0 = single wave).
         cta_group: Number of CTAs cooperating per tile (1 or 2 for 2SM).
+        problem_sizes_engine: Engine of the problem-sizes tile.
     """
 
     var num_groups: Int
     """Number of active groups."""
 
     @__allow_legacy_any_origin_fields
-    var problem_sizes: _ProblemSizesTile[Self.max_groups]
+    var problem_sizes: _ProblemSizesTile[
+        Self.max_groups, Self.problem_sizes_engine
+    ]
     """Problem sizes tensor (num_groups, 4) with [M, N, K, L] per group."""
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self,
-        problem_sizes: _ProblemSizesTile[Self.max_groups],
+        problem_sizes: _ProblemSizesTile[
+            Self.max_groups, Self.problem_sizes_engine
+        ],
         num_groups: Int,
     ):
         """Initialize scheduler with problem sizes.
@@ -382,11 +395,16 @@ struct GroupedTileScheduler[
         self.problem_sizes = problem_sizes
         self.num_groups = num_groups
 
-    @always_inline
+    @inline(.always)
     def work_iterator(
         self,
     ) -> GroupedWorkIterator[
-        Self.tile_m, Self.tile_n, Self.tile_k, Self.max_groups, Self.cta_group
+        Self.tile_m,
+        Self.tile_n,
+        Self.tile_k,
+        Self.max_groups,
+        Self.cta_group,
+        problem_sizes_engine=Self.problem_sizes_engine,
     ]:
         """Create a per-warp work iterator.
 
@@ -401,13 +419,14 @@ struct GroupedTileScheduler[
             Self.tile_k,
             Self.max_groups,
             Self.cta_group,
+            problem_sizes_engine=Self.problem_sizes_engine,
         ](
             self.problem_sizes,
             self.num_groups,
             UInt32(grid_dim.x),
         )
 
-    @always_inline
+    @inline(.always)
     def total_tiles(self) -> Int:
         """Compute total number of tiles across all groups."""
         var total = 0
@@ -432,6 +451,8 @@ struct GroupedCLCWorkIterator[
     max_groups: Int,
     num_clc_stages: Int,
     cta_group: Int = 2,
+    *,
+    problem_sizes_engine: TensorEngine,
 ](Copyable, Iterable, Iterator, RegisterPassable):
     """Per-warp work iterator for grouped GEMM with CLC barrier support.
 
@@ -447,6 +468,7 @@ struct GroupedCLCWorkIterator[
         num_clc_stages: Number of CLC pipeline stages for barrier-based
             synchronization.
         cta_group: Number of CTAs cooperating per tile (1 or 2 for 2SM).
+        problem_sizes_engine: Engine of the problem-sizes tile.
 
     Usage:
         var work_iter = scheduler.clc_work_iterator()
@@ -496,10 +518,12 @@ struct GroupedCLCWorkIterator[
     var use_clc_fetch: Bool
     """If True, __next__ waits on CLC barriers (for MMA warp)."""
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self,
-        problem_sizes: _ProblemSizesTile[Self.max_groups],
+        problem_sizes: _ProblemSizesTile[
+            Self.max_groups, Self.problem_sizes_engine
+        ],
         num_groups: Int,
         full_mbar: SMemPtr[SharedMemBarrier],
         empty_mbar: SMemPtr[SharedMemBarrier],
@@ -558,11 +582,11 @@ struct GroupedCLCWorkIterator[
 
         self.total_tiles = cumsum
 
-    @always_inline
+    @inline(.always)
     def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
 
-    @always_inline
+    @inline(.always)
     def __next__(mut self) raises StopIteration -> GroupedWorkInfo:
         """Return current work item and advance.
 
@@ -582,7 +606,7 @@ struct GroupedCLCWorkIterator[
             self.work_info = self._compute_next_work()
         return current
 
-    @always_inline
+    @inline(.always)
     def _fetch_next_work(self) -> GroupedWorkInfo:
         """Fetch next work item with CLC barrier synchronization.
 
@@ -613,7 +637,7 @@ struct GroupedCLCWorkIterator[
         # Delinearize to grouped work info
         return self._delinearize_to_group(linear_idx, self.work_info.group_idx)
 
-    @always_inline
+    @inline(.always)
     def _read_linear_idx_from_clc(self) -> UInt32:
         """Read linear tile index from CLC response.
 
@@ -621,12 +645,12 @@ struct GroupedCLCWorkIterator[
         """
         var response_ptr = self.clc_response + self.consumer_state.index()
         # Read the 128-bit response and extract linear_idx (first 32 bits)
-        var response = response_ptr[].cast[DType.uint32]()
+        var response = response_ptr[].cast[.uint32]()
         return response
         # Note: The working kernel uses inline assembly here, but for simplicity
         # we just cast the UInt128 to UInt32 to get the first component
 
-    @always_inline
+    @inline(.always)
     def _compute_next_work(self) -> GroupedWorkInfo:
         """Compute next work item without CLC wait (for non-MMA warps)."""
         # Simple linear advance
@@ -637,7 +661,7 @@ struct GroupedCLCWorkIterator[
             return GroupedWorkInfo()  # Invalid
         return self._delinearize_to_group(linear_idx, self.work_info.group_idx)
 
-    @always_inline
+    @inline(.always)
     def _current_linear_idx(self) -> UInt32:
         """Compute current linear tile index from work_info."""
         var g = Int(self.work_info.group_idx)
@@ -648,7 +672,7 @@ struct GroupedCLCWorkIterator[
             + self.work_info.m
         )
 
-    @always_inline
+    @inline(.always)
     def _delinearize_to_group(
         self, linear_idx: UInt32, prev_group_idx: UInt32
     ) -> GroupedWorkInfo:
@@ -702,6 +726,8 @@ struct GroupedCLCSchedulerIterator[
     max_groups: Int,
     num_clc_stages: Int,
     cta_group: Int = 2,
+    *,
+    problem_sizes_engine: TensorEngine,
 ](Copyable, Iterable, Iterator, RegisterPassable):
     """Scheduler warp iterator for grouped GEMM with CLC.
 
@@ -716,6 +742,7 @@ struct GroupedCLCSchedulerIterator[
         num_clc_stages: Number of CLC pipeline stages for barrier-based
             synchronization.
         cta_group: Number of CTAs cooperating per tile (1 or 2 for 2SM).
+        problem_sizes_engine: Engine of the problem-sizes tile.
 
     Usage:
         var sched_iter = scheduler.scheduler_iterator()
@@ -755,10 +782,12 @@ struct GroupedCLCSchedulerIterator[
     var signal_count: UInt32
     """Number of signals sent (for pipeline fill tracking)."""
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self,
-        problem_sizes: _ProblemSizesTile[Self.max_groups],
+        problem_sizes: _ProblemSizesTile[
+            Self.max_groups, Self.problem_sizes_engine
+        ],
         num_groups: Int,
         full_mbar: SMemPtr[SharedMemBarrier],
         empty_mbar: SMemPtr[SharedMemBarrier],
@@ -819,11 +848,11 @@ struct GroupedCLCSchedulerIterator[
 
         self.total_tiles = cumsum
 
-    @always_inline
+    @inline(.always)
     def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
 
-    @always_inline
+    @inline(.always)
     def __next__(mut self) raises StopIteration -> GroupedWorkInfo:
         """Return current work item, deferring advance to next call.
 
@@ -848,7 +877,7 @@ struct GroupedCLCSchedulerIterator[
 
         return current
 
-    @always_inline
+    @inline(.always)
     def signal_and_advance(mut self):
         """Signal CLC throttle and produce next work request.
 
@@ -909,7 +938,7 @@ struct GroupedCLCSchedulerIterator[
                 next_linear_idx, self.work_info.group_idx
             )
 
-    @always_inline
+    @inline(.always)
     def drain(mut self):
         """Drain all pending CLC requests before kernel exit.
 
@@ -930,7 +959,7 @@ struct GroupedCLCSchedulerIterator[
             var phase = UInt32(i // Self.num_clc_stages) & 1
             self.empty_mbar[stage].wait(phase)
 
-    @always_inline
+    @inline(.always)
     def _delinearize_to_group(
         self, linear_idx: UInt32, prev_group_idx: UInt32
     ) -> GroupedWorkInfo:

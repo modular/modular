@@ -18,13 +18,13 @@ from std.sys import is_amd_gpu, size_of
 
 from std.memory import bitcast
 
-from comm import Signal, MAX_GPUS, group_start, group_end
+from comm import Signal, group_start, group_end
 from comm.allreduce_residual_rmsnorm import (
     allreduce_residual_rmsnorm,
     allreduce_rmsnorm,
 )
 from comm.sync import enable_p2p, init_signal_buffer
-from std.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
+from max.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
 from layout import (
     Coord,
     Idx,
@@ -50,8 +50,8 @@ comptime out_fp8_dtype = DType.float8_e4m3fnuz if is_amd_gpu() else DType.float8
 def _assert_fp8_close[
     out_dtype: DType,
 ](
-    ref_host: UnsafePointer[Scalar[out_dtype], _],
-    fused_host: UnsafePointer[Scalar[out_dtype], _],
+    ref_host: Pointer[Scalar[out_dtype], _],
+    fused_host: Pointer[Scalar[out_dtype], _],
     length: Int,
     *,
     max_error_rate: Float32 = 0.05,
@@ -64,12 +64,12 @@ def _assert_fp8_close[
     var num_errors = 0
     var num_ulp_errors = 0
     for i in range(length):
-        var ref_val = ref_host[i].cast[DType.float32]()
-        var fused_val = fused_host[i].cast[DType.float32]()
+        var ref_val = ref_host[i].cast[.float32]()
+        var fused_val = fused_host[i].cast[.float32]()
         if ref_val != fused_val:
             num_errors += 1
-            var ref_bits = Int(bitcast[DType.uint8](ref_host[i]))
-            var fused_bits = Int(bitcast[DType.uint8](fused_host[i]))
+            var ref_bits = Int(bitcast[.uint8](ref_host[i]))
+            var fused_bits = Int(bitcast[.uint8](fused_host[i]))
             if abs(ref_bits - fused_bits) > 1:
                 num_ulp_errors += 1
 
@@ -82,8 +82,8 @@ def _assert_fp8_close[
         for i in range(length):
             if printed >= 5:
                 break
-            var ref_val = ref_host[i].cast[DType.float32]()
-            var fused_val = fused_host[i].cast[DType.float32]()
+            var ref_val = ref_host[i].cast[.float32]()
+            var fused_val = fused_host[i].cast[.float32]()
             if ref_val != fused_val:
                 print(
                     "  FP8 mismatch at",
@@ -100,9 +100,11 @@ def _assert_fp8_close[
         )
 
 
-def _assert_scales_close(
-    ref_host: UnsafePointer[Float32, _],
-    fused_host: UnsafePointer[Float32, _],
+def _assert_scales_close[
+    scales_dtype: DType,
+](
+    ref_host: Pointer[Scalar[scales_dtype], _],
+    fused_host: Pointer[Scalar[scales_dtype], _],
     rows: Int,
     *,
     max_rel_diff: Float32 = 0.005,
@@ -114,8 +116,8 @@ def _assert_scales_close(
     """
     var scale_errors = 0
     for i in range(rows):
-        var ref_s = ref_host[i]
-        var fused_s = fused_host[i]
+        var ref_s = ref_host[i].cast[.float32]()
+        var fused_s = fused_host[i].cast[.float32]()
         var denom = max(abs(ref_s), Float32(1e-12))
         var rel_diff = abs(ref_s - fused_s) / denom
         if rel_diff > max_rel_diff:
@@ -139,8 +141,8 @@ def _assert_scales_close(
 def _assert_bf16_close[
     dtype: DType,
 ](
-    ref_host: UnsafePointer[Scalar[dtype], _],
-    fused_host: UnsafePointer[Scalar[dtype], _],
+    ref_host: Pointer[Scalar[dtype], _],
+    fused_host: Pointer[Scalar[dtype], _],
     length: Int,
     *,
     max_ulp: Int = 2,
@@ -156,12 +158,12 @@ def _assert_bf16_close[
     var num_errors = 0
     var num_ulp_errors = 0
     for i in range(length):
-        var ref_val = ref_host[i].cast[DType.float32]()
-        var fused_val = fused_host[i].cast[DType.float32]()
+        var ref_val = ref_host[i].cast[.float32]()
+        var fused_val = fused_host[i].cast[.float32]()
         if ref_val != fused_val:
             num_errors += 1
-            var ref_bits = Int(bitcast[DType.uint16](ref_host[i]))
-            var fused_bits = Int(bitcast[DType.uint16](fused_host[i]))
+            var ref_bits = Int(bitcast[.uint16](ref_host[i]))
+            var fused_bits = Int(bitcast[.uint16](fused_host[i]))
             if abs(ref_bits - fused_bits) > max_ulp:
                 num_ulp_errors += 1
                 if num_ulp_errors <= 5:
@@ -196,6 +198,7 @@ def test_fused_allreduce_rmsnorm_fp8[
     out_dtype: DType,
     rows: Int,
     cols: Int,
+    scales_dtype: DType = .float32,
 ](list_of_ctx: List[DeviceContext]) raises:
     """Verify fused kernel against separate allreduce → fused RMSNorm+FP8."""
     comptime length = rows * cols
@@ -211,16 +214,15 @@ def test_fused_allreduce_rmsnorm_fp8[
         rows,
         "x",
         cols,
+        ", scales=",
+        scales_dtype,
         "]",
     )
 
     # --- Setup: per-GPU input buffers ---
     var in_dev = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var host_bufs = List[HostBuffer[in_dtype]](capacity=ngpus)
-    var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
-        uninitialized=True
-    )
+    var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
     var temp_bytes = ngpus * size_of[in_dtype]() * length
 
     for i in range(ngpus):
@@ -232,25 +234,27 @@ def test_fused_allreduce_rmsnorm_fp8[
         host_bufs.append(h^)
 
         signal_buffers.append(
-            list_of_ctx[i].create_buffer_sync[DType.uint8](
+            list_of_ctx[i].create_buffer_sync[.uint8](
                 size_of[Signal]() + temp_bytes
             )
         )
         init_signal_buffer(signal_buffers[i], list_of_ctx[i])
-        rank_sigs[i] = (
-            signal_buffers[i]
-            .unsafe_ptr()
-            .bitcast[Signal]()
-            .as_unsafe_any_origin()
-        )
 
-    comptime in_layout = row_major(Coord(Idx[rows], Idx[cols]))
+    var rank_sigs = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
+
+    comptime in_layout = row_major(Idx[rows], Idx[cols])
     comptime InputTileType = TileTensor[
         in_dtype, type_of(in_layout), ImmutAnyOrigin
     ]
-    var in_tiles = InlineArray[InputTileType, ngpus](uninitialized=True)
-    for i in range(ngpus):
-        in_tiles[i] = TileTensor(in_dev[i], in_layout).as_immut()
+    var in_tiles = Array[_, ngpus](
+        fill_with=lambda (i: Int) -> InputTileType: TileTensor(
+            in_dev[i], in_layout
+        ).as_imm()
+    )
     for i in range(ngpus):
         list_of_ctx[i].synchronize()
 
@@ -266,7 +270,7 @@ def test_fused_allreduce_rmsnorm_fp8[
     var gamma_tensor = TileTensor(gamma_dev, row_major(Coord(Index(cols))))
     var epsilon = Float32(1e-5)
     var weight_offset = Scalar[in_dtype](0.0)
-    var scale_ub = max_finite[out_dtype]().cast[DType.float32]()
+    var scale_ub = max_finite[out_dtype]().cast[.float32]()
 
     # --- Reference path: host-side float32 sum → fused RMSNorm+FP8 ---
     # The fused kernel accumulates the P2P loads in float32, then casts to
@@ -276,7 +280,7 @@ def test_fused_allreduce_rmsnorm_fp8[
     for i in range(length):
         var sum_f32 = Float32(0)
         for g in range(ngpus):
-            sum_f32 += host_bufs[g][i].cast[DType.float32]()
+            sum_f32 += host_bufs[g][i].cast[.float32]()
         ref_sum_host[i] = sum_f32.cast[in_dtype]()
 
     # Upload sum to device for the reference fused RMSNorm+FP8 input_fn.
@@ -285,13 +289,13 @@ def test_fused_allreduce_rmsnorm_fp8[
     ctx.synchronize()
 
     var ref_fp8_dev = ctx.enqueue_create_buffer[out_dtype](length)
-    var ref_scales_dev = ctx.enqueue_create_buffer[DType.float32](rows)
+    var ref_scales_dev = ctx.enqueue_create_buffer[scales_dtype](rows)
 
     var ref_sum_ptr = ref_sum_dev.unsafe_ptr()
 
     @__copy_capture(ref_sum_ptr)
-    @always_inline
-    @parameter
+    @inline(.always)
+    @__parameter
     def ref_input_fn[
         width: Int, _rank: Int
     ](idx: IndexList[_rank]) -> SIMD[in_dtype, width]:
@@ -300,17 +304,17 @@ def test_fused_allreduce_rmsnorm_fp8[
 
     var ref_fp8_tile = TileTensor(
         ref_fp8_dev,
-        row_major(Coord(Idx[rows], Idx[cols])),
+        row_major(Idx[rows], Idx[cols]),
     )
     var ref_scales_tile = TileTensor(
         ref_scales_dev,
-        row_major(Coord(Idx[rows], Idx[1])),
+        row_major(Idx[rows], Idx[1]),
     )
 
     rms_norm_fused_fp8[
         in_dtype,
         out_dtype,
-        DType.float32,
+        scales_dtype,
         2,
         ref_input_fn,
     ](
@@ -334,15 +338,15 @@ def test_fused_allreduce_rmsnorm_fp8[
         list_of_ctx[i].synchronize()
 
     var fused_fp8_dev = ctx.enqueue_create_buffer[out_dtype](length)
-    var fused_scales_dev = ctx.enqueue_create_buffer[DType.float32](rows)
+    var fused_scales_dev = ctx.enqueue_create_buffer[scales_dtype](rows)
 
     var fused_fp8_tile = TileTensor(
         fused_fp8_dev,
-        row_major(Coord(Idx[rows], Idx[cols])),
+        row_major(Idx[rows], Idx[cols]),
     )
     var fused_scales_tile = TileTensor(
         fused_scales_dev,
-        row_major(Coord(Idx[rows], Idx[1])),
+        row_major(Idx[rows], Idx[1]),
     )
 
     group_start()
@@ -376,8 +380,8 @@ def test_fused_allreduce_rmsnorm_fp8[
     )
 
     # --- Compare per-row scale factors ---
-    var ref_scales_host = ctx.enqueue_create_host_buffer[DType.float32](rows)
-    var fused_scales_host = ctx.enqueue_create_host_buffer[DType.float32](rows)
+    var ref_scales_host = ctx.enqueue_create_host_buffer[scales_dtype](rows)
+    var fused_scales_host = ctx.enqueue_create_host_buffer[scales_dtype](rows)
     ctx.enqueue_copy(ref_scales_host, ref_scales_dev)
     ctx.enqueue_copy(fused_scales_host, fused_scales_dev)
     ctx.synchronize()
@@ -423,10 +427,7 @@ def test_fused_allreduce_rmsnorm_noquant[
     # --- Setup: per-GPU input buffers ---
     var in_dev = List[DeviceBuffer[dtype]](capacity=ngpus)
     var host_bufs = List[HostBuffer[dtype]](capacity=ngpus)
-    var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
-        uninitialized=True
-    )
+    var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
     var temp_bytes = ngpus * size_of[dtype]() * length
 
     for i in range(ngpus):
@@ -438,25 +439,27 @@ def test_fused_allreduce_rmsnorm_noquant[
         host_bufs.append(h^)
 
         signal_buffers.append(
-            list_of_ctx[i].create_buffer_sync[DType.uint8](
+            list_of_ctx[i].create_buffer_sync[.uint8](
                 size_of[Signal]() + temp_bytes
             )
         )
         init_signal_buffer(signal_buffers[i], list_of_ctx[i])
-        rank_sigs[i] = (
-            signal_buffers[i]
-            .unsafe_ptr()
-            .bitcast[Signal]()
-            .as_unsafe_any_origin()
-        )
 
-    comptime in_layout = row_major(Coord(Idx[rows], Idx[cols]))
+    var rank_sigs = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
+
+    comptime in_layout = row_major(Idx[rows], Idx[cols])
     comptime InputTileType = TileTensor[
         dtype, type_of(in_layout), ImmutAnyOrigin
     ]
-    var in_tiles = InlineArray[InputTileType, ngpus](uninitialized=True)
-    for i in range(ngpus):
-        in_tiles[i] = TileTensor(in_dev[i], in_layout).as_immut()
+    var in_tiles = Array[_, ngpus](
+        fill_with=lambda (i: Int) -> InputTileType: TileTensor(
+            in_dev[i], in_layout
+        ).as_imm()
+    )
     for i in range(ngpus):
         list_of_ctx[i].synchronize()
 
@@ -473,16 +476,16 @@ def test_fused_allreduce_rmsnorm_noquant[
     var weight_offset = Scalar[dtype](0.0)
 
     # --- Host reference: allreduce in f32, then RMSNorm in f32 ---
-    var ref_sum_f32 = ctx.enqueue_create_host_buffer[DType.float32](length)
+    var ref_sum_f32 = ctx.enqueue_create_host_buffer[.float32](length)
     for i in range(length):
         var s = Float32(0)
         for g in range(ngpus):
-            s += host_bufs[g][i].cast[DType.float32]()
+            s += host_bufs[g][i].cast[.float32]()
         ref_sum_f32[i] = s
 
     var ref_out_host = ctx.enqueue_create_host_buffer[dtype](length)
     var eps_f32 = epsilon
-    var woff_f32 = weight_offset.cast[DType.float32]()
+    var woff_f32 = weight_offset.cast[.float32]()
     for r in range(rows):
         var m2 = Float32(0)
         for c in range(cols):
@@ -491,7 +494,7 @@ def test_fused_allreduce_rmsnorm_noquant[
         var norm = rsqrt(m2 / Float32(cols) + eps_f32)
         for c in range(cols):
             var s = ref_sum_f32[r * cols + c]
-            var g_f32 = gamma_host[c].cast[DType.float32]() + woff_f32
+            var g_f32 = gamma_host[c].cast[.float32]() + woff_f32
             ref_out_host[r * cols + c] = ((s * norm) * g_f32).cast[dtype]()
 
     # --- Fused kernel path (out_dtype == in_dtype → no quantization) ---
@@ -502,13 +505,13 @@ def test_fused_allreduce_rmsnorm_noquant[
 
     var fused_out_dev = ctx.enqueue_create_buffer[dtype](length)
     # Scale buffer + scale_ub are ignored on the no-quant path; pass a dummy.
-    var dummy_scales_dev = ctx.enqueue_create_buffer[DType.float32](rows)
+    var dummy_scales_dev = ctx.enqueue_create_buffer[.float32](rows)
 
     var fused_out_tile = TileTensor(
-        fused_out_dev, row_major(Coord(Idx[rows], Idx[cols]))
+        fused_out_dev, row_major(Idx[rows], Idx[cols])
     )
     var dummy_scales_tile = TileTensor(
-        dummy_scales_dev, row_major(Coord(Idx[rows], Idx[1]))
+        dummy_scales_dev, row_major(Idx[rows], Idx[1])
     )
     var scale_ub = Float32(1.0)
 
@@ -581,10 +584,7 @@ def test_fused_allreduce_residual_rmsnorm_fp8[
     # --- Setup: per-GPU input buffers ---
     var in_dev = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var host_bufs = List[HostBuffer[in_dtype]](capacity=ngpus)
-    var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
-        uninitialized=True
-    )
+    var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
     var temp_bytes = ngpus * size_of[in_dtype]() * length
 
     for i in range(ngpus):
@@ -596,25 +596,27 @@ def test_fused_allreduce_residual_rmsnorm_fp8[
         host_bufs.append(h^)
 
         signal_buffers.append(
-            list_of_ctx[i].create_buffer_sync[DType.uint8](
+            list_of_ctx[i].create_buffer_sync[.uint8](
                 size_of[Signal]() + temp_bytes
             )
         )
         init_signal_buffer(signal_buffers[i], list_of_ctx[i])
-        rank_sigs[i] = (
-            signal_buffers[i]
-            .unsafe_ptr()
-            .bitcast[Signal]()
-            .as_unsafe_any_origin()
-        )
 
-    comptime in_layout = row_major(Coord(Idx[rows], Idx[cols]))
+    var rank_sigs = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
+
+    comptime in_layout = row_major(Idx[rows], Idx[cols])
     comptime InputTileType = TileTensor[
         in_dtype, type_of(in_layout), ImmutAnyOrigin
     ]
-    var in_tiles = InlineArray[InputTileType, ngpus](uninitialized=True)
-    for i in range(ngpus):
-        in_tiles[i] = TileTensor(in_dev[i], in_layout).as_immut()
+    var in_tiles = Array[_, ngpus](
+        fill_with=lambda (i: Int) -> InputTileType: TileTensor(
+            in_dev[i], in_layout
+        ).as_imm()
+    )
     for i in range(ngpus):
         list_of_ctx[i].synchronize()
 
@@ -629,7 +631,7 @@ def test_fused_allreduce_residual_rmsnorm_fp8[
     var gamma_tensor = TileTensor(gamma_dev, row_major(Coord(Index(cols))))
     var epsilon = Float32(1e-5)
     var weight_offset = Scalar[in_dtype](0.0)
-    var scale_ub = max_finite[out_dtype]().cast[DType.float32]()
+    var scale_ub = max_finite[out_dtype]().cast[.float32]()
 
     # --- Residual buffer: deterministic values ---
     var residual_dev = ctx.enqueue_create_buffer[in_dtype](length)
@@ -648,8 +650,8 @@ def test_fused_allreduce_residual_rmsnorm_fp8[
     for i in range(length):
         var sum_f32 = Float32(0)
         for g in range(ngpus):
-            sum_f32 += host_bufs[g][i].cast[DType.float32]()
-        sum_f32 += residual_host[i].cast[DType.float32]()
+            sum_f32 += host_bufs[g][i].cast[.float32]()
+        sum_f32 += residual_host[i].cast[.float32]()
         ref_sum_host[i] = sum_f32.cast[in_dtype]()
 
     # Upload sum to device for the reference fused RMSNorm+FP8 input_fn.
@@ -658,13 +660,13 @@ def test_fused_allreduce_residual_rmsnorm_fp8[
     ctx.synchronize()
 
     var ref_fp8_dev = ctx.enqueue_create_buffer[out_dtype](length)
-    var ref_scales_dev = ctx.enqueue_create_buffer[DType.float32](rows)
+    var ref_scales_dev = ctx.enqueue_create_buffer[.float32](rows)
 
     var ref_sum_ptr = ref_sum_dev.unsafe_ptr()
 
     @__copy_capture(ref_sum_ptr)
-    @always_inline
-    @parameter
+    @inline(.always)
+    @__parameter
     def ref_input_fn[
         width: Int, _rank: Int
     ](idx: IndexList[_rank]) -> SIMD[in_dtype, width]:
@@ -674,11 +676,11 @@ def test_fused_allreduce_residual_rmsnorm_fp8[
     comptime shape = IndexList[2](rows, cols)
     var ref_fp8_tile = TileTensor(
         ref_fp8_dev,
-        row_major(Coord(Idx[rows], Idx[cols])),
+        row_major(Idx[rows], Idx[cols]),
     )
     var ref_scales_tile = TileTensor(
         ref_scales_dev,
-        row_major(Coord(Idx[rows], Idx[1])),
+        row_major(Idx[rows], Idx[1]),
     )
 
     rms_norm_fused_fp8[
@@ -708,24 +710,24 @@ def test_fused_allreduce_residual_rmsnorm_fp8[
         list_of_ctx[i].synchronize()
 
     var fused_fp8_dev = ctx.enqueue_create_buffer[out_dtype](length)
-    var fused_scales_dev = ctx.enqueue_create_buffer[DType.float32](rows)
+    var fused_scales_dev = ctx.enqueue_create_buffer[.float32](rows)
     var fused_residual_output_dev = ctx.enqueue_create_buffer[in_dtype](length)
 
     var fused_fp8_tile = TileTensor(
         fused_fp8_dev,
-        row_major(Coord(Idx[rows], Idx[cols])),
+        row_major(Idx[rows], Idx[cols]),
     )
     var fused_scales_tile = TileTensor(
         fused_scales_dev,
-        row_major(Coord(Idx[rows], Idx[1])),
+        row_major(Idx[rows], Idx[1]),
     )
     var residual_tile = TileTensor(
         residual_dev,
-        row_major(Coord(Idx[rows], Idx[cols])),
+        row_major(Idx[rows], Idx[cols]),
     )
     var fused_residual_output_tile = TileTensor(
         fused_residual_output_dev,
-        row_major(Coord(Idx[rows], Idx[cols])),
+        row_major(Idx[rows], Idx[cols]),
     )
 
     group_start()
@@ -733,7 +735,7 @@ def test_fused_allreduce_residual_rmsnorm_fp8[
     comptime for i in range(ngpus):
         allreduce_residual_rmsnorm(
             in_tiles,
-            residual_tile.as_immut(),
+            residual_tile.as_imm(),
             fused_fp8_tile,
             fused_residual_output_tile,
             gamma_tensor,
@@ -756,8 +758,8 @@ def test_fused_allreduce_residual_rmsnorm_fp8[
 
     var res_errors = 0
     for i in range(length):
-        var ref_val = ref_sum_host[i].cast[DType.float32]()
-        var fused_val = fused_res_out_host[i].cast[DType.float32]()
+        var ref_val = ref_sum_host[i].cast[.float32]()
+        var fused_val = fused_res_out_host[i].cast[.float32]()
         # The fused 1-stage/2-stage kernel accumulates allreduce + residual
         # in f32 before casting to bf16, giving exact match. The split
         # (2-kernel) path has an inherent bf16 round-trip for the allreduce
@@ -792,8 +794,8 @@ def test_fused_allreduce_residual_rmsnorm_fp8[
     )
 
     # --- Compare per-row scale factors ---
-    var ref_scales_host = ctx.enqueue_create_host_buffer[DType.float32](rows)
-    var fused_scales_host = ctx.enqueue_create_host_buffer[DType.float32](rows)
+    var ref_scales_host = ctx.enqueue_create_host_buffer[.float32](rows)
+    var fused_scales_host = ctx.enqueue_create_host_buffer[.float32](rows)
     ctx.enqueue_copy(ref_scales_host, ref_scales_dev)
     ctx.enqueue_copy(fused_scales_host, fused_scales_dev)
     ctx.synchronize()
@@ -850,10 +852,7 @@ def test_fused_allreduce_residual_rmsnorm_noquant[
     # --- Setup: per-GPU input buffers ---
     var in_dev = List[DeviceBuffer[dtype]](capacity=ngpus)
     var host_bufs = List[HostBuffer[dtype]](capacity=ngpus)
-    var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
-        uninitialized=True
-    )
+    var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
     var temp_bytes = ngpus * size_of[dtype]() * length
 
     for i in range(ngpus):
@@ -865,25 +864,27 @@ def test_fused_allreduce_residual_rmsnorm_noquant[
         host_bufs.append(h^)
 
         signal_buffers.append(
-            list_of_ctx[i].create_buffer_sync[DType.uint8](
+            list_of_ctx[i].create_buffer_sync[.uint8](
                 size_of[Signal]() + temp_bytes
             )
         )
         init_signal_buffer(signal_buffers[i], list_of_ctx[i])
-        rank_sigs[i] = (
-            signal_buffers[i]
-            .unsafe_ptr()
-            .bitcast[Signal]()
-            .as_unsafe_any_origin()
-        )
 
-    comptime in_layout = row_major(Coord(Idx[rows], Idx[cols]))
+    var rank_sigs = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
+
+    comptime in_layout = row_major(Idx[rows], Idx[cols])
     comptime InputTileType = TileTensor[
         dtype, type_of(in_layout), ImmutAnyOrigin
     ]
-    var in_tiles = InlineArray[InputTileType, ngpus](uninitialized=True)
-    for i in range(ngpus):
-        in_tiles[i] = TileTensor(in_dev[i], in_layout).as_immut()
+    var in_tiles = Array[_, ngpus](
+        fill_with=lambda (i: Int) -> InputTileType: TileTensor(
+            in_dev[i], in_layout
+        ).as_imm()
+    )
     for i in range(ngpus):
         list_of_ctx[i].synchronize()
 
@@ -908,20 +909,20 @@ def test_fused_allreduce_residual_rmsnorm_noquant[
     ctx.synchronize()
 
     # --- Host reference: allreduce + residual in f32, then RMSNorm in f32 ---
-    var ref_sum_f32 = ctx.enqueue_create_host_buffer[DType.float32](length)
+    var ref_sum_f32 = ctx.enqueue_create_host_buffer[.float32](length)
     var ref_sum_host = ctx.enqueue_create_host_buffer[dtype](length)
     for i in range(length):
         var s = Float32(0)
         for g in range(ngpus):
-            s += host_bufs[g][i].cast[DType.float32]()
-        s += residual_host[i].cast[DType.float32]()
+            s += host_bufs[g][i].cast[.float32]()
+        s += residual_host[i].cast[.float32]()
         ref_sum_f32[i] = s
         # bf16-rounded pre-norm sum (matches kernel's residual_output write).
         ref_sum_host[i] = s.cast[dtype]()
 
     var ref_out_host = ctx.enqueue_create_host_buffer[dtype](length)
     var eps_f32 = epsilon
-    var woff_f32 = weight_offset.cast[DType.float32]()
+    var woff_f32 = weight_offset.cast[.float32]()
     for r in range(rows):
         var m2 = Float32(0)
         for c in range(cols):
@@ -930,7 +931,7 @@ def test_fused_allreduce_residual_rmsnorm_noquant[
         var norm = rsqrt(m2 / Float32(cols) + eps_f32)
         for c in range(cols):
             var s = ref_sum_f32[r * cols + c]
-            var g_f32 = gamma_host[c].cast[DType.float32]() + woff_f32
+            var g_f32 = gamma_host[c].cast[.float32]() + woff_f32
             ref_out_host[r * cols + c] = ((s * norm) * g_f32).cast[dtype]()
 
     # --- Fused kernel path (out_dtype == in_dtype → no quantization) ---
@@ -942,19 +943,19 @@ def test_fused_allreduce_residual_rmsnorm_noquant[
     var fused_out_dev = ctx.enqueue_create_buffer[dtype](length)
     var fused_res_out_dev = ctx.enqueue_create_buffer[dtype](length)
     # Scale buffer + scale_ub are ignored on the no-quant path; pass a dummy.
-    var dummy_scales_dev = ctx.enqueue_create_buffer[DType.float32](rows)
+    var dummy_scales_dev = ctx.enqueue_create_buffer[.float32](rows)
 
     var fused_out_tile = TileTensor(
-        fused_out_dev, row_major(Coord(Idx[rows], Idx[cols]))
+        fused_out_dev, row_major(Idx[rows], Idx[cols])
     )
     var fused_res_out_tile = TileTensor(
-        fused_res_out_dev, row_major(Coord(Idx[rows], Idx[cols]))
+        fused_res_out_dev, row_major(Idx[rows], Idx[cols])
     )
     var residual_tile = TileTensor(
-        residual_dev, row_major(Coord(Idx[rows], Idx[cols]))
+        residual_dev, row_major(Idx[rows], Idx[cols])
     )
     var dummy_scales_tile = TileTensor(
-        dummy_scales_dev, row_major(Coord(Idx[rows], Idx[1]))
+        dummy_scales_dev, row_major(Idx[rows], Idx[1])
     )
     var scale_ub = Float32(1.0)
 
@@ -963,7 +964,7 @@ def test_fused_allreduce_residual_rmsnorm_noquant[
     comptime for i in range(ngpus):
         allreduce_residual_rmsnorm(
             in_tiles,
-            residual_tile.as_immut(),
+            residual_tile.as_imm(),
             fused_out_tile,
             fused_res_out_tile,
             gamma_tensor,
@@ -988,8 +989,8 @@ def test_fused_allreduce_residual_rmsnorm_noquant[
 
     var res_errors = 0
     for i in range(length):
-        var ref_val = ref_sum_host[i].cast[DType.float32]()
-        var fused_val = fused_res_out_host[i].cast[DType.float32]()
+        var ref_val = ref_sum_host[i].cast[.float32]()
+        var fused_val = fused_res_out_host[i].cast[.float32]()
         var max_mag = max(abs(ref_val), abs(fused_val))
         var bf16_ulp = max_mag * Float32(2.0**-7)
         if abs(ref_val - fused_val) > bf16_ulp:
@@ -1027,6 +1028,103 @@ def test_fused_allreduce_residual_rmsnorm_noquant[
 # --- Main ---
 
 comptime test_gpu_counts = (2, 4, 8)
+
+
+def test_fused_allreduce_rmsnorm_zero_rows[
+    ngpus: Int, dtype: DType, cols: Int
+](list_of_ctx: List[DeviceContext]) raises:
+    """Verify both entry points return without launching on a zero-row batch.
+
+    A step that skips speculative drafting runs the drafter's collectives on
+    zero rows on every rank. Buffers are sized for one row so the device
+    allocations are real. The views are zero-row, and the output must keep
+    its sentinel since nothing may be written.
+    """
+    print("  test_fused_allreduce_rmsnorm_zero_rows[", ngpus, ",", cols, "]")
+
+    var in_dev = List[DeviceBuffer[dtype]](capacity=ngpus)
+    var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
+    for i in range(ngpus):
+        in_dev.append(list_of_ctx[i].enqueue_create_buffer[dtype](cols))
+        signal_buffers.append(
+            list_of_ctx[i].create_buffer_sync[.uint8](size_of[Signal]())
+        )
+        init_signal_buffer(signal_buffers[i], list_of_ctx[i])
+
+    var rank_sigs = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
+
+    comptime zero_layout = row_major(Coord(Idx[0], Idx[cols]))
+    comptime InputTileType = TileTensor[
+        dtype, type_of(zero_layout), ImmutAnyOrigin
+    ]
+    var in_tiles = Array[_, ngpus](
+        fill_with=lambda (i: Int) -> InputTileType: TileTensor(
+            in_dev[i], zero_layout
+        ).as_imm()
+    )
+
+    var ctx = list_of_ctx[0]
+    var gamma_dev = ctx.enqueue_create_buffer[dtype](cols)
+    var gamma_tensor = TileTensor(gamma_dev, row_major(Coord(Index(cols))))
+    var sentinel = Scalar[dtype](7.0)
+    var out_dev = ctx.enqueue_create_buffer[dtype](cols)
+    var res_out_dev = ctx.enqueue_create_buffer[dtype](cols)
+    var residual_dev = ctx.enqueue_create_buffer[dtype](cols)
+    var scales_dev = ctx.enqueue_create_buffer[.float32](1)
+    out_dev.enqueue_fill(sentinel)
+    res_out_dev.enqueue_fill(sentinel)
+    for i in range(ngpus):
+        list_of_ctx[i].synchronize()
+
+    var out_tile = TileTensor(out_dev, zero_layout)
+    var res_out_tile = TileTensor(res_out_dev, zero_layout)
+    var residual_tile = TileTensor(residual_dev, zero_layout)
+    var scales_tile = TileTensor(scales_dev, row_major(Coord(Idx[0], Idx[1])))
+
+    group_start()
+    comptime for i in range(ngpus):
+        allreduce_rmsnorm(
+            in_tiles,
+            out_tile,
+            gamma_tensor,
+            Float32(1e-5),
+            Scalar[dtype](0.0),
+            Float32(1.0),
+            scales_tile,
+            rank_sigs,
+            list_of_ctx[i],
+        )
+        allreduce_residual_rmsnorm(
+            in_tiles,
+            residual_tile.as_imm(),
+            out_tile,
+            res_out_tile,
+            gamma_tensor,
+            Float32(1e-5),
+            Scalar[dtype](0.0),
+            Float32(1.0),
+            scales_tile,
+            rank_sigs,
+            list_of_ctx[i],
+        )
+    group_end()
+    for i in range(ngpus):
+        list_of_ctx[i].synchronize()
+
+    var out_host = ctx.enqueue_create_host_buffer[dtype](cols)
+    var res_out_host = ctx.enqueue_create_host_buffer[dtype](cols)
+    ctx.enqueue_copy(out_host, out_dev)
+    ctx.enqueue_copy(res_out_host, res_out_dev)
+    ctx.synchronize()
+    for i in range(cols):
+        assert_true(
+            out_host[i] == sentinel and res_out_host[i] == sentinel,
+            "a zero-row call wrote its output",
+        )
 
 
 def main() raises:
@@ -1089,6 +1187,18 @@ def main() raises:
         ](list_of_ctx)
         test_fused_allreduce_rmsnorm_fp8[
             num_gpus, DType.bfloat16, out_fp8_dtype, 20, 16384
+        ](list_of_ctx)
+
+        # --- bf16 scale buffer. Checkpoints that store `weight_scale` in
+        #     bf16 (compressed-tensors FP8-dynamic) drive the activation
+        #     scales dtype to bf16, so both kernels must instantiate for a
+        #     scales dtype other than float32. rows=1 takes the 1-stage
+        #     kernel, rows=8192 the 2-stage one. ---
+        test_fused_allreduce_rmsnorm_fp8[
+            num_gpus, DType.bfloat16, out_fp8_dtype, 1, 16384, DType.bfloat16
+        ](list_of_ctx)
+        test_fused_allreduce_rmsnorm_fp8[
+            num_gpus, DType.bfloat16, out_fp8_dtype, 8192, 8192, DType.bfloat16
         ](list_of_ctx)
 
         print(
@@ -1186,5 +1296,9 @@ def main() raises:
         test_fused_allreduce_residual_rmsnorm_noquant[
             num_gpus, DType.bfloat16, 17, 16384
         ](list_of_ctx)
+
+        test_fused_allreduce_rmsnorm_zero_rows[num_gpus, DType.bfloat16, 4096](
+            list_of_ctx
+        )
 
     print("\nAll tests passed!")

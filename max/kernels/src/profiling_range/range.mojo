@@ -13,11 +13,11 @@
 """Mojo `Range` context manager for libkineto activity spans.
 
 `Range` wraps the `KGEN_CompilerRT_Range{Begin,End,IsEnabled}` FFI bridge from
-`KGEN/lib/CompilerRT/RangeBridge.cpp`. Use it as a context manager to emit a
+`Mojo/lib/CompilerRT/RangeBridge.cpp`. Use it as a context manager to emit a
 libkineto activity span: `__enter__` opens the span and `__exit__` closes it.
 
-`Range` mirrors `std.runtime.tracing.Trace`: the span is opened in `__enter__`
-and closed in `__exit__` rather than in `__init__`/`__del__`. This sidesteps
+`Range` mirrors `max.runtime.tracing.Trace`: the span is opened in `__enter__`
+and closed in `__exit__` rather than in `__init__`/`__deinit__`. This sidesteps
 Mojo's ASAP destruction: a `var span = Range(...)` whose handle is never read
 again would otherwise be destroyed immediately after construction, closing the
 span before any work inside it ran. The `with` statement keeps the object alive
@@ -32,7 +32,7 @@ span begun without a matching end (mirrors the C++ RAII discipline).
 from std.ffi import external_call
 
 
-@always_inline
+@inline(.always)
 def is_enabled() -> Bool:
     """Reports whether the libkineto profiler is currently enabled.
 
@@ -74,9 +74,10 @@ struct Range(ImplicitlyCopyable):
             ...  # graph build code runs inside the span
     ```
 
-    A future update will add a `category` parameter (mirroring
-    `std.runtime.tracing.Trace[level, category]`) and a `StringSlice` name
-    overload for dynamically-built names (e.g. `Range("kernel_" + variant)`).
+    `max.runtime.tracing.Trace` now records libkineto spans natively when the
+    profiler is live, so new instrumentation should prefer `Trace` — it also
+    feeds the other tracing backends. `Range` remains for code that wants a
+    profiler-only span with no `Trace` machinery.
     """
 
     var _name: StaticString
@@ -95,7 +96,7 @@ struct Range(ImplicitlyCopyable):
     external code would unbalance libkineto's bookkeeping.
     """
 
-    @always_inline
+    @inline(.always)
     def __init__(out self, name: StaticString, color: UInt32 = 0):
         """Records the span name and color; opening is deferred to `__enter__`.
 
@@ -103,7 +104,7 @@ struct Range(ImplicitlyCopyable):
             name: The span name. Passed straight through to libkineto in
                 `__enter__`. `StaticString` accepts both string literals and
                 runtime `StaticString` values; this matches the convention used
-                by `std.runtime.tracing.Trace`.
+                by `max.runtime.tracing.Trace`.
             color: 24-bit RGB color for trace viewers that honor it.
                 Defaults to 0 (libkineto's default color).
         """
@@ -113,7 +114,7 @@ struct Range(ImplicitlyCopyable):
         # entered (or entered while disabled) never closes a span in __exit__.
         self._began = False
 
-    @always_inline
+    @inline(.always)
     def __enter__(mut self):
         """Begin a libkineto activity span if the profiler is enabled.
 
@@ -124,17 +125,20 @@ struct Range(ImplicitlyCopyable):
         if is_enabled():
             # RangeBridge.cpp requires `namePtr` non-null even when the length
             # is 0 (constructing a std::string_view from null is UB under
-            # C++17). `StaticString.unsafe_ptr()` is backed by a real symbol
-            # and is non-null even for `Range("")`, which upholds that.
+            # C++17). `StaticString.as_bytes().unsafe_ptr()` is backed by a
+            # real symbol and is non-null even for `Range("")`, which upholds
+            # that.
             external_call["KGEN_CompilerRT_RangeBegin", NoneType](
-                self._name.unsafe_ptr(), self._name.byte_length(), self._color
+                self._name.as_bytes().unsafe_ptr(),
+                self._name.byte_length(),
+                self._color,
             )
             # Only mark begun after RangeBegin returns successfully — __exit__
             # uses `_began` to decide whether to call RangeEnd, so an unbegun
             # span must never set this to True.
             self._began = True
 
-    @always_inline
+    @inline(.always)
     def __exit__(self):
         """Close the libkineto activity span if `__enter__` opened one.
 

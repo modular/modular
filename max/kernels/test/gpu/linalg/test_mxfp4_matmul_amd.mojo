@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Tests for the native MXFP4 block-scaled matmul kernel on AMD CDNA4.
 
-Validates MXFP4MatmulAMD against a per-element GPU reference
+Validates BlockScaledMatmulAMD against a per-element GPU reference
 that uses the llvm.amdgcn.cvt.scalef32.pk.f32.fp4 intrinsic for FP4→FP32
 dequantization and scalar accumulation.
 
@@ -20,19 +20,19 @@ Usage:
   mojo test_mxfp4_matmul_amd.mojo
 """
 
-from std.gpu import global_idx
-from std.gpu.host import DeviceContext
+from max.gpu import global_idx
+from max.gpu.host import DeviceContext
 from std.math import ceildiv
 from std.memory import bitcast
 from std.random import random_ui64
 from std.sys.intrinsics import llvm_intrinsic
 
 from internal_utils import assert_almost_equal
-from layout import Coord, Idx, TileTensor, row_major
+from layout import TileTensor, row_major
 from linalg.fp4_utils import MXFP4_SF_VECTOR_SIZE
-from linalg.matmul.gpu.amd.mxfp4_matmul_amd import (
-    MXFP4MatmulAMD,
-    _launch_mxfp4_split_k,
+from linalg.matmul.gpu.amd.block_scaled_matmul_amd import (
+    BlockScaledMatmulAMD,
+    _launch_block_scaled_split_k,
 )
 
 
@@ -42,14 +42,14 @@ from linalg.matmul.gpu.amd.mxfp4_matmul_amd import (
 
 
 def block_scaled_matmul_ref(
-    a_ptr: UnsafePointer[Scalar[DType.uint8], ImmutAnyOrigin],
-    b_ptr: UnsafePointer[Scalar[DType.uint8], ImmutAnyOrigin],
-    a_scales_ptr: UnsafePointer[Scalar[DType.float8_e8m0fnu], ImmutAnyOrigin],
-    b_scales_ptr: UnsafePointer[Scalar[DType.float8_e8m0fnu], ImmutAnyOrigin],
-    c_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-    M: Int,
-    N: Int,
-    K: Int,
+    a_ptr: ImmPointer[UInt8, ImmutAnyOrigin],
+    b_ptr: ImmPointer[UInt8, ImmutAnyOrigin],
+    a_scales_ptr: ImmPointer[Float8_e8m0fnu, ImmutAnyOrigin],
+    b_scales_ptr: ImmPointer[Float8_e8m0fnu, ImmutAnyOrigin],
+    c_ptr: MutPointer[Float32, MutAnyOrigin],
+    M_dev: Int32,
+    N_dev: Int32,
+    K_dev: Int32,
 ):
     """Per-element GPU reference for MXFP4 block-scaled matmul.
 
@@ -57,14 +57,17 @@ def block_scaled_matmul_ref(
     packed FP4 data via the CDNA4 cvt.scalef32.pk.f32.fp4 intrinsic,
     multiplying with E8M0 scales, and accumulating in FP32.
     """
+    var M = Int(M_dev)
+    var N = Int(N_dev)
+    var K = Int(K_dev)
 
-    @always_inline
+    @inline(.always)
     def cast_fp4x2_to_fp32x2[
         byte_select: Int
-    ](packed: Int32, scale: Float32) -> SIMD[DType.float32, 2]:
+    ](packed: Int32, scale: Float32) -> SIMD[.float32, 2]:
         return llvm_intrinsic[
             "llvm.amdgcn.cvt.scalef32.pk.f32.fp4",
-            SIMD[DType.float32, 2],
+            SIMD[.float32, 2],
         ](packed, scale, Int32(byte_select))
 
     var m = global_idx.x
@@ -81,15 +84,15 @@ def block_scaled_matmul_ref(
     var am_ptr = a_ptr + m * (K // 2)
     var bn_ptr = b_ptr + n * (K // 2)
 
-    var accum = SIMD[DType.float32, 2](0)
+    var accum = SIMD[.float32, 2](0)
 
     for ko in range(k_groups):
-        var a_scale = am_scales_ptr[ko].cast[DType.float32]()
-        var b_scale = bn_scales_ptr[ko].cast[DType.float32]()
+        var a_scale = am_scales_ptr[ko].cast[.float32]()
+        var b_scale = bn_scales_ptr[ko].cast[.float32]()
 
         for ki in range(0, MXFP4_SF_VECTOR_SIZE // 2, 4):
-            var a_data = bitcast[DType.int32, 1](am_ptr.load[width=4](ki))
-            var b_data = bitcast[DType.int32, 1](bn_ptr.load[width=4](ki))
+            var a_data = bitcast[.int32, 1](am_ptr.load[width=4](ki))
+            var b_data = bitcast[.int32, 1](bn_ptr.load[width=4](ki))
 
             comptime for byte_select in range(4):
                 accum += cast_fp4x2_to_fp32x2[byte_select](
@@ -120,9 +123,9 @@ def test_mxfp4_matmul[
     MMA_N: Int = 16,
     MMA_K: Int = 128,
 ](ctx: DeviceContext) raises:
-    """Test MXFP4MatmulAMD against a GPU reference kernel.
+    """Test BlockScaledMatmulAMD against a GPU reference kernel.
 
-    Launches MXFP4MatmulAMD directly with the provided BM/BN/BK_ELEMS/WM/WN
+    Launches BlockScaledMatmulAMD directly with the provided BM/BN/BK_ELEMS/WM/WN
     and MMA shape. Defaults match the current production tile config and
     the 16x16x128 MFMA shape.
 
@@ -225,14 +228,14 @@ def test_mxfp4_matmul[
     ctx.enqueue_copy(a_scales_dev, a_scales_host)
     ctx.enqueue_copy(b_scales_dev, b_scales_host)
 
-    var a_tt = TileTensor[mut=False](a_dev, a_shape)
-    var b_tt = TileTensor[mut=False](b_dev, b_shape)
-    var c_tt = TileTensor[mut=True](c_dev, c_shape)
-    var a_scales_tt = TileTensor[mut=False](a_scales_dev, a_scales_shape)
-    var b_scales_tt = TileTensor[mut=False](b_scales_dev, b_scales_shape)
+    var a_tt = TileTensor(a_dev, a_shape).as_imm()
+    var b_tt = TileTensor(b_dev, b_shape).as_imm()
+    var c_tt = TileTensor(c_dev, c_shape)
+    var a_scales_tt = TileTensor(a_scales_dev, a_scales_shape).as_imm()
+    var b_scales_tt = TileTensor(b_scales_dev, b_scales_shape).as_imm()
 
     # --- Direct launch with explicit tile params ---
-    comptime Kernel = MXFP4MatmulAMD[
+    comptime Kernel = BlockScaledMatmulAMD[
         BM=BM,
         BN=BN,
         BK_ELEMS=BK_ELEMS,
@@ -243,12 +246,17 @@ def test_mxfp4_matmul[
         MMA_K=MMA_K,
     ]
     comptime kernel = Kernel.run[
-        DType.float32,
+        .float32,
         type_of(c_tt).LayoutType,
         type_of(a_tt).LayoutType,
         type_of(b_tt).LayoutType,
         type_of(a_scales_tt).LayoutType,
         type_of(b_scales_tt).LayoutType,
+        type_of(c_tt).Engine,
+        type_of(a_tt).Engine,
+        type_of(b_tt).Engine,
+        type_of(a_scales_tt).Engine,
+        type_of(b_scales_tt).Engine,
     ]
     ctx.enqueue_function[kernel](
         c_tt,
@@ -268,9 +276,9 @@ def test_mxfp4_matmul[
         a_scales_dev,
         b_scales_dev,
         c_ref_dev,
-        M_static,
-        N_static,
-        K_static,
+        Int32(M_static),
+        Int32(N_static),
+        Int32(K_static),
         grid_dim=(ceildiv(M_static, BLOCK_DIM), ceildiv(N_static, BLOCK_DIM)),
         block_dim=(BLOCK_DIM, BLOCK_DIM),
     )
@@ -303,7 +311,7 @@ def test_mxfp4_matmul_split_k[
 ](ctx: DeviceContext) raises:
     """Test the inter-block split-K launcher against the GPU reference.
 
-    Launches `_launch_mxfp4_split_k` (workspace + reduce path) for the
+    Launches `_launch_block_scaled_split_k` (workspace + reduce path) for the
     given `num_splits` and verifies bit-exactness against the same scalar
     dequant reference used by `test_mxfp4_matmul`. Covers both the K-band
     accumulation and the reduce-kernel sum/cast.
@@ -378,14 +386,14 @@ def test_mxfp4_matmul_split_k[
     ctx.enqueue_copy(a_scales_dev, a_scales_host)
     ctx.enqueue_copy(b_scales_dev, b_scales_host)
 
-    var a_tt = TileTensor[mut=False](a_dev, a_shape)
-    var b_tt = TileTensor[mut=False](b_dev, b_shape)
-    var c_tt = TileTensor[mut=True](c_dev, c_shape)
-    var a_scales_tt = TileTensor[mut=False](a_scales_dev, a_scales_shape)
-    var b_scales_tt = TileTensor[mut=False](b_scales_dev, b_scales_shape)
+    var a_tt = TileTensor(a_dev, a_shape).as_imm()
+    var b_tt = TileTensor(b_dev, b_shape).as_imm()
+    var c_tt = TileTensor(c_dev, c_shape)
+    var a_scales_tt = TileTensor(a_scales_dev, a_scales_shape).as_imm()
+    var b_scales_tt = TileTensor(b_scales_dev, b_scales_shape).as_imm()
 
     # --- Split-K launch (workspace + reduce path) ---
-    _launch_mxfp4_split_k[
+    _launch_block_scaled_split_k[
         BM=BM,
         BN=BN,
         BK_ELEMS=BK_ELEMS,
@@ -402,9 +410,9 @@ def test_mxfp4_matmul_split_k[
         a_scales_dev,
         b_scales_dev,
         c_ref_dev,
-        M_static,
-        N_static,
-        K_static,
+        Int32(M_static),
+        Int32(N_static),
+        Int32(K_static),
         grid_dim=(ceildiv(M_static, BLOCK_DIM), ceildiv(N_static, BLOCK_DIM)),
         block_dim=(BLOCK_DIM, BLOCK_DIM),
     )

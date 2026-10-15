@@ -17,14 +17,17 @@ from kv_cache.types import (
     PagedKVCacheCollection,
 )
 from layout import (
+    DefaultEngine,
     IntTuple,
     Layout,
-    LayoutTensor,
-    RuntimeLayout,
     UNKNOWN_VALUE,
     Coord,
+    Idx,
+    TileTensor,
+    row_major,
 )
 from std.memory import alloc
+from std.sys import size_of
 from std.testing import assert_true
 
 from std.utils.coord import dyn_coord
@@ -51,25 +54,38 @@ def do_test[
     )
 
     var blocks_ptr = List(length=shape.flattened_length(), fill=Float32(0))
-    var blocks = LayoutTensor[DType.float32, Layout.row_major[6]()](
-        blocks_ptr, RuntimeLayout[Layout.row_major[6]()].row_major(shape)
+    comptime Collection = PagedKVCacheCollection[
+        DType.float32,
+        kv_params,
+        page_size,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
+        scale_dtype_=scale_dtype,
+    ]
+    var blocks = TileTensor(
+        Span(blocks_ptr), row_major(shape.flattened_length())
+    ).reshape(
+        Coord(
+            Int64(shape[0]),
+            Idx[2],
+            Int64(shape[2]),
+            Idx[page_size],
+            Idx[kv_params.num_heads],
+            Idx[kv_params.head_size],
+        )
     )
-    comptime layout_1d = Layout(UNKNOWN_VALUE)
     var cache_lengths_ptr = List(length=batch_size, fill=UInt32(0))
-    var cache_lengths = LayoutTensor[DType.uint32, layout_1d](
-        cache_lengths_ptr,
-        RuntimeLayout[layout_1d].row_major(IndexList[1](batch_size)),
-    )
-    comptime layout_2d = Layout.row_major[2]()
+    var cache_lengths = TileTensor(
+        Span(cache_lengths_ptr), row_major(len(cache_lengths_ptr))
+    ).reshape(Coord(Int64(batch_size)))
     var lookup_table_ptr = List(
         length=batch_size * max_num_blocks, fill=UInt32(0)
     )
-    var lookup_table = LayoutTensor[DType.uint32, layout_2d](
-        lookup_table_ptr,
-        RuntimeLayout[layout_2d].row_major(
-            IndexList[2](batch_size, max_num_blocks)
-        ),
-    )
+    var lookup_table = TileTensor(
+        Span(lookup_table_ptr), row_major(len(lookup_table_ptr))
+    ).reshape(Coord(Int64(batch_size), Int64(max_num_blocks)))
     for i in range(batch_size):
         cache_lengths[i] = UInt32(i)
         for j in range(max_num_blocks):
@@ -78,49 +94,31 @@ def do_test[
     var max_seq_length = UInt32(2048)
     var max_cache_length = UInt32(2048)
 
-    # Concrete scales element type: the real scale dtype when set, else the
-    # block dtype (`float32`). Used for both the `scales` declaration and its
-    # assignment so the compiler folds the types without a rebind.
     comptime scales_dtype = scale_dtype.or_else(DType.float32)
-    var scales: OptionalReg[
-        LayoutTensor[scales_dtype, Layout.row_major[6](), MutUntrackedOrigin]
-    ] = None
+    var scales: OptionalReg[Collection.scales_tt_type] = None
 
     comptime if scale_dtype == DType.float8_e4m3fn:
         # Use the same shape as the blocks.
         var scales_ptr = alloc[Scalar[scales_dtype]](shape.flattened_length())
-        scales = LayoutTensor[scales_dtype, Layout.row_major[6]()](
-            scales_ptr,
-            RuntimeLayout[Layout.row_major[6]()].row_major(shape),
+        scales = rebind[Collection.scales_tt_type](
+            TileTensor(scales_ptr, row_major(shape.flattened_length()))
+            .reshape(
+                Coord(
+                    Int64(shape[0]),
+                    Idx[2],
+                    Int64(shape[2]),
+                    Idx[page_size],
+                    Idx[kv_params.num_heads],
+                    Idx[kv_params.head_size],
+                )
+            )
+            .as_unsafe_any_origin()
         ).fill(0)
 
-    var collection = PagedKVCacheCollection[
-        DType.float32,
-        kv_params,
-        page_size,
-        scale_dtype_=scale_dtype,
-    ](
-        LayoutTensor[blocks.dtype, Layout.row_major[6]()](
-            blocks.ptr,
-            RuntimeLayout[Layout.row_major[6]()](
-                blocks.runtime_layout.shape.value,
-                blocks.runtime_layout.stride.value,
-            ),
-        ),
-        LayoutTensor[mut=False, cache_lengths.dtype, Layout(UNKNOWN_VALUE)](
-            cache_lengths.ptr.as_immutable().as_unsafe_any_origin(),
-            RuntimeLayout[Layout(UNKNOWN_VALUE)](
-                cache_lengths.runtime_layout.shape.value,
-                cache_lengths.runtime_layout.stride.value,
-            ),
-        ),
-        LayoutTensor[mut=False, lookup_table.dtype, Layout.row_major[2]()](
-            lookup_table.ptr,
-            RuntimeLayout[Layout.row_major[2]()](
-                lookup_table.runtime_layout.shape.value,
-                lookup_table.runtime_layout.stride.value,
-            ),
-        ),
+    var collection = Collection(
+        rebind[Collection.blocks_tt_type](blocks.as_unsafe_any_origin()),
+        cache_lengths.as_imm().as_unsafe_any_origin(),
+        lookup_table.as_imm().as_unsafe_any_origin(),
         max_seq_length,
         max_cache_length,
         scales,
@@ -151,9 +149,13 @@ def test_paged_kv_cache_stride_is_unknown() raises:
         kv_params,
         16,
         MutUntrackedOrigin,
+        DefaultEngine[element_width=1],
         ImmUntrackedOrigin,
+        DefaultEngine[element_width=1],
         ImmUntrackedOrigin,
+        DefaultEngine[element_width=1],
         MutUntrackedOrigin,
+        DefaultEngine[element_width=1],
     ]
 
     # Verify stride[0] is UNKNOWN_VALUE
@@ -232,55 +234,47 @@ def test_paged_kv_cache_offset_correctness() raises:
     for i in range(total_elems):
         blocks_ptr[i] = Float32(i)
 
-    var blocks = LayoutTensor[DType.float32, Layout.row_major[6]()](
-        blocks_ptr, RuntimeLayout[Layout.row_major[6]()].row_major(shape_6d)
+    comptime Collection = PagedKVCacheCollection[
+        DType.float32,
+        kv_params_small,
+        page_size,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
+    ]
+    var blocks = TileTensor(
+        Span(blocks_ptr), row_major(shape_6d.flattened_length())
+    ).reshape(
+        Coord(
+            Int64(shape_6d[0]),
+            Idx[2],
+            Int64(shape_6d[2]),
+            Idx[page_size],
+            Idx[kv_params_small.num_heads],
+            Idx[kv_params_small.head_size],
+        )
     )
 
     # Create minimal supporting tensors
     comptime batch_size = 1
     var cache_lengths_ptr = List(length=batch_size, fill=UInt32(0))
-    comptime layout_1d = Layout(UNKNOWN_VALUE)
-    var cache_lengths = LayoutTensor[DType.uint32, layout_1d](
-        cache_lengths_ptr,
-        RuntimeLayout[layout_1d].row_major(IndexList[1](batch_size)),
-    )
+    var cache_lengths = TileTensor(
+        Span(cache_lengths_ptr), row_major(len(cache_lengths_ptr))
+    ).reshape(Coord(Int64(batch_size)))
 
-    comptime layout_2d = Layout.row_major[2]()
     var lookup_table_ptr = List(length=batch_size * num_blocks, fill=UInt32(0))
     for i in range(num_blocks):
         lookup_table_ptr[i] = UInt32(i)  # Identity mapping
-    var lookup_table = LayoutTensor[DType.uint32, layout_2d](
-        lookup_table_ptr,
-        RuntimeLayout[layout_2d].row_major(
-            IndexList[2](batch_size, num_blocks)
-        ),
-    )
+    var lookup_table = TileTensor(
+        Span(lookup_table_ptr), row_major(len(lookup_table_ptr))
+    ).reshape(Coord(Int64(batch_size), Int64(num_blocks)))
 
     # Create collection
-    var collection = PagedKVCacheCollection[
-        DType.float32, kv_params_small, page_size
-    ](
-        LayoutTensor[DType.float32, Layout.row_major[6]()](
-            blocks.ptr,
-            RuntimeLayout[Layout.row_major[6]()](
-                blocks.runtime_layout.shape.value,
-                blocks.runtime_layout.stride.value,
-            ),
-        ),
-        LayoutTensor[mut=False, DType.uint32, Layout(UNKNOWN_VALUE)](
-            cache_lengths.ptr,
-            RuntimeLayout[Layout(UNKNOWN_VALUE)](
-                cache_lengths.runtime_layout.shape.value,
-                cache_lengths.runtime_layout.stride.value,
-            ),
-        ),
-        LayoutTensor[mut=False, DType.uint32, Layout.row_major[2]()](
-            lookup_table.ptr,
-            RuntimeLayout[Layout.row_major[2]()](
-                lookup_table.runtime_layout.shape.value,
-                lookup_table.runtime_layout.stride.value,
-            ),
-        ),
+    var collection = Collection(
+        rebind[Collection.blocks_tt_type](blocks.as_unsafe_any_origin()),
+        cache_lengths.as_imm().as_unsafe_any_origin(),
+        lookup_table.as_imm().as_unsafe_any_origin(),
         UInt32(page_size),
         UInt32(page_size),
     )
@@ -289,7 +283,6 @@ def test_paged_kv_cache_offset_correctness() raises:
     # Get key cache for layer 1 (kv_idx=0, layer_idx=1)
     var key_cache = collection.get_key_cache(1)
 
-    # Directly access the blocks tensor using IndexList
     # 4D coords [block=1, page=0, head=1, dim=2]
     # In 6D, this corresponds to [block=1, kv=0, layer=1, page=0, head=1, dim=2]
     #
@@ -316,7 +309,7 @@ def test_paged_kv_cache_offset_correctness() raises:
     # we'd compute wrong offset: 1*16 + 0*8 + 1*4 + 2 = 22 (wrong!)
 
     # Access via the blocks TileTensor - this tests the layout offset computation
-    var idx = dyn_coord[DType.int64]((1, 0, 1, 2))
+    var idx = dyn_coord[.int64]((1, 0, 1, 2))
     var value = key_cache.blocks.raw_load[width=1](key_cache.blocks.layout(idx))
     var expected_value = Float32(expected_6d_offset)
 
@@ -338,9 +331,13 @@ def test_paged_kv_cache_quantization() raises:
         kv_params,
         16,
         MutUntrackedOrigin,
+        DefaultEngine[element_width=1],
         ImmUntrackedOrigin,
+        DefaultEngine[element_width=1],
         ImmUntrackedOrigin,
+        DefaultEngine[element_width=1],
         MutUntrackedOrigin,
+        DefaultEngine[element_width=1],
         scale_dtype_=DType.float8_e4m3fn,
         quantization_granularity_=256,
     ]
@@ -351,10 +348,256 @@ def test_paged_kv_cache_quantization() raises:
     )
 
 
+def test_scales_resolve_through_their_own_lookup_table() raises:
+    """A distinct scales_lookup_table must resolve scale pages independently
+    of lookup_table, not silently fall back to it.
+    """
+    comptime kv_params_small = KVCacheStaticParams(num_heads=1, head_size=4)
+    comptime page_size = 1
+    comptime granularity = 4
+    comptime batch_size = 1
+    comptime num_value_blocks = 1
+    comptime num_scale_blocks = 3
+
+    comptime blocks_shape = IndexList[6](
+        num_value_blocks,
+        2,
+        1,
+        page_size,
+        kv_params_small.num_heads,
+        kv_params_small.head_size,
+    )
+    var blocks_ptr = List(
+        length=blocks_shape.flattened_length(), fill=Float32(0)
+    )
+    comptime Collection = PagedKVCacheCollection[
+        DType.float32,
+        kv_params_small,
+        page_size,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
+        scale_dtype_=DType.float32,
+        quantization_granularity_=granularity,
+    ]
+    var blocks = TileTensor(
+        Span(blocks_ptr), row_major(blocks_shape.flattened_length())
+    ).reshape(
+        Coord(
+            Int64(blocks_shape[0]),
+            Idx[2],
+            Int64(blocks_shape[2]),
+            Idx[page_size],
+            Idx[kv_params_small.num_heads],
+            Idx[kv_params_small.head_size],
+        )
+    )
+
+    var cache_lengths_ptr = List(length=batch_size, fill=UInt32(1))
+    var cache_lengths = TileTensor(
+        Span(cache_lengths_ptr), row_major(len(cache_lengths_ptr))
+    ).reshape(Coord(Int64(batch_size)))
+
+    # Values resolve through block 0.
+    var lookup_table_ptr = alloc[UInt32](batch_size)
+    lookup_table_ptr[0] = UInt32(0)
+    var lookup_table = (
+        TileTensor(lookup_table_ptr, row_major(batch_size))
+        .reshape(Coord(Int64(batch_size), Int64(1)))
+        .as_imm()
+        .as_unsafe_any_origin()
+    )
+
+    # Scales resolve through block 2 -- distinct from what lookup_table
+    # points at, and only reachable through scales_lookup_table.
+    var scales_lookup_table_ptr = alloc[UInt32](batch_size)
+    scales_lookup_table_ptr[0] = UInt32(2)
+    var scales_lookup_table_opt: OptionalReg[
+        Collection.CacheType.lookup_table_tt_type
+    ] = (
+        TileTensor(scales_lookup_table_ptr, row_major(batch_size))
+        .reshape(Coord(Int64(batch_size), Int64(1)))
+        .as_imm()
+        .as_unsafe_any_origin()
+    )
+
+    comptime scales_shape = IndexList[6](
+        num_scale_blocks, 2, 1, page_size, kv_params_small.num_heads, 1
+    )
+    var scales_ptr = alloc[Float32](scales_shape.flattened_length())
+    var scales = rebind[Collection.scales_tt_type](
+        TileTensor(scales_ptr, row_major(scales_shape.flattened_length()))
+        .reshape(
+            Coord(
+                Int64(scales_shape[0]),
+                Idx[2],
+                Int64(scales_shape[2]),
+                Idx[page_size],
+                Idx[kv_params_small.num_heads],
+                Idx[1],
+            )
+        )
+        .as_unsafe_any_origin()
+    ).fill(Scalar[Collection.scale_dtype](-1.0))
+    # Block 0 -- where lookup_table points -- holds a decoy value that a
+    # buggy fallback to lookup_table would read instead.
+    scales[0, 0, 0, 0, 0, 0] = Scalar[Collection.scale_dtype](111.0)
+    # Block 2 -- where scales_lookup_table points -- holds the real value.
+    scales[2, 0, 0, 0, 0, 0] = Scalar[Collection.scale_dtype](222.0)
+
+    var scales_opt: OptionalReg[Collection.scales_tt_type] = scales
+
+    var collection = Collection(
+        rebind[Collection.blocks_tt_type](blocks.as_unsafe_any_origin()),
+        cache_lengths.as_imm().as_unsafe_any_origin(),
+        lookup_table.as_imm().as_unsafe_any_origin(),
+        UInt32(page_size),
+        UInt32(page_size),
+        scales_opt,
+        scales_lookup_table_opt,
+    )
+
+    var key_cache = collection.get_key_cache(0)
+    var scale = key_cache.load_scale[width=1](
+        bs=0, head_idx=0, tok_idx=0, head_dim_idx=0
+    )
+
+    assert_true(
+        Float32(scale) == Float32(222.0),
+        String("scale resolved through the wrong LUT: got ")
+        + String(scale)
+        + ", expected 222.0 (via scales_lookup_table, not lookup_table)",
+    )
+
+
+def _build_collection_and_page_stride[
+    page_size: Int, num_layers: Int
+](page_stride: Int) raises -> Int:
+    """Returns the byte distance between consecutive pages of a collection.
+
+    Builds a paged collection over `num_blocks` pages, then measures the page
+    stride the way a kernel experiences it: the distance between the pointers
+    two adjacent physical pages resolve to. `page_stride` is forwarded
+    verbatim, so -1 exercises the packed path.
+    """
+    comptime num_blocks = 8
+    comptime batch_size = 1
+    comptime shape = IndexList[6](
+        num_blocks,
+        2,
+        num_layers,
+        page_size,
+        kv_params.num_heads,
+        kv_params.head_size,
+    )
+
+    # The pool owes `num_blocks * page_stride` elements when a padded stride is
+    # supplied, since the tensor below still describes packed pages.
+    var packed_page = (
+        2 * num_layers * page_size * kv_params.num_heads * kv_params.head_size
+    )
+    var page = packed_page if page_stride < 0 else page_stride
+    var blocks_ptr = List(length=num_blocks * page, fill=Float32(0))
+    comptime Collection = PagedKVCacheCollection[
+        DType.float32,
+        kv_params,
+        page_size,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
+    ]
+    var blocks = TileTensor(
+        Span(blocks_ptr)[: shape.flattened_length()],
+        row_major(shape.flattened_length()),
+    ).reshape(
+        Coord(
+            Int64(shape[0]),
+            Idx[2],
+            Int64(shape[2]),
+            Idx[page_size],
+            Idx[kv_params.num_heads],
+            Idx[kv_params.head_size],
+        )
+    )
+
+    var cache_lengths_ptr = List(length=batch_size, fill=UInt32(0))
+    var cache_lengths = TileTensor(
+        Span(cache_lengths_ptr), row_major(len(cache_lengths_ptr))
+    ).reshape(Coord(Int64(batch_size)))
+    var lookup_table_ptr = List(length=batch_size * num_blocks, fill=UInt32(0))
+    var lookup_table = TileTensor(
+        Span(lookup_table_ptr), row_major(len(lookup_table_ptr))
+    ).reshape(Coord(Int64(batch_size), Int64(num_blocks)))
+    for j in range(num_blocks):
+        lookup_table[0, j] = UInt32(j)
+
+    var collection = Collection(
+        rebind[Collection.blocks_tt_type](blocks.as_unsafe_any_origin()),
+        cache_lengths.as_imm().as_unsafe_any_origin(),
+        lookup_table.as_imm().as_unsafe_any_origin(),
+        UInt32(page_size * num_blocks),
+        UInt32(page_size * num_blocks),
+        page_stride=page_stride,
+    )
+
+    var cache = collection.get_key_cache(0)
+    var page0 = cache.block_paged_ptr[page_size](0, 0, 0)
+    var page1 = cache.block_paged_ptr[page_size](0, page_size, 0)
+    return Int(page1) - Int(page0)
+
+
+def test_page_stride_of_minus_one_keeps_pages_packed() raises:
+    """A -1 stride must reproduce the geometry callers already depend on."""
+    comptime page_size = 16
+    comptime num_layers = 3
+    var measured = _build_collection_and_page_stride[page_size, num_layers](-1)
+    comptime packed = (
+        2 * num_layers * page_size * kv_params.num_heads * kv_params.head_size
+    )
+    comptime element_size = size_of[Float32]()
+    assert_true(
+        measured == packed * element_size,
+        String("packed page stride should be ")
+        + String(packed * element_size)
+        + " bytes, got "
+        + String(measured),
+    )
+
+
+def test_page_stride_overrides_the_packed_distance() raises:
+    """A padded page is reached at the supplied stride, not the packed one."""
+    comptime page_size = 16
+    comptime num_layers = 3
+    comptime packed = (
+        2 * num_layers * page_size * kv_params.num_heads * kv_params.head_size
+    )
+    # Whole-row padding keeps the row division in `_stride()` exact.
+    comptime row = kv_params.num_heads * kv_params.head_size
+    comptime padded = packed + 16 * row
+    comptime assert padded % row == 0, "a padded page must be whole rows"
+
+    var measured = _build_collection_and_page_stride[page_size, num_layers](
+        padded
+    )
+    comptime element_size = size_of[Float32]()
+    assert_true(
+        measured == padded * element_size,
+        String("padded page stride should be ")
+        + String(padded * element_size)
+        + " bytes, got "
+        + String(measured),
+    )
+
+
 def main() raises:
+    test_page_stride_of_minus_one_keeps_pages_packed()
+    test_page_stride_overrides_the_packed_distance()
     test_paged_kv_cache_stride_is_unknown()
     test_paged_kv_cache_offset_correctness()
     test_paged_kv_cache_quantization()
+    test_scales_resolve_through_their_own_lookup_table()
     do_test[16, 16]()
     do_test[64, 16]()
     do_test[128, 64]()

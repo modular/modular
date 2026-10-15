@@ -18,6 +18,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, ClassVar, cast
 
+from max import tree
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -39,11 +40,10 @@ from max.pipelines.lib import (
     ModuleV3MultiGraphPipelineModelWithKVCache,
     PipelineConfig,
 )
+from max.pipelines.lib.memory_estimation import MemoryPlan
 from max.pipelines.lib.utils import (
     parse_state_dict_from_weights,
-    upper_bounded_default,
 )
-from transformers import AutoConfig
 
 from .batch_processor import PixtralModuleV3BatchProcessor
 from .model_config import PixtralConfig
@@ -82,26 +82,6 @@ class PixtralModel(
         PixtralModuleV3BatchProcessor
     )
 
-    @classmethod
-    def calculate_max_seq_len(
-        cls,
-        pipeline_config: PipelineConfig,
-        huggingface_config: AutoConfig,
-    ) -> int:
-        """Bounds ``max_length`` by ``text_config.max_position_embeddings`` (config is permissive)."""
-        upper_bound = huggingface_config.text_config.max_position_embeddings
-        try:
-            return upper_bounded_default(
-                upper_bound=upper_bound,
-                default=pipeline_config.model.max_length,
-            )
-        except ValueError as e:
-            raise ValueError(
-                f"Unable to infer max_length for {cls.__qualname__}, "
-                f"the provided max_length ({pipeline_config.model.max_length}) "
-                f"exceeds the model's max_position_embeddings ({upper_bound})."
-            ) from e
-
     vision_model: Callable[..., Any] | None
     """Compiled vision model (encoder + projector) for a ragged batch of images."""
 
@@ -115,19 +95,22 @@ class PixtralModel(
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
+        *,
+        memory_plan: MemoryPlan,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         max_batch_size: int = 1,
     ) -> None:
-        self._max_batch_size = max_batch_size
         super().__init__(
             pipeline_config,
             session,
             devices,
             kv_cache_config,
             weights,
-            adapter,
-            return_logits,
+            adapter=adapter,
+            return_logits=return_logits,
+            memory_plan=memory_plan,
+            max_batch_size=max_batch_size,
         )
 
         if self.pipeline_config.model.enable_echo:
@@ -135,7 +118,7 @@ class PixtralModel(
                 "Pixtral model does not currently implement enable echo."
             )
 
-        assert self._max_batch_size, "Expected max_batch_size to be set"
+        assert self.max_batch_size, "Expected max_batch_size to be set"
 
         if len(self.devices) > 1:
             raise NotImplementedError(
@@ -178,7 +161,7 @@ class PixtralModel(
             model_inputs.return_n_logits,
             image_embeddings,
             image_token_indices,
-            *model_inputs.kv_cache_inputs.flatten(),
+            *tree.leaves(model_inputs.kv_cache_inputs),
         )
 
         if len(model_outputs) == 3:
@@ -205,9 +188,7 @@ class PixtralModel(
         vision_state_dict: dict[str, WeightData] = {}
         language_state_dict: dict[str, WeightData] = {}
         for k, v in state_dict.items():
-            if k.startswith("vision_encoder.") or k.startswith(
-                "multi_modal_projector."
-            ):
+            if k.startswith(("vision_encoder.", "multi_modal_projector.")):
                 # Remap vision_encoder.X -> X since PixtralVision owns
                 # these components directly (no VisionEncoder sub-module).
                 if k.startswith("vision_encoder."):
@@ -255,7 +236,9 @@ class PixtralModel(
             * vision_config.patch_size
         )
 
-        model_config = PixtralConfig.initialize(self.pipeline_config)
+        model_config = PixtralConfig.initialize(
+            self.pipeline_config, max_seq_len=self.max_seq_len
+        )
         model_config.return_logits = self.return_logits
         return model_config
 

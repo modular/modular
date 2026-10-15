@@ -25,17 +25,13 @@ from std.math import isclose
 
 from layout import (
     Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
     row_major,
 )
 from nn.attention.gpu.mha import flash_attention, mha_gpu_naive
 from nn.attention.mha_mask import CausalMask
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.testing import assert_almost_equal
-from std.utils.index import Index
 from std.utils.numerics import min_or_neg_inf
 
 
@@ -80,12 +76,8 @@ def test_gemma4_global_decode(
                 k_ptr[(i * kv_num_heads + h) * depth + d] = k_val
                 v_ptr[(i * kv_num_heads + h) * depth + d] = v_val
 
-    comptime mask_layout = Layout.row_major[4]()
-    var mask = LayoutTensor[mask_type, mask_layout](
-        mask_ptr,
-        RuntimeLayout[mask_layout].row_major(
-            Index(batch_size, num_heads, seq_len, num_keys)
-        ),
+    var mask = TileTensor(
+        mask_ptr, row_major((batch_size, num_heads, seq_len, num_keys))
     )
     for b in range(batch_size):
         for h in range(num_heads):
@@ -167,8 +159,8 @@ def test_gemma4_global_decode(
     for h in range(num_heads):
         for d in range(depth):
             var idx = d + depth * h
-            var actual = actual_ptr[idx].cast[DType.float64]()
-            var expect = expect_ptr[idx].cast[DType.float64]()
+            var actual = actual_ptr[idx].cast[.float64]()
+            var expect = expect_ptr[idx].cast[.float64]()
             if not isclose(actual, expect, atol=1e-5, rtol=3e-2):
                 print("MISMATCH:", h, d, actual, expect)
             assert_almost_equal(actual, expect, atol=1e-5, rtol=3e-2)

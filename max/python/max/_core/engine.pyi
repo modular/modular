@@ -18,9 +18,10 @@
 import enum
 import inspect
 import os
+import pathlib
 import types
 from collections.abc import Iterator, Mapping, Sequence
-from typing import Any, overload
+from typing import Any, TypeAlias, overload
 
 import max._core.driver
 import max._core.dtype
@@ -29,7 +30,7 @@ from max._core.driver import Buffer
 from max._core.mlrt import AsyncValue
 from max._core_types.driver import DLPackArray
 
-InputType = DLPackArray | Buffer | int | float | bool
+InputType: TypeAlias = DLPackArray | Buffer | int | float | bool
 
 class TensorSpec:
     """
@@ -54,9 +55,6 @@ class TensorSpec:
         If a dimension size is unknown/dynamic (such as the batch size), its
         value is ``None``.
         """
-
-    def __repr__(self) -> str: ...
-    def __str__(self) -> str: ...
 
 class ModelMetadata:
     """Input and output metadata for a compiled model function."""
@@ -83,6 +81,47 @@ class CompiledModels:
         Args:
             path: Filesystem path to write the MEF to.
         """
+
+def get_config_value(key: str) -> str:
+    """
+    Reads a config value.
+
+    Global overrides take priority, then the ``MODULAR_<KEY>``
+    environment variable, then ``modular.cfg``.
+
+    Raises:
+        KeyError: If the key is not set in any source.
+        RuntimeError: If the config fails to open.
+    """
+
+def get_global_value(key: str) -> str | None:
+    """
+    Returns the process-wide override for ``key``, or ``None`` if unset.
+
+    Ignores environment variables and ``modular.cfg``.
+    """
+
+def set_global_value(key: str, value: str) -> None:
+    """
+    Sets a process-wide config override.
+
+    Overrides take priority over environment variables and
+    ``modular.cfg`` for every consumer in the process. They are not
+    inherited by subprocesses.
+    """
+
+def unset_global_value(key: str) -> None:
+    """Removes an override set by :func:`set_global_value`."""
+
+def max_cache_dir() -> pathlib.Path | None:
+    """
+    Returns the directory the engine caches compiled models (``.mef``) in.
+
+    Resolved by the compiler itself.
+
+    Returns:
+        pathlib.Path | None: the cache directory, or None if unresolvable.
+    """
 
 @overload
 def read(path: str | os.PathLike) -> CompiledModels:
@@ -131,6 +170,35 @@ class Model:
     number of inputs doesn't match.
 
     For supported input types and execution errors, see :meth:`execute`.
+
+    For example, load a graph, list its inputs, and run it:
+
+    .. code-block:: python
+
+        import numpy as np
+
+        from max.driver import CPU
+        from max.dtype import DType
+        from max.engine import InferenceSession
+        from max.graph import DeviceRef, Graph, TensorType
+
+        with Graph(
+            "add_one",
+            input_types=[
+                TensorType(DType.float32, ["batch"], device=DeviceRef.CPU())
+            ],
+        ) as graph:
+            (x,) = graph.inputs
+            graph.output(x + 1.0)
+
+        session = InferenceSession(devices=[CPU()])
+        model = session.load(graph)
+        for tensor in model.input_metadata:
+            print(
+                f"name: {tensor.name}, shape: {tensor.shape},"
+                f" dtype: {tensor.dtype}"
+            )
+        outputs = model.execute(np.ones((2,), np.float32))
     """
 
     @property
@@ -182,7 +250,7 @@ class Model:
 
         Returns a list of strings, one per ``mgp.generic.execute`` kernel in
         the compiled graph.  Each string describes the fused kernel composition,
-        e.g. ``"Epilogue(custom__kv_rope, custom__kv_cache_store)"``.
+        such as ``"Epilogue(custom__kv_rope, custom__kv_cache_store)"``.
         """
 
     @property
@@ -242,7 +310,6 @@ class Model:
     def __call__(self, *args: InputType, **kwargs: InputType) -> list[Buffer]:
         """Executes the model. See :class:`Model` for details."""
 
-    def __repr__(self) -> str: ...
     def capture(
         self, graph_keys: int | Sequence[int], *inputs: Buffer
     ) -> list[Buffer]:
@@ -252,7 +319,7 @@ class Model:
         Capture is best-effort and model-dependent. It records the current execution
         path; models that perform unsupported operations during capture (for example,
         host-device synchronization) will fail to capture. Callers should decide which
-        phases are safe to capture (e.g. decode-only in serving).
+        phases are safe to capture (such as decode-only in serving).
         """
 
     def replay(self, graph_keys: int | Sequence[int], *inputs: Buffer) -> None:
@@ -328,6 +395,16 @@ class Model:
         """
 
     def reload(self, weights_registry: Mapping[str, Any]) -> None: ...
+    def release_weights(self) -> None:
+        """
+        Drops the host-side weight references held by this model.
+
+        Releases the weights registry and the owning references, so the host
+        weight memory can be freed once the caller drops its own references.
+        Safe only when every weight was copied to its execution device during
+        model init: reading a host weight after this call is undefined
+        behavior. ``reload`` remains usable afterwards.
+        """
 
 class DebugConfig:
     """
@@ -370,6 +447,14 @@ class DebugConfig:
     @uninitialized_read_check.setter
     def uninitialized_read_check(self, arg: bool, /) -> None: ...
     @property
+    def uninitialized_read_mode(self) -> str:
+        r"""
+        A string that sets what :attr:`uninitialized_read_check` does on a match. One of ``\'\'``, ``'abort'``, ``'report'``. ``\'\'`` (unset) behaves as ``'abort'``, which stops at the first match. ``'report'`` prints each match and keeps running so a single run enumerates every offending load, with no bound on its output. On Apple GPUs, ``'report'`` currently aborts at the first match without printing. Ignored unless :attr:`uninitialized_read_check` is set. Takes effect at model build time.
+        """
+
+    @uninitialized_read_mode.setter
+    def uninitialized_read_mode(self, arg: str, /) -> None: ...
+    @property
     def device_sync_mode(self) -> bool:
         """
         A boolean that, when ``True``, triggers MAX to force synchronous GPU execution so every device operation waits for completion. This surfaces async errors at their call site but serializes the pipeline. Takes effect at run time.
@@ -402,65 +487,25 @@ class DebugConfig:
     @source_tracebacks.setter
     def source_tracebacks(self, arg: bool, /) -> None: ...
     @property
+    def pre_jit(self) -> bool:
+        """
+        A boolean that, when ``True``, stops graph compilation once the Mojo for the graph has been emitted (see ``ir_output_dir``), skipping the kernel JIT. ``InferenceSession.compile`` then raises :class:`~max.engine.CompilationStopped`. Takes effect at model build time.
+        """
+
+    @pre_jit.setter
+    def pre_jit(self, arg: bool, /) -> None: ...
+    @property
     def op_log_level(self) -> str:
         r"""
-        A string that sets the log level for per-op tracing. One of ``\'\'``, ``'notset'``, ``'trace'``, ``'debug'``, ``'info'``, ``'warning'``, ``'error'``, ``'critical'``. Takes effect at model build time.
+        A string that sets the log level for per-op tracing. One of ``\'\'``, ``'NOTSET'``, ``'TRACE'``, ``'DEBUG'``, ``'INFO'``, ``'WARNING'``, ``'ERROR'``, ``'CRITICAL'``. Takes effect at model build time.
         """
 
     @op_log_level.setter
     def op_log_level(self, arg: str, /) -> None: ...
     @property
-    def profiling_enabled(self) -> bool:
-        """
-        A boolean master switch for the libkineto-backed HTA/Dynolog profiler. Defaults to ``False``. Mirrored by the ``MODULAR_MAX_DEBUG_PROFILING_ENABLED`` environment variable. Currently a no-op; takes effect once ``session.profiling.start()`` drives trace collection.
-        """
-
-    @profiling_enabled.setter
-    def profiling_enabled(self, arg: bool, /) -> None: ...
-    @property
-    def profiling_output_path(self) -> str:
-        """
-        Where to write the Chrome-trace JSON. Accepts a file path; supports ``{pid}`` and ``{rank}`` template substitution and directory mode (existing-directory paths auto-generate ``trace_rank<rank>_<pid>_<unix-ts>_<seq>.json`` inside). An empty value lets ``Range.cpp`` fall back to its built-in default. Mirrored by ``MODULAR_MAX_DEBUG_PROFILING_OUTPUT_PATH``.
-        """
-
-    @profiling_output_path.setter
-    def profiling_output_path(self, arg: str, /) -> None: ...
-    @property
-    def profiling_dynolog_enabled(self) -> bool:
-        """
-        Opt a daemon-mode process out of Dynolog registration. Only has an effect when the process is launched with ``KINETO_USE_DAEMON=1`` -- that env var is what turns on-demand capture on (libkineto keys its IPC client on it), registering the PID at device creation so ``dyno gputrace`` works with no other setup. This knob then defaults to ``True`` and is the off switch. Mirrored by ``MODULAR_MAX_DEBUG_PROFILING_DYNOLOG_ENABLED``.
-        """
-
-    @profiling_dynolog_enabled.setter
-    def profiling_dynolog_enabled(self, arg: bool, /) -> None: ...
-    @property
-    def profiling_warmup_steps(self) -> int:
-        """
-        Number of ``model.execute()`` iterations to skip before active trace recording begins. Defaults to ``0``. Mirrored by the ``MODULAR_MAX_DEBUG_PROFILING_WARMUP_STEPS`` environment variable. Currently a no-op; takes effect once ``session.profiling.start()`` drives trace collection.
-        """
-
-    @profiling_warmup_steps.setter
-    def profiling_warmup_steps(self, arg: int, /) -> None: ...
-    @property
-    def profiling_active_steps(self) -> int:
-        """
-        Number of ``model.execute()`` iterations to record once warmup completes. Defaults to ``10``. Mirrored by the ``MODULAR_MAX_DEBUG_PROFILING_ACTIVE_STEPS`` environment variable. Currently a no-op; takes effect once ``session.profiling.start()`` drives trace collection.
-        """
-
-    @profiling_active_steps.setter
-    def profiling_active_steps(self, arg: int, /) -> None: ...
-    @property
-    def profiling_periodic_flush_seconds(self) -> int:
-        """
-        Cadence (in seconds) at which in-flight trace chunks are flushed to disk. Defaults to ``60``. Mirrored by the ``MODULAR_MAX_DEBUG_PROFILING_PERIODIC_FLUSH_SECONDS`` environment variable. Currently a no-op; today the trace is written synchronously when profiling stops.
-        """
-
-    @profiling_periodic_flush_seconds.setter
-    def profiling_periodic_flush_seconds(self, arg: int, /) -> None: ...
-    @property
     def assert_level(self) -> str:
         r"""
-        A string that sets the Mojo assertion level for compiled kernels. One of ``\'\'``, ``'none'``, ``'warn'``, ``'safe'``, ``'all'``. Higher levels enable more runtime checks (e.g. LayoutTensor bounds) at a performance cost. Takes effect at model build time.
+        A string that sets the Mojo assertion level for compiled kernels. One of ``\'\'``, ``'none'``, ``'warn'``, ``'safe'``, ``'all'``. Higher levels enable more runtime checks (such as LayoutTensor bounds) at a performance cost. Takes effect at model build time.
         """
 
     @assert_level.setter

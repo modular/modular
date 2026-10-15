@@ -33,6 +33,7 @@ from max.pipelines.diffusion.interface import DiffusionPipeline, max_compile
 from max.pipelines.lib.bfloat16_utils import float32_to_bfloat16_as_uint16
 from max.pipelines.lib.config.model_config import (
     _resolve_component_encoding_and_weights,
+    _select_quantization_encoding,
 )
 from max.profiler import Tracer, traced
 
@@ -41,6 +42,7 @@ from ..qwen2_5vl.encoder import (
     Qwen25VLEncoderModel,
     Qwen25VLMultimodalEncoderModel,
 )
+from ..qwen_image.arch import QwenImageArchConfig
 from .model import QwenImageEditTransformerModel
 
 
@@ -426,7 +428,9 @@ class QwenImageEditPipeline(DiffusionPipeline):
             subfolder="tokenizer",
         )
 
-        encoding = first_config.quantization_encoding or "bfloat16"
+        encoding = _select_quantization_encoding(
+            first_config, QwenImageArchConfig.DEFAULT_ENCODING
+        )
         self.prompt_encoder = Qwen25VLMultimodalEncoderModel(
             text_encoder=self.text_encoder,
             config=self._prompt_encoder_config,
@@ -673,10 +677,7 @@ class QwenImageEditPipeline(DiffusionPipeline):
         updated_latents = ops.cast(updated_latents, lat_dtype)
 
         token_types = img_ids[:, :, 0]
-        is_condition_token = ops.not_equal(
-            token_types,
-            ops.constant(0, DType.int64, device=token_types.device),
-        )
+        is_condition_token = ops.not_equal(token_types, 0)
         condition_token_mask = ops.broadcast_to(
             ops.unsqueeze(is_condition_token, -1),
             latents.shape,
@@ -803,7 +804,7 @@ class QwenImageEditPipeline(DiffusionPipeline):
 
         For multi-image editing each condition image needs a distinct T
         coordinate so the transformer can distinguish them via RoPE:
-        noise → T=0, first image → T=1, second image → T=2, etc.
+        noise → T=0, first image → T=1, second image → T=2, and so on.
         """
         t_coords = np.full((height, width), image_index + 1, dtype=np.int64)
         h_c = np.arange(height, dtype=np.int64) - (height - height // 2)

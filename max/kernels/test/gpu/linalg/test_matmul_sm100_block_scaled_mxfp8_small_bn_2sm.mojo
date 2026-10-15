@@ -22,13 +22,12 @@ MMA_N=24 is excluded because BN=12 breaks TMA tile layout constraints.
 from std.math import align_up, ceildiv
 from std.sys import argv, size_of
 import linalg.matmul.vendor.blas as vendor_blas
-from std.gpu.host import DeviceContext
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host import DeviceContext
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from internal_utils import assert_almost_equal
 from std.random import rand
 from layout import (
     TileTensor,
-    Coord,
     CoordLike,
     row_major,
     Idx,
@@ -48,7 +47,7 @@ from linalg.fp4_utils import (
     set_scale_factor,
 )
 from std.random import random_ui64
-from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 
 def simple_init() -> Bool:
@@ -92,14 +91,12 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         t" SF_VECTOR_SIZE={SF_VECTOR_SIZE}"
     )
 
-    var a_shape = row_major(Coord(m, Idx[KType.static_value]))
+    var a_shape = row_major(m, Idx[KType.static_value])
     comptime assert (
         transpose_b
     ), "TileTensor migration only supports transpose_b=True for now"
-    var b_shape = row_major(
-        Coord(Idx[NType.static_value], Idx[KType.static_value])
-    )
-    var c_shape = row_major(Coord(m, Idx[NType.static_value]))
+    var b_shape = row_major(Idx[NType.static_value], Idx[KType.static_value])
+    var c_shape = row_major(m, Idx[NType.static_value])
 
     var a_size = Int(m.value()) * Int(k.value())
     var b_size = Int(n.value()) * Int(k.value())
@@ -124,22 +121,18 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     var c_ref_tensor = TileTensor(c_device_ref, c_shape)
 
     var a_scales_shape = row_major(
-        Coord(
-            ceildiv(Int(m.value()), SF_MN_GROUP_SIZE),
-            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1]],
-            Idx[SF_ATOM_K],
-        )
+        ceildiv(Int(m.value()), SF_MN_GROUP_SIZE),
+        Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
     var b_scales_shape = row_major(
-        Coord(
-            Idx[ceildiv(NType.static_value, SF_MN_GROUP_SIZE)],
-            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1]],
-            Idx[SF_ATOM_K],
-        )
+        Idx[ceildiv(NType.static_value, SF_MN_GROUP_SIZE)],
+        Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
 
     var a_scales_total = a_scales_shape.product()
@@ -163,13 +156,6 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     )
     var b_scales_tensor = TileTensor(b_scales_device, b_scales_shape)
 
-    # LayoutTensors for reference matmul (vendor_blas)
-    var a_lt = a_tensor.to_layout_tensor()
-    var b_lt = b_tensor.to_layout_tensor()
-    var a_scales_lt = a_scales_tensor.to_layout_tensor()
-    var b_scales_lt = b_scales_tensor.to_layout_tensor()
-    var c_ref_tensor_lt = c_ref_tensor.to_layout_tensor()
-
     # Initialize matmul operands
     if simple_init():
         for m in range(Int(m.value())):
@@ -181,8 +167,8 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
                 comptime assert b_host.flat_rank == 2
                 b_host[n, k] = random_ui64(0, 1).cast[b_type]()
     else:
-        rand(a_host.ptr, a_host.num_elements())
-        rand(b_host.ptr, b_host.num_elements())
+        rand(a_host.as_span())
+        rand(b_host.as_span())
 
     # NOTE: unused scales must be zero to avoid accuracy issues
     for idx0 in range(align_up(Int(m.value()), SF_MN_GROUP_SIZE)):
@@ -194,7 +180,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
             if idx0 < Int(m.value()) and idx1 < Int(k.value()):
                 var scale_value = (
                     (1 << random_ui64(1, 3))
-                    .cast[DType.float32]()
+                    .cast[.float32]()
                     .cast[scales_dtype]()
                 )
                 set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
@@ -214,7 +200,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
             if idx0 < Int(n.value()) and idx1 < Int(k.value()):
                 var scale_value = (
                     (1 << random_ui64(1, 3))
-                    .cast[DType.float32]()
+                    .cast[.float32]()
                     .cast[scales_dtype]()
                 )
                 set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
@@ -260,18 +246,18 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         ctx,
     )
 
-    comptime assert a_type != DType.float8_e4m3fn or transpose_b, (
+    comptime assert a_type != .float8_e4m3fn or transpose_b, (
         "Testing is only supported for transposed_b==True when"
         " a_type==float8_e4m3fn. Add the non-transposed case if needed."
     )
 
     vendor_blas.matmul(
         ctx,
-        c_ref_tensor_lt.as_unsafe_any_origin(),
-        a_lt,
-        b_lt,
-        a_scales=a_scales_lt.get_immutable().as_unsafe_any_origin(),
-        b_scales=b_scales_lt.get_immutable().as_unsafe_any_origin(),
+        c_ref_tensor,
+        a_tensor,
+        b_tensor,
+        a_scales=a_scales_tensor,
+        b_scales=b_scales_tensor,
         transpose_b=transpose_b,
         c_row_major=True,
     )
@@ -283,8 +269,8 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     ctx.synchronize()
 
     assert_almost_equal(
-        c_host.ptr,
-        c_host_ref.ptr,
+        c_host._storage,
+        c_host_ref._storage,
         c_host.num_elements(),
         atol=1e-2,
         rtol=1e-2,

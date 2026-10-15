@@ -45,19 +45,18 @@ compile.
 from std.math import ceildiv, exp, rsqrt
 from std.memory import alloc
 from std.random import randn, seed
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.sys import get_defined_bool, get_defined_int, get_defined_string
 
-from layout import LayoutTensor, TileTensor
-from layout.coord import Coord, Idx
-from layout.runtime_layout import RuntimeLayout
+from layout import TileTensor
+from layout.coord import Idx
 from layout.tile_layout import row_major
 
 from nn.attention.gpu.amd_structured.mha_mma_op import MlaConfigV2
 from nn.attention.gpu.amd_structured.mla_prefill_v2 import MlaPrefillV2
 from nn.attention.gpu.amd_structured.ps_metadata import build_uniform
 from nn.attention.mha_mask import CausalMask, MHAMask, NullMask
-from nn.attention.mha_operand import LayoutTensorMHAOperand, MHAOperand
+from nn.attention.mha_operand import TileTensorMHAOperand, MHAOperand
 
 
 # ---- Shape constants. DeepSeek-V3 MLA at TP=4 production shard. -----
@@ -95,10 +94,10 @@ def _is_finite(v: Float32) -> Bool:
 
 
 def _mla_naive_fp32_ref_chunked(
-    host_q_src: UnsafePointer[mut=False, Scalar[DType.bfloat16], _],
-    host_knope_src: UnsafePointer[mut=False, Scalar[DType.bfloat16], _],
-    host_krope_src: UnsafePointer[mut=False, Scalar[DType.bfloat16], _],
-    host_out_ref_fp32: UnsafePointer[mut=True, Scalar[DType.float32], _],
+    host_q_src: ImmPointer[BFloat16, _],
+    host_knope_src: ImmPointer[BFloat16, _],
+    host_krope_src: ImmPointer[BFloat16, _],
+    host_out_ref_fp32: MutPointer[Float32, _],
     batch: Int,
     seq_len: Int,
     num_keys: Int,
@@ -119,7 +118,7 @@ def _mla_naive_fp32_ref_chunked(
     K_nope segment (DeepSeek-V3 convention).
     """
     var heads_per_kv = num_heads // num_kv_heads
-    var score_buf = alloc[Scalar[DType.float32]](chunk_size * num_keys)
+    var score_buf = alloc[Float32](chunk_size * num_keys)
 
     for b in range(batch):
         for h in range(num_heads):
@@ -198,7 +197,7 @@ def _mla_naive_fp32_ref_chunked(
     score_buf.free()
 
 
-@always_inline
+@inline(.always)
 def _mla_prefill_v2_launch[
     k_nope_t: MHAOperand,
     k_rope_t: MHAOperand,
@@ -216,8 +215,8 @@ def _mla_prefill_v2_launch[
     scale: Float32,
     num_keys: Int,
     start_pos: Int,
-    work_indptr_ptr: UnsafePointer[mut=False, Scalar[DType.int32], _],
-    work_info_ptr: UnsafePointer[mut=False, Scalar[DType.int32], _],
+    work_indptr_ptr: ImmPointer[Int32, _],
+    work_info_ptr: ImmPointer[Int32, _],
     num_works: Int,
     num_cu: Int,
     ctx: DeviceContext,
@@ -248,6 +247,8 @@ def _mla_prefill_v2_launch[
         o.dtype,
         q.LayoutType,
         o.LayoutType,
+        q.Engine,
+        o.Engine,
         ragged=False,
     ]
 
@@ -281,11 +282,11 @@ def _mla_prefill_v2_launch[
         o,
         mask_functor,
         scale,
-        num_keys,
-        start_pos,
+        Int32(num_keys),
+        Int32(start_pos),
         work_indptr_ptr,
         work_info_ptr,
-        num_works,
+        Int32(num_works),
         grid_dim=(gx, gy, gz),
         block_dim=kernel.NUM_THREADS,
     )
@@ -351,11 +352,11 @@ def test_mla_vs_fp32_ref[
     comptime SIZE_OUT = BATCH * SEQ_LEN * NUM_HEADS * D_NOPE
 
     # ---- BF16 source buffers + FP8 round-trip --------------------------
-    var host_q_src = ctx.enqueue_create_host_buffer[DType.bfloat16](SIZE_Q)
-    var host_knope_src = ctx.enqueue_create_host_buffer[DType.bfloat16](
+    var host_q_src = ctx.enqueue_create_host_buffer[.bfloat16](SIZE_Q)
+    var host_knope_src = ctx.enqueue_create_host_buffer[.bfloat16](
         BATCH * NUM_KEYS * NUM_KV_HEADS * D_NOPE
     )
-    var host_krope_src = ctx.enqueue_create_host_buffer[DType.bfloat16](
+    var host_krope_src = ctx.enqueue_create_host_buffer[.bfloat16](
         BATCH * NUM_KEYS * NUM_KV_HEADS * D_ROPE
     )
     ctx.synchronize()
@@ -372,7 +373,7 @@ def test_mla_vs_fp32_ref[
         var q_bf16 = host_q_src[i] * scale_factor
         var q_t = q_bf16.cast[qkv_type]()
         host_q[i] = q_t
-        host_q_src[i] = q_t.cast[DType.bfloat16]()
+        host_q_src[i] = q_t.cast[.bfloat16]()
 
     var host_knope = ctx.enqueue_create_host_buffer[qkv_type](
         BATCH * NUM_KEYS * NUM_KV_HEADS * D_NOPE
@@ -381,7 +382,7 @@ def test_mla_vs_fp32_ref[
         var k_bf16 = host_knope_src[i] * scale_factor
         var k_t = k_bf16.cast[qkv_type]()
         host_knope[i] = k_t
-        host_knope_src[i] = k_t.cast[DType.bfloat16]()
+        host_knope_src[i] = k_t.cast[.bfloat16]()
 
     var host_krope = ctx.enqueue_create_host_buffer[qkv_type](
         BATCH * NUM_KEYS * NUM_KV_HEADS * D_ROPE
@@ -390,7 +391,7 @@ def test_mla_vs_fp32_ref[
         var k_bf16 = host_krope_src[i] * scale_factor
         var k_t = k_bf16.cast[qkv_type]()
         host_krope[i] = k_t
-        host_krope_src[i] = k_t.cast[DType.bfloat16]()
+        host_krope_src[i] = k_t.cast[.bfloat16]()
 
     # ---- Latent K cache build ------------------------------------------
     var host_k_latent = ctx.enqueue_create_host_buffer[qkv_type](SIZE_K_LATENT)
@@ -436,15 +437,15 @@ def test_mla_vs_fp32_ref[
     var num_cu = len(md.work_indptr) - 1
     var n_indptr = len(md.work_indptr)
     var n_info = len(md.work_info)
-    var host_work_indptr = ctx.enqueue_create_host_buffer[DType.int32](n_indptr)
-    var host_work_info = ctx.enqueue_create_host_buffer[DType.int32](n_info)
+    var host_work_indptr = ctx.enqueue_create_host_buffer[.int32](n_indptr)
+    var host_work_info = ctx.enqueue_create_host_buffer[.int32](n_info)
     ctx.synchronize()
     for i in range(n_indptr):
         host_work_indptr[i] = md.work_indptr[i]
     for i in range(n_info):
         host_work_info[i] = md.work_info[i]
-    var dev_work_indptr = ctx.enqueue_create_buffer[DType.int32](n_indptr)
-    var dev_work_info = ctx.enqueue_create_buffer[DType.int32](n_info)
+    var dev_work_indptr = ctx.enqueue_create_buffer[.int32](n_indptr)
+    var dev_work_info = ctx.enqueue_create_buffer[.int32](n_info)
     ctx.enqueue_copy(dev_work_indptr, host_work_indptr)
     ctx.enqueue_copy(dev_work_info, host_work_info)
     ctx.synchronize()
@@ -452,41 +453,27 @@ def test_mla_vs_fp32_ref[
     # ---- TileTensor views for the launch ------------------------------
     var q_tt = TileTensor(
         dev_q,
-        row_major(
-            Coord(Int32(BATCH), Int32(SEQ_LEN), Idx[NUM_HEADS], Idx[D_QK])
-        ),
+        row_major(Int32(BATCH), Int32(SEQ_LEN), Idx[NUM_HEADS], Idx[D_QK]),
     )
     var o_tt = TileTensor(
         dev_out,
-        row_major(
-            Coord(Int32(BATCH), Int32(SEQ_LEN), Idx[NUM_HEADS], Idx[D_NOPE])
-        ),
+        row_major(Int32(BATCH), Int32(SEQ_LEN), Idx[NUM_HEADS], Idx[D_NOPE]),
     )
     var k_tt = TileTensor(
         dev_k_latent,
         row_major(
-            Coord(
-                Int32(BATCH),
-                Int32(NUM_KEYS),
-                Idx[NUM_KV_HEADS],
-                Idx[CACHE_DEPTH],
-            )
+            Int32(BATCH), Int32(NUM_KEYS), Idx[NUM_KV_HEADS], Idx[CACHE_DEPTH]
         ),
     )
-    var k_nope_op = LayoutTensorMHAOperand(k_tt)
-    var k_rope_op = LayoutTensorMHAOperand(k_tt)
+    var k_nope_op = TileTensorMHAOperand(k_tt)
+    var k_rope_op = TileTensorMHAOperand(k_tt)
     var v_tt = TileTensor(
         dev_k_latent,
         row_major(
-            Coord(
-                Int32(BATCH),
-                Int32(NUM_KEYS),
-                Idx[NUM_KV_HEADS],
-                Idx[CACHE_DEPTH],
-            )
+            Int32(BATCH), Int32(NUM_KEYS), Idx[NUM_KV_HEADS], Idx[CACHE_DEPTH]
         ),
     )
-    var v_op = LayoutTensorMHAOperand(v_tt)
+    var v_op = TileTensorMHAOperand(v_tt)
 
     _mla_prefill_v2_launch[config=CONFIG](
         q_tt,
@@ -513,7 +500,7 @@ def test_mla_vs_fp32_ref[
 
     # ---- FP32 host reference (full sweep) -----------------------------
     var size_ref = BATCH * SEQ_LEN * NUM_HEADS * D_NOPE
-    var host_out_ref_fp32 = alloc[Scalar[DType.float32]](size_ref)
+    var host_out_ref_fp32 = alloc[Float32](size_ref)
     comptime CHUNK_SIZE = 64
     _mla_naive_fp32_ref_chunked(
         host_q_src.unsafe_ptr(),
@@ -535,9 +522,9 @@ def test_mla_vs_fp32_ref[
     )
 
     # ---- Per-head cosine similarity (kernel vs FP32 ref) --------------
-    var dot = InlineArray[Float64, NUM_HEADS](fill=Float64(0))
-    var a_sq = InlineArray[Float64, NUM_HEADS](fill=Float64(0))
-    var r_sq = InlineArray[Float64, NUM_HEADS](fill=Float64(0))
+    var dot = Array[Float64, NUM_HEADS](fill=Float64(0))
+    var a_sq = Array[Float64, NUM_HEADS](fill=Float64(0))
+    var r_sq = Array[Float64, NUM_HEADS](fill=Float64(0))
     var num_nonfinite = 0
     var max_diff: Float32 = 0
 
@@ -546,7 +533,7 @@ def test_mla_vs_fp32_ref[
             for h in range(NUM_HEADS):
                 for d in range(D_NOPE):
                     var idx = ((b * SEQ_LEN + s) * NUM_HEADS + h) * D_NOPE + d
-                    var a_val = host_out[idx].cast[DType.float32]()
+                    var a_val = host_out[idx].cast[.float32]()
                     var r_val = host_out_ref_fp32[idx]
                     if not _is_finite(a_val):
                         num_nonfinite += 1

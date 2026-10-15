@@ -25,9 +25,8 @@ from std.random import rand, random_float64, seed
 from std.sys import align_of
 
 import linalg.matmul.vendor.blas as vendor_blas
-from std.gpu.host import DeviceContext
-from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
-from std.memory import alloc
+from max.gpu.host import DeviceContext
+from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from internal_utils import assert_almost_equal
 from layout import (
     TileTensor,
@@ -99,14 +98,12 @@ def test_grouped_gemm_epilogue[
     comptime max_groups = 1
     var num_groups = 1
 
-    var a_shape = row_major(Coord(m, Idx[KType.static_value]))
+    var a_shape = row_major(m, Idx[KType.static_value])
     var b_shape = row_major(
-        Coord(
-            Idx[NType.static_value if transpose_b else KType.static_value],
-            Idx[KType.static_value if transpose_b else NType.static_value],
-        )
+        Idx[NType.static_value if transpose_b else KType.static_value],
+        Idx[KType.static_value if transpose_b else NType.static_value],
     )
-    var c_shape = row_major(Coord(m, Idx[NType.static_value]))
+    var c_shape = row_major(m, Idx[NType.static_value])
 
     var a_size = Int(m.value()) * Int(k.value())
     var b_size = Int(n.value()) * Int(k.value())
@@ -136,22 +133,18 @@ def test_grouped_gemm_epilogue[
 
     # Scale factor shapes (5D)
     var a_scales_shape = row_major(
-        Coord(
-            Idx[ceildiv(MType.static_value, SF_MN_GROUP_SIZE)],
-            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1]],
-            Idx[SF_ATOM_K],
-        )
+        Idx[ceildiv(MType.static_value, SF_MN_GROUP_SIZE)],
+        Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
     var b_scales_shape = row_major(
-        Coord(
-            Idx[ceildiv(NType.static_value, SF_MN_GROUP_SIZE)],
-            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1]],
-            Idx[SF_ATOM_K],
-        )
+        Idx[ceildiv(NType.static_value, SF_MN_GROUP_SIZE)],
+        Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
 
     var sfa_size = a_scales_shape.product()
@@ -159,43 +152,35 @@ def test_grouped_gemm_epilogue[
 
     # Scale factor device allocations
     var sfa_device = ctx.enqueue_create_buffer[scales_dtype](sfa_size)
-    var sfa_tensor = TileTensor(sfa_device, a_scales_shape)
     var sfb_device = ctx.enqueue_create_buffer[scales_dtype](sfb_size)
-    var sfb_tensor = TileTensor(sfb_device, b_scales_shape)
 
     # Scale factor host allocations — initialized to 1.0 (identity scaling)
     var sfa_host_ptr = ctx.enqueue_create_host_buffer[scales_dtype](sfa_size)
-    var sfa_host = TileTensor(sfa_host_ptr, a_scales_shape)
     var sfb_host_ptr = ctx.enqueue_create_host_buffer[scales_dtype](sfb_size)
-    var sfb_host = TileTensor(sfb_host_ptr, b_scales_shape)
     var scale_one = Float32(1.0).cast[scales_dtype]()
     for i in range(sfa_size):
         sfa_host_ptr[i] = scale_one
     for i in range(sfb_size):
         sfb_host_ptr[i] = scale_one
 
-    # The C LayoutTensor that will be captured by the epilogue lambda
-    var c_tensor_lt = c_tensor.to_layout_tensor()
-
     # Define epilogue lambda that adds original C value to matmul result
-    @parameter
-    @always_inline
-    @__copy_capture(c_tensor_lt)
+    @__parameter
+    @inline(.always)
+    @__copy_capture(c_tensor)
     def epilogue_add_c[
         _dtype: DType,
-        width: SIMDSize,
+        width: SIMDLength,
         *,
         alignment: Int = align_of[SIMD[_dtype, width]](),
-    ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
-        _dtype, width
-    ]:
+    ](idx: Coord, val: SIMD[_dtype, width]) capturing -> SIMD[_dtype, width]:
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
         # C' = matmul(A, B) + C_original
-        return val + c_tensor_lt.load[width=width](idx).cast[_dtype]()
+        return val + c_tensor.load[width=width](idx).cast[_dtype]()
 
     # Initialize random data
     seed(42)
-    rand(a_host.ptr, a_host.num_elements())
-    rand(b_host.ptr, b_host.num_elements())
+    rand(a_host.as_span())
+    rand(b_host.as_span())
 
     # Initialize C with random values for epilogue test
     for i in range(Int(m.value())):
@@ -207,7 +192,7 @@ def test_grouped_gemm_epilogue[
     # Copy to device
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)
-    ctx.enqueue_copy(c_device, c_host.ptr)
+    ctx.enqueue_copy(c_device, c_host._storage)
     ctx.enqueue_copy(sfa_device, sfa_host_ptr)
     ctx.enqueue_copy(sfb_device, sfb_host_ptr)
 
@@ -224,7 +209,7 @@ def test_grouped_gemm_epilogue[
     )
 
     # Problem sizes tensor
-    var problem_sizes_host = ctx.enqueue_create_host_buffer[DType.int32](
+    var problem_sizes_host = ctx.enqueue_create_host_buffer[.int32](
         max_groups * 4
     )
     problem_sizes_host[0] = Int32(Int(m.value()))  # M
@@ -232,9 +217,7 @@ def test_grouped_gemm_epilogue[
     problem_sizes_host[2] = Int32(Int(k.value()))  # K
     problem_sizes_host[3] = Int32(1)  # L (batch)
 
-    var problem_sizes_device = ctx.enqueue_create_buffer[DType.int32](
-        max_groups * 4
-    )
+    var problem_sizes_device = ctx.enqueue_create_buffer[.int32](max_groups * 4)
     ctx.enqueue_copy(problem_sizes_device, problem_sizes_host)
 
     var problem_sizes_tensor = TileTensor(
@@ -242,11 +225,11 @@ def test_grouped_gemm_epilogue[
     )
 
     # Pointer arrays
-    var a_ptrs_host = ctx.enqueue_create_host_buffer[DType.uint64](max_groups)
-    var b_ptrs_host = ctx.enqueue_create_host_buffer[DType.uint64](max_groups)
-    var c_ptrs_host = ctx.enqueue_create_host_buffer[DType.uint64](max_groups)
-    var sfa_ptrs_host = ctx.enqueue_create_host_buffer[DType.uint64](max_groups)
-    var sfb_ptrs_host = ctx.enqueue_create_host_buffer[DType.uint64](max_groups)
+    var a_ptrs_host = ctx.enqueue_create_host_buffer[.uint64](max_groups)
+    var b_ptrs_host = ctx.enqueue_create_host_buffer[.uint64](max_groups)
+    var c_ptrs_host = ctx.enqueue_create_host_buffer[.uint64](max_groups)
+    var sfa_ptrs_host = ctx.enqueue_create_host_buffer[.uint64](max_groups)
+    var sfb_ptrs_host = ctx.enqueue_create_host_buffer[.uint64](max_groups)
 
     a_ptrs_host[0] = UInt64(Int(a_device.unsafe_ptr()))
     b_ptrs_host[0] = UInt64(Int(b_device.unsafe_ptr()))
@@ -254,11 +237,11 @@ def test_grouped_gemm_epilogue[
     sfa_ptrs_host[0] = UInt64(Int(sfa_device.unsafe_ptr()))
     sfb_ptrs_host[0] = UInt64(Int(sfb_device.unsafe_ptr()))
 
-    var a_ptrs_device = ctx.enqueue_create_buffer[DType.uint64](max_groups)
-    var b_ptrs_device = ctx.enqueue_create_buffer[DType.uint64](max_groups)
-    var c_ptrs_device = ctx.enqueue_create_buffer[DType.uint64](max_groups)
-    var sfa_ptrs_device = ctx.enqueue_create_buffer[DType.uint64](max_groups)
-    var sfb_ptrs_device = ctx.enqueue_create_buffer[DType.uint64](max_groups)
+    var a_ptrs_device = ctx.enqueue_create_buffer[.uint64](max_groups)
+    var b_ptrs_device = ctx.enqueue_create_buffer[.uint64](max_groups)
+    var c_ptrs_device = ctx.enqueue_create_buffer[.uint64](max_groups)
+    var sfa_ptrs_device = ctx.enqueue_create_buffer[.uint64](max_groups)
+    var sfb_ptrs_device = ctx.enqueue_create_buffer[.uint64](max_groups)
 
     ctx.enqueue_copy(a_ptrs_device, a_ptrs_host)
     ctx.enqueue_copy(b_ptrs_device, b_ptrs_host)
@@ -287,38 +270,32 @@ def test_grouped_gemm_epilogue[
     )
 
     # Template tensors - 3D TileTensors with batch=1
-    var a_3d_shape = row_major(Coord(Idx[1], m, k))
+    var a_3d_shape = row_major(Idx[1], m, k)
     var b_3d_shape = row_major(
-        Coord(
-            Idx[1],
-            Idx[NType.static_value if transpose_b else KType.static_value],
-            Idx[KType.static_value if transpose_b else NType.static_value],
-        )
+        Idx[1],
+        Idx[NType.static_value if transpose_b else KType.static_value],
+        Idx[KType.static_value if transpose_b else NType.static_value],
     )
-    var c_3d_shape = row_major(Coord(Idx[1], m, n))
+    var c_3d_shape = row_major(Idx[1], m, n)
     var a_template = TileTensor(a_device, a_3d_shape)
     var b_template = TileTensor(b_device, b_3d_shape)
     var c_template = TileTensor(c_device, c_3d_shape)
 
     # Scale factor template tensors - 5D with batch=1 and merged last dims
     var a_scales_5d_shape = row_major(
-        Coord(
-            Idx[1],
-            Idx[ceildiv(MType.static_value, SF_MN_GROUP_SIZE)],
-            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1] * SF_ATOM_K],
-        )
+        Idx[1],
+        Idx[ceildiv(MType.static_value, SF_MN_GROUP_SIZE)],
+        Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1] * SF_ATOM_K],
     )
     var a_scales_5d = TileTensor(sfa_device, a_scales_5d_shape)
     var b_scales_5d_shape = row_major(
-        Coord(
-            Idx[1],
-            Idx[ceildiv(NType.static_value, SF_MN_GROUP_SIZE)],
-            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1] * SF_ATOM_K],
-        )
+        Idx[1],
+        Idx[ceildiv(NType.static_value, SF_MN_GROUP_SIZE)],
+        Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1] * SF_ATOM_K],
     )
     var b_scales_5d = TileTensor(sfb_device, b_scales_5d_shape)
 
@@ -345,14 +322,11 @@ def test_grouped_gemm_epilogue[
     )
 
     # Run reference matmul (without epilogue)
-    var a_lt = a_tensor.to_layout_tensor()
-    var b_lt = b_tensor.to_layout_tensor()
-    var c_ref_tensor_lt = c_ref_tensor.to_layout_tensor()
     vendor_blas.matmul(
         ctx,
-        c_ref_tensor_lt,
-        a_lt,
-        b_lt,
+        c_ref_tensor,
+        a_tensor,
+        b_tensor,
         c_row_major=True,
         transpose_b=transpose_b,
     )
@@ -360,39 +334,37 @@ def test_grouped_gemm_epilogue[
     ctx.synchronize()
 
     # Copy results back
-    ctx.enqueue_copy(c_host.ptr, c_device)
-    ctx.enqueue_copy(c_host_ref.ptr, c_device_ref)
+    ctx.enqueue_copy(c_host._storage, c_device)
+    ctx.enqueue_copy(c_host_ref._storage, c_device_ref)
     ctx.synchronize()
 
     # Apply epilogue lambda on CPU to reference
-    var c_tensor_host_lt = c_host_original.to_layout_tensor()
 
-    @parameter
-    @always_inline
-    @__copy_capture(c_tensor_host_lt)
+    @inline(.always)
     def epilogue_add_c_host[
         _dtype: DType,
-        width: SIMDSize,
+        width: SIMDLength,
         *,
         alignment: Int = align_of[SIMD[_dtype, width]](),
-    ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
+    ](idx: Coord, val: SIMD[_dtype, width]) {var c_host_original} -> SIMD[
         _dtype, width
     ]:
-        return val + c_tensor_host_lt.load[width=width](idx).cast[_dtype]()
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
+        return val + c_host_original.load[width=width](idx).cast[_dtype]()
 
     for i in range(Int(m.value())):
         for j in range(Int(n.value())):
             comptime assert c_host_ref.flat_rank >= 2
             c_host_ref[Coord(i, j)] = epilogue_add_c_host(
-                IndexList[2](i, j),
+                Coord(i, j),
                 c_host_ref[i, j],
             )
 
     # Compare results
     comptime rtol = 1e-2
     assert_almost_equal(
-        c_host.ptr,
-        c_host_ref.ptr,
+        c_host._storage,
+        c_host_ref._storage,
         c_host.num_elements(),
         atol=0.0001,
         rtol=rtol,

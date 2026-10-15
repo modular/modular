@@ -15,9 +15,9 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from dataclasses import dataclass
 from typing import Any, ClassVar, cast
 
+from max import tree
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -25,7 +25,7 @@ from max.experimental import functional as F
 from max.experimental.sharding import (
     DeviceMesh,
 )
-from max.experimental.tensor import Tensor
+from max.experimental.tensor import Tensor, default_device
 from max.graph import DeviceRef, TensorType
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn.transformer import ReturnLogits
@@ -37,9 +37,12 @@ from max.pipelines.lib import (
     ModuleV3MultiGraphPipelineModelWithKVCache,
     PipelineConfig,
 )
+from max.pipelines.lib.memory_estimation import MemoryPlan
+from max.pipelines.modeling.eager_validation import eager_validator
 from transformers import AutoConfig
 
 from .batch_processor import Gemma3MultiModalModuleV3BatchProcessor
+from .inputs import Gemma3MultiModalModelInputs
 from .model_config import Gemma3ForConditionalGenerationConfig
 from .vision_model.gemma3multimodal import (
     Gemma3LanguageModel,
@@ -51,21 +54,6 @@ from .weight_adapters import (
 )
 
 logger = logging.getLogger("max.pipelines")
-
-
-@dataclass
-class Gemma3MultiModalModelInputs(ModelInputs):
-    """Inputs for the Gemma3 multimodal model (V3)."""
-
-    tokens: Buffer
-    input_row_offsets: Buffer
-    return_n_logits: Buffer
-    pixel_values: Buffer | None = None
-    image_token_indices: Buffer | None = None
-
-    @property
-    def has_vision_inputs(self) -> bool:
-        return self.pixel_values is not None
 
 
 class Gemma3MultiModalModelV3(
@@ -88,19 +76,22 @@ class Gemma3MultiModalModelV3(
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
+        *,
+        memory_plan: MemoryPlan,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         max_batch_size: int = 1,
     ) -> None:
-        self._max_batch_size = max_batch_size
         super().__init__(
             pipeline_config,
             session,
             devices,
             kv_cache_config,
             weights,
-            adapter,
-            return_logits,
+            adapter=adapter,
+            return_logits=return_logits,
+            memory_plan=memory_plan,
+            max_batch_size=max_batch_size,
         )
 
         self.vision_model, self.language_model = self.load_model()
@@ -112,7 +103,7 @@ class Gemma3MultiModalModelV3(
         )
 
     def _load_state_dict(self) -> dict[str, Any]:
-        assert self._max_batch_size, "Expected max_batch_size to be set"
+        assert self.max_batch_size, "Expected max_batch_size to be set"
 
         weights_dict = dict(self.weights.items())
         self._language_weights_dict = convert_safetensor_language_state_dict(
@@ -126,10 +117,10 @@ class Gemma3MultiModalModelV3(
     def _create_model_config(
         self, state_dict: dict[str, Any]
     ) -> Gemma3ForConditionalGenerationConfig:
-        assert self._max_batch_size, "Expected max_batch_size to be set"
+        assert self.max_batch_size, "Expected max_batch_size to be set"
 
         model_config = Gemma3ForConditionalGenerationConfig.initialize(
-            self.pipeline_config
+            self.pipeline_config, max_seq_len=self.max_seq_len
         )
         model_config.finalize(
             huggingface_config=self.huggingface_config,
@@ -178,9 +169,8 @@ class Gemma3MultiModalModelV3(
         mesh = DeviceMesh(tuple(self.devices), (n_devices,), ("tp",))
 
         # ---- Build and compile language model ----
-        with F.lazy():
+        with F.lazy(), default_device(mesh):
             language_nn = Gemma3LanguageModel(model_config, self.kv_params)
-            language_nn.to(mesh)
 
         assert isinstance(
             self._batch_processor, Gemma3MultiModalModuleV3BatchProcessor
@@ -207,7 +197,10 @@ class Gemma3MultiModalModelV3(
             assert self.vision_model is not None
             assert model_inputs.pixel_values is not None
 
-            vision_output = self.vision_model(model_inputs.pixel_values)
+            with eager_validator.graph_break(
+                reason="the tower runs only for a prefill carrying images"
+            ):
+                vision_output = self.vision_model(model_inputs.pixel_values)
             image_embeddings = cast(Buffer, vision_output[0].driver_tensor)
 
             assert model_inputs.image_token_indices is not None
@@ -230,7 +223,7 @@ class Gemma3MultiModalModelV3(
             model_inputs.input_row_offsets,
             image_embeddings,
             image_token_indices,
-            *kv_cache_inputs.flatten(),
+            *tree.leaves(kv_cache_inputs),
         )
 
         def _to_buffer(t: Tensor) -> Buffer:

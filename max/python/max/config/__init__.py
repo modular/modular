@@ -503,9 +503,9 @@ def resolve_max_config_inheritance(
         # Merge base config with current config (current takes precedence)
         return deep_merge_max_configs(base_config_dict, config_dict)
 
-    except (FileNotFoundError, ValueError) as e:
+    except (FileNotFoundError, ValueError):
         # Re-raise FileNotFoundError and ValueError exceptions (these are intentional validation errors)
-        raise e
+        raise
     except Exception as e:
         logger.warning(f"Failed to load base configuration '{depends_on}': {e}")
         return config_dict
@@ -703,6 +703,33 @@ class MAXConfig:
         files. For comprehensive files, automatically detects the appropriate
         section based on class name.
 
+        Define a config subclass, then load its values from a YAML file:
+
+        .. code-block:: python
+
+            from dataclasses import dataclass
+            from pathlib import Path
+            from tempfile import TemporaryDirectory
+
+            from max.config import MAXConfig
+
+            @dataclass
+            class MyCacheConfig(MAXConfig):
+                page_size: int = 128
+
+                @staticmethod
+                def help() -> dict[str, str]:
+                    return {"page_size": "Number of tokens per KV cache page."}
+
+            with TemporaryDirectory() as tmp_dir:
+                config_path = Path(tmp_dir) / "my_cache.yaml"
+                config_path.write_text("page_size: 256")
+                config = MyCacheConfig.from_config_file(config_path)
+
+        .. invisible-code-block: python
+
+            assert config.page_size == 256
+
         Args:
             config_path: The path to the YAML configuration file.
             section_name: The section name for comprehensive configs.
@@ -714,19 +741,6 @@ class MAXConfig:
         Raises:
             FileNotFoundError: If the config file does not exist.
             ValueError: If the configuration is invalid.
-
-        .. code-block:: python
-
-            config = KVCacheConfig.from_config_file("kv_cache.yaml")
-
-            # Comprehensive config file (auto-detects section)
-            kv_config = KVCacheConfig.from_config_file("pipeline.yaml")
-            sampling_config = SamplingConfig.from_config_file("pipeline.yaml")
-
-            # Custom section name
-            config = KVCacheConfig.from_config_file(
-                "config.yaml", "my_cache_section"
-            )
         """
         config_path = Path(config_path)
 
@@ -923,6 +937,33 @@ class MAXConfig:
         values back to their proper types (for example, enum objects) using
         :class:`MAXConfig` type conversion logic.
 
+        Build a parser from a config instance and parse a list of arguments,
+        restricting a field to a set of valid choices:
+
+        .. code-block:: python
+
+            from dataclasses import dataclass
+
+            from max.config import MAXConfig
+
+            @dataclass
+            class MyServerConfig(MAXConfig):
+                backend: str = "modular"
+
+                @staticmethod
+                def help() -> dict[str, str]:
+                    return {"backend": "Serving backend to use."}
+
+            config = MyServerConfig()
+            parser = config.cli_arg_parsers(
+                choices_provider={"backend": ["modular", "vllm"]},
+            )
+            args = parser.parse_args(["--backend", "vllm"])
+
+        .. invisible-code-block: python
+
+            assert args.backend == "vllm"
+
         Args:
             choices_provider: A dictionary mapping field names to their valid
                 choices. Allows external code to specify choices for specific
@@ -944,23 +985,6 @@ class MAXConfig:
             - Converts parsed values to proper types (enums and similar).
             - Groups arguments by field metadata for better organization.
             - Maintains compatibility with standard ``argparse`` usage.
-
-        .. code-block:: python
-
-            config = KVCacheConfig.from_config_file("kv_cache.yaml")
-            parser = config.cli_arg_parsers()
-            args = parser.parse_args()
-
-            # With choices for validation
-            choices = {"backend": ["modular", "vllm"],
-                       "dataset_name": ["sharegpt", "random"]}
-            parser = config.cli_arg_parsers(choices_provider=choices)
-            args = parser.parse_args(["--backend", "vllm"])
-
-            # With required parameters
-            required = {"model", "dataset_name"}
-            parser = config.cli_arg_parsers(required_params=required)
-            args = parser.parse_args()
         """
 
         # Create parser

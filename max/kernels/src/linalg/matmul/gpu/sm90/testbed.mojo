@@ -14,9 +14,9 @@
 """Provides a testbed for validating SM90 warp-specialized matmul kernels against a vendor reference."""
 
 from std.math import ceildiv
-from std.sys import align_of
+from std.sys import size_of
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.memory import dealloc
 from std.memory.alloc import Layout as AllocLayout
 from layout import Coord, CoordLike, Idx, TileTensor, row_major
@@ -27,7 +27,7 @@ from internal_utils._measure import relative_difference
 from std.collections import OptionalReg
 from std.utils.index import IndexList
 
-from ....utils import elementwise_compute_lambda_type, elementwise_epilogue_type
+from ....utils import ElementwiseComputeFn, no_compute_fn
 from ....utils_gpu import MatmulConfig
 from ...vendor.blas import Backend
 from ...vendor.blas import matmul as vendor_matmul
@@ -39,6 +39,7 @@ def test_matmul_sm90[
     MType: CoordLike,
     NType: CoordLike,
     KType: CoordLike,
+    ComputeFnType: ElementwiseComputeFn = type_of(no_compute_fn),
     //,
     a_type: DType,
     b_type: DType,
@@ -54,13 +55,17 @@ def test_matmul_sm90[
     use_tma_store: Bool = False,
     schedule: MatmulSchedule = MatmulSchedule.NONE,
     default_epilogue: Bool = False,
-    elementwise_compute_lambda_fn: Optional[
-        elementwise_compute_lambda_type
-    ] = None,
+    has_compute_fn: Bool = False,
     measure_threshold: Optional[Float64] = None,
     backend: Backend = Backend.CUBLAS,
     k_group_size: Int = 1,
-](ctx: DeviceContext, m: MType, n: NType, k: KType) raises:
+](
+    ctx: DeviceContext,
+    m: MType,
+    n: NType,
+    k: KType,
+    compute_fn: ComputeFnType = no_compute_fn,
+) raises:
     """Runs an SM90 warp-specialized matmul and validates the result against a vendor reference.
 
     Allocates host and device buffers for the operands, initializes them with
@@ -72,6 +77,7 @@ def test_matmul_sm90[
         MType: Coordinate-like type encoding the M dimension extent (inferred).
         NType: Coordinate-like type encoding the N dimension extent (inferred).
         KType: Coordinate-like type encoding the K dimension extent (inferred).
+        ComputeFnType: Type of `compute_fn` (inferred).
         a_type: Element dtype of the left-hand operand.
         b_type: Element dtype of the right-hand operand.
         c_type: Element dtype of the output matrix.
@@ -85,8 +91,10 @@ def test_matmul_sm90[
         grid_shape: Optional explicit grid shape override.
         use_tma_store: Whether to use TMA store for the epilogue.
         schedule: Tile scheduler hint controlling launch order.
-        default_epilogue: Whether to use the default store-based epilogue.
-        elementwise_compute_lambda_fn: Optional elementwise compute lambda applied in the epilogue.
+        default_epilogue: Whether to store the output through an epilogue
+            closure instead of the kernel's own store.
+        has_compute_fn: Whether the kernel stores `compute_fn(idx, a @ b)`;
+            takes precedence over `default_epilogue`.
         measure_threshold: Optional relative-difference threshold for a measured assertion.
         backend: Vendor backend used for the reference matmul.
         k_group_size: Group size used for grouped matmul along the K dimension.
@@ -96,6 +104,8 @@ def test_matmul_sm90[
         m: Number of rows of the output matrix (M dimension).
         n: Number of columns of the output matrix (N dimension).
         k: Contraction dimension shared by the operands (K dimension).
+        compute_fn: Maps each output index and value to the value to store
+            when `has_compute_fn` is set.
     """
     var M = Int(m.value())
     var N = Int(n.value())
@@ -112,20 +122,22 @@ def test_matmul_sm90[
     # Host allocations
     var a_host_alloc = alloc(
         AllocLayout[Scalar[a_type]](count=a_size)
-    ).into_deletable()
+    ).into_managed()
     var a_host = a_host_alloc.unsafe_ptr()
     var b_host_alloc = alloc(
         AllocLayout[Scalar[b_type]](count=b_size)
-    ).into_deletable()
+    ).into_managed()
     var b_host = b_host_alloc.unsafe_ptr()
     var c_host_alloc = alloc(
         AllocLayout[Scalar[c_type]](count=c_size)
-    ).into_deletable()
+    ).into_managed()
     var c_host = c_host_alloc.unsafe_ptr()
     var c_host_ref_alloc = alloc(
         AllocLayout[Scalar[c_type]](count=c_size)
-    ).into_deletable()
-    var c_host_ref = c_host_ref_alloc.unsafe_ptr()
+    ).into_managed()
+    var c_host_ref: UnsafePointer[
+        Scalar[c_type], origin_of(c_host_ref_alloc)
+    ] = c_host_ref_alloc.unsafe_ptr()
 
     # Device allocations
     var a_dev_buffer = ctx.enqueue_create_buffer[a_type](a_size)
@@ -134,7 +146,7 @@ def test_matmul_sm90[
     var c_dev_ref_buffer = ctx.enqueue_create_buffer[c_type](c_size)
 
     # Construct TileTensors for device buffers
-    var a_tensor = TileTensor(a_dev_buffer, row_major(Coord(m, k))).as_immut()
+    var a_tensor = TileTensor(a_dev_buffer, row_major(m, k)).as_imm()
     var b_tensor = TileTensor(
         b_dev_buffer,
         row_major(
@@ -143,9 +155,9 @@ def test_matmul_sm90[
                 Idx[KType.static_value if transpose_b else NType.static_value],
             ),
         ),
-    ).as_immut()
-    var c_tensor = TileTensor(c_dev_buffer, row_major(Coord(m, n)))
-    var c_ref_tensor = TileTensor(c_dev_ref_buffer, row_major(Coord(m, n)))
+    ).as_imm()
+    var c_tensor = TileTensor(c_dev_buffer, row_major(m, n))
+    var c_ref_tensor = TileTensor(c_dev_ref_buffer, row_major(m, n))
 
     # Initialize matmul operands
     rand(a_host, a_size)
@@ -211,22 +223,14 @@ def test_matmul_sm90[
         String(CLUSTER_N),
     )
 
-    @parameter
-    @always_inline
-    @__copy_capture(c_tensor)
+    @inline(.always)
     def epilogue_fn[
-        _dtype: DType,
-        width: SIMDSize,
-        *,
-        alignment: Int = align_of[SIMD[_dtype, width]](),
-    ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
-        c_tensor.store_linear[alignment=alignment](
+        _dtype: DType, width: SIMDLength, *, alignment: Int
+    ](idx: Coord, val: SIMD[_dtype, width]) {var c_tensor}:
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
+        c_tensor.store[alignment=alignment * size_of[c_type]()](
             idx, rebind[SIMD[c_type, width]](val)
         )
-
-    comptime elf = Optional[elementwise_epilogue_type](
-        epilogue_fn
-    ) if default_epilogue and elementwise_compute_lambda_fn is None else None
 
     comptime matmul_config = MatmulConfig[a_type, b_type, c_type, transpose_b](
         block_tile_shape=block_tile_shape,
@@ -238,22 +242,32 @@ def test_matmul_sm90[
         k_group_size=k_group_size,
     )
 
-    warp_specialize_gemm_with_multicasting[
-        transpose_b=transpose_b,
-        config=matmul_config,
-        schedule=schedule,
-        grid_shape=grid_shape,
-        use_tma_store=use_tma_store,
-        elementwise_lambda_fn=elf,
-        elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-    ](
-        c_tensor,
-        a_tensor,
-        b_tensor,
-        ctx,
-    )
+    comptime if has_compute_fn:
+        warp_specialize_gemm_with_multicasting[
+            transpose_b=transpose_b,
+            config=matmul_config,
+            schedule=schedule,
+            grid_shape=grid_shape,
+            use_tma_store=use_tma_store,
+        ](c_tensor, a_tensor, b_tensor, compute_fn, ctx)
+    elif default_epilogue:
+        warp_specialize_gemm_with_multicasting[
+            transpose_b=transpose_b,
+            config=matmul_config,
+            schedule=schedule,
+            grid_shape=grid_shape,
+            use_tma_store=use_tma_store,
+        ](IndexList[2](M, N), a_tensor, b_tensor, epilogue_fn, ctx)
+    else:
+        warp_specialize_gemm_with_multicasting[
+            transpose_b=transpose_b,
+            config=matmul_config,
+            schedule=schedule,
+            grid_shape=grid_shape,
+            use_tma_store=use_tma_store,
+        ](c_tensor, a_tensor, b_tensor, ctx)
 
-    comptime assert a_type != DType.float8_e4m3fn or transpose_b, (
+    comptime assert a_type != .float8_e4m3fn or transpose_b, (
         "Testing is only supported for transposed_b==True when"
         " a_type==float8_e4m3fn. Add the non-transposed case if needed."
     )
@@ -271,22 +285,19 @@ def test_matmul_sm90[
     ctx.enqueue_copy(c_host_ref, c_dev_ref_buffer)
     ctx.synchronize()
 
-    comptime if elementwise_compute_lambda_fn:
-        # Apply the compute lambda directly on the reference tensor
-        comptime compute_lambda = elementwise_compute_lambda_fn.value()
+    comptime if has_compute_fn:
         for i in range(M):
             for j in range(N):
-                c_host_ref[i * N + j] = compute_lambda(
-                    IndexList[2](i, j),
-                    c_host_ref[i * N + j],
+                c_host_ref[i * N + j] = compute_fn[c_type, 1, alignment=1](
+                    (i, j), c_host_ref[i * N + j]
                 )
 
-    comptime if measure_threshold:
+    comptime if case .Some(threshold) = measure_threshold:
         assert_with_measure[relative_difference](
             c_host,
             c_host_ref,
             c_size,
-            threshold=measure_threshold.value(),
+            threshold=threshold,
         )
 
     comptime rtol = 1e-2
@@ -299,7 +310,7 @@ def test_matmul_sm90[
     )
 
     # Cleanup host pointers
-    dealloc(a_host_alloc^.into_allocation())
-    dealloc(b_host_alloc^.into_allocation())
-    dealloc(c_host_alloc^.into_allocation())
-    dealloc(c_host_ref_alloc^.into_allocation())
+    dealloc(a_host_alloc^)
+    dealloc(b_host_alloc^)
+    dealloc(c_host_alloc^)
+    dealloc(c_host_ref_alloc^)

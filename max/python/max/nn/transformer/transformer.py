@@ -15,8 +15,9 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from enum import Enum
-from typing import TypeVar
+from typing import Any, TypeVar
 
+from max import tree
 from max.dtype import DType
 from max.graph import (
     DeviceRef,
@@ -25,6 +26,7 @@ from max.graph import (
     TensorValueLike,
     ops,
 )
+from max.tree import Tree
 
 from ..embedding import Embedding
 from ..kv_cache import KVCacheParams, PagedCacheValues
@@ -32,8 +34,6 @@ from ..layer import (
     Layer,
     LayerList,
     Module,
-    SubgraphInput,
-    _flatten_graph_inputs,
 )
 from ..linear import Linear
 from ..rotary_embedding import RotaryEmbedding
@@ -63,7 +63,7 @@ def forward_sharded_layers(
 
 def _call_layer_directly(
     layer: Module,
-    values: Sequence[SubgraphInput],
+    values: Sequence[Tree[Any]],
 ) -> list[TensorValue]:
     result = layer(*values)
     if isinstance(result, tuple):
@@ -76,15 +76,16 @@ def forward_sequential_layers(
     *,
     inputs_for_layer: Callable[
         [int, list[TensorValue]],
-        Sequence[SubgraphInput],
+        Sequence[Tree[Any]],
     ],
     initial_hidden_states: list[TensorValue],
     on_layer_output: Callable[[int, list[TensorValue]], None] | None = None,
     subgraph_layer_groups: list[list[int]] | None = None,
-    name_for_subgraph: Callable[
-        [int], str
-    ] = lambda i: f"transformer_block_{i}",
+    name_for_subgraph: Callable[[int], str] = lambda i: (
+        f"transformer_block_{i}"
+    ),
     weight_prefix_for_layer: Callable[[int], str] | None = None,
+    layer_ids: Sequence[int] | None = None,
 ) -> list[TensorValue]:
     """Forward pass through sequential layers with optional subgraph groups.
 
@@ -116,15 +117,19 @@ def forward_sequential_layers(
         weight_prefix_for_layer: A callable that takes the layer index and
             returns the weight prefix string for that layer. Required when using
             subgraphs.
+        layer_ids: The index of each of ``layers`` that the callbacks receive
+            and ``subgraph_layer_groups`` lists, such as its index in the whole
+            model when ``layers`` are one pipeline stage's. Defaults to each
+            layer's position in ``layers``.
 
     Returns:
         The output hidden states of the last layer.
     """
-
+    ids = range(len(layers)) if layer_ids is None else layer_ids
     h = initial_hidden_states
 
     if subgraph_layer_groups is None:
-        for layer_idx, layer in enumerate(layers):
+        for layer_idx, layer in zip(ids, layers, strict=True):
             values = inputs_for_layer(layer_idx, h)
             h = _call_layer_directly(layer, values)
             if on_layer_output is not None:
@@ -138,13 +143,13 @@ def forward_sequential_layers(
     layer_idx_to_group_idx: dict[int, int] = {}
     for group_idx, layer_group in enumerate(subgraph_layer_groups):
         for layer_idx in layer_group:
-            assert layer_idx < len(layers), (
-                f"Layer index {layer_idx} is out of range for {len(layers)} layers"
+            assert layer_idx in ids, (
+                f"Layer index {layer_idx} is not among the layer ids {ids}"
             )
             layer_idx_to_group_idx[layer_idx] = group_idx
 
     group_idx_to_subgraph: dict[int, Graph] = {}
-    for layer_idx, layer in enumerate(layers):
+    for layer_idx, layer in zip(ids, layers, strict=True):
         values = inputs_for_layer(layer_idx, h)
         if layer_idx not in layer_idx_to_group_idx:
             h = _call_layer_directly(layer, values)
@@ -157,9 +162,7 @@ def forward_sequential_layers(
                     weight_prefix=weight_prefix_for_layer(layer_idx),
                 )
 
-            flat_args = [
-                leaf for v in values for leaf in _flatten_graph_inputs(v)
-            ]
+            flat_args = tree.leaves(values)
             call_results = ops.call(
                 group_idx_to_subgraph[group_idx],
                 *flat_args,
@@ -192,15 +195,14 @@ def extract_hs(
         normalizer: Per-device normalization functions. Required when
             ``return_hidden_states`` is ``ALL_NORMALIZED``.
         capture_hidden_states: A list of per-layer captured hidden states at specific layer indices.  Each entry is a
-            per-device list of tensors. The entries are concatenated along the
-            feature dimension to produce a single fused hidden-state tensor
-            per device.
+            per-device list of tensors.
 
     Returns:
         Empty tuple for ``NONE``; ``(TensorValue,)`` for ``LAST``; for
-        ``ALL`` / ``ALL_NORMALIZED`` / ``SELECTED_LAYERS`` the per-device tensors are
-        returned as positional tuple elements (``N`` entries, one per
-        device).
+        ``ALL`` / ``ALL_NORMALIZED`` the per-device tensors are returned as
+        positional tuple elements (``N`` entries, one per device). For
+        ``SELECTED_LAYERS``, every capture separately —
+        ``N * len(capture_hidden_states)`` entries ordered device-major.
     """
     if return_hidden_states == ReturnHiddenStates.LAST:
         # Each entry in last_token_hs_distributed is identical.
@@ -219,16 +221,38 @@ def extract_hs(
             capture_hidden_states is not None and len(capture_hidden_states) > 0
         )
         num_devices = len(capture_hidden_states[0])
-        fused_per_dev = [
-            ops.concat(
-                [layer_hs[i] for layer_hs in capture_hidden_states],
-                axis=-1,
-            )
+        return tuple(
+            layer_hs[i]
             for i in range(num_devices)
-        ]
-        return tuple(fused_per_dev)
+            for layer_hs in capture_hidden_states
+        )
     else:
         return tuple()
+
+
+def captures_by_device(
+    values: Sequence[TensorValue], num_devices: int
+) -> list[list[TensorValue]]:
+    """Splits the device-major capture tail of `extract_hs()` into per-device lists."""
+    assert values and len(values) % num_devices == 0, (
+        f"expected a positive multiple of {num_devices} captured hidden "
+        f"states, got {len(values)}"
+    )
+    per_device = len(values) // num_devices
+    return [
+        list(values[d * per_device : (d + 1) * per_device])
+        for d in range(num_devices)
+    ]
+
+
+def fuse_captured_hidden_states(
+    captures_per_device: Sequence[Sequence[TensorValue]],
+) -> list[TensorValue]:
+    """Concatenates each device's captures, for a consumer with one wide matmul."""
+    return [
+        captures[0] if len(captures) == 1 else ops.concat(list(captures), -1)
+        for captures in captures_per_device
+    ]
 
 
 class TransformerBlock(Module):
@@ -280,22 +304,53 @@ class TransformerBlock(Module):
 
 
 class ReturnLogits(str, Enum):
+    """Which logits a transformer model returns per sequence.
+
+    ``LAST_TOKEN`` returns only the final position's logits, ``VARIABLE``
+    returns ``return_n_logits`` trailing positions, and ``ALL`` returns
+    every position.
+    """
+
     LAST_TOKEN = "last_token"
+    """Return only the final token's logits."""
+
     VARIABLE = "variable"
+    """Return ``return_n_logits`` trailing positions' logits."""
+
     ALL = "all"
+    """Return every token's logits."""
 
 
 class ReturnHiddenStates(str, Enum):
+    """Which hidden states a transformer model returns per sequence.
+
+    ``NONE`` returns none, ``LAST`` returns the final token's hidden
+    states, and ``ALL`` returns every token's. See each member's
+    description for the other modes.
+    """
+
     NONE = "none"
+    """Return no hidden states."""
+
     LAST = "last"
+    """Return the final token's hidden states."""
+
     # Like LAST but returns the post-allgather per-device tensors rather
     # than collapsing to a single copy. Lets callers consume the data that
     # was already placed on every device by the allgather, avoiding a
     # redundant broadcast.
     LAST_PER_DEVICE = "last_per_device"
+    """Return the final token's hidden states as per-device tensors,
+    one per device, without collapsing identical replicas."""
+
     ALL_NORMALIZED = "all_normalized"
+    """Return every token's hidden states after the model's final norm."""
+
     ALL = "all"
+    """Return every token's hidden states."""
+
     SELECTED_LAYERS = "selected_layers"
+    """Return hidden states captured at specific layer indices."""
 
 
 def logits_postprocess(
@@ -559,9 +614,7 @@ class Transformer(LogitsPostprocessMixin, Module):
         h = self.embed_tokens(tokens)
 
         if self.embedding_multiplier != 1.0:
-            h = h * ops.constant(
-                self.embedding_multiplier, h.dtype, device=h.device
-            )
+            h = h * float(self.embedding_multiplier)
 
         return self._process_hidden_states(
             h, kv_collection, return_n_logits, input_row_offsets

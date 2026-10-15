@@ -57,18 +57,14 @@ Two hard M5 constraints, both satisfied by the width-16 decode:
     fp32-vs-MMA reduction order and the final cast).
 """
 
-from std.collections import Optional
-from std.gpu import WARP_SIZE, global_idx, lane_id
-from std.gpu.host import DeviceContext
+from max.gpu import WARP_SIZE, global_idx, lane_id
+from max.gpu.host import DeviceContext
 from std.math import ceildiv
-import std.gpu.primitives.warp as warp
-from std.utils import IndexList
+import max.gpu.primitives.warp as warp
 
-from layout import Coord, TileTensor, TensorLayout
-from layout.tile_layout import row_major
+from layout import Coord, TensorEngine, TileTensor, TensorLayout
 
 from linalg.fp4_utils import decode_e2m1_to_f16, NVFP4_SF_VECTOR_SIZE
-from linalg.utils import elementwise_epilogue_type
 
 
 @__name(t"fp4_gemv_{c_type}")
@@ -78,16 +74,23 @@ def fp4_gemv_kernel[
     a_layout: TensorLayout,
     p_layout: TensorLayout,
     s_layout: TensorLayout,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type],
+    c_engine: TensorEngine,
+    a_engine: TensorEngine,
+    p_engine: TensorEngine,
+    s_engine: TensorEngine,
 ](
-    c: TileTensor[c_type, c_layout, MutAnyOrigin],  # [1, N]
-    a: TileTensor[DType.bfloat16, a_layout, ImmutAnyOrigin],  # [1, K]
-    packed: TileTensor[DType.uint8, p_layout, ImmutAnyOrigin],  # [N, K//2]
+    c: TileTensor[c_type, c_layout, MutAnyOrigin, Engine=c_engine],  # [1, N]
+    a: TileTensor[
+        .bfloat16, a_layout, ImmutAnyOrigin, Engine=a_engine
+    ],  # [1, K]
+    packed: TileTensor[
+        .uint8, p_layout, ImmutAnyOrigin, Engine=p_engine
+    ],  # [N, K//2]
     scales: TileTensor[
-        DType.float8_e4m3fn, s_layout, ImmutAnyOrigin
+        .float8_e4m3fn, s_layout, ImmutAnyOrigin, Engine=s_engine
     ],  # [N,K//16]
-    n: Int,
-    k: Int,
+    n_arg: Int32,
+    k_arg: Int32,
 ):
     """One warp per output column; 32 lanes stride down K decoding FP4 -> fp32.
 
@@ -101,18 +104,22 @@ def fp4_gemv_kernel[
         a_layout: `TileTensor` layout of the activation `a`.
         p_layout: `TileTensor` layout of the packed FP4 weight.
         s_layout: `TileTensor` layout of the FP8 block scales.
-        elementwise_lambda_fn: Optional fused epilogue applied on the
-            width-1 store.
+        c_engine: `TensorEngine` of the output `c`.
+        a_engine: `TensorEngine` of the activation `a`.
+        p_engine: `TensorEngine` of the packed FP4 weight.
+        s_engine: `TensorEngine` of the FP8 block scales.
 
     Args:
         c: Output tile tensor `[1, N]` receiving the GEMV result.
         a: Bf16 activation tile tensor `[1, K]`, the single activation row.
         packed: FP4-packed weight tile tensor `[N, K//2]` (lo-nibble first).
         scales: FP8-E4M3 block scales tile tensor `[N, ceil(K/16)]`.
-        n: Number of output columns (rows of the transposed weight).
-        k: Inner dimension length; must be a multiple of
+        n_arg: Number of output columns (rows of the transposed weight).
+        k_arg: Inner dimension length; must be a multiple of
             `NVFP4_SF_VECTOR_SIZE` (16).
     """
+    var n = Int(n_arg)
+    var k = Int(k_arg)
     comptime SF = NVFP4_SF_VECTOR_SIZE  # 16 nibbles / scale block
     comptime BYTES = SF // 2  # 8 packed bytes / block
 
@@ -123,7 +130,7 @@ def fp4_gemv_kernel[
 
     # Each lane owns whole 16-col FP8 scale-blocks, strided by WARP_SIZE blocks.
     # (K is a multiple of 16 for every NVFP4-quantized Linear -> no K tail.)
-    var acc = SIMD[DType.float32, 1](0)
+    var acc = Float32(0)
     var nblk = k // SF
     var blk = lid
     while blk < nblk:
@@ -134,44 +141,37 @@ def fp4_gemv_kernel[
         var bytes = packed.load[width=BYTES, alignment=1](Coord(n_idx, byte0))
         # Expand 8 bytes -> 16 E2M1 nibbles: element 2*j = lo nibble (even K),
         # 2*j+1 = hi nibble (odd K). Width-16 uint16 arithmetic: M5-safe.
-        var nib = SIMD[DType.uint16, SF](0)
+        var nib = SIMD[.uint16, SF](0)
 
         comptime for j in range(BYTES):
             var bj = UInt16(bytes[j])
             nib[2 * j] = bj & UInt16(0xF)
             nib[2 * j + 1] = (bj >> UInt16(4)) & UInt16(0xF)
 
-        var scale_abs = abs(scales[n_idx, blk][0].cast[DType.float32]())
+        var scale_abs = abs(scales[n_idx, blk][0].cast[.float32]())
         # F16-domain decode (Preston's inject) then cast f32: dodges the M5
         # bf16/f32 subnormal-FTZ trap that zeroes +-0.5 -- f16 subnormals
         # survive on M5 (verified on-device). Bit-identical to
         # `decode_e2m1_to_f32(nib)` (all 16 E2M1 values are exact in f16->f32),
         # so `* scale_abs` still matches the materialize->dense oracle exactly.
-        var w_f32 = decode_e2m1_to_f16(nib).cast[DType.float32]() * scale_abs
-        var xv = a.load[width=SF](Coord(0, k0)).cast[DType.float32]()
+        var w_f32 = decode_e2m1_to_f16(nib).cast[.float32]() * scale_abs
+        var xv = a.load[width=SF](Coord(0, k0)).cast[.float32]()
         acc[0] += (xv * w_f32).reduce_add()
         blk += WARP_SIZE
 
     var dot = warp.sum(acc)
     if lid == 0:
-        var y = dot.cast[c_type]()
-
-        comptime if elementwise_lambda_fn:
-            comptime epilogue = elementwise_lambda_fn.value()
-            epilogue[c_type, 1](IndexList[2](0, n_idx), y)
-        else:
-            c.store(Coord(0, n_idx), y)
+        c.store[width=1](Coord(0, n_idx), dot.cast[c_type]())
 
 
-@always_inline
+@inline(.always)
 def enqueue_apple_fp4_gemv[
-    c_type: DType = DType.float32,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    c_type: DType = .float32,
 ](
     c: TileTensor[mut=True, c_type, ...],
-    a: TileTensor[DType.bfloat16, ...],
-    packed: TileTensor[DType.uint8, ...],
-    scales: TileTensor[DType.float8_e4m3fn, ...],
+    a: TileTensor[.bfloat16, ...],
+    packed: TileTensor[.uint8, ...],
+    scales: TileTensor[.float8_e4m3fn, ...],
     n: Int,
     k: Int,
     ctx: DeviceContext,
@@ -187,8 +187,6 @@ def enqueue_apple_fp4_gemv[
 
     Parameters:
         c_type: Output element type (fp16, bf16, fp32). Accumulation is fp32.
-        elementwise_lambda_fn: Optional fused epilogue (AMD's `(row, col)`
-            contract), applied on the width-1 store.
 
     Args:
         c: Output tile tensor `[1, N]` receiving the GEMV result.
@@ -209,15 +207,18 @@ def enqueue_apple_fp4_gemv[
         type_of(a).LayoutType,
         type_of(packed).LayoutType,
         type_of(scales).LayoutType,
-        elementwise_lambda_fn,
+        type_of(c).Engine,
+        type_of(a).Engine,
+        type_of(packed).Engine,
+        type_of(scales).Engine,
     ]
     ctx.enqueue_function[kernel](
         c,
         a,
         packed,
         scales,
-        n,
-        k,
+        Int32(n),
+        Int32(k),
         grid_dim=grid,
         block_dim=BLK,
     )

@@ -21,21 +21,22 @@ from max.nn.comm.ep.ep_config import (
     estimate_ep_memory_usage,
 )
 from max.pipelines.architectures.hy_v3.model_config import (
+    HYV3Config,
     hyv3_num_experts_from_config,
 )
 from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib.config import PipelineConfig
+from max.pipelines.lib.config.model_config import (
+    _select_quantization_encoding,
+)
 from max.pipelines.modeling.config_enums import supported_encoding_dtype
 from transformers import AutoConfig
-
-_GRAPH_CAPTURE_HEADROOM_BYTES_PER_DEVICE = 8 * 1024**3
 
 
 class HyV3MemoryPlanner(PagedMemoryPlanner):
     """Memory planner for HY-V3 (Hunyuan) MoE models.
 
-    Accounts for expert-parallel routing buffers and optional
-    device-graph-capture headroom.
+    Accounts for expert-parallel routing buffers.
     """
 
     _always_signal_buffers = True
@@ -43,7 +44,9 @@ class HyV3MemoryPlanner(PagedMemoryPlanner):
     def estimate_activation_memory(
         self, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
     ) -> int:
-        encoding = pipeline_config.model.quantization_encoding
+        encoding = _select_quantization_encoding(
+            pipeline_config.model, HYV3Config.DEFAULT_ENCODING
+        )
         n_gpus_per_node = len(pipeline_config.model.device_specs)
         # Use moe_intermediate_size for EP buffer math, not the
         # dense-layer intermediate_size (the latter is ~9x larger on
@@ -56,7 +59,7 @@ class HyV3MemoryPlanner(PagedMemoryPlanner):
         ep_buffer_memory = 0
         moe_activation_memory = 0
         ep_size = pipeline_config.runtime.ep_size
-        if ep_size > 1 and encoding is not None:
+        if ep_size > 1:
             ep_max_rank_send_tokens = calculate_ep_max_tokens_per_rank(
                 max_batch_input_tokens=pipeline_config.runtime.max_batch_input_tokens,
                 ep_size=ep_size,
@@ -96,12 +99,5 @@ class HyV3MemoryPlanner(PagedMemoryPlanner):
             ep_buffer_memory = per_device_ep_memory * n_gpus_per_node * 2
 
         activation_memory = moe_activation_memory + ep_buffer_memory
-
-        graph_capture_headroom = 0
-        if pipeline_config.runtime.device_graph_capture:
-            graph_capture_headroom = (
-                _GRAPH_CAPTURE_HEADROOM_BYTES_PER_DEVICE * n_gpus_per_node
-            )
-            activation_memory += graph_capture_headroom
 
         return activation_memory

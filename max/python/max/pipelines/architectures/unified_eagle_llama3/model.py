@@ -18,6 +18,7 @@ import logging
 from dataclasses import dataclass, replace
 from typing import Any, ClassVar
 
+from max import tree
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
@@ -36,6 +37,7 @@ from max.pipelines.lib import (
     UnifiedSpecDecodeInputs,
 )
 from max.pipelines.lib._hf_config import PretrainedConfig
+from max.pipelines.lib.memory_estimation import MemoryPlan
 from max.pipelines.lib.pipeline_variants.unified_spec_decode_model import (
     _UnifiedSpecDecodeModelMixin,
 )
@@ -71,7 +73,11 @@ class UnifiedEagleLlama3Inputs(UnifiedSpecDecodeInputs):
             self.tokens,
             self.input_row_offsets,
             self.return_n_logits,
-            *(self.kv_cache_inputs.flatten() if self.kv_cache_inputs else ()),
+            *(
+                tree.leaves(self.kv_cache_inputs)
+                if self.kv_cache_inputs
+                else ()
+            ),
         )
         return prefix + self._spec_decode_tail_buffers(
             include_in_thinking_phase=False
@@ -80,7 +86,7 @@ class UnifiedEagleLlama3Inputs(UnifiedSpecDecodeInputs):
 
 class UnifiedEagleLlama3Model(
     _UnifiedSpecDecodeModelMixin,
-    GraphPipelineModelWithKVCache[TextContext],
+    GraphPipelineModelWithKVCache[TextContext, UnifiedEagleLlama3Config],
 ):
     """Unified EAGLE Llama3: target + draft in one compiled graph."""
 
@@ -99,6 +105,8 @@ class UnifiedEagleLlama3Model(
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
+        *,
+        memory_plan: MemoryPlan,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
@@ -110,10 +118,11 @@ class UnifiedEagleLlama3Model(
             devices,
             kv_cache_config,
             weights,
-            adapter,
+            adapter=adapter,
             return_logits=ReturnLogits.VARIABLE,
             return_hidden_states=ReturnHiddenStates.ALL_NORMALIZED,
             max_batch_size=max_batch_size,
+            memory_plan=memory_plan,
         )
         self.model = self.load_model(session)
 
@@ -165,7 +174,9 @@ class UnifiedEagleLlama3Model(
         target_hf_config = self.huggingface_config
         assert target_hf_config is not None
 
-        target_config = Llama3Config.initialize(self.pipeline_config)
+        target_config = Llama3Config.initialize(
+            self.pipeline_config, max_seq_len=self.max_seq_len
+        )
         target_config.finalize(
             huggingface_config=target_hf_config,
             state_dict=state_dict,
@@ -174,7 +185,10 @@ class UnifiedEagleLlama3Model(
         )
 
         draft_config = Llama3Config.initialize_from_config(
-            self.pipeline_config, draft_hf_config, draft_model_config
+            self.pipeline_config,
+            draft_hf_config,
+            draft_model_config,
+            max_seq_len=self.max_seq_len,
         )
         # The draft model config may default to gpu:0. Override its
         # devices to match the target so weights land on the correct GPU
@@ -212,10 +226,9 @@ class UnifiedEagleLlama3Model(
         self,
         session: InferenceSession,
         state_dict: dict[str, Any],
-        model_config: Any,
+        model_config: UnifiedEagleLlama3Config,
     ) -> tuple[Graph, dict[str, Any]]:
         del session
-        assert isinstance(model_config, UnifiedEagleLlama3Config)
 
         nn_model = UnifiedEagleLlama3Module(model_config)
 
@@ -246,8 +259,24 @@ class UnifiedEagleLlama3Model(
             "unified_eagle_llama3",
             input_types=nn_model.input_types(),
         ) as graph:
-            inputs = nn_model._unflatten_graph_inputs(graph.inputs)
-            outputs = nn_model(inputs)
+            graph_inputs = nn_model.decode_inputs(graph.inputs)
+            outputs = nn_model(
+                tokens=graph_inputs.tokens,
+                input_row_offsets=graph_inputs.input_row_offsets,
+                draft_tokens=graph_inputs.draft_tokens,
+                kv_collections=graph_inputs.kv("target"),
+                draft_kv_collections=graph_inputs.kv("draft"),
+                return_n_logits=graph_inputs.return_n_logits,
+                seed=graph_inputs.seed,
+                temperature=graph_inputs.temperature,
+                top_k=graph_inputs.top_k,
+                max_k=graph_inputs.max_k,
+                top_p=graph_inputs.top_p,
+                min_top_p=graph_inputs.min_top_p,
+                pinned_bitmask=graph_inputs.pinned_bitmask,
+                wait_payload=graph_inputs.wait_payload,
+                device_bitmask_scratch=graph_inputs.device_bitmask_scratch,
+            )
             graph.output(*outputs)
 
         return graph, weights_registry

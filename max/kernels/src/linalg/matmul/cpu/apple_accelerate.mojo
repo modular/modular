@@ -17,24 +17,25 @@ Wraps the Apple Accelerate `cblas_sgemm` routine to provide single-precision mat
 
 from std.collections import Optional
 from std.math import fma
-from std.memory import alloc
+from std.memory.alloc import ManagedAllocation, alloc
 from std.sys import CompilationTarget, simd_width_of
 from std.ffi import _get_dylib_function as _ffi_get_dylib_function
 from std.ffi import _Global, OwnedDLHandle
 
-from std.algorithm import elementwise, vectorize
-from std.algorithm.functional import (
+from std.algorithm import vectorize
+
+from max.algorithm import elementwise
+from max.algorithm.functional import (
     _get_start_indices_of_nth_subvolume,
     parallelize_over_rows,
 )
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.utils import IndexList
 from std.utils.index import Index
 
 from ...bmm import (
     elementwise_epilogue_type as batched_matmul_elementwise_epilogue_type,
 )
-from std.gpu.memory import AddressSpace
 from layout import Coord, Idx, TileTensor, row_major
 from ...packing import pack_b_ndbuffer
 from ...utils import (
@@ -81,7 +82,7 @@ def _on_error_msg() -> Error:
             "the XCode package is installed and that the library path is "
             "correctly set in one of the following paths ["
         ),
-        ", ".join(Span([LIB_ACC_PATH])),
+        ", ".join([LIB_ACC_PATH]),
         "].",
     )
 
@@ -101,7 +102,7 @@ def _init_dylib() -> OwnedDLHandle:
         return OwnedDLHandle(unsafe_uninitialized=True)
 
 
-@always_inline
+@inline(.always)
 def _get_dylib_function[
     func_name: StaticString, result_type: TrivialRegisterPassable
 ]() raises -> result_type:
@@ -115,7 +116,7 @@ def _get_dylib_function[
     ]()
 
 
-@always_inline
+@inline(.always)
 def get_cblas_f32_function() raises -> cblas_gemm_type:
     """Loads and returns the `cblas_sgemm` function pointer from the Apple Accelerate library.
 
@@ -144,7 +145,7 @@ def get_cblas_f32_function() raises -> cblas_gemm_type:
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
+@inline(.always)
 def use_apple_accelerate_lib[
     c_type: DType,
     a_type: DType,
@@ -159,8 +160,7 @@ def use_apple_accelerate_lib[
         `True` if the Accelerate library is available and the dtype combination is supported.
     """
     return (
-        CompilationTarget.is_macos()
-        and a_type == b_type == c_type == DType.float32
+        CompilationTarget.is_macos() and a_type == b_type == c_type == .float32
     )
 
 
@@ -180,7 +180,7 @@ struct _CBLASTranspose(TrivialRegisterPassable):
 
 
 # _cblas_f32 used by apple_batched_matmul (via the corresponding apple_matmul)
-@always_inline
+@inline(.always)
 def _cblas_f32[
     *,
     transpose_b: Bool = False,
@@ -218,7 +218,7 @@ def _cblas_f32[
 
 # _cblas_f32 used by apple_matmul (except via the apple_matmul in
 # apple_batched_matmul)
-@always_inline
+@inline(.always)
 def _cblas_f32[
     *,
     transpose_b: Bool = False,
@@ -262,17 +262,17 @@ def _cblas_f32[
 # Currently, use is limited in Apple Float32 case.
 # apple_matmul (which internally calls cblas_sgemm, which in turns calls a
 # cblas_sgemv has been found to have suboptimal performance compared to this.
-@always_inline
+@inline(.always)
 def apple_gemv[
     *,
     b_packed: Bool,
     transpose_b: Bool = False,
     elementwise_lambda_fn: Optional[matmul_elementwise_epilogue_type] = None,
 ](
-    c: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    a: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
-    b: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
-    ctx: Optional[DeviceContext] = None,
+    c: TileTensor[mut=True, address_space=.GENERIC, ...],
+    a: TileTensor[mut=False, address_space=.GENERIC, ...],
+    b: TileTensor[mut=False, address_space=.GENERIC, ...],
+    ctx: Optional[DeviceContext.CPU] = None,
 ) raises:
     """Performs a parallelized and vectorized GEMV for the M=1 case on Apple CPUs.
 
@@ -301,25 +301,24 @@ def apple_gemv[
     var K = Int(a.dim[1]()) if b_packed else Int(b.dim[0]())
     var N = Int(b.dim[0]()) if transpose_b or b_packed else Int(b.dim[1]())
 
-    var transposed_b_ptr = Optional[
-        UnsafePointer[Scalar[b.dtype], MutUntrackedOrigin]
-    ]()
+    var transposed_b_alloc = Optional[ManagedAllocation[Scalar[b.dtype]]]()
     var transposed_b = TileTensor(
         UnsafePointer[Scalar[b.dtype], MutUntrackedOrigin].unsafe_dangling(),
-        row_major(Coord(Int(0), Int(0))),
+        row_major(Int(0), Int(0)),
     )
 
     # If both b_packed and transpose_b are False, we need to transpose B at
     # runtime (which is suboptimal, but enables faster gemv below).
     comptime if b_packed == False and not transpose_b:
         var transposed_b_shape = Index(Int(b.dim[1]()), Int(b.dim[0]()))
-        var allocated_ptr = alloc[Scalar[b.dtype]](b.num_elements())
-        transposed_b_ptr = allocated_ptr
+        transposed_b_alloc = alloc[Scalar[b.dtype]](
+            {count = b.num_elements()}
+        ).into_managed()
         transposed_b = TileTensor(
-            allocated_ptr,
-            row_major(
-                Coord(Int(transposed_b_shape[0]), Int(transposed_b_shape[1]))
-            ),
+            transposed_b_alloc.unsafe_value()
+            .unsafe_ptr()
+            .unsafe_origin_cast[MutUntrackedOrigin](),
+            row_major(transposed_b_shape[0], transposed_b_shape[1]),
         )
 
         var _kernel_type_m = 0
@@ -338,16 +337,16 @@ def apple_gemv[
 
     comptime simd_width = simd_width_of[c.dtype]()
 
-    @always_inline
-    @__copy_capture(c, a, b, K)
-    @parameter
-    def process_rows(start_row: Int, end_row: Int):
+    @inline(.always)
+    def process_rows(
+        start_row: Int, end_row: Int
+    ) {var c, var a, var b, var K, imm}:
         for var n in range(start_row, end_row):
             var acc_vector = SIMD[c.dtype, simd_width]()
             var acc_scalar = Scalar[c.dtype]()
 
-            @always_inline
-            def compute_fn[width: Int](k: Int) {a, b, c, mut}:
+            @inline(.always)
+            def compute_fn[width: Int](k: Int) {a, b, c, transposed_b, mut}:
                 var a_val = a.load[width=width](Coord(Idx[0], k)).cast[
                     c.dtype
                 ]()
@@ -375,20 +374,18 @@ def apple_gemv[
 
             var val = acc_vector.reduce_add() + acc_scalar
 
-            comptime if elementwise_lambda_fn:
-                comptime func = elementwise_lambda_fn.value()
-                func[c.dtype, 1](Index(0, n), val)
+            comptime if case .Some(func) = elementwise_lambda_fn:
+                func[c.dtype, 1]((0, n), val)
             else:
                 c.store[width=1](Coord(Idx[0], n), val)
 
     # TODO: Experiment with this.
     comptime parallelism_grain_size = 16
-    parallelize_over_rows[process_rows](
-        IndexList[2](N, K), 1, parallelism_grain_size, ctx
+    parallelize_over_rows(
+        process_rows, IndexList[2](N, K), 1, parallelism_grain_size, ctx
     )
 
-    if transposed_b_ptr:
-        transposed_b_ptr.unsafe_value().free()
+    _ = transposed_b_alloc^
 
 
 # ===-----------------------------------------------------------------------===#
@@ -397,7 +394,7 @@ def apple_gemv[
 
 
 # apple_matmul used by apple_batched_matmul
-@always_inline
+@inline(.always)
 def apple_matmul[
     *,
     transpose_b: Bool = False,
@@ -428,7 +425,7 @@ def apple_matmul[
     comptime assert a.flat_rank >= 2
     comptime assert b.flat_rank >= 2
     comptime assert (
-        a.dtype == b.dtype == c.dtype == DType.float32
+        a.dtype == b.dtype == c.dtype == .float32
     ), "unsupported type in apple accelerate"
     var m = Int32(Int(a.dim[0]()))
     var n = Int32(Int(b.dim[0]()) if transpose_b else Int(b.dim[1]()))
@@ -456,20 +453,17 @@ def apple_matmul[
         rebind[UnsafePointer[Float32, ImmutAnyOrigin]](b.ptr),
     )
 
-    comptime if elementwise_lambda_fn:
+    comptime if case .Some(epilogue) = elementwise_lambda_fn:
         var m = Int(c.dim[0]())
         var n = Int(c.dim[1]())
-        comptime epilogue = elementwise_lambda_fn.value()
         comptime simd_size = simd_width_of[c.dtype]()
 
-        @always_inline
+        @inline(.always)
         def epilogue_on_col_chunk[
             simd_width: Int, alignment: Int = 1
         ](idx: Coord) {var}:
             var c_val = c.load[width=simd_width](idx)
-            epilogue[c.dtype, simd_width](
-                Index(idx[0].value(), idx[1].value()), c_val
-            )
+            epilogue[c.dtype, simd_width](idx, c_val)
 
         # TODO: thread a DeviceContext through the matmul stack so we can
         # drop this local construction.
@@ -479,7 +473,7 @@ def apple_matmul[
 
 
 # apple_matmul used by all matmuls except apple_batched_matmul
-@always_inline
+@inline(.always)
 def apple_matmul[
     *,
     transpose_b: Bool = False,
@@ -505,7 +499,7 @@ def apple_matmul[
         b: Input B matrix tile.
     """
     comptime assert (
-        a.dtype == b.dtype == c.dtype == DType.float32
+        a.dtype == b.dtype == c.dtype == .float32
     ), "unsupported type in apple accelerate"
     var cblas_gemm = get_cblas_f32_function()
 
@@ -519,7 +513,7 @@ def apple_matmul[
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
+@inline(.always)
 def apple_batched_matmul[
     rank: Int,
     *,
@@ -566,41 +560,38 @@ def apple_batched_matmul[
     var b_rows = Int(b.dim[b.rank - 2]())
     var b_cols = Int(b.dim[b.rank - 1]())
 
-    var c_stride = c_rows * c_cols
-    var a_stride = a_rows * a_cols
-    var b_stride = b_rows * b_cols
+    # Collapse the leading batch dims into one batch axis so each per-batch
+    # 2D operand view is a subscript slice. This assumes the batch dims are
+    # packed contiguously, the same assumption the pointer form made.
+    var c3 = c.reshape(row_major(batch_size, c_rows, c_cols))
+    var a3 = a.reshape(row_major(batch_size, a_rows, a_cols))
+    var b3 = b.reshape(row_major(batch_size, b_rows, b_cols))
 
     var cblas_gemm = get_cblas_f32_function()
 
     for batch in range(batch_size):
-        var c2 = TileTensor(
-            c.ptr + batch * c_stride,
-            row_major(Coord(c_rows, c_cols)),
-        )
-        var a2 = TileTensor(
-            a.ptr + batch * a_stride,
-            row_major(Coord(a_rows, a_cols)),
-        )
-        var b2 = TileTensor(
-            b.ptr + batch * b_stride,
-            row_major(Coord(b_rows, b_cols)),
-        )
+        var c2 = c3[batch, :, :]
+        var a2 = a3[batch, :, :]
+        var b2 = b3[batch, :, :]
 
         var batch_coords = _get_start_indices_of_nth_subvolume[2](
             batch, c_shape_idx
         )
 
-        @parameter
+        @__parameter
         @__copy_capture(batch_coords)
         def elementwise_lambda_2d[
-            c_type: DType, width: SIMDSize, *, alignment: Int = 1
-        ](out_coords: IndexList[2], out_val: SIMD[c_type, width]):
+            c_type: DType, width: SIMDLength, *, alignment: Int = 1
+        ](out_coords: Coord, out_val: SIMD[c_type, width]):
+            comptime assert (
+                out_coords.rank == 2
+            ), "the matmul epilogue contract is rank 2"
             var local_batch_coords = batch_coords
-            local_batch_coords[rank - 1] = out_coords[1]
-            local_batch_coords[rank - 2] = out_coords[0]
+            local_batch_coords[rank - 1] = Int(out_coords[1].value())
+            local_batch_coords[rank - 2] = Int(out_coords[0].value())
 
             comptime func = elementwise_epilogue_fn.value()
-            func[c_type, width, rank](local_batch_coords, out_val)
+            func[c_type, width](Coord(local_batch_coords), out_val)
 
         apple_matmul[
             transpose_b=transpose_b,

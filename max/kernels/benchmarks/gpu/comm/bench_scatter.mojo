@@ -19,9 +19,9 @@ Each group (DP replica) gets a different chunk, and all devices within a group
 Focus is on small sizes typical of row_offsets distribution.
 """
 
-from std.collections import InlineArray
+from std.collections import Array
 from std.math import ceildiv
-from std.sys import size_of, simd_width_of
+from std.sys import size_of
 from std.sys.defines import get_defined_bool, get_defined_dtype, get_defined_int
 
 from std.benchmark import (
@@ -31,18 +31,21 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
+from max.benchmark import (
+    bench_multicontext,
+    bencher_iter_custom,
+)
 from comm.sync import enable_p2p
 from comm.scatter import scatter
-from layout import Idx, TileTensor, row_major
-from comm import MAX_GPUS, Signal
-from std.gpu.host import DeviceBuffer, DeviceContext
+from layout import TileTensor, row_major
+from comm import Signal
+from max.gpu.host import DeviceBuffer, DeviceContext
 from internal_utils import arg_parse, CacheBustingBuffer
 
 from std.testing import assert_true
 
 
-@always_inline
-@parameter
+@inline(.always)
 def _chunk_value[dtype: DType](dp_idx: Int, j: Int) -> Scalar[dtype]:
     """Generate position-based value that includes the DP replica index.
 
@@ -133,61 +136,54 @@ def bench_scatter[
         list_of_ctx[gpu_idx].enqueue_memset(out_bufs_list[gpu_idx], 0)
 
     # Create signal buffers for synchronization.
-    var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
-        uninitialized=True
-    )
+    var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
 
     for gpu_idx in range(ngpus):
         signal_buffers.append(
-            list_of_ctx[gpu_idx].create_buffer_sync[DType.uint8](
-                size_of[Signal]()
-            )
+            list_of_ctx[gpu_idx].create_buffer_sync[.uint8](size_of[Signal]())
         )
-        list_of_ctx[gpu_idx].enqueue_memset[DType.uint8](
-            signal_buffers[gpu_idx], 0
-        )
-        rank_sigs[gpu_idx] = (
-            signal_buffers[gpu_idx]
-            .unsafe_ptr()
-            .bitcast[Signal]()
-            .as_unsafe_any_origin()
-        )
+        list_of_ctx[gpu_idx].enqueue_memset[.uint8](signal_buffers[gpu_idx], 0)
+
+    var rank_sigs = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
 
     # Build TileTensor arrays for the scatter API.
     comptime InputTileType = TileTensor[
         dtype, type_of(row_major(num_elems)), ImmutAnyOrigin
     ]
-    var tt_in_bufs = InlineArray[InputTileType, dp_size](uninitialized=True)
-    for dp_idx in range(dp_size):
-        tt_in_bufs[dp_idx] = TileTensor(
+    var tt_in_bufs = Array[InputTileType, dp_size](
+        fill_with=lambda (dp_idx: Int) -> InputTileType: TileTensor(
             cb_inputs[dp_idx].device_buffer(), row_major(num_elems)
-        ).as_immut()
+        ).as_imm()
+    )
 
     comptime OutputTileType = TileTensor[
         dtype, type_of(row_major(num_elems)), MutAnyOrigin
     ]
-    var out_tiles = InlineArray[OutputTileType, ngpus](uninitialized=True)
+    var out_tiles = Array[OutputTileType, ngpus](uninitialized=True)
     for gpu_idx in range(ngpus):
         out_tiles[gpu_idx] = OutputTileType(
             out_bufs_list[gpu_idx], row_major(num_elems)
         )
         list_of_ctx[gpu_idx].synchronize()
 
-    @parameter
-    @always_inline
+    @inline(.always)
     def bench_iter(
         mut bencher: Bencher, ctx: DeviceContext, ctx_idx: Int
-    ) raises:
-        @parameter
-        @always_inline
-        def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
+    ) raises {mut tt_in_bufs, imm}:
+        @inline(.always)
+        def call_fn(
+            ctx_inner: DeviceContext, cache_iter: Int
+        ) raises {mut tt_in_bufs, imm}:
             # Update input pointers to the cache-busted offset.
             comptime for dp_idx in range(dp_size):
                 tt_in_bufs[dp_idx] = TileTensor(
                     cb_inputs[dp_idx].offset_ptr(cache_iter),
                     row_major(num_elems),
-                ).as_immut()
+                ).as_imm()
 
             scatter[ngpus=ngpus, dp_size=dp_size](
                 tt_in_bufs,
@@ -196,9 +192,11 @@ def bench_scatter[
                 ctx_inner,
             )
 
-        bencher.iter_custom[call_fn](ctx)
+        bencher_iter_custom(bencher, call_fn, ctx)
 
-    b.bench_multicontext[bench_iter](
+    bench_multicontext(
+        b,
+        bench_iter,
         list_of_ctx,
         BenchId(name),
         [ThroughputMeasure(BenchMetric.bytes, num_bytes)],
@@ -255,7 +253,7 @@ def bench_scatter[
 def main() raises:
     var num_elems = arg_parse("num_elems", 16)
 
-    comptime dtype = get_defined_dtype["dtype", DType.uint32]()
+    comptime dtype = get_defined_dtype["dtype", .uint32]()
     comptime num_gpus = get_defined_int["num_gpus", 2]()
     comptime dp_size = get_defined_int["dp_size", 2]()
     comptime cache_busting = get_defined_bool["cache_busting", True]()

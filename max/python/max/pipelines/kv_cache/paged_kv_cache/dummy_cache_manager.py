@@ -21,9 +21,14 @@ from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.kv_cache import MHAKVCacheParams
 from max.nn.kv_cache.metrics import KVCacheMetrics
+from max.pipelines.context import TextContext
+from max.pipelines.kv_cache.kv_connector import (
+    CompletedTransfer,
+    KVTransfer,
+)
 from max.pipelines.modeling.types import RequestID
 
-from .cache_manager import PagedKVCacheManager
+from .cache_manager import BlockCount, ByteCount, PagedKVCacheManager
 
 
 class DummyKVCache(PagedKVCacheManager):
@@ -40,59 +45,46 @@ class DummyKVCache(PagedKVCacheManager):
             devices=[DeviceRef.CPU()],
         )
 
-    def get_pct_used_blocks_after_allocation(
-        self, *args: Any, **kwargs: Any
-    ) -> float:
-        """Returns a fixed low percentage (0.01)."""
-        return 0.01
-
-    def claim(self, request_id: RequestID, replica_idx: int) -> None:
+    def claim(self, ctx: TextContext, replica_idx: int = 0) -> None:
         """No-op."""
-        pass
 
-    def alloc(self, *args: Any, **kwargs: Any) -> None:
-        """No-op."""
+    def alloc(self, *args: Any, **kwargs: Any) -> KVTransfer:
+        """No-op; returns an already-complete transfer (nothing to onload)."""
+        return CompletedTransfer()
 
     def step(self, *args: Any, **kwargs: Any) -> None:
         """No-op."""
-        pass
 
-    def contains(self, request_id: RequestID, replica_idx: int) -> bool:
+    def poll_transfers(self) -> None:
+        """No-op; ``alloc`` posts nothing, so nothing is ever in flight."""
+
+    def pending_transfers_exist(self, replica_idx: int = 0) -> bool:
+        """Returns False, for the same reason."""
+        return False
+
+    def contains(self, ctx: TextContext) -> bool:
         """Returns True for any request."""
         return True
 
-    def release(self, request_id: RequestID, replica_idx: int) -> None:
+    def release(self, ctx: TextContext) -> None:
         """No-op."""
-        pass
 
-    def get_num_pages(self, replica_idx: int) -> int:
-        """Returns 1."""
-        return 1
+    def block_count(self, replica_idx: int = 0) -> BlockCount:
+        """Returns a single block; this cache never allocates, so it stays free."""
+        return BlockCount(free=1, total=1)
 
-    def get_num_used_pages(self, replica_idx: int) -> int:
-        """Returns 1."""
-        return 1
+    def host_byte_count(self) -> ByteCount:
+        """Returns one permanently used byte."""
+        return ByteCount(free=0, total=1)
 
-    def get_num_host_pages(self, replica_idx: int) -> int:
-        """Returns 1."""
-        return 1
-
-    def get_num_used_host_pages(self, replica_idx: int) -> int:
-        """Returns 1."""
-        return 1
-
-    def get_num_disk_pages(self, replica_idx: int) -> int:
-        """Returns 1."""
-        return 1
-
-    def get_num_used_disk_pages(self, replica_idx: int) -> int:
-        """Returns 1."""
-        return 1
+    def disk_byte_count(self) -> ByteCount:
+        """Returns one permanently used byte."""
+        return ByteCount(free=0, total=1)
 
     def get_metrics_aggregated(self) -> KVCacheMetrics:
         """Returns empty aggregated metrics."""
         return KVCacheMetrics()
 
-    def reset_metrics(self) -> None:
-        """No-op."""
-        pass
+    def take_metrics_aggregated(self) -> KVCacheMetrics:
+        """Returns empty aggregated metrics; nothing to reset."""
+        return KVCacheMetrics()

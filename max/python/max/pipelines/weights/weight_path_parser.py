@@ -41,31 +41,51 @@ class WeightPathParser:
 
         For example:
 
-        .. code-block:: pycon
+        .. code-block:: python
 
-            >>> WeightPathParser.parse("org/model", "path/to/weights.safetensors")
-            (["path/to/weights.safetensors"], None)
+            from pathlib import Path
 
-            >>> WeightPathParser.parse("org/model", ["path/to/weights1.safetensors", "path/to/weights2.safetensors"])
-            (["path/to/weights1.safetensors", "path/to/weights2.safetensors"], None)
+            from max.pipelines.weights.weight_path_parser import WeightPathParser
 
-            >>> WeightPathParser.parse("org/model", Path("path/to/weights.safetensors"))
-            ([Path("path/to/weights.safetensors")], None)
+            WeightPathParser.parse("org/model", "path/to/weights.safetensors")
+            # -> ([Path("path/to/weights.safetensors")], None)
 
-            >>> WeightPathParser.parse("org/model", "org/model/weights.safetensors")
-            ([Path("weights.safetensors")], "org/model")
+            WeightPathParser.parse(
+                "org/model",
+                ["path/to/weights1.safetensors", "path/to/weights2.safetensors"],
+            )
+            # -> ([Path("path/to/weights1.safetensors"),
+            #      Path("path/to/weights2.safetensors")], None)
 
-            >>> WeightPathParser.parse("org/model", ["local_weights.safetensors", "other_org/other_model/remote_weights.safetensors"])
-            ([Path("local_weights.safetensors"), Path("remote_weights.safetensors")], "other_org/other_model")
+            WeightPathParser.parse("org/model", Path("path/to/weights.safetensors"))
+            # -> ([Path("path/to/weights.safetensors")], None)
+
+            # A path under model_path's own repo is relative to that repo.
+            WeightPathParser.parse("org/model", "org/model/weights.safetensors")
+            # -> ([Path("weights.safetensors")], None)
+
+            WeightPathParser.parse(
+                "org/model",
+                [
+                    "local_weights.safetensors",
+                    "other_org/other_model/remote_weights.safetensors",
+                ],
+            )
+            # -> ([Path("local_weights.safetensors"),
+            #      Path("remote_weights.safetensors")], "other_org/other_model")
 
         When the weight path does not have a Hugging Face prefix,
         ``file_exists`` returns ``False`` and the whole path is treated as a
         local path:
 
-        .. code-block:: pycon
+        .. code-block:: python
 
-            >>> WeightPathParser.parse("org/model", "very/nested/subfolder/another_nested/weights.safetensors")
-            ([Path("very/nested/subfolder/another_nested/weights.safetensors")], None)
+            WeightPathParser.parse(
+                "org/model",
+                "very/nested/subfolder/another_nested/weights.safetensors",
+            )
+            # -> ([Path("very/nested/subfolder/another_nested/weights.safetensors")],
+            #     None)
 
         If ``model_path`` is empty and the repo ID cannot be derived, a
         ``ValueError`` is raised.
@@ -115,7 +135,7 @@ class WeightPathParser:
                 hf_weights_repo_id = extracted_repo_id
 
             # Skip empty sentinel paths returned when the input was a bare
-            # HF repo ID — files will be discovered by _resolve_weight_path.
+            # HF repo ID — files will be discovered by weight-path resolution.
             if str(path) == ".":
                 continue
 
@@ -158,7 +178,7 @@ class WeightPathParser:
         elif len(path_pieces) == 2 and not path.exists():
             # Bare HF repo ID (e.g. "org/model-NVFP4") used as a weight
             # source.  Return a sentinel empty path so that
-            # `_resolve_weight_path` discovers files from this repo.
+            # weight-path resolution discovers files from this repo.
             repo_id = str(path)
             try:
                 is_repo = huggingface_hub.repo_exists(repo_id)

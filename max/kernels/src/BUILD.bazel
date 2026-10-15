@@ -7,7 +7,7 @@ package(default_visibility = ["//max:consumers"])
 # land their files here in runfiles.
 exports_files(
     ["index.md"],
-    visibility = ["//KGEN/test/mojo-lsp-server/parse-tree:__pkg__"],
+    visibility = ["//Mojo/test/mojo-lsp-server/parse-tree:__pkg__"],
 )
 
 # Auto-discover all kernel library sub-packages, excluding private (underscore-
@@ -22,14 +22,13 @@ _KERNEL_LIBS = [
 # exclusions (e.g. graph_compiler/builtin_primitives) live in the BUILD file
 # for that container package; see //max/kernels/src/graph_compiler/BUILD.bazel.
 _EXCLUDED_KERNEL_LIBS = (
-    "layout",  # this package ships with Mojo and the docs are built for mojolang.org
     "graph_compiler",  # this is a container, not a real package; see //max/kernels/src/graph_compiler:docs
     "internal_utils",  # internal helpers
     "weights_registry",  # internal weight registration helpers
 )
 
-# Static landing page for `/max/api/kernels/`. Each kernel sub-package is its
-# own Bazel package (used throughout the codebase as `//max:linalg`, `//max:nn`,
+# Static landing page for `/api/mojo/`. Each kernel sub-package is its own
+# Bazel package (used throughout the codebase as `//max:linalg`, `//max:nn`,
 # etc.), so per-sub-package `.docs` are stitched into the published tree by the
 # `docs` `pkg_filegroup` below. The post-process-docs.py script injects a
 # `## Packages` listing into this page from the assembled sub-package index
@@ -58,6 +57,6 @@ pkg_filegroup(
     srcs = [":index.docs"] + [lib + ".docs" for lib in _KERNEL_LIBS if lib not in _EXCLUDED_KERNEL_LIBS] + [
         "//max/kernels/src/graph_compiler:docs",
     ],
-    prefix = "max/api/kernels",
+    prefix = "api/mojo",
     tags = ["manual"],
 )

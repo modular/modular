@@ -36,12 +36,10 @@ def group_norm(
     transform. Useful when the batch axis is small enough that batch
     normalization is unstable.
 
-    ``group_norm`` executes only on CUDA/HIP GPU targets, so this example
-    builds the graph but does not run it:
-
     .. code-block:: python
 
         from max.dtype import DType
+        from max.engine import InferenceSession
         from max.graph import DeviceRef, Graph, ops
 
         device = DeviceRef.CPU()
@@ -58,6 +56,19 @@ def group_norm(
                 ops.group_norm(x, gamma, beta, num_groups=2, epsilon=1e-5)
             )
 
+        model = InferenceSession().load(graph)
+        result = model.execute()[0]
+        # Each group (channels 0-1 and 2-3) is normalized to zero mean and
+        # approximately unit variance.
+
+    .. invisible-code-block: python
+
+        import numpy as np
+
+        assert np.allclose(
+            result.to_numpy(), [[[[-1.0]], [[1.0]], [[-1.0]], [[1.0]]]], atol=1e-3
+        )
+
     Args:
         input: The tensor to normalize, of shape
             ``(batch, channels, ...)``.
@@ -71,7 +82,7 @@ def group_norm(
             numerical stability.
 
     Returns:
-        A tensor with the same shape and dtype as ``input``.
+        A ``TensorValue`` with the same shape and dtype as ``input``.
 
     Raises:
         ValueError: If ``input`` has fewer than 2 dimensions.

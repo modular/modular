@@ -18,43 +18,45 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 import numpy as np
-from max.driver import Buffer, Device, DevicePinnedBuffer
-from max.dtype import DType
+from max.driver import Buffer
 from max.graph import BufferType, DeviceRef, TensorType
 from max.nn.comm.ep import EPCommInitializer
-from max.nn.kv_cache import KVCacheInputsInterface
+from max.nn.kv_cache import KVCacheInputs
 from max.nn.kv_cache.cache_params import KVCacheParamInterface
 from max.pipelines.context import TextContext
 from max.pipelines.lib.interfaces.arch_config import ArchConfig
 from max.pipelines.lib.interfaces.batch_processor import (
+    RAGGED_INPUT_ROW_OFFSETS,
+    RAGGED_INPUT_TOKENS,
     BatchProcessorRuntime,
+    InputsT,
     RaggedBatchProcessor,
     process_ragged_kv_outputs,
     ragged_kv_symbolic_inputs,
 )
 from max.pipelines.lib.interfaces.pipeline_model import ModelOutputs
 from max.pipelines.lib.utils import compute_data_parallel_splits
-from max.pipelines.lora import LoRAInputs
 from max.support.algorithm import flatten2d
 
 if TYPE_CHECKING:
     from .model import Llama3Inputs
 
 
-class Llama3BatchProcessor(RaggedBatchProcessor[TextContext, "Llama3Inputs"]):
-    """Ragged batching with pinned host buffers and optional DP / LoRA."""
+class Llama3BatchProcessorBase(RaggedBatchProcessor[TextContext, InputsT]):
+    """Ragged batching with pinned host buffers and optional DP / LoRA.
+
+    Generic in the ``*Inputs`` type so a model whose inputs are a sibling of
+    :class:`Llama3Inputs` rather than a subclass -- the whole DeepSeek V3
+    family -- can reuse this batching without claiming to produce
+    :class:`Llama3Inputs`. Subclasses bind ``InputsT`` and implement
+    :meth:`_make_inputs`; :class:`Llama3BatchProcessor` is the binding for
+    models that do produce :class:`Llama3Inputs`.
+    """
 
     def _stage_ragged_token_inputs(
-        self,
-        context_batch: Sequence[TextContext],
-        device0: Device,
+        self, context_batch: Sequence[TextContext]
     ) -> tuple[Buffer, Buffer, Buffer]:
-        """Stages ragged tokens/offsets into cached device buffers.
-
-        Fresh pinned host staging is allocated every step (never reused) so the
-        next overlap step's host writes can't clobber the in-flight H2D copy.
-        Destination device buffers are cached and reused so captured graphs
-        replay in place.
+        """Stages this batch's ragged tokens and row offsets.
 
         Returns:
             ``(device_tokens, device_row_offsets, host_row_offsets)``; the host
@@ -62,46 +64,24 @@ class Llama3BatchProcessor(RaggedBatchProcessor[TextContext, "Llama3Inputs"]):
         """
         batch_size = len(context_batch)
         total_seq_len = sum(ctx.tokens.active_length for ctx in context_batch)
-        pinned = not device0.is_host
 
-        host_buffer_cls = DevicePinnedBuffer if pinned else Buffer
-        host_tokens: Buffer = host_buffer_cls(
-            dtype=DType.int64, shape=(total_seq_len,), device=device0
-        )
-        host_row_offsets: Buffer = host_buffer_cls(
-            dtype=DType.uint32, shape=(batch_size + 1,), device=device0
-        )
-
-        np.cumsum(
-            [0] + [ctx.tokens.active_length for ctx in context_batch],
-            dtype=np.uint32,
-            out=host_row_offsets.to_numpy(),
-        )
-        if context_batch:
-            np.concatenate(
-                [ctx.tokens.active for ctx in context_batch],
-                out=host_tokens.to_numpy(),
+        with self._stager.stage() as staging:
+            host_tokens, (device_tokens,) = staging.get(
+                RAGGED_INPUT_TOKENS, (total_seq_len,)
             )
-
-        if not pinned:
-            # On host there is no separate device memory; the graph reads the
-            # host buffers directly.
-            return host_tokens, host_row_offsets, host_row_offsets
-
-        device_tokens = self._device_input_allocator.alloc(
-            name="ragged_input_tokens",
-            dtype=DType.int64,
-            shape=(total_seq_len,),
-            device=device0,
-        )
-        device_row_offsets = self._device_input_allocator.alloc(
-            name="ragged_input_row_offsets",
-            dtype=DType.uint32,
-            shape=(batch_size + 1,),
-            device=device0,
-        )
-        device_tokens.inplace_copy_from(host_tokens)
-        device_row_offsets.inplace_copy_from(host_row_offsets)
+            host_row_offsets, (device_row_offsets,) = staging.get(
+                RAGGED_INPUT_ROW_OFFSETS, (batch_size + 1,)
+            )
+            np.cumsum(
+                [0] + [ctx.tokens.active_length for ctx in context_batch],
+                dtype=np.uint32,
+                out=host_row_offsets.to_numpy(),
+            )
+            if context_batch:
+                np.concatenate(
+                    [ctx.tokens.active for ctx in context_batch],
+                    out=host_tokens.to_numpy(),
+                )
         return device_tokens, device_row_offsets, host_row_offsets
 
     def get_symbolic_inputs(
@@ -119,10 +99,9 @@ class Llama3BatchProcessor(RaggedBatchProcessor[TextContext, "Llama3Inputs"]):
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
-    ) -> Llama3Inputs:
-        from .model import Llama3Inputs
+    ) -> InputsT:
 
         dp = self.runtime.pipeline_config.model.data_parallel_degree
         if len(replica_batches) != dp:
@@ -131,10 +110,9 @@ class Llama3BatchProcessor(RaggedBatchProcessor[TextContext, "Llama3Inputs"]):
             )
 
         context_batch = flatten2d(replica_batches)
-        device0 = self.runtime.devices[0]
 
-        device_tokens, device_row_offsets, host_row_offsets = (
-            self._stage_ragged_token_inputs(context_batch, device0)
+        device_tokens, device_row_offsets, _ = self._stage_ragged_token_inputs(
+            context_batch
         )
 
         return_n_logits_tensor = Buffer.from_numpy(
@@ -148,7 +126,7 @@ class Llama3BatchProcessor(RaggedBatchProcessor[TextContext, "Llama3Inputs"]):
         else:
             data_parallel_splits = None
 
-        inputs = Llama3Inputs(
+        return self._make_inputs(
             tokens=device_tokens,
             input_row_offsets=device_row_offsets,
             return_n_logits=return_n_logits_tensor,
@@ -157,15 +135,20 @@ class Llama3BatchProcessor(RaggedBatchProcessor[TextContext, "Llama3Inputs"]):
             data_parallel_splits=data_parallel_splits,
         )
 
-        lora_manager = self.runtime.lora_manager
-        if lora_manager is not None:
-            inputs.lora = LoRAInputs(
-                *lora_manager.get_lora_graph_inputs(
-                    context_batch, host_row_offsets.to_numpy(), device0
-                )
-            )
-
-        return inputs
+    def _make_inputs(
+        self,
+        *,
+        tokens: Buffer,
+        input_row_offsets: Buffer,
+        return_n_logits: Buffer,
+        signal_buffers: list[Buffer],
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None,
+        data_parallel_splits: Buffer | None,
+    ) -> InputsT:
+        """Constructs this processor's ``*Inputs`` from the batched fields."""
+        raise NotImplementedError(
+            f"{type(self).__qualname__} must implement _make_inputs"
+        )
 
     def process_outputs(
         self, outputs: Sequence[Buffer | object]
@@ -177,7 +160,32 @@ class Llama3BatchProcessor(RaggedBatchProcessor[TextContext, "Llama3Inputs"]):
         )
 
 
-class Llama3EpBatchProcessor(Llama3BatchProcessor):
+class Llama3BatchProcessor(Llama3BatchProcessorBase["Llama3Inputs"]):
+    """Ragged batching for models whose inputs are :class:`Llama3Inputs`."""
+
+    def _make_inputs(
+        self,
+        *,
+        tokens: Buffer,
+        input_row_offsets: Buffer,
+        return_n_logits: Buffer,
+        signal_buffers: list[Buffer],
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None,
+        data_parallel_splits: Buffer | None,
+    ) -> Llama3Inputs:
+        from .model import Llama3Inputs
+
+        return Llama3Inputs(
+            tokens=tokens,
+            input_row_offsets=input_row_offsets,
+            return_n_logits=return_n_logits,
+            signal_buffers=signal_buffers,
+            kv_cache_inputs=kv_cache_inputs,
+            data_parallel_splits=data_parallel_splits,
+        )
+
+
+class Llama3EpBatchProcessorBase(Llama3BatchProcessorBase[InputsT]):
     """Llama3 batching extended with EP MoE communication buffers."""
 
     def __init__(
@@ -223,10 +231,9 @@ class Llama3EpBatchProcessor(Llama3BatchProcessor):
             )
 
         context_batch = flatten2d(replica_batches)
-        device0 = self.runtime.devices[0]
 
         device_tokens, device_row_offsets, host_row_offsets = (
-            self._stage_ragged_token_inputs(context_batch, device0)
+            self._stage_ragged_token_inputs(context_batch)
         )
 
         return_n_logits_tensor = Buffer.from_numpy(
@@ -248,3 +255,9 @@ class Llama3EpBatchProcessor(Llama3BatchProcessor):
             self._ep_inputs(),
             self._host_input_row_offsets_for_dp(host_row_offsets, dp),
         )
+
+
+class Llama3EpBatchProcessor(
+    Llama3EpBatchProcessorBase["Llama3Inputs"], Llama3BatchProcessor
+):
+    """EP MoE batching for models whose inputs are :class:`Llama3Inputs`."""

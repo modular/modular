@@ -89,8 +89,51 @@ class EPConfig:
     dispatch_quant_config: QuantConfig | None = None
     """Quantization configuration used for dispatch token quantization."""
 
+    nvfp4_dyn_global_scales: bool = False
+    """Quantize each NVFP4 dispatch token against its own global scale.
+
+    Instead of the checkpoint's static input scale, the dispatch kernel first
+    reduces each token's absolute max, then quantizes the token against
+    ``2688 / rowmax``. The scale's BF16 inverse travels with the token, and
+    the dispatch outputs gain ``output_rowwise_scales`` -- one per received
+    row, directly after the block scales -- so a received row dequantizes as
+    ``fp4 * block_scale * rowwise_scale``. Requires NVFP4 dispatch.
+    """
+
     fused_shared_expert: bool = False
     """Whether to fuse the shared expert computation with the routed experts."""
+
+    fuse_ffn_combine_send: bool = False
+    """Fuse the combine send into the MoE FFN's own epilogue.
+
+    The FFN's down-projection epilogue scatters each finished row straight
+    into the owning rank's receive buffer and releases the arrival signal
+    itself, so the FFN's output is never staged in a local tensor: the
+    ``(max_recv_tokens, hidden_size)`` buffer the unfused chain has to
+    materialize -- the largest single activation in the MoE region -- is not
+    allocated. The caller drops its ``combine_async`` and goes straight to
+    the wait, which reads only the symmetric receive buffers.
+
+    Opt-in per model rather than always-on: the send pays for itself at
+    prefill-scale tokens per expert and is neutral below, so it is a recipe
+    choice rather than a universal default. Incompatible with
+    ``use_allreduce`` (no peer buffers to write) and with
+    ``fused_shared_expert`` (which keeps the shared expert's rows in the very
+    tensor being elided); both raise rather than degrade silently.
+    """
+
+    moe_dim: int = 0
+    """Intermediate width of the routed experts' FFN, when the model provides
+    it. A config that gives it gets the fused MoE counters' reserve in its EP
+    sync-counter buffers. It does not request the fused MoE, which needs
+    ``MODULAR_EP_FUSED_MOE=1`` and a configuration the backend serves."""
+
+    fused_moe_ready: bool = False
+    """Whether EP init set up the backend's one-launch fused MoE for this
+    configuration. Set by :class:`EPCommInitializer` when
+    ``MODULAR_EP_FUSED_MOE=1`` requests it and the backend serves the
+    configuration; layers whose experts the fused op serves then run
+    dispatch, FFN and combine as one launch."""
 
     use_allreduce: bool = False
     """Whether to use allreduce for the cross-device communication."""
@@ -116,15 +159,6 @@ class EPConfig:
     model's first __init__ pass (no re-shard needed).
     """
 
-    mxfp4_a_scales_preshuffled: bool = False
-    """When True (KS224 up-proj fusion, MXFP4 preshuffled-B path on
-    AMD), the dispatch-wait kernel writes the per-token E8M0 activation scale
-    directly into the up-proj grouped-matmul's per-expert fixed-stride
-    ``scale_4d`` slot layout, so the standalone preshuffle kernel is dropped from
-    the decode critical path. The dispatch scales output is then slot-sized
-    (``n_local_experts * align_up(max_recv_tokens_per_expert, 32)`` rows)
-    instead of ``max_recv_tokens`` rows. Set by ``MoEQuantized`` when the MXFP4
-    strategy uses preshuffled B. Only valid for MXFP4 dispatch."""
     # In EPConfig, alongside n_experts / num_moe_layers / max_replicas:
 
     num_logical_experts: int = 0
@@ -157,6 +191,12 @@ class EPConfig:
             n_gpus_per_node=self.n_gpus_per_node,
             top_k=self.top_k,
             use_allreduce=self.use_allreduce,
+            dispatch_element_dtype=(
+                self.dispatch_quant_config.mx_element_dtype
+                if self.dispatch_quant_config is not None
+                and self.dispatch_quant_config.is_mx
+                else None
+            ),
         )
 
     def get_max_recv_tokens(self) -> int:
@@ -169,6 +209,17 @@ class EPConfig:
             return self.max_tokens_per_rank * min(
                 self.n_experts, n_ranks * self.top_k
             )
+
+    def _max_recv_tokens_per_expert(self, alignment: int = 32) -> int:
+        """Returns the most tokens one local expert can receive, rounded up to
+        a multiple of ``alignment``: every rank can route all of its tokens to
+        it. The default alignment gives the per-expert A-scale slot stride of
+        the MX grouped matmul, which the MX dispatch ops derive the same way
+        from their EP geometry."""
+        n_ranks = self.n_gpus_per_node * self.n_nodes
+        return (
+            ceildiv(self.max_tokens_per_rank * n_ranks, alignment) * alignment
+        )
 
     def __post_init__(self):
         if self.num_logical_experts == 0:
@@ -187,15 +238,26 @@ class EPConfig:
                     )
 
             elif self.dispatch_dtype in (DType.uint8, DType.float4_e2m1fn):
-                if not self.dispatch_quant_config.is_fp4:
+                if not (
+                    self.dispatch_quant_config.is_fp4
+                    or self.dispatch_quant_config.is_mxfp6
+                ):
                     raise ValueError(
-                        "dispatch_quant_config must be an FP4 configuration when dispatch_dtype is uint8 or float4_e2m1fn"
+                        "dispatch_quant_config must be an FP4 or MXFP6 configuration when dispatch_dtype is uint8 or float4_e2m1fn"
                     )
 
             else:
                 raise ValueError(
                     f"Unsupported dispatch dtype: {self.dispatch_dtype}"
                 )
+
+        if self.nvfp4_dyn_global_scales and (
+            self.dispatch_quant_config is None
+            or not self.dispatch_quant_config.is_nvfp4
+        ):
+            raise ValueError(
+                "nvfp4_dyn_global_scales requires an NVFP4 dispatch_quant_config"
+            )
 
         if self.use_allreduce and self.n_nodes > 1:
             raise ValueError(
@@ -235,6 +297,7 @@ def estimate_ep_memory_usage(
     n_gpus_per_node: int,
     top_k: int,
     use_allreduce: bool = False,
+    dispatch_element_dtype: DType | None = None,
 ) -> int:
     """Estimate the EP communication memory usage per device per buffer group.
 
@@ -253,12 +316,23 @@ def estimate_ep_memory_usage(
         top_k: Number of experts each token is routed to.
         use_allreduce: Whether allreduce is used for cross-device communication.
             When True, dispatch/combine buffers are sized for local experts only.
+        dispatch_element_dtype: The logical element dtype behind a packed
+            ``uint8`` dispatch dtype (see
+            :attr:`~max.nn.quant_config.QuantConfig.mx_element_dtype`). ``uint8``
+            alone cannot say whether the bytes are FP4 or FP6, and the two pack
+            to different widths, so sizing needs the element type. ``None`` for
+            formats whose dtype already identifies them.
 
     Returns:
         Total estimated memory usage in bytes per device per buffer group.
     """
 
     def _n_elems_to_bytes(dtype: DType, n_elems: int) -> int:
+        if dtype == DType.uint8 and dispatch_element_dtype in (
+            DType.float6_e2m3fn,
+            DType.float6_e3m2fn,
+        ):
+            return n_elems * 3 // 4 + n_elems // 32
         if dtype in (DType.uint8, DType.float4_e2m1fn):
             # Account for the scales. For NVFP4 format, every 16 FP4 elements
             # share one FP8 scale factor. The size of the scales is one eighth
@@ -332,3 +406,17 @@ def calculate_ep_max_tokens_per_rank(
     # must be ceil, not floor — otherwise the dispatch kernel rejects the
     # largest shard (see ep.mojo dispatch assertion).
     return ceildiv(max_batch_input_tokens, tp_size)
+
+
+_EP_LOCAL_SYNC_RESERVED_WORDS = 262144
+"""Int32 words (1 MiB) reserved for the fused MegaMoE counters at the end of
+each EP sync-counter buffer of a config that gives ``moe_dim``. Mirrors
+``EP_LOCAL_SYNC_RESERVED_WORDS`` in ``ep_comm.mojo``; the fused path asserts
+that its counters fit."""
+
+
+def _ep_fused_moe_requested() -> bool:
+    """Returns whether ``MODULAR_EP_FUSED_MOE=1`` asks EP init to set up the
+    backend's one-launch fused MoE. Internal and off by default; the backend
+    decides whether it serves the configuration."""
+    return os.environ.get("MODULAR_EP_FUSED_MOE", "0") == "1"

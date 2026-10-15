@@ -13,9 +13,10 @@
 
 import std.math as math
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Coord, Idx, TileTensor, row_major
-from nn.normalization import rms_norm_rope_gpu
+from builtin_kernels.rowwise_normalization import rms_norm_rope
+from std.sys import align_of
 from std.testing import assert_almost_equal
 from std.utils.numerics import get_accum_type
 
@@ -25,11 +26,11 @@ from std.utils.index import Index, IndexList
 def compute_rms_norm_rope_ref[
     dtype: DType, output_dtype: DType, cos_sin_dtype: DType
 ](
-    input_h: UnsafePointer[Scalar[dtype], _],
-    gamma_h: UnsafePointer[Scalar[dtype], _],
-    cos_h: UnsafePointer[Scalar[cos_sin_dtype], _],
-    sin_h: UnsafePointer[Scalar[cos_sin_dtype], _],
-    output_ref: UnsafePointer[mut=True, Scalar[output_dtype], _],
+    input_h: Pointer[Scalar[dtype], _],
+    gamma_h: Pointer[Scalar[dtype], _],
+    cos_h: Pointer[Scalar[cos_sin_dtype], _],
+    sin_h: Pointer[Scalar[cos_sin_dtype], _],
+    output_ref: MutPointer[Scalar[output_dtype], _],
     rows: Int,
     cols: Int,
     epsilon: Float32,
@@ -141,45 +142,60 @@ def run_rms_norm_rope_gpu[
     var cos_vals = TileTensor(cos_d, row_major(Coord(shape)))
     var sin_vals = TileTensor(sin_d, row_major(Coord(shape)))
 
-    @always_inline
-    @__copy_capture(data_buf)
-    @parameter
+    @inline(.always)
     def input_fn[
-        width: Int, _rank: Int, alignment: Int
-    ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
-        var idx = data_buf.layout(Coord(coords))
-        return data_buf.raw_load[width=width, alignment=alignment](idx)
-
-    @always_inline
-    @__copy_capture(cos_vals)
-    @parameter
-    def cos_fn[
-        width: Int, _rank: Int, alignment: Int
-    ](coords: IndexList[_rank]) -> SIMD[cos_sin_dtype, width]:
-        var idx = cos_vals.layout(Coord(coords))
-        return cos_vals.raw_load[width=width, alignment=alignment](idx)
-
-    @always_inline
-    @__copy_capture(sin_vals)
-    @parameter
-    def sin_fn[
-        width: Int, _rank: Int, alignment: Int
-    ](coords: IndexList[_rank]) -> SIMD[cos_sin_dtype, width]:
-        var idx = sin_vals.layout(Coord(coords))
-        return sin_vals.raw_load[width=width, alignment=alignment](idx)
-
-    @always_inline
-    @__copy_capture(output_buf)
-    @parameter
-    def output_fn[
         width: Int, alignment: Int
-    ](coords: IndexList[rank], val: SIMD[output_dtype, width]) -> None:
-        var idx = output_buf.layout(Coord(coords))
-        output_buf.raw_store[width=width, alignment=alignment](idx, val)
+    ](coords: Coord) {var data_buf} -> SIMD[dtype, width]:
+        var idx = data_buf.layout(coords)
+        return data_buf.raw_load[
+            width=width, alignment=alignment * align_of[dtype]()
+        ](idx)
 
-    rms_norm_rope_gpu[
-        input_fn, cos_fn, sin_fn, output_fn, multiply_before_cast=True
-    ](shape, gamma, epsilon, weight_offset, cos_vals, sin_vals, ctx)
+    @inline(.always)
+    def cos_fn[
+        width: Int, alignment: Int
+    ](coords: Coord) {var cos_vals} -> SIMD[cos_sin_dtype, width]:
+        var idx = cos_vals.layout(coords)
+        return cos_vals.raw_load[
+            width=width, alignment=alignment * align_of[cos_sin_dtype]()
+        ](idx)
+
+    @inline(.always)
+    def sin_fn[
+        width: Int, alignment: Int
+    ](coords: Coord) {var sin_vals} -> SIMD[cos_sin_dtype, width]:
+        var idx = sin_vals.layout(coords)
+        return sin_vals.raw_load[
+            width=width, alignment=alignment * align_of[cos_sin_dtype]()
+        ](idx)
+
+    @inline(.always)
+    def output_fn[
+        width: SIMDLength, alignment: Int
+    ](coords: Coord, val: SIMD[output_dtype, width]) {var output_buf} -> None:
+        var idx = output_buf.layout(coords)
+        output_buf.raw_store[
+            width=width, alignment=alignment * align_of[output_dtype]()
+        ](idx, val)
+
+    rms_norm_rope[
+        dtype,
+        output_dtype,
+        cos_sin_dtype,
+        rank,
+        target="gpu",
+    ](
+        input_fn,
+        cos_fn,
+        sin_fn,
+        output_fn,
+        Coord(shape),
+        Int(cols),
+        gamma,
+        epsilon.cast[dtype](),
+        weight_offset,
+        ctx,
+    )
 
     ctx.enqueue_copy(result_gpu, output_d)
     ctx.synchronize()
@@ -198,22 +214,22 @@ def run_rms_norm_rope_gpu[
 def main() raises:
     with DeviceContext() as ctx:
         # Basic shapes
-        run_rms_norm_rope_gpu[DType.float32](ctx, Index(2, 4))
-        run_rms_norm_rope_gpu[DType.float32](ctx, Index(3, 8))
-        run_rms_norm_rope_gpu[DType.float32](ctx, Index(5, 16))
+        run_rms_norm_rope_gpu[.float32](ctx, Index(2, 4))
+        run_rms_norm_rope_gpu[.float32](ctx, Index(3, 8))
+        run_rms_norm_rope_gpu[.float32](ctx, Index(5, 16))
         # Higher rank
-        run_rms_norm_rope_gpu[DType.float32](ctx, Index(2, 3, 8))
-        run_rms_norm_rope_gpu[DType.float32](ctx, Index(1, 5, 6, 16))
+        run_rms_norm_rope_gpu[.float32](ctx, Index(2, 3, 8))
+        run_rms_norm_rope_gpu[.float32](ctx, Index(1, 5, 6, 16))
         # Larger cols
-        run_rms_norm_rope_gpu[DType.float32](ctx, Index(4, 128))
-        run_rms_norm_rope_gpu[DType.float32](ctx, Index(2, 256))
-        run_rms_norm_rope_gpu[DType.float32](ctx, Index(2, 4096))
+        run_rms_norm_rope_gpu[.float32](ctx, Index(4, 128))
+        run_rms_norm_rope_gpu[.float32](ctx, Index(2, 256))
+        run_rms_norm_rope_gpu[.float32](ctx, Index(2, 4096))
         # bfloat16
         # BFloat16 accumulates rounding from both RMSNorm and RoPE; use 5%.
-        run_rms_norm_rope_gpu[DType.bfloat16](ctx, Index(3, 128), rtol=5e-2)
-        run_rms_norm_rope_gpu[DType.bfloat16](ctx, Index(2, 4096), rtol=5e-2)
+        run_rms_norm_rope_gpu[.bfloat16](ctx, Index(3, 128), rtol=5e-2)
+        run_rms_norm_rope_gpu[.bfloat16](ctx, Index(2, 4096), rtol=5e-2)
         # Mixed cos/sin dtype
-        run_rms_norm_rope_gpu[DType.bfloat16, cos_sin_dtype=DType.float32](
+        run_rms_norm_rope_gpu[.bfloat16, cos_sin_dtype=DType.float32](
             ctx, Index(2, 128), rtol=5e-2
         )
         # Decoupled output dtype: f32 input/weight, bf16 output (the JSC-32

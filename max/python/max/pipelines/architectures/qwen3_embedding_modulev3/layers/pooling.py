@@ -28,8 +28,7 @@ def last_token_pool(
     end_offsets = input_row_offsets[1:]
     end_offsets = end_offsets.to(hidden_states.device)
 
-    one = F.constant(1, DType.uint32, device=hidden_states.device)
-    last_token_indices = end_offsets - one
+    last_token_indices = end_offsets - 1
     last_token_indices_i32 = last_token_indices.cast(DType.int32)
 
     pooled = F.gather(hidden_states, last_token_indices_i32, axis=0)
@@ -42,8 +41,7 @@ def normalize_embeddings(embeddings: Tensor) -> Tensor:
 
     embeddings_squared = embeddings_f32 * embeddings_f32
     norm_squared = F.sum(embeddings_squared, axis=-1)
-    epsilon = F.constant(1e-12, DType.float32, embeddings_f32.device)
-    norm = F.sqrt(norm_squared + epsilon)
+    norm = F.sqrt(norm_squared + 1e-12)
     embeddings_normalized = embeddings_f32 / norm
 
     return embeddings_normalized

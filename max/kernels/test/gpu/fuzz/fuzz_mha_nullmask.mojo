@@ -16,11 +16,11 @@
 # (memcheck/redzone) by default; with --check, numerical (flash vs the naive MHA
 # reference) under the `ref` oracle.
 
-from std.math import max, min
+from std.math import min
 from std.random import rand, random_ui64, seed
 from std.sys.defines import get_defined_int
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Idx, TileTensor, row_major
 from nn.attention.gpu.mha import flash_attention, mha_gpu_naive
 from nn.attention.mha_mask import NullMask

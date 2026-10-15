@@ -33,6 +33,7 @@ from max.pipelines.modeling.types import (
     TextGenerationInputs,
     TextGenerationRequest,
     TextGenerationRequestMessage,
+    TokenIds,
 )
 
 
@@ -49,9 +50,9 @@ class EchoPipelineTokenizer(
     """
 
     @property
-    def eos(self) -> int:
-        """Return a dummy EOS token ID."""
-        return 0
+    def eos_token_ids(self) -> set[int]:
+        """Echo has no EOS; generation stops by length."""
+        return set()
 
     @property
     def expects_content_wrapping(self) -> bool:
@@ -80,17 +81,12 @@ class EchoPipelineTokenizer(
                 raise ValueError("Prompt cannot be empty")
             return np.array(tokens, dtype=np.int64)
 
-    async def decode(
-        self, encoded: npt.NDArray[np.integer[Any]], **kwargs
-    ) -> str:
+    async def decode(self, encoded: TokenIds, **kwargs) -> str:
         """Decode token IDs back to text.
 
         Convert ASCII values back to characters.
         """
-        if isinstance(encoded, int):
-            encoded = np.array([encoded])
-        elif encoded.ndim == 0:
-            encoded = np.array([encoded.item()])
+        encoded = np.atleast_1d(np.asarray(encoded))
 
         # Convert ASCII values back to characters
         try:
@@ -122,10 +118,8 @@ class EchoPipelineTokenizer(
         encoded_prompt = await self.encode(prompt, add_special_tokens=False)
 
         # Determine max tokens
-        max_new_tokens = (
-            request.sampling_params.max_new_tokens
-            if request.sampling_params.max_new_tokens
-            else len(encoded_prompt)
+        max_new_tokens = request.sampling_params.max_new_tokens or len(
+            encoded_prompt
         )
         max_length = len(encoded_prompt) + max_new_tokens
 
@@ -138,7 +132,7 @@ class EchoPipelineTokenizer(
             max_length=max_length,
             tokens=token_buffer,
             eos_tracker=await build_eos_tracker_for_request(
-                {self.eos},
+                self.eos_token_ids,
                 request,
                 self.encode,
             ),

@@ -21,7 +21,7 @@ two halves as :meth:`Vae.encode` / :meth:`Vae.decode` rather than a
 single ``forward``.
 
 The whole package is self-contained -- the supporting building blocks
-(``Encoder``, ``Decoder``, ``DownEncoderBlock2D``, etc.), the per-
+(``Encoder``, ``Decoder``, ``DownEncoderBlock2D`` and so on), the per-
 layer modules (``Downsample2D``, ``ResnetBlock2D``, ...), and the
 config class live alongside ``Vae`` so the demonstration does not
 depend on the broader ``autoencoders_modulev3`` package.

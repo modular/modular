@@ -1,5 +1,6 @@
 load(
     "//bazel:api.bzl",
+    "modular_py_library",
     "modular_py_test",
     "requirement",
 )
@@ -53,7 +54,6 @@ modular_py_test(
         "//max/python/max/pipelines/architectures/gemma4",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
-        "//max/python/max/pipelines/request",
         requirement("numpy"),
     ],
 )
@@ -64,6 +64,7 @@ modular_py_test(
     srcs = glob(
         ["**/test_*.py"],
         exclude = [
+            "test_attention.py",
             "test_batch_vision_inputs.py",
             "test_config_init.py",
             "test_fused_projection_weights.py",
@@ -74,10 +75,7 @@ modular_py_test(
             "test_video_processor.py",
             "test_vision_rotary_embedding.py",
         ],
-    ) + [
-        "_attention_helpers.py",
-        "conftest.py",
-    ],
+    ),
     data = [
         "//max/tests/integration/architectures/gemma4/testdata",
     ],
@@ -90,28 +88,22 @@ modular_py_test(
         "test.resources:gpu-memory": "16",
     },
     gpu_constraints = ["//:has_gpu"],
-    # test_attention.py: 4 tests, 4 shards = one test per shard, compiles run in parallel
-    per_test_shard_count = {
-        "test_attention.py": 4,
-    },
+    precompile_mefs = True,
     tags = ["gpu"],
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
     deps = [
+        ":gemma4_torch_reference",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
         "//max/python/max/nn",
         "//max/python/max/pipelines/architectures/gemma4",
-        "//max/python/max/pipelines/kv_cache",
-        "//max/tests/integration/test_common:context_utils",
-        "//max/tests/integration/test_common:graph_utils",
         requirement("numpy"),
         requirement("torch"),
-        requirement("transformers"),
     ],
 )
 
@@ -143,6 +135,7 @@ modular_py_test(
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/modeling",
+        "//max/python/max/support",
         requirement("numpy"),
         requirement("pillow"),
         requirement("pytest-asyncio"),
@@ -164,9 +157,10 @@ modular_py_test(
     name = "test_tool_parser",
     srcs = ["test_tool_parser.py"],
     deps = [
+        "//max/python/max/_xgrammar",
         "//max/python/max/pipelines/architectures/gemma4",
+        "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/modeling",
-        requirement("llguidance"),
     ],
 )
 
@@ -200,5 +194,81 @@ modular_py_test(
         "//max/python/max/graph",
         "//max/python/max/pipelines/architectures/gemma4",
         requirement("torch"),
+    ],
+)
+
+modular_py_library(
+    name = "gemma4_torch_reference",
+    testonly = True,
+    srcs = ["conftest.py"],
+    imports = ["."],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/pipelines/architectures/gemma4",
+        requirement("pytest"),
+        requirement("torch"),
+        requirement("transformers"),
+    ],
+)
+
+modular_py_library(
+    name = "attention_helpers",
+    testonly = True,
+    srcs = [
+        "_attention_helpers.py",
+    ],
+    data = [
+        "//max/tests/integration/architectures/gemma4/testdata",
+    ],
+    imports = ["."],
+    deps = [
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/gemma4",
+        "//max/python/max/pipelines/kv_cache",
+        requirement("torch"),
+        requirement("transformers"),
+    ],
+)
+
+modular_py_test(
+    name = "test_attention",
+    size = "large",
+    srcs = ["test_attention.py"],
+    data = [
+        "//max/tests/integration/architectures/gemma4/testdata",
+    ],
+    env = {
+        "PIPELINES_TESTDATA": "max/tests/integration/architectures/gemma4/testdata",
+        "MODULAR_TORCH_MEMORY_PERCENT": "0.5",
+    },
+    exec_properties = {
+        # Increased from 4 to 16 due to MODELS-958
+        "test.resources:gpu-memory": "16",
+    },
+    gpu_constraints = ["//:has_gpu"],
+    precompile_mefs = True,
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":attention_helpers",
+        ":gemma4_torch_reference",
+        "//max/python/max:tree",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/tests/integration/test_common:context_utils",
+        "//max/tests/integration/test_common:graph_utils",
+        requirement("numpy"),
+        requirement("torch"),
+        requirement("transformers"),
     ],
 )

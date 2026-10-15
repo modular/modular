@@ -28,9 +28,9 @@ K and V are extensively sub-staged to fit in SMEM:
 from std.math import align_down
 from std.sys import size_of
 from std.bit import prev_power_of_two
-from std.gpu.globals import WARP_SIZE, WARPGROUP_SIZE
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.host.info import B200
+from max.gpu.globals import WARP_SIZE, WARPGROUP_SIZE
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host.info import B200
 
 from nn.attention.gpu.nvidia.sm100.attention import SM100_RESERVED_SMEM_BYTES
 
@@ -170,35 +170,35 @@ struct Depth512SM100Config[
         self.TMEM_O = 0
         self.TMEM_O_hi = ov_depth // 4  # only meaningful when split_o
         self.TMEM_S_even = self.MMA_M * ov_depth // 256
-        s_cols = self.MMA_M * self.BN // 256
+        var s_cols = self.MMA_M * self.BN // 256
         self.TMEM_S_odd = self.TMEM_S_even + s_cols
         self.tmem_used = self.TMEM_S_odd + s_cols
 
         # SMEM budget
-        var smem_use = size_of[UInt32]()  # tmem_addr
+        var smem_use = 0
 
         # Q: BM rows × full depth
-        q_bytes = self.BM * qk_depth * Self.qkv_dtype_size
+        var q_bytes = self.BM * qk_depth * Self.qkv_dtype_size
 
         # P buffer: BM × BN (softmax writes P here for SS MMA P@V)
         self.p_buf_bytes = self.BM * self.BN * Self.qkv_dtype_size
 
         # Correction: BM float32 elements
-        correction_bytes = self.BM * size_of[DType.float32]()
+        var correction_bytes = self.BM * size_of[DType.float32]()
 
         # Fixed barriers: 10 when split_o (PO_hi + O_mma_hi), 8 otherwise.
-        misc_mbars_fixed = 10 if self.split_o else 8
+        var misc_mbars_fixed = 10 if self.split_o else 8
         smem_use += q_bytes + self.p_buf_bytes + correction_bytes
         smem_use += misc_mbars_fixed * Self.mbar_size
 
         # KV pipeline: fused K/V sub-tiles share buffer slots.
         # K sub-tile: (BN//2) × BK0 elements
         # V sub-tile: BK1 × v_cols_per_cta elements
-        kv_sub_tile_bytes = (self.BN // 2) * self.BK0 * Self.qkv_dtype_size
-        kv_barrier_bytes = 2 * Self.mbar_size  # per buffer slot
-        bytes_per_slot = kv_sub_tile_bytes + kv_barrier_bytes
+        var kv_sub_tile_bytes = (self.BN // 2) * self.BK0 * Self.qkv_dtype_size
+        var kv_barrier_bytes = 2 * Self.mbar_size  # per buffer slot
+        var bytes_per_slot = kv_sub_tile_bytes + kv_barrier_bytes
 
-        remaining = Self.sm100_smem_carveout - smem_use
+        var remaining = Self.sm100_smem_carveout - smem_use
         self.num_kv_stages = remaining // bytes_per_slot
         self.num_kv_stages = min(
             self.num_kv_stages, (32 - misc_mbars_fixed) // 2
@@ -207,7 +207,7 @@ struct Depth512SM100Config[
 
         self.smem_used = smem_use
 
-    @always_inline
+    @inline(.always)
     def BM_eff(self) -> Int:
         """Number of distinct sequence positions per CTA tile.
 
@@ -218,23 +218,23 @@ struct Depth512SM100Config[
             return self.BM // self.group
         return self.BM
 
-    @always_inline
+    @inline(.always)
     def rope_depth(self) -> Int:
         return self.qk_depth - self.ov_depth
 
-    @always_inline
+    @inline(.always)
     def num_q(self) -> Int:
         return 1
 
-    @always_inline
+    @inline(.always)
     def correction_smem_elements(self) -> Int:
         return self.BM
 
-    @always_inline
+    @inline(.always)
     def num_active_warps_per_group(self) -> Int:
         return 4
 
-    @always_inline
+    @inline(.always)
     def num_active_threads_per_group(self) -> Int:
         return WARP_SIZE * self.num_active_warps_per_group()
 

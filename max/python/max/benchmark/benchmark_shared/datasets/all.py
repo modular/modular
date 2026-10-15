@@ -29,6 +29,10 @@ from max.benchmark.benchmark_shared.datasets._tokenizer_pool import (
 from max.benchmark.benchmark_shared.datasets.agentic_code import (
     AgenticCodeBenchmarkDataset,
 )
+from max.benchmark.benchmark_shared.datasets.agentic_tools import (
+    ToolConfig,
+    tool_profiles_from_mapping,
+)
 from max.benchmark.benchmark_shared.datasets.artificial_analysis import (
     ArtificialAnalysisBenchmarkDataset,
 )
@@ -82,6 +86,53 @@ from max.benchmark.benchmark_shared.datasets.vision_arena import (
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
 logger = logging.getLogger(__name__)
+
+
+def _resolve_agentic_tool_profiles(
+    args: ServingBenchmarkConfig,
+) -> list[ToolConfig] | None:
+    """Resolve ``--agentic-tool-profiles``, rejecting incoherent combinations.
+
+    Args:
+        args: The parsed benchmark configuration.
+
+    Returns:
+        The tool profiles, or ``None`` when no agent loop is configured.
+
+    Raises:
+        ValueError: If only one of the two agentic flags is set, or if the
+            run cannot reach the builder that assembles the loop.
+    """
+    tools, rounds = (
+        args.agentic_tool_profiles,
+        args.agentic_rounds_per_turn,
+    )
+    if tools is None and rounds is None:
+        return None
+    if tools is None or rounds is None:
+        raise ValueError(
+            "--agentic-tool-profiles and --agentic-rounds-per-turn must be"
+            " set together: the first says what the tools are, the second"
+            " how many rounds run per turn."
+        )
+
+    # The agent loop is built on the fitted path, and --fit-distributions is
+    # wired per dataset rather than centrally.
+    # TODO(ENABLE-2345): drop this once that routing is refactored.
+    fitted_datasets = ("instruct-coder", "agentic-code", "nemotron-opencode")
+    if (
+        not args.fit_distributions
+        or not args.num_chat_sessions
+        or args.dataset_name not in fitted_datasets
+    ):
+        raise ValueError(
+            "--agentic-tool-profiles needs --fit-distributions with"
+            f" --num-chat-sessions and --dataset-name in {fitted_datasets};"
+            f" got fit_distributions={args.fit_distributions},"
+            f" num_chat_sessions={args.num_chat_sessions},"
+            f" dataset_name={args.dataset_name!r}."
+        )
+    return tool_profiles_from_mapping(tools)
 
 
 def _inflated_chat_session_count(
@@ -170,6 +221,8 @@ def sample_requests(
             output_lengths = [int(args.output_lengths)] * num_requests
 
         # We should not be using / accessing args.output_lengths from here on out.
+
+        tools = _resolve_agentic_tool_profiles(args)
 
         # This entire isinstance tree is tech debt.  BenchmarkDataset has been
         # designed to have methods that can be overridden by subclasses.  We do
@@ -274,7 +327,9 @@ def sample_requests(
             # dataset's encode/decode fan-out is done; workers spawn lazily
             # on first use, so this is free when none of the methods below
             # actually exercise the pool.
-            with TokenizerPool(tokenizer) as pool:
+            with TokenizerPool(
+                tokenizer, disable_tqdm=args.disable_tqdm
+            ) as pool:
                 if args.num_chat_sessions:
                     return benchmark_dataset.gen_multiturn_random_requests(
                         input_len=args.random_input_len,
@@ -317,7 +372,9 @@ def sample_requests(
                     args, args.num_chat_sessions
                 )
                 if args.fit_distributions:
-                    with TokenizerPool(tokenizer) as pool:
+                    with TokenizerPool(
+                        tokenizer, disable_tqdm=args.disable_tqdm
+                    ) as pool:
                         return benchmark_dataset.gen_multiturn_sessions(
                             num_sessions=inflated_n,
                             tokenizer=tokenizer,
@@ -330,6 +387,8 @@ def sample_requests(
                             delay_between_turns_dist=args.delay_between_chat_turns,
                             sys_prompt_ratio=args.random_sys_prompt_ratio,
                             max_num_unique_sys_prompt=args.random_max_num_unique_sys_prompt,
+                            tools=tools,
+                            agentic_rounds_per_turn=args.agentic_rounds_per_turn,
                         )
                 else:
                     return benchmark_dataset.gen_multiturn_sessions(
@@ -408,7 +467,9 @@ def sample_requests(
                     args, args.num_chat_sessions
                 )
                 if args.fit_distributions:
-                    with TokenizerPool(tokenizer) as pool:
+                    with TokenizerPool(
+                        tokenizer, disable_tqdm=args.disable_tqdm
+                    ) as pool:
                         return benchmark_dataset.gen_multiturn_sessions(
                             num_sessions=inflated_n,
                             tokenizer=tokenizer,
@@ -421,6 +482,8 @@ def sample_requests(
                             delay_between_turns_dist=args.delay_between_chat_turns,
                             sys_prompt_ratio=args.random_sys_prompt_ratio,
                             max_num_unique_sys_prompt=args.random_max_num_unique_sys_prompt,
+                            tools=tools,
+                            agentic_rounds_per_turn=args.agentic_rounds_per_turn,
                             enable_tool_calls=args.tool_calls,
                         )
                 else:
@@ -447,7 +510,9 @@ def sample_requests(
                     args, args.num_chat_sessions
                 )
                 if args.fit_distributions:
-                    with TokenizerPool(tokenizer) as pool:
+                    with TokenizerPool(
+                        tokenizer, disable_tqdm=args.disable_tqdm
+                    ) as pool:
                         return benchmark_dataset.gen_multiturn_sessions(
                             num_sessions=inflated_n,
                             tokenizer=tokenizer,
@@ -460,6 +525,8 @@ def sample_requests(
                             delay_between_turns_dist=args.delay_between_chat_turns,
                             sys_prompt_ratio=args.random_sys_prompt_ratio,
                             max_num_unique_sys_prompt=args.random_max_num_unique_sys_prompt,
+                            tools=tools,
+                            agentic_rounds_per_turn=args.agentic_rounds_per_turn,
                             enable_tool_calls=args.tool_calls,
                         )
                 else:
@@ -486,6 +553,15 @@ def sample_requests(
                 f"Unknown / unsupported dataset: {benchmark_dataset}"
             )
     elif benchmark_task in PIXEL_GENERATION_TASKS:
+        if (
+            args.agentic_tool_profiles is not None
+            or args.agentic_rounds_per_turn is not None
+        ):
+            raise ValueError(
+                "--agentic-tool-profiles is not supported for"
+                f" {benchmark_task}: the agent loop is assembled on the"
+                " text-generation multiturn path."
+            )
         if args.num_prompts is None:
             raise ValueError(
                 "Please specify '--num-prompts' for "
@@ -521,10 +597,13 @@ def sample_requests(
                     "--num-frames is required for --benchmark-task text-to-video"
                 )
         elif benchmark_task == "image-to-video":
-            if not isinstance(benchmark_dataset, LocalImageBenchmarkDataset):
+            if not isinstance(
+                benchmark_dataset,
+                (LocalImageBenchmarkDataset, SyntheticPixelBenchmarkDataset),
+            ):
                 raise ValueError(
                     "image-to-video currently supports only "
-                    "--dataset-name local-image"
+                    "--dataset-name local-image or synthetic-pixel"
                 )
             if args.num_frames is None:
                 raise ValueError(

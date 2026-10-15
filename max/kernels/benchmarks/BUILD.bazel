@@ -3,10 +3,8 @@ load(
     "//bazel:api.bzl",
     "mojo_binary",
     "mojo_test",
-    "pkg_filegroup",
-    "pkg_files",
-    "strip_prefix",
 )
+load("//max/kernels/src:deprecations.bzl", "IGNORED_POINTER_DEPRECATIONS_COPTS")
 
 package(default_visibility = ["//max:consumers"])
 
@@ -15,12 +13,28 @@ _RUN_BENCHMARKS = [
     "nn/bench_gather_reduce.mojo",
 ]
 
+_EXTRA_DEPS = {
+    "algorithm/parallelize_overhead.mojo": ["//max:max_mojo"],
+    "gpu/nn/bench_argmax.mojo": ["//max:builtin_kernels"],
+    "gpu/nn/bench_normalization.mojo": ["//max:builtin_kernels"],
+    "gpu/nn/bench_rms_norm_fused_residual_add.mojo": ["//max:builtin_kernels"],
+    "gpu/nn/bench_rms_norm_rope.mojo": ["//max:builtin_kernels"],
+    "gpu/nn/bench_softmax.mojo": ["//max:builtin_kernels"],
+    "linalg/bench_layout_tensor.mojo": ["//max:max_mojo"],
+}
+
 _EXTRA_CONSTRAINTS = {
     "algorithm/parallelize_overhead.mojo": select({
         "//:asan": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
     "gpu/comm/bench_allgather.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # No multi-GPU Metal machines exist
+    "gpu/comm/bench_allgather_relay.mojo": ["//:amd_gpu"],  # The relay path is gated to CDNA4; needs 8 GPUs and P2P
+    "gpu/comm/bench_reducescatter_relay.mojo": ["//:amd_gpu"],  # The relay path is gated to CDNA4; needs 8 GPUs and P2P
+    "gpu/comm/bench_allgather_rmsnorm.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # No multi-GPU Metal machines exist
@@ -33,13 +47,24 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # No multi-GPU Metal machines exist; needs P2P
+    "gpu/comm/bench_reducescatter_rmsnorm.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # No multi-GPU Metal machines exist; needs P2P
+    "gpu/comm/bench_rs_norm_gemm_pdl.mojo": ["//:nvidia_gpu"],  # SM100 consumer GEMM + P2P
     "gpu/comm/bench_broadcast.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # No multi-GPU Metal machines exist
     "gpu/comm/bench_reducescatter.mojo": ["//:nvidia_gpu"],  # Requires P2P for reduce-scatter
-    "gpu/comm/bench_ep_dispatch.mojo": ["//:nvidia_gpu"],  # Requires NVSHMEM shmem_module_init
-    "gpu/comm/bench_ep_combine.mojo": ["//:nvidia_gpu"],  # Requires NVSHMEM shmem_module_init
+    "gpu/comm/bench_ep_dispatch.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # P2P only; no multi-GPU Metal machines exist
+    "gpu/comm/bench_ep_combine.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # P2P only; no multi-GPU Metal machines exist
     "nn/bench_gather_reduce.mojo": ["@platforms//:incompatible"],  # TODO(KERN-464): re-enable and remove this tag
     "gpu/nn/bench_kv_cache_ragged_qkv_matmul.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
@@ -49,6 +74,7 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: PRDT-506 (paged KV + matmul, same as sibling)
+    "gpu/nn/bench_rms_norm_gemm_pdl.mojo": ["//:nvidia_gpu"],  # SM100 consumer GEMM
     "gpu/linalg/bench_apple_gpu_matmul.mojo": ["//:apple_gpu"],  # Apple M5 simdgroup matmul (incl. split-K) — Metal only
     "gpu/linalg/bench_apple_fp4_matmul.mojo": ["//:apple_gpu"],  # Apple M5 weight-only NVFP4 (W4A16) matmul — Metal only
     "gpu/linalg/bench_apple_fp4_reconcile.mojo": ["//:apple_gpu"],  # Apple M5 W4A16 dispatch-path benchmark — Metal only
@@ -57,10 +83,6 @@ _EXTRA_CONSTRAINTS = {
     "gpu/linalg/bench_grouped_matmul_apple_fp8.mojo": ["//:apple_gpu"],  # Apple M5 grouped (MoE) FP8 W8A16 tiled vs naive — Metal only
     "gpu/nn/bench_conv2d_apple.mojo": ["//:apple_gpu"],  # Apple M5 im2col conv2d vs naive — Metal only
     "gpu/nn/bench_apple_fa_prefill.mojo": ["//:apple_gpu"],  # Apple M5 MMA flash-attention prefill (no-SMEM + SMEM-staged) — Metal only
-    "gpu/linalg/bench_matmul.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: PRDT-506
     "gpu/bench_matmul_mxfp4.mojo": ["//:amd_gpu"],
     "gpu/linalg/bench_grouped_matmul_dequant_mxfp4_amd.mojo": ["//:amd_gpu"],
     "gpu/linalg/bench_grouped_matmul_amd.mojo": ["//:amd_gpu"],
@@ -72,10 +94,7 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: KERN-2317
-    "gpu/linalg/bench_grouped_matmul.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: MOCO-3161
+    "gpu/nn/bench_mla_decode_sparse_fp8.mojo": ["//:b200_gpu"],  # SM100-only sparse MLA decode; the kernel asserts on other GPUs
     "gpu/linalg/bench_blockwise_fp8_1d2d.mojo": ["//:b200_gpu"],  # SM100-specific blockwise FP8
     "gpu/linalg/bench_mma_throughput_sm100.mojo": ["//:b200_gpu"],  # SM100 tcgen05 MMA tile-size microbench
     "gpu/linalg/profile_grouped_matmul_swiglu_nvfp4.mojo": ["//:b200_gpu"],  # SM100-specific grouped block-scaled matmul
@@ -91,20 +110,39 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # Kernel uses NVIDIA SM90 TMA primitives; Metal AIR codegen crashes.
+    "gpu/nn/bench_mla_index_fp8_paged.mojo": ["//:b200_gpu"],  # SM100 tensor-core scorer: tcgen05 / TMA / SS-UMMA
+    "gpu/nn/bench_latent_sparse_attention_v4.mojo": ["//:b200_gpu"],  # the `fast` arm only takes the SM100 route there
+    # TODO(MOCO-4551): re-enable once Metal supports non-relaxed atomic
+    # orderings natively; CoopRow's device-scope release fence needs a Metal 4
+    # deployment target today.
+    "gpu/bench_coop_row_barrier.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     "gpu/nn/bench_topk_bitonic.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # Uses NVIDIA GPU barrier primitives.
+    "gpu/nn/bench_topk_deepselect.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # Kernel uses block-scope atomics (BLOCK_SCOPE) unsupported on Metal.
+    "gpu/nn/trace_topk_bitonic.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # Kernel uses block-scope atomics (BLOCK_SCOPE) unsupported on Metal.
+    "gpu/nn/xcheck_topk_bitonic.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # Kernel uses block-scope atomics (BLOCK_SCOPE) unsupported on Metal.
     "gpu/nn/bench_conv2d_sm100.mojo": ["//:b200_gpu"],  # SM100-specific TMA im2col
+    "gpu/nn/bench_fused_qkv_matmul_mxfp8_amd.mojo": ["//:mi355_gpu"],  # CDNA4 block-scaled matmul + its fused KV-scatter epilogue
     "gpu/nn/bench_mha_prefill_v2.mojo": ["//:mi355_gpu"],  # gfx950 MFMA 32x32x16 BF16 + from_expcnt
     "gpu/nn/bench_mha_prefill_v2_paged.mojo": ["//:mi355_gpu"],  # gfx950 MFMA 32x32x16 BF16 + paged KV operand
     "gpu/linalg/bench_block_scaled_matmul.mojo": ["//:b200_gpu"],  # SM100-specific block-scaled matmul
+    "gpu/linalg/bench_o_proj_matmul_mxfp8_amd.mojo": ["//:mi355_gpu"],  # CDNA4 block-scaled matmul
     "gpu/linalg/bench_matmul_tma_epilogue.mojo": ["//:b200_gpu"],  # SM100-specific TMA epilogue matmul
     "gpu/linalg/bench_matmul_1d_tma_epilogue.mojo": ["//:b200_gpu"],  # SM100-specific 1D bias TMA epilogue matmul
-    "gpu/nn/bench_moe_routing.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # Requires NVIDIA GPU warp primitives
     "gpu/bench_cp_async_bulk.mojo": ["//:b200_gpu"],  # cp.async.bulk requires SM100+ architecture
     "gpu/comm/bench_scatter.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
@@ -131,6 +169,10 @@ _CPU_TESTS = glob(
         "autotune/**",
         "demos/**",
         "gpu/**",
+        # Has a dedicated `mojo_test` below carrying the -D shape defines and
+        # TEST_ONLY gate; one rule per source (see "Lint files in multiple
+        # targets"), so it must leave the generic glob.
+        "linalg/bench_layout_tensor.mojo",
         "misc/**",
         "packages/**",
     ] + _RUN_BENCHMARKS,
@@ -140,6 +182,7 @@ _CPU_TESTS = glob(
     mojo_binary(
         name = src.split(".")[0],
         srcs = [src],
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
         enable_assertions = False,
         target_compatible_with = _EXTRA_CONSTRAINTS.get(src, []),
         deps = [
@@ -148,7 +191,7 @@ _CPU_TESTS = glob(
             "//max:layout",
             "//max:nn",
             "@mojo//:std",
-        ],
+        ] + _EXTRA_DEPS.get(src, []),
     )
     for src in _CPU_TESTS
 ]
@@ -161,12 +204,44 @@ _CPU_TESTS = glob(
     for src in _CPU_TESTS
 ]
 
+# Qwen3.8 spec-decode verify attention at the prod shape: 24 q / 4 kv heads
+# (GQA group 6, which divides no SM100 MMA_M), head dim 256, fp8 e4m3 KV,
+# bf16 out, page 256. Timed via `run_benchmark=True`; `verify=True` prints a
+# digest for packed-vs-unpacked A/B comparison across builds. Built as a
+# dedicated target because the defines are shape facts, not defaults.
+mojo_binary(
+    name = "gpu/nn/bench_qwen38_decode_attn",
+    srcs = ["gpu/nn/bench_qwen38_decode_attn.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS + [
+        "-D",
+        "dtype=DType.float8_e4m3fn",
+        "-D",
+        "head_dim=256",
+        "-D",
+        "num_q_heads=24",
+        "-D",
+        "num_kv_heads=4",
+        "-D",
+        "page_size=256",
+    ],
+    enable_assertions = False,
+    target_compatible_with = ["//:b200_gpu"],
+    deps = [
+        "//max:comm",
+        "//max:internal_utils",
+        "//max:layout",
+        "//max:nn",
+        "@mojo//:std",
+    ],
+)
+
 [
     mojo_test(
         name = src + ".test",
         size = "enormous",
         srcs = [src],
         args = ["-t"],
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
         enable_assertions = False,
         target_compatible_with = _EXTRA_CONSTRAINTS.get(src, []),
         deps = [
@@ -175,7 +250,7 @@ _CPU_TESTS = glob(
             "//max:layout",
             "//max:nn",
             "@mojo//:std",
-        ],
+        ] + _EXTRA_DEPS.get(src, []),
     )
     for src in _RUN_BENCHMARKS
 ]
@@ -184,6 +259,7 @@ _CPU_TESTS = glob(
     mojo_binary(
         name = src.split(".")[0],
         srcs = [src],
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
         data = select({
             "//:nvidia_gpu": ["@nvshmem_prebuilt//:host"],
             "//conditions:default": [],
@@ -198,11 +274,12 @@ _CPU_TESTS = glob(
             "//max:comm",
             "//max:internal_utils",
             "//max:layout",
+            "//max:max_mojo",
             "//max:nn",
             "//max:shmem",
             "//max:structured_kernels",
             "@mojo//:std",
-        ],
+        ] + _EXTRA_DEPS.get(src, []),
     )
     for src in glob(
         ["gpu/**/*.mojo"],
@@ -213,6 +290,21 @@ _CPU_TESTS = glob(
             # Needs `-D fp32_scores/cadence` (gated FP32-scores path);
             # the generic glob can't pass them. Dedicated target below.
             "gpu/nn/bench_mla_prefill_v2.mojo",
+            # Has a dedicated `mojo_test` so it can be TIMED on remote B200
+            # (`bazel test --config=remote-b200`), which a `mojo_binary` cannot
+            # be. One rule per source, so it must leave the glob.
+            "gpu/nn/bench_fp8_index_prefill.mojo",
+            # Same reason: `--sweep=1` takes the whole top-k A/B grid in
+            # one process, and timing that needs a test target.
+            "gpu/nn/bench_topk_mt.mojo",
+            # Dedicated target below: the Qwen3.8 prod shape is carried in
+            # `-D` defines, which the generic glob cannot pass.
+            "gpu/nn/bench_qwen38_decode_attn.mojo",
+            # Dedicated `mojo_test` below: it calls the registered graph ops
+            # (needs `builtin_kernels`) and is timed on remote B200.
+            "gpu/bench_squeeze_shape.mojo",
+            # Same reason: dedicated `mojo_test` below for the tile op.
+            "gpu/bench_tile.mojo",
         ],
     )
 ]
@@ -232,9 +324,76 @@ _CPU_TESTS = glob(
             # Needs `-D fp32_scores/cadence` (gated FP32-scores path);
             # the generic glob can't pass them. Dedicated target below.
             "gpu/nn/bench_mla_prefill_v2.mojo",
+            # Has a dedicated `mojo_test` so it can be TIMED on remote B200
+            # (`bazel test --config=remote-b200`), which a `mojo_binary` cannot
+            # be. One rule per source, so it must leave the glob.
+            "gpu/nn/bench_fp8_index_prefill.mojo",
+            # Same reason: `--sweep=1` takes the whole top-k A/B grid in
+            # one process, and timing that needs a test target.
+            "gpu/nn/bench_topk_mt.mojo",
+            # Dedicated target below: the Qwen3.8 prod shape is carried in
+            # `-D` defines, which the generic glob cannot pass.
+            "gpu/nn/bench_qwen38_decode_attn.mojo",
+            # Dedicated `mojo_test` below: it calls the registered graph ops
+            # (needs `builtin_kernels`) and is timed on remote B200.
+            "gpu/bench_squeeze_shape.mojo",
+            # Same reason: dedicated `mojo_test` below for the tile op.
+            "gpu/bench_tile.mojo",
         ],
     )
 ]
+
+# `mo.squeeze_shape` / `mo.unsqueeze_shape` through their registered
+# `execute` entry points (gather_scatter.mojo). A `mojo_test` so it can be
+# timed on remote B200 (`bazel test --config=remote-b200`); pass
+# `--test_arg=--nsys` for the fixed-count launch mode used under nsys.
+mojo_test(
+    name = "gpu/bench_squeeze_shape.mojo.run",
+    size = "enormous",
+    srcs = ["gpu/bench_squeeze_shape.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    enable_assertions = False,
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = ["//:has_gpu"],
+    deps = [
+        "//max:builtin_kernels",
+        "//max:extensibility",
+        "//max:max_mojo",
+        "@mojo//:std",
+    ],
+)
+
+build_test(
+    name = "gpu/bench_squeeze_shape.mojo.test",
+    tags = ["gpu"],
+    targets = ["gpu/bench_squeeze_shape.mojo.run"],
+)
+
+# `mo.tile` through its registered `Tile.execute` entry point
+# (gather_scatter.mojo). A `mojo_test` so it can be timed on remote B200
+# (`bazel test --config=remote-b200`); pass `--test_arg=--nsys` for the
+# fixed-count launch mode used under nsys/ncu.
+mojo_test(
+    name = "gpu/bench_tile.mojo.run",
+    size = "enormous",
+    srcs = ["gpu/bench_tile.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    enable_assertions = False,
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = ["//:has_gpu"],
+    deps = [
+        "//max:builtin_kernels",
+        "//max:extensibility",
+        "//max:max_mojo",
+        "@mojo//:std",
+    ],
+)
 
 # MlaPrefillV2 device-timed TFLOPS bench.
 # Delegates numeric steps to the gated MlaPrefillV2Core FP32-scores / reference-cadence
@@ -244,7 +403,7 @@ _CPU_TESTS = glob(
 mojo_binary(
     name = "gpu/nn/bench_mla_prefill_v2",
     srcs = ["gpu/nn/bench_mla_prefill_v2.mojo"],
-    copts = [
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS + [
         "-D",
         "fp32_scores=true",
         "-D",
@@ -256,6 +415,7 @@ mojo_binary(
         "//max:comm",
         "//max:internal_utils",
         "//max:layout",
+        "//max:max_mojo",
         "//max:nn",
         "//max:shmem",
         "//max:structured_kernels",
@@ -275,6 +435,7 @@ mojo_test(
     name = "gpu/nn/bench_conv3d.mojo.run",
     size = "enormous",
     srcs = ["gpu/nn/bench_conv3d.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     enable_assertions = False,
     exec_properties = {
         "test.resources:gpu-memory": "6",
@@ -292,6 +453,7 @@ mojo_test(
     deps = [
         "//max:internal_utils",
         "//max:layout",
+        "//max:max_mojo",
         "//max:nn",
         "@mojo//:std",
     ],
@@ -301,6 +463,7 @@ mojo_test(
     name = "gpu/nn/bench_conv2d.mojo.run",
     size = "enormous",
     srcs = ["gpu/nn/bench_conv2d.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     enable_assertions = False,
     exec_properties = {
         "test.resources:gpu-memory": "6",
@@ -313,6 +476,7 @@ mojo_test(
     deps = [
         "//max:internal_utils",
         "//max:layout",
+        "//max:max_mojo",
         "//max:nn",
         "@mojo//:std",
     ],
@@ -322,6 +486,7 @@ mojo_test(
     name = "gpu/layout/bench_tile_io_copy.mojo.run",
     size = "enormous",
     srcs = ["gpu/layout/bench_tile_io_copy.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     enable_assertions = False,
     exec_properties = {
         "test.resources:gpu-memory": "1",
@@ -333,47 +498,86 @@ mojo_test(
     target_compatible_with = ["//:has_gpu"],
     deps = [
         "//max:layout",
+        "//max:max_mojo",
         "@mojo//:std",
     ],
 )
 
-# --- SM100 FA4 warp-specialized (WS) vs baseline A/B benches ---
-# Execute on a remote B200 via `bazel test --config=remote-b200[-benchmark] ...`
-# (mojo_test so the run is a remote *test action*; `bazel run` would execute locally).
-# Comptime cells (each a separate compiled target): FA4_FORCE_CONFIG (0=auto, 1=WS,
-# 2=baseline) x FA4_WS_SPLITK_FORCE (P) x depth. Baseline (run_base, FORCE=2) comptime-kills
-# the WS block (dispatch.mojo:558-559) -> byte-identical to main's selected non-WS path.
-# Runtime shape (seq_len/num_keys/cache_len/batch_size) is forwarded per invocation via
-# `--test_arg=--name=value` (arg_parse matches "--<name>=", internal_utils/_utils.mojo:205);
-# always add `--nocache_test_results` for a benchmark. See plan crystalline-leaping-sunrise.md.
-_FA4_WS_CELLS = {
-    "run_auto": [
-        "-D",
-        "FA4_FORCE_CONFIG=0",
+# SM100 FP8 indexer prefill scorer at GLM-5.2 shapes. Excluded from the generic
+# `gpu/**` glob above because a benchmark it builds as a `mojo_binary` cannot be
+# TIMED on remote B200 -- only a test target can -- and a source may belong to
+# exactly one rule. `manual`, so `//...` never runs the benchmark itself; the
+# `build_test` below restores the compile coverage the glob would have given.
+# Shape stays a runtime arg so one binary covers the whole grid; `num_heads` is
+# a `-D`, so a head count other than the GLM 32 needs its own target.
+mojo_test(
+    name = "gpu/nn/bench_fp8_index_prefill.mojo.run",
+    size = "enormous",
+    srcs = ["gpu/nn/bench_fp8_index_prefill.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    enable_assertions = False,
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    tags = [
+        "gpu",
+        "manual",
     ],
-    "run_ws": [
-        "-D",
-        "FA4_FORCE_CONFIG=1",
+    target_compatible_with = ["//:b200_gpu"],  # tcgen05 / TMA / SS-UMMA
+    deps = [
+        "//max:internal_utils",
+        "//max:layout",
+        "//max:max_mojo",
+        "//max:nn",
+        "@mojo//:std",
     ],
-    "run_ws_p2": [
-        "-D",
-        "FA4_FORCE_CONFIG=1",
-        "-D",
-        "FA4_WS_SPLITK_FORCE=2",
-    ],
-    "run_ws_p4": [
-        "-D",
-        "FA4_FORCE_CONFIG=1",
-        "-D",
-        "FA4_WS_SPLITK_FORCE=4",
-    ],
-    "run_base": [
-        "-D",
-        "FA4_FORCE_CONFIG=2",
-    ],
-}
+)
 
-# Deps/data/env mirror the generic gpu/** glob (above) that already compiles these srcs.
+build_test(
+    name = "gpu/nn/bench_fp8_index_prefill.mojo.test",
+    tags = ["gpu"],
+    targets = ["gpu/nn/bench_fp8_index_prefill.mojo.run"],
+)
+
+# Indexer top-k across the multi-turn length ladder, both row regimes and all
+# four bf16 payload/schedule arms. Out of the `gpu/**` glob for the same reason
+# as the benchmark above: that glob builds a `mojo_binary`, and only a test
+# target can be TIMED on remote B200. `--sweep=1` runs the whole grid in one
+# process, which is the paired form the A/B wants. `manual` keeps it out of
+# `//...`; the `build_test` below restores the glob's compile coverage.
+mojo_test(
+    name = "gpu/nn/bench_topk_mt.mojo.run",
+    size = "enormous",
+    srcs = ["gpu/nn/bench_topk_mt.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    enable_assertions = False,
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # Uses NVIDIA GPU barrier primitives.
+    deps = [
+        "//max:internal_utils",
+        "//max:layout",
+        "//max:max_mojo",
+        "//max:nn",
+        "@mojo//:std",
+    ],
+)
+
+build_test(
+    name = "gpu/nn/bench_topk_mt.mojo.test",
+    tags = ["gpu"],
+    targets = ["gpu/nn/bench_topk_mt.mojo.run"],
+)
+
+# Deps/data/env shared by the softmax / m3 benchmark targets below.
 _FA4_WS_DEPS = [
     "//max:comm",
     "//max:internal_utils",
@@ -384,100 +588,105 @@ _FA4_WS_DEPS = [
     "@mojo//:std",
 ]
 
-# bench_mha (contiguous): depth is comptime via `-D depth=<d>`.
+# Row-wise softmax at MiniMax-M3's logits shapes: fp32 rows of 200,064 (full
+# vocab, post-all-gather) against 50,016 (one TP4 vocab shard), at the decode
+# row counts. Sizes the `algorithm.rowwise` split-K tier the sampling tail hits.
 [
     mojo_test(
-        name = "gpu/nn/bench_mha.mojo.%s_d%d" % (suffix, depth),
+        name = "gpu/nn/bench_softmax.mojo.run_m3_logits_%dx%d" % (rows, cols),
         size = "enormous",
-        srcs = ["gpu/nn/bench_mha.mojo"],
-        copts = copts + [
+        srcs = ["gpu/nn/bench_softmax.mojo"],
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS + [
             "-D",
-            "depth=%d" % depth,
+            "dtype=DType.float32",
+            "-D",
+            "shape=%dx%d" % (rows, cols),
         ],
-        data = select({
-            "//:nvidia_gpu": ["@nvshmem_prebuilt//:host"],
-            "//conditions:default": [],
-        }),
         enable_assertions = False,
-        env = select({
-            "//:nvidia_gpu": {"MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt"},
-            "//conditions:default": {},
-        }),
         exec_properties = {
-            "test.resources:gpu-memory": "64",
+            "test.resources:gpu-memory": "16",
         },
         tags = [
             "gpu",
             "manual",
         ],
-        target_compatible_with = ["//:b200_gpu"],
-        deps = _FA4_WS_DEPS,
+        deps = _FA4_WS_DEPS + ["//max:builtin_kernels"],
     )
-    for suffix, copts in _FA4_WS_CELLS.items()
-    for depth in [
+    for rows in [
+        16,
         64,
-        128,
+    ]
+    for cols in [
+        50016,
+        200064,
     ]
 ]
 
-# bench_kv_cache_ragged_flash_attention (ragged, long-cache/small-grid vehicle):
-# depth is comptime via `-D head_dim=<d>`.
-[
-    mojo_test(
-        name = "gpu/nn/bench_kv_cache_ragged_flash_attention.mojo.%s_d%d" % (suffix, depth),
-        size = "enormous",
-        srcs = ["gpu/nn/bench_kv_cache_ragged_flash_attention.mojo"],
-        copts = copts + [
-            "-D",
-            "head_dim=%d" % depth,
-        ],
-        data = select({
-            "//:nvidia_gpu": ["@nvshmem_prebuilt//:host"],
-            "//conditions:default": [],
-        }),
-        enable_assertions = False,
-        env = select({
-            "//:nvidia_gpu": {"MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt"},
-            "//conditions:default": {},
-        }),
-        exec_properties = {
-            "test.resources:gpu-memory": "40",
-        },
-        tags = [
-            "gpu",
-            "manual",
-        ],
-        target_compatible_with = ["//:b200_gpu"],
-        deps = _FA4_WS_DEPS,
-    )
-    for suffix, copts in _FA4_WS_CELLS.items()
-    for depth in [
-        64,
-        128,
-    ]
-]
-
-pkg_files(
-    name = "kernel_benchmark_input_files",
-    srcs = glob(
-        [
-            "**/*.mojo",
-            "**/*.yaml",
-        ],
-        exclude = [
-            "demos/**",
-            "misc/**",
-            "packages/**",
-        ],
-    ),
-    prefix = "kernel-benchmark",
-    strip_prefix = strip_prefix.from_pkg(""),
+# MiniMax-M3 dense-attention decode cell on MI355: 64 q heads and 4 kv heads
+# over TP4 give num_heads=16 / group=16, depth 128, fp8_e4m3 KV, bf16 out.
+# `num_partitions` stays a runtime arg so one binary sweeps the split-K ladder.
+mojo_test(
+    name = "gpu/nn/bench_mha.mojo.run_m3_dense_fp8_amd",
+    size = "enormous",
+    srcs = ["gpu/nn/bench_mha.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS + [
+        "-D",
+        "qkv_type=DType.float8_e4m3fn",
+        "-D",
+        "mask_type=DType.bfloat16",
+        "-D",
+        "depth=128",
+        "-D",
+        "num_heads=16",
+        "-D",
+        "group=16",
+    ],
+    enable_assertions = False,
+    exec_properties = {
+        "test.resources:gpu-memory": "64",
+    },
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = ["//:amd_gpu"],
+    deps = _FA4_WS_DEPS,
 )
 
-pkg_filegroup(
-    name = "kernel_benchmark_files",
-    srcs = [
-        ":kernel_benchmark_input_files",
-        "//max/kernels/benchmarks/autotune:autotune_files",
+# Just for mentioning unreferenced files
+filegroup(
+    name = "yaml_files",
+    srcs = glob(["gpu/**/*.yaml"]),
+    tags = ["maybe-unused"],
+)
+
+# Driver scripts for the ncu captures behind the benchmarks above. They are run
+# by hand on a profiling box, not by any target, so they exist only to be named
+# here.
+filegroup(
+    name = "ncu_scripts",
+    srcs = glob(["gpu/**/*_ncu.sh"]),
+    tags = ["maybe-unused"],
+)
+
+# Small tile-compatible M/N/K exercise every matmul variant; TEST_ONLY skips
+# timing so this target checks correctness rather than benchmark performance.
+mojo_test(
+    name = "linalg/bench_tile_tensor_correctness",
+    srcs = ["linalg/bench_layout_tensor.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS + [
+        "-D",
+        "M=16",
+        "-D",
+        "N=64",
+        "-D",
+        "K=128",
+        "-D",
+        "TEST_ONLY=true",
+    ],
+    deps = [
+        "//max:layout",
+        "//max:max_mojo",
+        "@mojo//:std",
     ],
 )

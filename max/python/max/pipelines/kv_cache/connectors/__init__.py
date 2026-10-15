@@ -14,126 +14,104 @@
 """KV cache connectors for external cache tiers.
 
 - `NullConnector`: No-op connector when external caching is disabled
-- `LocalConnector`: Host memory offloading
-- `TieredConnector`: GPU <-> CPU <-> Disk offloading
+- `TierConnector`: GPU <-> CPU <-> Disk offloading, backed by the Rust
+  ``kv_tier_connector`` extension. Also serves the ``tiered`` alias, whose
+  Python implementation it replaced.
 - `create_connector()`: Factory function
 """
 
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
-from typing import TYPE_CHECKING
+from collections.abc import Mapping, Sequence
 
 from max.driver import Device
+from max.nn.kv_cache import KVCacheGroupId
 from max.nn.kv_cache.cache_params import (
-    KVCacheBufferInterface,
+    TIERED_CONNECTOR_TYPES,
     KVCacheMemory,
     KVCacheParamInterface,
     KVConnectorType,
-    KVHashAlgo,
+    connector_type,
 )
 from max.pipelines.kv_cache.kv_connector import KVConnector
 
-from .local_connector import LocalConnector
 from .null_connector import NullConnector
-from .tiered_connector import TieredConnector
-
-if TYPE_CHECKING:
-    from max.pipelines.kv_cache.config import KVConnectorConfig
 
 logger = logging.getLogger("max.pipelines")
 
 
 def create_connector(
-    kv_connector: KVConnectorType | None,
-    kv_connector_config: KVConnectorConfig | None,
+    leaves: Mapping[str, KVCacheGroupId],
     devices: Sequence[Device],
-    replica_kv_memory: Sequence[Sequence[KVCacheMemory]],
-    total_num_host_blocks: int,
-    kv_hash_algo: KVHashAlgo,
+    replica_kv_memory: Sequence[Mapping[str, KVCacheMemory]],
     params: KVCacheParamInterface,
+    device_memory_bytes: int,
 ) -> KVConnector:
-    """Create a KV cache connector instance based on ``kv_connector``.
+    """Create a KV cache connector instance from ``params.kv_connector_config``.
 
     A single connector serves every DP replica for all connector types:
     ``replica_kv_memory`` holds each replica's device buffers, and load/offload
     select the replica via ``replica_idx`` (SERVOPT-1501). The host/disk tiers
-    (``local``/``tiered``) back this with one shared pinned host buffer / disk
-    cache; the distributed ``dkv`` connector owns one Rust client per replica
+    back this with one shared pinned host buffer / disk cache, which the tiered
+    connector sizes from the config's ``host_offload_max_gb`` /
+    ``disk_offload_max_gb`` (or from its own device page pool when either is
+    unset); the distributed ``dkv`` connector owns one Rust client per replica
     internally.
 
+    ``tiered`` is a backward-compatible alias for the Rust ``rust_tiered``
+    connector, which replaced its deleted Python implementation, and therefore
+    inherits ``rust_tiered``'s CUDA/HIP requirement.
+
     Args:
-        kv_connector: Connector type to instantiate (or None for no-op).
-        kv_connector_config: Connector-specific configuration object.
         devices: Devices for the KV cache tensors (all participating devices).
-        replica_kv_memory: Per-replica offload-ready KV memory units (one inner
-            sequence per DP replica).
-        total_num_host_blocks: Total number of host blocks for swapping (the
-            full shared pool across replicas for ``local``/``tiered``).
-        kv_hash_algo: KV-cache hash algorithm; forwarded to connectors that
-            persist hash-keyed state on disk so they can refuse to start
-            against a directory locked to a different algorithm.
-        params: KV-cache parameters; the ``dkv`` connector uses them to derive
-            its multi-tenant per-GPU handshake identity.
+        replica_kv_memory: Per-replica offload-ready KV memory units, one
+            mapping per DP replica, keyed by the leaf ids ``params.leaves()``
+            names.
+        params: KV-cache parameters. Carries the connector config (type and
+            settings); the ``dkv`` connector also uses them to derive its
+            multi-tenant per-GPU handshake identity.
+        device_memory_bytes: The device page pool this connector sizes its
+            tiers against. The caller states it rather than deriving it from
+            ``params``, because the managers measure it differently: the paged
+            manager counts its flat pages, Jenga its huge blocks.
 
     Returns:
         A connector instance implementing the KVConnector protocol.
     """
-    connector = kv_connector
+    cfg = params.kv_connector_config
+    connector = connector_type(cfg)
 
     if connector == KVConnectorType.dkv:
         from .dkv import DKVConnector
 
-        if (
-            kv_connector_config is None
-            or not kv_connector_config.block_store_endpoint
-        ):
+        if not cfg.block_store_endpoint:
             raise ValueError(
                 "kv_connector_config must include 'block_store_endpoint' "
-                "when kv_connector is 'dkv'"
+                "when its type is 'dkv'"
             )
         logger.info(
             "Creating DKVConnector: endpoint=%s",
-            kv_connector_config.block_store_endpoint,
+            cfg.block_store_endpoint,
         )
         return DKVConnector(
+            leaves=leaves,
             replica_kv_memory=replica_kv_memory,
-            local_block_store_endpoint=kv_connector_config.block_store_endpoint,
+            local_block_store_endpoint=cfg.block_store_endpoint,
             devices=devices,
             params=params,
         )
 
-    if connector == KVConnectorType.tiered:
-        cfg = kv_connector_config
-        if cfg is None or cfg.disk_offload_dir is None:
-            raise ValueError(
-                "kv_connector_config must include 'disk_offload_dir' "
-                "when kv_connector is 'tiered'"
-            )
-        logger.debug(
-            "Creating TieredConnector: "
-            f"host_blocks={total_num_host_blocks}, "
-            f"disk_dir={cfg.disk_offload_dir}, "
-            f"disk_max_gb={cfg.disk_offload_max_gb}"
-        )
+    # ``tiered`` is a backward-compatible alias for ``rust_tiered``, kept after
+    # its Python implementation was deleted.
+    if connector in TIERED_CONNECTOR_TYPES:
+        from .tier_connector import TierConnector
 
-        return TieredConnector(
-            devices=devices,
+        return TierConnector.create(
+            leaves=leaves,
             replica_kv_memory=replica_kv_memory,
-            total_num_host_blocks=total_num_host_blocks,
-            disk_cache_dir=cfg.disk_offload_dir,
-            max_disk_size_gb=cfg.disk_offload_max_gb,
-            kv_hash_algo=kv_hash_algo,
-        )
-
-    if connector == KVConnectorType.local:
-        logger.debug(
-            f"Creating LocalConnector: host_blocks={total_num_host_blocks}"
-        )
-        return LocalConnector(
-            replica_kv_memory=replica_kv_memory,
-            total_num_host_blocks=total_num_host_blocks,
+            params=params,
+            device_memory_bytes=device_memory_bytes,
         )
 
     logger.debug("Creating NullConnector: no KV cache connector configured")
@@ -141,11 +119,8 @@ def create_connector(
 
 
 __all__ = [
-    "DKVConnector",
     "KVConnector",
     "KVConnectorType",
-    "LocalConnector",
     "NullConnector",
-    "TieredConnector",
     "create_connector",
 ]

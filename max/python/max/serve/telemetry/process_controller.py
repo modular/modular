@@ -33,7 +33,7 @@ from typing import Any
 import prometheus_client
 from max.serve.config import MetricRecordingMethod, Settings
 from max.serve.process_control import subprocess_manager
-from max.serve.telemetry.common import configure_metrics
+from max.serve.telemetry.common import configure_metrics, configure_tracing
 from max.serve.telemetry.metrics import (
     MaxMeasurement,
     MetricClient,
@@ -54,11 +54,11 @@ class ProcessMetricClient(MetricClient):
     ``transaction_buffer`` / ``transaction_depth`` are deliberately
     unsynchronized. This is safe because of a single-emitter invariant: the
     only process that opens transactions is the model worker, which emits
-    metrics from one async event loop, and every transaction body (e.g.
+    metrics from one async event loop, and every transaction body (such as
     ``construct_batch`` / ``_publish_metrics``) is fully synchronous — no
     ``await`` inside — so no other measurement can interleave. Do not open a
     ``transaction()`` from a context where measurements are produced
-    concurrently (e.g. the API server's per-request handlers) without first
+    concurrently (such as the API server's per-request handlers) without first
     making this state thread-local; otherwise unrelated measurements would be
     swept into the batch and the buffer mutations would race.
     """
@@ -180,7 +180,10 @@ def init_and_process(
 ) -> None:
     """Initialize logging & metrics, and start the metrics server if enabled. This is expected to run from the Telemetry process."""
     configure_metrics(settings)
+    configure_tracing(settings)
 
+    # Deliberately the raw setting, not _telemetry_disabled: /metrics is a
+    # local pull surface, not egress, so OTEL_SDK_DISABLED must not remove it.
     if (
         not settings.disable_telemetry
         and settings.metric_recording == MetricRecordingMethod.PROCESS

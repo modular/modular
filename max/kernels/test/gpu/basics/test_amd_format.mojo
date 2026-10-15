@@ -14,22 +14,24 @@
 from std.os import abort
 
 from std.builtin._format_float import _write_float
-from std.builtin.simd import Float8_e4m3fn, Float8_e5m2
-from std.gpu.host import DeviceContext
-from std.memory import memcmp, unsafe_memcpy
+from std.simd import Float8_e4m3fn, Float8_e5m2
+from max.gpu.host import DeviceContext
 
 
 struct Buffer[capacity: Int](Defaultable, Writer):
-    var data: InlineArray[UInt8, Self.capacity]
+    var data: Array[UInt8, Self.capacity]
     var pos: Int
 
     def __init__(out self):
-        self.data = InlineArray[UInt8, Self.capacity](fill=0)
+        self.data = Array[UInt8, Self.capacity](fill=0)
         self.pos = 0
 
     def write_string(mut self, string: StringSlice):
+        var data_ptr: Pointer[
+            UInt8, origin_of(self.data)
+        ] = self.data.unsafe_ptr()
         for i, byte in enumerate(string.bytes()):
-            (self.data.unsafe_ptr() + self.pos)[i] = byte
+            (data_ptr + self.pos)[i] = byte
         self.pos += string.byte_length()
 
 
@@ -88,3 +90,4 @@ def main() raises:
         print("== test_format_float8_e4m3fn")
         comptime kernel_1 = test_format_float8_e4m3fn
         ctx.enqueue_function[kernel_1](grid_dim=1, block_dim=1)
+        ctx.synchronize()

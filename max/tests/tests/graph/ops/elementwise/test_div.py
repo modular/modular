@@ -101,6 +101,17 @@ def test_div__python_int__operator(tensor_type: TensorType) -> None:
 
 
 @given(tensor_type=...)
+def test_floordiv__same_type__operator(tensor_type: TensorType) -> None:
+    """``//`` on integers stays integral, unlike ``/``."""
+    assume(tensor_type.dtype.is_integral())
+    with Graph("floordiv", input_types=[tensor_type, tensor_type]) as graph:
+        lhs, rhs = graph.inputs[0].tensor, graph.inputs[1].tensor
+        assert (lhs // rhs).type == tensor_type
+        assert (lhs // 2).type == tensor_type
+        assert (2 // lhs).type == tensor_type
+
+
+@given(tensor_type=...)
 def test_div__mismatched_devices(tensor_type: TensorType) -> None:
     device = DeviceRef.GPU(1)
     assume(tensor_type.device != device)
@@ -122,8 +133,8 @@ def build_models(lhs_dtype: DType, rhs_dtype: DType) -> Graph:
 
 def run_models(
     model: Any,
-    lhs_val: int | float,
-    rhs_val: int | float,
+    lhs_val: float,
+    rhs_val: float,
     lhs_dtype: DType,
     rhs_dtype: DType,
     cpu: Device,

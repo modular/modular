@@ -62,14 +62,16 @@ def can_load_cudart() -> bool:
 
 
 @contextmanager
-def _cuda_profiler_region() -> Iterator[None]:
+def cuda_profiler_region() -> Iterator[None]:
     """Bracket a region with ``cudaProfilerStart`` / ``cudaProfilerStop``.
 
-    Assumes libcudart is loadable; the backend gate
-    (``ProfileBackend.can_capture_gpu``) already refuses to re-exec under nsys
-    when it is not. If we somehow get here without it, raise — the nsys child
-    runs with ``--capture-range=cudaProfilerApi`` and would otherwise produce
-    an empty ``.nsys-rep``.
+    Yields once with the CUDA profiler started and stops it on exit, so a
+    profiler run with ``--capture-range=cudaProfilerApi`` (nsys) or
+    ``--profile-from-start off`` (ncu) records only the wrapped region.
+
+    Raises:
+        RuntimeError: If libcudart cannot be loaded; ``cudaProfilerStart``
+            then cannot be called and the capture would be empty.
     """
     cudart = _load_cudart()
     if cudart is None:

@@ -13,10 +13,11 @@
 
 from std.math import ceildiv
 
-from std.gpu import global_idx
-from std.gpu.primitives import block, warp
-from std.gpu.globals import WARP_SIZE
-from std.gpu.host import DeviceContext
+from max.gpu import global_idx
+from max.gpu.primitives import block
+from max.gpu.primitives import warp
+from max.gpu.globals import WARP_SIZE
+from max.gpu.host import DeviceContext
 from std.testing import assert_equal
 
 comptime dtype = DType.uint64
@@ -26,14 +27,17 @@ def warp_prefix_sum_kernel[
     dtype: DType,
     exclusive: Bool,
 ](
-    output: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    input: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    size: Int,
+    output: MutPointer[Scalar[dtype], MutAnyOrigin],
+    input: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
+    size_dev: Int32,
 ):
+    var size = Int(size_dev)
     var tid = global_idx.x
     if tid >= size:
         return
-    output[tid] = warp.prefix_sum[exclusive=exclusive](input[tid])
+    output.unsafe_store(
+        tid, warp.prefix_sum[exclusive=exclusive](input.unsafe_load(tid))
+    )
 
 
 def test_warp_prefix_sum[exclusive: Bool](ctx: DeviceContext) raises:
@@ -57,7 +61,7 @@ def test_warp_prefix_sum[exclusive: Bool](ctx: DeviceContext) raises:
     ctx.enqueue_function[kernel](
         out_device,
         in_device,
-        size,
+        Int32(size),
         block_dim=BLOCK_SIZE,
         grid_dim=grid_dim,
     )
@@ -86,15 +90,19 @@ def block_prefix_sum_kernel[
     block_size: Int,
     exclusive: Bool,
 ](
-    output: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    input: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    size: Int,
+    output: MutPointer[Scalar[dtype], MutAnyOrigin],
+    input: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
+    size_dev: Int32,
 ):
+    var size = Int(size_dev)
     var tid = global_idx.x
     if tid >= size:
         return
-    output[tid] = block.prefix_sum[exclusive=exclusive, block_size=block_size](
-        input[tid]
+    output.unsafe_store(
+        tid,
+        block.prefix_sum[exclusive=exclusive, block_size=block_size](
+            input.unsafe_load(tid)
+        ),
     )
 
 
@@ -123,7 +131,7 @@ def test_block_prefix_sum[exclusive: Bool](ctx: DeviceContext) raises:
     ctx.enqueue_function[kernel](
         out_device,
         in_device,
-        size,
+        Int32(size),
         block_dim=BLOCK_SIZE,
         grid_dim=grid_dim,
     )

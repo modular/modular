@@ -1,24 +1,35 @@
-"""Self-transition that runs the Mojo build action with the production compiler under asan.
+"""Transition that runs the Mojo build action with the production compiler under asan.
 
-Attached to a target via `_transitioned_mojo_library` /
-`_transitioned_mojo_shared_library` (gated behind
+Applied to the `_mojo_override` compiler attribute of
+`_transitioned_mojo_library` / `_transitioned_mojo_shared_library` (gated behind
 `use_production_compiler_for_asan`), this flips `//:modular_config` to
 `production` ONLY when the incoming config is `asan`. Under `--config=asan` the
 Mojo build action then runs the *non-instrumented* compiler -- fast -- while
-producing the same artifact (a `.mojopkg` / object is config-invariant: neither
+producing the same artifact (a `.mojoc` / object is config-invariant: neither
 `mojo precompile` nor `mojo build` is passed `--sanitize`), instead of the
 ASAN-instrumented compiler that makes asan builds slow.
+
+It is an ATTRIBUTE transition, not a rule-level `cfg`, and that distinction is
+load-bearing. A rule-level `cfg` reconfigures the target and everything beneath
+it, so every cc library under a Mojo library forks into an `-ST-` variant. Those
+libraries then reach a depending binary twice -- once through the Mojo graph and
+once through an ordinary cc dep -- and rules_cc rejects the same dynamic library
+in two configurations outright ("You are trying to link the same dynamic library
+... built in a different configuration"). It is also wrong on its face: an asan
+binary would link non-instrumented copies of `libMSupportGlobals.so` and friends.
+Only the compiler needs reconfiguring, so only the compiler is transitioned; the
+target and its deps stay in the incoming asan config and keep their coverage.
 
 The asan-only gating lives in `asan_to_production_config_select` (passed as
 `new_config`), which maps `asan` -> `production` and every other config to
 ITSELF. So under Bazel's `diff_against_baseline` output-directory naming:
 
-  * Under `--config=asan` the target lands on a single shared
+  * Under `--config=asan` the compiler lands on a single shared
     `k8-opt-asan-ST-<hash>` variant, built once with the production compiler and
     shared by every asan consumer.
   * Under any other config the transition output equals the baseline, so Bazel
-    does NOT fork an `-ST-` variant: the target builds exactly as it would
-    without the flag.
+    does NOT fork an `-ST-` variant: the compiler is the one the toolchain
+    already provides.
 
 The transition flips ONLY `//:modular_config` -- moving it off `asan` is what
 makes the C++ toolchain drop the ASAN instrumentation. It deliberately leaves the

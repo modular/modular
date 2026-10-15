@@ -12,27 +12,26 @@
 # ===----------------------------------------------------------------------=== #
 """Multi-GPU broadcast kernel implementation."""
 
-from std.collections import InlineArray
+from std.collections import Array
 from std.math import align_down, ceildiv
-from std.gpu.host import DeviceContext, get_gpu_target
-from std.gpu import (
+from max.gpu.host import DeviceContext, get_gpu_target
+from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     global_idx,
     grid_dim,
 )
-from std.gpu.primitives.grid_controls import (
+from max.gpu.primitives.grid_controls import (
     PDL,
     PDLLevel,
     pdl_launch_attributes,
 )
 
 from std.sys import align_of, is_amd_gpu, simd_width_of, size_of
-from std.gpu.memory import Consistency, multimem_st
-from std.gpu.intrinsics import Scope
-from layout import TensorLayout, TileTensor
+from max.gpu.memory import Consistency, multimem_st
+from max.gpu.intrinsics import Scope
+from layout import TensorLayout, TensorEngine, TileTensor
 
 from .sync import (
-    MAX_GPUS,
     Signal,
     _multi_gpu_barrier,
     circular_add,
@@ -56,13 +55,15 @@ def broadcast_multimem_kernel[
     Layout: TensorLayout,
     BLOCK_SIZE: Int,
     ngpus: Int,
+    out_engine: TensorEngine,
+    in_engine: TensorEngine,
     simd_width: Int = simd_width_of[dtype, target=get_gpu_target()](),
 ](
-    output: TileTensor[dtype, Layout, MutAnyOrigin],
-    input: TileTensor[dtype, Layout, ImmutAnyOrigin],
-    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
-    my_rank: Int,
-    root: Int,
+    output: TileTensor[dtype, Layout, MutAnyOrigin, Engine=out_engine],
+    input: TileTensor[dtype, Layout, ImmutAnyOrigin, Engine=in_engine],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
+    my_rank: Int32,
+    root: Int32,
 ):
     """Broadcast kernel using multimem.st for multicast writes.
 
@@ -74,6 +75,8 @@ def broadcast_multimem_kernel[
         Layout: `TensorLayout` shared by both tensors.
         BLOCK_SIZE: Number of threads per thread block.
         ngpus: Number of GPUs participating in the broadcast.
+        out_engine: Engine of the output tensor.
+        in_engine: Engine of the input tensor.
         simd_width: Vector width used for memory access (defaults to the
             device-native SIMD width for `dtype`).
 
@@ -84,7 +87,9 @@ def broadcast_multimem_kernel[
         my_rank: Rank of this GPU in the communicator.
         root: Rank of the source GPU whose data is broadcast to all GPUs.
     """
-    var my_sig = rank_sigs[my_rank]
+    var _my_rank = Int(my_rank)
+    var _root = Int(root)
+    var my_sig = rank_sigs[_my_rank]
 
     # --- Thread Indexing ---
     var global_tid = global_idx.x
@@ -92,17 +97,17 @@ def broadcast_multimem_kernel[
     var stride = grid_dim.x * BLOCK_SIZE
 
     with PDL():
-        _multi_gpu_barrier[ngpus, is_start=True](rank_sigs, my_sig, my_rank)
+        _multi_gpu_barrier[ngpus, is_start=True](rank_sigs, my_sig, _my_rank)
 
         var num_elements = input.num_elements()
         var num_simd_vectors = num_elements // simd_width
 
         # Only root GPU performs the multicast store
-        if my_rank == root:
+        if _my_rank == _root:
             comptime alignment = align_of[SIMD[dtype, simd_width]]()
 
             # Get multicast output pointer and input pointer
-            var out_ptr = output.ptr.address_space_cast[AddressSpace.GLOBAL]()
+            var out_ptr = output.ptr.address_space_cast[.GLOBAL]()
             var in_ptr = input.ptr.address_space_cast[_target_address_space]()
 
             # Grid-strided loop to cover all elements (vectorized)
@@ -157,7 +162,7 @@ def broadcast_multimem_kernel[
                         consistency=Consistency.RELAXED,
                     ](out_ptr + overlap_idx, data)
 
-        _multi_gpu_barrier[ngpus, is_start=False](rank_sigs, my_sig, my_rank)
+        _multi_gpu_barrier[ngpus, is_start=False](rank_sigs, my_sig, _my_rank)
 
 
 @__llvm_metadata(
@@ -169,12 +174,14 @@ def broadcast_pull_1stage_kernel[
     layout: TensorLayout,
     BLOCK_SIZE: Int,
     ngpus: Int,
+    out_engine: TensorEngine,
+    in_engine: TensorEngine,
     simd_width: Int = simd_width_of[dtype, target=get_gpu_target()](),
 ](
-    output: TileTensor[dtype, layout, MutAnyOrigin],
-    input: TileTensor[dtype, layout, ImmutAnyOrigin],
-    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
-    my_rank: Int,
+    output: TileTensor[dtype, layout, MutAnyOrigin, Engine=out_engine],
+    input: TileTensor[dtype, layout, ImmutAnyOrigin, Engine=in_engine],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
+    my_rank: Int32,
 ):
     """Single-stage pull broadcast kernel: each GPU reads root's input directly.
 
@@ -189,6 +196,8 @@ def broadcast_pull_1stage_kernel[
         layout: `TensorLayout` shared by both tensors.
         BLOCK_SIZE: Number of threads per thread block.
         ngpus: Number of GPUs participating in the broadcast.
+        out_engine: Engine of the output tensor.
+        in_engine: Engine of the input tensor.
         simd_width: Vector width used for memory access (defaults to the
             device-native SIMD width for `dtype`).
 
@@ -198,7 +207,8 @@ def broadcast_pull_1stage_kernel[
         rank_sigs: Per-GPU `Signal` pointers for barrier synchronization.
         my_rank: Rank of this GPU in the communicator.
     """
-    var my_sig = rank_sigs[my_rank]
+    var _my_rank = Int(my_rank)
+    var my_sig = rank_sigs[_my_rank]
 
     # --- Thread Indexing ---
     var global_tid = global_idx.x
@@ -206,7 +216,7 @@ def broadcast_pull_1stage_kernel[
     var stride = grid_dim.x * BLOCK_SIZE
 
     with PDL():
-        _multi_gpu_barrier[ngpus, is_start=True](rank_sigs, my_sig, my_rank)
+        _multi_gpu_barrier[ngpus, is_start=True](rank_sigs, my_sig, _my_rank)
 
         comptime alignment = align_of[SIMD[dtype, simd_width]]()
         var in_ptr = input.ptr.address_space_cast[_target_address_space]()
@@ -231,7 +241,7 @@ def broadcast_pull_1stage_kernel[
             var data = in_ptr.load[width=1, invariant=True](tail_idx)
             out_ptr.store(tail_idx, data)
 
-        _multi_gpu_barrier[ngpus, is_start=False](rank_sigs, my_sig, my_rank)
+        _multi_gpu_barrier[ngpus, is_start=False](rank_sigs, my_sig, _my_rank)
 
 
 @__llvm_metadata(
@@ -242,15 +252,16 @@ def broadcast_pull_2stage_kernel[
     dtype: DType,
     OutputLayout: TensorLayout,
     ngpus: Int,
+    result_engine: TensorEngine,
     *,
     BLOCK_SIZE: Int,
 ](
-    result: TileTensor[dtype, OutputLayout, MutAnyOrigin],
-    root_input_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
-    num_elements: Int,
-    my_rank: Int,
-    root: Int,
+    result: TileTensor[dtype, OutputLayout, MutAnyOrigin, Engine=result_engine],
+    root_input_ptr: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
+    num_elements: Int32,
+    my_rank: Int32,
+    root: Int32,
 ):
     """Two-stage broadcast: scatter from root, then allgather among all GPUs.
 
@@ -267,6 +278,7 @@ def broadcast_pull_2stage_kernel[
         dtype: Data dtype of tensor elements.
         OutputLayout: Layout of the output TileTensor.
         ngpus: Number of GPUs participating.
+        result_engine: Engine of the output tensor.
         BLOCK_SIZE: Number of threads per block.
 
     Args:
@@ -278,7 +290,10 @@ def broadcast_pull_2stage_kernel[
         my_rank: Current GPU rank.
         root: Root GPU rank (source of broadcast).
     """
-    var my_sig = rank_sigs[my_rank]
+    var _my_rank = Int(my_rank)
+    var _root = Int(root)
+    var _num_elements = Int(num_elements)
+    var my_sig = rank_sigs[_my_rank]
 
     # Thread indexing
     var global_tid = global_idx.x
@@ -288,41 +303,39 @@ def broadcast_pull_2stage_kernel[
     comptime alignment = align_of[SIMD[dtype, simd_width]]()
 
     # Partition data among all ngpus GPUs
-    var part_size = (num_elements // simd_width // ngpus) * simd_width
+    var part_size = (_num_elements // simd_width // ngpus) * simd_width
     var thr_local_start = global_tid * simd_width
     var elem_stride = stride * simd_width  # Stride in elements, not threads
 
     # Get payload buffers from signal pointers (skip Signal header)
     # These are used as scratch space for the scatter-gather pattern
-    var payloads = InlineArray[
-        UnsafePointer[Scalar[dtype], MutAnyOrigin], ngpus
-    ](uninitialized=True)
-
-    comptime for i in range(ngpus):
-        payloads[i] = (
-            rank_sigs[i].address_space_cast[AddressSpace.GENERIC]() + 1
+    comptime PtrType = MutPointer[Scalar[dtype], MutAnyOrigin]
+    var payloads = Array[_, ngpus](
+        fill_with_unrolled=lambda [i: Int]() -> PtrType: (
+            rank_sigs[i].address_space_cast[.GENERIC]() + 1
         ).bitcast[Scalar[dtype]]()
+    )
 
     with PDL():
         # === Stage 1: Scatter from root ===
         # Initial barrier to ensure all GPUs are ready
-        _multi_gpu_barrier[ngpus, is_start=True](rank_sigs, my_sig, my_rank)
+        _multi_gpu_barrier[ngpus, is_start=True](rank_sigs, my_sig, _my_rank)
 
-        var is_root = my_rank == root
+        var is_root = _my_rank == _root
         var result_ptr = result.ptr.address_space_cast[_target_address_space]()
-
         # Each GPU reads its chunk from root's input and writes to payload
-        var my_chunk_start = my_rank * part_size
+        var my_chunk_start = _my_rank * part_size
         var my_chunk_end = (
-            num_elements if my_rank == ngpus - 1 else my_chunk_start + part_size
+            _num_elements if _my_rank
+            == ngpus - 1 else my_chunk_start + part_size
         )
-        var my_payload = payloads[my_rank]
+        var my_payload = payloads[_my_rank]
 
         # Calculate tail info (only last chunk can have tail elements)
         # Since part_size is SIMD-aligned, only the last GPU's chunk can have tail
-        var tail_start = align_down(num_elements, simd_width)
+        var tail_start = align_down(_num_elements, simd_width)
         var aligned_chunk_end = (
-            tail_start if my_rank == ngpus - 1 else my_chunk_end
+            tail_start if _my_rank == ngpus - 1 else my_chunk_end
         )
 
         # Stage 1: All GPUs write their chunk to payload + result
@@ -350,14 +363,14 @@ def broadcast_pull_2stage_kernel[
 
         # Barrier with memory fence to ensure scatter is complete
         _multi_gpu_barrier[ngpus, is_start=False, need_fence=True](
-            rank_sigs, my_sig, my_rank
+            rank_sigs, my_sig, _my_rank
         )
 
         # === Stage 2: Gather remaining chunks ===
         # Non-root GPUs gather the chunks they don't have from all other GPUs.
         if not is_root:
             # Calculate max chunk size and its aligned portion
-            var last_chunk_size = num_elements - (ngpus - 1) * part_size
+            var last_chunk_size = _num_elements - (ngpus - 1) * part_size
             var last_aligned_size = align_down(last_chunk_size, simd_width)
             # Use the larger of part_size or last_aligned_size for loop bound
             var max_aligned_chunk_size = (
@@ -370,7 +383,7 @@ def broadcast_pull_2stage_kernel[
             ):
                 comptime for offset in range(1, ngpus):
                     # Round-robin: each GPU gathers from other peers
-                    var src_rank = circular_add[ngpus](my_rank, offset)
+                    var src_rank = circular_add[ngpus](_my_rank, offset)
 
                     var chunk_start = src_rank * part_size
                     # Use aligned size for last chunk, full size for others
@@ -396,7 +409,7 @@ def broadcast_pull_2stage_kernel[
             var last_chunk_start = (ngpus - 1) * part_size
             if (
                 global_tid == 0
-                and my_rank != ngpus - 1
+                and _my_rank != ngpus - 1
                 and last_aligned_size < last_chunk_size
             ):
                 var last_payload = payloads[ngpus - 1]
@@ -413,7 +426,7 @@ def broadcast_pull_2stage_kernel[
             == result_ptr
         )
         if is_root and not is_inplace:
-            var num_simd_vectors = num_elements // simd_width
+            var num_simd_vectors = _num_elements // simd_width
             for idx in range(global_tid, num_simd_vectors, stride):
                 var elem_idx = idx * simd_width
                 var data = root_input_ptr.address_space_cast[
@@ -425,14 +438,14 @@ def broadcast_pull_2stage_kernel[
 
             # Handle tail elements (spread across threads)
             var root_tail_idx = tail_start + global_tid
-            if root_tail_idx < num_elements:
+            if root_tail_idx < _num_elements:
                 var data = root_input_ptr.address_space_cast[
                     _target_address_space
                 ]().load[width=1, invariant=True](root_tail_idx)
                 result_ptr.store(root_tail_idx, data)
 
         # Final barrier to ensure all GPUs complete before returning
-        _multi_gpu_barrier[ngpus, is_start=False](rank_sigs, my_sig, my_rank)
+        _multi_gpu_barrier[ngpus, is_start=False](rank_sigs, my_sig, _my_rank)
 
 
 def _should_use_2stage[ngpus: Int](num_bytes: Int) -> Bool:
@@ -444,33 +457,37 @@ def _should_use_2stage[ngpus: Int](num_bytes: Int) -> Bool:
     - 8 GPUs: 2-stage wins for >= 2 MiB
     """
 
-    comptime if ngpus == 2:
-        return False
-    elif ngpus == 4:
-        return num_bytes >= 6 * 1024 * 1024  # 6 MiB
-    elif ngpus == 8:
-        return num_bytes >= 2 * 1024 * 1024  # 2 MiB
-    else:
-        # For other GPU counts, use 2-stage for large sizes as a reasonable default
-        return num_bytes >= 4 * 1024 * 1024  # 4 MiB
+    comptime match ngpus:
+        case 2:
+            return False
+        case 4:
+            return num_bytes >= 6 * 1024 * 1024  # 6 MiB
+        case 8:
+            return num_bytes >= 2 * 1024 * 1024  # 2 MiB
+        case _:
+            # For other GPU counts, use 2-stage for large sizes as a reasonable default
+            return num_bytes >= 4 * 1024 * 1024  # 4 MiB
 
 
-@parameter
 def broadcast[
     dtype: DType,
     in_layout: TensorLayout,
     in_origin: Origin,
+    in_engine: TensorEngine,
+    out_engine: TensorEngine,
     //,
     ngpus: Int,
     pdl_level: PDLLevel = PDLLevel(),
     use_multimem: Bool = False,
 ](
-    input_tensor: TileTensor[dtype, in_layout, in_origin],
-    output_tensor: TileTensor[mut=True, dtype, in_layout, _],
-    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    input_tensor: TileTensor[dtype, in_layout, in_origin, Engine=in_engine],
+    output_tensor: TileTensor[mut=True, dtype, in_layout, _, Engine=out_engine],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
     ctx: DeviceContext,
     root: Int,
     _max_num_blocks: Optional[Int] = None,
+    *,
+    rank: Int,
 ) raises:
     """Broadcast data from root GPU to all participating GPUs.
 
@@ -478,6 +495,8 @@ def broadcast[
         dtype: Data type of the tensor elements.
         in_layout: Layout of the input TileTensor.
         in_origin: Origin of the input TileTensor.
+        in_engine: Engine of the input tensor.
+        out_engine: Engine of the output tensor.
         ngpus: Number of GPUs participating in the broadcast.
         pdl_level: Controls PDL behavior for P2P kernels.
         use_multimem: Whether to use multimem mode for improved performance.
@@ -485,17 +504,19 @@ def broadcast[
     Args:
         input_tensor: Input tensor from root GPU as a TileTensor.
         output_tensor: Output tensor for THIS GPU as a TileTensor.
-        rank_sigs: Per-GPU Signal pointers.
+        rank_sigs: Per-GPU Signal pointers, indexed by group rank.
         ctx: Device context for THIS GPU.
-        root: Root GPU rank (source of broadcast data).
+        root: Group rank of the source GPU.
         _max_num_blocks: Optional grid limit.
+        rank: This GPU's group rank, not its device id: a group placed on
+            devices 4..7 still packs `rank_sigs` at 0..ngpus-1.
     """
     comptime assert ngpus >= 2, "broadcast requires at least 2 GPUs"
 
-    var my_rank: Int = Int(ctx.id())
+    var my_rank: Int = rank
 
     var num_elements = output_tensor.num_elements()
-    comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
+    comptime simd_width = simd_width_of[dtype, target=ctx.target]()
 
     # Do nothing if there are no elements to reduce.
     if num_elements == 0:
@@ -530,14 +551,16 @@ def broadcast[
             in_layout,
             BLOCK_SIZE,
             ngpus,
+            out_engine,
+            in_engine,
         ]
 
         ctx.enqueue_function[bcast_kernel](
             output_tensor,
-            input_tensor.as_immut(),
+            input_tensor.as_imm(),
             rank_sigs,
-            my_rank,
-            root,
+            Int32(my_rank),
+            Int32(root),
             grid_dim=grid_size,
             block_dim=BLOCK_SIZE,
             attributes=pdl_launch_attributes(pdl_level),
@@ -552,6 +575,7 @@ def broadcast[
                 ctx,
                 root,
                 _max_num_blocks,
+                rank=my_rank,
             )
         else:
             comptime bcast_kernel = broadcast_pull_1stage_kernel[
@@ -559,34 +583,39 @@ def broadcast[
                 in_layout,
                 BLOCK_SIZE,
                 ngpus,
+                out_engine,
+                in_engine,
             ]
 
             ctx.enqueue_function[bcast_kernel](
                 output_tensor,
-                input_tensor.as_immut(),
+                input_tensor.as_imm(),
                 rank_sigs,
-                my_rank,
+                Int32(my_rank),
                 grid_dim=grid_size,
                 block_dim=BLOCK_SIZE,
                 attributes=pdl_launch_attributes(pdl_level),
             )
 
 
-@parameter
 def broadcast_2stage[
     dtype: DType,
     in_layout: TensorLayout,
     in_origin: Origin,
+    in_engine: TensorEngine,
+    out_engine: TensorEngine,
     //,
     ngpus: Int,
     pdl_level: PDLLevel,
 ](
-    input_tensor: TileTensor[dtype, in_layout, in_origin],
-    output_tensor: TileTensor[mut=True, dtype, in_layout, _],
-    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    input_tensor: TileTensor[dtype, in_layout, in_origin, Engine=in_engine],
+    output_tensor: TileTensor[mut=True, dtype, in_layout, _, Engine=out_engine],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
     ctx: DeviceContext,
     root: Int,
     _max_num_blocks: Optional[Int] = None,
+    *,
+    rank: Int,
 ) raises:
     """Two-stage broadcast: scatter from root, then allgather among all GPUs.
 
@@ -610,6 +639,8 @@ def broadcast_2stage[
         dtype: Data dtype of tensor elements.
         in_layout: Layout of the input TileTensor.
         in_origin: Origin of the input TileTensor.
+        in_engine: Engine of the input tensor.
+        out_engine: Engine of the output tensor.
         ngpus: Number of GPUs participating.
         pdl_level: Control PDL behavior for the kernel.
 
@@ -620,11 +651,12 @@ def broadcast_2stage[
         ctx: Device context for THIS GPU.
         root: Root GPU rank (source of broadcast data).
         _max_num_blocks: Optional maximum number of thread blocks.
+        rank: This GPU's group rank; see `broadcast`.
     """
-    var my_rank: Int = Int(ctx.id())
+    var my_rank: Int = rank
 
     var num_elements = output_tensor.num_elements()
-    comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
+    comptime simd_width = simd_width_of[dtype, target=ctx.target]()
 
     # Do nothing if there are no elements.
     if num_elements == 0:
@@ -644,20 +676,24 @@ def broadcast_2stage[
         ceildiv(ceildiv(num_elements, simd_width * ngpus), BLOCK_SIZE),
     )
 
+    # `OutputLayout` and `in_layout` are the same here: broadcast writes the
+    # shape it reads. The root's input is passed as a host-resolved bare
+    # pointer (all GPUs read it via P2P), so the kernel takes no input tile.
     comptime kernel = broadcast_pull_2stage_kernel[
         dtype,
         in_layout,
         ngpus,
+        out_engine,
         BLOCK_SIZE=BLOCK_SIZE,
     ]
 
     ctx.enqueue_function[kernel](
         output_tensor,
-        input_tensor.as_immut().ptr,
+        rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](input_tensor.ptr),
         rank_sigs,
-        num_elements,
-        my_rank,
-        root,
+        Int32(num_elements),
+        Int32(my_rank),
+        Int32(root),
         grid_dim=grid_size,
         block_dim=BLOCK_SIZE,
         attributes=pdl_launch_attributes(pdl_level),

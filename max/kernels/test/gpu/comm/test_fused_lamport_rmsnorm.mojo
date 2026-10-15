@@ -30,11 +30,11 @@ from std.sys import size_of
 from std.random import random_float64
 from std.memory import bitcast
 
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 
 from layout import Coord, TileTensor, row_major
 
-from comm import Signal, MAX_GPUS, group_start, group_end
+from comm import Signal, group_start, group_end
 from comm.sync import init_signal_buffer
 from comm.sync import enable_p2p
 from comm.allreduce import allreduce
@@ -71,13 +71,13 @@ def _neg_zero_bits() -> Scalar[dtype]:
     lanes before pushing -- if that path is broken, real data is mistaken
     for the sentinel and the kernel deadlocks or returns wrong sums.
     """
-    return bitcast[dtype, 1](SIMD[DType.uint16, 1](0x8000))[0]
+    return bitcast[dtype, 1](UInt16(0x8000))[0]
 
 
 def _run_rms_norm_unfused(
-    in_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    out_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    gamma_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
+    in_ptr: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
+    out_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
+    gamma_ptr: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
     M: Int,
     K: Int,
     epsilon: Float32,
@@ -92,18 +92,18 @@ def _run_rms_norm_unfused(
     var out_view = TileTensor(out_ptr, row_major(Coord(shape)))
     var gamma_view = TileTensor(gamma_ptr, row_major(Coord(Index(K))))
 
-    @always_inline
+    @inline(.always)
     @__copy_capture(in_view)
-    @parameter
+    @__parameter
     def input_fn[width: Int](coords: Coord) -> SIMD[dtype, width]:
         var idx = in_view.layout(coords)
         return in_view.raw_load[width=width](idx)
 
-    @always_inline
+    @inline(.always)
     @__copy_capture(out_view)
-    @parameter
+    @__parameter
     def output_fn[
-        width: SIMDSize, alignment: Int
+        width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[dtype, width]) -> None:
         var idx = out_view.layout(coords)
         out_view.raw_store[width=width, alignment=alignment](idx, val)
@@ -117,7 +117,10 @@ def _run_rms_norm_unfused(
 
 
 def rmsnorm_test[
-    ngpus: Int, *, seed_neg_zero: Bool = False
+    ngpus: Int,
+    *,
+    seed_neg_zero: Bool = False,
+    interleave_zero_rows: Bool = False,
 ](
     list_of_ctx: List[DeviceContext],
     M: Int,
@@ -134,7 +137,12 @@ def rmsnorm_test[
     bit pattern matching Lamport's fp32 sentinel under truncation). Since
     `x + (-0.0) == x`, the sum is unchanged, but the kernel must
     `remove_neg_zero` the input pack before pushing -- if not, real data
-    is mistaken for the sentinel and the kernel deadlocks or misreduces."""
+    is mistaken for the sentinel and the kernel deadlocks or misreduces.
+
+    `interleave_zero_rows=True` issues a zero-row call on every rank before
+    each fused call, as a step that skips speculative drafting does. It must
+    not launch, so the generation rotation stays in step and every real call
+    still matches the reference."""
     print(
         "==== fused Lamport AR+RMSNorm  ngpus=",
         ngpus,
@@ -158,19 +166,13 @@ def rmsnorm_test[
     # Separate signal buffers for the unfused AR vs the fused AR+RMSNorm
     # kernel; both use the same `Signal` layout (lamport_region +
     # lamport_state) but each rotates its own generation flag independently.
-    var sigs_ar_devbufs = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var sigs_fused_devbufs = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs_ar = InlineArray[
-        UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
-    ](uninitialized=True)
-    var rank_sigs_fused = InlineArray[
-        UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
-    ](uninitialized=True)
+    var sigs_ar_devbufs = List[DeviceBuffer[.uint8]](capacity=ngpus)
+    var sigs_fused_devbufs = List[DeviceBuffer[.uint8]](capacity=ngpus)
 
     var gamma_host = alloc[Scalar[dtype]](K)
     for i in range(K):
         gamma_host[i] = random_float64(min=0.5, max=1.5).cast[dtype]()
-    var act_host = List[UnsafePointer[Scalar[dtype], MutUntrackedOrigin]](
+    var act_host = List[MutPointer[Scalar[dtype], MutUntrackedOrigin]](
         capacity=ngpus
     )
 
@@ -199,25 +201,25 @@ def rmsnorm_test[
         # generic allreduce also routes to Lamport for these small bf16
         # messages and uses the same region.
         sigs_ar_devbufs.append(
-            list_of_ctx[g].create_buffer_sync[DType.uint8](size_of[Signal]())
+            list_of_ctx[g].create_buffer_sync[.uint8](size_of[Signal]())
         )
         sigs_fused_devbufs.append(
-            list_of_ctx[g].create_buffer_sync[DType.uint8](size_of[Signal]())
+            list_of_ctx[g].create_buffer_sync[.uint8](size_of[Signal]())
         )
         init_signal_buffer(sigs_ar_devbufs[g], list_of_ctx[g])
         init_signal_buffer(sigs_fused_devbufs[g], list_of_ctx[g])
-        rank_sigs_ar[g] = (
-            sigs_ar_devbufs[g]
-            .unsafe_ptr()
-            .bitcast[Signal]()
-            .as_unsafe_any_origin()
-        )
-        rank_sigs_fused[g] = (
-            sigs_fused_devbufs[g]
-            .unsafe_ptr()
-            .bitcast[Signal]()
-            .as_unsafe_any_origin()
-        )
+
+    var rank_sigs_ar = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(sigs_ar_devbufs[i])
+    )
+    var rank_sigs_fused = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(sigs_fused_devbufs[i])
+    )
+
     for g in range(ngpus):
         list_of_ctx[g].synchronize()
 
@@ -226,25 +228,25 @@ def rmsnorm_test[
     comptime InTensorType = TileTensor[
         dtype, type_of(row_major(0)), ImmutAnyOrigin
     ]
-    var in_tensors = InlineArray[InTensorType, ngpus](uninitialized=True)
-    for g in range(ngpus):
-        in_tensors[g] = InTensorType(
-            rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+    var in_tensors = Array[_, ngpus](
+        fill_with=lambda (g: Int) -> InTensorType: InTensorType(
+            rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
                 act_in[g].unsafe_ptr()
             ),
             act_layout,
         )
+    )
     comptime OutTensorType = TileTensor[
         dtype, type_of(row_major(0)), MutAnyOrigin
     ]
-    var ar_out_tensors = InlineArray[OutTensorType, ngpus](uninitialized=True)
-    for g in range(ngpus):
-        ar_out_tensors[g] = OutTensorType(
-            rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
+    var ar_out_tensors = Array[_, ngpus](
+        fill_with=lambda (g: Int) -> OutTensorType: OutTensorType(
+            rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](
                 ar_out[g].unsafe_ptr()
             ),
             act_layout,
         )
+    )
 
     # ---- Unfused reference: on-device AR -> on-device rms_norm_gpu. ----
     # `allreduce` routes to the standalone Lamport AR for this shape (small,
@@ -262,13 +264,13 @@ def rmsnorm_test[
 
     for g in range(ngpus):
         _run_rms_norm_unfused(
-            rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+            rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
                 ar_out[g].unsafe_ptr()
             ),
-            rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
+            rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](
                 unfused_out[g].unsafe_ptr()
             ),
-            rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+            rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
                 gamma[g].unsafe_ptr()
             ),
             M,
@@ -286,24 +288,43 @@ def rmsnorm_test[
     list_of_ctx[0].synchronize()
     var expected = alloc[Float32](act_size)
     for i in range(act_size):
-        expected[i] = expected_host[i].cast[DType.float32]()
+        expected[i] = expected_host[i].cast[.float32]()
 
     # ---- Fused kernel: `lamport_allreduce_rmsnorm` on each device. ----
     var host = alloc[Scalar[dtype]](act_size)
     var got = alloc[Float32](act_size)
 
     for it in range(iters):
+        comptime if interleave_zero_rows:
+            comptime for g in range(ngpus):
+                lamport_allreduce_rmsnorm[dtype, ngpus, pdl=False](
+                    g,
+                    rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
+                        act_in[g].unsafe_ptr()
+                    ),
+                    rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](
+                        fused_out[g].unsafe_ptr()
+                    ),
+                    rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
+                        gamma[g].unsafe_ptr()
+                    ),
+                    rank_sigs_fused,
+                    0,
+                    K,
+                    EPS.cast[dtype](),
+                    list_of_ctx[g],
+                )
         group_start()
         comptime for g in range(ngpus):
             lamport_allreduce_rmsnorm[dtype, ngpus, pdl=False](
                 g,
-                rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+                rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
                     act_in[g].unsafe_ptr()
                 ),
-                rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
+                rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](
                     fused_out[g].unsafe_ptr()
                 ),
-                rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+                rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
                     gamma[g].unsafe_ptr()
                 ),
                 rank_sigs_fused,
@@ -320,7 +341,7 @@ def rmsnorm_test[
             list_of_ctx[g].enqueue_copy(host, fused_out[g])
             list_of_ctx[g].synchronize()
             for i in range(act_size):
-                got[i] = host[i].cast[DType.float32]()
+                got[i] = host[i].cast[.float32]()
             assert_almost_equal(
                 got, expected, num_elements=act_size, atol=1e-2, rtol=1e-2
             )
@@ -370,19 +391,13 @@ def unsynced_skew_test[
     var unfused_big = List[DeviceBuffer[dtype]](capacity=ngpus)
     var fused_big = List[DeviceBuffer[dtype]](capacity=ngpus)
     var gamma = List[DeviceBuffer[dtype]](capacity=ngpus)
-    var act_host = List[UnsafePointer[Scalar[dtype], MutUntrackedOrigin]](
+    var act_host = List[MutPointer[Scalar[dtype], MutUntrackedOrigin]](
         capacity=ngpus
     )
 
     # Separate signal buffers per kernel path -- as in `rmsnorm_test`.
-    var sigs_ar_devbufs = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var sigs_fused_devbufs = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs_ar = InlineArray[
-        UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
-    ](uninitialized=True)
-    var rank_sigs_fused = InlineArray[
-        UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
-    ](uninitialized=True)
+    var sigs_ar_devbufs = List[DeviceBuffer[.uint8]](capacity=ngpus)
+    var sigs_fused_devbufs = List[DeviceBuffer[.uint8]](capacity=ngpus)
 
     var gamma_host = alloc[Scalar[dtype]](K)
     for i in range(K):
@@ -412,25 +427,25 @@ def unsynced_skew_test[
         list_of_ctx[g].enqueue_copy(gamma[g], gamma_host)
 
         sigs_ar_devbufs.append(
-            list_of_ctx[g].create_buffer_sync[DType.uint8](size_of[Signal]())
+            list_of_ctx[g].create_buffer_sync[.uint8](size_of[Signal]())
         )
         sigs_fused_devbufs.append(
-            list_of_ctx[g].create_buffer_sync[DType.uint8](size_of[Signal]())
+            list_of_ctx[g].create_buffer_sync[.uint8](size_of[Signal]())
         )
         init_signal_buffer(sigs_ar_devbufs[g], list_of_ctx[g])
         init_signal_buffer(sigs_fused_devbufs[g], list_of_ctx[g])
-        rank_sigs_ar[g] = (
-            sigs_ar_devbufs[g]
-            .unsafe_ptr()
-            .bitcast[Signal]()
-            .as_unsafe_any_origin()
-        )
-        rank_sigs_fused[g] = (
-            sigs_fused_devbufs[g]
-            .unsafe_ptr()
-            .bitcast[Signal]()
-            .as_unsafe_any_origin()
-        )
+
+    var rank_sigs_ar = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(sigs_ar_devbufs[i])
+    )
+    var rank_sigs_fused = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(sigs_fused_devbufs[i])
+    )
+
     for g in range(ngpus):
         list_of_ctx[g].synchronize()
 
@@ -441,21 +456,22 @@ def unsynced_skew_test[
 
     for it in range(NUM_UNSYNCED_ITERS):
         var base = it * slice_size
-        var in_tensors = InlineArray[InType, ngpus](uninitialized=True)
-        var ar_out_tensors = InlineArray[OutType, ngpus](uninitialized=True)
-        for g in range(ngpus):
-            in_tensors[g] = InType(
-                rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+        var in_tensors = Array[_, ngpus](
+            fill_with=lambda (g: Int) -> InType: InType(
+                rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
                     act_big[g].unsafe_ptr() + base
                 ),
                 act_layout,
             )
-            ar_out_tensors[g] = OutType(
-                rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
+        )
+        var ar_out_tensors = Array[_, ngpus](
+            fill_with=lambda (g: Int) -> OutType: OutType(
+                rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](
                     ar_big[g].unsafe_ptr() + base
                 ),
                 act_layout,
             )
+        )
 
         group_start()
         comptime for g in range(ngpus):
@@ -470,13 +486,13 @@ def unsynced_skew_test[
         # into the big buffer (no DeviceBuffer slice API needed).
         for g in range(ngpus):
             _run_rms_norm_unfused(
-                rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+                rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
                     ar_big[g].unsafe_ptr() + base
                 ),
-                rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
+                rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](
                     unfused_big[g].unsafe_ptr() + base
                 ),
-                rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+                rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
                     gamma[g].unsafe_ptr()
                 ),
                 M,
@@ -493,13 +509,13 @@ def unsynced_skew_test[
         comptime for g in range(ngpus):
             lamport_allreduce_rmsnorm[dtype, ngpus, pdl=False](
                 g,
-                rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+                rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
                     act_big[g].unsafe_ptr() + base
                 ),
-                rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
+                rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](
                     fused_big[g].unsafe_ptr() + base
                 ),
-                rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+                rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
                     gamma[g].unsafe_ptr()
                 ),
                 rank_sigs_fused,
@@ -527,8 +543,8 @@ def unsynced_skew_test[
     for it in range(NUM_UNSYNCED_ITERS):
         var base = it * slice_size
         for i in range(slice_size):
-            expected_f32[i] = unfused_host[base + i].cast[DType.float32]()
-            got_f32[i] = fused_host[base + i].cast[DType.float32]()
+            expected_f32[i] = unfused_host[base + i].cast[.float32]()
+            got_f32[i] = fused_host[base + i].cast[.float32]()
         assert_almost_equal(
             got_f32,
             expected_f32,
@@ -587,6 +603,11 @@ def main() raises:
     rmsnorm_test[ngpus, seed_neg_zero=True](ctx, 8, 7168)
     print(_case_str(1, 7168, tag="negzero"))
     rmsnorm_test[ngpus, seed_neg_zero=True](ctx, 1, 7168)
+
+    # Zero-row calls between real ones: skipped launches must leave the
+    # generation rotation in step across ranks.
+    print(_case_str(8, 7168, tag="zero-rows"))
+    rmsnorm_test[ngpus, interleave_zero_rows=True](ctx, 8, 7168)
 
     # Unsynced back-to-back stress: many calls without cross-rank sync,
     # exercising the generation-rotation slack under real inter-rank drift.

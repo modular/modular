@@ -30,7 +30,11 @@ from max.graph import (
 )
 from max.graph.weights import WeightData
 from max.nn.comm.ep import EPBatchManager, EPCommInitializer, EPConfig
-from max.nn.moe import MoEGate, MoEQuantized
+from max.nn.comm.ep.ep_kernels import (
+    _ep_dispatch_output_types,
+    uses_mx_ep_token_format,
+)
+from max.nn.moe import GatedActivation, MoEGate, MoEQuantized
 from max.nn.moe.expert_parallel import forward_moe_sharded_layers
 from max.nn.quant_config import (
     InputScaleSpec,
@@ -222,7 +226,6 @@ def test_ep_moe_mxfp8_nvidia(
         shared_experts_dim=MOE_DIM,
         ep_size=n_devices,
         dtype=dtype,
-        apply_router_weight_first=False,
         ep_batch_manager=ep_batch_manager,
         quant_config=mxfp8_config,
     )
@@ -344,3 +347,92 @@ def test_ep_moe_mxfp8_nvidia(
             f"token {tok_idx}: cosine similarity {cos_sim.min().item():.6f}"
             " < 0.98"
         )
+
+
+def _mx_quant_config(fmt: QuantFormat) -> QuantConfig:
+    """Builds an MX (block-scaled, group 32) quant config for the fold gate."""
+    return QuantConfig(
+        input_scale=InputScaleSpec(
+            granularity=ScaleGranularity.BLOCK,
+            origin=ScaleOrigin.DYNAMIC,
+            dtype=DType.float32,
+            block_size=(1, 32),
+        ),
+        weight_scale=WeightScaleSpec(
+            granularity=ScaleGranularity.BLOCK,
+            dtype=DType.float8_e8m0fnu,
+            block_size=(1, 32),
+        ),
+        mlp_quantized_layers=set(),
+        attn_quantized_layers=set(),
+        embedding_output_dtype=None,
+        format=fmt,
+        can_use_fused_swiglu=True,
+    )
+
+
+def _build_ep_moe(
+    quant_config: QuantConfig, n_devices: int, max_tokens_per_rank: int
+) -> tuple[MoEQuantized, EPConfig]:
+    ep_config = EPConfig(
+        dispatch_dtype=(
+            DType.uint8 if quant_config.is_mxfp4 else DType.float8_e4m3fn
+        ),
+        combine_dtype=DType.bfloat16,
+        hidden_size=HIDDEN_DIM,
+        top_k=8,
+        n_experts=NUM_EXPERTS,
+        max_tokens_per_rank=max_tokens_per_rank,
+        n_gpus_per_node=n_devices,
+        n_nodes=int(os.environ.get("SHMEM_TOTAL_NODES", "1")),
+        dispatch_quant_config=quant_config,
+        fused_shared_expert=True,
+    )
+    devices_ref = [DeviceRef.GPU(i) for i in range(n_devices)]
+    moe = MoEQuantized(
+        devices=[DeviceRef.CPU()] + devices_ref,
+        hidden_dim=HIDDEN_DIM,
+        num_experts=NUM_EXPERTS,
+        num_experts_per_token=8,
+        moe_dim=MOE_DIM,
+        has_shared_experts=True,
+        shared_experts_dim=MOE_DIM,
+        ep_size=n_devices,
+        dtype=ep_config.dispatch_dtype,
+        ep_batch_manager=EPBatchManager(ep_config),
+        quant_config=quant_config,
+        activation=GatedActivation("swigluoai", alpha=1.702, limit=7.0),
+    )
+    return moe, ep_config
+
+
+@pytest.mark.skipif(
+    accelerator_api() != "hip",
+    reason="The MX EP A-scale dispatch fold is AMD-only",
+)
+@pytest.mark.parametrize("n_devices", [2])
+def test_ep_mx_scale_fold_amd(n_devices: int) -> None:
+    """The dispatch writes MXFP8 and MXFP4 A-scales in the matmul's slot layout.
+
+    Pinned at graph build -- before any weight is loaded.
+    """
+    assert n_devices <= accelerator_count(), (
+        "Devices are not enough to run EP test"
+    )
+    max_tokens_per_rank = 128
+    # The fold's single source of truth for the per-expert slot stride.
+    max_recv_per_expert = max_tokens_per_rank * n_devices
+    expected_stride = (max_recv_per_expert + 31) // 32 * 32
+    # `_build_ep_moe` fuses the shared expert into the local experts.
+    n_local_experts = NUM_EXPERTS // n_devices + 1
+
+    for fmt in (QuantFormat.MXFP8, QuantFormat.MXFP4):
+        _, ep_config = _build_ep_moe(
+            _mx_quant_config(fmt), n_devices, max_tokens_per_rank
+        )
+        assert uses_mx_ep_token_format(ep_config), (
+            f"{fmt} should dispatch through MXTokenFormat on AMD"
+        )
+        assert ep_config._max_recv_tokens_per_expert() == expected_stride
+        scales_type = _ep_dispatch_output_types(ep_config, DeviceRef.GPU(0))[1]
+        assert int(scales_type.shape[0]) == n_local_experts * expected_stride

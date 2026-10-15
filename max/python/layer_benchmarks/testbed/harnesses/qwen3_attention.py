@@ -38,7 +38,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-import torch
+# torch is a caller-supplied dep, see BUILD.bazel
+import torch  # type: ignore[import-not-found]
 from max.driver import DLPackArray
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, ops
@@ -173,9 +174,7 @@ class Qwen3AttentionHarness(RaggedAttentionHarness[Qwen3AttentionStaticParams]):
             ),
         ) as graph:
             inputs, input_row_offsets, *kv_cache = graph.inputs
-            kv_collection = kv_params.unflatten_kv_inputs(
-                iter(kv_cache)
-            ).inputs[0]
+            kv_collection = kv_params.unflatten_kv_inputs(iter(kv_cache))[0]
             layer_idx_const = ops.constant(
                 0, DType.uint32, device=DeviceRef.CPU()
             )

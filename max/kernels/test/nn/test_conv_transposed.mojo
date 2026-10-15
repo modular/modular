@@ -41,7 +41,7 @@ comptime simd_size: Int = simd_width_of[DType.float32]()
 comptime dtype = DType.float32
 
 
-@always_inline
+@inline(.always)
 def extend_shape_5d[
     rank: Int
 ](in_shape: IndexList[rank], first: Int, last: Int) -> IndexList[5]:
@@ -62,7 +62,7 @@ def extend_shape_5d[
     return out_shape
 
 
-@always_inline
+@inline(.always)
 def extend_shape_3d[rank: Int](in_shape: IndexList[rank]) -> IndexList[3]:
     var out_shape = IndexList[3](1)
 
@@ -72,7 +72,7 @@ def extend_shape_3d[rank: Int](in_shape: IndexList[rank]) -> IndexList[3]:
     return out_shape
 
 
-@always_inline
+@inline(.always)
 def append_shape_5d[
     rank: Int
 ](in_shape: IndexList[rank], last2nd: Int, last: Int) -> IndexList[5]:
@@ -135,16 +135,16 @@ def test_conv_transposed[
 
     var conv_shape = ConvShape[rank](
         n=N,
-        input_dims=input_dims,
-        output_dims=output_dims,
-        filter_dims=filter_dims,
+        input_dims=Coord(input_dims),
+        output_dims=Coord(output_dims),
+        filter_dims=Coord(filter_dims),
         c=C,
         f=F,
-        stride=stride,
-        dilation=dilation,
-        pad_d=pad_d,
-        pad_h=pad_h,
-        pad_w=pad_w,
+        stride=Coord(stride),
+        dilation=Coord(dilation),
+        pad_d=Coord(pad_d),
+        pad_h=Coord(pad_h),
+        pad_w=Coord(pad_w),
         num_groups=num_groups,
     )
 
@@ -225,11 +225,11 @@ def test_conv_transposed[
     var output_image_size = output_dims.flattened_length()
     for n in range(N):
         for i in range(output_image_size):
-            var output_ref_ptr = output_ref.ptr + F * (
+            var output_ref_ptr = output_ref._storage + F * (
                 i + output_image_size * n
             )
 
-            @always_inline
+            @inline(.always)
             def body0[
                 width: Int
             ](offset: Int) {var output_ref_ptr, var bias_ptr}:
@@ -248,23 +248,22 @@ def test_conv_transposed[
     comptime conv_attr = ConvInfoStatic[rank]()
 
     # Test epilogue
-    @always_inline
+    @inline(.always)
     @__copy_capture(output, bias_ptr)
-    @parameter
-    def epilogue[_rank: Int](coords: IndexList[_rank], f_size: Int):
-        @always_inline
+    @__parameter
+    def epilogue(coords: Coord, f_size: Int):
+        @inline(.always)
         def body1[width: Int](idx: Int) {var}:
-            var curr_coords = rebind[IndexList[rank + 2]](coords)
-            curr_coords[rank + 1] += idx
+            var f = Int(coords[rank + 1].value()) + idx
+            var curr_coords = coords
+            curr_coords.replace_dynamic[rank + 1](f)
 
-            var output_idx = output.layout(Coord(curr_coords))
+            var output_idx = output.layout(curr_coords)
 
             var vec = output.raw_load[width=width](output_idx)
 
             output.raw_store(
-                output_idx,
-                10.0
-                * (vec + bias_ptr.load[width=width](curr_coords[rank + 1])),
+                output_idx, 10.0 * (vec + bias_ptr.load[width=width](f))
             )
 
         vectorize[simd_size](f_size, body1)
@@ -333,9 +332,9 @@ def test_conv_transpose_shape_basic() raises:
     var pads = TileTensor(pads_ptr, row_major(Coord(Index(4))))
     var output_pads = TileTensor(output_pads_ptr, row_major(Coord(Index(2))))
 
-    var shape = conv_transpose_shape[
-        DType.float32, DType.int32, DType.int32, DType.int32, DType.int32
-    ](input, kernel, strides, dilations, pads, output_pads)
+    var shape = conv_transpose_shape[.float32, .int32, .int32, .int32, .int32](
+        input, kernel, strides, dilations, pads, output_pads
+    )
 
     assert_equal(shape[0], 1)
     assert_equal(shape[1], 5)
@@ -350,7 +349,7 @@ def test_conv_transpose_shape_basic() raises:
 
 
 def test_2d_stride_3_2_pad_1_1_2_2() raises:
-    test_conv_transposed[DType.float32, 2](
+    test_conv_transposed[.float32, 2](
         1,  # N
         Index(3, 3),
         1,  # C
@@ -364,7 +363,7 @@ def test_2d_stride_3_2_pad_1_1_2_2() raises:
 
 
 def test_2d_basic_no_pad() raises:
-    test_conv_transposed[DType.float32, 2](
+    test_conv_transposed[.float32, 2](
         1,  # N
         Index(3, 3),
         1,  # C
@@ -378,7 +377,7 @@ def test_2d_basic_no_pad() raises:
 
 
 def test_2d_dilation_2_2() raises:
-    test_conv_transposed[DType.float32, 2](
+    test_conv_transposed[.float32, 2](
         1,  # N
         Index(3, 3),
         1,  # C
@@ -392,7 +391,7 @@ def test_2d_dilation_2_2() raises:
 
 
 def test_2d_stride_3_2_kernel_2_2() raises:
-    test_conv_transposed[DType.float32, 2](
+    test_conv_transposed[.float32, 2](
         1,  # N
         Index(3, 3),
         1,  # C
@@ -406,7 +405,7 @@ def test_2d_stride_3_2_kernel_2_2() raises:
 
 
 def test_3d_stride_1_3_2() raises:
-    test_conv_transposed[DType.float32, 3](
+    test_conv_transposed[.float32, 3](
         1,  # N
         Index(2, 3, 3),
         1,  # C
@@ -420,7 +419,7 @@ def test_3d_stride_1_3_2() raises:
 
 
 def test_3d_stride_2_1_2_dilation_1_1_2() raises:
-    test_conv_transposed[DType.float32, 3](
+    test_conv_transposed[.float32, 3](
         1,  # N
         Index(3, 4, 7),
         1,  # C
@@ -434,7 +433,7 @@ def test_3d_stride_2_1_2_dilation_1_1_2() raises:
 
 
 def test_3d_with_padding() raises:
-    test_conv_transposed[DType.float32, 3](
+    test_conv_transposed[.float32, 3](
         1,  # N
         Index(4, 3, 3),
         1,  # C
@@ -448,7 +447,7 @@ def test_3d_with_padding() raises:
 
 
 def test_3d_complex_padding_dilation() raises:
-    test_conv_transposed[DType.float32, 3](
+    test_conv_transposed[.float32, 3](
         1,  # N
         Index(4, 5, 7),
         1,  # C
@@ -462,7 +461,7 @@ def test_3d_complex_padding_dilation() raises:
 
 
 def test_3d_multi_channel() raises:
-    test_conv_transposed[DType.float32, 3](
+    test_conv_transposed[.float32, 3](
         1,  # N
         Index(5, 5, 5),
         4,  # C
@@ -497,7 +496,7 @@ def main() raises:
     # Large shapes commented out to save CI cost.
 
     # # StarGan shape
-    # test_conv_transposed[DType.float32, 2](
+    # test_conv_transposed[.float32, 2](
     #     16,  # N
     #     Index(32, 32),
     #     256,  # C
@@ -509,7 +508,7 @@ def main() raises:
     #     1,  # num_groups
     # )
 
-    # test_conv_transposed[DType.float32, 2](
+    # test_conv_transposed[.float32, 2](
     #     16,  # N
     #     Index(64, 64),
     #     128,  # C
@@ -522,7 +521,7 @@ def main() raises:
     # )
 
     # # 3d Unet shapes
-    # test_conv_transposed[DType.float32, 3](
+    # test_conv_transposed[.float32, 3](
     #     1,  # N
     #     Index(4, 4, 4),
     #     320,  # C
@@ -530,11 +529,11 @@ def main() raises:
     #     320,  # F
     #     Index(2, 2, 2),  # stride
     #     Index(1, 1, 1),  # dilation
-    #     IndexList[6](0),  # pad
+    #     (0,),  # pad
     #     1,  # num_groups
     # )
 
-    # test_conv_transposed[DType.float32, 3](
+    # test_conv_transposed[.float32, 3](
     #     1,  # N
     #     Index(8, 8, 8),
     #     320,  # C
@@ -542,11 +541,11 @@ def main() raises:
     #     256,  # F
     #     Index(2, 2, 2),  # stride
     #     Index(1, 1, 1),  # dilation
-    #     IndexList[6](0),  # pad
+    #     (0,),  # pad
     #     1,  # num_groups
     # )
 
-    # test_conv_transposed[DType.float32, 3](
+    # test_conv_transposed[.float32, 3](
     #     1,  # N
     #     Index(16, 16, 16),
     #     256,  # C
@@ -554,11 +553,11 @@ def main() raises:
     #     128,  # F
     #     Index(2, 2, 2),  # stride
     #     Index(1, 1, 1),  # dilation
-    #     IndexList[6](0),  # pad
+    #     (0,),  # pad
     #     1,  # num_groups
     # )
 
-    # test_conv_transposed[DType.float32, 3](
+    # test_conv_transposed[.float32, 3](
     #     1,  # N
     #     Index(32, 32, 32),
     #     128,  # C
@@ -566,11 +565,11 @@ def main() raises:
     #     64,  # F
     #     Index(2, 2, 2),  # stride
     #     Index(1, 1, 1),  # dilation
-    #     IndexList[6](0),  # pad
+    #     (0,),  # pad
     #     1,  # num_groups
     # )
 
-    # test_conv_transposed[DType.float32, 3](
+    # test_conv_transposed[.float32, 3](
     #     1,  # N
     #     Index(64, 64, 64),
     #     64,  # C
@@ -578,6 +577,6 @@ def main() raises:
     #     32,  # F
     #     Index(2, 2, 2),  # stride
     #     Index(1, 1, 1),  # dilation
-    #     IndexList[6](0),  # pad
+    #     (0,),  # pad
     #     1,  # num_groups
     # )

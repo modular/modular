@@ -47,7 +47,7 @@ def _spin_until_signaled(state: StructuredOutputOverlapState) -> None:
     before spinning so the trampoline fires; the worker then runs
     asynchronously and the spin sees the release-store.
     """
-    state.device.default_stream.synchronize()
+    state.device.default_queue.synchronize()
     deadline = time.monotonic() + 5.0
     while state.bitmask_flag.load() == 0:
         if time.monotonic() > deadline:
@@ -169,7 +169,7 @@ def test_payload_shape_matches_wait_host_value(
     payload = state.wait_payload
     assert payload.dtype == DType.int64
     assert tuple(payload.shape) == (2,)
-    # Read via the pinned numpy view -- ``DevicePinnedBuffer`` is what
+    # Read via the pinned numpy view -- staging memory is what
     # backs ``wait_payload`` (so that input bindings stay pinned -> CPU
     # graph input and avoid pageable HtoD copies).
     payload_np = payload.to_numpy()
@@ -193,7 +193,7 @@ def _build_overlap_smoke_graph(
 
     The pinned input is declared on the CPU per the engine's input
     binding rule ("Pinned tensors can only be used in place of CPU
-    graph inputs"), even though the runtime ``DevicePinnedBuffer``'s
+    graph inputs"), even though the runtime staging ``Buffer``'s
     ``.device`` is the accelerator.
 
     Both pinned and scratch use int32 because the bitmask is packed:
@@ -233,7 +233,7 @@ def test_in_graph_h2d_preserves_pinned_row_layout(
     asserts the device scratch matches the pinned source byte-for-byte.
 
     Catches:
-      - DevicePinnedBuffer / graph-input device mismatch (would make
+      - Staging buffer / graph-input device mismatch (would make
         inplace_memcpy lower as the wrong direction and produce
         uninitialized device contents).
       - Row reordering between pinned and device.
@@ -331,7 +331,7 @@ def test_callback_writes_propagate_to_device(
     )
 
 
-def test_stale_flag_no_race_with_default_stream_callback(
+def test_stale_flag_no_race_with_default_queue_callback(
     accelerator: Accelerator, state: StructuredOutputOverlapState
 ) -> None:
     """Mirrors the production pattern: callback on the device default
@@ -554,3 +554,52 @@ def test_in_graph_h2d_is_gated_by_wait_host_value(
         "(compiler reorder, lost chain dependency, or parallel "
         "execution in the captured cuGraph)."
     )
+
+
+# ------------------------- several verify widths -------------------------- #
+
+_WIDTHS = (1, 2, 4)
+
+
+@pytest.fixture
+def multi_width_state(
+    accelerator: Accelerator, cpu: CPU
+) -> StructuredOutputOverlapState:
+    """A state serving several verify widths, as a width schedule asks for."""
+    if accelerator.api not in ("cuda", "hip"):
+        pytest.skip(
+            "StructuredOutputOverlapState requires a CUDA/HIP accelerator"
+        )
+    return StructuredOutputOverlapState(
+        device=accelerator,
+        cpu=cpu,
+        max_batch_size=_MAX_BATCH,
+        num_positions=_WIDTHS,
+        vocab_size=_VOCAB,
+    )
+
+
+def test_priming_one_width_does_not_disturb_another(
+    multi_width_state: StructuredOutputOverlapState,
+) -> None:
+    """Widths are independent buffers, so one width cannot corrupt another.
+
+    This is the property the single shared buffer could not provide, and the
+    reason a single shared buffer could not serve several widths.
+    """
+    packed = multi_width_state.packed_vocab_size
+    narrow, wide = _WIDTHS[0], _WIDTHS[-1]
+
+    multi_width_state.prime(
+        np.full((_MAX_BATCH, wide, packed), -1, dtype=np.int32)
+    )
+    multi_width_state.prime(
+        np.zeros((_MAX_BATCH, narrow, packed), dtype=np.int32)
+    )
+
+    wide_rows = multi_width_state.pinned_for(wide).to_numpy()
+    assert (wide_rows[:_MAX_BATCH, :wide, :] == -1).all(), (
+        "priming the narrow width overwrote the wide width's rows"
+    )
+    narrow_rows = multi_width_state.pinned_for(narrow).to_numpy()
+    assert (narrow_rows[:_MAX_BATCH, :narrow, :] == 0).all()

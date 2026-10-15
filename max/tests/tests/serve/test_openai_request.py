@@ -11,13 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-
-import json
-
 from max.pipelines.context.exceptions import InputError
+from max.pipelines.sampling import ToolCallPolicy
 from max.serve.config import Settings
+from max.serve.pipelines.echo_gen import EchoPipelineTokenizer
 from max.serve.router.openai_routes import (
+    _convert_chat_completion_tools_to_token_generator_tools,
     _create_response_format,
+    openai_create_chat_completion,
     openai_parse_chat_completion_request,
 )
 
@@ -27,11 +28,48 @@ bazel+mypy complain about this import not being available even though it is part
 Explicitly importing //max/python/max/serve/schemas in the test's BUILD file hasn't worked either.
 """
 
+import base64
+import io
+import json
+from types import SimpleNamespace
 from typing import Any, cast
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
+import av
+import numpy as np
 import pytest
+from max.pipelines.request.open_responses import (
+    ReasoningEffortEnum,
+    ReasoningParam,
+)
 from max.serve.schemas.openai import CreateChatCompletionRequest
 from pydantic import AnyUrl, ValidationError
+
+
+def _mp4_data_uri(num_frames: int = 2) -> str:
+    """A tiny valid H.264 MP4 as a ``data:`` URI.
+
+    The router decodes a frame of every video to validate it, so a placeholder
+    payload is rejected before the assertions under test are reached.
+    """
+    buf = io.BytesIO()
+    container = av.open(buf, mode="w", format="mp4")
+    stream = container.add_stream("libx264", rate=24)
+    assert isinstance(stream, av.VideoStream)
+    stream.width = 32
+    stream.height = 32
+    stream.pix_fmt = "yuv420p"
+    for i in range(num_frames):
+        arr = np.full((32, 32, 3), fill_value=i * 30, dtype=np.uint8)
+        for packet in stream.encode(
+            av.VideoFrame.from_ndarray(arr, format="rgb24")
+        ):
+            container.mux(packet)
+    for packet in stream.encode():
+        container.mux(packet)
+    container.close()
+    encoded = base64.b64encode(buf.getvalue()).decode()
+    return "data:video/mp4;base64," + encoded
 
 
 @pytest.mark.skip
@@ -62,6 +100,7 @@ async def test_openai_extract_image_from_requests() -> None:
         images,
         _videos,
         _decoded,
+        _max_decoded_bytes,
     ) = await openai_parse_chat_completion_request(request, False, settings)
     assert len(messages) == 2
     assert len(images) == 0
@@ -74,6 +113,7 @@ async def test_openai_extract_image_from_requests() -> None:
         images,
         _videos,
         _decoded,
+        _max_decoded_bytes,
     ) = await openai_parse_chat_completion_request(request, True, settings)
     assert len(messages) == 2
     assert len(images) == 0
@@ -99,6 +139,7 @@ async def test_openai_extract_image_from_requests() -> None:
         images,
         _videos,
         _decoded,
+        _max_decoded_bytes,
     ) = await openai_parse_chat_completion_request(
         request,
         False,
@@ -117,6 +158,7 @@ async def test_openai_extract_image_from_requests() -> None:
         images,
         _videos,
         _decoded,
+        _max_decoded_bytes,
     ) = await openai_parse_chat_completion_request(
         request,
         True,
@@ -147,6 +189,7 @@ async def test_openai_extract_image_from_requests() -> None:
         images,
         _videos,
         _decoded,
+        _max_decoded_bytes,
     ) = await openai_parse_chat_completion_request(
         CreateChatCompletionRequest(
             model="test", messages=[system_message, user_message_image_two_urls]
@@ -181,6 +224,7 @@ async def test_openai_extract_image_from_requests() -> None:
         images,
         _videos,
         _decoded,
+        _max_decoded_bytes,
     ) = await openai_parse_chat_completion_request(request, False, settings)
     assert len(messages) == 1
     assert len(images) == 2
@@ -192,6 +236,7 @@ async def test_openai_extract_image_from_requests() -> None:
         images,
         _videos,
         _decoded,
+        _max_decoded_bytes,
     ) = await openai_parse_chat_completion_request(request, True, settings)
     assert len(messages) == 1
     assert len(images) == 2
@@ -218,6 +263,7 @@ async def test_openai_user_message_with_null_content() -> None:
         _images,
         _videos,
         _decoded,
+        _max_decoded_bytes,
     ) = await openai_parse_chat_completion_request(request, False, settings)
     assert len(messages) == 1
     assert messages[0].role == "user"
@@ -235,6 +281,7 @@ async def test_openai_user_message_with_null_content() -> None:
         _images,
         _videos,
         _decoded,
+        _max_decoded_bytes,
     ) = await openai_parse_chat_completion_request(request, False, settings)
     assert len(messages) == 1
     assert messages[0].role == "user"
@@ -266,6 +313,7 @@ async def test_openai_parse_normalizes_developer_role_to_system() -> None:
         _images,
         _videos,
         _decoded,
+        _max_decoded_bytes,
     ) = await openai_parse_chat_completion_request(
         request, wrap_content=False, settings=settings
     )
@@ -354,6 +402,7 @@ async def test_openai_parse_forwards_tool_call_metadata() -> None:
         _images,
         _videos,
         _decoded,
+        _max_decoded_bytes,
     ) = await openai_parse_chat_completion_request(
         request, wrap_content=False, settings=settings
     )
@@ -404,6 +453,7 @@ async def test_openai_parse_drops_empty_tool_calls() -> None:
         _images,
         _videos,
         _decoded,
+        _max_decoded_bytes,
     ) = await openai_parse_chat_completion_request(
         request, wrap_content=False, settings=settings
     )
@@ -503,6 +553,7 @@ async def test_openai_parse_coerces_empty_tool_call_arguments() -> None:
         _images,
         _videos,
         _decoded,
+        _max_decoded_bytes,
     ) = await openai_parse_chat_completion_request(
         request, wrap_content=False, settings=settings
     )
@@ -587,33 +638,8 @@ def test_openai_response_format_accepts_boolean_schema(schema: bool) -> None:
     assert response_format["json_schema"]["schema"] is schema
 
 
-def test_create_response_format_probes_normalized_schema() -> None:
-    """``_create_response_format`` validates the *normalized* schema against
-    the active backend (via the injected validator), so an uncompilable schema
-    is a 400 here rather than a worker crash later."""
-    probed: list[str] = []
-
-    class _RecordingValidator:
-        """GrammarValidator that records the schema it is asked to check."""
-
-        def check_tool_grammar(self, grammar: str) -> None:
-            return None
-
-        def check_json_schema(self, json_schema: str) -> None:
-            probed.append(json_schema)
-
-    class _RaisingValidator:
-        """GrammarValidator that rejects everything, as an uncompilable
-        schema would."""
-
-        def check_tool_grammar(self, grammar: str) -> None:
-            raise InputError("cannot compile")
-
-        def check_json_schema(self, json_schema: str) -> None:
-            raise InputError("cannot compile")
-
-    # A schema with no root ``type`` — normalization defaults it to "object",
-    # and that normalized form is what the validator (and worker) must compile.
+def test_create_response_format_passes_schema_through_unchanged() -> None:
+    """The route carries the schema through verbatim."""
     response_format = cast(
         Any,
         {
@@ -622,19 +648,29 @@ def test_create_response_format_probes_normalized_schema() -> None:
         },
     )
 
-    _create_response_format(
-        response_format,
-        enable_response_format_schema=True,
-        grammar_validator=_RecordingValidator(),
+    result = _create_response_format(
+        response_format, enable_response_format_schema=True
     )
-    assert len(probed) == 1
-    assert json.loads(probed[0])["type"] == "object"
+
+    assert result is not None
+    assert result.json_schema == {"properties": {}}
+
+
+def test_create_response_format_rejects_schema_without_the_flag() -> None:
+    """The flag check stays at the route: the worker's grammar gate skips
+    requests ``update_context`` would reject, so one reaching the worker
+    would raise from inside ``execute()``."""
+    response_format = cast(
+        Any,
+        {
+            "type": "json_schema",
+            "json_schema": {"name": "t", "schema": {"type": "object"}},
+        },
+    )
 
     with pytest.raises(InputError):
         _create_response_format(
-            response_format,
-            enable_response_format_schema=True,
-            grammar_validator=_RaisingValidator(),
+            response_format, enable_response_format_schema=False
         )
 
 
@@ -845,7 +881,7 @@ def test_openai_image_url_accepts_non_string_sizing_hints() -> None:
                     {
                         "type": "video_url",
                         "video_url": {
-                            "url": "data:video/mp4;base64,AAAA",
+                            "url": _mp4_data_uri(),
                             "fps": 2.0,
                             "max_long_side_pixel": 1008,
                         },
@@ -889,7 +925,7 @@ async def test_openai_wrap_content_carries_detail_hint() -> None:
                         {
                             "type": "video_url",
                             "video_url": {
-                                "url": "data:video/mp4;base64,AAAA",
+                                "url": _mp4_data_uri(),
                                 "detail": "low",
                             },
                         },
@@ -927,11 +963,87 @@ async def test_openai_root_role_accepted_and_passed_through() -> None:
         _images,
         _videos,
         _decoded,
+        _max_decoded_bytes,
     ) = await openai_parse_chat_completion_request(request, False, settings)
     # ``root`` survives normalization unchanged and stays first.
     assert messages[0].role == "root"
     assert messages[0].content == "You are MiniMax."
     assert messages[1].role == "system"
+
+
+@pytest.mark.parametrize(
+    "effort", ["minimal", "low", "medium", "high", "xhigh", "max"]
+)
+def test_reasoning_effort_reaches_the_template_unchanged(effort: str) -> None:
+    """Every rung, including ``max`` above ``xhigh``, turns thinking on and is
+    handed to the chat template as the client spelled it."""
+    request = CreateChatCompletionRequest.model_validate(
+        {
+            "model": "test",
+            "messages": [{"role": "user", "content": "hi"}],
+            "reasoning_effort": effort,
+        }
+    )
+    assert request.resolved_chat_template_kwargs == {
+        "enable_thinking": True,
+        "thinking": True,
+        "reasoning_effort": effort,
+    }
+
+
+def test_reasoning_effort_none_turns_thinking_off() -> None:
+    request = CreateChatCompletionRequest.model_validate(
+        {
+            "model": "test",
+            "messages": [{"role": "user", "content": "hi"}],
+            "reasoning_effort": "none",
+        }
+    )
+    kwargs = request.resolved_chat_template_kwargs
+    assert kwargs is not None
+    assert kwargs["enable_thinking"] is False
+    assert kwargs["thinking"] is False
+
+
+def test_reasoning_effort_rejects_an_unknown_level() -> None:
+    """A typo fails validation rather than reaching the template verbatim."""
+    with pytest.raises(ValidationError):
+        CreateChatCompletionRequest.model_validate(
+            {
+                "model": "test",
+                "messages": [{"role": "user", "content": "hi"}],
+                "reasoning_effort": "hgih",
+            }
+        )
+
+
+def test_reasoning_object_effort_rejects_an_unknown_level() -> None:
+    with pytest.raises(ValidationError):
+        CreateChatCompletionRequest.model_validate(
+            {
+                "model": "test",
+                "messages": [{"role": "user", "content": "hi"}],
+                "reasoning": {"effort": "hgih"},
+            }
+        )
+
+
+def test_reasoning_object_effort_accepts_max() -> None:
+    request = CreateChatCompletionRequest.model_validate(
+        {
+            "model": "test",
+            "messages": [{"role": "user", "content": "hi"}],
+            "reasoning": {"effort": "max"},
+        }
+    )
+    kwargs = request.resolved_chat_template_kwargs
+    assert kwargs is not None
+    assert kwargs["reasoning_effort"] == "max"
+
+
+def test_responses_reasoning_effort_accepts_max() -> None:
+    param = ReasoningParam.model_validate({"effort": "max"})
+    assert param.effort == ReasoningEffortEnum.max
 
 
 def test_thinking_translates_to_standard_reasoning_flags() -> None:
@@ -1001,6 +1113,127 @@ def test_thinking_does_not_override_explicit_chat_template_kwargs() -> None:
         "enable_thinking": False,
         "thinking": True,
     }
+
+
+def _chat_template_kwargs_for(payload: dict[str, Any]) -> dict[str, Any] | None:
+    request = CreateChatCompletionRequest.model_validate(
+        {
+            "model": "gpt-3.5-turbo",
+            "messages": [{"role": "user", "content": "Hello"}],
+            **payload,
+        }
+    )
+    return request.resolved_chat_template_kwargs
+
+
+@pytest.mark.parametrize(
+    "payload,expected",
+    [
+        pytest.param({}, None, id="no_reasoning_controls"),
+        pytest.param(
+            {"chat_template_kwargs": {"enable_thinking": False}},
+            {"enable_thinking": False},
+            id="passthrough_without_reasoning_controls",
+        ),
+        pytest.param(
+            {"reasoning_effort": "high"},
+            {
+                "enable_thinking": True,
+                "thinking": True,
+                "reasoning_effort": "high",
+            },
+            id="top_level_effort",
+        ),
+        pytest.param(
+            {"reasoning_effort": "none"},
+            {
+                "enable_thinking": False,
+                "thinking": False,
+                "reasoning_effort": "none",
+            },
+            id="effort_none_disables_thinking",
+        ),
+        pytest.param(
+            {"chat_template_kwargs": {"reasoning_effort": "none"}},
+            {
+                "enable_thinking": False,
+                "thinking": False,
+                "reasoning_effort": "none",
+            },
+            id="client_effort_none_disables_thinking",
+        ),
+        pytest.param(
+            {"chat_template_kwargs": {"reasoning_effort": "low"}},
+            {
+                "enable_thinking": True,
+                "thinking": True,
+                "reasoning_effort": "low",
+            },
+            id="client_effort_enables_thinking",
+        ),
+        pytest.param(
+            {
+                "chat_template_kwargs": {
+                    "reasoning_effort": "none",
+                    "enable_thinking": True,
+                }
+            },
+            {
+                "enable_thinking": True,
+                "thinking": True,
+                "reasoning_effort": "none",
+            },
+            id="client_toggle_wins_over_client_effort",
+        ),
+        pytest.param(
+            {"reasoning": {"effort": "low"}},
+            {
+                "enable_thinking": True,
+                "thinking": True,
+                "reasoning_effort": "low",
+            },
+            id="openrouter_effort",
+        ),
+        pytest.param(
+            {"reasoning": {"enabled": False, "effort": "high"}},
+            {
+                "enable_thinking": False,
+                "thinking": False,
+                "reasoning_effort": "high",
+            },
+            id="openrouter_enabled_wins_over_effort",
+        ),
+        pytest.param(
+            {"reasoning_effort": "high", "reasoning": {"effort": "low"}},
+            {
+                "enable_thinking": True,
+                "thinking": True,
+                "reasoning_effort": "high",
+            },
+            id="top_level_effort_wins",
+        ),
+        pytest.param(
+            {
+                "reasoning_effort": "high",
+                "chat_template_kwargs": {
+                    "reasoning_effort": "low",
+                    "enable_thinking": False,
+                },
+            },
+            {
+                "reasoning_effort": "low",
+                "enable_thinking": False,
+                "thinking": False,
+            },
+            id="client_kwargs_win",
+        ),
+    ],
+)
+def test_resolved_chat_template_kwargs(
+    payload: dict[str, Any], expected: dict[str, Any] | None
+) -> None:
+    """Reasoning controls are folded into the kwargs the chat template sees."""
+    assert _chat_template_kwargs_for(payload) == expected
 
 
 # ---------------------------------------------------------------------------
@@ -1140,6 +1373,24 @@ async def test_openai_rejects_invalid_json_tool_call_arguments() -> None:
         )
 
 
+async def test_openai_rejects_text_content_part_without_text_field() -> None:
+    """``{'type': 'text'}`` parts must include ``text`` and error cleanly."""
+    request = CreateChatCompletionRequest.model_validate(
+        {
+            "model": "test",
+            "messages": [{"role": "user", "content": [{"type": "text"}]}],
+        }
+    )
+
+    with pytest.raises(
+        InputError,
+        match=r"Content part of type 'text' must include a 'text' field\.",
+    ):
+        await openai_parse_chat_completion_request(
+            request, wrap_content=True, settings=Settings()
+        )
+
+
 async def test_openai_rejects_tool_call_id_mismatch() -> None:
     """A ``tool`` reply whose ``tool_call_id`` matches no tool_call -> 400 (verifier 16_08)."""
     from max.pipelines.context.exceptions import InputError
@@ -1258,6 +1509,7 @@ async def test_openai_accepts_complete_tool_call_replies() -> None:
         _images,
         _videos,
         _decoded,
+        _max_decoded_bytes,
     ) = await openai_parse_chat_completion_request(
         request, wrap_content=False, settings=Settings()
     )
@@ -1265,7 +1517,7 @@ async def test_openai_accepts_complete_tool_call_replies() -> None:
 
 
 async def test_openai_rejects_oversized_image() -> None:
-    """An image whose resolved bytes exceed 10MB -> 400 (verifier 11_04)."""
+    """An image over the request media budget -> 400 (verifier 11_04)."""
     import base64 as _base64
 
     from max.pipelines.context.exceptions import InputError
@@ -1290,8 +1542,7 @@ async def test_openai_rejects_oversized_image() -> None:
         await openai_parse_chat_completion_request(
             request,
             wrap_content=True,
-            settings=Settings(),
-            max_image_bytes=10 * 1024 * 1024,
+            settings=Settings(max_media_bytes=10 * 1024 * 1024),
         )
 
 
@@ -1335,6 +1586,7 @@ async def test_openai_accepts_image_count_at_limit() -> None:
         images,
         _videos,
         _decoded,
+        _max_decoded_bytes,
     ) = await openai_parse_chat_completion_request(
         request,
         wrap_content=True,
@@ -1359,6 +1611,7 @@ async def test_openai_accepts_64mb_request_body() -> None:
         images,
         videos,
         _decoded,
+        _max_decoded_bytes,
     ) = await openai_parse_chat_completion_request(
         request, wrap_content=True, settings=Settings()
     )
@@ -1495,3 +1748,199 @@ def test_merge_tool_call_deltas_empty_string_arg_is_present_not_absent() -> (
     assert merged[0].function is not None
     assert merged[0].function.name is None
     assert merged[0].function.arguments == ""
+
+
+@pytest.mark.parametrize(
+    "policy,requested,expected",
+    [
+        (ToolCallPolicy.FORCE_UNCONSTRAINED, True, True),
+        (ToolCallPolicy.FORCE_UNCONSTRAINED, False, False),
+        (ToolCallPolicy.FORCE_UNCONSTRAINED, "absent", False),
+        (ToolCallPolicy.FORCE_STRICT_FALSE, True, False),
+        (ToolCallPolicy.FORCE_STRICT_FALSE, False, False),
+        (ToolCallPolicy.FORCE_STRICT_FALSE, "absent", False),
+        (ToolCallPolicy.FORCE_STRICT_TRUE_AND_BEST_EFFORT, True, True),
+        (ToolCallPolicy.FORCE_STRICT_TRUE_AND_BEST_EFFORT, False, True),
+        (ToolCallPolicy.FORCE_STRICT_TRUE_AND_BEST_EFFORT, "absent", True),
+        (ToolCallPolicy.DEFAULT_STRICT_FALSE_AND_BEST_EFFORT, True, True),
+        (ToolCallPolicy.DEFAULT_STRICT_FALSE_AND_BEST_EFFORT, False, False),
+        (ToolCallPolicy.DEFAULT_STRICT_FALSE_AND_BEST_EFFORT, "absent", False),
+        (ToolCallPolicy.DEFAULT_STRICT_TRUE_AND_BEST_EFFORT, True, True),
+        (ToolCallPolicy.DEFAULT_STRICT_TRUE_AND_BEST_EFFORT, False, False),
+        (ToolCallPolicy.DEFAULT_STRICT_TRUE_AND_BEST_EFFORT, "absent", True),
+        (ToolCallPolicy.FORCE_STRICT_TRUE_AND_REJECT_UNSUPPORTED, True, True),
+        (ToolCallPolicy.FORCE_STRICT_TRUE_AND_REJECT_UNSUPPORTED, False, True),
+        (
+            ToolCallPolicy.FORCE_STRICT_TRUE_AND_REJECT_UNSUPPORTED,
+            "absent",
+            True,
+        ),
+        (
+            ToolCallPolicy.DEFAULT_STRICT_FALSE_AND_REJECT_UNSUPPORTED,
+            True,
+            True,
+        ),
+        (
+            ToolCallPolicy.DEFAULT_STRICT_FALSE_AND_REJECT_UNSUPPORTED,
+            False,
+            False,
+        ),
+        (
+            ToolCallPolicy.DEFAULT_STRICT_FALSE_AND_REJECT_UNSUPPORTED,
+            "absent",
+            False,
+        ),
+        (ToolCallPolicy.DEFAULT_STRICT_TRUE_AND_REJECT_UNSUPPORTED, True, True),
+        (
+            ToolCallPolicy.DEFAULT_STRICT_TRUE_AND_REJECT_UNSUPPORTED,
+            False,
+            False,
+        ),
+        (
+            ToolCallPolicy.DEFAULT_STRICT_TRUE_AND_REJECT_UNSUPPORTED,
+            "absent",
+            True,
+        ),
+    ],
+)
+def test_tool_call_policy_resolves_strict(
+    policy: ToolCallPolicy, requested: object, expected: bool
+) -> None:
+    """Every policy resolves a concrete ``strict`` and the function keys keep a
+    fixed order."""
+    function: dict[str, Any] = {
+        "name": "computer",
+        "description": "Control the desktop.",
+        "parameters": {"type": "object", "properties": {}},
+    }
+    if requested != "absent":
+        function["strict"] = requested
+    request = CreateChatCompletionRequest.model_validate(
+        {
+            "model": "test",
+            "messages": [{"role": "user", "content": "hi"}],
+            "tools": [{"type": "function", "function": function}],
+        }
+    )
+
+    tools = _convert_chat_completion_tools_to_token_generator_tools(
+        request.tools, policy=policy
+    )
+
+    assert tools is not None
+    converted = tools[0]["function"]
+    assert converted["strict"] is expected
+    assert list(converted) == ["description", "name", "parameters", "strict"]
+
+
+class _GrammarBlockPassedProbe(Exception):
+    """Raised once the handler reaches the response generator.
+
+    It ends the request before any downstream backend or streaming work runs.
+    """
+
+
+class _FakeGrammarToolParser:
+    """Stand-in ``ToolParser`` that records its grammar-builder kwargs.
+
+    These are the kwargs ``openai_create_chat_completion`` passes to
+    ``generate_tool_call_grammar``.
+    """
+
+    def __init__(self) -> None:
+        self.received_kwargs: dict[str, Any] | None = None
+
+    def generate_tool_call_grammar(self, **kwargs: Any) -> str:
+        self.received_kwargs = kwargs
+        return "{}"
+
+
+@pytest.mark.parametrize("requested", [True, False, "absent"])
+@pytest.mark.parametrize("policy", list(ToolCallPolicy))
+async def test_tool_call_policy_reaches_grammar_generation(
+    policy: ToolCallPolicy, requested: object
+) -> None:
+    """The handler skips the tool-call grammar only for ``force_unconstrained``.
+
+    Otherwise, it passes the policy's resolved ``strict`` and
+    ``reject_unsupported`` to the parser's grammar builder.
+    """
+    fake_parser = _FakeGrammarToolParser()
+
+    function: dict[str, Any] = {
+        "name": "f",
+        "parameters": {"type": "object", "properties": {}},
+    }
+    if requested != "absent":
+        function["strict"] = requested
+    request_body = json.dumps(
+        {
+            "model": "test",
+            "messages": [{"role": "user", "content": "hi"}],
+            "tools": [{"type": "function", "function": function}],
+        }
+    ).encode("utf-8")
+
+    mock_request = Mock()
+    mock_request.headers = {}
+    mock_request.body = AsyncMock(return_value=request_body)
+    mock_request.state = SimpleNamespace(
+        request_id="test-tool-call-policy-wiring"
+    )
+    mock_request.url = SimpleNamespace(path="/v1/chat/completions")
+    pipeline_config = SimpleNamespace(
+        runtime=SimpleNamespace(
+            allow_extra_request_fields=False,
+            tool_parser=None,
+            reasoning_parser=None,
+            emit_reasoning_content=False,
+        ),
+        sampling=SimpleNamespace(
+            tool_call_policy=policy,
+            enable_structured_output=False,
+            structured_output_backend="xgrammar",
+        ),
+    )
+    mock_request.app = SimpleNamespace(
+        state=SimpleNamespace(
+            pipeline=SimpleNamespace(
+                model_name="test",
+                lora_queue=None,
+                tokenizer=EchoPipelineTokenizer(),
+            ),
+            settings=Settings(),
+        )
+    )
+
+    with (
+        patch(
+            "max.serve.router.openai_routes.get_tool_parser",
+            return_value=fake_parser,
+        ),
+        patch(
+            "max.serve.router.openai_routes.get_app_pipeline_config",
+            return_value=pipeline_config,
+        ),
+        patch(
+            "max.serve.router.openai_routes.OpenAIChatResponseGenerator",
+            side_effect=_GrammarBlockPassedProbe,
+        ),
+        patch("max.serve.router.openai_routes.METRICS", MagicMock()),
+        pytest.raises(_GrammarBlockPassedProbe),
+    ):
+        await openai_create_chat_completion(mock_request)
+
+    if policy is ToolCallPolicy.FORCE_UNCONSTRAINED:
+        assert fake_parser.received_kwargs is None
+        return
+    assert fake_parser.received_kwargs is not None
+    assert (
+        fake_parser.received_kwargs["reject_unsupported"]
+        is policy.reject_unsupported
+    )
+    requested_strict = None if requested == "absent" else requested
+    assert isinstance(requested_strict, bool | None)
+    tools = fake_parser.received_kwargs["tools"]
+    assert tools[0]["function"]["strict"] is policy.resolve_strict(
+        requested_strict
+    )

@@ -14,16 +14,16 @@
 
 from std.random import seed
 
-from std.gpu import *
-from std.gpu.host import DeviceContext
+from max.gpu import *
+from max.gpu.host import DeviceContext
 from internal_utils import InitializationType, Timer, init_vector_launch
 
 from std.testing import assert_equal
 
-from layout import TileTensor, Idx, row_major
+from layout import TileTensor, row_major
 
 
-@no_inline
+@inline(.never)
 def test_vec_init[
     dtype: DType, block_dim: Int = 256
 ](length: Int, init_type: InitializationType, context: DeviceContext) raises:

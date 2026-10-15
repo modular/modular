@@ -22,11 +22,13 @@ from ..value import TensorValue, TensorValueLike
 from .broadcast_to import broadcast_to
 from .constant import constant
 from .custom import custom
+from .transfer_to import transfer_to
 
 
 def _promote_repeats(
     repeats: int | TensorValue,
     input_dim: Dim,
+    device: DeviceRef,
     out_dim: DimLike | None,
 ) -> tuple[TensorValue, Dim | None]:
     if out_dim is not None:
@@ -35,6 +37,10 @@ def _promote_repeats(
     if isinstance(repeats, TensorValue):
         if repeats.rank == 0:
             repeats = broadcast_to(repeats, [1])
+        # The custom op is single-device: repeats must ride on the
+        # input's device (GPU included since the tensor-repeats kernel).
+        if repeats.device != device:
+            repeats = transfer_to(repeats, device)
         return repeats, out_dim
 
     if repeats <= 0:
@@ -43,7 +49,7 @@ def _promote_repeats(
         )
 
     return constant(
-        np.array([repeats]), DType.int64, DeviceRef.CPU()
+        np.array([repeats]), DType.int64, device
     ), input_dim * repeats
 
 
@@ -53,72 +59,80 @@ def repeat_interleave(
     axis: int | None = None,
     out_dim: DimLike | None = None,
 ) -> TensorValue:
-    """Repeats elements of a tensor along the given dimension.
+    """Repeats each element of a tensor along an axis.
 
-    Modeled after :obj:`torch.repeat_interleave`, with the constraint that
+    Modeled after :obj:`torch.repeat_interleave`.
 
-    For example, given ``repeats=2`` and the following input:
-
-    .. code-block:: python
-
-        # Input tensor with shape (2, 2)
-        input = TensorValue(x)  # Contains [[1.0, 2.0], [3.0, 4.0]]
-
-    ``repeat_interleave`` with ``axis=0``:
+    Given the input ``[[1.0, 2.0], [3.0, 4.0]]`` (shape ``(2, 2)``), each
+    element repeats ``repeats`` times along ``axis``. Use ``axis=0`` to repeat
+    rows, ``axis=1`` to repeat columns, ``axis=None`` (the default) to flatten
+    first, or pass a per-element ``repeats`` tensor to repeat each index a
+    different number of times:
 
     .. code-block:: python
 
-        # Output tensor with shape (4, 2)
-        output = repeat_interleave(input, repeats=2, axis=0)
-        # Contains [[1.0, 2.0], [1.0, 2.0], [3.0, 4.0], [3.0, 4.0]]
+        import numpy as np
+        from max.driver import CPU
+        from max.dtype import DType
+        from max.engine import InferenceSession
+        from max.graph import DeviceRef, Graph, TensorType, ops
 
-    ``repeat_interleave`` with ``axis=1``:
+        input_type = TensorType(DType.float32, [2, 2], device=DeviceRef.CPU())
+        with Graph("repeat_interleave", input_types=[input_type]) as graph:
+            x = graph.inputs[0].tensor
+            per_element = ops.constant(
+                np.array([2, 3]), DType.int64, device=DeviceRef.CPU()
+            )
+            graph.output(
+                ops.repeat_interleave(x, repeats=2, axis=0),  # shape (4, 2)
+                ops.repeat_interleave(x, repeats=2, axis=1),  # shape (2, 4)
+                ops.repeat_interleave(x, repeats=2),  # flattened, shape (8,)
+                # Per-element repeats: row 0 twice, row 1 three times.
+                ops.repeat_interleave(x, repeats=per_element, axis=0, out_dim=5),
+            )
 
-    .. code-block:: python
+        model = InferenceSession(devices=[CPU()]).load(graph)
+        rows, cols, flat, per_row = model.execute(
+            np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32)
+        )
+        # rows:    [[1.0, 2.0], [1.0, 2.0], [3.0, 4.0], [3.0, 4.0]]
+        # cols:    [[1.0, 1.0, 2.0, 2.0], [3.0, 3.0, 4.0, 4.0]]
+        # flat:    [1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0]
+        # per_row: [[1.0, 2.0], [1.0, 2.0], [3.0, 4.0], [3.0, 4.0], [3.0, 4.0]]
 
-        # Output tensor with shape (2, 4)
-        output = repeat_interleave(input, repeats=2, axis=1)
-        # Contains [[1.0, 1.0, 2.0, 2.0], [3.0, 3.0, 4.0, 4.0]]
+    .. invisible-code-block: python
 
-    ``repeat_interleave`` with ``axis=None`` (the default):
-
-    ``repeat_interleave`` with ``repeats=[2, 3]`` and ``axis=0``:
-
-    .. code-block:: python
-
-        repeat_value = TensorValue([2, 3])
-
-        # Output tensor with shape (5, 2)
-        output = repeat_interleave(input, repeats=repeat_value, axis=0)
-        # Contains [[1.0, 2.0], [1.0, 2.0], [3.0, 4.0], [3.0, 4.0], [3.0, 4.0]]
-
-    .. code-block:: python
-
-        # Output tensor with shape (8,)
-        output = repeat_interleave(input, repeats=2)  # axis = None
-        # Contains [1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0]
+        np.testing.assert_allclose(
+            rows.to_numpy(), [[1.0, 2.0], [1.0, 2.0], [3.0, 4.0], [3.0, 4.0]]
+        )
+        np.testing.assert_allclose(
+            cols.to_numpy(), [[1.0, 1.0, 2.0, 2.0], [3.0, 3.0, 4.0, 4.0]]
+        )
+        np.testing.assert_allclose(
+            flat.to_numpy(), [1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0]
+        )
+        np.testing.assert_allclose(
+            per_row.to_numpy(),
+            [[1.0, 2.0], [1.0, 2.0], [3.0, 4.0], [3.0, 4.0], [3.0, 4.0]],
+        )
 
     Args:
-        x:
-            The input tensor.
-        repeats:
-            The number of repetitions for each element.
-        axis:
-            The dimension along which to repeat values. If axis is not
-            specified or None (the default), flatten the input array
-            and repeat the flattened values.
-        out_dim: Optional symbolic dimension for the output size (for graph validation).
+        x: The input tensor.
+        repeats: The number of times to repeat each element. Pass either a
+            positive integer or a rank-0/rank-1 integer ``TensorValue``.
+        axis: The axis to repeat along. If ``None`` (the default), the input is
+            flattened first.
+        out_dim: The output size along ``axis``. Required when ``repeats`` is a
+            ``TensorValue`` (the output extent is data-dependent).
 
     Returns:
-        A symbolic tensor with the elements interleaved.
+        A ``TensorValue`` representing the input with its elements interleaved.
 
     Raises:
-        ValueError: If ``repeats`` non-positive or if ``axis`` is out of range.
+        ValueError: If ``repeats`` is non-positive or ``axis`` is out of
+            range.
     """
     x = TensorValue(x)
-
-    if x.device == DeviceRef.GPU():
-        raise ValueError("repeat_interleave is not supported on GPU")
 
     if axis is not None and not -x.rank <= axis < x.rank:
         raise ValueError(
@@ -133,7 +147,9 @@ def repeat_interleave(
     if axis < 0:
         axis += x.rank
 
-    repeats, inferred_size = _promote_repeats(repeats, x.shape[axis], out_dim)
+    repeats, inferred_size = _promote_repeats(
+        repeats, x.shape[axis], x.device, out_dim
+    )
 
     result_shape = Shape(x.shape)
 
@@ -144,6 +160,12 @@ def repeat_interleave(
     # is statically known, otherwise use the provided out_dim.
     result_shape[axis] = inferred_size
 
+    # The axis stays a CPU constant: the kernel registration reads it
+    # as a host-side Scalar, and the compiled path (GPU included) depends
+    # on that. Eager execution is therefore CPU-only for now -- the
+    # interpreter's single-device custom-op admission rejects the
+    # mixed-device op -- until the axis moves to a compile-time custom
+    # op parameter (tracked in AGENT-492).
     axis_val = constant(axis, DType.int64, DeviceRef.CPU())
 
     output = custom(

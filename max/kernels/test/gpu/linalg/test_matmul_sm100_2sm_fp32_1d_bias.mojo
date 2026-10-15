@@ -14,8 +14,8 @@
 from std.sys import size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
-from std.gpu.host import DeviceContext
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host import DeviceContext
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.memory import alloc
 from internal_utils import assert_almost_equal
 from std.random import rand
@@ -63,16 +63,14 @@ def test_blackwell_matmul_with_1d_bias[
         t" mma_shape={mma_shape} block_tile_shape={block_tile_shape}"
     )
 
-    var a_shape = row_major(Coord(m, Idx[KType.static_value]))
+    var a_shape = row_major(m, Idx[KType.static_value])
     var b_shape = row_major(
-        Coord(
-            Idx[NType.static_value if transpose_b else KType.static_value],
-            Idx[KType.static_value if transpose_b else NType.static_value],
-        )
+        Idx[NType.static_value if transpose_b else KType.static_value],
+        Idx[KType.static_value if transpose_b else NType.static_value],
     )
-    var c_shape = row_major(Coord(m, Idx[NType.static_value]))
+    var c_shape = row_major(m, Idx[NType.static_value])
     # 1D bias: shape [N] — broadcast across all M rows.
-    var bias_shape = row_major(Coord(Idx[NType.static_value]))
+    var bias_shape = row_major(Idx[NType.static_value])
 
     var a_size = M * K
     var b_size = N * K if transpose_b else K * N
@@ -103,9 +101,9 @@ def test_blackwell_matmul_with_1d_bias[
     var bias_tile = TileTensor(bias_device, bias_shape)
 
     # Initialize
-    rand(a_host.ptr, a_host.num_elements())
-    rand(b_host.ptr, b_host.num_elements())
-    rand(bias_host.ptr, bias_host.num_elements(), min=-10, max=10)
+    rand(a_host.as_span())
+    rand(b_host.as_span())
+    rand(bias_host.as_span(), min=-10, max=10)
 
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)
@@ -126,7 +124,10 @@ def test_blackwell_matmul_with_1d_bias[
     )
 
     comptime EpilogueType = TileTensor[
-        matmul_config.c_type, type_of(bias_shape), ImmutAnyOrigin
+        matmul_config.c_type,
+        type_of(bias_shape),
+        ImmutAnyOrigin,
+        Engine=bias_tile.Engine,
     ]
     blackwell_matmul_tma_umma_warp_specialized[
         transpose_b=transpose_b,
@@ -140,15 +141,12 @@ def test_blackwell_matmul_with_1d_bias[
     )
 
     # Reference: cuBLAS matmul
-    var a_lt = a_tensor.to_layout_tensor()
-    var b_lt = b_tensor.to_layout_tensor()
-    var c_ref_tensor_lt = c_ref_tensor.to_layout_tensor()
 
     vendor_blas.matmul(
         ctx,
-        c_ref_tensor_lt,
-        a_lt,
-        b_lt,
+        c_ref_tensor,
+        a_tensor,
+        b_tensor,
         c_row_major=True,
         transpose_b=transpose_b,
     )
@@ -162,16 +160,16 @@ def test_blackwell_matmul_with_1d_bias[
     # Add 1D bias to reference: C_ref[i, j] += bias[j] for all i (broadcast).
     for i in range(M):
         for j in range(N):
-            var bias_val = bias_host_ptr[j].cast[DType.float32]()
+            var bias_val = bias_host_ptr[j].cast[.float32]()
             var idx = c_host_ref.layout(Coord(i, j))
             c_host_ref_ptr[idx] = (
-                c_host_ref_ptr[idx].cast[DType.float32]() + bias_val
+                c_host_ref_ptr[idx].cast[.float32]() + bias_val
             ).cast[c_type]()
 
     comptime rtol = 1e-2
     assert_almost_equal(
-        c_host.ptr,
-        c_host_ref.ptr,
+        c_host._storage,
+        c_host_ref._storage,
         c_host.num_elements(),
         atol=0.0001,
         rtol=rtol,

@@ -20,25 +20,22 @@ and that the combine kernel produces the expected weighted reduction:
 """
 
 from std.random import randint, randn, seed
-from std.sys import has_nvidia_gpu_accelerator, has_amd_gpu_accelerator, size_of
+from std.sys import default_accelerator, size_of
 
-from std.gpu.host import DeviceBuffer, DeviceContext
-from layout import TileTensor, Idx, row_major
+from max.gpu.host import DeviceContext
+from layout import Coord, TileTensor, Idx, row_major
 from shmem.ep import (
     ep_fused_dispatch_kernel_api,
     ep_fused_combine_kernel_api,
 )
-from shmem.ep_comm import (
-    BF16TokenFormat,
-    EPLocalSyncCounters,
-    router_weights_wrapper_type,
-)
+from shmem.ep_comm import BF16TokenFormat, EPLocalSyncCounters
 from std.testing import assert_almost_equal
+from std.utils.index import IndexList
 
 
 def legalize_topk_ids[
     n_experts: Int, top_k: Int
-](topk_ids: UnsafePointer[mut=True, Int32, _], n_tokens: Int):
+](topk_ids: MutPointer[Int32, _], n_tokens: Int):
     for tok_id in range(n_tokens):
         var topk_ids_for_token = topk_ids + tok_id * top_k
 
@@ -99,27 +96,27 @@ def test_skip_a2a[
 
     # fmt: off
     # --- Device buffers ---
-    var dispatch_send_buf = ctx.enqueue_create_buffer[DType.uint8](n_tokens * msg_bytes)
-    var dispatch_recv_buf = ctx.enqueue_create_buffer[DType.uint8](max_recv_num_tokens * msg_bytes)
-    var dispatch_recv_count_buf = ctx.enqueue_create_buffer[DType.uint64](n_local_experts)
+    var dispatch_send_buf = ctx.enqueue_create_buffer[.uint8](n_tokens * msg_bytes)
+    var dispatch_recv_buf = ctx.enqueue_create_buffer[.uint8](max_recv_num_tokens * msg_bytes)
+    var dispatch_recv_count_buf = ctx.enqueue_create_buffer[.uint64](n_local_experts)
     ctx.enqueue_memset(dispatch_recv_count_buf, UInt64.MAX_FINITE)
 
-    var combine_send_buf = ctx.enqueue_create_buffer[DType.uint8](max_recv_num_tokens * combine_msg_bytes)
-    var combine_recv_buf = ctx.enqueue_create_buffer[DType.uint8](n_tokens * top_k * combine_msg_bytes)
-    var combine_recv_count_buf = ctx.enqueue_create_buffer[DType.uint64](n_local_experts)
+    var combine_send_buf = ctx.enqueue_create_buffer[.uint8](max_recv_num_tokens * combine_msg_bytes)
+    var combine_recv_buf = ctx.enqueue_create_buffer[.uint8](n_tokens * top_k * combine_msg_bytes)
+    var combine_recv_count_buf = ctx.enqueue_create_buffer[.uint64](n_local_experts)
     ctx.enqueue_memset(combine_recv_count_buf, UInt64.MAX_FINITE)
 
-    var atomic_counters_buf = ctx.enqueue_create_buffer[DType.int32](EPLocalSyncCounters[n_local_experts].total_size())
+    var atomic_counters_buf = ctx.enqueue_create_buffer[.int32](EPLocalSyncCounters[n_local_experts].total_size())
     ctx.enqueue_memset(atomic_counters_buf, Int32(0))
 
     var device_input_buf = ctx.enqueue_create_buffer[input_type](n_tokens * hidden_size)
-    var device_topk_buf = ctx.enqueue_create_buffer[DType.int32](n_tokens * top_k)
-    var device_router_weights_buf = ctx.enqueue_create_buffer[DType.float32](n_tokens * top_k)
+    var device_topk_buf = ctx.enqueue_create_buffer[.int32](n_tokens * top_k)
+    var device_router_weights_buf = ctx.enqueue_create_buffer[.float32](n_tokens * top_k)
     var device_output_buf = ctx.enqueue_create_buffer[input_type](max_recv_num_tokens * hidden_size)
     var device_combine_output_buf = ctx.enqueue_create_buffer[input_type](n_tokens * hidden_size)
-    var device_row_offsets_buf = ctx.enqueue_create_buffer[DType.uint32](n_local_experts + 1 + shared_expert_offset)
-    var device_expert_ids_buf = ctx.enqueue_create_buffer[DType.int32](n_local_experts + shared_expert_offset)
-    var device_src_info_buf = ctx.enqueue_create_buffer[DType.int32](max_recv_num_tokens * 2)
+    var device_row_offsets_buf = ctx.enqueue_create_buffer[.uint32](n_local_experts + 1 + shared_expert_offset)
+    var device_expert_ids_buf = ctx.enqueue_create_buffer[.int32](n_local_experts + shared_expert_offset)
+    var device_src_info_buf = ctx.enqueue_create_buffer[.int32](max_recv_num_tokens * 2)
 
     # --- Host buffers ---
     var host_topk_ids = alloc[Int32](n_tokens * top_k)
@@ -198,14 +195,24 @@ def test_skip_a2a[
         device_router_weights_buf, router_weights_layout
     )
 
-    @always_inline
-    @parameter
+    @inline(.always)
+    @__parameter
     @__copy_capture(router_weights_tt)
     def router_weights_fn[
         width: Int
-    ](token_idx: Int, topk_id: Int) -> SIMD[DType.float32, width]:
+    ](token_idx: Int, topk_id: Int) -> SIMD[.float32, width]:
         var w = router_weights_tt.load[width=1]((token_idx, topk_id))
-        return SIMD[DType.float32, width](w)
+        return SIMD[.float32, width](w)
+
+    @inline(.always)
+    @__parameter
+    @__copy_capture(combine_output_tt)
+    def store_combine_output[
+        dtype: DType, rank: Int, width: SIMDLength, *, alignment: Int = 1
+    ](coords: IndexList[rank], val: SIMD[dtype, width]):
+        combine_output_tt.store[
+            width=width, alignment=alignment * size_of[dtype]()
+        ](Coord(coords), rebind[SIMD[input_type, width]](val))
 
     # --- Run fused dispatch ---
     ep_fused_dispatch_kernel_api[
@@ -237,7 +244,7 @@ def test_skip_a2a[
 
     var topk_ids_immut_ptr = (
         device_topk_buf.unsafe_ptr()
-        .as_immutable()
+        .as_imm()
         .unsafe_origin_cast[ImmUntrackedOrigin]()
     )
 
@@ -249,12 +256,13 @@ def test_skip_a2a[
         n_gpus_per_node,
         n_nodes,
         "gpu",
+        store_combine_output,
         router_weights_wrapper=router_weights_fn,
         fused_shared_expert=fused_shared_expert,
         skip_a2a=True,
         allreduce_world_size=N_DEVICES,
     ](
-        combine_output_tt,
+        n_tokens,
         atomic_counters_tt,
         dispatch_output_immut,
         src_info_immut,
@@ -344,7 +352,8 @@ def test_skip_a2a[
 
 def main() raises:
     comptime assert (
-        has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator()
+        default_accelerator().is_nvidia_gpu()
+        or default_accelerator().is_amd_gpu()
     ), "Only NVIDIA and AMD GPUs are supported"
 
     var ctx_0 = DeviceContext(device_id=0)

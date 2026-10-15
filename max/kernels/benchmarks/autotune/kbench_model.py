@@ -92,6 +92,7 @@ ScalarValue = str | int | float | bool
 _WRAPPER_SOURCE = """\
 from {module_name} import main as _bench_main
 from std.builtin._startup import _ensure_runtime_init
+from std.sys import stderr
 
 
 @export
@@ -105,7 +106,8 @@ def benchmark_entry() abi("C") -> Int32:
     try:
         _bench_main()
         return 0
-    except:
+    except e:
+        print("Unhandled exception caught during execution:", e, file=stderr)
         return 1
 """
 
@@ -340,7 +342,7 @@ class KbenchCache:
     def store_failed(self, key: str) -> None:
         """Store build failure result for the specified key."""
         if not self.is_active:
-            return None
+            return
         # TODO: revise the following conflict.
         if key in self.data:
             logging.debug(f"overwriting {key} already in obj-cache")
@@ -1084,6 +1086,17 @@ class _SharedLibExecutor:
     def execute(self, bi: BuildItem) -> BuildItem:
         """Load the library (if changed) and run the benchmark."""
         assert bi.bin_path is not None
+        if bi.dryrun:
+            # Mirror `_run_cmdline`'s -1. The parent prints the line: a -1
+            # respawns this worker, which would drop unflushed stdout.
+            args = [
+                f"KBENCH_ARG_{p.name.removeprefix('$')}={p.value}"
+                for p in bi.spec_instance.params
+                if p.name.startswith("$")
+            ]
+            line = list2cmdline([*args, f"{bi.bin_path}:benchmark_entry"])
+            bi.exec_output = ProcessOutput(line, None, -1, None)
+            return bi
         if self._so_path != bi.bin_path:
             self._so_path = bi.bin_path
             try:
@@ -1337,6 +1350,8 @@ def _gpu_manager(
             f"{status} [{done}/{total}] ({utils._percentage(done, total)}%)"
         )
         completed_bi.exec_output.log()
+        if completed_bi.dryrun and completed_bi.exec_output.return_code == -1:
+            print(completed_bi.exec_output.stdout)
 
         completed_bi.stdout_capture_path.unlink(missing_ok=True)
         completed_bi.stderr_capture_path.unlink(missing_ok=True)
@@ -1427,7 +1442,7 @@ class Scheduler:
         build_opts: list[str],
         dryrun: bool,
         output_suffix: str = "output.csv",
-        progress: Progress = Progress(),
+        progress: Progress = Progress(),  # noqa: B008
         use_shared_lib: bool = False,
         output_dir_list: list[Path] | None = None,
         cache_dir: Path | None = None,
@@ -1591,9 +1606,7 @@ class Scheduler:
             if bi.use_shared_lib
             else bi.spec_instance.build
         )
-        effective_output_dir = (
-            bi.build_output_dir if bi.build_output_dir else bi.output_dir
-        )
+        effective_output_dir = bi.build_output_dir or bi.output_dir
         bi.build_output = build_fn(
             output_dir=effective_output_dir,
             build_opts=bi.build_opts,

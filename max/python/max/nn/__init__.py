@@ -12,18 +12,33 @@
 # ===----------------------------------------------------------------------=== #
 """Neural network modules for MAX.
 
-Graph-based API:
+``max.nn`` layers come in two modes. In graph-based execution, a layer's
+``__call__`` stages its operations into a :class:`~max.graph.Graph`, and MAX
+compiles the finished graph into an optimized executable that runs on
+:class:`~max.driver.Buffer` inputs:
 
 .. code-block:: python
 
-    from max.nn import Linear, AttentionWithRope
-    from max.nn.kv_cache import KVCacheParams
+    import numpy as np
 
-Eager tensor API:
+    from max.dtype import DType
+    from max.engine import InferenceSession
+    from max.graph import DeviceRef, Graph, TensorType
+    from max.nn import Linear
 
-.. code-block:: python
+    input_type = TensorType(DType.float32, ["batch", 64], device=DeviceRef.CPU())
+    with Graph("layer", input_types=[input_type]) as graph:
+        x = graph.inputs[0].tensor
+        graph.output(Linear(64, 32, DType.float32, DeviceRef.CPU())(x))
 
-    from max.experimental.nn import Module, Linear, Embedding
+    model = InferenceSession().load(
+        graph,
+        weights_registry={"weight": np.zeros((32, 64), dtype=np.float32)},
+    )
+
+In eager execution, :mod:`max.experimental.nn` runs the same layer
+abstractions directly on :class:`~max.experimental.tensor.Tensor` values,
+executing each operation immediately, PyTorch-style.
 """
 
 from .attention import (
@@ -43,6 +58,7 @@ from .conv import Conv1D, Conv2d, Conv3D
 from .conv_transpose import ConvTranspose1d, WeightNormConvTranspose1d
 from .data_parallelism import split_batch, split_batch_replicated
 from .embedding import Embedding, VocabParallelEmbedding
+from .hyper_connection import HyperConnection
 from .identity import Identity
 from .kv_cache import (
     KVCacheInputs,
@@ -50,9 +66,8 @@ from .kv_cache import (
     KVCacheParams,
     build_max_lengths_tensors,
 )
-from .layer import Layer, LayerList, Module, Shardable
+from .layer import Layer, LayerList, MissingLayer, Module, Shardable
 from .linear import MLP, ColumnParallelLinear, FusedMLP, GPTQLinear, Linear
-from .lora import AttentionWithRopeAndLoRA, LinearLoRA, SupportsLoRA
 from .moe import MoE, MoEGate, MoEQuantized, forward_moe_sharded_layers
 from .norm import ConstantLayerNorm, GroupNorm, LayerNorm, RMSNorm
 from .quant_config import (
@@ -94,7 +109,6 @@ __all__ = [
     "MLP",
     "Allreduce",
     "AttentionWithRope",
-    "AttentionWithRopeAndLoRA",
     "ColumnParallelLinear",
     "ConstantLayerNorm",
     "Conv1D",
@@ -111,6 +125,7 @@ __all__ = [
     "GPTQAttentionWithRope",
     "GPTQLinear",
     "GroupNorm",
+    "HyperConnection",
     "Identity",
     "InputScaleSpec",
     "KVCacheInputs",
@@ -121,13 +136,13 @@ __all__ = [
     "LayerList",
     "LayerNorm",
     "Linear",
-    "LinearLoRA",
     "LinearScalingParams",
     "Llama3RopeScalingParams",
     "Llama3RotaryEmbedding",
     "LongRoPERotaryEmbedding",
     "LongRoPEScalingParams",
     "MinPSampler",
+    "MissingLayer",
     "MoE",
     "MoEGate",
     "MoEQuantized",
@@ -148,7 +163,6 @@ __all__ = [
     "Shardable",
     "Signals",
     "StackedLinear",
-    "SupportsLoRA",
     "TensorParallelAttentionWithRope",
     "TensorParallelLatentAttentionWithRope",
     "Transformer",

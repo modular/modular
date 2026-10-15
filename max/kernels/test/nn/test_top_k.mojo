@@ -15,7 +15,13 @@
 from std.math import iota
 from std.random import rand, seed
 
-from layout import Coord, Idx, TileTensor, coord_to_index_list, row_major
+from layout import (
+    Coord,
+    DefaultEngine,
+    TileTensor,
+    coord_to_index_list,
+    row_major,
+)
 from layout.coord import DynamicCoord
 from layout.tile_layout import Layout
 
@@ -24,7 +30,7 @@ from nn.topk import _top_k_cpu, _top_k_sampling
 from std.utils.index import IndexList, product
 
 comptime FillFnType = def[rank: Int, dtype: DType](
-    TileTensor[mut=True, dtype, ...]
+    TileTensor[mut=True, dtype, ..., Engine=DefaultEngine[element_width=1]]
 ) -> None
 
 
@@ -43,8 +49,8 @@ struct TestTensor[rank: Int, dtype: DType](Movable):
     ) -> TileTensor[
         Self.dtype,
         Layout[
-            shape_types=DynamicCoord[DType.int64, Self.rank].element_types,
-            stride_types=DynamicCoord[DType.int64, Self.rank].element_types,
+            shape_types=DynamicCoord[.int64, Self.rank].element_types,
+            stride_types=DynamicCoord[.int64, Self.rank].element_types,
         ],
         origin_of(self.storage),
     ]:
@@ -52,12 +58,8 @@ struct TestTensor[rank: Int, dtype: DType](Movable):
             TileTensor[
                 Self.dtype,
                 Layout[
-                    shape_types=DynamicCoord[
-                        DType.int64, Self.rank
-                    ].element_types,
-                    stride_types=DynamicCoord[
-                        DType.int64, Self.rank
-                    ].element_types,
+                    shape_types=DynamicCoord[.int64, Self.rank].element_types,
+                    stride_types=DynamicCoord[.int64, Self.rank].element_types,
                 ],
                 origin_of(self.storage),
             ]
@@ -65,7 +67,7 @@ struct TestTensor[rank: Int, dtype: DType](Movable):
             TileTensor(
                 Span[Scalar[Self.dtype]](self.storage),
                 row_major(Coord(self.shape)),
-            ).make_dynamic[DType.int64]()
+            ).make_dynamic[.int64]()
         )
 
 
@@ -109,6 +111,7 @@ def test_case_sampling[
 
     var max_k = K
 
+    var batch_size: Int
     comptime if rank == 1:
         batch_size = 1
     elif rank == 2:
@@ -117,19 +120,19 @@ def test_case_sampling[
         batch_size = input_shape[0] * input_shape[1]
     var temperature_ptr = List(length=batch_size, fill=Float32(0))
     for i in range(batch_size):
-        temperature_ptr[i] = temperature.cast[DType.float32]()
+        temperature_ptr[i] = temperature.cast[.float32]()
 
     var temperature_buf = Optional(
         TileTensor(temperature_ptr, row_major(Int64(batch_size)))
         .as_unsafe_any_origin()
-        .as_immut()
+        .as_imm()
     )
 
     var seed_ptr = List(length=batch_size, fill=UInt64(12))
     var seed_buf = Optional(
         TileTensor(seed_ptr, row_major(Int64(batch_size)))
         .as_unsafe_any_origin()
-        .as_immut()
+        .as_imm()
     )
 
     _top_k_sampling(
@@ -168,7 +171,7 @@ def test_case[
     var output_shape = input_shape
     output_shape[axis] = K
     var out_vals = TestTensor[rank, dtype](output_shape)
-    var out_idxs = TestTensor[rank, DType.int64](output_shape)
+    var out_idxs = TestTensor[rank, .int64](output_shape)
 
     var input_buf = input.to_tile_tensor()
     fill_fn[rank, dtype](input_buf)
@@ -200,25 +203,31 @@ def main() raises:
 
     def fill_iota[
         rank: Int, dtype: DType
-    ](buf: TileTensor[mut=True, dtype, ...]):
+    ](
+        buf: TileTensor[
+            mut=True, dtype, ..., Engine=DefaultEngine[element_width=1]
+        ]
+    ):
         iota(
-            buf.ptr,
+            buf._storage,
             coord_to_index_list(buf.layout.shape_coord()).flattened_length(),
         )
 
     def fill_rand[
         rank: Int, dtype: DType
-    ](buf: TileTensor[mut=True, dtype, ...]):
+    ](
+        buf: TileTensor[
+            mut=True, dtype, ..., Engine=DefaultEngine[element_width=1]
+        ]
+    ):
         rand(
-            buf.ptr,
+            buf._storage,
             coord_to_index_list(buf.layout.shape_coord()).flattened_length(),
         )
 
     def test_1d_sorted():
         print("== test_1d_sorted")
-        test_case[1, DType.float32](
-            fill_iota, 5, 0, IndexList[1](10), sorted=True
-        )
+        test_case[1, .float32](fill_iota, 5, 0, (10,), sorted=True)
 
     # CHECK-LABEL: test_1d_sorted
     # CHECK: 9.0,8.0,7.0,6.0,5.0,
@@ -227,9 +236,7 @@ def main() raises:
 
     def test_1d_notsorted():
         print("== test_1d_notsorted")
-        test_case[1, DType.float32](
-            fill_iota, 5, 0, IndexList[1](10), sorted=False
-        )
+        test_case[1, .float32](fill_iota, 5, 0, (10,), sorted=False)
 
     # CHECK-LABEL: test_1d_notsorted
     # CHECK: 8.0,7.0,6.0,9.0,5.0,
@@ -238,9 +245,7 @@ def main() raises:
 
     def test_axis_1():
         print("== test_axis_1")
-        test_case[2, DType.float32](
-            fill_iota, 2, 1, IndexList[2](4, 4), sorted=True
-        )
+        test_case[2, .float32](fill_iota, 2, 1, (4, 4), sorted=True)
 
     # CHECK-LABEL: test_axis_1
     # CHECK: 3.0,2.0,7.0,6.0,11.0,10.0,15.0,14.0,
@@ -249,9 +254,7 @@ def main() raises:
 
     def test_axis_1_notsorted():
         print("== test_axis_1_notsorted")
-        test_case[2, DType.float32](
-            fill_iota, 2, 1, IndexList[2](4, 4), sorted=False
-        )
+        test_case[2, .float32](fill_iota, 2, 1, (4, 4), sorted=False)
 
     # CHECK-LABEL: test_axis_1_notsorted
     # CHECK: 3.0,2.0,7.0,6.0,11.0,10.0,15.0,14.0,
@@ -260,9 +263,7 @@ def main() raises:
 
     def test_smallest():
         print("== test_smallest")
-        test_case[2, DType.float32, largest=False](
-            fill_iota, 2, 1, IndexList[2](4, 4), False
-        )
+        test_case[2, .float32, largest=False](fill_iota, 2, 1, (4, 4), False)
 
     # CHECK-LABEL: test_smallest
     # CHECK: 0.0,1.0,4.0,5.0,8.0,9.0,12.0,13.0,
@@ -271,7 +272,7 @@ def main() raises:
 
     def test_axis_0():
         print("== test_axis_0")
-        test_case[2, DType.float32](fill_iota, 2, 0, IndexList[2](4, 4))
+        test_case[2, .float32](fill_iota, 2, 0, (4, 4))
 
     # CHECK-LABEL: test_axis_0
     # CHECK: 12.0,13.0,14.0,15.0,8.0,9.0,10.0,11.0,
@@ -280,12 +281,16 @@ def main() raises:
 
     def fill_identical[
         rank: Int, dtype: DType
-    ](buf: TileTensor[mut=True, dtype, ...]):
+    ](
+        buf: TileTensor[
+            mut=True, dtype, ..., Engine=DefaultEngine[element_width=1]
+        ]
+    ):
         _ = buf.fill(1)
 
     def test_identical():
         print("== test_identical")
-        test_case[2, DType.float32](fill_identical, 3, 0, IndexList[2](4, 4))
+        test_case[2, .float32](fill_identical, 3, 0, (4, 4))
 
     # CHECK-LABEL: test_identical
     # CHECK: 1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,
@@ -294,7 +299,7 @@ def main() raises:
 
     def test_identical_large():
         print("== test_identical_large")
-        test_case[2, DType.float32](fill_identical, 3, 0, IndexList[2](33, 33))
+        test_case[2, .float32](fill_identical, 3, 0, (33, 33))
 
     # CHECK-LABEL: test_identical_large
     # CHECK: 1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,
@@ -303,7 +308,7 @@ def main() raises:
 
     def test_max_k():
         print("== test_max_k")
-        test_case[2, DType.float32](fill_iota, 3, 0, IndexList[2](3, 4))
+        test_case[2, .float32](fill_iota, 3, 0, (3, 4))
 
     # CHECK-LABEL: test_max_k
     # CHECK: 8.0,9.0,10.0,11.0,4.0,5.0,6.0,7.0,0.0,1.0,2.0,3.0,
@@ -312,9 +317,13 @@ def main() raises:
 
     def fill_custom[
         rank: Int, dtype: DType
-    ](buf: TileTensor[mut=True, dtype, ...]):
+    ](
+        buf: TileTensor[
+            mut=True, dtype, ..., Engine=DefaultEngine[element_width=1]
+        ]
+    ):
         var flat_buf = TileTensor(
-            buf.ptr,
+            buf._storage,
             row_major(buf.num_elements()),
         )
 
@@ -327,9 +336,7 @@ def main() raises:
 
     def test_5d():
         print("== test_5d")
-        test_case[5, DType.float32](
-            fill_custom, 1, 1, IndexList[5](1, 4, 3, 2, 1)
-        )
+        test_case[5, .float32](fill_custom, 1, 1, (1, 4, 3, 2, 1))
 
     # CHECK-LABEL: == test_5d
     # CHECK: 17.0,22.0,21.0,20.0,19.0,18.0,
@@ -339,11 +346,11 @@ def main() raises:
     def test_1d_sorted_sampling() raises:
         print("== test_1d_sorted_sampling")
         comptime rank = 1
-        test_case_sampling[1, DType.float32](
+        test_case_sampling[1, .float32](
             fill_iota,
             5,
             0,
-            IndexList[1](10),
+            (10,),
             temperature=0,
         )
 
@@ -353,7 +360,7 @@ def main() raises:
 
     def test_2d_sorted_sampling() raises:
         print("== test_2d_sorted_sampling")
-        test_case_sampling[2, DType.float32](
+        test_case_sampling[2, .float32](
             fill_rand,
             5,
             1,
@@ -367,7 +374,7 @@ def main() raises:
 
     def test_3d_sorted_sampling() raises:
         print("== test_3d_sorted_sampling")
-        test_case_sampling[3, DType.float32](
+        test_case_sampling[3, .float32](
             fill_rand,
             5,
             2,
@@ -379,7 +386,13 @@ def main() raises:
     # 6,9,5,2,3,1,7,9,5,1,9,0,2,3,4,
     test_3d_sorted_sampling()
 
-    def ones[rank: Int, dtype: DType](buf: TileTensor[mut=True, dtype, ...]):
+    def ones[
+        rank: Int, dtype: DType
+    ](
+        buf: TileTensor[
+            mut=True, dtype, ..., Engine=DefaultEngine[element_width=1]
+        ]
+    ):
         for i in range(
             coord_to_index_list(buf.layout.shape_coord()).flattened_length()
         ):
@@ -388,9 +401,7 @@ def main() raises:
     def test_1d_sorted_sampling_temp() raises:
         print("== test_1d_sorted_sampling_temp")
         comptime rank = 1
-        test_case_sampling[1, DType.float32](
-            fill_rand, 5, 0, IndexList[1](10), temperature=0.7
-        )
+        test_case_sampling[1, .float32](fill_rand, 5, 0, (10,), temperature=0.7)
 
     # CHECK-LABEL: test_1d_sorted_sampling_temp
     # CHECK: 4,
@@ -398,7 +409,7 @@ def main() raises:
 
     def test_2d_sorted_sampling_temp() raises:
         print("== test_2d_sorted_sampling_temp")
-        test_case_sampling[2, DType.float32](
+        test_case_sampling[2, .float32](
             fill_rand,
             5,
             1,
@@ -412,7 +423,7 @@ def main() raises:
 
     def test_2d_sorted_sampling_temp_zero() raises:
         print("== test_2d_sorted_sampling_temp_zero")
-        test_case_sampling[2, DType.float32](
+        test_case_sampling[2, .float32](
             fill_rand,
             5,
             1,
@@ -426,7 +437,7 @@ def main() raises:
 
     def test_deterministic_sampling() raises:
         print("== test_deterministic_sampling")
-        test_case_sampling[2, DType.float32](
+        test_case_sampling[2, .float32](
             ones,
             5,
             1,

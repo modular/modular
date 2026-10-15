@@ -18,10 +18,10 @@ block-scaled FP4 variants (e.g. NVFP4, MXFP4).
 """
 
 from std.math import ceildiv
-from std.gpu.host import DeviceContext
-from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from max.gpu.host import DeviceContext
+from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from std.random import rand
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Idx, TileTensor, row_major
 from std.utils.index import Index, IndexList
 
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
@@ -77,13 +77,13 @@ def _test_grouped_1d1d_block_fp4_impl[
     var total_tokens = num_active_experts * tokens_per_expert
 
     # Offsets and expert IDs
-    var a_offsets_host = ctx.enqueue_create_host_buffer[DType.uint32](
+    var a_offsets_host = ctx.enqueue_create_host_buffer[.uint32](
         num_active_experts + 1
     )
-    var a_scale_offsets_host = ctx.enqueue_create_host_buffer[DType.uint32](
+    var a_scale_offsets_host = ctx.enqueue_create_host_buffer[.uint32](
         num_active_experts
     )
-    var expert_ids_host = ctx.enqueue_create_host_buffer[DType.int32](
+    var expert_ids_host = ctx.enqueue_create_host_buffer[.int32](
         num_active_experts
     )
 
@@ -128,11 +128,9 @@ def _test_grouped_1d1d_block_fp4_impl[
     var a_buf = ctx.enqueue_create_buffer[a_type](total_tokens * packed_K)
     var b_buf = ctx.enqueue_create_buffer[b_type](num_experts * N * packed_K)
     var c_buf = ctx.enqueue_create_buffer[c_type](total_tokens * N)
-    var a_off_buf = ctx.enqueue_create_buffer[DType.uint32](
-        num_active_experts + 1
-    )
-    var a_soff_buf = ctx.enqueue_create_buffer[DType.uint32](num_active_experts)
-    var eid_buf = ctx.enqueue_create_buffer[DType.int32](num_active_experts)
+    var a_off_buf = ctx.enqueue_create_buffer[.uint32](num_active_experts + 1)
+    var a_soff_buf = ctx.enqueue_create_buffer[.uint32](num_active_experts)
+    var eid_buf = ctx.enqueue_create_buffer[.int32](num_active_experts)
     var a_sf_buf = ctx.enqueue_create_buffer[sf_dtype](a_sf_size)
     var b_sf_buf = ctx.enqueue_create_buffer[sf_dtype](b_sf_size)
 
@@ -146,8 +144,8 @@ def _test_grouped_1d1d_block_fp4_impl[
     ctx.enqueue_copy(b_sf_buf, b_sf_host)
 
     # Expert scales
-    var es_buf = ctx.enqueue_create_buffer[DType.float32](num_experts)
-    var es_host = ctx.enqueue_create_host_buffer[DType.float32](num_experts)
+    var es_buf = ctx.enqueue_create_buffer[.float32](num_experts)
+    var es_host = ctx.enqueue_create_host_buffer[.float32](num_experts)
     for i in range(num_experts):
         es_host[i] = 1.0
     ctx.enqueue_copy(es_buf, es_host)
@@ -155,15 +153,15 @@ def _test_grouped_1d1d_block_fp4_impl[
     # Construct TileTensors directly from pointers and layouts
     var a_tt = TileTensor(
         a_buf,
-        row_major(Coord(Int(total_tokens), Idx[packed_K])),
+        row_major(total_tokens, Idx[packed_K]),
     )
     var b_tt = TileTensor(
         b_buf,
-        row_major(Coord(Idx[num_experts], Idx[N], Idx[packed_K])),
+        row_major(Idx[num_experts], Idx[N], Idx[packed_K]),
     )
     var c_tt = TileTensor(
         c_buf,
-        row_major(Coord(Int(total_tokens), Idx[N])),
+        row_major(total_tokens, Idx[N]),
     )
     var a_offsets_tt = TileTensor(
         a_off_buf,
@@ -188,26 +186,22 @@ def _test_grouped_1d1d_block_fp4_impl[
     var a_scales_tt = TileTensor(
         a_sf_buf,
         row_major(
-            Coord(
-                Int64(a_scale_dim0),
-                Idx[k_groups],
-                Idx[SF_ATOM_M[0]],
-                Idx[SF_ATOM_M[1]],
-                Idx[SF_ATOM_K],
-            )
+            Int64(a_scale_dim0),
+            Idx[k_groups],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         ),
     ).as_unsafe_any_origin()
     var b_scales_tt = TileTensor(
         b_sf_buf,
         row_major(
-            Coord(
-                Idx[num_experts],
-                Idx[n_groups],
-                Idx[k_groups],
-                Idx[SF_ATOM_M[0]],
-                Idx[SF_ATOM_M[1]],
-                Idx[SF_ATOM_K],
-            )
+            Idx[num_experts],
+            Idx[n_groups],
+            Idx[k_groups],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         ),
     ).as_unsafe_any_origin()
 
@@ -270,12 +264,15 @@ def _test_grouped_1d1d_mixed_experts[
 ](
     ctx: DeviceContext,
     num_active_experts: Int,
-    tokens_per_expert_ptr: UnsafePointer[Int, _],
+    tokens_per_expert_ptr: ImmPointer[Int, _],
+    eids_ptr: ImmPointer[Int32, _],
 ) raises:
     """Test with non-uniform runtime tokens per expert (dynamic switching).
 
     Some experts may have group_size < 128 (cp.async), others >= 128 (TMA).
-    Token counts are fully runtime — not known at compile time.
+    Token counts are fully runtime. A group with a negative id in
+    `eids_ptr` is masked: it keeps its token rows (still counted in
+    `total_tokens`) but the scheduler must skip it.
     """
     comptime a_type = DType.uint8
     comptime b_type = DType.uint8
@@ -301,13 +298,13 @@ def _test_grouped_1d1d_mixed_experts[
         mma_n,
     )
 
-    var a_offsets_host = ctx.enqueue_create_host_buffer[DType.uint32](
+    var a_offsets_host = ctx.enqueue_create_host_buffer[.uint32](
         num_active_experts + 1
     )
-    var a_scale_offsets_host = ctx.enqueue_create_host_buffer[DType.uint32](
+    var a_scale_offsets_host = ctx.enqueue_create_host_buffer[.uint32](
         num_active_experts
     )
-    var expert_ids_host = ctx.enqueue_create_host_buffer[DType.int32](
+    var expert_ids_host = ctx.enqueue_create_host_buffer[.int32](
         num_active_experts
     )
 
@@ -320,7 +317,7 @@ def _test_grouped_1d1d_mixed_experts[
         )
         a_offsets_host[i + 1] = a_offsets_host[i] + UInt32(tpe)
         a_scale_dim0 += ceildiv(tpe, SF_MN_GROUP_SIZE)
-        expert_ids_host[i] = Int32(i)
+        expert_ids_host[i] = eids_ptr[i]
 
     var a_host = ctx.enqueue_create_host_buffer[a_type](total_tokens * packed_K)
     var b_host = ctx.enqueue_create_host_buffer[b_type](
@@ -350,11 +347,9 @@ def _test_grouped_1d1d_mixed_experts[
     var a_buf = ctx.enqueue_create_buffer[a_type](total_tokens * packed_K)
     var b_buf = ctx.enqueue_create_buffer[b_type](num_experts * N * packed_K)
     var c_buf = ctx.enqueue_create_buffer[c_type](total_tokens * N)
-    var a_off_buf = ctx.enqueue_create_buffer[DType.uint32](
-        num_active_experts + 1
-    )
-    var a_soff_buf = ctx.enqueue_create_buffer[DType.uint32](num_active_experts)
-    var eid_buf = ctx.enqueue_create_buffer[DType.int32](num_active_experts)
+    var a_off_buf = ctx.enqueue_create_buffer[.uint32](num_active_experts + 1)
+    var a_soff_buf = ctx.enqueue_create_buffer[.uint32](num_active_experts)
+    var eid_buf = ctx.enqueue_create_buffer[.int32](num_active_experts)
     var a_sf_buf = ctx.enqueue_create_buffer[sf_dtype](a_sf_size)
     var b_sf_buf = ctx.enqueue_create_buffer[sf_dtype](b_sf_size)
 
@@ -366,23 +361,23 @@ def _test_grouped_1d1d_mixed_experts[
     ctx.enqueue_copy(a_sf_buf, a_sf_host)
     ctx.enqueue_copy(b_sf_buf, b_sf_host)
 
-    var es_buf = ctx.enqueue_create_buffer[DType.float32](num_experts)
-    var es_host = ctx.enqueue_create_host_buffer[DType.float32](num_experts)
+    var es_buf = ctx.enqueue_create_buffer[.float32](num_experts)
+    var es_host = ctx.enqueue_create_host_buffer[.float32](num_experts)
     for i in range(num_experts):
         es_host[i] = 1.0
     ctx.enqueue_copy(es_buf, es_host)
 
     var a_tt = TileTensor(
         a_buf.unsafe_ptr(),
-        row_major(Coord(Int(total_tokens), Idx[packed_K])),
+        row_major(total_tokens, Idx[packed_K]),
     )
     var b_tt = TileTensor(
         b_buf.unsafe_ptr(),
-        row_major(Coord(Idx[num_experts], Idx[N], Idx[packed_K])),
+        row_major(Idx[num_experts], Idx[N], Idx[packed_K]),
     )
     var c_tt = TileTensor(
         c_buf.unsafe_ptr(),
-        row_major(Coord(Int(total_tokens), Idx[N])),
+        row_major(total_tokens, Idx[N]),
     )
     var a_offsets_tt = TileTensor(
         a_off_buf.unsafe_ptr(),
@@ -404,26 +399,22 @@ def _test_grouped_1d1d_mixed_experts[
     var a_scales_tt = TileTensor(
         a_sf_buf.unsafe_ptr().bitcast[Scalar[sf_dtype]](),
         row_major(
-            Coord(
-                Int64(a_scale_dim0),
-                Idx[k_groups],
-                Idx[SF_ATOM_M[0]],
-                Idx[SF_ATOM_M[1]],
-                Idx[SF_ATOM_K],
-            )
+            Int64(a_scale_dim0),
+            Idx[k_groups],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         ),
     ).as_unsafe_any_origin()
     var b_scales_tt = TileTensor(
         b_sf_buf.unsafe_ptr().bitcast[Scalar[sf_dtype]](),
         row_major(
-            Coord(
-                Idx[num_experts],
-                Idx[n_groups],
-                Idx[k_groups],
-                Idx[SF_ATOM_M[0]],
-                Idx[SF_ATOM_M[1]],
-                Idx[SF_ATOM_K],
-            )
+            Idx[num_experts],
+            Idx[n_groups],
+            Idx[k_groups],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         ),
     ).as_unsafe_any_origin()
 
@@ -477,8 +468,7 @@ def run_grouped_1d1d_block_fp4_smoke_suite[
 ]() raises:
     var ctx = DeviceContext()
 
-    @parameter
-    @always_inline
+    @inline(.always)
     def test_grouped_1d1d_block_fp4[
         num_experts: Int,
         N: Int,
@@ -626,12 +616,11 @@ def run_grouped_1d1d_block_fp4_smoke_suite[
 
     # --- Mixed-expert tests: dynamic TMA/cp.async switching ---
     # Some experts have group_size < 128 (cp.async), others >= 128 (TMA).
-    # Token counts are fully runtime — the kernel dynamically selects the
-    # load method per expert based on group_size vs SF_MN_GROUP_SIZE.
+    # Token counts are fully runtime, so the kernel selects the load
+    # method per expert from group_size vs SF_MN_GROUP_SIZE.
     print("\n=== Grouped 1D1D NVFP4 Mixed-Expert Dynamic Switching Tests ===")
 
-    @parameter
-    @always_inline
+    @inline(.always)
     def mixed4[
         num_experts: Int,
         N: Int,
@@ -640,6 +629,7 @@ def run_grouped_1d1d_block_fp4_smoke_suite[
         AB_swapped: Bool = False,
     ](ctx: DeviceContext, t0: Int, t1: Int, t2: Int, t3: Int) raises:
         var tpe = [t0, t1, t2, t3]
+        var eids = [Int32(0), Int32(1), Int32(2), Int32(3)]
         _test_grouped_1d1d_mixed_experts[
             num_experts,
             N,
@@ -649,7 +639,7 @@ def run_grouped_1d1d_block_fp4_smoke_suite[
             sf_dtype=sf_dtype,
             sf_vector_size=sf_vector_size,
             scaling_kind=scaling_kind,
-        ](ctx, 4, tpe.unsafe_ptr())
+        ](ctx, 4, tpe.unsafe_ptr(), eids.unsafe_ptr())
 
     # experts 0,2: cp.async (gs=4,1); experts 1,3: TMA (gs=256,200)
     mixed4[4, 1024, 1024, 8](ctx, 4, 256, 1, 200)
@@ -662,6 +652,48 @@ def run_grouped_1d1d_block_fp4_smoke_suite[
     mixed4[4, 1024, 1024, 16](ctx, 32, 512, 1, 128)
     # MMA_N=32 mixed
     mixed4[4, 1024, 1024, 32](ctx, 64, 200, 8, 300)
+
+    # Scheduler lookup boundary: the warp lookup addresses 256 groups,
+    # 8 per lane.
+    print("\n=== Grouped 1D1D NVFP4 Sched Lookup Boundary Tests ===")
+    # 256 groups, dense: every lane's segment exactly full. Group i
+    # gets expert id i, so the expert count must cover the groups.
+    test_grouped_1d1d_block_fp4[256, 128, 256](ctx, 256, 64)
+    # 257 groups: one past the lookup's reach, so the sequential path
+    # serves the launch.
+    test_grouped_1d1d_block_fp4[257, 128, 256](ctx, 257, 64)
+
+    # 255 groups, sparse: a partial segment on lane 31, populated
+    # groups straddling the 63/64 lane boundary, and a masked group
+    # (id -1) whose tokens the scheduler must still skip.
+    comptime sparse_groups = 255
+    var sparse_tokens = List[Int]()
+    var sparse_eids = List[Int32]()
+    for _ in range(sparse_groups):
+        sparse_tokens.append(0)
+        sparse_eids.append(-1)
+    var populated = [0, 63, 64, 100, 128, 192, 250, sparse_groups - 1]
+    var counts = [300, 64, 128, 1, 200, 33, 65, 127]
+    var next_eid = Int32(0)
+    for k in range(len(populated)):
+        var g = populated[k]
+        sparse_tokens[g] = counts[k]
+        sparse_eids[g] = -1 if g == 100 else next_eid
+        if g != 100:
+            next_eid += 1
+    _test_grouped_1d1d_mixed_experts[
+        16,
+        128,
+        256,
+        sf_dtype=sf_dtype,
+        sf_vector_size=sf_vector_size,
+        scaling_kind=scaling_kind,
+    ](
+        ctx,
+        sparse_groups,
+        sparse_tokens.unsafe_ptr(),
+        sparse_eids.unsafe_ptr(),
+    )
 
     print("=== ALL TESTS PASSED ===")
     _ = ctx^

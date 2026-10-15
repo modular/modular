@@ -12,9 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 """Exhaustive kernel-level tests for the preshuffled-B grouped MXFP4 kernels.
 
-Bypasses the public `mxfp4_grouped_matmul_amd_preb` dispatcher and exercises
+Bypasses the public `block_scaled_grouped_matmul_amd_preb` dispatcher and exercises
 each preb kernel directly against a per-expert ungrouped GPU reference
-(`mxfp4_block_scaled_matmul_amd`):
+(`block_scaled_matmul_amd`):
 
   - `PreShuffledBGroupedGEMM.launch[persistent=True]`   — persistent 1D grid
                                                           + XCD swizzle
@@ -38,20 +38,20 @@ Usage:
   br test_mxfp4_grouped_matmul_amd_kernels.mojo.test
 """
 
-from std.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
-from std.gpu.host.info import MI355X
-from std.gpu.memory import CacheOperation
-from std.math import align_up, ceildiv
+from max.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
+from max.gpu.host.info import MI355X
+from max.gpu.memory import CacheOperation
+from std.math import align_up
 from std.memory import bitcast
 from std.random import random_ui64, seed
 
 from internal_utils import assert_almost_equal
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Idx, TileTensor, row_major
 from linalg.fp4_utils import MXFP4_SF_VECTOR_SIZE
 from linalg.matmul.gpu.amd import (
     PreShuffledBGroupedGEMM,
     Shuffler,
-    mxfp4_block_scaled_matmul_amd,
+    block_scaled_matmul_amd,
 )
 
 
@@ -60,21 +60,21 @@ from linalg.matmul.gpu.amd import (
 # ===----------------------------------------------------------------------=== #
 
 
-def _fill_random_bytes(buf: HostBuffer[DType.uint8], n: Int):
+def _fill_random_bytes(buf: HostBuffer[.uint8], n: Int):
     for i in range(n):
         buf[i] = UInt8(random_ui64(0, 255))
 
 
-def _fill_random_e8m0(buf: HostBuffer[DType.float8_e8m0fnu], n: Int):
+def _fill_random_e8m0(buf: HostBuffer[.float8_e8m0fnu], n: Int):
     """Scales clamped to E8M0 byte range [125..129] = magnitudes [0.25..4],
     keeping f32 accumulators in range while still exercising scale-dequant."""
     for i in range(n):
-        buf[i] = bitcast[DType.float8_e8m0fnu](UInt8(random_ui64(125, 129)))
+        buf[i] = bitcast[.float8_e8m0fnu](UInt8(random_ui64(125, 129)))
 
 
 def _build_routing(
-    a_offsets_host: HostBuffer[DType.uint32],
-    expert_ids_host: HostBuffer[DType.int32],
+    a_offsets_host: HostBuffer[.uint32],
+    expert_ids_host: HostBuffer[.int32],
     num_tokens_by_expert: List[Int],
     expert_ids_list: List[Int],
 ):
@@ -87,7 +87,7 @@ def _build_routing(
 
 
 # ===----------------------------------------------------------------------=== #
-# GPU reference — per-expert ungrouped `mxfp4_block_scaled_matmul_amd`.
+# GPU reference — per-expert ungrouped `block_scaled_matmul_amd`.
 # Shares the AMD MFMA code path, so a bug common to all MFMA paths would not
 # be caught; but it's fast enough to support large shapes.
 # ===----------------------------------------------------------------------=== #
@@ -98,13 +98,13 @@ def _gpu_per_expert_reference[
 ](
     ctx: DeviceContext,
     num_active: Int,
-    a_offsets_host: HostBuffer[DType.uint32],
-    expert_ids_host: HostBuffer[DType.int32],
-    a_dev: DeviceBuffer[DType.uint8],
-    b_dev: DeviceBuffer[DType.uint8],
-    a_scales_dev: DeviceBuffer[DType.float8_e8m0fnu],
-    b_scales_dev: DeviceBuffer[DType.float8_e8m0fnu],
-    mut c_ref_dev: DeviceBuffer[DType.float32],
+    a_offsets_host: HostBuffer[.uint32],
+    expert_ids_host: HostBuffer[.int32],
+    a_dev: DeviceBuffer[.uint8],
+    b_dev: DeviceBuffer[.uint8],
+    a_scales_dev: DeviceBuffer[.float8_e8m0fnu],
+    b_scales_dev: DeviceBuffer[.float8_e8m0fnu],
+    mut c_ref_dev: DeviceBuffer[.float32],
 ) raises:
     comptime packed_K = K // 2
     comptime scale_K = K // MXFP4_SF_VECTOR_SIZE
@@ -120,26 +120,26 @@ def _gpu_per_expert_reference[
 
         var a_expert = TileTensor(
             a_dev.unsafe_ptr() + token_start * packed_K,
-            row_major(Coord(num_tokens, Idx[packed_K])),
+            row_major(num_tokens, Idx[packed_K]),
         )
-        var b_expert = TileTensor[mut=False](
+        var b_expert = TileTensor(
             b_dev.unsafe_ptr() + expert_id * N * packed_K,
             row_major[N, packed_K](),
-        )
-        var sfa_expert = TileTensor[mut=False](
+        ).as_imm()
+        var sfa_expert = TileTensor(
             a_scales_dev.unsafe_ptr() + token_start * scale_K,
-            row_major(Coord(num_tokens, Idx[scale_K])),
-        )
-        var sfb_expert = TileTensor[mut=False](
+            row_major(num_tokens, Idx[scale_K]),
+        ).as_imm()
+        var sfb_expert = TileTensor(
             b_scales_dev.unsafe_ptr() + expert_id * N * scale_K,
             row_major[N, scale_K](),
-        )
-        var c_expert = TileTensor[mut=True](
+        ).as_imm()
+        var c_expert = TileTensor(
             c_ref_dev.unsafe_ptr() + token_start * N,
-            row_major(Coord(num_tokens, Idx[N])),
+            row_major(num_tokens, Idx[N]),
         )
 
-        mxfp4_block_scaled_matmul_amd(
+        block_scaled_matmul_amd(
             c_expert, a_expert, b_expert, sfa_expert, sfb_expert, ctx
         )
 
@@ -163,6 +163,7 @@ def _run_preb[
     b_cache_policy: CacheOperation = CacheOperation.ALWAYS,
     cluster_drain_sched: Bool = False,
     mfma_cluster: Int = 4,
+    pipeline_depth: Int = 2,
     waves_per_eu: Int = 0,
     wg_per_cu: Int = 2,  # struct param — sizes the persistent grid
     static_grid_z: Bool = False,  # comptime grid.z = n_local_experts (direct)
@@ -211,20 +212,16 @@ def _run_preb[
     )
 
     # Host buffers + random init.
-    var a_h = ctx.enqueue_create_host_buffer[DType.uint8](
-        total_tokens * packed_K
-    )
-    var b_h = ctx.enqueue_create_host_buffer[DType.uint8](
-        num_experts * N * packed_K
-    )
-    var a_sc_h = ctx.enqueue_create_host_buffer[DType.float8_e8m0fnu](
+    var a_h = ctx.enqueue_create_host_buffer[.uint8](total_tokens * packed_K)
+    var b_h = ctx.enqueue_create_host_buffer[.uint8](num_experts * N * packed_K)
+    var a_sc_h = ctx.enqueue_create_host_buffer[.float8_e8m0fnu](
         total_tokens * scale_K
     )
-    var b_sc_h = ctx.enqueue_create_host_buffer[DType.float8_e8m0fnu](
+    var b_sc_h = ctx.enqueue_create_host_buffer[.float8_e8m0fnu](
         num_experts * N * scale_K
     )
-    var a_off_h = ctx.enqueue_create_host_buffer[DType.uint32](num_active + 1)
-    var eid_h = ctx.enqueue_create_host_buffer[DType.int32](num_active)
+    var a_off_h = ctx.enqueue_create_host_buffer[.uint32](num_active + 1)
+    var eid_h = ctx.enqueue_create_host_buffer[.int32](num_active)
     ctx.synchronize()
 
     _fill_random_bytes(a_h, total_tokens * packed_K)
@@ -241,30 +238,28 @@ def _run_preb[
     var max_padded_M = align_up(ascale_toks, 32)
 
     # Device buffers + upload.
-    var a_d = ctx.enqueue_create_buffer[DType.uint8](total_tokens * packed_K)
-    var b_d = ctx.enqueue_create_buffer[DType.uint8](num_experts * N * packed_K)
-    var b_pre_d = ctx.enqueue_create_buffer[DType.uint8](
-        num_experts * N * packed_K
-    )
-    var a_sc_d = ctx.enqueue_create_buffer[DType.float8_e8m0fnu](
+    var a_d = ctx.enqueue_create_buffer[.uint8](total_tokens * packed_K)
+    var b_d = ctx.enqueue_create_buffer[.uint8](num_experts * N * packed_K)
+    var b_pre_d = ctx.enqueue_create_buffer[.uint8](num_experts * N * packed_K)
+    var a_sc_d = ctx.enqueue_create_buffer[.float8_e8m0fnu](
         total_tokens * scale_K
     )
-    var b_sc_d = ctx.enqueue_create_buffer[DType.float8_e8m0fnu](
+    var b_sc_d = ctx.enqueue_create_buffer[.float8_e8m0fnu](
         num_experts * N * scale_K
     )
     # Preshuffled scale buffers (uint8 — opaque bytes). The dispatcher
     # expects scale tensors in scale-4d byte order; we produce them
     # below via the GPU launcher (A) and CPU helper (B, static weights).
-    var a_sc_pre_d = ctx.enqueue_create_buffer[DType.uint8](
+    var a_sc_pre_d = ctx.enqueue_create_buffer[.uint8](
         num_experts * max_padded_M * scale_K
     )
-    var b_sc_pre_d = ctx.enqueue_create_buffer[DType.uint8](
+    var b_sc_pre_d = ctx.enqueue_create_buffer[.uint8](
         num_experts * N * scale_K
     )
-    var a_off_d = ctx.enqueue_create_buffer[DType.uint32](num_active + 1)
-    var eid_d = ctx.enqueue_create_buffer[DType.int32](num_active)
-    var c_d = ctx.enqueue_create_buffer[DType.float32](total_tokens * N)
-    var c_ref_d = ctx.enqueue_create_buffer[DType.float32](total_tokens * N)
+    var a_off_d = ctx.enqueue_create_buffer[.uint32](num_active + 1)
+    var eid_d = ctx.enqueue_create_buffer[.int32](num_active)
+    var c_d = ctx.enqueue_create_buffer[.float32](total_tokens * N)
+    var c_ref_d = ctx.enqueue_create_buffer[.float32](total_tokens * N)
 
     # Zero c_d and c_ref_d. Inactive slots (M=0 or expert_id=-1) leave their
     # output range unwritten by both the kernel and the reference, so the
@@ -280,10 +275,10 @@ def _run_preb[
     ctx.enqueue_copy(eid_d, eid_h)
 
     # GPU preshuffle b_d → b_pre_d.
-    var b_raw_tt = TileTensor[mut=False](
+    var b_raw_tt = TileTensor(
         b_d, row_major[num_experts, N, packed_K]()
-    )
-    var b_pre_dst_tt = TileTensor[mut=True](
+    ).as_imm()
+    var b_pre_dst_tt = TileTensor(
         b_pre_d,
         Shuffler[num_experts].b_5d_grouped_layout[N=N, K_BYTES=packed_K],
     )
@@ -292,17 +287,17 @@ def _run_preb[
     )
 
     # GPU preshuffle of A-scales into per-expert fixed-stride slots.
-    var a_sc_raw_u8_tt = TileTensor[mut=False](
-        a_sc_d.unsafe_ptr().bitcast[Scalar[DType.uint8]](),
-        row_major(Coord(total_tokens, Idx[scale_K])),
-    )
-    var a_sc_pre_tt = TileTensor[mut=True](
+    var a_sc_raw_u8_tt = TileTensor(
+        a_sc_d.unsafe_ptr().bitcast[Scalar[.uint8]](),
+        row_major(total_tokens, Idx[scale_K]),
+    ).as_imm()
+    var a_sc_pre_tt = TileTensor(
         a_sc_pre_d,
-        row_major(Coord(num_experts * max_padded_M, Idx[scale_K])),
+        row_major(num_experts * max_padded_M, Idx[scale_K]),
     )
-    var a_off_tt_for_pre = TileTensor[mut=False](
-        a_off_d, row_major(Coord(num_active + 1))
-    )
+    var a_off_tt_for_pre = TileTensor(
+        a_off_d, row_major(num_active + 1)
+    ).as_imm()
     Shuffler[1].preshuffle_grouped_scale_4d_gpu[K_SCALES=scale_K](
         a_sc_raw_u8_tt,
         a_sc_pre_tt,
@@ -316,13 +311,13 @@ def _run_preb[
     # CPU preshuffle of B-scales. B-scales are static weights — in
     # production this runs once at session.load. Done here on host since
     # the existing helper takes comptime MN; for B that's the static N.
-    var b_sc_pre_h = ctx.enqueue_create_host_buffer[DType.uint8](
+    var b_sc_pre_h = ctx.enqueue_create_host_buffer[.uint8](
         num_experts * N * scale_K
     )
     ctx.synchronize()
     var b_sc_raw_u8_tt = TileTensor(
-        b_sc_h.unsafe_ptr().bitcast[Scalar[DType.uint8]](),
-        row_major(Coord(Idx[num_experts], Idx[N], Idx[scale_K])),
+        b_sc_h.unsafe_ptr().bitcast[UInt8](),
+        row_major(Idx[num_experts], Idx[N], Idx[scale_K]),
     )
     Shuffler[num_experts].preshuffle_scale_4d[MN=N, K_SCALES=scale_K](
         b_sc_raw_u8_tt, b_sc_pre_h
@@ -346,23 +341,21 @@ def _run_preb[
     # buffers; bitcast uint8 ptr → float8_e8m0fnu to match the dispatcher
     # signature (the kernel internally bitcasts back to uint8 for V#
     # construction; the dtype here is a wrapping convention).
-    var a_tt = TileTensor[mut=False](
-        a_d, row_major(Coord(total_tokens, Idx[packed_K]))
-    )
-    var b_pre_tt = TileTensor[mut=False](
+    var a_tt = TileTensor(a_d, row_major(total_tokens, Idx[packed_K])).as_imm()
+    var b_pre_tt = TileTensor(
         b_pre_d, row_major[num_experts, N * packed_K]()
-    )
-    var a_sc_tt = TileTensor[mut=False](
-        a_sc_pre_d.unsafe_ptr().bitcast[Scalar[DType.float8_e8m0fnu]](),
-        row_major(Coord(num_experts * max_padded_M, Idx[scale_K])),
-    )
-    var b_sc_tt = TileTensor[mut=False](
-        b_sc_pre_d.unsafe_ptr().bitcast[Scalar[DType.float8_e8m0fnu]](),
+    ).as_imm()
+    var a_sc_tt = TileTensor(
+        a_sc_pre_d.unsafe_ptr().bitcast[Float8_e8m0fnu](),
+        row_major(num_experts * max_padded_M, Idx[scale_K]),
+    ).as_imm()
+    var b_sc_tt = TileTensor(
+        b_sc_pre_d.unsafe_ptr().bitcast[Float8_e8m0fnu](),
         row_major[num_experts, N, scale_K](),
-    )
-    var a_off_tt = TileTensor(a_off_d, row_major(Coord(num_active + 1)))
-    var eid_tt = TileTensor(eid_d, row_major(Coord(num_active)))
-    var c_tt = TileTensor[mut=True](c_d, row_major(Coord(total_tokens, Idx[N])))
+    ).as_imm()
+    var a_off_tt = TileTensor(a_off_d, row_major(num_active + 1))
+    var eid_tt = TileTensor(eid_d, row_major(num_active))
+    var c_tt = TileTensor(c_d, row_major(total_tokens, Idx[N]))
 
     PreShuffledBGroupedGEMM[cu_count=cu_count, wg_per_cu=wg_per_cu].launch[
         BM=BM,
@@ -373,6 +366,7 @@ def _run_preb[
         b_cache_policy=b_cache_policy,
         cluster_drain_sched=cluster_drain_sched,
         mfma_cluster=mfma_cluster,
+        pipeline_depth=pipeline_depth,
         waves_per_eu=waves_per_eu,
         static_grid_z=static_grid_z,
     ](
@@ -391,10 +385,8 @@ def _run_preb[
     ctx.synchronize()
 
     # Compare.
-    var c_h = ctx.enqueue_create_host_buffer[DType.float32](total_tokens * N)
-    var c_ref_h = ctx.enqueue_create_host_buffer[DType.float32](
-        total_tokens * N
-    )
+    var c_h = ctx.enqueue_create_host_buffer[.float32](total_tokens * N)
+    var c_ref_h = ctx.enqueue_create_host_buffer[.float32](total_tokens * N)
     ctx.enqueue_copy(c_h, c_d)
     ctx.enqueue_copy(c_ref_h, c_ref_d)
     ctx.synchronize()
@@ -433,6 +425,7 @@ def test_persistent[
     b_cache_policy: CacheOperation = CacheOperation.ALWAYS,
     cluster_drain_sched: Bool = False,
     mfma_cluster: Int = 4,
+    pipeline_depth: Int = 2,
     waves_per_eu: Int = 0,
     wg_per_cu: Int = 2,
 ](
@@ -463,6 +456,7 @@ def test_persistent[
         b_cache_policy=b_cache_policy,
         cluster_drain_sched=cluster_drain_sched,
         mfma_cluster=mfma_cluster,
+        pipeline_depth=pipeline_depth,
         waves_per_eu=waves_per_eu,
         wg_per_cu=wg_per_cu,
     ](name, num_tokens_by_expert, expert_ids_list, ctx)
@@ -480,6 +474,7 @@ def test_direct[
     b_cache_policy: CacheOperation = CacheOperation.ALWAYS,
     cluster_drain_sched: Bool = False,
     mfma_cluster: Int = 4,
+    pipeline_depth: Int = 2,
     waves_per_eu: Int = 0,
     wg_per_cu: Int = 2,
     static_grid_z: Bool = False,
@@ -511,6 +506,7 @@ def test_direct[
         b_cache_policy=b_cache_policy,
         cluster_drain_sched=cluster_drain_sched,
         mfma_cluster=mfma_cluster,
+        pipeline_depth=pipeline_depth,
         waves_per_eu=waves_per_eu,
         wg_per_cu=wg_per_cu,
         static_grid_z=static_grid_z,
@@ -967,7 +963,7 @@ def main() raises:
     # ----------------------------------------------------------------- #
     # Production dispatch-band coverage — real kimi N/K with the EXACT
     # (BM, BN, BK_ELEMS, WN, persistent, b_cache_policy) each band in
-    # mxfp4_grouped_matmul_amd.mojo launches. One representative token
+    # block_scaled_grouped_matmul_amd.mojo launches. One representative token
     # distribution per band (a few active experts + an inactive slot
     # where useful). STREAMING vs ALWAYS is result-identical (cache hint);
     # these cases assert the exact instantiation compiles, runs, and is
@@ -1334,7 +1330,7 @@ def main() raises:
     ]("down skewed hot expert", [200, 1, 1, 1], [0, 1, 2, 3], ctx)
 
     # MiniMax-M3 dispatcher band configs (N=6144; up K=6144, down K=3072).
-    # Exactly the tiles mxfp4_grouped_matmul_amd_preb selects for M3 (defaults
+    # Exactly the tiles block_scaled_grouped_matmul_amd_preb selects for M3 (defaults
     # for the scheduler knobs, matching run_kernel). Certifies each M3 band
     # instantiation against the per-expert reference.
     print("---- MiniMax-M3 dispatcher band configs ----")
@@ -1626,5 +1622,47 @@ def main() raises:
         wg_per_cu=1,
         b_cache_policy=SX,
     ]("M3 down etm<=2 decode BN64/wg1 (2 experts)", [1, 1], [0, 1], ctx)
+
+    # ----------------------------------------------------------------- #
+    # Pipeline-depth parameterization (deeper-prefetch lever).
+    # `pipeline_depth > 2` sizes the B-fragment ring to `pipeline_depth`
+    # slots and swaps the b_prefetch steady loop's end-of-iter draining
+    # barrier() for the non-draining `s_waitcnt[lgkmcnt=0]` + bare s_barrier.
+    # This is the CORRECTNESS gate for the depth plumbing + barrier seam: at
+    # depth 3/4 the deeper ring is allocated and the non-draining barrier
+    # engages, and the result must still match the per-expert reference.
+    #
+    # FALSE-NEGATIVE GUARD: this is numerics-only. A build that (regressively)
+    # left the draining barrier in place would ALSO pass here — the perf
+    # effect (B loads actually staying outstanding) is NOT observable from
+    # numerics and MUST be rocprof-verified on GPU when depth is raised in a
+    # dispatch band. Passing this test alone does not prove the lever works.
+    #
+    # M3 decode-band tiles (N=6144; up K=6144, down K=3072), a few active
+    # experts + an inactive slot, on both the persistent and direct grids.
+    print("---- pipeline_depth > 2 (deeper prefetch) correctness ----")
+    # M3 up decode tile, depth 3 and 4 (persistent).
+    test_persistent[
+        4, 6144, 6144, BM=16, BN=64, BK_ELEMS=512, WN=16, pipeline_depth=3
+    ]("M3 up decode depth=3", [8, 4, 0, 4], [0, 1, 2, 3], ctx)
+    test_persistent[
+        4, 6144, 6144, BM=16, BN=64, BK_ELEMS=512, WN=16, pipeline_depth=4
+    ]("M3 up decode depth=4", [8, 4, 0, 4], [0, 1, 2, 3], ctx)
+    # M3 up decode tile, BN128/WN32 variant, depth 3 (persistent).
+    test_persistent[
+        4, 6144, 6144, BM=16, BN=128, BK_ELEMS=512, WN=32, pipeline_depth=3
+    ]("M3 up decode BN128 depth=3", [8, 4, 0, 4], [0, 1, 2, 3], ctx)
+    # M3 down decode tile, depth 3 (persistent).
+    test_persistent[
+        4, 6144, 3072, BM=16, BN=64, BK_ELEMS=512, WN=16, pipeline_depth=3
+    ]("M3 down decode depth=3", [8, 4, 0, 4], [0, 1, 2, 3], ctx)
+    # Direct grid at depth 3 and 4 — a larger single expert so the steady
+    # loop (where the non-draining barrier lives) runs many iterations.
+    test_direct[
+        1, 6144, 6144, BM=64, BN=128, BK_ELEMS=512, WN=64, pipeline_depth=3
+    ]("M3 up direct depth=3", [512], [0], ctx)
+    test_direct[
+        1, 6144, 6144, BM=64, BN=128, BK_ELEMS=512, WN=64, pipeline_depth=4
+    ]("M3 up direct depth=4", [512], [0], ctx)
 
     print("==== all preb grouped MXFP4 kernel tests passed ====")

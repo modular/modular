@@ -35,7 +35,7 @@ from max.experimental.compile_pool import (
     ProcessCompilePool,
     RemoteCompileError,
 )
-from max.graph import DeviceRef, Graph, TensorType
+from max.graph import DeviceRef, Graph, Module, TensorType
 
 
 @pytest.fixture(scope="module")
@@ -75,6 +75,36 @@ def test_compiles_in_background(
         np.testing.assert_array_equal(
             _run_model(session, future.result(timeout=240)),
             np.full(4, scale, dtype=np.float32),
+        )
+
+
+def test_compiles_multi_graph_module(
+    pool: ProcessCompilePool, session: InferenceSession
+) -> None:
+    module = Module()
+    scales = (2.0, 3.0)
+    for scale in scales:
+        with Graph(
+            f"scale_{scale}".replace(".", "_"),
+            input_types=[
+                TensorType(DType.float32, [4], device=DeviceRef.CPU())
+            ],
+            module=module,
+        ) as g:
+            (x,) = g.inputs
+            g.output(x.tensor * scale)
+
+    with pytest.raises(ValueError, match="at least one device"):
+        pool.compile_module(module, device_specs=[])
+
+    future = pool.compile_module(module, device_specs=[DeviceSpec.cpu()])
+    models = session.init_all(future.result(timeout=240))
+    assert len(models) == len(scales)
+    for scale in scales:
+        name = f"scale_{scale}".replace(".", "_")
+        (out,) = models[name](np.ones(4, dtype=np.float32))
+        np.testing.assert_array_equal(
+            np.asarray(out.to_numpy()), np.full(4, scale, dtype=np.float32)
         )
 
 

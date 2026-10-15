@@ -129,12 +129,25 @@ MODEL_PROFILES: dict[str, ModelProfile] = {
         tags=["model:minimax-m3"],
         description="MiniMax M3 model-specific tests",
     ),
+    "muse_glimmer": ModelProfile(
+        name="muse_glimmer",
+        default_port=8600,
+        tags=["model:muse_glimmer"],
+        description="Muse Glimmer model-specific tests",
+    ),
+    "nemotron": ModelProfile(
+        name="nemotron",
+        default_port=8700,
+        tags=["model:nemotron"],
+        description="Nemotron model-specific tests",
+    ),
+    "smollm": ModelProfile(
+        name="smollm",
+        default_port=8500,
+        tags=["model:smollm"],
+        description="SmolLM model-specific tests",
+    ),
 }
-
-
-def get_model_profile(name: str) -> ModelProfile | None:
-    """Get a model profile by name, or None if not found."""
-    return MODEL_PROFILES.get(name)
 
 
 def fetch_hf_config(model: str, timeout: float = 10.0) -> dict[str, Any]:

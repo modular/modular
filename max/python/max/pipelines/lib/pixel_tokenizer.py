@@ -31,12 +31,10 @@ from max.pipelines.context import PixelContext, TokenBuffer
 from max.pipelines.context.exceptions import PromptTooLongError
 from max.pipelines.context.outputs import GenerationOutput
 from max.pipelines.diffusion.schedulers import SchedulerFactory
-from max.pipelines.modeling.types import PipelineTokenizer
+from max.pipelines.lib.request_text import retrieve_input_text
+from max.pipelines.modeling.types import PipelineTokenizer, TokenIds
 from max.pipelines.request import OpenResponsesRequest
-from max.pipelines.request.open_responses import (
-    InputImageContent,
-    InputTextContent,
-)
+from max.pipelines.request.open_responses import InputImageContent
 from max.pipelines.request.provider_options import (
     ImageProviderOptions,
     PixelProviderOptionsBase,
@@ -44,7 +42,6 @@ from max.pipelines.request.provider_options import (
 from transformers import AutoTokenizer, PreTrainedTokenizerFast
 
 if TYPE_CHECKING:
-    import PIL.Image
     from max.pipelines.lib.config import PipelineConfig
 
 logger = logging.getLogger("max.pipelines")
@@ -175,7 +172,7 @@ class PixelGenerationTokenizer(
         model_path: Path to the model/tokenizer.
         pipeline_config: Pipeline configuration with ModelManifest metadata.
         subfolder: Subfolder within the model path for the primary tokenizer.
-        subfolder_2: Optional subfolder for a second tokenizer (e.g. text encoder).
+        subfolder_2: Optional subfolder for a second tokenizer (such as text encoder).
         revision: Git revision/branch to use.
         max_length: Maximum sequence length for the primary tokenizer.
         secondary_max_length: Maximum sequence length for the secondary tokenizer, if used.
@@ -543,9 +540,10 @@ class PixelGenerationTokenizer(
         )
 
     @property
-    def eos(self) -> int:
-        """Returns the end-of-sequence token ID."""
-        return self.delegate.eos_token_id
+    def eos_token_ids(self) -> set[int]:
+        """Returns the end-of-sequence token IDs."""
+        eos = self.delegate.eos_token_id
+        return {eos} if eos is not None else set()
 
     @property
     def expects_content_wrapping(self) -> bool:
@@ -645,11 +643,7 @@ class PixelGenerationTokenizer(
 
         return encoded_prompt, attention_mask_flat
 
-    async def decode(
-        self,
-        encoded: tuple[npt.NDArray[np.int64], npt.NDArray[np.bool_]],
-        **kwargs,
-    ) -> str:
+    async def decode(self, encoded: TokenIds, **kwargs) -> str:
         """Decodes token arrays to text (not implemented for this tokenizer)."""
         raise NotImplementedError(
             "Decoding is not implemented for this tokenizer."
@@ -677,11 +671,6 @@ class PixelGenerationTokenizer(
     def _retrieve_prompt(request: OpenResponsesRequest) -> str:
         """Retrieve the text prompt from an OpenResponsesRequest.
 
-        Supports three input formats:
-        1. input is a string - use directly as prompt
-        2. input is a list of messages where first message content is a string - use as prompt
-        3. input is a list of messages where first message content is a list - extract InputTextContent.text
-
         Args:
             request: The OpenResponsesRequest to extract the prompt from.
 
@@ -691,43 +680,7 @@ class PixelGenerationTokenizer(
         Raises:
             ValueError: If no valid prompt can be extracted from the request.
         """
-        # Case 1: input is a string
-        if isinstance(request.body.input, str):
-            return request.body.input
-
-        # Cases 2 & 3: input is a list of messages
-        if isinstance(request.body.input, list):
-            if not request.body.input:
-                raise ValueError("Input message list cannot be empty.")
-
-            first_message = request.body.input[0]
-
-            # Case 2: message.content is a string
-            if isinstance(first_message.content, str):
-                return first_message.content
-
-            # Case 3: message.content is a list
-            if isinstance(first_message.content, list):
-                # Extract text from all InputTextContent items
-                text_parts = [
-                    item.text
-                    for item in first_message.content
-                    if isinstance(item, InputTextContent)
-                ]
-                if not text_parts:
-                    raise ValueError(
-                        "No text content found in message. Please include at least one "
-                        "InputTextContent item with a text prompt."
-                    )
-                return " ".join(text_parts)
-
-            raise ValueError(
-                f"Unexpected message content type: {type(first_message.content).__name__}"
-            )
-
-        raise ValueError(
-            f"Input must be a string or list of messages, got {type(request.body.input).__name__}"
-        )
+        return retrieve_input_text(request)
 
     @staticmethod
     def _retrieve_image(

@@ -15,32 +15,22 @@ from std.math import exp
 from std.random import rand, seed
 from std.sys import argv
 
-from std.gpu import *
-from std.gpu.host import DeviceContext
-from std.sys import Vendor, has_amd_gpu_accelerator
-from std.gpu.host.info import (
+from max.gpu import *
+from max.gpu.host import DeviceContext
+from max.gpu.host.info import (
     A100,
     H100,
     GPUInfo,
     _is_sm10x_gpu,
 )
-from layout import (
-    Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-    TileTensor,
-    UNKNOWN_VALUE,
-    row_major,
-)
+from layout import Idx, TileTensor, row_major
 from nn.attention.gpu.mha import (
     flash_attention,
     mha_gpu_naive,
 )
 from nn.attention.mha_mask import NullMask
+from nn.attention.gpu.nvidia.common import immut_tile_tensor_1d
 from std.testing import assert_almost_equal
-
-from std.utils.index import Index
 
 
 def is_benchmark() -> Bool:
@@ -51,11 +41,7 @@ def is_benchmark() -> Bool:
 
 
 def is_sm8(info: GPUInfo) -> Bool:
-    return (
-        info.vendor == Vendor.NVIDIA_GPU
-        and info.compute >= 8
-        and info.compute < 9
-    )
+    return info.api == "cuda" and info.compute >= 8 and info.compute < 9
 
 
 def test[
@@ -78,7 +64,7 @@ def test[
         "batch_size:",
         batch_size,
         "num_partitions:",
-        num_partitions.value() if num_partitions else -1,
+        num_partitions.or_else(-1),
         "num_heads:",
         num_heads,
         "seq_len:",
@@ -166,10 +152,10 @@ def test[
         row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
 
-    @parameter
-    @always_inline
-    @__copy_capture(q_device, k_device, v_device, output_device)
-    def kernel_launch(ctx: DeviceContext) raises:
+    @inline(.always)
+    def kernel_launch(
+        ctx: DeviceContext,
+    ) raises {var q_device, var k_device, var v_device, var output_device, imm}:
         flash_attention[decoding_warp_split_k=decoding_warp_split_k](
             output_device,
             q_device,
@@ -187,7 +173,7 @@ def test[
         # Warmup
         kernel_launch(ctx)
 
-        var nstime = Float64(ctx.execution_time[kernel_launch](nrun)) / Float64(
+        var nstime = Float64(ctx.execution_time(kernel_launch, nrun)) / Float64(
             nrun
         )
         var sectime = nstime / 1000000
@@ -227,9 +213,8 @@ def test[
     ctx.enqueue_copy(output_ptr, output_ref_device_ptr)
     ctx.synchronize()
 
-    @parameter
     def get_rtol() -> Float64:
-        return 2e-2 if num_partitions and num_partitions.value() >= 4 else 1e-2
+        return 2e-2 if num_partitions.or_else(0) >= 4 else 1e-2
 
     var rtol = get_rtol()
     for h in range(num_heads):
@@ -240,7 +225,7 @@ def test[
                 ]()
                 var actual = flash_output_ptr[
                     d + depth * (h + s * num_heads)
-                ].cast[DType.float64]()
+                ].cast[.float64]()
                 var rerr = abs((actual - expect) / expect)
                 assert_almost_equal(
                     actual,
@@ -257,9 +242,9 @@ def test[
 
 
 def test_depth_supported_by_gpu(info: GPUInfo) -> List[Int]:
-    var depths = [64, 128, 512]
+    var depths: List = [64, 128, 512]
 
-    if info == materialize[H100]() or _is_sm10x_gpu(info):
+    if info == materialize[H100.gpu_info]() or _is_sm10x_gpu(info):
         depths.append(80)
         depths.append(256)
 
@@ -267,7 +252,7 @@ def test_depth_supported_by_gpu(info: GPUInfo) -> List[Int]:
 
 
 def test_context_encoding(ctx: DeviceContext) raises:
-    test[DType.bfloat16, depth=127, num_heads=2](111, 121, ctx)
+    test[.bfloat16, depth=127, num_heads=2](111, 121, ctx)
 
     comptime depths = test_depth_supported_by_gpu(ctx.default_device_info)
 
@@ -403,7 +388,7 @@ def test_decoding[
     batch_size: Int,
     num_partitions: Optional[Int],
     split_k: Bool,
-    qkv_type: DType = DType.bfloat16,
+    qkv_type: DType = .bfloat16,
 ](ctx: DeviceContext, use_index_input: Bool = False) raises:
     comptime depths = test_depth_supported_by_gpu(ctx.default_device_info)
 
@@ -419,9 +404,7 @@ def test_decoding[
         ](1, 11, ctx, use_index_input=use_index_input)
 
         comptime if (
-            not is_sm8(ctx.default_device_info)
-            or num_partitions
-            and num_partitions.value() == 1
+            not is_sm8(ctx.default_device_info) or num_partitions == Optional(1)
         ):
             test[
                 qkv_type,
@@ -468,7 +451,7 @@ def test_decoding_large_group[
     batch_size: Int,
     num_partitions: Optional[Int] = None,
     split_k: Bool = False,
-    qkv_type: DType = DType.bfloat16,
+    qkv_type: DType = .bfloat16,
 ](ctx: DeviceContext, use_index_input: Bool = False) raises:
     comptime depths = test_depth_supported_by_gpu(ctx.default_device_info)
 
@@ -566,13 +549,9 @@ def test_flash_attention_sink_kernel(ctx: DeviceContext, seq_len: Int) raises:
         out_dev,
         row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
-    comptime sinks_layout = Layout.row_major(UNKNOWN_VALUE)
-    var sinks_device = LayoutTensor[qkv_type, sinks_layout](
-        sinks_dev.unsafe_ptr(),
-        RuntimeLayout[sinks_layout].row_major(Index(num_heads)),
-    )
+    var sinks_device = immut_tile_tensor_1d(sinks_dev.unsafe_ptr(), num_heads)
 
-    @always_inline
+    @inline(.always)
     def launch(ctx: DeviceContext) raises {imm}:
         flash_attention[sink=True](
             out_device,
@@ -583,7 +562,7 @@ def test_flash_attention_sink_kernel(ctx: DeviceContext, seq_len: Int) raises:
             scale,  # 0.0 -> all QK logits are exactly zero
             ctx,
             None,
-            sink_weights=sinks_device.get_immutable().as_unsafe_any_origin(),
+            sink_weights=sinks_device,
         )
 
     launch(ctx)
@@ -601,8 +580,8 @@ def test_flash_attention_sink_kernel(ctx: DeviceContext, seq_len: Int) raises:
     # (since V=1)
     for s in range(seq_len):
         for d in range(depth):
-            var got0 = out_host[0, s, 0, d].cast[DType.float32]()
-            var got1 = out_host[0, s, 1, d].cast[DType.float32]()
+            var got0 = out_host[0, s, 0, d].cast[.float32]()
+            var got1 = out_host[0, s, 1, d].cast[.float32]()
             assert_almost_equal(got0, want0, atol=2e-2, rtol=2e-2)
             assert_almost_equal(got1, want1, atol=2e-2, rtol=2e-2)
 

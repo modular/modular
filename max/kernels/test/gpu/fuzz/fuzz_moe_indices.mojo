@@ -21,7 +21,7 @@
 # relative to num_experts, the tail slots are uninitialized and the copy-back
 # reads them. Run under `--oracle initcheck` (or `poison`) to surface it.
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.random import random_ui64, seed
 from std.sys.defines import get_defined_int
 
@@ -32,7 +32,7 @@ from nn.moe import moe_create_indices
 from _fuzz import boundary_int, collect_args, flag, flag_int
 
 comptime num_experts = get_defined_int["num_experts", 256]()
-comptime expected_count = get_defined_int["expected_count", 8192]()
+comptime max_tokens = get_defined_int["max_tokens", 8192]()
 comptime fuzz_seed = get_defined_int["fuzz_seed", 12345]()
 comptime budget = get_defined_int["budget", 16]()
 
@@ -56,7 +56,7 @@ def gen_specs(n: Int) -> List[CaseSpec]:
             # Sparse-activation regime: many inactive experts.
             num_tokens = boundary_int(1, num_experts, 1)
         else:
-            num_tokens = boundary_int(1, 4096, expected_count)
+            num_tokens = boundary_int(1, 4096, max_tokens)
         specs.append(CaseSpec(num_tokens))
     return specs^
 
@@ -65,18 +65,18 @@ def run_one_case(ctx: DeviceContext, spec: CaseSpec) raises:
     var n = spec.num_tokens
 
     # Host copy-back targets for the two precondition-sensitive buffers.
-    var esi_host = ctx.enqueue_create_host_buffer[DType.uint32](num_experts + 1)
-    var eids_host = ctx.enqueue_create_host_buffer[DType.int32](num_experts)
-    var topk_host = ctx.enqueue_create_host_buffer[DType.uint32](n)
+    var esi_host = ctx.enqueue_create_host_buffer[.uint32](num_experts + 1)
+    var eids_host = ctx.enqueue_create_host_buffer[.int32](num_experts)
+    var topk_host = ctx.enqueue_create_host_buffer[.uint32](n)
 
-    var token_expert_order_dev = ctx.enqueue_create_buffer[DType.uint32](n)
-    var expert_start_indices_dev = ctx.enqueue_create_buffer[DType.uint32](
+    var token_expert_order_dev = ctx.enqueue_create_buffer[.uint32](n)
+    var expert_start_indices_dev = ctx.enqueue_create_buffer[.uint32](
         num_experts + 1
     )
-    var restore_token_order_dev = ctx.enqueue_create_buffer[DType.uint32](n)
-    var expert_ids_dev = ctx.enqueue_create_buffer[DType.int32](num_experts)
-    var expert_usage_stats_dev = ctx.enqueue_create_buffer[DType.uint32](2)
-    var topk_dev = ctx.enqueue_create_buffer[DType.uint32](n)
+    var restore_token_order_dev = ctx.enqueue_create_buffer[.uint32](n)
+    var expert_ids_dev = ctx.enqueue_create_buffer[.int32](num_experts)
+    var expert_usage_stats_dev = ctx.enqueue_create_buffer[.uint32](2)
+    var topk_dev = ctx.enqueue_create_buffer[.uint32](n)
 
     var token_expert_order = TileTensor(token_expert_order_dev, row_major(n))
     var expert_start_indices = TileTensor(
@@ -94,7 +94,7 @@ def run_one_case(ctx: DeviceContext, spec: CaseSpec) raises:
     random(topk_host_t, min=0, max=UInt32(num_experts))
     ctx.enqueue_copy(topk_dev, topk_host)
 
-    moe_create_indices["gpu", expected_count=expected_count](
+    moe_create_indices["gpu"](
         token_expert_order,
         expert_start_indices,
         restore_token_order,

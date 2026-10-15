@@ -19,7 +19,8 @@ import math
 from dataclasses import dataclass
 from typing import Any
 
-import torch
+# torch is a caller-supplied dep, see BUILD.bazel
+import torch  # type: ignore[import-not-found]
 from max.driver import Buffer, DLPackArray
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, ops
@@ -304,9 +305,7 @@ class AttentionWithRopeHarness(
             ),
         ) as graph:
             inputs, input_row_offsets, *kv_cache = graph.inputs
-            kv_collection = kv_params.unflatten_kv_inputs(
-                iter(kv_cache)
-            ).inputs[0]
+            kv_collection = kv_params.unflatten_kv_inputs(iter(kv_cache))[0]
             layer_idx = ops.constant(0, DType.uint32, device=DeviceRef.CPU())
             graph.output(
                 layer(

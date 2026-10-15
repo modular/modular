@@ -43,8 +43,8 @@ from std.random import random_ui64, seed
 from std.sys.defines import get_defined_bool, get_defined_int
 from std.utils.numerics import isfinite, neg_inf
 
-from std.gpu.host import DeviceContext
-from layout import Coord, Idx, TileTensor, row_major
+from max.gpu.host import DeviceContext
+from layout import Idx, TileTensor, row_major
 from nn.moe import single_group_router
 
 from _fuzz import (
@@ -62,7 +62,7 @@ comptime scores_type = DType.float32
 comptime bias_type = DType.float32
 
 # COMPTIME router geometry (default = MiniMax-M3). n_routed_experts must be a
-# multiple of WARP_SIZE; n_experts_per_tok must be a power of two.
+# multiple of WARP_SIZE.
 comptime N_EXPERTS = get_defined_int["n_routed_experts", 128]()
 comptime TOPK = get_defined_int["n_experts_per_tok", 4]()
 comptime NORM = get_defined_bool["norm_weights", True]()
@@ -130,21 +130,20 @@ def _check_router(
         var biased = List[Float64]()
         for e in range(N_EXPERTS):
             biased.append(
-                scores[base + e].cast[DType.float64]()
-                + bias[e].cast[DType.float64]()
+                scores[base + e].cast[.float64]() + bias[e].cast[.float64]()
             )
         # k-th largest biased score (the top-k membership threshold).
         var work = biased.copy()
-        var threshold = neg_inf[DType.float64]()
+        var threshold = neg_inf[.float64]()
         for _ in range(TOPK):
             var best = 0
-            var best_val = neg_inf[DType.float64]()
+            var best_val = neg_inf[.float64]()
             for e in range(N_EXPERTS):
                 if work[e] > best_val:
                     best_val = work[e]
                     best = e
             threshold = best_val
-            work[best] = neg_inf[DType.float64]()
+            work[best] = neg_inf[.float64]()
         var tol = 1e-3 + 1e-3 * abs(threshold)
 
         # (1) Every selected expert is in the true top-k (up to ties).
@@ -190,7 +189,7 @@ def _check_router(
             comptime if NORM:
                 w /= wsum
             w *= ROUTED_SCALING
-            var got = actual_w[kbase + j].cast[DType.float64]()
+            var got = actual_w[kbase + j].cast[.float64]()
             if abs(got - w) > 1e-2 + 1e-2 * abs(w):
                 print(
                     "FUZZ_NUMERIC_FAIL kind=weight token=",
@@ -281,17 +280,15 @@ def run_one_case(
 
     var scores_dev = ctx.enqueue_create_buffer[scores_type](nt * N_EXPERTS)
     var bias_dev = ctx.enqueue_create_buffer[bias_type](N_EXPERTS)
-    var idx_dev = ctx.enqueue_create_buffer[DType.int32](nt * TOPK)
+    var idx_dev = ctx.enqueue_create_buffer[.int32](nt * TOPK)
     var w_dev = ctx.enqueue_create_buffer[scores_type](nt * TOPK)
     ctx.enqueue_copy(scores_dev, scores_host)
     ctx.enqueue_copy(bias_dev, bias_host)
 
-    var expert_scores = TileTensor(
-        scores_dev, row_major(Coord(nt, Idx[N_EXPERTS]))
-    )
+    var expert_scores = TileTensor(scores_dev, row_major(nt, Idx[N_EXPERTS]))
     var expert_bias = TileTensor(bias_dev, row_major(Idx[N_EXPERTS]))
-    var expert_indices = TileTensor(idx_dev, row_major(Coord(nt, Idx[TOPK])))
-    var expert_weights = TileTensor(w_dev, row_major(Coord(nt, Idx[TOPK])))
+    var expert_indices = TileTensor(idx_dev, row_major(nt, Idx[TOPK]))
+    var expert_weights = TileTensor(w_dev, row_major(nt, Idx[TOPK]))
 
     single_group_router[N_EXPERTS, TOPK, NORM, "gpu"](
         expert_indices,
@@ -304,7 +301,7 @@ def run_one_case(
     ctx.synchronize()
 
     if contract:
-        var idx_h = ctx.enqueue_create_host_buffer[DType.int32](nt * TOPK)
+        var idx_h = ctx.enqueue_create_host_buffer[.int32](nt * TOPK)
         ctx.enqueue_copy(idx_h, idx_dev)
         ctx.synchronize()
         if not _check_index_contract(
@@ -312,7 +309,7 @@ def run_one_case(
         ):
             raise Error("MoE router index contract violated")
     elif check:
-        var idx_h = ctx.enqueue_create_host_buffer[DType.int32](nt * TOPK)
+        var idx_h = ctx.enqueue_create_host_buffer[.int32](nt * TOPK)
         var w_h = ctx.enqueue_create_host_buffer[scores_type](nt * TOPK)
         ctx.enqueue_copy(idx_h, idx_dev)
         ctx.enqueue_copy(w_h, w_dev)

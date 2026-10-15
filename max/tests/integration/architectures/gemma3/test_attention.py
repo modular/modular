@@ -17,11 +17,15 @@ import copy
 import numpy as np
 import pytest
 import torch
+from max import tree
 from max.driver import Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.kv_cache import MHAKVCacheParams, PagedCacheValues
+from max.nn.kv_cache import (
+    MHAKVCacheParams,
+    PagedCacheValues,
+)
 from max.nn.rotary_embedding import Llama3RotaryEmbedding
 from max.pipelines.architectures.gemma3.layers.attention import (
     Gemma3Attention as MaxGemma3Attention,
@@ -200,7 +204,7 @@ def generate_max_outputs(
         dtype=dtype,
         devices=[device_ref],
         layer_idx=layer_idx,
-        sliding_window_pattern=text_config.sliding_window_pattern,
+        is_sliding=bool((layer_idx + 1) % text_config.sliding_window_pattern),
     )
     attention.load_state_dict(state_dict)
 
@@ -235,7 +239,7 @@ def generate_max_outputs(
         inputs, input_row_offsets, *kv_cache = graph.inputs
         kv_collection: PagedCacheValues = kv_params.unflatten_kv_inputs(
             iter(kv_cache)
-        ).inputs[0]
+        )[0]
 
         graph.output(
             attention(
@@ -249,9 +253,9 @@ def generate_max_outputs(
 
     # Set up cache inputs and call the compiled model.
     batch = [create_text_context(np.empty(input_seq_len))]
-    kv_manager.claim(batch[0].request_id, replica_idx=0)
-    kv_manager.alloc(batch[0], replica_idx=0)
-    kv_runtime_inputs = kv_manager.runtime_inputs_for_leaf([batch]).inputs[0]
+    kv_manager.claim(batch[0])
+    kv_manager.alloc(batch[0])
+    kv_runtime_inputs = kv_manager.runtime_inputs_for_leaf([batch])[0]
     assert kv_runtime_inputs.attention_dispatch_metadata is not None
 
     output = compiled.execute(
@@ -259,12 +263,7 @@ def generate_max_outputs(
         Buffer.from_numpy(np.array([0, input_seq_len], dtype=np.uint32)).to(
             device
         ),
-        kv_runtime_inputs.kv_blocks.to(device),
-        kv_runtime_inputs.cache_lengths.to(device),
-        kv_runtime_inputs.lookup_table.to(device),
-        kv_runtime_inputs.max_prompt_length,
-        kv_runtime_inputs.max_cache_length,
-        kv_runtime_inputs.attention_dispatch_metadata,
+        *tree.leaves(kv_runtime_inputs),
     )[0]
 
     return output

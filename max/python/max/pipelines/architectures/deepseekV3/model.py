@@ -18,12 +18,13 @@ import logging
 from dataclasses import dataclass, field, replace
 from typing import Any, ClassVar
 
+from max import tree
 from max.driver import Buffer, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph, ops
 from max.nn.comm.ep import EPCommInitializer, EPConfig
-from max.nn.kv_cache import KVCacheInputs
+from max.nn.kv_cache import KVCacheInputsPerDevice
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
     ModelInputs,
@@ -33,7 +34,10 @@ from max.pipelines.weights.quant import parse_quant_config
 from typing_extensions import override
 
 from ..deepseekV2.model import DeepseekV2Inputs, DeepseekV2Model
-from .batch_processor import DeepseekV3BatchProcessor
+from .batch_processor import (
+    DeepseekV3BatchProcessor,
+    DeepseekV3BatchProcessorBase,
+)
 from .deepseekV3 import DeepseekV3
 from .memory_planner import (
     _ep_max_rank_send_tokens_for_pipeline,
@@ -69,7 +73,11 @@ class DeepseekV3Inputs(DeepseekV2Inputs):
             self.return_n_logits,
             self.data_parallel_splits,
             *self.signal_buffers,
-            *(self.kv_cache_inputs.flatten() if self.kv_cache_inputs else ()),
+            *(
+                tree.leaves(self.kv_cache_inputs)
+                if self.kv_cache_inputs
+                else ()
+            ),
             *self.batch_context_lengths,
             *self.ep_inputs,
         )
@@ -79,7 +87,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
     """A DeepseekV3 model."""
 
     model_config_cls: ClassVar[type[Any]] = DeepseekV3Config
-    batch_processor_cls: ClassVar[type[DeepseekV3BatchProcessor]] = (
+    batch_processor_cls: ClassVar[type[DeepseekV3BatchProcessorBase[Any]]] = (
         DeepseekV3BatchProcessor
     )
 
@@ -92,9 +100,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         #   == num_devices  ->  DP attention  (each device owns a batch shard)
         #   == 1            ->  TP attention  (heads sharded, tokens replicated)
         data_parallel_degree = self.pipeline_config.model.data_parallel_degree
-        max_batch_total_tokens = (
-            self.pipeline_config.runtime.max_batch_total_tokens
-        )
+        max_batch_total_tokens = self.planned_max_batch_total_tokens
         # PipelineConfig would automatically resolve it if not set by user.
         assert max_batch_total_tokens is not None, "max_length must be set"
 
@@ -189,7 +195,9 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
             correction_bias_dtype = None
 
         # Initialize config with parameters from pipeline_config
-        model_config = DeepseekV3Config.initialize(self.pipeline_config)
+        model_config = DeepseekV3Config.initialize(
+            self.pipeline_config, max_seq_len=self.max_seq_len
+        )
 
         # Finalize config with state_dict-dependent parameters
         # `dtype` is downgraded to bfloat16 above when a quantized target has
@@ -278,7 +286,9 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         # Create the graph
         with Graph(
             "deepseekV3_graph",
-            input_types=nn_model.input_types(self.kv_params),
+            input_types=self._bind_graph_inputs(
+                nn_model.input_tree(self.kv_params)
+            ),
         ) as graph:
             (
                 tokens,
@@ -298,8 +308,9 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
 
             # Unmarshal the KV cache arguments.
             kv_inputs = self.kv_params.unflatten_kv_inputs(variadic_args_iter)
-            assert isinstance(kv_inputs, KVCacheInputs)
-            kv_caches_per_dev = list(kv_inputs.inputs)
+            kv_caches_per_dev = tree.leaves(
+                kv_inputs, leaf=KVCacheInputsPerDevice
+            )
 
             # Unmarshal the batch context lengths
             batch_context_lengths = [

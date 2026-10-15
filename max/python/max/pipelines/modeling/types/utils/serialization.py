@@ -25,6 +25,7 @@ from max.pipelines.context.eos_tracking import EOSTracker
 from max.pipelines.context.outputs import GenerationOutput
 from max.pipelines.request.open_responses import (
     OpenResponsesRequest,
+    OutputAudioContent,
     OutputImageContent,
     OutputTextContent,
     OutputVideoContent,
@@ -55,6 +56,7 @@ def _build_type_registry() -> dict[str, type]:
     for cls in [
         EOSTracker,
         OpenResponsesRequest,
+        OutputAudioContent,
         OutputImageContent,
         OutputTextContent,
         OutputVideoContent,
@@ -668,10 +670,6 @@ def _decode_numpy_array(
         )
 
     if isinstance(obj, dict) and obj.get("__shm__") is True:
-        try:
-            return _open_shm_array(obj)
-
-        except FileNotFoundError:
-            raise
+        return _open_shm_array(obj)
 
     return obj

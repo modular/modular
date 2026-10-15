@@ -14,42 +14,54 @@
 import std.math
 from std.collections.string import StaticString
 from std.random import rand
-from std.sys import align_of, simd_width_of
+from std.sys import align_of, get_defined_bool, get_defined_int, simd_width_of
 
 import std.benchmark
 from std.algorithm import Static2DTileUnitFunc as Tile2DFunc
-from std.algorithm import sync_parallelize, vectorize
+from std.algorithm import vectorize
+
+from max.algorithm import sync_parallelize
 from layout import *
-from std.memory import memset_zero
+from std.memory import (
+    Allocation,
+    ThinAllocation,
+    alloc,
+    dealloc,
+    unsafe_memset_zero,
+)
 from std.python import Python
 
-comptime M = 512  # rows of A and C
-comptime N = 4096  # cols of B and C
-comptime K = 512  # cols of A and rows of B
+comptime M = get_defined_int["M", 512]()  # rows of A and C
+comptime N = get_defined_int["N", 4096]()  # cols of B and C
+comptime K = get_defined_int["K", 512]()  # cols of A and rows of B
 
 comptime dtype = DType.float32
 
 
 struct Matrix[rows: Int, cols: Int]:
-    var data: UnsafePointer[Scalar[dtype], MutUntrackedOrigin]
+    var data: ThinAllocation[Scalar[dtype]]
 
     # Initialize zeroeing all values
     def __init__(out self):
-        self.data = alloc[Scalar[dtype]](Self.rows * Self.cols)
-        memset_zero(self.data, Self.rows * Self.cols)
+        self.data = alloc[Scalar[dtype]](
+            {count = Self.rows * Self.cols}
+        ).into_thin()
+        unsafe_memset_zero(self.data.unsafe_ptr(), Self.rows * Self.cols)
 
     # Initialize taking a pointer, don't set any elements
-    def __init__(
-        out self, data: UnsafePointer[Scalar[dtype], MutUntrackedOrigin]
-    ):
-        self.data = data
+    def __init__(out self, var data: Allocation[Scalar[dtype]]):
+        assert data.layout().count() == Self.rows * Self.cols
+        self.data = data^.into_thin()
+
+    def __deinit__(deinit self):
+        dealloc(self.data^.unsafe_with_layout({count = Self.rows * Self.cols}))
 
     ## Initialize with random values
     @staticmethod
     def rand() -> Self:
-        var data = alloc[Scalar[dtype]](Self.rows * Self.cols)
-        rand(data, Self.rows * Self.cols)
-        return Self(data)
+        var data = alloc[Scalar[dtype]]({count = Self.rows * Self.cols})
+        rand(data.unsafe_span())
+        return Self(data^)
 
     def __getitem__(self, y: Int, x: Int) -> Scalar[dtype]:
         return self.load(y, x)
@@ -58,10 +70,14 @@ struct Matrix[rows: Int, cols: Int]:
         self.store(y, x, val)
 
     def load[nelts: Int = 1](self, y: Int, x: Int) -> SIMD[dtype, nelts]:
-        return self.data.load[width=nelts](y * self.cols + x)
+        return self.data.unsafe_ptr().unsafe_load[width=nelts](
+            y * self.cols + x
+        )
 
-    def store[nelts: Int = 1](self, y: Int, x: Int, val: SIMD[dtype, nelts]):
-        return self.data.store(y * self.cols + x, val)
+    def store[
+        nelts: Int = 1
+    ](mut self, y: Int, x: Int, val: SIMD[dtype, nelts]):
+        return self.data.unsafe_ptr().unsafe_store(y * self.cols + x, val)
 
 
 def matmul_naive(mut C: Matrix, A: Matrix, B: Matrix):
@@ -73,8 +89,8 @@ def matmul_naive(mut C: Matrix, A: Matrix, B: Matrix):
 
 # Perform 2D tiling on the iteration space defined by end_x and end_y
 def tile[
-    tiled_fn: Tile2DFunc, tile_x: Int, tile_y: Int
-](end_x: Int, end_y: Int):
+    tile_x: Int, tile_y: Int
+](end_x: Int, end_y: Int, tiled_fn: Some[Tile2DFunc]):
     for y in range(0, end_y, tile_y):
         for x in range(0, end_x, tile_x):
             tiled_fn[tile_x, tile_y](x, y)
@@ -93,13 +109,13 @@ def matmul_unrolled(mut C: Matrix, A: Matrix, B: Matrix):
     comptime assert N % tile_n == 0, "N must be a multiple of tile_n"
     comptime assert K % tile_k == 0, "K must be a multiple of tile_k"
 
-    @parameter
-    def calc_row(m0: Int):
+    def calc_row(m0: Int) {mut C, imm}:
         for m in range(tile_m * m0, tile_m * m0 + tile_m):
             _ = m  # FIXME: param closures not noticing access.
 
-            @parameter
-            def calc_tile[tile_x: Int, tile_y: Int](x: Int, y: Int):
+            def calc_tile[
+                tile_x: Int, tile_y: Int
+            ](x: Int, y: Int) {mut C, imm}:
                 comptime for _k in range(tile_y):
                     var k = _k + y
                     var A_val = A[m, k]
@@ -122,15 +138,28 @@ def matmul_unrolled(mut C: Matrix, A: Matrix, B: Matrix):
                         unroll_factor=unroll_factor,
                     ](dot)
 
-            tile[calc_tile, tile_n, tile_k](C.cols, B.rows)
+            tile[tile_n, tile_k](C.cols, B.rows, calc_tile)
 
-    sync_parallelize[calc_row](C.rows // tile_m)
+    sync_parallelize(calc_row, C.rows // tile_m)
 
 
 def matmul_tiled_layout(mut C: Matrix, A: Matrix, B: Matrix):
-    var dst = LayoutTensor[dtype, Layout.row_major(M, N)](C.data)
-    var lhs = LayoutTensor[dtype, Layout.row_major(M, K)](A.data)
-    var rhs = LayoutTensor[dtype, Layout.row_major(K, N)](B.data)
+    var dst = TileTensor(
+        C.data.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin](),
+        row_major[M, N](),
+    )
+    var lhs = TileTensor(
+        A.data.unsafe_ptr()
+        .unsafe_mut_cast[True]()
+        .unsafe_origin_cast[MutUntrackedOrigin](),
+        row_major[M, K](),
+    )
+    var rhs = TileTensor(
+        B.data.unsafe_ptr()
+        .unsafe_mut_cast[True]()
+        .unsafe_origin_cast[MutUntrackedOrigin](),
+        row_major[K, N](),
+    )
 
     comptime vec_size = simd_width_of[dtype]() * 2
 
@@ -142,8 +171,7 @@ def matmul_tiled_layout(mut C: Matrix, A: Matrix, B: Matrix):
     comptime assert N % tile_n == 0, "N must be a multiple of tile_n"
     comptime assert K % tile_k == 0, "K must be a multiple of tile_k"
 
-    @parameter
-    def calc_row(m_1: Int):
+    def calc_row(m_1: Int) {imm}:
         for k_1 in range(K // tile_k):
             for n_1 in range(N // tile_n):
                 var lhs_view = lhs.tile[tile_m, tile_k](m_1, k_1)
@@ -152,21 +180,21 @@ def matmul_tiled_layout(mut C: Matrix, A: Matrix, B: Matrix):
 
                 comptime for m in range(tile_m):
                     comptime for k in range(tile_k):
-                        var lhs_val = rebind[Scalar[dtype]](lhs_view[m, k])
+                        var lhs_val = lhs_view[m, k]
 
                         def dot[simd_size: Int](n: Int) {mut}:
                             comptime assert (
-                                type_of(dst_view).layout.stride[1] == 1
+                                dst_view.static_stride[1] == 1
                             ), "elements of dst should be contiguous"
                             comptime assert (
-                                type_of(rhs_view).layout.stride[1] == 1
+                                rhs_view.static_stride[1] == 1
                             ), "elements of rhs should be contiguous"
 
-                            dst_view.store[simd_size](
-                                m,
-                                n,
-                                dst_view.load[simd_size](m, n)
-                                + lhs_val * rhs_view.load[simd_size](k, n),
+                            dst_view.store(
+                                (m, n),
+                                dst_view.load[width=simd_size]((m, n))
+                                + lhs_val
+                                * rhs_view.load[width=simd_size]((k, n)),
                             )
 
                         comptime unroll_factor = tile_n // vec_size
@@ -176,21 +204,26 @@ def matmul_tiled_layout(mut C: Matrix, A: Matrix, B: Matrix):
                             unroll_factor=unroll_factor,
                         ](dot)
 
-    sync_parallelize[calc_row](M // tile_m)
-
-
-def alloc_aligned_tile[
-    M: Int, N: Int, dtype: DType
-]() -> UnsafePointer[Scalar[dtype], MutUntrackedOrigin]:
-    comptime alignment = align_of[SIMD[dtype, simd_width_of[dtype]()]]()
-    comptime cache_width = ((N + alignment - 1) // alignment) * alignment
-    return alloc[Scalar[dtype]](M * cache_width, alignment=alignment)
+    sync_parallelize(calc_row, M // tile_m)
 
 
 def matmul_tiled_layout_cache(mut C: Matrix, A: Matrix, B: Matrix):
-    var dst = LayoutTensor[dtype, Layout.row_major(M, N)](C.data)
-    var lhs = LayoutTensor[dtype, Layout.row_major(M, K)](A.data)
-    var rhs = LayoutTensor[dtype, Layout.row_major(K, N)](B.data)
+    var dst = TileTensor(
+        C.data.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin](),
+        row_major[M, N](),
+    )
+    var lhs = TileTensor(
+        A.data.unsafe_ptr()
+        .unsafe_mut_cast[True]()
+        .unsafe_origin_cast[MutUntrackedOrigin](),
+        row_major[M, K](),
+    )
+    var rhs = TileTensor(
+        B.data.unsafe_ptr()
+        .unsafe_mut_cast[True]()
+        .unsafe_origin_cast[MutUntrackedOrigin](),
+        row_major[K, N](),
+    )
 
     comptime vec_size = simd_width_of[dtype]() * 2
 
@@ -202,11 +235,10 @@ def matmul_tiled_layout_cache(mut C: Matrix, A: Matrix, B: Matrix):
     comptime assert N % tile_n == 0, "N must be a multiple of tile_n"
     comptime assert K % tile_k == 0, "K must be a multiple of tile_k"
 
-    @parameter
-    def calc_row(m_1: Int):
-        var rhs_cache = LayoutTensor[
-            dtype, Layout.row_major(tile_k, tile_n), MutAnyOrigin
-        ].stack_allocation()
+    def calc_row(m_1: Int) {imm}:
+        var rhs_cache = stack_allocation[
+            dtype, alignment=align_of[SIMD[dtype, vec_size]]()
+        ](row_major[tile_k, tile_n]())
 
         for k_1 in range(K // tile_k):
             for n_1 in range(N // tile_n):
@@ -218,19 +250,23 @@ def matmul_tiled_layout_cache(mut C: Matrix, A: Matrix, B: Matrix):
 
                 comptime for m in range(tile_m):
                     comptime for k in range(tile_k):
-                        var lhs_val = rebind[Scalar[dtype]](lhs_view[m, k])
+                        var lhs_val = lhs_view[m, k]
 
                         def dot[simd_size: Int](n: Int) {mut}:
                             comptime assert (
-                                type_of(dst_view).layout.stride[1] == 1
+                                dst_view.static_stride[1] == 1
                             ), "elements of dst should be contiguous"
 
-                            dst_view.store[simd_size](
-                                m,
-                                n,
-                                dst_view.load[simd_size](m, n)
+                            dst_view.store(
+                                (m, n),
+                                dst_view.load[width=simd_size]((m, n))
                                 + lhs_val
-                                * rhs_cache.aligned_load[simd_size](k, n),
+                                * rhs_cache.load[
+                                    width=simd_size,
+                                    alignment=align_of[
+                                        SIMD[dtype, simd_size]
+                                    ](),
+                                ]((k, n)),
                             )
 
                         comptime unroll_factor = tile_n // vec_size
@@ -240,13 +276,26 @@ def matmul_tiled_layout_cache(mut C: Matrix, A: Matrix, B: Matrix):
                             unroll_factor=unroll_factor,
                         ](dot)
 
-    sync_parallelize[calc_row](M // tile_m)
+    sync_parallelize(calc_row, M // tile_m)
 
 
 def matmul_layout_transposed(mut C: Matrix, A: Matrix, B: Matrix):
-    var dst = LayoutTensor[dtype, Layout.row_major(M, N)](C.data)
-    var lhs = LayoutTensor[dtype, Layout.row_major(M, K)](A.data)
-    var rhs = LayoutTensor[dtype, Layout.row_major(K, N)](B.data)
+    var dst = TileTensor(
+        C.data.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin](),
+        row_major[M, N](),
+    )
+    var lhs = TileTensor(
+        A.data.unsafe_ptr()
+        .unsafe_mut_cast[True]()
+        .unsafe_origin_cast[MutUntrackedOrigin](),
+        row_major[M, K](),
+    )
+    var rhs = TileTensor(
+        B.data.unsafe_ptr()
+        .unsafe_mut_cast[True]()
+        .unsafe_origin_cast[MutUntrackedOrigin](),
+        row_major[K, N](),
+    )
 
     comptime vec_size = 4 * simd_width_of[dtype]()
 
@@ -262,14 +311,13 @@ def matmul_layout_transposed(mut C: Matrix, A: Matrix, B: Matrix):
         tile_k % vec_size == 0
     ), "tile_k must be a multiple of vec_size"
 
-    @parameter
-    def calc_row(m_1: Int):
-        var rhs_cache = LayoutTensor[
-            dtype, Layout.row_major(tile_n, tile_k), MutAnyOrigin
-        ].stack_allocation()
-        var lhs_cache = LayoutTensor[
-            dtype, Layout.row_major(tile_m, tile_k), MutAnyOrigin
-        ].stack_allocation()
+    def calc_row(m_1: Int) {imm}:
+        var rhs_cache = stack_allocation[
+            dtype, alignment=align_of[SIMD[dtype, vec_size]]()
+        ](row_major[tile_n, tile_k]())
+        var lhs_cache = stack_allocation[
+            dtype, alignment=align_of[SIMD[dtype, vec_size]]()
+        ](row_major[tile_m, tile_k]())
 
         for k_1 in range(K // tile_k):
             var lhs_view = lhs.tile[tile_m, tile_k](m_1, k_1)
@@ -286,8 +334,14 @@ def matmul_layout_transposed(mut C: Matrix, A: Matrix, B: Matrix):
 
                         def dot[simd_size: Int](k: Int) {mut}:
                             sum = std.math.fma(
-                                lhs_cache.load[vec_size](m, k),
-                                rhs_cache.aligned_load[vec_size](n, k),
+                                lhs_cache.load[
+                                    width=vec_size,
+                                    alignment=align_of[SIMD[dtype, vec_size]](),
+                                ]((m, k)),
+                                rhs_cache.load[
+                                    width=vec_size,
+                                    alignment=align_of[SIMD[dtype, vec_size]](),
+                                ]((n, k)),
                                 sum,
                             )
 
@@ -300,10 +354,10 @@ def matmul_layout_transposed(mut C: Matrix, A: Matrix, B: Matrix):
 
                         dst_view[m, n] += sum.reduce_add()
 
-    sync_parallelize[calc_row](M // tile_m)
+    sync_parallelize(calc_row, M // tile_m)
 
 
-@always_inline
+@inline(.always)
 def bench[
     func: def(mut Matrix, Matrix, Matrix) thin -> None, name: StaticString
 ]() raises:
@@ -311,23 +365,23 @@ def bench[
     var B = Matrix[K, N].rand()
     var C = Matrix[M, N]()
 
-    @always_inline
+    @inline(.always)
     def test_fn() {mut C, imm A, imm B}:
         _ = func(C, A, B)
 
     var secs = std.benchmark.run(test_fn, max_runtime_secs=0.5).mean()
 
-    A.data.free()
-    B.data.free()
-    C.data.free()
+    _ = A^
+    _ = B^
+    _ = C^
 
-    var gflops = ((2 * M * N * K) / secs) / 1e9
+    var gflops = (Float64(2 * M * N * K) / secs) / 1e9
 
     var py = Python.import_module("builtins")
     _ = py.print(py.str("{:<13}{:>8.3f} GFLOPS").format(name, gflops))
 
 
-@always_inline
+@inline(.always)
 def test_matrix_equal[
     func: def(mut Matrix, Matrix, Matrix) thin -> None
 ](mut C: Matrix, A: Matrix, B: Matrix) raises -> Bool:
@@ -368,17 +422,15 @@ def test_all() raises:
             "Layout Transposed output does not match naive implementation"
         )
 
-    A.data.free()
-    B.data.free()
-    C.data.free()
-
 
 def main() raises:
     test_all()
+    comptime if get_defined_bool["TEST_ONLY", False]():
+        return
     print("CPU Results\n")
 
     bench[matmul_naive, "Naive:"]()
     bench[matmul_unrolled, "Unrolled:"]()
-    bench[matmul_tiled_layout, "LayoutTensor:"]()
-    bench[matmul_tiled_layout_cache, "LayoutTensor Cached:"]()
-    bench[matmul_layout_transposed, "LayoutTensor Transposed:"]()
+    bench[matmul_tiled_layout, "TileTensor:"]()
+    bench[matmul_tiled_layout_cache, "TileTensor Cached:"]()
+    bench[matmul_layout_transposed, "TileTensor Transposed:"]()

@@ -30,10 +30,9 @@ that the existing DeepSeek tests use, so any divergence is a kernel
 numerics bug we've introduced.
 """
 
-from std.math import ceildiv
-from std.random import randn, seed
+from std.random import seed
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import (
     TileTensor,
     row_major,
@@ -44,7 +43,7 @@ from linalg.fp8_quantization import (
     naive_blockwise_scaled_fp8_matmul,
 )
 from std.testing import assert_almost_equal
-from std.utils.index import Index, IndexList
+from std.utils.index import Index
 
 
 def _run_one[
@@ -131,11 +130,11 @@ def _run_one[
         transpose_b=True,
         scales_granularity_mnk=Index(1, n_g, k_g),
     ](
-        c_ref_tt.to_layout_tensor(),
-        a_tt.to_layout_tensor(),
-        b_tt.to_layout_tensor(),
-        a_scales_tt.to_layout_tensor(),
-        b_scales_tt.to_layout_tensor(),
+        c_ref_tt,
+        a_tt,
+        b_tt,
+        a_scales_tt,
+        b_scales_tt,
         ctx,
     )
     ctx.synchronize()

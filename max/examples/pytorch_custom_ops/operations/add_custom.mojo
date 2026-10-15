@@ -13,11 +13,10 @@
 
 import extensibility
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from extensibility import InputTensor, OutputTensor, foreach
 
 from std.utils.coord import Coord
-from std.utils.index import IndexList
 
 
 @extensibility.register("add_constant_custom")
@@ -30,9 +29,8 @@ struct AddConstantCustom[value: Int]:
         x: InputTensor[dtype=outp.dtype, rank=outp.rank, ...],
         ctx: DeviceContext,
     ) raises:
-        @parameter
-        @always_inline
-        def add_constant[width: Int](idx: Coord) -> SIMD[x.dtype, width]:
+        @inline(.always)
+        def add_constant[width: Int](idx: Coord) {var} -> SIMD[x.dtype, width]:
             return x.load[width](idx) + Scalar[outp.dtype](Self.value)
 
-        foreach[add_constant, target=target](outp, ctx)
+        foreach[target=target](add_constant, outp, ctx)

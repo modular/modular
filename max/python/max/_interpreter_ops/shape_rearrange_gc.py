@@ -43,7 +43,7 @@ width: the handler bit-casts every dtype to the same-width unsigned int (a
 zero-copy view), runs the copy, and views the result back. One graph per width
 (uint8/16/32/64) therefore serves every dtype uniformly — including float16
 (no typed CPU kernel) and bool on GPU — and every width compiles on every
-device. See :func:`uint_view_dtype`.
+device. See :func:`gc_compile.uint_view_dtype`.
 """
 
 from collections.abc import Callable
@@ -51,38 +51,16 @@ from dataclasses import dataclass
 from enum import Enum
 from functools import partial
 
-from max import _core, engine
+from max import _core, _eager_policy, engine
 from max._core.dialects import kgen, mo, rmo
 from max._interpreter_ops import gc_compile
 from max.driver import Device
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, Module, TensorType, ops
 
-MAX_RANK = 5  # Matches op_utils.MAX_RANK; sweep ranks 1..MAX_RANK.
+MAX_RANK = gc_compile.MAX_RANK  # Sweep ranks 1..MAX_RANK.
 
-_WIDTH_DTYPES = [DType.uint8, DType.uint16, DType.uint32, DType.uint64]
-_UINT_FOR_SIZE = {
-    1: DType.uint8,
-    2: DType.uint16,
-    4: DType.uint32,
-    8: DType.uint64,
-}
-
-
-def uint_view_dtype(dtype: DType) -> DType:
-    """The same-bit-width unsigned int a dtype is bit-cast to for copying.
-
-    Raises:
-        NotImplementedError: For sub-byte dtypes (e.g. ``float4_e2m1fn``), which
-            pack multiple elements per byte and so cannot be reinterpreted
-            element-for-element as a whole-byte unsigned int.
-    """
-    bits = dtype.size_in_bits
-    if bits % 8 != 0 or bits // 8 not in _UINT_FOR_SIZE:
-        raise NotImplementedError(
-            f"shape-rearrange GC path does not support sub-byte dtype {dtype}"
-        )
-    return _UINT_FOR_SIZE[bits // 8]
+_WIDTH_DTYPES = gc_compile.WIDTH_DTYPES
 
 
 class DeviceClass(Enum):
@@ -100,6 +78,10 @@ class RearrangeSpec:
     devices: DeviceClass
     rank_keyed: bool
     max_rank: int | None = None  # Cap for rank sweep; None uses MAX_RANK.
+    # The kernel handles any rank; the sweep above precompiles only
+    # 1..max_rank, and `model()` lazily compiles higher ranks (unless this
+    # process disallows lazy compile). The cap then only bounds the sweep.
+    arbitrary_rank: bool = False
 
 
 _REARRANGE_OPS: dict[type[_core.Operation], RearrangeSpec] = {}
@@ -185,8 +167,7 @@ class _ShapeRearrangeFamily(gc_compile.GCFamilySpec):
         self, device: Device, module: Module | None = None
     ) -> Module:
         """Per-slot counterpart of :meth:`build_module`: one *device* only.
-        A ``CPU_ONLY`` op (e.g. ``Tile``) is skipped below via
-        :func:`_devices_for`."""
+        A ``CPU_ONLY`` op is skipped below via :func:`_devices_for`."""
         if module is None:
             module = Module()
         for op_type, spec in _REARRANGE_OPS.items():
@@ -227,18 +208,26 @@ def model(
             )
         spec = _spec_for(op_type)
         # Same unsupported-target signal as the dtype check above: a clean
-        # error rather than the GC kernel's comptime rank assert firing deep
-        # in compilation (e.g. tile is capped at rank 4).
-        if (
-            spec is not None
-            and spec.rank_keyed
-            and rank not in _ranks_for(spec)
-        ):
-            return (
-                f"Unsupported shape-rearrange rank {rank} for"
-                f" {op_type.__name__} (max {_ranks_for(spec)[-1]});"
-                f" key {key!r}."
+        # error rather than an assert firing deep in compilation. An
+        # arbitrary_rank spec (e.g. tile) still precompiles only the sweep;
+        # higher ranks compile on demand, except when this process disallows
+        # lazy compile.
+        if spec is not None and spec.rank_keyed:
+            sweep_ranks = _ranks_for(spec)
+            if rank in sweep_ranks:
+                return None
+            over_cap = (
+                rank is None
+                or rank < 1
+                or not spec.arbitrary_rank
+                or not _eager_policy.allow_lazy_compile()
             )
+            if over_cap:
+                return (
+                    f"Unsupported shape-rearrange rank {rank} for"
+                    f" {op_type.__name__} (max {sweep_ranks[-1]});"
+                    f" key {key!r}."
+                )
         return None
 
     def build(module: Module) -> None:
@@ -251,7 +240,6 @@ def model(
         device,
         build,
         unsupported_reason=check_supported,
-        display_name="shape-rearrange",
     )
 
 
@@ -358,9 +346,11 @@ _register_spec(
     mo.TileOp,
     RearrangeSpec(
         build_graph=_build_tile_graph,
-        devices=DeviceClass.CPU_ONLY,
+        devices=DeviceClass.ALL,
         rank_keyed=True,
-        max_rank=4,  # GC tile kernel supports up to rank 4.
+        # The kernel handles any rank. The sweep precompiles 1..MAX_RANK;
+        # higher ranks lazy-compile on dispatch (see `model`).
+        arbitrary_rank=True,
     ),
 )
 
@@ -432,11 +422,11 @@ _register_spec(
 )
 _register_spec(
     mo.PadReflectOp,
-    _pad_spec(mo.PadReflectOp, rmo.MoPadReflectOp, False, DeviceClass.CPU_ONLY),
+    _pad_spec(mo.PadReflectOp, rmo.MoPadReflectOp, False, DeviceClass.ALL),
 )
 _register_spec(
     mo.PadRepeatOp,
-    _pad_spec(mo.PadRepeatOp, rmo.MoPadRepeatOp, False, DeviceClass.CPU_ONLY),
+    _pad_spec(mo.PadRepeatOp, rmo.MoPadRepeatOp, False, DeviceClass.ALL),
 )
 
 

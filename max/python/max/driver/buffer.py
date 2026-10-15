@@ -24,12 +24,9 @@ from typing import Any
 import numpy as np
 import numpy.typing as npt
 from max._core.driver import Buffer as Buffer
-from max._core.driver import DevicePinnedBuffer as DevicePinnedBuffer
+from max._core.driver import _batch_inplace_copy
 from max._core.driver import (
-    _unsafe_alloc_fast_pinned_buffer as _unsafe_alloc_fast_pinned_buffer,
-)
-from max._core.driver import (
-    _unsafe_free_fast_pinned_buffer as _unsafe_free_fast_pinned_buffer,
+    _ChunkedStagingRegion as _ChunkedStagingRegion,
 )
 from max.dtype import DType
 
@@ -54,6 +51,63 @@ def _contiguous(self: Buffer) -> Buffer:
 
 def _repr(self: Buffer) -> str:
     return f"max.driver.Buffer({self.dtype}, {self.shape}, {self.stream})"
+
+
+# DTypes whose values NumPy can represent faithfully. These allow a fast bulk
+# conversion for display. Other float types (bfloat16, float8_*, float4_*) are
+# read element-wise so their values render as numbers rather than raw bytes.
+_NUMPY_FAITHFUL_DTYPES = frozenset(
+    {
+        DType.bool,
+        DType.int8,
+        DType.int16,
+        DType.int32,
+        DType.int64,
+        DType.uint8,
+        DType.uint16,
+        DType.uint32,
+        DType.uint64,
+        DType.float16,
+        DType.float32,
+        DType.float64,
+    }
+)
+
+
+def _display_numpy(self: Buffer) -> npt.NDArray[Any]:
+    """Returns a host numpy array of the buffer's values for display.
+
+    Faithfully-representable dtypes are converted in bulk via ``to_numpy``.
+    Other float dtypes (such as ``bfloat16`` and the ``float8`` family) are
+    read element-wise so their values are shown as decoded numbers instead of
+    the raw byte contents that ``to_numpy`` would expose.
+    """
+    if self.dtype in _NUMPY_FAITHFUL_DTYPES:
+        return self.to_numpy()
+
+    # Copy to the host once so per-element reads don't trigger a device
+    # transfer for every element.
+    host = self if (self.pinned or self.device.is_host) else self.to(CPU())
+    if host.rank == 0:
+        return np.asarray(host.item())
+    values = [host[idx].item() for idx in host._iterate_indices()]
+    return np.asarray(values).reshape(self.shape)
+
+
+def _str(self: Buffer) -> str:
+    """Returns a human-readable string containing the buffer's data.
+
+    The data is copied to the host if the buffer lives on an accelerator, then
+    formatted like a numpy array (large buffers are summarized with ``...``).
+    The values are followed by the buffer's ``dtype``, ``shape``, and
+    ``device``.
+    """
+    prefix = "Buffer("
+    data = np.array2string(_display_numpy(self), prefix=prefix)
+    return (
+        f"{prefix}{data}, dtype={self.dtype}, shape={self.shape},"
+        f" device={self.device})"
+    )
 
 
 def _view(self: Buffer, dtype: DType, shape: ShapeType | None = None) -> Buffer:
@@ -106,6 +160,12 @@ def _from_numpy(arr: npt.NDArray[Any]) -> Buffer:
 
     The underlying data is not copied unless the array is noncontiguous. If
     it is, a contiguous copy will be returned.
+
+    Args:
+        arr: The numpy array to wrap.
+
+    Returns:
+        A new buffer that views or copies the numpy array data.
     """
     # NOTE: np.ascontiguousarray only copies if needed.
     # Skip np.contiguousarray for scalars since it converts them to rank-1.
@@ -143,6 +203,14 @@ def _from_dlpack(array: Any, *, copy: bool | None = None) -> Buffer:
 
     This usually does not result in a copy, and the producer of the object
     retains ownership of the underlying memory.
+
+    Args:
+        array: An object that implements the dlpack protocol.
+        copy: Whether to create a copy of the data. Defaults to ``None``,
+            which copies only when the producer requires it.
+
+    Returns:
+        A new buffer that views or copies the data.
     """
     if isinstance(array, np.ndarray):
         if not array.flags.c_contiguous:
@@ -173,7 +241,7 @@ def _from_dlpack(array: Any, *, copy: bool | None = None) -> Buffer:
                     msg
                     + " Consider passing `copy = True` to `Buffer.from_dlpack`."
                 )
-            raise e
+            raise
 
         return buffer.view(DType.bool) if is_bool else buffer
 
@@ -210,6 +278,20 @@ def _mmap(
     mode: np._MemMapModeKind = "copyonwrite",
     offset: int = 0,
 ) -> Buffer:
+    """Creates a memory-mapped buffer from a binary file on disk.
+
+    The argument semantics follow ``np.memmap``.
+
+    Args:
+        filename: Path of the binary file to map.
+        dtype: Element type of the mapped data.
+        shape: Shape of the mapped buffer, either a tuple or an ``int``.
+        mode: Memory-map mode, following ``np.memmap`` semantics.
+        offset: Byte offset into the file where the mapping starts.
+
+    Returns:
+        A new buffer backed by the memory-mapped file.
+    """
     arr: np.memmap[Any, Any] = np.memmap(
         filename,
         dtype.to_numpy(),
@@ -226,12 +308,58 @@ def _mmap(
 Buffer._iterate_indices = _iterate_indices  # type: ignore[method-assign]
 Buffer.contiguous = _contiguous  # type: ignore[method-assign]
 Buffer.__repr__ = _repr  # type: ignore[method-assign, assignment]
+Buffer.__str__ = _str  # type: ignore[method-assign, assignment]
 Buffer.view = _view  # type: ignore[method-assign]
 Buffer.inplace_copy_from = inplace_copy_from  # type: ignore[method-assign]
-Buffer.from_numpy = _from_numpy  # type: ignore[method-assign]
+Buffer.from_numpy = staticmethod(_from_numpy)  # type: ignore[method-assign]
 Buffer.to_numpy = _to_numpy  # type: ignore[method-assign]
-Buffer.from_dlpack = _from_dlpack  # type: ignore[method-assign]
-Buffer.mmap = _mmap  # type: ignore[method-assign]
+Buffer.from_dlpack = staticmethod(_from_dlpack)  # type: ignore[method-assign]
+Buffer.mmap = staticmethod(_mmap)  # type: ignore[method-assign]
+
+
+def batch_inplace_copy(dsts: Sequence[Buffer], srcs: Sequence[Buffer]) -> None:
+    """Copies ``srcs[i]`` into ``dsts[i]`` in as few driver submissions as possible.
+
+    Sources may be host, pinned, same-device or peer memory in any mix.
+    Identity pairs (``dst is src``), zero-byte pairs and repeats of an earlier
+    pair's destination, source and size (on the same devices) are skipped.
+
+    One submission is one stream, and a stream only orders the writes it
+    performs, so destinations are grouped by device and each device's group is
+    submitted on that device's own stream. Callers do not need to group.
+
+    Args:
+        dsts: Destination buffers, in any mix of devices.
+        srcs: Source buffers, paired with ``dsts`` by index.
+
+    Raises:
+        ValueError: If ``dsts``/``srcs`` lengths differ.
+    """
+    if len(dsts) != len(srcs):
+        raise ValueError(
+            "batch_inplace_copy: dsts and srcs must have the same length"
+            f" (got {len(dsts)} dsts, {len(srcs)} srcs)"
+        )
+    # Dedupe identical copy operations.
+    seen: set[tuple[str, int, int, str, int, int, int]] = set()
+    unique_dsts: list[Buffer] = []
+    unique_srcs: list[Buffer] = []
+    for dst, src in zip(dsts, srcs, strict=True):
+        nbytes = dst.num_elements * dst.dtype.size_in_bytes
+        key = (
+            dst.device.label,
+            dst.device.id,
+            dst._data_ptr(),
+            src.device.label,
+            src.device.id,
+            src._data_ptr(),
+            nbytes,
+        )
+        if key not in seen:
+            seen.add(key)
+            unique_dsts.append(dst)
+            unique_srcs.append(src)
+    _batch_inplace_copy(unique_dsts, unique_srcs)
 
 
 def copy_pinned_to_destinations(
@@ -256,27 +384,27 @@ def copy_pinned_to_destinations(
     if not source.pinned:
         return
     source_device = source.device
-    source_stream = source_device.default_stream
+    source_stream = source_device.default_queue
     for destination in destinations:
         if destination.device.id != source_device.id:
-            source_stream.wait_for(destination.device.default_stream)
+            source_stream.wait_for(destination.device.default_queue)
 
 
 def load_max_buffer(path: PathLike[str]) -> Buffer:
     """Experimental method for loading serialized MAX buffers.
 
-    Max buffers can be exported by creating a graph and calling `Value.print()`
-    with the `BINARY_MAX_CHECKPOINT` option.
+    Max buffers can be exported by creating a graph and calling
+    ``Value.print()`` with the ``BINARY_MAX_CHECKPOINT`` option.
 
     Args:
         path: Path to buffer (should end with .max)
 
     Returns:
-        A `Buffer` created from the path. The shape and dtype are read
-        from the file.
+        A :obj:`~max.driver.Buffer` created from the path. The shape and
+        dtype are read from the file.
 
     Raises:
-        ValueError if the file format is not the MAX checkpoint format.
+        ``ValueError``: If the file format is not the MAX checkpoint format.
     """
     with open(path, "rb") as f:
         header = f.read(8)

@@ -11,10 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.collections import InlineArray
+from std.collections import Array
 from layout.layout_tensor import LayoutTensorIter
 from layout import *
 from layout._fillers import arange
+from layout.tile_layout import Layout as TileLayout
 from layout.layout import (
     MakeLayoutList,
     blocked_product,
@@ -98,12 +99,12 @@ def test_layout_basic() raises:
 
     # testing col major
     assert_equal(
-        Layout.col_major[3](IndexList[3](3, 64, 128)),
+        Layout.col_major[3]((3, 64, 128)),
         Layout(IntTuple(3, 64, 128), IntTuple(1, 3, 192)),
     )
 
     assert_equal(
-        Layout.col_major[3](IndexList[3](UNKNOWN_VALUE, 64, 128)),
+        Layout.col_major[3]((UNKNOWN_VALUE, 64, 128)),
         Layout(
             IntTuple(UNKNOWN_VALUE, 64, 128),
             IntTuple(1, UNKNOWN_VALUE, UNKNOWN_VALUE),
@@ -117,7 +118,7 @@ def test_layout_basic() raises:
     )
 
     assert_equal(
-        Layout.col_major[3](IndexList[3](UNKNOWN_VALUE, 8, 16)),
+        Layout.col_major[3]((UNKNOWN_VALUE, 8, 16)),
         Layout(
             IntTuple(UNKNOWN_VALUE, 8, 16),
             IntTuple(1, UNKNOWN_VALUE, UNKNOWN_VALUE),
@@ -533,13 +534,13 @@ def test_blocked_product() raises:
     assert_equal(String(bp0), "(((2, 3), (5, 4)):((5, 10), (1, 30)))")
     var cm_M = 8
     var cm_K = 8
-    core_matrix = Layout.row_major(cm_M, cm_K)
+    var core_matrix = Layout.row_major(cm_M, cm_K)
     var t_M = 2
     var t_K = 3
     var bp1 = blocked_product(core_matrix^, Layout.col_major(t_M, t_K))
     # ((cm_M,         t_M), (cm_K,               t_K)):
     # ((cm_K, cm_M * cm_K), (1,    t_M * cm_M * cm_K))
-    reference_bp1 = Layout(
+    var reference_bp1 = Layout(
         IntTuple(IntTuple(cm_M, t_M), IntTuple(cm_K, t_K)),
         IntTuple(IntTuple(cm_K, cm_M * cm_K), IntTuple(1, t_M * cm_M * cm_K)),
     )
@@ -638,10 +639,10 @@ def test_zipped_divide() raises:
     assert_equal(String(zd0), "(((2, 2), (2, 2)):((4, 1), (8, 2)))")
 
     # Resemble the case for distributing a tile over warp group.
-    tile_layout = Layout(
+    var tile_layout = Layout(
         IntTuple(IntTuple(16, 64), 4), IntTuple(IntTuple(128, 2), 2048)
     )
-    thread_layout = Layout(
+    var thread_layout = Layout(
         IntTuple(IntTuple(8, 4), 4), IntTuple(IntTuple(4, 1), 32)
     )
     assert_equal(
@@ -898,23 +899,19 @@ def test_iter() raises:
 def test_arange_nested_layout() raises:
     """Test arange function with nested layout structures."""
     # Test nested layout with tile structure similar to GPU shared memory tiles
-    var nested_tensor = LayoutTensor[
-        DType.float32,
-        Layout(
-            IntTuple(IntTuple(16, 8), IntTuple(32, 2)),
-            IntTuple(IntTuple(32, 1024), IntTuple(1, 512)),
+    var nested_storage = Array[Float32, 128 * 64](fill={})
+    var nested_tensor = TileTensor(
+        nested_storage,
+        TileLayout(
+            Coord(coord[16, 8], coord[32, 2]),
+            Coord(coord[32, 1024], coord[1, 512]),
         ),
-        MutAnyOrigin,
-        alignment=16,
-    ].stack_allocation()
+    )
     arange(nested_tensor)
 
     # Test simple 2D layout with row-major for comparison
-    var simple_tensor = LayoutTensor[
-        DType.float32,
-        Layout.row_major(4, 4),
-        MutAnyOrigin,
-    ].stack_allocation()
+    var simple_storage = Array[Float32, 16](fill={})
+    var simple_tensor = TileTensor(simple_storage, row_major[4, 4]())
     arange(simple_tensor)
 
     # Verify values are filled in logical order (row-major)
@@ -928,11 +925,8 @@ def test_arange_nested_layout() raises:
     assert_equal(simple_tensor[1, 3], 7.0)
 
     # Test column-major layout
-    var col_major_tensor = LayoutTensor[
-        DType.float32,
-        Layout.col_major(4, 4),
-        MutAnyOrigin,
-    ].stack_allocation()
+    var col_major_storage = Array[Float32, 16](fill={})
+    var col_major_tensor = TileTensor(col_major_storage, col_major[4, 4]())
     arange(col_major_tensor)
 
     # For column-major, values should still be in logical row-major order
@@ -947,9 +941,9 @@ def test_layout_tensor_iterator_print() raises:
     """Test case for MSTDL-1984: Tensors generated from LayoutTensorIter won't print.
     """
     comptime buf_size = 16
-    var storage = InlineArray[Int16, buf_size](uninitialized=True)
-    for i in range(buf_size):
-        storage[i] = Int16(i)
+    var storage = Array[Int16, buf_size](
+        fill_with=lambda (i: Int) -> Int16: Int16(i)
+    )
     comptime tile_layout = Layout.row_major(2, 2)
     var iter = LayoutTensorIter[
         DType.int16,

@@ -1,0 +1,34 @@
+[package]
+name = "kv-tier-connector"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# Rust port of MAX's Python KV cache connectors (LocalConnector + TieredConnector).
+# The Python lanes hold the GIL while issuing copies / disk I/O, contending with
+# the scheduler thread and starving the GPU; moving the tiers + lanes into Rust
+# runs them on real OS threads with the GIL released. This crate is the pure
+# logic (block pool, disk tier, copy engine, lanes, connectors); the
+# `kv-tier-connector-pyo3` crate exposes it to Python.
+
+[lib]
+crate-type = ["rlib"]
+
+# The GPU driver shim (`gpu.rs`) `dlopen`s the vendor runtime at load time via
+# libloading (`libcuda.so.1` / `libamdhip64.so` for the copies + events + p2p
+# fan-out), and profiler ranges (`trace.rs`) go through the max-profiler crate,
+# which resolves the MAX tool-annotation shim at runtime. So this builds with
+# no CUDA/ROCm toolkit present and runs on either vendor.
+[dependencies]
+itertools = { workspace = true }
+kv-core = { path = "../kv-core" }
+libloading = "0.8"
+max-profiler = { path = "../max-profiler" }
+parking_lot = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+
+[lints]
+workspace = true

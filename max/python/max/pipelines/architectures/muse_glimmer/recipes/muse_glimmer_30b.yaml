@@ -1,0 +1,24 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+# One B200.
+model:
+  model_path: meta-models/Muse-Glimmer-30B
+
+runtime:
+  max_batch_size: 64
+  enable_in_flight_batching: true
+
+# tool_choice required/named and response_format need the grammar, and the
+# arch cannot turn it on by default.
+sampling:
+  enable_structured_output: true

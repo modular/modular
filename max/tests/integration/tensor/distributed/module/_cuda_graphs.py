@@ -10,13 +10,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Shared test logic for CUDA graph capture/replay with CompiledModel.
+"""Shared test logic for CUDA graph capture/replay with CompiledCallable.
 
 DO NOT run this file directly -- it contains a base class that is
 subclassed by module/test_cuda_graphs_multi_gpu.py.
 
 These tests exercise the pipeline-builder workflow:
-compile → execute_raw → capture → replay, verifying that CompiledModel
+compile → execute_raw → capture → replay, verifying that CompiledCallable
 exposes the right tools for the serving infrastructure.
 
 Single-GPU only — multi-device collectives are not CUDA-graph-capture-safe,
@@ -34,8 +34,9 @@ import numpy as np
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import Model
+from max.experimental.compilation import CompiledCallable
 from max.experimental.functional import full, matmul
-from max.experimental.nn.module import CompiledModel, Module, module_dataclass
+from max.experimental.nn.module import Module, module_dataclass
 from max.experimental.tensor import Tensor, TensorType
 from max.graph import DeviceRef
 
@@ -44,14 +45,14 @@ F32 = DType.float32
 
 
 class CUDAGraphTests:
-    """Tests for CUDA graph capture/replay via CompiledModel.
+    """Tests for CUDA graph capture/replay via CompiledCallable.
 
     Subclass must set DEVICE.
     """
 
     DEVICE: ClassVar[Device]
 
-    def _single_gpu_model(self) -> CompiledModel[[Tensor], Tensor]:
+    def _single_gpu_model(self) -> CompiledCallable[[Tensor], Tensor]:
         """Compiles a simple linear model on a single GPU."""
         device = self.DEVICE
         device_ref = DeviceRef(device.label, device.id)

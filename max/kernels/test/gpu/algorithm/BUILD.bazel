@@ -1,0 +1,33 @@
+load("//bazel:api.bzl", "mojo_test")
+load("//max/kernels/src:deprecations.bzl", "IGNORED_POINTER_DEPRECATIONS_COPTS")
+
+package(default_visibility = ["//max:consumers"])
+
+_EXTRA_CONSTRAINTS = {
+    # Split-K is off on Metal, and the oversized monoid's block join exceeds
+    # Metal's 32 KB threadgroup memory.
+    "test_rowwise_splitk_large_state.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+}
+
+[
+    mojo_test(
+        name = src + ".test",
+        srcs = [src],
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+        exec_properties = {
+            "test.resources:gpu-memory": "0.8",
+        },
+        tags = ["gpu"],
+        target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
+        deps = [
+            "//max:algorithm",
+            "//max:builtin_kernels",
+            "//max:layout",
+            "@mojo//:std",
+        ],
+    )
+    for src in glob(["**/*.mojo"])
+]

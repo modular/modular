@@ -17,8 +17,8 @@ from layout import TileTensor, row_major
 
 
 def main():
-    var data = InlineArray[Int32, 9](fill=0)
+    var data = Array[Int32, 9](fill=0)
     var tensor = TileTensor(data, row_major[3, 3]())
 
     # CHECK: The input dimension must be divisible by the input count
-    _ = tensor.as_immut().split[2]()
+    _ = tensor.as_imm().split[2]()

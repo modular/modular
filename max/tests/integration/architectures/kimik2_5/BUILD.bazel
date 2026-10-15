@@ -24,6 +24,20 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_graph_capture_vision_inputs",
+    srcs = ["test_graph_capture_vision_inputs.py"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/kimik2_5",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/lib",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
     name = "test_tool_parser",
     srcs = ["test_tool_parser.py"],
     deps = [
@@ -32,8 +46,6 @@ modular_py_test(
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/modeling",
-        requirement("llguidance"),
-        requirement("numpy"),
     ],
 )
 
@@ -48,6 +60,20 @@ modular_py_test(
         "//max/python/max/pipelines/architectures/kimik2_5",
         requirement("numpy"),
         requirement("pytest-asyncio"),
+    ],
+)
+
+modular_py_test(
+    name = "test_preprocess_cache",
+    srcs = ["test_preprocess_cache.py"],
+    deps = [
+        "//max/python/max/pipelines/architectures/kimik2_5",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
+        "//max/python/max/support",
+        requirement("numpy"),
+        requirement("pillow"),
     ],
 )
 

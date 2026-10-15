@@ -27,15 +27,15 @@ from std.os import abort
 from std.pathlib import Path
 from std.ffi import _find_dylib
 from std.ffi import _get_dylib_function as _ffi_get_dylib_function
-from std.ffi import _CPointer, _Global, OwnedDLHandle
+from std.ffi import _Global, OwnedDLHandle
 
-from std.gpu.host._nvidia_cuda import CUstream
+from max.gpu.host._nvidia_cuda import CUstream
 
 from .dtype import DataType, Property
 from .result import Result
 
 comptime cublasContext = NoneType
-comptime cublasHandle_t = OptionalUnsafePointer[cublasContext, _]
+comptime cublasHandle_t = OptionalPointer[cublasContext, _]
 
 # ===-----------------------------------------------------------------------===#
 # Library Load
@@ -78,7 +78,7 @@ def _init_dylib() -> OwnedDLHandle:
     )
 
 
-@always_inline
+@inline(.always)
 def _get_dylib_function[
     func_name: StaticString, result_type: TrivialRegisterPassable
 ]() raises -> result_type:
@@ -94,41 +94,43 @@ def _get_dylib_function[
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
+@inline(.always)
 def check_cublas_error(stat: Result) raises:
     if stat != Result.SUCCESS:
         raise Error(t"failed to operate on CUBLAS due to error: {stat}")
 
 
-@always_inline
+@inline(.always)
 def check_cublas_error(stat: Result, msg: StringSlice) raises:
     if stat != Result.SUCCESS:
         raise Error(t"{msg}. Got a CUBLAS error: {stat}")
 
 
-@always_inline
+@inline(.always)
 def _convert_to_cublas_datatype[mojo_type: DType]() -> DataType:
-    comptime if mojo_type == DType.float32:
-        return DataType.R_32F
-    elif mojo_type == DType.float16:
-        return DataType.R_16F
-    elif mojo_type == DType.float8_e4m3fn:
-        return DataType.R_8F_E4M3
-    elif mojo_type == DType.float8_e5m2:
-        return DataType.R_8F_E5M2
-    # TODO (KERN-2238): uint8 is a proxy data type for two Float4-E2M1 values for now.
-    # Replace this with float4-e2m1fn when GENAI-337 is fixed.
-    elif mojo_type == DType.uint8:
-        return DataType.R_4F_E2M1
-    else:
-        comptime assert mojo_type == DType.bfloat16, (
-            "Only support FP32, FP16, BF16, E4M3, E5M2, and E2M1x2 (UInt8)."
-            " Please extend it if more types are needed."
-        )
-        return DataType.R_16BF
+    comptime match mojo_type:
+        case .float32:
+            return DataType.R_32F
+        case .float16:
+            return DataType.R_16F
+        case .float8_e4m3fn:
+            return DataType.R_8F_E4M3
+        case .float8_e5m2:
+            return DataType.R_8F_E5M2
+        # TODO (KERN-2238): uint8 is a proxy data type for two Float4-E2M1 values for now.
+        # Replace this with float4-e2m1fn when GENAI-337 is fixed.
+        case .uint8:
+            return DataType.R_4F_E2M1
+        case .bfloat16:
+            return DataType.R_16BF
+        case _:
+            comptime assert False, (
+                "Only support FP32, FP16, BF16, E4M3, E5M2, and E2M1x2 (UInt8)."
+                " Please extend it if more types are needed."
+            )
 
 
-@always_inline
+@inline(.always)
 def _convert_to_cublas_transpose(transpose: Bool) -> cublasOperation_t:
     return (
         cublasOperation_t.CUBLAS_OP_T if transpose else cublasOperation_t.CUBLAS_OP_N
@@ -810,7 +812,7 @@ struct cublasPointerMode_t(TrivialRegisterPassable, Writable):
     def __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
-    @no_inline
+    @inline(.never)
     def write_to(self, mut writer: Some[Writer]):
         if self == Self.CUBLAS_POINTER_MODE_HOST:
             return writer.write_string("CUBLAS_POINTER_MODE_HOST")
@@ -973,7 +975,7 @@ struct cublasMath_t(TrivialRegisterPassable, Writable):
     def __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
-    @no_inline
+    @inline(.never)
     def write_to(self, mut writer: Some[Writer]):
         if self == Self.CUBLAS_DEFAULT_MATH:
             return writer.write_string("CUBLAS_DEFAULT_MATH")
@@ -2134,7 +2136,7 @@ struct Algorithm(TrivialRegisterPassable, Writable):
     def __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
-    @no_inline
+    @inline(.never)
     def write_to(self, mut writer: Some[Writer]):
         if self == Self.DEFAULT:
             return writer.write_string("DEFAULT")
@@ -2659,7 +2661,7 @@ struct cublasDiagType_t(TrivialRegisterPassable, Writable):
     def __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
-    @no_inline
+    @inline(.never)
     def write_to(self, mut writer: Some[Writer]):
         if self == Self.CUBLAS_DIAG_NON_UNIT:
             return writer.write_string("CUBLAS_DIAG_NON_UNIT")
@@ -2695,7 +2697,7 @@ struct ComputeType(TrivialRegisterPassable, Writable):
     def __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
-    @no_inline
+    @inline(.never)
     def write_to(self, mut writer: Some[Writer]):
         if self == Self.COMPUTE_16F:
             return writer.write_string("COMPUTE_16F")
@@ -3853,7 +3855,7 @@ def cublasGemmEx64(
     _btype: DataType,
     ldb: Int64,
     beta: OpaquePointer[ImmutAnyOrigin],
-    _c: _CPointer[NoneType, MutAnyOrigin],
+    _c: OptionalPointer[NoneType, MutAnyOrigin],
     _ctype: DataType,
     ldc: Int64,
     compute_type: ComputeType,
@@ -5357,7 +5359,7 @@ def cublasGemmEx(
     _btype: DataType,
     ldb: Int32,
     beta: OpaquePointer[ImmutAnyOrigin],
-    _c: _CPointer[NoneType, MutAnyOrigin],
+    _c: OptionalPointer[NoneType, MutAnyOrigin],
     _ctype: DataType,
     ldc: Int32,
     compute_type: ComputeType,
@@ -5535,7 +5537,7 @@ def cublasLoggerConfigure(
     log_is_on: Int16,
     log_to_std_out: Int16,
     log_to_std_err: Int16,
-    log_file_name: OptionalUnsafePointer[Int8, _],
+    log_file_name: OptionalPointer[Int8, _],
 ) raises -> Result:
     return _get_dylib_function[
         "cublasLoggerConfigure",
@@ -6161,7 +6163,7 @@ struct cublasAtomicsMode_t(TrivialRegisterPassable, Writable):
     def __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
-    @no_inline
+    @inline(.never)
     def write_to(self, mut writer: Some[Writer]):
         if self == Self.CUBLAS_ATOMICS_NOT_ALLOWED:
             return writer.write_string("CUBLAS_ATOMICS_NOT_ALLOWED")
@@ -6461,7 +6463,7 @@ struct cublasSideMode_t(TrivialRegisterPassable, Writable):
     def __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
-    @no_inline
+    @inline(.never)
     def write_to(self, mut writer: Some[Writer]):
         if self == Self.CUBLAS_SIDE_LEFT:
             return writer.write_string("CUBLAS_SIDE_LEFT")
@@ -7091,7 +7093,7 @@ struct cublasOperation_t(TrivialRegisterPassable, Writable):
     def __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
-    @no_inline
+    @inline(.never)
     def write_to(self, mut writer: Some[Writer]):
         if self == Self.CUBLAS_OP_N:
             return writer.write_string("CUBLAS_OP_N")

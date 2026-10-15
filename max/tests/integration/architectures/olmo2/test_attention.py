@@ -15,6 +15,7 @@
 import numpy as np
 import pytest
 import torch
+from max import tree
 from max.driver import Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -183,7 +184,7 @@ def generate_max_outputs(
         ),
     ) as graph:
         inputs, input_row_offsets, *kv_cache = graph.inputs
-        kv_collection = kv_params.unflatten_kv_inputs(iter(kv_cache)).inputs[0]
+        kv_collection = kv_params.unflatten_kv_inputs(iter(kv_cache))[0]
 
         graph.output(
             attention(
@@ -199,8 +200,8 @@ def generate_max_outputs(
 
     # Set up cache inputs and call the compiled model.
     batch = [create_text_context(np.empty(input_seq_len))]
-    kv_manager.claim(batch[0].request_id, replica_idx=0)
-    kv_manager.alloc(batch[0], replica_idx=0)
+    kv_manager.claim(batch[0])
+    kv_manager.alloc(batch[0])
     kv_runtime_inputs = kv_manager.runtime_inputs([batch])
 
     output = compiled.execute(
@@ -208,7 +209,7 @@ def generate_max_outputs(
         Buffer.from_numpy(np.array([0, input_seq_len], dtype=np.uint32)).to(
             device
         ),
-        *kv_runtime_inputs.flatten(),
+        *tree.leaves(kv_runtime_inputs),
     )[0]
 
     return output

@@ -11,8 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import linalg.matmul.vendor.blas as vendor_blas
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from linalg.matmul.gpu.sm90.testbed import test_matmul_sm90
 from linalg.matmul.gpu.tile_scheduler import MatmulSchedule
 from layout import Idx
@@ -35,9 +34,9 @@ def main() raises:
         comptime for i in range(len(wgmma_n)):
             comptime for j in range(1, 3):
                 test_matmul_sm90[
-                    DType.bfloat16,
-                    DType.bfloat16,
-                    DType.bfloat16,
+                    .bfloat16,
+                    .bfloat16,
+                    .bfloat16,
                     Index(1, 1, 1),  # cluster_shape
                     block_tile_shape[j, wgmma_n[i]],
                     wgmma_shape[wgmma_n[i]],
@@ -52,9 +51,9 @@ def main() raises:
                 )
 
                 test_matmul_sm90[
-                    DType.bfloat16,
-                    DType.bfloat16,
-                    DType.bfloat16,
+                    .bfloat16,
+                    .bfloat16,
+                    .bfloat16,
                     Index(1, 1, 1),  # cluster_shape
                     block_tile_shape[j, wgmma_n[i]],
                     wgmma_shape[wgmma_n[i]],
@@ -69,9 +68,9 @@ def main() raises:
                 )
 
                 test_matmul_sm90[
-                    DType.bfloat16,
-                    DType.bfloat16,
-                    DType.bfloat16,
+                    .bfloat16,
+                    .bfloat16,
+                    .bfloat16,
                     Index(1, 1, 1),  # cluster_shape
                     block_tile_shape[j, wgmma_n[i]],
                     wgmma_shape[wgmma_n[i]],
@@ -87,9 +86,9 @@ def main() raises:
 
                 # Test K not multiple of tile size.
                 test_matmul_sm90[
-                    DType.bfloat16,
-                    DType.bfloat16,
-                    DType.bfloat16,
+                    .bfloat16,
+                    .bfloat16,
+                    .bfloat16,
                     Index(1, 1, 1),  # cluster_shape
                     block_tile_shape[j, wgmma_n[i]],
                     wgmma_shape[wgmma_n[i]],
@@ -105,9 +104,9 @@ def main() raises:
 
         # K is aligned by 8B
         test_matmul_sm90[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
+            .bfloat16,
             Index(1, 1, 1),  # cluster_shape
             block_tile_shape[2, 128],
             wgmma_shape[128],
@@ -117,9 +116,9 @@ def main() raises:
 
         # K is aligned by 4B
         test_matmul_sm90[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
+            .bfloat16,
             Index(1, 1, 1),  # cluster_shape
             block_tile_shape[2, 256],
             wgmma_shape[256],
@@ -128,9 +127,9 @@ def main() raises:
         ](ctx, Int(90), Idx[256], Idx[270])
 
         test_matmul_sm90[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
+            .bfloat16,
             Index(1, 1, 1),  # cluster_shape
             block_tile_shape[2, 128],
             wgmma_shape[128],
@@ -139,9 +138,9 @@ def main() raises:
         ](ctx, Int(213), Idx[1111], Idx[128])
 
         test_matmul_sm90[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
+            .bfloat16,
             Index(1, 1, 1),  # cluster_shape
             Index(128, 64, 64),
             Index(64, 64, 16),
@@ -150,9 +149,9 @@ def main() raises:
         ](ctx, Int(256), Idx[4096], Idx[1536])
 
         test_matmul_sm90[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
+            .bfloat16,
             Index(1, 1, 1),  # cluster_shape
             Index(64, 48, 64),
             Index(64, 48, 16),
@@ -162,9 +161,9 @@ def main() raises:
         ](ctx, Int(256), Idx[1536], Idx[4096])
 
         test_matmul_sm90[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
+            .bfloat16,
             Index(1, 1, 1),  # cluster_shape
             Index(64, 48, 64),
             Index(64, 48, 16),
@@ -174,9 +173,9 @@ def main() raises:
         ](ctx, Int(256), Idx[1536], Idx[4096])
 
         test_matmul_sm90[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
+            .bfloat16,
             Index(1, 1, 1),  # cluster_shape
             Index(64, 32, 64),
             Index(64, 32, 16),
@@ -185,9 +184,9 @@ def main() raises:
         ](ctx, Int(2), Idx[4096], Idx[1536])
 
         test_matmul_sm90[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
+            .bfloat16,
             Index(1, 1, 1),  # cluster_shape
             Index(64, 8, 64),
             Index(64, 8, 16),
@@ -196,9 +195,9 @@ def main() raises:
         ](ctx, Int(16), Idx[64], Idx[256])
 
         test_matmul_sm90[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
+            .bfloat16,
             Index(1, 1, 1),  # cluster_shape
             Index(64, 256, 64),
             Index(64, 256, 16),
@@ -207,9 +206,9 @@ def main() raises:
         ](ctx, Int(20), Idx[84], Idx[4096])
 
         test_matmul_sm90[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
+            .bfloat16,
             Index(1, 1, 1),  # cluster_shape
             Index(128, 256, 64),
             Index(64, 256, 16),
@@ -218,9 +217,9 @@ def main() raises:
         ](ctx, Int(476), Idx[1024], Idx[128])
 
         test_matmul_sm90[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
+            .bfloat16,
             Index(1, 1, 1),  # cluster_shape
             Index(128, 48, 64),
             Index(64, 48, 16),
@@ -229,9 +228,9 @@ def main() raises:
         ](ctx, Int(1536), Idx[48], Idx[4096])
 
         test_matmul_sm90[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
+            .bfloat16,
             Index(1, 1, 1),  # cluster_shape
             Index(128, 8, 64),
             Index(64, 8, 16),

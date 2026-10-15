@@ -22,7 +22,7 @@ matmul kernels.
 from std.math import ceildiv
 from std.math.uutils import udivmod
 
-from std.gpu import block_idx, grid_dim
+from max.gpu import block_idx, grid_dim
 
 from std.utils.fast_div import FastDiv
 from std.utils.index import Index, IndexList
@@ -31,7 +31,9 @@ from ...utils_gpu import block_swizzle
 
 
 @fieldwise_init
-struct RasterOrder(Equatable, Hashable, TrivialRegisterPassable, Writable):
+struct RasterOrder(
+    EnumLike, Equatable, Hashable, TrivialRegisterPassable, Writable
+):
     """Rasterization order for mapping thread blocks to output tiles.
 
     Controls the traversal direction of the 2D output tile grid. `AlongN`
@@ -45,15 +47,36 @@ struct RasterOrder(Equatable, Hashable, TrivialRegisterPassable, Writable):
     comptime AlongN = Self(0)
     comptime AlongM = Self(1)
 
-    @always_inline
+    comptime _enum_case_names = ParameterList.of[
+        "AlongN".value,
+        "AlongM".value,
+    ].values
+
+    comptime _enum_case_types = TypeList.splat[
+        ParameterList[Self._enum_case_names].size, NoneType
+    ].values
+
+    @inline(.always)
+    def _get_enum_discriminant(self) -> Int:
+        return Int(self._value)
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        comptime assert False, "RasterOrder has no payload"
+
+    @inline(.always)
     def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    @always_inline
+    @inline(.always)
     def __ne__(self, other: Self) -> Bool:
         return self._value != other._value
 
-    @no_inline
+    @inline(.never)
     def write_to(self, mut writer: Some[Writer]):
         if self._value == 0:
             writer.write("rasterN")
@@ -81,7 +104,7 @@ struct WorkInfo(TrivialRegisterPassable, Writable):
 
     comptime INVALID_WORK_INFO = Self(0, 0, 0, 0, False)
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self,
     ):
@@ -91,19 +114,19 @@ struct WorkInfo(TrivialRegisterPassable, Writable):
         self.num_k_tiles = 0
         self.is_valid_tile = False
 
-    @always_inline
+    @inline(.always)
     def is_valid(self) -> Bool:
         return self.is_valid_tile
 
-    @always_inline
+    @inline(.always)
     def is_final_split(self, k_tiles_per_output_tile: UInt32) -> Bool:
         return (self.k_start + self.num_k_tiles) == k_tiles_per_output_tile
 
-    @always_inline
+    @inline(.always)
     def get_k_start(self) -> UInt32:
         return self.k_start
 
-    @no_inline
+    @inline(.never)
     def write_to(self, mut writer: Some[Writer]):
         writer.write(
             "(",
@@ -121,7 +144,7 @@ struct WorkInfo(TrivialRegisterPassable, Writable):
 
 
 @fieldwise_init
-struct MatmulSchedule(TrivialRegisterPassable):
+struct MatmulSchedule(EnumLike, TrivialRegisterPassable):
     """Tile scheduling strategy for GPU matmul kernels.
 
     Selects how thread blocks are mapped to output tiles across the grid.
@@ -138,11 +161,34 @@ struct MatmulSchedule(TrivialRegisterPassable):
     comptime TILE2D = Self(2)
     comptime DS_SCHEDULER = Self(3)
 
-    @always_inline
+    comptime _enum_case_names = ParameterList.of[
+        "NONE".value,
+        "TILE1D".value,
+        "TILE2D".value,
+        "DS_SCHEDULER".value,
+    ].values
+
+    comptime _enum_case_types = TypeList.splat[
+        ParameterList[Self._enum_case_names].size, NoneType
+    ].values
+
+    @inline(.always)
+    def _get_enum_discriminant(self) -> Int:
+        return Int(self._value)
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        comptime assert False, "MatmulSchedule has no payload"
+
+    @inline(.always)
     def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    @always_inline
+    @inline(.always)
     def __ne__(self, other: Self) -> Bool:
         return self._value != other._value
 
@@ -188,7 +234,7 @@ struct TileScheduler[
     var prob_shape: IndexList[3]  # M x N x K
     var num_waves_m: UInt32
     var num_waves_n: UInt32
-    var log_num_waves_n: FastDiv[DType.uint32]
+    var log_num_waves_n: FastDiv[.uint32]
 
     # Member variables for DeepSeek Scheduler
     var current_iter: Int  # Tracks the scheduler's progress across kernel launches
@@ -200,7 +246,7 @@ struct TileScheduler[
         ceildiv(Self.problem_shape[1], Self.tile_shape[1])
     )
 
-    @always_inline
+    @inline(.always)
     def __init__(out self, prob_shape: IndexList[3]):
         comptime if Self.schedule == MatmulSchedule.TILE2D:
             comptime assert _check_cluster(
@@ -219,7 +265,7 @@ struct TileScheduler[
         self.num_waves_n = UInt32(
             ceildiv(self.prob_shape[1], Self.wave_shape[1])
         )
-        self.log_num_waves_n = FastDiv[DType.uint32](Int(self.num_waves_n))
+        self.log_num_waves_n = FastDiv[.uint32](Int(self.num_waves_n))
 
         self.current_iter = -1
         self.num_aligned_m_blocks = UInt32(
@@ -236,7 +282,7 @@ struct TileScheduler[
                 block_idx.y
             )
 
-    @always_inline
+    @inline(.always)
     def get_current_work_info(mut self) -> WorkInfo:
         comptime if Self.schedule == MatmulSchedule.DS_SCHEDULER:
             var m_block_idx: UInt32 = 0
@@ -254,7 +300,7 @@ struct TileScheduler[
             )
         else:
             var m, n = self._index_to_mn()
-            is_valid = m < self.prob_shape[0] and n < self.prob_shape[1]
+            var is_valid = m < self.prob_shape[0] and n < self.prob_shape[1]
             return WorkInfo(
                 UInt32(m),
                 UInt32(n),
@@ -263,11 +309,11 @@ struct TileScheduler[
                 is_valid,
             )
 
-    @always_inline
+    @inline(.always)
     def advance(mut self):
         self.idx += Self.num_grids
 
-    @always_inline
+    @inline(.always)
     def fetch_next_work(mut self) -> WorkInfo:
         comptime if Self.schedule == MatmulSchedule.DS_SCHEDULER:
             return self.fetch_next_work_ds()
@@ -275,7 +321,7 @@ struct TileScheduler[
             self.advance()
             return self.get_current_work_info()
 
-    @always_inline
+    @inline(.always)
     def _index_to_mn(self) -> Tuple[Int, Int]:
         """Map the thread block's index to coordinates of work tile."""
 
@@ -284,16 +330,16 @@ struct TileScheduler[
 
         return self._index_to_mn_tile1d()
 
-    @always_inline
+    @inline(.always)
     def _index_to_mn_tile1d(self) -> Tuple[Int, Int]:
         # Grid dim as if there is no persist kernel
-        logical_grid_dim = Index[dtype=DType.uint32](
+        var logical_grid_dim = Index[dtype=DType.uint32](
             ceildiv(self.prob_shape[1], Self.tile_shape[1]),
             ceildiv(self.prob_shape[0], Self.tile_shape[0]),
         )
 
-        by, bx = udivmod(Int(self.idx), logical_grid_dim[0])
-        block_xy_swizzle = block_swizzle(
+        var by, bx = udivmod(Int(self.idx), logical_grid_dim[0])
+        var block_xy_swizzle = block_swizzle(
             Index[dtype=DType.uint32](bx, by), logical_grid_dim
         )
 
@@ -302,44 +348,44 @@ struct TileScheduler[
 
         return (m, n)
 
-    @always_inline
+    @inline(.always)
     def _index_to_mn_tile2d(self) -> Tuple[Int, Int]:
         # We consider a sweep on busy SMs a wave, not all SMs
-        comptime log_num_grids = FastDiv[DType.uint32](Int(Self.num_grids))
-        comptime log_grid_shape = FastDiv[DType.uint32](Self.grid_shape[0])
+        comptime log_num_grids = FastDiv[.uint32](Int(Self.num_grids))
+        comptime log_grid_shape = FastDiv[.uint32](Self.grid_shape[0])
 
-        comptime FastUInt = Scalar[FastDiv[DType.uint32].uint_type]
+        comptime FastUInt = Scalar[FastDiv[.uint32].uint_type]
 
-        num_waves_executed = FastUInt(self.idx) / log_num_grids
-        idx_in_wave = FastUInt(self.idx) % log_num_grids
+        var num_waves_executed = FastUInt(self.idx) / log_num_grids
+        var idx_in_wave = FastUInt(self.idx) % log_num_grids
 
-        num_waves_executed_m = (
+        var num_waves_executed_m = (
             FastUInt(num_waves_executed) / self.log_num_waves_n
         )
-        num_waves_executed_n = (
+        var num_waves_executed_n = (
             FastUInt(num_waves_executed) % self.log_num_waves_n
         )
 
         # The wave maps to a BM x grid_shape[1] by BN x grid_shape[0]
         # submatrix in C.
-        wave_m = num_waves_executed_m * FastUInt(Self.wave_shape[0])
-        wave_n = num_waves_executed_n * FastUInt(Self.wave_shape[1])
+        var wave_m = num_waves_executed_m * FastUInt(Self.wave_shape[0])
+        var wave_n = num_waves_executed_n * FastUInt(Self.wave_shape[1])
 
-        m_in_wave = FastUInt(idx_in_wave) / log_grid_shape
-        n_in_wave = FastUInt(idx_in_wave) % log_grid_shape
+        var m_in_wave = FastUInt(idx_in_wave) / log_grid_shape
+        var n_in_wave = FastUInt(idx_in_wave) % log_grid_shape
 
         return (
             Int(wave_m + m_in_wave * FastUInt(Self.tile_shape[0])),
             Int(wave_n + n_in_wave * FastUInt(Self.tile_shape[1])),
         )
 
-    @always_inline
+    @inline(.always)
     def num_output_tiles(self) -> Int:
         return ceildiv(self.prob_shape[0], Self.wave_shape[0]) * ceildiv(
             self.prob_shape[1], Self.wave_shape[1]
         )
 
-    @always_inline
+    @inline(.always)
     def fetch_next_work_ds(mut self) -> WorkInfo:
         var m_block_idx: UInt32 = 0
         var n_block_idx: UInt32 = 0
@@ -357,7 +403,7 @@ struct TileScheduler[
         )
 
     # Calculates swizzled M and N block indices for better cache utilization
-    @always_inline
+    @inline(.always)
     def _get_swizzled_block_idx(
         self, num_m_blocks: UInt32, block_idx: Int
     ) -> Tuple[UInt32, UInt32]:
@@ -387,7 +433,7 @@ struct TileScheduler[
         return (m_block_idx, n_block_idx)
 
     # Gets the next (m_block_idx, n_block_idx) pair for the current thread block to process
-    @always_inline
+    @inline(.always)
     def _get_next_block(
         mut self, mut m_block_idx: UInt32, mut n_block_idx: UInt32
     ) -> Bool:

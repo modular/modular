@@ -13,7 +13,8 @@
 """Idefics3 vision-language architecture for multimodal text generation."""
 
 from .arch import idefics3_modulev3_arch
-from .model import Idefics3Inputs, Idefics3Model
+from .inputs import Idefics3Inputs
+from .model import Idefics3Model
 from .model_config import Idefics3Config
 
 __all__ = [

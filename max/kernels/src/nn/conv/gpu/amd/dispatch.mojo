@@ -40,8 +40,8 @@ Mirrors the structure of `nn.conv.gpu.amd.rdna.dispatch` and
 `nn.conv.gpu.nvidia.sm100.dispatch`.
 """
 
-from std.gpu import global_idx
-from std.gpu.host import DeviceContext
+from max.gpu import global_idx
+from max.gpu.host import DeviceContext
 from std.math import ceildiv
 from std.sys import simd_width_of
 from std.sys.info import _accelerator_arch
@@ -65,32 +65,37 @@ def _transpose_rscf_to_frsc_kpad[
 ](
     src_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
     dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    R: Int,
-    S: Int,
-    C: Int,
-    F: Int,
-    K_padded: Int,
+    R: Int32,
+    S: Int32,
+    C: Int32,
+    F: Int32,
+    K_padded: Int32,
 ):
     """GPU kernel: filter RSCF `[R*S*C, F]` -> FRSC `[F, K_padded]`.
 
     `K_padded >= R*S*C`; padded trailing columns are zero-filled.
     """
-    var K_real = R * S * C
-    var total = F * K_padded
+    var _R = Int(R)
+    var _S = Int(S)
+    var _C = Int(C)
+    var _F = Int(F)
+    var _K_padded = Int(K_padded)
+    var K_real = _R * _S * _C
+    var total = _F * _K_padded
     var tid = global_idx.x
     if tid >= total:
         return
-    var f = tid // K_padded
-    var k = tid - f * K_padded
+    var f = tid // _K_padded
+    var k = tid - f * _K_padded
     if k >= K_real:
         dst_ptr.store(tid, Scalar[dtype](0))
         return
-    var r = k // (S * C)
-    var sc = k - r * (S * C)
-    var s = sc // C
-    var c = sc - s * C
-    # RSCF source index: ((r * S + s) * C + c) * F + f.
-    var rscf_idx = ((r * S + s) * C + c) * F + f
+    var r = k // (_S * _C)
+    var sc = k - r * (_S * _C)
+    var s = sc // _C
+    var c = sc - s * _C
+    # RSCF source index: ((r * _S + s) * _C + c) * _F + f.
+    var rscf_idx = ((r * _S + s) * _C + c) * _F + f
     dst_ptr.store(tid, src_ptr.load(rscf_idx))
 
 
@@ -100,32 +105,37 @@ def _transpose_fcrs_to_frsc_kpad[
 ](
     src_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
     dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    F: Int,
-    C: Int,
-    R: Int,
-    S: Int,
-    K_padded: Int,
+    F: Int32,
+    C: Int32,
+    R: Int32,
+    S: Int32,
+    K_padded: Int32,
 ):
     """GPU kernel: filter FCRS `[F, C, R, S]` -> FRSC `[F, K_padded]`.
 
     `K_padded >= R*S*C`; padded trailing columns are zero-filled.
     """
-    var K_real = R * S * C
-    var total = F * K_padded
+    var _F = Int(F)
+    var _C = Int(C)
+    var _R = Int(R)
+    var _S = Int(S)
+    var _K_padded = Int(K_padded)
+    var K_real = _R * _S * _C
+    var total = _F * _K_padded
     var tid = global_idx.x
     if tid >= total:
         return
-    var f = tid // K_padded
-    var k = tid - f * K_padded
+    var f = tid // _K_padded
+    var k = tid - f * _K_padded
     if k >= K_real:
         dst_ptr.store(tid, Scalar[dtype](0))
         return
-    var r = k // (S * C)
-    var sc = k - r * (S * C)
-    var s = sc // C
-    var c = sc - s * C
-    # FCRS source index: f*C*R*S + c*R*S + r*S + s.
-    var fcrs_idx = f * C * R * S + c * R * S + r * S + s
+    var r = k // (_S * _C)
+    var sc = k - r * (_S * _C)
+    var s = sc // _C
+    var c = sc - s * _C
+    # FCRS source index: f*_C*_R*_S + c*_R*_S + r*_S + s.
+    var fcrs_idx = f * _C * _R * _S + c * _R * _S + r * _S + s
     dst_ptr.store(tid, src_ptr.load(fcrs_idx))
 
 
@@ -135,7 +145,7 @@ def _transpose_fcrs_to_frsc_kpad[
 # ---------------------------------------------------------------------------
 
 
-@always_inline
+@inline(.always)
 def _launch_amd_4wave_conv2d_runtime[
     input_type: DType,
     filter_type: DType,
@@ -173,9 +183,8 @@ def _launch_amd_4wave_conv2d_runtime[
     row stride is `C_out` (NHWC contiguous).
     """
 
-    @parameter
-    @always_inline
-    def _launch[stride_v: Int, pad_v: Int]() raises:
+    @inline(.always)
+    def _launch[stride_v: Int, pad_v: Int]() raises {imm}:
         var _rt_N = Int(input.dim[0]())
         var _rt_H = Int(input.dim[1]())
         var _rt_W = Int(input.dim[2]())
@@ -187,7 +196,7 @@ def _launch_amd_4wave_conv2d_runtime[
         # Dynamic 2D `[M_total, C_out]` output view.
         var _output_dims = IndexList[2](_rt_M_total, C_out)
         var _dyn_out_layout = row_major(Coord(_output_dims))
-        var output_2d_tt = TileTensor(output.ptr, _dyn_out_layout)
+        var output_2d_tt = output.reshape(_dyn_out_layout)
         amd_4wave_conv[
             elementwise_lambda_fn=elementwise_lambda_fn,
             R=R,
@@ -209,20 +218,21 @@ def _launch_amd_4wave_conv2d_runtime[
             beta=beta,
         )
 
-    if stride == 1 and pad == 0:
-        _launch[1, 0]()
-    elif stride == 1 and pad == 1:
-        _launch[1, 1]()
-    elif stride == 1 and pad == 2:
-        _launch[1, 2]()
-    elif stride == 2 and pad == 0:
-        _launch[2, 0]()
-    elif stride == 2 and pad == 1:
-        _launch[2, 1]()
-    elif stride == 2 and pad == 2:
-        _launch[2, 2]()
-    else:
-        return False
+    match (stride, pad):
+        case (1, 0):
+            _launch[1, 0]()
+        case (1, 1):
+            _launch[1, 1]()
+        case (1, 2):
+            _launch[1, 2]()
+        case (2, 0):
+            _launch[2, 0]()
+        case (2, 1):
+            _launch[2, 1]()
+        case (2, 2):
+            _launch[2, 2]()
+        case _:
+            return False
     return True
 
 
@@ -401,11 +411,11 @@ def dispatch_amd_4wave_conv2d[
             ctx.enqueue_function[_transpose_fcrs_to_frsc_kpad[filter_type]](
                 filter.ptr,
                 filter_frsc_ptr,
-                _C_out,
-                _C_in,
-                _R,
-                _S,
-                _K_padded,
+                Int32(_C_out),
+                Int32(_C_in),
+                Int32(_R),
+                Int32(_S),
+                Int32(_K_padded),
                 grid_dim=transpose_grid,
                 block_dim=_transpose_block,
             )
@@ -413,11 +423,11 @@ def dispatch_amd_4wave_conv2d[
             ctx.enqueue_function[_transpose_rscf_to_frsc_kpad[filter_type]](
                 filter.ptr,
                 filter_frsc_ptr,
-                _R,
-                _S,
-                _C_in,
-                _C_out,
-                _K_padded,
+                Int32(_R),
+                Int32(_S),
+                Int32(_C_in),
+                Int32(_C_out),
+                Int32(_K_padded),
                 grid_dim=transpose_grid,
                 block_dim=_transpose_block,
             )
@@ -435,16 +445,17 @@ def dispatch_amd_4wave_conv2d[
             Scalar[output_type], ImmutAnyOrigin
         ].unsafe_dangling()
 
-        @parameter
-        @always_inline
-        def _src_immut() -> UnsafePointer[Scalar[output_type], ImmutAnyOrigin]:
+        @inline(.always)
+        def _src_immut() {
+            imm
+        } -> UnsafePointer[Scalar[output_type], ImmutAnyOrigin]:
             comptime if has_residual:
                 # When called with has_residual=True, the caller must
                 # supply source_ptr. Materialize an immutable view of it
                 # (the kernel only reads).
-                if source_ptr:
+                if case .Some(source_ptr) = source_ptr:
                     return UnsafePointer[Scalar[output_type], ImmutAnyOrigin](
-                        unsafe_from_address=Int(source_ptr.value())
+                        unsafe_from_address=Int(source_ptr)
                     )
             return _src_ptr_immut
 
@@ -453,9 +464,10 @@ def dispatch_amd_4wave_conv2d[
         # -------- Static vs runtime-HW dispatch --------------------
         comptime if _all_hw_static:
 
-            @parameter
-            @always_inline
-            def _launch_static[stride_v: Int, pad_v: Int]() raises -> Bool:
+            @inline(.always)
+            def _launch_static[
+                stride_v: Int, pad_v: Int
+            ]() raises {imm} -> Bool:
                 comptime _eff_R = _R
                 comptime _eff_S = _S
                 comptime _H_out_v = (
@@ -483,8 +495,8 @@ def dispatch_amd_4wave_conv2d[
                     _N_static, _H_static, _W_static, _C_in
                 ]()
                 comptime _output_2d_layout = row_major[_M_total_v, _C_out]()
-                var input_nhwc_tt = TileTensor(input.ptr, _nhwc_in_layout)
-                var output_2d_tt = TileTensor(output.ptr, _output_2d_layout)
+                var input_nhwc_tt = input.reshape(_nhwc_in_layout)
+                var output_2d_tt = output.reshape(_output_2d_layout)
                 amd_4wave_conv[
                     elementwise_lambda_fn=elementwise_lambda_fn,
                     H=_H_static,
@@ -510,26 +522,27 @@ def dispatch_amd_4wave_conv2d[
                 )
                 return True
 
-            if stride[0] == 1 and pad == 0:
-                if not _launch_static[1, 0]():
+            match (stride[0], pad):
+                case (1, 0):
+                    if not _launch_static[1, 0]():
+                        return False
+                case (1, 1):
+                    if not _launch_static[1, 1]():
+                        return False
+                case (1, 2):
+                    if not _launch_static[1, 2]():
+                        return False
+                case (2, 0):
+                    if not _launch_static[2, 0]():
+                        return False
+                case (2, 1):
+                    if not _launch_static[2, 1]():
+                        return False
+                case (2, 2):
+                    if not _launch_static[2, 2]():
+                        return False
+                case _:
                     return False
-            elif stride[0] == 1 and pad == 1:
-                if not _launch_static[1, 1]():
-                    return False
-            elif stride[0] == 1 and pad == 2:
-                if not _launch_static[1, 2]():
-                    return False
-            elif stride[0] == 2 and pad == 0:
-                if not _launch_static[2, 0]():
-                    return False
-            elif stride[0] == 2 and pad == 1:
-                if not _launch_static[2, 1]():
-                    return False
-            elif stride[0] == 2 and pad == 2:
-                if not _launch_static[2, 2]():
-                    return False
-            else:
-                return False
         else:
             if not _launch_amd_4wave_conv2d_runtime[
                 C_in=_C_in,

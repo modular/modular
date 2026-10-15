@@ -16,7 +16,9 @@
 import os
 
 import pytest
+from fastapi import FastAPI
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
+from max.serve.api_server import fastapi_config
 from max.serve.config import Settings
 
 
@@ -149,9 +151,64 @@ def test_fastapi_config_wires_graceful_shutdown_timeout() -> None:
     graceful shutdown itself is uvicorn's behavior; we only verify the wiring,
     with no model worker or server start required.
     """
-    from fastapi import FastAPI
-    from max.serve.api_server import fastapi_config
-    from max.serve.config import Settings
-
     config = fastapi_config(FastAPI(), Settings(graceful_shutdown_timeout_s=42))
     assert config.timeout_graceful_shutdown == 42
+
+
+def test_http_keepalive_timeout_outlives_pooling_clients() -> None:
+    """The default must sit above a pooling client's idle-connection timeout.
+
+    Go's ``http.Transport`` idles pooled connections out at 90s by default. If
+    the server closes first, a client reusing a pooled connection races that
+    close and sees a TCP reset instead of a response -- and cannot retry it,
+    because a proxied POST body is not replayable.
+    """
+    assert Settings().http_keepalive_timeout_s > 90
+
+
+def test_http_keepalive_timeout_env_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MAX_SERVE_HTTP_KEEPALIVE_TIMEOUT_S", "300")
+    assert Settings().http_keepalive_timeout_s == 300
+
+
+def test_fastapi_config_wires_http_keepalive_timeout() -> None:
+    config = fastapi_config(FastAPI(), Settings(http_keepalive_timeout_s=137))
+    assert config.timeout_keep_alive == 137
+
+
+def test_max_media_bytes_default_is_enforcing() -> None:
+    """The media budget must ship enforcing, not disabled.
+
+    The multimodal ingestion security review found media limits effectively
+    off by default (MXSERV-381), so a real default is the property under test:
+    a 0 here would restore unlimited fetched and decoded media.
+    """
+    assert Settings().max_media_bytes == 100 * 1024 * 1024
+
+
+def test_max_media_bytes_env_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MAX_SERVE_MAX_MEDIA_BYTES", "4096")
+    assert Settings().max_media_bytes == 4096
+
+
+def test_max_media_bytes_is_independent_of_max_request_bytes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The media budget and the body-size limit are separate knobs.
+
+    They govern different resources: the body limit bounds what a client
+    uploads, while the media budget bounds what the server fetches and decodes
+    on the client's behalf -- a few hundred bytes of body can name a dozen
+    URLs. Raising one must not silently widen the other, in particular must not
+    widen how much a decompression bomb is allowed to decode to.
+    """
+    monkeypatch.setenv(
+        "MAX_SERVE_MAX_REQUEST_BYTES", str(2 * 1024 * 1024 * 1024)
+    )
+    settings = Settings()
+    assert settings.max_request_bytes == 2 * 1024 * 1024 * 1024
+    assert settings.max_media_bytes == 100 * 1024 * 1024

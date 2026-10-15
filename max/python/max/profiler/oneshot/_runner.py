@@ -58,7 +58,7 @@ from ._backend import (
     detect_backend,
 )
 from ._cprofile import _render_cprofile, _render_cprofile_from_dump
-from ._cuda import _cuda_profiler_region
+from ._cuda import cuda_profiler_region
 from ._nsys import _reexec_under_nsys, render_nsys_kernel_summary
 
 logger = logging.getLogger("max.profiler.oneshot")
@@ -221,7 +221,7 @@ def profiled_region(
     prof = cProfile.Profile()
 
     under_nsys = _is_under_nsys()
-    cuda_region = _cuda_profiler_region() if under_nsys else _null_context()
+    cuda_region = cuda_profiler_region() if under_nsys else _null_context()
     prof.enable()
     try:
         with cuda_region:
@@ -300,7 +300,7 @@ class OneShotCapture:
             return
         self._started = True
         if self._under_nsys:
-            self._cuda_cm = _cuda_profiler_region()
+            self._cuda_cm = cuda_profiler_region()
             # __enter__ runs cudaProfilerStart.
             self._cuda_cm.__enter__()
         self._cprofile.enable()

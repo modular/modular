@@ -29,7 +29,11 @@ from max.graph import (
     Value,
     ops,
 )
-from max.nn.kv_cache import KVCacheInputsPerDevice, PagedCacheValues
+from max.nn.kv_cache import (
+    KVCacheInputsPerDevice,
+    PagedCacheValues,
+    packed_page_stride,
+)
 from max.nn.layer import Module
 from max.nn.transformer import forward_sequential_layers
 
@@ -283,6 +287,7 @@ def test_structured_kv_collection_input(use_subgraphs: bool) -> None:
         kv_collections = [
             PagedCacheValues(
                 kv_blocks=main_graph.inputs[1].buffer,
+                page_stride=packed_page_stride(main_graph.inputs[1].buffer),
                 cache_lengths=main_graph.inputs[2].tensor,
                 lookup_table=main_graph.inputs[3].tensor,
                 max_prompt_length=main_graph.inputs[4].tensor,
@@ -321,3 +326,34 @@ def test_structured_kv_collection_input(use_subgraphs: bool) -> None:
             assert layers[1].call_count == 1
             # Direct path forwards the exact same collection object.
             assert layers[1].received_kv is kv_collections
+
+
+@pytest.mark.parametrize("use_subgraphs", [False, True])
+def test_layer_ids_reach_every_callback(use_subgraphs: bool) -> None:
+    """Callbacks and subgraph groups see the given layer ids, not positions."""
+    with Graph("test", input_types=[TENSOR_T]) as main_graph:
+        layers = [_IdentityLayer() for _ in range(2)]
+        seen: dict[str, list[int]] = {"inputs": [], "prefix": [], "output": []}
+
+        def inputs_for_layer(idx: int, h: list[TensorValue]) -> list[Any]:
+            seen["inputs"].append(idx)
+            return [h]
+
+        def weight_prefix_for_layer(idx: int) -> str:
+            seen["prefix"].append(idx)
+            return f"layers.{idx}."
+
+        forward_sequential_layers(
+            layers,
+            inputs_for_layer=inputs_for_layer,
+            weight_prefix_for_layer=weight_prefix_for_layer,
+            subgraph_layer_groups=[[5, 6]] if use_subgraphs else None,
+            initial_hidden_states=[main_graph.inputs[0].tensor],
+            on_layer_output=lambda idx, h: seen["output"].append(idx),
+            layer_ids=range(5, 7),
+        )
+
+        assert seen["inputs"] == seen["output"] == [5, 6]
+        if use_subgraphs:
+            assert seen["prefix"] and set(seen["prefix"]) == {5, 6}
+            assert str(main_graph).count("callee = @transformer_block_0") == 2

@@ -34,12 +34,14 @@ class Llama4Model(LlamaModelBase):
     """
 
     model_config_cls: ClassVar[type[Llama4Config]] = Llama4Config
-    norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm"
+    norm_method: Literal["rms_norm", "layer_norm"] = "rms_norm"
     attention_bias: bool = False
 
     @override
     def _create_model_config(self, state_dict: dict[str, Any]) -> Llama4Config:
-        model_config = Llama4Config.initialize(self.pipeline_config)
+        model_config = Llama4Config.initialize(
+            self.pipeline_config, max_seq_len=self.max_seq_len
+        )
         model_config.finalize(
             huggingface_config=self.huggingface_config,
             state_dict=state_dict,

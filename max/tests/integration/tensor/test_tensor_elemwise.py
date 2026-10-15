@@ -456,6 +456,18 @@ def test_floordiv() -> None:
     assert result.real
 
 
+def test_floordiv_int() -> None:
+    a = Tensor.full(
+        [4, 6],
+        -7,
+        dtype=DType.int32,
+        device=Accelerator() if accelerator_count() else CPU(),
+    )
+    result = a // 2
+    assert result.dtype == DType.int32
+    assert result.real
+
+
 def test_rfloordiv() -> None:
     a = Tensor.ones(
         [4, 6],

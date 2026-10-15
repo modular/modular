@@ -14,7 +14,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
-from typing import Protocol
+from typing import Any, Protocol
 
 from max.dtype import DType
 from max.graph import (
@@ -26,10 +26,11 @@ from max.graph import (
     ops,
 )
 from max.nn.comm.allreduce import Allreduce
+from max.tree import Tree
 
 from ..embedding import VocabParallelEmbedding
 from ..kv_cache import KVCacheParams, PagedCacheValues
-from ..layer import LayerList, Module, Shardable, SubgraphInput
+from ..layer import LayerList, Module, Shardable
 from ..linear import ColumnParallelLinear
 from ..rotary_embedding import RotaryEmbedding
 from .transformer import (
@@ -61,6 +62,7 @@ def distributed_logits_postprocess(
     return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
     logits_scaling: float = 1.0,
     logit_softcapping: float | None = None,
+    capture_hidden_states: list[list[TensorValue]] | None = None,
 ) -> tuple[TensorValue, ...]:
     """Common logits postprocessing for multi-device sharded models.
 
@@ -75,11 +77,14 @@ def distributed_logits_postprocess(
         lm_head: Language model head (takes per-device inputs + signal buffers).
         signal_buffers: Signal buffers for collective operations.
         return_logits: Which logits to return.
-        device: Primary device for scalar ops (e.g. ops.range).
+        device: Primary device for scalar ops (such as ops.range).
         norm_shards: Per-device normalization functions. When None, hidden
             states are passed directly to lm_head without normalization.
         return_hidden_states: Which hidden states to return.
         logits_scaling: Scaling factor for logits.
+        capture_hidden_states: For ``SELECTED_LAYERS`` mode, the per-layer
+            captured hidden states gathered during the layer loop. See
+            :func:`extract_hs`.
 
     Returns:
         Tuple of (last_logits, [logits, offsets], [hidden_states]).
@@ -169,6 +174,7 @@ def distributed_logits_postprocess(
         last_token_hs_distributed=last_token_h,
         all_hs_distributed=h,
         normalizer=norm_shards,
+        capture_hidden_states=capture_hidden_states,
     )
     return ret_val
 
@@ -196,6 +202,7 @@ class DistributedLogitsPostprocessMixin:
         input_row_offsets: Sequence[TensorValue],
         return_n_logits: TensorValue,
         signal_buffers: Sequence[BufferValue],
+        capture_hidden_states: list[list[TensorValue]] | None = None,
     ) -> tuple[TensorValue, ...]:
         return distributed_logits_postprocess(
             h,
@@ -209,6 +216,7 @@ class DistributedLogitsPostprocessMixin:
             return_hidden_states=self.return_hidden_states,
             logits_scaling=self.logits_scaling,
             logit_softcapping=self.logit_softcapping,
+            capture_hidden_states=capture_hidden_states,
         )
 
 
@@ -342,9 +350,7 @@ class DistributedTransformer(DistributedLogitsPostprocessMixin, Module):
             input_row_offsets.to(self.devices[0]), signal_buffers
         )
 
-        def inputs_for_layer(
-            idx: int, h: list[TensorValue]
-        ) -> list[SubgraphInput]:
+        def inputs_for_layer(idx: int, h: list[TensorValue]) -> list[Tree[Any]]:
             return [
                 ops.constant(idx, DType.uint32, device=DeviceRef.CPU()),
                 h,

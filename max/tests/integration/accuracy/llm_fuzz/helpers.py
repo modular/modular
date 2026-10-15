@@ -15,6 +15,8 @@
 from __future__ import annotations
 
 import json
+import sys
+from collections.abc import Collection
 from typing import Any
 
 
@@ -96,6 +98,7 @@ def make_tool(
     name: str,
     params_schema: dict[str, Any] | None = None,
     description: str | None = None,
+    strict: bool | None = None,
 ) -> dict[str, Any]:
     """Create an OpenAI-format tool definition."""
     if params_schema is None:
@@ -105,14 +108,14 @@ def make_tool(
             "required": ["input"],
             "additionalProperties": False,
         }
-    return {
-        "type": "function",
-        "function": {
-            "name": name,
-            "description": description or f"Tool: {name}",
-            "parameters": params_schema,
-        },
+    function: dict[str, Any] = {
+        "name": name,
+        "description": description or f"Tool: {name}",
+        "parameters": params_schema,
     }
+    if strict is not None:
+        function["strict"] = strict
+    return {"type": "function", "function": function}
 
 
 def budget_exhausted(resp: Any) -> bool:
@@ -208,3 +211,68 @@ STRUCTURAL_LEAK_MARKERS: tuple[str, ...] = (
     "<think>",
     "</think>",
 )
+
+
+def normalize_test_id(test_id: str) -> str:
+    """Canonical form of a ``scenario:test`` id for exclusion matching.
+
+    Known-failures entries are written readably, with spaces, while the
+    config loaders strip whitespace from them (or, on the Mammoth path, do
+    not). Dropping all whitespace on both the entry side and the runtime side
+    makes the two forms compare equal.
+    """
+    return "".join(test_id.split())
+
+
+def parse_exclude(
+    spec: str | None, known_scenarios: Collection[str] | None = None
+) -> tuple[set[str], set[str]]:
+    """Split an ``--exclude`` value into scenario names and test ids.
+
+    The value is comma-separated, but a test name can itself contain commas
+    (``nested anyOf, to check validation semantics``). When
+    ``known_scenarios`` is given, a fragment that does not start with a
+    registered scenario name is a continuation of the previous test id and is
+    re-joined to it instead of becoming an entry of its own. Without it, every
+    comma splits.
+
+    Returns:
+        ``(scenario_names, test_ids)``; test ids are whitespace-normalized
+        with :func:`normalize_test_id`.
+    """
+    entries: list[str] = []
+    for token in (spec or "").split(","):
+        token = token.strip()
+        if not token:
+            continue
+        starts_entry = (
+            known_scenarios is None
+            or token.split(":", 1)[0].strip() in known_scenarios
+        )
+        if not starts_entry and entries and ":" in entries[-1]:
+            # A comma inside a test name or a stale scenario name: they look
+            # the same, so warn instead of silently swallowing the neighbour.
+            print(
+                f"warning: --exclude fragment {token!r} does not start with a "
+                f"known scenario; treating it as part of {entries[-1]!r}. "
+                "If that is not what you meant, fix or remove the entry.",
+                file=sys.stderr,
+            )
+            entries[-1] += "," + token
+        else:
+            if not starts_entry:
+                print(
+                    f"warning: --exclude entry {token!r} does not start with a "
+                    "known scenario name; check it for a typo or a stale entry.",
+                    file=sys.stderr,
+                )
+            entries.append(token)
+
+    exclude_groups: set[str] = set()
+    exclude_tests: set[str] = set()
+    for entry in entries:
+        if ":" in entry:
+            exclude_tests.add(normalize_test_id(entry))
+        else:
+            exclude_groups.add(entry)
+    return exclude_groups, exclude_tests

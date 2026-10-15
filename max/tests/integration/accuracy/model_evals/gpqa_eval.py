@@ -27,6 +27,15 @@ Run locally against a server on ``localhost:8000``::
     ./bazelw run //max/tests/integration/accuracy/model_evals:gpqa_eval -- \\
         --base-url http://localhost:8000 --model MiniMaxAI/MiniMax-M3-MXFP8 \\
         --sample-size 2 --out-dir /tmp/gpqa
+
+Results stream to ``<out-dir>/results.jsonl`` as each request completes, so a
+killed/crashed run keeps everything already finished. To debug specific rows
+(e.g. re-run exactly the ones that errored or looked wrong last time), pass
+``--row-ids`` instead of ``--sample-size``::
+
+    ./bazelw run //max/tests/integration/accuracy/model_evals:gpqa_eval -- \\
+        --base-url http://localhost:8000 --model MiniMaxAI/MiniMax-M3-MXFP8 \\
+        --row-ids 3,17,42 --out-dir /tmp/gpqa-debug
 """
 
 from __future__ import annotations
@@ -43,14 +52,14 @@ from eval_common import (
     GenParams,
     build_chat_kwargs,
     exact_match_score,
+    expand_repeats,
     load_gated,
     make_client,
-    make_repeat_samples,
     parse_mcq_letter,
     run_parallel,
+    select_rows,
     stable_seed,
     strip_think,
-    subsample,
     write_outputs,
 )
 
@@ -64,12 +73,16 @@ GPQA_INSTRUCTION = (
 )
 
 
-def prepare_options(sample: dict[str, Any]) -> tuple[list[str], str]:
+def prepare_options(
+    sample: dict[str, Any], seed: int | None = None
+) -> tuple[list[str], str]:
     """Deterministically shuffles the four options and returns the answer letter.
 
     Uses a stable per-question seed (:func:`eval_common.stable_seed`) so the
     shuffle is reproducible run-to-run (unlike ``PYTHONHASHSEED``-salted
-    ``hash()``).
+    ``hash()``). When ``seed`` is set, it's folded into the shuffle key so
+    changing the seed also reorders the options — useful for checking that a
+    correct answer isn't an artifact of its position.
 
     Returns:
         A ``(shuffled_options, correct_letter)`` tuple.
@@ -80,7 +93,9 @@ def prepare_options(sample: dict[str, Any]) -> tuple[list[str], str]:
         sample["Incorrect Answer 2"],
         sample["Incorrect Answer 3"],
     ]
-    rng = random.Random(stable_seed(sample["Question"]))
+    question = sample["Question"]
+    key = f"{seed}:{question}" if seed is not None else question
+    rng = random.Random(stable_seed(key))
     rng.shuffle(options)
     correct_letter = "ABCD"[options.index(sample["Correct Answer"])]
     return options, correct_letter
@@ -109,6 +124,18 @@ def build_messages(
     return messages
 
 
+def reasoning_text(message: Any) -> str | None:
+    """Reads the reasoning a server returns beside ``content``, if any.
+
+    MAX names the field ``reasoning`` and other OpenAI-compatible servers
+    ``reasoning_content``. Returns ``None`` when the reasoning is inline in
+    ``content`` (inside ``<think>``) or absent.
+    """
+    return getattr(message, "reasoning", None) or getattr(
+        message, "reasoning_content", None
+    )
+
+
 def infer(
     client: ChatClient,
     model: str,
@@ -116,11 +143,16 @@ def infer(
     params: GenParams,
     root_preamble: str,
     system_prompt: str,
+    save_responses: bool = False,
 ) -> dict[str, Any]:
-    """Runs and grades a single (repeat, question) sample."""
+    """Runs and grades a single (repeat, question) sample.
+
+    With ``save_responses``, the row also carries the response text as
+    ``response`` and any separately returned reasoning as ``reasoning``.
+    """
     repeat_index, prompt_index, sample = item
     question = sample["Question"]
-    options, correct_letter = prepare_options(sample)
+    options, correct_letter = prepare_options(sample, params.seed)
     options_str = "\n".join(
         f"{chr(65 + i)}) {opt}" for i, opt in enumerate(options)
     )
@@ -131,7 +163,7 @@ def infer(
     )
     choice = resp.choices[0]
     correct, predicted = grade(choice.message.content, correct_letter)
-    return {
+    row = {
         "prompt_index": prompt_index,
         "repeat_index": repeat_index,
         "question": question[:120],
@@ -143,6 +175,10 @@ def infer(
             resp.usage.completion_tokens if resp.usage else 0
         ),
     }
+    if save_responses:
+        row["response"] = choice.message.content
+        row["reasoning"] = reasoning_text(choice.message)
+    return row
 
 
 def load_gpqa_dataset() -> list[dict[str, Any]]:
@@ -158,30 +194,44 @@ def load_gpqa_dataset() -> list[dict[str, Any]]:
 
 def run_eval(
     client: ChatClient,
-    dataset: list[dict[str, Any]],
+    indexed_dataset: list[tuple[int, dict[str, Any]]],
     model: str,
     repeats: int,
     workers: int,
     params: GenParams,
     root_preamble: str,
     system_prompt: str,
+    out_dir: str | None = None,
+    save_responses: bool = False,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    """Runs GPQA-diamond over ``dataset`` with ``repeats`` and returns results.
+    """Runs GPQA-diamond over ``indexed_dataset`` with ``repeats``.
 
     Each ``(repeat, question)`` pair is submitted independently. A failed/
-    timed-out request is recorded as an incorrect row, never dropped.
+    timed-out request is recorded as an incorrect row, never dropped. When
+    ``out_dir`` is set, results stream to ``results.jsonl`` as they complete,
+    so a crash mid-run doesn't lose already-finished samples. With
+    ``save_responses``, each row also carries the full response text (see
+    :func:`infer`).
 
     Returns:
         A ``(results, score)`` tuple.
     """
-    samples = make_repeat_samples(dataset, repeats)
+    samples = expand_repeats(indexed_dataset, repeats)
     print(
-        f"GPQA-diamond: evaluating {len(dataset)} questions x {repeats} repeats "
-        f"= {len(samples)} total samples"
+        f"GPQA-diamond: evaluating {len(indexed_dataset)} questions x "
+        f"{repeats} repeats = {len(samples)} total samples"
     )
 
     def fn(item: tuple[int, int, dict[str, Any]]) -> dict[str, Any]:
-        return infer(client, model, item, params, root_preamble, system_prompt)
+        return infer(
+            client,
+            model,
+            item,
+            params,
+            root_preamble,
+            system_prompt,
+            save_responses,
+        )
 
     def on_error(
         item: tuple[int, int, dict[str, Any]], exc: Exception
@@ -196,7 +246,7 @@ def run_eval(
         }
 
     results, errors = run_parallel(
-        samples, fn, on_error, workers, "GPQA-diamond"
+        samples, fn, on_error, workers, "GPQA-diamond", out_dir=out_dir
     )
     return results, exact_match_score(results, len(samples), errors)
 
@@ -212,7 +262,16 @@ def run_eval(
     "--sample-size",
     type=int,
     default=None,
-    help="Max questions (evenly sampled). Empty = full dataset. Applied before repeats.",
+    help="Max questions (evenly sampled). Empty = full dataset. Applied "
+    "before repeats. Mutually exclusive with --row-ids.",
+)
+@click.option(
+    "--row-ids",
+    default=None,
+    help="Explicit comma-separated dataset row indices to evaluate, e.g. "
+    "'3,17,42' (indices into the full dataset, order/duplicates preserved). "
+    "Mutually exclusive with --sample-size — use this to re-run exactly the "
+    "rows that errored or looked wrong last time.",
 )
 @click.option("--repeats", type=int, default=5, help="Repeats per question.")
 @click.option(
@@ -243,10 +302,17 @@ def run_eval(
     default="GPQA",
     help="Prefix for the GITHUB_ENV metric keys the job summary reads.",
 )
+@click.option(
+    "--save-responses",
+    is_flag=True,
+    help="Also record each response's full text, reasoning included, in "
+    "results.jsonl. Off by default: a reasoning trace can run to --max-tokens.",
+)
 def main(
     base_url: str,
     model: str,
     sample_size: int | None,
+    row_ids: str | None,
     repeats: int,
     seed: int | None,
     workers: int,
@@ -257,22 +323,25 @@ def main(
     root_preamble: str,
     system_prompt: str,
     metric_prefix: str,
+    save_responses: bool,
 ) -> None:
     """Runs GPQA-diamond against a running OpenAI-compatible server and scores it."""
     client = make_client(base_url)
-    dataset = subsample(load_gpqa_dataset(), sample_size)
+    indexed_dataset = select_rows(load_gpqa_dataset(), sample_size, row_ids)
     params = GenParams(
         max_tokens=max_tokens, temperature=temperature, top_p=top_p, seed=seed
     )
     results, summary = run_eval(
         client,
-        dataset,
+        indexed_dataset,
         model,
         repeats,
         workers,
         params,
         root_preamble,
         system_prompt,
+        out_dir=out_dir,
+        save_responses=save_responses,
     )
     write_outputs(
         out_dir, results, summary, metric_prefix, label="GPQA-diamond"

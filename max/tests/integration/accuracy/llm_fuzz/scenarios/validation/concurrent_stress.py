@@ -650,7 +650,7 @@ class ConcurrentStress(BaseScenario):
                     test_name,
                     Verdict.FAIL,
                     detail=f"{len(errors)} error(s): {'; '.join(errors)}",
-                    response_body=content if content else "",
+                    response_body=content or "",
                 )
             ]
         return [

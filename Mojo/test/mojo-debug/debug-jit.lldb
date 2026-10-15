@@ -1,0 +1,28 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+
+# RUN: %debug -X -b -X -o -X 'b jit.mojo:16' -X -o -X 'run' '%S/Inputs/jit.mojo' | FileCheck %s
+# TODO(MOTO-1007): Remove this once we have a fix for asan.
+# UNSUPPORTED: asan
+
+# COM: Here we test debugging of a source file passed by relative path.
+# RUN: mkdir -p debug-jit/Inputs
+# RUN: cp '%S/Inputs/jit.mojo' debug-jit/Inputs/jit.mojo
+# RUN: %debug -X -b -X -o -X 'b jit.mojo:16' -X -o -X run  'debug-jit/Inputs/jit.mojo' | FileCheck %s
+
+# CHECK-NOT: hello
+# CHECK: Process {{.*}} stopped
+# CHECK: stop reason = breakpoint 1.1
+# CHECK: JIT(0x{{.*}})`{{.*}}jitbp{{.*}} at jit.mojo:16:
+# CHECK: -> 16        print("hello\n")
+

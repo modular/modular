@@ -19,11 +19,12 @@ from dataclasses import dataclass
 from typing import Any, ClassVar, Literal
 
 import numpy as np
+from max import tree
 from max.driver import Buffer, Device
 from max.engine import InferenceSession, Model
 from max.graph import Graph
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.kv_cache import KVCacheInputsInterface
+from max.nn.kv_cache import KVCacheInputs
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
@@ -34,6 +35,7 @@ from max.pipelines.lib import (
     PipelineConfig,
 )
 from max.pipelines.lib.log_probabilities import LogProbabilitiesMixin
+from max.pipelines.lib.memory_estimation import MemoryPlan
 
 from .batch_processor import Llama3BatchProcessor
 from .data_parallel_llama import create_graph as create_data_parallel_graph
@@ -88,7 +90,7 @@ class Llama3Inputs(ModelInputs):
                 self.return_n_logits,
                 splits_tensor,
                 *(
-                    self.kv_cache_inputs.flatten()
+                    tree.leaves(self.kv_cache_inputs)
                     if self.kv_cache_inputs is not None
                     else ()
                 ),
@@ -100,7 +102,7 @@ class Llama3Inputs(ModelInputs):
             self.return_n_logits,
             *self.signal_buffers,
             *(
-                self.kv_cache_inputs.flatten()
+                tree.leaves(self.kv_cache_inputs)
                 if self.kv_cache_inputs is not None
                 else ()
             ),
@@ -121,7 +123,7 @@ class LlamaModelBase(
     model: Model
     """Compiled and initialized model ready for inference."""
 
-    norm_method: Literal["rms_norm"] | Literal["layer_norm"]
+    norm_method: Literal["rms_norm", "layer_norm"]
     """Normalization layer."""
 
     attention_bias: bool = False
@@ -137,6 +139,8 @@ class LlamaModelBase(
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
+        *,
+        memory_plan: MemoryPlan,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
@@ -153,17 +157,18 @@ class LlamaModelBase(
             devices,
             kv_cache_config,
             weights,
-            adapter,
-            return_logits,
-            return_hidden_states,
+            adapter=adapter,
+            return_logits=return_logits,
+            return_hidden_states=return_hidden_states,
             max_batch_size=max_batch_size,
+            memory_plan=memory_plan,
         )
         self.model = self.load_model(session)
 
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> Llama3Inputs:
         """Delegates to the batch processor and narrows to ``Llama3Inputs``."""
@@ -178,26 +183,15 @@ class LlamaModelBase(
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         assert isinstance(model_inputs, Llama3Inputs)
         assert model_inputs.kv_cache_inputs is not None
-        if self.pipeline_config.model.data_parallel_degree > 1:
-            model_outputs = self.model.execute(*model_inputs.buffers)
-        elif self._lora_manager:
-            assert model_inputs.lora is not None
-            model_outputs = self.model.execute(
-                model_inputs.tokens,
-                model_inputs.input_row_offsets,
-                model_inputs.return_n_logits,
-                *model_inputs.lora.buffers(),
-                *model_inputs.signal_buffers,
-                *model_inputs.kv_cache_inputs.flatten(),
-            )
-        else:
-            model_outputs = self.model.execute(*model_inputs.buffers)
+        model_outputs = self.model.execute(*model_inputs.buffers)
 
         assert self.batch_processor is not None
         return self.batch_processor.process_outputs(model_outputs)
 
     def _create_model_config(self, state_dict: dict[str, Any]) -> Any:
-        model_config = Llama3Config.initialize(self.pipeline_config)
+        model_config = Llama3Config.initialize(
+            self.pipeline_config, max_seq_len=self.max_seq_len
+        )
         model_config.finalize(
             huggingface_config=self.huggingface_config,
             state_dict=state_dict,
@@ -247,7 +241,9 @@ class LlamaModelBase(
 
         with Graph(
             getattr(self.huggingface_config, "model_type", "llama3"),
-            input_types=dist_model.input_types(self.kv_params),
+            input_types=self._bind_graph_inputs(
+                dist_model.input_tree(self.kv_params)
+            ),
         ) as graph:
             tokens, input_row_offsets, return_n_logits, *variadic_args = (
                 graph.inputs
@@ -280,9 +276,6 @@ class LlamaModelBase(
         assert isinstance(model_config, Llama3Config)
         single_model: Llama3 = Llama3(model_config)
 
-        if self._lora_manager:
-            self._lora_manager.init_weights(single_model, state_dict)
-
         single_model.load_state_dict(
             state_dict,
             override_quantization_encoding=True,
@@ -293,8 +286,8 @@ class LlamaModelBase(
 
         with Graph(
             "llama3",
-            input_types=single_model.input_types(
-                self.kv_params, self._lora_manager
+            input_types=self._bind_graph_inputs(
+                single_model.input_tree(self.kv_params)
             ),
         ) as graph:
             (
@@ -303,8 +296,6 @@ class LlamaModelBase(
                 return_n_logits,
                 *rest,
             ) = graph.inputs
-            if self._lora_manager:
-                rest = self._lora_manager.bind_graph_inputs(rest)
             kv_collections = self._unflatten_kv_inputs(rest)
             outputs = single_model(
                 tokens.tensor,
@@ -320,7 +311,7 @@ class Llama3Model(LlamaModelBase):
     """Llama 3 pipeline model implementation."""
 
     config_class: type[Llama3Config] = Llama3Config
-    norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm"
+    norm_method: Literal["rms_norm", "layer_norm"] = "rms_norm"
     """Normalization layer."""
 
     def __init__(
@@ -330,6 +321,8 @@ class Llama3Model(LlamaModelBase):
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
+        *,
+        memory_plan: MemoryPlan,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
@@ -341,8 +334,9 @@ class Llama3Model(LlamaModelBase):
             devices,
             kv_cache_config,
             weights,
-            adapter,
-            return_logits,
-            return_hidden_states,
+            adapter=adapter,
+            return_logits=return_logits,
+            return_hidden_states=return_hidden_states,
             max_batch_size=max_batch_size,
+            memory_plan=memory_plan,
         )

@@ -13,7 +13,7 @@
 
 from std.math import isclose
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Coord, TileTensor, coord, row_major
 
 from nn.bicubic import cpu_bicubic_kernel, gpu_bicubic_kernel, resize_bicubic
@@ -139,7 +139,7 @@ def test_bicubic_kernel[
         "--------------------------------now we want to call the bicubic"
         " upsampling kernel--------------------------------"
     )
-    # Call the bicubic upsampling kernel - convert to LayoutTensor
+    # Call the bicubic upsampling kernel.
     resize_bicubic[target="cpu"](output_host, input_host, ctx)
     print(
         "--------------------------------after calling the bicubic upsampling"
@@ -679,14 +679,16 @@ def test_large_image_gpu_launch[dtype: DType](ctx: DeviceContext) raises:
         dtype,
         output_origin=output_dev_nd.origin,
         OutputLayoutType=output_dev_nd.LayoutType,
+        OutputEngine=output_dev_nd.Engine,
         input_origin=ImmOrigin(input_dev_nd.origin),
         InputLayoutType=input_dev_nd.LayoutType,
+        InputEngine=input_dev_nd.Engine,
     ]
 
     # This would fail with block_dim=(64, 64) = 4096 threads.
     ctx.enqueue_function[kernel](
         output_dev_nd,
-        input_dev_nd.as_immut(),
+        input_dev_nd.as_imm(),
         grid_dim=(1, 3),
         block_dim=(256,),
     )
@@ -718,10 +720,10 @@ def test_large_image_gpu_launch[dtype: DType](ctx: DeviceContext) raises:
 
 def main() raises:
     with DeviceContext() as ctx:
-        test_bicubic_kernel[DType.float32,](  # data_type
+        test_bicubic_kernel[.float32,](  # data_type
             coord[1, 3, 5, 5],  # input  (NCHW)
             coord[1, 3, 10, 10],  # output (NCHW)
             ctx,
         )
 
-        test_large_image_gpu_launch[DType.float32](ctx)
+        test_large_image_gpu_launch[.float32](ctx)

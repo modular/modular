@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from typing import Any, ClassVar, Literal
 
 import numpy as np
+from max import tree
 from max._core.engine import Model
 from max.driver import Buffer, is_virtual_device_mode
 from max.dtype import DType
@@ -26,6 +27,9 @@ from max.graph import Graph
 from max.nn.comm.ep import EPCommInitializer, EPConfig
 from max.nn.comm.ep.ep_config import calculate_ep_max_tokens_per_rank
 from max.nn.comm.ep.ep_manager import EPBatchManager
+from max.pipelines.lib.config.model_config import (
+    _select_quantization_encoding,
+)
 from max.pipelines.lib.interfaces import AlwaysSignalBuffersMixin
 from max.pipelines.modeling.config_enums import supported_encoding_dtype
 from max.pipelines.weights.quant import parse_quant_config
@@ -73,7 +77,11 @@ class Qwen3Inputs(Llama3Inputs):
         return (
             *base,
             *self.signal_buffers,
-            *(self.kv_cache_inputs.flatten() if self.kv_cache_inputs else ()),
+            *(
+                tree.leaves(self.kv_cache_inputs)
+                if self.kv_cache_inputs
+                else ()
+            ),
             *self.ep_inputs,
         )
 
@@ -91,7 +99,7 @@ class Qwen3Model(AlwaysSignalBuffersMixin, LlamaModelBase):
     )
 
     model: Model
-    norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm"
+    norm_method: Literal["rms_norm", "layer_norm"] = "rms_norm"
     attention_bias: bool = False
     state_dict: dict[str, Any]
 
@@ -103,7 +111,7 @@ class Qwen3Model(AlwaysSignalBuffersMixin, LlamaModelBase):
 
         Args:
             state_dict: Model weight state dict, required for non-bfloat16
-                dispatch dtypes (e.g. FP8) to parse the dispatch quantization
+                dispatch dtypes (such as FP8) to parse the dispatch quantization
                 configuration.
         """
         ep_size = self.pipeline_config.runtime.ep_size
@@ -127,12 +135,10 @@ class Qwen3Model(AlwaysSignalBuffersMixin, LlamaModelBase):
             data_parallel_degree=data_parallel_degree,
         )
 
-        encoding = self.pipeline_config.model.quantization_encoding
-        dispatch_dtype = (
-            supported_encoding_dtype(encoding)
-            if encoding is not None
-            else DType.bfloat16
+        encoding = _select_quantization_encoding(
+            self.pipeline_config.model, Qwen3Config.DEFAULT_ENCODING
         )
+        dispatch_dtype = supported_encoding_dtype(encoding)
 
         dispatch_quant_config = None
         if dispatch_dtype != DType.bfloat16 and state_dict is not None:
@@ -155,7 +161,9 @@ class Qwen3Model(AlwaysSignalBuffersMixin, LlamaModelBase):
     @override
     def _create_model_config(self, state_dict: dict[str, Any]) -> Qwen3Config:
         model_config = Qwen3Config.initialize_from_config(
-            self.pipeline_config, self.huggingface_config
+            self.pipeline_config,
+            self.huggingface_config,
+            max_seq_len=self.max_seq_len,
         )
         model_config.finalize(
             huggingface_config=self.huggingface_config,

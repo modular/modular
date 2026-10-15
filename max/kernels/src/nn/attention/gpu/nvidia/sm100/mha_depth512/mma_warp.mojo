@@ -38,8 +38,8 @@ CTA role split (cta_group=2):
 """
 
 from std.sys import size_of
-from std.gpu.primitives.cluster import block_rank_in_cluster
-from std.gpu.compute.arch.mma_nvidia_sm100 import (
+from max.gpu.primitives.cluster import block_rank_in_cluster
+from max.gpu.compute.arch.mma_nvidia_sm100 import (
     UMMAKind,
     mma_arrive_multicast,
 )
@@ -56,7 +56,7 @@ from .smem import Depth512AttentionSMem
 from std.utils.index import Index
 
 
-@always_inline
+@inline(.always)
 def depth512_mma[
     MaskType: MHAMask,
     qkv_dtype: DType,
@@ -136,18 +136,15 @@ def depth512_mma[
     # P@V MMA types are defined inside pv_mma (depth-dependent).
 
     # ---- TMEM addresses ------------------------------------------------------
-    # `tmem_addr` is read ONCE in the kernel prologue (post-`cluster_sync`) and
-    # passed in by register; do NOT re-read `smem.tmem_addr_ptr()` here (see the
-    # publish-handshake note in `kernel.mojo`).
-    o_tmem = tmem_addr + UInt32(config.TMEM_O)
-    o_hi_tmem = tmem_addr + UInt32(config.TMEM_O_hi)
-    s_even_tmem = tmem_addr + UInt32(config.TMEM_S_even)
-    s_odd_tmem = tmem_addr + UInt32(config.TMEM_S_odd)
+    var o_tmem = tmem_addr + UInt32(config.TMEM_O)
+    var o_hi_tmem = tmem_addr + UInt32(config.TMEM_O_hi)
+    var s_even_tmem = tmem_addr + UInt32(config.TMEM_S_even)
+    var s_odd_tmem = tmem_addr + UInt32(config.TMEM_S_odd)
 
     # ---- SMEM descriptors ----------------------------------------------------
 
     # Q: [BM, BK0] per depth sub-stage, k_major.
-    q_desc = smem_descriptor[
+    var q_desc = smem_descriptor[
         BMN=BM,
         BK=BK0,
         swizzle_mode=config.swizzle_mode,
@@ -155,7 +152,7 @@ def depth512_mma[
     ](smem.q_smem())
 
     # K: [BN//2, BK0] per CTA per pipeline slot, k_major.
-    kv_desc_k = smem_descriptor[
+    var kv_desc_k = smem_descriptor[
         BMN=BN // 2,
         BK=BK0,
         swizzle_mode=config.swizzle_mode,
@@ -163,7 +160,7 @@ def depth512_mma[
     ](smem.kv_smem_base())
 
     # P: descriptor with [BM, BN] strides (matching the full P buffer layout).
-    p_desc = smem_descriptor[
+    var p_desc = smem_descriptor[
         BMN=BM,
         BK=BN,
         swizzle_mode=config.swizzle_mode,
@@ -173,7 +170,7 @@ def depth512_mma[
     # V: [BK1, v_cols_per_cta] per CTA per pipeline slot, mn_major.
     # Each slot holds one [BK1, v_cols_per_cta] tile. The MMA with
     # cta_group=2 reads v_cols_per_cta cols from each CTA.
-    kv_desc_v = smem_descriptor[
+    var kv_desc_v = smem_descriptor[
         BMN=config.v_cols_per_cta,
         BK=BK1,
         swizzle_mode=config.swizzle_mode,
@@ -233,7 +230,7 @@ def depth512_mma[
     if not is_leader:
         return
 
-    e = elect()
+    var e = elect()
 
     # CTA mask for multicast arrive: signal both CTAs in the pair.
     # 0b11 = (1 << cta_group) - 1 for cta_group=2.
@@ -241,9 +238,10 @@ def depth512_mma[
 
     # ---- Helper: P@V with depth-dependent commit strategy ---------------------
 
-    @parameter
-    @always_inline
-    def pv_mma(*, is_first: Bool):
+    @inline(.always)
+    def pv_mma(
+        *, is_first: Bool
+    ) {mut kv_pipeline, mut pipeline_o_lo, mut pipeline_o_hi, imm}:
         """Execute P@V multiplication(s) and commit O barriers.
 
         split_o: P@V_lo → commit O_mma_lo, then P@V_hi → commit O_mma_hi.

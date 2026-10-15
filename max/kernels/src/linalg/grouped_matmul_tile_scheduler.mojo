@@ -15,15 +15,15 @@
 
 from std.math import ceildiv
 
-from std.gpu import block_idx, grid_dim
+from max.gpu import block_idx, grid_dim
 
 from std.utils.fast_div import FastDiv
 from std.utils.index import Index, IndexList
-from layout import Layout, LayoutTensor
+from layout import ImmTileTensor, TensorLayout
 
 
 @fieldwise_init
-struct RasterOrder(TrivialRegisterPassable):
+struct RasterOrder(EnumLike, TrivialRegisterPassable):
     """Represents the rasterization order used when traversing output tiles."""
 
     var _value: Int32
@@ -31,11 +31,32 @@ struct RasterOrder(TrivialRegisterPassable):
     comptime AlongN = Self(0)
     comptime AlongM = Self(1)
 
-    @always_inline
+    comptime _enum_case_names = ParameterList.of[
+        "AlongN".value,
+        "AlongM".value,
+    ].values
+
+    comptime _enum_case_types = TypeList.splat[
+        ParameterList[Self._enum_case_names].size, NoneType
+    ].values
+
+    @inline(.always)
+    def _get_enum_discriminant(self) -> Int:
+        return Int(self._value)
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        comptime assert False, "RasterOrder has no payload"
+
+    @inline(.always)
     def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    @always_inline
+    @inline(.always)
     def __ne__(self, other: Self) -> Bool:
         return self._value != other._value
 
@@ -52,7 +73,7 @@ struct WorkInfo(TrivialRegisterPassable, Writable):
     var is_valid_tile: Bool
     var terminate: Bool
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self,
     ):
@@ -61,15 +82,15 @@ struct WorkInfo(TrivialRegisterPassable, Writable):
         self.is_valid_tile = False
         self.terminate = False
 
-    @always_inline
+    @inline(.always)
     def is_valid(self) -> Bool:
         return self.is_valid_tile
 
-    @always_inline
+    @inline(.always)
     def is_done(self) -> Bool:
         return self.terminate
 
-    @no_inline
+    @inline(.never)
     def write_to(self, mut writer: Some[Writer]):
         writer.write(
             "(",
@@ -94,7 +115,7 @@ struct WorkInfo(TrivialRegisterPassable, Writable):
 # ought to enable swapAB for grouped matmul.
 struct TileScheduler[
     group_offsets_origin: ImmOrigin,
-    offsets_layout: Layout,
+    OffsetsLayoutType: TensorLayout,
     //,
     *,
     static_MN: Int,  # if swapAB, then static_MN is M, otherwise N
@@ -110,7 +131,7 @@ struct TileScheduler[
 
     Parameters:
         group_offsets_origin: Memory origin of `group_offsets` (inferred).
-        offsets_layout: Memory layout of `group_offsets` (inferred).
+        OffsetsLayoutType: Layout type of `group_offsets` (inferred).
         static_MN: Size of the static (non-reducing) output dimension. When
             `swapAB` is true this is M, otherwise N.
         tile_shape: Per-tile shape `(M, N, K)` of output tiles in the
@@ -125,8 +146,8 @@ struct TileScheduler[
     """
 
     var num_active_experts: Int
-    var group_offsets: LayoutTensor[
-        DType.uint32, Self.offsets_layout, Self.group_offsets_origin
+    var group_offsets: ImmTileTensor[
+        .uint32, Self.OffsetsLayoutType, Self.group_offsets_origin
     ]
     var current_iter: Int32  # Tracks the scheduler's progress across kernel launches
     var current_group_idx: UInt32
@@ -135,7 +156,7 @@ struct TileScheduler[
     comptime cta_group_tile_shape = Index(
         Self.tile_shape[0] * Self.cta_group, Self.tile_shape[1] * Self.cta_group
     )
-    comptime div_dynamic_block = FastDiv[DType.uint32](
+    comptime div_dynamic_block = FastDiv[.uint32](
         Self.cta_group_tile_shape[Self.dynamic_dim]
     )
     var current_dynamic_dim_cumsum: UInt32
@@ -146,12 +167,12 @@ struct TileScheduler[
 
     comptime kNum1DBlocksPerGroup: UInt32 = 16
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self,
         num_active_experts: Int,
-        group_offsets: LayoutTensor[
-            DType.uint32, Self.offsets_layout, Self.group_offsets_origin
+        group_offsets: ImmTileTensor[
+            .uint32, Self.OffsetsLayoutType, Self.group_offsets_origin
         ],
     ):
         comptime assert (
@@ -187,26 +208,23 @@ struct TileScheduler[
         self.current_dynamic_dim_cumsum = 0
         self.block_idx_start = 0
 
-    @always_inline
+    @inline(.always)
     def fetch_next_work(mut self) -> WorkInfo:
         self.current_iter += 1
         var next_block_idx = UInt32(self.current_iter) * UInt32(
             grid_dim.x
         ) + UInt32(block_idx.x)
-        var start_idx = rebind[Scalar[DType.uint32]](
-            self.group_offsets[Int(self.current_group_idx)]
-        )
+        var start_idx = self.group_offsets[Int(self.current_group_idx)]
 
+        var num_dynamic_dim_blocks: UInt32
         # Trim to the next group
         while True:
             if self.current_group_idx >= UInt32(self.num_active_experts):
                 # at this point, we finished all groups
                 return WorkInfo(0, 0, False, True)
 
-            end_idx = rebind[Scalar[DType.uint32]](
-                self.group_offsets[Int(self.current_group_idx + 1)]
-            )
-            current_dynamic_dim = end_idx - start_idx
+            var end_idx = self.group_offsets[Int(self.current_group_idx + 1)]
+            var current_dynamic_dim = end_idx - start_idx
             num_dynamic_dim_blocks = UInt32(
                 rebind[Scalar[Self.div_dynamic_block.uint_type]](
                     current_dynamic_dim
@@ -258,7 +276,7 @@ struct TileScheduler[
             False,
         )
 
-    @always_inline
+    @inline(.always)
     def _get_swizzled_block_idx(
         self,
         num_n_blocks: UInt32,
@@ -272,9 +290,7 @@ struct TileScheduler[
         var primary_num_blocks: UInt32 = (
             Self.num_static_dim_blocks if Self.swapAB else num_dynamic_dim_blocks
         )
-        var div_primary_num_blocks = FastDiv[DType.uint32](
-            Int(primary_num_blocks)
-        )
+        var div_primary_num_blocks = FastDiv[.uint32](Int(primary_num_blocks))
         comptime uint_type = div_primary_num_blocks.uint_type
         var block_idx = rebind[Scalar[uint_type]](_block_idx)
         if not Self.swizzle:
@@ -295,7 +311,7 @@ struct TileScheduler[
         var num_blocks_per_group = (
             secondary_num_blocks * Self.kNum1DBlocksPerGroup
         )
-        var div_num_blocks_per_group = FastDiv[DType.uint32](
+        var div_num_blocks_per_group = FastDiv[.uint32](
             Int(num_blocks_per_group)
         )
         var group_idx = UInt32(block_idx / div_num_blocks_per_group)
@@ -304,9 +320,7 @@ struct TileScheduler[
         var num_blocks_in_group = min(
             Self.kNum1DBlocksPerGroup, primary_num_blocks - first_block_idx
         )
-        var div_num_blocks_in_group = FastDiv[DType.uint32](
-            Int(num_blocks_in_group)
-        )
+        var div_num_blocks_in_group = FastDiv[.uint32](Int(num_blocks_in_group))
         comptime uint_type2 = div_num_blocks_in_group.uint_type
         m_block_idx = first_block_idx + UInt32(
             in_group_idx % div_num_blocks_in_group

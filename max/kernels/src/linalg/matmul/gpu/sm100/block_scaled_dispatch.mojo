@@ -16,9 +16,9 @@
 
 
 from std.math import ceildiv
-from std.gpu.host import DeviceContext, get_gpu_target
-from std.gpu.primitives.grid_controls import PDLLevel
-from layout import Coord, Idx, Layout, TileTensor, row_major
+from max.gpu.host import DeviceContext
+from max.gpu.primitives.grid_controls import PDLLevel
+from layout import Coord, TileTensor
 from layout.tile_tensor import NullableTileTensor
 from std.logger import Logger
 from linalg.fp4_utils import (
@@ -30,23 +30,22 @@ from linalg.fp4_utils import (
     NVFP4_SF_DTYPE,
     get_scaling_kind,
 )
-from std.gpu.host.info import _is_sm10x_gpu
+from max.gpu.host.info import _is_sm10x_gpu
 from std.collections import Optional
 from linalg.utils import (
     elementwise_epilogue_type,
     elementwise_compute_lambda_type,
 )
-from std.utils.index import Index, IndexList
+from std.utils.index import Index
 from linalg.matmul.vendor.blas import matmul
-from std.memory import UnsafePointer
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.sys import size_of, simd_width_of
-from std.algorithm import elementwise
-from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from max.algorithm import elementwise
+from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from linalg.matmul.gpu.sm100.block_scaled_matmul import (
     blackwell_block_scaled_matmul_tma_umma_warp_specialized,
 )
-from linalg.matmul.gpu.sm100.config import BlockScaledMatmulConfig, GEMMKind
+from linalg.matmul.gpu.sm100.config import BlockScaledMatmulConfig
 from linalg.matmul.gpu.sm100_structured.default.tuning_configs import (
     TuningConfigSM100,
     _get_tuning_list_sm100_nvfp4,
@@ -128,7 +127,7 @@ def heuristic_and_outliers_dispatch[
     var m = Int(c.dim[0]())
 
     comptime scaling_kind = get_scaling_kind[
-        a_type, scales_dtype, SF_VECTOR_SIZE
+        a_type, scales_dtype, SF_VECTOR_SIZE, b_type
     ]()
     comptime is_fp4 = (
         scaling_kind == UMMAKind.KIND_MXF4NVF4
@@ -183,11 +182,10 @@ def heuristic_and_outliers_dispatch[
         _get_tuning_list_sm100_mxfp8(), "mxfp8_heuristic_outliers"
     )
 
-    @always_inline
-    def rule(x: TuningConfigSM100) {} -> Bool:
-        return x.K == static_K and x.N == static_N
-
-    comptime outlier_configs = outliers.find(rule=rule)
+    comptime outlier_configs = outliers.find(
+        rule=lambda (x: TuningConfigSM100) -> Bool: x.K == static_K
+        and x.N == static_N
+    )
 
     comptime for tuning_config in outlier_configs:
         if m >= tuning_config.M and m < tuning_config.M_end:
@@ -418,27 +416,11 @@ def _vendor_blas_block_scaled_matmul_with_epilogue[
     if m == 0 or n == 0:
         return
 
-    comptime if not elementwise_lambda_fn:
-        if not c.ptr:
-            raise "c must be allocated!"
-
-        matmul(
-            ctx,
-            c.value(),
-            a,
-            b,
-            a_scales=a_scales,
-            b_scales=b_scales,
-            transpose_b=True,
-            c_row_major=True,
-            alpha=tensor_sf,
-        )
-    else:
-        comptime epilogue = elementwise_lambda_fn.value()
+    comptime if case .Some(epilogue) = elementwise_lambda_fn:
         # Nvidia GPUs >= sm_100 arch support 32B load/store to global memory.
         comptime use_32b_simd = True
         comptime simd_size = 32 // size_of[c_type]() if use_32b_simd else (
-            simd_width_of[c_type, target=get_gpu_target()]()
+            simd_width_of[c_type, target=ctx.target]()
         )
 
         # If c is already allocated, we can just use the sm100 blockwise scaled fp8 matmul and
@@ -452,9 +434,7 @@ def _vendor_blas_block_scaled_matmul_with_epilogue[
                 var c_val = rebind[SIMD[c_type, simd_width]](
                     c_tt.load[width=simd_width](idx)
                 )
-                epilogue[c_type, simd_width, alignment=alignment](
-                    Index(idx[0].value(), idx[1].value()), c_val
-                )
+                epilogue[c_type, simd_width, alignment=alignment](idx, c_val)
 
             matmul(
                 ctx,
@@ -488,4 +468,19 @@ def _vendor_blas_block_scaled_matmul_with_epilogue[
             b_scales,
             tensor_sf,
             ctx,
+        )
+    else:
+        if not c.ptr:
+            raise "c must be allocated!"
+
+        matmul(
+            ctx,
+            c.value(),
+            a,
+            b,
+            a_scales=a_scales,
+            b_scales=b_scales,
+            transpose_b=True,
+            c_row_major=True,
+            alpha=tensor_sf,
         )

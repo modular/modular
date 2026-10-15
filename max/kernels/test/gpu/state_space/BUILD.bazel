@@ -1,4 +1,5 @@
 load("//bazel:api.bzl", "mojo_test")
+load("//max/kernels/src:deprecations.bzl", "IGNORED_POINTER_DEPRECATIONS_COPTS")
 
 package(default_visibility = ["//max:consumers"])
 
@@ -44,10 +45,20 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
+    "test_gated_delta_spec_ring.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
 }
 
 _GPU_MEMORY = {
-    "test_gated_delta.mojo": "3",
+    # These four each hold a ~4 GiB state or ring pool, to reach a row past a
+    # 32-bit offset.
+    "test_gated_delta.mojo": "6",
+    "test_gated_delta_conv1d.mojo": "6",
+    "test_gated_delta_spec_ring.mojo": "6",
+    "test_varlen_causal_conv1d.mojo": "6",
+    "bench_gated_delta_recurrence.mojo": "4",
 }
 
 [
@@ -55,6 +66,8 @@ _GPU_MEMORY = {
         name = src + ".test",
         size = "large",
         srcs = [src],
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+        enable_assertions = True,
         exec_properties = {
             "test.resources:gpu-memory": _GPU_MEMORY.get(src, "2"),
         },
@@ -63,6 +76,7 @@ _GPU_MEMORY = {
         deps = [
             "//max:internal_utils",
             "//max:linalg",
+            "//max:testdata",
             "//max/kernels/src/state_space",
             "@mojo//:std",
         ],

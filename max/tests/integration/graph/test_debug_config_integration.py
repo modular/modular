@@ -200,12 +200,14 @@ class TestEnvVarMechanism:
             assert InferenceSession.debug.op_log_level == "DEBUG"
             assert InferenceSession.debug.print_style == PrintStyle.COMPACT
             assert InferenceSession.debug.ir_output_dir == "/tmp/ir"
+            assert InferenceSession.debug.uninitialized_read_mode == "report"
             print("PASS")
             """,
             env_overrides={
                 "MODULAR_DEBUG": (
                     "assert-level=all,op-log-level=DEBUG,"
-                    "print-style=compact,ir-output-dir=/tmp/ir"
+                    "print-style=compact,ir-output-dir=/tmp/ir,"
+                    "uninitialized-read-mode=report"
                 )
             },
         )
@@ -360,10 +362,12 @@ class TestPythonAPIMechanism:
             from max.engine import InferenceSession
             from max.graph import Graph
             InferenceSession.debug.sensible_mode = True
+            InferenceSession.debug.uninitialized_read_mode = "report"
             InferenceSession.debug.reset()
             assert InferenceSession.debug.nan_check is False
             assert InferenceSession.debug.device_sync_mode is False
             assert InferenceSession.debug.assert_level == ""
+            assert InferenceSession.debug.uninitialized_read_mode == ""
             assert Graph.debug.source_tracebacks is False
             print("PASS")
             """,
@@ -438,13 +442,14 @@ class TestReaderMigration:
     """The migrated reader sites see values set via the new Config keys."""
 
     def test_graph_source_tracebacks_via_modular_debug(self) -> None:
-        # graph.py's _SOURCE_TRACEBACKS_ENABLED reads from
-        # InferenceSession.debug.source_tracebacks, which goes through
-        # Config and picks up MODULAR_DEBUG=source-tracebacks.
+        # graph.py's _location() reads the live
+        # InferenceSession.debug.source_tracebacks value, which goes through
+        # Config and picks up MODULAR_DEBUG=source-tracebacks. This covers the
+        # public debug API rather than graph.py internals.
         result = _run_script(
             """\
-            from max.graph import graph
-            assert graph._SOURCE_TRACEBACKS_ENABLED is True
+            from max.engine import InferenceSession
+            assert InferenceSession.debug.source_tracebacks is True
             print("PASS")
             """,
             env_overrides={"MODULAR_DEBUG": "source-tracebacks"},
@@ -556,7 +561,7 @@ class TestReaderMigration:
             f"stdout: {result.stdout}\nstderr: {result.stderr}"
         )
         # The pipeline writes one file per stage with extensions like
-        # `.mo.mlir`, `.mo-pre-mogg.mlir`, `.mogg.mlir`, etc.  We just
+        # `.mo.mlir`, `.mo-pre-map.mlir`, `.mogg-pre-mgp.mlir`, etc.  We just
         # require at least one MLIR file landed.
         assert any(name.endswith(".mlir") for name in files), (
             f"Expected at least one .mlir file in {ir_dir}, got {files}"
@@ -567,6 +572,58 @@ class TestReaderMigration:
         # legacy `max.temps_dir` key was set.
         assert any(name.endswith(".mojo") for name in files), (
             f"Expected an emitted .mojo file in {ir_dir}, got {files}"
+        )
+
+    def test_pre_jit_emits_mojo_without_compiling(self, tmp_path: Path) -> None:
+        """Under `ir-output-dir` plus `pre-jit`, compiling a graph writes the
+        emitted `.mojo` and then fails naming the option, instead of
+        JIT-compiling the kernels. This is the in-process form of the
+        `gc-pipeline-pre-jit` mo-opt pipeline, for a caller that wants the
+        emitted Mojo and nothing else.
+        """
+        ir_dir = tmp_path / "ir-out"
+        ir_dir.mkdir()
+        result = _run_script(
+            """\
+            from max.driver import CPU
+            from max.dtype import DType
+            from max.engine import CompilationStopped, InferenceSession
+            from max.graph import DeviceRef, Graph, TensorType
+
+            graph = Graph(
+                "tiny_add_pre_jit",
+                forward=lambda x, y: x + y,
+                input_types=[
+                    TensorType(
+                        dtype=DType.float32,
+                        shape=(4,),
+                        device=DeviceRef.CPU(),
+                    ),
+                    TensorType(
+                        dtype=DType.float32,
+                        shape=(4,),
+                        device=DeviceRef.CPU(),
+                    ),
+                ],
+            )
+            session = InferenceSession(devices=[CPU()])
+            try:
+                session.load(graph)
+            except CompilationStopped:
+                print("PASS")
+            else:
+                raise AssertionError("load succeeded despite pre-jit")
+            """,
+            env_overrides={
+                "MODULAR_DEBUG": f"ir-output-dir={ir_dir},pre-jit",
+                "MODULAR_MAX_ENABLE_MODEL_IR_CACHE": "false",
+            },
+        )
+        _assert_pass(result)
+        files = sorted(p.name for p in ir_dir.iterdir())
+        assert any(name.endswith(".mojo") for name in files), (
+            f"Expected an emitted .mojo file in {ir_dir}, got {files}.\n"
+            f"stdout: {result.stdout}\nstderr: {result.stderr}"
         )
 
     def test_source_tracebacks_appear_in_ir_dump(self, tmp_path: Path) -> None:

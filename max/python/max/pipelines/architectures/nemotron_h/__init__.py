@@ -11,6 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Nemotron-H architecture: a hybrid decoder interleaving Mamba-2
+mixers, NoPE GQA attention, relu2 MLP blocks, and, in the Nemotron 3 MoE
+variants, mixture-of-experts blocks.
+"""
+
 from .arch import nemotron_h_arch
 from .model import NemotronHInputs, NemotronHModel
 from .model_config import NemotronHConfig

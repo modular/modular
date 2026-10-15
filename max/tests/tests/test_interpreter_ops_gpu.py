@@ -20,12 +20,18 @@ import operator
 import os
 from collections.abc import Generator, Sequence
 from typing import Any
+from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
 import torch
 from max import _interpreter
-from max._interpreter_ops import GC_FAMILIES, adopted_from_manifest
+from max._interpreter_ops import GC_FAMILIES, adopted_from_store
+from max._interpreter_ops.handlers import (
+    _handle_squeeze_shape,
+    _handle_tile,
+    _handle_unsqueeze_shape,
+)
 from max.driver import CPU, Accelerator, Buffer, accelerator_count
 from max.dtype import DType
 from max.experimental import functional as F
@@ -49,9 +55,9 @@ from max.experimental.functional import (
 )
 from max.experimental.realization_context import set_seed
 from max.experimental.sharding import (
+    DeviceMapping,
     DeviceMesh,
     Partial,
-    PlacementMapping,
     Replicated,
     Sharded,
 )
@@ -70,19 +76,23 @@ def _interpreter_only() -> Generator[None]:
         yield
 
 
+@pytest.fixture(autouse=True)
+def _seed_torch() -> None:
+    torch.manual_seed(42)
+
+
 @pytest.fixture(scope="session", autouse=True)
 def _require_warm_adoption() -> None:
     """Fail loudly unless the build-warmed eager-GC cache actually took effect.
 
     The numeric tests below pass whether the warm adopts or silently cold-
-    compiles, so this asserts adoption directly. ``XARCH_WARM_RLOCATION`` is set
+    compiles, so this asserts adoption directly. ``MAX_EAGER_WARM_STORE`` is set
     only on a warmed lane; its absence with an accelerator present means a new
     NVIDIA lane wasn't wired (checked at runtime, not in the BUILD select, since
     the pydeps lint aspect evaluates that select on non-NVIDIA lanes too). When
-    wired, ``adopted_from_manifest`` must hold for each family, else adoption
-    fell through to a cold recompile.
+    wired, ``adopted_from_store`` must hold for every family.
     """
-    if not os.environ.get("XARCH_WARM_RLOCATION"):
+    if not os.environ.get("MAX_EAGER_WARM_STORE"):
         if accelerator_count() > 0:
             raise RuntimeError(
                 "test_interpreter_ops_gpu ran on a GPU with no eager-GC warm"
@@ -93,13 +103,10 @@ def _require_warm_adoption() -> None:
         return
     # Derive from the registry, not a hand-maintained tuple, so this adoption
     # gate can't drift from the families the warm actually covers (MXF-533).
-    unadopted = [
-        f.name for f in GC_FAMILIES if not adopted_from_manifest(f.name)
-    ]
+    unadopted = [f.name for f in GC_FAMILIES if not adopted_from_store(f.name)]
     if unadopted:
         raise RuntimeError(
-            f"eager-GC warm is wired but {unadopted} did not adopt from the"
-            " manifest, a silent cold-compile fallback (arch/key drift)."
+            f"eager-GC warm is wired but {unadopted} did not load from it"
         )
 
 
@@ -108,8 +115,12 @@ DTYPE_TO_TORCH = {
     DType.float32: torch.float32,
     DType.float16: torch.float16,
     DType.bfloat16: torch.bfloat16,
+    DType.int8: torch.int8,
+    DType.int16: torch.int16,
     DType.int32: torch.int32,
     DType.int64: torch.int64,
+    DType.uint8: torch.uint8,
+    DType.uint16: torch.uint16,
     DType.uint32: torch.uint32,
     DType.uint64: torch.uint64,
     DType.bool: torch.bool,
@@ -357,9 +368,9 @@ class TestElementwiseGPU:
 
     def test_unsupported_op_raises_on_gpu(self) -> None:
         """Test that unsupported GPU ops raise an error."""
-        # atanh uses libm and is not supported on GPU
+        # GPU sweeps no float64 targets.
         a_torch = torch.tensor(
-            [0.1, 0.2, 0.3, 0.4], dtype=torch.float32, device="cuda"
+            [0.1, 0.2, 0.3, 0.4], dtype=torch.float64, device="cuda"
         )
 
         a = Tensor.from_dlpack(a_torch)
@@ -427,6 +438,7 @@ class TestElementwiseGPU:
             (F.sin, torch.sin),
             (F.cos, torch.cos),
             (F.tanh, torch.tanh),
+            (F.relu, torch.relu),
         ],
     )
     @pytest.mark.parametrize(
@@ -444,7 +456,15 @@ class TestElementwiseGPU:
     ) -> None:
         """Test unary ops on GPU with various dtypes."""
         # Float-only ops: skip for integer dtypes
-        float_only_ops = (F.exp, F.log, F.sqrt, F.sin, F.cos, F.tanh)
+        float_only_ops = (
+            F.exp,
+            F.log,
+            F.sqrt,
+            F.sin,
+            F.cos,
+            F.tanh,
+            F.relu,
+        )
         if op in float_only_ops and dtype in (DType.int32, DType.int64):
             pytest.skip("Op not tested for integer types")
 
@@ -472,6 +492,42 @@ class TestElementwiseGPU:
         result_torch = torch.from_dlpack(c)
         # Use relaxed tolerance for lower precision dtypes
         torch.testing.assert_close(result_torch, expected, rtol=1e-2, atol=1e-2)
+
+    @pytest.mark.parametrize(
+        "op,torch_func",
+        [
+            (F.log1p, torch.log1p),
+            (F.atanh, torch.atanh),
+            (F.erf, torch.erf),
+            (F.gelu, torch.nn.functional.gelu),
+        ],
+    )
+    @pytest.mark.parametrize(
+        "dtype", [DType.float32, DType.float16, DType.bfloat16]
+    )
+    def test_transcendental_unary_ops_gpu(
+        self, op: Any, torch_func: Any, dtype: DType
+    ) -> None:
+        """Test log1p, atanh, erf, and gelu on GPU over the swept float dtypes."""
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+        # Inside atanh's (-1, 1) domain; spans erf's small/large branch split.
+        a_torch = torch.tensor(
+            [-0.95, -0.5, -1e-3, 0.0, 0.25, 0.75, 0.95],
+            dtype=torch_dtype,
+            device="cuda",
+        )
+
+        a = Tensor.from_dlpack(a_torch)
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            c = op(a)
+
+        expected = torch_func(a_torch.float()).to(torch_dtype)
+        result_torch = torch.from_dlpack(c)
+        atol = 1e-6 if dtype == DType.float32 else 1e-2
+        torch.testing.assert_close(result_torch, expected, rtol=1e-2, atol=atol)
 
 
 class TestMatmulGPU:
@@ -770,6 +826,126 @@ class TestShapeRearrangeGPU:
         np.testing.assert_array_equal(
             torch.from_dlpack(out).cpu().numpy(), expected
         )
+
+
+class TestSqueezeUnsqueezeShapeGPU:
+    """mo.squeeze_shape and mo.unsqueeze_shape results land on the GPU.
+
+    No graph API emits these ops, so the tests call the handlers directly.
+    """
+
+    @staticmethod
+    def _gpu_op() -> MagicMock:
+        mock_result = MagicMock()
+        mock_result.type.device_ref = DeviceRef.GPU().to_mlir()
+        mock_op = MagicMock()
+        mock_op.results = [mock_result]
+        return mock_op
+
+    def test_squeeze_shape_on_gpu(self) -> None:
+        gpu = Accelerator()
+        shape = Buffer.from_numpy(np.array([2, 1, 3, 1, 1], dtype=np.int32)).to(
+            gpu
+        )
+        indices = Buffer.from_numpy(np.array([-1, 1, 3], dtype=np.int64)).to(
+            gpu
+        )
+
+        (out,) = _handle_squeeze_shape(self._gpu_op(), [shape, indices])
+
+        assert isinstance(out, Buffer)
+        assert out.device == gpu
+        result = out.to_numpy()
+        assert result.dtype == np.int32
+        np.testing.assert_array_equal(result, [2, 3])
+
+    def test_unsqueeze_shape_on_gpu(self) -> None:
+        gpu = Accelerator()
+        shape = Buffer.from_numpy(
+            np.array([10, 11, 12, 13], dtype=np.int32)
+        ).to(gpu)
+        indices = Buffer.from_numpy(np.array([0, -3, 3], dtype=np.int64)).to(
+            gpu
+        )
+
+        (out,) = _handle_unsqueeze_shape(self._gpu_op(), [shape, indices])
+
+        assert isinstance(out, Buffer)
+        assert out.device == gpu
+        result = out.to_numpy()
+        assert result.dtype == np.int32
+        np.testing.assert_array_equal(result, [1, 10, 11, 1, 1, 12, 13])
+
+
+class TestTileGPU:
+    """F.tile runs on the GPU without staging the input through the CPU."""
+
+    def test_tile_2d_gpu(self) -> None:
+        """F.tile on a 2-D GPU tensor along both axes."""
+        x_torch = torch.arange(6, dtype=torch.float32, device="cuda").reshape(
+            2, 3
+        )
+        x = Tensor.from_dlpack(x_torch)
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = F.tile(x, (2, 3))
+        expected = np.tile(x_torch.cpu().numpy(), (2, 3))
+        np.testing.assert_array_equal(
+            torch.from_dlpack(y).cpu().numpy(), expected
+        )
+
+    def test_tile_3d_gpu(self) -> None:
+        """F.tile on a 3-D GPU tensor along every axis."""
+        x_torch = torch.arange(24, dtype=torch.float32, device="cuda").reshape(
+            2, 3, 4
+        )
+        x = Tensor.from_dlpack(x_torch)
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = F.tile(x, (2, 1, 2))
+        expected = np.tile(x_torch.cpu().numpy(), (2, 1, 2))
+        np.testing.assert_array_equal(
+            torch.from_dlpack(y).cpu().numpy(), expected
+        )
+
+    def test_tile_integer_gpu(self) -> None:
+        """F.tile on an int32 GPU tensor."""
+        x_torch = torch.arange(6, dtype=torch.int32, device="cuda").reshape(
+            2, 3
+        )
+        x = Tensor.from_dlpack(x_torch)
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = F.tile(x, (1, 2))
+        expected = np.tile(x_torch.cpu().numpy(), (1, 2))
+        np.testing.assert_array_equal(
+            torch.from_dlpack(y).cpu().numpy(), expected
+        )
+
+    def test_tile_gpu_resident_repeats(self) -> None:
+        """A GPU-resident repeats tensor syncs to the host for sizing.
+
+        The public API always builds repeats on the host; this reaches the
+        handler the way a raw mo.tile op with device-resident repeats does.
+        """
+        gpu = Accelerator()
+        x = Buffer.from_numpy(np.array([[1, 2], [3, 4]], dtype=np.float32)).to(
+            gpu
+        )
+        reps = Buffer.from_numpy(np.array([2, 2], dtype=np.int64)).to(gpu)
+
+        (out,) = _handle_tile(MagicMock(), [x, reps])
+
+        assert isinstance(out, Buffer)
+        assert out.device == gpu
+        expected = np.tile(np.array([[1, 2], [3, 4]]), (2, 2))
+        np.testing.assert_array_equal(out.to_numpy(), expected)
 
 
 class TestRangeGPU:
@@ -1465,6 +1641,8 @@ class TestUnaryMixedOpsGPU:
             (DType.int32, DType.float32),
             (DType.int64, DType.float32),
             (DType.float32, DType.int64),
+            (DType.int32, DType.bool),
+            (DType.bool, DType.int32),
         ],
     )
     def test_cast(self, in_dtype: DType, out_dtype: DType) -> None:
@@ -2156,6 +2334,8 @@ class TestSelectGPU:
     @pytest.mark.parametrize(
         "dtype",
         [
+            DType.int8,
+            DType.int16,
             DType.int32,
             DType.int64,
         ],
@@ -2198,6 +2378,68 @@ class TestSelectGPU:
         y_torch = torch.arange(
             10, 70, 10, dtype=torch.float32, device="cuda"
         ).reshape(2, 3)
+
+        cond = Tensor.from_dlpack(cond_torch)
+        x = Tensor.from_dlpack(x_torch)
+        y = Tensor.from_dlpack(y_torch)
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            result = F.where(cond, x, y)
+
+        expected = torch.where(cond_torch, x_torch, y_torch)
+        torch.testing.assert_close(torch.from_dlpack(result), expected)
+
+    @pytest.mark.parametrize(
+        "dtype",
+        [
+            DType.uint8,
+            DType.uint16,
+            DType.uint32,
+            DType.uint64,
+        ],
+    )
+    def test_select_uint_gpu(self, dtype: DType) -> None:
+        """Test select op with unsigned integer dtypes on GPU."""
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+        cond_torch = torch.tensor(
+            [True, False, True, False],
+            dtype=torch.bool,
+            device="cuda",
+        )
+        x_torch = torch.tensor([1, 2, 3, 4], dtype=torch_dtype, device="cuda")
+        y_torch = torch.tensor(
+            [10, 20, 30, 40], dtype=torch_dtype, device="cuda"
+        )
+
+        cond = Tensor.from_dlpack(cond_torch)
+        x = Tensor.from_dlpack(x_torch)
+        y = Tensor.from_dlpack(y_torch)
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            result = F.where(cond, x, y)
+
+        # torch.where has no uint16/32/64 kernel (only uint8), so compute the
+        # oracle in int64 and cast back; F.where above already ran natively.
+        expected = torch.where(
+            cond_torch, x_torch.to(torch.int64), y_torch.to(torch.int64)
+        ).to(torch_dtype)
+        torch.testing.assert_close(torch.from_dlpack(result), expected)
+
+    def test_select_bool_values_gpu(self) -> None:
+        """Test select op where x/y (not just cond) are bool tensors on GPU."""
+        cond_torch = torch.tensor(
+            [True, False, True, False], dtype=torch.bool, device="cuda"
+        )
+        x_torch = torch.tensor(
+            [True, True, False, False], dtype=torch.bool, device="cuda"
+        )
+        y_torch = torch.tensor(
+            [False, False, True, True], dtype=torch.bool, device="cuda"
+        )
 
         cond = Tensor.from_dlpack(cond_torch)
         x = Tensor.from_dlpack(x_torch)
@@ -2359,7 +2601,6 @@ class TestLayerNormGPU:
         """Test layer_norm on GPU matches torch reference."""
         torch_dtype = DTYPE_TO_TORCH[dtype]
         shape = [3, 4, 5]
-        torch.manual_seed(42)
         x_torch = torch.randn(shape, dtype=torch_dtype, device="cuda")
         gamma_torch = torch.randn(shape[-1], dtype=torch_dtype, device="cuda")
         beta_torch = torch.randn(shape[-1], dtype=torch_dtype, device="cuda")
@@ -2389,7 +2630,6 @@ class TestLayerNormGPU:
         """Test layer_norm on a 2D tensor on GPU."""
         torch_dtype = DTYPE_TO_TORCH[dtype]
         shape = [4, 8]
-        torch.manual_seed(42)
         x_torch = torch.randn(shape, dtype=torch_dtype, device="cuda")
         gamma_torch = torch.randn(shape[-1], dtype=torch_dtype, device="cuda")
         beta_torch = torch.randn(shape[-1], dtype=torch_dtype, device="cuda")
@@ -2415,7 +2655,6 @@ class TestLayerNormGPU:
     def test_layer_norm_gpu_large(self) -> None:
         """Test layer_norm with a large feature dimension on GPU."""
         shape = [8, 128]
-        torch.manual_seed(42)
         x_torch = torch.randn(shape, dtype=torch.float32, device="cuda")
         gamma_torch = torch.randn(shape[-1], dtype=torch.float32, device="cuda")
         beta_torch = torch.randn(shape[-1], dtype=torch.float32, device="cuda")
@@ -2439,6 +2678,160 @@ class TestLayerNormGPU:
         )
         torch.testing.assert_close(
             torch.from_dlpack(y), expected, atol=1e-5, rtol=1e-5
+        )
+
+
+class TestRmsNormGPU:
+    """Tests for rms_norm on GPU."""
+
+    @pytest.mark.parametrize(
+        "dtype", [DType.float32, DType.float16, DType.bfloat16]
+    )
+    def test_rms_norm_gpu(self, dtype: DType) -> None:
+        """Test rms_norm (Llama-style) on GPU matches torch reference."""
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+        shape = [3, 4, 5]
+        x_torch = torch.randn(shape, dtype=torch_dtype, device="cuda")
+        weight_torch = torch.randn(shape[-1], dtype=torch_dtype, device="cuda")
+
+        x = Tensor.from_dlpack(x_torch)
+        weight = Tensor.from_dlpack(weight_torch)
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = F.rms_norm(x, weight, epsilon=1e-5)
+
+        variance = x_torch.to(torch.float32).pow(2).mean(-1, keepdim=True)
+        normed = x_torch.to(torch.float32) * torch.rsqrt(variance + 1e-5)
+        expected = (weight_torch.to(torch.float32) * normed).to(torch_dtype)
+        tol = 1e-2 if dtype == DType.bfloat16 else 1e-3
+        torch.testing.assert_close(
+            torch.from_dlpack(y), expected, atol=tol, rtol=tol
+        )
+
+    def test_rms_norm_gpu_multiply_before_cast(self) -> None:
+        """Test rms_norm (Gemma-style multiply_before_cast=True) on GPU."""
+        shape = [4, 6]
+        x_torch = torch.randn(shape, dtype=torch.bfloat16, device="cuda")
+        weight_torch = torch.randn(
+            shape[-1], dtype=torch.bfloat16, device="cuda"
+        )
+
+        x = Tensor.from_dlpack(x_torch)
+        weight = Tensor.from_dlpack(weight_torch)
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = F.rms_norm(
+                x,
+                weight,
+                epsilon=1e-6,
+                weight_offset=1.0,
+                multiply_before_cast=True,
+            )
+
+        x_f32 = x_torch.to(torch.float32)
+        variance = x_f32.pow(2).mean(-1, keepdim=True)
+        normed = x_f32 * torch.rsqrt(variance + 1e-6)
+        w_f32 = weight_torch.to(torch.float32) + 1.0
+        expected = (normed * w_f32).to(torch.bfloat16)
+        torch.testing.assert_close(
+            torch.from_dlpack(y), expected, atol=1e-2, rtol=1e-2
+        )
+
+
+class TestGroupNormGPU:
+    """Tests for group_norm on GPU."""
+
+    @staticmethod
+    def _group_norm_ref(
+        x: torch.Tensor,
+        gamma: torch.Tensor,
+        beta: torch.Tensor,
+        num_groups: int,
+        eps: float,
+    ) -> torch.Tensor:
+        """Torch reference via ``torch.nn.functional.group_norm``."""
+        return torch.nn.functional.group_norm(
+            x, num_groups, weight=gamma, bias=beta, eps=eps
+        )
+
+    @pytest.mark.parametrize(
+        "dtype", [DType.float32, DType.float16, DType.bfloat16]
+    )
+    def test_group_norm_gpu_4d(self, dtype: DType) -> None:
+        """Test group_norm on a 4D NCHW tensor on GPU."""
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+        x_torch = torch.randn(2, 4, 3, 3, dtype=torch_dtype, device="cuda")
+        gamma_torch = torch.randn(4, dtype=torch_dtype, device="cuda")
+        beta_torch = torch.randn(4, dtype=torch_dtype, device="cuda")
+
+        x = Tensor.from_dlpack(x_torch)
+        gamma = Tensor.from_dlpack(gamma_torch)
+        beta = Tensor.from_dlpack(beta_torch)
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = F.group_norm(x, gamma, beta, num_groups=2, epsilon=1e-5)
+
+        expected = self._group_norm_ref(
+            x_torch, gamma_torch, beta_torch, 2, 1e-5
+        )
+        tol = 1e-2 if dtype == DType.bfloat16 else 1e-3
+        torch.testing.assert_close(
+            torch.from_dlpack(y), expected, atol=tol, rtol=tol
+        )
+
+    def test_group_norm_gpu_3d_input(self) -> None:
+        """Test group_norm on a 3D [N, C, L] tensor on GPU."""
+        x_torch = torch.randn(2, 6, 8, dtype=torch.float32, device="cuda")
+        gamma_torch = torch.randn(6, dtype=torch.float32, device="cuda")
+        beta_torch = torch.randn(6, dtype=torch.float32, device="cuda")
+
+        x = Tensor.from_dlpack(x_torch)
+        gamma = Tensor.from_dlpack(gamma_torch)
+        beta = Tensor.from_dlpack(beta_torch)
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = F.group_norm(x, gamma, beta, num_groups=3, epsilon=1e-5)
+
+        expected = self._group_norm_ref(
+            x_torch, gamma_torch, beta_torch, 3, 1e-5
+        )
+        torch.testing.assert_close(
+            torch.from_dlpack(y), expected, atol=1e-4, rtol=1e-4
+        )
+
+    def test_group_norm_gpu_single_group(self) -> None:
+        """Test group_norm with num_groups=1 on GPU."""
+        x_torch = torch.randn(2, 4, 3, 3, dtype=torch.float32, device="cuda")
+        gamma_torch = torch.randn(4, dtype=torch.float32, device="cuda")
+        beta_torch = torch.randn(4, dtype=torch.float32, device="cuda")
+
+        x = Tensor.from_dlpack(x_torch)
+        gamma = Tensor.from_dlpack(gamma_torch)
+        beta = Tensor.from_dlpack(beta_torch)
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = F.group_norm(x, gamma, beta, num_groups=1, epsilon=1e-5)
+
+        expected = self._group_norm_ref(
+            x_torch, gamma_torch, beta_torch, 1, 1e-5
+        )
+        torch.testing.assert_close(
+            torch.from_dlpack(y), expected, atol=1e-4, rtol=1e-4
         )
 
 
@@ -3430,6 +3823,295 @@ class TestScatterNdGPU:
         )
 
 
+class TestScatterNdReduceGPU:
+    """GPU tests for the scatter_nd reduce variants (add/max/min/mul).
+
+    The GPU reduce kernels fold duplicate index vectors with a compare-and-swap
+    loop (KERN-3231), so the result is order-independent and matches the CPU
+    fold; ``test_duplicate_indices`` is the direct check that no update races.
+    """
+
+    _REDUCERS = {
+        "add": F.scatter_nd_add,
+        "max": F.scatter_nd_max,
+        "min": F.scatter_nd_min,
+        "mul": F.scatter_nd_mul,
+    }
+
+    @staticmethod
+    def _ref_torch(
+        reduce_op: str,
+        x_torch: "torch.Tensor",
+        updates_torch: "torch.Tensor",
+        indices_np: "Any",
+    ) -> "torch.Tensor":
+        """Sequential fold matching the kernel's per-index-vector reduction."""
+        import numpy as np
+
+        out = x_torch.clone()
+        index_depth = indices_np.shape[-1]
+        for batch_idx in np.ndindex(indices_np.shape[:-1]):
+            idx_vec = tuple(
+                int(indices_np[batch_idx + (k,)]) for k in range(index_depth)
+            )
+            update = updates_torch[batch_idx]
+            if reduce_op == "add":
+                out[idx_vec] = out[idx_vec] + update
+            elif reduce_op == "mul":
+                out[idx_vec] = out[idx_vec] * update
+            elif reduce_op == "max":
+                out[idx_vec] = torch.maximum(out[idx_vec], update)
+            else:
+                out[idx_vec] = torch.minimum(out[idx_vec], update)
+        return out
+
+    @pytest.mark.parametrize("reduce_op", ["add", "max", "min", "mul"])
+    @pytest.mark.parametrize(
+        "dtype", [DType.float32, DType.bfloat16, DType.int32]
+    )
+    def test_reduce_dtypes(self, reduce_op: str, dtype: DType) -> None:
+        """scatter_nd reduce on GPU across float and int dtypes."""
+        import numpy as np
+        from max.experimental.tensor import Tensor, realization_context
+
+        torch_dtype = {
+            DType.float32: torch.float32,
+            DType.bfloat16: torch.bfloat16,
+            DType.int32: torch.int32,
+        }[dtype]
+        x_torch = torch.full((4, 3), 4, dtype=torch_dtype, device="cuda")
+        updates_torch = (
+            torch.arange(1, 7, dtype=torch.float32, device="cuda")
+            .reshape(2, 3)
+            .to(torch_dtype)
+        )
+        indices_np = np.array([[0], [2]], dtype=np.int64)
+        indices_torch = torch.from_numpy(indices_np).to("cuda")
+
+        x = Tensor.from_dlpack(x_torch)
+        updates = Tensor.from_dlpack(updates_torch)
+        indices = Tensor.from_dlpack(indices_torch)
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = self._REDUCERS[reduce_op](x, updates, indices)
+
+        expected = self._ref_torch(
+            reduce_op, x_torch, updates_torch, indices_np
+        )
+        torch.testing.assert_close(
+            torch.from_dlpack(y), expected, rtol=1e-2, atol=1e-2
+        )
+
+    @pytest.mark.parametrize("reduce_op", ["add", "max", "min", "mul"])
+    def test_duplicate_indices(self, reduce_op: str) -> None:
+        """Two updates hit slot 1; the reducer must fold both, not race."""
+        import numpy as np
+        from max.experimental.tensor import Tensor, realization_context
+
+        # Base + update values chosen so folding both duplicates is observable
+        # for each reducer (dropping either changes slot 1).
+        base, update_vals = {
+            "add": (0.0, [10.0, 20.0, 30.0]),
+            "mul": (1.0, [2.0, 3.0, 4.0]),
+            "max": (0.0, [10.0, 20.0, 5.0]),
+            "min": (100.0, [30.0, 20.0, 50.0]),
+        }[reduce_op]
+
+        x_torch = torch.full((4,), base, dtype=torch.float32, device="cuda")
+        updates_torch = torch.tensor(
+            update_vals, dtype=torch.float32, device="cuda"
+        )
+        indices_np = np.array([[1], [1], [3]], dtype=np.int64)
+        indices_torch = torch.from_numpy(indices_np).to("cuda")
+
+        x = Tensor.from_dlpack(x_torch)
+        updates = Tensor.from_dlpack(updates_torch)
+        indices = Tensor.from_dlpack(indices_torch)
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = self._REDUCERS[reduce_op](x, updates, indices)
+
+        expected = self._ref_torch(
+            reduce_op, x_torch, updates_torch, indices_np
+        )
+        torch.testing.assert_close(
+            torch.from_dlpack(y), expected, rtol=0, atol=0
+        )
+
+
+class TestScatterElementsGPU:
+    """GPU tests for the axis-scatter family (scatter, add/max/min/mul).
+
+    ``scatter_nd`` has GPU coverage above; this covers the element-wise
+    variants, whose eager GPU graphs (native atomics for add,
+    compare-exchange for max/min/mul, KERN-3243) were only exercised through
+    the compiled integration tests. Each test also asserts the output stays
+    resident on the accelerator — the point of the GPU family.
+    """
+
+    _OPS = {
+        "scatter": F.scatter,
+        "add": F.scatter_add,
+        "max": F.scatter_max,
+        "min": F.scatter_min,
+        "mul": F.scatter_mul,
+    }
+
+    @staticmethod
+    def _ref_torch(
+        op_name: str,
+        x_torch: "torch.Tensor",
+        updates_torch: "torch.Tensor",
+        indices_np: "Any",
+        axis: int,
+    ) -> "torch.Tensor":
+        """Sequential fold matching the kernel's per-update semantics."""
+        import numpy as np
+
+        out = x_torch.clone()
+        for upd_idx in np.ndindex(tuple(updates_torch.shape)):
+            out_idx = list(upd_idx)
+            out_idx[axis] = int(indices_np[upd_idx])
+            t = tuple(out_idx)
+            if op_name == "scatter":
+                out[t] = updates_torch[upd_idx]
+            elif op_name == "add":
+                out[t] = out[t] + updates_torch[upd_idx]
+            elif op_name == "mul":
+                out[t] = out[t] * updates_torch[upd_idx]
+            elif op_name == "max":
+                out[t] = torch.maximum(out[t], updates_torch[upd_idx])
+            else:
+                out[t] = torch.minimum(out[t], updates_torch[upd_idx])
+        return out
+
+    @pytest.mark.parametrize("axis", [0, 1])
+    def test_scatter_overwrite_gpu(self, axis: int) -> None:
+        """Overwrite scatter on GPU keeps the output on-device.
+
+        Indices are distinct per destination: without an atomic update
+        callable, duplicate indices leave an unspecified winner, so there
+        is no deterministic reference for collisions.
+        """
+        import numpy as np
+        from max.experimental.tensor import Tensor, realization_context
+
+        device = Accelerator()
+        x_np = np.arange(12, dtype=np.float32).reshape(3, 4)
+        if axis == 0:
+            updates_np = np.array(
+                [[90.0, 91.0, 92.0, 93.0], [10.0, 20.0, 30.0, 40.0]],
+                dtype=np.float32,
+            )
+            # Distinct (row, col) per update.
+            indices_np = np.array([[0, 1, 2, 1], [2, 0, 1, 2]], dtype=np.int64)
+        else:
+            updates_np = np.array(
+                [[90.0, 91.0], [92.0, 93.0], [10.0, 20.0]], dtype=np.float32
+            )
+            # Distinct (row, col) per update.
+            indices_np = np.array([[3, 0], [2, 1], [0, 3]], dtype=np.int64)
+
+        x = Tensor(storage=Buffer.from_numpy(x_np).to(device))
+        updates = Tensor(storage=Buffer.from_numpy(updates_np).to(device))
+        indices = Tensor(storage=Buffer.from_numpy(indices_np).to(device))
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = F.scatter(x, updates, indices, axis=axis)
+
+        assert y.storage is not None
+        assert y.storage.device == device
+        # torch.testing.assert_close requires both sides on the same
+        # device, so fold the reference on cuda like the inputs.
+        expected = self._ref_torch(
+            "scatter",
+            torch.from_numpy(x_np).to("cuda"),
+            torch.from_numpy(updates_np).to("cuda"),
+            indices_np,
+            axis,
+        )
+        torch.testing.assert_close(
+            torch.from_dlpack(y), expected, rtol=0, atol=0
+        )
+
+    @pytest.mark.parametrize("reduce_op", ["add", "max", "min", "mul"])
+    @pytest.mark.parametrize("axis", [0, 1])
+    def test_scatter_reduce_gpu(self, reduce_op: str, axis: int) -> None:
+        """Reduce scatter on GPU folds duplicates and stays on-device.
+
+        Duplicate indices collide on one row (axis 0) or one column
+        (axis 1), exercising each reducer's atomic accumulate path.
+        """
+        import numpy as np
+        from max.experimental.tensor import Tensor, realization_context
+
+        device = Accelerator()
+        x_np = np.arange(12, dtype=np.float32).reshape(3, 4)
+        if axis == 0:
+            updates_np = np.array(
+                [[90.0, 91.0, 92.0, 93.0], [10.0, 20.0, 30.0, 40.0]],
+                dtype=np.float32,
+            )
+            # Both update rows hit row 0: every column collides.
+            indices_np = np.array([[0, 1, 0, 2], [0, 0, 0, 0]], dtype=np.int64)
+        else:
+            updates_np = np.array(
+                [[90.0, 91.0], [92.0, 93.0], [10.0, 20.0]], dtype=np.float32
+            )
+            # Columns 0-1 collide across all three update rows.
+            indices_np = np.array([[0, 0], [1, 0], [0, 1]], dtype=np.int64)
+
+        x = Tensor(storage=Buffer.from_numpy(x_np).to(device))
+        updates = Tensor(storage=Buffer.from_numpy(updates_np).to(device))
+        indices = Tensor(storage=Buffer.from_numpy(indices_np).to(device))
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = self._OPS[reduce_op](x, updates, indices, axis=axis)
+
+        assert y.storage is not None
+        assert y.storage.device == device
+        # torch.testing.assert_close requires both sides on the same
+        # device, so fold the reference on cuda like the inputs.
+        expected = self._ref_torch(
+            reduce_op,
+            torch.from_numpy(x_np).to("cuda"),
+            torch.from_numpy(updates_np).to("cuda"),
+            indices_np,
+            axis,
+        )
+        torch.testing.assert_close(
+            torch.from_dlpack(y), expected, rtol=1e-5, atol=1e-5
+        )
+
+
+class TestRepeatInterleaveGPU:
+    """Eager GPU execution for repeat_interleave is not yet supported.
+
+    The compiled graph path runs on GPU (see
+    ``max/tests/integration/graph/test_repeat_interleave.py``), but the
+    eager interpreter cannot dispatch the custom op there: the axis rides
+    as a CPU constant (the kernel registration reads it as a host-side
+    Scalar), and the interpreter's single-device custom-op admission
+    (``_is_interpretable_custom``) rejects the resulting mixed-device op.
+    Enabling eager GPU dispatch needs the axis to become a compile-time
+    custom-op parameter; tracked in AGENT-492. When that lands, add the
+    residency test back: input on the accelerator, output resident,
+    values against ``torch.repeat_interleave``.
+    """
+
+
 _NEED_2_GPUS = pytest.mark.skipif(
     accelerator_count() < 2,
     reason="Requires at least 2 accelerator devices",
@@ -3504,7 +4186,7 @@ class TestDistributedAllreduceSumHandler:
         data = np.ones((4, 4), dtype=np.float32)
 
         # Replicate data on every device, then re-label as Partial.
-        rep_mapping = PlacementMapping(mesh, (Replicated(),))
+        rep_mapping = DeviceMapping(mesh, (Replicated(),))
 
         try:
             replicated = df_shard(
@@ -3520,9 +4202,7 @@ class TestDistributedAllreduceSumHandler:
 
         partial_t = Tensor._from_shards(
             tuple(s.driver_tensor for s in replicated.local_shards),
-            mesh,
-            (Partial(),),
-            data.shape,
+            DeviceMapping(mesh, (Partial(),)),
         )
 
         try:
@@ -3563,7 +4243,7 @@ class TestDistributedAllgatherHandler:
 
         sharded_t = df_shard(
             Tensor.from_dlpack(np.ascontiguousarray(data)),
-            PlacementMapping(mesh, (Sharded(0),)),
+            DeviceMapping(mesh, (Sharded(0),)),
         )
 
         with (
@@ -3633,7 +4313,7 @@ class TestDistributedScatterHandler:
         data = np.arange(16, dtype=np.float32).reshape(4, 4)
         rows_per_chunk = 4 // num_gpus
 
-        mapping = PlacementMapping(mesh, (Sharded(0),))
+        mapping = DeviceMapping(mesh, (Sharded(0),))
 
         with (
             rc.EagerRealizationContext() as ctx,
@@ -3700,7 +4380,7 @@ class TestDistributedBroadcastHandler:
         data = np.arange(16, dtype=np.float32).reshape(4, 4)
         t = Tensor(storage=Buffer.from_numpy(data).to(devices[0]))
 
-        mapping = PlacementMapping(mesh, (Replicated(),))
+        mapping = DeviceMapping(mesh, (Replicated(),))
 
         with (
             rc.EagerRealizationContext() as ctx,
@@ -3800,7 +4480,7 @@ class TestDistributedReducescatterSumHandler:
                 for i in range(num_gpus)
             ]
             partial_t = Tensor.from_shard_values(
-                shard_tvs, PlacementMapping(mesh, (Partial(),))
+                shard_tvs, DeviceMapping(mesh, (Partial(),))
             )
             result = reduce_scatter(partial_t, scatter_axis=0, mesh_axis=0)
 
@@ -3926,4 +4606,201 @@ class TestMutableStoreOpsGPU:
         expected[1:3, 1:3] = src_bytes
         np.testing.assert_array_equal(
             buf.view(DType.uint8).to_numpy(), expected
+        )
+
+
+class TestResizeNearestGPU:
+    """GPU resize_nearest agrees with the CPU path on exactly representable data."""
+
+    @pytest.mark.parametrize(
+        "dtype", [DType.float32, DType.float16, DType.bfloat16]
+    )
+    @pytest.mark.parametrize(
+        "coordinate_transform_mode, round_mode",
+        # half_pixel with floor reads below index 0 without the kernel clamp.
+        [(0, 0), (0, 2), (1, 1), (2, 3)],
+    )
+    def test_matches_cpu(
+        self, dtype: DType, coordinate_transform_mode: int, round_mode: int
+    ) -> None:
+        # Distinct small integers are exact in float16 and bfloat16, so a wrong
+        # source index changes the output.
+        x_np = np.arange(32, dtype=np.float32).reshape(1, 2, 4, 4)
+        out_shape = [1, 2, 6, 3]
+
+        x_gpu = Tensor.from_dlpack(
+            torch.from_numpy(x_np).to(DTYPE_TO_TORCH[dtype]).cuda()
+        )
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            gpu_out = F.resize_nearest(
+                x_gpu,
+                out_shape,
+                coordinate_transform_mode=coordinate_transform_mode,
+                round_mode=round_mode,
+            )
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            cpu_out = F.resize_nearest(
+                Tensor.from_dlpack(x_np),
+                out_shape,
+                coordinate_transform_mode=coordinate_transform_mode,
+                round_mode=round_mode,
+            )
+
+        np.testing.assert_array_equal(
+            torch.from_dlpack(gpu_out).float().cpu().numpy(),
+            np.from_dlpack(cpu_out),
+        )
+
+
+class TestResizeLinearGPU:
+    """GPU resize_linear agrees with the CPU path."""
+
+    @pytest.mark.parametrize(
+        "dtype", [DType.float32, DType.float16, DType.bfloat16]
+    )
+    @pytest.mark.parametrize("antialias", [False, True])
+    def test_matches_cpu(self, dtype: DType, antialias: bool) -> None:
+        # Small integers are exact in float16 and bfloat16. Two axes change, so
+        # the kernel runs two passes through a scratch buffer.
+        x_np = np.arange(60, dtype=np.float32).reshape(1, 3, 4, 5)
+        out_shape = [1, 3, 7, 3]
+
+        x_gpu = Tensor.from_dlpack(
+            torch.from_numpy(x_np).to(DTYPE_TO_TORCH[dtype]).cuda()
+        )
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            gpu_out = F.resize_linear(x_gpu, out_shape, antialias=antialias)
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            cpu_out = F.resize_linear(
+                Tensor.from_dlpack(x_np), out_shape, antialias=antialias
+            )
+
+        torch.testing.assert_close(
+            torch.from_dlpack(gpu_out).float().cpu(),
+            torch.from_dlpack(cpu_out),
+            rtol=2e-2,
+            atol=2e-2,
+        )
+
+    def test_rank3_lazy_compile_matches_cpu(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A rank-3 input lazy-compiles on dispatch and matches the CPU path.
+
+        The accelerated warm builds only rank 4 (MXF-841), so rank 3 must
+        compile on demand; `modular_eager_py_test` forbids cold compiles, so
+        this test re-allows them like TestResizeLazyCompileGPU does.
+        """
+        monkeypatch.setenv("MAX_EAGER_ALLOW_LAZY_COMPILE", "1")
+
+        x_np = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
+        out_shape = [2, 6, 8]
+
+        x_gpu = Tensor.from_dlpack(torch.from_numpy(x_np).cuda())
+        assert x_gpu.storage is not None
+        device = x_gpu.storage.device
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            gpu_out = F.resize_linear(x_gpu, out_shape)
+        assert gpu_out.storage is not None
+        assert gpu_out.storage.device == device
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            cpu_out = F.resize_linear(Tensor.from_dlpack(x_np), out_shape)
+
+        np.testing.assert_allclose(
+            torch.from_dlpack(gpu_out).float().cpu().numpy(),
+            np.from_dlpack(cpu_out),
+            rtol=1e-5,
+        )
+
+    def test_same_shape_copies(self) -> None:
+        """An unchanged shape takes the copy path, which must still write."""
+        x_np = np.arange(60, dtype=np.float32).reshape(1, 3, 4, 5)
+
+        x_gpu = Tensor.from_dlpack(torch.from_numpy(x_np).cuda())
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            gpu_out = F.resize_linear(x_gpu, [1, 3, 4, 5])
+        assert gpu_out.storage is not None
+
+        np.testing.assert_array_equal(
+            torch.from_dlpack(gpu_out).float().cpu().numpy(), x_np
+        )
+
+
+class TestResizeLazyCompileGPU:
+    """A rank the GPU warm skips lazy-compiles on dispatch and is reused.
+
+    The resize family warms rank 4 only on accelerators (MXF-841), so this
+    guards the trim's precondition (AGENT-553): a dispatch outside the
+    warmed set still compiles on demand, and the second dispatch reuses
+    the cached model rather than recompiling.
+    """
+
+    def test_trimmed_rank_lazy_compiles_and_is_reused(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from max._core.dialects import mo
+        from max._interpreter_ops import resize_gc
+
+        # The warm suite forbids cold compiles (eager_py_test.bzl sets
+        # MAX_EAGER_ALLOW_LAZY_COMPILE=0); this test exercises the lazy
+        # path a trimmed rank relies on, so it re-allows it for itself.
+        monkeypatch.setenv("MAX_EAGER_ALLOW_LAZY_COMPILE", "1")
+
+        # Rank 3 (NCW): a rank the accelerated warm does not build.
+        x_np = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
+        x_3d = Tensor.from_dlpack(torch.from_numpy(x_np).cuda())
+        assert x_3d.storage is not None
+        device = x_3d.storage.device
+        out_shape = [2, 6, 8]
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            first = F.resize_nearest(x_3d, out_shape)
+
+        assert first.storage is not None
+        assert first.storage.device == device
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            F.resize_nearest(x_3d, out_shape)
+
+        # The second dispatch must hit the family cache, not recompile.
+        key = resize_gc._graph_name(
+            mo.ResizeNearestOp, device, DType.float32, 3, (0, 0)
+        )
+        assert key in resize_gc._FAMILY.cache
+        assert (
+            resize_gc.resize_model(
+                mo.ResizeNearestOp, device, DType.float32, 3, (0, 0)
+            )
+            is resize_gc._FAMILY.cache[key]
         )

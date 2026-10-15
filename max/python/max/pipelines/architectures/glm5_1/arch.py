@@ -17,10 +17,10 @@ from max.pipelines.architectures.deepseekV3.batch_processor import (
 )
 from max.pipelines.architectures.deepseekV3_2 import weight_adapters
 from max.pipelines.context import TextContext
-from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib import SupportedArchitecture
 from max.pipelines.modeling.types import PipelineTask
 
+from .memory_planner import Glm5_1MemoryPlanner
 from .model import Glm5_1Model
 from .model_config import Glm5_1Config
 from .reasoning import GlmReasoningParser  # noqa: F401  registers "glm45"
@@ -36,13 +36,10 @@ glm5_1_arch = SupportedArchitecture(
         "zai-org/GLM-5.2",
         "zai-org/GLM-5.2-FP8",
         "zai-org/GLM-5",
+        "zai-org/GLM-5.3",
     ],
-    default_encoding="float8_e4m3fn",
-    supported_encodings={
-        "float4_e2m1fnx2",
-        "float8_e4m3fn",
-        "bfloat16",
-    },
+    default_encoding=Glm5_1Config.DEFAULT_ENCODING,
+    supported_encodings=Glm5_1Config.SUPPORTED_ENCODINGS,
     multi_gpu_supported=True,
     pipeline_model=Glm5_1Model,
     batching=DeepseekV3BatchProcessor,
@@ -55,10 +52,13 @@ glm5_1_arch = SupportedArchitecture(
     supports_empty_batches=True,
     requires_max_batch_context_length=True,
     config=Glm5_1Config,
-    memory_planner=PagedMemoryPlanner,
+    memory_planner=Glm5_1MemoryPlanner,
     tool_parser="glm45",
     reasoning_parser="glm45",
-    # The "glm45" tool parser only emits Lark tool-call grammars, which the
-    # xgrammar backend cannot compile. Pin to llguidance (matches gemma4).
-    default_structured_output_backend="llguidance",
+    # GLM strongly prefers pretty-printed JSON: under the compact grammar its
+    # content-bearing continuations are all masked at the first array decision
+    # and the schema's shortest terminator wins (measured 8/8 degenerate
+    # {"findings":[]} vs 0/8 whitespace-tolerant on GLM-5.2). Whitespace runs
+    # stay bounded via STRUCTURED_OUTPUT_MAX_WHITESPACE_RUN.
+    default_structured_output_any_whitespace=True,
 )

@@ -14,122 +14,156 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, ClassVar, Literal
 
 import numpy as np
-from max.driver import Buffer, DLPackArray, is_virtual_device_mode
+from max import tree
+from max.driver import Buffer, Device, DLPackArray, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import (
-    BufferValue,
     DeviceRef,
     Graph,
     Module,
     TensorType,
-    TensorValue,
 )
 from max.graph.buffer_utils import cast_tensors_to
 from max.nn.comm import Signals
+from max.nn.kv_cache import (
+    KVCacheInputsPerDevice,
+    RecurrentStateInputsPerDevice,
+    recurrent_leaf,
+)
+from max.pipelines.context import ImageMetadata
 from max.pipelines.lib import (
     CompilationTimer,
     ModelInputs,
     ModelOutputs,
-    PipelineConfig,
 )
 from max.pipelines.lib.interfaces import AlwaysSignalBuffersMixin
+from max.pipelines.lib.vision_encoder_cache import VisionEncodeResult
 from max.pipelines.modeling.types import RequestID
 from max.profiler import traced
-from transformers import AutoConfig
 
 from ..llama3.model import Llama3Inputs, LlamaModelBase
+from ..qwen3vl_moe.context import Qwen3VLTextAndVisionContext
 from .batch_processor import Qwen3_5BatchProcessor
 from .model_config import Qwen3_5Config
 from .qwen3_5 import Qwen3_5
-from .state_cache import GatedDeltaNetStateCache
+from .state_cache import ATTN_CACHE_KEY, STATE_CACHE_KEY
+from .vision_packing import Qwen3_5VisionInputs, pack_uncached_images
 
 logger = logging.getLogger("max.pipelines")
 
 
 @dataclass
 class Qwen3_5Inputs(Llama3Inputs):
-    """Inputs for Qwen3.5 including linear attention states and optional vision inputs."""
+    """Inputs for Qwen3.5, including the linear-attention state pools.
 
-    slot_idx: Buffer | None = None
-    """Per-batch ``[B]`` uint32 slot indices into the linear-attention pools."""
-
-    conv_pools: list[Buffer] | None = None
-    """Per-layer mutable conv pool, ``[max_slots, conv_dim, K-1]``."""
-
-    recurrent_pools: list[Buffer] | None = None
-    """Per-layer mutable recurrent pool, ``[max_slots, nv, KD, VD]``."""
+    Image embeddings come from the pipeline-driven encoder cache on the base
+    ``vision_embeddings`` / ``vision_scatter_indices`` fields.
+    """
 
     request_ids: list[RequestID] | None = None
     """Request IDs for this batch, used to manage per-request state cache slots."""
 
-    # Vision inputs (None for text-only or decode steps)
-    image_token_indices: Buffer | None = None
-    """Pre-computed scatter indices for image embeddings."""
+    decoder_position_ids: Buffer | None = None
+    """``[3, total_seq_len]`` M-RoPE positions, one column per active token.
 
-    pixel_values: Buffer | None = None
-    """Raw pixel values for vision encoding."""
+    Present only when the graph was built with M-RoPE wired in; see
+    ``Qwen3_5.mrope_enabled``."""
 
-    vision_position_ids: Buffer | None = None
-    """Rotary position IDs for the vision encoder."""
-
-    weights: Buffer | None = None
-    """Bilinear interpolation weights for vision position embeddings."""
-
-    indices: Buffer | None = None
-    """Bilinear interpolation indices for vision position embeddings."""
-
-    max_grid_size: Buffer | None = None
-    """Maximum grid size (CPU scalar) for vision attention."""
-
-    grid_thw: Buffer | None = None
-    """Grid dimensions (temporal, height, width) per image, shape (n_images, 3)."""
-
-    cu_seqlens: Buffer | None = None
-    """Cumulative sequence lengths for vision full attention."""
-
-    max_seqlen: Buffer | None = None
-    """Maximum sequence length (CPU scalar) for vision attention."""
-
-    lm_image_embeddings: Buffer | None = None
-    """Image embeddings for the LM graph (empty [0, H] buffer for decode/text-only steps,
-    real embeddings for prefill steps with images). Must be non-None for multimodal models."""
-
-    @property
-    def has_vision_inputs(self) -> bool:
-        """True when pixel values are available for vision encoding."""
-        return self.pixel_values is not None
+    vision_inputs_in_graph: bool = True
+    """Whether the graph declares the vision-merge inputs. False for
+    text-only checkpoints, which compile no vision encoder and so take none."""
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
-        vision_lm_inputs: tuple[Buffer, ...] = ()
-        if self.lm_image_embeddings is not None:
-            assert self.image_token_indices is not None
-            vision_lm_inputs = (
-                self.lm_image_embeddings,
-                self.image_token_indices,
-            )
-        slot_idx_inputs: tuple[Buffer, ...] = ()
-        if self.slot_idx is not None:
-            slot_idx_inputs = (self.slot_idx,)
         return (
             self.tokens,
             self.input_row_offsets,
             self.return_n_logits,
             *self.signal_buffers,
             *(
-                self.kv_cache_inputs.flatten()
+                tree.leaves(self.kv_cache_inputs)
                 if self.kv_cache_inputs is not None
                 else ()
             ),
-            *slot_idx_inputs,
-            *(self.conv_pools or ()),
-            *(self.recurrent_pools or ()),
-            *vision_lm_inputs,
+            # Set by the pipeline's vision seam (``finalize_vision_inputs``)
+            # on every prepared batch, empties included.
+            *(self.vision_embeddings if self.vision_inputs_in_graph else ()),
+            *(
+                self.vision_scatter_indices
+                if self.vision_inputs_in_graph
+                else ()
+            ),
+            *(
+                ()
+                if self.decoder_position_ids is None
+                else (self.decoder_position_ids,)
+            ),
+        )
+
+
+# Scale tensors carry the calibration a quantized checkpoint cannot be read
+# without. A dropped one is not a degradation, it is a different model.
+_SCALE_SUFFIXES = (".weight_scale", ".weight_scale_2", ".input_scale")
+
+# Everything the architecture deliberately does not load. `mtp.*` is the
+# speculative-decoding head, which the weight adapter drops.
+_UNUSED_PREFIXES = ("mtp.",)
+
+
+def _check_weights_match(expected: set[str], provided: set[str]) -> None:
+    """Fails the load when the checkpoint and the graph disagree on weights.
+
+    ``load_state_dict(strict=False)`` drops both directions of mismatch
+    without a word, so a quantized checkpoint whose 995 scale tensors go
+    unconsumed loads clean and emits garbage. This is the gate that turns
+    that into a startup error.
+
+    Args:
+        expected: Weight names the built graph will look up.
+        provided: Weight names the adapted checkpoint supplies.
+
+    Raises:
+        ValueError: If a weight the graph needs is absent, or a scale tensor
+            the checkpoint supplies is not consumed.
+    """
+    missing = sorted(expected - provided)
+    if missing:
+        raise ValueError(
+            f"Qwen3.5 checkpoint is missing {len(missing)} weight(s) the model "
+            f"requires: {missing[:20]}"
+            + (f" (+{len(missing) - 20} more)" if len(missing) > 20 else "")
+        )
+
+    unused = provided - expected
+    unconsumed_scales = sorted(
+        k
+        for k in unused
+        if k.endswith(_SCALE_SUFFIXES) and not k.startswith(_UNUSED_PREFIXES)
+    )
+    if unconsumed_scales:
+        raise ValueError(
+            f"Qwen3.5 checkpoint supplies {len(unconsumed_scales)} "
+            "quantization scale tensor(s) that no layer consumes, so those "
+            "weights would be read at the wrong precision: "
+            f"{unconsumed_scales[:20]}"
+            + (
+                f" (+{len(unconsumed_scales) - 20} more)"
+                if len(unconsumed_scales) > 20
+                else ""
+            )
+        )
+
+    if unused:
+        logger.info(
+            "Qwen3.5 load_state_dict: %d unused checkpoint keys: %s",
+            len(unused),
+            sorted(unused)[:20],
         )
 
 
@@ -146,7 +180,7 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
     )
 
     model: Model
-    norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm"
+    norm_method: Literal["rms_norm", "layer_norm"] = "rms_norm"
     attention_bias: bool = False
     state_dict: dict[str, Any]
 
@@ -159,38 +193,26 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
     # Model dtype and hidden size (set during graph build, used for empty buffers)
     _hidden_size: int = 0
     _model_dtype: DType = DType.bfloat16
+    # State-pool storage dtype. Deliberately separate from _model_dtype: the
+    # vision empties keep the compute dtype even when the pools are fp32.
+    _state_dtype: DType = DType.bfloat16
+    # Per-request state bytes the config budgeted, checked in `load_model`.
+    _accounted_state_bytes: int = 0
 
-    # Linear attention state dimensions (set during graph build)
     _num_linear_layers: int = 0
-    _conv_dim: int = 0
-    _conv_kernel_size: int = 0
-    _num_v_heads: int = 0
-    _key_head_dim: int = 0
-    _value_head_dim: int = 0
 
-    # Per-request state cache for the linear-attention pools.
-    _state_cache: GatedDeltaNetStateCache | None = None
+    # Whether the built graph takes M-RoPE positions; set during graph build.
+    _mrope_enabled: bool = False
 
-    # Pre-allocated empty vision input buffers for the LM graph (multimodal models only).
-    # Used for decode/text-only steps so that buffers() always has the right input count.
-    _empty_lm_image_embeddings: Buffer | None = None
-    _empty_lm_image_token_indices: Buffer | None = None
-
-    @classmethod
-    def calculate_max_seq_len(
-        cls,
-        pipeline_config: PipelineConfig,
-        huggingface_config: AutoConfig,
-    ) -> int:
-        text_config = Qwen3_5Config._get_text_config(huggingface_config)
-        return Qwen3_5Config.calculate_max_seq_len(pipeline_config, text_config)
+    # Zero-row vision embeddings for decode / text-only steps, so buffers()
+    # always has the right input count. Cached: see empty_vision_embeddings.
+    _empty_vision_embeddings: list[Buffer] | None = None
 
     @traced
     def load_model(self, session: InferenceSession) -> Model:
         self._session = session
 
         self._input_row_offsets_prealloc: Buffer | None = None
-        self._slot_idx_prealloc: Buffer | None = None
         max_batch_size = self.max_batch_size
         assert max_batch_size is not None, (
             "max_batch_size must be set in runtime config"
@@ -209,66 +231,126 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
             language_graph = self._build_language_graph(
                 state_dict, module=module
             )
-            assert self._vision_state_dict is not None
-            vision_graph = self._build_vision_graph(module=module)
+            # Text-only checkpoints have no vision tower, hence no vision graph.
+            vision_graph = (
+                self._build_vision_graph(module=module)
+                if self._vision_state_dict is not None
+                else None
+            )
             timer.mark_build_complete()
             models = session.load_all(
                 module,
                 weights_registry={
                     **self.state_dict,
-                    **self._vision_state_dict,
+                    **(self._vision_state_dict or {}),
                 },
             )
             model = models[language_graph.name]
-            self.vision_model = models[vision_graph.name]
-
-        # Initialize per-request state cache for linear attention layers.
-        # _num_linear_layers is populated by _build_graph, so this and the
-        # slot-idx prealloc must run after it.
-        if self._num_linear_layers > 0:
-            self._state_cache = GatedDeltaNetStateCache(
-                num_layers=self._num_linear_layers,
-                conv_dim=self._conv_dim,
-                conv_kernel_size=self._conv_kernel_size,
-                num_v_heads=self._num_v_heads,
-                key_head_dim=self._key_head_dim,
-                value_head_dim=self._value_head_dim,
-                max_slots=max_batch_size,
-                device=self.devices[0],
-                dtype=self._model_dtype,
+            self.vision_model = (
+                models[vision_graph.name] if vision_graph is not None else None
             )
-            if not is_virtual_device_mode():
-                self._slot_idx_prealloc = Buffer(
-                    shape=[max_batch_size],
-                    dtype=DType.uint32,
-                    device=self.devices[0],
-                )
 
-        if self._vision_state_dict is not None:
-            # Pre-allocate empty vision input buffers for the LM graph so that
-            # buffers() always returns the correct input count for CUDA graph capture.
-            self._empty_lm_image_embeddings = Buffer.zeros(
-                shape=[0, self._hidden_size], dtype=self._model_dtype
-            ).to(self.devices[0])
-            self._empty_lm_image_token_indices = Buffer.zeros(
-                shape=[0], dtype=DType.int32
-            ).to(self.devices[0])
-
-        if (
-            self._batch_processor is not None
-            and self._state_cache is not None
-            and self._slot_idx_prealloc is not None
-        ):
-            bind = getattr(self._batch_processor, "bind_prepare_state", None)
-            if bind is not None:
-                bind(
-                    state_cache=self._state_cache,
-                    slot_idx_prealloc=self._slot_idx_prealloc,
-                    empty_lm_image_embeddings=self._empty_lm_image_embeddings,
-                    empty_lm_image_token_indices=self._empty_lm_image_token_indices,
-                )
+        if self._num_linear_layers > 0 and not is_virtual_device_mode():
+            self.check_state_budget()
 
         return model
+
+    def check_state_budget(self) -> None:
+        """Checks the state the cache declares against what planning budgeted.
+
+        The two resolve ``state_dtype`` either side of ``finalize``, and a
+        disagreement surfaces only as an OOM at load.
+        """
+        state = recurrent_leaf(self.kv_params)
+        assert state is not None, (
+            "Qwen3.5 has linear-attention layers, so its cache must declare a"
+            " recurrent state child"
+        )
+        allocated = state.bytes_per_state * len(self.devices)
+        assert allocated == self._accounted_state_bytes, (
+            f"Qwen3.5 declares {allocated} B of recurrent state per request"
+            f" but memory planning budgeted {self._accounted_state_bytes} B."
+            f" The pool dtype ({self._state_dtype}) and the accounted dtype"
+            " must agree."
+        )
+
+    def pack_vision_inputs(
+        self,
+        selection: Sequence[
+            tuple[Qwen3VLTextAndVisionContext, Sequence[ImageMetadata]]
+        ],
+        devices: list[Device],
+    ) -> Qwen3_5VisionInputs | None:
+        """Pack the pipeline-selected cache-miss images to device.
+
+        Runs in the pipeline's prep-ahead window so the host-to-device copy
+        overlaps the prior batch.
+        """
+        return pack_uncached_images(selection, devices)
+
+    def vision_execute(
+        self,
+        selection: Sequence[
+            tuple[Qwen3VLTextAndVisionContext, Sequence[ImageMetadata]]
+        ],
+        devices: list[Device],
+        packed: Qwen3_5VisionInputs | None,
+    ) -> VisionEncodeResult:
+        """Run the vision encoder on the media ``pack_vision_inputs`` packed.
+
+        Returns explicit per-item token counts rather than letting the driver
+        derive them from placeholder spans. A clip's span covers ``grid_t``
+        placeholder runs AND the timestamp text between them, so its width
+        exceeds the rows the encoder emits; an image's span happens to match,
+        which is why the derived counts were correct until now.
+        """
+        if packed is None:
+            return VisionEncodeResult(
+                embeddings=self.empty_vision_embeddings(devices)
+            )
+        assert self.vision_model is not None
+        assert self._session is not None
+        vision_outputs = self.vision_model.execute(
+            packed.pixel_values,
+            packed.weights,
+            packed.indices,
+            packed.vision_position_ids,
+            packed.max_grid_size,
+            packed.grid_thw,
+            packed.cu_seqlens,
+            packed.max_seqlen,
+            *self.signal_buffers,
+        )
+        assert isinstance(vision_outputs[0], Buffer)
+        embeddings = cast_tensors_to(
+            [vision_outputs[0]], self._model_dtype, self._session
+        )[0]
+        # The hidden state is replicated across devices, so every replica
+        # merges the same embeddings.
+        return VisionEncodeResult(
+            embeddings=[embeddings.to(device) for device in devices],
+            per_image_token_counts=[
+                img.embedding_rows
+                for _ctx, miss_images in selection
+                for img in miss_images
+            ],
+        )
+
+    def empty_vision_embeddings(self, devices: list[Device]) -> list[Buffer]:
+        """Per-device zero-row image embeddings for cached / text-only batches.
+
+        Cached: hit on every text-only / decode step, so it must not allocate
+        per call, and graph-capture replay only skips an input refresh for an
+        identical buffer object.
+        """
+        if self._empty_vision_embeddings is None:
+            self._empty_vision_embeddings = [
+                Buffer.zeros(
+                    shape=[0, self._hidden_size], dtype=self._model_dtype
+                ).to(device)
+                for device in devices
+            ]
+        return self._empty_vision_embeddings
 
     def _build_vision_graph(self, module: Module) -> Graph:
         """Build the vision encoder graph for processing images."""
@@ -291,10 +373,15 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
             )
             for device in self.devices
         ]
+        # The bilinear position grid is interpolated once per FRAME while
+        # pixels and rotary ids carry one row per temporal PATCH, so these two
+        # are sum(h * w) long against pixel_values' sum(t * h * w). Binding
+        # them to `vision_seq_len` would be an over-constraint that only holds
+        # for still images (t == 1) and rejects every clip.
         weights_types = [
             TensorType(
                 DType.float32,
-                shape=[4, "vision_seq_len", 1],
+                shape=[4, "vision_pos_len", 1],
                 device=DeviceRef.from_device(device),
             )
             for device in self.devices
@@ -302,7 +389,7 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
         indices_types = [
             TensorType(
                 DType.int64,
-                shape=[4, "vision_seq_len"],
+                shape=[4, "vision_pos_len"],
                 device=DeviceRef.from_device(device),
             )
             for device in self.devices
@@ -346,18 +433,16 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
 
         with Graph(
             "qwen3_5_vision",
-            input_types=tuple(
-                [
-                    *pixel_values_types,
-                    *weights_types,
-                    *indices_types,
-                    *rot_pos_ids_types,
-                    *max_grid_size_types,
-                    *grid_thw_types,
-                    *cu_seqlens_types,
-                    *max_seqlen_types,
-                    *signals.input_types(),
-                ]
+            input_types=(
+                *pixel_values_types,
+                *weights_types,
+                *indices_types,
+                *rot_pos_ids_types,
+                *max_grid_size_types,
+                *grid_thw_types,
+                *cu_seqlens_types,
+                *max_seqlen_types,
+                *signals.input_types(),
             ),
             module=module,
         ) as graph:
@@ -402,7 +487,9 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
         full_state_dict = state_dict
 
         model_config = Qwen3_5Config.initialize_from_config(
-            self.pipeline_config, self.huggingface_config
+            self.pipeline_config,
+            self.huggingface_config,
+            max_seq_len=self.max_seq_len,
         )
         model_config.finalize(
             huggingface_config=Qwen3_5Config._get_text_config(
@@ -422,24 +509,14 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
         )
         nn_model = Qwen3_5(model_config)
 
-        graph_inputs = nn_model.input_types(self.kv_params)
+        graph_inputs = self._bind_graph_inputs(
+            nn_model.input_tree(self.kv_params)
+        )
 
-        # Log weight loading diagnostics (strict=False silently drops mismatches)
-        expected_weights = set(nn_model.raw_state_dict().keys())
-        provided_weights = set(full_state_dict.keys())
-        missing_keys = expected_weights - provided_weights
-        unused_keys = provided_weights - expected_weights
-        if missing_keys:
-            logger.warning(
-                f"Qwen3.5 load_state_dict: {len(missing_keys)} MISSING"
-                f" weights (not in checkpoint): {sorted(missing_keys)}"
-            )
-        if unused_keys:
-            logger.info(
-                f"Qwen3.5 load_state_dict: {len(unused_keys)} unused"
-                f" checkpoint keys: {sorted(list(unused_keys)[:20])}"
-                + ("..." if len(unused_keys) > 20 else "")
-            )
+        _check_weights_match(
+            expected=set(nn_model.raw_state_dict().keys()),
+            provided=set(full_state_dict.keys()),
+        )
 
         nn_model.load_state_dict(
             full_state_dict,
@@ -465,21 +542,22 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
         # Keep a reference so _build_vision_graph can access vision_encoder
         self._nn_model = nn_model
 
-        # Save dimensions for state buffer allocation and empty-buffer creation
+        num_devices = len(self.devices)
         self._num_linear_layers = len(nn_model.linear_layer_indices)
-        self._conv_dim = nn_model._conv_dim
-        self._conv_kernel_size = nn_model._conv_kernel_size
-        self._num_v_heads = nn_model._num_v_heads
-        self._key_head_dim = nn_model._key_head_dim
-        self._value_head_dim = nn_model._value_head_dim
         self._hidden_size = model_config.hidden_size
-        self._model_dtype = model_config.dtype
+        self._model_dtype = model_config.compute_dtype
+        self._state_dtype = model_config.state_dtype
+        self._accounted_state_bytes = model_config._per_request_state_bytes()
 
         has_vision = nn_model.vision_encoder is not None
-        num_devices = len(self.devices)
-        num_linear_layers = self._num_linear_layers
-        # Vision adds 2 extra inputs: image_embeddings, image_token_indices
-        vision_input_count = 2 if has_vision else 0
+        # Vision adds image_embeddings + image_token_indices, per device.
+        vision_input_count = 2 * num_devices if has_vision else 0
+        # M-RoPE adds one shared [3, total_seq_len] positions tensor.
+        self._mrope_enabled = nn_model.mrope_enabled
+        if isinstance(self._batch_processor, Qwen3_5BatchProcessor):
+            self._batch_processor.mrope_enabled = self._mrope_enabled
+            self._batch_processor.vision_enabled = has_vision
+        position_ids_count = 1 if nn_model.mrope_enabled else 0
 
         with Graph(
             "qwen3_5",
@@ -493,48 +571,48 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
             # Extract signal buffers
             signal_buffers = [v.buffer for v in variadic_args[:num_devices]]
 
-            # Unmarshal KV cache inputs. The trailing slice contains
-            # [slot_idx, *conv_pools, *recurrent_pools, *vision_inputs].
+            # The state child sits inside the KV slice, so one unflatten
+            # resolves both.
             kv_start = num_devices
-            slot_idx_count = 1 if num_linear_layers > 0 else 0
             kv_count = (
                 len(variadic_args)
                 - num_devices
-                - slot_idx_count
-                - num_linear_layers * 2
                 - vision_input_count
+                - position_ids_count
             )
             kv_cache_inputs = variadic_args[kv_start : kv_start + kv_count]
-            kv_collections = self._unflatten_kv_inputs(kv_cache_inputs)
+            kv_tree = self.kv_params.unflatten_kv_inputs(iter(kv_cache_inputs))
 
-            # Extract slot_idx + the linear-attention pools (BufferType inputs).
+            assert isinstance(kv_tree, dict)
+            kv_collections = tree.leaves(
+                kv_tree[ATTN_CACHE_KEY], leaf=KVCacheInputsPerDevice
+            )
+            state = tree.leaves(
+                kv_tree[STATE_CACHE_KEY], leaf=RecurrentStateInputsPerDevice
+            )
+
             idx = kv_start + kv_count
-            slot_idx_g: TensorValue | None = None
-            conv_pools: list[BufferValue] = []
-            recurrent_pools: list[BufferValue] = []
-            if num_linear_layers > 0:
-                slot_idx_g = variadic_args[idx].tensor
-                idx += 1
-                conv_pools = [
-                    variadic_args[idx + i].buffer
-                    for i in range(num_linear_layers)
-                ]
-                idx += num_linear_layers
-                recurrent_pools = [
-                    variadic_args[idx + i].buffer
-                    for i in range(num_linear_layers)
-                ]
-                idx += num_linear_layers
 
             # Extract vision inputs (only present for multimodal models)
             image_embeddings_g = None
             image_token_indices_g = None
             if has_vision:
-                image_embeddings_g = variadic_args[idx].tensor
-                image_token_indices_g = variadic_args[idx + 1].tensor
+                image_embeddings_g = [
+                    variadic_args[idx + d].tensor for d in range(num_devices)
+                ]
+                image_token_indices_g = [
+                    variadic_args[idx + num_devices + d].tensor
+                    for d in range(num_devices)
+                ]
+                idx += vision_input_count
 
-            assert slot_idx_g is not None, (
-                "Qwen3.5 graph requires linear attention layers; got 0"
+            position_ids_g = (
+                variadic_args[idx].tensor if position_ids_count else None
+            )
+
+            assert state, (
+                "Qwen3.5 graph requires linear attention layers; the cache"
+                " declared no recurrent state child"
             )
             outputs = nn_model(
                 tokens.tensor,
@@ -542,11 +620,10 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
                 return_n_logits.tensor,
                 input_row_offsets.tensor,
                 signal_buffers,
-                slot_idx_g,
-                conv_pools,
-                recurrent_pools,
+                list(state),
                 image_embeddings_g,
                 image_token_indices_g,
+                position_ids_g,
             )
 
             graph.output(*outputs)
@@ -555,51 +632,6 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         assert isinstance(model_inputs, Qwen3_5Inputs)
         assert model_inputs.kv_cache_inputs is not None
-
-        if self.vision_model is not None:
-            # Multimodal model: always pass image embeddings to the LM graph.
-            # For decode/text-only steps, lm_image_embeddings is already the
-            # pre-allocated empty buffer for decode-step LM vision inputs.
-            # For prefill steps with images, run the vision encoder and update.
-            if model_inputs.has_vision_inputs:
-                assert model_inputs.pixel_values is not None
-                assert model_inputs.weights is not None
-                assert model_inputs.indices is not None
-                assert model_inputs.vision_position_ids is not None
-                assert model_inputs.max_grid_size is not None
-                assert model_inputs.grid_thw is not None
-                assert model_inputs.cu_seqlens is not None
-                assert model_inputs.max_seqlen is not None
-                assert model_inputs.image_token_indices is not None
-
-                vision_outputs = self.vision_model.execute(
-                    model_inputs.pixel_values,
-                    model_inputs.weights,
-                    model_inputs.indices,
-                    model_inputs.vision_position_ids,
-                    model_inputs.max_grid_size,
-                    model_inputs.grid_thw,
-                    model_inputs.cu_seqlens,
-                    model_inputs.max_seqlen,
-                    *self.signal_buffers,
-                )
-                assert isinstance(vision_outputs[0], Buffer)
-                assert self._session is not None
-                model_inputs.lm_image_embeddings = cast_tensors_to(
-                    [vision_outputs[0]], self._model_dtype, self._session
-                )[0]
-                # image_token_indices is already set on model_inputs
-            elif model_inputs.lm_image_embeddings is None:
-                # Text-only or decode step with no pre-allocated buffers (e.g.
-                # prefill without images): use the persistent empty placeholders.
-                assert self._empty_lm_image_embeddings is not None
-                assert self._empty_lm_image_token_indices is not None
-                model_inputs.lm_image_embeddings = (
-                    self._empty_lm_image_embeddings
-                )
-                model_inputs.image_token_indices = (
-                    self._empty_lm_image_token_indices
-                )
 
         model_outputs = self.model.execute(*model_inputs.buffers)
 
@@ -612,8 +644,3 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
             logits=logits,
             next_token_logits=logits,
         )
-
-    def release(self, request_id: RequestID) -> None:
-        """Release per-request state cache slot when a request completes."""
-        if self._state_cache is not None:
-            self._state_cache.release(request_id)

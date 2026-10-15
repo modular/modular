@@ -22,10 +22,10 @@ from layout import TileTensor, row_major
 # CHECK-LABEL: test_tile_tensor_split_dynamic_negative_idx
 def main():
     print("== test_tile_tensor_split_dynamic_negative_idx")
-    var data = InlineArray[Int32, 8](fill=0)
+    var data = Array[Int32, 8](fill=0)
     var tensor = TileTensor(data, row_major[4, 2]())
 
     # CHECK: Assert Error: split idx out of range
-    _ = tensor.as_immut().split[axis=0](2, -1)
+    _ = tensor.as_imm().split[axis=0](2, -1)
     # CHECK-NOT: is never reached
     print("is never reached")

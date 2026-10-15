@@ -26,14 +26,15 @@ BF16 GMEM round trip).
 
 """
 
-from std.gpu.host import DeviceContext
-from std.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
+from max.gpu.host import DeviceContext
+from max.gpu.primitives.grid_controls import PDLLevel
 from std.memory import UnsafePointer
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Idx, TileTensor, row_major
 
 from linalg.fp4_utils import MXFP8_SF_DTYPE, MXFP8_SF_VECTOR_SIZE
 from .dispatch import grouped_matmul_mxfp8_dispatch
 from .grouped_1d1d_matmul_kernel import RealSwiGLUOutput
+from linalg.swiglu_activation import swiglu, swiglu_activation_type
 
 
 def grouped_matmul_swiglu_mxfp8_dispatch[
@@ -52,10 +53,7 @@ def grouped_matmul_swiglu_mxfp8_dispatch[
     # cooperative path on prefill regimes; flip to False to benchmark
     # the cooperative path on decode.
     use_inplace: Bool = True,
-    # Activation flavor. False = plain SwiGLU; True = clamped
-    # (`swigluoai`). Pass the HF config `swiglu_alpha`/`swiglu_limit`
-    # as the runtime `alpha`/`limit` args when set to True.
-    clamp_activation: Bool = False,
+    activation: swiglu_activation_type = swiglu[0.0],
 ](
     c_packed: TileTensor,
     c_swiglu_scales: TileTensor,
@@ -70,10 +68,6 @@ def grouped_matmul_swiglu_mxfp8_dispatch[
     num_active_experts: Int,
     estimated_total_m: Int,
     ctx: DeviceContext,
-    # Runtime α and L for clamped activation. Ignored when
-    # `clamp_activation=False`.
-    alpha: Float32 = Float32(0.0),
-    limit: Float32 = Float32(0.0),
 ) raises:
     """SwiGLU + MXFP8 fused MoE up-projection dispatch.
 
@@ -109,10 +103,8 @@ def grouped_matmul_swiglu_mxfp8_dispatch[
             dispatch-level gate forces the cooperative path on
             prefill regimes; flip to False to benchmark the
             cooperative path on decode.
-        clamp_activation: Activation flavor (defaults to False).
-            False is plain SwiGLU; True is clamped (`swigluoai`).
-            Pass the HF config `swiglu_alpha`/`swiglu_limit` as the
-            runtime `alpha`/`limit` args when set to True.
+        activation: Gated activation applied in the fused epilogue, selected
+            at compile time (defaults to `swiglu`).
 
     Args:
         c_packed: Output `float8_e4m3fn`, shape `(M_total, D)` (one
@@ -138,55 +130,40 @@ def grouped_matmul_swiglu_mxfp8_dispatch[
         num_active_experts: Number of active experts.
         estimated_total_m: Estimated total non-padded token count.
         ctx: Device context.
-        alpha: Runtime α for the clamped activation. Ignored when
-            `clamp_activation=False`. Pass the HF config
-            `swiglu_alpha` value (canonically 1.702 for the
-            `swigluoai` family).
-        limit: Runtime L for the clamped activation. Ignored when
-            `clamp_activation=False`. Pass the HF config
-            `swiglu_limit` value (canonically 7.0 for the
-            `swigluoai` family).
     """
     comptime c_type = DType.bfloat16
     comptime N = type_of(b).static_shape[1]
 
-    # C is unused on the fused path: the epilogue writes results through
-    # `swiglu_out` into `c_packed`, and the launcher + kernel comptime-gate out
-    # the C TMA encode, prefetch, and store when `fuse_swiglu`. We still pass a
-    # real BF16 tensor so `grouped_matmul_block_scaled` can infer
-    # `c_type`/`N`/layout and satisfy the kernel ABI, but it is a fixed 1-row
-    # placeholder decoupled from `estimated_total_m` (which floors to 0 in
-    # low-concurrency EP decode and previously produced a zero-dim C TMA
-    # descriptor -> CUDA_ERROR_INVALID_VALUE). The buffer is never read or
-    # written. (Mojo's `UnsafePointer` is non-nullable, so this is a minimal
-    # 1xN allocation rather than a null view.)
-    var dummy_c_buffer = ctx.enqueue_create_buffer[c_type](N)
-    var dummy_c_shape = row_major(Coord(Idx[1], Idx[N]))
-    var dummy_c_tensor = TileTensor(dummy_c_buffer, dummy_c_shape)
-
     comptime c_packed_row_stride = type_of(c_packed).static_shape[1]
     comptime sf_dim1 = type_of(c_swiglu_scales).static_shape[1]
-    var c_packed_ptr = rebind[UnsafePointer[UInt8, MutAnyOrigin]](c_packed.ptr)
+    var c_packed_ptr = rebind[UnsafePointer[UInt8, MutAnyOrigin]](
+        c_packed._storage
+    )
+
+    # The fused path never reads or writes C. It only carries `c_type` and `N`
+    # and fills the kernel ABI, so alias `c_packed` rather than allocate.
+    var dummy_c_tensor = TileTensor(
+        c_packed_ptr.bitcast[Scalar[c_type]](),
+        row_major(Idx[1], Idx[N]),
+    )
     var c_swiglu_scales_ptr = rebind[
         UnsafePointer[Scalar[MXFP8_SF_DTYPE], MutAnyOrigin]
-    ](c_swiglu_scales.ptr)
+    ](c_swiglu_scales._storage)
     # MXFP8 doesn't use a per-expert tensor_sf; the trait method is
     # gated out for MXFP8 so this pointer is never dereferenced.
     var c_input_scales_ptr = rebind[UnsafePointer[Float32, ImmutAnyOrigin]](
-        expert_scales.ptr
+        expert_scales._storage
     )
     var swiglu_out = RealSwiGLUOutput[
         c_packed_row_stride,
         sf_dim1,
         MXFP8_SF_DTYPE,
         MXFP8_SF_VECTOR_SIZE,
-        clamp_activation,
+        activation,
     ](
         c_packed_ptr,
         c_swiglu_scales_ptr,
         c_input_scales_ptr,
-        alpha,
-        limit,
     )
 
     grouped_matmul_mxfp8_dispatch[
@@ -212,5 +189,3 @@ def grouped_matmul_swiglu_mxfp8_dispatch[
         ctx,
         swiglu_out,
     )
-
-    _ = dummy_c_buffer^

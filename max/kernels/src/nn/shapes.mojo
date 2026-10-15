@@ -13,7 +13,7 @@
 """Provides output-shape computation utilities for sliding-window operations such as pooling and convolution."""
 
 from std.math import ceildiv
-from std.math.uutils import ufloordiv, umod
+from std.math.uutils import udivmod, ufloordiv, umod
 from std.utils import IndexList
 
 from layout import Coord, CoordLike
@@ -23,7 +23,7 @@ from layout import Coord, CoordLike
 #
 # The static-folding counterpart of
 # `_get_start_indices_of_nth_subvolume[subvolume_rank](n, shape)`
-# (`std.algorithm.functional`): same semantics for every `subvolume_rank` (the
+# (`max.algorithm.functional`): same semantics for every `subvolume_rank` (the
 # trailing `subvolume_rank` dims are the subvolume set by the caller; dims
 # `1..rank-subvolume_rank-1` are decomposed; dim 0 is the final quotient), and
 # bit-identical to it for the shapes that reach it. The difference is only in
@@ -35,7 +35,7 @@ from layout import Coord, CoordLike
 # literal, so the `divmod` strength-reduces to a magic-multiply + shift
 # (verified: SASS `IMAD.HI`/`SHF`, no `IDIV`/`MUFU.RCP`) instead of the runtime
 # Newton-reciprocal divide that an `IndexList` divisor forces. Dynamic dims fall
-# back to the runtime value carried in the `Coord`, matching the stdlib baseline.
+# back to the runtime value carried in the `Coord`, matching the MAX baseline.
 #
 # The flat index `n` stays runtime, so the *result* indices are runtime; only
 # the DIVISORS fold. `rank` and the static dims are inferred from the `Coord`
@@ -52,7 +52,7 @@ from layout import Coord, CoordLike
 #
 # Shared by the normalization (rms_norm / layer_norm) and concat kernels; lives
 # here rather than in either kernel module so neither has to import the other.
-@always_inline
+@inline(.always)
 def _get_start_indices_of_nth_subvolume_static[
     element_types: TypeList[Trait=CoordLike, ...], //, subvolume_rank: Int = 1
 ](n: Int, shape: Coord[*element_types]) -> IndexList[shape.rank]:
@@ -88,17 +88,16 @@ def _get_start_indices_of_nth_subvolume_static[
             curr = ufloordiv(curr, divisor)
         else:
             # Dynamic dim: read the divisor from the runtime leaf value carried
-            # in the `Coord`. This path emits a runtime divide, same as the
-            # `_get_start_indices_of_nth_subvolume` baseline.
+            # in the `Coord`. Nothing folds here, so the quotient and the
+            # remainder must come out of ONE division.
             var divisor = Int(shape[i].value())
-            res[i] = umod(curr, divisor)
-            curr = ufloordiv(curr, divisor)
+            curr, res[i] = udivmod(curr, divisor)
 
     res[0] = curr
     return res
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def get_sliding_window_out_dim[
     ceil_mode: Bool = False,
 ](in_dim: Int, ft_dim: Int, dilation: Int, stride: Int, pad: Int) -> Int:

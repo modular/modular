@@ -19,9 +19,9 @@ scaling formats via the `scales_dtype` parameter.
 from std.math import align_up, ceildiv
 from std.sys import argv
 import linalg.matmul.vendor.blas as vendor_blas
-from std.gpu.host import DeviceContext
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.memory import alloc, bitcast, dealloc, ThinAllocation
+from max.gpu.host import DeviceContext
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.memory import alloc, bitcast, dealloc
 from std.memory.alloc import Layout as AllocLayout
 from std.random import rand, random_ui64, seed
 from internal_utils import assert_almost_equal
@@ -52,13 +52,13 @@ from linalg.fp4_utils import (
     SF_ATOM_K,
     set_scale_factor,
 )
-from linalg.fp4_quantization import naive_block_scaled_matmul
-from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from linalg.block_scaled_quantization import naive_block_scaled_matmul
+from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 
 def _rand_mxfp4_value() -> Scalar[MXFP4_SF_DTYPE]:
     # E8M0 is all-exponent: valid non-zero, non-NaN values are 0x01..0xFE.
-    return bitcast[MXFP4_SF_DTYPE](random_ui64(1, 254).cast[DType.uint8]())
+    return bitcast[MXFP4_SF_DTYPE](random_ui64(1, 254).cast[.uint8]())
 
 
 def _rand_mxfp4[
@@ -170,11 +170,11 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     # Infer scaling_kind from scales_dtype.
     comptime scaling_kind = UMMAKind.KIND_MXF4 if scales_dtype == MXFP4_SF_DTYPE else UMMAKind.KIND_MXF4NVF4
 
-    var a_shape = row_major(Coord(m, Idx[KType.static_value // 2]))
+    var a_shape = row_major(m, Idx[KType.static_value // 2])
     var b_shape = row_major(
-        Coord(Idx[NType.static_value], Idx[KType.static_value // 2])
+        Idx[NType.static_value], Idx[KType.static_value // 2]
     )
-    var c_shape = row_major(Coord(m, Idx[NType.static_value]))
+    var c_shape = row_major(m, Idx[NType.static_value])
 
     var a_size = Int(m.value()) * (KType.static_value // 2)
     var b_size = Int(n.value()) * (KType.static_value // 2)
@@ -182,20 +182,29 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
 
     var a_host_alloc = alloc(
         AllocLayout[Scalar[a_type]](count=a_size)
-    ).into_deletable()
-    var a_host = TileTensor(a_host_alloc.unsafe_ptr(), a_shape)
+    ).into_managed()
+    var a_host_ptr: UnsafePointer[
+        Scalar[a_type], origin_of(a_host_alloc)
+    ] = a_host_alloc.unsafe_ptr()
+    var a_host = TileTensor(a_host_ptr, a_shape)
     var b_host_alloc = alloc(
         AllocLayout[Scalar[b_type]](count=b_size)
-    ).into_deletable()
-    var b_host = TileTensor(b_host_alloc.unsafe_ptr(), b_shape)
+    ).into_managed()
+    var b_host_ptr: UnsafePointer[
+        Scalar[b_type], origin_of(b_host_alloc)
+    ] = b_host_alloc.unsafe_ptr()
+    var b_host = TileTensor(b_host_ptr, b_shape)
     var c_host_alloc = alloc(
         AllocLayout[Scalar[c_type]](count=c_size)
-    ).into_deletable()
+    ).into_managed()
     var c_host = TileTensor(c_host_alloc.unsafe_ptr(), c_shape)
     var c_host_ref_alloc = alloc(
         AllocLayout[Scalar[c_type]](count=c_size)
-    ).into_deletable()
-    var c_host_ref = TileTensor(c_host_ref_alloc.unsafe_ptr(), c_shape)
+    ).into_managed()
+    var c_host_ref_ptr: UnsafePointer[
+        Scalar[c_type], origin_of(c_host_ref_alloc)
+    ] = c_host_ref_alloc.unsafe_ptr()
+    var c_host_ref = TileTensor(c_host_ref_ptr, c_shape)
 
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
     var a_tensor = TileTensor(a_device, a_shape)
@@ -220,22 +229,18 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     # Dim 4: each subrow has 4 scale factors.
 
     var a_scales_shape = row_major(
-        Coord(
-            ceildiv(Int(m.value()), SF_MN_GROUP_SIZE),
-            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1]],
-            Idx[SF_ATOM_K],
-        )
+        ceildiv(Int(m.value()), SF_MN_GROUP_SIZE),
+        Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
     var b_scales_shape = row_major(
-        Coord(
-            ceildiv(Int(n.value()), SF_MN_GROUP_SIZE),
-            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1]],
-            Idx[SF_ATOM_K],
-        )
+        ceildiv(Int(n.value()), SF_MN_GROUP_SIZE),
+        Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
 
     var a_scales_total = a_scales_shape.product()
@@ -243,16 +248,18 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
 
     var a_scales_host_alloc = alloc(
         AllocLayout[Scalar[scales_dtype]](count=a_scales_total)
-    ).into_deletable()
-    var a_scales_host = TileTensor(
-        a_scales_host_alloc.unsafe_ptr(), a_scales_shape
-    )
+    ).into_managed()
+    var a_scales_host_ptr: UnsafePointer[
+        Scalar[scales_dtype], origin_of(a_scales_host_alloc)
+    ] = a_scales_host_alloc.unsafe_ptr()
+    var a_scales_host = TileTensor(a_scales_host_ptr, a_scales_shape)
     var b_scales_host_alloc = alloc(
         AllocLayout[Scalar[scales_dtype]](count=b_scales_total)
-    ).into_deletable()
-    var b_scales_host = TileTensor(
-        b_scales_host_alloc.unsafe_ptr(), b_scales_shape
-    )
+    ).into_managed()
+    var b_scales_host_ptr: UnsafePointer[
+        Scalar[scales_dtype], origin_of(b_scales_host_alloc)
+    ] = b_scales_host_alloc.unsafe_ptr()
+    var b_scales_host = TileTensor(b_scales_host_ptr, b_scales_shape)
 
     var a_scales_device = ctx.enqueue_create_buffer[scales_dtype](
         a_scales_total
@@ -336,19 +343,18 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     # Epilogue multiplies output by 2 so we can verify the lambda is actually
     # invoked — if TileWriter skips the lambda the result will be 1x, not 2x,
     # and the comparison against 2x reference will fail.
-    @parameter
-    @always_inline
+    @__parameter
+    @inline(.always)
     @__copy_capture(c_tensor)
     def epilogue_fn[
         _dtype: DType,
-        width: SIMDSize,
+        width: SIMDLength,
         *,
         alignment: Int = 1,
-    ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
+    ](idx: Coord, val: SIMD[_dtype, width]) capturing -> None:
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
         var scaled = rebind[SIMD[c_type, width]](val) * Scalar[c_type](2)
-        c_tensor.store_linear[alignment=alignment * size_of[c_type](),](
-            idx, scaled
-        )
+        c_tensor.store[alignment=alignment * size_of[c_type]()](idx, scaled)
 
     comptime epi = Optional[elementwise_epilogue_type](
         epilogue_fn
@@ -432,12 +438,12 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     print("\n=== TEST PASSED ===\n")
 
     # Cleanup
-    dealloc(a_host_alloc^.into_allocation())
-    dealloc(b_host_alloc^.into_allocation())
-    dealloc(c_host_alloc^.into_allocation())
-    dealloc(c_host_ref_alloc^.into_allocation())
-    dealloc(a_scales_host_alloc^.into_allocation())
-    dealloc(b_scales_host_alloc^.into_allocation())
+    dealloc(a_host_alloc^)
+    dealloc(b_host_alloc^)
+    dealloc(c_host_alloc^)
+    dealloc(c_host_ref_alloc^)
+    dealloc(a_scales_host_alloc^)
+    dealloc(b_scales_host_alloc^)
     _ = a_device^
     _ = b_device^
     _ = c_device^

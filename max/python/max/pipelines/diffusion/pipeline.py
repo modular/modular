@@ -35,6 +35,10 @@ from max.pipelines.context import (
     PixelGenerationContextType,
 )
 from max.pipelines.context.outputs import GenerationOutput
+from max.pipelines.modeling.eager_validation import (
+    eager_usage_validator,
+    eager_validator,
+)
 from max.pipelines.modeling.types import (
     Pipeline,
     PipelineOutputsDict,
@@ -42,17 +46,17 @@ from max.pipelines.modeling.types import (
     RequestID,
 )
 from max.pipelines.request.open_responses import (
+    ImageGenerationDetails,
     OutputImageContent,
     OutputVideoContent,
     Usage,
 )
 from max.pipelines.weights.weight_loading import auto_cast_weights_from_env
 
-from .cache import DenoisingCacheConfig
 from .interface import DiffusionPipeline
 
 if TYPE_CHECKING:
-    from max.experimental.nn import CompiledModel
+    from max.experimental.compilation import CompiledCallable
     from max.pipelines.lib.config import PipelineConfig
     from max.pipelines.lib.model_manifest import ModelManifest
     from max.pipelines.lib.pipeline_executor import PipelineExecutor
@@ -108,10 +112,11 @@ class PixelGenerationPipeline(
     def __init__(
         self,
         pipeline_config: PipelineConfig,
-        pipeline_model: type[DiffusionPipeline]
-        | type[PipelineExecutor[Any, Any, Any]]
-        | type[Module[Any, Any]],
-        cache_config: DenoisingCacheConfig | None = None,
+        pipeline_model: type[
+            DiffusionPipeline
+            | PipelineExecutor[Any, Any, Any]
+            | Module[Any, Any]
+        ],
     ) -> None:
         from max.engine import InferenceSession  # local import to avoid cycles
         from max.pipelines.lib.pipeline_executor import PipelineExecutor
@@ -127,75 +132,77 @@ class PixelGenerationPipeline(
         # Configure session with pipeline settings.
         self._pipeline_config.configure_session(session)
 
+        self._request_validator = eager_usage_validator(
+            pipeline_config.runtime.eager_usage_validator, "execution"
+        )
+
         self._use_module = False
         self._use_executor = False
         self._module: PixelGenerationModule | None = None
-        self._compiled: CompiledModel | None = None
+        self._compiled: CompiledCallable | None = None
         self._executor: PipelineExecutor[Any, Any, Any] | None = None
         self._pipeline_model: DiffusionPipeline | None = None
 
-        if issubclass(pipeline_model, Module):
-            # ModuleV3 path: construct the Module under F.lazy(), compose
-            # the manifest's loader through the Module tree's
-            # query-translating adapters, then compile.  Compilation,
-            # session lifecycle, and the CompiledModel handle all live
-            # here -- the Module itself carries only structure (forward +
-            # input_types) and the request/response I/O contract
-            # (prepare_inputs + from_outputs).
-            self._use_module = True
-            module_cls = cast(type[PixelGenerationModule], pipeline_model)
-            with F.lazy():
-                module_io = module_cls(manifest=pipeline_config.models)
-            # The Module ABC carries ``.compile()`` and the walker's
-            # ``.descendants`` traversal; the Protocol carries the I/O
-            # methods.  Bridge with one cast since mypy can't express
-            # the intersection (Module & PixelGenerationModule).
-            module_base = cast(Module[Any, Any], module_io)
-            # Compose the source loader through every Module's
-            # ``adapt_loader``, then materialise just the parameters the
-            # Module declares -- the loader stays cold for anything the
-            # tree never asks for.
-            # Imported here rather than at module scope to break a
-            # circular import: ``max.pipelines.lib`` imports this module's
-            # ``PixelGenerationPipeline``, so importing from
-            # ``max.pipelines.lib.*`` at load time re-enters a
-            # partially-initialized ``lib`` package.
-            from max.pipelines.lib.weight_loader import adapt_module_loader
+        with eager_usage_validator(
+            pipeline_config.runtime.eager_usage_validator, "initialization"
+        ):
+            if issubclass(pipeline_model, Module):
+                # ModuleV3 path: construct the Module under F.lazy(), compose
+                # the manifest's loader through the Module tree's
+                # query-translating adapters, then compile.  Compilation,
+                # session lifecycle, and the CompiledCallable handle all live
+                # here -- the Module itself carries only structure (forward +
+                # input_types) and the request/response I/O contract
+                # (prepare_inputs + from_outputs).
+                self._use_module = True
+                module_cls = cast(type[PixelGenerationModule], pipeline_model)
+                with F.lazy():
+                    module_io = module_cls(manifest=pipeline_config.models)
+                # The Module ABC carries ``.compile()`` and the walker's
+                # ``.descendants`` traversal; the Protocol carries the I/O
+                # methods.  Bridge with one cast since mypy can't express
+                # the intersection (Module & PixelGenerationModule).
+                module_base = cast(Module[Any, Any], module_io)
+                # Compose the source loader through every Module's
+                # ``adapt_loader``, then materialise just the parameters the
+                # Module declares -- the loader stays cold for anything the
+                # tree never asks for.
+                # Imported here rather than at module scope to break a
+                # circular import: ``max.pipelines.lib`` imports this module's
+                # ``PixelGenerationPipeline``, so importing from
+                # ``max.pipelines.lib.*`` at load time re-enters a
+                # partially-initialized ``lib`` package.
+                from max.pipelines.lib.weight_loader import adapt_module_loader
 
-            loader = adapt_module_loader(
-                module_base, pipeline_config.models.loader()
-            )
-            state_dict = {
-                name: loader(name) for name, _ in module_base.parameters
-            }
-            self._compiled = module_base.compile(
-                *module_io.input_types(),
-                weights=state_dict,
-                auto_cast=auto_cast_weights_from_env(),
-            )
-            self._module = module_io
-        elif issubclass(pipeline_model, PipelineExecutor):
-            # Merge CLI-supplied cache_config into runtime so the executor
-            # receives TaylorSeer / FBCache settings.
-            if cache_config is not None:
-                pipeline_config.runtime.denoising_cache = cache_config
-            self._use_executor = True
-            self._executor = pipeline_model(
-                manifest=pipeline_config.models,
-                session=session,
-                runtime_config=pipeline_config.runtime,
-            )
-        else:
-            # Weight paths are resolved per-component inside
-            # _load_sub_models.
-            self._pipeline_model = pipeline_model(
-                pipeline_config=self._pipeline_config,
-                session=session,
-                devices=self._devices,
-                weight_paths=[],
-                cache_config=cache_config
-                or pipeline_config.runtime.denoising_cache,
-            )
+                loader = adapt_module_loader(
+                    module_base, pipeline_config.models.loader()
+                )
+                state_dict = {
+                    name: loader(name) for name, _ in module_base.parameters
+                }
+                self._compiled = module_base.compile(
+                    *module_io.input_types(),
+                    weights=state_dict,
+                    auto_cast=auto_cast_weights_from_env(),
+                )
+                self._module = module_io
+            elif issubclass(pipeline_model, PipelineExecutor):
+                self._use_executor = True
+                self._executor = pipeline_model(
+                    manifest=pipeline_config.models,
+                    session=session,
+                    runtime_config=pipeline_config.runtime,
+                )
+            else:
+                # Weight paths are resolved per-component inside
+                # _load_sub_models.
+                self._pipeline_model = pipeline_model(
+                    pipeline_config=self._pipeline_config,
+                    session=session,
+                    devices=self._devices,
+                    weight_paths=[],
+                    cache_config=pipeline_config.runtime.denoising_cache,
+                )
 
     @property
     def pipeline_config(self) -> PipelineConfig:
@@ -212,6 +219,13 @@ class PixelGenerationPipeline(
         inputs: PixelGenerationInputs[PixelGenerationContextType],
     ) -> PipelineOutputsDict[GenerationOutput]:
         """Runs the pixel generation pipeline for the given inputs."""
+        with self._request_validator:
+            return self._execute(inputs)
+
+    def _execute(
+        self,
+        inputs: PixelGenerationInputs[PixelGenerationContextType],
+    ) -> PipelineOutputsDict[GenerationOutput]:
         model_inputs, flat_batch = self.prepare_batch(inputs.batch)
         if not flat_batch or model_inputs is None:
             return {}
@@ -246,10 +260,16 @@ class PixelGenerationPipeline(
                 )
                 raise
             module_outputs = self._module.from_outputs(list(compiled_outputs))
-            images = np.from_dlpack(module_outputs.images)
-            num_images_per_prompt = np.from_dlpack(
-                model_inputs.num_images_per_prompt
-            ).item()
+            # The response carries pixels, so the host has to read them. One
+            # bulk read of the finished image is the cheapest shape this can
+            # take, which is what the validator wants to hear.
+            with eager_validator.allow_device_transfer(
+                reason="the response body is the decoded image"
+            ):
+                images = np.from_dlpack(module_outputs.images)
+                num_images_per_prompt = np.from_dlpack(
+                    model_inputs.num_images_per_prompt
+                ).item()
             assert isinstance(num_images_per_prompt, int)
         elif self._use_executor:
             assert self._executor is not None
@@ -319,11 +339,17 @@ class PixelGenerationPipeline(
             pixel_data = images[offset : offset + num_images_per_prompt]
 
             output_format = getattr(_context, "output_format", "jpeg")
-            # Usage reports generated pixels as output tokens, counted from
+            # Per the unified usage spec, image generation keeps token counts
+            # at 0; billing-relevant metadata (dimensions, megapixels, steps,
+            # image count) lives under image_generation_details, measured from
             # the actual output arrays rather than the requested dimensions.
-            # Prompt text is not counted, so input_tokens stays 0.
-            output_pixels = int(
-                sum(img.shape[0] * img.shape[1] for img in pixel_data)
+            usage = Usage(
+                input_tokens=0,
+                output_tokens=0,
+                total_tokens=0,
+                image_generation_details=ImageGenerationDetails.from_images(
+                    pixel_data, steps=_context.num_inference_steps
+                ),
             )
             responses[request_id] = GenerationOutput(
                 request_id=request_id,
@@ -332,11 +358,7 @@ class PixelGenerationPipeline(
                     OutputImageContent.from_numpy(img, format=output_format)
                     for img in pixel_data
                 ],
-                usage=Usage(
-                    input_tokens=0,
-                    output_tokens=output_pixels,
-                    total_tokens=output_pixels,
-                ),
+                usage=usage,
             )
 
         return responses
@@ -394,4 +416,3 @@ class PixelGenerationPipeline(
         Args:
             request_id: The request ID to release resources for.
         """
-        pass

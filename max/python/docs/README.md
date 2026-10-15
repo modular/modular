@@ -54,5 +54,5 @@ CLAUDE.md file for instructions on updating the corresponding RST file.
   pipeline, monkey-patches, and the full list of common pitfalls.
 - [`docs/internal/PythonDocstringStyleGuide.md`](../../../docs/internal/PythonDocstringStyleGuide.md)
   — Python docstring style (RST, Google sections, Sphinx directives).
-- `.claude/skills/docstrings/SKILL.md` — the `docstrings` skill, for bulk
+- `.agents/skills/docstrings/SKILL.md` — the `docstrings` skill, for bulk
   docstring editing across many files. Invoke with `/docstrings`.

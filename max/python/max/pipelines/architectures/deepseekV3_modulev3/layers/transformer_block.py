@@ -26,10 +26,9 @@ from max.experimental.nn.common_layers.multi_latent_attention import (
     MLAPrefillMetadata,
 )
 from max.experimental.nn.norm import RMSNorm
-from max.experimental.sharding import Partial, PlacementMapping
+from max.experimental.sharding import DeviceMapping, Partial
 from max.experimental.tensor import Tensor
-from max.graph import TensorValue
-from max.nn.comm.ep import EPBatchManager
+from max.nn.comm.ep import EPBatchManager, EPCommBuffers
 
 from ..model_config import DeepseekV3Config
 from .moe_gate import DeepseekV3TopKRouter
@@ -82,7 +81,6 @@ def _get_mlp(
             has_shared_experts=True,
             shared_experts_dim=config.n_shared_experts
             * config.moe_intermediate_size,
-            apply_router_weight_first=False,
             quant_config=config.quant_config,
         )
         if ep_batch_manager is not None:
@@ -100,7 +98,11 @@ def _get_mlp(
     mlp = QuantizedMLP(
         hidden_dim=config.hidden_size,
         feed_forward_length=config.intermediate_size,
-        quant_config=config.quant_config,
+        quant_config=(
+            None
+            if layer_idx in config.dense_mlp_layers_without_quant
+            else config.quant_config
+        ),
     )
     if mode == ParallelismMode.TP_TP or (
         config.ep_config is not None and config.ep_config.use_allreduce
@@ -170,6 +172,7 @@ class DeepseekV3TransformerBlock(Module[..., Tensor]):
             graph_mode=config.graph_mode,
             buffer_size=config.max_batch_context_length,
             quant_config=config.quant_config,
+            quantize_o_proj=config.mla_o_proj_quantized,
         )
         tensor_parallel_latent_attention_with_rope(self.self_attn)
         self.mlp = _get_mlp(config, self.mode, layer_idx, ep_batch_manager)
@@ -188,6 +191,7 @@ class DeepseekV3TransformerBlock(Module[..., Tensor]):
         input_row_offsets: Tensor,
         freqs_cis: Tensor,
         mla_prefill_metadata: MLAPrefillMetadata | None = None,
+        comm_buffers: EPCommBuffers | None = None,
     ) -> Tensor:
         residual = x
         norm_x = self.input_layernorm(x)
@@ -202,7 +206,11 @@ class DeepseekV3TransformerBlock(Module[..., Tensor]):
 
         hidden_states = self._post_attention(residual, attn_out)
         norm_h = self.post_attention_layernorm(hidden_states)
-        mlp_out = self.mlp(norm_h)
+        if isinstance(self.mlp, ExpertParallelMoE):
+            assert comm_buffers is not None
+            mlp_out = self.mlp(norm_h, comm_buffers)
+        else:
+            mlp_out = self.mlp(norm_h)
         hidden_states = self._post_mlp(hidden_states, mlp_out)
         return F.rebind(hidden_states, x.shape)
 
@@ -212,38 +220,7 @@ class DeepseekV3TransformerBlock(Module[..., Tensor]):
         attn_out: Tensor,
     ) -> Tensor:
         """Residual connection and collective after attention."""
-        match self.mode:
-            case ParallelismMode.TP_EP:
-                assert self.config.ep_config is not None
-                if self.config.ep_config.use_allreduce:
-                    attn_out = F.allreduce_sum(attn_out)
-                    return x + attn_out
-                else:
-                    # attn_outs[i] is device i's partial sum (allreduce was
-                    # skipped).  Add the residual only on device 0 so it isn't
-                    # counted P times after the reduce-scatter.
-                    mesh = x.mesh
-                    attn_shards = [
-                        TensorValue(s) for s in attn_out.local_shards
-                    ]
-                    residual_shards = [TensorValue(s) for s in x.local_shards]
-                    folded = [
-                        residual_shards[0] + attn_shards[0],
-                        *attn_shards[1:],
-                    ]
-                    partial = Tensor.from_shard_values(
-                        folded, PlacementMapping(mesh, (Partial(),))
-                    )
-
-                    # Partial -> Sharded(0): real reduce-scatter collective.
-                    return F.reduce_scatter(partial, scatter_axis=0)
-            case ParallelismMode.TP_TP:
-                attn_out = F.allreduce_sum(attn_out)
-                return x + attn_out
-            case ParallelismMode.DP_EP:
-                return x + attn_out
-            case _:
-                raise ValueError(f"Unsupported parallelism mode: {self.mode}")
+        return post_attention(self.mode, self.config, x, attn_out)
 
     def _post_mlp(
         self,
@@ -251,24 +228,77 @@ class DeepseekV3TransformerBlock(Module[..., Tensor]):
         mlp_out: Tensor,
     ) -> Tensor:
         """Collective after MoE/MLP to restore the expected hidden-state layout."""
-        match self.mode:
-            case ParallelismMode.TP_EP:
-                assert self.config.ep_config is not None
-                if self.config.ep_config.use_allreduce:
-                    mlp_out = F.allreduce_sum(mlp_out)
-                    return h + mlp_out
-                else:
-                    h = h + mlp_out
-                    return F.allgather(h, tensor_axis=0)
-            case ParallelismMode.TP_TP:
-                # Both the TP MoE (routed + shared) and the plain TP MLP return
-                # each device's partial sum; one all-reduce after the layer
-                # resolves it (matches the V2 ``nn.moe`` single-all-reduce
-                # layout, where the shared expert is summed before this
-                # collective).
+        return post_mlp(self.mode, self.config, h, mlp_out)
+
+
+def post_attention(
+    mode: ParallelismMode,
+    config: DeepseekV3Config,
+    x: Tensor,
+    attn_out: Tensor,
+) -> Tensor:
+    """Residual connection and collective after attention."""
+    match mode:
+        case ParallelismMode.TP_EP:
+            assert config.ep_config is not None
+            if config.ep_config.use_allreduce:
+                attn_out = F.allreduce_sum(attn_out)
+                return x + attn_out
+            else:
+                # Each device holds its partial sum (allreduce was
+                # skipped). Add the residual only on the first device so
+                # it isn't counted P times after the reduce-scatter.
+                def add_residual_once(
+                    partial_sums: list[Tensor], residuals: list[Tensor]
+                ) -> list[Tensor]:
+                    return [
+                        residuals[0] + partial_sums[0],
+                        *partial_sums[1:],
+                    ]
+
+                partial = F.call_on_mesh(
+                    add_residual_once,
+                    x.mesh,
+                    x.mesh.axis_names,
+                    out_specs=DeviceMapping(x.mesh, (Partial(),)),
+                )(attn_out, x)
+
+                # Partial -> Sharded(0): real reduce-scatter collective.
+                return F.reduce_scatter(partial, scatter_axis=0)
+        case ParallelismMode.TP_TP:
+            attn_out = F.allreduce_sum(attn_out)
+            return x + attn_out
+        case ParallelismMode.DP_EP:
+            return x + attn_out
+        case _:
+            raise ValueError(f"Unsupported parallelism mode: {mode}")
+
+
+def post_mlp(
+    mode: ParallelismMode,
+    config: DeepseekV3Config,
+    h: Tensor,
+    mlp_out: Tensor,
+) -> Tensor:
+    """Collective after MoE/MLP to restore the expected hidden-state layout."""
+    match mode:
+        case ParallelismMode.TP_EP:
+            assert config.ep_config is not None
+            if config.ep_config.use_allreduce:
                 mlp_out = F.allreduce_sum(mlp_out)
                 return h + mlp_out
-            case ParallelismMode.DP_EP:
-                return h + mlp_out
-            case _:
-                raise ValueError(f"Unsupported parallelism mode: {self.mode}")
+            else:
+                h = h + mlp_out
+                return F.allgather(h, tensor_axis=0)
+        case ParallelismMode.TP_TP:
+            # Both the TP MoE (routed + shared) and the plain TP MLP return
+            # each device's partial sum; one all-reduce after the layer
+            # resolves it (matches the V2 ``nn.moe`` single-all-reduce
+            # layout, where the shared expert is summed before this
+            # collective).
+            mlp_out = F.allreduce_sum(mlp_out)
+            return h + mlp_out
+        case ParallelismMode.DP_EP:
+            return h + mlp_out
+        case _:
+            raise ValueError(f"Unsupported parallelism mode: {mode}")

@@ -14,27 +14,35 @@
 
 Tests the dispatch function that selects optimal kernel configuration based
 on (N, K) shape. Verifies correctness against vendor_blas reference for:
-- Dispatch-tuned shapes: N=4096,K=7168 and N=7168,K=2048
-- Fallback path (auto-computed config for unknown shapes)
+- Dispatch-tuned shapes: N=4096,K=7168 and N=7168,K=2048, plus
+  N=2048,K=4096, which decodes at the default decode stages
+- Fallback path for unknown shapes: default decode stages, auto stages
+  otherwise
 - Various active expert counts, token patterns, and -1 expert IDs
+- Per-row input scales (`a_row_scales`) in every dispatch regime
 """
 from std.math import align_up, ceildiv
 
 import linalg.matmul.vendor.blas as vendor_blas
-from std.gpu.host import DeviceContext
-from std.memory import alloc
+from max.gpu.host import DeviceContext
+from std.memory import Pointer
 from internal_utils import assert_almost_equal
+from std.testing import assert_equal, assert_false
+from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d.dispatch import (
+    DECODE_AVG_M,
+    DECODE_DEFAULT_STAGES,
+    SMALL_PREFILL_AVG_M,
+    _tuned_stages,
+)
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
     grouped_matmul_nvfp4_dispatch,
 )
-from std.random import random_ui64, seed, rand
-from std.builtin.simd import _convert_f32_to_float8_scalar
-from layout import (
-    Coord,
-    Idx,
-    TileTensor,
-    row_major,
+from linalg.matmul.gpu.sm100_structured.structured_kernels.row_scales import (
+    RealRowScales,
 )
+from std.random import random_float64, random_ui64, seed, rand
+from std.simd import _convert_f32_to_float8_scalar
+from layout import Idx, TileTensor, row_major
 from linalg.fp4_utils import (
     SF_MN_GROUP_SIZE,
     SF_ATOM_M,
@@ -49,6 +57,7 @@ def _test_dispatch[
     num_experts: Int,
     N: Int,
     K: Int,
+    check_row_scales: Bool = False,
 ](
     num_active_experts: Int,
     num_tokens_by_expert: List[Int],
@@ -60,6 +69,12 @@ def _test_dispatch[
     Follows the same reference-computation pattern as
     test_grouped_matmul_sm100_block_fp4.mojo but calls the dispatch function
     which selects all config parameters based on (N, K).
+
+    With `check_row_scales`, also runs the dispatch with bf16 per-row input
+    scales twice. Power-of-two scales commute with every rounding step, so
+    that output must equal the unscaled output times the row scale exactly.
+    Arbitrary scales are then checked against the vendor reference scaled
+    per row on the host.
     """
     seed(1234)
     comptime a_type = DType.uint8
@@ -70,7 +85,7 @@ def _test_dispatch[
     comptime SF_VECTOR_SIZE = NVFP4_SF_VECTOR_SIZE
     comptime transpose_b = True
 
-    total_num_tokens = 0
+    var total_num_tokens = 0
     for i in range(len(num_tokens_by_expert)):
         total_num_tokens += num_tokens_by_expert[i]
     var M = total_num_tokens
@@ -90,9 +105,9 @@ def _test_dispatch[
     )
 
     # --- Host allocations ---
-    var a_shape = row_major(Coord(Int(M), Idx[packed_K]))
-    var b_shape = row_major(Coord(Idx[num_experts], Idx[N], Idx[packed_K]))
-    var c_shape = row_major(Coord(Int(M), Idx[N]))
+    var a_shape = row_major(M, Idx[packed_K])
+    var b_shape = row_major(Idx[num_experts], Idx[N], Idx[packed_K])
+    var c_shape = row_major(M, Idx[N])
 
     var a_size = M * packed_K
     var b_size = num_experts * N * packed_K
@@ -117,46 +132,44 @@ def _test_dispatch[
     var c_device_ref = ctx.enqueue_create_buffer[c_type](c_size)
     var c_ref_tensor = TileTensor(c_device_ref, c_shape)
 
-    var a_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
+    var a_offsets_device = ctx.enqueue_create_buffer[.uint32](
         num_active_experts + 1
     )
     var a_offsets_tensor = TileTensor(
         a_offsets_device,
-        row_major(Coord(Int(num_active_experts + 1))),
+        row_major(num_active_experts + 1),
     )
-    var a_scale_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
+    var a_scale_offsets_device = ctx.enqueue_create_buffer[.uint32](
         num_active_experts
     )
     var a_scale_offsets_tensor = TileTensor(
         a_scale_offsets_device,
-        row_major(Coord(Int(num_active_experts))),
+        row_major(num_active_experts),
     )
-    var expert_ids_device = ctx.enqueue_create_buffer[DType.int32](
+    var expert_ids_device = ctx.enqueue_create_buffer[.int32](
         num_active_experts
     )
     var expert_ids_tensor = TileTensor(
         expert_ids_device,
-        row_major(Coord(Int(num_active_experts))),
+        row_major(num_active_experts),
     )
-    var expert_scales_device = ctx.enqueue_create_buffer[DType.float32](
-        num_experts
-    )
+    var expert_scales_device = ctx.enqueue_create_buffer[.float32](num_experts)
     var expert_scales_tensor = TileTensor(
         expert_scales_device,
-        row_major(Coord(Idx[num_experts])),
+        row_major(Idx[num_experts]),
     )
 
     # --- Offsets & expert IDs ---
-    var a_offsets_host_ptr = ctx.enqueue_create_host_buffer[DType.uint32](
+    var a_offsets_host_ptr = ctx.enqueue_create_host_buffer[.uint32](
         num_active_experts + 1
     )
-    var a_scale_offsets_ptr = ctx.enqueue_create_host_buffer[DType.uint32](
+    var a_scale_offsets_ptr = ctx.enqueue_create_host_buffer[.uint32](
         num_active_experts
     )
-    var expert_ids_host_ptr = ctx.enqueue_create_host_buffer[DType.int32](
+    var expert_ids_host_ptr = ctx.enqueue_create_host_buffer[.int32](
         num_experts
     )
-    var expert_scales_host_ptr = ctx.enqueue_create_host_buffer[DType.float32](
+    var expert_scales_host_ptr = ctx.enqueue_create_host_buffer[.float32](
         num_experts
     )
 
@@ -164,14 +177,14 @@ def _test_dispatch[
     for i in range(num_experts):
         expert_scales_host_ptr[i] = 1.0 + Float32(i + 1) / Float32(num_experts)
 
-    a_scale_dim0 = 0
+    var a_scale_dim0 = 0
     a_offsets_host_ptr[0] = 0
     for i in range(num_active_experts):
         a_scale_offsets_ptr[i] = UInt32(
             a_scale_dim0
             - Int(a_offsets_host_ptr[i] // UInt32(SF_MN_GROUP_SIZE))
         )
-        local_m = num_tokens_by_expert[i]
+        var local_m = num_tokens_by_expert[i]
         a_offsets_host_ptr[i + 1] = a_offsets_host_ptr[i] + UInt32(local_m)
         a_scale_dim0 += ceildiv(local_m, SF_MN_GROUP_SIZE)
         expert_ids_host_ptr[i] = Int32(expert_ids[i])
@@ -181,23 +194,19 @@ def _test_dispatch[
     comptime n_groups = ceildiv(N, SF_MN_GROUP_SIZE)
 
     var a_scales_shape = row_major(
-        Coord(
-            Int(a_scale_dim0),
-            Idx[k_groups],
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1]],
-            Idx[SF_ATOM_K],
-        )
+        a_scale_dim0,
+        Idx[k_groups],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
     var b_scales_shape = row_major(
-        Coord(
-            Idx[num_experts],
-            Idx[n_groups],
-            Idx[k_groups],
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1]],
-            Idx[SF_ATOM_K],
-        )
+        Idx[num_experts],
+        Idx[n_groups],
+        Idx[k_groups],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
 
     var a_scales_total = a_scales_shape.product()
@@ -222,26 +231,26 @@ def _test_dispatch[
     var b_scales_tensor = TileTensor(b_scales_device, b_scales_shape)
 
     # --- Initialize data ---
-    rand(a_host.ptr, a_host.num_elements(), min=0, max=255)
-    rand(b_host.ptr, b_host.num_elements(), min=0, max=255)
+    rand(a_host.as_span(), min=0, max=255)
+    rand(b_host.as_span(), min=0, max=255)
 
     var a_scales_tensor_host = TileTensor(a_scales_host_ptr, a_scales_shape)
     var b_scales_tensor_host = TileTensor(b_scales_host_ptr, b_scales_shape)
 
     # Initialize a_scales to 0, then set valid regions to power-of-2 values
     for i in range(a_scales_host.num_elements()):
-        a_scales_host.ptr[i] = Scalar[scales_dtype](0.0)
-    rand(b_scales_host.ptr, b_scales_host.num_elements())
+        a_scales_host._storage[i] = Scalar[scales_dtype](0.0)
+    rand(b_scales_host.as_span())
 
     # Set a_scales for active expert regions
     for i in range(num_active_experts):
-        start = Int(a_offsets_host_ptr[i])
-        end = Int(a_offsets_host_ptr[i + 1])
-        local_m = end - start
-        actual_start = (
+        var start = Int(a_offsets_host_ptr[i])
+        var end = Int(a_offsets_host_ptr[i + 1])
+        var local_m = end - start
+        var actual_start = (
             start // SF_MN_GROUP_SIZE + Int(a_scale_offsets_ptr[i])
         ) * SF_MN_GROUP_SIZE
-        actual_end = actual_start + local_m
+        var actual_end = actual_start + local_m
         for idx0 in range(actual_start, actual_end):
             for idx1 in range(
                 0,
@@ -251,14 +260,14 @@ def _test_dispatch[
                 if idx1 < K:
                     var scale_value = _convert_f32_to_float8_scalar[
                         scales_dtype
-                    ]((1 << random_ui64(0, 2)).cast[DType.float32]())
+                    ]((1 << random_ui64(0, 2)).cast[.float32]())
                     set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
                         a_scales_tensor_host, idx0, idx1, scale_value
                     )
 
     # Zero unused b_scales regions
     for e in range(num_experts):
-        expert_slice_size = (
+        var expert_slice_size = (
             Int(b_scales_host.dim(1))
             * Int(b_scales_host.dim(2))
             * Int(b_scales_host.dim(3))
@@ -268,13 +277,11 @@ def _test_dispatch[
         var b_scales_tensor_expert_slice = TileTensor(
             b_scales_host_ptr.unsafe_ptr() + e * expert_slice_size,
             row_major(
-                Coord(
-                    Idx[n_groups],
-                    Idx[k_groups],
-                    Idx[SF_ATOM_M[0]],
-                    Idx[SF_ATOM_M[1]],
-                    Idx[SF_ATOM_K],
-                )
+                Idx[n_groups],
+                Idx[k_groups],
+                Idx[SF_ATOM_M[0]],
+                Idx[SF_ATOM_M[1]],
+                Idx[SF_ATOM_K],
             ),
         )
         for idx0 in range(align_up(N, SF_MN_GROUP_SIZE)):
@@ -305,31 +312,27 @@ def _test_dispatch[
     var a_scales_tt = TileTensor(
         a_scales_device,
         row_major(
-            Coord(
-                Int64(a_scale_dim0),
-                Idx[k_groups],
-                Idx[SF_ATOM_M[0]],
-                Idx[SF_ATOM_M[1]],
-                Idx[SF_ATOM_K],
-            )
+            Int64(a_scale_dim0),
+            Idx[k_groups],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         ),
     ).as_unsafe_any_origin()
     var b_scales_tt = TileTensor(
         b_scales_device,
         row_major(
-            Coord(
-                Idx[num_experts],
-                Idx[n_groups],
-                Idx[k_groups],
-                Idx[SF_ATOM_M[0]],
-                Idx[SF_ATOM_M[1]],
-                Idx[SF_ATOM_K],
-            )
+            Idx[num_experts],
+            Idx[n_groups],
+            Idx[k_groups],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         ),
     ).as_unsafe_any_origin()
     var expert_scales_tt = TileTensor(
         expert_scales_device,
-        row_major(Coord(Int64(num_experts))),
+        row_major(Int64(num_experts)),
     ).as_unsafe_any_origin()
 
     # --- Call dispatch function (MOGG argument order) ---
@@ -361,9 +364,9 @@ def _test_dispatch[
     ] * SF_ATOM_K
 
     for i in range(num_active_experts):
-        start = Int(a_offsets_host_ptr[i])
-        end = Int(a_offsets_host_ptr[i + 1])
-        expert_id = expert_ids_host_ptr[i]
+        var start = Int(a_offsets_host_ptr[i])
+        var end = Int(a_offsets_host_ptr[i + 1])
+        var expert_id = expert_ids_host_ptr[i]
 
         if expert_id < 0 or end - start == 0:
             continue
@@ -386,13 +389,11 @@ def _test_dispatch[
         var new_b_scales_tensor = TileTensor(
             b_scales_tensor.ptr + Int(expert_id) * b_scales_expert_stride,
             row_major(
-                Coord(
-                    Idx[n_groups],
-                    Idx[k_groups],
-                    Idx[SF_ATOM_M[0]],
-                    Idx[SF_ATOM_M[1]],
-                    Idx[SF_ATOM_K],
-                )
+                Idx[n_groups],
+                Idx[k_groups],
+                Idx[SF_ATOM_M[0]],
+                Idx[SF_ATOM_M[1]],
+                Idx[SF_ATOM_K],
             ),
         )
 
@@ -402,13 +403,11 @@ def _test_dispatch[
         var new_a_scales_tensor = TileTensor(
             a_scales_tensor.ptr + a_scales_start * a_scales_row_stride,
             row_major(
-                Coord(
-                    ceildiv(end - start, SF_MN_GROUP_SIZE),
-                    Idx[k_groups],
-                    Idx[SF_ATOM_M[0]],
-                    Idx[SF_ATOM_M[1]],
-                    Idx[SF_ATOM_K],
-                )
+                ceildiv(end - start, SF_MN_GROUP_SIZE),
+                Idx[k_groups],
+                Idx[SF_ATOM_M[0]],
+                Idx[SF_ATOM_M[1]],
+                Idx[SF_ATOM_K],
             ),
         )
 
@@ -433,20 +432,115 @@ def _test_dispatch[
 
     # Zero output regions for skipped experts (expert_id == -1 or 0 tokens)
     for i in range(num_active_experts):
-        start = Int(a_offsets_host_ptr[i])
-        end = Int(a_offsets_host_ptr[i + 1])
+        var start = Int(a_offsets_host_ptr[i])
+        var end = Int(a_offsets_host_ptr[i + 1])
         if expert_ids_host_ptr[i] < 0 or end - start == 0:
             for j in range(start * N, end * N):
                 c_host_ptr[j] = Scalar[c_type](0)
                 c_host_ref_ptr[j] = Scalar[c_type](0)
 
     assert_almost_equal(
-        c_host.ptr,
-        c_host_ref.ptr,
+        c_host._storage,
+        c_host_ref._storage,
         c_host.num_elements(),
         atol=1e-2,
         rtol=1e-2,
     )
+
+    comptime if check_row_scales:
+        var row_scales_host = ctx.enqueue_create_host_buffer[.bfloat16](M)
+        var row_scales_device = ctx.enqueue_create_buffer[.bfloat16](M)
+        var c_rs_host = ctx.enqueue_create_host_buffer[c_type](c_size)
+        var c_expected = ctx.enqueue_create_host_buffer[c_type](c_size)
+        var row_scales = RealRowScales(
+            rebind[Pointer[BFloat16, ImmutAnyOrigin]](
+                row_scales_device.unsafe_ptr()
+            )
+        )
+        comptime for pass_idx in range(2):
+            comptime pow2 = pass_idx == 0
+            for m in range(M):
+                comptime if pow2:
+                    row_scales_host[m] = (
+                        (1 << random_ui64(0, 6)).cast[.float32]() / 8
+                    ).cast[.bfloat16]()
+                else:
+                    row_scales_host[m] = random_float64(0.25, 4.0).cast[
+                        .bfloat16
+                    ]()
+            ctx.enqueue_copy(row_scales_device, row_scales_host)
+            grouped_matmul_nvfp4_dispatch[
+                transpose_b=transpose_b, RowScalesT=type_of(row_scales)
+            ](
+                c_tensor,
+                a_tensor,
+                b_tensor,
+                a_scales_tt,
+                b_scales_tt,
+                a_offsets_tensor,
+                a_scale_offsets_tensor,
+                expert_ids_tensor,
+                expert_scales_tt,
+                num_active_experts,
+                total_num_tokens,
+                ctx,
+                a_row_scales=row_scales,
+            )
+            ctx.enqueue_copy(c_rs_host, c_device)
+            ctx.synchronize()
+
+            for i in range(num_active_experts):
+                var start = Int(a_offsets_host_ptr[i])
+                var end = Int(a_offsets_host_ptr[i + 1])
+                var skip = expert_ids_host_ptr[i] < 0
+                for m in range(start, end):
+                    for n in range(N):
+                        var idx = m * N + n
+                        if skip:
+                            c_rs_host[idx] = 0
+                            c_expected[idx] = 0
+                            continue
+                        var base: Scalar[c_type]
+                        comptime if pow2:
+                            base = c_host_ptr[idx]
+                        else:
+                            base = c_host_ref_ptr[idx]
+                        c_expected[idx] = (
+                            base.cast[.float32]()
+                            * row_scales_host[m].cast[.float32]()
+                        ).cast[c_type]()
+
+            comptime if pow2:
+                var mismatches = 0
+                for idx in range(c_size):
+                    if c_rs_host[idx] != c_expected[idx]:
+                        if mismatches < 8:
+                            print(
+                                "    row-scale mismatch at row",
+                                idx // N,
+                                "col",
+                                idx % N,
+                                ":",
+                                c_rs_host[idx],
+                                "vs",
+                                c_expected[idx],
+                            )
+                        mismatches += 1
+                if mismatches != 0:
+                    raise Error(
+                        String(mismatches, " power-of-two row-scale mismatches")
+                    )
+            else:
+                assert_almost_equal(
+                    c_rs_host.unsafe_ptr(),
+                    c_expected.unsafe_ptr(),
+                    c_size,
+                    atol=5e-2,
+                    rtol=2e-2,
+                )
+        print("    row scales PASSED")
+        _ = row_scales_device^
+
     print("    PASSED")
 
     # --- Cleanup ---
@@ -462,7 +556,24 @@ def _test_dispatch[
     _ = expert_scales_device^
 
 
+def test_tuned_stages() raises:
+    """Pins the stage lookup: tuned rows, the decode default, and auto."""
+    # An untuned decode shape, and the decode rows the default replaced.
+    assert_equal(
+        _tuned_stages[1856, 2688, DECODE_AVG_M](),
+        Optional(DECODE_DEFAULT_STAGES),
+    )
+    assert_equal(_tuned_stages[4096, 7168, DECODE_AVG_M](), Optional(6))
+    assert_equal(_tuned_stages[7168, 2048, DECODE_AVG_M](), Optional(6))
+    assert_equal(_tuned_stages[2048, 4096, DECODE_AVG_M](), Optional(6))
+    # Tuned prefill rows, and auto stages for untuned prefill.
+    assert_equal(_tuned_stages[4096, 7168, -1](), Optional(7))
+    assert_false(Bool(_tuned_stages[1856, 2688, SMALL_PREFILL_AVG_M]()))
+    assert_false(Bool(_tuned_stages[2048, 4096, -1]()))
+
+
 def main() raises:
+    test_tuned_stages()
     with DeviceContext() as ctx:
         # ============================================================
         # 1. Dispatch-tuned shape: N=4096, K=7168 (DeepSeek V3 up-proj)
@@ -481,7 +592,7 @@ def main() raises:
 
         # 1b: Small token counts (MoE decode regime)
         print("  1b: 4 experts, very small tokens (2 each)")
-        _test_dispatch[6, 4096, 7168](
+        _test_dispatch[6, 4096, 7168, True](
             4,
             [2, 2, 2, 2],
             [0, 1, 2, 3],
@@ -499,7 +610,7 @@ def main() raises:
 
         # 1d: Unaligned token counts
         print("  1d: unaligned tokens")
-        _test_dispatch[6, 4096, 7168](
+        _test_dispatch[6, 4096, 7168, True](
             3,
             [65, 129, 257],
             [2, 0, 1],
@@ -508,7 +619,7 @@ def main() raises:
 
         # 1e: -1 expert IDs (inactive experts skipped by kernel)
         print("  1e: -1 expert IDs")
-        _test_dispatch[6, 4096, 7168](
+        _test_dispatch[6, 4096, 7168, True](
             3,
             [128, 256, 512],
             [-1, 0, 2],
@@ -558,9 +669,12 @@ def main() raises:
         )
 
         # ============================================================
-        # 3. Fallback path (unknown shapes, auto-computed stages)
+        # 3. Fallback path (unknown shapes: auto stages, default decode stages)
         # ============================================================
-        print("\n=== Fallback: unknown shapes (auto-computed stages) ===")
+        print(
+            "\n=== Fallback: unknown shapes (auto stages, default decode"
+            " stages) ==="
+        )
 
         # 3a: Standard shape, no dispatch match
         print("  3a: N=2048, K=1024 (auto)")
@@ -595,6 +709,16 @@ def main() raises:
             4,
             [0, 1, 2, 3],
             [0, 3, 2, 4],
+            ctx,
+        )
+
+        # 3e: Decode shape without a tuned row (default decode stages), with
+        # N not a multiple of the 128-row tile and an odd K-iteration count.
+        print("  3e: N=1856, K=2688, decode (default stages)")
+        _test_dispatch[8, 1856, 2688](
+            4,
+            [3, 1, 5, 2],
+            [0, 3, 5, 7],
             ctx,
         )
 
@@ -661,7 +785,7 @@ def main() raises:
 
         # 5c: Mixed -1 IDs and zero tokens on tuned shape
         print("  5c: -1 IDs + zero tokens on tuned shape")
-        _test_dispatch[6, 4096, 7168](
+        _test_dispatch[6, 4096, 7168, True](
             4,
             [0, 64, 128, 0],
             [-1, 2, 4, -1],
@@ -715,7 +839,7 @@ def main() raises:
 
         # 6d: Unaligned tokens on prefill path
         print("  6d: N=4096, K=7168, unaligned tokens")
-        _test_dispatch[6, 4096, 7168](
+        _test_dispatch[6, 4096, 7168, True](
             3,
             [129, 257, 193],
             [2, 0, 1],
@@ -838,7 +962,7 @@ def main() raises:
 
         # 8b: Decode with -1 masking (id<0 experts skipped by kernel)
         print("  8b: N=512, K=7168, decode with -1 IDs mixed")
-        _test_dispatch[8, 512, 7168](
+        _test_dispatch[8, 512, 7168, True](
             8,
             [1, 1, 1, 1, 1, 1, 1, 1],
             [0, -1, 2, -1, 4, -1, 6, -1],
@@ -856,7 +980,7 @@ def main() raises:
 
         # 8d: Small prefill regime (8 < avg_m <= 64): 8 experts @ 40 tok
         print("  8d: N=512, K=7168, small prefill 8 experts @ 40 tok")
-        _test_dispatch[8, 512, 7168](
+        _test_dispatch[8, 512, 7168, True](
             8,
             [40, 40, 40, 40, 40, 40, 40, 40],
             [0, 1, 2, 3, 4, 5, 6, 7],
@@ -916,6 +1040,81 @@ def main() raises:
             4,
             [128, 128, 128, 128],
             [0, 1, 2, 3],
+            ctx,
+        )
+
+        # ============================================================
+        # 9. Inkling-Small gate+up shape
+        #    N=2048, K=4096 decodes at the default decode stages
+        #    (mma_bn=8, cta_group=1). The prefill case below is the
+        #    first time the shape reaches the auto-maximizer, which is
+        #    what it exists to pin.
+        # ============================================================
+        print("\n=== Inkling-Small gate+up: N=2048, K=4096 ===")
+
+        # 9a: Decode regime: 9 experts at 1 tok each
+        print("  9a: N=2048, K=4096, decode 9 experts @ 1 tok")
+        _test_dispatch[9, 2048, 4096](
+            9,
+            [1, 1, 1, 1, 1, 1, 1, 1, 1],
+            [0, 1, 2, 3, 4, 5, 6, 7, 8],
+            ctx,
+        )
+
+        # 9b: Large prefill: falls through to auto stages
+        print("  9b: N=2048, K=4096, large prefill 4 experts @ 128 tok")
+        _test_dispatch[4, 2048, 4096](
+            4,
+            [128, 128, 128, 128],
+            [0, 1, 2, 3],
+            ctx,
+        )
+
+        # ============================================================
+        # 10. Per-row input scales: prime and ragged token counts in each
+        #     regime. The regime is picked at runtime, so one shape covers
+        #     every row-scale epilogue. The N=512, K=7168 cases above cover
+        #     the dispatch's separate launch path.
+        # ============================================================
+        print("\n=== Row scales: prime token counts ===")
+
+        print("  10a: N=4096, K=7168, decode primes")
+        _test_dispatch[6, 4096, 7168, True](
+            4,
+            [3, 7, 1, 5],
+            [2, 0, 5, 1],
+            ctx,
+        )
+
+        print("  10b: N=4096, K=7168, decode ragged, 6 experts")
+        _test_dispatch[6, 4096, 7168, True](
+            6,
+            [5, 3, 1, 7, 2, 11],
+            [0, 1, 2, 3, 4, 5],
+            ctx,
+        )
+
+        print("  10c: N=4096, K=7168, small prefill primes")
+        _test_dispatch[6, 4096, 7168, True](
+            3,
+            [31, 97, 61],
+            [3, 0, 1],
+            ctx,
+        )
+
+        print("  10d: N=4096, K=7168, large prefill primes with -1 IDs")
+        _test_dispatch[6, 4096, 7168, True](
+            5,
+            [97, 13, 211, 5, 131],
+            [3, 0, -1, 1, 4],
+            ctx,
+        )
+
+        print("  10e: N=4096, K=7168, large prefill primes")
+        _test_dispatch[6, 4096, 7168, True](
+            3,
+            [131, 257, 61],
+            [5, 2, 4],
             ctx,
         )
 

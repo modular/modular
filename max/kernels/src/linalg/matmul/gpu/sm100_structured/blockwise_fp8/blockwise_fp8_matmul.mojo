@@ -20,12 +20,11 @@ warp-specialized blockwise FP8 kernel with register-based accumulation.
 from std.math import align_up, ceildiv
 from std.sys import get_defined_bool, size_of
 
-from std.gpu.host import DeviceContext, FuncAttribute
-from std.gpu.host.info import B200
-from layout import TileTensor
+from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host.info import B200
+from layout import TileTensor, coord
 from structured_kernels.tile_types import create_tma_tile
 
-from std.utils.index import Index
 from std.utils.static_tuple import StaticTuple
 
 from ..structured_kernels.config import MatmulConfig, GEMMKind
@@ -99,7 +98,7 @@ def blockwise_fp8_matmul[
 
     comptime assert transpose_b, "Only support transposed B"
     comptime assert (
-        a_type == b_type and a_type == DType.float8_e4m3fn
+        a_type == b_type and a_type == .float8_e4m3fn
     ), "Only support float8_e4m3fn"
     comptime assert (
         a_scales_type == b_scales_type
@@ -176,37 +175,44 @@ def blockwise_fp8_matmul[
             Int32(corrected_config.cluster_shape[2]),
         ),
         n_scale_granularity=n_scale_granularity,
+        b_scales_engine=type_of(b_scales).Engine,
     ]
 
     # Create TMA descriptors using kernel's layout types
-    a_tma_op = create_tma_tile[
+    var a_tma_op = create_tma_tile[
         Kernel.ATileLayout,
         Kernel.ADescLayout,
-        Index(BM // config.cluster_shape[1], BK),
+        coord[BM // config.cluster_shape[1], BK],
         swizzle_mode=config.a_swizzle,
     ](ctx, a)
 
-    b_tma_op = create_tma_tile[
+    var b_tma_op = create_tma_tile[
         Kernel.BTileLayout,
         Kernel.BDescLayout,
-        Index(
-            BN // (config.cluster_shape[0] // config.cta_group), BK
-        ) if transpose_b else Index(
-            BK, BN // (config.cluster_shape[0] // config.cta_group)
-        ),
+        coord[
+            BN
+            // (
+                config.cluster_shape[0] // config.cta_group
+            ) if transpose_b else BK,
+            BK if transpose_b else BN
+            // (config.cluster_shape[0] // config.cta_group),
+        ],
         swizzle_mode=config.b_swizzle,
     ](ctx, b)
 
-    a_scales_tma_op = create_tma_tile[
+    var a_scales_tma_op = create_tma_tile[
         Kernel.AScalesLayout,
         Kernel.AScalesLayout,
-        Index(1, BM),
+        coord[1, BM],
     ](ctx, a_scales)
 
-    comptime c_tma_tile_shape_mma128 = Index(64, config.output_tile_shape[1])
-    comptime c_tma_tile_shape = config.output_tile_shape if (
-        MMA_M == 256 or config.cta_group == 1
-    ) else c_tma_tile_shape_mma128
+    comptime bw_c_m = (
+        config.output_tile_shape[0] if (
+            MMA_M == 256 or config.cta_group == 1
+        ) else 64
+    )
+    comptime bw_c_n = config.output_tile_shape[1]
+    comptime c_tma_tile_shape = coord[bw_c_m, bw_c_n]
 
     var c_tma_op = create_tma_tile[
         Kernel.CTileLayout,
@@ -235,7 +241,7 @@ def blockwise_fp8_matmul[
         c_tma_op,
         a_scales_tma_op,
         cluster_dim,
-        ceildiv(K, BK),
+        Int32(ceildiv(K, BK)),
         b_scales,
         problem_shape,
         grid_dim=grid_dim,

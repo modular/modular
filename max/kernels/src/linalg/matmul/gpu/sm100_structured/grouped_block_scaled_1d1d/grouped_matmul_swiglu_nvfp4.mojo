@@ -26,14 +26,16 @@ package's `dispatch.mojo`) and the `RealSwiGLUOutput` carrier (in
 `grouped_1d1d_matmul_kernel.mojo`).
 """
 
-from std.gpu.host import DeviceContext
-from std.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
+from max.gpu.host import DeviceContext
+from max.gpu.primitives.grid_controls import PDLLevel
 from std.memory import UnsafePointer
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Idx, TileTensor, row_major
 
 from linalg.fp4_utils import NVFP4_SF_DTYPE, NVFP4_SF_VECTOR_SIZE
 from .dispatch import grouped_matmul_nvfp4_dispatch
 from .grouped_1d1d_matmul_kernel import RealSwiGLUOutput
+from ..structured_kernels.row_scales import NullRowScales, RowScales
+from linalg.swiglu_activation import swiglu, swiglu_activation_type
 
 
 def grouped_matmul_swiglu_nvfp4_dispatch[
@@ -56,12 +58,8 @@ def grouped_matmul_swiglu_nvfp4_dispatch[
     # the decode regime auto-uses the faster path; flip to False to
     # benchmark the legacy cooperative path on decode.
     use_inplace: Bool = True,
-    # Activation flavor. False = plain SwiGLU (silu(g)·u), True =
-    # clamped (`swigluoai`: g'=min(g,L); u'=clamp(u,-L,L); (u'+1)·g'·
-    # σ(g'·α)). For `hidden_act = "silu"` models leave False; for
-    # `hidden_act = "swigluoai"` set True and pass `alpha`/`limit`
-    # runtime args.
-    clamp_activation: Bool = False,
+    activation: swiglu_activation_type = swiglu[0.0],
+    RowScalesT: RowScales = NullRowScales,
 ](
     c_packed: TileTensor,
     c_swiglu_scales: TileTensor,
@@ -77,11 +75,7 @@ def grouped_matmul_swiglu_nvfp4_dispatch[
     num_active_experts: Int,
     estimated_total_m: Int,
     ctx: DeviceContext,
-    # Runtime α and L for clamped activation. Ignored when
-    # `clamp_activation=False`. Default 0.0 keeps the kernel argument
-    # ABI stable for standard-SwiGLU callers that omit them.
-    alpha: Float32 = Float32(0.0),
-    limit: Float32 = Float32(0.0),
+    a_row_scales: RowScalesT = NullRowScales(),
 ) raises:
     """SwiGLU + NVFP4 fused MoE up-projection dispatch.
 
@@ -116,12 +110,10 @@ def grouped_matmul_swiglu_nvfp4_dispatch[
             loop's SMEM-amortized work pattern outperforms the per-tile
             shuffle cost. Flip to False to benchmark the legacy cooperative
             path on decode.
-        clamp_activation: Activation flavor. `False` (default) is plain
-            SwiGLU (`silu(g)·u`); `True` is clamped (`swigluoai`:
-            `g'=min(g,L)`, `u'=clamp(u,-L,L)`, `(u'+1)·g'·σ(g'·α)`). For
-            `hidden_act = "silu"` models leave False; for `hidden_act =
-            "swigluoai"` set True and pass the `alpha`/`limit` runtime
-            args.
+        activation: Gated activation applied in the fused epilogue, selected
+            at compile time (defaults to `swiglu`).
+        RowScalesT: Per-row input scales type. Defaults to the no-op
+            `NullRowScales`.
 
     Args:
         c_packed: Output, packed NVFP4 (uint8). Shape `(M_total, D/2)` where
@@ -152,29 +144,12 @@ def grouped_matmul_swiglu_nvfp4_dispatch[
         estimated_total_m: Estimated total non-padded token count, used to
             size the BF16 scratch buffer.
         ctx: Device context.
-        alpha: Runtime α for the clamped activation. Ignored when
-            `clamp_activation=False`. For `swigluoai` models pass the
-            HF config `swiglu_alpha` value.
-        limit: Runtime L for the clamped activation. Ignored when
-            `clamp_activation=False`. For `swigluoai` models pass the
-            HF config `swiglu_limit` value.
+        a_row_scales: Per-row input scales, one per `a` row. Token `m`'s
+            gate and up are scaled by `expert_scales[e] * a_row_scales[m]`
+            before SwiGLU.
     """
     comptime c_type = DType.bfloat16
     comptime N = type_of(b).static_shape[1]
-
-    # C is unused on the fused path: the epilogue writes results through
-    # `swiglu_out`, and the launcher + kernel comptime-gate out the C TMA
-    # encode, prefetch, and store when `fuse_swiglu`. We still pass a real BF16
-    # tensor so `grouped_matmul_block_scaled` can infer `c_type`/`N`/layout and
-    # satisfy the kernel ABI, but it is a fixed 1-row placeholder decoupled from
-    # `estimated_total_m` (which floors to 0 in low-concurrency EP decode and
-    # previously produced a zero-dim C TMA descriptor ->
-    # CUDA_ERROR_INVALID_VALUE). The buffer is never read or written. (Mojo's
-    # `UnsafePointer` is non-nullable, so this is a minimal 1xN allocation
-    # rather than a null view.)
-    var dummy_c_buffer = ctx.enqueue_create_buffer[c_type](N)
-    var dummy_c_shape = row_major(Coord(Idx[1], Idx[N]))
-    var dummy_c_tensor = TileTensor(dummy_c_buffer, dummy_c_shape)
 
     # Wrap the three real destinations in a RealSwiGLUOutput carrier.
     # c_packed shape: (M_total, D/2). Row stride = D/2 = N/4 (since N is
@@ -183,25 +158,32 @@ def grouped_matmul_swiglu_nvfp4_dispatch[
     # SF tile shape (n_blocks, sf_dim1, SF_ATOM_M[0], SF_ATOM_M[1], SF_ATOM_K).
     # The static dim1 is ceildiv(D, NVFP4_SF_VECTOR_SIZE * SF_ATOM_K).
     comptime sf_dim1 = type_of(c_swiglu_scales).static_shape[1]
-    var c_packed_ptr = rebind[UnsafePointer[UInt8, MutAnyOrigin]](c_packed.ptr)
+    var c_packed_ptr = rebind[UnsafePointer[UInt8, MutAnyOrigin]](
+        c_packed._storage
+    )
+
+    # The fused path never reads or writes C. It only carries `c_type` and `N`
+    # and fills the kernel ABI, so alias `c_packed` rather than allocate.
+    var dummy_c_tensor = TileTensor(
+        c_packed_ptr.bitcast[Scalar[c_type]](),
+        row_major(Idx[1], Idx[N]),
+    )
     var c_swiglu_scales_ptr = rebind[
         UnsafePointer[Scalar[NVFP4_SF_DTYPE], MutAnyOrigin]
-    ](c_swiglu_scales.ptr)
+    ](c_swiglu_scales._storage)
     var c_input_scales_ptr = rebind[UnsafePointer[Float32, ImmutAnyOrigin]](
-        c_input_scales.ptr
+        c_input_scales._storage
     )
     var swiglu_out = RealSwiGLUOutput[
         c_packed_row_stride,
         sf_dim1,
         NVFP4_SF_DTYPE,
         NVFP4_SF_VECTOR_SIZE,
-        clamp_activation,
+        activation,
     ](
         c_packed_ptr,
         c_swiglu_scales_ptr,
         c_input_scales_ptr,
-        alpha,
-        limit,
     )
 
     # The fused matmul writes SF for both live tokens and the per-expert
@@ -216,6 +198,7 @@ def grouped_matmul_swiglu_nvfp4_dispatch[
         SwiGLUOutputT=type_of(swiglu_out),
         swiglu_match_bf16=match_bf16,
         swiglu_use_inplace=use_inplace,
+        RowScalesT=RowScalesT,
     ](
         dummy_c_tensor,
         a,
@@ -230,6 +213,5 @@ def grouped_matmul_swiglu_nvfp4_dispatch[
         estimated_total_m,
         ctx,
         swiglu_out,
+        a_row_scales=a_row_scales,
     )
-
-    _ = dummy_c_buffer^

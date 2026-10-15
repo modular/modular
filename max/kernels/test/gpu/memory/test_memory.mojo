@@ -12,16 +12,15 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 
 
 # CHECK-LABEL: test_memset_async
 def test_memset_async(ctx: DeviceContext) raises:
     print("== test_memset_async")
 
-    @parameter
-    @always_inline
-    def test_memset[dtype: DType](val: Scalar[dtype]) raises:
+    @inline(.always)
+    def test_memset[dtype: DType](val: Scalar[dtype]) raises {imm}:
         comptime length = 4
         var data = alloc[Scalar[dtype]](length)
         var data_device = ctx.enqueue_create_buffer[dtype](length)
@@ -47,9 +46,9 @@ def test_memset_async(ctx: DeviceContext) raises:
     # CHECK: 3
     # CHECK: 3
     # CHECK: 3
-    test_memset[DType.float32](1.0)
-    test_memset[DType.float16](1.0)
-    test_memset[DType.int8](3)
+    test_memset[.float32](1.0)
+    test_memset[.float16](1.0)
+    test_memset[.int8](3)
 
 
 def main() raises:

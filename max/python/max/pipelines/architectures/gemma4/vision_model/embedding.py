@@ -83,9 +83,7 @@ class Gemma4VisionPatchEmbedder(Module):
         """
         # 1. Normalise pixel values from [0, 1] to [-1, 1].
         patches = ops.cast(patches_flat, self.dtype)
-        patches = patches * ops.constant(
-            2.0, self.dtype, device=self.device
-        ) - ops.constant(1.0, self.dtype, device=self.device)
+        patches = patches * 2.0 - 1.0
 
         # 2. Linear projection: [total_patches, 3*ps²] → [total_patches, hidden]
         hidden = self.input_proj(patches)
@@ -100,8 +98,9 @@ class Gemma4VisionPatchEmbedder(Module):
         )
 
         x_ids = ops.cast(pixel_position_ids[:, 0], DType.int64)
-        y_ids = ops.cast(pixel_position_ids[:, 1], DType.int64) + ops.constant(
-            self.position_embedding_size, DType.int64, device=self.device
+        y_ids = (
+            ops.cast(pixel_position_ids[:, 1], DType.int64)
+            + self.position_embedding_size
         )
 
         emb_x = ops.gather(table_flat, x_ids, axis=0)

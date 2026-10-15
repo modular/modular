@@ -46,7 +46,7 @@ from .types import (
 
 
 @fieldwise_init
-struct PhaseAction(ImplicitlyCopyable, Movable):
+struct PhaseAction(EnumLike, ImplicitlyCopyable, Movable):
     """Action type for a recipe step."""
 
     var value: Int
@@ -54,6 +54,28 @@ struct PhaseAction(ImplicitlyCopyable, Movable):
     comptime EMIT = Self(0)  # Match body ops and emit them
     comptime BARRIER = Self(1)  # Emit s_barrier
     comptime FENCE = Self(2)  # Emit schedule_barrier fence
+
+    comptime _enum_case_names = ParameterList.of[
+        "EMIT".value,
+        "BARRIER".value,
+        "FENCE".value,
+    ].values
+
+    comptime _enum_case_types = TypeList.splat[
+        ParameterList[Self._enum_case_names].size, NoneType
+    ].values
+
+    @inline(.always)
+    def _get_enum_discriminant(self) -> Int:
+        return Int(self.value)
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        comptime assert False, "PhaseAction has no payload"
 
     def __eq__(self, other: Self) -> Bool:
         return self.value == other.value
@@ -242,10 +264,7 @@ def single_buffer_epilogue_recipe() -> List[PhaseStep]:
 
 def pipe_to_list[N: Int](p: Pipe[N]) -> List[OpDesc]:
     """Convert a Pipe to a List[OpDesc]."""
-    var result = List[OpDesc](capacity=N)
-    for i in range(N):
-        result.append(p.ops[i])
-    return result^
+    return List(length=N, fill_with=lambda (i: Int) -> OpDesc: p.ops[i])
 
 
 def default_prologue(
@@ -648,7 +667,7 @@ def apply_edge_rules(
     for _ in range(8):  # OpRole values 0-6 + NONE(255), use 8 slots
         by_role.append(List[Int]())
 
-    @always_inline
+    @inline(.always)
     def _role_idx(role: OpRole) -> Int:
         return role._value if role._value < 8 else 7
 
@@ -672,12 +691,12 @@ def apply_edge_rules(
         is_lc.append(body[i].subtile == lc_sel)
 
     # Half assignment per op.
-    @always_inline
+    @inline(.always)
     def _op_half(idx: Int) {half} -> Int:
         return 0 if idx < half else 1
 
     # _in_half for Phase 1: op at idx is in the half that processes stage.
-    @always_inline
+    @inline(.always)
     def _in_half(idx: Int, stage: Int) {half} -> Bool:
         return (stage == 0) == (idx < half)
 
@@ -749,11 +768,10 @@ def apply_edge_rules(
                         continue
 
                 # K-offset filter on consumer.
-                if rule.k_offset_filter == 1:
-                    if c_op.k_offset != KOffsetKind.K_PREV:
+                match rule.k_offset_filter:
+                    case 1 if c_op.k_offset != KOffsetKind.K_PREV:
                         continue
-                elif rule.k_offset_filter == 2:
-                    if c_op.k_offset == KOffsetKind.K_PREV:
+                    case 2 if c_op.k_offset == KOffsetKind.K_PREV:
                         continue
 
                 # Compute loop distance.
@@ -971,7 +989,7 @@ def derive_prologue_from_program(
     var result = List[ScheduleEntry]()
     var slot = 0
 
-    @always_inline
+    @inline(.always)
     def _emit(
         mut result: List[ScheduleEntry],
         op: OpDesc,
@@ -993,7 +1011,7 @@ def derive_prologue_from_program(
     var num_blocks = len(program.blocks)
 
     # Helper to emit a global load as a prologue entry with the given k_offset.
-    @always_inline
+    @inline(.always)
     def _emit_load(
         mut result: List[ScheduleEntry],
         gl: OpDesc,

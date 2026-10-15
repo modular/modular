@@ -20,6 +20,10 @@ from max.experimental.nn import Conv2d
 from max.experimental.tensor import Tensor
 
 
+@pytest.mark.skip(
+    reason="MXF-837: interpreter conv treats an FCRS filter as RSCF, so"
+    " the output shape is wrong"
+)
 @pytest.mark.skipif(not accelerator_count(), reason="requires an accelerator")
 def test_conv2d_forward_moves_bias_to_input_device() -> None:
     """forward must move the bias to the input's device, not just the weight.

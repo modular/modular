@@ -12,52 +12,59 @@
 # ===----------------------------------------------------------------------=== #
 """Tests for log_basic_config output.
 
-These tests guard against a regression where max_seq_len and cache_memory
-were missing from server startup logs because log_basic_config was called
-before pipeline_config.resolve() had populated model.max_length and
-kv_cache._available_cache_memory.
+Guards against a regression where max_seq_len was missing from server startup
+logs. The value comes from the memory plan the caller passes in. (cache_memory
+now logs from the memory planner, where the KV budget is computed, rather than
+from this config logger.)
+
+Also covers the speculative block: which acceptance knobs a run is using has
+to be readable from the startup dump, or an A/B over them cannot be
+attributed.
 """
 
 from __future__ import annotations
 
 import logging
+import re
 from unittest.mock import MagicMock, patch
 
 from max.driver import DeviceSpec
 from max.pipelines.lib import (
     KVCacheConfig,
     MAXModelConfig,
+    MemoryPlan,
     PipelineConfig,
     PipelineRuntimeConfig,
 )
 from max.pipelines.lib.model_manifest import ModelManifest
-from max.pipelines.logging_utils import log_basic_config
+from max.pipelines.logging_utils import log_basic_config, log_pipeline_info
 from max.pipelines.modeling.types import PipelineTask
+from max.pipelines.speculative import SpeculativeConfig
 
 
 def _make_pipeline_config(
-    max_length: int | None,
-    available_cache_memory: int | None,
+    max_length: int | None, speculative: SpeculativeConfig | None = None
 ) -> PipelineConfig:
     """Build a minimal PipelineConfig without triggering full validation."""
     model_config = MAXModelConfig.model_construct(
         model_path="modularai/Llama-3.1-8B-Instruct-GGUF",
         device_specs=[DeviceSpec.cpu()],
         max_length=max_length,
+        kv_cache=KVCacheConfig(),
     )
-    kv_cache = KVCacheConfig()
-    kv_cache._available_cache_memory = available_cache_memory
-    model_config.kv_cache = kv_cache
     model_config._huggingface_config = MagicMock()
 
     runtime = PipelineRuntimeConfig.model_construct()
     return PipelineConfig.model_construct(
         runtime=runtime,
         models=ModelManifest({"main": model_config}),
+        speculative=speculative,
     )
 
 
-def _capture_log_basic_config(config: PipelineConfig) -> str:
+def _capture_log_basic_config(
+    config: PipelineConfig, memory_plan: MemoryPlan
+) -> str:
     """Call log_basic_config with mocked registry and return all logged lines."""
     arch = MagicMock()
     arch.name = "LlamaForCausalLM"
@@ -87,7 +94,48 @@ def _capture_log_basic_config(config: PipelineConfig) -> str:
                 return_value=pipeline_cls,
             ),
         ):
-            log_basic_config(config)
+            log_basic_config(config, memory_plan=memory_plan)
+    finally:
+        logger.removeHandler(capture)
+        logger.setLevel(original_level)
+
+    return "\n".join(r.getMessage() for r in records)
+
+
+def _capture_log_pipeline_info(
+    config: PipelineConfig, memory_plan: MemoryPlan, task: PipelineTask
+) -> str:
+    """Call log_pipeline_info with a mocked architecture and capture its output."""
+    arch = MagicMock()
+    arch.name = "TestArchitecture"
+    arch.task = task
+    arch.pipeline_model = type("TestModel", (), {})
+    arch.tokenizer_cls = type("TestTokenizer", (), {})
+    pipeline_cls = type("TestPipeline", (), {})
+
+    records: list[logging.LogRecord] = []
+
+    class _Capture(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            records.append(record)
+
+    capture = _Capture()
+    logger = logging.getLogger("max.pipelines")
+    original_level = logger.level
+    logger.setLevel(logging.INFO)
+    logger.addHandler(capture)
+    try:
+        with (
+            patch(
+                "max.pipelines.logging_utils.PIPELINE_REGISTRY.architecture_for_config",
+                return_value=arch,
+            ),
+            patch(
+                "max.pipelines.logging_utils.get_pipeline_for_task",
+                return_value=pipeline_cls,
+            ),
+        ):
+            log_pipeline_info(config, memory_plan=memory_plan)
     finally:
         logger.removeHandler(capture)
         logger.setLevel(original_level)
@@ -100,50 +148,65 @@ class TestLogBasicConfigAfterResolve:
 
     def test_max_seq_len_present_after_resolve(self) -> None:
         """max_seq_len must show the resolved value, not None."""
-        config = _make_pipeline_config(
-            max_length=131072, available_cache_memory=None
+        config = _make_pipeline_config(max_length=131072)
+        memory_plan = MemoryPlan(
+            planned_max_batch_size=1, footprint=0, planned_max_length=131072
         )
-        output = _capture_log_basic_config(config)
+        output = _capture_log_basic_config(config, memory_plan)
         assert "131072" in output, (
             f"Expected max_seq_len=131072 in log output:\n{output}"
         )
 
-    def test_cache_memory_present_after_resolve(self) -> None:
-        """cache_memory must appear when _available_cache_memory is populated."""
-        cache_bytes = 256 * 1024**3  # 256 GiB
+
+class TestLogBasicConfigSpeculative:
+    """The speculative acceptance knobs must be readable at startup."""
+
+    def test_acceptance_deciding_knobs_are_logged(self) -> None:
+        """The fields AcceptanceSampler actually dispatches on."""
         config = _make_pipeline_config(
-            max_length=131072, available_cache_memory=cache_bytes
+            max_length=4096,
+            speculative=SpeculativeConfig(
+                speculative_method="mtp",
+                synthetic_acceptance_rate=0.75,
+                draft_proposal="sampled",
+            ),
         )
-        output = _capture_log_basic_config(config)
-        assert "cache_memory" in output, (
-            f"cache_memory entry missing from log:\n{output}"
-        )
-        assert "GiB" in output, (
-            f"Expected human-readable GiB in cache_memory:\n{output}"
+        output = _capture_log_basic_config(
+            config,
+            MemoryPlan(
+                planned_max_batch_size=1, footprint=0, planned_max_length=4096
+            ),
         )
 
-    def test_both_fields_present_after_resolve(self) -> None:
-        """Both max_seq_len and cache_memory must appear after resolve.
+        for key, value in (
+            ("synthetic_acceptance_rate", "0.75"),
+            ("draft_proposal", "sampled"),
+            ("use_greedy_acceptance", "False"),
+        ):
+            assert re.search(rf"{key} +: {value}", output), output
 
-        retrieve_factory() calls resolve(), which populates max_length and
-        _available_cache_memory. Callers must invoke log_basic_config only
-        after retrieve_factory/retrieve.
-        """
-        cache_bytes = 200 * 1024**3
-        config = _make_pipeline_config(
-            max_length=262144, available_cache_memory=cache_bytes
-        )
-        output = _capture_log_basic_config(config)
 
-        assert "262144" in output, f"max_seq_len missing:\n{output}"
-        assert "cache_memory" in output, f"cache_memory missing:\n{output}"
+class TestLogPipelineInfoKVCache:
+    """KV cache settings are only useful for text-generation pipelines."""
 
-    def test_cache_memory_absent_without_available_memory(self) -> None:
-        """cache_memory must not appear when _available_cache_memory is None."""
-        config = _make_pipeline_config(
-            max_length=131072, available_cache_memory=None
+    def test_omits_kv_cache_for_pixel_generation(self) -> None:
+        output = _capture_log_pipeline_info(
+            _make_pipeline_config(max_length=None),
+            MemoryPlan(
+                planned_max_batch_size=1, footprint=0, planned_max_length=0
+            ),
+            PipelineTask.PIXEL_GENERATION,
         )
-        output = _capture_log_basic_config(config)
-        assert "cache_memory" not in output, (
-            f"cache_memory should be absent when _available_cache_memory is None:\n{output}"
+
+        assert "KV Cache" not in output
+
+    def test_includes_kv_cache_for_text_generation(self) -> None:
+        output = _capture_log_pipeline_info(
+            _make_pipeline_config(max_length=4096),
+            MemoryPlan(
+                planned_max_batch_size=1, footprint=0, planned_max_length=4096
+            ),
+            PipelineTask.TEXT_GENERATION,
         )
+
+        assert "KV Cache" in output

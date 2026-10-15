@@ -31,8 +31,7 @@ Warmup + hot timing loops, mirroring `bench_apple_gpu_matmul.mojo`.
 """
 
 from std.sys.info import _accelerator_arch
-from std.gpu.host import DeviceContext
-from std.os import getenv
+from max.gpu.host import DeviceContext
 from std.time import perf_counter
 
 from layout import TileTensor
@@ -41,6 +40,7 @@ from layout.tile_layout import row_major
 from linalg.fp4_utils import NVFP4_SF_VECTOR_SIZE
 from linalg.matmul.gpu.apple import enqueue_apple_matmul
 from linalg.matmul.gpu.apple.fp4_dequant import enqueue_fp4_materialize
+from std.math import ceildiv
 from linalg.matmul.gpu.apple.fp4_matmul import (
     _enqueue_apple_fp4_materialize_dense,
     _launch_apple_fp4_matmul,
@@ -49,8 +49,8 @@ from linalg.matmul.gpu.apple.fp4_matmul import (
 
 
 def _fill_packed(
-    packed: UnsafePointer[mut=True, Scalar[DType.uint8], _],
-    scales: UnsafePointer[mut=True, Scalar[DType.float8_e4m3fn], _],
+    packed: MutPointer[UInt8, _],
+    scales: MutPointer[Float8_e4m3fn, _],
     npacked: Int,
     nscale: Int,
     seed: UInt64,
@@ -68,7 +68,7 @@ def _fill_packed(
         state ^= state >> UInt64(7)
         state ^= state << UInt64(17)
         var v = Int(state % UInt64(4)) + 1
-        scales[i] = (Float32(v) * Float32(0.5)).cast[DType.float8_e4m3fn]()
+        scales[i] = (Float32(v) * Float32(0.5)).cast[.float8_e4m3fn]()
 
 
 def _bench_fp4_shape(
@@ -77,15 +77,13 @@ def _bench_fp4_shape(
     """Time fused W4A16 vs materialize+bf16 on one shape; report both + ratio.
     """
     var packed_k = k // 2
-    var scale_k = (k + NVFP4_SF_VECTOR_SIZE - 1) // NVFP4_SF_VECTOR_SIZE
+    var scale_k = ceildiv(k, NVFP4_SF_VECTOR_SIZE)
 
-    var act_host = ctx.enqueue_create_host_buffer[DType.bfloat16](m * k)
-    var packed_host = ctx.enqueue_create_host_buffer[DType.uint8](n * packed_k)
-    var scale_host = ctx.enqueue_create_host_buffer[DType.float8_e4m3fn](
-        n * scale_k
-    )
+    var act_host = ctx.enqueue_create_host_buffer[.bfloat16](m * k)
+    var packed_host = ctx.enqueue_create_host_buffer[.uint8](n * packed_k)
+    var scale_host = ctx.enqueue_create_host_buffer[.float8_e4m3fn](n * scale_k)
     for i in range(m * k):
-        act_host[i] = Scalar[DType.bfloat16](Float32((i % 5) - 2))
+        act_host[i] = BFloat16(Float32((i % 5) - 2))
     _fill_packed(
         packed_host.unsafe_ptr(),
         scale_host.unsafe_ptr(),
@@ -94,22 +92,22 @@ def _bench_fp4_shape(
         UInt64(0xF94ED7042B),
     )
 
-    var act_dev = ctx.enqueue_create_buffer[DType.bfloat16](m * k)
-    var packed_dev = ctx.enqueue_create_buffer[DType.uint8](n * packed_k)
-    var scale_dev = ctx.enqueue_create_buffer[DType.float8_e4m3fn](n * scale_k)
-    var wdense_dev = ctx.enqueue_create_buffer[DType.bfloat16](n * k)
-    var out_dev = ctx.enqueue_create_buffer[DType.float32](m * n)
+    var act_dev = ctx.enqueue_create_buffer[.bfloat16](m * k)
+    var packed_dev = ctx.enqueue_create_buffer[.uint8](n * packed_k)
+    var scale_dev = ctx.enqueue_create_buffer[.float8_e4m3fn](n * scale_k)
+    var wdense_dev = ctx.enqueue_create_buffer[.bfloat16](n * k)
+    var out_dev = ctx.enqueue_create_buffer[.float32](m * n)
     ctx.enqueue_copy(act_dev, act_host)
     ctx.enqueue_copy(packed_dev, packed_host)
     ctx.enqueue_copy(scale_dev, scale_host)
 
-    var act_tt = TileTensor(act_dev.unsafe_ptr(), row_major(m, k)).as_immut()
+    var act_tt = TileTensor(act_dev.unsafe_ptr(), row_major(m, k)).as_imm()
     var packed_tt = TileTensor(
         packed_dev.unsafe_ptr(), row_major(n, packed_k)
-    ).as_immut()
+    ).as_imm()
     var scale_tt = TileTensor(
         scale_dev.unsafe_ptr(), row_major(n, scale_k)
-    ).as_immut()
+    ).as_imm()
     var wdense_tt = TileTensor(wdense_dev.unsafe_ptr(), row_major(n, k))
     var out_tt = TileTensor(out_dev.unsafe_ptr(), row_major(m, n))
 
@@ -131,15 +129,14 @@ def _bench_fp4_shape(
 
     # --- fused: the cooperative-SMEM kernel directly (BM/BK by M, like the
     # dispatch: BM=128/BK=64 for M>=256, BM=64/BK=32 below). ---
-    @parameter
-    def _run_fused() raises:
+    def _run_fused() raises {imm}:
         if m >= 256:
             _launch_apple_fp4_matmul[
-                DType.float32, None, BM=128, BK=64, coalesce_scales=True
+                DType.float32, BM=128, BK=64, coalesce_scales=True
             ](out_tt, act_tt, packed_tt, scale_tt, m, n, ctx)
         else:
             _launch_apple_fp4_matmul[
-                DType.float32, None, BM=64, BK=32, coalesce_scales=False
+                DType.float32, BM=64, BK=32, coalesce_scales=False
             ](out_tt, act_tt, packed_tt, scale_tt, m, n, ctx)
 
     for _ in range(warmup):
@@ -153,13 +150,13 @@ def _bench_fp4_shape(
 
     # --- mat-alloc: materialize->dense WITH the real per-call alloc + free. ---
     for _ in range(warmup):
-        _enqueue_apple_fp4_materialize_dense[DType.float32, None](
+        _enqueue_apple_fp4_materialize_dense[.float32](
             out_tt, act_tt, packed_tt, scale_tt, m, n, k, ctx
         )
         ctx.synchronize()
     var t2 = perf_counter()
     for _ in range(hot):
-        _enqueue_apple_fp4_materialize_dense[DType.float32, None](
+        _enqueue_apple_fp4_materialize_dense[.float32](
             out_tt, act_tt, packed_tt, scale_tt, m, n, k, ctx
         )
         ctx.synchronize()
@@ -167,21 +164,17 @@ def _bench_fp4_shape(
 
     # --- mat-prealloc: materialize->dense reusing a buffer (alloc-free ceiling). ---
     for _ in range(warmup):
-        enqueue_fp4_materialize[DType.bfloat16](
-            wdense_tt, packed_tt, scale_tt, ctx
-        )
+        enqueue_fp4_materialize[.bfloat16](wdense_tt, packed_tt, scale_tt, ctx)
         enqueue_apple_matmul[
             in_type=DType.bfloat16, c_type=DType.float32, transpose_b=True
-        ](out_tt, act_tt, wdense_tt.as_immut(), ctx)
+        ](out_tt, act_tt, wdense_tt.as_imm(), ctx)
         ctx.synchronize()
     var t3 = perf_counter()
     for _ in range(hot):
-        enqueue_fp4_materialize[DType.bfloat16](
-            wdense_tt, packed_tt, scale_tt, ctx
-        )
+        enqueue_fp4_materialize[.bfloat16](wdense_tt, packed_tt, scale_tt, ctx)
         enqueue_apple_matmul[
             in_type=DType.bfloat16, c_type=DType.float32, transpose_b=True
-        ](out_tt, act_tt, wdense_tt.as_immut(), ctx)
+        ](out_tt, act_tt, wdense_tt.as_imm(), ctx)
         ctx.synchronize()
     var matprealloc_sec = (perf_counter() - t3) / Float64(hot)
 

@@ -56,6 +56,7 @@ from std.math import ceildiv
 from std.random import seed
 from std.sys import size_of
 
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     BenchConfig,
@@ -64,7 +65,7 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from kv_cache.types import (
     KVCacheStaticParams,
     PagedKVCacheCollection,
@@ -72,11 +73,7 @@ from kv_cache.types import (
 from layout import (
     Coord,
     Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
-    UNKNOWN_VALUE,
     row_major,
 )
 from layout._fillers import random
@@ -153,10 +150,6 @@ def bench_fused_qkv_index_rms_norm_rope[
     )
     var paged_lut_shape = IndexList[2](batch_size, pages_per_seq)
 
-    comptime kv_block_layout = Layout.row_major[6]()
-    comptime cache_lengths_layout = Layout(UNKNOWN_VALUE)
-    comptime paged_lut_layout = Layout.row_major[2]()
-
     # Cache-busted tensors (cold HBM per iter). Q reads are read-only and
     # identical for both variants, so a single ring is shared. The K caches are
     # read+written in place, so fused and unfused get independent rings.
@@ -212,8 +205,8 @@ def bench_fused_qkv_index_rms_norm_rope[
     )
 
     # L2-hot auxiliaries and write-only outputs (fixed buffers).
-    var row_offsets_d = ctx.enqueue_create_buffer[DType.uint32](batch_size + 1)
-    var cache_lengths_d = ctx.enqueue_create_buffer[DType.uint32](batch_size)
+    var row_offsets_d = ctx.enqueue_create_buffer[.uint32](batch_size + 1)
+    var cache_lengths_d = ctx.enqueue_create_buffer[.uint32](batch_size)
     var q_main_out_unfused_d = ctx.enqueue_create_buffer[dtype](
         total_seq_len * main_q_heads * head_dim
     )
@@ -230,18 +223,14 @@ def bench_fused_qkv_index_rms_norm_rope[
     var gamma_k_main_d = ctx.enqueue_create_buffer[dtype](head_dim)
     var gamma_q_index_d = ctx.enqueue_create_buffer[dtype](head_dim)
     var gamma_k_index_d = ctx.enqueue_create_buffer[dtype](head_dim)
-    var paged_lut_d = ctx.enqueue_create_buffer[DType.uint32](
+    var paged_lut_d = ctx.enqueue_create_buffer[.uint32](
         paged_lut_shape.flattened_length()
     )
     var freqs_d = ctx.enqueue_create_buffer[freq_dtype](max_seq_len * rope_dim)
 
-    var row_offsets_h = ctx.enqueue_create_host_buffer[DType.uint32](
-        batch_size + 1
-    )
-    var cache_lengths_h = ctx.enqueue_create_host_buffer[DType.uint32](
-        batch_size
-    )
-    var paged_lut_h = ctx.enqueue_create_host_buffer[DType.uint32](
+    var row_offsets_h = ctx.enqueue_create_host_buffer[.uint32](batch_size + 1)
+    var cache_lengths_h = ctx.enqueue_create_host_buffer[.uint32](batch_size)
+    var paged_lut_h = ctx.enqueue_create_host_buffer[.uint32](
         paged_lut_shape.flattened_length()
     )
     for i in range(batch_size + 1):
@@ -254,32 +243,58 @@ def bench_fused_qkv_index_rms_norm_rope[
     ctx.enqueue_copy(cache_lengths_d, cache_lengths_h)
     ctx.enqueue_copy(paged_lut_d, paged_lut_h)
 
-    comptime gamma_layout = Layout.row_major(head_dim)
-    var gamma_rt = RuntimeLayout[gamma_layout].row_major(Index(head_dim))
     with gamma_q_main_d.map_to_host() as h:
-        random(LayoutTensor[dtype, gamma_layout](h, gamma_rt))
+        random(TileTensor(h, row_major(Idx[head_dim])))
     with gamma_k_main_d.map_to_host() as h:
-        random(LayoutTensor[dtype, gamma_layout](h, gamma_rt))
+        random(TileTensor(h, row_major(Idx[head_dim])))
     with gamma_q_index_d.map_to_host() as h:
-        random(LayoutTensor[dtype, gamma_layout](h, gamma_rt))
+        random(TileTensor(h, row_major(Idx[head_dim])))
     with gamma_k_index_d.map_to_host() as h:
-        random(LayoutTensor[dtype, gamma_layout](h, gamma_rt))
+        random(TileTensor(h, row_major(Idx[head_dim])))
 
-    comptime freqs_static_layout = Layout.row_major(max_seq_len, rope_dim)
-    var freqs_rt = RuntimeLayout[freqs_static_layout].row_major(
-        IndexList[2](max_seq_len, rope_dim)
-    )
     with freqs_d.map_to_host() as h:
-        random(LayoutTensor[freq_dtype, freqs_static_layout](h, freqs_rt))
+        random(TileTensor(h, row_major(Idx[max_seq_len], Idx[rope_dim])))
     ctx.synchronize()
 
-    # Runtime layouts rebuilt per iter onto each ring window.
-    var main_kv_rt = RuntimeLayout[kv_block_layout].row_major(
-        main_kv_block_shape
+    comptime main_collection = PagedKVCacheCollection[
+        dtype,
+        main_params,
+        page_size,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
+    ]
+    comptime main_layout = main_collection.blocks_tt_layout
+    var main_shape = Coord[*main_layout.shape_types]()
+    main_shape[0] = Int64(num_paged_blocks)
+    main_shape[2] = Int64(num_layers)
+    var main_strides = Coord[*main_layout.stride_types]()
+    main_strides[0] = Int64(
+        2 * num_layers * page_size * main_kv_heads * head_dim
     )
-    var index_kv_rt = RuntimeLayout[kv_block_layout].row_major(
-        index_kv_block_shape
+    main_strides[1] = Int64(num_layers * page_size * main_kv_heads * head_dim)
+    var main_kv_layout = main_layout(main_shape, main_strides)
+
+    comptime index_collection = PagedKVCacheCollection[
+        dtype,
+        index_params,
+        page_size,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
+    ]
+    comptime index_layout = index_collection.blocks_tt_layout
+    var index_shape = Coord[*index_layout.shape_types]()
+    index_shape[0] = Int64(num_paged_blocks)
+    index_shape[2] = Int64(num_layers)
+    var index_strides = Coord[*index_layout.stride_types]()
+    index_strides[0] = Int64(
+        2 * num_layers * page_size * index_kv_heads * head_dim
     )
+    index_strides[1] = Int64(num_layers * page_size * index_kv_heads * head_dim)
+    var index_kv_layout = index_layout(index_shape, index_strides)
 
     var q_main_out_unfused_tile = TileTensor(
         q_main_out_unfused_d,
@@ -304,17 +319,11 @@ def bench_fused_qkv_index_rms_norm_rope[
     var freqs_tile = TileTensor(freqs_d, row_major[max_seq_len, rope_dim]())
     var row_offsets_tile = TileTensor(row_offsets_d, row_major(batch_size + 1))
 
-    var cache_lengths_tensor = LayoutTensor[
-        mut=False, DType.uint32, cache_lengths_layout
-    ](
-        cache_lengths_d,
-        RuntimeLayout[cache_lengths_layout].row_major(Index(batch_size)),
+    var cache_lengths_tensor = TileTensor(
+        cache_lengths_d, row_major(Int64(batch_size))
     )
-    var paged_lut_tensor = LayoutTensor[
-        mut=False, DType.uint32, paged_lut_layout
-    ](
-        paged_lut_d,
-        RuntimeLayout[paged_lut_layout].row_major(paged_lut_shape),
+    var paged_lut_tensor = TileTensor(
+        paged_lut_d, row_major(Int64(batch_size), Int64(pages_per_seq))
     )
     var max_prompt_len = UInt32(seq_len)
     var max_cache_len = cache_len
@@ -339,82 +348,78 @@ def bench_fused_qkv_index_rms_norm_rope[
     var gamma_bytes = 4 * head_dim * elt
     var bytes_per_iter = rw_bytes + freqs_bytes + gamma_bytes
 
-    @parameter
-    @__copy_capture(
-        cb_q_main,
-        cb_q_index,
-        cb_main_kv_unfused,
-        cb_index_kv_unfused,
-        main_kv_rt,
-        index_kv_rt,
-        cache_lengths_tensor,
-        paged_lut_tensor,
-        q_main_out_unfused_tile,
-        q_index_out_unfused_tile,
-        gamma_q_main_tile,
-        gamma_k_main_tile,
-        gamma_q_index_tile,
-        gamma_k_index_tile,
-        freqs_tile,
-        row_offsets_tile,
-        max_prompt_len,
-        max_cache_len,
-        total_seq_len,
-    )
-    @always_inline
-    def bench_unfused(mut b: Bencher):
-        @parameter
-        @always_inline
-        def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
-            # Named vars bind the per-iter ring-window pointer's origin before
-            # it flows into the cache collection / input lambdas.
-            var main_kv_lt = LayoutTensor[dtype, kv_block_layout](
-                cb_main_kv_unfused.offset_ptr(iteration), main_kv_rt
+    @inline(.always)
+    def bench_unfused(
+        mut b: Bencher,
+    ) {
+        var cb_q_main,
+        var cb_q_index,
+        var cb_main_kv_unfused,
+        var cb_index_kv_unfused,
+        var main_kv_layout,
+        var index_kv_layout,
+        var cache_lengths_tensor,
+        var paged_lut_tensor,
+        var q_main_out_unfused_tile,
+        var q_index_out_unfused_tile,
+        var gamma_q_main_tile,
+        var gamma_k_main_tile,
+        var gamma_q_index_tile,
+        var gamma_k_index_tile,
+        var freqs_tile,
+        var row_offsets_tile,
+        var max_prompt_len,
+        var max_cache_len,
+        var total_seq_len,
+        imm,
+    }:
+        @inline(.always)
+        def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
+            var main_kv_tile = TileTensor(
+                cb_main_kv_unfused.offset_ptr(iteration), main_kv_layout
             )
-            var index_kv_lt = LayoutTensor[dtype, kv_block_layout](
-                cb_index_kv_unfused.offset_ptr(iteration), index_kv_rt
+            var index_kv_tile = TileTensor(
+                cb_index_kv_unfused.offset_ptr(iteration), index_kv_layout
             )
-            var main_kv = PagedKVCacheCollection[dtype, main_params, page_size](
-                main_kv_lt,
-                cache_lengths_tensor,
-                paged_lut_tensor,
+            var main_kv = main_collection(
+                main_kv_tile.as_unsafe_any_origin(),
+                cache_lengths_tensor.as_imm().as_unsafe_any_origin(),
+                paged_lut_tensor.as_imm().as_unsafe_any_origin(),
                 max_prompt_len,
                 max_cache_len,
             )
-            var index_kv = PagedKVCacheCollection[
-                dtype, index_params, page_size
-            ](
-                index_kv_lt,
-                cache_lengths_tensor,
-                paged_lut_tensor,
+            var index_kv = index_collection(
+                index_kv_tile.as_unsafe_any_origin(),
+                cache_lengths_tensor.as_imm().as_unsafe_any_origin(),
+                paged_lut_tensor.as_imm().as_unsafe_any_origin(),
                 max_prompt_len,
                 max_cache_len,
             )
             var q_main_src = TileTensor(
                 cb_q_main.offset_ptr(iteration),
                 row_major((total_seq_len, Idx[main_q_heads], Idx[head_dim])),
-            ).as_immut()
+            ).as_imm()
             var q_index_src = TileTensor(
                 cb_q_index.offset_ptr(iteration),
                 row_major((total_seq_len, Idx[index_q_heads], Idx[head_dim])),
-            ).as_immut()
+            ).as_imm()
 
-            @always_inline
-            @parameter
-            @__copy_capture(q_main_src)
+            @inline(.always)
             def q_main_fn[
                 width: Int, alignment: Int
-            ](token: Int, head: Int, col: Int) -> SIMD[dtype, width]:
+            ](token: Int, head: Int, col: Int) {var q_main_src} -> SIMD[
+                dtype, width
+            ]:
                 return q_main_src.load[width=width](
                     Coord(Index(token, head, col))
                 )
 
-            @always_inline
-            @parameter
-            @__copy_capture(q_index_src)
+            @inline(.always)
             def q_index_fn[
                 width: Int, alignment: Int
-            ](token: Int, head: Int, col: Int) -> SIMD[dtype, width]:
+            ](token: Int, head: Int, col: Int) {var q_index_src} -> SIMD[
+                dtype, width
+            ]:
                 return q_index_src.load[width=width](
                     Coord(Index(token, head, col))
                 )
@@ -423,16 +428,16 @@ def bench_fused_qkv_index_rms_norm_rope[
                 target="gpu",
                 multiply_before_cast=True,
                 interleaved=False,
-                q_input_fn=q_main_fn,
             ](
                 main_kv,
-                gamma_q_main_tile.as_immut(),
-                gamma_k_main_tile.as_immut(),
-                freqs_tile.as_immut(),
+                q_main_fn,
+                gamma_q_main_tile.as_imm(),
+                gamma_k_main_tile.as_imm(),
+                freqs_tile.as_imm(),
                 Float32(1e-6),
                 Scalar[dtype](weight_offset),
                 UInt32(layer_idx),
-                row_offsets_tile.as_immut(),
+                row_offsets_tile.as_imm(),
                 q_main_out_unfused_tile,
                 ctx,
             )
@@ -440,23 +445,24 @@ def bench_fused_qkv_index_rms_norm_rope[
                 target="gpu",
                 multiply_before_cast=True,
                 interleaved=False,
-                q_input_fn=q_index_fn,
             ](
                 index_kv,
-                gamma_q_index_tile.as_immut(),
-                gamma_k_index_tile.as_immut(),
-                freqs_tile.as_immut(),
+                q_index_fn,
+                gamma_q_index_tile.as_imm(),
+                gamma_k_index_tile.as_imm(),
+                freqs_tile.as_imm(),
                 Float32(1e-6),
                 Scalar[dtype](weight_offset),
                 UInt32(layer_idx),
-                row_offsets_tile.as_immut(),
+                row_offsets_tile.as_imm(),
                 q_index_out_unfused_tile,
                 ctx,
             )
 
-        b.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom(b, kernel_launch, ctx)
 
-    m.bench_function[bench_unfused](
+    m.bench_function(
+        bench_unfused,
         BenchId(
             _bench_name[dtype, head_dim, rope_dim, "unfused"](
                 batch_size, seq_len
@@ -465,80 +471,78 @@ def bench_fused_qkv_index_rms_norm_rope[
         [ThroughputMeasure(BenchMetric.bytes, bytes_per_iter)],
     )
 
-    @parameter
-    @__copy_capture(
-        cb_q_main,
-        cb_q_index,
-        cb_main_kv_fused,
-        cb_index_kv_fused,
-        main_kv_rt,
-        index_kv_rt,
-        cache_lengths_tensor,
-        paged_lut_tensor,
-        q_main_out_fused_tile,
-        q_index_out_fused_tile,
-        gamma_q_main_tile,
-        gamma_k_main_tile,
-        gamma_q_index_tile,
-        gamma_k_index_tile,
-        freqs_tile,
-        row_offsets_tile,
-        max_prompt_len,
-        max_cache_len,
-        total_seq_len,
-    )
-    @always_inline
-    def bench_fused(mut b: Bencher):
-        @parameter
-        @always_inline
-        def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
-            var main_kv_lt = LayoutTensor[dtype, kv_block_layout](
-                cb_main_kv_fused.offset_ptr(iteration), main_kv_rt
+    @inline(.always)
+    def bench_fused(
+        mut b: Bencher,
+    ) {
+        var cb_q_main,
+        var cb_q_index,
+        var cb_main_kv_fused,
+        var cb_index_kv_fused,
+        var main_kv_layout,
+        var index_kv_layout,
+        var cache_lengths_tensor,
+        var paged_lut_tensor,
+        var q_main_out_fused_tile,
+        var q_index_out_fused_tile,
+        var gamma_q_main_tile,
+        var gamma_k_main_tile,
+        var gamma_q_index_tile,
+        var gamma_k_index_tile,
+        var freqs_tile,
+        var row_offsets_tile,
+        var max_prompt_len,
+        var max_cache_len,
+        var total_seq_len,
+        imm,
+    }:
+        @inline(.always)
+        def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
+            var main_kv_tile = TileTensor(
+                cb_main_kv_fused.offset_ptr(iteration), main_kv_layout
             )
-            var index_kv_lt = LayoutTensor[dtype, kv_block_layout](
-                cb_index_kv_fused.offset_ptr(iteration), index_kv_rt
+            var index_kv_tile = TileTensor(
+                cb_index_kv_fused.offset_ptr(iteration), index_kv_layout
             )
-            var main_kv = PagedKVCacheCollection[dtype, main_params, page_size](
-                main_kv_lt,
-                cache_lengths_tensor,
-                paged_lut_tensor,
+            var main_kv = main_collection(
+                main_kv_tile.as_unsafe_any_origin(),
+                cache_lengths_tensor.as_imm().as_unsafe_any_origin(),
+                paged_lut_tensor.as_imm().as_unsafe_any_origin(),
                 max_prompt_len,
                 max_cache_len,
             )
-            var index_kv = PagedKVCacheCollection[
-                dtype, index_params, page_size
-            ](
-                index_kv_lt,
-                cache_lengths_tensor,
-                paged_lut_tensor,
+            var index_kv = index_collection(
+                index_kv_tile.as_unsafe_any_origin(),
+                cache_lengths_tensor.as_imm().as_unsafe_any_origin(),
+                paged_lut_tensor.as_imm().as_unsafe_any_origin(),
                 max_prompt_len,
                 max_cache_len,
             )
             var q_main_src = TileTensor(
                 cb_q_main.offset_ptr(iteration),
                 row_major((total_seq_len, Idx[main_q_heads], Idx[head_dim])),
-            ).as_immut()
+            ).as_imm()
             var q_index_src = TileTensor(
                 cb_q_index.offset_ptr(iteration),
                 row_major((total_seq_len, Idx[index_q_heads], Idx[head_dim])),
-            ).as_immut()
+            ).as_imm()
 
-            @always_inline
-            @parameter
-            @__copy_capture(q_main_src)
+            @inline(.always)
             def q_main_fn[
                 width: Int, alignment: Int
-            ](token: Int, head: Int, col: Int) -> SIMD[dtype, width]:
+            ](token: Int, head: Int, col: Int) {var q_main_src} -> SIMD[
+                dtype, width
+            ]:
                 return q_main_src.load[width=width](
                     Coord(Index(token, head, col))
                 )
 
-            @always_inline
-            @parameter
-            @__copy_capture(q_index_src)
+            @inline(.always)
             def q_index_fn[
                 width: Int, alignment: Int
-            ](token: Int, head: Int, col: Int) -> SIMD[dtype, width]:
+            ](token: Int, head: Int, col: Int) {var q_index_src} -> SIMD[
+                dtype, width
+            ]:
                 return q_index_src.load[width=width](
                     Coord(Index(token, head, col))
                 )
@@ -551,29 +555,30 @@ def bench_fused_qkv_index_rms_norm_rope[
                 target="gpu",
                 multiply_before_cast=True,
                 interleaved=False,
-                main_q_input_fn=q_main_fn,
-                index_q_input_fn=q_index_fn,
             ](
                 main_kv,
                 index_kv,
-                gamma_q_main_tile.as_immut(),
-                gamma_k_main_tile.as_immut(),
-                gamma_q_index_tile.as_immut(),
-                gamma_k_index_tile.as_immut(),
-                freqs_tile.as_immut(),
+                gamma_q_main_tile.as_imm(),
+                gamma_k_main_tile.as_imm(),
+                gamma_q_index_tile.as_imm(),
+                gamma_k_index_tile.as_imm(),
+                freqs_tile.as_imm(),
                 Float32(1e-6),
                 Float32(1e-6),
                 Scalar[dtype](weight_offset),
                 UInt32(layer_idx),
-                row_offsets_tile.as_immut(),
+                row_offsets_tile.as_imm(),
+                q_main_fn,
+                q_index_fn,
                 q_main_out_fused_tile,
                 q_index_out_fused_tile,
                 ctx,
             )
 
-        b.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom(b, kernel_launch, ctx)
 
-    m.bench_function[bench_fused](
+    m.bench_function(
+        bench_fused,
         BenchId(
             _bench_name[dtype, head_dim, rope_dim, "fused"](batch_size, seq_len)
         ),

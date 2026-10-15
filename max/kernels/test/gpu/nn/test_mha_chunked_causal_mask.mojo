@@ -14,15 +14,8 @@
 from std.math import isclose
 from std.random import rand
 
-from std.gpu.host import DeviceContext
-from layout import (
-    Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-    TileTensor,
-    row_major,
-)
+from max.gpu.host import DeviceContext
+from layout import Coord, Idx, TileTensor, row_major
 from nn.attention.gpu.mha import flash_attention, mha_gpu_naive
 from nn.attention.mha_mask import (
     MASK_VALUE,
@@ -41,22 +34,24 @@ def build_ChunkedCausalMask[
     num_heads: Int,
     seq_len: Int,
     num_keys: Int,
-    mask: LayoutTensor[mut=True, mask_type, ...],
+    mask: TileTensor[mut=True, mask_type, ...],
 ) raises:
     # Initialize causal mask.
     for b in range(batch_size):
         for h in range(num_heads):
             for q_idx in range(seq_len):
                 for k_idx in range(num_keys):
-                    start_pos = num_keys - seq_len
+                    var start_pos = num_keys - seq_len
                     var q_chunk_idx = (q_idx + start_pos) // local_window_size
                     var k_chunk_idx = k_idx // local_window_size
                     var chunk_masked = q_chunk_idx != k_chunk_idx
                     var causal_masked = q_idx + start_pos < k_idx
                     var masked = chunk_masked or causal_masked
                     mask.store(
-                        Index(b, h, q_idx, k_idx),
-                        Scalar[mask.dtype](0 if not masked else MASK_VALUE),
+                        Coord(Index(b, h, q_idx, k_idx)),
+                        Scalar[mask.dtype](MASK_VALUE) if masked else Scalar[
+                            mask.dtype
+                        ](0),
                     )
 
 
@@ -109,12 +104,8 @@ def test_attention[
         output_ptr[i] = Scalar[qkv_type](0)
 
     # Construct host mask buffer for initialization.
-    comptime layout_4d = Layout.row_major[4]()
-    var mask = LayoutTensor[mask_type, layout_4d, MutAnyOrigin](
-        mask_ptr,
-        RuntimeLayout[layout_4d].row_major(
-            Index(batch_size, num_heads, seq_len, num_keys)
-        ),
+    var mask = TileTensor(
+        mask_ptr, row_major((batch_size, num_heads, seq_len, num_keys))
     )
 
     # Q, K, V are randomly initialized.
@@ -256,7 +247,7 @@ def test_attention[
                 ]()
                 var actual = flash_output_ptr[
                     d + depth * (h + s * num_heads)
-                ].cast[DType.float64]()
+                ].cast[.float64]()
                 if not isclose(actual, expect, atol=1e-5, rtol=rtol):
                     var rerr = abs((actual - expect) / expect)
                     print(h, s, d, actual, expect, rerr)
@@ -385,14 +376,14 @@ def test_mask_apply() raises:
     comptime local_window_size = 4
     var mask = ChunkedCausalMask[local_window_size]()
 
-    var score_vec = SIMD[DType.float32, 4](0.0)
+    var score_vec = SIMD[.float32, 4](0.0)
     score_vec[0] = 1.0
     score_vec[1] = 2.0
     score_vec[2] = 3.0
     score_vec[3] = 4.0
 
     comptime simd_width = 4
-    comptime SIMD_T = SIMD[DType.float32, simd_width]
+    comptime SIMD_T = SIMD[.float32, simd_width]
     comptime UNMASKED_INPUT = SIMD_T(0.0)
     var inf_vec = SIMD_T(MASK_VALUE)
 

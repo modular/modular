@@ -7,7 +7,9 @@ filegroup(
     name = "ibverbs_provider_files",
     srcs = [
         "etc/libibverbs.d/efa.driver",
+        "etc/libibverbs.d/mlx5.driver",
         "lib/libibverbs/libefa-rdmav59.so",
+        "lib/libibverbs/libmlx5-rdmav59.so",
     ],
 )
 
@@ -50,6 +52,18 @@ cc_import(
 cc_import(
     name = "libibverbs_import",
     shared_library = "lib/libibverbs.so.1",
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+)
+
+# The mlx5dv API the UCX verbs transports call. Its provider sibling
+# (lib/libibverbs/libmlx5-rdmav59.so) is loaded by libibverbs at runtime and so
+# is not imported here.
+cc_import(
+    name = "libmlx5_import",
+    shared_library = "lib/libmlx5.so.1",
     target_compatible_with = [
         "@platforms//cpu:x86_64",
         "@platforms//os:linux",

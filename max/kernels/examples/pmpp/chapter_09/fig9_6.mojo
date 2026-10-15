@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu import block_idx, thread_idx
-from std.gpu.host import DeviceContext
+from max.gpu import block_idx, thread_idx
+from max.gpu.host import DeviceContext
 from std.math import ceildiv
 from std.atomic import Atomic
 from std.random import random_ui64
@@ -96,8 +96,8 @@ def main() raises:
 
     with DeviceContext() as ctx:
         # Device memory allocation
-        var d_image = ctx.enqueue_create_buffer[DType.uint8](total_pixels)
-        var d_bins = ctx.enqueue_create_buffer[DType.uint32](NUM_BINS)
+        var d_image = ctx.enqueue_create_buffer[.uint8](total_pixels)
+        var d_bins = ctx.enqueue_create_buffer[.uint32](NUM_BINS)
 
         # Copy data to device
         ctx.enqueue_copy(d_image, h_image)

@@ -21,6 +21,7 @@ from max.pipelines.lib import (
     KVCacheConfig,
     PipelineArgs,
     PipelineConfig,
+    PipelineRuntimeConfig,
     TextGenerationPipeline,
 )
 from max.pipelines.lib.interfaces import ModelOutputs
@@ -37,7 +38,7 @@ def pipeline() -> TextGenerationPipeline[TextContext]:
                 model_path="kathywu95/deepseek-v3-small-random",
                 kv_cache=KVCacheConfig(enable_prefix_caching=False),
                 max_length=100,
-                max_batch_size=2,
+                runtime=PipelineRuntimeConfig(max_batch_size=2),
             )
         ),
         task=PipelineTask.TEXT_GENERATION,

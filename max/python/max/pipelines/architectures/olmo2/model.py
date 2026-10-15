@@ -34,7 +34,7 @@ class Olmo2Model(LlamaModelBase):
     signal_buffers: list[Buffer]
     """Device buffers used for synchronization in communication collectives."""
 
-    norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm"
+    norm_method: Literal["rms_norm", "layer_norm"] = "rms_norm"
     """Normalization layer."""
 
     attention_bias: bool = False
@@ -45,7 +45,9 @@ class Olmo2Model(LlamaModelBase):
 
     @override
     def _create_model_config(self, state_dict: dict[str, Any]) -> Olmo2Config:
-        model_config = Olmo2Config.initialize(self.pipeline_config)
+        model_config = Olmo2Config.initialize(
+            self.pipeline_config, max_seq_len=self.max_seq_len
+        )
         model_config.finalize(
             huggingface_config=self.huggingface_config,
             state_dict=state_dict,

@@ -16,9 +16,11 @@ from __future__ import annotations
 
 import enum
 import functools
+from collections import OrderedDict
 from collections.abc import Callable, Sequence
 from typing import Any
 
+from max import tree
 from max._core.driver import is_virtual_device_mode
 from max.dtype import DType
 from max.graph import (
@@ -40,12 +42,11 @@ from max.nn.attention.multi_latent_attention_fp8 import (
     DataParallelLatentAttentionWithRopeFp8,
     TensorParallelLatentAttentionWithRopeFp8,
 )
-from max.nn.comm import Signals
-from max.nn.comm.ep import EPBatchManager
+from max.nn.comm.ep import EPBatchManager, EPConfig
 from max.nn.data_parallelism import split_batch_replicated
 from max.nn.embedding import VocabParallelEmbedding
 from max.nn.kv_cache import KVCacheParamInterface, PagedCacheValues
-from max.nn.layer import LayerList, Module, SubgraphInput
+from max.nn.layer import LayerList, Module
 from max.nn.linear import MLP, ColumnParallelLinear
 from max.nn.moe import MoE, MoEQuantized
 from max.nn.moe.expert_parallel import forward_moe_sharded_layers
@@ -64,6 +65,11 @@ from max.nn.transformer.distributed_transformer import (
     extract_hs,
     forward_sharded_layers,
 )
+from max.pipelines.lib.interfaces.batch_processor import (
+    ragged_batch_inputs,
+    signal_inputs,
+)
+from max.tree import Tree
 
 from .layers.moe_gate import DeepseekV3TopKRouter
 from .model_config import DeepseekV3Config
@@ -115,6 +121,25 @@ def _validate_parallelism_config(config: DeepseekV3Config) -> None:
         )
 
 
+def mask_padded_tail(
+    logits: TensorValue, vocab_size: int, unpadded_vocab_size: int | None
+) -> TensorValue:
+    """Sends the dummy/padding rows of the vocabulary to negative infinity."""
+    if unpadded_vocab_size is None or unpadded_vocab_size >= vocab_size:
+        return logits
+    device = logits.device
+    # Two broadcast scalars rather than a materialized row: keeps a
+    # vocab-sized fp32 constant out of the graph.
+    keep = ops.broadcast_to(
+        ops.constant(0.0, DType.float32, device=device), [unpadded_vocab_size]
+    )
+    drop = ops.broadcast_to(
+        ops.constant(float("-inf"), DType.float32, device=device),
+        [vocab_size - unpadded_vocab_size],
+    )
+    return logits + ops.cast(ops.concat([keep, drop]), logits.dtype)
+
+
 def deepseek_logits_postprocess(
     h: list[TensorValue],
     input_row_offsets: list[TensorValue],
@@ -131,6 +156,9 @@ def deepseek_logits_postprocess(
     return_hidden_states: ReturnHiddenStates,
     logits_scaling: float = 1.0,
     capture_hidden_states: list[list[TensorValue]] | None = None,
+    emit_last_token_logits: bool = True,
+    unpadded_vocab_size: int | None = None,
+    vocab_size: int | None = None,
 ) -> tuple[TensorValue, ...]:
     """Logits postprocessing for DeepseekV3 and DeepseekV3NextN.
 
@@ -139,8 +167,14 @@ def deepseek_logits_postprocess(
     variable / all logits computation, logits scaling, and hidden-states
     extraction.
 
+    When ``emit_last_token_logits`` is False, the last-token norm + full-vocab
+    lm_head projection (and, under DP attention, its last-token allgather) is
+    skipped and ``last_logits`` is omitted from the output tuple. Callers that
+    consume only the VARIABLE logits (e.g. the unified MTP graph) set this to
+    avoid an unused vocab-sized GEMM + collective per step.
+
     Returns:
-        ``(last_logits, [logits, offsets], [hidden_states])`` — the optional
+        ``([last_logits], [logits, offsets], [hidden_states])`` — the optional
         segments are present only when the corresponding mode is active.
     """
     if is_data_parallel_attention:
@@ -150,22 +184,31 @@ def deepseek_logits_postprocess(
             last_token_indices = input_row_offsets[dev_idx][1:] - 1
             last_token_h = ops.gather(h0, last_token_indices, axis=0)
             last_token_per_dev.append(last_token_h)
-        last_token_distributed = ops.allgather(
-            last_token_per_dev, signal_buffers
-        )
+        # ``last_token_distributed`` is only consumed by the last-token lm_head
+        # below and by ``extract_hs`` for the LAST / LAST_PER_DEVICE modes;
+        # callers that suppress ``last_logits`` pair it with ALL /
+        # ALL_NORMALIZED hidden states, so the allgather is skipped too.
+        if emit_last_token_logits:
+            last_token_distributed = ops.allgather(
+                last_token_per_dev, signal_buffers
+            )
+        else:
+            last_token_distributed = last_token_per_dev
     else:
         last_token_distributed = [
             ops.gather(h_i, offsets_i[1:] - 1, axis=0)
             for h_i, offsets_i in zip(h, input_row_offsets, strict=True)
         ]
 
-    norm_last_token = forward_sharded_layers(
-        norm_shards, last_token_distributed
-    )
-    last_logits = ops.cast(
-        lm_head(norm_last_token, signal_buffers)[0],
-        DType.float32,
-    )
+    last_logits: TensorValue | None = None
+    if emit_last_token_logits:
+        norm_last_token = forward_sharded_layers(
+            norm_shards, last_token_distributed
+        )
+        last_logits = ops.cast(
+            lm_head(norm_last_token, signal_buffers)[0],
+            DType.float32,
+        )
 
     logits = None
     offsets = None
@@ -231,12 +274,29 @@ def deepseek_logits_postprocess(
             else input_row_offsets[0]
         )
 
+    if unpadded_vocab_size is not None:
+        assert vocab_size is not None, (
+            "vocab_size must accompany unpadded_vocab_size"
+        )
+        if last_logits is not None:
+            last_logits = mask_padded_tail(
+                last_logits, vocab_size, unpadded_vocab_size
+            )
+        if logits is not None:
+            logits = mask_padded_tail(logits, vocab_size, unpadded_vocab_size)
+
     if logits_scaling != 1.0:
-        last_logits = last_logits / logits_scaling
+        if last_logits is not None:
+            last_logits = last_logits / logits_scaling
         if logits is not None:
             logits = logits / logits_scaling
 
-    ret_val: tuple[TensorValue, ...] = (last_logits,)
+    assert last_logits is not None or logits is not None, (
+        "skipping last_logits requires VARIABLE/ALL logits to be emitted"
+    )
+    ret_val: tuple[TensorValue, ...] = (
+        () if last_logits is None else (last_logits,)
+    )
     if logits is not None and offsets is not None:
         ret_val += (logits, offsets)
 
@@ -307,12 +367,12 @@ class DeepseekV3DecoderLayer(Module):
             mla_kwargs["o_proj_quant_config"] = config.quant_config
             mla_kwargs["o_proj_dtype"] = config.dtype
 
-        mla_cls: (
-            type[DataParallelLatentAttentionWithRope]
-            | type[DataParallelLatentAttentionWithRopeFp8]
-            | type[TensorParallelLatentAttentionWithRope]
-            | type[TensorParallelLatentAttentionWithRopeFp8]
-        )
+        mla_cls: type[
+            DataParallelLatentAttentionWithRope
+            | DataParallelLatentAttentionWithRopeFp8
+            | TensorParallelLatentAttentionWithRope
+            | TensorParallelLatentAttentionWithRopeFp8
+        ]
         match self.mode:
             case ParallelismMode.TP_EP:
                 # TP attention + EP MoE: the cross-device communication is
@@ -426,7 +486,6 @@ class DeepseekV3DecoderLayer(Module):
                 * config.moe_intermediate_size,
                 dtype=config.dtype,
                 ep_size=ep_size,
-                apply_router_weight_first=False,
                 ep_batch_manager=self.ep_manager,
                 quant_config=config.quant_config,
                 shared_experts_dtype=(
@@ -625,6 +684,57 @@ class DeepseekV3DecoderLayer(Module):
                 ]
             case _:
                 raise ValueError(f"Unsupported parallelism mode: {self.mode}")
+
+
+def deepseekV3_input_tree(
+    *,
+    kv_params: KVCacheParamInterface,
+    device_refs: list[DeviceRef],
+    data_parallel_degree: int,
+    ep_config: EPConfig | None,
+    eplb_profile: tuple[int, int] | None = None,
+) -> OrderedDict[str, object]:
+    """Names the graph's inputs; its leaves are the graph's inputs.
+
+    ``host_row_offsets`` and ``data_parallel_splits`` are always inputs, even
+    at DP=1: MLA latent decode reads the host offsets. ``batch_context`` is
+    one host scalar per device, after the KV leaves. ``ep`` and
+    ``eplb_profile`` are present only when the graph is built for them;
+    ``eplb_profile`` is ``(num_hidden_layers, n_routed_experts)``.
+    """
+    inputs: OrderedDict[str, object] = OrderedDict(
+        batch=ragged_batch_inputs(
+            device_refs[0],
+            (
+                "tokens",
+                "row_offsets",
+                "host_row_offsets",
+                "return_n_logits",
+                "data_parallel_splits",
+            ),
+            data_parallel_degree=data_parallel_degree,
+        ),
+        signals=signal_inputs(device_refs),
+        kv=kv_params.get_symbolic_inputs(),
+        batch_context=OrderedDict(
+            length=tuple(
+                TensorType(DType.int32, shape=[1], device=DeviceRef.CPU())
+                for _ in device_refs
+            )
+        ),
+    )
+    if ep_config is not None:
+        inputs["ep"] = EPBatchManager(ep_config).input_tree()
+    if eplb_profile is not None:
+        num_layers, n_experts = eplb_profile
+        inputs["eplb_profile"] = OrderedDict(
+            expert_counts=tuple(
+                BufferType(DType.int64, shape=[n_experts], device=device)
+                for _ in range(num_layers)
+                for device in device_refs
+            )
+        )
+    return inputs
 
 
 class DeepseekV3(Module):
@@ -841,10 +951,8 @@ class DeepseekV3(Module):
                 self.config.eagle_aux_hidden_state_layer_ids
             )
 
-        def inputs_for_layer(
-            idx: int, h: list[TensorValue]
-        ) -> list[SubgraphInput]:
-            values: list[SubgraphInput] = [
+        def inputs_for_layer(idx: int, h: list[TensorValue]) -> list[Tree[Any]]:
+            values: list[Tree[Any]] = [
                 ops.constant(idx, DType.uint32, device=DeviceRef.CPU()),
                 h,
                 signal_buffers,
@@ -903,76 +1011,27 @@ class DeepseekV3(Module):
             return_logits=self.return_logits,
             return_hidden_states=self.return_hidden_states,
             logits_scaling=self.logits_scaling,
-            capture_hidden_states=eagle3_captured if eagle3_captured else None,
+            capture_hidden_states=eagle3_captured or None,
+        )
+
+    def input_tree(
+        self, kv_params: KVCacheParamInterface
+    ) -> OrderedDict[str, object]:
+        """Names the graph's inputs; its leaves are the graph's inputs."""
+        return deepseekV3_input_tree(
+            kv_params=kv_params,
+            device_refs=list(self.config.devices),
+            data_parallel_degree=self.config.data_parallel_degree,
+            ep_config=self.config.ep_config,
+            eplb_profile=(
+                (self.config.num_hidden_layers, self.config.n_routed_experts)
+                if self.config.eplb_profile_enabled
+                else None
+            ),
         )
 
     def input_types(
         self,
         kv_params: KVCacheParamInterface,
     ) -> tuple[TensorType | BufferType, ...]:
-        # TODO: Move input symbol computation from the manager classes.
-        # It should be possible to compute the input symbols from the model
-        # config.
-        device_ref = self.config.devices[0]
-
-        # Construct Graph Inputs
-        tokens_type = TensorType(
-            DType.int64, shape=["total_seq_len"], device=device_ref
-        )
-        device_input_row_offsets_type = TensorType(
-            DType.uint32,
-            shape=["input_row_offsets_len"],
-            device=device_ref,
-        )
-
-        # Add host input row offsets type, this is used to split the
-        # concatenated DP inputs.
-        host_input_row_offsets_type = TensorType(
-            DType.uint32,
-            shape=["input_row_offsets_len"],
-            device=DeviceRef.CPU(),
-        )
-        return_n_logits_type = TensorType(
-            DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
-        )
-        data_parallel_splits_type = TensorType(
-            DType.int64,
-            shape=[self.config.data_parallel_degree + 1],
-            device=DeviceRef.CPU(),
-        )
-
-        signals = Signals(devices=self.config.devices)
-        signal_buffer_types: list[BufferType] = signals.input_types()
-
-        all_input_types: list[TensorType | BufferType] = [
-            tokens_type,
-            device_input_row_offsets_type,
-            host_input_row_offsets_type,
-            return_n_logits_type,
-            data_parallel_splits_type,
-        ]
-        all_input_types.extend(signal_buffer_types)
-        all_input_types.extend(kv_params.flattened_kv_inputs())
-
-        # Add batch context lengths
-        batch_context_length_type = TensorType(
-            DType.int32, shape=[1], device=DeviceRef.CPU()
-        )
-        all_input_types.extend(
-            [batch_context_length_type for _ in range(len(self.config.devices))]
-        )
-
-        if self.ep_manager is not None:
-            all_input_types.extend(self.ep_manager.input_types())
-
-        if self.config.eplb_profile_enabled:
-            for _layer_idx in range(self.config.num_hidden_layers):
-                for device in self.config.devices:
-                    all_input_types.append(
-                        BufferType(
-                            DType.int64,
-                            shape=[self.config.n_routed_experts],
-                            device=device,
-                        )
-                    )
-        return tuple(all_input_types)
+        return tuple(tree.leaves(self.input_tree(kv_params)))

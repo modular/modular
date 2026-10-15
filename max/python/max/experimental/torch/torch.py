@@ -18,7 +18,7 @@ from __future__ import annotations
 import inspect
 import itertools
 import threading
-from collections.abc import Callable, Hashable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from concurrent import futures
 from functools import partial
 from pathlib import Path
@@ -163,10 +163,10 @@ class CustomOpLibrary:
     value in Python. Each argument corresponding to an ``OutputTensor`` in the
     Mojo operation will be modified in-place.
 
-    For more information, see the [custom ops for PyTorch](/max/develop/custom-kernels-pytorch) tutorial.
+    For more information, see the [custom ops for PyTorch](/develop/custom-kernels-pytorch) tutorial.
 
     Args:
-        kernel_library: The path to a ``.mojo`` file or a ``.mojoc``/``.mojopkg`` with
+        kernel_library: The path to a ``.mojo`` file or a ``.mojoc`` with
             your custom op kernels, or the corresponding library object.
     """
 
@@ -218,8 +218,6 @@ class CustomOpLibrary:
 
 ParametersDict = Mapping[str, bool | int | str | DType]
 ParameterKey = tuple[str, bool | int | str | DType]
-
-CompiledModelKey = tuple[Hashable, ...]
 
 
 class CustomOp:

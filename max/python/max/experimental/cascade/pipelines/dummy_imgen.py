@@ -14,22 +14,22 @@
 
 import asyncio
 import io
-from collections.abc import AsyncIterable, AsyncIterator, Awaitable
+from collections.abc import AsyncIterable, AsyncIterator
 from dataclasses import dataclass
 from typing import Any, cast
 
 import numpy as np
 import numpy.typing as npt
-from max.experimental.cascade.core import (
-    Worker,
-    pipeline_method,
-    worker_method,
+from max.experimental.cascade.core import Worker, worker_method
+from max.experimental.cascade.interfaces.gen_ai import (
+    ChatMessage,
+    GenAIChunk,
+    GenAIImageChunk,
+    GenAIRequest,
+    GenAITextChunk,
+    Modality,
 )
-from max.experimental.cascade.interfaces.imgen import (
-    ImageGenInterface,
-    ImageGenRequest,
-)
-from max.experimental.cascade.interfaces.pipeline import CascadePipeline
+from max.experimental.cascade.interfaces.pipeline import GenAIPipeline
 from PIL import Image
 from scipy import ndimage
 
@@ -91,27 +91,6 @@ class DummyDenoiser(Worker):
         super().__init__(deploy_hints=["gpu"])
 
     @worker_method()
-    async def denoise(
-        self,
-        prompt_embeds: Int32Array,
-        tokens: Int32Array,
-        latents: Int32Array,
-        latent_image_ids: Int32Array,
-        sigmas: Int32Array,
-        guidance_scale: float,
-    ) -> dict[str, object]:
-        """Return fake latent state for the dummy image pipeline."""
-        await asyncio.sleep(0.01)
-        return {
-            "prompt_embeds": prompt_embeds,
-            "tokens": tokens,
-            "latents": latents,
-            "latent_image_ids": latent_image_ids,
-            "sigmas": sigmas,
-            "guidance_scale": guidance_scale,
-        }
-
-    @worker_method()
     async def denoise_streaming(
         self,
         prompt_embeds: Int32Array,
@@ -146,13 +125,6 @@ class DummyVAEDecoder(Worker):
         super().__init__(deploy_hints=["gpu"])
 
     @worker_method()
-    async def decode(
-        self, latents: dict[str, object], height: int, width: int
-    ) -> UInt8Array:
-        """Generate a deterministic image array from the context seed."""
-        return _decode_latents(latents, height, width)
-
-    @worker_method()
     async def decode_streaming(
         self,
         latents_iter: AsyncIterable[dict[str, object]],
@@ -171,19 +143,17 @@ class DummyImageSerializer(Worker):
         super().__init__(deploy_hints=["cpu"])
 
     @worker_method()
-    async def serialize(self, img: UInt8Array, output_format: str) -> bytes:
-        """Serialize an image array into an encoded byte buffer."""
-        return _serialize_image(img, output_format)
-
-    @worker_method()
     async def serialize_streaming(
         self,
         img_iter: AsyncIterable[UInt8Array],
         output_format: str,
-    ) -> AsyncIterator[bytes]:
-        """Forward a stream of image arrays into a stream of encoded bytes."""
+    ) -> AsyncIterator[GenAIImageChunk]:
+        """Forward a stream of image arrays into a stream of image chunks."""
         async for img in img_iter:
-            yield _serialize_image(img, output_format)
+            yield GenAIImageChunk(
+                format=output_format,
+                data=_serialize_image(img, output_format),
+            )
 
 
 def _decode_latents(
@@ -210,8 +180,18 @@ def _serialize_image(img: UInt8Array, output_format: str) -> bytes:
     return buffer.getvalue()
 
 
+def _prompt_text(messages: list[ChatMessage]) -> str:
+    """Join every text part of a conversation into one prompt string."""
+    return "\n".join(
+        part.text
+        for message in messages
+        for part in message.content
+        if isinstance(part, GenAITextChunk)
+    )
+
+
 @dataclass
-class DummyImageGenPipeline(CascadePipeline, ImageGenInterface):
+class DummyImageGenPipeline(GenAIPipeline):
     """Wire dummy image-generation workers into an end-to-end pipeline."""
 
     tokenizer: DummyTokenizer
@@ -220,54 +200,35 @@ class DummyImageGenPipeline(CascadePipeline, ImageGenInterface):
     vae_decoder: DummyVAEDecoder
     image_serializer: DummyImageSerializer
 
-    @pipeline_method
-    async def generate_image(
-        self, req: ImageGenRequest, prompt: str
-    ) -> Awaitable[bytes]:
-        """Generate an image from a text prompt."""
-        tokens = await self.tokenizer.encode(prompt)
-        sigmas = await self.tokenizer.prepare_sigmas(
-            req.height, req.width, req.num_steps
-        )
-        latents = await self.tokenizer.prepare_latents(
-            req.height, req.width, req.seed
-        )
-        latent_image_ids = await self.tokenizer.prepare_latent_image_ids(
-            req.height, req.width
-        )
-        prompt_embeds = await self.text_encoder.encode(tokens)
-        denoised = await self.denoiser.denoise(
-            prompt_embeds,
-            tokens,
-            latents,
-            latent_image_ids,
-            sigmas,
-            req.guidance_scale,
-        )
-        image = await self.vae_decoder.decode(denoised, req.height, req.width)
-        return await self.image_serializer.serialize(image, req.output_format)
+    def supported_input_modalities(self) -> set[Modality]:
+        """Accept text prompts."""
+        return {Modality.TEXT}
 
-    @pipeline_method
-    async def generate_image_streaming(
-        self, req: ImageGenRequest, prompt: str
-    ) -> AsyncIterator[bytes]:
-        """Stream encoded images, emitting one frame per denoising step.
+    def supported_output_modalities(self) -> set[Modality]:
+        """Emit generated images."""
+        return {Modality.IMAGE}
+
+    async def _generate_iterator(
+        self, req: GenAIRequest
+    ) -> AsyncIterable[GenAIChunk]:
+        """Stream image chunks, emitting one per denoising step.
 
         Wires the streaming variants of the denoiser, VAE decoder, and image
         serializer into an end-to-end async pipeline. Each downstream worker
         consumes the upstream stream and forwards a transformed frame, so the
-        caller observes ``num_steps`` byte buffers without any intermediate
+        caller observes ``num_steps`` chunks without any intermediate
         materialization.
         """
-        tokens = await self.tokenizer.encode(prompt)
+        options = req.image
+        tokens = await self.tokenizer.encode(_prompt_text(req.messages))
         sigmas = await self.tokenizer.prepare_sigmas(
-            req.height, req.width, req.num_steps
+            options.height, options.width, options.num_steps
         )
         latents = await self.tokenizer.prepare_latents(
-            req.height, req.width, req.seed
+            options.height, options.width, options.seed
         )
         latent_image_ids = await self.tokenizer.prepare_latent_image_ids(
-            req.height, req.width
+            options.height, options.width
         )
         prompt_embeds = await self.text_encoder.encode(tokens)
         denoised_stream = await self.denoiser.denoise_streaming(
@@ -276,15 +237,14 @@ class DummyImageGenPipeline(CascadePipeline, ImageGenInterface):
             latents,
             latent_image_ids,
             sigmas,
-            req.guidance_scale,
+            options.guidance_scale,
         )
         image_stream = await self.vae_decoder.decode_streaming(
-            denoised_stream, req.height, req.width
+            denoised_stream, options.height, options.width
         )
-        async for frame in await self.image_serializer.serialize_streaming(
-            image_stream, req.output_format
-        ):
-            yield frame
+        return await self.image_serializer.serialize_streaming(
+            image_stream, options.output_format
+        )
 
 
 async def build_dummy_imgen_pipeline() -> DummyImageGenPipeline:

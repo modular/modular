@@ -32,10 +32,13 @@ from max.pipelines.architectures.qwen2_5vl.model_config import Qwen2_5VLConfig
 from max.pipelines.architectures.qwen2_5vl.tokenizer import (
     Qwen2_5VLTokenizer,
 )
-from max.pipelines.lib import KVCacheConfig
+from max.pipelines.lib import KVCacheConfig, PipelineRuntimeConfig
 from transformers import AutoConfig
 
 CONFIG_DIR = Path(__file__).parent / "configs" / "qwen2_5vl_3b"
+
+
+_MAX_SEQ_LEN = 1024
 
 
 def _load_hf_config() -> AutoConfig:
@@ -47,13 +50,12 @@ def _mock_pipeline_config(
 ) -> Mock:
     """Builds a minimal PipelineConfig mock for config init."""
     model = Mock()
-    model.kv_cache.cache_dtype = "bfloat16"
     model.quantization_encoding = "bfloat16"
+    model.kv_cache.kv_cache_format = None
     model.weight_path = [Path("model.safetensors")]
     model.rope_type = "default"
     model.device_specs = [DeviceSpec.cpu()]
     model.max_length = None
-    model.graph_quantization_encoding = None
     model.use_subgraphs = True
     model.data_parallel_degree = 1
     model.huggingface_config = hf_config
@@ -61,6 +63,9 @@ def _mock_pipeline_config(
     pipeline_config = Mock()
     pipeline_config.model = model
     pipeline_config.lora = None
+    # A real runtime config, not a Mock: the tokenizer sizes its preprocessed
+    # image cache from these budgets, and arithmetic on a Mock raises.
+    pipeline_config.runtime = PipelineRuntimeConfig()
     return pipeline_config
 
 
@@ -72,7 +77,9 @@ def test_all_config_entry_points() -> None:
     devices = [DeviceRef.CPU()]
 
     # initialize_from_config
-    config = Qwen2_5VLConfig.initialize_from_config(pipeline_config, hf_config)
+    config = Qwen2_5VLConfig.initialize_from_config(
+        pipeline_config, hf_config, max_seq_len=_MAX_SEQ_LEN
+    )
     assert config.llm_config is not None
 
     # construct_kv_params -- the path that crashed in the smoke test
@@ -92,7 +99,7 @@ def test_all_config_entry_points() -> None:
 
     # calculate_max_seq_len
     max_seq_len = Qwen2_5VLConfig.calculate_max_seq_len(
-        pipeline_config, hf_config
+        hf_config, pipeline_config.model
     )
     assert max_seq_len > 0
 
@@ -101,7 +108,9 @@ def test_finalize() -> None:
     """finalize() must resolve attributes from the correct sub-config."""
     hf_config = _load_hf_config()
     pipeline_config = _mock_pipeline_config()
-    config = Qwen2_5VLConfig.initialize_from_config(pipeline_config, hf_config)
+    config = Qwen2_5VLConfig.initialize_from_config(
+        pipeline_config, hf_config, max_seq_len=_MAX_SEQ_LEN
+    )
 
     fake_weight = Mock(dtype=DType.bfloat16)
     llm_state_dict: dict[str, Any] = {
@@ -133,7 +142,9 @@ def test_finalize_propagates_quantization_config() -> None:
     hf_config.quantization_config = {"quant_method": "compressed-tensors"}
     assert not hasattr(hf_config.text_config, "quantization_config")
 
-    config = Qwen2_5VLConfig.initialize_from_config(pipeline_config, hf_config)
+    config = Qwen2_5VLConfig.initialize_from_config(
+        pipeline_config, hf_config, max_seq_len=_MAX_SEQ_LEN
+    )
 
     fake_weight = Mock(dtype=DType.bfloat16)
     llm_state_dict: dict[str, Any] = {

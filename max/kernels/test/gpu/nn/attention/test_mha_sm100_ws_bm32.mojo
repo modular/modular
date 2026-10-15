@@ -20,9 +20,17 @@ Target hardware family: NVIDIA SM100 (B200).
 The whole `.ws` MMA_M=32 datapath: the shared KV sub-tile ring (producer +
 consumer), the packed-TMEM P@V, the per-quarter WS softmax, and the two-level
 (per-WG Level-1 + cross-WG Level-2) LSE combine wired into `fa4_softmax`'s
-epilogue (Md). A very short prompt (`valid_length <= 32`) routes the dispatch
-(sm100/dispatch.mojo) to the `BM=32` WS config; the output is compared against
-`mha_gpu_naive` over the full `[0, num_keys)` range with the SAME mask.
+epilogue (Md). A short prompt routes the dispatch (sm100/dispatch.mojo) to a WS
+config; the output is compared against `mha_gpu_naive` over the full
+`[0, num_keys)` range with the SAME mask.
+
+WHICH WS config depends on `group`, not on `valid_length` alone: the Layout-G
+(BM=32) gate needs `BM_eff() == BM // group >= max_prompt_len`, so at the default
+`num_q_heads=64` (`group == 8`) BM=32's `BM_eff()` is 4 and a `valid_length=8`
+prompt FAILS that gate and falls through to Layout-E (BM=64, MMA_M=64,
+`m_pack=2`), whose `BM_eff()` is 8. Only the `num_q_heads=32` cell (`group == 4`,
+`BM_eff() == 8`) is genuinely BM=32. Both layouts are worth covering, but do not
+read a passing cell here as evidence about MMA_M=32 unless its group says so.
 
 The `T = ceil(num_keys / 256)` WS-tile count (driven by `cache_length`) exercises
 both epilogue arms and the odd-tail alias-swap:
@@ -83,10 +91,10 @@ carrier in an otherwise-fully-masked WG.
 from std.collections import Set
 from std.math import ceildiv, isnan, rsqrt
 from std.random import rand, random_ui64, seed
-from std.sys import get_defined_int
+from std.utils.numerics import nan
 
-from std.gpu.host import DeviceContext
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from max.gpu.host import DeviceContext
+from layout import Coord, Idx, TileTensor, row_major
 from layout._fillers import random
 from kv_cache.types import (
     KVCacheStaticParams,
@@ -100,8 +108,6 @@ from nn.attention.mha_mask import (
     ChunkedMask,
     SlidingWindowCausalMask,
 )
-
-from std.utils import IndexList
 
 
 comptime _LUT_TAIL_PAD = 16
@@ -119,12 +125,18 @@ def execute_ws_bm32_test[
     use_sink: Bool = False,
     large_sink: Bool = False,
     raise_on_fail: Bool = True,
+    # Comptime split-K partition-count override threaded into `flash_attention`.
+    # `0` => auto (the dispatch ladder picks `P`); a named `P` is honored verbatim
+    # and pins the WS single-CTA / cluster / workspace split-K mechanism -- the
+    # coverage replacement for the retired `FA4_WS_SPLITK_FORCE` define.
+    num_partitions: Int = 0,
 ](
     mask: mask_t, cache_length: Int, valid_length: Int, ctx: DeviceContext
 ) raises:
     # gpt-oss-20b-like shape: 8 kv-heads, `num_q_heads` q-heads (group =
-    # num_q_heads // 8), like the split-K LSE test. `valid_length <= 32` routes
-    # the dispatch to the WS BM=32 config.
+    # num_q_heads // 8), like the split-K LSE test. A short `valid_length` routes
+    # to a WS config; `group` picks WHICH one (Layout-G BM=32 needs
+    # `BM // group >= valid_length`) -- see the module docstring.
     comptime kv_params = KVCacheStaticParams(num_heads=8, head_size=head_size)
     comptime dtype = DType.bfloat16
     comptime kv_heads = kv_params.num_heads
@@ -133,17 +145,6 @@ def execute_ws_bm32_test[
     comptime layer_idx = 0
     # WS KV tile is BN=256 (even -> WG0, odd -> WG1). Diagnostic only.
     comptime WS_BN = 256
-
-    # `valid_length > 32` reaches WS only when the config is force-selected
-    # (`-D FA4_FORCE_CONFIG=1`, the Phase C2 multi-tile target); under the auto
-    # route (<=32) it would silently fall to the baseline path, so this would no
-    # longer be a WS test. Keep the guard active for the default (auto) target.
-    comptime _force_config = get_defined_int["FA4_FORCE_CONFIG", 0]()
-    if valid_length > 32 and _force_config != 1:
-        raise Error(
-            "WS BM=32 route requires valid_length <= 32 (or -D"
-            " FA4_FORCE_CONFIG=1 to force WS)"
-        )
 
     var num_keys = cache_length + valid_length
     var total_length = valid_length
@@ -172,70 +173,76 @@ def execute_ws_bm32_test[
         sep="",
     )
 
-    comptime row_offsets_layout = Layout(UNKNOWN_VALUE)
-    comptime cache_lengths_layout = Layout(UNKNOWN_VALUE)
-    comptime q_ragged_layout = Layout.row_major(
-        UNKNOWN_VALUE, num_q_heads, head_size
-    )
-    comptime output_layout = Layout.row_major(
-        UNKNOWN_VALUE, num_q_heads, head_size
-    )
-    comptime paged_lut_layout = Layout.row_major[2]()
-    comptime kv_block_6d_layout = Layout.row_major[6]()
-    comptime sink_layout = Layout.row_major(UNKNOWN_VALUE)
+    comptime Collection = PagedKVCacheCollection[
+        dtype,
+        kv_params,
+        page_size,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
+    ]
 
     var scale = rsqrt(Float32(head_size))
+
+    # `num_partitions` reaches FA4 as an EXACT partition count via
+    # `mha.mojo`'s `num_partitions_override`. Only P=2 is honored on B200 (the
+    # sole `CLUSTER_SPLITK_CANDIDATES` entry at 148 SMs); a larger P silently
+    # reroutes to the workspace fallback, so the test uses P=2 only. The naive
+    # oracle is invariant in `P`, so it cannot confirm `P` was honored; the
+    # only signal is the candidate match itself.
+    var np_opt = (
+        Optional[Int](num_partitions) if num_partitions > 0 else Optional[Int]()
+    )
 
     seed(0x5151)
 
     # --- Row offsets (single sequence) ---
-    var input_row_offsets = ctx.enqueue_create_host_buffer[DType.uint32](
+    var input_row_offsets = ctx.enqueue_create_host_buffer[.uint32](
         batch_size + 1
     )
     input_row_offsets[0] = 0
     input_row_offsets[1] = UInt32(valid_length)
-    var input_row_offsets_dev = ctx.enqueue_create_buffer[DType.uint32](
+    var input_row_offsets_dev = ctx.enqueue_create_buffer[.uint32](
         batch_size + 1
     )
     ctx.enqueue_copy(input_row_offsets_dev, input_row_offsets)
-    var input_row_offsets_lt = LayoutTensor[
-        mut=False, DType.uint32, row_offsets_layout
-    ](
-        input_row_offsets_dev,
-        RuntimeLayout[row_offsets_layout].row_major(
-            IndexList[1](batch_size + 1)
-        ),
+    var input_row_offsets_tt = (
+        TileTensor(
+            input_row_offsets_dev,
+            row_major(Int64(len(input_row_offsets_dev))),
+        )
+        .as_imm()
+        .as_unsafe_any_origin()
     )
 
     # --- Q (ragged: [total_length, num_q_heads, head_size]) ---
     var q_size = total_length * num_q_heads * head_size
     var q_host = ctx.enqueue_create_host_buffer[dtype](q_size)
-    var q_host_tt = LayoutTensor[dtype, q_ragged_layout](
-        q_host.unsafe_ptr(),
-        RuntimeLayout[q_ragged_layout].row_major(
-            IndexList[3](total_length, num_q_heads, head_size)
-        ),
+    var q_host_tt = TileTensor(
+        q_host, row_major(total_length, Idx[num_q_heads], Idx[head_size])
     )
     random(q_host_tt)
     var q_dev = ctx.enqueue_create_buffer[dtype](q_size)
     ctx.enqueue_copy(q_dev, q_host)
-    var q_lt = LayoutTensor[mut=False, dtype, q_ragged_layout](
-        q_dev,
-        RuntimeLayout[q_ragged_layout].row_major(
-            IndexList[3](total_length, num_q_heads, head_size)
-        ),
-    )
+    var q_tt = TileTensor(
+        q_dev, row_major(total_length, Idx[num_q_heads], Idx[head_size])
+    ).as_imm()
 
     # --- Paged KV blocks (shared physical storage for both runs) ---
     var num_paged_blocks = ceildiv(num_keys, page_size) * batch_size + 4
-    var kv_block_paged_shape = IndexList[6](
-        num_paged_blocks,
-        2,
-        num_layers,
-        page_size,
-        kv_params.num_heads,
-        head_size,
+    comptime BlocksLayout = Collection.blocks_tt_layout
+    var blocks_shape = Coord[*BlocksLayout.shape_types]()
+    blocks_shape[0] = Int64(num_paged_blocks)
+    blocks_shape[2] = Int64(num_layers)
+    var blocks_strides = Coord[*BlocksLayout.stride_types]()
+    blocks_strides[0] = Int64(
+        2 * num_layers * page_size * kv_params.num_heads * head_size
     )
+    blocks_strides[1] = Int64(
+        num_layers * page_size * kv_params.num_heads * head_size
+    )
+    var blocks_layout = BlocksLayout(blocks_shape, blocks_strides)
     var kv_block_size = (
         num_paged_blocks
         * 2
@@ -245,64 +252,78 @@ def execute_ws_bm32_test[
         * head_size
     )
     var kv_block_host = ctx.enqueue_create_host_buffer[dtype](kv_block_size)
-    var kv_block_host_tt = LayoutTensor[dtype, kv_block_6d_layout](
-        kv_block_host.unsafe_ptr(),
-        RuntimeLayout[kv_block_6d_layout].row_major(kv_block_paged_shape),
-    )
+    var kv_block_host_tt = TileTensor(kv_block_host, blocks_layout)
     random(kv_block_host_tt)
+    # Reserve the last physical block as a NaN poison page. The LUT's padded
+    # tail points every unused column at it (see below), so any TMA that reads
+    # past a sequence's real pages pulls non-finite data instead of plausible
+    # KV -- `0 * NaN = NaN` then fails the comparison loudly rather than being
+    # silently masked to zero. With `page_size < BN` a trailing tile spans more
+    # page slots than the sequence has pages, and the kernel is required to
+    # OOB-zero-fill those slots rather than load them, so a correct kernel
+    # never touches this block.
+    var poison_block = num_paged_blocks - 1
+    var block_elems = (
+        2 * num_layers * page_size * kv_params.num_heads * head_size
+    )
+    for i in range(block_elems):
+        kv_block_host[poison_block * block_elems + i] = nan[dtype]()
     var kv_block_dev = ctx.enqueue_create_buffer[dtype](kv_block_size)
     ctx.enqueue_copy(kv_block_dev, kv_block_host)
-    var kv_block_paged_lt = LayoutTensor[dtype, kv_block_6d_layout](
-        kv_block_dev,
-        RuntimeLayout[kv_block_6d_layout].row_major(kv_block_paged_shape),
-    )
+    var kv_block_paged_tt = TileTensor(kv_block_dev, blocks_layout)
 
     # --- Full lookup table (unique physical block per logical page) ---
     var full_pages = ceildiv(num_keys, page_size)
     var lut_cols = padded_lut_cols(full_pages)
-    var paged_lut_host = ctx.enqueue_create_host_buffer[DType.uint32](
+    var paged_lut_host = ctx.enqueue_create_host_buffer[.uint32](
         batch_size * lut_cols
     )
     var lut_set = Set[Int]()
     for blk in range(full_pages):
-        var randval = Int(random_ui64(0, UInt64(num_paged_blocks - 1)))
+        # `poison_block` (the last one) is excluded so the real pages never
+        # alias it.
+        var randval = Int(random_ui64(0, UInt64(num_paged_blocks - 2)))
         while randval in lut_set:
-            randval = Int(random_ui64(0, UInt64(num_paged_blocks - 1)))
+            randval = Int(random_ui64(0, UInt64(num_paged_blocks - 2)))
         lut_set.add(randval)
         paged_lut_host[blk] = UInt32(randval)
+    # `padded_lut_cols` over-allocates so `PagedRowIndices.populate` can SIMD-read
+    # `num_pages` columns from any valid start (kv_cache/types.mojo), and populate
+    # does NOT clamp against the sequence's real page count. Leaving the tail
+    # uninitialized made those reads pick up arbitrary host memory -- an
+    # out-of-range physical block, i.e. an illegal global read rather than merely
+    # wrong data. Point the tail at the in-range NaN poison block instead.
+    for blk in range(full_pages, lut_cols):
+        paged_lut_host[blk] = UInt32(poison_block)
 
     # --- Cache lengths ---
-    var cache_lengths_host = ctx.enqueue_create_host_buffer[DType.uint32](
-        batch_size
-    )
+    var cache_lengths_host = ctx.enqueue_create_host_buffer[.uint32](batch_size)
     cache_lengths_host[0] = UInt32(cache_length)
-    var cache_lengths_dev = ctx.enqueue_create_buffer[DType.uint32](batch_size)
+    var cache_lengths_dev = ctx.enqueue_create_buffer[.uint32](batch_size)
     ctx.enqueue_copy(cache_lengths_dev, cache_lengths_host)
-    var cache_lengths_lt = LayoutTensor[
-        mut=False, DType.uint32, cache_lengths_layout
-    ](
-        cache_lengths_dev,
-        RuntimeLayout[cache_lengths_layout].row_major(IndexList[1](batch_size)),
+    var cache_lengths_tt = (
+        TileTensor(cache_lengths_dev, row_major(Int64(len(cache_lengths_dev))))
+        .as_imm()
+        .as_unsafe_any_origin()
     )
 
-    var paged_lut_dev = ctx.enqueue_create_buffer[DType.uint32](
+    var paged_lut_dev = ctx.enqueue_create_buffer[.uint32](
         batch_size * lut_cols
     )
     ctx.enqueue_copy(paged_lut_dev, paged_lut_host)
-    var paged_lut_lt = LayoutTensor[mut=False, DType.uint32, paged_lut_layout](
-        paged_lut_dev,
-        RuntimeLayout[paged_lut_layout].row_major(
-            IndexList[2](batch_size, lut_cols)
-        ),
+    var paged_lut_tt = (
+        TileTensor(paged_lut_dev, row_major(Int64(batch_size), Int64(lut_cols)))
+        .as_imm()
+        .as_unsafe_any_origin()
     )
 
-    var kv_collection = PagedKVCacheCollection[dtype, kv_params, page_size](
+    var kv_collection = Collection(
         # Disjoint k/v views share one blocks buffer's origin; declare the block
         # origin UnsafeAnyOrigin to opt out of the nested-origin exclusivity check
         # (mirrors test_mha_sm100_1q_splitk_lse / test_mha_sm100_1q_sink).
-        kv_block_paged_lt.as_unsafe_any_origin(),
-        cache_lengths_lt,
-        paged_lut_lt,
+        kv_block_paged_tt.as_unsafe_any_origin(),
+        cache_lengths_tt,
+        paged_lut_tt,
         UInt32(valid_length),
         UInt32(num_keys),
     )
@@ -314,7 +335,7 @@ def execute_ws_bm32_test[
     # head. Spread rand [0,1) to ~[-2, 6): the ~3-magnitude score range sits
     # inside this band, so across the 64 heads some have sink > a quarter's local
     # max and some below -- exercising the WG0-quarter-0 clamp band (Risk 5). The
-    # same `sinks_lt` feeds both the WS run and the naive oracle.
+    # same `sinks_tt` feeds both the WS run and the naive oracle.
     var sinks_host = ctx.enqueue_create_host_buffer[dtype](num_q_heads)
     if use_sink:
         rand(sinks_host.as_span())
@@ -325,73 +346,70 @@ def execute_ws_bm32_test[
                 # it -- a per-quarter or per-partition over-count would show as a
                 # large denominator/error vs naive. Spread [8, 12).
                 sinks_host[h] = (
-                    sinks_host[h].cast[DType.float32]() * Float32(4.0)
-                    + Float32(8.0)
+                    sinks_host[h].cast[.float32]() * Float32(4.0) + Float32(8.0)
                 ).cast[dtype]()
             else:
                 sinks_host[h] = (
-                    sinks_host[h].cast[DType.float32]() * Float32(8.0)
-                    - Float32(2.0)
+                    sinks_host[h].cast[.float32]() * Float32(8.0) - Float32(2.0)
                 ).cast[dtype]()
     else:
         sinks_host.as_span().fill(Scalar[dtype](0))
     var sinks_dev = ctx.enqueue_create_buffer[dtype](num_q_heads)
     ctx.enqueue_copy(sinks_dev, sinks_host)
-    var sinks_lt = LayoutTensor[mut=False, dtype, sink_layout](
-        sinks_dev.unsafe_ptr().as_unsafe_any_origin(),
-        RuntimeLayout[sink_layout].row_major(IndexList[1](num_q_heads)),
+    var sinks_tt = (
+        TileTensor(sinks_dev, row_major(Int64(len(sinks_dev))))
+        .as_imm()
+        .as_unsafe_any_origin()
     )
 
     var test_out_size = total_length * num_q_heads * head_size
 
     # ============ Run 1: WS FA4 (BM=32) over the full cache ============
     var test_out_dev = ctx.enqueue_create_buffer[dtype](test_out_size)
-    var test_out_lt = LayoutTensor[dtype, output_layout](
-        test_out_dev.unsafe_ptr(),
-        RuntimeLayout[output_layout].row_major(
-            IndexList[3](total_length, num_q_heads, head_size)
-        ),
+    var test_out_tt = TileTensor(
+        test_out_dev,
+        row_major(total_length, Idx[num_q_heads], Idx[head_size]),
     )
     comptime if use_sink:
         flash_attention[ragged=True, sink=True](
-            test_out_lt,
-            q_lt,
+            test_out_tt,
+            q_tt,
             k_cache,
             v_cache,
             mask,
-            input_row_offsets_lt,
+            input_row_offsets_tt,
             scale,
             ctx,
-            sink_weights=sinks_lt,
+            sink_weights=sinks_tt,
+            num_partitions=np_opt,
         )
     else:
         flash_attention[ragged=True](
-            test_out_lt,
-            q_lt,
+            test_out_tt,
+            q_tt,
             k_cache,
             v_cache,
             mask,
-            input_row_offsets_lt,
+            input_row_offsets_tt,
             scale,
             ctx,
+            num_partitions=np_opt,
         )
 
     # ============ Run 2: naive over the full key range [0, num_keys) ======
     var ref_out_dev = ctx.enqueue_create_buffer[dtype](test_out_size)
-    var ref_out_lt = LayoutTensor[dtype, output_layout](
-        ref_out_dev.unsafe_ptr(),
-        RuntimeLayout[output_layout].row_major(
-            IndexList[3](total_length, num_q_heads, head_size)
-        ),
+    var ref_out_tt = TileTensor(
+        ref_out_dev,
+        row_major(total_length, Idx[num_q_heads], Idx[head_size]),
     )
     comptime if use_sink:
         mha_gpu_naive[ragged=True, sink=True](
-            q_lt,
+            q_tt,
             k_cache,
             v_cache,
             mask,
-            ref_out_lt,
-            input_row_offsets_lt,
+            ref_out_tt,
+            input_row_offsets_tt,
             scale,
             batch_size,
             valid_length,
@@ -400,16 +418,16 @@ def execute_ws_bm32_test[
             head_size,
             group,
             ctx,
-            sinks_lt,
+            sinks_tt,
         )
     else:
         mha_gpu_naive[ragged=True](
-            q_lt,
+            q_tt,
             k_cache,
             v_cache,
             mask,
-            ref_out_lt,
-            input_row_offsets_lt,
+            ref_out_tt,
+            input_row_offsets_tt,
             scale,
             batch_size,
             valid_length,
@@ -443,8 +461,8 @@ def execute_ws_bm32_test[
         for h in range(num_q_heads):
             for d in range(head_size):
                 var flat = (i * num_q_heads + h) * head_size + d
-                var a = test_out_host[flat].cast[DType.float32]()
-                var expected = ref_out_host[flat].cast[DType.float32]()
+                var a = test_out_host[flat].cast[.float32]()
+                var expected = ref_out_host[flat].cast[.float32]()
                 if isnan(a):
                     nan_count += 1
                     if first_nan_idx < 0:
@@ -540,139 +558,79 @@ def main() raises:
     # {1,2,3,5}, including the T==5 shape at the end that first exercised the
     # shared-ring main loop.
     with DeviceContext() as ctx:
-        # ---- Cross-CTA cluster split-K (P pinned by FA4_WS_SPLITK_FORCE) -------
-        # The `-D FA4_WS_SPLITK_FORCE=P` targets route the WS BM=32 config through
-        # a P-CTA cluster: each CTA owns 1/P of the KV, runs the 8-way intra-CTA
-        # split over its slice, then DSMEM-combines its OWN depth band (the THIRD
-        # split-K level). These cells exit early so the default (force-unset)
-        # matrix below stays single-CTA WS. All depth-128, vl=8, compared vs
-        # mha_gpu_naive over the full [0, num_keys) range at the bf16 floor.
-        # FSK is clamped to a power of two <= P_MAX (4) by dispatch, so `>= 4`
-        # selects the P=4 cells and `2..3` the P=2 cells.
-        comptime FSK = get_defined_int["FA4_WS_SPLITK_FORCE", 0]()
-        comptime if FSK >= 2:
-            comptime if FSK >= 4:
-                # ===== P >= 4 (cross-CTA cluster split-K, m_pack == 4 owning
-                # bands) ===== The force knob pins P in {4,6,8,10,16}; for P > 4
-                # only the first `m_pack` (== 4) partitions own a depth band, while
-                # partitions >= 4 still partition the KV, stage a normalized
-                # partial, and are reduced into the owning bands (many empty at
-                # high P: cache=1024 -> T=5 leaves P-5 empty for P>5; cache=640 ->
-                # T=3 leaves P-3 empty). All compared vs mha_gpu_naive over the
-                # full [0, num_keys) range at the bf16 floor.
-                # (a) all-live-at-P4 / mostly-empty-at-high-P: cache=1024 -> T=5.
-                execute_ws_bm32_test[NullMask, 128](
-                    NullMask(), cache_length=1024, valid_length=8, ctx=ctx
-                )
-                execute_ws_bm32_test[CausalMask, 128](
-                    CausalMask(), cache_length=1024, valid_length=8, ctx=ctx
-                )
-                # (b) window x split composition: the per-partition splitk_window
-                #     offset composes with the per-quarter mask column offset.
-                #     cache=640 -> T=3; the window/chunk spans the partition
-                #     boundary so live partitions see visible keys.
-                execute_ws_bm32_test[ChunkedMask[384], 128](
-                    ChunkedMask[384](),
-                    cache_length=640,
-                    valid_length=8,
-                    ctx=ctx,
-                )
-                execute_ws_bm32_test[SlidingWindowCausalMask[512], 128](
-                    SlidingWindowCausalMask[512](),
-                    cache_length=640,
-                    valid_length=8,
-                    ctx=ctx,
-                )
-                # (c) EMPTY trailing partition (L3 neutral element): cache=640 ->
-                #     num_keys=648 -> T=3, T < P so trailing partitions get 0 tiles
-                #     and must take the neutral element (M=-inf, L=0, finite-0 O ->
-                #     w_p=0) yet still publish + write their band.
-                execute_ws_bm32_test[NullMask, 128](
-                    NullMask(), cache_length=640, valid_length=8, ctx=ctx
-                )
-                execute_ws_bm32_test[CausalMask, 128](
-                    CausalMask(), cache_length=640, valid_length=8, ctx=ctx
-                )
-                # (d) depth-64 (num_d_tiles=1, own_cols=16): confirm no depth-128
-                #     hardcode in the L3 band math -- Null/Causal (T=5) plus both
-                #     window masks (T=3 window x split on the narrow depth).
-                execute_ws_bm32_test[NullMask, 64](
-                    NullMask(), cache_length=1024, valid_length=8, ctx=ctx
-                )
-                execute_ws_bm32_test[CausalMask, 64](
-                    CausalMask(), cache_length=1024, valid_length=8, ctx=ctx
-                )
-                execute_ws_bm32_test[ChunkedMask[384], 64](
-                    ChunkedMask[384](),
-                    cache_length=640,
-                    valid_length=8,
-                    ctx=ctx,
-                )
-                execute_ws_bm32_test[SlidingWindowCausalMask[512], 64](
-                    SlidingWindowCausalMask[512](),
-                    cache_length=640,
-                    valid_length=8,
-                    ctx=ctx,
-                )
-            else:
-                # ===== P=2 (re-banding 2:1: two warp-bands per partition) =====
-                # Null + Causal: cache=1024 -> num_keys=1032 -> T=5,
-                # splitk_window(5,2) = {3,2} tiles (both non-empty).
-                execute_ws_bm32_test[NullMask, 128](
-                    NullMask(), cache_length=1024, valid_length=8, ctx=ctx
-                )
-                execute_ws_bm32_test[CausalMask, 128](
-                    CausalMask(), cache_length=1024, valid_length=8, ctx=ctx
-                )
-                # (b) window x split composition: the per-partition splitk_window
-                # offset composes with the per-quarter mask column offset. cache
-                # =640 -> num_keys=648; the window/chunk spans the partition
-                # boundary (both partitions see visible keys).
-                execute_ws_bm32_test[ChunkedMask[384], 128](
-                    ChunkedMask[384](),
-                    cache_length=640,
-                    valid_length=8,
-                    ctx=ctx,
-                )
-                execute_ws_bm32_test[SlidingWindowCausalMask[512], 128](
-                    SlidingWindowCausalMask[512](),
-                    cache_length=640,
-                    valid_length=8,
-                    ctx=ctx,
-                )
-                # (d) depth-64 P=2 (num_d_tiles=1, own_cols=16): re-banding 2:1 on
-                #     the narrow depth. cache=1024 -> T=5, both partitions non-empty.
-                execute_ws_bm32_test[NullMask, 64](
-                    NullMask(), cache_length=1024, valid_length=8, ctx=ctx
-                )
-                execute_ws_bm32_test[CausalMask, 64](
-                    CausalMask(), cache_length=1024, valid_length=8, ctx=ctx
-                )
-                # (e) sink, P=2: the sink mass must be folded EXACTLY ONCE across
-                #     the P partitions -- the `fold_sink` partition-0 refinement
-                #     (splitk_partition_idx==0) composes with the WS WG0-quarter-0
-                #     gate (warp_idx==0) so ONLY partition 0's WG0-q0 folds it. A
-                #     residual per-partition (Px) or per-quarter (4x) over-count
-                #     inflates the denominator far above the floor. Moderate spread
-                #     [-2,6) straddles the scores so the denominator is sensitive.
-                execute_ws_bm32_test[CausalMask, 128, use_sink=True](
-                    CausalMask(), cache_length=1024, valid_length=8, ctx=ctx
-                )
-                execute_ws_bm32_test[
-                    SlidingWindowCausalMask[512], 128, use_sink=True
-                ](
-                    SlidingWindowCausalMask[512](),
-                    cache_length=1024,
-                    valid_length=8,
-                    ctx=ctx,
-                )
-                # large-sink (~+10) clamp-stress x Causal (Phase B Risk 5 under the
-                # finer split): Gmax is pinned to the sink, so every quarter /
-                # partition must rescale to ~0 and only WG0-q0 may carry the sink.
-                execute_ws_bm32_test[
-                    CausalMask, 128, use_sink=True, large_sink=True
-                ](CausalMask(), cache_length=1024, valid_length=8, ctx=ctx)
-            return
+        # ---- Cross-CTA cluster split-K at P=2 (pinned by `num_partitions=2`) -
+        # `num_partitions=2` routes the WS BM=32 config through a 2-CTA cluster:
+        # each CTA owns half the KV and DSMEM-combines its own depth band (the
+        # THIRD split-K level on top of the 8-way intra-CTA split). P=2 is the
+        # ONLY value this honors on B200: `CLUSTER_SPLITK_CANDIDATES = [2]` at
+        # 148 SMs, and a larger `num_partitions` with no candidate match
+        # silently reroutes to the `launch_workspace` fallback (a DIFFERENT
+        # mechanism, not the static cluster kernel), so the retired
+        # `FA4_WS_SPLITK_FORCE=P in {4,8,16}` cluster coverage (re-banding at
+        # wider P, the empty-band stress) is NOT reproducible via the runtime
+        # override and is dropped with the define. The naive oracle is
+        # P-invariant so it cannot detect that reroute -- the only signal a
+        # forced P=2 was honored is the candidate match itself. All depth-128 or
+        # depth-64, vl=8, vs mha_gpu_naive over the full [0, num_keys) range at
+        # the bf16 floor.
+        # Null + Causal: cache=1024 -> num_keys=1032 -> T=5, splitk_window(5,2)
+        # = {3,2} tiles (both non-empty).
+        execute_ws_bm32_test[NullMask, 128, num_partitions=2](
+            NullMask(), cache_length=1024, valid_length=8, ctx=ctx
+        )
+        execute_ws_bm32_test[CausalMask, 128, num_partitions=2](
+            CausalMask(), cache_length=1024, valid_length=8, ctx=ctx
+        )
+        # window x split composition: the per-partition splitk_window offset
+        # composes with the per-quarter mask column offset. cache=640 ->
+        # num_keys=648; the window/chunk spans the partition boundary (both
+        # partitions see visible keys).
+        execute_ws_bm32_test[ChunkedMask[384], 128, num_partitions=2](
+            ChunkedMask[384](),
+            cache_length=640,
+            valid_length=8,
+            ctx=ctx,
+        )
+        execute_ws_bm32_test[
+            SlidingWindowCausalMask[512], 128, num_partitions=2
+        ](
+            SlidingWindowCausalMask[512](),
+            cache_length=640,
+            valid_length=8,
+            ctx=ctx,
+        )
+        # depth-64 P=2 (num_d_tiles=1, own_cols=16): re-banding 2:1 on the
+        # narrow depth. cache=1024 -> T=5, both partitions non-empty.
+        execute_ws_bm32_test[NullMask, 64, num_partitions=2](
+            NullMask(), cache_length=1024, valid_length=8, ctx=ctx
+        )
+        execute_ws_bm32_test[CausalMask, 64, num_partitions=2](
+            CausalMask(), cache_length=1024, valid_length=8, ctx=ctx
+        )
+        # sink, P=2: the sink mass must be folded EXACTLY ONCE across the P
+        # partitions -- the `fold_sink` partition-0 refinement
+        # (splitk_partition_idx==0) composes with the WS WG0-quarter-0 gate
+        # (warp_idx==0) so ONLY partition 0's WG0-q0 folds it. A residual
+        # per-partition (Px) or per-quarter (4x) over-count inflates the
+        # denominator far above the floor. Moderate spread [-2,6) straddles the
+        # scores so the denominator is sensitive.
+        execute_ws_bm32_test[CausalMask, 128, use_sink=True, num_partitions=2](
+            CausalMask(), cache_length=1024, valid_length=8, ctx=ctx
+        )
+        execute_ws_bm32_test[
+            SlidingWindowCausalMask[512], 128, use_sink=True, num_partitions=2
+        ](
+            SlidingWindowCausalMask[512](),
+            cache_length=1024,
+            valid_length=8,
+            ctx=ctx,
+        )
+        # large-sink (~+10) clamp-stress x Causal (Phase B Risk 5 under the
+        # finer split): Gmax is pinned to the sink, so every quarter /
+        # partition must rescale to ~0 and only WG0-q0 may carry the sink.
+        execute_ws_bm32_test[
+            CausalMask, 128, use_sink=True, large_sink=True, num_partitions=2
+        ](CausalMask(), cache_length=1024, valid_length=8, ctx=ctx)
 
         # ---- Null + Causal x depth{64,128} x T{1,3} -------------------------
         comptime for depth in [128, 64]:
@@ -706,13 +664,31 @@ def main() raises:
         execute_ws_bm32_test[CausalMask, 128, page_size=64](
             CausalMask(), cache_length=640, valid_length=8, ctx=ctx
         )
+        execute_ws_bm32_test[CausalMask, 64, page_size=64](
+            CausalMask(), cache_length=640, valid_length=8, ctx=ctx
+        )
+        # Short trailing tile (num_keys=544 -> T=3, 32 real keys in tile 2).
+        # Layout-E key-splits each 256-key tile into two 128-key partitions, so
+        # here partition 0 holds 1 valid page of 2 and partition 1 starts past
+        # `num_keys` entirely (valid_pages == 0 -> every slot OOB-zero-filled).
+        # The P@V contraction cut cannot express a per-partition boundary --
+        # `mma_maybe_partial_k` predicates k-blocks on the MMA's shared BK axis
+        # while Layout-E's partitions are packed along MMA_N -- so zero-fill is
+        # the only protection, and these cells are what prove it engages. Runtime
+        # `cache_length` only, so no extra config elaborates.
+        execute_ws_bm32_test[CausalMask, 64, page_size=64](
+            CausalMask(), cache_length=536, valid_length=8, ctx=ctx
+        )
+        execute_ws_bm32_test[CausalMask, 128, page_size=64](
+            CausalMask(), cache_length=536, valid_length=8, ctx=ctx
+        )
 
         # ---- A3-i regression: single-WG-fully-masked (all-empty-WG probe) -----
         # The two-level WS combine's Level-1 self-normalize (exp2((m_g - m_wg) *
         # log2e)) would divide by an all-`-inf` warpgroup max -- exp2(-inf - -inf)
         # = NaN -- IF a whole WG saw zero visible keys for a row. That NaN is
         # UNREACHABLE here, for two independent reasons:
-        #   (1) Masked scores are the FINITE MASK_VALUE (-10000), not -inf
+        #   (1) Masked scores are the FINITE MASK_VALUE, not -inf
         #       (attention_utils.mojo `.select(s, MASK_VALUE)`, with the -inf alt
         #       commented out at :2908). So a fully-masked-but-processed tile
         #       yields a finite m_wg that the combine's exp2((m_wg - M)*log2e)
@@ -808,34 +784,3 @@ def main() raises:
         execute_ws_bm32_test[CausalMask, 128](
             CausalMask(), cache_length=1272, valid_length=8, ctx=ctx
         )
-
-        # ---- Phase C2: multi-tile prompts (vl > 32), forced onto WS -----------
-        # The auto route only sends max_prompt_len <= 32 to WS today; the widened
-        # rule (C4) admits larger prompts. These cells force WS via
-        # `-D FA4_FORCE_CONFIG=1` (the multi-tile variant target) and drive
-        # prompts that span many BM=32 query tiles (PairBM_eff = 32//group = 4 at
-        # group=8, so vl=64 -> 16 tiles, vl=128 -> 32, vl=200 -> 50) via each
-        # CTA's `prompt_offset`, vs mha_gpu_naive at the bf16 floor. This proves
-        # the widened envelope is CORRECT before the route admits it. Guarded
-        # `== 1` so the default (auto) target is byte-identical.
-        comptime if get_defined_int["FA4_FORCE_CONFIG", 0]() == 1:
-            comptime for depth in [128, 64]:
-                # vl=64 (16 query tiles): T=1 (num_keys=256) and T=3 (704).
-                execute_ws_bm32_test[CausalMask, depth](
-                    CausalMask(), cache_length=192, valid_length=64, ctx=ctx
-                )
-                execute_ws_bm32_test[CausalMask, depth](
-                    CausalMask(), cache_length=640, valid_length=64, ctx=ctx
-                )
-                # vl=128 (32 query tiles), windowed, T=3 (num_keys=768).
-                execute_ws_bm32_test[SlidingWindowCausalMask[512], depth](
-                    SlidingWindowCausalMask[512](),
-                    cache_length=640,
-                    valid_length=128,
-                    ctx=ctx,
-                )
-            # vl=200 (50 tiles) + T=4 (num_keys=840): multi-tile prompt AND the
-            # shared-ring main loop (main_iters>=1) together.
-            execute_ws_bm32_test[CausalMask, 128](
-                CausalMask(), cache_length=640, valid_length=200, ctx=ctx
-            )

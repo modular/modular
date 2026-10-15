@@ -59,14 +59,16 @@ genuine consumer of the slice-1 primitive.
 """
 
 from std.atomic import Ordering, fence
-from std.gpu import barrier, block_idx, global_idx, thread_idx
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu import global_idx
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext
 from std.memory import bitcast
-from std.sys import has_amd_gpu_accelerator
-from std.testing import assert_equal, assert_true
+from std.sys import default_accelerator
+from std.testing import assert_true
 
 from comm.lamport import has_neg_zero, set_neg_zero
 from comm.sync import enable_p2p
+from std.math import ceildiv
 
 
 # Each pack is one naturally-aligned 128-bit line: 4 x fp32 / 4 x uint32.
@@ -95,7 +97,7 @@ comptime NUM_SLOTS = 256
 def writer_kernel[
     use_fence: Bool,
     fence_scope: StaticString,
-](peer_buf: UnsafePointer[Scalar[DTYPE], MutAnyOrigin], num_slots: Int):
+](peer_buf: MutPointer[Scalar[DTYPE], MutAnyOrigin], num_slots_dev: Int32):
     """Publishes ITERS generations of the all-lanes-equal pack into a peer slot.
 
     Each thread owns one 128-bit slot. For every generation `g` it first writes
@@ -104,6 +106,8 @@ def writer_kernel[
     naturally-aligned 128-bit volatile stores (the single `v4` instruction we
     are testing for atomicity).
     """
+    # `Int` is not device-passable; widen the fixed-width arg.
+    var num_slots = Int(num_slots_dev)
     var slot = Int(global_idx.x)
     if slot >= num_slots:
         return
@@ -133,10 +137,10 @@ def reader_kernel[
     use_fence: Bool,
     fence_scope: StaticString,
 ](
-    own_buf: UnsafePointer[Scalar[DTYPE], MutAnyOrigin],
-    num_slots: Int,
-    torn_counts: UnsafePointer[Scalar[DType.int64], MutAnyOrigin],
-    max_seen: UnsafePointer[Scalar[DType.int64], MutAnyOrigin],
+    own_buf: MutPointer[Scalar[DTYPE], MutAnyOrigin],
+    num_slots_dev: Int32,
+    torn_counts: MutPointer[Int64, MutAnyOrigin],
+    max_seen: MutPointer[Int64, MutAnyOrigin],
 ):
     """Spins on its own slot, detecting torn reads and tracking progress.
 
@@ -150,6 +154,8 @@ def reader_kernel[
     bug). The bounded `SPIN_CAP` makes such a failure a finite result, not a
     hang.
     """
+    # `Int` is not device-passable; widen the fixed-width arg.
+    var num_slots = Int(num_slots_dev)
     var slot = Int(global_idx.x)
     if slot >= num_slots:
         return
@@ -228,10 +234,10 @@ def run_variant[
     reader_ctx.enqueue_copy(shared, init_host)
     reader_ctx.synchronize()
 
-    var torn_buf = reader_ctx.create_buffer_sync[DType.int64](NUM_SLOTS)
-    var seen_buf = reader_ctx.create_buffer_sync[DType.int64](NUM_SLOTS)
-    reader_ctx.enqueue_memset[DType.int64](torn_buf, 0)
-    reader_ctx.enqueue_memset[DType.int64](seen_buf, 0)
+    var torn_buf = reader_ctx.create_buffer_sync[.int64](NUM_SLOTS)
+    var seen_buf = reader_ctx.create_buffer_sync[.int64](NUM_SLOTS)
+    reader_ctx.enqueue_memset[.int64](torn_buf, 0)
+    reader_ctx.enqueue_memset[.int64](seen_buf, 0)
     reader_ctx.synchronize()
 
     var shared_ptr = shared.unsafe_ptr().as_unsafe_any_origin()
@@ -239,12 +245,12 @@ def run_variant[
     var seen_ptr = seen_buf.unsafe_ptr().as_unsafe_any_origin()
 
     comptime BLOCK = 128
-    var grid = (NUM_SLOTS + BLOCK - 1) // BLOCK
+    var grid = ceildiv(NUM_SLOTS, BLOCK)
 
     # Launch reader first (it spins waiting), then the writer that feeds it.
     reader_ctx.enqueue_function[reader_kernel[use_fence, fence_scope]](
         shared_ptr,
-        NUM_SLOTS,
+        Int32(NUM_SLOTS),
         torn_ptr,
         seen_ptr,
         grid_dim=grid,
@@ -252,7 +258,7 @@ def run_variant[
     )
     writer_ctx.enqueue_function[writer_kernel[use_fence, fence_scope]](
         shared_ptr,
-        NUM_SLOTS,
+        Int32(NUM_SLOTS),
         grid_dim=grid,
         block_dim=BLOCK,
     )
@@ -261,8 +267,8 @@ def run_variant[
     reader_ctx.synchronize()
 
     # Reduce results on the host.
-    var torn_host = alloc[Scalar[DType.int64]](NUM_SLOTS)
-    var seen_host = alloc[Scalar[DType.int64]](NUM_SLOTS)
+    var torn_host = alloc[Int64](NUM_SLOTS)
+    var seen_host = alloc[Int64](NUM_SLOTS)
     reader_ctx.enqueue_copy(torn_host, torn_buf)
     reader_ctx.enqueue_copy(seen_host, seen_buf)
     reader_ctx.synchronize()
@@ -322,6 +328,9 @@ def main() raises:
     )
     assert_true(enable_p2p(), "failed to enable P2P access between GPUs")
 
+    comptime target = default_accelerator()
+
+    # TODO(MSTDL-3208): Use DeviceContext[target]
     var writer_ctx = DeviceContext(device_id=0)
     var reader_ctx = DeviceContext(device_id=1)
     assert_true(
@@ -337,7 +346,7 @@ def main() raises:
     # which is broader than the GPU-wide "agent" scope. We deliberately do NOT
     # use `gpu.intrinsics.threadfence` -- it asserts `is_nvidia_gpu()` and
     # cannot express an AMD release fence at all.
-    comptime if has_amd_gpu_accelerator():
+    comptime if target.is_amd_gpu():
         print("target family: AMD (CDNA), expecting global_store_dwordx4")
     else:
         print("target family: NVIDIA, expecting st.volatile.global.v4.b32")

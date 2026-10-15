@@ -18,10 +18,11 @@ If the vertex was visited in the previous level, it pushes updates to all
 its unvisited neighbors.
 """
 
-from std.gpu import block_idx, thread_idx, block_dim, grid_dim
-from std.gpu.host import DeviceContext
+from max.gpu import block_idx, thread_idx, block_dim, grid_dim
+from max.gpu.host import DeviceContext
 from std.atomic import Atomic
 from std.collections import List
+from std.math import ceildiv
 
 from graph_utils import (
     UNVISITED,
@@ -36,7 +37,7 @@ comptime BLOCK_SIZE = 256
 def bfs_kernel(
     src_ptrs: UnsafePointer[UInt32, MutAnyOrigin],
     dst: UnsafePointer[UInt32, MutAnyOrigin],
-    num_vertices: Int,
+    num_vertices_dev: Int32,
     level: UnsafePointer[UInt32, MutAnyOrigin],
     new_vertex_visited: UnsafePointer[UInt32, MutAnyOrigin],
     curr_level: UInt32,
@@ -50,11 +51,13 @@ def bfs_kernel(
     Args:
         src_ptrs: CSR row pointers.
         dst: CSR column indices (neighbor vertices).
-        num_vertices: Total number of vertices.
+        num_vertices_dev: Total number of vertices.
         level: Level array (distance from source).
         new_vertex_visited: Flag indicating if any new vertex was visited.
         curr_level: Current BFS level being processed.
     """
+    # `Int` is not device-passable; widen the fixed-width arg.
+    var num_vertices = Int(num_vertices_dev)
     var vertex = block_idx.x * block_dim.x + thread_idx.x
 
     if vertex < num_vertices:
@@ -93,10 +96,10 @@ def main() raises:
     h_level[start_vertex] = 0
 
     # Allocate device memory
-    var d_src_ptrs = ctx.enqueue_create_buffer[DType.uint32](NUM_VERTICES + 1)
-    var d_dst = ctx.enqueue_create_buffer[DType.uint32](num_edges)
-    var d_level = ctx.enqueue_create_buffer[DType.uint32](NUM_VERTICES)
-    var d_new_vertex_visited = ctx.enqueue_create_buffer[DType.uint32](1)
+    var d_src_ptrs = ctx.enqueue_create_buffer[.uint32](NUM_VERTICES + 1)
+    var d_dst = ctx.enqueue_create_buffer[.uint32](num_edges)
+    var d_level = ctx.enqueue_create_buffer[.uint32](NUM_VERTICES)
+    var d_new_vertex_visited = ctx.enqueue_create_buffer[.uint32](1)
 
     # Copy graph to device
     var h_src_ptrs = alloc[UInt32](NUM_VERTICES + 1)
@@ -112,7 +115,7 @@ def main() raises:
 
     # BFS iteration
     var curr_level: UInt32 = 1
-    var grid_size = (NUM_VERTICES + BLOCK_SIZE - 1) // BLOCK_SIZE
+    var grid_size = ceildiv(NUM_VERTICES, BLOCK_SIZE)
 
     print("Running BFS...")
     while True:
@@ -124,7 +127,7 @@ def main() raises:
         ctx.enqueue_function[bfs_kernel](
             d_src_ptrs,
             d_dst,
-            NUM_VERTICES,
+            Int32(NUM_VERTICES),
             d_level,
             d_new_vertex_visited,
             curr_level,

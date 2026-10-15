@@ -54,7 +54,7 @@ from .amd_target import mi355x_target
 
 
 @fieldwise_init
-struct PingPongOps(ScheduleOps):
+struct PingPongOps(EnumLike, ScheduleOps):
     """Op tags for the ping-pong double-buffered matmul kernel.
 
     Kernel-specific data ops in the 0-127 range; framework infrastructure ops
@@ -69,6 +69,65 @@ struct PingPongOps(ScheduleOps):
     comptime MMA_LOAD_A = Self(3)
     comptime MMA_LOAD_B = Self(4)
     comptime MMA = Self(5)
+
+    # Op tags are open-ended Ints (`OpDesc.tag` interchange): schedules can
+    # carry tags this struct does not name, so the enum is not exhaustive
+    # and unknown tags map to discriminant -1 (never a valid case index).
+    comptime _enum_is_exhaustive = False
+
+    comptime _enum_case_names = ParameterList.of[
+        "LOAD_A".value,
+        "LOAD_B".value,
+        "COMPUTE".value,
+        "MMA_LOAD_A".value,
+        "MMA_LOAD_B".value,
+        "MMA".value,
+        "BARRIER".value,
+        "WAIT_VM".value,
+        "WAIT_LGKM".value,
+        "SET_PRIO".value,
+        "SCHEDULE_BARRIER".value,
+    ].values
+
+    comptime _enum_case_types = TypeList.splat[
+        ParameterList[Self._enum_case_names].size, NoneType
+    ].values
+
+    @inline(.always)
+    def _get_enum_discriminant(self) -> Int:
+        match self.value:
+            case Self.LOAD_A.value:
+                return 0
+            case Self.LOAD_B.value:
+                return 1
+            case Self.COMPUTE.value:
+                return 2
+            case Self.MMA_LOAD_A.value:
+                return 3
+            case Self.MMA_LOAD_B.value:
+                return 4
+            case Self.MMA.value:
+                return 5
+            case Self.BARRIER.value:
+                return 6
+            case Self.WAIT_VM.value:
+                return 7
+            case Self.WAIT_LGKM.value:
+                return 8
+            case Self.SET_PRIO.value:
+                return 9
+            case Self.SCHEDULE_BARRIER.value:
+                return 10
+            case _:
+                return -1
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        comptime assert False, "PingPongOps has no payload"
 
 
 # Convenience aliases (Int values) for use in op factories and external imports.

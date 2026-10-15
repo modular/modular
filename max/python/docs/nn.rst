@@ -14,12 +14,26 @@ max.nn
 Submodules
 ----------
 
+.. autosummary::
+   :nosignatures:
+
+   max.nn.attention
+   max.nn.kernels
+   max.nn.kv_cache
+   max.nn.moe
+   max.nn.sampling
+   max.nn.state_space
+
 .. toctree::
    :maxdepth: 1
+   :hidden:
 
    nn.attention
    nn.kernels
    nn.kv_cache
+   nn.moe
+   nn.sampling
+   nn.state_space
 
 Base classes
 ------------
@@ -49,7 +63,6 @@ Linear layers
    Embedding
    GPTQLinear
    Linear
-   LinearLoRA
    MLP
    StackedLinear
    VocabParallelEmbedding
@@ -66,17 +79,6 @@ Normalization
    GroupNorm
    LayerNorm
    RMSNorm
-
-LoRA
-----
-
-.. autosummary::
-   :nosignatures:
-   :toctree: generated
-   :template: autosummary/class.rst
-
-   AttentionWithRopeAndLoRA
-   SupportsLoRA
 
 Rotary embeddings
 -----------------
@@ -106,6 +108,7 @@ Transformer
 
    DistributedTransformer
    DistributedTransformerBlock
+   HyperConnection
    ReturnHiddenStates
    ReturnLogits
    Transformer
@@ -134,6 +137,7 @@ Mixture of experts
    :template: autosummary/class.rst
 
    Allreduce
+   ~max.nn.comm.ep.EPCommBuffers
    MoE
    MoEGate
    MoEQuantized

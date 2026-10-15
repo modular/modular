@@ -119,12 +119,12 @@ The `comptime for` unrolls at compile time. Each `ScheduleEntry` carries an
 
 ### The dispatch function
 
-You write a `@parameter` function that maps `ScheduleEntry` tags to kernel
+You write a `@__parameter` function that maps `ScheduleEntry` tags to kernel
 primitives:
 
 ```mojo
-@parameter
-@always_inline
+@__parameter
+@inline(.always)
 def dispatch[entry: ScheduleEntry]():
     comptime if entry.op.tag == MyOps.LOAD_A.value:
         load_a_from_dram(entry.op.stage)
@@ -283,8 +283,8 @@ comptime schedule = build_default_matmul_schedule[
     num_k_tiles=num_k_tiles, ...
 ]()
 
-@parameter
-@always_inline
+@__parameter
+@inline(.always)
 def _bind[entry: ScheduleEntry]():
     comptime if entry.op.tag == LOAD_DRAM:
         load_tiles_from_dram()
@@ -888,8 +888,8 @@ and the MMA resource model — the same analysis it does for `vmcnt` on AMD.
 The dispatch function maps to the existing WGMMA ceremony:
 
 ```mojo
-@parameter
-@always_inline
+@__parameter
+@inline(.always)
 def inner_dispatch[entry: ScheduleEntry]():
     comptime if entry.op.tag == FA3InnerOps.WGMMA_QK.value:
         warpgroup_fence(p_reg_tile)
@@ -969,8 +969,8 @@ runs them, with barrier ops injected at the synchronization points.
 **Step 7 — Dispatch.** The dispatch function maps tags to NVIDIA primitives:
 
 ```mojo
-@parameter
-@always_inline
+@__parameter
+@inline(.always)
 def producer_dispatch[entry: ScheduleEntry]():
     comptime if entry.op.tag == FA3Ops.TMA_LOAD_K.value:
         # Wait for consumer to free stage, set expected bytes, TMA copy
@@ -983,8 +983,8 @@ def producer_dispatch[entry: ScheduleEntry]():
         produced_mbar_kv[stage_idx].expect_bytes(tile_bytes)
         v_tma_op.async_copy(v_tile(stage_idx), produced_mbar_kv[stage_idx], coord)
 
-@parameter
-@always_inline
+@__parameter
+@inline(.always)
 def consumer_dispatch[entry: ScheduleEntry]():
     comptime if entry.op.tag == FA3Ops.WGMMA_QK.value:
         # Wait for K data, then async MMA

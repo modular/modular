@@ -13,12 +13,14 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import copy
 import io
 import json
 import logging
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from io import BytesIO
 from typing import Any
 
@@ -30,9 +32,18 @@ from max.pipelines.architectures.qwen2_5vl.nn.data_processing import (
 )
 from max.pipelines.architectures.qwen2_5vl.nn.qwen_vl_utils import smart_resize
 from max.pipelines.architectures.qwen3vl_moe.nn.data_processing import (
+    QWEN3VL_MAX_PIXELS,
     get_bilinear_interpolation_weights_and_indices,
     get_rope_index,
     get_seqlens,
+)
+from max.pipelines.architectures.qwen3vl_moe.nn.video_processing import (
+    QWEN3VL_VIDEO_FPS,
+    QWEN3VL_VIDEO_MAX_FRAMES,
+    QWEN3VL_VIDEO_MAX_PIXELS,
+    QWEN3VL_VIDEO_MIN_FRAMES,
+    QWEN3VL_VIDEO_MIN_PIXELS,
+    preprocess_clip,
 )
 from max.pipelines.context import (
     ImageMetadata,
@@ -41,9 +52,12 @@ from max.pipelines.context import (
 from max.pipelines.context.exceptions import PromptTooLongError
 from max.pipelines.lib import (
     TextAndVisionTokenizer,
+    VisionPreprocessCache,
     max_tokens_to_generate,
+    resolve_eos_token_ids,
 )
 from max.pipelines.lib.config import PipelineConfig
+from max.pipelines.lib.tokenizer import encode_dkv_cache_hint
 from max.pipelines.modeling.types import (
     ImageContentPart,
     MessageContent,
@@ -51,7 +65,9 @@ from max.pipelines.modeling.types import (
     TextGenerationRequest,
     TextGenerationRequestMessage,
     TextGenerationRequestTool,
+    VisionPreprocessCacheStats,
 )
+from max.profiler import traced
 from max.support.image import find_contiguous_ranges, hash_image
 from PIL import Image
 from transformers import AutoTokenizer
@@ -84,9 +100,7 @@ def _load_image(image_input: dict[str, Any]) -> Image.Image:
         image_obj = image
     elif isinstance(image, bytes):
         image_obj = Image.open(io.BytesIO(image))
-    elif isinstance(image, str) and (
-        image.startswith("http://") or image.startswith("https://")
-    ):
+    elif isinstance(image, str) and (image.startswith(("http://", "https://"))):
         with requests.get(image, stream=True) as response:
             response.raise_for_status()
             with BytesIO(response.content) as bio:
@@ -119,7 +133,7 @@ def qwen3vl_image_preprocessing(
     temporal_patch_size: int = 2,
     merge_size: int = 2,
     min_pixels: int = 65536,
-    max_pixels: int = 16777216,
+    max_pixels: int = QWEN3VL_MAX_PIXELS,
 ) -> tuple[npt.NDArray[np.float32], tuple[int, int, int]]:
     """Preprocess image for Qwen3VL vision model.
 
@@ -133,7 +147,7 @@ def qwen3vl_image_preprocessing(
         temporal_patch_size: Temporal patch size (default 2)
         merge_size: Spatial merge size (default 2)
         min_pixels: Minimum pixels for smart_resize (default 65536)
-        max_pixels: Maximum pixels for smart_resize (default 16777216)
+        max_pixels: Maximum pixels for smart_resize
 
     Returns:
         Tuple of (pixel_values, image_grid_thw) where:
@@ -215,6 +229,63 @@ def qwen3vl_image_preprocessing(
     return flatten_patches, image_grid_thw
 
 
+# One image's patchified pixels and its (t, h, w) grid, as cached.
+_PreprocessedImage = tuple[npt.NDArray[np.float32], npt.NDArray[np.int32]]
+
+VIDEO_PAD_TOKEN = "<|video_pad|>"
+"""The clip placeholder the chat template emits, one per video part."""
+
+VISION_START_TOKEN = "<|vision_start|>"
+VISION_END_TOKEN = "<|vision_end|>"
+"""Wrap each of a clip's expanded placeholder runs, as the reference does.
+
+Spelled out rather than derived from ``vision_start_token_id``: the chat
+template hardcodes the same literals, and `get_rope_index` counts a vision
+block by the token that FOLLOWS one of these, so a mismatch here would silently
+change every clip's M-RoPE positions.
+"""
+
+_VIDEO_PLACEHOLDER = "<|videoplaceholder|>"
+"""Stand-in during expansion, so the loop does not re-match what it emitted."""
+
+
+@dataclass(frozen=True)
+class _PreprocessedClip:
+    """One clip's patch rows, encoder grid and per-run timestamps."""
+
+    pixel_values: npt.NDArray[np.float32]
+    """``[grid_t * grid_h * grid_w, 1536]`` patch rows."""
+
+    grid_thw: tuple[int, int, int]
+    """``(grid_t, grid_h, grid_w)``, where ``grid_t`` counts temporal PATCHES."""
+
+    timestamps: list[float]
+    """One label per temporal patch, so one per placeholder run."""
+
+    @property
+    def num_runs(self) -> int:
+        """Separate placeholder runs this clip contributes to the prompt."""
+        return self.grid_thw[0]
+
+    def tokens_per_run(self, merge_size: int) -> int:
+        """Placeholders in each of the clip's ``grid_t`` runs."""
+        _, grid_h, grid_w = self.grid_thw
+        return grid_h * grid_w // merge_size**2
+
+
+@dataclass(frozen=True)
+class _VisionEntry:
+    """One image or clip, paired with the encoder grid row it contributes.
+
+    The encoder's arrays are one concatenation over these in prompt order, and
+    ``ctx.images`` is the metadata of the same sequence, so the two stay 1:1 by
+    construction rather than by a convention two files have to agree on.
+    """
+
+    metadata: ImageMetadata
+    grid_thw: npt.NDArray[np.integer[Any]]
+
+
 class Qwen3VLImageProcessor:
     """Custom image processor for Qwen3VL that handles image processing without PyTorch dependencies.
 
@@ -228,7 +299,7 @@ class Qwen3VLImageProcessor:
         temporal_patch_size: int = 2,
         merge_size: int = 2,
         min_pixels: int = 65536,
-        max_pixels: int = 16777216,
+        max_pixels: int = QWEN3VL_MAX_PIXELS,
     ):
         """Initialize the custom image processor.
 
@@ -237,7 +308,7 @@ class Qwen3VLImageProcessor:
             temporal_patch_size: Temporal patch size
             merge_size: Spatial merge size (used for calculating image tokens)
             min_pixels: Minimum pixels for smart_resize (default 65536)
-            max_pixels: Maximum pixels for smart_resize (default 16777216)
+            max_pixels: Maximum pixels for smart_resize
         """
         self.patch_size = patch_size
         self.temporal_patch_size = temporal_patch_size
@@ -318,8 +389,15 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
 
     - image_processor is a custom image processor that handles image preprocessing without PyTorch dependencies.
     - tokenizer uses transformers' tokenizer directly instead of AutoProcessor to avoid dependency on PyTorch.
-    - no video support yet.
+    - clips go through :mod:`~.nn.video_processing`, which is a separate path
+      rather than a per-frame reuse of the image one: a clip's resize depends
+      on its frame count, and each of its patch rows spans two distinct
+      consecutive frames.
     """
+
+    _requires_vision_config = True
+    """Whether the checkpoint must carry a vision tower. Text-only subclasses
+    clear it."""
 
     def __init__(
         self,
@@ -349,7 +427,11 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
         assert config is not None
 
         # Extract vision config parameters
-        vision_config = config.vision_config
+        vision_config = (
+            config.vision_config
+            if self._requires_vision_config
+            else getattr(config, "vision_config", None)
+        )
 
         self.spatial_merge_size = getattr(
             vision_config, "spatial_merge_size", 2
@@ -370,53 +452,52 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
             temporal_patch_size=self.temporal_patch_size,
             merge_size=self.spatial_merge_size,
             min_pixels=65536,  # Qwen3VL default shortest_edge
-            max_pixels=16777216,  # Qwen3VL default longest_edge
+            max_pixels=QWEN3VL_MAX_PIXELS,
         )
 
-        # Initialize EOS token IDs
-        self._default_eos_token_ids = set([self.eos])
+        self._preprocess_cache: VisionPreprocessCache[_PreprocessedImage] = (
+            VisionPreprocessCache.for_images(pipeline_config.runtime)
+        )
+        self._video_preprocess_cache: VisionPreprocessCache[
+            _PreprocessedClip
+        ] = VisionPreprocessCache.for_videos(pipeline_config.runtime)
+        # A clip's layout depends on its frame count as well as its pixel
+        # budget, so both belong in the digest's size class -- two requests for
+        # the same bytes under different sampling bounds are different clips.
+        self._video_size_tier = (
+            QWEN3VL_VIDEO_MAX_PIXELS << 16
+        ) | QWEN3VL_VIDEO_MAX_FRAMES
+
+        self._eos_token_ids = resolve_eos_token_ids(
+            self.delegate.eos_token_id, pipeline_config
+        )
 
         huggingface_config = pipeline_config.model.huggingface_config
-        if eos_token_id := getattr(huggingface_config, "eos_token_id", None):
-            if isinstance(eos_token_id, int):
-                self._default_eos_token_ids.add(eos_token_id)
-            elif isinstance(eos_token_id, list):
-                self._default_eos_token_ids.update(eos_token_id)
 
         self.enable_prefix_caching = (
             pipeline_config.model.kv_cache.enable_prefix_caching
         )
+        self.enable_vision_caching = (
+            pipeline_config.runtime.vision_cache_utilization != 0
+        )
 
-        if image_token_id := getattr(
-            huggingface_config, "image_token_id", None
-        ):
-            self.image_token_id = image_token_id
-        else:
-            raise ValueError("image_token_id not found in model_config config")
-
-        if video_token_id := getattr(
-            huggingface_config, "video_token_id", None
-        ):
-            self.video_token_id = video_token_id
-
+        self.image_token_id = self._resolve_media_token_id(
+            huggingface_config, "image_token_id", "<|image_pad|>"
+        )
+        # Required, not optional: `get_rope_index` and
+        # `Qwen3VLTextAndVisionContext.video_token_id` both consume this
+        # unconditionally, so leaving the attribute unset would fail every
+        # request -- image or not -- rather than only the video ones.
+        self.video_token_id = self._resolve_media_token_id(
+            huggingface_config, "video_token_id", "<|video_pad|>"
+        )
         # Qwen3VL specific: vision_start_token and vision_end_token
-        if vision_start_token_id := getattr(
-            huggingface_config, "vision_start_token_id", None
-        ):
-            self.vision_start_token_id = vision_start_token_id
-        else:
-            raise ValueError(
-                "vision_start_token_id not found in model_config config"
-            )
-
-        if vision_end_token_id := getattr(
-            huggingface_config, "vision_end_token_id", None
-        ):
-            self.vision_end_token_id = vision_end_token_id
-        else:
-            raise ValueError(
-                "vision_end_token_id not found in model_config config"
-            )
+        self.vision_start_token_id = self._resolve_media_token_id(
+            huggingface_config, "vision_start_token_id", "<|vision_start|>"
+        )
+        self.vision_end_token_id = self._resolve_media_token_id(
+            huggingface_config, "vision_end_token_id", "<|vision_end|>"
+        )
 
         vision_cfg = getattr(huggingface_config, "vision_config", None)
         if vision_cfg is not None:
@@ -425,16 +506,39 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
                 self.num_position_embeddings = getattr(
                     vision_cfg, "num_position_embeddings", None
                 )
-        else:
+        elif self._requires_vision_config:
             raise ValueError(
                 "vision_config must be provided in HuggingFace Config"
             )
 
-        if self.num_position_embeddings is None:
+        if (
+            self._requires_vision_config
+            and self.num_position_embeddings is None
+        ):
             raise ValueError(
                 "num_position_embeddings not found in vision_config. "
                 "This is required for bilinear interpolation position embeddings."
             )
+
+    def _resolve_media_token_id(
+        self, config: Any, attribute: str, token: str
+    ) -> int:
+        """A multimodal special token id from the config.
+
+        Text-only subclasses (which do not require a vision config) fall back
+        to the token's id in the tokenizer vocabulary, since a checkpoint
+        saved from the language model alone omits these config fields.
+        """
+        value = getattr(config, attribute, None)
+        if value:
+            return int(value)
+        if not self._requires_vision_config:
+            token_id = self.delegate.convert_tokens_to_ids(token)
+            if isinstance(token_id, int) and token_id != (
+                self.delegate.unk_token_id
+            ):
+                return token_id
+        raise ValueError(f"{attribute} not found in model_config config")
 
     def apply_chat_template(
         self,
@@ -466,6 +570,209 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
         assert isinstance(templated_message, str)
         return templated_message
 
+    def preprocess_cache_stats(
+        self,
+    ) -> Mapping[str, VisionPreprocessCacheStats]:
+        """This tokenizer's :class:`PreprocessCacheStatsProbe` snapshot."""
+        return {
+            "image": self._preprocess_cache.stats(),
+            "video": self._video_preprocess_cache.stats(),
+        }
+
+    def _preprocess_image(
+        self, image_hash: int | None, image: Image.Image
+    ) -> _PreprocessedImage:
+        """Preprocesses one image, reusing a cached result when available.
+
+        The cache key is the digest of the raw encoded bytes plus the
+        resolution size class -- the same key ``new_context`` hands to the
+        vision encoder cache, computed once and shared by both. Hitting here
+        skips the smart-resize, rescale and patchify that the encoder cache
+        cannot skip, since it is consulted only after that work has run.
+
+        ``Qwen3VLImageProcessor`` calls :func:`qwen3vl_image_preprocessing`
+        once per image with no cross-image state and only stacks at the end, so
+        preprocessing one image at a time and stacking afterwards is
+        bit-identical to the batched call it replaces.
+
+        Args:
+            image_hash: The image's content digest, or ``None`` when no media
+                caching needs one.
+            image: The decoded image to preprocess.
+
+        Returns:
+            The image's patchified pixels and its ``(t, h, w)`` grid.
+        """
+
+        def preprocess() -> _PreprocessedImage:
+            _, image_grid_thw, pixel_values_list = self.img_processor(
+                images=[image], return_tensors="pt"
+            )
+            return pixel_values_list[0], image_grid_thw[0]
+
+        return self._preprocess_cache.get_or_preprocess(image_hash, preprocess)
+
+    def _preprocess_one_clip(
+        self, video_hash: int | None, raw_bytes: bytes
+    ) -> _PreprocessedClip:
+        """Preprocesses one clip, reusing a cached result when available.
+
+        A hit is worth more here than on the image path: videos are never
+        decoded at admission, so a miss pays the decode of every sampled frame
+        as well as the resize and patchify.
+
+        Args:
+            video_hash: The clip's content digest, or ``None`` when nothing
+                needs one.
+            raw_bytes: The raw encoded clip, preprocessed on a miss.
+
+        Returns:
+            The clip's patch rows, encoder grid and per-run timestamps.
+        """
+
+        def preprocess() -> _PreprocessedClip:
+            pixel_values, grid_thw, timestamps = preprocess_clip(
+                raw_bytes,
+                patch_size=self.patch_size,
+                merge_size=self.spatial_merge_size,
+                temporal_patch_size=self.temporal_patch_size,
+                min_pixels=QWEN3VL_VIDEO_MIN_PIXELS,
+                max_pixels=QWEN3VL_VIDEO_MAX_PIXELS,
+                fps=QWEN3VL_VIDEO_FPS,
+                min_frames=QWEN3VL_VIDEO_MIN_FRAMES,
+                max_frames=QWEN3VL_VIDEO_MAX_FRAMES,
+            )
+            return _PreprocessedClip(
+                pixel_values=pixel_values,
+                grid_thw=grid_thw,
+                timestamps=timestamps,
+            )
+
+        return self._video_preprocess_cache.get_or_preprocess(
+            video_hash, preprocess
+        )
+
+    @traced
+    def _preprocess_clips(
+        self, video_hashes: Sequence[int | None], videos: Sequence[bytes]
+    ) -> list[_PreprocessedClip]:
+        """Preprocesses each clip, for dispatch to a worker thread."""
+        return [
+            self._preprocess_one_clip(video_hash, raw_bytes)
+            for video_hash, raw_bytes in zip(video_hashes, videos, strict=True)
+        ]
+
+    def _clip_entries(
+        self,
+        encoded_prompt: npt.NDArray[np.integer[Any]],
+        clips: Sequence[_PreprocessedClip],
+        video_hashes: Sequence[int | None],
+        needs_media_hash: bool,
+    ) -> list[_VisionEntry]:
+        """Pairs each clip with the prompt span its placeholder runs occupy.
+
+        One entry per clip, not per run: the encoder consumes a clip as a
+        single ``(grid_t, h, w)`` grid item, so splitting it would change what
+        ``mo.spatial_merge`` and the per-frame attention segments see. The
+        entry's span therefore covers all ``grid_t`` runs AND the timestamp
+        text between them, and ``num_embedding_rows`` records that the encoder
+        emits fewer rows than that span is wide.
+
+        Args:
+            encoded_prompt: The tokenized prompt, placeholders expanded.
+            clips: The request's clips, in prompt order.
+            video_hashes: One digest per clip, or ``None`` entries.
+            needs_media_hash: Whether any cache needs the digests.
+
+        Returns:
+            One entry per clip, in prompt order. Empty when the request has no
+            clips, which is still worth the call: the run check then demands
+            the prompt hold no video placeholders either.
+
+        Raises:
+            ValueError: If the prompt's placeholder runs do not match the runs
+                the clips declare.
+        """
+        runs = find_contiguous_ranges(encoded_prompt, [self.video_token_id])
+        expected = sum(clip.num_runs for clip in clips)
+        if len(runs) != expected:
+            raise ValueError(
+                f"Clip placeholder mismatch: the prompt holds {len(runs)} "
+                f"contiguous {VIDEO_PAD_TOKEN} run(s) but the request's "
+                f"{len(clips)} clip(s) declare {expected}. User-injected "
+                f"{VIDEO_PAD_TOKEN} tokens are not supported."
+            )
+
+        entries: list[_VisionEntry] = []
+        cursor = 0
+        for clip, video_hash in zip(clips, video_hashes, strict=True):
+            clip_runs = runs[cursor : cursor + clip.num_runs]
+            cursor += clip.num_runs
+            rows = clip.num_runs * clip.tokens_per_run(self.spatial_merge_size)
+            entries.append(
+                _VisionEntry(
+                    metadata=ImageMetadata(
+                        start_idx=clip_runs[0][0],
+                        end_idx=clip_runs[-1][1],
+                        pixel_values=clip.pixel_values,
+                        image_hash=video_hash if needs_media_hash else None,
+                        num_embedding_rows=rows,
+                    ),
+                    grid_thw=np.array(clip.grid_thw, dtype=np.int32),
+                )
+            )
+        return entries
+
+    def _expand_video_placeholders(
+        self, text: str, clips: Sequence[_PreprocessedClip]
+    ) -> str:
+        """Expands each ``<|video_pad|>`` into its clip's ``grid_t`` runs.
+
+        A clip does not become one placeholder run. Per the reference's
+        ``replace_video_token``, it becomes ``grid_t`` runs of
+        ``grid_h * grid_w / merge^2`` placeholders, each preceded by a
+        timestamp label and wrapped in its own vision-start/end pair -- so the
+        temporal progression is carried by ordinary text between the runs
+        rather than by the position array.
+
+        Args:
+            text: The templated prompt, images already expanded.
+            clips: The request's clips, in prompt order.
+
+        Returns:
+            The prompt with every clip placeholder expanded.
+
+        Raises:
+            ValueError: If the prompt holds more clip placeholders than clips.
+        """
+        index = 0
+        while VIDEO_PAD_TOKEN in text:
+            if index >= len(clips):
+                raise ValueError(
+                    f"More {VIDEO_PAD_TOKEN} tokens than videos. The request "
+                    f"provided {len(clips)} video(s)."
+                )
+            clip = clips[index]
+            run = _VIDEO_PLACEHOLDER * clip.tokens_per_run(
+                self.spatial_merge_size
+            )
+            text = text.replace(
+                VIDEO_PAD_TOKEN,
+                "".join(
+                    f"<{label:.1f} seconds>"
+                    f"{VISION_START_TOKEN}{run}{VISION_END_TOKEN}"
+                    for label in clip.timestamps
+                ),
+                1,
+            )
+            index += 1
+        if index != len(clips):
+            raise ValueError(
+                f"Found {index} {VIDEO_PAD_TOKEN} token(s) in the prompt but "
+                f"the request provided {len(clips)} video(s)."
+            )
+        return text.replace(_VIDEO_PLACEHOLDER, VIDEO_PAD_TOKEN)
+
     async def new_context(
         self, request: TextGenerationRequest
     ) -> Qwen3VLTextAndVisionContext:
@@ -474,19 +781,13 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
         This method processes both text and vision inputs using the Qwen3VL
         processor and extracts the necessary components for model execution.
         """
-        # Check for video inputs and raise error; we do not support video inputs in MAX
-        if request.messages:
-            messages_data = [msg.model_dump() for msg in request.messages]
-            for msg in messages_data:
-                contents = msg.get("content", [])
-                if not isinstance(contents, list):
-                    continue
-                for item in contents:
-                    if isinstance(item, dict) and item.get("type") == "video":
-                        raise ValueError(
-                            "Qwen3VL processor in MAX framework does not support video inputs. "
-                            "Please remove video inputs from the request."
-                        )
+        # Video needs no guard of its own here: `TextGenerationRequest`
+        # already rejects a clip without a matching `messages` placeholder, and
+        # `apply_chat_template` is what emits that placeholder. What can still
+        # go wrong is clip-specific and is rejected where it is detectable --
+        # a user-injected `<|video_pad|>` in `_expand_video_placeholders`, an
+        # out-of-bounds frame size in `video_smart_resize`, and a checkpoint
+        # with no `video_token_id` at construction.
 
         # Step 1: Extract prompt from request and apply chat template if needed
         prompt: str | Sequence[int]
@@ -546,10 +847,38 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
         # Step 3: Process images with custom image processor (if any) and expand <|image_pad|> placeholders in text
         pixel_values_list: list[npt.NDArray[np.float32]] = []
         image_grid_thw: npt.NDArray[np.int32] | None = None
-        pixel_values: npt.NDArray[np.float32] | None = None
+        image_hashes: list[int | None] = []
         if image_inputs:
-            pixel_values, image_grid_thw, pixel_values_list = (
-                self.img_processor(images=image_inputs, return_tensors="pt")
+            # Key each image on its raw encoded bytes (+ the resolution size
+            # class), not on hash_image(pixel_values): the raw-byte key is
+            # byte-identical across torch/BLAS/device so a separate encoder can
+            # reproduce it for cache-aware routing, whereas the post-resize
+            # float hash cannot. smart_resize is deterministic from the encoded
+            # bytes + fixed config, so the process-wide max-pixels resolution
+            # bound is the size tier. request.images is 1:1 with image_inputs.
+            #
+            # One digest per image, shared by the preprocessed-tensor cache
+            # here and the vision encoder cache downstream, so the bytes are
+            # hashed once rather than twice.
+            image_hashes = (
+                [
+                    hash_image(raw_bytes, self.img_processor.max_pixels)
+                    for raw_bytes in request.images
+                ]
+                if self.enable_prefix_caching
+                or self.enable_vision_caching
+                or self._preprocess_cache.enabled
+                else [None] * len(image_inputs)
+            )
+            per_image = [
+                self._preprocess_image(image_hash, image)
+                for image_hash, image in zip(
+                    image_hashes, image_inputs, strict=True
+                )
+            ]
+            pixel_values_list = [pixels for pixels, _ in per_image]
+            image_grid_thw = np.array(
+                [grid for _, grid in per_image], dtype=np.int32
             )
 
             # Expand <|image_pad|> placeholders using image_grid_thw and merge_size**2
@@ -584,8 +913,32 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
 
             text = text_list
         else:
-            assert isinstance(prompt, str)
-            text = [prompt]
+            # A pre-tokenized prompt (token ids) skips the tokenizer in step 4.
+            text = [prompt] if isinstance(prompt, str) else []
+
+        # Step 3b: Preprocess clips and expand their <|video_pad|> placeholders
+        clips: list[_PreprocessedClip] = []
+        video_hashes: list[int | None] = []
+        if request.videos:
+            # As for images: one digest per clip, shared by the preprocess
+            # cache here and the vision-encoder cache downstream.
+            video_hashes = (
+                [
+                    hash_image(raw_bytes, self._video_size_tier)
+                    for raw_bytes in request.videos
+                ]
+                if self.enable_prefix_caching
+                or self.enable_vision_caching
+                or self._video_preprocess_cache.enabled
+                else [None] * len(request.videos)
+            )
+            # Decoding a clip is far heavier than an image and holds the GIL
+            # only in numpy/PIL, so keep it off the event loop.
+            clips = await asyncio.to_thread(
+                self._preprocess_clips, video_hashes, request.videos
+            )
+            assert len(text) == 1, "one prompt per request"
+            text = [self._expand_video_placeholders(text[0], clips)]
 
         # Step 4: Tokenize the expanded text
         # See processing_qwen3_vl.py line 52-57 for defaults
@@ -595,7 +948,14 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
             "add_special_tokens": add_special_tokens,
         }
 
-        tokenizer_outputs = self.delegate(text, **tokenizer_kwargs)
+        if isinstance(prompt, str):
+            tokenizer_outputs = self.delegate(text, **tokenizer_kwargs)
+        else:
+            token_ids = [int(token) for token in prompt]
+            tokenizer_outputs = {
+                "input_ids": [token_ids],
+                "attention_mask": [[1] * len(token_ids)],
+            }
 
         # Extract input_ids from tokenizer outputs
         if isinstance(tokenizer_outputs["input_ids"][0], int):
@@ -632,32 +992,100 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
         # Handle JSON schema if provided
         json_schema = (
             json.dumps(request.response_format.json_schema)
-            if request.response_format and request.response_format.json_schema
+            if request.response_format
+            and request.response_format.json_schema is not None
             else None
         )
 
         if self.max_length and encoded_prompt.shape[0] > self.max_length:
             raise PromptTooLongError(encoded_prompt.shape[0], self.max_length)
 
-        # Step 5: Process vision model inputs for Qwen3VL using image processing results
-        vision_data: VisionEncodingData | None = None
-        images: list[ImageMetadata] = []
+        # Step 5: Assemble the vision encoder's inputs, in PROMPT order.
+        #
+        # `vision_packing._split_vision_data` and the vision-encoder cache both
+        # zip `ctx.images` against a cumulative-sum walk of these grid rows, so
+        # the two must agree row for row. Images and clips interleave freely in
+        # a prompt, so the grid merges both streams on start_idx rather than
+        # concatenating images-then-clips.
+        needs_media_hash = (
+            self.enable_prefix_caching or self.enable_vision_caching
+        )
+        video_grid_thw = (
+            np.array([clip.grid_thw for clip in clips], dtype=np.int32)
+            if clips
+            else None
+        )
+        entries: list[_VisionEntry] = []
         if image_inputs:
             assert image_grid_thw is not None
-            assert pixel_values is not None
-            # pixel_values is already set from img_processor above if images were present
+            # Reuses the digests computed above for the preprocessed-tensor
+            # cache (see there for why the key is the raw encoded bytes rather
+            # than the post-resize pixels); computing them again here would
+            # hash every image's bytes twice.
+            entries.extend(
+                _VisionEntry(
+                    metadata=ImageMetadata(
+                        start_idx=start_idx,
+                        end_idx=end_idx,
+                        pixel_values=pixels,
+                        image_hash=image_hash if needs_media_hash else None,
+                    ),
+                    grid_thw=grid,
+                )
+                for (start_idx, end_idx), pixels, image_hash, grid in zip(
+                    find_contiguous_ranges(
+                        encoded_prompt, [self.image_token_id]
+                    ),
+                    pixel_values_list,
+                    image_hashes,
+                    image_grid_thw,
+                    strict=True,
+                )
+            )
+        # Called even with no clips, which is when the run check matters most:
+        # a prompt carrying a literal video placeholder and no video reaches
+        # image_token_indices anyway, since that scatter indexes BOTH
+        # modalities, and would claim a position with no embedding row behind
+        # it. With no clips the check expects zero runs and rejects any.
+        entries.extend(
+            self._clip_entries(
+                encoded_prompt, clips, video_hashes, needs_media_hash
+            )
+        )
+        entries.sort(key=lambda entry: entry.metadata.start_idx)
+
+        images: list[ImageMetadata] = [entry.metadata for entry in entries]
+        vision_data: VisionEncodingData | None = None
+        if not entries:
+            # TODO:consistently handle image_token_indices when we don't get images. Here or model.py?
+            image_token_indices = np.array([], dtype=np.int32)
+        else:
+            # Every placeholder position, both modalities: this is what the
+            # embedding scatter indexes by, and a clip's runs are not
+            # contiguous with one another.
             image_token_indices = (
-                (encoded_prompt == self.image_token_id)
+                np.isin(
+                    encoded_prompt,
+                    [self.image_token_id, self.video_token_id],
+                )
                 .nonzero()[0]
                 .astype(np.int32)
             )
-            # Precompute vision_position_ids for this context
+            encoder_grid_thw = np.stack(
+                [entry.grid_thw for entry in entries]
+            ).astype(np.int32)
+
+            # Precompute vision_position_ids for this context. Tiled by `t`,
+            # so this is a patch-row array like the pixels.
             vision_position_ids = mrope_pos_ids_3d(
-                grid_thw=image_grid_thw,
+                grid_thw=encoder_grid_thw,
                 spatial_merge_size=self.spatial_merge_size,
             )
 
-            # Precompute bilinear interpolation weights and indices
+            # Precompute bilinear interpolation weights and indices. These
+            # discard `t`, so they are sum(h * w) long -- shorter than the
+            # pixels for any clip, which is why the vision graph gives them
+            # their own symbolic dimension.
             if self.num_position_embeddings is None:
                 raise ValueError(
                     "num_position_embeddings is required for bilinear interpolation"
@@ -665,84 +1093,55 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
             num_grid_per_side = int(self.num_position_embeddings**0.5)
             bilinear_indices, bilinear_weights = (
                 get_bilinear_interpolation_weights_and_indices(
-                    grid_thw=image_grid_thw,
+                    grid_thw=encoder_grid_thw,
                     num_grid_per_side=num_grid_per_side,
                 )
             )
 
             # Precompute seqlens values (Qwen3VL uses simpler get_seqlens without window attention)
+            # Repeats each grid's h * w by its `t`, so a clip attends within
+            # each temporal patch rather than across them.
             cu_seqlens_arr, max_seqlen = get_seqlens(
-                grid_thw=image_grid_thw,
+                grid_thw=encoder_grid_thw,
             )
             # max_seqlen is already uint32, convert to array for VisionEncodingData
             max_seqlen_arr = np.array(max_seqlen, dtype=np.uint32)
 
             # Precompute max_grid_size (max of height and width dimensions)
             max_grid_size = np.array(
-                int(np.max(image_grid_thw[:, 1:])), dtype=np.int32
+                int(np.max(encoder_grid_thw[:, 1:])), dtype=np.int32
             )
 
             # Create VisionEncodingData with all vision-specific fields
             vision_data = VisionEncodingData(
-                image_grid_thw=image_grid_thw,
-                video_grid_thw=None,
+                image_grid_thw=encoder_grid_thw,
+                video_grid_thw=video_grid_thw,
                 vision_position_ids=vision_position_ids,
                 max_grid_size=max_grid_size,
                 weights=bilinear_weights,
                 indices=bilinear_indices,
                 cu_seqlens=cu_seqlens_arr,
                 max_seqlen=max_seqlen_arr,
-                concatenated_pixel_values=pixel_values,
+                concatenated_pixel_values=np.vstack(
+                    [entry.metadata.pixel_values for entry in entries]
+                ).astype(np.float32),
             )
-        else:
-            # TODO:consistently handle image_token_indices when we don't get images. Here or model.py?
-            image_token_indices = np.array([], dtype=np.int32)
 
-        # process images for prefix caching
-        if pixel_values_list:
-            start_and_end_idxs = find_contiguous_ranges(
-                encoded_prompt, [self.image_token_id]
-            )
-            # Key each image on its raw encoded bytes (+ the resolution size
-            # class), not on hash_image(pixel_values): the raw-byte key is
-            # byte-identical across torch/BLAS/device so a separate encoder can
-            # reproduce it for cache-aware routing, whereas the post-resize
-            # float hash cannot. smart_resize is deterministic from the encoded
-            # bytes + fixed config, so the process-wide max-pixels resolution
-            # bound is the size tier. request.images is 1:1 with
-            # pixel_values_list (one processed entry per input image).
-            image_size_tier = self.img_processor.max_pixels
-            images = [
-                ImageMetadata(
-                    start_idx=start_idx,
-                    end_idx=end_idx,
-                    pixel_values=pixel_values,
-                    image_hash=hash_image(raw_bytes, image_size_tier)
-                    if self.enable_prefix_caching
-                    else None,
-                )
-                for (start_idx, end_idx), pixel_values, raw_bytes in zip(
-                    start_and_end_idxs,
-                    pixel_values_list,
-                    request.images,
-                    strict=True,
-                )
-            ]
-        else:
-            images = []
-
-        # Calculate Rope Delta and position ids
+        # Calculate Rope Delta and position ids.
+        #
+        # These take the per-MODALITY grids rather than the encoder's merged
+        # one: `get_rope_index` walks image and video blocks with separate
+        # cursors, and expands each clip's single (grid_t, h, w) row into
+        # grid_t rows of (1, h, w) itself -- one per placeholder run, which is
+        # the timestamp semantics the prompt carries.
         decoder_position_ids, rope_delta_array = get_rope_index(
             spatial_merge_size=self.spatial_merge_size,
             image_token_id=self.image_token_id,
             video_token_id=self.video_token_id,
             vision_start_token_id=self.vision_start_token_id,
             input_ids=encoded_prompt.reshape(1, -1),
-            image_grid_thw=vision_data.image_grid_thw
-            if vision_data is not None
-            else None,
-            # Video processing not supported in MAX
-            video_grid_thw=None,
+            image_grid_thw=image_grid_thw,
+            video_grid_thw=video_grid_thw,
             second_per_grid_ts=None,
             attention_mask=attention_mask,
         )
@@ -766,8 +1165,12 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
             log_probabilities_echo=request.echo,
             sampling_params=request.sampling_params,
             target_endpoint=request.target_endpoint,
+            dkv_cache_hint=encode_dkv_cache_hint(request.dkv_cache_hint),
             images=images,
-            vision_token_ids=[self.image_token_id],
+            # Both: a clip's span is delimited by <|video_pad|>, and
+            # `TextAndVisionContext` validates a span's endpoints against this
+            # list.
+            vision_token_ids=[self.image_token_id, self.video_token_id],
             # Qwen3VL-specific fields
             spatial_merge_size=self.spatial_merge_size,
             rope_delta=rope_delta,
@@ -779,6 +1182,7 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
             decoder_position_ids=decoder_position_ids,
             vision_data=vision_data,
             vocab_size=self.tokenizer_vocab_size,
+            cache_salt=request.cache_salt,
         )
 
         return context

@@ -4,13 +4,15 @@ Benchmarks comparing MAX kernels against external baselines on NVIDIA B200 GPUs.
 
 ## Benchmarks
 
-| Target               | Description                                 | Baselines                    |
-|----------------------|---------------------------------------------|------------------------------|
-| `bench_prefill`      | MHA prefill (variable-length)               | FlashInfer, flash-attention  |
-| `bench_decode`       | MHA decode (single token)                   | FlashInfer (TRT-LLM backend) |
-| `bench_mla_decode`   | Multi-head Latent Attention decode          | FlashInfer (TRT-LLM MLA)     |
-| `bench_grouped_gemm` | Grouped GEMM                                | DeepGEMM                     |
-| `bench_ep_baseline`  | Expert Parallelism dispatch/combine (adhoc) | DeepEP (optional)            |
+| Target                       | Description                                 | Baselines                    |
+|------------------------------|---------------------------------------------|------------------------------|
+| `bench_prefill`              | MHA prefill (variable-length)               | FlashInfer, flash-attention  |
+| `bench_decode`               | MHA decode (single token)                   | FlashInfer (TRT-LLM backend) |
+| `bench_mla_decode`           | Multi-head Latent Attention decode          | FlashInfer (TRT-LLM MLA)     |
+| `bench_grouped_gemm`         | Grouped GEMM                                | DeepGEMM                     |
+| `bench_ep_baseline`          | Expert Parallelism dispatch/combine (adhoc) | DeepEP (optional)            |
+| `bench_mega_ffn_nvfp4_graph` | NVFP4 MoE FFN under a CUDA graph            | FlashInfer (TRT-LLM MoE)     |
+| `bench_mla_sparse_graph`     | FP8 sparse MLA under a CUDA graph           | FlashInfer (TRT-LLM MLA)     |
 
 ## Running Benchmarks
 
@@ -142,6 +144,38 @@ Bazel's `http_file` doesn't encode special characters, causing 403 errors.
 **Solution:** `setup_bench_env.py --build-wheels` automatically renames
 wheels to replace `+` with `_` (e.g., `deep_gemm-2.2.0_38f8ef7-...whl`).
 The wheel contents are unchanged—only the filename is sanitized.
+
+## CUDA graph comparison benchmarks
+
+These benchmarks time a MAX op the way serving runs it, captured in a CUDA
+graph with PDL, at a model's per-rank shapes. Each MAX arm has a competitor
+arm that calls the FlashInfer kernel vLLM selects for the same op on SM100.
+
+| MAX arm (bazel)                 | Competitor arm (vLLM venv)              |
+|---------------------------------|-----------------------------------------|
+| `bench_mega_ffn_nvfp4_graph.py` | `bench_flashinfer_trtllm_moe_nvfp4.py`  |
+| `bench_mla_sparse_graph.py`     | `bench_flashinfer_trtllm_mla_sparse.py` |
+
+Both arms of a pair share their inputs and their timer:
+
+- `moe_routing.py`: per-expert token counts (balanced, uniform, skewed) and
+  the EP dispatch layout of one rank.
+- `sparse_mla_indices.py`: top-k key positions and paged-cache rows.
+- `gpu_telemetry.py`: short timed bursts after an idle gap, single replays
+  from idle, sustained time and energy per op, and the kernels a replay ran.
+
+The competitor arms import the kernel library from a venv with the `vllm`
+wheel installed, so they run the versions vLLM pins. They are not bazel
+targets. Run them with that venv's Python from this directory:
+
+```bash
+<venv>/bin/python bench_flashinfer_trtllm_moe_nvfp4.py --tokens 48,8192
+<venv>/bin/python bench_flashinfer_trtllm_mla_sparse.py --batch 8 --q-len 6
+```
+
+Shape YAMLs with the production dims live under
+`Faux/utils/compare/shapes/<model>/`. The `extract-kernel-shapes` skill
+describes how to derive them and how to run a fair head-to-head.
 
 ## EP Baseline Benchmark (Adhoc)
 

@@ -26,13 +26,13 @@ requires per-K-iteration scaling in CUDA cores:
 from std.math import gcd
 from std.math.uutils import umod, ufloordiv
 
-from std.gpu import WARP_SIZE, lane_id, warp_id as get_warp_id
-from std.gpu.memory import AddressSpace
-from std.gpu.sync import syncwarp
+from max.gpu import WARP_SIZE, lane_id, warp_id as get_warp_id
+from max.gpu.sync import syncwarp
 from layout import (
     Coord,
-    Idx,
+    DefaultEngine,
     TensorLayout,
+    TensorEngine,
     TileTensor,
     row_major,
     stack_allocation,
@@ -54,7 +54,7 @@ from ..structured_kernels.tmem import TmemAddress, TmemFragments
 # =============================================================================
 
 
-@always_inline
+@inline(.always)
 def get_accumulator_dims[
     *,
     c_smem_dim1: Int,
@@ -99,7 +99,7 @@ def get_accumulator_dims[
     return IndexList[2](num_stages, num_elements)
 
 
-@always_inline
+@inline(.always)
 def is_lower_fragment_required[
     cta_group: Int,
     block_tile_shape: IndexList[3],
@@ -163,7 +163,10 @@ struct BlockwiseFP8Accumulator[
         Self.accum_type,
         Self.AccumLayout,
         MutUntrackedOrigin,
-        address_space=AddressSpace.GENERIC,
+        # Register-backed stack tile, never DeviceBuffer-backed, so pin
+        # DefaultEngine.
+        Engine=DefaultEngine[element_width=1],
+        address_space=.GENERIC,
     ]
 
     # Fragment load parameters (match TmemFragments defaults)
@@ -189,7 +192,7 @@ struct BlockwiseFP8Accumulator[
     var upper: Self.RegTileType
     var lower: Self.RegTileType
 
-    @always_inline
+    @inline(.always)
     def __init__(out self):
         """Create accumulator with zero-initialized register tiles."""
         var accum_layout = row_major[Self.num_stages, Self.num_elements]()
@@ -200,7 +203,7 @@ struct BlockwiseFP8Accumulator[
         comptime if Self.is_lower_required:
             _ = self.lower.fill(0.0)
 
-    @always_inline
+    @inline(.always)
     def promote[
         # Parameters derived from argument types (use _ for inference)
         num_pipeline_stages: Int,
@@ -209,13 +212,19 @@ struct BlockwiseFP8Accumulator[
         # Type parameters
         b_scales_dtype: DType,
         b_scales_layout: TensorLayout,
+        b_scales_engine: TensorEngine,
         a_scales_dtype: DType,
         # A-scales tile dimensions
         a_scales_dim0: Int,
         a_scales_dim1: Int,
     ](
         mut self,
-        b_scales: TileTensor[b_scales_dtype, b_scales_layout, ImmutAnyOrigin],
+        b_scales: TileTensor[
+            b_scales_dtype,
+            b_scales_layout,
+            ImmutAnyOrigin,
+            Engine=b_scales_engine,
+        ],
         a_scales_tiles: SMemTileArray2DRowMajor[
             a_scales_dtype,
             a_scales_dim0,
@@ -245,6 +254,7 @@ struct BlockwiseFP8Accumulator[
             b_scales_dtype: Element type of the B-scales tensor; must be
                 `float32`.
             b_scales_layout: Memory layout of the B-scales tensor.
+            b_scales_engine: Engine of the B-scales tensor.
             a_scales_dtype: Element type of the A-scales SMEM tiles; must
                 be `float32`.
             a_scales_dim0: Row count of each A-scales SMEM tile.
@@ -267,8 +277,7 @@ struct BlockwiseFP8Accumulator[
         comptime a_scales_type = a_scales_dtype
 
         comptime assert (
-            a_scales_dtype == b_scales_dtype
-            and Self.accum_type == DType.float32
+            a_scales_dtype == b_scales_dtype and Self.accum_type == .float32
         ), "Only support float32 for a_scales, b_scales, and accum_type"
 
         var M = problem_shape[0]

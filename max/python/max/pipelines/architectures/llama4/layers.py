@@ -39,9 +39,7 @@ def l2_norm(x: TensorValue, eps: float) -> TensorValue:
     """
     xf = x.cast(DType.float32)
     mean_sq = ops.mean(xf * xf, axis=-1)
-    normed = xf * ops.rsqrt(
-        mean_sq + ops.constant(eps, DType.float32, device=x.device)
-    )
+    normed = xf * ops.rsqrt(mean_sq + float(eps))
     return normed.cast(x.dtype)
 
 
@@ -159,38 +157,28 @@ class Llama4TextAttention(Module):
         one sequence) it reduces to ``[0, total_seq_len)`` exactly, matching
         the original prefill behavior.
         """
-        cpu = DeviceRef.CPU()
-        # ``repeat_interleave`` runs on CPU; do the integer position math there,
-        # then move the final scales to the compute device (as before).
-        row_offsets = input_row_offsets.to(cpu).cast(DType.int64)
+        row_offsets = input_row_offsets.cast(DType.int64)
         starts = row_offsets[:-1]  # per-sequence start offset in flat buffer
         lengths = row_offsets[1:] - starts  # per-sequence token count
         # Per-sequence shift from flat index to absolute position. cache_lengths
         # (uint32) is the decode start offset; cast to int64 before subtracting.
         # Its batch dim equals ``input_row_offsets_len - 1`` at runtime, but the
         # symbolic dims differ, so rebind to the row-offsets span shape.
-        cache_lengths = (
-            cache_lengths.to(cpu).cast(DType.int64).rebind(starts.shape)
-        )
+        cache_lengths = cache_lengths.cast(DType.int64).rebind(starts.shape)
         delta = cache_lengths - starts
         per_token_delta = ops.repeat_interleave(
             delta, lengths, axis=0, out_dim=total_seq_len
         )
-        stop = ops.shape_to_tensor([total_seq_len])
+        # ``ops.range`` reads its bounds from the host -- they are shape
+        # metadata, not data -- but emits the sequence on the compute device.
+        stop = ops.shape_to_tensor([total_seq_len])[0]
         global_idx = ops.range(
-            ops.constant(0, DType.int64, device=cpu),
-            stop[0],
-            ops.constant(1, DType.int64, device=cpu),
-            out_dim=total_seq_len,
-            dtype=DType.int64,
-            device=cpu,
+            0, stop, 1, out_dim=total_seq_len, dtype=DType.int64, device=device
         )
         positions = (global_idx + per_token_delta).cast(DType.float32)
-        floor_scale = ops.constant(self.floor_scale, DType.float32, device=cpu)
-        one = ops.constant(1.0, DType.float32, device=cpu)
-        floored = ops.floor((positions + one) / floor_scale)
-        scales = ops.log(floored + one) * self.attn_scale + 1.0
-        return scales.to(device)
+        floored = ops.floor((positions + 1.0) / float(self.floor_scale))
+        scales = ops.log(floored + 1.0) * self.attn_scale + 1.0
+        return scales
 
     def __call__(
         self,

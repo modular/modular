@@ -67,7 +67,7 @@ struct Status(Equatable, TrivialRegisterPassable, Writable):
     def __int__(self) -> Int:
         return Int(self._value)
 
-    @no_inline
+    @inline(.never)
     def write_to(self, mut writer: Some[Writer]):
         if self == Self.SUCCESS:
             return writer.write_string("SUCCESS")
@@ -102,16 +102,17 @@ struct DataType(Equatable, TrivialRegisterPassable):
         self._value = Int32(value)
 
     def __init__(out self, dtype: DType) raises:
-        if dtype == DType.float32:
-            self = Self.FLOAT
-        elif dtype == DType.float16:
-            self = Self.HALF
-        elif dtype == DType.bfloat16:
-            self = Self.BFLOAT16
-        else:
-            raise Error(
-                "the dtype '", dtype, "' is not currently handled by MIOpen"
-            )
+        match dtype:
+            case .float32:
+                self = Self.FLOAT
+            case .float16:
+                self = Self.HALF
+            case .bfloat16:
+                self = Self.BFLOAT16
+            case _:
+                raise Error(
+                    "the dtype '", dtype, "' is not currently handled by MIOpen"
+                )
 
     def __int__(self) -> Int:
         return Int(self._value)

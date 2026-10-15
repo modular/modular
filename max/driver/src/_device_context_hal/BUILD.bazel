@@ -1,9 +1,0 @@
-package(default_visibility = ["//max:consumers"])
-
-# The HAL DeviceContext compiles only as part of the stdlib overlay: staged
-# over the stdlib's `gpu/host/device_context.mojo` under
-# --config=hal-device-context (see mojo/stdlib/std/BUILD.bazel). It defines
-# `DevicePointer` and `DefaultDeviceTypeEncoder` against its own
-# `DeviceBuffer`, which cannot conform to `builtin.device_passable`'s
-# signatures outside the overlay, so there is no standalone `mojo_library`.
-exports_files(glob(["*.mojo"]))

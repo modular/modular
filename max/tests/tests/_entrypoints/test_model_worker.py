@@ -75,6 +75,7 @@ async def test_model_worker_propagates_exception(
                 context_type=TextContext,
             ),
             zmq_endpoint_base=generate_zmq_ipc_path(),
+            memory_plan=None,
         ):
             raise ValueError("kaboom")
 
@@ -119,6 +120,7 @@ async def test_model_worker_propagates_construction_exception(
             ),
             metric_client=NoopClient(),
             zmq_endpoint_base=generate_zmq_ipc_path(),
+            memory_plan=None,
         ):
             pass
 
@@ -157,14 +159,15 @@ async def test_model_worker_start_timeout(
                 PipelineTask.TEXT_GENERATION, context_type=TextContext
             ),
             zmq_endpoint_base=generate_zmq_ipc_path(),
+            memory_plan=None,
         ):
             pass
 
 
 class MockTokenizer(PipelineTokenizer):  # type: ignore
     @property
-    def eos(self) -> int:
-        return 0
+    def eos_token_ids(self) -> set[int]:
+        return set()
 
     @property
     def expects_content_wrapping(self) -> bool:

@@ -126,6 +126,8 @@ typedef enum M_Dtype {
 
   /// Bits 0 through 3 indicate the kind of FP value.
   M_FLOAT4_E2M1FN = 0 | mIsFloat,
+  M_FLOAT6_E2M3FN = 1 | mIsFloat,
+  M_FLOAT6_E3M2FN = 2 | mIsFloat,
   /// Some slots are left blank here to enable us to support more lower
   /// precision types in the future.
   M_FLOAT8_E8M0FNU = 9 | mIsFloat,
@@ -219,7 +221,7 @@ typedef struct M_Safetensors M_Safetensors;
 /// is any non-CPU compute device (GPU or NPU). The closed set of valid
 /// device labels is enforced by `EngineContext::create` -- see
 /// `Support/DeviceSpecs.h` for the label constants and
-/// `max/internal/lib/API/c/EngineContext.cpp` for the validating guard.
+/// `max/lib/max_license/API/c/EngineContext.cpp` for the validating guard.
 #ifdef __cplusplus
 typedef enum M_DeviceType : int {
 #else

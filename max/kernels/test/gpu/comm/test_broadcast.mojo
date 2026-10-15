@@ -14,21 +14,16 @@
 from std.math import ceildiv
 from std.sys import size_of
 from std.itertools import product
-from std.gpu.host import DeviceBuffer, DeviceContext
-from layout import (
-    Idx,
-    TileTensor,
-    row_major,
-)
+from max.gpu.host import DeviceBuffer, DeviceContext
+from layout import TileTensor, row_major
 from std.testing import assert_true
 
-from comm import Signal, MAX_GPUS
+from comm import Signal
 from comm.broadcast import broadcast
 from comm.sync import enable_p2p, init_signal_buffer
 
 
-@always_inline
-@parameter
+@inline(.always)
 def _input_value[dtype: DType](root: Int, j: Int) -> Scalar[dtype]:
     """Generate position-based input value that includes root rank.
 
@@ -53,13 +48,17 @@ comptime test_lengths = (
     8 * 1024 + 3,  # Not a multiple of simd_width
     128 * 1024,  # Larger latency bound
     256 * 1024,  # Smallest bandwidth bound
+    # For 8 GPUs this stays on 1-stage (< 2 MiB) and exercises 1-stage tail handling.
+    256 * 1024 + 3,
     16 * 1024 * 1024,  # Bandwidth bound
     16 * 1024 * 1024 + 3,  # Large non-aligned: tests 2-stage tail handling
     64 * 1024 * 1024,  # Bandwidth bound: 8192 chunk size at dim = 8192
 )
 
 # Test hyperparameters.
-comptime test_dtypes = (DType.bfloat16, DType.float32)
+# uint8 is what the byte-oriented callers (distributed_ops, block_offload_ops)
+# instantiate.
+comptime test_dtypes = (DType.bfloat16, DType.float32, DType.uint8)
 comptime test_gpu_counts = (2, 4, 8)
 
 
@@ -100,17 +99,14 @@ def broadcast_test[
     var out_dev_list = List[DeviceBuffer[dtype]](capacity=ngpus)
 
     # Create TileTensor types for input and output
-    var in_tile = TileTensor(input_dev, row_major(length)).as_immut()
+    var in_tile = TileTensor(input_dev, row_major(length)).as_imm()
     comptime OutputTileType = TileTensor[
         dtype, type_of(row_major(length)), MutAnyOrigin
     ]
-    var out_tiles = InlineArray[OutputTileType, ngpus](uninitialized=True)
+    var out_tiles = Array[OutputTileType, ngpus](uninitialized=True)
 
     # Create signal buffers for synchronization
-    var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
-        uninitialized=True
-    )
+    var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
     for i in range(ngpus):
         # Create this rank's output buffer
         if root_self_copy and i == root:
@@ -134,15 +130,15 @@ def broadcast_test[
     for i in range(ngpus):
         # Create and initialize signal buffers (with payload space for 2-stage)
         signal_buffers.append(
-            list_of_ctxs[i].create_buffer_sync[DType.uint8](signal_buf_size)
+            list_of_ctxs[i].create_buffer_sync[.uint8](signal_buf_size)
         )
         init_signal_buffer(signal_buffers[i], list_of_ctxs[i])
-        rank_sigs[i] = (
-            signal_buffers[i]
-            .unsafe_ptr()
-            .bitcast[Signal]()
-            .as_unsafe_any_origin()
-        )
+
+    var rank_sigs = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
 
     for i in range(ngpus):
         list_of_ctxs[i].synchronize()
@@ -157,7 +153,7 @@ def broadcast_test[
     # Launch broadcast per device
     comptime for i in range(ngpus):
         broadcast[ngpus](
-            in_tile, out_tiles[i], rank_sigs, list_of_ctxs[i], root
+            in_tile, out_tiles[i], rank_sigs, list_of_ctxs[i], root, rank=i
         )
 
     # Synchronize all GPUs
@@ -186,7 +182,6 @@ def broadcast_test[
                 )
 
 
-@parameter
 def run_broadcast_sweep[]() raises:
     # Run tests for each configuration.
     comptime for gpu_idx, dtype_idx, length_idx, root_self_copy in product(

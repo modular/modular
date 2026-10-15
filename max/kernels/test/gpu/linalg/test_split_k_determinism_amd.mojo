@@ -19,11 +19,11 @@ and all GPUs launch before the first sync, so the node runs under the
 concurrent-kernel, high-occupancy load where the split-K epilogue race surfaces.
 
 Covers amd_4wave_split_k_matmul (the kernel the race lives in; fails without the
-num_splits > 1 epilogue drain) and _launch_mxfp4_split_k (a regression guard for
+num_splits > 1 epilogue drain) and _launch_block_scaled_split_k (a regression guard for
 that path).
 """
 
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from std.memory import bitcast
 from std.random import random_float64, random_ui64
 from std.testing import assert_equal
@@ -34,7 +34,9 @@ from linalg.matmul.gpu.amd.amd_4wave_split_k_matmul import (
     amd_4wave_split_k_matmul,
     SplitKWorkspace,
 )
-from linalg.matmul.gpu.amd.mxfp4_matmul_amd import _launch_mxfp4_split_k
+from linalg.matmul.gpu.amd.block_scaled_matmul_amd import (
+    _launch_block_scaled_split_k,
+)
 
 
 def _report_divergence[
@@ -178,16 +180,16 @@ def test_mxfp4_split_k_determinism[
             for i in range(N * K_SCALES):
                 sb[i] = bitcast[sf_dtype](UInt8(random_ui64(125, 129)))
 
-        var a_tt = TileTensor[mut=False](device_a, row_major[M, K_PACKED]())
-        var b_tt = TileTensor[mut=False](device_b, row_major[N, K_PACKED]())
-        var as_tt = TileTensor[mut=False](device_as, row_major[M, K_SCALES]())
-        var bs_tt = TileTensor[mut=False](device_bs, row_major[N, K_SCALES]())
+        var a_tt = TileTensor(device_a, row_major[M, K_PACKED]()).as_imm()
+        var b_tt = TileTensor(device_b, row_major[N, K_PACKED]()).as_imm()
+        var as_tt = TileTensor(device_as, row_major[M, K_SCALES]()).as_imm()
+        var bs_tt = TileTensor(device_bs, row_major[N, K_SCALES]()).as_imm()
 
         for _ in range(reps):
             var device_c = ctx.enqueue_create_buffer[out_dtype](M * N)
             ctx.enqueue_memset(device_c, 0)
-            var c_tt = TileTensor[mut=True](device_c, row_major[M, N]())
-            _launch_mxfp4_split_k[
+            var c_tt = TileTensor(device_c, row_major[M, N]())
+            _launch_block_scaled_split_k[
                 BM=64, BN=128, BK_ELEMS=256, WM=64, WN=32, num_splits=num_splits
             ](c_tt, a_tt, b_tt, as_tt, bs_tt, M, ctx)
             outputs.append(device_c)

@@ -87,7 +87,7 @@ class ModelWorkerProxy(ABC, Generic[BaseContextType, PipelineOutputType]):
     async def wait_until_connected(self, timeout_s: float | None) -> None:
         """Block until the proxy is ready to accept requests.
 
-        Transports that establish a connection to the worker (e.g. ZMQ)
+        Transports that establish a connection to the worker (such as ZMQ)
         override this to wait for that handshake at startup, before the server
         serves traffic, so runtime admission never has to distinguish "not
         connected yet" from a genuinely full queue. ``timeout_s`` of ``None``
@@ -101,15 +101,16 @@ class ModelWorkerProxy(ABC, Generic[BaseContextType, PipelineOutputType]):
         self,
         req_id: RequestID,
         data: BaseContextType,
-    ) -> AsyncGenerator[list[PipelineOutputType], None]:
+    ) -> AsyncGenerator[tuple[list[PipelineOutputType], int | None], None]:
         """Submit ``data`` to the model worker and return a response generator.
 
         Awaiting this coroutine performs the handoff to the model worker (for
         example, the request-queue put). A submission failure — such as a dead
         worker — raises here, before any response has been streamed, so callers
         can surface it as an error before response headers are sent. The
-        returned async generator yields batches of pipeline outputs as they
-        arrive.
+        returned async generator yields ``(outputs, batch_id)`` pairs: a batch
+        of pipeline outputs and the monotonic batch counter from the scheduler
+        that produced them (``None`` for cancelled results).
         """
         ...
 
@@ -143,7 +144,6 @@ class ModelWorkerInterface(ABC, Generic[BaseContextType, PipelineOutputType]):
         ModelWorkerProxy[BaseContextType, PipelineOutputType]
     ]:
         """Called by API worker to communicate with model worker"""
-        pass
 
     @abstractmethod
     def model_worker_queues(
@@ -152,4 +152,3 @@ class ModelWorkerInterface(ABC, Generic[BaseContextType, PipelineOutputType]):
         WorkerQueues[BaseContextType, PipelineOutputType]
     ]:
         """Called by model worker to get work IO streams"""
-        pass

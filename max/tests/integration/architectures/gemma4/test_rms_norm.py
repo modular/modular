@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import pytest
 import torch
-from conftest import (  # type: ignore[import-not-found]
+from conftest import (
     TEXT_HEAD_DIM,
     TEXT_HIDDEN_SIZE,
     TEXT_RMS_NORM_EPS,

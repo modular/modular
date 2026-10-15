@@ -18,6 +18,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, ClassVar
 
+from max import tree
 from max.driver import Buffer, Device, DLPackArray
 from max.dtype import DType
 from max.engine import InferenceSession, Model
@@ -37,7 +38,7 @@ from max.pipelines.lib import (
     MultiGraphPipelineModelWithKVCache,
     PipelineConfig,
 )
-from transformers import AutoConfig
+from max.pipelines.lib.memory_estimation import MemoryPlan
 
 from .batch_processor import Idefics3BatchProcessor
 from .model_config import Idefics3Config
@@ -115,21 +116,6 @@ class Idefics3Model(MultiGraphPipelineModelWithKVCache[TextAndVisionContext]):
         Idefics3BatchProcessor
     )
 
-    @classmethod
-    def calculate_max_seq_len(
-        cls,
-        pipeline_config: PipelineConfig,
-        huggingface_config: AutoConfig,
-    ) -> int:
-        """Uses ``max_length`` when set, else ``text_config.max_position_embeddings`` (config bounds)."""
-        max_seq_len = pipeline_config.model.max_length
-        if max_seq_len:
-            return max_seq_len
-        text_config = getattr(
-            huggingface_config, "text_config", huggingface_config
-        )
-        return getattr(text_config, "max_position_embeddings", 4096)
-
     vision_model: Model | None
     """The compiled vision model for processing images."""
 
@@ -143,6 +129,8 @@ class Idefics3Model(MultiGraphPipelineModelWithKVCache[TextAndVisionContext]):
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
+        *,
+        memory_plan: MemoryPlan,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         max_batch_size: int = 1,
@@ -153,9 +141,10 @@ class Idefics3Model(MultiGraphPipelineModelWithKVCache[TextAndVisionContext]):
             devices,
             kv_cache_config,
             weights,
-            adapter,
-            return_logits,
+            adapter=adapter,
+            return_logits=return_logits,
             max_batch_size=max_batch_size,
+            memory_plan=memory_plan,
         )
 
         self.image_token_id = self.huggingface_config.image_token_id
@@ -185,7 +174,9 @@ class Idefics3Model(MultiGraphPipelineModelWithKVCache[TextAndVisionContext]):
     ) -> Idefics3Config:
         del state_dict
 
-        idefics3_config = Idefics3Config.initialize(self.pipeline_config)
+        idefics3_config = Idefics3Config.initialize(
+            self.pipeline_config, max_seq_len=self.max_seq_len
+        )
         idefics3_config.finalize(
             huggingface_config=self.huggingface_config,
             llm_state_dict=self._language_weights_dict,
@@ -386,7 +377,7 @@ class Idefics3Model(MultiGraphPipelineModelWithKVCache[TextAndVisionContext]):
             model_inputs.return_n_logits,
             image_embeddings,
             image_token_indices,
-            *model_inputs.kv_cache_inputs.flatten(),
+            *tree.leaves(model_inputs.kv_cache_inputs),
         )
 
         # Return model outputs based on what the language model returns

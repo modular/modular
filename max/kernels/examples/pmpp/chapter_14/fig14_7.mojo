@@ -13,9 +13,10 @@
 
 """Figure 14.7: Radix sort iteration kernel implementation in Mojo."""
 
-from std.gpu import block_idx, thread_idx
-from std.gpu.host import DeviceContext
+from max.gpu import block_idx, thread_idx
+from max.gpu.host import DeviceContext
 from std.random import random_ui64
+from std.math import ceildiv
 
 
 def grid_exclusive_scan(bits: UnsafePointer[mut=True, UInt32, _], N: Int):
@@ -36,9 +37,9 @@ def radix_sort_iter(
     input: UnsafePointer[UInt32, ImmutAnyOrigin],
     output: UnsafePointer[UInt32, MutAnyOrigin],
     bits: UnsafePointer[UInt32, MutAnyOrigin],
-    N: Int,
-    iter: Int,
-    block_dim_x: Int,
+    N_dev: Int32,
+    iter_dev: Int32,
+    block_dim_x_dev: Int32,
 ):
     """Radix sort iteration kernel - extracts bits.
 
@@ -46,10 +47,14 @@ def radix_sort_iter(
         input: Input array.
         output: Output array.
         bits: Bit array.
-        N: Size of array.
-        iter: Current bit position.
-        block_dim_x: Block dimension.
+        N_dev: Size of array.
+        iter_dev: Current bit position.
+        block_dim_x_dev: Block dimension.
     """
+    # `Int` is not device-passable; widen the fixed-width args.
+    var N = Int(N_dev)
+    var iter = Int(iter_dev)
+    var block_dim_x = Int(block_dim_x_dev)
     var i = block_idx.x * block_dim_x + thread_idx.x
 
     if i < N:
@@ -63,9 +68,9 @@ def radix_scatter(
     output: UnsafePointer[UInt32, MutAnyOrigin],
     bits: UnsafePointer[UInt32, MutAnyOrigin],
     scanResult: UnsafePointer[UInt32, ImmutAnyOrigin],
-    N: Int,
-    iter: Int,
-    block_dim_x: Int,
+    N_dev: Int32,
+    iter_dev: Int32,
+    block_dim_x_dev: Int32,
 ):
     """Scatter elements based on scan results.
 
@@ -74,10 +79,14 @@ def radix_scatter(
         output: Output array.
         bits: Bit array.
         scanResult: Scan result array.
-        N: Size of array.
-        iter: Current bit position.
-        block_dim_x: Block dimension.
+        N_dev: Size of array.
+        iter_dev: Current bit position.
+        block_dim_x_dev: Block dimension.
     """
+    # `Int` is not device-passable; widen the fixed-width args.
+    var N = Int(N_dev)
+    var iter = Int(iter_dev)
+    var block_dim_x = Int(block_dim_x_dev)
     var i = block_idx.x * block_dim_x + thread_idx.x
 
     if i < N:
@@ -196,16 +205,16 @@ def main() raises:
     var ctx = DeviceContext()
 
     # Allocate device memory
-    var d_input = ctx.enqueue_create_buffer[DType.uint32](N)
-    var d_output = ctx.enqueue_create_buffer[DType.uint32](N)
-    var d_bits = ctx.enqueue_create_buffer[DType.uint32](N + 1)
+    var d_input = ctx.enqueue_create_buffer[.uint32](N)
+    var d_output = ctx.enqueue_create_buffer[.uint32](N)
+    var d_bits = ctx.enqueue_create_buffer[.uint32](N + 1)
 
     # Copy to device
     ctx.enqueue_copy(d_input, h_data)
 
     # Launch configuration
     var threads_per_block = 256
-    var num_blocks = (N + threads_per_block - 1) // threads_per_block
+    var num_blocks = ceildiv(N, threads_per_block)
 
     print("\nLaunching radix sort iteration kernel (Fig 14.7)")
     print("Array size:", N, "elements")
@@ -230,9 +239,9 @@ def main() raises:
             current_input,
             current_output,
             d_bits,
-            N,
-            iter,
-            threads_per_block,
+            Int32(N),
+            Int32(iter),
+            Int32(threads_per_block),
             grid_dim=(num_blocks, 1, 1),
             block_dim=(threads_per_block, 1, 1),
         )
@@ -259,9 +268,9 @@ def main() raises:
             current_output,
             d_bits,
             d_bits,
-            N,
-            iter,
-            threads_per_block,
+            Int32(N),
+            Int32(iter),
+            Int32(threads_per_block),
             grid_dim=(num_blocks, 1, 1),
             block_dim=(threads_per_block, 1, 1),
         )

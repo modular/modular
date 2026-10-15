@@ -57,12 +57,12 @@
 #   dist as-is; 1 = force all logits <= 0, the cleanest temp=0 all--Inf trigger;
 #   2 = force all logits >= 0).
 
-from std.random import random_float64, random_ui64, seed as set_seed
+from std.random import random_ui64, seed as set_seed
 from std.sys.defines import get_defined_int
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.utils.numerics import inf, nan
-from layout import Coord, TileTensor, row_major
+from layout import TileTensor, row_major
 from nn.topk import fused_token_sampling_gpu
 
 from _fuzz import (
@@ -266,18 +266,18 @@ def run_one_case(ctx: DeviceContext, spec: CaseSpec) raises:
 
     # Per-row temperature (float32). 0 == greedy (the unclamped-divide trigger).
     var temp_val = Float32(spec.temp_milli) / 1000.0
-    var temp_host = ctx.enqueue_create_host_buffer[DType.float32](batch_size)
+    var temp_host = ctx.enqueue_create_host_buffer[.float32](batch_size)
     for r in range(batch_size):
         temp_host[r] = temp_val
-    var temp_dev = ctx.enqueue_create_buffer[DType.float32](batch_size)
+    var temp_dev = ctx.enqueue_create_buffer[.float32](batch_size)
     ctx.enqueue_copy(temp_dev, temp_host)
     var temp_tt = TileTensor(temp_dev, row_major(batch_size))
 
     # Per-row seed for the sampler RNG (uint64).
-    var rng_host = ctx.enqueue_create_host_buffer[DType.uint64](batch_size)
+    var rng_host = ctx.enqueue_create_host_buffer[.uint64](batch_size)
     for r in range(batch_size):
         rng_host[r] = UInt64(spec.seed + r)
-    var rng_dev = ctx.enqueue_create_buffer[DType.uint64](batch_size)
+    var rng_dev = ctx.enqueue_create_buffer[.uint64](batch_size)
     ctx.enqueue_copy(rng_dev, rng_host)
     var rng_tt = TileTensor(rng_dev, row_major(batch_size))
 
@@ -305,9 +305,9 @@ def run_one_case(ctx: DeviceContext, spec: CaseSpec) raises:
         Float32(1.0),
         in_tt,
         out_tt,
-        k=k_tt.as_unsafe_any_origin().as_immut(),
-        temperature=temp_tt.as_unsafe_any_origin().as_immut(),
-        seed=rng_tt.as_unsafe_any_origin().as_immut(),
+        k=k_tt.as_unsafe_any_origin().as_imm(),
+        temperature=temp_tt.as_unsafe_any_origin().as_imm(),
+        seed=rng_tt.as_unsafe_any_origin().as_imm(),
     )
 
     # The oracle read: copy the int64 output row(s) back to host.

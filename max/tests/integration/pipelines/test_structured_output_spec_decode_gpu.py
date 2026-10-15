@@ -23,11 +23,15 @@ import asyncio
 import json
 import time
 
-import hf_repo_lock
 import numpy as np
 import pytest
 from max.driver import DeviceSpec
-from max.pipelines import PipelineArgs, PipelineConfig
+from max.pipelines import (
+    PipelineArgs,
+    PipelineConfig,
+    PipelineRuntimeConfig,
+    SamplingConfig,
+)
 from max.pipelines.context import (
     SamplingParams,
     TextContext,
@@ -65,40 +69,32 @@ def test_eagle_structured_output_json_schema_gpu(
     """
     # Use Llama-3.2-3B-Instruct as target with EAGLE-Llama-3.2-3B-Instruct-bf16
     # as the draft model. This is the smallest EAGLE model pair available.
-    target_revision = hf_repo_lock.revision_for_hf_repo(
-        "meta-llama/Llama-3.2-3B-Instruct"
-    )
-    assert target_revision is not None
-
-    draft_revision = hf_repo_lock.revision_for_hf_repo(
-        "atomicapple0/EAGLE-Llama-3.2-3B-Instruct-bf16"
-    )
-    assert draft_revision is not None
-
     pipeline_config = PipelineArgs(
         model_path="meta-llama/Llama-3.2-3B-Instruct",
         quantization_encoding="bfloat16",
         device_specs=[DeviceSpec.accelerator()],
-        huggingface_model_revision=target_revision,
         max_length=2048,
         draft_model=MAXModelConfig(
             model_path="atomicapple0/EAGLE-Llama-3.2-3B-Instruct-bf16",
             quantization_encoding="bfloat16",
             device_specs=[DeviceSpec.accelerator()],
-            huggingface_model_revision=draft_revision,
         ),
         speculative=SpeculativeConfig(
             speculative_method="eagle",
             num_speculative_tokens=2,
         ),
-        enable_structured_output=True,
-        max_batch_size=1,
-        enable_overlap_scheduler=True,
+        sampling=SamplingConfig(enable_structured_output=True),
+        runtime=PipelineRuntimeConfig(
+            max_batch_size=1,
+            enable_overlap_scheduler=True,
+        ),
     )
 
-    tokenizer, pipeline_factory = pipeline_registry.retrieve_factory(
+    retrieved = pipeline_registry.retrieve_factory(
         PipelineConfig.from_args(pipeline_config)
     )
+    tokenizer = retrieved.tokenizer
+    pipeline_factory = retrieved.factory
     assert isinstance(tokenizer, TextTokenizer)
 
     prompt = """Extract the person's name and age from: 'David Smith is 35 years old.'"""
@@ -136,7 +132,7 @@ def test_eagle_structured_output_json_schema_gpu(
     assert isinstance(pipeline, OverlapTextGenerationPipeline)
 
     kv_manager = pipeline.kv_manager
-    kv_manager.claim(context.request_id, replica_idx=0)
+    kv_manager.claim(context)
 
     tokens: list[int] = []
     max_iterations = 60
@@ -145,7 +141,7 @@ def test_eagle_structured_output_json_schema_gpu(
         inputs: TextGenerationInputs[TextContext] = TextGenerationInputs(
             batches=[[context]]
         )
-        kv_manager.alloc(context, replica_idx=0)
+        kv_manager.alloc(context)
         response = pipeline.execute(inputs)
 
         if request_id in response:
@@ -189,40 +185,32 @@ def test_eagle_structured_output_heterogeneous_batch_gpu(
     - Structured requests use grammar-constrained bitmasks during verification
     - Free-form requests use unconstrained (all-True) bitmasks
     """
-    target_revision = hf_repo_lock.revision_for_hf_repo(
-        "meta-llama/Llama-3.2-3B-Instruct"
-    )
-    assert target_revision is not None
-
-    draft_revision = hf_repo_lock.revision_for_hf_repo(
-        "atomicapple0/EAGLE-Llama-3.2-3B-Instruct-bf16"
-    )
-    assert draft_revision is not None
-
     pipeline_config = PipelineArgs(
         model_path="meta-llama/Llama-3.2-3B-Instruct",
         quantization_encoding="bfloat16",
         device_specs=[DeviceSpec.accelerator()],
-        huggingface_model_revision=target_revision,
         max_length=2048,
         draft_model=MAXModelConfig(
             model_path="atomicapple0/EAGLE-Llama-3.2-3B-Instruct-bf16",
             quantization_encoding="bfloat16",
             device_specs=[DeviceSpec.accelerator()],
-            huggingface_model_revision=draft_revision,
         ),
         speculative=SpeculativeConfig(
             speculative_method="eagle",
             num_speculative_tokens=2,
         ),
-        enable_structured_output=True,
-        max_batch_size=2,
-        enable_overlap_scheduler=True,
+        sampling=SamplingConfig(enable_structured_output=True),
+        runtime=PipelineRuntimeConfig(
+            max_batch_size=2,
+            enable_overlap_scheduler=True,
+        ),
     )
 
-    tokenizer, pipeline_factory = pipeline_registry.retrieve_factory(
+    retrieved = pipeline_registry.retrieve_factory(
         PipelineConfig.from_args(pipeline_config)
     )
+    tokenizer = retrieved.tokenizer
+    pipeline_factory = retrieved.factory
     assert isinstance(tokenizer, TextTokenizer)
 
     # Request 1: Structured output with JSON schema
@@ -283,8 +271,8 @@ def test_eagle_structured_output_heterogeneous_batch_gpu(
     assert isinstance(pipeline, OverlapTextGenerationPipeline)
 
     kv_manager = pipeline.kv_manager
-    kv_manager.claim(structured_ctx.request_id, replica_idx=0)
-    kv_manager.claim(freeform_ctx.request_id, replica_idx=0)
+    kv_manager.claim(structured_ctx)
+    kv_manager.claim(freeform_ctx)
 
     structured_tokens: list[int] = []
     freeform_tokens: list[int] = []
@@ -303,7 +291,7 @@ def test_eagle_structured_output_heterogeneous_batch_gpu(
         # Allocate KV cache for all contexts in the batch.
         # Even done contexts need consistent allocation for spec decode.
         for ctx in contexts:
-            kv_manager.alloc(ctx, replica_idx=0)
+            kv_manager.alloc(ctx)
 
         inputs: TextGenerationInputs[TextContext] = TextGenerationInputs(
             batches=[contexts]
@@ -370,40 +358,32 @@ def test_eagle_structured_output_no_first_decode_stall_gpu(
     per iteration (50-150x), while legitimate variance from graph-capture
     jitter or KV eviction is at most 2-3x. 30x reliably separates the two.
     """
-    target_revision = hf_repo_lock.revision_for_hf_repo(
-        "meta-llama/Llama-3.2-3B-Instruct"
-    )
-    assert target_revision is not None
-
-    draft_revision = hf_repo_lock.revision_for_hf_repo(
-        "atomicapple0/EAGLE-Llama-3.2-3B-Instruct-bf16"
-    )
-    assert draft_revision is not None
-
     pipeline_config = PipelineArgs(
         model_path="meta-llama/Llama-3.2-3B-Instruct",
         quantization_encoding="bfloat16",
         device_specs=[DeviceSpec.accelerator()],
-        huggingface_model_revision=target_revision,
         max_length=2048,
         draft_model=MAXModelConfig(
             model_path="atomicapple0/EAGLE-Llama-3.2-3B-Instruct-bf16",
             quantization_encoding="bfloat16",
             device_specs=[DeviceSpec.accelerator()],
-            huggingface_model_revision=draft_revision,
         ),
         speculative=SpeculativeConfig(
             speculative_method="eagle",
             num_speculative_tokens=2,
         ),
-        enable_structured_output=True,
-        max_batch_size=1,
-        enable_overlap_scheduler=True,
+        sampling=SamplingConfig(enable_structured_output=True),
+        runtime=PipelineRuntimeConfig(
+            max_batch_size=1,
+            enable_overlap_scheduler=True,
+        ),
     )
 
-    tokenizer, pipeline_factory = pipeline_registry.retrieve_factory(
+    retrieved = pipeline_registry.retrieve_factory(
         PipelineConfig.from_args(pipeline_config)
     )
+    tokenizer = retrieved.tokenizer
+    pipeline_factory = retrieved.factory
     assert isinstance(tokenizer, TextTokenizer)
 
     prompt = """Extract the person's name and age from: 'Maria Garcia is 42 years old.'"""
@@ -438,7 +418,7 @@ def test_eagle_structured_output_no_first_decode_stall_gpu(
     assert isinstance(pipeline, OverlapTextGenerationPipeline)
 
     kv_manager = pipeline.kv_manager
-    kv_manager.claim(context.request_id, replica_idx=0)
+    kv_manager.claim(context)
 
     # Collect per-call wall times. The overlap pipeline is pipelined:
     #   call 0: prefill (drives model forward, no output yet)
@@ -456,7 +436,7 @@ def test_eagle_structured_output_no_first_decode_stall_gpu(
         inputs: TextGenerationInputs[TextContext] = TextGenerationInputs(
             batches=[[context]]
         )
-        kv_manager.alloc(context, replica_idx=0)
+        kv_manager.alloc(context)
 
         t0 = time.monotonic()
         response = pipeline.execute(inputs)

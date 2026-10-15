@@ -24,7 +24,6 @@ Two pieces live here:
 from __future__ import annotations
 
 import logging
-import re
 import uuid
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Mapping, Sequence
@@ -74,22 +73,6 @@ def names_from_tools(
     return names or None
 
 
-_JSON_TYPE_TO_GRAMMAR_RULE: dict[str, str] = {
-    "string": "string_val",
-    "number": "number_val",
-    "integer": "integer_val",
-    "boolean": "bool_val",
-    "array": "array_val",
-    "object": "object_val",
-    "null": "null_val",
-}
-
-
-def grammar_rule_for_json_type(json_type: str, default: str = "value") -> str:
-    """Maps a JSON Schema type name to its Lark grammar rule name."""
-    return _JSON_TYPE_TO_GRAMMAR_RULE.get(json_type, default)
-
-
 _TOOL_PARSERS: dict[str, type[ToolParser]] = {}
 
 
@@ -118,7 +101,7 @@ def get_parser_cls(name: str | None) -> type[ToolParser] | None:
 
     Returns ``None`` if no parser is registered under that name, or if
     ``name`` is ``None``. Useful for callers that need to read class-level
-    attributes (e.g., structural tag delimiters).
+    attributes (such as structural tag delimiters).
     """
     if name is None:
         return None
@@ -159,11 +142,6 @@ def generate_call_id() -> str:
     return f"call_{uuid.uuid4().hex[:_TOOL_CALL_ID_LENGTH]}"
 
 
-def escape_for_lark_string(s: str) -> str:
-    """Escapes a string for use inside a Lark double-quoted terminal."""
-    return s.replace("\\", "\\\\").replace('"', '\\"')
-
-
 def get_token_id(tokenizer: Any, token: str) -> int | None:
     """Resolve a single token string to its ID, or ``None`` if unknown."""
     delegate = getattr(tokenizer, "delegate", tokenizer)
@@ -178,19 +156,6 @@ def get_token_id(tokenizer: Any, token: str) -> int | None:
     return None
 
 
-def resolve_lark_token_reference(token_id: int) -> str:
-    """Format a token ID as llguidance's ``<[N]>`` reference."""
-    return f"<[{token_id}]>"
-
-
-def canonicalize_lark_rule_name(s: str) -> str:
-    """Convert *s* to a string safe for use as a Lark rule name.
-
-    Lark rule names must be lowercase (uppercase starts a terminal).
-    """
-    return re.sub(r"[^a-z0-9_]", "_", s.lower())
-
-
 @dataclass
 class StreamingToolCallState:
     """State for a single tool call being streamed.
@@ -203,6 +168,7 @@ class StreamingToolCallState:
     id: str = ""
     name: str = ""
     arguments_sent: str = ""
+    opener_sent: bool = False
 
 
 @dataclass
@@ -223,10 +189,10 @@ class StructuralTagToolParser(ABC):
 
     Supports two layouts:
 
-    * **Section-wrapped** (e.g. Kimi K2.5, DeepSeek V3, MiniMax M2):
+    * **Section-wrapped** (such as Kimi K2.5, DeepSeek V3, MiniMax M2):
       an outer ``SECTION_BEGIN``/``SECTION_END`` pair wrapping one or more
       inner ``CALL_BEGIN``/``CALL_END`` pairs.
-    * **Flat** (e.g. Gemma 4): only ``CALL_BEGIN``/``CALL_END`` are set;
+    * **Flat** (such as Gemma 4): only ``CALL_BEGIN``/``CALL_END`` are set;
       ``SECTION_BEGIN``/``SECTION_END`` are left empty (the default).
       The base class scans for call pairs directly with no nesting.
 
@@ -260,7 +226,7 @@ class StructuralTagToolParser(ABC):
     @property
     def _start_marker(self) -> str:
         """The marker that opens the tool-call region (section or call)."""
-        return self.SECTION_BEGIN if self.SECTION_BEGIN else self.CALL_BEGIN
+        return self.SECTION_BEGIN or self.CALL_BEGIN
 
     # ----- Public ToolParser protocol -----------------------------------
 
@@ -311,9 +277,11 @@ class StructuralTagToolParser(ABC):
                 cursor = section_end + len(self.SECTION_END)
 
         if not tool_calls:
+            # Do not embed the raw model output -- it may contain PII and is
+            # surfaced to logs. Report only the length for debugging.
             raise ValueError(
                 "Tool calls section found but no valid tool calls parsed "
-                f"from: {response[first_marker_idx:]}"
+                f"(section length: {len(response) - first_marker_idx} chars)"
             )
 
         return ParsedToolResponse(content=content_before, tool_calls=tool_calls)
@@ -365,13 +333,6 @@ class StructuralTagToolParser(ABC):
                     if tool_id and tool_name:
                         tc_state.id = tool_id
                         tc_state.name = tool_name
-                        deltas.append(
-                            ParsedToolCallDelta(
-                                index=i,
-                                id=tool_id,
-                                name=tool_name,
-                            )
-                        )
 
                 if args is not None:
                     args_str = self._format_args_for_streaming(
@@ -380,6 +341,19 @@ class StructuralTagToolParser(ABC):
                     if args_str:
                         args_diff = self._compute_args_diff(i, args_str)
                         if args_diff:
+                            if (
+                                not tc_state.opener_sent
+                                and tc_state.id
+                                and tc_state.name
+                            ):
+                                deltas.append(
+                                    ParsedToolCallDelta(
+                                        index=i,
+                                        id=tc_state.id,
+                                        name=tc_state.name,
+                                    )
+                                )
+                                tc_state.opener_sent = True
                             deltas.append(
                                 ParsedToolCallDelta(
                                     index=i, arguments=args_diff
@@ -412,10 +386,10 @@ class StructuralTagToolParser(ABC):
     ) -> None:
         """No-op: these parsers do not need schema-driven streaming.
 
-        Schema-driven parsers (e.g. MiniMax-M3) override this; see
+        Schema-driven parsers (such as MiniMax-M3) override this; see
         ``ToolParser.set_streaming_tool_schemas`` for when that is required.
         """
-        return None
+        return
 
     # ----- Hooks (subclasses override) ----------------------------------
 
@@ -500,6 +474,39 @@ class StructuralTagToolParser(ABC):
             self._state.sent_content_idx = sendable_idx
             return content
         return None
+
+    def flush(self) -> str | None:
+        """Releases content withheld as a possible start-marker prefix.
+
+        :meth:`_extract_content_delta` withholds a trailing run of the buffer
+        that matches a prefix of the start marker, because the next token may
+        complete it and leaking marker bytes as assistant content is the worse
+        failure. That speculation is only sound while tokens are still
+        arriving. Once the stream is over nothing can complete the marker, so
+        the withheld run is ordinary text, and keeping it back drops
+        characters the model generated.
+
+        Callers invoke this once the generation is done. It matches
+        :meth:`parse_complete`, which returns the whole response as content
+        when no marker is found, so a truncated marker reads the same way in
+        both modes.
+
+        Returns:
+            The withheld text, or ``None`` when nothing was held back or the
+            buffer reached the tool-call region, where the remaining bytes are
+            structure rather than content.
+        """
+        # The marker completed, so everything past it is a tool call.
+        if self._start_marker in self._buffer:
+            return None
+        # The cursor already reached the end, so nothing was held.
+        if len(self._buffer) <= self._state.sent_content_idx:
+            return None
+        # The cursor lags only when the tail matched a marker prefix that no
+        # later token completed, which is now everything left in the buffer.
+        content = self._buffer[self._state.sent_content_idx :]
+        self._state.sent_content_idx = len(self._buffer)
+        return content
 
     def _extract_tool_call_bodies(
         self, marker_pos: int

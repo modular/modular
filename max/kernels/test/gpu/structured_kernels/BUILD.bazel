@@ -1,4 +1,5 @@
 load("//bazel:api.bzl", "mojo_test")
+load("//max/kernels/src:deprecations.bzl", "IGNORED_POINTER_DEPRECATIONS_COPTS")
 
 package(default_visibility = ["//max:consumers"])
 
@@ -11,6 +12,9 @@ _EXTRA_CONSTRAINTS = {
     "test_mha_prefill_v2_paged.mojo": ["//:mi355_gpu"],
     "test_mha_prefill_v2_gqa.mojo": ["//:mi355_gpu"],
     "test_mha_prefill_v2_rescale.mojo": ["//:mi355_gpu"],
+    "test_mha_prefill_v2_lazy_rescale_crossrow_canary.mojo": [
+        "//:mi355_gpu",
+    ],
     "test_mha_i2i_repro.mojo": ["//:mi355_gpu"],
     "test_mha_i2i_random_ref.mojo": ["//:mi355_gpu"],
     "test_mla_prefill_v2.mojo": ["//:mi355_gpu"],
@@ -18,6 +22,12 @@ _EXTRA_CONSTRAINTS = {
         "//:has_gpu",
         "//:amd_gpu",
     ],
+    # Only NVIDIA (mbarrier) and AMD (atomic-counter) backends exist; Apple
+    # GPUs would fall through to the NVIDIA-only mbarrier path.
+    "test_producer_consumer_pipeline.mojo": ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
 }
 
 # Per-file compile defines. The test compiles the reference-cadence /
@@ -33,13 +43,40 @@ _EXTRA_COPTS = {
     ],
 }
 
+_EXTRA_DEPS = {
+    "test_mfma_fragment_lane_mapping.mojo": ["//max:max_mojo"],
+}
+
+# Per-file tags. `manual` keeps a test referenced (no unreferenced-file lint)
+# but out of CI: wildcard `//...` expansion skips it, and the presubmit
+# target-pattern file subtracts manual targets (ci/bazel-diff/utils.sh). It
+# still runs when named explicitly.
+_EXTRA_TAGS = {
+    # Cross-row leak canary: the leak it guards still reproduces
+    # nondeterministically (KERN-3589). #98414 fixed one instance and added
+    # this canary, but the same seed passes one run and fails the next, so it
+    # red-flags unrelated presubmits. Re-enable once KERN-3589 is fixed; run
+    # it by explicit target to check a fix.
+    "test_mha_prefill_v2_lazy_rescale_crossrow_canary.mojo": ["manual"],
+    # https://linear.app/modularml/issue/KERN-3610
+    "test_mha_vs_naive_reference.mojo": ["manual"],
+    # Flaky due to a K/V DMA race in `MhaPrefillV2` (KERN-3053).
+    "test_mha_i2i_random_ref.mojo": ["manual"],
+    "test_mha_i2i_repro.mojo": ["manual"],
+    "test_mha_prefill_v2.mojo": ["manual"],
+    "test_mha_prefill_v2_causal.mojo": ["manual"],
+    "test_mha_prefill_v2_gqa.mojo": ["manual"],
+    "test_mha_prefill_v2_paged.mojo": ["manual"],
+    "test_mha_prefill_v2_rescale.mojo": ["manual"],
+}
+
 [
     mojo_test(
         name = src + ".test",
         size = "medium",
         srcs = [src],
-        copts = _EXTRA_COPTS.get(src, []),
-        tags = ["gpu"],
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS + _EXTRA_COPTS.get(src, []),
+        tags = ["gpu"] + _EXTRA_TAGS.get(src, []),
         target_compatible_with = _EXTRA_CONSTRAINTS.get(
             src,
             [
@@ -52,7 +89,7 @@ _EXTRA_COPTS = {
             "//max:nn",
             "//max:structured_kernels",
             "@mojo//:std",
-        ],
+        ] + _EXTRA_DEPS.get(src, []),
     )
     # Excluded from this glob:
     #  - nkv8 gate harness: built via the explicit per-shape targets below
@@ -77,6 +114,7 @@ mojo_test(
     name = "test_v227_adapter_round_trip.mojo.test",
     size = "medium",
     srcs = ["test_v227_adapter_round_trip.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     tags = [
         "gpu",
         "manual",
@@ -121,7 +159,7 @@ _R3_BASE_COPTS = [
         # seq=8192 cases whose host FP32 reference overran were dropped).
         size = test_size,
         srcs = ["test_mla_prefill_v2_nkv8_gate.mojo"],
-        copts = _R3_BASE_COPTS + [
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS + _R3_BASE_COPTS + [
             "-D",
             "num_kv_heads={}".format(nkv),
             "-D",

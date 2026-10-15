@@ -21,79 +21,52 @@ the Q-load prologue and the MMA/softmax/correction machinery are shared through
 """
 
 from std.sys import size_of
-from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
-from std.gpu import (
+from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     block_idx,
+    lane_id,
     warp_id,
     thread_idx,
-    WARP_SIZE,
-    barrier,
 )
 from std.math import ceildiv, exp2
 from std.math.constants import log2e
-from std.gpu.primitives import elect_one_sync
-from std.gpu.primitives.cluster import cluster_sync
-import std.gpu.primitives.warp as warp
-from std.gpu.memory import (
-    AddressSpace,
-    cp_async_bulk_tensor_shared_cluster_global,
+from max.gpu.primitives.cluster import elect_one_sync
+from max.gpu.primitives.cluster import cluster_sync
+import max.gpu.primitives.warp as warp
+from max.gpu.memory import (
     external_memory,
     fence_mbarrier_init,
     fence_async_view_proxy,
 )
-from std.gpu.sync import (
+from max.gpu.sync import (
     named_barrier,
     cp_async_bulk_commit_group,
     cp_async_bulk_wait_group,
 )
-from std.gpu.globals import WARPGROUP_SIZE
-from std.gpu.host import DeviceContext, FuncAttribute
-from std.ffi import UnsafeUnion
-from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
-from std.gpu.compute.arch.tcgen05 import (
-    tcgen05_alloc,
-    tcgen05_dealloc,
+from max.gpu.globals import WARPGROUP_SIZE
+from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
+from max.gpu.compute.arch.tcgen05 import (
     tcgen05_ld,
     tcgen05_load_wait,
-    tcgen05_release_allocation_lock,
     tcgen05_st,
-    tcgen05_cp,
     tcgen05_store_wait,
     tcgen05_fence_after,
     tcgen05_fence_before,
 )
 
 from nn.attention.mha_operand import MHAOperand, KVCacheMHAOperand
-from nn.attention.mha_mask import MHAMask
 from kv_cache.types import KVCacheT
-from nn.attention.mha_utils import OptionallyStaticInt, MHAPartitionScheme
-from nn.attention.gpu.nvidia.common import (
-    elect,
-    OptionalPointer,
-    NullPointer,
-    NonNullPointer,
-)
 
-from nn.attention.gpu.nvidia.sm100.softmax_warp import fa4_softmax
-from nn.attention.gpu.nvidia.sm100.correction_warp import fa4_correction
 from nn.attention.gpu.mha import q_num_matrix_view_rows
 
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
-    SM100TensorAccumulator,
+    assert_sm_exclusive_smem,
     add_ftz,
-    sub_ftz,
     mul_ftz,
-    fma_ftz,
-    exp2_emulation,
 )
-from std.gpu.compute.arch.mma_nvidia_sm100 import (
-    MMASmemDescriptorPair,
-    UMMAKind,
-    mma_arrive_multicast,
-)
-from linalg.arch.sm100.mma import smem_descriptor
+from max.gpu.compute.arch.mma_nvidia_sm100 import mma_arrive_multicast
 
 
 from layout import (
@@ -101,7 +74,9 @@ from layout import (
     row_major,
     Idx,
     TensorLayout,
+    TensorEngine,
     Coord,
+    coord,
     stack_allocation as tt_stack_allocation,
 )
 from layout.swizzle import make_swizzle
@@ -116,11 +91,10 @@ from layout.tma_async import (
     create_tensor_tile,
     TMATensorTile,
     SharedMemBarrier,
-    RaggedTMA3DTile,
     _gather4_box_width,
     _default_desc_shape,
 )
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.utils.numerics import min_or_neg_inf
 
 
@@ -165,10 +139,10 @@ struct MLASparseSharedMemoryFP8[config: MLASparseConfig, scale_block_size: Int]:
     comptime V_SCALES_SIZE = Self.config.B_TOPK * Self.V_scales_per_token
 
     var base: MLASparseSharedMemory[Self.config]
-    var k_scales: InlineArray[Float32, Self.K_SCALES_SIZE]
-    var v_scales: InlineArray[Float32, Self.V_SCALES_SIZE]
-    var k_fp8_tma_done: InlineArray[SharedMemBarrier, Self.num_mbars]
-    var v_fp8_tma_done: InlineArray[SharedMemBarrier, Self.num_mbars]
+    var k_scales: Array[Float32, Self.K_SCALES_SIZE]
+    var v_scales: Array[Float32, Self.V_SCALES_SIZE]
+    var k_fp8_tma_done: Array[SharedMemBarrier, Self.num_mbars]
+    var v_fp8_tma_done: Array[SharedMemBarrier, Self.num_mbars]
 
 
 struct MLAPrefillSparseFP8[
@@ -207,11 +181,11 @@ struct MLAPrefillSparseFP8[
     # the depth-tile sub-copies are issued manually so each real-head box
     # lands at the PADDED (64-row) depth-tile stride the BMN=64 QK-MMA reads
     # (see the Q-load in `kernel`). NFC at 64/128 (real == padded).
-    comptime q_tile_shape = Index(
-        1, Self.NUM_Q_HEADS_PER_CTA, Self.config.qk_depth
-    )
+    comptime q_tile_shape = coord[
+        1, Self.NUM_Q_HEADS_PER_CTA, Self.config.input_qk_depth
+    ]
     comptime q_desc_shape = _default_desc_shape[
-        3, Self.qkv_dtype, Self.q_tile_shape, Self.config.q_swizzle_mode
+        Self.qkv_dtype, Self.q_tile_shape, Self.config.q_swizzle_mode
     ]()
 
     comptime k_tile_width = Self.config.qk_depth
@@ -220,8 +194,8 @@ struct MLAPrefillSparseFP8[
     comptime k_gather_box = _gather4_box_width[
         Self.qkv_dtype, Self.k_tile_width, Self.k_swizzle_mode
     ]()
-    comptime k_tile_shape = Index(Self.k_tile_height, Self.k_gather_box)
-    comptime k_desc_shape = Index(1, Self.k_gather_box)
+    comptime k_tile_shape = coord[Self.k_tile_height, Self.k_gather_box]
+    comptime k_desc_shape = coord[1, Self.k_gather_box]
 
     comptime v_tile_width = Self.V_SMEM_COLS_PER_CTA
     # V uses SWIZZLE_128B; gather4 splits tile_width=128 into 2 col-groups
@@ -236,13 +210,11 @@ struct MLAPrefillSparseFP8[
     comptime v_gather_box = _gather4_box_width[
         Self.qkv_dtype, Self.v_tile_width, Self.v_swizzle_mode
     ]()
-    comptime v_tile_shape = Index(Self.v_tile_height, Self.v_gather_box)
-    comptime v_desc_shape = Index(1, Self.v_gather_box)
+    comptime v_tile_shape = coord[Self.v_tile_height, Self.v_gather_box]
+    comptime v_desc_shape = coord[1, Self.v_gather_box]
 
-    # desc_shape inner dim 64×2=128B satisfies the ≤256B SWIZZLE_NONE constraint.
-    # SMEM is written in column-group order to match TMA's sub-copy layout.
-    comptime o_tile_shape = Index(Self.NUM_Q_HEADS_PER_CTA, Self.config.v_depth)
-    comptime o_desc_shape = Index(Self.NUM_Q_HEADS_PER_CTA, 64)
+    comptime o_tile_shape = coord[Self.NUM_Q_HEADS_PER_CTA, Self.config.v_depth]
+    comptime o_desc_shape = coord[Self.NUM_Q_HEADS_PER_CTA, 64]
 
     # FP8 TMA swizzle modes. SWIZZLE_NONE paired with INT64 packing means one
     # gather4 descriptor covers the full row without inner col-tiling.
@@ -261,10 +233,10 @@ struct MLAPrefillSparseFP8[
         Self.k_tma_tile_width_fp8,
         Self.k_tma_swizzle_fp8,
     ]()
-    comptime k_tma_tile_shape_fp8 = Index(
+    comptime k_tma_tile_shape_fp8 = coord[
         Self.k_tile_height, Self.k_tma_gather_box_fp8
-    )
-    comptime k_tma_desc_shape_fp8 = Index(1, Self.k_tma_gather_box_fp8)
+    ]
+    comptime k_tma_desc_shape_fp8 = coord[1, Self.k_tma_gather_box_fp8]
 
     # FP8 V TMA: INT64-packed, per-atom width (V_BMN_PER_ATOM / 8 INT64 elems).
     # Two gather4 calls per row group (one per SV atom) because the atoms'
@@ -279,10 +251,10 @@ struct MLAPrefillSparseFP8[
     ]()
     # FP8 V loads all B_TOPK rows at once (no key-half split like BF16).
     comptime v_tma_tile_height_fp8 = Self.config.B_TOPK
-    comptime v_tma_tile_shape_fp8 = Index(
+    comptime v_tma_tile_shape_fp8 = coord[
         Self.v_tma_tile_height_fp8, Self.v_tma_gather_box_fp8
-    )
-    comptime v_tma_desc_shape_fp8 = Index(1, Self.v_tma_gather_box_fp8)
+    ]
+    comptime v_tma_desc_shape_fp8 = coord[1, Self.v_tma_gather_box_fp8]
 
     comptime SMemType = MLASparseSharedMemory[Self.config]
     comptime FULL_Q_TYPE = Self.SMemType.FULL_Q_TYPE
@@ -315,30 +287,21 @@ struct MLAPrefillSparseFP8[
     # FP8 KV-cache helpers (used by kernel_fp8 only)
     # ------------------------------------------------------------------
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def load_k_fp8_tma(
         k_tma_op_fp8: TMATensorTile[
             Self.k_tma_dtype_fp8,
-            2,
             Self.k_tma_tile_shape_fp8,
             Self.k_tma_desc_shape_fp8,
         ],
-        indices: TileTensor[
-            DType.uint32, address_space=AddressSpace.GENERIC, ...
-        ],
+        indices: TileTensor[.uint32, address_space=.GENERIC, ...],
         kv_lut: Self.KVLUTType,
         k_smem_fp8_ptr: UnsafePointer[
-            mut=True,
-            Scalar[DType.float8_e4m3fn],
-            address_space=AddressSpace.SHARED,
-            ...,
+            mut=True, Float8_e4m3fn, address_space=.SHARED, ...
         ],
         k_fp8_tma_done: UnsafePointer[
-            mut=True,
-            SharedMemBarrier,
-            address_space=AddressSpace.SHARED,
-            ...,
+            mut=True, SharedMemBarrier, address_space=.SHARED, ...
         ],
         k: UInt32,
         cta_id: UInt32,
@@ -350,7 +313,7 @@ struct MLAPrefillSparseFP8[
         comptime num_warps = 4
         comptime num_rows_per_warp = 4
 
-        var k_smem_i64 = k_smem_fp8_ptr.bitcast[Scalar[DType.int64]]()
+        var k_smem_i64 = k_smem_fp8_ptr.bitcast[Int64]()
         var k_smem_tensor_i64 = TileTensor(
             k_smem_i64,
             row_major[Self.B_TOPK_PER_CTA, Self.k_tma_tile_width_fp8](),
@@ -388,21 +351,16 @@ struct MLAPrefillSparseFP8[
                 idx_v4[3],
             )
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def load_k_scales_to_smem[
         scale_block_size: Int
     ](
         scales_ptr: UnsafePointer[Float32, ImmutAnyOrigin],
-        indices: TileTensor[
-            DType.uint32, address_space=AddressSpace.GENERIC, ...
-        ],
+        indices: TileTensor[.uint32, address_space=.GENERIC, ...],
         kv_lut: Self.KVLUTType,
         k_scales_smem_ptr: UnsafePointer[
-            mut=True,
-            Float32,
-            address_space=AddressSpace.SHARED,
-            ...,
+            mut=True, Float32, address_space=.SHARED, ...
         ],
         k: UInt32,
         cta_id: UInt32,
@@ -422,8 +380,7 @@ struct MLAPrefillSparseFP8[
 
         var i = tid
         while i < UInt32(K_SCALES_SIZE):
-            var row = i // UInt32(scales_per_token)
-            var block = i % UInt32(scales_per_token)
+            var row, block = divmod(i, UInt32(scales_per_token))
             var raw = indices.load[width=1](Coord(topk_base + row)).cast[
                 DType.int32
             ]()
@@ -435,28 +392,19 @@ struct MLAPrefillSparseFP8[
             k_scales_smem_ptr[Int(i)] = scale_val
             i += UInt32(WARPGROUP_SIZE)
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def convert_k_fp8_to_bf16[
         scale_block_size: Int
     ](
         k_smem_fp8_ptr: UnsafePointer[
-            mut=True,
-            Scalar[DType.float8_e4m3fn],
-            address_space=AddressSpace.SHARED,
-            ...,
+            mut=True, Float8_e4m3fn, address_space=.SHARED, ...
         ],
         k_smem_bf16_ptr: UnsafePointer[
-            mut=True,
-            Scalar[Self.qkv_dtype],
-            address_space=AddressSpace.SHARED,
-            ...,
+            mut=True, Scalar[Self.qkv_dtype], address_space=.SHARED, ...
         ],
         k_scales_smem_ptr: UnsafePointer[
-            mut=True,
-            Float32,
-            address_space=AddressSpace.SHARED,
-            ...,
+            mut=True, Float32, address_space=.SHARED, ...
         ],
     ):
         # k_smem_fp8_ptr points to the upper half of K SMEM (FP8 staging).
@@ -484,8 +432,7 @@ struct MLAPrefillSparseFP8[
         ]()
 
         var lane = UInt32(thread_idx.x) & UInt32(0x7F)
-        var group_idx = lane // UInt32(GROUP_SIZE)
-        var idx_in_group = lane % UInt32(GROUP_SIZE)
+        var group_idx, idx_in_group = divmod(lane, UInt32(GROUP_SIZE))
 
         # 2 rows per thread covering all TOPK_PER_CTA=64 rows:
         #   row_0 (0..31), row_1 (32..63)
@@ -505,19 +452,19 @@ struct MLAPrefillSparseFP8[
         var sw1_a = Int(sw_bf16(row_1 * UInt32(BN_QK) + col_bf16))
         var sw1_b = Int(sw_bf16(row_1 * UInt32(BN_QK) + col_bf16 + UInt32(8)))
 
-        var src_u8 = k_smem_fp8_ptr.bitcast[Scalar[DType.uint8]]()
+        var src_u8 = k_smem_fp8_ptr.bitcast[UInt8]()
 
         var p0a_all = tt_stack_allocation[
-            dtype=DType.uint32, address_space=AddressSpace.LOCAL
+            dtype=DType.uint32, address_space=.LOCAL
         ](row_major[4, COLS_PER_GROUP]())
         var p0b_all = tt_stack_allocation[
-            dtype=DType.uint32, address_space=AddressSpace.LOCAL
+            dtype=DType.uint32, address_space=.LOCAL
         ](row_major[4, COLS_PER_GROUP]())
         var p1a_all = tt_stack_allocation[
-            dtype=DType.uint32, address_space=AddressSpace.LOCAL
+            dtype=DType.uint32, address_space=.LOCAL
         ](row_major[4, COLS_PER_GROUP]())
         var p1b_all = tt_stack_allocation[
-            dtype=DType.uint32, address_space=AddressSpace.LOCAL
+            dtype=DType.uint32, address_space=.LOCAL
         ](row_major[4, COLS_PER_GROUP]())
 
         comptime for c in range(COLS_PER_GROUP):
@@ -550,10 +497,10 @@ struct MLAPrefillSparseFP8[
                     Int(row_1) * scales_per_token + Int(block_idx)
                 ]
                 var s0_bits = UInt32(
-                    bitcast[DType.uint16, 1](s0_fp32.cast[bf16_type]())
+                    bitcast[.uint16, 1](s0_fp32.cast[bf16_type]())
                 )
                 var s1_bits = UInt32(
-                    bitcast[DType.uint16, 1](s1_fp32.cast[bf16_type]())
+                    bitcast[.uint16, 1](s1_fp32.cast[bf16_type]())
                 )
                 var s0_u32 = s0_bits | (s0_bits << 16)
                 var s1_u32 = s1_bits | (s1_bits << 16)
@@ -589,30 +536,21 @@ struct MLAPrefillSparseFP8[
 
         fence_async_view_proxy()
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def load_v_fp8_tma(
         v_tma_op_fp8: TMATensorTile[
             Self.v_tma_dtype_fp8,
-            2,
             Self.v_tma_tile_shape_fp8,
             Self.v_tma_desc_shape_fp8,
         ],
-        indices: TileTensor[
-            DType.uint32, address_space=AddressSpace.GENERIC, ...
-        ],
+        indices: TileTensor[.uint32, address_space=.GENERIC, ...],
         kv_lut: Self.KVLUTType,
         v_smem_fp8_ptr: UnsafePointer[
-            mut=True,
-            Scalar[DType.float8_e4m3fn],
-            address_space=AddressSpace.SHARED,
-            ...,
+            mut=True, Float8_e4m3fn, address_space=.SHARED, ...
         ],
         v_fp8_tma_done: UnsafePointer[
-            mut=True,
-            SharedMemBarrier,
-            address_space=AddressSpace.SHARED,
-            ...,
+            mut=True, SharedMemBarrier, address_space=.SHARED, ...
         ],
         k: UInt32,
         cta_id: UInt32,
@@ -625,7 +563,7 @@ struct MLAPrefillSparseFP8[
             Self.config.B_TOPK
         ) // ROWS_PER_GATHER // num_warps
 
-        var v_smem_i64 = v_smem_fp8_ptr.bitcast[Scalar[DType.int64]]()
+        var v_smem_i64 = v_smem_fp8_ptr.bitcast[Int64]()
         # gather4 writes its 4 gathered rows PACKED at the descriptor box
         # width (v_tma_tile_width_fp8 int64s per row) starting at dst.ptr;
         # the dst tile's row stride is NOT consulted. Stage atom-major --
@@ -681,21 +619,16 @@ struct MLAPrefillSparseFP8[
                     idx_v4[3],
                 )
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def load_v_scales_to_smem[
         scale_block_size: Int
     ](
         scales_ptr: UnsafePointer[Float32, ImmutAnyOrigin],
-        indices: TileTensor[
-            DType.uint32, address_space=AddressSpace.GENERIC, ...
-        ],
+        indices: TileTensor[.uint32, address_space=.GENERIC, ...],
         kv_lut: Self.KVLUTType,
         v_scales_smem_ptr: UnsafePointer[
-            mut=True,
-            Float32,
-            address_space=AddressSpace.SHARED,
-            ...,
+            mut=True, Float32, address_space=.SHARED, ...
         ],
         k: UInt32,
         indices_base: UInt32,
@@ -724,8 +657,7 @@ struct MLAPrefillSparseFP8[
 
         var i = tid
         while i < UInt32(V_SCALES_SIZE):
-            var row = i // UInt32(scales_per_token)
-            var block = i % UInt32(scales_per_token)
+            var row, block = divmod(i, UInt32(scales_per_token))
             var raw = indices.load[width=1](Coord(topk_base + row)).cast[
                 DType.int32
             ]()
@@ -739,28 +671,19 @@ struct MLAPrefillSparseFP8[
             v_scales_smem_ptr[Int(i)] = scale_val
             i += UInt32(WARPGROUP_SIZE)
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def convert_v_fp8_to_bf16[
         scale_block_size: Int
     ](
         v_smem_fp8_ptr: UnsafePointer[
-            mut=True,
-            Scalar[DType.float8_e4m3fn],
-            address_space=AddressSpace.SHARED,
-            ...,
+            mut=True, Float8_e4m3fn, address_space=.SHARED, ...
         ],
         v_smem_bf16_ptr: UnsafePointer[
-            mut=True,
-            Scalar[Self.qkv_dtype],
-            address_space=AddressSpace.SHARED,
-            ...,
+            mut=True, Scalar[Self.qkv_dtype], address_space=.SHARED, ...
         ],
         v_scales_smem_ptr: UnsafePointer[
-            mut=True,
-            Float32,
-            address_space=AddressSpace.SHARED,
-            ...,
+            mut=True, Float32, address_space=.SHARED, ...
         ],
         cta_id: UInt32,
     ):
@@ -794,20 +717,19 @@ struct MLAPrefillSparseFP8[
         ]()
 
         var lane = UInt32(thread_idx.x) & UInt32(0x7F)
-        var group_idx = lane // UInt32(GROUP_SIZE)
-        var idx_in_group = lane % UInt32(GROUP_SIZE)
+        var group_idx, idx_in_group = divmod(lane, UInt32(GROUP_SIZE))
         var col_bf16 = idx_in_group * UInt32(16)
 
-        var src_u8 = v_smem_fp8_ptr.bitcast[Scalar[DType.uint8]]()
+        var src_u8 = v_smem_fp8_ptr.bitcast[UInt8]()
 
         # The SWIZZLE_128B BF16 writes clobber the aliased FP8 staging region,
         # so within a key-half every FP8 read must complete (barrier) before
         # any BF16 write.
         var pa_all = tt_stack_allocation[
-            dtype=DType.uint32, address_space=AddressSpace.LOCAL
+            dtype=DType.uint32, address_space=.LOCAL
         ](row_major[ROWS_PER_KH * COLS_PER_GROUP, 4]())
         var pb_all = tt_stack_allocation[
-            dtype=DType.uint32, address_space=AddressSpace.LOCAL
+            dtype=DType.uint32, address_space=.LOCAL
         ](row_major[ROWS_PER_KH * COLS_PER_GROUP, 4]())
 
         # Convert the two key-halves in sequence to halve register footprint.
@@ -874,7 +796,7 @@ struct MLAPrefillSparseFP8[
                             Int(abs_row) * scales_per_token + Int(block_idx)
                         ]
                         var s_bits = UInt32(
-                            bitcast[DType.uint16, 1](s_fp32.cast[bf16_type]())
+                            bitcast[.uint16, 1](s_fp32.cast[bf16_type]())
                         )
                         var s_u32 = s_bits | (s_bits << 16)
                         pa = hmul2_bf16x8_by_scalar[bf16_type](pa, s_u32)
@@ -930,41 +852,43 @@ struct MLAPrefillSparseFP8[
             Int32(Self.config.cta_group), 1, 1
         )
     )
-    @__llvm_metadata(`nvvm.minctasm`=SIMDSize(1))
+    @__llvm_metadata(`nvvm.minctasm`=SIMDLength(1))
     @__name(
         t"mla_prefill_sparse_fp8_{Self.qkv_dtype}_nqh{Self.config.num_q_heads}_nkvh{Self.config.num_kv_heads}",
     )
     def kernel_fp8[
         TopKLengthLayout: TensorLayout,
         IndicesLayout: TensorLayout,
+        TopKLengthEngine: TensorEngine,
+        IndicesEngine: TensorEngine,
         scale_block_size: Int,
     ](
         q_tma_op: TMATensorTile[
             Self.qkv_dtype,
-            3,
             Self.q_tile_shape,
             Self.q_desc_shape,
         ],
         k_tma_op_fp8: TMATensorTile[
             Self.k_tma_dtype_fp8,
-            2,
             Self.k_tma_tile_shape_fp8,
             Self.k_tma_desc_shape_fp8,
         ],
         v_tma_op_fp8: TMATensorTile[
             Self.v_tma_dtype_fp8,
-            2,
             Self.v_tma_tile_shape_fp8,
             Self.v_tma_desc_shape_fp8,
         ],
         o_tma_op: TMATensorTile[
             Self.output_dtype,
-            2,
             Self.o_tile_shape,
             Self.o_desc_shape,
         ],
-        topk_lengths: TileTensor[DType.uint32, TopKLengthLayout, MutAnyOrigin],
-        indices: TileTensor[DType.uint32, IndicesLayout, MutAnyOrigin],
+        topk_lengths: TileTensor[
+            .uint32, TopKLengthLayout, MutAnyOrigin, Engine=TopKLengthEngine
+        ],
+        indices: TileTensor[
+            .uint32, IndicesLayout, MutAnyOrigin, Engine=IndicesEngine
+        ],
         kv_lut: Self.KVLUTType,
         scale: Float32,
         attn_sink_ptr: Optional[UnsafePointer[Float32, ImmutAnyOrigin]],
@@ -975,9 +899,9 @@ struct MLAPrefillSparseFP8[
         var cta_id = UInt32(block_idx.x % Self.config.cta_group)
         var seq_idx = UInt32(block_idx.x // Self.config.cta_group)
         var warp_idx = warp_id()
-        var lane_idx = thread_idx.x % WARP_SIZE
+        var lane_idx = lane_id()
         var warpgroup_idx = warp.broadcast(thread_idx.x // WARPGROUP_SIZE)
-        var top_k_length = topk_lengths[seq_idx]
+        var top_k_length = topk_lengths.load[width=1](Coord(seq_idx))
         var num_k_blocks = max(
             ceildiv(top_k_length, UInt32(Self.config.B_TOPK)), 1
         )
@@ -990,54 +914,97 @@ struct MLAPrefillSparseFP8[
             v_tma_op_fp8.prefetch_descriptor()
 
         ref smem_fp8 = external_memory[
-            UInt8, address_space=AddressSpace.SHARED, alignment=128
+            UInt8, address_space=.SHARED, alignment=128
         ]().bitcast[MLASparseSharedMemoryFP8[Self.config, scale_block_size]]()[]
         ref smem = smem_fp8.base
         ref qkvo_union = smem.qkvo_union
 
         var full_q_ptr = qkvo_union.unsafe_get[Self.FULL_Q_TYPE]().unsafe_ptr()
-        var shared_qkv_ptr = qkvo_union.unsafe_get[
-            Self.SHARED_QKV_TYPE
-        ]().unsafe_ptr()
+        ref shared_qkv = qkvo_union.unsafe_get[Self.SHARED_QKV_TYPE]()
+        var shared_qkv_ptr: UnsafePointer[
+            Scalar[Self.qkv_dtype], origin_of(shared_qkv), address_space=.SHARED
+        ] = shared_qkv.unsafe_ptr()
         var q_smem_ptr = shared_qkv_ptr
         var v_smem_ptr = shared_qkv_ptr + Self.SMemType.SHARED_Q_SIZE
         var k_smem_ptr = v_smem_ptr + Self.SMemType.V_SIZE
-        var o_ptr = qkvo_union.unsafe_get[Self.O_TYPE]().unsafe_ptr()
+        ref o_union = qkvo_union.unsafe_get[Self.O_TYPE]()
+        var o_ptr: UnsafePointer[
+            Scalar[Self.qkv_dtype], origin_of(o_union), address_space=.SHARED
+        ] = o_union.unsafe_ptr()
         var scores_ptr = smem.scores.unsafe_ptr()
         var p_ptr = smem.p.unsafe_ptr()
         var prologue_q_ptr = smem.prologue_q.unsafe_ptr()
         var prologue_q_cp_ptr = smem.prologue_q_cp.unsafe_ptr()
-        var qk_ss_done_ptr = smem.qk_ss_done.unsafe_ptr()
-        var qk_ts_done_ptr = smem.qk_ts_done.unsafe_ptr()
-        var sv_p0_done_ptr = smem.sv_p0_done.unsafe_ptr()
-        var sv_p1_done_ptr = smem.sv_p1_done.unsafe_ptr()
-        var k_p0_ready_ptr = smem.k_p0_ready.unsafe_ptr()
-        var k_p1_ready_ptr = smem.k_p1_ready.unsafe_ptr()
-        var v_p0_ready_ptr = smem.v_p0_ready.unsafe_ptr()
-        var v_p1_ready_ptr = smem.v_p1_ready.unsafe_ptr()
-        var p_free_ptr = smem.p_free.unsafe_ptr()
-        var so_ready_ptr = smem.so_ready.unsafe_ptr()
-        var k_valid_ready_ptr = smem.k_valid_ready.unsafe_ptr()
-        var k_valid_free_ptr = smem.k_valid_free.unsafe_ptr()
-        var is_k_valid_ptr = smem.is_k_valid.unsafe_ptr()
-        var tmem_addr_ptr = smem.tmem_addr.unsafe_ptr()
-        var rowwise_max_ptr = smem.rowwise_max.unsafe_ptr()
-        var rowwise_sum_ptr = smem.rowwise_sum.unsafe_ptr()
+        var qk_ss_done_ptr: UnsafePointer[
+            SharedMemBarrier, origin_of(smem.qk_ss_done), address_space=.SHARED
+        ] = smem.qk_ss_done.unsafe_ptr()
+        var qk_ts_done_ptr: UnsafePointer[
+            SharedMemBarrier, origin_of(smem.qk_ts_done), address_space=.SHARED
+        ] = smem.qk_ts_done.unsafe_ptr()
+        var sv_p0_done_ptr: UnsafePointer[
+            SharedMemBarrier, origin_of(smem.sv_p0_done), address_space=.SHARED
+        ] = smem.sv_p0_done.unsafe_ptr()
+        var sv_p1_done_ptr: UnsafePointer[
+            SharedMemBarrier, origin_of(smem.sv_p1_done), address_space=.SHARED
+        ] = smem.sv_p1_done.unsafe_ptr()
+        var k_p0_ready_ptr: UnsafePointer[
+            SharedMemBarrier, origin_of(smem.k_p0_ready), address_space=.SHARED
+        ] = smem.k_p0_ready.unsafe_ptr()
+        var k_p1_ready_ptr: UnsafePointer[
+            SharedMemBarrier, origin_of(smem.k_p1_ready), address_space=.SHARED
+        ] = smem.k_p1_ready.unsafe_ptr()
+        var v_p0_ready_ptr: UnsafePointer[
+            SharedMemBarrier, origin_of(smem.v_p0_ready), address_space=.SHARED
+        ] = smem.v_p0_ready.unsafe_ptr()
+        var v_p1_ready_ptr: UnsafePointer[
+            SharedMemBarrier, origin_of(smem.v_p1_ready), address_space=.SHARED
+        ] = smem.v_p1_ready.unsafe_ptr()
+        var p_free_ptr: UnsafePointer[
+            SharedMemBarrier, origin_of(smem.p_free), address_space=.SHARED
+        ] = smem.p_free.unsafe_ptr()
+        var so_ready_ptr: UnsafePointer[
+            SharedMemBarrier, origin_of(smem.so_ready), address_space=.SHARED
+        ] = smem.so_ready.unsafe_ptr()
+        var k_valid_ready_ptr: UnsafePointer[
+            SharedMemBarrier,
+            origin_of(smem.k_valid_ready),
+            address_space=.SHARED,
+        ] = smem.k_valid_ready.unsafe_ptr()
+        var k_valid_free_ptr: UnsafePointer[
+            SharedMemBarrier,
+            origin_of(smem.k_valid_free),
+            address_space=.SHARED,
+        ] = smem.k_valid_free.unsafe_ptr()
+        var is_k_valid_ptr: UnsafePointer[
+            UInt8, origin_of(smem.is_k_valid), address_space=.SHARED
+        ] = smem.is_k_valid.unsafe_ptr()
+        var rowwise_max_ptr: UnsafePointer[
+            Float32, origin_of(smem.rowwise_max), address_space=.SHARED
+        ] = smem.rowwise_max.unsafe_ptr()
+        var rowwise_sum_ptr: UnsafePointer[
+            Float32, origin_of(smem.rowwise_sum), address_space=.SHARED
+        ] = smem.rowwise_sum.unsafe_ptr()
 
         # FP8-specific SMEM pointers.
         var k_scales_ptr = smem_fp8.k_scales.unsafe_ptr()
         var v_scales_ptr = smem_fp8.v_scales.unsafe_ptr()
-        var k_fp8_tma_done_ptr = smem_fp8.k_fp8_tma_done.unsafe_ptr()
-        var v_fp8_tma_done_ptr = smem_fp8.v_fp8_tma_done.unsafe_ptr()
+        var k_fp8_tma_done_ptr: UnsafePointer[
+            SharedMemBarrier,
+            origin_of(smem_fp8.k_fp8_tma_done),
+            address_space=.SHARED,
+        ] = smem_fp8.k_fp8_tma_done.unsafe_ptr()
+        var v_fp8_tma_done_ptr: UnsafePointer[
+            SharedMemBarrier,
+            origin_of(smem_fp8.v_fp8_tma_done),
+            address_space=.SHARED,
+        ] = smem_fp8.v_fp8_tma_done.unsafe_ptr()
         # FP8 K staging: upper half of K SMEM (k_smem_ptr + K_SIZE FP8 bytes).
         # FP8 V staging: upper half of V SMEM (v_smem_ptr + V_SIZE FP8 bytes).
         var k_smem_fp8_ptr = (
-            k_smem_ptr.bitcast[Scalar[DType.float8_e4m3fn]]()
-            + Self.SMemType.K_SIZE
+            k_smem_ptr.bitcast[Float8_e4m3fn]() + Self.SMemType.K_SIZE
         )
         var v_smem_fp8_ptr = (
-            v_smem_ptr.bitcast[Scalar[DType.float8_e4m3fn]]()
-            + Self.SMemType.V_SIZE
+            v_smem_ptr.bitcast[Float8_e4m3fn]() + Self.SMemType.V_SIZE
         )
 
         if warp_idx == 0:
@@ -1088,14 +1055,6 @@ struct MLAPrefillSparseFP8[
             full_q_ptr, q_tma_op, prologue_q_ptr, cta_id, seq_idx
         )
 
-        if warp_idx == 0:
-            tcgen05_alloc[Int32(Self.config.cta_group)](
-                tmem_addr_ptr, Self.config.sm100_tmem_cols
-            )
-            tcgen05_release_allocation_lock[Int32(Self.config.cta_group)]()
-
-        barrier()
-
         if warpgroup_idx == 0:
             warpgroup_reg_dealloc[96]()
 
@@ -1104,7 +1063,7 @@ struct MLAPrefillSparseFP8[
             comptime MAX_INIT_VAL = Float32(-1e30)
             var mi: Float32 = MAX_INIT_VAL
             var li: Float32 = 0.0
-            var real_mi: Float32 = Float32(min_or_neg_inf[DType.float32]())
+            var real_mi: Float32 = Float32(min_or_neg_inf[.float32]())
 
             var scale_log2e = scale * Float32(log2e)
             comptime P_PER_THREAD = Self.config.B_TOPK // 2  # 64
@@ -1171,12 +1130,10 @@ struct MLAPrefillSparseFP8[
                     comptime bit_idx = i % 8
                     var mask_byte = is_k_valid_ptr[mask_byte_base + byte_offset]
                     if ((mask_byte >> UInt8(bit_idx)) & UInt8(1)) == UInt8(0):
-                        p[i] = Float32(min_or_neg_inf[DType.float32]())
+                        p[i] = Float32(min_or_neg_inf[.float32]())
                 _ = k_valid_free_ptr[cur_buf].arrive()
 
-                var cur_pi_max: Float32 = Float32(
-                    min_or_neg_inf[DType.float32]()
-                )
+                var cur_pi_max: Float32 = Float32(min_or_neg_inf[.float32]())
                 comptime for i in range(P_PER_THREAD):
                     cur_pi_max = max(cur_pi_max, p[i])
                 cur_pi_max = mul_ftz(cur_pi_max, scale_log2e)
@@ -1190,9 +1147,11 @@ struct MLAPrefillSparseFP8[
                 )
                 real_mi = max(real_mi, cur_pi_max)
 
-                var should_scale_o = warp.vote[DType.uint32](
-                    cur_pi_max - mi > Float32(6.0)
-                ) != UInt32(0)
+                # Per-lane decision for the STATE update (new_max/mi/li):
+                # `idx_in_wg` packs one independent head-row's softmax
+                # state per lane, so an OR here would leak a sibling
+                # head's rescale trajectory into this one's.
+                var should_scale_o = cur_pi_max - mi > Float32(6.0)
 
                 var new_max: Float32
                 var scale_for_old: Float32
@@ -1205,7 +1164,20 @@ struct MLAPrefillSparseFP8[
                 mi = new_max
                 li = mul_ftz(li, scale_for_old)
 
-                var s_bf16 = InlineArray[Scalar[Self.qkv_dtype], P_PER_THREAD](
+                # The O-rescale WALK below touches TMEM via tcgen05_ld/st,
+                # which are warp-collective ops (datapaths=32) requiring
+                # every lane to participate uniformly -- a per-lane branch
+                # here would diverge the warp on those ops and hang. Vote
+                # ANY (not the state above): any lane needing a rescale
+                # pulls every lane through the walk, but each lane applies
+                # its OWN `scale_for_old` (exactly 1.0 for a lane that
+                # didn't need it), so a coerced lane's contribution is an
+                # exact no-op multiply, not a value substitution.
+                var any_rescale = warp.vote[.uint32](should_scale_o) != UInt32(
+                    0
+                )
+
+                var s_bf16 = Array[Scalar[Self.qkv_dtype], P_PER_THREAD](
                     uninitialized=True
                 )
                 comptime for i in range(P_PER_THREAD):
@@ -1221,12 +1193,38 @@ struct MLAPrefillSparseFP8[
                     ) & 1
                     sv_p1_done_ptr[prev_buf].wait(prev_phase)
 
-                var o_chunk_prefetch = InlineArray[
-                    Scalar[DType.float32], O_RESCALE_CHUNK
-                ](uninitialized=True)
-                if k > 0 and should_scale_o:
+                # Write S to scores smem as 8 bf16 per uint128, stride 64
+                # uint128 between writes--exactly the K-major SW128B layout
+                # the SS-MMA reads. Keep the packed 128-bit store: a plain
+                # SIMD[bf16, 8] store scalarizes into bank-conflicting
+                # half-word stores.
+                def store_s() {imm}:
+                    comptime for i in range(P_PER_THREAD // 8):
+                        var s_vec = SIMD[Self.qkv_dtype, 8](
+                            s_bf16[i * 8 + 0],
+                            s_bf16[i * 8 + 1],
+                            s_bf16[i * 8 + 2],
+                            s_bf16[i * 8 + 3],
+                            s_bf16[i * 8 + 4],
+                            s_bf16[i * 8 + 5],
+                            s_bf16[i * 8 + 6],
+                            s_bf16[i * 8 + 7],
+                        )
+                        st_shared_v4_b32_at_bf16_elem_off[
+                            out_dtype=Self.qkv_dtype
+                        ](
+                            scores_ptr,
+                            s_smem_bf16_elem_base + i * 512,
+                            bitcast[.uint32, 4](s_vec),
+                        )
+
+                # Rescale O (in TMEM) if mi changed materially. Chunk 0's
+                # TMEM load is issued before the S/P smem write to overlap its
+                # latency, and stays in this branch so the loaded tuple never
+                # crosses a control-flow join (ptxas spills it whole if it does).
+                if k > 0 and any_rescale:
                     tcgen05_fence_after()
-                    o_chunk_prefetch = tcgen05_ld[
+                    var o_chunk_prefetch = tcgen05_ld[
                         datapaths=32,
                         bits=32,
                         repeat=O_RESCALE_CHUNK,
@@ -1234,41 +1232,13 @@ struct MLAPrefillSparseFP8[
                         pack=False,
                         width=O_RESCALE_CHUNK,
                     ](UInt32(Self.O_TMEM_ADDR))
-
-                # Write S to scores smem as 8 bf16 per uint128, stride 64
-                # uint128 between writes--exactly the K-major SW128B layout
-                # the SS-MMA reads. Keep the packed 128-bit store: a plain
-                # SIMD[bf16, 8] store scalarizes into bank-conflicting
-                # half-word stores.
-                comptime for i in range(P_PER_THREAD // 8):
-                    var s_vec = SIMD[Self.qkv_dtype, 8](
-                        s_bf16[i * 8 + 0],
-                        s_bf16[i * 8 + 1],
-                        s_bf16[i * 8 + 2],
-                        s_bf16[i * 8 + 3],
-                        s_bf16[i * 8 + 4],
-                        s_bf16[i * 8 + 5],
-                        s_bf16[i * 8 + 6],
-                        s_bf16[i * 8 + 7],
-                    )
-                    st_shared_v4_b32_at_bf16_elem_off[out_dtype=Self.qkv_dtype](
-                        scores_ptr,
-                        s_smem_bf16_elem_base + i * 512,
-                        bitcast[DType.uint32, 4](s_vec),
-                    )
-
-                # Rescale O (in TMEM) if mi changed materially; chunk 0
-                # was prefetched above, chunks 1..N-1 load sequentially.
-                if k > 0 and should_scale_o:
+                    store_s()
                     tcgen05_load_wait()
-                    var o_scaled_0 = InlineArray[
-                        Scalar[DType.float32], O_RESCALE_CHUNK
-                    ](uninitialized=True)
-                    comptime for j in range(O_RESCALE_CHUNK):
-                        o_scaled_0[j] = mul_ftz(
-                            o_chunk_prefetch[j],
-                            scale_for_old,
+                    var o_scaled_0 = Array[_, O_RESCALE_CHUNK](
+                        fill_with_unrolled=lambda [j: Int]() -> Float32: (
+                            mul_ftz(o_chunk_prefetch[j], scale_for_old)
                         )
+                    )
                     tcgen05_st[
                         datapaths=32,
                         bits=32,
@@ -1288,14 +1258,11 @@ struct MLAPrefillSparseFP8[
                             + UInt32(chunk_idx * O_RESCALE_CHUNK)
                         )
                         tcgen05_load_wait()
-                        var o_scaled = InlineArray[
-                            Scalar[DType.float32], O_RESCALE_CHUNK
-                        ](uninitialized=True)
-                        comptime for j in range(O_RESCALE_CHUNK):
-                            o_scaled[j] = mul_ftz(
-                                o_chunk[j],
-                                scale_for_old,
+                        var o_scaled = Array[_, O_RESCALE_CHUNK](
+                            fill_with_unrolled=lambda [j: Int]() -> Float32: (
+                                mul_ftz(o_chunk[j], scale_for_old)
                             )
+                        )
                         tcgen05_st[
                             datapaths=32,
                             bits=32,
@@ -1308,6 +1275,8 @@ struct MLAPrefillSparseFP8[
                         )
                     tcgen05_store_wait()
                     tcgen05_fence_before()
+                else:
+                    store_s()
 
                 fence_async_view_proxy()
                 comptime if Self.config.cta_group == 2:
@@ -1315,9 +1284,9 @@ struct MLAPrefillSparseFP8[
                 else:
                     _ = so_ready_ptr[cur_buf].arrive()
 
-            if real_mi == Float32(min_or_neg_inf[DType.float32]()):
+            if real_mi == Float32(min_or_neg_inf[.float32]()):
                 li = 0.0
-                mi = Float32(min_or_neg_inf[DType.float32]())
+                mi = Float32(min_or_neg_inf[.float32]())
 
             rowwise_sum_ptr[idx_in_wg] = li
             named_barrier[Int32(WARPGROUP_SIZE)](Int32(0))
@@ -1349,7 +1318,7 @@ struct MLAPrefillSparseFP8[
             else:
                 output_scale = 1.0 / li
 
-            var have_valid_indices = warp.vote[DType.uint32](
+            var have_valid_indices = warp.vote[.uint32](
                 li != Float32(0.0)
             ) != UInt32(0)
             if not have_valid_indices:
@@ -1362,6 +1331,14 @@ struct MLAPrefillSparseFP8[
 
             comptime GROUP_STRIDE = Self.NUM_Q_HEADS_PER_CTA * 64
 
+            # SW128B swizzle of row `head_local`: XORs the 16 B chunk index with
+            # `head_local % 8` and keeps the offset within a chunk, so each
+            # chunk is one contiguous 8-element store.
+            var o_row_base = (
+                Int(depth_col_block) * 2 * GROUP_STRIDE + Int(head_local) * 64
+            )
+            var o_sw_row = head_local % UInt32(8)
+
             comptime for atom_idx in range(Self.NUM_SV_ATOMS):
                 comptime atom_o_tmem_addr = (
                     Self.O_TMEM_ADDR + atom_idx * Self.O_ATOM_PHYS_COLS
@@ -1369,10 +1346,7 @@ struct MLAPrefillSparseFP8[
 
                 comptime for chunk in range(2):
                     comptime CHUNK = 64
-                    var col_group = (
-                        Int(depth_col_block) * 2 + atom_idx * 4 + chunk
-                    )
-                    var c_chunk: InlineArray[Scalar[DType.float32], CHUNK]
+                    var c_chunk: Array[Float32, CHUNK]
                     c_chunk = tcgen05_ld[
                         datapaths=32,
                         bits=32,
@@ -1383,17 +1357,37 @@ struct MLAPrefillSparseFP8[
                     ](UInt32(atom_o_tmem_addr + chunk * CHUNK))
                     tcgen05_load_wait()
 
-                    comptime for i in range(CHUNK // 2):
-                        var v0_f32 = c_chunk[2 * i] * output_scale
-                        var v1_f32 = c_chunk[2 * i + 1] * output_scale
-                        var v = SIMD[Self.qkv_dtype, 2](
-                            v0_f32.cast[Self.qkv_dtype](),
-                            v1_f32.cast[Self.qkv_dtype](),
+                    comptime for g in range(CHUNK // 8):
+                        var v = SIMD[Self.qkv_dtype, 8](
+                            (c_chunk[8 * g + 0] * output_scale).cast[
+                                Self.qkv_dtype
+                            ](),
+                            (c_chunk[8 * g + 1] * output_scale).cast[
+                                Self.qkv_dtype
+                            ](),
+                            (c_chunk[8 * g + 2] * output_scale).cast[
+                                Self.qkv_dtype
+                            ](),
+                            (c_chunk[8 * g + 3] * output_scale).cast[
+                                Self.qkv_dtype
+                            ](),
+                            (c_chunk[8 * g + 4] * output_scale).cast[
+                                Self.qkv_dtype
+                            ](),
+                            (c_chunk[8 * g + 5] * output_scale).cast[
+                                Self.qkv_dtype
+                            ](),
+                            (c_chunk[8 * g + 6] * output_scale).cast[
+                                Self.qkv_dtype
+                            ](),
+                            (c_chunk[8 * g + 7] * output_scale).cast[
+                                Self.qkv_dtype
+                            ](),
                         )
                         var smem_offset = (
-                            col_group * GROUP_STRIDE
-                            + Int(head_local) * 64
-                            + i * 2
+                            o_row_base
+                            + (atom_idx * 4 + chunk) * GROUP_STRIDE
+                            + Int((UInt32(g) ^ o_sw_row) * UInt32(8))
                         )
                         # Store only the real head rows; padded rows
                         # [num_q_heads, 64) carry dropped MMA output and would
@@ -1410,9 +1404,11 @@ struct MLAPrefillSparseFP8[
                         )
                         var store_off = (
                             smem_offset * (1 - pad_row)
-                            + (Self.SMemType.O_SIZE - 2) * pad_row
+                            + (Self.SMemType.O_SIZE - 8) * pad_row
                         )
-                        (o_ptr + store_off).store[width=2](v)
+                        st_shared_v4_b32_at_bf16_elem_off[
+                            out_dtype=Self.qkv_dtype
+                        ](o_ptr, store_off, bitcast[.uint32, 4](v))
 
             named_barrier[Int32(WARPGROUP_SIZE)](Int32(0))
             if warp_idx == 0:
@@ -1434,11 +1430,6 @@ struct MLAPrefillSparseFP8[
                     )
                     cp_async_bulk_commit_group()
             cp_async_bulk_wait_group[0]()
-
-            if warp_idx == 0:
-                tcgen05_dealloc[Int32(Self.config.cta_group)](
-                    tmem_addr_ptr[], Self.config.sm100_tmem_cols
-                )
 
         elif warpgroup_idx == 1:
             # K producer (FP8 path)
@@ -1680,7 +1671,7 @@ struct MLAPrefillSparseFP8[
                 )
 
 
-@always_inline
+@inline(.always)
 def mla_prefill_sparse_fp8[
     output_dtype: DType,
     q_type: DType,
@@ -1690,13 +1681,11 @@ def mla_prefill_sparse_fp8[
     q_depth: Int,
     scale_block_size: Int,
 ](
-    output: TileTensor[output_dtype, address_space=AddressSpace.GENERIC, ...],
-    q: TileTensor[q_type, address_space=AddressSpace.GENERIC, ...],
+    output: TileTensor[output_dtype, address_space=.GENERIC, ...],
+    q: TileTensor[q_type, address_space=.GENERIC, ...],
     kv_cache: cache_t,
-    indices: TileTensor[DType.uint32, address_space=AddressSpace.GENERIC, ...],
-    topk_lengths: TileTensor[
-        DType.uint32, address_space=AddressSpace.GENERIC, ...
-    ],
+    indices: TileTensor[.uint32, address_space=.GENERIC, ...],
+    topk_lengths: TileTensor[.uint32, address_space=.GENERIC, ...],
     attn_sink_ptr: Optional[UnsafePointer[Float32, ImmutAnyOrigin]],
     scales_ptr: UnsafePointer[Float32, ImmutAnyOrigin],
     scale: Float32,
@@ -1705,6 +1694,15 @@ def mla_prefill_sparse_fp8[
 ) raises:
     comptime assert q_depth == config.qk_depth
     comptime assert config.qk_depth == 576
+    # This backend has not been given the narrow-row treatment its BF16-KV and
+    # native-FP8 siblings have (no tail zero-fill, byte counts still derived
+    # from the full width), so refuse the narrow row rather than transfer fewer
+    # bytes than the barriers wait for.
+    comptime assert config.input_qk_depth == config.qk_depth, (
+        "the FP8-KV converter prefill takes only the full rotary-carrying row."
+        " the narrow NoPE row is supported by the BF16-KV and native-FP8"
+        " prefill kernels"
+    )
     # Same head-count contract as the BF16 `mla_prefill_sparse` above: 128 (2-CTA
     # tile) or a multiple of 8 in (0, 64] (single-CTA tile padded to a legal
     # 64-row MMA M-tile). Q is BF16 in both paths, so the sub-64 padded Q load
@@ -1739,13 +1737,13 @@ def mla_prefill_sparse_fp8[
     var num_q_rows = q_num_matrix_view_rows(q)
     var kv_operand = KVCacheMHAOperand(kv_cache)
 
-    q_tma_op = create_tensor_tile[
-        Index(1, config.num_q_heads // config.cta_group, q_depth),
+    var q_tma_op = create_tensor_tile[
+        coord[1, config.num_q_heads // config.cta_group, q_depth],
         swizzle_mode=config.q_swizzle_mode,
     ](ctx, q)
 
     # FP8 K TMA: INT64-packed, SWIZZLE_NONE, 72 INT64 elems per 576-byte row.
-    k_tma_op_fp8 = kv_operand.create_gather4_tma_tile[
+    var k_tma_op_fp8 = kv_operand.create_gather4_tma_tile[
         tile_width=config.qk_depth // 8,
         tile_stride=config.qk_depth // 8,
         swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
@@ -1754,7 +1752,7 @@ def mla_prefill_sparse_fp8[
     ](ctx)
 
     # FP8 V TMA: INT64-packed, SWIZZLE_NONE.  tile_width = V_BMN_PER_ATOM / 8.
-    v_tma_op_fp8 = kv_operand.create_gather4_tma_tile[
+    var v_tma_op_fp8 = kv_operand.create_gather4_tma_tile[
         tile_width=config.v_depth // 2 // config.cta_group // 8,
         tile_stride=config.qk_depth // 8,
         swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
@@ -1766,14 +1764,16 @@ def mla_prefill_sparse_fp8[
         output.ptr,
         row_major(num_q_rows * config.num_q_heads, config.v_depth),
     )
-    o_tma_op_fp8 = create_tensor_tile[
-        Index(config.num_q_heads // config.cta_group, config.v_depth),
-        swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
-        __desc_shape=Index(config.num_q_heads // config.cta_group, 64),
+    var o_tma_op_fp8 = create_tensor_tile[
+        coord[config.num_q_heads // config.cta_group, config.v_depth],
+        swizzle_mode=TensorMapSwizzle.SWIZZLE_128B,
+        __desc_shape=coord[config.num_q_heads // config.cta_group, 64],
     ](ctx, output_2d_fp8)
 
     comptime assert type_of(topk_lengths).flat_rank == 1
     comptime assert type_of(indices).flat_rank == 1
+    comptime assert topk_lengths.element_size == 1
+    comptime assert indices.element_size == 1
     comptime kernel = MLAPrefillSparseFP8[
         KVLUTType=type_of(kv_operand),
         output_dtype=output_dtype,
@@ -1781,6 +1781,8 @@ def mla_prefill_sparse_fp8[
     ].kernel_fp8[
         type_of(topk_lengths).LayoutType,
         type_of(indices).LayoutType,
+        type_of(topk_lengths).Engine,
+        type_of(indices).Engine,
         scale_block_size,
     ]
 
@@ -1788,6 +1790,7 @@ def mla_prefill_sparse_fp8[
         MLASparseSharedMemoryFP8[config, scale_block_size]
     ]()
 
+    assert_sm_exclusive_smem[smem_size]()
     ctx.enqueue_function[kernel](
         q_tma_op,
         k_tma_op_fp8,

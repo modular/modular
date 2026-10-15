@@ -13,14 +13,21 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 from max.graph.weights import WeightsFormat
-from max.pipelines import PIPELINE_REGISTRY, PipelineArgs, PipelineConfig
+from max.pipelines import (
+    PIPELINE_REGISTRY,
+    PipelineArgs,
+    PipelineConfig,
+    PipelineRuntimeConfig,
+)
 from max.pipelines.context import TextContext
 from max.pipelines.lib.registry import (
     SupportedArchitecture,
@@ -28,6 +35,9 @@ from max.pipelines.lib.registry import (
 )
 from max.pipelines.lib.tokenizer import TextTokenizer
 from max.pipelines.modeling.types import PipelineTask
+from max.pipelines.weights.hf_utils import (
+    generate_local_model_path as _real_generate_local_model_path,
+)
 from test_common.mocks import (
     mock_pipeline_config_hf_dependencies,
     mock_pipeline_config_resolve,
@@ -39,8 +49,34 @@ from test_common.pipeline_model_dummy import (
     DummyPipelineModel,
     DummyPixelArchConfig,
     DummyPixelTokenizer,
+    DummyTextTokenizer,
 )
 from test_common.registry import prepare_registry
+
+
+@pytest.fixture(autouse=True)
+def _offline_hf_construction() -> Iterator[None]:
+    """Keep ``MAXModelConfig`` construction offline (CI runs
+    ``HF_HUB_OFFLINE=1``): ``__init__`` eagerly builds the HuggingFace repo
+    handles. Real cached repos resolve normally; uncached/placeholder repos
+    get a fake path.
+    """
+
+    def _gen(repo_id: str, revision: str) -> str:
+        try:
+            return _real_generate_local_model_path(repo_id, revision)
+        except Exception:
+            return f"/fake/cache/{repo_id}"
+
+    with (
+        patch("max.pipelines.lib.config.model_config.validate_hf_repo_access"),
+        patch("max.pipelines.weights.hf_utils.validate_hf_repo_access"),
+        patch(
+            "max.pipelines.weights.hf_utils.generate_local_model_path",
+            side_effect=_gen,
+        ),
+    ):
+        yield
 
 
 @prepare_registry
@@ -64,7 +100,7 @@ def test_registry__test_retrieve_with_unknown_architecture_max_engine() -> None:
         # This forces it to fail if we don't have it.
         trust_remote_code=True,
         max_length=1,
-        max_batch_size=1,
+        runtime=PipelineRuntimeConfig(max_batch_size=1),
     )
     with pytest.raises(ValueError):
         PIPELINE_REGISTRY.retrieve(PipelineConfig.from_args(config))
@@ -81,7 +117,7 @@ def test_registry__test_retrieve_with_unknown_architecture_unknown_engine() -> (
         model_path="GSAI-ML/LLaDA-8B-Instruct",
         trust_remote_code=True,
         max_length=1,
-        max_batch_size=1,
+        runtime=PipelineRuntimeConfig(max_batch_size=1),
     )
     with pytest.raises(
         ValueError,
@@ -120,6 +156,21 @@ def test_registry__retrieve_pipeline_task_defaults_to_text_generation_on_ambiguo
 
 
 @prepare_registry
+def test_registry__retrieve_pipeline_task_falls_back_to_module_v3() -> None:
+    """An arch registered only as ``X_ModuleV3`` resolves its task for ``X``,
+    the name a checkpoint's ``config.json`` carries."""
+    PIPELINE_REGISTRY.register(
+        dataclasses.replace(
+            DUMMY_LLAMA_ARCH, name="OnlyModuleV3ForCausalLM_ModuleV3"
+        )
+    )
+    task = PIPELINE_REGISTRY.retrieve_pipeline_task("OnlyModuleV3ForCausalLM")
+    assert task == PipelineTask.TEXT_GENERATION
+    with pytest.raises(ValueError, match="not found in registry"):
+        PIPELINE_REGISTRY.retrieve_pipeline_task("UnknownForCausalLM")
+
+
+@prepare_registry
 @mock_pipeline_config_resolve
 def test_registry__retrieve_factory_pixel_uses_arch_config_max_length() -> None:
     pixel_arch = SupportedArchitecture(
@@ -140,7 +191,7 @@ def test_registry__retrieve_factory_pixel_uses_arch_config_max_length() -> None:
         model_path="dummy/pixel-model",
         quantization_encoding="bfloat16",
         max_length=1,
-        max_batch_size=1,
+        runtime=PipelineRuntimeConfig(max_batch_size=1),
     )
     PIPELINE_REGISTRY.retrieve_factory(
         PipelineConfig.from_args(pipeline_args),
@@ -149,6 +200,42 @@ def test_registry__retrieve_factory_pixel_uses_arch_config_max_length() -> None:
     )
 
     assert DummyPixelTokenizer.init_kwargs["max_length"] == 123
+
+
+@prepare_registry
+@mock_pipeline_config_resolve
+def test_registry__retrieve_factory_tokenizer_uses_planned_max_length() -> None:
+    """The text tokenizer bound is the memory plan's planned_max_length,
+    even when the arch config's get_max_seq_len ignores the user's
+    --max-length (the permissive configs return the raw checkpoint bound,
+    here 123)."""
+    text_arch = SupportedArchitecture(
+        name="DummyPermissiveTextModel",
+        task=PipelineTask.TEXT_GENERATION,
+        example_repo_ids=["dummy/text-model"],
+        default_encoding="bfloat16",
+        supported_encodings={"bfloat16"},
+        pipeline_model=DummyPipelineModel,
+        tokenizer=DummyTextTokenizer,
+        context_type=TextContext,
+        default_weights_format=WeightsFormat.safetensors,
+        config=DummyPixelArchConfig,
+    )
+    PIPELINE_REGISTRY.register(text_arch)
+
+    pipeline_args = PipelineArgs(
+        model_path="dummy/text-model",
+        quantization_encoding="bfloat16",
+        max_length=777,
+        runtime=PipelineRuntimeConfig(max_batch_size=1),
+    )
+    PIPELINE_REGISTRY.retrieve_factory(
+        PipelineConfig.from_args(pipeline_args),
+        task=PipelineTask.TEXT_GENERATION,
+        override_architecture="DummyPermissiveTextModel",
+    )
+
+    assert DummyTextTokenizer.init_kwargs["max_length"] == 777
 
 
 def test_supported_architecture__eq__method() -> None:
@@ -208,7 +295,7 @@ def test_supported_architecture__eq__method() -> None:
     assert arch2 == arch1
 
     # Test equality with self
-    assert arch1 == arch1
+    assert arch1 == arch1  # noqa: PLR0124
 
     # Test inequality with different class
     assert arch1 != "not an architecture"

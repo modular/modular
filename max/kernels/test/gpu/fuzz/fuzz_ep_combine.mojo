@@ -41,8 +41,8 @@
 # that carried the bug) and the wild write lands in this device's own combine
 # receive buffer where the redzone/memcheck oracle guards it.
 
-from std.gpu import global_idx
-from std.gpu.host import DeviceContext
+from max.gpu import global_idx
+from max.gpu.host import DeviceContext
 from std.math import ceildiv
 from std.random import randint, randn, seed
 from std.sys import size_of
@@ -106,8 +106,8 @@ def si_dist_name(d: Int) -> String:
 
 
 def corrupt_src_info_kernel(
-    src_info: UnsafePointer[Int32, MutAnyOrigin],
-    n_rows: Int,
+    src_info: MutPointer[Int32, MutAnyOrigin],
+    n_rows_dev: Int32,
     bad_src_idx: Int32,
     bad_topk_idx: Int32,
 ):
@@ -116,6 +116,8 @@ def corrupt_src_info_kernel(
     Models the production failure mode: dispatch leaves a row holding stale /
     garbled values that combine then uses as a write offset.
     """
+    # `Int` is not device-passable; widen the fixed-width arg.
+    var n_rows = Int(n_rows_dev)
     var gid = Int(global_idx.x)
     if gid < n_rows:
         src_info[gid * 2] = bad_src_idx
@@ -172,32 +174,32 @@ def run_one_case(ctx: DeviceContext, spec: CaseSpec) raises:
     comptime hw_info = type_of(ctx).default_device_info
 
     # ----- buffers (single device, single slot) -----
-    var dispatch_send = ctx.enqueue_create_buffer[DType.uint8](
+    var dispatch_send = ctx.enqueue_create_buffer[.uint8](
         n_tokens_per_rank * msg_bytes
     )
-    var dispatch_recv = ctx.enqueue_create_buffer[DType.uint8](
+    var dispatch_recv = ctx.enqueue_create_buffer[.uint8](
         max_recv_num_tokens * msg_bytes
     )
-    var dispatch_recv_count = ctx.enqueue_create_buffer[DType.uint64](n_experts)
+    var dispatch_recv_count = ctx.enqueue_create_buffer[.uint64](n_experts)
     ctx.enqueue_memset(dispatch_recv_count, UInt64.MAX_FINITE)
 
-    var combine_send = ctx.enqueue_create_buffer[DType.uint8](
+    var combine_send = ctx.enqueue_create_buffer[.uint8](
         max_recv_num_tokens * combine_msg_bytes
     )
     # The OOB target: a garbage src_idx makes the combine write land outside
     # this buffer (redzone / memcheck guards it).
-    var combine_recv = ctx.enqueue_create_buffer[DType.uint8](
+    var combine_recv = ctx.enqueue_create_buffer[.uint8](
         n_tokens_per_rank * top_k * combine_msg_bytes
     )
-    var combine_recv_count = ctx.enqueue_create_buffer[DType.uint64](n_experts)
+    var combine_recv_count = ctx.enqueue_create_buffer[.uint64](n_experts)
     ctx.enqueue_memset(combine_recv_count, UInt64.MAX_FINITE)
 
-    var atomic_counters = ctx.enqueue_create_buffer[DType.int32](
+    var atomic_counters = ctx.enqueue_create_buffer[.int32](
         EPLocalSyncCounters[n_experts].total_size()
     )
     ctx.enqueue_memset(atomic_counters, Int32(0))
 
-    var topk_ids_dev = ctx.enqueue_create_buffer[DType.int32](
+    var topk_ids_dev = ctx.enqueue_create_buffer[.int32](
         n_tokens_per_rank * top_k
     )
     var input_tokens_dev = ctx.enqueue_create_buffer[input_type](
@@ -206,11 +208,11 @@ def run_one_case(ctx: DeviceContext, spec: CaseSpec) raises:
     var dispatch_out_dev = ctx.enqueue_create_buffer[input_type](
         max_recv_num_tokens * hidden_size
     )
-    var row_offsets_dev = ctx.enqueue_create_buffer[DType.uint32](
+    var row_offsets_dev = ctx.enqueue_create_buffer[.uint32](
         n_local_experts + 1
     )
-    var expert_ids_dev = ctx.enqueue_create_buffer[DType.int32](n_local_experts)
-    var src_info_dev = ctx.enqueue_create_buffer[DType.int32](
+    var expert_ids_dev = ctx.enqueue_create_buffer[.int32](n_local_experts)
+    var src_info_dev = ctx.enqueue_create_buffer[.int32](
         max_recv_num_tokens * 2
     )
 
@@ -247,45 +249,39 @@ def run_one_case(ctx: DeviceContext, spec: CaseSpec) raises:
     var expert_ids_layout = row_major[n_local_experts]()
     var src_info_layout = row_major((Idx[max_recv_num_tokens], Idx[2]))
 
-    var topk_ids_t = TileTensor[
-        mut=False, DType.int32, type_of(topk_ids_layout)
-    ](ptr=topk_ids_dev.unsafe_ptr(), layout=topk_ids_layout)
+    var topk_ids_t = TileTensor[mut=False, .int32, type_of(topk_ids_layout)](
+        ptr=topk_ids_dev.unsafe_ptr(), layout=topk_ids_layout
+    )
     var input_tokens_t = TileTensor[
         mut=False, input_type, type_of(input_tokens_layout)
     ](ptr=input_tokens_dev.unsafe_ptr(), layout=input_tokens_layout)
     var out_t = TileTensor[input_type, type_of(out_layout)](
         ptr=dispatch_out_dev.unsafe_ptr(), layout=out_layout
     )
-    var row_offsets_t = TileTensor[DType.uint32, type_of(row_offsets_layout)](
+    var row_offsets_t = TileTensor[.uint32, type_of(row_offsets_layout)](
         ptr=row_offsets_dev.unsafe_ptr(), layout=row_offsets_layout
     )
-    var expert_ids_t = TileTensor[DType.int32, type_of(expert_ids_layout)](
+    var expert_ids_t = TileTensor[.int32, type_of(expert_ids_layout)](
         ptr=expert_ids_dev.unsafe_ptr(), layout=expert_ids_layout
     )
-    var src_info_t = TileTensor[DType.int32, type_of(src_info_layout)](
+    var src_info_t = TileTensor[.int32, type_of(src_info_layout)](
         ptr=src_info_dev.unsafe_ptr(), layout=src_info_layout
     )
 
     var format_handler = token_fmt_type(out_t)
 
-    var recv_bufs = InlineArray[UnsafePointer[UInt8, MutAnyOrigin], n_ranks](
-        uninitialized=True
-    )
-    recv_bufs[0] = dispatch_recv.unsafe_ptr().as_unsafe_any_origin()
-    var recv_count_bufs = InlineArray[
-        UnsafePointer[UInt64, MutAnyOrigin], n_ranks
-    ](uninitialized=True)
-    recv_count_bufs[0] = dispatch_recv_count.unsafe_ptr().as_unsafe_any_origin()
-    var combine_recv_bufs = InlineArray[
-        UnsafePointer[UInt8, MutAnyOrigin], n_ranks
-    ](uninitialized=True)
-    combine_recv_bufs[0] = combine_recv.unsafe_ptr().as_unsafe_any_origin()
-    var combine_recv_count_bufs = InlineArray[
-        UnsafePointer[UInt64, MutAnyOrigin], n_ranks
-    ](uninitialized=True)
-    combine_recv_count_bufs[
-        0
-    ] = combine_recv_count.unsafe_ptr().as_unsafe_any_origin()
+    var recv_bufs: Array[_, n_ranks] = [
+        dispatch_recv.unsafe_ptr().as_unsafe_any_origin(),
+    ]
+    var recv_count_bufs: Array[_, n_ranks] = [
+        dispatch_recv_count.unsafe_ptr().as_unsafe_any_origin(),
+    ]
+    var combine_recv_bufs: Array[_, n_ranks] = [
+        combine_recv.unsafe_ptr().as_unsafe_any_origin(),
+    ]
+    var combine_recv_count_bufs: Array[_, n_ranks] = [
+        combine_recv_count.unsafe_ptr().as_unsafe_any_origin(),
+    ]
 
     var counters = EPLocalSyncCounters[n_experts](atomic_counters.unsafe_ptr())
 
@@ -360,7 +356,7 @@ def run_one_case(ctx: DeviceContext, spec: CaseSpec) raises:
         var pair = bad_indices(spec.dist)
         ctx.enqueue_function[corrupt_src_info_kernel](
             src_info_dev.unsafe_ptr(),
-            max_recv_num_tokens,
+            Int32(max_recv_num_tokens),
             pair[0],
             pair[1],
             grid_dim=ceildiv(max_recv_num_tokens, 256),
@@ -370,8 +366,8 @@ def run_one_case(ctx: DeviceContext, spec: CaseSpec) raises:
     # ----- the kernel under test: combine send_tokens_back uses src_info as a
     # ----- write offset. A garbage offset is the SERVOPT-1458 wild write.
     ctx.enqueue_function[combine_async](
-        out_t.as_immut(),
-        src_info_t.as_immut(),
+        out_t.as_imm(),
+        src_info_t.as_imm(),
         combine_send.unsafe_ptr(),
         combine_recv_bufs,
         combine_recv_count_bufs,

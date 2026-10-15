@@ -20,7 +20,7 @@ from std.math import clamp
 from std.utils.numerics import isinf, isnan, max_finite, min_finite
 
 
-@always_inline
+@inline(.always)
 def guarded_inv_scale[dt: DType](scale: Scalar[dt]) -> Scalar[dt]:
     """Reciprocal of an FP8 scale factor, guarded to stay finite.
 
@@ -48,7 +48,7 @@ def guarded_inv_scale[dt: DType](scale: Scalar[dt]) -> Scalar[dt]:
     return inv_scale
 
 
-@always_inline
+@inline(.always)
 def compute_dynamic_fp8_scale[
     out_dtype: DType,
 ](
@@ -92,13 +92,13 @@ def compute_dynamic_fp8_scale[
     return (scale_factor, scale_factor_recip)
 
 
-@always_inline
+@inline(.always)
 def fp8_quantize[
     out_dtype: DType,
     *,
     use_clamp: Bool = True,
 ](values: SIMD, scale_recip: Scalar[values.dtype]) -> SIMD[
-    out_dtype, values.size
+    out_dtype, values.length
 ]:
     """Quantize values to FP8, clamping to the representable range.
 
@@ -132,10 +132,10 @@ def fp8_quantize[
     var result = values * scale_recip
 
     comptime if use_clamp:
-        comptime min_val = SIMD[values.dtype, values.size](
+        comptime min_val = SIMD[values.dtype, values.length](
             min_finite[out_dtype]()
         )
-        comptime max_val = SIMD[values.dtype, values.size](
+        comptime max_val = SIMD[values.dtype, values.length](
             max_finite[out_dtype]()
         )
         return clamp(result, min_val, max_val).cast[out_dtype]()
@@ -143,10 +143,10 @@ def fp8_quantize[
         return result.cast[out_dtype]()
 
 
-@always_inline
+@inline(.always)
 def cast_saturating[
     in_dtype: DType,
-    width: SIMDSize,
+    width: SIMDLength,
     //,
     out_dtype: DType,
 ](values: SIMD[in_dtype, width]) -> SIMD[out_dtype, width]:
@@ -158,6 +158,8 @@ def cast_saturating[
     `out_dtype` is FP8, and is a plain cast otherwise (no-op clamp for
     bf16/f16). Use it for direct stores to a (possibly-FP8) destination, e.g.
     the MLA RoPE / RMSNorm KV-cache writes where the cache dtype is generic.
+    A float8 input is widened to float32 before the clamp, since no GPU target
+    implements float8 min/max natively.
 
     Parameters:
         out_dtype: The destination dtype.
@@ -171,6 +173,13 @@ def cast_saturating[
     comptime if in_dtype == out_dtype or not out_dtype.is_float8():
         return values.cast[out_dtype]()
 
-    comptime min_val = SIMD[values.dtype, values.size](min_finite[out_dtype]())
-    comptime max_val = SIMD[values.dtype, values.size](max_finite[out_dtype]())
+    comptime if in_dtype.is_float8():
+        return cast_saturating[out_dtype](values.cast[.float32]())
+
+    comptime min_val = SIMD[values.dtype, values.length](
+        min_finite[out_dtype]()
+    )
+    comptime max_val = SIMD[values.dtype, values.length](
+        max_finite[out_dtype]()
+    )
     return clamp(values, min_val, max_val).cast[out_dtype]()

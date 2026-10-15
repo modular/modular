@@ -15,15 +15,17 @@
 
 from std.math import ceildiv, exp, inf, log
 
-from std.algorithm.functional import parallelize
+from max.algorithm.functional import parallelize
 from extensibility import register, register_shape_function
-from std.gpu import global_idx
-from std.gpu.host import DeviceContext
-from std.gpu.host.info import is_cpu, is_gpu
+from max.gpu import global_idx
+from max.gpu.host import DeviceContext
+from max.gpu.host.info import is_cpu, is_gpu
 from nn._ragged_utils import get_batch_from_row_offsets
 
 from extensibility import InputTensor, OutputTensor
+from extensibility import Tensor, TileTensorable
 
+from std.utils.coord import coord_to_index_list
 from std.utils.index import IndexList
 
 
@@ -39,10 +41,10 @@ struct FixedHeightMinHeap[k_dtype: DType, v_dtype: DType, levels: Int]:
     comptime num_elements = 2**Self.levels - 1
     """Maximum number of entries the heap can hold."""
 
-    var k_array: InlineArray[Scalar[Self.k_dtype], Self.num_elements]
+    var k_array: Array[Scalar[Self.k_dtype], Self.num_elements]
     """Inline array of heap keys, storing token ids."""
 
-    var v_array: InlineArray[Scalar[Self.v_dtype], Self.num_elements]
+    var v_array: Array[Scalar[Self.v_dtype], Self.num_elements]
     """Inline array of heap values, storing logits."""
 
     def __init__(
@@ -54,10 +56,10 @@ struct FixedHeightMinHeap[k_dtype: DType, v_dtype: DType, levels: Int]:
             fill_k: Key value to fill every heap slot with.
             fill_v: Value to fill every heap slot with.
         """
-        self.k_array = InlineArray[length=Self.num_elements](fill=fill_k)
-        self.v_array = InlineArray[length=Self.num_elements](fill=fill_v)
+        self.k_array = Array[length=Self.num_elements](fill=fill_k)
+        self.v_array = Array[length=Self.num_elements](fill=fill_v)
 
-    @always_inline
+    @inline(.always)
     def swap(mut self, a: Int, b: Int) -> None:
         """Swaps the key/value pairs at two heap positions.
 
@@ -139,7 +141,7 @@ def compute_log_probabilities_1tok[
     """
     var vocab_size = logits.shape()[1]
     var batch_index = get_batch_from_row_offsets(
-        lp_output_offsets.to_tile_tensor[DType.int64](), output_token_index
+        lp_output_offsets.to_tile_tensor[.int64](), output_token_index
     )
     var reverse_index_in_seq = (
         lp_output_offsets[batch_index + 1] - UInt32(output_token_index) - 1
@@ -245,8 +247,7 @@ struct LogProbabilitiesRagged:
 
         comptime if is_cpu[target]():
 
-            @parameter
-            def lp_idx_kernel(output_token_index: Int) -> None:
+            def lp_idx_kernel(output_token_index: Int) {imm} -> None:
                 compute_log_probabilities_1tok[target, levels](
                     output_token_index=output_token_index,
                     lp_logits=lp_logits,
@@ -259,17 +260,30 @@ struct LogProbabilitiesRagged:
                     lp_output_offsets=lp_output_offsets,
                 )
 
-            parallelize[lp_idx_kernel](
-                num_output_tokens, ctx=Optional[DeviceContext](ctx)
+            parallelize(
+                lp_idx_kernel,
+                num_output_tokens,
+                ctx=Optional(ctx.assert_cpu_target()),
             )
         elif is_gpu[target]():
+            # `Int` is not device-passable; the closure carries a fixed-width
+            # copy of the token count.
+            var num_output_tokens_dev = Int32(num_output_tokens)
 
-            @parameter
-            @__copy_capture(num_output_tokens)
             @__name(t"log_probabilities_l{levels}")
-            def raw_lp_kernel():
+            def raw_lp_kernel() {
+                var num_output_tokens_dev,
+                var lp_logits,
+                var lp_tokens,
+                var logits,
+                var tokens,
+                var sampled_tokens,
+                var logit_row_offsets,
+                var token_row_offsets,
+                var lp_output_offsets,
+            }:
                 var output_token_index = global_idx.x
-                if output_token_index < num_output_tokens:
+                if output_token_index < Int(num_output_tokens_dev):
                     compute_log_probabilities_1tok[target, levels](
                         output_token_index=output_token_index,
                         lp_logits=lp_logits,
@@ -283,7 +297,8 @@ struct LogProbabilitiesRagged:
                     )
 
             comptime block_size = 64
-            ctx.enqueue_function[raw_lp_kernel](
+            ctx.enqueue_function(
+                raw_lp_kernel,
                 grid_dim=ceildiv(num_output_tokens, block_size),
                 block_dim=block_size,
             )
@@ -293,15 +308,15 @@ struct LogProbabilitiesRagged:
 
 @register_shape_function("compute_log_probabilities_ragged")
 def compute_log_probabilities_ragged_shape[
-    levels: Int
+    levels: Int,
 ](
-    logits: InputTensor[dtype=logit_dtype, rank=2, ...],
-    tokens: InputTensor[dtype=token_dtype, rank=1, ...],
-    sampled_tokens: InputTensor[dtype=token_dtype, rank=1, ...],
-    logit_row_offsets: InputTensor[dtype=offset_dtype, rank=1, ...],
-    token_row_offsets: InputTensor[dtype=offset_dtype, rank=1, ...],
-    lp_output_offsets: InputTensor[dtype=offset_dtype, rank=1, ...],
-    lp_output_offsets_host: InputTensor[dtype=offset_dtype, rank=1, ...],
+    logits: Some[Tensor],
+    tokens: Some[Tensor],
+    sampled_tokens: Some[Tensor],
+    logit_row_offsets: Some[Tensor],
+    token_row_offsets: Some[Tensor],
+    lp_output_offsets: Some[Tensor],
+    lp_output_offsets_host: Some[TileTensorable],
 ) -> IndexList[2]:
     """Computes the output shapes for the ragged log-probabilities op.
 
@@ -324,7 +339,48 @@ def compute_log_probabilities_ragged_shape[
     Returns:
         The output shape `[num_output_tokens, 2**levels]`.
     """
+    comptime assert (
+        type_of(logits).dtype == logit_dtype
+    ), "logits dtype must be logit_dtype"
+    comptime assert type_of(logits).rank == 2, "logits must be rank 2"
+    comptime assert (
+        type_of(tokens).dtype == token_dtype
+    ), "tokens dtype must be token_dtype"
+    comptime assert type_of(tokens).rank == 1, "tokens must be rank 1"
+    comptime assert (
+        type_of(sampled_tokens).dtype == token_dtype
+    ), "sampled_tokens dtype must be token_dtype"
+    comptime assert (
+        type_of(sampled_tokens).rank == 1
+    ), "sampled_tokens must be rank 1"
+    comptime assert (
+        type_of(logit_row_offsets).dtype == offset_dtype
+    ), "logit_row_offsets dtype must be offset_dtype"
+    comptime assert (
+        type_of(logit_row_offsets).rank == 1
+    ), "logit_row_offsets must be rank 1"
+    comptime assert (
+        type_of(token_row_offsets).dtype == offset_dtype
+    ), "token_row_offsets dtype must be offset_dtype"
+    comptime assert (
+        type_of(token_row_offsets).rank == 1
+    ), "token_row_offsets must be rank 1"
+    comptime assert (
+        type_of(lp_output_offsets).dtype == offset_dtype
+    ), "lp_output_offsets dtype must be offset_dtype"
+    comptime assert (
+        type_of(lp_output_offsets).rank == 1
+    ), "lp_output_offsets must be rank 1"
+    comptime assert (
+        type_of(lp_output_offsets_host).dtype == offset_dtype
+    ), "lp_output_offsets_host dtype must be offset_dtype"
+    comptime assert (
+        type_of(lp_output_offsets_host).rank == 1
+    ), "lp_output_offsets_host must be rank 1"
+    var num_offsets = coord_to_index_list(
+        lp_output_offsets_host.shape().tuple()
+    )[0]
     return IndexList[2](
-        Int(lp_output_offsets_host[lp_output_offsets_host.shape()[0] - 1]),
+        Int(lp_output_offsets_host.to_tile_tensor().raw_load(num_offsets - 1)),
         2**levels,
     )

@@ -397,10 +397,8 @@ class TestPixelGenerationTokenizer:
             max_length=2048,
         )
 
-        dummy_encoded = (np.array([1, 2, 3]), np.array([True, True, True]))
-
         with pytest.raises(NotImplementedError):
-            await tokenizer.decode(dummy_encoded)
+            await tokenizer.decode(np.array([1, 2, 3]))
 
     def test_properties(
         self, flux_model_path: str, flux_pipeline_config: PipelineConfig
@@ -413,8 +411,10 @@ class TestPixelGenerationTokenizer:
             max_length=2048,
         )
 
-        # Test eos property
-        assert isinstance(tokenizer.eos, int)
+        # Test eos_token_ids property
+        assert tokenizer.eos_token_ids and all(
+            isinstance(t, int) for t in tokenizer.eos_token_ids
+        )
 
         # Test expects_content_wrapping property
         assert tokenizer.expects_content_wrapping is False

@@ -19,8 +19,13 @@ from max.dtype import DType
 from max.graph.weights import WeightData, Weights
 from max.graph.weights.weights import Shape
 from max.pipelines.lib import PipelineConfig
+from max.pipelines.lib.config.model_config import (
+    _select_dtype_cast,
+)
 from max.pipelines.modeling.config_enums import supported_encoding_dtype
 from transformers import AutoConfig
+
+from .model_config import Qwen3_5Config
 
 # -----------------------------------------------------------------------
 # Vision encoder weight mapping
@@ -167,22 +172,28 @@ def convert_qwen3_5_state_dict(
     # and bfloat16 (e.g. due to mixed-dtype checkpoint files). This mirrors
     # the same logic in llama3/weight_adapters.py.
     #
-    # Qwen3.5 checkpoints have a small number of intentionally-float32
-    # tensors (A_log, norm.weight). Those are already in float32 so they
-    # are unaffected by either direction of casting.
-    model_config = pipeline_config.model
-    if model_config._applied_dtype_cast_from:
-        cast_from = model_config._applied_dtype_cast_from
-        cast_to = model_config._applied_dtype_cast_to
+    # The linear-attention scalars were just upcast to float32 above, which is
+    # exactly what makes them eligible for a float32 -> bfloat16 cast here and
+    # undoes that upcast; they are excluded so the model sees the float32 its
+    # `Weight` declarations ask for.
+    # TODO(MXF-517): this should be resolved by the ArchConfig, not the adapter.
+    cast_from, cast_to = _select_dtype_cast(
+        pipeline_config.model, Qwen3_5Config.DEFAULT_ENCODING
+    )
+    if cast_from:
         assert cast_to, (
-            "Invalid configuration: _applied_dtype_cast_to is not set but "
-            "_applied_dtype_cast_from is set. This should not happen."
+            "Invalid configuration: cast_to is not set but "
+            "cast_from is set. This should not happen."
         )
         cast_from_dtype = supported_encoding_dtype(cast_from)
         cast_to_dtype = supported_encoding_dtype(cast_to)
         for key, weight_data in new_state_dict.items():
-            if weight_data.dtype == cast_from_dtype and not key.startswith(
-                _VISION_MAX_PREFIX
+            if (
+                weight_data.dtype == cast_from_dtype
+                and not key.startswith(_VISION_MAX_PREFIX)
+                and not key.endswith(
+                    (".dt_bias", ".A_log", ".linear_attn.norm.weight")
+                )
             ):
                 new_state_dict[key] = weight_data.astype(cast_to_dtype)
 

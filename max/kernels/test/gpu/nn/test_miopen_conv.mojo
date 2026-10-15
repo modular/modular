@@ -11,13 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu.host import DeviceContext
-from layout import (
-    Coord,
-    Idx,
-    TileTensor,
-    row_major,
-)
+from max.gpu.host import DeviceContext
+from layout import Coord, TileTensor, row_major
 from layout._fillers import random
 from nn.conv.conv import conv_miopen
 
@@ -31,9 +26,9 @@ def conv2d_ref_cpu[
     output_type: DType,
     conv_rank: Int,
 ](
-    input_ptr: UnsafePointer[mut=False, Scalar[input_type], _],
-    filter_ptr: UnsafePointer[mut=False, Scalar[filter_type], _],
-    output_ptr: UnsafePointer[mut=True, Scalar[output_type], _],
+    input_ptr: ImmPointer[Scalar[input_type], _],
+    filter_ptr: ImmPointer[Scalar[filter_type], _],
+    output_ptr: MutPointer[Scalar[output_type], _],
     input_dim: IndexList[conv_rank + 2],
     filter_dim: IndexList[conv_rank + 2],
     output_dim: IndexList[conv_rank + 2],
@@ -102,9 +97,9 @@ def conv3d_ref_cpu[
     output_type: DType,
     conv_rank: Int,
 ](
-    input_ptr: UnsafePointer[mut=False, Scalar[input_type], _],
-    filter_ptr: UnsafePointer[mut=False, Scalar[filter_type], _],
-    output_ptr: UnsafePointer[mut=True, Scalar[output_type], _],
+    input_ptr: ImmPointer[Scalar[input_type], _],
+    filter_ptr: ImmPointer[Scalar[filter_type], _],
+    output_ptr: MutPointer[Scalar[output_type], _],
     input_dim: IndexList[conv_rank + 2],
     filter_dim: IndexList[conv_rank + 2],
     output_dim: IndexList[conv_rank + 2],
@@ -309,7 +304,7 @@ def test_conv_miopen[
         if diff > max_diff:
             max_diff = diff
     # Use absolute tolerance appropriate for reduced precision types
-    comptime if input_type == DType.float32:
+    comptime if input_type == .float32:
         if max_diff > 1e-3:
             print("  FAIL: max_diff=", max_diff)
             raise Error("MIOpen output does not match CPU reference")

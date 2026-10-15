@@ -68,14 +68,17 @@ struct Lamport:
     """
 
     # Layout of the `Signal.lamport_state` block:
-    # [flag, prev_num_elements, arrival, reserved].
+    # [flag, prev_num_packs, arrival, reserved].
+    # `prev_num_packs` is in 16-byte packs, not elements: calls of different
+    # dtypes share one signal buffer, and each must clear exactly the region the
+    # previous call wrote regardless of either call's element width.
     comptime STATE_LEN = 4
     comptime STATE_FLAG = 0
-    comptime STATE_PREV_ELEMS = 1
+    comptime STATE_PREV_PACKS = 1
     comptime STATE_ARRIVAL = 2
 
 
-@always_inline
+@inline(.always)
 def _sentinel_bits[
     dtype: DType
 ]() -> Scalar[_unsigned_integral_type_of[dtype]()]:
@@ -91,9 +94,7 @@ def _sentinel_bits[
         The negative-zero bit pattern as the matching unsigned-integer scalar.
     """
     comptime assert (
-        dtype == DType.bfloat16
-        or dtype == DType.float16
-        or dtype == DType.float32
+        dtype == .bfloat16 or dtype == .float16 or dtype == .float32
     ), (
         "Lamport sentinel supports bfloat16, float16, and float32 only; fp8"
         " transport is out of scope (>8 lanes/pack and the coarse sentinel"
@@ -104,7 +105,7 @@ def _sentinel_bits[
     return Scalar[uint](1) << Scalar[uint](bit_width_of[uint]() - 1)
 
 
-@always_inline
+@inline(.always)
 def remove_neg_zero[
     dtype: DType, width: Int
 ](v: SIMD[dtype, width]) -> SIMD[dtype, width]:
@@ -134,7 +135,7 @@ def remove_neg_zero[
     return bitcast[dtype, width](sanitized)
 
 
-@always_inline
+@inline(.always)
 def has_neg_zero[dtype: DType, width: Int](v: SIMD[dtype, width]) -> Bool:
     """Returns True if any lane of `v` holds the `-0.0` sentinel bit pattern.
 
@@ -158,7 +159,7 @@ def has_neg_zero[dtype: DType, width: Int](v: SIMD[dtype, width]) -> Bool:
     return Bool(bits.eq(SIMD[uint, width](_sentinel_bits[dtype]())).reduce_or())
 
 
-@always_inline
+@inline(.always)
 def set_neg_zero[dtype: DType, width: Int]() -> SIMD[dtype, width]:
     """Returns the universal "not ready" sentinel pack.
 
@@ -184,9 +185,7 @@ def set_neg_zero[dtype: DType, width: Int]() -> SIMD[dtype, width]:
         pack_bytes % 4 == 0
     ), "Lamport sentinel pack must be a multiple of 4 bytes"
     comptime n_u32 = pack_bytes // 4
-    return bitcast[dtype, width](
-        SIMD[DType.uint32, n_u32](LAMPORT_SENTINEL_U32)
-    )
+    return bitcast[dtype, width](SIMD[.uint32, n_u32](LAMPORT_SENTINEL_U32))
 
 
 struct LamportGeneration:
@@ -198,7 +197,7 @@ struct LamportGeneration:
     generation while clearing the generation that will be reused two calls
     later, leaving exactly one generation of skew slack.
 
-    Given a monotonically-increasing call counter `flag`:
+    Given a call counter `flag`:
 
     - `data_index` = `flag % 3` is the generation written and read this call;
     - `clear_index` = `(flag + 2) % 3` is the generation cleared back to the
@@ -215,7 +214,7 @@ struct LamportGeneration:
     write-next-call + clear-for-the-call-after."""
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def data_index(flag: Int) -> Int:
         """Returns the generation index written and read on this call.
 
@@ -228,7 +227,7 @@ struct LamportGeneration:
         return flag % Self.NUM_GENERATIONS
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def clear_index(flag: Int) -> Int:
         """Returns the generation index cleared to the sentinel on this call.
 
@@ -243,3 +242,16 @@ struct LamportGeneration:
             % 3` for the default of three generations.
         """
         return (flag + Self.NUM_GENERATIONS - 1) % Self.NUM_GENERATIONS
+
+    @staticmethod
+    @inline(.always)
+    def advance(flag: Int) -> Int:
+        """Returns the next call's counter value, mod `NUM_GENERATIONS`.
+
+        Args:
+            flag: The current call counter, in `[0, NUM_GENERATIONS)`.
+
+        Returns:
+            `(flag + 1) % NUM_GENERATIONS`.
+        """
+        return (flag + 1) % Self.NUM_GENERATIONS

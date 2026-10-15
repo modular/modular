@@ -11,6 +11,28 @@ max.pipelines.speculative
 
 .. currentmodule:: max.pipelines.speculative
 
+Submodules
+----------
+
+.. autosummary::
+   :nosignatures:
+
+   max.pipelines.speculative.adaptive_width
+   max.pipelines.speculative.block_driver
+   max.pipelines.speculative.depth_schedule
+   max.pipelines.speculative.driver
+   max.pipelines.speculative.spec_target
+
+.. toctree::
+   :maxdepth: 1
+   :hidden:
+
+   pipelines.speculative.adaptive_width
+   pipelines.speculative.block_driver
+   pipelines.speculative.depth_schedule
+   pipelines.speculative.driver
+   pipelines.speculative.spec_target
+
 Configuration
 -------------
 
@@ -19,9 +41,9 @@ Configuration
    :toctree: generated
    :template: autosummary/class.rst
 
-   RejectionSamplingStrategy
    SpeculativeConfig
    SpeculativeMethod
+   VerifyWidthRange
 
 Token merging
 -------------

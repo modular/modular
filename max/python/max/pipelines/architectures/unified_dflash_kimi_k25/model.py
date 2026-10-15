@@ -23,24 +23,28 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
-from unittest.mock import MagicMock
 
 import numpy as np
+from max import tree
 from max._core.driver import is_virtual_device_mode
 from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import Graph, Value
+from max.graph import DeviceRef, Graph, Module
 from max.graph.weights import WeightData, load_weights
 from max.nn.comm.ep import EPCommInitializer
-from max.nn.kv_cache import KVCacheInputsInterface, KVCacheParams
+from max.nn.kv_cache import (
+    KVCacheInputs,
+    KVCacheParams,
+    spec_decode_cache_slack,
+)
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures.kimik2_5.context import (
     KimiK2_5TextAndVisionContext,
 )
-from max.pipelines.lib import CompilationTimer
+from max.pipelines.lib import CompilationTimer, KVCacheConfig, PipelineConfig
 from max.pipelines.lib.interfaces import (
     UnifiedSpecDecodeInputs,
 )
@@ -48,10 +52,13 @@ from max.pipelines.lib.pipeline_variants.unified_spec_decode_model import (
     _UnifiedSpecDecodeModelMixin,
 )
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
+from max.pipelines.speculative import DraftAliases, validate_draft_state_dict
+from transformers import AutoConfig
 from typing_extensions import override
 
 from ..dflash_kimi_k25 import DFlashKimiK25DraftConfig
 from ..kimik2_5.model import KimiK2_5Model, KimiK2_5ModelInputs
+from ..kimik2_5.model_config import KimiK2_5TextConfig
 from ..llama3.weight_adapters import _convert_safetensor_with_model_config
 from .batch_processor import UnifiedDflashKimiK25BatchProcessor
 from .model_config import (
@@ -68,26 +75,38 @@ logger = logging.getLogger("max.pipelines")
 class UnifiedDflashKimiK25Inputs(UnifiedSpecDecodeInputs, KimiK2_5ModelInputs):
     """Inputs for the unified DFlash Kimi K2.5 graph.
 
-    Same as :class:`KimiK2_5ModelInputs` plus the spec-decode fields and
-    trailing buffer packing from :class:`UnifiedSpecDecodeInputs`. The draft
-    owns its own MHA :class:`KVCacheInputs` so its dispatch metadata is
-    independent of the target's MLA cache. The DFlash graph does not bind
-    ``in_thinking_phase``.
+    Same as :class:`KimiK2_5ModelInputs` -- including the per-device
+    vision-merge inputs (base ``vision_embeddings`` /
+    ``vision_scatter_indices``, set by the pipeline's vision seam) that the
+    unified graph scatters into the merged token embedding before the target
+    forward -- plus the spec-decode fields and trailing buffer packing from
+    :class:`UnifiedSpecDecodeInputs`. The draft owns its own MHA
+    :class:`KVCacheInputs` so its dispatch metadata is independent of the
+    target's MLA cache. The DFlash graph does not bind ``in_thinking_phase``
+    (it is only consumed by the relaxed-acceptance-for-thinking sampler rule,
+    which DFlash does not configure); the structured-output bitmask triple is
+    packed whenever the graph was compiled with it.
     """
-
-    token_bitmasks: Buffer | None = None
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
+        assert len(self.vision_embeddings) == len(
+            self.vision_scatter_indices
+        ), (
+            "vision_embeddings and vision_scatter_indices must have the "
+            "same length"
+        )
         buffers = (
             self.tokens,
+            *self.vision_embeddings,
+            *self.vision_scatter_indices,
             self.input_row_offsets,
             self.host_input_row_offsets,
             self.return_n_logits,
             self.data_parallel_splits,
             *self.signal_buffers,
             *(
-                self.kv_cache_inputs.flatten()
+                tree.leaves(self.kv_cache_inputs)
                 if self.kv_cache_inputs is not None
                 else ()
             ),
@@ -95,7 +114,7 @@ class UnifiedDflashKimiK25Inputs(UnifiedSpecDecodeInputs, KimiK2_5ModelInputs):
             *self.ep_inputs,
         )
         return buffers + self._spec_decode_tail_buffers(
-            include_in_thinking_phase=False, supports_structured_output=False
+            include_in_thinking_phase=False,
         )
 
 
@@ -109,10 +128,63 @@ class UnifiedDflashKimiK25Model(_UnifiedSpecDecodeModelMixin, KimiK2_5Model):
 
     batch_processor_cls = UnifiedDflashKimiK25BatchProcessor
 
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
+    def __init__(
+        self, pipeline_config: PipelineConfig, *args: Any, **kwargs: Any
+    ) -> None:
         kwargs["return_logits"] = ReturnLogits.VARIABLE
         kwargs["return_hidden_states"] = ReturnHiddenStates.SELECTED_LAYERS
-        super().__init__(*args, **kwargs)
+        assert pipeline_config.speculative is not None
+        self.resolved_num_speculative_tokens = (
+            pipeline_config.speculative.draft_width
+        )
+        super().__init__(pipeline_config, *args, **kwargs)
+
+    @override
+    @classmethod
+    def get_kv_params(
+        cls,
+        huggingface_config: AutoConfig,
+        pipeline_config: PipelineConfig,
+        devices: list[DeviceRef],
+        kv_cache_config: KVCacheConfig,
+        cache_dtype: DType,
+    ) -> KVCacheParams:
+        # The parent reads the raw speculative section, where the unset
+        # width would bake num_draft_tokens=0; rebake at the trained width.
+        params = super().get_kv_params(
+            huggingface_config,
+            pipeline_config,
+            devices,
+            kv_cache_config,
+            cache_dtype,
+        )
+        assert pipeline_config.speculative is not None
+        assert isinstance(params, KVCacheParams)
+        return replace(
+            params,
+            num_draft_tokens=pipeline_config.speculative.draft_width,
+        )
+
+    @override
+    def _create_model_config(
+        self, state_dict: dict[str, WeightData]
+    ) -> KimiK2_5TextConfig:
+        model_config = super()._create_model_config(state_dict)
+        # ``KimiK2_5TextConfig.initialize`` derives its KV params, and the
+        # rope table's spec-decode slack, from the raw speculative section,
+        # where the unset width reads as 0; re-derive both at the drafter's
+        # trained width.
+        resolved_spec = self.resolved_num_speculative_tokens
+        assert resolved_spec is not None
+        assert isinstance(model_config.kv_params, KVCacheParams)
+        stale_slack = spec_decode_cache_slack(model_config.kv_params)
+        model_config.kv_params = replace(
+            model_config.kv_params, num_draft_tokens=resolved_spec
+        )
+        model_config.max_position_embeddings += (
+            spec_decode_cache_slack(model_config.kv_params) - stale_slack
+        )
+        return model_config
 
     @override
     def load_model(self, session: InferenceSession) -> tuple[Model, Model]:
@@ -149,9 +221,7 @@ class UnifiedDflashKimiK25Model(_UnifiedSpecDecodeModelMixin, KimiK2_5Model):
         for key, value in target_state_dict.items():
             if key.startswith("vision_encoder."):
                 vision_state_dict[key] = value
-            elif key.startswith("language_model.") or key.startswith(
-                "language_"
-            ):
+            elif key.startswith(("language_model.", "language_")):
                 llm_state_dict[key] = value
 
         target_config = self._create_model_config(target_state_dict)
@@ -208,9 +278,13 @@ class UnifiedDflashKimiK25Model(_UnifiedSpecDecodeModelMixin, KimiK2_5Model):
         assert self.pipeline_config.speculative is not None
         dflash_block_size = int(dflash_hf.block_size or 0)
         if dflash_block_size <= 0:
-            dflash_block_size = (
-                self.pipeline_config.speculative.num_speculative_tokens + 1
-            )
+            num_spec = self.pipeline_config.speculative.num_speculative_tokens
+            if num_spec is None:
+                raise ValueError(
+                    "The DFlash draft checkpoint declares no block_size; set"
+                    " --num-speculative-tokens explicitly."
+                )
+            dflash_block_size = num_spec + 1
 
         target_kv.num_draft_tokens = dflash_block_size
         logger.info(
@@ -255,7 +329,10 @@ class UnifiedDflashKimiK25Model(_UnifiedSpecDecodeModelMixin, KimiK2_5Model):
         )
         unified_config.validate_dflash_fields()
 
-        nn_model = UnifiedDflashKimiK25(unified_config)
+        nn_model = UnifiedDflashKimiK25(
+            unified_config,
+            enable_structured_output=self.pipeline_config.needs_bitmask_constraints,
+        )
 
         nn_model.draft.embed_tokens = nn_model.target.embed_tokens
         nn_model.draft.lm_head = nn_model.target.lm_head
@@ -272,27 +349,17 @@ class UnifiedDflashKimiK25Model(_UnifiedSpecDecodeModelMixin, KimiK2_5Model):
             draft_state_dict, weight_alignment=1, strict=False
         )
 
-        draft_expected = set(nn_model.draft.raw_state_dict().keys())
-        draft_provided = set(draft_state_dict.keys())
-        shared_prefixes = ("embed_tokens.", "lm_head.")
-        missing = {
-            k
-            for k in draft_expected - draft_provided
-            if not k.startswith(shared_prefixes)
-        }
-        extra = draft_provided - draft_expected
-        if missing:
-            raise ValueError(
-                f"Draft model has unloaded non-shared weights: "
-                f"{sorted(missing)}"
-            )
-        if extra:
-            logger.warning(f"Draft state_dict has unused keys: {sorted(extra)}")
+        # The DFlash draft inherits the embedding and the output head.
+        aliased = validate_draft_state_dict(
+            nn_model.draft.raw_state_dict().keys(),
+            draft_state_dict.keys(),
+            DraftAliases(always=("embed_tokens.", "lm_head.")),
+        )
 
         draft_weights_registry = nn_model.draft.state_dict()
 
         for name, weight in nn_model.draft.raw_state_dict().items():
-            if name.startswith(shared_prefixes):
+            if name.startswith(aliased):
                 continue
             weight.name = f"draft.{name}"
 
@@ -303,6 +370,7 @@ class UnifiedDflashKimiK25Model(_UnifiedSpecDecodeModelMixin, KimiK2_5Model):
             pipeline_config=self.pipeline_config,
             huggingface_config=self.huggingface_config,
             llm_config=target_config,
+            max_seq_len=self.max_seq_len,
         )
         self.model_config = kimik2_5_config
         self.nn_model = KimiK2_5(kimik2_5_config)
@@ -312,86 +380,57 @@ class UnifiedDflashKimiK25Model(_UnifiedSpecDecodeModelMixin, KimiK2_5Model):
         self.state_dict = dict(self.nn_model.state_dict())
         self.state_dict.update(nn_model.target.state_dict())
         for k, v in draft_weights_registry.items():
-            if k.startswith(shared_prefixes):
+            if k.startswith(aliased):
                 continue
             self.state_dict[f"draft.{k}"] = v
 
-        vision_model = MagicMock(spec=Model)
-        logger.warning(
-            "Skipping vision model compilation. Vision support is not yet "
-            "implemented for Kimi DFlash."
-        )
-
-        with CompilationTimer("unified_dflash_kimi_k25_language_model") as t:
+        with CompilationTimer("vision + unified_dflash_kimi_k25 model") as t:
+            graph_module = Module()
+            vision_graph, _ = self._build_vision_graph(
+                kimik2_5_config, vision_state_dict, module=graph_module
+            )
             with Graph(
                 "unified_dflash_kimi_k25_graph",
                 input_types=nn_model.input_types(self.kv_params),
+                module=graph_module,
             ) as graph:
-                (
-                    tokens,
-                    devices_input_row_offsets,
-                    host_input_row_offsets,
-                    return_n_logits,
-                    data_parallel_splits,
-                    *variadic_args,
-                ) = graph.inputs
-
-                variadic_args_iter = iter(variadic_args)
-                signal_buffers = [
-                    next(variadic_args_iter).buffer
-                    for _ in range(len(self.devices))
-                ]
-
-                kv_collections, draft_kv_collections = (
-                    self.kv_params.unflatten_basic_kv_tree(variadic_args_iter)
+                graph_inputs = nn_model.decode_inputs(
+                    graph.inputs, self.kv_params
                 )
 
-                batch_context_lengths = [
-                    next(variadic_args_iter).tensor
-                    for _ in range(len(self.devices))
-                ]
-
-                target_ep_inputs: list[Value[Any]] | None = None
-                if nn_model.target.ep_manager is not None:
-                    n_target_ep = len(nn_model.target.ep_manager.input_types())
-                    target_ep_inputs = [
-                        next(variadic_args_iter) for _ in range(n_target_ep)
-                    ]
-
-                draft_tokens = next(variadic_args_iter).tensor
-
-                seed = next(variadic_args_iter).tensor
-                temperature = next(variadic_args_iter).tensor
-                top_k = next(variadic_args_iter).tensor
-                max_k = next(variadic_args_iter).tensor
-                top_p = next(variadic_args_iter).tensor
-                min_top_p = next(variadic_args_iter).tensor
-
                 outputs = nn_model(
-                    tokens=tokens.tensor,
-                    input_row_offsets=devices_input_row_offsets.tensor,
-                    draft_tokens=draft_tokens,
-                    signal_buffers=signal_buffers,
-                    kv_collections=kv_collections,
-                    return_n_logits=return_n_logits.tensor,
-                    host_input_row_offsets=host_input_row_offsets.tensor,
-                    data_parallel_splits=data_parallel_splits.tensor,
-                    batch_context_lengths=batch_context_lengths,
-                    seed=seed,
-                    temperature=temperature,
-                    top_k=top_k,
-                    max_k=max_k,
-                    top_p=top_p,
-                    min_top_p=min_top_p,
-                    ep_inputs=target_ep_inputs,
-                    draft_kv_collections=draft_kv_collections,
+                    graph_inputs.tokens,
+                    graph_inputs.input_row_offsets,
+                    graph_inputs.draft_tokens,
+                    graph_inputs.kv("target"),
+                    graph_inputs.kv("draft"),
+                    graph_inputs.return_n_logits,
+                    graph_inputs.seed,
+                    graph_inputs.temperature,
+                    graph_inputs.top_k,
+                    graph_inputs.max_k,
+                    graph_inputs.top_p,
+                    graph_inputs.min_top_p,
+                    signal_buffers=graph_inputs.signal_buffers,
+                    ep_inputs=graph_inputs.ep_inputs or None,
+                    host_input_row_offsets=graph_inputs.host_offsets,
+                    data_parallel_splits=graph_inputs.dp_splits,
+                    batch_context_lengths=graph_inputs.batch_context_lengths,
+                    vision_embeddings=graph_inputs.vision_embeddings,
+                    vision_scatter_indices=graph_inputs.vision_scatter_indices,
+                    pinned_bitmask=graph_inputs.pinned_bitmask,
+                    wait_payload=graph_inputs.wait_payload,
+                    device_bitmask_scratch=graph_inputs.device_bitmask_scratch,
+                    draft_probs_full=graph_inputs.draft_probs_full,
                 )
                 graph.output(*outputs)
 
             t.mark_build_complete()
-            language_model = session.load(
-                graph, weights_registry=self.state_dict
+            models = session.load_all(
+                graph_module, weights_registry=self.state_dict
             )
+            vision_model = models[vision_graph.name]
+            language_model = models[graph.name]
 
         return vision_model, language_model
 
@@ -402,7 +441,7 @@ class UnifiedDflashKimiK25Model(_UnifiedSpecDecodeModelMixin, KimiK2_5Model):
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[KimiK2_5TextAndVisionContext]],
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
         draft_tokens: Buffer | None = None,
         **kwargs: Any,

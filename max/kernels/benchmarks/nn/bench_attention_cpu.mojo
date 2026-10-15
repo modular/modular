@@ -14,7 +14,9 @@
 from std.random import rand
 
 from std.benchmark import *
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from std.memory import alloc, dealloc
+from std.sys.info import align_of
+from layout import Coord, TileTensor, UNKNOWN_VALUE, row_major
 from nn.attention.cpu.mha import flash_attention
 
 from std.utils import IndexList
@@ -49,71 +51,93 @@ def bench_attention[dtype: DType](mut m: Bench, spec: AttentionSpec) raises:
     var kv_shape = Index(spec.batch_size, spec.kv_seq_len, spec.depth_dim)
     var mask_shape = Index(spec.batch_size, spec.seq_len, spec.kv_seq_len)
 
-    var q_ptr = alloc[Scalar[dtype]](q_shape.flattened_length())
-    var k_ptr = alloc[Scalar[dtype]](kv_shape.flattened_length())
-    var v_ptr = alloc[Scalar[dtype]](kv_shape.flattened_length())
-    var mask_ptr = alloc[Scalar[dtype]](mask_shape.flattened_length())
-    var output_ptr = alloc[Scalar[dtype]](q_shape.flattened_length())
+    var q_alloc = alloc[Scalar[dtype]](
+        {count = q_shape.flattened_length()}
+    ).into_managed()
+    var k_alloc = alloc[Scalar[dtype]](
+        {count = kv_shape.flattened_length()}
+    ).into_managed()
+    var v_alloc = alloc[Scalar[dtype]](
+        {count = kv_shape.flattened_length()}
+    ).into_managed()
+    var mask_alloc = alloc[Scalar[dtype]](
+        {count = mask_shape.flattened_length()}
+    ).into_managed()
+    var output_alloc = alloc[Scalar[dtype]](
+        {count = q_shape.flattened_length()}
+    ).into_managed()
 
-    rand(q_ptr, q_shape.flattened_length())
-    rand(k_ptr, kv_shape.flattened_length())
-    rand(v_ptr, kv_shape.flattened_length())
-    rand(mask_ptr, mask_shape.flattened_length())
+    rand(q_alloc.unsafe_span())
+    rand(k_alloc.unsafe_span())
+    rand(v_alloc.unsafe_span())
+    rand(mask_alloc.unsafe_span())
 
-    comptime layout = Layout.row_major[3]()
-    var q = LayoutTensor[dtype, layout](
-        q_ptr, RuntimeLayout[layout].row_major(q_shape)
+    var q = (
+        TileTensor(q_alloc.unsafe_span(), row_major(q_alloc.layout().count()))
+        .reshape(Coord(q_shape))
+        .as_imm()
     )
-    var k = LayoutTensor[dtype, layout](
-        k_ptr, RuntimeLayout[layout].row_major(kv_shape)
+    var k = (
+        TileTensor(k_alloc.unsafe_span(), row_major(k_alloc.layout().count()))
+        .reshape(Coord(kv_shape))
+        .as_imm()
+        .as_unsafe_any_origin()
     )
-    var v = LayoutTensor[dtype, layout](
-        v_ptr, RuntimeLayout[layout].row_major(kv_shape)
+    var v = (
+        TileTensor(v_alloc.unsafe_span(), row_major(v_alloc.layout().count()))
+        .reshape(Coord(kv_shape))
+        .as_imm()
+        .as_unsafe_any_origin()
     )
-    var mask = LayoutTensor[dtype, layout](
-        mask_ptr, RuntimeLayout[layout].row_major(mask_shape)
+    var mask = (
+        TileTensor(
+            mask_alloc.unsafe_span(), row_major(mask_alloc.layout().count())
+        )
+        .reshape(Coord(mask_shape))
+        .as_imm()
+        .as_unsafe_any_origin()
     )
-    var output = LayoutTensor[dtype, layout](
-        output_ptr, RuntimeLayout[layout].row_major(q_shape)
-    )
+    var output = TileTensor(
+        output_alloc.unsafe_span(), row_major(output_alloc.layout().count())
+    ).reshape(Coord(q_shape))
 
-    @parameter
-    @always_inline
+    @inline(.always)
     def input_k_fn[
         simd_width: Int, _rank: Int
-    ](idx: IndexList[_rank]) -> SIMD[dtype, simd_width]:
-        return k.load[width=simd_width](rebind[IndexList[3]](idx))
+    ](idx: IndexList[_rank]) {imm} -> SIMD[dtype, simd_width]:
+        comptime assert _rank == 3
+        return k.load[width=simd_width, alignment=align_of[dtype]()](Coord(idx))
 
-    @parameter
-    @always_inline
+    @inline(.always)
     def input_v_fn[
         simd_width: Int, _rank: Int
-    ](idx: IndexList[_rank]) -> SIMD[dtype, simd_width]:
-        return v.load[width=simd_width](rebind[IndexList[3]](idx))
+    ](idx: IndexList[_rank]) {imm} -> SIMD[dtype, simd_width]:
+        comptime assert _rank == 3
+        return v.load[width=simd_width, alignment=align_of[dtype]()](Coord(idx))
 
-    @parameter
-    @always_inline
+    @inline(.always)
     def mask_fn[
         simd_width: Int, _rank: Int
-    ](idx: IndexList[_rank]) -> SIMD[dtype, simd_width]:
-        return mask.load[width=simd_width](rebind[IndexList[3]](idx))
+    ](idx: IndexList[_rank]) {imm} -> SIMD[dtype, simd_width]:
+        comptime assert _rank == 3
+        return mask.load[width=simd_width, alignment=align_of[dtype]()](
+            Coord(idx)
+        )
 
     comptime scale = 0.25
 
-    @always_inline
-    @parameter
-    def flash_bench_fn(mut b: Bencher):
-        @always_inline
-        @parameter
-        def iter_fn[depth_static_dim: Int]():
-            comptime output_static_shape = IndexList[3](
-                UNKNOWN_VALUE, UNKNOWN_VALUE, depth_static_dim
-            )
-            flash_attention[input_k_fn, input_v_fn, mask_fn](
+    @inline(.always)
+    def flash_bench_fn(mut b: Bencher) {imm}:
+        @inline(.always)
+        def iter_fn[depth_static_dim: Int]() {imm}:
+            flash_attention(
+                input_k_fn,
+                input_v_fn,
+                mask_fn,
                 q,
-                k.runtime_layout.shape.value.canonicalize(),
-                v.runtime_layout.shape.value.canonicalize(),
-                mask.runtime_layout.shape.value.canonicalize(),
+                kv_shape,
+                kv_shape,
+                mask_shape,
                 output,
                 scale=scale,
             )
@@ -123,13 +147,30 @@ def bench_attention[dtype: DType](mut m: Bench, spec: AttentionSpec) raises:
         comptime for idx in range(len(depth_static_dims)):
             comptime dim = depth_static_dims[idx]
             if dim == spec.depth_dim:
-                b.iter[iter_fn[dim]]()
+                # `iter` takes a closure value, and a parametric closure only
+                # names an overload set, so instantiate it behind a
+                # non-parametric one.
+                @inline(.always)
+                def iter_static() {imm}:
+                    iter_fn[dim]()
+
+                b.iter(iter_static)
                 return
 
-        # Fallback to dispatch with a dynamic shape.
-        b.iter[iter_fn[UNKNOWN_VALUE]]()
+        # Benchmark any remaining depth through the same runtime-shape entry point.
+        @inline(.always)
+        def iter_dynamic() {imm}:
+            iter_fn[UNKNOWN_VALUE]()
 
-    m.bench_function[flash_bench_fn](BenchId("flash", String(spec)))
+        b.iter(iter_dynamic)
+
+    m.bench_function(flash_bench_fn, BenchId("flash", String(spec)))
+
+    dealloc(q_alloc^)
+    dealloc(k_alloc^)
+    dealloc(v_alloc^)
+    dealloc(mask_alloc^)
+    dealloc(output_alloc^)
 
 
 def main() raises:
@@ -309,5 +350,5 @@ def main() raises:
 
     var m = Bench()
     for i in range(len(specs)):
-        bench_attention[DType.float32](m, specs[i])
+        bench_attention[.float32](m, specs[i])
     m.dump_report()

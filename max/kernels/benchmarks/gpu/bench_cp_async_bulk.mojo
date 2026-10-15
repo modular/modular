@@ -33,6 +33,7 @@ different slot, hiding g2s latency behind S-1 iterations of work.
 
 from std.sys import get_defined_bool, get_defined_int, size_of
 
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     Bencher,
@@ -40,24 +41,18 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from std.gpu import (
-    barrier,
-    block_idx,
-    grid_dim as gpu_grid_dim,
-    thread_idx,
-    warp_id,
-)
-from std.gpu.host import DeviceContext, FuncAttribute
-from std.gpu.memory import (
-    AddressSpace,
+from max.gpu import block_idx, grid_dim as gpu_grid_dim, warp_id
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext
+from max.gpu.memory import (
     cp_async_bulk_global_shared_cta,
     cp_async_bulk_prefetch,
     cp_async_bulk_shared_cluster_global,
     external_memory,
     fence_mbarrier_init,
 )
-from std.gpu.primitives import elect_one_sync
-from std.gpu.sync import (
+from max.gpu.primitives.cluster import elect_one_sync
+from max.gpu.sync import (
     cp_async_bulk_commit_group,
     cp_async_bulk_wait_group,
 )
@@ -66,22 +61,22 @@ from internal_utils import arg_parse
 from layout.tma_async import SharedMemBarrier
 
 
-@always_inline
+@inline(.always)
 def _smem_ptr[
     BYTES_PER_COPY: Int, S: Int
 ](
-    base: UnsafePointer[UInt8, _, address_space=AddressSpace.SHARED],
+    base: MutPointer[UInt8, _, address_space=.SHARED],
     warp: Int,
     slot: Int,
 ) -> type_of(base):
     return base + (warp * S + slot) * BYTES_PER_COPY
 
 
-@always_inline
+@inline(.always)
 def _mbar_ref[
     S: Int
 ](
-    base: UnsafePointer[SharedMemBarrier, _, address_space=AddressSpace.SHARED],
+    base: MutPointer[SharedMemBarrier, _, address_space=.SHARED],
     warp: Int,
     slot: Int,
 ) -> type_of(base):
@@ -91,15 +86,15 @@ def _mbar_ref[
 def bulk_memcpy_kernel[
     NUM_THREADS: Int, BYTES_PER_COPY: Int, S: Int, PREFETCH: Bool
 ](
-    src: UnsafePointer[UInt8, ImmutAnyOrigin],
-    dst: UnsafePointer[UInt8, MutAnyOrigin],
-    total_chunks: Int,
+    src: ImmPointer[UInt8, ImmutAnyOrigin],
+    dst: MutPointer[UInt8, MutAnyOrigin],
+    total_chunks: Int32,
 ):
     comptime NUM_WARPS = NUM_THREADS // 32
     comptime DATA_BYTES = NUM_WARPS * S * BYTES_PER_COPY
 
     var smem_base = external_memory[
-        UInt8, address_space=AddressSpace.SHARED, alignment=128
+        UInt8, address_space=.SHARED, alignment=128
     ]()
     var mbar_base = (smem_base + DATA_BYTES).bitcast[SharedMemBarrier]()
 
@@ -112,12 +107,12 @@ def bulk_memcpy_kernel[
     fence_mbarrier_init()
     barrier()
 
-    var src_g = src.address_space_cast[AddressSpace.GLOBAL]()
-    var dst_g = dst.address_space_cast[AddressSpace.GLOBAL]()
+    var src_g = src.address_space_cast[.GLOBAL]()
+    var dst_g = dst.address_space_cast[.GLOBAL]()
 
-    var first = Int(block_idx.x) * NUM_WARPS + w
+    var first = block_idx.x * NUM_WARPS + w
     var stride = Int(gpu_grid_dim.x) * NUM_WARPS
-    var my_total = max(0, (total_chunks - first + stride - 1) // stride)
+    var my_total = max(0, (Int(total_chunks) - first + stride - 1) // stride)
 
     if not is_leader:
         return
@@ -226,29 +221,28 @@ def main() raises:
     var m = Bench()
 
     with DeviceContext() as ctx:
-        var src_dev = ctx.enqueue_create_buffer[DType.uint8](total_bytes)
-        var dst_dev = ctx.enqueue_create_buffer[DType.uint8](total_bytes)
+        var src_dev = ctx.enqueue_create_buffer[.uint8](total_bytes)
+        var dst_dev = ctx.enqueue_create_buffer[.uint8](total_bytes)
 
-        @parameter
-        @always_inline
-        def bench_func(mut b: Bencher):
-            @parameter
-            @always_inline
-            def kernel_launch(ctx: DeviceContext) raises:
+        @inline(.always)
+        def bench_func(mut b: Bencher) {imm}:
+            @inline(.always)
+            def kernel_launch(ctx: DeviceContext) raises {imm}:
                 ctx.enqueue_function[
                     bulk_memcpy_kernel[NUM_THREADS, BYTES_PER_COPY, S, PREFETCH]
                 ](
                     src_dev,
                     dst_dev,
-                    total_chunks,
+                    Int32(total_chunks),
                     grid_dim=(grid,),
                     block_dim=(NUM_THREADS,),
                     shared_mem_bytes=smem_bytes,
                 )
 
-            b.iter_custom[kernel_launch](ctx)
+            bencher_iter_custom(b, kernel_launch, ctx)
 
-        m.bench_function[bench_func](
+        m.bench_function(
+            bench_func,
             BenchId(
                 "cp_async_bulk",
                 input_id=String(

@@ -62,7 +62,7 @@ class Learnable2DInterpPosEmbDividedFixed(Module, Shardable):
         dim: int = 1152,
         num_frames: int = 4,
         dtype: DType = DType.bfloat16,
-        device: DeviceRef = DeviceRef.CPU(),
+        device: DeviceRef = DeviceRef.CPU(),  # noqa: B008
         is_sharding: bool = False,
     ) -> None:
         """Initializes the 2D position embedding grid.
@@ -204,7 +204,7 @@ class PatchEmbedding(Module, Shardable):
         init_pos_emb_width: int = 64,
         init_pos_emb_time: int = 4,
         dtype: DType = DType.bfloat16,
-        device: DeviceRef = DeviceRef.CPU(),
+        device: DeviceRef = DeviceRef.CPU(),  # noqa: B008
         has_bias: bool = True,
         is_sharding: bool = False,
     ) -> None:
@@ -316,8 +316,8 @@ class PatchEmbedding(Module, Shardable):
         ``x = self.pos_emb(x, grid_thws)``.
 
         Args:
-            pixel_values: (n_patches, in_channels, patch_size, patch_size) in NCHW format,
-                i.e. n_patches patches of shape (3, 14, 14).
+            pixel_values: (n_patches, in_channels, patch_size, patch_size) in
+                NCHW format; that is, n_patches patches of shape (3, 14, 14).
             grid_thws: (n_videos, 3) temporal, height, width per video,
                 dtype int64.
 

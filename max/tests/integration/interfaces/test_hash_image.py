@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 # ===----------------------------------------------------------------------=== #
 # Copyright (c) 2026, Modular Inc. All rights reserved.
 #
@@ -15,6 +14,7 @@
 
 import numpy as np
 import pytest
+from max._core import xxhash
 from max.support.image import hash_image, hash_video
 
 
@@ -114,6 +114,56 @@ def test_hash_image_pixels_reject_size_tier() -> None:
     # that would otherwise yield a subtly wrong, tier-independent key.
     with pytest.raises(ValueError, match="size_tier is only folded"):
         hash_image(arr, 123)
+
+
+def _concatenated_digest(data: bytes, tier: int) -> int:
+    """The raw-bytes key computed the way it was before streaming.
+
+    Builds ``data ++ tier`` in one mutable buffer and hashes it in a single
+    shot, which is what ``hash_image`` did when it copied the payload.
+    """
+    buf = bytearray(len(data) + 8)
+    buf[: len(data)] = data
+    buf[len(data) :] = int(tier).to_bytes(8, "little", signed=False)
+    hash_val = xxhash.xxh3_64_intdigest(np.frombuffer(buf, dtype=np.uint8))
+    return int(np.uint64(hash_val).astype(np.int64))
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        b"",
+        b"x",
+        b"modular",
+        b"\x00" * 8,
+        bytes(range(256)),
+        b"\xff\xd8\xff\xe0" + bytes(range(256)) * 40,  # JPEG-ish, spans blocks
+    ],
+)
+@pytest.mark.parametrize("tier", [0, 1, 280, 70 << 16 | 32, 2**64 - 1])
+def test_streamed_key_matches_the_concatenated_key(
+    data: bytes, tier: int
+) -> None:
+    """Streaming the tier must not change a single key.
+
+    ``hash_image`` hashes the payload and the tier as two pieces instead of
+    copying the payload to append eight bytes to it. XXH3 defines that as
+    identical to hashing the concatenation, and this pins it: a separate
+    encoder process reproduces these keys, so a digest change here would
+    silently split the two sides' view of image identity.
+    """
+    assert hash_image(data, tier) == _concatenated_digest(data, tier)
+
+
+def test_raw_byte_key_golden_values() -> None:
+    """Hard-coded digests, so both implementations changing together is caught.
+
+    The parity test above compares two code paths in this process; these pin the
+    actual numbers a cache-aware router has to agree with.
+    """
+    assert hash_image(b"modular", 280) == 8862388020968666451
+    assert hash_image(b"", 0) == -4072596861322023719
+    assert hash_image(b"x", 2**64 - 1) == 6386758147624513512
 
 
 def test_hash_video_depends_on_pixels_and_grid() -> None:

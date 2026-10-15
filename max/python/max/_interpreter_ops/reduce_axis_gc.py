@@ -64,8 +64,9 @@ from max.graph import DeviceRef, Graph, Module, TensorType, TensorValue, ops
 # CUDA's reduction kernels (the reduce/argmax family) only support 32- and
 # 64-bit integer reduction: 8/16-bit int reduce fails to compile on the B200
 # backend ("Failed to compile the model"). So on accelerators the reduction
-# family is narrowed to the wide ints. Cumsum is exempt — on GPU it transfers to
-# CPU (KERN-1095), so it keeps the full int set; CPU supports every width.
+# family is narrowed to the wide ints. Cumsum is exempt: its GPU kernel scans
+# narrow ints in 32 bits, so it keeps the full int set. CPU supports every
+# width.
 _WIDE_INT_DTYPES = [DType.int32, DType.int64, DType.uint32, DType.uint64]
 
 # Cumsum's (exclusive, reverse) flags ride in the cache key as a variant; every
@@ -196,8 +197,8 @@ def _supported_dtypes(dtype_class: DTypeClass, device: Device) -> list[DType]:
     if dtype_class is DTypeClass.FLOAT:
         return gc_compile.float_dtypes(device)
     if dtype_class is DTypeClass.CUMSUM:
-        # Cumsum runs on CPU even for a GPU graph (KERN-1095), so it keeps every
-        # int width on all devices.
+        # The cumsum GPU kernel widens 8/16-bit ints to 32 bits, so it keeps
+        # every int width on all devices.
         return (
             gc_compile.float_dtypes(device)
             + gc_compile.SIGNED_INT_DTYPES
@@ -332,8 +333,8 @@ def reduce_model(
 
     Lazy by default: compiled on first use and cached for the process lifetime.
     With ``MAX_EAGER_OP_PRECOMPILE=1`` it was precompiled at import and this is a
-    lookup. On the first miss, a warm cache is adopted whole (manifest
-    force-load, else a batched stamp sweep) instead of compiling per target.
+    lookup. On the first miss, a warm cache is adopted whole (the warm store,
+    else a batched stamp sweep) instead of compiling per target.
 
     Args:
         op_type: The concrete ``mo.*Op`` type of the op being handled.
@@ -345,9 +346,9 @@ def reduce_model(
         The compiled model ready for execution.
 
     Raises:
-        KeyError: If the (op, device, dtype) is outside the supported set; or,
-            with ``MAX_EAGER_OP_PRECOMPILE=1``, if a supported target was not
-            swept.
+        KeyError: If the (op, device, dtype) is outside the supported set.
+        EagerLazyCompileDisallowed: If a supported target is not already
+            compiled and ``MAX_EAGER_ALLOW_LAZY_COMPILE=0``.
     """
     key = _graph_name(op_type, device, dtype, variant)
     # Cache-check before building the closures below: this runs on every
@@ -376,5 +377,4 @@ def reduce_model(
         device,
         build,
         unsupported_reason=check_supported,
-        display_name="reduce",
     )

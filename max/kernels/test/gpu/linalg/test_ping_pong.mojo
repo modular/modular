@@ -19,8 +19,8 @@ Supports both BF16 and FP8 via compile-time flag:
 
 from std.sys import get_defined_bool, get_defined_int
 
-from layout import Idx, Coord, TileTensor, row_major
-from std.gpu.host import DeviceContext
+from layout import TileTensor, row_major
+from max.gpu.host import DeviceContext
 import linalg.matmul.vendor.blas as vendor_blas
 from std.testing import assert_equal
 from std.random import random_float64
@@ -45,8 +45,8 @@ def test_ping_pong_kernel_amd[
     """Test ping-pong kernel with parameterized input dtype."""
     var device_a = ctx.enqueue_create_buffer[in_dtype](M * K)
     var device_b = ctx.enqueue_create_buffer[in_dtype](N * K)
-    var device_c = ctx.enqueue_create_buffer[DType.float32](M * N)
-    var device_c_ref = ctx.enqueue_create_buffer[DType.float32](M * N)
+    var device_c = ctx.enqueue_create_buffer[.float32](M * N)
+    var device_c_ref = ctx.enqueue_create_buffer[.float32](M * N)
 
     with device_a.map_to_host() as host_a, device_b.map_to_host() as host_b:
         # Use random floats for both BF16 and FP8 to expose precision bugs.
@@ -67,9 +67,9 @@ def test_ping_pong_kernel_amd[
     var c_ref_tt = TileTensor(device_c_ref, row_major[M, N]())
     vendor_blas.matmul(
         ctx,
-        c_ref_tt.to_layout_tensor(),
-        a_tt.to_layout_tensor(),
-        b_tt.to_layout_tensor(),
+        c_ref_tt,
+        a_tt,
+        b_tt,
         c_row_major=True,
         transpose_b=True,
     )
@@ -95,7 +95,7 @@ def test_ping_pong_kernel_amd[
             # FP8 16x16x128 MMA has lower precision than BF16 16x16x32
             var rel_tol = Float32(
                 0.05
-            ) if in_dtype == DType.float8_e4m3fn else Float32(0.01)
+            ) if in_dtype == .float8_e4m3fn else Float32(0.01)
             var abs_tol = Float32(1e-5)
             for i in range(M * N):
                 var actual = host_c[i]

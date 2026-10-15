@@ -31,30 +31,43 @@ class Conv2d(Module[[Tensor], Tensor]):
 
     This is a Conv2d implementation that uses Tensor instead of Weight objects.
 
-    Example:
-        .. code-block:: python
+    For example, apply the layer to a batch of images:
 
-            from max.driver import Accelerator
-            from max.dtype import DType
-            from max.experimental.nn import Conv2d
-            from max.experimental.tensor import Tensor
+    .. Skipped: an Apple GPU satisfies the ``accelerator_count()`` guard
+       below but cannot run an FCRS-filter conv, whose only GPU path is
+       cuDNN. Paired ``start``/``end`` rather than ``next`` so the skip
+       also covers the invisible check, which reads ``result`` from this
+       block. Remove both once KERN-3583 is fixed.
+    .. skip: start if(__import__("sys").platform == "darwin", "FCRS conv is cuDNN-only (KERN-3583)")
 
-            conv = Conv2d(
-                kernel_size=3,
-                in_channels=3,
-                out_channels=64,
-                dtype=DType.float32,
-                has_bias=True,
-                permute=True,
-            )
-            x = Tensor.ones([1, 3, 32, 32], dtype=DType.float32)
+    .. code-block:: python
+
+        from max.driver import Accelerator, accelerator_count
+        from max.dtype import DType
+        from max.experimental.nn import Conv2d
+        from max.experimental.tensor import Tensor
+
+        conv = Conv2d(
+            kernel_size=3,
+            in_channels=3,
+            out_channels=64,
+            dtype=DType.float32,
+            has_bias=True,
+            permute=True,
+        )
+        x = Tensor.ones([1, 3, 32, 32], dtype=DType.float32)
+        # permute=True uses the FCRS filter layout, which requires a GPU.
+        if accelerator_count():
             result = conv(x.to(Accelerator()))
 
-        .. invisible-code-block: python
+    .. invisible-code-block: python
 
+        if accelerator_count():
             # permute=True: NCHW in -> NCHW out. 3x3 kernel, no padding,
             # so 32x32 -> 30x30 and channels go 3 -> 64.
             assert tuple(int(d) for d in result.shape) == (1, 64, 30, 30)
+
+    .. skip: end
 
     """
 

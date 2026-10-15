@@ -32,7 +32,7 @@ from max.pipelines.request import RequestID
 from ._zmq_queue import ZmqPullSocket, ZmqPushSocket
 
 if TYPE_CHECKING:
-    from max.pipelines.lora import LoRAManager
+    from max.pipelines.lora import LoRAManagerV3
 
 _logger = logging.getLogger("max.serve")
 
@@ -40,19 +40,19 @@ __all__ = ["LoRARequestProcessor"]
 
 
 class LoRARequestProcessor:
-    """Processes LoRA requests by delegating operations to a LoRAManager.
+    """Processes LoRA requests by delegating operations to a LoRA manager.
 
     Acts as a bridge between the LoRA queue system and the LoRA manager,
     processing load/unload/list operations and returning appropriate responses.
 
     Args:
-        manager: The LoRAManager instance to handle operations.
+        manager: The LoRA manager instance to handle operations.
         zmq_endpoint_base: Base endpoint string for ZMQ request/response sockets.
     """
 
     def __init__(
         self,
-        manager: LoRAManager,
+        manager: LoRAManagerV3,
         zmq_endpoint_base: str,
     ):
         self.manager = manager
@@ -93,9 +93,9 @@ class LoRARequestProcessor:
                 return self._handle_unload_request(request)
         except Exception as e:
             _logger.exception(
-                f"Unexpected error handling LoRA request {request}: {e}"
+                f"Unexpected error handling LoRA request {request}"
             )
-            error_detail = str(e) if str(e) else "Unknown error"
+            error_detail = str(e) or "Unknown error"
 
             if request.operation == LoRAOperation.LOAD:
                 return LoRAResponse(

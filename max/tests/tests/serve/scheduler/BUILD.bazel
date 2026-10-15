@@ -35,6 +35,7 @@ _MACOS_INCOMPATIBLE_TESTS = [
         }) if src in _MACOS_INCOMPATIBLE_TESTS else [],
         deps = [
             ":common",
+            requirement("opentelemetry-sdk"),
             requirement("pytest-asyncio"),
             requirement("pytest-mock"),
         ],
@@ -65,10 +66,6 @@ modular_py_test(
     tags = [
         "external-exclusive",  # Times out if run with too many other tests
         "gpu",
-        # TODO(GEX-3817): times out at the 610s test cap on b200 remote
-        # execution (10/10, 20/20, 2026-07-17); un-gating needs a bare-metal
-        # ci-local-gpu stability run, which remote exec cannot provide.
-        "manual",
     ],
     target_compatible_with = [
         "@platforms//cpu:x86_64",
@@ -77,9 +74,12 @@ modular_py_test(
     deps = [
         ":common",
         "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
         "//max/python/max/nn",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/kv_cache",
+        "//max/python/max/pipelines/kv_cache:kv_connector",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/modeling",
         "//max/python/max/pipelines/speculative",
@@ -106,11 +106,11 @@ modular_py_test(
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
+    precompile_mefs = True,
     tags = [
         "gpu",
     ],
     deps = [
-        ":common",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",

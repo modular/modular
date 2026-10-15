@@ -45,6 +45,11 @@ from max.pipelines.architectures.gemma4.layers.rms_norm import Gemma4RMSNorm
 class Gemma4Attention(Module, Shardable):
     """Implementation of the attention layer for the Gemma3 text model."""
 
+    # Flash-attention mask override for subclasses (e.g. the DSpark draft's
+    # non-causal block attention). ``None`` selects the standard causal /
+    # sliding-window-causal mask by layer type.
+    mask_variant: MHAMaskVariant | None = None
+
     def __init__(
         self,
         *,
@@ -241,11 +246,13 @@ class Gemma4Attention(Module, Shardable):
         xq = xq.reshape((-1, self.n_heads, self.head_dim))
 
         # Calculate Flash Attention.
-        mask_variant = (
-            MHAMaskVariant.SLIDING_WINDOW_CAUSAL_MASK
-            if self.use_local
-            else MHAMaskVariant.CAUSAL_MASK
-        )
+        mask_variant = self.mask_variant
+        if mask_variant is None:
+            mask_variant = (
+                MHAMaskVariant.SLIDING_WINDOW_CAUSAL_MASK
+                if self.use_local
+                else MHAMaskVariant.CAUSAL_MASK
+            )
         attn_out = flash_attention_ragged(
             self.kv_params,
             input=xq,

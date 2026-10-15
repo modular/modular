@@ -12,4 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 """Provides the AMD RDNA GPU backend implementations for matmuls."""
 
-from .matmul import gemm_kernel_rdna
+from .matmul import (
+    gemm_kernel_rdna,
+    gemm_kernel_rdna_compute_fn,
+    gemm_kernel_rdna_epilogue_fn,
+)

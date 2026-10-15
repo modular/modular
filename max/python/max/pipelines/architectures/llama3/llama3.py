@@ -15,8 +15,10 @@
 from __future__ import annotations
 
 import functools
+from collections import OrderedDict
 from collections.abc import Callable, Sequence
 
+from max import tree
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType, TensorValue, ops
 from max.graph.quantization import QuantizationEncoding
@@ -29,10 +31,11 @@ from max.nn.embedding import Embedding
 from max.nn.kv_cache import KVCacheParamInterface
 from max.nn.layer import Module
 from max.nn.linear import MLP, GPTQLinear, Linear
-from max.nn.lora import AttentionWithRopeAndLoRA
 from max.nn.norm import ConstantLayerNorm, RMSNorm
 from max.nn.transformer import Transformer, TransformerBlock
-from max.pipelines.lora import LoRAManager
+from max.pipelines.lib.interfaces.batch_processor import (
+    ragged_kv_symbolic_input_tree,
+)
 
 from .model_config import Llama3Config, create_rope_embedding
 
@@ -149,17 +152,6 @@ class Llama3(Transformer):
                 quantization_encoding=config.model_quantization_encoding,
                 scale=config.attention_multiplier,
             )
-        elif config.lora_config is not None:
-            attention_cls = functools.partial(
-                AttentionWithRopeAndLoRA,
-                stacked_qkv=config.stacked_qkv,
-                scale=config.attention_multiplier,
-                clip_qkv=config.clip_qkv,
-                has_bias=config.attention_bias,
-                max_num_loras=config.lora_config.max_num_loras,
-                max_lora_rank=config.lora_config.max_lora_rank,
-                quant_config=config.quant_config,
-            )
         else:
             attention_cls = functools.partial(
                 AttentionWithRope,
@@ -239,57 +231,29 @@ class Llama3(Transformer):
             target_layer_ids=config.target_layer_ids,
         )
 
+    def input_tree(
+        self,
+        kv_params: KVCacheParamInterface,
+        needs_hidden_state_input: bool = False,
+    ) -> OrderedDict[str, object]:
+        """Names the graph's inputs; its leaves are the graph's inputs."""
+        # Hidden state input is for EAGLE-like spec decoding draft models.
+        return ragged_kv_symbolic_input_tree(
+            kv_params=kv_params,
+            device_refs=list(self.config.devices),
+            include_signal_buffers=False,
+            hidden_states=(
+                (self.config.dtype, self.config.hidden_size)
+                if needs_hidden_state_input
+                else None
+            ),
+        )
+
     def input_types(
         self,
         kv_params: KVCacheParamInterface,
-        lora_manager: LoRAManager | None,
         needs_hidden_state_input: bool = False,
     ) -> tuple[TensorType | BufferType, ...]:
-        # TODO: Move input symbol computation from the manager classes.
-        # It should be possible to compute the input symbols from the model
-        # config.
-        device_ref = self.config.devices[0]
-
-        # Construct general input types
-        return_n_logits_type = TensorType(
-            DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
-        )
-
-        kv_inputs = kv_params.get_symbolic_inputs()
-
-        # Construct Graph Inputs
-        tokens_type = TensorType(
-            DType.int64, shape=["total_seq_len"], device=device_ref
-        )
-        input_row_offsets_type = TensorType(
-            DType.uint32, shape=["input_row_offsets_len"], device=device_ref
-        )
-        if lora_manager is not None:
-            return (
-                tokens_type,
-                input_row_offsets_type,
-                return_n_logits_type,
-                *lora_manager.get_symbolic_inputs(device_ref),
-                *kv_inputs.flatten(),
-            )
-        # hidden state input is for EAGLE-like spec decoding draft models
-        if needs_hidden_state_input:
-            hidden_states_type = TensorType(
-                self.config.dtype,
-                shape=["total_seq_len", self.config.hidden_size],
-                device=device_ref,
-            )
-            return (
-                tokens_type,
-                input_row_offsets_type,
-                return_n_logits_type,
-                hidden_states_type,
-                *kv_inputs.flatten(),
-            )
-
-        return (
-            tokens_type,
-            input_row_offsets_type,
-            return_n_logits_type,
-            *kv_inputs.flatten(),
+        return tuple(
+            tree.leaves(self.input_tree(kv_params, needs_hidden_state_input))
         )

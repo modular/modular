@@ -22,12 +22,12 @@ on a single B200.
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
 from max.pipelines.lib import SupportedArchitecture
+from max.pipelines.lib.tokenizer import ReasoningTextTokenizer
 from max.pipelines.modeling.types import PipelineTask
 
 from . import weight_adapters
 from .model import LagunaModel
 from .model_config import LagunaConfig
-from .tokenizer import LagunaTokenizer
 
 laguna_arch = SupportedArchitecture(
     name="LagunaForCausalLM",
@@ -36,10 +36,10 @@ laguna_arch = SupportedArchitecture(
         "poolside/Laguna-M.1-NVFP4",
     ],
     default_weights_format=WeightsFormat.safetensors,
-    default_encoding="bfloat16",
-    supported_encodings={"bfloat16", "float4_e2m1fnx2"},
+    default_encoding=LagunaConfig.DEFAULT_ENCODING,
+    supported_encodings=LagunaConfig.SUPPORTED_ENCODINGS,
     pipeline_model=LagunaModel,
-    tokenizer=LagunaTokenizer,
+    tokenizer=ReasoningTextTokenizer,
     context_type=TextContext,
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,

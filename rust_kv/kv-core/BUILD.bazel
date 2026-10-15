@@ -1,0 +1,35 @@
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+load("@rust_kv_crates//:defs.bzl", "all_crate_deps")
+load("//rust_kv:test_compat.bzl", "NO_SANITIZER_COMPATIBLE_WITH")
+
+package(default_visibility = ["//rust_kv:consumers"])
+
+# Pure host code, so unlike kv-tier-connector this is not gated to a GPU
+# platform. Third-party crates (sha2, for the SHA-256 block hash) come from the
+# @rust_kv_crates universe, which the open-source build also has.
+rust_library(
+    name = "kv-core",
+    srcs = glob(["src/**/*.rs"]),
+    edition = "2024",
+    deps = all_crate_deps(normal = True),
+)
+
+rust_test(
+    name = "kv-core-test",
+    crate = ":kv-core",
+    edition = "2024",
+    # A macOS binary links on the Linux remote executor, which has neither
+    # `dsymutil` (split debuginfo) nor `rust-objcopy` (the opt-mode strip pass).
+    rustc_flags = select({
+        "@platforms//os:macos": [
+            "-C",
+            "split-debuginfo=off",
+            "-C",
+            "strip=none",
+        ],
+        "//conditions:default": [],
+    }),
+    # The sanitizer runners cannot load the ASAN runtime for Rust test binaries;
+    # kv-core is safe Rust (`unsafe_code = "deny"`), so there is nothing to sanitize.
+    target_compatible_with = NO_SANITIZER_COMPATIBLE_WITH,
+)

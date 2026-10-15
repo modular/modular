@@ -14,6 +14,7 @@
 from max.graph.weights import WeightsFormat
 from max.pipelines.lib import SupportedArchitecture
 from max.pipelines.modeling.types import InputModality, PipelineTask
+from max.pipelines.speculative._dflash import dflash_draft_width
 
 from ..kimik2_5 import weight_adapters
 from ..kimik2_5.context import KimiK2_5TextAndVisionContext
@@ -29,12 +30,8 @@ unified_dflash_kimi_k25_arch = SupportedArchitecture(
     example_repo_ids=[
         "nvidia/Kimi-K2.5-NVFP4",
     ],
-    default_encoding="bfloat16",
-    supported_encodings={
-        "bfloat16",
-        "float8_e4m3fn",
-        "float4_e2m1fnx2",
-    },
+    default_encoding=UnifiedDflashKimiK25Config.DEFAULT_ENCODING,
+    supported_encodings=UnifiedDflashKimiK25Config.SUPPORTED_ENCODINGS,
     multi_gpu_supported=True,
     input_modalities={InputModality.TEXT, InputModality.IMAGE},
     pipeline_model=UnifiedDflashKimiK25Model,
@@ -52,4 +49,5 @@ unified_dflash_kimi_k25_arch = SupportedArchitecture(
     reasoning_parser="kimik2_5",
     memory_planner=KimiK25MemoryPlanner,
     supports_device_graph_capture=False,
+    checkpoint_draft_width=dflash_draft_width,
 )

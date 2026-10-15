@@ -26,7 +26,8 @@ writer can later move to a closed-source tree.
   barrier (reduce-scatter) or not (local store).
 - `num_peers: Int`: number of C TMA descriptors the kernel must supply in
   `c_tma_ops` (1 for the local store, one per peer for reduce-scatter).
-- `write_batched[...]( c_tma_ops, c_tiles, stage, tile_coord, shape, alpha )`:
+- `write_batched[...]( c_tma_ops, c_tiles, stage, tile_coord, shape,
+  epilogue_fn, compute_fn, alpha )`:
   a static method that *constructs the concrete writer and writes one batched
   output tile*. Construction lives inside the policy, where the concrete writer
   type is named and non-erased; the kernel only passes the `c_tma_ops` array
@@ -42,7 +43,7 @@ trait-typed writer *value*:
 - A trait *associated* type / value erases to its declared bound, so a writer
   obtained as a trait-typed value cannot have `write_batched` called on it
   (its associated `CTileArray` / `Stage` arg types are opaque, and matching a
-  by-value-`Tuple` requirement against an `@always_inline` impl trips a
+  by-value-`Tuple` requirement against an `@inline(.always)` impl trips a
   parameter-origin mismatch). Keeping the construct-and-write step *inside* the
   policy static method dodges erasure entirely: there the writer is concrete,
   and `c_tiles` / `stage` are the shared `SMemTileArray2DRowMajor[...]` /
@@ -58,13 +59,15 @@ Target hardware: SM100 (B200).
 
 from std.collections import Optional
 from std.memory import Pointer
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 
+from layout import Coord
 from layout.tma_async import TMATensorTile
 
 from linalg.utils import (
+    ElementwiseComputeFn,
+    ElementwiseEpilogueFn,
     elementwise_epilogue_type,
-    elementwise_compute_lambda_type,
 )
 
 from std.utils.index import IndexList
@@ -94,11 +97,13 @@ trait OutputWriter:
 
     @staticmethod
     def write_batched[
+        EpilogueFnType: ElementwiseEpilogueFn,
+        ComputeFnType: ElementwiseComputeFn,
+        //,
         tma_origin: ImmOrigin,
         c_type: DType,
-        c_rank: Int,
-        c_tile_shape: IndexList[c_rank],
-        c_desc_shape: IndexList[c_rank],
+        c_tile_shape: Coord,
+        c_desc_shape: Coord,
         a_type: DType,
         accum_type: DType,
         block_tile_shape: IndexList[3],
@@ -111,14 +116,13 @@ trait OutputWriter:
         num_output_stages: Int,
         num_output_warps: Int,
         elementwise_lambda_fn: Optional[elementwise_epilogue_type],
-        elementwise_compute_lambda_fn: Optional[
-            elementwise_compute_lambda_type
-        ],
+        has_epilogue_fn: Bool,
+        has_compute_fn: Bool,
         register_based_epilogue: Bool,
     ](
         c_tma_ops: Pointer[
-            InlineArray[
-                TMATensorTile[c_type, c_rank, c_tile_shape, c_desc_shape],
+            Array[
+                TMATensorTile[c_type, c_tile_shape, c_desc_shape],
                 Self.num_peers,
             ],
             tma_origin,
@@ -129,6 +133,8 @@ trait OutputWriter:
         stage: OutputStage[opc],
         tile_coord: Tuple[UInt32, UInt32, UInt32],
         shape: Tuple[UInt32, UInt32],
+        epilogue_fn: EpilogueFnType,
+        compute_fn: ComputeFnType,
         alpha: Float32 = Float32(1.0),
     ):
         """Construct the concrete writer from the `c_tma_ops` array and write
@@ -141,9 +147,10 @@ trait OutputWriter:
         pipeline stage directly, with no rebind needed.
 
         Parameters:
+            EpilogueFnType: Type of the elementwise epilogue closure.
+            ComputeFnType: Type of the compute epilogue closure.
             tma_origin: Origin of the C TMA descriptor memory.
             c_type: Element `DType` of the output C tensor.
-            c_rank: Rank (number of dimensions) of the C tensor.
             c_tile_shape: Per-dimension tile shape of the C TMA descriptor.
             c_desc_shape: Per-dimension shape of the C output tensor.
             a_type: Element `DType` of the A operand.
@@ -160,8 +167,10 @@ trait OutputWriter:
             num_output_warps: Number of warps participating in the epilogue.
             elementwise_lambda_fn: Optional fused elementwise epilogue that
                 writes the output tile to global memory, or `None`.
-            elementwise_compute_lambda_fn: Optional fused elementwise
-                compute applied to the accumulator before store, or `None`.
+            has_epilogue_fn: Whether `epilogue_fn` stores the output tile
+                to global memory instead of the TMA store.
+            has_compute_fn: Whether `compute_fn` is applied to the
+                accumulator before the store.
             register_based_epilogue: Whether the epilogue runs from register
                 fragments instead of staging through SMEM.
 
@@ -174,6 +183,10 @@ trait OutputWriter:
             tile_coord: `(m, n, k_start)` block coordinates of the output
                 tile.
             shape: `(M, N)` problem dimensions for bounds checking.
+            epilogue_fn: Stores each output value to global memory;
+                ignored unless `has_epilogue_fn` is True.
+            compute_fn: Element-wise epilogue applied to each output value;
+                ignored unless `has_compute_fn` is True.
             alpha: Scaling factor applied to the accumulator (defaults to 1).
         """
         ...

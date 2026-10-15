@@ -35,11 +35,8 @@ example_repo_ids = [
 gemma3_multimodal_arch = SupportedArchitecture(
     name="Gemma3ForConditionalGeneration",
     example_repo_ids=example_repo_ids,
-    default_encoding="bfloat16",
-    supported_encodings={
-        "bfloat16",
-        "float8_e4m3fn",
-    },
+    default_encoding=Gemma3ForConditionalGenerationConfig.DEFAULT_ENCODING,
+    supported_encodings=Gemma3ForConditionalGenerationConfig.SUPPORTED_ENCODINGS,
     pipeline_model=Gemma3_MultiModalModel,
     task=PipelineTask.TEXT_GENERATION,
     tokenizer=TextAndVisionTokenizer,

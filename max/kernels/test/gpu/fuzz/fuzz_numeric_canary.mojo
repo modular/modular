@@ -22,8 +22,8 @@
 # i.e. it proves the numerical oracle catches what the memory-safety/diff oracle
 # cannot, and that boundary generation finds the shape-dependent numeric bug.
 
-from std.gpu import global_idx
-from std.gpu.host import DeviceContext
+from max.gpu import global_idx
+from max.gpu.host import DeviceContext
 from std.math import ceildiv
 from std.random import rand, seed
 from std.sys.defines import get_defined_int
@@ -36,10 +36,12 @@ comptime BLOCK = 256
 
 
 def numeric_canary_kernel(
-    dst: UnsafePointer[Float32, MutAnyOrigin],
-    inp: UnsafePointer[Float32, MutAnyOrigin],
-    n: Int,
+    dst: MutPointer[Float32, MutAnyOrigin],
+    inp: MutPointer[Float32, MutAnyOrigin],
+    n_dev: Int32,
 ):
+    # `Int` is not device-passable; widen the fixed-width arg.
+    var n = Int(n_dev)
     var gid = global_idx.x
     if gid < n:
         var v = inp[gid] * Float32(2.0)
@@ -68,25 +70,25 @@ def run_one_case(
     ctx: DeviceContext, spec: CaseSpec, check: Bool = False
 ) raises:
     var n = spec.n
-    var in_host = ctx.enqueue_create_host_buffer[DType.float32](n)
+    var in_host = ctx.enqueue_create_host_buffer[.float32](n)
     rand(in_host.as_span())
 
-    var in_dev = ctx.enqueue_create_buffer[DType.float32](n)
-    var out_dev = ctx.enqueue_create_buffer[DType.float32](n)
+    var in_dev = ctx.enqueue_create_buffer[.float32](n)
+    var out_dev = ctx.enqueue_create_buffer[.float32](n)
     ctx.enqueue_copy(in_dev, in_host)
 
     ctx.enqueue_function[numeric_canary_kernel](
         out_dev,
         in_dev,
-        n,
+        Int32(n),
         grid_dim=ceildiv(n, BLOCK),
         block_dim=BLOCK,
     )
     ctx.synchronize()
 
     if check:
-        var out_h = ctx.enqueue_create_host_buffer[DType.float32](n)
-        var ref_h = ctx.enqueue_create_host_buffer[DType.float32](n)
+        var out_h = ctx.enqueue_create_host_buffer[.float32](n)
+        var ref_h = ctx.enqueue_create_host_buffer[.float32](n)
         ctx.enqueue_copy(out_h, out_dev)
         ctx.synchronize()
         var src = in_host.as_span()

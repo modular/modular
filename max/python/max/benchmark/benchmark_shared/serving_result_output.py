@@ -18,6 +18,7 @@ Printing, formatting, JSON/YAML persistence, and related utilities.
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import logging
@@ -25,8 +26,11 @@ import math
 import os
 import re
 import statistics
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from datetime import datetime
+from io import BytesIO
+from typing import NamedTuple
 
 import numpy as np
 import yaml
@@ -40,6 +44,7 @@ from max.benchmark.benchmark_shared.datasets.chat_judge import (
 )
 from max.benchmark.benchmark_shared.datasets.types import (
     ChatSamples,
+    OpenAIImage,
     RequestSamples,
     Samples,
 )
@@ -49,10 +54,21 @@ from max.benchmark.benchmark_shared.lora_benchmark_manager import (
 from max.benchmark.benchmark_shared.metrics import (
     BenchmarkResult,
     LoRAMetrics,
-    SpecDecodeStats,
+    PercentileMetrics,
+    StandardPercentileMetrics,
+    ThroughputMetrics,
+)
+from max.benchmark.benchmark_shared.percentile_metrics import (
+    json_safe,
 )
 from max.benchmark.benchmark_shared.server_metrics import print_server_metrics
 from max.benchmark.benchmark_shared.utils import print_section
+from max.benchmark.benchmark_shared.workload_stats import (
+    Distribution,
+    WorkloadStats,
+)
+from PIL import Image, UnidentifiedImageError
+from tabulate import tabulate
 
 logger = logging.getLogger(__name__)
 
@@ -108,49 +124,135 @@ def print_input_prompts(samples: Samples) -> None:
         print(elide_data_uris_in_string(str(prompt_info)))
 
 
-def _format_distribution_table(
-    values: Sequence[float | int], label: str
+def _format_distribution(
+    dist: Distribution | Sequence[float | int], label: str
 ) -> str:
-    """Format distribution statistics as a mini-table with header and value rows."""
-    _STAT_COLUMNS = (
-        "min",
-        "max",
-        "mean",
-        "std",
-        "p5",
-        "p25",
-        "p50",
-        "p75",
-        "p95",
-        "p99",
-    )
-    _COL_WIDTH = 10
+    """Formats a distribution as a mini-table with header and value rows.
 
-    arr = np.array(values, dtype=float)
-    p5, p25, p50, p75, p95, p99 = np.percentile(arr, [5, 25, 50, 75, 95, 99])
-    stat_values = (
-        np.min(arr),
-        np.max(arr),
-        np.mean(arr),
-        np.std(arr),
-        p5,
-        p25,
-        p50,
-        p75,
-        p95,
-        p99,
-    )
-    header = "    " + "".join(f"{name:<{_COL_WIDTH}}" for name in _STAT_COLUMNS)
-    row = "    " + "".join(f"{v:<{_COL_WIDTH}.2f}" for v in stat_values)
-    return f"  {label}:\n{header}\n{row}"
+    Every table carries the workload stats JSON's percentiles, so the sections
+    of the dry-run report line up with each other and with production. Raw
+    values also get std, p5 and p25, which show the spread and the low end of
+    per-session quantities that a :class:`Distribution` does not keep.
+    """
+    spread: dict[str, float] = {}
+    if not isinstance(dist, Distribution):
+        summary = Distribution.of(dist)
+        assert summary is not None, f"{label}: no values to summarize"
+        arr = np.asarray(dist, dtype=float)
+        p5, p25 = np.percentile(arr, (5, 25))
+        spread = {"std": float(arr.std()), "p5": float(p5), "p25": float(p25)}
+        dist = summary
+    cells = {
+        "count": f"{dist.count}",
+        "min": f"{dist.min:.2f}",
+        "mean": f"{dist.mean:.2f}",
+        **{name: f"{v:.2f}" for name, v in spread.items()},
+        **{f"p{p}": f"{v:.2f}" for p, v in dist.percentiles.items()},
+        "max": f"{dist.max:.2f}",
+    }
+    header = "    " + "".join(f"{name:<10}" for name in cells)
+    row = "    " + "".join(f"{v:<10}" for v in cells.values())
+    lines = [f"  {label}:", header, row]
+    if dist.fraction_above:
+        shares = ", ".join(
+            f">{t // 1000}k: {share:.2%}"
+            for t, share in dist.fraction_above.items()
+        )
+        lines.append(f"    share above {shares}")
+    return "\n".join(lines)
 
 
-def print_workload_stats(samples: Samples) -> None:
+def _image_dimensions(image: OpenAIImage) -> tuple[int, int] | None:
+    """Decode a data-URI image's (width, height), or None if not decodable."""
+    url = image["image_url"]["url"]
+    if not url.startswith("data:"):
+        return None
+    try:
+        _, b64_data = url.split(",", 1)
+        with Image.open(BytesIO(base64.b64decode(b64_data))) as img:
+            return img.size
+    except (ValueError, UnidentifiedImageError, OSError):
+        return None
+
+
+def _image_long_side(image: OpenAIImage) -> int | None:
+    """Decode a data-URI image's longer side in pixels, or None if not decodable."""
+    dimensions = _image_dimensions(image)
+    return None if dimensions is None else max(dimensions)
+
+
+def _print_image_stats(
+    images_per_item: Sequence[int],
+    all_images: Sequence[OpenAIImage],
+    label: str,
+) -> None:
+    """Print image-count and (when decodable) shape distributions."""
+    if sum(images_per_item) == 0:
+        return
+    print()
+    print(_format_distribution(images_per_item, f"Image count ({label})"))
+    # One decode per image feeds both tables; long side alone cannot show
+    # what shapes a sampled --image-aspect-ratio actually produced.
+    dimensions = [
+        d for img in all_images if (d := _image_dimensions(img)) is not None
+    ]
+    if dimensions:
+        print()
+        print(
+            _format_distribution(
+                [max(d) for d in dimensions], "Image long side (px)"
+            )
+        )
+        print()
+        print(
+            _format_distribution(
+                [w / h for w, h in dimensions], "Image aspect ratio (w/h)"
+            )
+        )
+
+
+def _print_requests_sent(stats: WorkloadStats) -> None:
+    """Prints the requests the run would send, in production's terms."""
+    print()
+    print_section(title=" Requests Sent ", char="-")
+    print(f"  {'Requests:':<30} {stats.requests}")
+    if stats.context_limit is not None:
+        print(f"  {'Context limit:':<30} {stats.context_limit}")
+    if (dropped := stats.dropped_turn_fraction) is not None and dropped > 0:
+        print(
+            f"  {'Turns dropped at the limit:':<30}"
+            f" {stats.turns_dropped_at_context_limit} ({dropped:.2%})"
+        )
+    for dist, label in (
+        (stats.input_len, "Input length"),
+        (stats.input_len_first_turn, "Input length (first turn)"),
+        (stats.input_len_later_turn, "Input length (later turns)"),
+        (stats.output_len, "Output length"),
+        (stats.tools_per_request, "Tools per tool-offering request"),
+    ):
+        if dist is not None:
+            print()
+            print(_format_distribution(dist, label))
+    print()
+    for share, label in (
+        (stats.tool_request_fraction, "Tool-offering requests:"),
+        (stats.image_request_fraction, "Image-carrying requests:"),
+        (stats.constrained_request_fraction, "Structured-output requests:"),
+    ):
+        if share is not None:
+            print(f"  {label:<30} {share:.2%}")
+
+
+def print_workload_stats(
+    samples: Samples, stats: WorkloadStats | None = None
+) -> None:
     """Print workload distribution statistics and exit.
 
     For single-turn workloads, prints input/output length stats.
     For multi-turn workloads, additionally prints num_turns and
-    delay_until_next_message stats.
+    delay_until_next_message stats. When ``stats`` is given, also prints the
+    requests the run would send: lengths split by turn, the long-context
+    tail and the request mix.
     """
     print_section(title=" Workload Statistics ", char="=")
 
@@ -162,13 +264,18 @@ def print_workload_stats(samples: Samples) -> None:
 
         print(f"  {'Total requests:':<30} {len(samples.requests)}")
         print()
-        print(_format_distribution_table(input_lens, "Input length"))
+        print(_format_distribution(input_lens, "Input length"))
         if output_lens:
             print()
-            print(_format_distribution_table(output_lens, "Output length"))
+            print(_format_distribution(output_lens, "Output length"))
         else:
             print()
             print("  Output length:  not specified (server-determined)")
+        _print_image_stats(
+            [len(r.encoded_images) for r in samples.requests],
+            [img for r in samples.requests for img in r.encoded_images],
+            "per request",
+        )
 
     elif isinstance(samples, ChatSamples):
         sessions = samples.chat_sessions
@@ -226,34 +333,43 @@ def print_workload_stats(samples: Samples) -> None:
         else:
             print(f"  {'Total turns (across all):':<30} {total_turns}")
         print()
-        print(
-            _format_distribution_table(
-                all_input_lens, "Input length (per turn)"
-            )
-        )
+        print(_format_distribution(all_input_lens, "Input length (per turn)"))
         print()
         if all_output_lens:
             print(
-                _format_distribution_table(
+                _format_distribution(
                     all_output_lens, "Output length (per turn)"
                 )
             )
         else:
             print("  Output length (per turn):  none recorded")
         print()
-        print(
-            _format_distribution_table(num_turns_list, "Num turns per session")
-        )
+        print(_format_distribution(num_turns_list, "Num turns per session"))
         if all_delays:
             print()
             print(
-                _format_distribution_table(
+                _format_distribution(
                     all_delays, "Delay between chat turns (ms)"
                 )
             )
         else:
             print()
             print("  Delay until next msg:  none configured")
+
+        images_per_session = [
+            sum(len(msg.images) for msg in session.messages)
+            for session in sessions
+        ]
+        all_images = [
+            img
+            for session in sessions
+            for msg in session.messages
+            for img in msg.images
+        ]
+        _print_image_stats(images_per_session, all_images, "per session")
+
+    if stats is not None:
+        _print_requests_sent(stats)
 
     print("=" * 50)
 
@@ -287,6 +403,58 @@ def print_lora_benchmark_results(metrics: LoRAMetrics) -> None:
     print_action_section("unload", metrics.unload_times_ms)
 
 
+# Metric containers exposing the six percentile fields consumed by the summary
+# table. ``StandardPercentileMetrics`` (and its ``RatePercentileMetrics``
+# subclass) and ``ThroughputMetrics`` delegate the fields to an inner
+# ``PercentileMetrics`` via ``__getattr__``.
+_PercentileLike = (
+    PercentileMetrics | StandardPercentileMetrics | ThroughputMetrics
+)
+
+
+class PercentileRow(NamedTuple):
+    """A labeled metric to render as one row of the percentile summary table."""
+
+    label: str
+    metrics: _PercentileLike
+
+
+def format_gpu_statistics_title(n_devices: int) -> str:
+    """Section title stating GPU rows are derived across the sampled devices."""
+    assert n_devices > 0, "GPU statistics title requires at least one device"
+    device_label = "device" if n_devices == 1 else "devices"
+    return f"GPU Statistics (aggregated across {n_devices} {device_label})"
+
+
+def gpu_utilization_group_label(group: str) -> str:
+    """GPU statistics row label for one group's utilization."""
+    return f"GPU utilization, {group} (%)"
+
+
+def format_percentile_table(rows: Sequence[PercentileRow]) -> str:
+    """Render per-metric percentile stats as one table, one row per metric."""
+    headers = ["Metric", "Mean", "Std", "P50", "P90", "P95", "P99"]
+    table = [
+        [
+            row.label,
+            f"{row.metrics.mean:.2f}",
+            f"{row.metrics.std:.2f}",
+            f"{row.metrics.p50:.2f}",
+            f"{row.metrics.p90:.2f}",
+            f"{row.metrics.p95:.2f}",
+            f"{row.metrics.p99:.2f}",
+        ]
+        for row in rows
+    ]
+    return tabulate(
+        table,
+        headers=headers,
+        tablefmt="simple_outline",
+        colalign=("left", *("right",) * (len(headers) - 1)),
+        disable_numparse=True,
+    )
+
+
 def print_benchmark_summary(
     metrics: BenchmarkResult,
     request_rate: float,
@@ -294,19 +462,29 @@ def print_benchmark_summary(
     achieved_request_rate: float,
     collect_gpu_stats: bool,
     collect_cpu_stats: bool,
-    spec_decode_stats: SpecDecodeStats | None = None,
     lora_manager: LoRABenchmarkManager | None = None,
 ) -> None:
     """Print benchmark summary for text-generation and pixel-generation."""
-    agg = metrics.aggregates
-    assert agg is not None, (
+    groups = metrics.result_groups
+    assert groups is not None, (
+        "print_benchmark_summary called before result_groups was populated"
+    )
+    summary = groups.summary
+    assert metrics.aggregates is not None, (
         "print_benchmark_summary called on a metrics record with no aggregates"
     )
+    # Summary scalars are filled from aggregates by ``build_result_groups``.
+    assert summary.completed is not None
+    assert summary.failures is not None
+    assert summary.duration is not None
+    assert summary.request_throughput is not None
 
     print_section(title=" Serving Benchmark Result ", char="=")
-    print("{:<40} {:<10}".format("Successful requests:", agg.completed))
-    print("{:<40} {:<10}".format("Failed requests:", agg.failures))
-    print("{:<40} {:<10.2f}".format("Benchmark duration (s):", agg.duration))
+    print("{:<40} {:<10}".format("Successful requests:", summary.completed))
+    print("{:<40} {:<10}".format("Failed requests:", summary.failures))
+    print(
+        "{:<40} {:<10.2f}".format("Benchmark duration (s):", summary.duration)
+    )
     if metrics.text_data is not None:
         t = metrics.text_data
         print("{:<40} {:<10}".format("Total input tokens:", t.total_input))
@@ -322,12 +500,11 @@ def print_benchmark_summary(
                 t.nonempty_response_chunks,
             )
         )
-    else:
-        assert metrics.pixel_data is not None
+    elif summary.total_generated_outputs is not None:
         print(
             "{:<40} {:<10}".format(
                 "Total generated outputs:",
-                metrics.pixel_data.total_generated_outputs,
+                summary.total_generated_outputs,
             )
         )
     offline_benchmark = math.isinf(request_rate) and max_concurrency is None
@@ -339,10 +516,10 @@ def print_benchmark_summary(
     )
     print(
         "{:<40} {:<10.5f}".format(
-            "Request throughput (req/s):", agg.request_throughput
+            "Request throughput (req/s):", summary.request_throughput
         )
     )
-    print("{:<40} {:<10}".format("Max Concurrency:", metrics.max_concurrency))
+    print("{:<40} {:<10}".format("Max Concurrency:", summary.max_concurrency))
     if (
         metrics.text_data is not None
         and metrics.text_data.max_concurrent_conversations is not None
@@ -354,77 +531,117 @@ def print_benchmark_summary(
             )
         )
 
-    if metrics.text_data is not None:
-        t = metrics.text_data
-        print_section(title="Client Experience Metrics")
-        if t.input_throughput is not None:
-            print(
-                t.input_throughput.format_with_prefix(
-                    prefix="input token throughput", unit="tok/s"
-                )
-            )
-        if t.output_throughput is not None:
-            print(
-                t.output_throughput.format_with_prefix(
-                    prefix="output token throughput", unit="tok/s"
-                )
-            )
-        total_tpm = (
-            (t.total_input + t.total_output) * 60.0 / agg.duration
-            if agg.duration > 0
-            else float("nan")
-        )
+    if summary.aggregate_tokens_per_minute is not None:
         print(
             "{:<40} {:<10.2f}".format(
-                "Total TPM (input+output, whole bench):", total_tpm
+                "Total TPM (input+output, whole bench):",
+                summary.aggregate_tokens_per_minute,
             )
         )
-        print(
-            "{:<40} {:<10.2f}".format(
-                "Global Cached Token Rate:",
-                t.global_cached_token_rate * 100,
+
+    # Each line prints only when its feature was used: a run without it would
+    # otherwise carry a permanent "0.00%" for something it never sent.
+    mix = groups.request_mix
+    if mix is not None:
+        mix_lines: list[tuple[str, float]] = []
+        if mix.constrained_request_rate:
+            mix_lines.append(
+                ("Structured-output requests:", mix.constrained_request_rate)
             )
-            + "%"
-        )
-        if t.ttft_ms is not None:
-            print_section(title="Time to First Token")
-            print(t.ttft_ms.format_with_prefix(prefix="TTFT", unit="ms"))
-        if t.tpot_ms is not None:
-            print_section(title="Time per Output Token")
-            print("[(latency - TTFT) / (output_tokens - 1), per request]")
-            print(t.tpot_ms.format_with_prefix(prefix="TPOT", unit="ms"))
-        if t.step_tpot_ms is not None:
-            print_section(title="Time per Output Token (step-based)")
-            print("[ITL / tokens_per_step, per decode step]")
-            print(
-                t.step_tpot_ms.format_with_prefix(prefix="Step TPOT", unit="ms")
-            )
-        if t.itl_ms is not None:
-            print_section(title="Inter-token Latency")
-            print(t.itl_ms.format_with_prefix(prefix="ITL", unit="ms"))
-        if t.per_turn_cached_token_rate is not None:
-            print_section(title="Per-Turn Cached Token Rate")
-            print(
-                t.per_turn_cached_token_rate.format_with_prefix(
-                    prefix="Per-Turn Cached Token Rate", unit="%"
+            if mix.constrained_conformance_rate is not None:
+                mix_lines.append(
+                    (
+                        "  of which schema-conforming:",
+                        mix.constrained_conformance_rate,
+                    )
                 )
+        if mix.tool_request_rate:
+            mix_lines.append(("Tool-offering requests:", mix.tool_request_rate))
+            if mix.tool_call_response_rate is not None:
+                mix_lines.append(
+                    ("  of which called a tool:", mix.tool_call_response_rate)
+                )
+        if mix.image_request_rate:
+            mix_lines.append(
+                ("Image-carrying requests:", mix.image_request_rate)
+            )
+        if mix.lora_request_rate:
+            mix_lines.append(("LoRA-routed requests:", mix.lora_request_rate))
+        if mix_lines:
+            print_section(title="Request Mix")
+            for label, rate in mix_lines:
+                print(f"{label:<40} {rate:<10.2%}")
+
+    latency = groups.latency_stats
+    if latency is not None:
+        latency_rows = [
+            PercentileRow(label, pm)
+            for label, pm in (
+                ("TTFT (ms)", latency.ttft_ms),
+                ("TTFT constrained (ms)", latency.ttft_ms_constrained),
+                ("TTFT unconstrained (ms)", latency.ttft_ms_unconstrained),
+                ("TPOT (ms)", latency.tpot_ms),
+                ("TPOT constrained (ms)", latency.tpot_ms_constrained),
+                ("TPOT unconstrained (ms)", latency.tpot_ms_unconstrained),
+                ("Step TPOT (ms)", latency.step_tpot_ms),
+                ("ITL (ms)", latency.itl_ms),
+                ("Request Latency (ms)", latency.latency_ms),
+            )
+            if pm is not None
+        ]
+        if latency_rows:
+            print_section(title="Latency Stats")
+            print(format_percentile_table(latency_rows))
+            if latency.tpot_ms is not None:
+                print("  TPOT = (latency - TTFT) / (output_tokens - 1)")
+            if latency.step_tpot_ms is not None:
+                print("  Step TPOT = ITL / tokens_per_step, per decode step")
+
+    throughput = groups.throughput_stats
+    if throughput is not None:
+        throughput_rows = [
+            PercentileRow(label, pm)
+            for label, pm in (
+                ("Input throughput (tok/s)", throughput.input_throughput),
+                ("Output throughput (tok/s)", throughput.output_throughput),
+            )
+            if pm is not None
+        ]
+        if throughput_rows:
+            print_section(title="Throughput Stats")
+            print(format_percentile_table(throughput_rows))
+            print(
+                "  Throughput P90/P95/P99 are reversed"
+                " (bottom 10/5/1%; higher is better)"
             )
 
-        if t.per_turn_cache_retention is not None:
-            print_section(title="Per-Turn KV Cache Retention")
+    cache = groups.cache_stats
+    if cache is not None:
+        print_section(title="Cache Stats")
+        if cache.global_cached_token_rate is not None:
             print(
-                t.per_turn_cache_retention.format_with_prefix(
-                    prefix="Per-Turn Cache Retention", unit="%"
+                "{:<40} {:<10.2f}".format(
+                    "Global Cached Token Rate:",
+                    cache.global_cached_token_rate * 100,
                 )
+                + "%"
             )
-
-    if agg.latency_ms is not None:
-        print_section(title="Per-Request E2E Latency")
-        print(
-            agg.latency_ms.format_with_prefix(
-                prefix="Request Latency", unit="ms"
+        cache_rows = [
+            PercentileRow(label, pm)
+            for label, pm in (
+                (
+                    "Per-Turn Cached Token Rate (%)",
+                    cache.per_turn_cached_token_rate,
+                ),
+                (
+                    "Per-Turn Cache Retention (%)",
+                    cache.per_turn_cache_retention,
+                ),
             )
-        )
+            if pm is not None
+        ]
+        if cache_rows:
+            print(format_percentile_table(cache_rows))
 
     if metrics.text_data is not None:
         t = metrics.text_data
@@ -433,6 +650,7 @@ def print_benchmark_summary(
         print("{:<40} {:<10}".format("Max output tokens:", t.max_output))
         print("{:<40} {:<10}".format("Max total tokens:", t.max_total))
 
+    spec_decode_stats = metrics.spec_decode_stats
     if spec_decode_stats is not None:
         print_section(title="Speculative Decoding")
         if spec_decode_stats.acceptance_rate is not None:
@@ -473,27 +691,50 @@ def print_benchmark_summary(
                     "{:<40} {:<10.2f}".format(f"  Position {pos}:", rate * 100)
                 )
 
-    # Print GPU and CPU statistics
-    if collect_gpu_stats and metrics.peak_gpu_memory_mib:
-        print_section(title="GPU Statistics")
-        for gpu_id in range(len(metrics.peak_gpu_memory_mib)):
-            print(
-                "{:<40} {:<10.2f}".format(
-                    f"GPU {gpu_id} peak memory (MiB):",
-                    metrics.peak_gpu_memory_mib[gpu_id],
-                )
+    # Per-GPU series stay in result_groups.gpu_stats JSON; the console
+    # reuses the same percentile table as latency / throughput.
+    gpu = groups.gpu_stats
+    if collect_gpu_stats and gpu is not None:
+        gpu_rows = [
+            PercentileRow(
+                label,
+                StandardPercentileMetrics(
+                    [float(v) for v in values], unit=unit
+                ),
             )
-            print(
-                "{:<40} {:<10.2f}".format(
-                    f"GPU {gpu_id} available memory (MiB):",
-                    metrics.available_gpu_memory_mib[gpu_id],
-                )
+            for label, values, unit in (
+                ("Peak GPU memory (MiB)", gpu.peak_gpu_memory_mib, "MiB"),
+                (
+                    "Available GPU memory (MiB)",
+                    gpu.available_gpu_memory_mib,
+                    "MiB",
+                ),
+                ("GPU utilization (%)", gpu.gpu_utilization, "%"),
             )
+            if values
+        ]
+        # The mean across roles hides which disaggregated engine is
+        # saturated; generate-github-summary.py reads these rows into the
+        # triage line.
+        gpu_rows.extend(
+            PercentileRow(
+                gpu_utilization_group_label(group),
+                StandardPercentileMetrics([float(v) for v in values], unit="%"),
+            )
+            for group, values in gpu.gpu_utilization_by_group.items()
+            if values
+        )
+        if gpu_rows:
+            n_devices = max(
+                len(gpu.peak_gpu_memory_mib),
+                len(gpu.available_gpu_memory_mib),
+                len(gpu.gpu_utilization),
+            )
+            print_section(title=format_gpu_statistics_title(n_devices))
+            print(format_percentile_table(gpu_rows))
             print(
-                "{:<40} {:<10.2f}".format(
-                    f"GPU {gpu_id} utilization (%):",
-                    metrics.gpu_utilization[gpu_id],
-                )
+                "  For per-GPU metrics, dump the result JSON instead"
+                " (--result-filename)"
             )
     if collect_cpu_stats:
         cpu = metrics.cpu_metrics
@@ -510,6 +751,27 @@ def print_benchmark_summary(
                 cpu.system_percent if cpu else 0.0,
             )
         )
+    diag = groups.diagnostics
+    if diag is not None:
+        diag_rows = [
+            (label, value)
+            for label, value in (
+                ("Server startup time (s):", diag.server_startup_time),
+                ("Steady-state detected:", diag.steady_state_detected),
+                ("Steady-state windows:", diag.steady_state_window_count),
+                ("Outliers rejected:", diag.num_outliers_rejected),
+            )
+            if value is not None
+        ]
+        if diag_rows or diag.steady_state_warning:
+            print_section(title="Diagnostics")
+            for label, value in diag_rows:
+                if isinstance(value, float):
+                    print(f"{label:<40} {value:<10.2f}")
+                else:
+                    print(f"{label:<40} {value:<10}")
+            if diag.steady_state_warning:
+                print(f"Steady-state warning: {diag.steady_state_warning}")
     print("=" * 50)
     if lora_manager:
         print_lora_benchmark_results(lora_manager.metrics)
@@ -520,7 +782,7 @@ def print_benchmark_summary(
     print("=" * 50)
 
 
-def _parse_metadata(metadata: list[str] | None) -> dict[str, str]:
+def _parse_metadata(metadata: Sequence[str] | None) -> dict[str, str]:
     """Parse ``KEY=VALUE`` metadata strings into a flat dict.
 
     The special key ``server_cpu`` is mapped to ``cpu``.
@@ -538,45 +800,116 @@ def _parse_metadata(metadata: list[str] | None) -> dict[str, str]:
     return result
 
 
+@dataclass(frozen=True)
+class BenchmarkRunResultLabels:
+    """The benchmark configuration a result was produced with."""
+
+    backend: Backend
+    """The serving backend benchmarked."""
+
+    benchmark_task: BenchmarkTask
+    """The task benchmarked."""
+
+    model_id: str
+    """The model benchmarked."""
+
+    tokenizer_id: str
+    """The tokenizer tokens were counted with."""
+
+    dataset_name: str
+    """The dataset the requests were drawn from."""
+
+    burstiness: float | None
+    """The arrival burstiness factor, or ``None`` when the load generator has
+    none."""
+
+    max_concurrent_conversations: int | None
+    """The limit on concurrent multi-turn sessions, or ``None``."""
+
+    client_args: Mapping[str, object]
+    """The load generator's configuration, recorded verbatim apart from the
+    iteration's request rate and concurrency."""
+
+    metadata: Sequence[str]
+    """``KEY=VALUE`` strings recorded as top-level fields."""
+
+    @classmethod
+    def from_config(
+        cls,
+        args: ServingBenchmarkConfig,
+        *,
+        benchmark_task: BenchmarkTask,
+        model_id: str,
+        tokenizer_id: str,
+    ) -> BenchmarkRunResultLabels:
+        """Builds labels for a result produced with ``args``.
+
+        Args:
+            args: The serving benchmark's configuration.
+            benchmark_task: The task benchmarked.
+            model_id: The model benchmarked.
+            tokenizer_id: The tokenizer tokens were counted with.
+
+        Returns:
+            The result's labels.
+        """
+        return cls(
+            backend=args.backend,
+            benchmark_task=benchmark_task,
+            model_id=model_id,
+            tokenizer_id=tokenizer_id,
+            dataset_name=args.dataset_name,
+            burstiness=args.burstiness,
+            max_concurrent_conversations=args.max_concurrent_conversations,
+            client_args=args.model_dump(),
+            metadata=list(args.metadata),
+        )
+
+
 def save_result_json(
     result_filename: str | None,
-    args: ServingBenchmarkConfig,
+    labels: BenchmarkRunResultLabels,
     benchmark_result: BenchmarkResult,
     *,
-    benchmark_task: BenchmarkTask,
-    model_id: str,
-    tokenizer_id: str,
     request_rate: float,
     record_max_concurrency: int | None,
 ) -> None:
-    """Persist benchmark results to *result_filename*."""
+    """Writes a benchmark result to ``result_filename``.
+
+    Args:
+        result_filename: The file to write, or ``None`` to write nothing. An
+            existing file is moved aside to ``<result_filename>.orig``.
+        labels: The benchmark configuration the result was produced with.
+        benchmark_result: The result's metrics.
+        request_rate: The iteration's request rate.
+        record_max_concurrency: The iteration's concurrency limit.
+    """
     if not result_filename:
         return
-    backend: Backend = args.backend
-    client_args = args.model_dump()
+    client_args = dict(labels.client_args)
     rr_client = str(request_rate) if request_rate < float("inf") else "inf"
     client_args["request_rate"] = rr_client
     client_args["max_concurrency"] = record_max_concurrency
     result_json: dict[str, object] = {
         "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "backend": backend,
-        "benchmark_task": benchmark_task,
-        "model_id": model_id,
-        "tokenizer_id": tokenizer_id,
+        "backend": labels.backend,
+        "benchmark_task": labels.benchmark_task,
+        "model_id": labels.model_id,
+        "tokenizer_id": labels.tokenizer_id,
         "num_prompts": (
             agg.completed
             if (agg := benchmark_result.aggregates) is not None
             else 0
         ),
-        "dataset_name": args.dataset_name,
+        "dataset_name": labels.dataset_name,
         "client_args": client_args,
         "request_rate": (
             request_rate if request_rate < float("inf") else "inf"
         ),
-        "burstiness": args.burstiness,
+        "burstiness": labels.burstiness,
         "max_concurrency": record_max_concurrency,
-        "max_concurrent_conversations": args.max_concurrent_conversations,
-        **_parse_metadata(args.metadata),
+        "max_concurrent_conversations": labels.max_concurrent_conversations,
+        **_parse_metadata(labels.metadata),
         **benchmark_result.to_result_dict(),
     }
     logger.info(f"Writing file: {result_filename}")
@@ -587,7 +920,9 @@ def save_result_json(
         )
         os.rename(result_filename, f"{result_filename}.orig")
     with open(result_filename, "w") as outfile:
-        json.dump(result_json, outfile)
+        # NaN latencies are real in partially-failed runs; scrub to null so
+        # the file stays consumable by strict JSON parsers (jq, JSON.parse).
+        json.dump(json_safe(result_json), outfile, allow_nan=False)
 
 
 def save_output_lengths(

@@ -11,6 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Input and output types for each generation modality: text, image, audio,
+and embeddings.
+"""
+
+from .audio_generation import (
+    AudioGenerationInputs,
+)
 from .embeddings_generation import (
     EmbeddingsContext,
     EmbeddingsGenerationContextType,
@@ -35,6 +42,7 @@ from .text_generation import (
 )
 
 __all__ = [
+    "AudioGenerationInputs",
     "BatchType",
     "CompletedBatchStats",
     "EmbeddingsContext",

@@ -13,26 +13,22 @@
 
 from layout import (
     Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
     UNKNOWN_VALUE,
     row_major,
 )
 from layout._fillers import random
-from std.math import exp, exp2, log
+from std.math import ceildiv, exp, exp2, log
 from state_space.selective_scan import (
     ssd_combined_cpu,
 )
 from std.testing import TestSuite, assert_almost_equal
 
-from std.utils.index import Index
-
 comptime MAX_DSTATE = 16
 comptime LOG2E = 1.4426950408889634
 
 
-@always_inline
+@inline(.always)
 def softplus_ref(val: Float32) -> Float32:
     """Reference softplus: log(1 + exp(x)) with numerical stability."""
     if val > 20.0:
@@ -40,7 +36,7 @@ def softplus_ref(val: Float32) -> Float32:
     return log(Float32(1.0) + exp(val))
 
 
-@always_inline
+@inline(.always)
 def silu_ref(val: Float32) -> Float32:
     """Reference SiLU: x * sigmoid(x) = x / (1 + exp(-x))."""
     if val < -20.0:
@@ -68,7 +64,7 @@ def run_ssd_combined[
 
     var group_size = dim // n_groups
     var chunk_size = 2048
-    var n_chunks = (seqlen + chunk_size - 1) // chunk_size
+    var n_chunks = ceildiv(seqlen, chunk_size)
 
     # Allocate host memory
     comptime layout_3d = Layout.row_major[3]()
@@ -165,7 +161,7 @@ def run_ssd_combined[
 
     # Initialize gamma to positive values
     for i in range(dim):
-        gamma_h.ptr[i] = abs(gamma_h.ptr[i]) + Scalar[dtype](0.1)
+        gamma_h._storage[i] = abs(gamma_h._storage[i]) + Scalar[dtype](0.1)
 
     var epsilon = Float32(0.001)
     var weight_offset = Scalar[dtype](0.0)
@@ -187,6 +183,7 @@ def run_ssd_combined[
         z_h.LayoutType,
         delta_bias_h.LayoutType,
         gamma_h.LayoutType,
+        output_h.Engine,
     ](
         batch,
         dim,
@@ -220,28 +217,28 @@ def run_ssd_combined[
             var group_id = d_idx // group_size
 
             # Pre-load A values with LOG2E scaling (matches kernel)
-            var A_ref = SIMD[DType.float32, MAX_DSTATE](0.0)
+            var A_ref = SIMD[.float32, MAX_DSTATE](0.0)
             for n in range(dstate):
-                A_ref[n] = Float32(A_h.ptr[d_idx * dstate + n]) * LOG2E
+                A_ref[n] = Float32(A_h._storage[d_idx * dstate + n]) * LOG2E
 
             # Load per-dim scalars
-            var gamma_val = Float32(gamma_h.ptr[d_idx])
+            var gamma_val = Float32(gamma_h._storage[d_idx])
             var D_val = Float32(0)
             if has_D:
-                D_val = Float32(D_h.ptr[d_idx])
+                D_val = Float32(D_h._storage[d_idx])
             var delta_bias_val = Float32(0)
             if has_delta_bias:
-                delta_bias_val = Float32(delta_bias_h.ptr[d_idx])
+                delta_bias_val = Float32(delta_bias_h._storage[d_idx])
             var weight_offset_val = Float32(weight_offset)
 
             # Initialize state to zero
-            var state_ref = SIMD[DType.float32, MAX_DSTATE](0.0)
+            var state_ref = SIMD[.float32, MAX_DSTATE](0.0)
 
             for t in range(seqlen):
                 var off_3d = b_idx * dim * seqlen + d_idx * seqlen + t
-                var u_val = Float32(u_h.ptr[off_3d])
-                var delta_val = Float32(delta_h.ptr[off_3d])
-                var residual_val = Float32(residual_h.ptr[off_3d])
+                var u_val = Float32(u_h._storage[off_3d])
+                var delta_val = Float32(delta_h._storage[off_3d])
+                var residual_val = Float32(residual_h._storage[off_3d])
 
                 if has_delta_bias:
                     delta_val += delta_bias_val
@@ -251,8 +248,8 @@ def run_ssd_combined[
                 var delta_u = delta_val * u_val
 
                 # Load B, C values
-                var B_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
-                var C_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
+                var B_vals = SIMD[.float32, MAX_DSTATE](0.0)
+                var C_vals = SIMD[.float32, MAX_DSTATE](0.0)
                 for n in range(dstate):
                     var bc_offset = (
                         b_idx * n_groups * dstate * seqlen
@@ -260,8 +257,8 @@ def run_ssd_combined[
                         + n * seqlen
                         + t
                     )
-                    B_vals[n] = Float32(B_h.ptr[bc_offset])
-                    C_vals[n] = Float32(C_h.ptr[bc_offset])
+                    B_vals[n] = Float32(B_h._storage[bc_offset])
+                    C_vals[n] = Float32(C_h._storage[bc_offset])
 
                 # State update: state = state * exp2(A * delta) + B * delta * u
                 var a_t = exp2(A_ref * delta_val)
@@ -279,7 +276,7 @@ def run_ssd_combined[
                 var normalized = combined * (gamma_val + weight_offset_val)
 
                 if has_z:
-                    var z_val = Float32(z_h.ptr[off_3d])
+                    var z_val = Float32(z_h._storage[off_3d])
                     var out_z_val = normalized * silu_ref(z_val)
                     out_z_ref_heap[off_3d] = Scalar[dtype](out_z_val)
                     normalized = out_z_val
@@ -289,7 +286,7 @@ def run_ssd_combined[
     # Compare kernel output vs reference
     for i in range(ref_size):
         assert_almost_equal(
-            output_h.ptr[i],
+            output_h._storage[i],
             output_ref_heap[i],
             rtol=rtol,
         )
@@ -298,7 +295,7 @@ def run_ssd_combined[
     if has_z:
         for i in range(ref_size):
             assert_almost_equal(
-                out_z_h.ptr[i],
+                out_z_h._storage[i],
                 out_z_ref_heap[i],
                 rtol=rtol,
             )
@@ -314,6 +311,18 @@ def test_ssd_combined_basic() raises:
         has_delta_bias=True,
         delta_softplus=False,
     ](batch=2, dim=4, seqlen=8, n_groups=1)
+
+
+def test_ssd_combined_odd_seqlen_multi_channel() raises:
+    """Odd seqlen makes rows start at unaligned element offsets."""
+    run_ssd_combined[
+        DType.float32,
+        4,  # DSTATE
+        has_D=True,
+        has_z=True,
+        has_delta_bias=True,
+        delta_softplus=False,
+    ](batch=2, dim=4, seqlen=9, n_groups=1)
 
 
 def test_ssd_combined_without_D() raises:

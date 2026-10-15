@@ -22,8 +22,10 @@ from max.nn.comm.ep.ep_config import (
     calculate_ep_max_tokens_per_rank,
     estimate_ep_memory_usage,
 )
+from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib.config import PipelineConfig
+from max.pipelines.lib.config.model_config import _select_quantization_encoding
 from max.pipelines.modeling.config_enums import (
     is_float4_encoding,
     supported_encoding_dtype,
@@ -31,11 +33,9 @@ from max.pipelines.modeling.config_enums import (
 from max.support.human_readable_formatter import to_human_readable_bytes
 from transformers import AutoConfig
 
-from .model_config import VisionConfig
+from .model_config import KimiK2_5Config, VisionConfig
 
 logger = logging.getLogger(__name__)
-
-_GRAPH_CAPTURE_HEADROOM_BYTES_PER_DEVICE = 8 * 1024**3
 
 # Empirical coefficient for peak activation bytes per vision-encoder patch.
 # See KimiK2_5Model._VISION_PEAK_BYTES_PER_PATCH_COEFF for derivation notes.
@@ -46,8 +46,7 @@ class KimiK25MemoryPlanner(PagedMemoryPlanner):
     """Memory planner for Kimi K2.5 (vision-language, MoE) models.
 
     Accounts for replicated vision encoder weights, expert-parallel routing,
-    MLA up-projection buffers, vision encoder activation memory, and optional
-    device-graph-capture headroom.
+    MLA up-projection buffers, and vision encoder activation memory.
     """
 
     _always_signal_buffers = True
@@ -72,8 +71,9 @@ class KimiK25MemoryPlanner(PagedMemoryPlanner):
         weights_size = model_config.weights_size()
         n_gpus_per_node = len(model_config.device_specs)
 
-        encoding = pipeline_config.model.quantization_encoding
-        assert encoding is not None
+        encoding = _select_quantization_encoding(
+            pipeline_config.model, KimiK2_5Config.DEFAULT_ENCODING
+        )
 
         def _n_elems_to_bytes(n_elems: int) -> int:
             dtype = supported_encoding_dtype(encoding).size_in_bytes
@@ -207,8 +207,9 @@ class KimiK25MemoryPlanner(PagedMemoryPlanner):
         Returns:
             Estimated activation memory in bytes.
         """
-        encoding = pipeline_config.model.quantization_encoding
-        assert encoding is not None
+        encoding = _select_quantization_encoding(
+            pipeline_config.model, KimiK2_5Config.DEFAULT_ENCODING
+        )
         mla_activation_memory: int = 0
         moe_activation_memory: int = 0
         ep_buffer_memory = 0
@@ -221,13 +222,17 @@ class KimiK25MemoryPlanner(PagedMemoryPlanner):
             else:
                 max_kv_length = pipeline_config.runtime.max_batch_total_tokens
 
+            cache_dtype = cache_dtype_for_encoding(
+                encoding,
+                pipeline_config.model.kv_cache.kv_cache_format,
+            )
             mla_activation_memory += (
                 pipeline_config.model.data_parallel_degree
                 * 2  # 2 for K and V
                 * max_kv_length
                 * huggingface_config.text_config.num_attention_heads
                 * huggingface_config.text_config.qk_nope_head_dim
-                * pipeline_config.model.kv_cache.cache_dtype.size_in_bytes
+                * cache_dtype.size_in_bytes
             )
 
         # Estimate buffer and activation memory during Expert Parallel MoE.
@@ -319,17 +324,6 @@ class KimiK25MemoryPlanner(PagedMemoryPlanner):
                 to_human_readable_bytes(vision_activation_memory),
             )
 
-        if pipeline_config.runtime.device_graph_capture:
-            graph_capture_headroom = (
-                _GRAPH_CAPTURE_HEADROOM_BYTES_PER_DEVICE
-                * len(pipeline_config.model.device_specs)
-            )
-            activation_memory += graph_capture_headroom
-            logger.info(
-                "Added graph capture headroom to activation memory: %s",
-                to_human_readable_bytes(graph_capture_headroom),
-            )
-
         if activation_memory != 0:
             logger.info(
                 "Estimated activation memory: %s",
@@ -337,58 +331,6 @@ class KimiK25MemoryPlanner(PagedMemoryPlanner):
             )
 
         return activation_memory
-
-    def estimate_vision_cache_entry_bytes(
-        self,
-        huggingface_config: AutoConfig,
-    ) -> int:
-        """Estimates per-entry bytes for the Kimi K2.5 vision encoder cache.
-
-        Max tokens per image = pos_emb_height * pos_emb_width / merge_sq,
-        multiplied by the text hidden size and 2 bytes (bfloat16).
-
-        Args:
-            huggingface_config: HuggingFace model configuration.
-
-        Returns:
-            Estimated bytes per vision cache entry.
-
-        Raises:
-            ValueError: If required vision or text config fields are absent or
-                invalid.
-        """
-        vision_config = getattr(huggingface_config, "vision_config", None)
-        if vision_config is None:
-            raise ValueError(
-                "KimiK2.5 requires a vision_config in the HuggingFace config"
-            )
-        text_config = getattr(huggingface_config, "text_config", None)
-        if text_config is None:
-            raise ValueError(
-                "KimiK2.5 requires a text_config in the HuggingFace config"
-            )
-        hidden = getattr(text_config, "hidden_size", 0)
-        if hidden <= 0:
-            raise ValueError(
-                "KimiK2.5 text_config.hidden_size must be positive"
-            )
-        merge_kernel_size = getattr(vision_config, "merge_kernel_size", [2, 2])
-        merge_sq = 1
-        for k in (
-            merge_kernel_size
-            if isinstance(merge_kernel_size, (list, tuple))
-            else [merge_kernel_size]
-        ):
-            merge_sq *= k
-        pos_h = getattr(vision_config, "init_pos_emb_height", 0)
-        pos_w = getattr(vision_config, "init_pos_emb_width", 0)
-        if pos_h <= 0 or pos_w <= 0:
-            raise ValueError(
-                "KimiK2.5 vision_config must provide "
-                "init_pos_emb_height and init_pos_emb_width"
-            )
-        max_tokens = (pos_h * pos_w) // merge_sq
-        return max_tokens * hidden * 2
 
 
 # ------------------------------------------------------------------

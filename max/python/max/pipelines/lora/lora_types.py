@@ -30,7 +30,12 @@ from enum import Enum
 import msgspec
 
 LORA_REQUEST_ENDPOINT = "lora_request"
+"""Name of the ZeroMQ endpoint the API server uses to push LoRA load and
+unload requests to workers."""
+
 LORA_RESPONSE_ENDPOINT = "lora_response"
+"""Name of the ZeroMQ endpoint workers use to return LoRA operation
+results to the API server."""
 
 
 class LoRAType(Enum):
@@ -41,9 +46,6 @@ class LoRAType(Enum):
 
     B = "lora_B"
     """Represents the LoRA B matrix. (low rank tensor to high rank tensor)"""
-
-    B_KV = "lora_B_kv"
-    """Represents the combined K and V LoRA B matrices for QKV fusion."""
 
     BIAS = "lora.bias"
     """Represents the LoRA bias matrix. (added to matrix B)"""

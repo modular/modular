@@ -17,7 +17,8 @@ HuggingFace AutoConfig shims for model_types that the installed version of
 transformers does not recognize natively.
 """
 
-from typing import Any
+import copy
+from typing import Any, ClassVar
 
 from transformers import AutoConfig, DeepseekV3Config, PretrainedConfig
 
@@ -205,28 +206,39 @@ except ValueError:
     pass
 
 
-class ExaoneConfig(PretrainedConfig):
-    """Local config class for EXAONE 3.5 models.
+class DeepseekV4HFConfig(PretrainedConfig):
+    """HuggingFace configuration class for DeepSeek-V4-Flash models.
 
-    The ``exaone`` model type is not natively registered in transformers, and the
-    remote ``configuration_exaone.py`` shipped in EXAONE 3.5 HuggingFace repos is
-    incompatible with the pinned transformers version.  Registering this minimal
-    subclass lets ``AutoConfig.from_pretrained`` load the repo's ``config.json``
-    without requiring ``trust_remote_code``.
+    ``deepseek_v4`` is not registered in transformers and the repo ships no
+    ``auto_map``, so ``AutoConfig.from_pretrained`` cannot resolve it. The
+    config is flat (no sub-configs) and, unlike V3.2, drops the MLA fields
+    (``kv_lora_rank``, ``qk_nope_head_dim``, ``v_head_dim``) and every dense-MLP
+    field (``intermediate_size``, ``first_k_dense_replace``, ``moe_layer_freq``)
+    -- every layer is MoE and KV is a single ``head_dim``-wide latent. So this
+    subclasses ``PretrainedConfig`` directly and preserves each field verbatim
+    rather than inheriting ``DeepseekV3Config``'s shape.
     """
 
-    model_type = "exaone"
+    model_type = "deepseek_v4"
 
-    @property
-    def num_hidden_layers(self) -> int:
-        """Aliases ``num_layers`` to the standard ``num_hidden_layers`` name."""
-        return self.num_layers
+    def __init__(
+        self, max_position_embeddings: int = 1048576, **kwargs: Any
+    ) -> None:
+        # Same trap as ``_KimiK2Config``: transformers >= 5.12 standardizes
+        # RoPE params in ``__post_init__`` and, for a scaling rope type (V4
+        # ships ``yarn``), eagerly reads ``self.max_position_embeddings`` as the
+        # ``setdefault`` fallback for ``original_max_position_embeddings``. It
+        # is not a declared field on the base config, so on a bare
+        # ``PretrainedConfig`` subclass it is never set before ``__post_init__``
+        # runs. Bind it before delegating.
+        self.max_position_embeddings = max_position_embeddings
+        super().__init__(**kwargs)
+        for key, value in kwargs.items():
+            if not hasattr(self, key):
+                setattr(self, key, value)
 
 
-try:
-    AutoConfig.register("exaone", ExaoneConfig)
-except ValueError:
-    pass
+AutoConfig.register("deepseek_v4", DeepseekV4HFConfig, exist_ok=True)
 
 
 class LagunaHFConfig(PretrainedConfig):
@@ -254,6 +266,146 @@ class LagunaHFConfig(PretrainedConfig):
 
 try:
     AutoConfig.register("laguna", LagunaHFConfig)
+except ValueError:
+    pass
+
+
+class _MiMoV2HFConfig(PretrainedConfig):
+    """Local config class for MiMo-V2 (``model_type: mimo_v2``).
+
+    MiMo-V2 repos point ``auto_map`` at ``configuration_mimo_v2.py``, so
+    ``AutoConfig.from_pretrained`` otherwise demands ``trust_remote_code=True``
+    and executes the repo's config code. The published ``config.json`` states
+    every field ``MiMoV2Config`` reads, so each is kept verbatim rather than
+    re-deriving the repo class's defaults.
+    """
+
+    model_type = "mimo_v2"
+
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        for k, v in kwargs.items():
+            if not hasattr(self, k):
+                setattr(self, k, v)
+
+
+AutoConfig.register("mimo_v2", _MiMoV2HFConfig, exist_ok=True)
+
+
+class _KimiK3SubHFConfig(PretrainedConfig):
+    """A Kimi K3 sub-config that preserves every field verbatim.
+
+    ``KimiK3Config`` reads K3's own field names straight off these objects
+    (``qk_nope_head_dim``, ``kv_lora_rank``, ``linear_attn_config``,
+    ``attn_res_block_size``, ...), none of which ``PretrainedConfig`` knows,
+    so anything not consumed by the base class is kept as an attribute.
+    """
+
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        for k, v in kwargs.items():
+            if not hasattr(self, k):
+                setattr(self, k, v)
+
+
+# Defaults from `KimiLinearConfig.__init__` in the repo's
+# `configuration_kimi_k3.py`. Replicated rather than imported: the point of the
+# shim is to load `config.json` WITHOUT executing repo code, and a default the
+# reference applies is part of the config's meaning. Kimi-K3's published
+# `config.json` omits `rope_theta` entirely, so without this the architecture
+# raises `AttributeError` on the real checkpoint.
+_KIMI_K3_TEXT_DEFAULTS: dict[str, Any] = {
+    "attn_res_block_size": None,
+    "first_k_dense_replace": 0,
+    "hidden_act": "silu",
+    "initializer_range": 0.02,
+    "latent_moe_use_norm": False,
+    "linear_attn_config": None,
+    "max_position_embeddings": 4096,
+    "mla_use_nope": False,
+    "mla_use_output_gate": False,
+    "moe_layer_freq": 1,
+    "moe_renormalize": True,
+    "moe_router_activation_func": "sigmoid",
+    "num_expert_group": 1,
+    "num_nextn_predict_layers": 0,
+    "num_shared_experts": 0,
+    "rms_norm_eps": 1e-6,
+    "rope_scaling": None,
+    "rope_theta": 10000.0,
+    "routed_scaling_factor": 1.0,
+    "topk_group": 1,
+    "topk_method": "noaux_tc",
+    "use_grouped_topk": True,
+}
+
+
+class _KimiK3TextHFConfig(_KimiK3SubHFConfig):
+    """The ``text_config`` half, with the reference class's defaults applied."""
+
+    model_type = "kimi_linear"
+
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        # transformers v5 nests rope under `rope_parameters`; prefer a value the
+        # repo actually stated, either spelling, over the reference default.
+        if getattr(self, "rope_theta", None) is None:
+            rope_params = getattr(self, "rope_parameters", None)
+            if isinstance(rope_params, dict):
+                self.rope_theta = rope_params.get("rope_theta")
+        for key, value in _KIMI_K3_TEXT_DEFAULTS.items():
+            if getattr(self, key, None) is None:
+                setattr(self, key, value)
+        # Two the reference derives rather than defaults. Guarded because
+        # transformers instantiates a declared sub-config with no kwargs.
+        heads = getattr(self, "num_attention_heads", None)
+        hidden = getattr(self, "hidden_size", None)
+        if getattr(self, "num_key_value_heads", None) is None and heads:
+            self.num_key_value_heads = heads
+        if getattr(self, "head_dim", None) is None and heads and hidden:
+            self.head_dim = hidden // heads
+
+
+class KimiK3HFConfig(PretrainedConfig):
+    """Local config class for Kimi K3 (``model_type: kimi_k3``).
+
+    K3 repos point ``auto_map`` at ``configuration_kimi_k3.py``, so
+    ``AutoConfig.from_pretrained`` otherwise demands ``trust_remote_code=True``
+    and executes the repo's own config code. Registering this subclass lets the
+    repo's ``config.json`` load directly instead.
+
+    ``text_config`` becomes an object rather than a dict because
+    ``KimiK3Config`` reaches through it by attribute
+    (``model_config.py:104``); ``linear_attn_config`` stays a dict because
+    that is how ``_layer_indices`` reads it.
+    """
+
+    model_type = "kimi_k3"
+    sub_configs = {
+        "text_config": _KimiK3TextHFConfig,
+        "vision_config": _KimiK3SubHFConfig,
+    }
+
+    def __init__(
+        self,
+        text_config: dict[str, Any] | _KimiK3TextHFConfig | None = None,
+        vision_config: dict[str, Any] | _KimiK3SubHFConfig | None = None,
+        **kwargs: Any,
+    ) -> None:
+        if isinstance(text_config, dict) or text_config is None:
+            text_config = _KimiK3TextHFConfig(**(text_config or {}))
+        if isinstance(vision_config, dict) or vision_config is None:
+            vision_config = _KimiK3SubHFConfig(**(vision_config or {}))
+        self.text_config = text_config
+        self.vision_config = vision_config
+        super().__init__(**kwargs)
+        for k, v in kwargs.items():
+            if not hasattr(self, k):
+                setattr(self, k, v)
+
+
+try:
+    AutoConfig.register("kimi_k3", KimiK3HFConfig)
 except ValueError:
     pass
 
@@ -318,3 +470,241 @@ except ImportError:
         AutoConfig.register("llama4", _Llama4HFConfig)
     except ValueError:
         pass  # Already registered
+
+
+class _InklingMMHFConfig(PretrainedConfig):
+    """Shim for the top-level ``inkling_mm_model`` model type; unmapped blocks
+    (``audio_config``, ``mtp_config``) stay as plain attributes."""
+
+    model_type = "inkling_mm_model"
+
+    def __init__(
+        self,
+        text_config: Any = None,
+        vision_config: Any = None,
+        **kwargs: Any,
+    ) -> None:
+        self.text_config = PretrainedConfig(**(text_config or {}))
+        self.vision_config = PretrainedConfig(**(vision_config or {}))
+        super().__init__(**kwargs)
+
+
+AutoConfig.register("inkling_mm_model", _InklingMMHFConfig, exist_ok=True)
+
+
+class _Glm5NextHFConfig(PretrainedConfig):
+    """Shim for GLM-5.3-Flash's ``glm5_next`` model type.
+
+    The enablement PR (huggingface/transformers#48342) is unmerged, so no
+    released transformers recognises this checkpoint and ``AutoConfig`` raises
+    before MAX sees it. The nested ``text_config`` / ``vision_config`` are the
+    only structure MAX reads; everything else on the top level -- the media
+    token ids and ``quantization_config`` -- stays a plain attribute.
+    """
+
+    model_type = "glm5_next"
+
+    def __init__(
+        self,
+        text_config: Any = None,
+        vision_config: Any = None,
+        **kwargs: Any,
+    ) -> None:
+        self.text_config = PretrainedConfig(**(text_config or {}))
+        self.vision_config = PretrainedConfig(**(vision_config or {}))
+        super().__init__(**kwargs)
+
+    def __getattr__(self, key: str) -> Any:
+        """Falls back to ``text_config`` for a decoder field asked for flatly.
+
+        GLM-5.2's config is flat and GLM-5.3-Flash's is nested, so the shared
+        DeepSeek-V3.2 code path reads ``topk_method``, ``scoring_func`` and
+        friends off the top level and raises here. Delegating is what the
+        multimodal configs in transformers do for the same reason, and it keeps
+        the difference from leaking into every flat reader.
+
+        Deliberately not a substitute for reading ``text_config`` explicitly:
+        ``Glm5NextConfig.initialize`` does that, because a field present on
+        both levels with different values would resolve silently here.
+        """
+        text_config = self.__dict__.get("text_config")
+        if text_config is not None and hasattr(text_config, key):
+            return getattr(text_config, key)
+        raise AttributeError(
+            f"'{type(self).__name__}' object has no attribute '{key}'"
+        )
+
+
+AutoConfig.register("glm5_next", _Glm5NextHFConfig, exist_ok=True)
+
+
+class _Qwen4ExpTextHFConfig(PretrainedConfig):
+    """Shim for the ``qwen4_exp_text`` decoder config.
+
+    Every field is forwarded verbatim; only ``intermediate_size`` is
+    defaulted, because :class:`Llama3Config` reads it directly while this
+    model has no dense MLP to declare one -- every layer's feed-forward is
+    the MoE block.
+    """
+
+    model_type = "qwen4_exp_text"
+
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        for key, value in kwargs.items():
+            if not hasattr(self, key):
+                setattr(self, key, value)
+        if not hasattr(self, "intermediate_size"):
+            self.intermediate_size = getattr(self, "moe_intermediate_size", 0)
+
+
+class _Qwen4ExpHFConfig(PretrainedConfig):
+    """Shim for the top-level ``qwen4_exp`` model type."""
+
+    model_type = "qwen4_exp"
+    sub_configs = {"text_config": _Qwen4ExpTextHFConfig}
+
+    def __init__(
+        self,
+        text_config: Any = None,
+        vision_config: Any = None,
+        **kwargs: Any,
+    ) -> None:
+        self.text_config = _Qwen4ExpTextHFConfig(**(text_config or {}))
+        self.vision_config = PretrainedConfig(**(vision_config or {}))
+        super().__init__(**kwargs)
+
+
+AutoConfig.register("qwen4_exp_text", _Qwen4ExpTextHFConfig, exist_ok=True)
+AutoConfig.register("qwen4_exp", _Qwen4ExpHFConfig, exist_ok=True)
+
+
+# TODO: drop these shims once transformers >= 5.15, which ships native
+# muse_glimmer configs. Before switching, note two differences from the
+# native 5.17 classes: the vision config's default rope_type is "axial" (it
+# overrides the checkpoint's "default"), which _rope_theta in
+# muse_glimmer/model_config.py rejects; and a text config without
+# rope_parameters defaults to theta 10000 there, 500000 here.
+class _MuseGlimmerSubHFConfig(PretrainedConfig):
+    """A Muse Glimmer config that keeps every field and fills reference defaults.
+
+    ``muse_glimmer`` landed in transformers 5.15.0; the defaults follow its
+    5.17.0 config classes except where the TODO above says otherwise.
+    """
+
+    _defaults: ClassVar[dict[str, Any]] = {}
+
+    def __init__(self, **kwargs: Any) -> None:
+        kwargs = {**copy.deepcopy(self._defaults), **kwargs}
+        super().__init__(**kwargs)
+
+
+class _MuseGlimmerTextHFConfig(_MuseGlimmerSubHFConfig):
+    model_type = "muse_glimmer_text"
+    _defaults: ClassVar[dict[str, Any]] = {
+        "head_dim": 128,
+        "num_key_value_heads": 2,
+        "sliding_window": 2048,
+        "qk_scale_factor": 3.87,
+        "output_multiplier": 0.19611613513818404,
+        "post_norm_eps": 1e-8,
+        "final_logit_softcapping": 20.0,
+        "rms_norm_eps": 1e-5,
+        "hidden_activation": "silu",
+        "tie_word_embeddings": False,
+        "rope_parameters": {"rope_theta": 500000.0, "rope_type": "default"},
+    }
+
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        # Derived as in the reference's __post_init__. Guarded because
+        # transformers instantiates a declared sub-config with no kwargs.
+        n = getattr(self, "num_hidden_layers", None)
+        if getattr(self, "layer_types", None) is None and n:
+            self.layer_types = [
+                "full_attention"
+                if (n - 1 - i) % 4 == 0
+                else "sliding_attention"
+                for i in range(n)
+            ]
+        if getattr(self, "layer_rope_theta", None) is None and n:
+            self.layer_rope_theta = [
+                0 if t == "full_attention" else self.rope_theta
+                for t in self.layer_types
+            ]
+
+    @property
+    def rope_theta(self) -> float:
+        return self.rope_parameters["rope_theta"]
+
+
+class _MuseGlimmerVisionHFConfig(_MuseGlimmerSubHFConfig):
+    model_type = "muse_glimmer_vision"
+    _defaults: ClassVar[dict[str, Any]] = {
+        "hidden_size": 1536,
+        "intermediate_size": 8960,
+        "num_hidden_layers": 50,
+        "num_attention_heads": 16,
+        "hidden_act": "gelu",
+        "layer_norm_eps": 1e-5,
+        "patch_size": 14,
+        "patch_temporal": 2,
+        "merge_size": 2,
+        "pos_emb_height": 32,
+        "pos_emb_width": 32,
+        "max_position_embeddings": 1024,
+        "rope_parameters": {"rope_theta": 10000.0, "rope_type": "default"},
+    }
+
+    def __init__(
+        self, layer_types: list[str] | None = None, **kwargs: Any
+    ) -> None:
+        # Set after the base init: its `validate_layer_type` rejects
+        # "window_attention", which predates this model in transformers.
+        super().__init__(**kwargs)
+        n = self.num_hidden_layers
+        self.layer_types = layer_types or [
+            "full_attention"
+            if (i + 1) % 4 == 0 or i == n - 1
+            else "window_attention"
+            for i in range(n)
+        ]
+
+
+class MuseGlimmerHFConfig(_MuseGlimmerSubHFConfig):
+    """Local config class for Muse Glimmer (``model_type: muse_glimmer``)."""
+
+    model_type = "muse_glimmer"
+    sub_configs = {
+        "text_config": _MuseGlimmerTextHFConfig,
+        "vision_config": _MuseGlimmerVisionHFConfig,
+    }
+    _defaults: ClassVar[dict[str, Any]] = {
+        "image_token_id": 200092,
+        "video_token_id": 200091,
+        "out_hidden_size": 6144,
+        "projector_hidden_size": 4096,
+        "projector_hidden_act": "gelu",
+    }
+
+    def __init__(
+        self,
+        text_config: dict[str, Any] | _MuseGlimmerTextHFConfig | None = None,
+        vision_config: dict[str, Any]
+        | _MuseGlimmerVisionHFConfig
+        | None = None,
+        **kwargs: Any,
+    ) -> None:
+        if isinstance(text_config, dict) or text_config is None:
+            text_config = _MuseGlimmerTextHFConfig(**(text_config or {}))
+        if isinstance(vision_config, dict) or vision_config is None:
+            vision_config = _MuseGlimmerVisionHFConfig(**(vision_config or {}))
+        self.text_config = text_config
+        self.vision_config = vision_config
+        super().__init__(**kwargs)
+
+
+AutoConfig.register("muse_glimmer", MuseGlimmerHFConfig, exist_ok=True)
+AutoConfig.register(
+    "muse_glimmer_text", _MuseGlimmerTextHFConfig, exist_ok=True
+)

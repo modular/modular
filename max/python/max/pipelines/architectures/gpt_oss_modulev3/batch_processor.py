@@ -14,21 +14,18 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from max.driver import Buffer
-from max.nn.kv_cache import KVCacheInputsInterface
+from max.nn.kv_cache import KVCacheInputs
 from max.pipelines.context import TextContext
 from max.pipelines.lib.interfaces.batch_processor import (
     ModuleV3SingleReplicaBatchProcessor,
 )
 
-if TYPE_CHECKING:
-    from .model import GptOssInputs
+from .inputs import GptOssInputs
 
 
 class GptOssModuleV3BatchProcessor(
-    ModuleV3SingleReplicaBatchProcessor[TextContext, "GptOssInputs"]
+    ModuleV3SingleReplicaBatchProcessor[TextContext, GptOssInputs]
 ):
     """Ragged batching for GPT OSS ModuleV3 models (single GPU, no signals)."""
 
@@ -38,10 +35,8 @@ class GptOssModuleV3BatchProcessor(
         tokens: Buffer,
         input_row_offsets: Buffer,
         return_n_logits: Buffer,
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer],
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer],
     ) -> GptOssInputs:
-        from .model import GptOssInputs
-
         return GptOssInputs(
             tokens=tokens,
             input_row_offsets=input_row_offsets,

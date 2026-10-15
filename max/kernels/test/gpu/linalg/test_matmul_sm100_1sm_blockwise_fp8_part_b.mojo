@@ -18,9 +18,9 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     MatmulConfig,
     GEMMKind,
 )
-from std.gpu.host import DeviceContext
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.memory import memset_zero
+from max.gpu.host import DeviceContext
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.memory import unsafe_memset_zero
 from internal_utils import (
     assert_almost_equal,
     assert_with_measure,
@@ -29,7 +29,6 @@ from std.random import rand
 from internal_utils._measure import relative_difference
 from layout import (
     TileTensor,
-    Coord,
     CoordLike,
     row_major,
     Idx,
@@ -62,7 +61,7 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
     mma_shape: IndexList[3],
     cluster_shape: StaticTuple[Int32, 3],
     cta_group: Int,
-    scales_type: DType = DType.float32,
+    scales_type: DType = .float32,
     transpose_b: Bool = True,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
@@ -104,23 +103,17 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
         sep="",
     )
 
-    var a_shape = row_major(Coord(m, Idx[KType.static_value]))
+    var a_shape = row_major(m, Idx[KType.static_value])
     var b_shape = row_major(
-        Coord(
-            Idx[NType.static_value if transpose_b else KType.static_value],
-            Idx[KType.static_value if transpose_b else NType.static_value],
-        )
+        Idx[NType.static_value if transpose_b else KType.static_value],
+        Idx[KType.static_value if transpose_b else NType.static_value],
     )
-    var c_shape = row_major(Coord(m, Idx[NType.static_value]))
+    var c_shape = row_major(m, Idx[NType.static_value])
 
-    var a_scales_shape = row_major(
-        Coord(ceildiv(Int(k.value()), BLOCK_SCALE_K), m)
-    )
+    var a_scales_shape = row_major(ceildiv(Int(k.value()), BLOCK_SCALE_K), m)
     var b_scales_shape = row_major(
-        Coord(
-            ceildiv(Int(n.value()), BLOCK_SCALE_K),
-            ceildiv(Int(k.value()), BLOCK_SCALE_K),
-        )
+        ceildiv(Int(n.value()), BLOCK_SCALE_K),
+        ceildiv(Int(k.value()), BLOCK_SCALE_K),
     )
 
     var a_size = Int(m.value()) * Int(k.value())
@@ -167,8 +160,8 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
     var b_scales_device = ctx.enqueue_create_buffer[scales_type](b_scales_size)
     var b_scales_tensor = TileTensor(b_scales_device, b_scales_shape)
 
-    memset_zero(c_host_ptr.unsafe_ptr(), c_size)
-    memset_zero(c_host_ref_ptr.unsafe_ptr(), c_size)
+    unsafe_memset_zero(c_host_ptr.unsafe_ptr(), c_size)
+    unsafe_memset_zero(c_host_ref_ptr.unsafe_ptr(), c_size)
 
     # Initialize matmul operands
     if simple_init():
@@ -192,10 +185,10 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
                 ](0.5)
 
     else:
-        rand(a_host.ptr, a_host.num_elements())
-        rand(b_host.ptr, b_host.num_elements())
-        rand(a_scales_host.ptr, a_scales_host.num_elements())
-        rand(b_scales_host.ptr, b_scales_host.num_elements())
+        rand(a_host.as_span())
+        rand(b_host.as_span())
+        rand(a_scales_host.as_span())
+        rand(b_scales_host.as_span())
 
     # Move operands to the Device
     ctx.enqueue_copy(a_device, a_host_ptr)
@@ -203,13 +196,6 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
 
     ctx.enqueue_copy(a_scales_device, a_scales_host_ptr)
     ctx.enqueue_copy(b_scales_device, b_scales_host_ptr)
-
-    # LayoutTensors for reference matmul
-    var a_lt = a_tensor.to_layout_tensor()
-    var b_lt = b_tensor.to_layout_tensor()
-    var a_scales_lt = a_scales_tensor.to_layout_tensor()
-    var b_scales_lt = b_scales_tensor.to_layout_tensor()
-    var c_ref_tensor_lt = c_ref_tensor.to_layout_tensor()
 
     comptime matmul_config = MatmulConfig[a_type, b_type, c_type, transpose_b](
         cluster_shape=Index(
@@ -240,11 +226,11 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
         transpose_b=transpose_b,
         scales_granularity_mnk=Index(1, BLOCK_SCALE_K, BLOCK_SCALE_K),
     ](
-        c_ref_tensor_lt,
-        a_lt,
-        b_lt,
-        a_scales_lt.get_immutable(),
-        b_scales_lt.get_immutable(),
+        c_ref_tensor,
+        a_tensor,
+        b_tensor,
+        a_scales_tensor,
+        b_scales_tensor,
         ctx,
     )
 
@@ -255,12 +241,15 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
     ctx.synchronize()
 
     assert_with_measure[relative_difference](
-        c_host.ptr, c_host_ref.ptr, c_host.num_elements(), threshold=0.001
+        c_host._storage,
+        c_host_ref._storage,
+        c_host.num_elements(),
+        threshold=0.001,
     )
 
     assert_almost_equal(
-        c_host.ptr,
-        c_host_ref.ptr,
+        c_host._storage,
+        c_host_ref._storage,
         c_host.num_elements(),
         atol=1e-2,
         rtol=1e-2,
@@ -358,7 +347,7 @@ def main() raises:
                 cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
                 a_swizzle=swizzle,
                 b_swizzle=swizzle,
-                scales_type=DType.bfloat16,
+                scales_type=.bfloat16,
                 cta_group=1,
             ](
                 ctx,
@@ -427,7 +416,7 @@ def main() raises:
                 cluster_shape=StaticTuple[Int32, 3](2, 2, 1),
                 a_swizzle=swizzle,
                 b_swizzle=swizzle,
-                scales_type=DType.bfloat16,
+                scales_type=.bfloat16,
                 cta_group=1,
             ](
                 ctx,

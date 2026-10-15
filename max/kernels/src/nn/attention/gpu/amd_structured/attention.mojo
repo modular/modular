@@ -23,13 +23,14 @@ helper on the struct.
 """
 
 from std.collections import OptionalReg
-from std.math import ceildiv
+from std.math import ceildiv, recip
 from std.math.constants import log2e
-from std.memory import bitcast, stack_allocation
+from std.math.uutils import udivmod
+from std.memory import bitcast, unsafe_stack_allocation
 from layout.tile_tensor import stack_allocation as tt_stack_allocation
-from std.sys import align_of, simd_width_of, size_of
+from std.sys import align_of, simd_width_of
 from std.sys.intrinsics import readfirstlane
-from std.gpu import barrier, block_idx, lane_id, thread_idx
+from max.gpu import block_idx, lane_id, thread_idx
 from layout import TileTensor
 from layout import row_major
 from layout.swizzle import Swizzle
@@ -39,12 +40,12 @@ from layout.tile_layout import (
     Layout as TileLayout,
 )
 from layout.coord import Coord
-from structured_kernels.amd_tile_io import RegTileWriter
+from structured_kernels.amd_tile_io import RegTileEpilogue, RegTileWriter
 from layout.tensor_core import num_matrix_reg
 from nn.attention.mha_mask import CausalMask, MHAMask, TileMaskStatus
 from nn.attention.mha_operand import MHAOperand
 from nn.attention.mha_utils import MHAConfig
-from std.utils import Index, IndexList
+from std.utils import Index
 from std.utils.numerics import get_accum_type, min_or_neg_inf
 
 from .softmax import Softmax
@@ -84,10 +85,11 @@ struct Attention[
     # `v_smem_ptr` is bitcast'd from `k_smem_ptr` (no separate V allocation).
     # Enforced via `comptime assert` in `__init__`.
     mla_kv_alias: Bool = False,
-    # MLA decode MTP: query tokens (S) folded into the MMA
-    # M dimension, heads-inner (row = token*H + head, M = num_heads*q_seq_len).
+    # Speculative decode (MLA MTP / MHA verify): S query tokens folded into the
+    # MMA M dimension, heads-inner (row = token*H + head, M = H*S; H is
+    # `heads_inner`: `num_heads` under MLA, `group` for MHA).
     # Default 1 = single-token decode (query_rows == group), byte-identical.
-    # gfx950 / AMD MLA decode only.
+    # gfx950 decode only.
     q_seq_len: Int = 1,
 ]:
     """Holds the per-warp register, SMEM, and softmax state for a gfx950 MHA/MLA attention tile.
@@ -123,8 +125,10 @@ struct Attention[
         mla_mode: Whether AMD MLA decode is active (defaults to `False`).
         mla_kv_alias: Whether V aliases onto K's SMEM, skipping the V DMA
             (defaults to `False`; requires `shared_kv=True`).
-        q_seq_len: Number of query tokens folded into the MMA M dimension
-            for MLA decode (defaults to 1, single-token decode).
+        q_seq_len: Token SLOTS the MMA M dimension is built from for
+            speculative decode (defaults to 1, single-token decode). The
+            tile's HEIGHT, which `mha_decoding` pads above the tokens a
+            sequence carries; those arrive as the runtime `seq_len`.
     """
 
     # Block/warp dimensions from MHAConfig.
@@ -139,29 +143,39 @@ struct Attention[
     comptime num_warps_m = Self.BM // Self.WM
     comptime depth = Self.config.depth
 
-    # MLA-decode token-fold geometry. At S=1 `query_rows == group`, so everything
-    # below collapses to single-token decode (byte-identical). For S>1 the QK^T M
-    # dimension holds M = num_heads * q_seq_len rows (heads-inner: token*H + head).
-    # The fold applies ONLY to AMD MLA decode (`token_gen and mla_mode`); the
-    # `Attention` struct is shared with MHA/GQA prefill (`mha.mojo:2111`) and MHA
-    # decode (`mha.mojo:3734`) where `group < num_heads`. For those non-MLA paths
-    # `heads_inner` MUST fold to `group`, else the `__init__` invariant becomes
-    # `group % num_heads` (compile break for GQA) and the mask derives
-    # `fold_seq_len = 0` (→ score_row = num_keys → whole fragment masked to NaN).
-    comptime _is_mla_fold = Self.token_gen and Self.mla_mode
+    # Decode token-fold geometry: MLA always, MHA at S>1 (speculative verify).
+    # At S=1 `query_rows == group` and everything below collapses to single-token
+    # decode (byte-identical); at S>1 the QK^T M dimension holds
+    # `_fold_heads * q_seq_len` heads-inner rows (token*H + head).
+    # Off the fold path — prefill and single-token MHA decode — `heads_inner`
+    # MUST be `group`, else the `__init__` invariant becomes `group % num_heads`
+    # (GQA compile break) and the mask derives `fold_seq_len = 0` (score_row =
+    # num_keys → all-NaN fragment). MHA satisfies that by construction
+    # (`_fold_heads == group`), so the `_fold_active` guard on `heads_inner`
+    # below is load-bearing only for MLA, whose `_fold_heads` is `num_heads`.
+    comptime _fold_active = Self.token_gen and (
+        Self.mla_mode or Self.q_seq_len > 1
+    )
+    # H — heads a folded CTA owns per token. MLA tiles the single latent KV head
+    # across `num_heads`; MHA gives each CTA one KV head, hence `group`.
+    comptime _fold_heads = Self.num_heads if Self.mla_mode else Self.group
     comptime query_rows = (
-        Self.num_heads * Self.q_seq_len
-    ) if Self._is_mla_fold else Self.group
-    # H — the divisor used by the per-token causal mask: token(row) = row // H,
+        Self._fold_heads * Self.q_seq_len
+    ) if Self._fold_active else Self.group
+    # The divisor used by the per-token causal mask: token(row) = row // H,
     # head(row) = row % H. The fold invariant `query_rows % heads_inner == 0`
     # is asserted in `__init__` (comptime asserts must live in a function body).
-    comptime heads_inner = Self.num_heads if Self._is_mla_fold else Self.group
+    comptime heads_inner = Self._fold_heads if Self._fold_active else Self.group
 
     comptime accum_type = get_accum_type[Self.q_type]()
 
     # gfx950 config — concrete struct, no trait.
     comptime amd_structured_config = AMDStructuredConfig[
-        Self.config, Self.group, Self.token_gen, Self.mla_mode
+        Self.config,
+        Self.group,
+        Self.token_gen,
+        Self.mla_mode,
+        Self.q_seq_len,
     ]
 
     comptime mma_shape = Self.amd_structured_config.get_mma_shape()
@@ -229,9 +243,19 @@ struct Attention[
     # `copy_to_shared`/`load_a` use a plain `col_major[16,4]` consistent only
     # without the swizzle, so disable the P swizzle for warp-local (a
     # bank-conflict optimization, not correctness; num_warps_n=1 has no cross-warp
-    # P contention). A register-resident warp-local path is a deferred follow-up.
+    # P contention).
+    #
+    # At MMA_M == 32 the register chain IS expressible, so warp-local declines
+    # the round-trip. `PRegisterBuffer.mma_tile`'s gather fills only fragment
+    # row 0, hence one M-tile per warp; MLA decode's BM=64 tile has two.
+    comptime _p_register_chain_ok = (
+        Self.mma_shape[0] == 32 and Self.num_m_mmas == 1
+    )
     comptime _warp_local_p = (
-        Self._is_mla_fold and Self.num_warps_m > 1 and Self.num_warps_n == 1
+        Self._fold_active
+        and Self.num_warps_m > 1
+        and Self.num_warps_n == 1
+        and not Self._p_register_chain_ok
     )
     comptime _p_shared_memory_backed = (
         Self.BN != Self.WN
@@ -279,18 +303,35 @@ struct Attention[
 
     comptime kv_num_heads = Self.num_heads // Self.group
 
-    comptime _q_stride0 = (
-        Self.num_heads * Self.q_depth if not Self.token_gen else Self.q_depth
+    # A folded MHA CTA's rows are either the S TOKENS of its one query head
+    # (`group == 1`, stepping by the BSHD token stride) or the contiguous heads
+    # of all S tokens (`group == num_heads`, flat `q_depth` stride). Any other
+    # group needs both strides at once, which a single row stride cannot
+    # express, so `_mha_decode_fold_ok` excludes it.
+    comptime _fold_token_strided = (
+        Self._fold_active and not Self.mla_mode and Self.group == 1
     )
+    # Shared by the Q read and the O write so their row strides cannot drift.
+    # Prefill rows are always tokens; decode rows only under the fold above.
+    comptime _token_strided_rows = (
+        not Self.token_gen
+    ) or Self._fold_token_strided
+    # Query heads one `grid_y` step advances past, so a folded row's head can be
+    # based at its KV head's first: `group` for MHA (a CTA per KV head), 0 for
+    # MLA (grid_y is a query tile, not a KV head). The split-K stat key
+    # (`r_abs`) and the mask's `q_head_idx` must agree on it.
+    comptime _fold_head_base_stride = 0 if Self.mla_mode else Self.group
+    comptime _q_stride0 = (
+        Self.num_heads * Self.q_depth
+    ) if Self._token_strided_rows else Self.q_depth
     comptime QTileLayout = TileLayout[
         Coord[Int64, ComptimeInt[Self.q_depth]].element_types,
         Coord[ComptimeInt[Self._q_stride0], ComptimeInt[1]].element_types,
     ]
 
     comptime _output_stride0 = (
-        Self.num_heads
-        * Self.output_depth if not Self.token_gen else Self.output_depth
-    )
+        Self.num_heads * Self.output_depth
+    ) if Self._token_strided_rows else Self.output_depth
     comptime OutputTileLayout = TileLayout[
         Coord[Int64, ComptimeInt[Self.output_depth]].element_types,
         Coord[ComptimeInt[Self._output_stride0], ComptimeInt[1]].element_types,
@@ -332,9 +373,17 @@ struct Attention[
             or Self.amd_structured_config.double_buffer_k_only
         ) else 1
     )
+    # V SMEM must cover the wider of K depth and output depth: MLA prefill has
+    # depth=qk_nope < output_depth=v_head_dim (GLM 192<256), or V truncates.
+    comptime _v_smem_depth = max(Self.depth, Self.output_depth)
+    comptime _v_smem_physical_depth = ceildiv(
+        Self._v_smem_depth, Self._bk_smem
+    ) * Self._bk_smem
     comptime _v_smem_size = (
         Self.BN if Self.amd_structured_config.full_kv else Self.BK
-    ) * Self.depth * (2 if Self.amd_structured_config.double_buffer else 1)
+    ) * Self._v_smem_physical_depth * (
+        2 if Self.amd_structured_config.double_buffer else 1
+    )
     comptime _max_kv_smem_size = max(Self._k_smem_size, Self._v_smem_size)
 
     comptime QRegisterBufferType = QRegisterBuffer[
@@ -347,6 +396,16 @@ struct Attention[
         depth=Self.q_depth,
         thread_rows=Self.warp_rows,
         thread_cols=Self.warp_cols,
+        zero_partial_tile_pad=(
+            Self.token_gen
+            or Self.depth % Self.BK == 0
+            or Self.depth % Self.BK % Self.mma_shape[2] != 0
+        ),
+        # A folded tile leaves whole warps with no live rows on every launch, so
+        # it clamps the Q SRD to the parent tile. Prefill reaches that state too
+        # (`seq_len` under `BM`) but stays unclamped for the address math: depth
+        # 512 spilled ~150 more bytes with it, and its allocation is at the edge.
+        clamp_to_parent=Self._fold_active,
     ]
 
     # --- MMA op alias ---
@@ -362,14 +421,10 @@ struct Attention[
     var p_reg_buffer: Self.PRegisterBufferType
 
     var k_smem_ptr: UnsafePointer[
-        Scalar[Self.k_t.dtype],
-        MutUntrackedOrigin,
-        address_space=AddressSpace.SHARED,
+        Scalar[Self.k_t.dtype], MutUntrackedOrigin, address_space=.SHARED
     ]
     var v_smem_ptr: UnsafePointer[
-        Scalar[Self.v_t.dtype],
-        MutUntrackedOrigin,
-        address_space=AddressSpace.SHARED,
+        Scalar[Self.v_t.dtype], MutUntrackedOrigin, address_space=.SHARED
     ]
     # Dedicated warp-reduction scratch SMEM. Decoupling from K SMEM
     # avoids races between softmax's scratch ds_writes and other warps'
@@ -377,18 +432,14 @@ struct Attention[
     # `mla_kv_alias` mode (V reads from K's SMEM, so there's no later
     # V DMA to overwrite the corruption).
     var warp_scratch_ptr: UnsafePointer[
-        Scalar[Self.accum_type],
-        MutUntrackedOrigin,
-        address_space=AddressSpace.SHARED,
+        Scalar[Self.accum_type], MutUntrackedOrigin, address_space=.SHARED
     ]
 
     var q_buffer: Self.QRegisterBufferType
 
     @__allow_legacy_any_origin_fields
     var output_tile: TileTensor[
-        Self.output_type,
-        Self.OutputTileLayout,
-        MutAnyOrigin,
+        Self.output_type, Self.OutputTileLayout, MutAnyOrigin
     ]
 
     var batch_idx: Int
@@ -433,31 +484,31 @@ struct Attention[
         Self.accum_type,
         type_of(Self._warp_scratch_layout),
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]
     comptime _warp_scratch_size = (2 * Int(Self.num_warps_n) * Int(Self.BM))
 
     # --- Config delegation (static methods) ---
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def q_head_idx() -> Int:
         return Self.amd_structured_config.q_head_idx()
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def q_tile_idx() -> Int:
         return Self.amd_structured_config.q_tile_idx()
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def kv_head_idx() -> Int:
         return Self.amd_structured_config.kv_head_idx()
 
     # --- KV tile factory ---
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def make_kv_tile[
         operand_t: MHAOperand,
         //,
@@ -467,7 +518,12 @@ struct Attention[
         start_tok_idx: UInt32,
         head_idx: UInt32,
         kv_tile_num_rows: UInt32,
-    ) -> TileTensor[operand_t.dtype, Self.KvTileLayout, ImmutAnyOrigin]:
+    ) -> TileTensor[
+        operand_t.dtype,
+        Self.KvTileLayout,
+        ImmutAnyOrigin,
+        Engine=operand_t.Engine,
+    ]:
         return operand.block_paged_tile[Int(Self.BN)](
             batch_idx,
             start_tok_idx,
@@ -483,7 +539,7 @@ struct Attention[
 
     # --- Constructor ---
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self,
         output_ptr: UnsafePointer[Scalar[Self.output_type], MutAnyOrigin],
@@ -507,55 +563,103 @@ struct Attention[
         comptime assert (
             not Self.mla_kv_alias or Self.amd_structured_config.shared_kv
         ), "mla_kv_alias=True requires shared_kv=True"
+        # `num_m_mmas` CEILS, so a warp tile shorter than the MFMA rounds up to
+        # cover the next warp's slab while `mask_warp_row` and the split-K stat
+        # row keep stepping WM. Nothing downstream sees that, so trap it here.
+        comptime assert (
+            Self.WM % Self.mma_shape[0] == 0
+        ), "warp M tile must be a whole number of MFMA M tiles"
+        comptime assert (
+            Self.WN % Self.mma_shape[1] == 0
+        ), "warp N tile must be a whole number of MFMA N tiles"
         # Fold invariant: query rows partition evenly into S tokens of H. Scoped
         # to the fold path so a stray `group % num_heads` (GQA) is never asserted
         # on the shared non-MLA paths (where it holds trivially anyway).
-        comptime if Self._is_mla_fold:
+        comptime if Self._fold_active:
             comptime assert Self.query_rows % Self.heads_inner == 0
+        # MHA fold: `get_q_offset`/`get_output_offset` base the tile at
+        # `kv_head_idx * group` and read it with ONE row stride, so row
+        # `token*group + head` lands on BSHD element
+        # `(token*num_heads + head)*depth` only at the two groups asserted
+        # below.
+        # TODO: a nested ((group, S), depth) Q/O tile lifts this to any GQA
+        # group.
+        comptime if Self._fold_active and not Self.mla_mode:
+            comptime assert Self.group == Self.num_heads or Self.group == 1, (
+                "MHA token-fold (q_seq_len > 1) requires group == num_heads"
+                " (single KV head) or group == 1 (single query head per KV"
+                " head) for single-stride query-row addressing"
+            )
+            # The sink lookup is `q_head_idx()` = lane % MMA_M, which is the
+            # folded head only while num_heads == MMA_M; past that, warps beyond
+            # the first would seed softmax with the wrong head's sink weight.
+            comptime assert not Self.sink, (
+                "MHA token-fold (q_seq_len > 1) does not support attention"
+                " sinks: the sink lookup is not fold-row aware"
+            )
+            # An MHA CTA owns every one of its KV head's rows (`grid_y` steps by
+            # KV head, not by query tile as it does under MLA), so they must all
+            # fit the M tile. Holds on both arms by construction today
+            # (`BM == num_heads*S` stacked; `S <= BM` narrow) — this keeps it a
+            # property of the kernel rather than of the host dispatch table.
+            comptime assert (
+                Self.query_rows <= Self.BM
+            ), "MHA token-fold query rows must fit the block M tile"
 
         self.softmax = type_of(self.softmax)()
         self.out_reg_buffer = Self.OutputRegisterBufferType()
         self.out_reg_buffer.zero()
 
-        self.k_smem_ptr = stack_allocation[
+        self.k_smem_ptr = unsafe_stack_allocation[
             Self._max_kv_smem_size if Self.amd_structured_config.shared_kv else Self._k_smem_size,
             Self.k_t.dtype,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             alignment=Self._smem_alignment,
         ]()
         self.v_smem_ptr = self.k_smem_ptr.bitcast[
             Scalar[Self.v_t.dtype]
-        ]() if Self.amd_structured_config.shared_kv else stack_allocation[
+        ]() if Self.amd_structured_config.shared_kv else unsafe_stack_allocation[
             Self._v_smem_size,
             Self.v_t.dtype,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             alignment=Self._smem_alignment,
         ]()
 
-        self.warp_scratch_ptr = stack_allocation[
+        self.warp_scratch_ptr = unsafe_stack_allocation[
             Self._warp_scratch_size,
             Self.accum_type,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ]()
 
         self.p_reg_buffer = Self.PRegisterBufferType(
-            tt_stack_allocation[Self.q_type, address_space=AddressSpace.SHARED](
+            tt_stack_allocation[Self.q_type, address_space=.SHARED](
                 Self.PRegisterBufferType._smem_layout
             )
         )
 
         # `valid_rows` is the SRD OOB row bound (`make_amd_buffer_resource`
         # reads the Scalar row dim), so it gates every query row: decode sees
-        # `query_rows = num_heads * S` rows, and the old `group` value would clamp
-        # all token>=1 rows to zero. At S=1 `query_rows == group` (bit-identical).
-        # For variable query length use the runtime live-row count
-        # `num_heads * seq_len` so a short sequence's pad rows clamp to zero on
-        # both the Q read and the output store (== `query_rows` for a uniform
-        # batch). Other paths keep the comptime `query_rows` / prefill `min(BM,
-        # ...)` byte-identically.
+        # `query_rows = H * S` rows, so a `group` bound would clamp every
+        # token>=1 row to zero. At S=1 `query_rows == group` (bit-identical).
+        # For variable query length use the runtime live-row count `H * seq_len`
+        # so a short sequence's pad rows clamp to zero on both the Q read and the
+        # output store (below `query_rows` whenever the batch is non-uniform OR
+        # the fold padded the tile). Token-strided rows
+        # keep that: the SRD bound `(rows-1)*stride0 + depth` stops short of row
+        # `seq_len`, a full token stride later. MHA decode keeps the comptime
+        # `query_rows` and prefill its per-tile `min(BM, ...)`.
         var valid_rows: UInt32
-        comptime if Self._is_mla_fold and Self.q_seq_len > 1:
-            valid_rows = UInt32(Self.num_heads) * UInt32(seq_len)
+        comptime if Self._fold_active and Self.q_seq_len > 1:
+            valid_rows = UInt32(Self.heads_inner) * UInt32(seq_len)
+        elif Self.token_gen and Self.mla_mode:
+            # The bound is relative to this head tile, so cap it at the rows
+            # the tile owns; otherwise a partial last tile (24 heads at BM=16)
+            # spills into the next batch's or split's heads.
+            valid_rows = min(
+                UInt32(Self.BM),
+                UInt32(Self.query_rows)
+                - UInt32(Self.q_tile_idx()) * UInt32(Self.BM),
+            )
         elif Self.token_gen:
             valid_rows = UInt32(Self.query_rows)
         else:
@@ -644,16 +748,16 @@ struct Attention[
 
     # --- Buffer operations ---
 
-    @always_inline
+    @inline(.always)
     def zero_p_buffer[stage: Int = 0](self):
         self.p_reg_buffer.zero[stage]()
 
-    @always_inline
+    @inline(.always)
     def scale_q_buffer(self):
         """Pre-scale Q registers by scale factor (scale * log2e)."""
         self.q_buffer.scale[Self.accum_type](self.scale)
 
-    @always_inline
+    @inline(.always)
     def scale_p_reg[stage: Int = 0](self):
         var p_vec = self.p_reg_buffer.stage_tile[stage]().vectorize[
             1, Self.output_frag_size
@@ -666,7 +770,7 @@ struct Attention[
 
     # --- Mask operations ---
 
-    @always_inline
+    @inline(.always)
     def mask_status(
         self,
         kv_tile_start_row: UInt32,
@@ -679,7 +783,7 @@ struct Attention[
             # single-token span.
             comptime fold_seq_len = (
                 Self.query_rows // Self.heads_inner
-            ) if Self._is_mla_fold else 1
+            ) if Self._fold_active else 1
             return self.mask.status(
                 UInt32(self.batch_idx),
                 Index[dtype=DType.uint32](
@@ -698,17 +802,17 @@ struct Attention[
                 Index[dtype=DType.uint32](Self.BM, Self.BN),
             )
 
-    @always_inline
+    @inline(.always)
     def mask_advance(mut self):
         # Decode: no-op (kv_tile_start_row added directly in MaskTileOp.apply).
         comptime if not Self.token_gen:
             self.mask_warp_col += UInt32(Self.BN)
 
-    @always_inline
+    @inline(.always)
     def mask_skip_tile(self, status: TileMaskStatus) -> Bool:
         return status == TileMaskStatus.FULL_MASK
 
-    @always_inline
+    @inline(.always)
     def mask_skip_and_advance(
         mut self,
         kv_tile_start_row: UInt32,
@@ -720,7 +824,7 @@ struct Attention[
                 return True
         return False
 
-    @always_inline
+    @inline(.always)
     def mask_apply[
         stage: Int = 0
     ](
@@ -729,9 +833,8 @@ struct Attention[
         kv_tile_num_rows: UInt32,
         not_last_iter: Bool,
     ):
-        @always_inline
-        @parameter
-        def _mask_apply_impl(masked: Bool):
+        @inline(.always)
+        def _mask_apply_impl(masked: Bool) {imm}:
             MaskTileOp[
                 accum_type=Self.accum_type,
                 token_gen=Self.token_gen,
@@ -742,12 +845,13 @@ struct Attention[
                 group=Self.group,
                 mma_m=Self.mma_shape[0],
                 use_exp2=Self.use_exp2,
-                # Token fold: H = num_heads, M = query_rows = H*S. Defaults
-                # (group, group) reproduce single-token decode; `mla_mode` gates
-                # the fold arithmetic comptime-dead on the non-MLA paths.
+                # Token fold: H = heads_inner, M = query_rows = H*S. Defaults
+                # (group, group) reproduce single-token decode, where
+                # `fold_mode=False` makes the fold arithmetic comptime-dead.
                 num_heads_per_token=Self.heads_inner,
                 valid_rows=Self.query_rows,
-                mla_mode=Self._is_mla_fold,
+                head_base_stride=Self._fold_head_base_stride,
+                fold_mode=Self._fold_active,
                 # Warp-local (num_warps_m>1): a warp owns 16 absolute rows that
                 # may include pad rows, so the mask's dead-row guard must test
                 # the absolute row, not intra-warp `lane_row`.
@@ -776,7 +880,7 @@ struct Attention[
             _mask_apply_impl(masked=True)
         self.mask_advance()
 
-    @always_inline
+    @inline(.always)
     def get_num_rows(self) -> UInt32:
         var end = min(
             self.kv_start_row + UInt32(Self.BN), UInt32(self.num_keys)
@@ -786,7 +890,7 @@ struct Attention[
         )
         return UInt32(num_rows)
 
-    @always_inline
+    @inline(.always)
     def apply_mask[
         stage: Int, scale: Bool = True
     ](mut self, not_last_iter: Bool = False):
@@ -798,7 +902,7 @@ struct Attention[
 
     # --- Softmax ---
 
-    @always_inline
+    @inline(.always)
     def warp_scratch_tile(self) -> Self._WarpScratchTileType:
         """Warp-reduction scratch tile (decode only)."""
         return Self._WarpScratchTileType(
@@ -806,7 +910,7 @@ struct Attention[
             Self._warp_scratch_layout,
         )
 
-    @always_inline
+    @inline(.always)
     def online_softmax[stage: Int = 0](mut self):
         var warp_scratch = self.warp_scratch_tile().tile[
             2 * Int(Self.num_warps_n), Int(Self.WM)
@@ -818,9 +922,17 @@ struct Attention[
             warp_scratch,
         )
 
+    @inline(.always)
+    def _seed_inv_scale(self) -> Scalar[Self.accum_type]:
+        # A zero scale (uniform attention) makes any seed consistent; avoid
+        # `recip(0)` turning the seed into NaN.
+        if self.scale == 0:
+            return 1
+        return recip(self.scale)
+
     # --- Split online softmax (for MLA double-buffered kernel) ---
 
-    @always_inline
+    @inline(.always)
     def online_softmax_step_0[stage: Int, mask: Bool = True](mut self):
         """Step 0: mask + max + exp(even tiles).
 
@@ -838,7 +950,7 @@ struct Attention[
         self.softmax.calculate_qk_max(score_tile, warp_scratch)
         self.softmax.exp[start=0, stride=2](score_tile)
 
-    @always_inline
+    @inline(.always)
     def online_softmax_step_1[stage: Int](mut self):
         """Step 1: exp(odd tiles) + sum + correction + update max/sum.
 
@@ -855,7 +967,7 @@ struct Attention[
         self.softmax.update_max()
         self.softmax.update_sum()
 
-    @always_inline
+    @inline(.always)
     def online_softmax_step_0_fma[stage: Int, mask: Bool = True](mut self):
         """Step 0 with deferred scaling: mask (no scale), max, exp_scaled.
 
@@ -876,10 +988,12 @@ struct Attention[
             2 * Int(Self.num_warps_n), Int(Self.WM)
         ](0, 0)
         var score_tile = self.p_reg_buffer.stage_tile[stage]()
-        self.softmax.calculate_qk_max(score_tile, warp_scratch)
+        self.softmax.calculate_qk_max[unscale_seed=True](
+            score_tile, warp_scratch, self._seed_inv_scale()
+        )
         self.softmax.exp_scaled[start=0, stride=2](score_tile, self.scale)
 
-    @always_inline
+    @inline(.always)
     def online_softmax_step_1_fma[stage: Int](mut self):
         """Step 1 with deferred scaling for odd-indexed tiles.
 
@@ -901,7 +1015,7 @@ struct Attention[
         self.softmax.update_max()
         self.softmax.update_sum()
 
-    @always_inline
+    @inline(.always)
     def online_softmax_step_0_pkfma[stage: Int, mask: Bool = True](mut self):
         """Step 0 deferred-scale variant that emits `v_pk_fma_f32`.
 
@@ -922,10 +1036,12 @@ struct Attention[
             2 * Int(Self.num_warps_n), Int(Self.WM)
         ](0, 0)
         var score_tile = self.p_reg_buffer.stage_tile[stage]()
-        self.softmax.calculate_qk_max(score_tile, warp_scratch)
+        self.softmax.calculate_qk_max[unscale_seed=True](
+            score_tile, warp_scratch, self._seed_inv_scale()
+        )
         self.softmax.exp_pkfma[start=0, stride=2](score_tile, self.scale)
 
-    @always_inline
+    @inline(.always)
     def online_softmax_step_1_pkfma[stage: Int](mut self):
         """Step 1 pkfma counterpart of `_fma` step 1.
 
@@ -943,7 +1059,7 @@ struct Attention[
         self.softmax.update_max()
         self.softmax.update_sum()
 
-    @always_inline
+    @inline(.always)
     def online_softmax_step_0_prescaled[
         stage: Int, mask: Bool = True
     ](mut self):
@@ -966,7 +1082,7 @@ struct Attention[
         self.softmax.calculate_qk_max(score_tile, warp_scratch)
         self.softmax.exp[start=0, stride=2](score_tile)
 
-    @always_inline
+    @inline(.always)
     def online_softmax_step_1_prescaled[stage: Int](mut self):
         """Softmax step 1 for pre-scaled Q: no scale needed on scores.
 
@@ -983,23 +1099,18 @@ struct Attention[
         self.softmax.update_max()
         self.softmax.update_sum()
 
-    @always_inline
+    @inline(.always)
     def online_softmax_update_output(mut self):
         """Apply correction to output accumulator."""
         self.softmax.update_output(self.out_reg_buffer.reg_tile)
 
     # --- Output store ---
 
-    @always_inline
+    @inline(.always)
     def store_output(self):
         var output_warp_tile = self.output_tile.tile[
             Self.WM, Self.output_depth // Self.num_warps_n
         ](self.warp_row, self.warp_col)
-        var writer = RegTileWriter[
-            Self.output_type,
-            Self.warp_rows,
-            Self.warp_cols,
-        ](self.output_tile)
         # vectorize[1, 4] works for both MMA sizes:
         #  - 16×16: output_frag_size == 4, so [1, 4] = [frag_num_rows,
         #    output_frag_size] exactly.
@@ -1019,34 +1130,75 @@ struct Attention[
         comptime sub_layout = row_major[
             Self.num_n_mmas_output, Self.output_frag_size
         ]()
+        comptime output_cols_per_warp = (Self.output_depth // Self.num_warps_n)
         comptime for m_mma in range(Self.num_m_mmas):
             var sub_warp_tile = output_warp_tile.tile[
                 Self.mma_shape[0],
-                Self.output_depth // Self.num_warps_n,
+                output_cols_per_warp,
             ](m_mma, 0)
             var sub_reg = tt_stack_allocation[
-                Self.accum_type, address_space=AddressSpace.LOCAL
+                Self.accum_type, address_space=.LOCAL
             ](sub_layout)
             comptime for n_mma in range(Self.num_n_mmas_output):
                 comptime for k in range(Self.output_frag_size):
                     sub_reg[n_mma, k] = self.out_reg_buffer.reg_tile[
                         n_mma * Self.num_m_mmas + m_mma, k
                     ]
-            writer.store[mfma32=Self.mma_shape[0] == 32](
-                sub_warp_tile.vectorize[1, 4](),
-                sub_reg,
-            )
+            comptime if output_cols_per_warp % Self.mma_shape[1] == 0:
+                var writer = RegTileWriter[
+                    Self.output_type,
+                    Self.warp_rows,
+                    Self.warp_cols,
+                ](self.output_tile)
+                writer.store[mfma32=Self.mma_shape[0] == 32](
+                    sub_warp_tile.vectorize[1, 4](),
+                    sub_reg,
+                )
+            else:
+                comptime assert Self.mma_shape[0] == 32
+                var lane = Int(lane_id())
+                var output_row = (
+                    self.warp_row * Self.WM
+                    + m_mma * Self.mma_shape[0]
+                    + (lane & 31)
+                )
+                var lane_col_offset = 4 if lane >= 32 else 0
+                var epilogue = RegTileEpilogue[Self.output_type, 1](
+                    self.output_tile
+                )
+                if output_row < Int(self.output_tile.dim[0]()):
+                    comptime for n_mma in range(Self.num_n_mmas_output):
+                        comptime for k in range(Self.output_frag_size):
+                            comptime col_in_lane = ((k // 4) * 8 + (k % 4))
+                            var output_col = (
+                                self.warp_col * output_cols_per_warp
+                                + n_mma * Self.mma_shape[1]
+                                + col_in_lane
+                                + lane_col_offset
+                            )
+                            var data = SIMD[Self.accum_type, 1](
+                                sub_reg[n_mma, k]
+                            ).cast[Self.output_type]()
+                            if (
+                                output_col
+                                < (self.warp_col + 1) * output_cols_per_warp
+                            ):
+                                epilogue.store(
+                                    data,
+                                    m=output_row,
+                                    n=output_col,
+                                )
 
     # --- Decode-specific methods ---
 
-    @always_inline
+    @inline(.always)
     def copy_fragment_to_smem(self):
         """Copy P scores from registers to shared memory (decode only)."""
         comptime if not Self.token_gen:
             return
         self.p_reg_buffer.copy_to_shared()
 
-    @always_inline
+    @inline(.always)
     def store_partition_info(
         self,
         num_partitions: Int,
@@ -1055,8 +1207,8 @@ struct Attention[
     ):
         """Write softmax stats for split-K reduction (decode only).
 
-        With BM > MMA_M (e.g. MLA decode at BM=64, MMA_M=32), each warp
-        covers `num_m_mmas = BM/MMA_M` row tiles of the score matrix; row
+        With WM > MMA_M (e.g. MLA decode at BM=64, MMA_M=32), each warp
+        covers `num_m_mmas = WM/MMA_M` row tiles of the score matrix; row
         stats live in `softmax.rowsum_tensor[m_mma, 0]` per tile. Filter
         to lane_col=0 of warp 0 (the only lanes that hold reduced row
         stats post-softmax) and write one entry per m_mma.
@@ -1076,32 +1228,52 @@ struct Attention[
             return
 
         # Token fold (S>1): split-K is keyed by the absolute query row
-        # r = warp_row*WM + lane_row (heads-inner: token*H + head), not by head —
-        # the head-keyed writer below would collide S tokens of a head and drop
-        # warp_row>0 rows. After the row reduction the stat is broadcast across
-        # the lane group, so a lane's `rowsum_tensor[0,0][0]` holds row
-        # `warp_row*WM + lane_row` (lane_row = lane % MMA_M); take warp_col==0,
+        # r = warp_row*WM + m_mma*MMA_M + lane_row (heads-inner: token*H + head),
+        # not by head — the head-keyed writer below would collide S tokens of a
+        # head and drop warp_row>0 rows. After the row reduction the stat is
+        # broadcast across the lane group, so a lane's `rowsum_tensor[m,0][0]`
+        # holds that row (lane_row = lane % MMA_M); take warp_col==0,
         # lane < MMA_M as the one writer per row. The bound is the runtime
-        # live-row count `num_heads * seq_len` (not the comptime ceiling) so a
-        # short sequence's pad rows are skipped (their slots stay uninitialized
-        # and the reducer skips them). Comptime-dead at S=1.
-        comptime if Self._is_mla_fold and Self.q_seq_len > 1:
-            # Warp-local folds one 16-row MMA M-tile per warp (WM == mma_m), so a
-            # warp owns a single tile and its row stat lives in
-            # `rowsum_tensor[0, 0]`. Assert that here so a future num_m_mmas > 1
-            # fold can't silently drop the m_mma > 0 tiles' rows.
-            comptime assert Self.num_m_mmas == 1
+        # live-row count `H * seq_len` (not the comptime ceiling) so a short
+        # sequence's pad rows are skipped. Comptime-dead at S=1.
+        #
+        # Leaving those slots unwritten is only safe for MLA (its reducer
+        # early-returns on pad rows) and MHA ragged (a short sequence's pad rows
+        # are the next sequence's rows, written by that sequence's own CTA). A
+        # PADDED MHA batch leaves them uninitialized and `mha_splitk_reduce`'s
+        # `scale > 0` blend guard does not reject that, so `_mha_decode_fold_ok`
+        # excludes the combination on the host.
+        #
+        # The stat planes are keyed (token, head) over ALL `num_heads`, so
+        # the fold row `r = token*H + head` re-expands to `token*num_heads +
+        # kv_head_idx*group + head` — the identity whenever `H == num_heads`
+        # (MLA, where block_idx.y is a query tile, and single-KV-head MHA, where
+        # it is 0), so only `group == 1` needs the base term.
+        comptime if Self._fold_active and Self.q_seq_len > 1:
+            # A warp owns `num_m_mmas` stacked M-tiles, so each needs its own
+            # write, and both the row decomposition and the live-row test stay
+            # inside the loop — a warp's tiles can straddle the live/pad edge.
             var lane = Int(lane_id())
             var lane_row = lane % Self.mma_shape[0]
-            var r = self.warp_row * Self.WM + lane_row
-            var live_rows = Int(Self.num_heads) * Int(self.seq_len)
-            if (
-                self.warp_col == 0
-                and lane < Self.mma_shape[0]
-                and r < live_rows
-            ):
-                exp_sum_ptr[r] = self.softmax.rowsum_tensor[0, 0][0]
-                qk_max_ptr[r] = self.softmax.rowmax_tensor[0, 0][0]
+            var live_rows = Int(Self.heads_inner) * Int(self.seq_len)
+            var head_base = block_idx.y * Self._fold_head_base_stride
+            comptime for m_mma in range(Self.num_m_mmas):
+                var r = (
+                    self.warp_row * Self.WM
+                    + m_mma * Self.mma_shape[0]
+                    + lane_row
+                )
+                var token: Int
+                var head: Int
+                token, head = udivmod(r, Self.heads_inner)
+                var r_abs = token * Self.num_heads + head_base + head
+                if (
+                    self.warp_col == 0
+                    and lane < Self.mma_shape[0]
+                    and r < live_rows
+                ):
+                    exp_sum_ptr[r_abs] = self.softmax.rowsum_tensor[m_mma, 0][0]
+                    qk_max_ptr[r_abs] = self.softmax.rowmax_tensor[m_mma, 0][0]
         else:
             # `q_head_idx()` is per-thread for both MHA and MLA: it folds
             # `lane_id % MMA_M` into the tile base, so we just gate on the

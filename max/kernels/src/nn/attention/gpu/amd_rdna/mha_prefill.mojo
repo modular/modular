@@ -21,7 +21,7 @@ Recipe (per KV tile):
     P from SMEM as the A operand and V from LDS as B.
 """
 
-from std.gpu import barrier, lane_id
+from max.gpu.sync import barrier
 
 from .attention import AttentionRDNA
 from .buffers import KBufferRDNA, VBufferRDNA
@@ -29,15 +29,14 @@ from .mma import rdna_mma
 
 
 __extension AttentionRDNA:
-    @always_inline
+    @inline(.always)
     def mha_prefill(mut self):
         comptime assert Self.BK == 32, "BK must be 32 for RDNA"
 
-        @always_inline
-        @parameter
+        @inline(.always)
         def loop_over_kvcache[
             tile_size: Int
-        ](kv_tile_start_row: Int, end: Int, not_last_iter: Bool):
+        ](kv_tile_start_row: Int, end: Int, not_last_iter: Bool) {mut self}:
             if self.mask_skip_and_advance(UInt32(kv_tile_start_row)):
                 return
 

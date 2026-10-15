@@ -50,12 +50,23 @@ import msgspec
 import numpy as np
 import zmq
 from max.driver import Accelerator
+from max.driver import __version__ as max_version
 from max.driver.buffer import Buffer
+from max.dtype import DType
+from max.nn.kv_cache.cache_params import KVCacheMemory
 from max.pipelines.kv_cache import (
     KVTransferEngine,
     KVTransferEngineMetadata,
     TransferReqData,
 )
+
+
+def _view(buf: Buffer, total_num_pages: int) -> Buffer:
+    """View a buffer as a 2-D uint8 ``[total_num_pages, bytes_per_page]`` array."""
+    bytes_per_page = (
+        buf.num_elements * buf.dtype.size_in_bytes // total_num_pages
+    )
+    return buf.view(DType.uint8, [total_num_pages, bytes_per_page])
 
 
 def parse_args() -> argparse.Namespace:
@@ -86,7 +97,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--num-batches", type=int, default=50)
     p.add_argument("--warmup-batches", type=int, default=5)
     p.add_argument(
-        "--backend", choices=["libfabric", "ucx"], default="libfabric"
+        "--backend", choices=["libfabric", "ucx", "uccl"], default="libfabric"
     )
     p.add_argument(
         "--min-bandwidth-gbps",
@@ -234,8 +245,8 @@ def run_sender(
         for src_idxs, dst_idxs in requests:
             req = engine.initiate_send_transfer(
                 remote_md,
-                src_idxs,
-                dst_idxs,
+                {g: list(src_idxs) for g in remote_md.leaf_ids},
+                {g: list(dst_idxs) for g in remote_md.leaf_ids},
                 src_replica_idx=0,
                 dst_replica_idx=0,
             )
@@ -321,8 +332,10 @@ def run_receiver(
             for blocks in all_blocks:
                 result = blocks.to_numpy()
                 for req in in_flight:
+                    (src_idxs,) = req.src_idxs.values()
+                    (dst_idxs,) = req.dst_idxs.values()
                     for src_idx, dst_idx in zip(
-                        req.src_idxs, req.dst_idxs, strict=True
+                        src_idxs, dst_idxs, strict=True
                     ):
                         expected = (src_idx % 127) + 1
                         page = result[
@@ -340,6 +353,11 @@ def run_receiver(
 
 def main() -> None:
     args = parse_args()
+    # The pods mount this script from the CI checkout but import the `max`
+    # installed in the engine image. Naming that version up front keeps a
+    # checkout/image skew from surfacing only as an unrelated API error deep in
+    # engine construction.
+    print(f"[{args.role}] MAX engine version: {max_version}", flush=True)
     set_env_vars(args)
     num_pages = (
         args.num_pages
@@ -358,7 +376,15 @@ def main() -> None:
     sock = _setup_zmq(args.role, args.sender_addr)
     all_blocks = _allocate_device_buffers(args.role, cfg, args.device)
     engine = KVTransferEngine(
-        f"engine_{args.role}", [all_blocks], total_num_pages=cfg.num_pages
+        f"engine_{args.role}",
+        [
+            [
+                KVCacheMemory(
+                    replicated=False,
+                    buffers=[_view(b, cfg.num_pages) for b in all_blocks],
+                )
+            ]
+        ],
     )
     # Phase 2: exchange NIXL engine metadata and activate the RDMA path.
     remote_md = _exchange_engine_metadata(args.role, sock, engine)

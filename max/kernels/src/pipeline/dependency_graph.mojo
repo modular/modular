@@ -46,7 +46,7 @@ struct OpNode(ImplicitlyCopyable, Movable):
     var latency: Int
     """Estimated cycles until the result is available."""
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self,
         *,
@@ -95,7 +95,7 @@ struct LoopBody(Copyable, Movable):
     var ops: List[OpNode]
     var edges: List[DepEdge]
 
-    @always_inline
+    @inline(.always)
     def __init__(out self):
         self.ops = List[OpNode]()
         self.edges = List[DepEdge]()
@@ -178,9 +178,10 @@ struct LoopBody(Copyable, Movable):
             makespan: Target schedule length to compute ALAP relative to.
                 Typically the ASAP critical path length.
         """
-        var alap = List[Int]()
-        for i in range(len(self.ops)):
-            alap.append(makespan - self.ops[i].latency)
+        var alap = List(
+            length=len(self.ops),
+            fill_with=lambda (i: Int) -> Int: makespan - self.ops[i].latency,
+        )
         self._propagate_times(alap, forward=False)
         return alap^
 

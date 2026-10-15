@@ -12,8 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 """Generates tensors filled with values drawn from a normal (Gaussian) distribution for CPU and GPU."""
 
-from std.algorithm.functional import elementwise
-from std.gpu.host import DeviceContext
+from max.algorithm.functional import elementwise
+from max.gpu.host import DeviceContext
+from std.math import ceildiv
 from std.random import NormalRandom
 from extensibility import _dot_prod
 
@@ -28,14 +29,12 @@ def random_normal[
     target: StaticString,
     OutputFn: ImplicitlyCopyable
     & RegisterPassable
-    & def[width: SIMDSize, _rank: Int](
-        idx: IndexList[_rank], val: SIMD[dtype, width]
-    ),
+    & def[width: SIMDLength](idx: Coord, val: SIMD[dtype, width]),
 ](
     shape: IndexList[rank],
     mean: Float32,
     stddev: Float32,
-    seed_ptr: UnsafePointer[Scalar[DType.uint64], ImmutAnyOrigin],
+    seed_ptr: UnsafePointer[UInt64, ImmutAnyOrigin],
     ctx: DeviceContext,
     output_fn: OutputFn,
 ) raises:
@@ -93,13 +92,13 @@ def random_normal[
         comptime MAX_GRID = (
             info.sm_count * (info.threads_per_multiprocessor // BLOCK_SIZE)
         )
-        var nblocks = (numel + BLOCK_SIZE - 1) // BLOCK_SIZE
-        var grid_x = MAX_GRID if nblocks > MAX_GRID else nblocks
+        var nblocks = ceildiv(numel, BLOCK_SIZE)
+        var grid_x = min(nblocks, MAX_GRID)
         grid_block = grid_x * BLOCK_SIZE
     else:
         grid_block = numel
 
-    @always_inline
+    @inline(.always)
     def generate[width: Int, alignment: Int = 1](idx: Coord) {var}:
         comptime assert (
             width == 1
@@ -113,6 +112,6 @@ def random_normal[
         var rng = NormalRandom(seed=seed_ptr[0], subsequence=thread_id)
         var four = rng.step_normal_4(mean=mean, stddev=stddev)
         var value = four[within_thread].cast[dtype]()
-        output_fn[width=1](coord_to_index_list(idx), SIMD[dtype, 1](value))
+        output_fn[width=1](idx, SIMD[dtype, 1](value))
 
     elementwise[simd_width=1, target=target](generate, Coord(shape), ctx)

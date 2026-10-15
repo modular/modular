@@ -15,7 +15,7 @@
 Two cases exercised from `main()`:
 
   - **plain**: standard split-K (no lambda), output written to `c`.
-  - **epilogue**: split-K with `elementwise_lambda_fn`. Each output
+  - **epilogue**: split-K with an `epilogue_fn` value. Each output
     cell is reduced from `num_splits` f32 partials, then the lambda
     fires ONCE on the final reduced value (not per partial). Verifies
     both lambda accuracy vs vendor BLAS and lambda exclusivity (`c`
@@ -28,8 +28,7 @@ Compile-time configuration:
 from std.sys import align_of, get_defined_int
 
 from layout import Coord, TileTensor, row_major
-from std.gpu.host import DeviceContext
-from std.utils import IndexList
+from max.gpu.host import DeviceContext
 import linalg.matmul.vendor.blas as vendor_blas
 from std.testing import assert_equal
 from std.random import random_float64
@@ -56,8 +55,8 @@ def test_4wave_split_k[
 
     var device_a = ctx.enqueue_create_buffer[in_dtype](M * K)
     var device_b = ctx.enqueue_create_buffer[in_dtype](N * K)
-    var device_c = ctx.enqueue_create_buffer[DType.float32](M * N)
-    var device_c_ref = ctx.enqueue_create_buffer[DType.float32](M * N)
+    var device_c = ctx.enqueue_create_buffer[.float32](M * N)
+    var device_c_ref = ctx.enqueue_create_buffer[.float32](M * N)
 
     with device_a.map_to_host() as host_a, device_b.map_to_host() as host_b:
         for i in range(M * K):
@@ -73,9 +72,9 @@ def test_4wave_split_k[
     var c_ref_tt = TileTensor(device_c_ref, row_major[M, N]())
     vendor_blas.matmul(
         ctx,
-        c_ref_tt.to_layout_tensor(),
-        a_tt.to_layout_tensor(),
-        b_tt.to_layout_tensor(),
+        c_ref_tt,
+        a_tt,
+        b_tt,
         c_row_major=True,
         transpose_b=True,
     )
@@ -162,42 +161,40 @@ def test_4wave_split_k_epilogue[
     var a_tt = TileTensor(device_a, row_major[M, K]())
     var b_tt = TileTensor(device_b, row_major[N, K]())
     var c_tt = TileTensor(device_c, row_major[M, N]())
-    var out_tt = TileTensor(device_out, row_major[M, N]())
+    # Capture the raw pointer: `@__copy_capture` byte-copies, so a
+    # `DeviceBuffer`-backed tile would reach the device as a host reference.
+    var out_tt = TileTensor(device_out.unsafe_ptr(), row_major[M, N]())
 
     ctx.enqueue_memset(device_c_ref, 0)
     var c_ref_tt = TileTensor(device_c_ref, row_major[M, N]())
     vendor_blas.matmul(
         ctx,
-        c_ref_tt.to_layout_tensor(),
-        a_tt.to_layout_tensor(),
-        b_tt.to_layout_tensor(),
+        c_ref_tt,
+        a_tt,
+        b_tt,
         c_row_major=True,
         transpose_b=True,
     )
 
     ctx.enqueue_memset(device_out, 0)
 
-    @parameter
-    @always_inline
-    @__copy_capture(out_tt)
+    @inline(.always)
     def epilogue_fn[
         _dtype: DType,
-        width: SIMDSize,
+        width: SIMDLength,
         *,
-        alignment: Int = align_of[SIMD[_dtype, width]](),
-    ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
-        var coord = Coord(idx)
-        comptime assert coord.flat_rank == out_tt.flat_rank
+        alignment: Int,
+    ](idx: Coord, val: SIMD[_dtype, width]) {var} -> None:
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
+        comptime assert idx.flat_rank == out_tt.flat_rank
         out_tt.store[width=width, alignment=alignment](
-            coord, rebind[SIMD[out_dtype, width]](val)
+            idx, rebind[SIMD[out_dtype, width]](val)
         )
 
     var workspace = SplitKWorkspace[num_splits](ctx, M * N)
     amd_4wave_split_k_matmul[
-        num_splits=num_splits,
-        enable_swizzle=enable_swizzle,
-        elementwise_lambda_fn=epilogue_fn,
-    ](a_tt, b_tt, c_tt, ctx, workspace=workspace)
+        num_splits=num_splits, enable_swizzle=enable_swizzle
+    ](a_tt, b_tt, c_tt, epilogue_fn, ctx, workspace=workspace)
 
     with device_out.map_to_host() as host_out, device_c_ref.map_to_host() as host_c_ref, device_c.map_to_host() as host_c:
         # 1. Lambda accuracy: out_tt vs vendor BLAS reference

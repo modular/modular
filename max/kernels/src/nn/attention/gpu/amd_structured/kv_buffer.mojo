@@ -34,15 +34,12 @@ TileTensor is used throughout:
 
 from std.math import ceildiv
 from std.math.uutils import umod, ufloordiv
-from std.sys import simd_width_of, llvm_intrinsic
-from std.gpu import WARP_SIZE, lane_id
-from std.memory.pointer import AddressSpace as BaseAddressSpace
+from std.sys import simd_width_of
+from max.gpu import WARP_SIZE, lane_id
 from layout import (
     ComptimeInt,
     Coord,
-    CoordLike,
     Idx,
-    Layout,
     MixedLayout,
     TensorLayout,
     TileTensor,
@@ -105,6 +102,7 @@ struct KVCacheIterator[
         Self.cache_t.dtype,
         Self.GmemTileLayout,
         ImmutAnyOrigin,
+        Engine=Self.cache_t.Engine,
     ]
 
     var cache: Self.cache_t
@@ -113,7 +111,7 @@ struct KVCacheIterator[
     var batch_idx: Int
     var kv_head_idx: Int
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self,
         cache: Self.cache_t,
@@ -127,7 +125,7 @@ struct KVCacheIterator[
         self.batch_idx = batch_idx
         self.kv_head_idx = kv_head_idx
 
-    @always_inline
+    @inline(.always)
     def next_tile(mut self) -> Self.GmemTileType:
         """Returns a TileTensor for the next DRAM tile."""
         var valid_rows = max(
@@ -153,12 +151,12 @@ struct KVCacheIterator[
         self.tile_start_row += Self.tile_size
         return tile
 
-    @always_inline
+    @inline(.always)
     def increment(mut self):
         self.tile_start_row += Self.tile_size
 
 
-@always_inline
+@inline(.always)
 def _get_k_swizzle[mma_m: Int, bk: Int]() -> Optional[Swizzle]:
     """K swizzle for decode.
 
@@ -349,7 +347,12 @@ struct KVBuffer[
         Self.BN // Self.warp_tile_rows
     ) * Self._dma_col_groups
     comptime _tiles_per_warp = ceildiv(Self._total_tiles, Self._num_warps)
-    comptime vm_instrs_per_load = UInt32(Self._tiles_per_warp * 2)
+    # A nonuniform tile split has no single safe per-wave outstanding count;
+    # zero makes pipelined consumers wait for every wave's DMA to finish.
+    comptime vm_instrs_per_load = UInt32(
+        Self._tiles_per_warp * 2 if Self._total_tiles % Self._num_warps
+        == 0 else 0
+    )
 
     comptime _mma_total_rows = Self.num_mmas * Self.num_k_mmas2 * Self._reg_num_k_tiles
     comptime mma_layout = row_major[
@@ -359,7 +362,7 @@ struct KVBuffer[
         Self.kv_t.dtype,
         type_of(Self.mma_layout),
         MutUntrackedOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ]
     comptime KVMmaOpType = KVMmaOp[
         Self.kv_t.dtype,
@@ -381,7 +384,7 @@ struct KVBuffer[
         Self.kv_t.dtype,
         Self._SmemParentLayout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]
 
     @__allow_legacy_any_origin_fields
@@ -398,19 +401,19 @@ struct KVBuffer[
 
     var warp_id: UInt32
 
-    @always_inline
+    @inline(.always)
     def _smem_view(self) -> Self.SmemParentType:
         """Full 2-stage SMEM view with strides (BK, BN)."""
         return self.smem_tile
 
-    @always_inline
+    @inline(.always)
     def smem_block_tile[
         tile_rows: Int,
     ](self, tile_row: Int, block_col: Int) -> TileTensor[
         Self.kv_t.dtype,
         type_of(row_major[tile_rows, Self.bk_smem]()),
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]:
         """Get a (tile_rows, bk_smem) row-major sub-tile from SMEM.
 
@@ -432,7 +435,7 @@ struct KVBuffer[
             stride_layout=Self._SmemTileStrides,
         ](Coord(tile_row, block_col))
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self,
         k_cache: Self.kv_t,
@@ -451,7 +454,7 @@ struct KVBuffer[
 
         self.warp_id = warp_id
 
-    @always_inline
+    @inline(.always)
     def load_from_dram[buffer_idx: Int](mut self):
         var gmem_tile = self.kv_cache_iter.next_tile()
         var loader = SubTileLoaderLDS[Self.kv_t.dtype, Self.swizzle](gmem_tile)
@@ -548,7 +551,7 @@ struct KVBuffer[
     comptime _rows_per_k_tile = Self.num_mmas * Self.num_k_mmas2
     comptime _rows_per_k_mma = Self.num_mmas
 
-    @always_inline
+    @inline(.always)
     def get_mma_tile[
         k_mma_tile_idx: Int,
         bk_tile_idx: Int,
@@ -556,12 +559,12 @@ struct KVBuffer[
         Self.kv_t.dtype,
         type_of(row_major[Self._rows_per_k_mma, Self.input_frag_size]()),
         MutUntrackedOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ]:
         comptime reg_slot = bk_tile_idx % Self._reg_num_k_tiles
         return self.kv_mma_op.mma_tile_at[reg_slot, k_mma_tile_idx]()
 
-    @always_inline
+    @inline(.always)
     def mma_subtile[
         k_mma_tile_idx: Int,
         bk_tile_idx: Int,
@@ -569,7 +572,7 @@ struct KVBuffer[
         Self.kv_t.dtype,
         type_of(row_major[Self._rows_per_k_mma, Self.input_frag_size]()),
         MutUntrackedOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ]:
         """Alias for get_mma_tile, kept for decode-call-site symmetry.
 
@@ -581,7 +584,7 @@ struct KVBuffer[
         """
         return self.get_mma_tile[k_mma_tile_idx, bk_tile_idx]()
 
-    @always_inline
+    @inline(.always)
     def zero_partial_tile_pad(self):
         """Register-side zero for the OOB tail of the partial K-tile.
 
@@ -639,7 +642,7 @@ struct KVBuffer[
                     .fill(0)
                 )
 
-    @always_inline
+    @inline(.always)
     def load_from_shared(self, buffer: Int):
         # The no-index form loads every strip into the reg tile. When the
         # reg tile is chunked (_reg_num_k_tiles < num_k_tiles) slots alias,
@@ -742,7 +745,7 @@ struct KVBuffer[
             comptime for bk_tile in range(Self.num_k_tiles):
                 self.load_from_shared[bk_tile](buffer)
 
-    @always_inline
+    @inline(.always)
     def load_from_shared[bk_tile: Int](self, buffer: Int):
         var smem_base = self.smem_tile.tile[Self.BN, Self.BK](
             0, buffer * Self._blocks_per_stage
@@ -893,7 +896,7 @@ struct DecodeStreamingKVBuffer[
         Self.kv_t.dtype,
         type_of(Self.mma_layout),
         MutUntrackedOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ]
     comptime KVMmaOpType = KVMmaOp[
         Self.kv_t.dtype,
@@ -935,22 +938,18 @@ struct DecodeStreamingKVBuffer[
 
     @__allow_legacy_any_origin_fields
     var smem_ptr: UnsafePointer[
-        Scalar[Self.kv_t.dtype],
-        MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        Scalar[Self.kv_t.dtype], MutAnyOrigin, address_space=.SHARED
     ]
     var warp_id: UInt32
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self,
         cache: Self.kv_t,
         batch_idx: Int,
         head_idx: Int,
         smem_ptr: UnsafePointer[
-            Scalar[Self.kv_t.dtype],
-            MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            Scalar[Self.kv_t.dtype], MutAnyOrigin, address_space=.SHARED
         ],
         num_keys: Int,
         warp_id: UInt32,
@@ -959,31 +958,31 @@ struct DecodeStreamingKVBuffer[
         self.smem_ptr = smem_ptr
         self.warp_id = warp_id
 
-    @always_inline
+    @inline(.always)
     def _k_smem_view(
         self,
     ) -> TileTensor[
         Self.kv_t.dtype,
         Self._KSmemParentLayout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]:
         """Single-stage K SMEM view (BN × BK) with strides (BK, BN)."""
         return TileTensor[
             Self.kv_t.dtype,
             Self._KSmemParentLayout,
             MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ](self.smem_ptr, Self._KSmemParentLayout())
 
-    @always_inline
+    @inline(.always)
     def k_smem_block_tile[
         tile_rows: Int,
     ](self, tile_row: Int) -> TileTensor[
         Self.kv_t.dtype,
         type_of(row_major[tile_rows, Self.BK]()),
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]:
         """Get a (tile_rows, BK) row-major sub-tile from the K SMEM.
 
@@ -1003,10 +1002,10 @@ struct DecodeStreamingKVBuffer[
             stride_layout=Self._KSmemTileStrides,
         ](Coord(tile_row, Idx[0]))
 
-    @always_inline
+    @inline(.always)
     def load_from_dram[
         strip_idx: Int
-    ](self, gmem_tile: TileTensor[Self.kv_t.dtype, ...]):
+    ](self, gmem_tile: TileTensor[Self.kv_t.dtype, ...],):
         """Load one BK-wide strip from an external DRAM tile to SMEM.
 
         K (transpose=True): columns [strip*BK, (strip+1)*BK] from BN x depth.
@@ -1047,7 +1046,7 @@ struct DecodeStreamingKVBuffer[
                 ](gmem_tile)
 
                 var load_buf = stack_allocation[
-                    Self.kv_t.dtype, AddressSpace.LOCAL
+                    Self.kv_t.dtype, address_space=.LOCAL
                 ](row_major[_k_rows_per_stage, _k_sw]())
 
                 var dram_strip = gmem_tile.tile[Self.BN, Self.BK](0, strip_idx)
@@ -1061,7 +1060,7 @@ struct DecodeStreamingKVBuffer[
                     Self.kv_t.dtype,
                     type_of(_k_smem_layout),
                     MutAnyOrigin,
-                    address_space=AddressSpace.SHARED,
+                    address_space=.SHARED,
                 ](self.smem_ptr, _k_smem_layout)
 
                 RegTileWriterLDS[
@@ -1117,7 +1116,7 @@ struct DecodeStreamingKVBuffer[
             ](gmem_tile)
 
             var load_buf = stack_allocation[
-                Self.kv_t.dtype, AddressSpace.LOCAL
+                Self.kv_t.dtype, address_space=.LOCAL
             ](row_major[_v_rows_per_stage, _v_sw]())
 
             var dram_strip = gmem_tile.tile[Self.BK, Self.depth](strip_idx, 0)
@@ -1132,7 +1131,7 @@ struct DecodeStreamingKVBuffer[
                 Self.kv_t.dtype,
                 type_of(_v_smem_layout),
                 MutAnyOrigin,
-                address_space=AddressSpace.SHARED,
+                address_space=.SHARED,
             ](self.smem_ptr, _v_smem_layout)
 
             RegTileWriterLDS[
@@ -1144,7 +1143,7 @@ struct DecodeStreamingKVBuffer[
                 load_buf.vectorize[1, _v_sw](),
             )
 
-    @always_inline
+    @inline(.always)
     def load_from_shared(self):
         """Load from SMEM to MMA registers."""
         comptime if Self.transpose:
@@ -1183,9 +1182,8 @@ struct DecodeStreamingKVBuffer[
             # only a scalar `element_size` and loses the element-layout
             # stride, so a subsequent `distribute` emits a contiguous
             # `load[width=simd]` that reads the wrong bytes on a strided
-            # tile. LayoutTensor's `vectorize` preserves the element
-            # layout via `zipped_divide` and iterates element-by-element
-            # in `copy_from`, which is why the LayoutTensor path works.
+            # tile. Preserve the strided element addressing with the
+            # explicit scalar loads below instead of vectorizing this view.
             #
             # The MFMA B non-transpose layout is BLOCK-distributed:
             # lane (tr, tc) with tr = lane // MMA_N, tc = lane % MMA_N
@@ -1204,7 +1202,7 @@ struct DecodeStreamingKVBuffer[
                 Self.kv_t.dtype,
                 type_of(_v_smem_layout),
                 MutAnyOrigin,
-                address_space=AddressSpace.SHARED,
+                address_space=.SHARED,
             ](self.smem_ptr, _v_smem_layout)
             var warp_tile = smem_tile.tile[Self.BK, _v_warp_depth](
                 0, Int(warp_col)
@@ -1226,14 +1224,14 @@ struct DecodeStreamingKVBuffer[
                         frag[r] = mma_view[tr * Self.input_frag_size + r, tc][0]
                     reg_vec[kg * _v_num_mmas_v + i, 0] = frag
 
-    @always_inline
+    @inline(.always)
     def get_mma_tile[
         k_mma_idx: Int,
     ](self) -> TileTensor[
         Self.kv_t.dtype,
         type_of(row_major[Self.num_mmas, Self.input_frag_size]()),
         MutUntrackedOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ]:
         """Get register tile for one k_mma group within the single strip.
 
@@ -1267,7 +1265,7 @@ trait KVBufferConfig:
     comptime iterator_axis: Int
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def get_wtile_coord() -> IndexList[2]:
         ...
 
@@ -1296,7 +1294,7 @@ struct KBufferConfig[BN: Int, BK: Int, WN: Int](KVBufferConfig):
     comptime iterator_axis = 1
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def get_wtile_coord() -> IndexList[2]:
         var warp_col = get_warp_coords[Self.BN, Self.WN]()[1]
         return IndexList[2](warp_col, 0)
@@ -1327,7 +1325,7 @@ struct VBufferConfig[BN: Int, BK: Int, WN: Int, depth: Int](KVBufferConfig):
     comptime iterator_axis = 0
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def get_wtile_coord() -> IndexList[2]:
         var warp_col = get_warp_coords[Self.BN, Self.WN]()[1]
         return IndexList[2](0, warp_col)
@@ -1418,7 +1416,7 @@ struct DecodeKVBuffer[
         Self.dtype,
         type_of(Self._load_layout),
         MutUntrackedOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ]
     var load_tile: Self.LoadTile
 
@@ -1430,7 +1428,7 @@ struct DecodeKVBuffer[
         Self.dtype,
         type_of(Self._mma_layout),
         MutUntrackedOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ]
     var mma_tile: Self.MmaTile
 
@@ -1451,7 +1449,7 @@ struct DecodeKVBuffer[
         Self.dtype,
         type_of(Self._smem_layout),
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]
 
     @__allow_legacy_any_origin_fields
@@ -1474,16 +1472,16 @@ struct DecodeKVBuffer[
     var tile_idx: Int
     var load_tile_id: Int
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self,
         gmem_tile: Self.GmemTileType,
         smem_tile: Self.SmemTile,
     ):
-        self.load_tile = stack_allocation[Self.dtype, AddressSpace.LOCAL](
+        self.load_tile = stack_allocation[Self.dtype, address_space=.LOCAL](
             Self._load_layout
         )
-        self.mma_tile = stack_allocation[Self.dtype, AddressSpace.LOCAL](
+        self.mma_tile = stack_allocation[Self.dtype, address_space=.LOCAL](
             Self._mma_layout
         )
         self.smem_tile = smem_tile
@@ -1492,7 +1490,7 @@ struct DecodeKVBuffer[
         self.tile_idx = 0
         self.load_tile_id = 0
 
-    @always_inline
+    @inline(.always)
     def load_from_dram(
         mut self,
     ):
@@ -1512,25 +1510,25 @@ struct DecodeKVBuffer[
         self.tile_idx += 1
         self.load_tile_id = (self.load_tile_id + 1) % Self.num_stages
 
-    @always_inline
+    @inline(.always)
     def get_mma_tile(
         self,
     ) -> TileTensor[
         Self.dtype,
         type_of(row_major[Self._mma_rows, Self._mma_cols]()),
         MutAnyOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ]:
         return rebind[
             TileTensor[
                 Self.dtype,
                 type_of(row_major[Self._mma_rows, Self._mma_cols]()),
                 MutAnyOrigin,
-                address_space=AddressSpace.LOCAL,
+                address_space=.LOCAL,
             ]
         ](self.mma_tile)
 
-    @always_inline
+    @inline(.always)
     def copy_to_shared[
         tile_id: Int = 0
     ](self,):
@@ -1545,7 +1543,7 @@ struct DecodeKVBuffer[
             ).vectorize[1, Self.simd_width](),
         )
 
-    @always_inline
+    @inline(.always)
     def load_from_shared[
         k_mma: Int,
     ](self):

@@ -61,7 +61,7 @@ def wait_for_up(
     url: str,
     process: multiprocessing.process.BaseProcess,
     *,
-    timeout: int | float | None = 600,
+    timeout: float | None = 600,
 ) -> None:
     start_time = time.time()
     with httpx.Client() as client:

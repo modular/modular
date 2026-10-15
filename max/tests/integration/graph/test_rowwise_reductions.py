@@ -18,17 +18,25 @@ the pure reductions (``reduce_sum/max/min/mean/product``, ``argmax``,
 (``softmax``, ``logsoftmax``, ``layer_norm``, ``rms_norm``,
 ``row_mean_of_squares``). Each op is checked against a float32 torch reference
 across a few small column counts (even + odd), on the inner axis and -- for the
-pure arbitrary-axis reductions -- on a non-inner axis, in both bfloat16 and
-float32 where precision makes it meaningful.
+pure arbitrary-axis reductions -- on a non-inner axis, in bfloat16, float16 and
+float32 where precision makes it meaningful, plus a CPU-only 8-byte-element
+group (see :data:`WIDE_CPU_SPECS`) for what only the widest element can reach.
+
+Every case runs on both the CPU and the GPU -- the GPU is where the cooperative
+tiers, the cross-thread combine and the split-K path live, so it is the priority
+target rather than an afterthought. Two further inner-axis groups are GPU-only:
+the ops whose monoid state is narrower than the 4-byte word that combine
+exchanges (:data:`GPU_SUBWORD_SPECS`) and the split-K cross-block join
+(:data:`GPU_SPLITK_SPECS`), neither of which any CPU case can reach.
 
 These are small, fast CI shapes. The bandwidth-oriented perf grid for the same
 ops lives in the manual benchmark at
 ``//utils/benchmarking/kepler/graph:reductions`` and is not run here.
 
-Each parametrization builds one symbolic-dimension graph and loads it once, then
-feeds several concrete shapes as data (per the guidance against per-case graph
-recompilation) -- so the compile count equals the number of parametrizations,
-not the number of shapes.
+Each parametrization compiles one symbolic-dimension graph and feeds several
+concrete shapes as data. The compiles are recorded by CPU build actions
+(``precompile_mefs = True`` in the BUILD file), so the GPU worker initializes
+the artifacts rather than compiling them.
 """
 
 from __future__ import annotations
@@ -38,17 +46,19 @@ import math
 import numpy as np
 import pytest
 import torch
+from _rowwise_reduction_specs import (
+    GPU_SPLITK_SPECS,
+    GPU_SUBWORD_SPECS,
+    INNER_SPECS,
+    NONINNER_SPECS,
+    WIDE_CPU_SPECS,
+    RowwiseSpec,
+    build_graph,
+)
 from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Graph, TensorType
-from test_common.reduction_graphs import (
-    LAYER_NORM_EPS,
-    RMS_NORM_EPS,
-    build_reduction,
-)
-
-_DEV = DeviceRef.CPU()
+from test_common.reduction_graphs import LAYER_NORM_EPS, RMS_NORM_EPS
 
 # Ops whose output is integer indices.
 _INT_OUT = {"argmax", "argmin"}
@@ -56,35 +66,36 @@ _INT_OUT = {"argmax", "argmin"}
 # Small inner-axis column counts: even + odd, small + a wider row.
 _INNER_COLS = [32, 127, 128, 512]
 _INNER_ROWS = 8
-# Non-inner (reduce over axis 0): (reduce_len, cols). Even + odd reduce length.
-_NONINNER_SHAPES = [(33, 16), (64, 33)]
+# Non-inner (reduce over axis 0): (reduce_len, cols). Even + odd reduce length,
+# even + odd cols, and short reduce axes crossed with SIMD-divisible and
+# non-SIMD-divisible cols at small and large output counts.
+_NONINNER_SHAPES = [(33, 16), (64, 33), (8, 8192), (8, 8193), (8, 9)]
 
 
 def _torch_dtype(dtype: DType) -> torch.dtype:
-    return torch.bfloat16 if dtype == DType.bfloat16 else torch.float32
-
-
-def _build_graph(op: str, dtype: DType, axis: int) -> Graph:
-    """Build a single-reduction graph over `axis` with symbolic dimensions."""
-    x_t = TensorType(dtype, ["r", "c"], device=_DEV)
-    w_t = TensorType(dtype, ["c"], device=_DEV)
-    if op == "layer_norm":
-        input_types = [x_t, w_t, w_t]  # x, gamma, beta
-    elif op == "rms_norm":
-        input_types = [x_t, w_t]
-    else:
-        input_types = [x_t]
-
-    with Graph(f"{op}_ax{axis}", input_types=input_types) as graph:
-        x = graph.inputs[0].tensor
-        weights = [inp.tensor for inp in graph.inputs[1:]]
-        graph.output(build_reduction(op, x, axis, weights=weights))
-    return graph
+    return {
+        DType.bfloat16: torch.bfloat16,
+        DType.float16: torch.float16,
+        DType.bool: torch.bool,
+        DType.int8: torch.int8,
+        DType.int16: torch.int16,
+        DType.int64: torch.int64,
+        DType.float64: torch.float64,
+    }.get(dtype, torch.float32)
 
 
 def _make_input(op: str, rows: int, cols: int, dtype: DType) -> torch.Tensor:
     """Random [rows, cols] input; near-1 for product to avoid under/overflow."""
     torch.manual_seed(0)
+    if dtype == DType.bool:
+        # Sparse enough that a dropped element flips the row's max/min: most
+        # rows are all-False with a single True (and vice versa for min).
+        f = torch.rand(rows, cols, dtype=torch.float32)
+        return (f > 1.0 - 2.0 / cols) | (f < 1.0 / cols)
+    if dtype in (DType.int8, DType.int16, DType.int64):
+        return torch.randint(-100, 100, (rows, cols), dtype=torch.int32).to(
+            _torch_dtype(dtype)
+        )
     if op == "reduce_product":
         f = 1.0 + 0.02 * torch.randn(rows, cols, dtype=torch.float32)
     else:
@@ -115,13 +126,15 @@ def _read_f32(buf: Buffer) -> np.ndarray:
 
 
 def _tol(op: str, dtype: DType) -> tuple[float, float, float]:
-    """(atol, rtol, frac_allowed) comparing in float32; bf16 looser than fp32.
+    """(atol, rtol, frac_allowed) comparing in float32; half looser than fp32.
 
     Tolerances follow the validated benchmark harness: bf16 reductions
     accumulate in-dtype, so a small fraction of large-magnitude rows can exceed
-    a per-term tolerance (a broken kernel fails ~all elements, not a few).
+    a per-term tolerance (a broken kernel fails ~all elements, not a few). fp16
+    shares the bf16 budget -- it accumulates in-dtype just the same, with a
+    wider mantissa, so the bf16 numbers bound it.
     """
-    bf16 = dtype == DType.bfloat16
+    half = dtype in (DType.bfloat16, DType.float16)
     if op in (
         "reduce_max",
         "reduce_min",
@@ -132,16 +145,16 @@ def _tol(op: str, dtype: DType) -> tuple[float, float, float]:
         # max/min and the selected argmax/argmin value are representable
         # exactly, so both dtypes match to a tight absolute tolerance.
         return 1e-3, 0.0, 0.0
-    if op in ("reduce_sum",):
-        return (0.15, 5e-2, 2e-2) if bf16 else (1e-2, 1e-3, 0.0)
+    if op == "reduce_sum":
+        return (0.15, 5e-2, 2e-2) if half else (1e-2, 1e-3, 0.0)
     if op in ("reduce_mean", "row_mean_of_squares"):
-        return (2e-2, 3e-2, 2e-2) if bf16 else (1e-3, 1e-3, 0.0)
+        return (2e-2, 3e-2, 2e-2) if half else (1e-3, 1e-3, 0.0)
     if op == "softmax":
-        return (3e-3, 6e-2, 5e-3) if bf16 else (1e-4, 1e-3, 0.0)
+        return (3e-3, 6e-2, 5e-3) if half else (1e-4, 1e-3, 0.0)
     if op == "logsoftmax":
-        return (5e-2, 6e-2, 5e-3) if bf16 else (1e-3, 1e-3, 0.0)
+        return (5e-2, 6e-2, 5e-3) if half else (1e-3, 1e-3, 0.0)
     if op in ("layer_norm", "rms_norm"):
-        return (4e-2, 6e-2, 1e-2) if bf16 else (2e-3, 2e-3, 0.0)
+        return (4e-2, 6e-2, 1e-2) if half else (2e-3, 2e-3, 0.0)
     raise ValueError(f"no tolerance for {op!r}")
 
 
@@ -244,73 +257,85 @@ def _reference_and_check(
     _assert_close(got, ref, op, dtype, label)
 
 
-# Inner-axis matrix: precision-sensitive ops in both dtypes; exact
-# selection/compare ops (max/min/arg/min_and_max) in bfloat16 only.
-_INNER_BOTH = [
-    "reduce_sum",
-    "reduce_mean",
-    "reduce_product",
-    "softmax",
-    "logsoftmax",
-    "layer_norm",
-    "row_mean_of_squares",
-]
-_INNER_BF16_ONLY = [
-    "reduce_max",
-    "reduce_min",
-    "argmax",
-    "argmin",
-    "reduce_min_and_max",
-]
-_INNER_CASES = [
-    (op, DType.bfloat16) for op in _INNER_BOTH + _INNER_BF16_ONLY
-] + [(op, DType.float32) for op in _INNER_BOTH]
-
-
-@pytest.mark.parametrize(
-    "op,dtype", _INNER_CASES, ids=lambda v: v if isinstance(v, str) else str(v)
-)
-def test_rowwise_inner(
-    session: InferenceSession, op: str, dtype: DType
-) -> None:
-    model = session.load(_build_graph(op, dtype, axis=-1))
+@pytest.mark.parametrize("spec", INNER_SPECS, ids=lambda s: s.name)
+def test_rowwise_inner(session: InferenceSession, spec: RowwiseSpec) -> None:
+    model = session.load(build_graph(spec))
     for cols in _INNER_COLS:
-        x = _make_input(op, _INNER_ROWS, cols, dtype)
+        x = _make_input(spec.op, _INNER_ROWS, cols, spec.dtype)
         weights: list[torch.Tensor] = []
-        if op == "layer_norm":
+        if spec.op == "layer_norm":
             weights = [
-                _make_weight(1, cols, dtype),
-                (0.1 * torch.randn(cols)).to(_torch_dtype(dtype)),
+                _make_weight(1, cols, spec.dtype),
+                (0.1 * torch.randn(cols)).to(_torch_dtype(spec.dtype)),
             ]
-        elif op == "rms_norm":
-            weights = [_make_weight(1, cols, dtype)]
-        _reference_and_check(op, dtype, model, x, -1, weights, f"cols={cols}")
+        elif spec.op == "rms_norm":
+            weights = [_make_weight(1, cols, spec.dtype)]
+        _reference_and_check(
+            spec.op, spec.dtype, model, x, -1, weights, f"cols={cols}"
+        )
 
 
-# Non-inner (reduce over axis 0): the pure arbitrary-axis reductions. Precision-
-# sensitive sum/mean in both dtypes; the rest in bfloat16 only.
-_NONINNER_CASES = [
-    (op, DType.bfloat16)
-    for op in [
-        "reduce_sum",
-        "reduce_max",
-        "reduce_min",
-        "reduce_mean",
-        "reduce_product",
-        "reduce_min_and_max",
-    ]
-] + [(op, DType.float32) for op in ["reduce_sum", "reduce_mean"]]
-
-
-@pytest.mark.parametrize(
-    "op,dtype",
-    _NONINNER_CASES,
-    ids=lambda v: v if isinstance(v, str) else str(v),
-)
-def test_rowwise_noninner(
-    session: InferenceSession, op: str, dtype: DType
-) -> None:
-    model = session.load(_build_graph(op, dtype, axis=0))
+@pytest.mark.parametrize("spec", NONINNER_SPECS, ids=lambda s: s.name)
+def test_rowwise_noninner(session: InferenceSession, spec: RowwiseSpec) -> None:
+    model = session.load(build_graph(spec))
     for rows, cols in _NONINNER_SHAPES:
-        x = _make_input(op, rows, cols, dtype)
-        _reference_and_check(op, dtype, model, x, 0, [], f"shape={rows}x{cols}")
+        x = _make_input(spec.op, rows, cols, spec.dtype)
+        _reference_and_check(
+            spec.op, spec.dtype, model, x, 0, [], f"shape={rows}x{cols}"
+        )
+
+
+@pytest.mark.parametrize("spec", WIDE_CPU_SPECS, ids=lambda s: s.name)
+def test_rowwise_wide_element_cpu(
+    session: InferenceSession, spec: RowwiseSpec
+) -> None:
+    model = session.load(build_graph(spec))
+    shapes = (
+        [(_INNER_ROWS, cols) for cols in _INNER_COLS]
+        if spec.axis == -1
+        else _NONINNER_SHAPES
+    )
+    for rows, cols in shapes:
+        x = _make_input(spec.op, rows, cols, spec.dtype)
+        _reference_and_check(
+            spec.op,
+            spec.dtype,
+            model,
+            x,
+            spec.axis,
+            [],
+            f"shape={rows}x{cols}",
+        )
+
+
+@pytest.mark.parametrize("spec", GPU_SUBWORD_SPECS, ids=lambda s: s.name)
+def test_rowwise_inner_gpu_subword_state(
+    session: InferenceSession, spec: RowwiseSpec
+) -> None:
+    model = session.load(build_graph(spec))
+    for cols in _INNER_COLS:
+        x = _make_input(spec.op, _INNER_ROWS, cols, spec.dtype)
+        _reference_and_check(
+            spec.op, spec.dtype, model, x, -1, [], f"cols={cols}"
+        )
+
+
+# A few-row, long-row shape is what routes the inner-axis reduction through the
+# split-K tier (`num_rows` under the SM count and at least `_SPLITK_MIN_ROW` =
+# 32768 elements per row at `simd_width <= 4`, i.e. float32 here), whose
+# cross-block finish in `rowwise.pjoin` is the only place the scaffolder combines
+# whole per-block monoid states. Every other case in this file is orders of
+# magnitude below that element floor, so nothing else reaches it.
+_SPLITK_ROWS = 8
+_SPLITK_COLS = 40960
+
+
+@pytest.mark.parametrize("spec", GPU_SPLITK_SPECS, ids=lambda s: s.name)
+def test_rowwise_inner_gpu_splitk(
+    session: InferenceSession, spec: RowwiseSpec
+) -> None:
+    model = session.load(build_graph(spec))
+    x = _make_input(spec.op, _SPLITK_ROWS, _SPLITK_COLS, spec.dtype)
+    _reference_and_check(
+        spec.op, spec.dtype, model, x, -1, [], f"cols={_SPLITK_COLS}"
+    )

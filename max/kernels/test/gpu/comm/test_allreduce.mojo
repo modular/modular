@@ -11,28 +11,27 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import std.time
-from std.sys import size_of, has_amd_gpu_accelerator, simd_width_of
+from std.sys import size_of, simd_width_of
 from std.itertools import product
 
-from layout import Coord, Idx, TileTensor, coord_to_index_list, row_major
-from comm import Signal, MAX_GPUS, group_start, group_end
-from comm.sync import enable_p2p, init_signal_buffer
-from comm.allreduce import (
-    _allreduce_naive_single,
-    allreduce,
-    elementwise_epilogue_type,
+from layout import (
+    Coord,
+    TileTensor,
+    coord_to_index_list,
+    row_major,
 )
+from comm import Signal, group_start, group_end
+from comm.sync import enable_p2p, init_signal_buffer
+from comm.allreduce import _allreduce_naive_single, allreduce
 import comm.vendor.ccl as vendor_ccl
 from internal_utils import human_readable_size
-from std.gpu.host import (
+from max.gpu.host import (
     DeviceBuffer,
     DeviceContext,
     DeviceMulticastBuffer,
     get_gpu_target,
 )
 from std.testing import assert_almost_equal, assert_true
-from std.collections import Optional
 
 from std.utils import IndexList, StaticTuple
 
@@ -78,15 +77,12 @@ def allreduce_test[
     # Create device buffers for all GPUs
     var in_dev = List[DeviceBuffer[dtype]](capacity=ngpus)
     var out_dev = List[DeviceBuffer[dtype]](capacity=ngpus)
-    var host_buffers = List[UnsafePointer[Scalar[dtype], MutUntrackedOrigin]](
+    var host_buffers = List[MutPointer[Scalar[dtype], MutUntrackedOrigin]](
         capacity=ngpus
     )
 
     # Create signal buffers for synchronization
-    var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
-        uninitialized=True
-    )
+    var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
 
     # Set up temp buffers for GPUs to reduce-scatter into / all-gather from.
     var temp_buffer_num_bytes = ngpus * size_of[dtype]() * length
@@ -108,26 +104,26 @@ def allreduce_test[
 
         # Create and initialize signal buffers
         signal_buffers.append(
-            list_of_ctx[i].create_buffer_sync[DType.uint8](
+            list_of_ctx[i].create_buffer_sync[.uint8](
                 size_of[Signal]() + temp_buffer_num_bytes
             )
-        )
-        rank_sigs[i] = (
-            signal_buffers[i]
-            .unsafe_ptr()
-            .bitcast[Signal]()
-            .as_unsafe_any_origin()
         )
 
         # Copy data to device for non-multimem path
         if not use_multimem:
             list_of_ctx[i].enqueue_copy(in_dev[i], host_buffers[i])
 
+    var rank_sigs = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
+
     # Build TileTensor arrays for the allreduce API.
     comptime InTensorType = TileTensor[
         dtype, type_of(row_major(length)), ImmutAnyOrigin
     ]
-    var in_tensors = InlineArray[InTensorType, num_buffers](uninitialized=True)
+    var in_tensors = Array[InTensorType, num_buffers](uninitialized=True)
 
     if use_multimem:
         var multicast_buf = DeviceMulticastBuffer[dtype](
@@ -138,7 +134,7 @@ def allreduce_test[
             list_of_ctx[i].enqueue_copy(unicast_buf, host_buffers[i])
         # All GPUs use the same multicast pointer
         in_tensors[0] = TileTensor(
-            rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+            rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
                 multicast_buf.multicast_buffer_for(list_of_ctx[0]).unsafe_ptr()
             ),
             row_major(length),
@@ -146,7 +142,7 @@ def allreduce_test[
     else:
         for i in range(ngpus):
             in_tensors[i] = TileTensor(
-                rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+                rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
                     in_dev[i].unsafe_ptr()
                 ),
                 row_major(length),
@@ -155,9 +151,13 @@ def allreduce_test[
     comptime OutTensorType = TileTensor[
         dtype, type_of(row_major(length)), MutAnyOrigin
     ]
-    var out_tensors = InlineArray[OutTensorType, ngpus](uninitialized=True)
-    for i in range(ngpus):
-        out_tensors[i] = TileTensor(out_dev[i], row_major(length))
+    var out_tensors = Array[_, ngpus](
+        fill_with=lambda (i: Int) {
+            mut out_dev, imm
+        } -> OutTensorType: TileTensor(
+            out_dev[i], row_major(length)
+        ).as_unsafe_any_origin()
+    )
 
     # One-time init of the signal buffers: zero the barrier counters / state,
     # then set the embedded Lamport region to the -0.0 sentinel. Synchronize so
@@ -173,13 +173,13 @@ def allreduce_test[
         out_tensors_capture[i] = TileTensor(out_dev[i], row_major(length))
 
     # Custom epilogue that negates values to distinguish from default
-    @always_inline
-    @parameter
+    @inline(.always)
+    @__parameter
     @__copy_capture(out_tensors_capture)
     def outputs_lambda[
         input_index: Int,
         _dtype: DType,
-        _width: SIMDSize,
+        _width: SIMDLength,
         *,
         _alignment: Int,
     ](coords: Coord, val: SIMD[_dtype, _width]) -> None:
@@ -200,36 +200,40 @@ def allreduce_test[
     group_start()
 
     comptime for i in range(ngpus):
-        allreduce[
-            ngpus=ngpus,
-            output_lambda=Optional[elementwise_epilogue_type](
-                outputs_lambda[input_index=i, ...]
-            ) if use_custom_epilogue else None,
-            use_multimem=use_multimem,
-        ](in_tensors, out_tensors[i], rank_sigs, list_of_ctx[i])
+        comptime if use_custom_epilogue:
+            allreduce[
+                ngpus=ngpus,
+                output_lambda=outputs_lambda[input_index=i, ...],
+                use_multimem=use_multimem,
+            ](in_tensors, out_tensors[i].layout, rank_sigs, list_of_ctx[i])
+        else:
+            allreduce[ngpus=ngpus, use_multimem=use_multimem](
+                in_tensors, out_tensors[i], rank_sigs, list_of_ctx[i]
+            )
     group_end()
 
     for i in range(ngpus):
         list_of_ctx[i].synchronize()
 
     # Vendor RCCL comparison (non-multimem path only and only if available).
-    comptime if not use_multimem and has_amd_gpu_accelerator():
+    comptime if not use_multimem and list_of_ctx.T.target.is_amd_gpu():
         try:
             # Prepare distinct outputs for vendor path to avoid aliasing.
             var out_dev_vendor = List[DeviceBuffer[dtype]](capacity=ngpus)
             comptime OutVendorTileType = TileTensor[
                 dtype, type_of(row_major(length)), MutAnyOrigin
             ]
-            var out_tensors_vendor = InlineArray[OutVendorTileType, ngpus](
-                uninitialized=True
-            )
             for i in range(ngpus):
                 out_dev_vendor.append(
                     list_of_ctx[i].enqueue_create_buffer[dtype](length)
                 )
-                out_tensors_vendor[i] = TileTensor(
+            var out_tensors_vendor = Array[_, ngpus](
+                fill_with=lambda (i: Int) {
+                    mut out_dev_vendor, imm
+                } -> OutVendorTileType: TileTensor(
                     out_dev_vendor[i], row_major(length)
-                )
+                ).as_unsafe_any_origin()
+            )
 
             # Test RCCL.
             with vendor_ccl.group():
@@ -247,6 +251,7 @@ def allreduce_test[
             # Verify RCCL results
             for i in range(ngpus):
                 list_of_ctx[i].enqueue_copy(host_buffers[i], out_dev_vendor[i])
+                list_of_ctx[i].synchronize()
             for i in range(ngpus):
                 for j in range(length):
                     assert_almost_equal(host_buffers[i][j], expected_sum)
@@ -257,6 +262,7 @@ def allreduce_test[
     # Copy results back and verify
     for i in range(ngpus):
         list_of_ctx[i].enqueue_copy(host_buffers[i], out_dev[i])
+        list_of_ctx[i].synchronize()
 
     var mocl_expected_sum = (
         expected_sum if not use_custom_epilogue else -expected_sum
@@ -310,15 +316,15 @@ def allreduce_naive_test() raises -> None:
         ctxs.append(DeviceContext(device_id=i))
 
     # Allocate input/output buffers and initialize inputs
-    var in_dev = List[DeviceBuffer[DType.float32]](capacity=ngpus)
-    var out_dev = List[DeviceBuffer[DType.float32]](capacity=ngpus)
-    var host_ptrs = List[UnsafePointer[Float32, MutUntrackedOrigin]](
+    var in_dev = List[DeviceBuffer[.float32]](capacity=ngpus)
+    var out_dev = List[DeviceBuffer[.float32]](capacity=ngpus)
+    var host_ptrs = List[MutPointer[Float32, MutUntrackedOrigin]](
         capacity=ngpus
     )
 
     for i in range(ngpus):
-        in_dev.append(ctxs[i].enqueue_create_buffer[DType.float32](length))
-        out_dev.append(ctxs[i].enqueue_create_buffer[DType.float32](length))
+        in_dev.append(ctxs[i].enqueue_create_buffer[.float32](length))
+        out_dev.append(ctxs[i].enqueue_create_buffer[.float32](length))
         var h = alloc[Float32](length)
         host_ptrs.append(h)
         for j in range(length):
@@ -327,36 +333,38 @@ def allreduce_naive_test() raises -> None:
 
     # Build TileTensor arrays for the kernel API.
     comptime InTensorType = TileTensor[
-        DType.float32, type_of(row_major(length)), ImmutAnyOrigin
+        .float32, type_of(row_major(length)), ImmutAnyOrigin
     ]
-    var in_tensors = InlineArray[InTensorType, ngpus](uninitialized=True)
-    for i in range(ngpus):
-        in_tensors[i] = TileTensor(
-            rebind[UnsafePointer[Float32, ImmutAnyOrigin]](
-                in_dev[i].unsafe_ptr()
-            ),
+    var in_tensors = Array[_, ngpus](
+        fill_with=lambda (i: Int) -> InTensorType: TileTensor(
+            rebind[ImmPointer[Float32, ImmutAnyOrigin]](in_dev[i].unsafe_ptr()),
             row_major(length),
         )
+    )
 
     comptime OutTensorType = TileTensor[
-        DType.float32, type_of(row_major(length)), MutAnyOrigin
+        .float32, type_of(row_major(length)), MutAnyOrigin
     ]
-    var out_tensors = InlineArray[OutTensorType, ngpus](uninitialized=True)
-    for i in range(ngpus):
-        out_tensors[i] = TileTensor(out_dev[i], row_major(length))
+    var out_tensors = Array[_, ngpus](
+        fill_with=lambda (i: Int) {
+            mut out_dev, imm
+        } -> OutTensorType: TileTensor(
+            out_dev[i], row_major(length)
+        ).as_unsafe_any_origin()
+    )
 
     # Prepare an output lambda that writes into the correct device's out buffer.
     var out_tensors_capture = StaticTuple[OutTensorType, ngpus]()
     for i in range(ngpus):
         out_tensors_capture[i] = TileTensor(out_dev[i], row_major(length))
 
-    @always_inline
-    @parameter
+    @inline(.always)
+    @__parameter
     @__copy_capture(out_tensors_capture)
     def outputs_lambda[
         input_index: Int,
         _dtype: DType,
-        _width: SIMDSize,
+        _width: SIMDLength,
         *,
         _alignment: Int,
     ](coords: Coord, val: SIMD[_dtype, _width]) -> None:
@@ -364,7 +372,7 @@ def allreduce_naive_test() raises -> None:
             width=_width, alignment=_alignment
         ](
             rebind[IndexList[1]](coord_to_index_list(coords)),
-            rebind[SIMD[DType.float32, _width]](val),
+            rebind[SIMD[.float32, _width]](val),
         )
 
     # Launch naive allreduce per device
@@ -373,7 +381,7 @@ def allreduce_naive_test() raises -> None:
             dtype=DType.float32,
             ngpus=ngpus,
             output_lambda=outputs_lambda[input_index=i, ...],
-        ](in_tensors, out_tensors[i], 216, ctxs[i])
+        ](in_tensors, out_tensors[i].layout, 216, ctxs[i])
 
     # Synchronize and verify
     for i in range(ngpus):
@@ -383,6 +391,7 @@ def allreduce_naive_test() raises -> None:
     for i in range(ngpus):
         expected += Float32(i + 1)
         ctxs[i].enqueue_copy(host_ptrs[i], out_dev[i])
+        ctxs[i].synchronize()
 
     for i in range(ngpus):
         for j in range(length):
@@ -392,7 +401,6 @@ def allreduce_naive_test() raises -> None:
         host_ptrs[i].free()
 
 
-@parameter
 def run_allreduce_sweep[use_multimem: Bool]() raises:
     # Run tests for each configuration.
     comptime for gpu_idx, dtype_idx, length_idx, epilogue_idx in product(

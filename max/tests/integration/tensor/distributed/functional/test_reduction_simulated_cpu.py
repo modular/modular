@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Reduction tests on simulated CPU mesh — inherits all logic from _reduction."""
 
-from _test_helpers import make_partial
+from _test_helpers import make_partial, make_partial_distinct
 from max.driver import CPU
 from max.experimental.sharding import DeviceMesh
 
@@ -36,3 +36,4 @@ class TestReduction(ReductionTests):
         axis_names=("tp",),
     )
     partial_fn = staticmethod(make_partial)
+    partial_distinct_fn = staticmethod(make_partial_distinct)

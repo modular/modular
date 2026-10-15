@@ -32,12 +32,11 @@ within a row of V. So o_reg[i, m] = mean over all k_global of
 (k_global / 32) = (total_K - 1) / 64  (independent of i, m).
 """
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.testing import assert_almost_equal
 
-from layout import LayoutTensor, TileTensor
-from layout.coord import Coord, Idx
-from layout.runtime_layout import RuntimeLayout
+from layout import TileTensor
+from layout.coord import Idx
 from layout.tile_layout import row_major
 
 from nn.attention.gpu.amd_structured.mha_prefill_v2 import (
@@ -45,7 +44,7 @@ from nn.attention.gpu.amd_structured.mha_prefill_v2 import (
     mha_prefill_v2,
 )
 from nn.attention.mha_mask import NullMask
-from nn.attention.mha_operand import LayoutTensorMHAOperand
+from nn.attention.mha_operand import TileTensorMHAOperand
 
 
 comptime Q_BLOCK_SIZE = 32  # per warp
@@ -62,7 +61,7 @@ comptime BATCH = 1
 
 def test_v2_main_loop[
     depth: Int,
-    output_dtype: DType = DType.float32,
+    output_dtype: DType = .float32,
 ](ctx: DeviceContext) raises:
     comptime SIZE_Q = BM * depth
     comptime SIZE_KV = NUM_TILES * KV_BLOCK * depth
@@ -92,9 +91,9 @@ def test_v2_main_loop[
         ") ---",
     )
 
-    var dev_q = ctx.enqueue_create_buffer[DType.bfloat16](SIZE_Q)
-    var dev_k = ctx.enqueue_create_buffer[DType.bfloat16](SIZE_KV)
-    var dev_v = ctx.enqueue_create_buffer[DType.bfloat16](SIZE_KV)
+    var dev_q = ctx.enqueue_create_buffer[.bfloat16](SIZE_Q)
+    var dev_k = ctx.enqueue_create_buffer[.bfloat16](SIZE_KV)
+    var dev_v = ctx.enqueue_create_buffer[.bfloat16](SIZE_KV)
     var dev_out = ctx.enqueue_create_buffer[output_dtype](SIZE_OUT)
 
     var total_k = NUM_TILES * KV_BLOCK
@@ -111,53 +110,25 @@ def test_v2_main_loop[
 
     var q_tt = TileTensor(
         dev_q,
-        row_major(
-            Coord(
-                Int32(BATCH),
-                Int32(SEQ_LEN),
-                Idx[NUM_HEADS],
-                Idx[depth],
-            )
-        ),
+        row_major(Int32(BATCH), Int32(SEQ_LEN), Idx[NUM_HEADS], Idx[depth]),
     )
     var k_tt = TileTensor(
         dev_k,
-        row_major(
-            Coord(
-                Int32(BATCH),
-                Int32(NUM_KEYS),
-                Idx[NUM_KV_HEADS],
-                Idx[depth],
-            )
-        ),
+        row_major(Int32(BATCH), Int32(NUM_KEYS), Idx[NUM_KV_HEADS], Idx[depth]),
     )
     var v_tt = TileTensor(
         dev_v,
-        row_major(
-            Coord(
-                Int32(BATCH),
-                Int32(NUM_KEYS),
-                Idx[NUM_KV_HEADS],
-                Idx[depth],
-            )
-        ),
+        row_major(Int32(BATCH), Int32(NUM_KEYS), Idx[NUM_KV_HEADS], Idx[depth]),
     )
     var o_tt = TileTensor(
         dev_out,
-        row_major(
-            Coord(
-                Int32(BATCH),
-                Int32(SEQ_LEN),
-                Idx[NUM_HEADS],
-                Idx[depth],
-            )
-        ),
+        row_major(Int32(BATCH), Int32(SEQ_LEN), Idx[NUM_HEADS], Idx[depth]),
     )
-    # Wrap K/V TileTensors as LayoutTensorMHAOperand for the kernel's
+    # Wrap K/V TileTensors as TileTensorMHAOperand for the kernel's
     # paged-aware signature; the operand infers `buffer_layout` from the
     # passed TileTensor, so pass the existing row-major TileTensors directly.
-    var k_op = LayoutTensorMHAOperand(k_tt)
-    var v_op = LayoutTensorMHAOperand(v_tt)
+    var k_op = TileTensorMHAOperand(k_tt)
+    var v_op = TileTensorMHAOperand(v_tt)
 
     mha_prefill_v2[CONFIG](
         q_tt,
@@ -180,7 +151,7 @@ def test_v2_main_loop[
     # output adds a per-element round-off at store time (~1 ULP in
     # BF16, which at value ~0.5 is ~2e-3). Use a slightly looser
     # tolerance for BF16 to absorb the cast.
-    comptime tol: Float32 = 0.05 if output_dtype == DType.float32 else 0.01
+    comptime tol: Float32 = 0.05 if output_dtype == .float32 else 0.01
     var mismatches = 0
     var max_diff: Float32 = 0
     with dev_out.map_to_host() as host_out:

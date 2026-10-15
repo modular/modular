@@ -15,8 +15,8 @@
 # Demonstrates the complete pattern for GPU execution
 
 from std.math import ceildiv
-from std.gpu import global_idx
-from std.gpu.host import DeviceContext
+from max.gpu import global_idx
+from max.gpu.host import DeviceContext
 
 # ========================== KERNEL CODE ==========================
 

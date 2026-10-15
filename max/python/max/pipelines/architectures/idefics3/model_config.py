@@ -15,20 +15,24 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import ClassVar, Literal
 
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData
-from max.nn.kv_cache import KVCacheParams
+from max.nn.kv_cache import KVCacheParamInterface
 from max.nn.transformer import ReturnLogits
 from max.pipelines.architectures.llama3.model_config import Llama3Config
 from max.pipelines.lib import MAXModelConfig, PipelineConfig
+from max.pipelines.lib.config.model_config import _select_quantization_encoding
 from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithKVCache,
     ArchVLConfigWithTextSubconfig,
 )
-from max.pipelines.modeling.config_enums import supported_encoding_dtype
+from max.pipelines.modeling.config_enums import (
+    SupportedEncoding,
+    supported_encoding_dtype,
+)
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
@@ -88,9 +92,9 @@ class Idefics3VisionConfig:
     ) -> Idefics3VisionConfig:
         """Initialize Idefics3VisionConfig from HuggingFace config."""
 
-        quantization_encoding = pipeline_config.model.quantization_encoding
-        if quantization_encoding is None:
-            raise ValueError("quantization_encoding must be set")
+        quantization_encoding = _select_quantization_encoding(
+            pipeline_config.model, Idefics3Config.DEFAULT_ENCODING
+        )
         dtype = supported_encoding_dtype(quantization_encoding)
 
         vision_config = getattr(huggingface_config, "vision_config", None)
@@ -125,6 +129,9 @@ class Idefics3VisionConfig:
 class Idefics3Config(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
     """Configuration for Idefics3 models."""
 
+    DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
+    SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {"bfloat16"}
+
     devices: list[DeviceRef]
     """Devices that the Idefics3 model is parallelized over."""
 
@@ -143,6 +150,8 @@ class Idefics3Config(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
     text_config: Llama3Config
     """Text model configuration (Llama3-based)."""
 
+    quantization_encoding: SupportedEncoding | None = None
+
     @property
     def image_seq_len(self) -> int:
         """Calculate the number of image tokens after connector processing."""
@@ -152,7 +161,7 @@ class Idefics3Config(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
         total_patches = patches_per_side * patches_per_side
         return total_patches // (self.scale_factor * self.scale_factor)
 
-    def get_kv_params(self) -> KVCacheParams:
+    def get_kv_params(self) -> KVCacheParamInterface:
         """Returns the KV cache parameters from the embedded text config."""
         return self.text_config.get_kv_params()
 
@@ -170,6 +179,8 @@ class Idefics3Config(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
         cls,
         pipeline_config: PipelineConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         """Initializes an Idefics3Config instance from pipeline configuration.
 
@@ -193,11 +204,15 @@ class Idefics3Config(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
             huggingface_config, "text_config", huggingface_config
         )
         text_config = Llama3Config.initialize_from_config(
-            pipeline_config, hf_text_config
+            pipeline_config, hf_text_config, max_seq_len=max_seq_len
         )
 
         vision_config = Idefics3VisionConfig.initialize_from_config(
             pipeline_config, huggingface_config, text_config.hidden_size
+        )
+
+        quantization_encoding = _select_quantization_encoding(
+            model_config, cls.DEFAULT_ENCODING
         )
 
         return cls(
@@ -214,6 +229,7 @@ class Idefics3Config(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
             vision_config=vision_config,
             # Text model configuration (Llama3-based)
             text_config=text_config,
+            quantization_encoding=quantization_encoding,
         )
 
     def finalize(
@@ -221,7 +237,7 @@ class Idefics3Config(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
         huggingface_config: AutoConfig,
         llm_state_dict: dict[str, WeightData],
         return_logits: ReturnLogits,
-        norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm",
+        norm_method: Literal["rms_norm", "layer_norm"] = "rms_norm",
     ) -> None:
         """Finalize the Idefics3Config instance with state_dict dependent fields.
 

@@ -24,7 +24,7 @@ Contains:
   - mma_block_interleave, mma_block_interleave_list, double_buffer_reorder
 """
 
-from std.collections import InlineArray, List
+from std.collections import Array, List
 
 from .config import PipelineConfig, ScheduleConfig, SchedulingStrategy
 from .dependency_graph import LoopBody, OpNode
@@ -99,14 +99,15 @@ def _construct_mma_blocks(
 
         while op_idx < num_ops:
             var op = body.ops[order[op_idx]].op
-            if op.role == OpRole.COMPUTE:
-                mma_op = op
-                op_idx += 1
-                break
-            elif op.role == OpRole.FRAGMENT_LOAD:
-                pre_ops.append(op)
-            elif op.role == OpRole.GLOBAL_LOAD:
-                global_loads.append(op)
+            match op.role:
+                case .COMPUTE:
+                    mma_op = op
+                    op_idx += 1
+                    break
+                case .FRAGMENT_LOAD:
+                    pre_ops.append(op)
+                case .GLOBAL_LOAD:
+                    global_loads.append(op)
             op_idx += 1
 
         var pos_in_partition = block_idx % bph
@@ -193,14 +194,14 @@ def _construct_mma_blocks(
                 var scanned_mmas = 0
                 while scan_idx < num_ops and scanned_mmas < bph - 1:
                     var sop = body.ops[order[scan_idx]].op
-                    if sop.role == OpRole.COMPUTE:
-                        scanned_mmas += 1
-                    elif (
-                        sop.role == OpRole.FRAGMENT_LOAD
-                        and sop.stage != partition_idx
-                    ):
-                        top_drain_needed = True
-                        break
+                    match sop.role:
+                        case .COMPUTE:
+                            scanned_mmas += 1
+                        case .FRAGMENT_LOAD if sop.stage != partition_idx:
+                            top_drain_needed = True
+                            break
+                        case _:
+                            pass
                     scan_idx += 1
 
         var entry_wait = OpDesc.none()
@@ -1030,18 +1031,19 @@ def build_kernel_program(
 
     # Schedule.
     var order = List[Int]()
-    if sched.scheduling == SchedulingStrategy.CSP:
-        order = optimal_schedule_with_halves(
-            ldg,
-            max_globals_per_block=config.block_sizing.max_globals,
-            lds_contention_penalty=sched.lds_contention_penalty,
-            max_vgpr=sched.max_vgpr,
-        )
-    elif sched.scheduling == SchedulingStrategy.GREEDY:
-        order = greedy_schedule(ldg)
-    else:
-        for i in range(len(body)):
-            order.append(i)
+    match sched.scheduling:
+        case .CSP:
+            order = optimal_schedule_with_halves(
+                ldg,
+                max_globals_per_block=config.block_sizing.max_globals,
+                lds_contention_penalty=sched.lds_contention_penalty,
+                max_vgpr=sched.max_vgpr,
+            )
+        case .GREEDY:
+            order = greedy_schedule(ldg)
+        case .IDENTITY:
+            for i in range(len(body)):
+                order.append(i)
 
     # Build program (with placeholder waits — will be patched if auto_waits).
     var effective_sched = sched
@@ -1374,10 +1376,10 @@ def mma_block_interleave[
     var pos = 0
 
     # Classify ops by type.
-    var globals = InlineArray[OpDesc, N](uninitialized=True)
-    var frag_a = InlineArray[OpDesc, N](uninitialized=True)
-    var frag_b = InlineArray[OpDesc, N](uninitialized=True)
-    var mmas = InlineArray[OpDesc, N](uninitialized=True)
+    var globals = Array[OpDesc, N](uninitialized=True)
+    var frag_a = Array[OpDesc, N](uninitialized=True)
+    var frag_b = Array[OpDesc, N](uninitialized=True)
+    var mmas = Array[OpDesc, N](uninitialized=True)
     var n_g = 0
     var n_fa = 0
     var n_fb = 0
@@ -1385,22 +1387,24 @@ def mma_block_interleave[
 
     for i in range(N):
         var op = logical.ops[i]
-        if op.role == OpRole.GLOBAL_LOAD:
-            globals[n_g] = op
-            n_g += 1
-        elif op.role == OpRole.FRAGMENT_LOAD and op.channel == 0:
-            frag_a[n_fa] = op
-            n_fa += 1
-        elif op.role == OpRole.FRAGMENT_LOAD and op.channel == 1:
-            frag_b[n_fb] = op
-            n_fb += 1
-        elif op.role == OpRole.COMPUTE:
-            mmas[n_m] = op
-            n_m += 1
+        match op.role:
+            case .GLOBAL_LOAD:
+                globals[n_g] = op
+                n_g += 1
+            case .FRAGMENT_LOAD:
+                if op.channel == 0:
+                    frag_a[n_fa] = op
+                    n_fa += 1
+                elif op.channel == 1:
+                    frag_b[n_fb] = op
+                    n_fb += 1
+            case .COMPUTE:
+                mmas[n_m] = op
+                n_m += 1
 
     # Track which M-tile rows and N-tile cols have been seen.
-    var seen_m = InlineArray[Int, N](fill=0)
-    var seen_n = InlineArray[Int, N](fill=0)
+    var seen_m = Array[Int, N](fill=0)
+    var seen_n = Array[Int, N](fill=0)
 
     var g_idx = 0  # next global load to place
 
@@ -1494,14 +1498,15 @@ def mma_block_interleave_list(
 
     for i in range(n):
         var op = logical[i]
-        if op.role == OpRole.GLOBAL_LOAD:
-            globals.append(op)
-        elif op.role == OpRole.FRAGMENT_LOAD and op.channel == 0:
-            frag_a.append(op)
-        elif op.role == OpRole.FRAGMENT_LOAD and op.channel == 1:
-            frag_b.append(op)
-        elif op.role == OpRole.COMPUTE:
-            mmas.append(op)
+        match op.role:
+            case .GLOBAL_LOAD:
+                globals.append(op)
+            case .FRAGMENT_LOAD if op.channel == 0:
+                frag_a.append(op)
+            case .FRAGMENT_LOAD if op.channel == 1:
+                frag_b.append(op)
+            case .COMPUTE:
+                mmas.append(op)
 
     # Track which M-tile rows and N-tile cols have been seen.
     var seen_m = List[Bool]()

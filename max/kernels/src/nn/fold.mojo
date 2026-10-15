@@ -13,11 +13,11 @@
 """Implements the fold operation."""
 
 
-from std.algorithm import elementwise
-from std.gpu.host import DeviceContext
+from max.algorithm import elementwise
+from max.gpu.host import DeviceContext
 from layout import TileTensor
 
-from std.utils.coord import Coord, coord_to_index_list
+from std.utils.coord import Coord
 from std.utils.index import IndexList
 
 
@@ -103,7 +103,7 @@ def fold[
     comptime stride_w = stride[1]
     comptime stride_h = stride[0]
 
-    @always_inline
+    @inline(.always)
     def fold_fn[width: Int, alignment: Int = 1](idx: Coord) {var}:
         comptime assert idx.rank == 4, "fold_fn: rank must be 4"
 

@@ -18,9 +18,15 @@ from __future__ import annotations
 import os
 
 from max.config import ConfigFileModel
-from max.pipelines.diffusion.cache import DenoisingCacheConfig
-from max.pipelines.modeling.config_enums import PipelineRole
-from pydantic import Field, PrivateAttr
+from max.pipelines.diffusion.config import (
+    DEFAULT_DENOISING_CACHE_CONFIG,
+    DenoisingCacheConfig,
+)
+from max.pipelines.modeling.config_enums import (
+    EagerValidatorMode,
+    PipelineRole,
+)
+from pydantic import ConfigDict, Field, PrivateAttr
 
 # Default max batch input tokens for chunked prefill and memory estimation.
 DEFAULT_MAX_BATCH_INPUT_TOKENS = 8192
@@ -30,6 +36,13 @@ DEFAULT_MAX_BATCH_INPUT_TOKENS = 8192
 # is matched case-insensitively (e.g. ``"none"``, ``"None"``, ``"NONE"``).
 DISABLE_PARSER_SENTINEL = "none"
 
+_ENV_FLAG_TRUE = ("1", "true", "on", "yes")
+
+
+def _env_flag(name: str) -> bool:
+    """Returns whether environment variable ``name`` is set to a true value."""
+    return os.environ.get(name, "").strip().lower() in _ENV_FLAG_TRUE
+
 
 class PipelineRuntimeConfig(ConfigFileModel):
     """Model-agnostic runtime settings for pipeline execution.
@@ -37,6 +50,8 @@ class PipelineRuntimeConfig(ConfigFileModel):
     Contains batching, scheduling, and execution configuration that is
     independent of any particular model architecture.
     """
+
+    model_config = ConfigDict(frozen=True)
 
     pipeline_role: PipelineRole = Field(
         default="prefill_and_decode",
@@ -52,6 +67,26 @@ class PipelineRuntimeConfig(ConfigFileModel):
             "Maximum batch size to execute with the model. When not specified "
             "(``None``), this value is determined dynamically. For server "
             "launches, set this higher based on server capacity."
+        ),
+    )
+
+    precompiled_mefs: str | None = Field(
+        default=None,
+        description=(
+            "Directory of compiled-graph artifacts written by an earlier run's "
+            "``--export-mefs``. Every graph is initialized from its artifact "
+            "instead of being compiled, so the compiling and the executing run "
+            "can happen on different machines. The runs must build the same "
+            "graphs; a mismatch is an error rather than a silent recompile."
+        ),
+    )
+
+    export_mefs: str | None = Field(
+        default=None,
+        description=(
+            "Directory to write a compiled-graph artifact into for every graph "
+            "this run compiles, for a later run to reuse via "
+            "``--precompiled-mefs``. Compilation itself is unaffected."
         ),
     )
 
@@ -89,9 +124,21 @@ class PipelineRuntimeConfig(ConfigFileModel):
         ),
     )
 
+    ep_fuse_ffn_combine_send: bool | None = Field(
+        default=None,
+        description=(
+            "Whether the MoE FFN performs the expert-parallel combine send "
+            "from its own epilogue, which drops the local staging tensor for "
+            "its output. Unset defaults ON except for a decode-only worker, "
+            "since the span it speeds up grows with tokens per expert."
+        ),
+    )
+
     eplb_profile: bool = Field(
-        default_factory=lambda: os.getenv("MAX_SERVE_EPLB_PROFILE", "").lower()
-        in ("1", "true", "yes"),
+        default_factory=lambda: (
+            os.getenv("MAX_SERVE_EPLB_PROFILE", "").lower()
+            in ("1", "true", "yes")
+        ),
         description=(
             "When True, enables expert-parallel load balancing (EPLB) MoE "
             "routing histogram profiling in the pipeline. Mirrors "
@@ -148,6 +195,60 @@ class PipelineRuntimeConfig(ConfigFileModel):
         ),
     )
 
+    enable_spec_decode_mixed_batches: bool = Field(
+        default=False,
+        description=(
+            "When enabled with speculative decoding, prefill requests are "
+            "batched into decode steps (implies in-flight batching) and the "
+            "decode rows keep verifying their draft tokens instead of "
+            "advancing draft-less. Architectures that do not declare "
+            "``supports_spec_decode_mixed_batches`` fall back to plain "
+            "in-flight batching."
+        ),
+    )
+
+    prefill_coalesce_min_pending: int = Field(
+        default=0,
+        description=(
+            "Under in-flight batching the scheduler holds queued fresh "
+            "prefill requests until enough can share one decode step. "
+            "Prefills are released once this many are queued, counted across "
+            "the whole data-parallel group, since one eager step serves every "
+            "replica at once. A held prefill is also released after this many "
+            "decode steps so it never waits indefinitely, unless "
+            "prefill_coalesce_max_held_steps sets that deadline separately. "
+            "Holding keeps more steps pure decode so they can replay the "
+            "captured graph. A step holding a prefill request runs eager. "
+            "The default of 0 holds nothing back."
+        ),
+    )
+
+    prefill_coalesce_max_held_steps: int = Field(
+        default=0,
+        ge=0,
+        description=(
+            "Ceiling on how many consecutive decode steps a prefill is held "
+            "before it is admitted regardless of how few are queued. This "
+            "splits the release deadline out of prefill_coalesce_min_pending, "
+            "which otherwise serves as both the queue depth that opens the "
+            "gate and the step count that expires it. The default of 0 falls "
+            "back to prefill_coalesce_min_pending."
+        ),
+    )
+
+    prefill_schedule_interval: int = Field(
+        default=1,
+        ge=1,
+        description=(
+            "Admit prefill work only on every Nth scheduler step. "
+            "Data-parallel ranks advance in lockstep, so prefill on any rank "
+            "stalls the whole group; confining it to a shared cadence leaves "
+            "the steps in between entirely to decode. A step with no decode "
+            "work anywhere admits prefill regardless, rather than run an "
+            "empty batch. The default of 1 admits prefill every step."
+        ),
+    )
+
     eplb_replicas_per_gpu: int = Field(
         default=0,
         description=(
@@ -159,16 +260,6 @@ class PipelineRuntimeConfig(ConfigFileModel):
         ),
     )
 
-    max_num_steps: int = Field(
-        default=1,
-        description=(
-            "Deprecated. Multi-step pipeline execution is no longer supported; "
-            "the pipeline always runs single-step decode. Values other than "
-            "``1`` (including the legacy default ``-1``) are ignored after "
-            "logging a warning."
-        ),
-    )
-
     max_batch_input_tokens: int = Field(
         default=DEFAULT_MAX_BATCH_INPUT_TOKENS,
         description=(
@@ -176,6 +267,18 @@ class PipelineRuntimeConfig(ConfigFileModel):
             "This value is used for chunked prefill and memory estimation."
         ),
     )
+
+    max_request_input_tokens: int = Field(
+        default=0,
+        ge=0,
+        description=(
+            "Ceiling, in tokens, on how much of a single request is encoded "
+            "in one batch, so short requests still fit alongside a long "
+            "prefill instead of queueing behind it. 0 (default) disables the "
+            "cap. Requires chunked prefill."
+        ),
+    )
+    """Per-request ceiling on prefill tokens per batch (0 = off)."""
 
     use_experimental_kernels: str = Field(
         default=os.environ.get("USE_EXPERIMENTAL_KERNELS", "false"),
@@ -242,16 +345,16 @@ class PipelineRuntimeConfig(ConfigFileModel):
         ),
     )
 
-    fold_sampler_into_graph: bool = Field(
-        default=True,
+    experimental_device_graph_synthesis: bool = Field(
+        default=False,
         description=(
-            "Fold greedy token selection (argmax) into the captured forward "
-            "graph so a single device-graph replay materializes the sampled "
-            "token, avoiding a separate sampler submission and its blocking "
-            "readback. Only takes effect for all-greedy decode batches on "
-            "architectures that emit the folded token output (Nemotron-H); "
-            "any non-greedy request falls back to the separate sampler. "
-            "Default on."
+            "Compile model graphs with device-graph synthesis: the compiled "
+            "model constructs a device graph directly and executes it on "
+            "model forward passes. This is an experimental alternative to the "
+            "capture/replay workflow. Honored only by "
+            "architectures that opt in, and mutually exclusive with "
+            "``device_graph_capture``. "
+            "Use ``--experimental-device-graph-synthesis`` to enable."
         ),
     )
 
@@ -260,31 +363,6 @@ class PipelineRuntimeConfig(ConfigFileModel):
         description=(
             "Skip validation of user provided flags against the architecture's "
             "required arguments."
-        ),
-    )
-
-    max_pending_futures: int = Field(
-        default=1,
-        description=(
-            "Maximum number of unrealized future-token placeholders a request "
-            "may hold at once. The default of 1 is the classic overlap-"
-            "scheduler depth: one forward in flight per request. A value of 2 "
-            "enables experimental schedule-ahead decoding in the overlap "
-            "pipeline: two forwards stay in flight and each step's outputs "
-            "are consumed one step late, for pure-greedy token-generation "
-            "batches only (other batches drain to the classic depth). Not "
-            "supported with speculative decoding; prefill-only workers pin "
-            "to 1."
-        ),
-    )
-
-    kvcache_ce_watermark: float = Field(
-        default=0.95,
-        description=(
-            "Projected cache usage threshold for scheduling CE requests, "
-            "considering current and incoming requests. CE is scheduled if "
-            "either projected usage stays below this threshold or no active "
-            "requests exist. Higher values can cause more preemptions."
         ),
     )
 
@@ -326,6 +404,29 @@ class PipelineRuntimeConfig(ConfigFileModel):
         ),
     )
 
+    disable_overlap: bool = Field(
+        default_factory=lambda: _env_flag("MAX_DISABLE_OVERLAP"),
+        description=(
+            "Keeps the overlap pipeline but synchronizes after every model "
+            "execution, so CPU work no longer overlaps GPU work and throughput "
+            "drops. Device graph capture runs only in the overlap pipeline, so "
+            "this is how to run capture without overlap when debugging. "
+            "Defaults from the ``MAX_DISABLE_OVERLAP`` environment variable. "
+            "Has no effect when the overlap scheduler is off."
+        ),
+    )
+
+    disable_vendor_blas_fallback: bool = Field(
+        default_factory=lambda: _env_flag("MODULAR_DISABLE_VENDOR_FALLBACK"),
+        description=(
+            "Compiles kernels without the matmul vendor-BLAS fallback by "
+            "passing the ``MODULAR_DISABLE_VENDOR_FALLBACK`` define to the "
+            "kernel compile. Always on for device graph capture on HIP. "
+            "Defaults from the ``MODULAR_DISABLE_VENDOR_FALLBACK`` environment "
+            "variable."
+        ),
+    )
+
     dp_ce_balance_timeout_ms: float = Field(
         default=-1.0,
         description=(
@@ -352,6 +453,19 @@ class PipelineRuntimeConfig(ConfigFileModel):
     )
     """Occupancy threshold (0-1) that schedules CE work without deferral."""
 
+    dp_ce_balance_enable_dynamic_chunk_size: bool = Field(
+        default=False,
+        description=(
+            "Whether a below-threshold CE step with work on 2+ replicas "
+            "runs immediately with each replica's chunk size reduced to "
+            "the balance level, deferring only the excess. When False, "
+            "such steps are held whole until the threshold is met, a "
+            "deadline expires, or there is nothing else to run. Only "
+            "consulted when ``dp_ce_balance_timeout_ms`` > 0."
+        ),
+    )
+    """Whether below-threshold CE steps run at a reduced chunk size."""
+
     allow_unsupported_logprobs: bool = Field(
         default=False,
         description=(
@@ -375,10 +489,21 @@ class PipelineRuntimeConfig(ConfigFileModel):
     prefer_module_v3: bool = Field(
         default=False,
         description=(
-            "Whether to prefer the eager API architecture over the graph API architecture. "
+            "Whether to prefer the ModuleV3 architecture over the graph API architecture. "
             "When ``False`` (default), the inference server uses the graph API architecture. "
-            "When ``True``, the server uses the eager API architecture when available and "
+            "When ``True``, the server uses the ModuleV3 architecture when available and "
             "falls back to the graph API architecture."
+        ),
+    )
+
+    eager_usage_validator: EagerValidatorMode = Field(
+        default=EagerValidatorMode.INIT_ONLY,
+        description=(
+            "Configure when to use the eager usage validator, which reports "
+            "unsafe API usage. ``init-only`` (default) validates model "
+            "initialization only; ``enabled`` validates both model "
+            "initialization and every request, at the cost of Python overhead "
+            "on the serving path; ``disabled`` turns it off."
         ),
     )
 
@@ -447,21 +572,76 @@ class PipelineRuntimeConfig(ConfigFileModel):
         ),
     )
 
-    max_vision_cache_entries: int = Field(
-        default=256,
+    vision_cache_utilization: float = Field(
+        default=0.05,
+        ge=0,
+        le=1,
         description=(
-            "Maximum number of images cached in the vision encoder cache. "
-            "Each entry stores the vision encoder output for one image, "
-            "avoiding re-encoding across chunks and requests. Set to ``0`` "
-            "to disable caching. Only used by VLMs."
+            "Fraction of the KV cache pool budget (not total device "
+            "memory) reserved for the vision encoder cache, which stores "
+            "per-image encoder output to avoid re-encoding across chunks "
+            "and requests; the remainder stays with the KV cache. The "
+            "budget is carved into fixed-size blocks (a video spans many "
+            "blocks, an image a few). 0 disables caching; the default "
+            "reserves a small slice of the pool. Only used by VLMs."
+        ),
+    )
+
+    max_vision_preprocess_cache_bytes: int = Field(
+        default=10 * 1024**3,
+        description=(
+            "Host-memory budget, in bytes, for caching preprocessed image "
+            "tensors in the tokenizer. A hit skips the resize, rescale and "
+            "patchify for a repeated image -- for example the same image "
+            "resent on every turn of a conversation -- which the vision "
+            "encoder cache cannot avoid, because it is consulted only after "
+            "preprocessing has already run. This is a ceiling on resident "
+            "host memory in the API server process, not a reservation: the "
+            "cache grows to it under load and evicts least-recently-used "
+            "entries to stay within it. Set to ``0`` to disable. Only used "
+            "by VLMs."
+        ),
+    )
+
+    max_video_preprocess_cache_bytes: int = Field(
+        default=10 * 1024**3,
+        description=(
+            "Host-memory budget, in bytes, for caching preprocessed video "
+            "tensors in the tokenizer. Unlike images, videos are not decoded "
+            "at admission, so a hit skips the whole decode -- sampling, "
+            "resize and patchify of every sampled frame. Budgeted "
+            "separately from ``max_vision_preprocess_cache_bytes`` because a "
+            "video entry is an order of magnitude larger than an image one, "
+            "so a shared budget would let a single video evict many images. "
+            "Set to ``0`` to disable. Only used by VLMs that accept video."
+        ),
+    )
+
+    max_media_preprocess_cache_idle_seconds: float = Field(
+        default=300.0,
+        description=(
+            "How long a preprocessed image or video may go unused before it "
+            "becomes eligible to be dropped from the tokenizer's cache. This "
+            "is a reclaim policy rather than a lifetime: sweeps are periodic, "
+            "so an entry can outlive its deadline, and a request that arrives "
+            "meanwhile is served from it and resets the clock -- an entry is "
+            "keyed on media content, so it never goes stale. Without this, the "
+            "byte budget is the only bound, so a burst of distinct media holds "
+            "its whole "
+            "resident set for the rest of the process's life -- host memory "
+            "the model worker's own allocations compete for. An entry is only "
+            "worth keeping while the conversation that sent it might send the "
+            "next turn, which is seconds to minutes, and re-preprocessing a "
+            "wrongly dropped image costs a few milliseconds. Set to ``0`` to "
+            "keep entries until the budget evicts them. Only used by VLMs."
         ),
     )
 
     denoising_cache: DenoisingCacheConfig = Field(
-        default_factory=DenoisingCacheConfig,
+        default=DEFAULT_DENOISING_CACHE_CONFIG,
         description=(
-            "Cache configuration for diffusion model denoising "
-            "(FBCache, TaylorSeer)."
+            "Resolved denoising-cache config. Construction fills this from "
+            "top-level settings and architecture defaults."
         ),
     )
 
@@ -469,3 +649,25 @@ class PipelineRuntimeConfig(ConfigFileModel):
     """The section name to use when loading this config from a MAXConfig file.
     This is used to differentiate between different config sections in a single
     MAXConfig file."""
+
+    @property
+    def max_num_input_tokens(self) -> int | None:
+        """Tokens one forward encodes, or None when a prompt is encoded whole.
+
+        Chunked prefill cuts a CE batch at ``max_batch_input_tokens``, which is
+        also what a request has to be allocated for. Without it a prompt is
+        admitted in full, so nothing bounds the allocation. A decode worker
+        encodes no prompt: it receives the whole prompt's KV from prefill in
+        one transfer, so it must hold every page up front.
+        """
+        if (
+            not self.enable_chunked_prefill
+            or self.pipeline_role == "decode_only"
+        ):
+            return None
+        return self.max_batch_input_tokens
+
+    @property
+    def is_disaggregated(self) -> bool:
+        """Whether this worker is part of a disaggregated prefill/decode deployment."""
+        return self.pipeline_role in ("prefill_only", "decode_only")

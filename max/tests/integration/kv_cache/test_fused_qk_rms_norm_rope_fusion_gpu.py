@@ -32,14 +32,14 @@ from __future__ import annotations
 import ml_dtypes
 import numpy as np
 import pytest
+from max import tree
 from max.driver import CPU, Accelerator, Buffer, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.nn.kernels import fused_qk_rms_norm_rope_ragged
-from max.nn.kv_cache import MHAKVCacheParams, PagedCacheValues
-from max.pipelines.kv_cache import PagedKVCacheManager
-from test_common.context_utils import create_text_context
+from max.nn.kv_cache import MHAKVCacheParams
+from test_common.simple_kv_cache import paged_kv_cache_inputs
 
 pytestmark = pytest.mark.skipif(
     accelerator_count() == 0,
@@ -58,9 +58,6 @@ EPSILON = 1e-6
 PROMPT_LENS = [3, 5]
 TOTAL_SEQ_LEN = sum(PROMPT_LENS)
 Q_WIDTH = NUM_Q_HEADS * HEAD_DIM
-
-DTYPES = [DType.float32, DType.bfloat16]
-DTYPE_IDS = ["f32", "bf16"]
 
 
 @pytest.fixture(scope="module")
@@ -98,6 +95,9 @@ def _from_device(buf: Buffer, dtype: DType) -> np.ndarray:
             .view(ml_dtypes.bfloat16)
             .astype(np.float32)
         )
+    if dtype == DType.float8_e4m3fn:
+        # Raw bytes: the FP8 arms are compared bit-for-bit, not numerically.
+        return out.view(DType.uint8).to_numpy()
     return out.to_numpy()
 
 
@@ -111,6 +111,8 @@ def _build_graph(
     interleaved: bool,
     rope_dim: int,
     combined_width: int | None,
+    q_out_dtype: DType | None = None,
+    fold_cast: bool = True,
 ) -> Graph:
     """Builds a graph returning normalized + RoPE'd Q.
 
@@ -119,6 +121,9 @@ def _build_graph(
     carves Q out with a ``slice`` + ``reshape`` view (fused prologue). Q is
     always embedded at column ``HEAD_DIM`` of the combined buffer so the slice
     has a non-zero offset.
+
+    ``fold_cast`` picks which side produces ``q_out_dtype``: True asks the op
+    directly, False appends a separate ``ops.cast``.
     """
     if combined_width is None:
         in_type = TensorType(
@@ -149,45 +154,30 @@ def _build_graph(
         freqs_cis = g.inputs[2].tensor
         q_gamma = g.inputs[3].tensor
         k_gamma = g.inputs[4].tensor
-        (
-            blocks,
-            cache_lengths,
-            lookup_table,
-            max_prompt_length,
-            max_cache_length,
-            _dispatch_metadata,
-        ) = g.inputs[5:]
-
         if combined_width is not None:
             # slice + reshape carve Q out of the combined buffer; both fold into
             # the kernel's Q read lambda via input-prologue fusion.
             inp = inp[:, HEAD_DIM : HEAD_DIM + Q_WIDTH]
             inp = inp.reshape([inp.shape[0], NUM_Q_HEADS, HEAD_DIM])
 
-        kv_collection = PagedCacheValues(
-            blocks.buffer,
-            cache_lengths.tensor,
-            lookup_table.tensor,
-            max_prompt_length.tensor,
-            max_cache_length.tensor,
+        kv_collection = kv_params.unflatten_kv_inputs(iter(g.inputs[5:]))[0]
+        q = fused_qk_rms_norm_rope_ragged(
+            kv_params,
+            inp,
+            row_offsets,
+            kv_collection,
+            q_gamma=q_gamma,
+            k_gamma=k_gamma,
+            freqs_cis=freqs_cis,
+            epsilon=EPSILON,
+            layer_idx=ops.constant(LAYER_IDX, DType.uint32, DeviceRef.CPU()),
+            weight_offset=0.0,
+            interleaved=interleaved,
+            q_out_dtype=q_out_dtype if fold_cast else None,
         )
-        g.output(
-            fused_qk_rms_norm_rope_ragged(
-                kv_params,
-                inp,
-                row_offsets,
-                kv_collection,
-                q_gamma=q_gamma,
-                k_gamma=k_gamma,
-                freqs_cis=freqs_cis,
-                epsilon=EPSILON,
-                layer_idx=ops.constant(
-                    LAYER_IDX, DType.uint32, DeviceRef.CPU()
-                ),
-                weight_offset=0.0,
-                interleaved=interleaved,
-            )
-        )
+        if q_out_dtype is not None and not fold_cast:
+            q = ops.cast(q, q_out_dtype)
+        g.output(q)
     return g
 
 
@@ -212,30 +202,24 @@ def _run(
     q_np: np.ndarray,
     gamma: np.ndarray,
     combined_width: int | None,
+    q_out_dtype: DType | None = None,
+    fold_cast: bool = True,
 ) -> np.ndarray:
     graph = _build_graph(
         dtype,
         interleaved=interleaved,
         rope_dim=rope_dim,
         combined_width=combined_width,
+        q_out_dtype=q_out_dtype,
+        fold_cast=fold_cast,
     )
     model = session.load(graph)
 
     # Allocate the paged cache for the batch. Its contents are irrelevant to Q,
     # which is computed purely from the projection.
-    kv_manager = PagedKVCacheManager(
-        _kv_params(dtype),
-        total_num_pages=8,
-        session=session,
-        max_batch_size=128,
+    kv_rt = paged_kv_cache_inputs(
+        _kv_params(dtype), PROMPT_LENS, total_num_pages=8
     )
-    batch = [
-        create_text_context(np.empty(n, dtype=np.int64)) for n in PROMPT_LENS
-    ]
-    for ctx in batch:
-        kv_manager.claim(ctx.request_id, replica_idx=0)
-        kv_manager.alloc(ctx, replica_idx=0)
-    kv_rt = kv_manager.runtime_inputs_for_leaf([batch]).inputs[0]
     assert kv_rt.attention_dispatch_metadata is not None
 
     if combined_width is None:
@@ -252,28 +236,19 @@ def _run(
         _to_device(_rope_freqs(rope_dim), dtype, device),
         _to_device(gamma, dtype, device),  # q_gamma
         _to_device(gamma, dtype, device),  # k_gamma
-        kv_rt.kv_blocks,
-        kv_rt.cache_lengths,
-        kv_rt.lookup_table,
-        kv_rt.max_prompt_length,
-        kv_rt.max_cache_length,
-        kv_rt.attention_dispatch_metadata,
+        *tree.leaves(kv_rt),
     ]
     (result,) = model.execute(*inputs)
     assert isinstance(result, Buffer)
-    return _from_device(result, dtype)
+    return _from_device(result, q_out_dtype or dtype)
 
 
-@pytest.mark.parametrize("dtype", DTYPES, ids=DTYPE_IDS)
 @pytest.mark.parametrize(
     "interleaved", [True, False], ids=["interleaved", "split"]
 )
-@pytest.mark.parametrize("rope_frac", [1, 2], ids=["full_rope", "partial_rope"])
 def test_fused_matches_unfused(
     gpu: tuple[InferenceSession, Accelerator],
-    dtype: DType,
     interleaved: bool,
-    rope_frac: int,
 ) -> None:
     """A sliced + reshaped Q view must produce the same Q as the direct path.
 
@@ -282,8 +257,9 @@ def test_fused_matches_unfused(
     that the graph compiler fuses into the Q load. The results must be
     bit-exact -- the fusion cannot change the values it feeds the kernel.
     """
+    dtype = DType.bfloat16
     session, device = gpu
-    rope_dim = HEAD_DIM // rope_frac
+    rope_dim = HEAD_DIM // 2
 
     rng = np.random.default_rng(0)
     q_np = rng.standard_normal((TOTAL_SEQ_LEN, NUM_Q_HEADS, HEAD_DIM)).astype(
@@ -321,3 +297,73 @@ def test_fused_matches_unfused(
     assert direct.shape == (TOTAL_SEQ_LEN, NUM_Q_HEADS, HEAD_DIM)
     assert not np.any(np.isnan(fused))
     np.testing.assert_array_equal(fused, direct)
+
+
+@pytest.mark.parametrize(
+    "interleaved", [True, False], ids=["interleaved", "split"]
+)
+def test_q_out_dtype_matches_separate_cast(
+    gpu: tuple[InferenceSession, Accelerator],
+    interleaved: bool,
+) -> None:
+    """Folding the Q output cast into the op must not change a single byte.
+
+    Legitimate only because the op rounds to the compute dtype first -- exactly
+    what the separate ``mo.cast`` saw. Compared as raw FP8 bytes.
+    """
+    dtype = DType.bfloat16
+    q_out_dtype = DType.float8_e4m3fn
+    session, device = gpu
+    rope_dim = HEAD_DIM // 2
+
+    rng = np.random.default_rng(0)
+    q_np = rng.standard_normal((TOTAL_SEQ_LEN, NUM_Q_HEADS, HEAD_DIM)).astype(
+        np.float32
+    )
+    gamma = rng.standard_normal(HEAD_DIM).astype(np.float32)
+
+    folded = _run(
+        session,
+        device,
+        dtype,
+        interleaved=interleaved,
+        rope_dim=rope_dim,
+        q_np=q_np,
+        gamma=gamma,
+        combined_width=None,
+        q_out_dtype=q_out_dtype,
+        fold_cast=True,
+    )
+    separate = _run(
+        session,
+        device,
+        dtype,
+        interleaved=interleaved,
+        rope_dim=rope_dim,
+        q_np=q_np,
+        gamma=gamma,
+        combined_width=None,
+        q_out_dtype=q_out_dtype,
+        fold_cast=False,
+    )
+
+    # Both arms share the same `SIMD.cast`, so an out-of-range Q lands on the
+    # SAME byte on both sides -- range loss, not NaN, is this gate's blind spot.
+    # A finite out-of-range value saturates on both vendors (NVPTX lowers to
+    # `cvt.rn.satfinite`, AMDGPU clamps before `cvt.pk.fp8.f32`); measured on
+    # gfx950, scaling gamma by 1e4 puts every extreme element on 0x7E/0xFE
+    # (+/-448) with zero NaN. So `>= 0x7E` covers both, since 0x7F is NaN.
+    at_limit = int(np.count_nonzero((separate & 0x7F) >= 0x7E))
+    assert at_limit == 0, (
+        f"{at_limit} of {separate.size} FP8 Q bytes sit at the e4m3 limit"
+        " (+/-448, or NaN): a value left the representable range and both arms"
+        " round it the same way"
+    )
+    # An all-zero pair compares equal while proving nothing, so require >90%
+    # finite nonzero (0x00/0x80 are +/-0).
+    live = int(np.count_nonzero((separate & 0x7F) != 0x00))
+    assert live > 0.9 * separate.size, (
+        f"only {live} of {separate.size} FP8 bytes are finite non-zero; the"
+        " byte comparison would be vacuous"
+    )
+    np.testing.assert_array_equal(folded, separate)

@@ -31,7 +31,7 @@ import json
 import os
 import re
 import statistics
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Any, Protocol
@@ -81,7 +81,7 @@ class GenParams:
     seed: int | None = None
 
 
-def make_client(base_url: str) -> OpenAI:
+def make_client(base_url: str, api_key: str | None = None) -> OpenAI:
     """Builds the OpenAI-compatible client used by every eval.
 
     No client timeout: a request must only ever end by the server hitting
@@ -89,10 +89,16 @@ def make_client(base_url: str) -> OpenAI:
     longest-reasoning problems and inflate accuracy). ``max_retries=0``: a retry
     opens a new request while the original generation keeps running and holding
     KV cache, piling the server up toward OOM.
+
+    Args:
+        base_url: Server base URL; ``/v1`` is appended.
+        api_key: Credential for an authenticated endpoint. Falls back to
+            ``$OPENAI_API_KEY``, then to ``"dummy"`` — a local MAX Serve
+            ignores it, but an authenticated deployment 401s without it.
     """
     return OpenAI(
         base_url=base_url.rstrip("/") + "/v1",
-        api_key="dummy",
+        api_key=api_key or os.environ.get("OPENAI_API_KEY") or "dummy",
         timeout=None,
         max_retries=0,
     )
@@ -113,12 +119,14 @@ def strip_think(content: str | None) -> str:
 
 
 def build_chat_kwargs(
-    model: str, messages: list[dict[str, str]], params: GenParams
+    model: str, messages: Sequence[Mapping[str, Any]], params: GenParams
 ) -> dict[str, Any]:
     """Assembles ``chat.completions.create`` kwargs.
 
-    Omits ``top_p`` when ``None`` (judges send no ``top_p``) and ``seed`` when
-    ``None`` (server default).
+    ``messages`` is typed permissively (``Mapping`` values are ``Any``) so both
+    the text evals' plain ``str`` content and the multimodal evals' list-of-parts
+    content type-check through the same helper. Omits ``top_p`` when ``None``
+    (judges send no ``top_p``) and ``seed`` when ``None`` (server default).
     """
     kwargs: dict[str, Any] = {
         "model": model,
@@ -158,33 +166,105 @@ def make_repeat_samples(
     ]
 
 
+def select_rows(
+    dataset: list[dict[str, Any]],
+    sample_size: int | None,
+    row_ids: str | None,
+) -> list[tuple[int, dict[str, Any]]]:
+    """Selects which rows of ``dataset`` to evaluate, keeping original indices.
+
+    Pass at most one of ``sample_size`` (an evenly-strided subset) or
+    ``row_ids`` (explicit comma-separated indices into the full dataset,
+    order and duplicates preserved) — passing both is an error. Neither set
+    returns the full dataset. Every row comes back as
+    ``(original_index, item)`` so it stays traceable to the same dataset row
+    regardless of which selection switch was used — e.g. to re-run exactly
+    the rows that looked wrong last time via ``row_ids``.
+
+    Raises:
+        ValueError: ``sample_size`` and ``row_ids`` are both set, or a
+            ``row_ids`` index is out of range.
+    """
+    if sample_size and row_ids:
+        raise ValueError(
+            "sample_size and row_ids are mutually exclusive — set only one."
+        )
+    if row_ids:
+        ids = [int(x) for x in row_ids.split(",") if x.strip()]
+        bad = [i for i in ids if not (0 <= i < len(dataset))]
+        if bad:
+            raise ValueError(
+                f"row_ids {bad} out of range for dataset of size {len(dataset)}"
+            )
+        return [(i, dataset[i]) for i in ids]
+    if sample_size:
+        step = max(1, len(dataset) // sample_size)
+        return list(enumerate(dataset))[::step][:sample_size]
+    return list(enumerate(dataset))
+
+
+def expand_repeats(
+    indexed_dataset: list[tuple[int, dict[str, Any]]], repeats: int
+) -> list[tuple[int, int, dict[str, Any]]]:
+    """Expands ``(index, item)`` pairs into ``(repeat_index, index, item)``.
+
+    Like :func:`make_repeat_samples`, but for a dataset already narrowed by
+    :func:`select_rows`, so ``index`` stays the original full-dataset index
+    instead of a position in the narrowed subset.
+    """
+    return [
+        (rep, idx, item)
+        for rep in range(repeats)
+        for idx, item in indexed_dataset
+    ]
+
+
 def run_parallel(
     items: list[Any],
     fn: Callable[[Any], dict[str, Any]],
     on_error: Callable[[Any, Exception], dict[str, Any]],
     workers: int,
     desc: str,
+    out_dir: str | None = None,
 ) -> tuple[list[dict[str, Any]], int]:
     """Runs ``fn`` over ``items`` on a thread pool with a tqdm progress bar.
 
     On error, ``on_error(item, exc)`` builds a row that is RECORDED (never
     dropped) so dropping the hardest items can't inflate accuracy.
 
+    When ``out_dir`` is set, each row is written to ``results.jsonl`` and
+    flushed as soon as its future resolves, so a killed/crashed run still
+    leaves every completed sample on disk rather than losing everything
+    because the file would otherwise only be written after the slowest
+    request finishes.
+
     Returns:
         A ``(results, errors)`` tuple.
     """
     results: list[dict[str, Any]] = []
     errors = 0
-    with ThreadPoolExecutor(max_workers=workers) as ex:
-        futures = {ex.submit(fn, it): it for it in items}
-        for fut in tqdm(as_completed(futures), total=len(items), desc=desc):
-            it = futures[fut]
-            try:
-                results.append(fut.result())
-            except Exception as e:
-                errors += 1
-                print(f"Error: {e}")
-                results.append(on_error(it, e))
+    out_f = None
+    if out_dir is not None:
+        os.makedirs(out_dir, exist_ok=True)
+        out_f = open(os.path.join(out_dir, "results.jsonl"), "w")
+    try:
+        with ThreadPoolExecutor(max_workers=workers) as ex:
+            futures = {ex.submit(fn, it): it for it in items}
+            for fut in tqdm(as_completed(futures), total=len(items), desc=desc):
+                it = futures[fut]
+                try:
+                    r = fut.result()
+                except Exception as e:
+                    errors += 1
+                    print(f"Error: {e}")
+                    r = on_error(it, e)
+                results.append(r)
+                if out_f is not None:
+                    out_f.write(json.dumps(r) + "\n")
+                    out_f.flush()
+    finally:
+        if out_f is not None:
+            out_f.close()
     return results, errors
 
 
@@ -218,6 +298,89 @@ def truncation_stats(
     return len(truncated_rows), mean_finished, p50_finished
 
 
+def _graded_correct(row: dict[str, Any]) -> bool:
+    """Reads the correctness flag most evals record directly on the row."""
+    return bool(row.get("correct"))
+
+
+def finish_stats(
+    results: list[dict[str, Any]],
+    is_correct: Callable[[dict[str, Any]], bool] = _graded_correct,
+) -> dict[str, Any]:
+    """Counts finish reasons and splits accuracy by how generation ended.
+
+    ``stop_ratio`` is the share of completed responses that finished with
+    ``stop`` rather than by hitting the token cap (``length``), mirroring how
+    the vendor reference reports it. Rows that errored have no finish reason
+    and stay out of the ratio.
+
+    ``accuracy_given_stop`` and ``accuracy_given_length`` are accuracy over the
+    stopped and the truncated rows, so accuracy over the completed rows factors
+    exactly::
+
+        completed = accuracy_given_stop   * stop_ratio
+                  + accuracy_given_length * (1 - stop_ratio)
+
+    Reporting the factors rather than only their sum keeps a shift in how often
+    the model fails to terminate from reading as a regression in answer
+    quality: on a reasoning model at a high token cap the runaway tail is
+    concentrated on a handful of prompts and moves far more easily than quality
+    does, so the two move independently and a single number cannot say which
+    one did.
+
+    ``accuracy_given_length`` is normally ``0.0``, because a response truncated
+    mid-reasoning carries no parseable answer. That holds because of what the
+    endpoint returns, though, not because of anything enforced here -- the
+    graders parse whatever content came back without consulting
+    ``finish_reason``, so a truncated response that happens to contain a
+    parseable answer does grade correct. Reporting the term measures that per
+    run instead of assuming it, and leaves the identity above exact either way.
+
+    Errored rows sit outside it entirely. :func:`exact_match_score` keeps them
+    in the denominator of the headline ``accuracy`` so that dropping the hardest
+    problems cannot inflate it, so the two agree only on an error-free run.
+    Otherwise ``accuracy`` is the completed-row figure scaled by the
+    ``answered / total`` completion factor, whose terms that summary reports
+    alongside it.
+
+    The reported ratios are rounded, so reconstruct from ``correct_given_stop``
+    and ``correct_given_length`` when the identity has to hold to the last bit.
+
+    Args:
+        results: The graded rows, including any that errored.
+        is_correct: Reads whether a row was graded correct. Defaults to the
+            ``correct`` flag; evals that grade into some other field (such as
+            AA-Omniscience's four-way ``verdict``) pass their own reader rather
+            than duplicating the grade onto the row.
+
+    Returns:
+        The finish-reason counts, ``stop_ratio``, and the correct-count and
+        accuracy conditioned on each finish reason. An accuracy is ``None``
+        when its finish reason never occurred, so that "no such rows" stays
+        distinguishable from "those rows all graded wrong".
+    """
+    stop_rows = [r for r in results if r.get("finish_reason") == "stop"]
+    length_rows = [r for r in results if r.get("finish_reason") == "length"]
+    stop = len(stop_rows)
+    length = len(length_rows)
+    completed = stop + length
+    correct_given_stop = sum(1 for r in stop_rows if is_correct(r))
+    correct_given_length = sum(1 for r in length_rows if is_correct(r))
+    return {
+        "finish_stop": stop,
+        "finish_length": length,
+        "stop_ratio": round(stop / completed, 4) if completed else None,
+        "correct_given_stop": correct_given_stop,
+        "accuracy_given_stop": (
+            round(correct_given_stop / stop, 4) if stop else None
+        ),
+        "correct_given_length": correct_given_length,
+        "accuracy_given_length": (
+            round(correct_given_length / length, 4) if length else None
+        ),
+    }
+
+
 def exact_match_score(
     results: list[dict[str, Any]], total: int, errors: int
 ) -> dict[str, Any]:
@@ -239,8 +402,12 @@ def exact_match_score(
         "mean_output_tokens": mean_output_tokens,
         "p50_output_tokens": p50_output_tokens,
         "truncated": truncated,
+        "stop_ratio": round((total - errors - truncated) / (total - errors), 4)
+        if (total - errors) > 0
+        else 0.0,
         "mean_output_tokens_finished": mean_finished,
         "p50_output_tokens_finished": p50_finished,
+        **finish_stats(results),
     }
 
 
@@ -251,11 +418,79 @@ def dump_jsonl(out_dir: str, results: list[dict[str, Any]]) -> None:
         f.write("\n".join(json.dumps(r) for r in results))
 
 
+#: Fraction of samples that may error before the score stops meaning anything.
+#: Errors count as incorrect, so an endpoint that rejects every request scores
+#: 0.0 and, without this, reports success. Override for a deliberately lossy
+#: run; 0 disables the check.
+MAX_ERROR_RATE = float(os.environ.get("EVAL_MAX_ERROR_RATE") or 0.10)
+
+
+def enforce_error_budget(summary: dict[str, Any]) -> None:
+    """Exits nonzero when too many samples errored to trust the score.
+
+    Hooked into :func:`dump_score` so it covers every eval that writes its
+    summary there. Summaries reporting no error count are left alone rather
+    than guessed at, which is also how SciCode escapes it: it writes
+    ``score.json`` itself and discards the count :func:`run_parallel` returns.
+    """
+    total = summary.get("total")
+    errors = summary.get("errors", summary.get("errored"))
+    if not isinstance(total, int) or not isinstance(errors, int) or total <= 0:
+        return
+    if MAX_ERROR_RATE <= 0:
+        return
+    rate = errors / total
+    if rate <= MAX_ERROR_RATE:
+        return
+    print(
+        f"::error::{errors}/{total} samples errored ({rate:.1%}), above the "
+        f"{MAX_ERROR_RATE:.0%} budget. Errors score as incorrect, so this run's "
+        f"score reflects infrastructure, not model quality."
+    )
+    raise SystemExit(1)
+
+
+#: Minimum share of completed responses that finish with ``stop`` rather than
+#: the token cap. Nothing sets this yet; floors are dataset-specific, so each
+#: dataset opts in via its workflow env. Parsed at import so typos fail fast.
+_MIN_STOP_RATIO_ENV = os.environ.get("EVAL_MIN_STOP_RATIO") or ""
+MIN_STOP_RATIO = float(_MIN_STOP_RATIO_ENV) if _MIN_STOP_RATIO_ENV else None
+
+
+def enforce_stop_ratio(summary: dict[str, Any]) -> None:
+    """Exits nonzero when too many responses hit the token cap to trust the run.
+
+    Off unless ``EVAL_MIN_STOP_RATIO`` is set, and skipped for summaries that
+    report no usable ``stop_ratio``.
+    """
+    if MIN_STOP_RATIO is None:
+        return
+    ratio = summary.get("stop_ratio")
+    if not isinstance(ratio, (int, float)):
+        return
+    floor = MIN_STOP_RATIO
+    if ratio >= floor:
+        return
+    print(
+        f"::error::stop_ratio {ratio:.4f} is below the {floor:.4f} floor: "
+        f"{summary.get('finish_length')} of "
+        f"{summary.get('finish_stop', 0) + summary.get('finish_length', 0)} "
+        f"completed responses hit the token cap instead of stopping."
+    )
+    raise SystemExit(1)
+
+
 def dump_score(out_dir: str, summary: dict[str, Any]) -> None:
-    """Writes ``score.json`` (pretty-printed) into ``out_dir``."""
+    """Writes ``score.json`` (pretty-printed) into ``out_dir``.
+
+    Writes before enforcing the error budget so a rejected run still leaves its
+    artifacts behind for diagnosis.
+    """
     os.makedirs(out_dir, exist_ok=True)
     with open(os.path.join(out_dir, "score.json"), "w") as f:
         json.dump(summary, f, indent=2)
+    enforce_error_budget(summary)
+    enforce_stop_ratio(summary)
 
 
 def append_github_env(
@@ -322,23 +557,24 @@ def is_hf_access_error(exc: BaseException) -> bool:
 def load_gated(
     loader: Callable[[], list[dict[str, Any]]], *, label: str, dataset_id: str
 ) -> list[dict[str, Any]]:
-    """Runs ``loader`` for a gated dataset, skipping the eval on access denial.
+    """Runs ``loader`` for a gated dataset, failing the eval on access denial.
 
-    On an HF gated-access error, prints a ``::warning::`` and raises
-    ``SystemExit(0)`` so the CI step is skipped (not failed); other errors
-    propagate.
+    Exits nonzero rather than skipping: the suite qualifies a release branch on
+    all its datasets having run, so a lane that silently disappears reads as a
+    pass when nothing was measured. Fix the token's gated-repo access instead.
+    Other errors propagate.
     """
     try:
         return loader()
     except Exception as e:
         if is_hf_access_error(e):
             print(
-                f"::warning::{label} skipped — HF token does not have access to "
-                f"{dataset_id} (gated). Visit "
+                f"::error::{label} could not run — HF token does not have "
+                f"access to {dataset_id} (gated). Visit "
                 f"https://huggingface.co/datasets/{dataset_id} "
                 f"to request access and enable gated-repo permissions on your token."
             )
-            raise SystemExit(0) from None
+            raise SystemExit(1) from None
         raise
 
 

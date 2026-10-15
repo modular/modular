@@ -14,53 +14,53 @@
 
 from __future__ import annotations
 
-import logging
 from abc import ABC, abstractmethod
+from collections import OrderedDict
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import (
     TYPE_CHECKING,
-    Any,
     ClassVar,
     Generic,
     Protocol,
-    TypeVar,
     cast,
     runtime_checkable,
 )
 
 import numpy as np
-from max.driver import (
-    Buffer,
-    Device,
-    DevicePinnedBuffer,
-    is_virtual_device_mode,
-)
+from max import tree
+from max.driver import Buffer, Device, is_virtual_device_mode
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType
 from max.nn.comm import Signals
-from max.nn.kv_cache import KVCacheInputsInterface
+from max.nn.kv_cache import KVCacheInputs
 from max.nn.kv_cache.cache_params import KVCacheParamInterface
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import BaseContext, TextContext
 from max.pipelines.context.tokens import TokenBuffer
+from max.pipelines.graph_input_stager import (
+    GraphInputStager,
+    InputDescriptor,
+)
 from max.pipelines.lib.interfaces.arch_config import ArchConfig
 from max.pipelines.lib.interfaces.pipeline_model import (
     ModelInputs,
     ModelOutputs,
     UnifiedSpecDecodeInputs,
 )
+from max.pipelines.lora import LoRAManagerV3
 from max.pipelines.modeling.dataprocessing import collate_batch
+from typing_extensions import TypeVar
 
 if TYPE_CHECKING:
     from max.pipelines.lib import PipelineConfig
-    from max.pipelines.lora import LoRAManager
-
-logger = logging.getLogger("max.pipelines")
 
 ContextT = TypeVar("ContextT", bound=BaseContext)
 InputsT = TypeVar("InputsT", bound=ModelInputs)
 SpecDecodeInputsT = TypeVar("SpecDecodeInputsT", bound=UnifiedSpecDecodeInputs)
+ArchConfigT_co = TypeVar(
+    "ArchConfigT_co", bound=ArchConfig, default=ArchConfig, covariant=True
+)
 
 
 @runtime_checkable
@@ -77,70 +77,121 @@ class BatchProcessorRuntime:
     pipeline_config: PipelineConfig
     devices: list[Device]
     return_logits: ReturnLogits
-    return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE
-    signal_buffers: Sequence[Buffer] = ()
-    lora_manager: LoRAManager | None = None
-    pad_token_id: int = 0
-    max_batch_size: int | None = None
 
+    max_batch_size: int
+    """Most contexts the scheduler puts in one replica's batch."""
 
-class ModelInputCachingAllocator:
-    """Caches reusable, non-pinned device input buffers across steps.
+    max_seq_len: int
+    """Longest a single sequence can grow, after memory planning clamped it."""
 
-    Buffers are keyed by ``(name, device, dtype, shape)`` and reused so a
-    captured graph replays in place (the replay copy is a no-op when the model
-    inputs already are the captured buffers). Callers own copying host data
-    into the returned buffer.
+    max_batch_input_tokens: int
+    """The scheduler's per-step budget for active (unencoded) tokens."""
 
-    Never cache pinned host staging buffers here: those must be allocated fresh
-    every step so the next overlap step's host writes can't clobber an
-    in-flight H2D copy.
+    enable_chunked_prefill: bool = True
+    """Whether the scheduler splits a long prompt to stay inside that budget.
+
+    Mirrors ``pipeline_config.runtime.enable_chunked_prefill``, which the
+    scheduler reads as ``target_tokens_per_batch_ce``'s chunking policy.
     """
 
-    def __init__(self) -> None:
-        self._cache: dict[tuple[str, int, DType, tuple[int, ...]], Buffer] = {}
+    data_parallel_degree: int = 1
+    """Replicas the scheduler fills, each to its own batch size and budget.
 
-    def alloc(
-        self,
-        *,
-        name: str,
-        dtype: DType,
-        shape: tuple[int, ...],
-        device: Device,
-    ) -> Buffer:
-        """Returns the cached buffer for ``(name, device, dtype, shape)``.
+    A processor stages every replica's contexts into one ragged stream, so
+    the whole product bounds the buffers it stages into.
+    """
 
-        Allocated on first use and reused thereafter. Distinct ``name``s never
-        alias, and each device gets its own buffer under a given name.
+    return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE
+    signal_buffers: Sequence[Buffer] = ()
+    lora_manager: LoRAManagerV3 | None = None
+    pad_token_id: int = 0
 
-        Args:
-            name: Stable identifier for this logical buffer.
-            dtype: Element type.
-            shape: Buffer shape (ragged inputs change shape per step).
-            device: Target device for the buffer.
+    @property
+    def max_global_batch_size(self) -> int:
+        """Contexts in the largest batch a processor stages.
+
+        :attr:`max_batch_size` bounds one replica; this bounds the batch a
+        processor actually sees, which is every replica's contexts staged
+        into one ragged stream.
         """
-        shape = tuple(shape)
-        key = (name, id(device), dtype, shape)
-        buffer = self._cache.get(key)
-        if buffer is None:
-            buffer = Buffer(shape=shape, dtype=dtype, device=device)
-            self._cache[key] = buffer
-        return buffer
+        return self.max_batch_size * self.data_parallel_degree
+
+    @property
+    def max_batch_active_tokens(self) -> int:
+        """Most active tokens one batch's ragged token stream can carry.
+
+        Every context contributes its active window, and chunked prefill
+        holds a replica's sum under :attr:`max_batch_input_tokens` by
+        splitting a prompt that would overflow it. With chunked prefill off
+        that budget is only a soft limit -- the scheduler admits an
+        oversized request whole rather than dropping it -- so one
+        full-length sequence can land on top of an already-full budget.
+        Neither case can exceed a full batch of full-length sequences, and
+        every batch carries at least one token per context. Each replica
+        gets its own budget, and they are staged into one stream.
+        """
+        budget = self.max_batch_input_tokens
+        if not self.enable_chunked_prefill:
+            budget += self.max_seq_len
+        per_replica = max(
+            self.max_batch_size,
+            min(budget, self.max_batch_size * self.max_seq_len),
+        )
+        return per_replica * self.data_parallel_degree
 
 
-class BatchProcessor(ABC, Generic[ContextT, InputsT]):
+RAGGED_INPUT_TOKENS = "ragged_input_tokens"
+"""Device input holding a batch's concatenated active tokens."""
+
+RAGGED_INPUT_ROW_OFFSETS = "ragged_input_row_offsets"
+"""Device input holding each context's start offset into that token stream."""
+
+
+def ragged_token_descriptors(
+    runtime: BatchProcessorRuntime,
+) -> list[InputDescriptor]:
+    """The two device inputs every ragged batch stages.
+
+    Sized from the batching dimensions rather than a shared capacity: the
+    token stream holds one batch's active windows, and the row offsets hold
+    one entry per context plus the trailing total. Described in one place so
+    the architectures that stage a ragged batch cannot drift apart on the
+    sizes.
+    """
+    staging_device = [runtime.devices[0]]
+    return [
+        InputDescriptor(
+            name=RAGGED_INPUT_TOKENS,
+            dtype=DType.int64,
+            max_shape=(runtime.max_batch_active_tokens,),
+            destinations=staging_device,
+        ),
+        InputDescriptor(
+            name=RAGGED_INPUT_ROW_OFFSETS,
+            dtype=DType.uint32,
+            max_shape=(runtime.max_global_batch_size + 1,),
+            destinations=staging_device,
+        ),
+    ]
+
+
+class BatchProcessor(ABC, Generic[ContextT, InputsT, ArchConfigT_co]):
     """Batches pipeline contexts into model inputs and parses execution outputs."""
+
+    input_tree: OrderedDict[str, object] | None = None
+    """The graph's named inputs, or ``None`` until the model binds them."""
 
     def __init__(
         self,
-        config: ArchConfig,
+        config: ArchConfigT_co,
         runtime: BatchProcessorRuntime,
+        inputs: Sequence[InputDescriptor] = (),
     ) -> None:
         self.config = config
         self.runtime = runtime
-        # Caches reusable non-pinned device input buffers so captured graphs
-        # replay in place. Pinned host staging is never cached here.
-        self._device_input_allocator = ModelInputCachingAllocator()
+        # Holds the reused non-pinned device input buffers so captured graphs
+        # replay in place. Pinned host staging never belongs here.
+        self._stager = GraphInputStager(inputs)
 
     @abstractmethod
     def get_symbolic_inputs(
@@ -151,11 +202,23 @@ class BatchProcessor(ABC, Generic[ContextT, InputsT]):
     ) -> list[TensorType | BufferType]:
         """Returns non-KV graph input types in execution order."""
 
+    def bind_input_tree(self, input_tree: OrderedDict[str, object]) -> None:
+        """Receives the named inputs of the graph this processor feeds.
+
+        The model owns the tree and builds its graph from it, so the tree
+        cannot describe a different graph than the one the processor feeds.
+
+        Args:
+            input_tree: The graph's inputs keyed by name, whose leaves are the
+                graph's input types in declaration order.
+        """
+        self.input_tree = input_tree
+
     @abstractmethod
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[ContextT]],
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> InputsT:
         """Prepares inputs for the first execution step of a batch."""
@@ -167,20 +230,22 @@ class BatchProcessor(ABC, Generic[ContextT, InputsT]):
         """Maps raw ``Model.execute`` buffers to :class:`ModelOutputs`."""
 
 
-class RaggedBatchProcessor(BatchProcessor[ContextT, InputsT]):
+class RaggedBatchProcessor(BatchProcessor[ContextT, InputsT, ArchConfigT_co]):
     """Base for ragged KV text batching."""
 
     def __init__(
         self,
-        config: ArchConfig,
+        config: ArchConfigT_co,
         runtime: BatchProcessorRuntime,
+        inputs: Sequence[InputDescriptor] = (),
     ) -> None:
-        super().__init__(config, runtime)
+        super().__init__(
+            config, runtime, [*ragged_token_descriptors(runtime), *inputs]
+        )
         # Pre-allocate row offsets for multistep decode to avoid materializing
         # and copying a buffer on each step. Skip in virtual device mode
         # (warm-cache/cross-compilation) since VirtualDeviceContext does not
         # support memAlloc.
-        assert runtime.max_batch_size, "Expected max_batch_size to be set"
         self._input_row_offsets_prealloc: Buffer | None = None
         if not is_virtual_device_mode() and runtime.devices:
             self._input_row_offsets_prealloc = Buffer.from_numpy(
@@ -212,7 +277,7 @@ def build_single_replica_ragged_token_arrays(
 
 
 class SingleReplicaRaggedBatchProcessor(
-    RaggedBatchProcessor[ContextT, InputsT]
+    RaggedBatchProcessor[ContextT, InputsT, ArchConfigT_co]
 ):
     """Single-replica ragged KV batching for Graph-path models (no DP / LoRA).
 
@@ -240,7 +305,7 @@ class SingleReplicaRaggedBatchProcessor(
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[ContextT]],
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> InputsT:
         """Prepares ragged token inputs for a single-replica Graph-path batch."""
@@ -268,7 +333,7 @@ class SingleReplicaRaggedBatchProcessor(
         tokens: Buffer,
         input_row_offsets: Buffer,
         return_n_logits: Buffer,
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None,
         signal_buffers: list[Buffer],
     ) -> InputsT:
         """Constructs architecture-specific model inputs."""
@@ -305,10 +370,14 @@ class ModuleV3SingleReplicaBatchProcessor(BatchProcessor[ContextT, InputsT]):
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[ContextT]],
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> InputsT:
-        """Prepares ragged token inputs for a single-replica ModuleV3 batch."""
+        """Prepares ragged token inputs for a single-replica ModuleV3 batch.
+
+        Appends the per-call ModuleV3 LoRA buffers when the runtime's manager
+        is a :class:`LoRAManagerV3`, reusing the row offsets already built here.
+        """
         context_batch = single_replica_context_batch(
             replica_batches,
             processor_name=type(self).__qualname__,
@@ -318,7 +387,7 @@ class ModuleV3SingleReplicaBatchProcessor(BatchProcessor[ContextT, InputsT]):
             cast(Sequence[RaggableContext], context_batch)
         )
         device0 = self.runtime.devices[0]
-        return self._make_inputs(
+        inputs = self._make_inputs(
             tokens=Buffer.from_numpy(tokens_np).to(device0),
             input_row_offsets=Buffer.from_numpy(offsets_np).to(device0),
             return_n_logits=Buffer.from_numpy(
@@ -326,6 +395,11 @@ class ModuleV3SingleReplicaBatchProcessor(BatchProcessor[ContextT, InputsT]):
             ),
             kv_cache_inputs=kv_cache_inputs,
         )
+        if isinstance(self.runtime.lora_manager, LoRAManagerV3):
+            inputs.lora_buffers = self.runtime.lora_manager.input_buffers(
+                context_batch, offsets_np, device0
+            )
+        return inputs
 
     def _make_inputs(
         self,
@@ -333,7 +407,7 @@ class ModuleV3SingleReplicaBatchProcessor(BatchProcessor[ContextT, InputsT]):
         tokens: Buffer,
         input_row_offsets: Buffer,
         return_n_logits: Buffer,
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer],
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer],
     ) -> InputsT:
         """Constructs architecture-specific model inputs."""
         raise NotImplementedError(
@@ -397,6 +471,149 @@ def process_ragged_kv_outputs(
     )
 
 
+def ragged_batch_inputs(
+    device_ref: DeviceRef,
+    fields: Sequence[str] = ("tokens", "row_offsets", "return_n_logits"),
+    *,
+    data_parallel_degree: int = 1,
+    hidden_states: tuple[DType, int] | None = None,
+) -> OrderedDict[str, TensorType]:
+    """Returns the named per-batch graph inputs, in the order ``fields`` gives.
+
+    The result is an ``OrderedDict``, not a ``dict``: ``tree.flatten`` sorts a
+    plain dict's keys, and the graph declares its inputs in insertion order.
+
+    Args:
+        device_ref: The device that holds the token and row-offset tensors.
+        fields: The inputs to include, in graph order. Any of ``tokens``,
+            ``row_offsets``, ``host_row_offsets``, ``return_n_logits``,
+            ``data_parallel_splits`` and ``hidden_states``.
+        data_parallel_degree: The number of replicas, which sizes
+            ``data_parallel_splits``.
+        hidden_states: The ``(dtype, hidden_size)`` of the EAGLE draft's
+            hidden-state input. Required when ``fields`` names
+            ``hidden_states``.
+
+    Returns:
+        The input types keyed by field name.
+    """
+    available = {
+        "tokens": TensorType(
+            DType.int64, shape=["total_seq_len"], device=device_ref
+        ),
+        "row_offsets": TensorType(
+            DType.uint32, shape=["input_row_offsets_len"], device=device_ref
+        ),
+        "host_row_offsets": TensorType(
+            DType.uint32,
+            shape=["input_row_offsets_len"],
+            device=DeviceRef.CPU(),
+        ),
+        "return_n_logits": TensorType(
+            DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
+        ),
+        "data_parallel_splits": TensorType(
+            DType.int64,
+            shape=[data_parallel_degree + 1],
+            device=DeviceRef.CPU(),
+        ),
+    }
+    if hidden_states is not None:
+        dtype, hidden_size = hidden_states
+        available["hidden_states"] = TensorType(
+            dtype, shape=["total_seq_len", hidden_size], device=device_ref
+        )
+    return OrderedDict((name, available[name]) for name in fields)
+
+
+def signal_inputs(
+    device_refs: list[DeviceRef],
+) -> OrderedDict[str, tuple[BufferType, ...]]:
+    """Returns the named per-device allreduce signal buffers.
+
+    Args:
+        device_refs: The devices that take part in the allreduce.
+
+    Returns:
+        The signal buffer types, one per device, under ``signal``.
+    """
+    return OrderedDict(signal=tuple(Signals(devices=device_refs).input_types()))
+
+
+def vision_merge_inputs(
+    device_refs: Sequence[DeviceRef],
+    dtype: DType,
+    hidden_size: int,
+    *,
+    rows_dim: str,
+) -> OrderedDict[str, tuple[TensorType, ...]]:
+    """Returns the per-device vision embeddings and where they merge.
+
+    Args:
+        device_refs: The devices that each take a copy of the embeddings.
+        dtype: The dtype of the embeddings.
+        hidden_size: The width of each embedding row.
+        rows_dim: The name of the embeddings' row dimension, which each
+            architecture spells its own way.
+
+    Returns:
+        The embedding types under ``image_embeddings`` and the positions in the
+        token stream that their rows replace under ``image_token_indices``,
+        one of each per device.
+    """
+    return OrderedDict(
+        image_embeddings=tuple(
+            TensorType(dtype, shape=[rows_dim, hidden_size], device=device)
+            for device in device_refs
+        ),
+        image_token_indices=tuple(
+            TensorType(DType.int32, shape=["total_image_tokens"], device=device)
+            for device in device_refs
+        ),
+    )
+
+
+def ragged_kv_symbolic_input_tree(
+    *,
+    kv_params: KVCacheParamInterface,
+    device_refs: list[DeviceRef],
+    include_signal_buffers: bool,
+    batch_order: Sequence[str] = ("tokens", "row_offsets", "return_n_logits"),
+    hidden_states: tuple[DType, int] | None = None,
+) -> OrderedDict[str, object]:
+    """Returns the named graph input types of a standard ragged KV text model.
+
+    The tree's leaves are the inputs in execution order (``batch_order``
+    fields, signal buffers, KV leaves), and its paths name each one, so a
+    consumer that needs to know what a graph slot holds reads the tree rather
+    than re-deriving the order.
+
+    Args:
+        kv_params: The KV cache parameters that supply the ``kv`` subtree.
+        device_refs: The devices the model runs on. The first holds the batch
+            tensors.
+        include_signal_buffers: Whether to add the allreduce ``signals``.
+        batch_order: The per-batch inputs to include, in graph order. See
+            :func:`ragged_batch_inputs`.
+        hidden_states: The ``(dtype, hidden_size)`` of the EAGLE draft's
+            hidden-state input, appended to ``batch_order`` when given.
+
+    Returns:
+        The tree of input types, keyed ``batch``, ``signals`` and ``kv``.
+    """
+    inputs: OrderedDict[str, object] = OrderedDict(
+        batch=ragged_batch_inputs(
+            device_refs[0],
+            (*batch_order, "hidden_states") if hidden_states else batch_order,
+            hidden_states=hidden_states,
+        )
+    )
+    if include_signal_buffers:
+        inputs["signals"] = signal_inputs(device_refs)
+    inputs["kv"] = kv_params.get_symbolic_inputs()
+    return inputs
+
+
 def ragged_kv_symbolic_inputs(
     *,
     kv_params: KVCacheParamInterface,
@@ -404,32 +621,39 @@ def ragged_kv_symbolic_inputs(
     include_signal_buffers: bool,
 ) -> list[TensorType | BufferType]:
     """Returns symbolic graph inputs for a standard ragged KV text model."""
-    device_ref = device_refs[0]
-    return_n_logits_type = TensorType(
-        DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
+    return tree.leaves(
+        ragged_kv_symbolic_input_tree(
+            kv_params=kv_params,
+            device_refs=device_refs,
+            include_signal_buffers=include_signal_buffers,
+        )
     )
-    tokens_type = TensorType(
-        DType.int64, shape=["total_seq_len"], device=device_ref
+
+
+def modulev3_ragged_kv_symbolic_input_tree(
+    *,
+    kv_params: KVCacheParamInterface,
+    device_refs: list[DeviceRef],
+) -> OrderedDict[str, object]:
+    """Returns the named inputs of a ModuleV3 ragged KV model.
+
+    ModuleV3 ``forward`` expects ``(tokens, return_n_logits,
+    input_row_offsets, *kv)``, a different order than
+    :func:`ragged_kv_symbolic_input_tree`.
+
+    Args:
+        kv_params: The KV cache parameters that supply the ``kv`` subtree.
+        device_refs: The devices the model runs on.
+
+    Returns:
+        The tree of input types, keyed ``batch`` and ``kv``.
+    """
+    return ragged_kv_symbolic_input_tree(
+        kv_params=kv_params,
+        device_refs=device_refs,
+        include_signal_buffers=False,
+        batch_order=("tokens", "return_n_logits", "row_offsets"),
     )
-    input_row_offsets_type = TensorType(
-        DType.uint32, shape=["input_row_offsets_len"], device=device_ref
-    )
-    kv_inputs = kv_params.get_symbolic_inputs().flatten()
-    if include_signal_buffers:
-        signals = Signals(devices=device_refs)
-        return [
-            tokens_type,
-            input_row_offsets_type,
-            return_n_logits_type,
-            *signals.input_types(),
-            *kv_inputs,
-        ]
-    return [
-        tokens_type,
-        input_row_offsets_type,
-        return_n_logits_type,
-        *kv_inputs,
-    ]
 
 
 def modulev3_ragged_kv_symbolic_inputs(
@@ -443,71 +667,25 @@ def modulev3_ragged_kv_symbolic_inputs(
     *kv)`` — a different argument order than the Graph-path
     :func:`ragged_kv_symbolic_inputs`.
     """
-    device_ref = device_refs[0]
-    return_n_logits_type = TensorType(
-        DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
-    )
-    tokens_type = TensorType(
-        DType.int64, shape=["total_seq_len"], device=device_ref
-    )
-    input_row_offsets_type = TensorType(
-        DType.uint32, shape=["input_row_offsets_len"], device=device_ref
-    )
-    kv_inputs = kv_params.get_symbolic_inputs().flatten()
-    return [
-        tokens_type,
-        return_n_logits_type,
-        input_row_offsets_type,
-        *kv_inputs,
-    ]
-
-
-@dataclass
-class PersistentInputBuffers:
-    """Pinned-host buffers reused across unified spec-decode batch steps."""
-
-    tokens: Buffer
-    input_row_offsets: Buffer
-
-    @classmethod
-    def alloc(
-        cls,
-        max_batch_size: int,
-        max_batch_input_tokens: int,
-        device: Device,
-    ) -> PersistentInputBuffers:
-        """Allocates persistent token and row-offset buffers for spec-decode batching."""
-        max_batch_input_tokens = max(max_batch_input_tokens, max_batch_size)
-        tokens = Buffer(
-            shape=(max_batch_input_tokens,), dtype=DType.int64, device=device
+    return tree.leaves(
+        modulev3_ragged_kv_symbolic_input_tree(
+            kv_params=kv_params, device_refs=device_refs
         )
-        input_row_offsets = Buffer(
-            shape=(max_batch_size + 1,), dtype=DType.uint32, device=device
-        )
-        return cls(tokens, input_row_offsets)
+    )
 
 
 class UnifiedSpecDecodeBatchProcessor(
-    BatchProcessor[TextContext, SpecDecodeInputsT], Generic[SpecDecodeInputsT]
+    BatchProcessor[TextContext, SpecDecodeInputsT, ArchConfigT_co],
+    Generic[SpecDecodeInputsT, ArchConfigT_co],
 ):
     """Ragged batching with persistent buffers and seed for unified spec-decode graphs."""
 
     def __init__(
         self,
-        config: Any,
+        config: ArchConfigT_co,
         runtime: BatchProcessorRuntime,
     ) -> None:
-        super().__init__(config, runtime)
-        device0 = runtime.devices[0]
-        assert runtime.max_batch_size is not None
-        max_batch_input_tokens = (
-            runtime.pipeline_config.runtime.max_batch_input_tokens
-        )
-        self._persistent_input_buffers = PersistentInputBuffers.alloc(
-            max_batch_size=runtime.max_batch_size,
-            max_batch_input_tokens=max_batch_input_tokens,
-            device=device0,
-        )
+        super().__init__(config, runtime, ragged_token_descriptors(runtime))
         self._seed_counter = 0
 
     def _next_seed(self, device0: Device) -> Buffer:
@@ -532,48 +710,32 @@ class UnifiedSpecDecodeBatchProcessor(
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> SpecDecodeInputsT:
         """Prepares ragged token inputs with persistent buffers and a per-step seed."""
         context_batch = [ctx for batch in replica_batches for ctx in batch]
         device0 = self.runtime.devices[0]
-        buffer_type = Buffer if device0.is_host else DevicePinnedBuffer
 
         total_seq_len = sum(ctx.tokens.active_length for ctx in context_batch)
         batch_size = len(context_batch)
 
-        persistent_tokens = self._persistent_input_buffers.tokens
-        persistent_tokens = persistent_tokens[:total_seq_len]
-        persistent_input_row_offsets = (
-            self._persistent_input_buffers.input_row_offsets
-        )
-        persistent_input_row_offsets = persistent_input_row_offsets[
-            : batch_size + 1
-        ]
-
-        tokens_host = buffer_type(
-            dtype=DType.int64,
-            shape=(total_seq_len,),
-            device=device0,
-        )
-        offsets_host = buffer_type(
-            dtype=DType.uint32,
-            shape=(batch_size + 1,),
-            device=device0,
-        )
-
-        np.concatenate(
-            [ctx.tokens.active for ctx in context_batch],
-            out=tokens_host.to_numpy(),
-        )
-        persistent_tokens.inplace_copy_from(tokens_host)
-        np.cumsum(
-            [0] + [ctx.tokens.active_length for ctx in context_batch],
-            dtype=np.uint32,
-            out=offsets_host.to_numpy(),
-        )
-        persistent_input_row_offsets.inplace_copy_from(offsets_host)
+        with self._stager.stage() as staging:
+            tokens_host, (persistent_tokens,) = staging.get(
+                RAGGED_INPUT_TOKENS, (total_seq_len,)
+            )
+            offsets_host, (persistent_input_row_offsets,) = staging.get(
+                RAGGED_INPUT_ROW_OFFSETS, (batch_size + 1,)
+            )
+            np.concatenate(
+                [ctx.tokens.active for ctx in context_batch],
+                out=tokens_host.to_numpy(),
+            )
+            np.cumsum(
+                [0] + [ctx.tokens.active_length for ctx in context_batch],
+                dtype=np.uint32,
+                out=offsets_host.to_numpy(),
+            )
 
         return_n_logits_buf = Buffer.from_numpy(
             np.array([return_n_logits], dtype=np.int64)
@@ -594,7 +756,7 @@ class UnifiedSpecDecodeBatchProcessor(
         tokens: Buffer,
         input_row_offsets: Buffer,
         return_n_logits: Buffer,
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None,
         seed: Buffer,
         structured_output: bool,
     ) -> SpecDecodeInputsT:
@@ -650,7 +812,7 @@ class SingleReplicaEmbeddingBatchProcessor(
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> InputsT:
         """Prepares ragged token inputs for a single-replica embedding batch."""
@@ -741,7 +903,7 @@ class PaddedEncoderBatchProcessor(
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> InputsT:
         """Prepares padded token and attention-mask inputs for one replica."""
@@ -812,7 +974,7 @@ def modulev3_gemma_multimodal_language_symbolic_inputs(
     return_n_logits_type = TensorType(
         DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
     )
-    kv_inputs = kv_params.get_symbolic_inputs().flatten()
+    kv_inputs = kv_params.flattened_kv_inputs()
     return [
         tokens_type,
         return_n_logits_type,
@@ -850,7 +1012,7 @@ def modulev3_idefics3_language_symbolic_inputs(
         shape=["total_image_tokens"],
         device=device_ref,
     )
-    kv_inputs = kv_params.get_symbolic_inputs().flatten()
+    kv_inputs = kv_params.flattened_kv_inputs()
     return [
         tokens_type,
         input_row_offsets_type,

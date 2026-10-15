@@ -42,11 +42,13 @@ onto their substrate:
   from `phase` directly, so it needs no per-slot mutable wait state.
 """
 
-from std.gpu.memory import AddressSpace
 from layout.tma_async import SharedMemBarrier
+from std.atomic import Atomic
+from max.gpu import lane_id
+from std.sys._assembly import inlined_assembly
 
 comptime MbarPtr = UnsafePointer[
-    SharedMemBarrier, MutUntrackedOrigin, address_space=AddressSpace.SHARED
+    SharedMemBarrier, MutUntrackedOrigin, address_space=.SHARED
 ]
 
 
@@ -73,15 +75,13 @@ trait PipelineBackend(TrivialRegisterPassable):
     # to reason about generically.
     comptime Handle: TrivialRegisterPassable
 
-    @always_inline
+    @inline(.always)
     def __init__[
         num_stages: Int
     ](
         out self,
         ptr: UnsafePointer[
-            Self.BarrierStorage,
-            MutUntrackedOrigin,
-            address_space=AddressSpace.SHARED,
+            Self.BarrierStorage, MutUntrackedOrigin, address_space=.SHARED
         ],
     ):
         """Construct from the base pointer of the backing storage array.
@@ -108,7 +108,7 @@ trait PipelineBackend(TrivialRegisterPassable):
         """
         ...
 
-    @always_inline
+    @inline(.always)
     def init_barriers[
         num_stages: Int
     ](self, producer_arrive_count: Int32, consumer_arrive_count: Int32,):
@@ -126,7 +126,7 @@ trait PipelineBackend(TrivialRegisterPassable):
         """
         ...
 
-    @always_inline
+    @inline(.always)
     def wait_full[
         ticks: Optional[UInt32] = None
     ](self, stage: UInt32, phase: UInt32):
@@ -142,7 +142,7 @@ trait PipelineBackend(TrivialRegisterPassable):
         """
         ...
 
-    @always_inline
+    @inline(.always)
     def wait_empty[
         ticks: Optional[UInt32] = None
     ](self, stage: UInt32, phase: UInt32):
@@ -158,7 +158,7 @@ trait PipelineBackend(TrivialRegisterPassable):
         """
         ...
 
-    @always_inline
+    @inline(.always)
     def try_full(self, stage: UInt32, phase: UInt32) -> Bool:
         """Return whether the producer has filled `stage` (non-blocking).
 
@@ -171,7 +171,7 @@ trait PipelineBackend(TrivialRegisterPassable):
         """
         ...
 
-    @always_inline
+    @inline(.always)
     def try_empty(self, stage: UInt32, phase: UInt32) -> Bool:
         """Return whether the consumer has drained `stage` (non-blocking).
 
@@ -184,7 +184,7 @@ trait PipelineBackend(TrivialRegisterPassable):
         """
         ...
 
-    @always_inline
+    @inline(.always)
     def arrive_full(self, stage: UInt32):
         """Raise the `full` signal for `stage` (producer side).
 
@@ -193,7 +193,7 @@ trait PipelineBackend(TrivialRegisterPassable):
         """
         ...
 
-    @always_inline
+    @inline(.always)
     def arrive_empty(self, stage: UInt32):
         """Raise the `empty` signal for `stage` (consumer side).
 
@@ -202,7 +202,7 @@ trait PipelineBackend(TrivialRegisterPassable):
         """
         ...
 
-    @always_inline
+    @inline(.always)
     def full_handle(self, stage: UInt32) -> Self.Handle:
         """Return the `full` signal handle for `stage`.
 
@@ -214,7 +214,7 @@ trait PipelineBackend(TrivialRegisterPassable):
         """
         ...
 
-    @always_inline
+    @inline(.always)
     def empty_handle(self, stage: UInt32) -> Self.Handle:
         """Return the `empty` signal handle for `stage`.
 
@@ -251,7 +251,7 @@ struct NvidiaMbarBackend[num_stages: Int](PipelineBackend):
     # and producer waits on this barrier.
     var empty: MbarPtr
 
-    @always_inline
+    @inline(.always)
     def __init__[passed_num_stages: Int](out self, ptr: MbarPtr):
         """Construct from the base pointer of the backing barrier array.
 
@@ -270,7 +270,7 @@ struct NvidiaMbarBackend[num_stages: Int](PipelineBackend):
         self.empty = ptr + Self.num_stages
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def storage_elems[passed_num_stages: Int]() -> Int:
         comptime assert passed_num_stages == Self.num_stages, (
             "num_stages passed to NvidiaMbarBackend.storage_elems must match"
@@ -278,7 +278,7 @@ struct NvidiaMbarBackend[num_stages: Int](PipelineBackend):
         )
         return 2 * Self.num_stages
 
-    @always_inline
+    @inline(.always)
     def init_barriers[
         passed_num_stages: Int
     ](self, producer_arrive_count: Int32, consumer_arrive_count: Int32,):
@@ -290,39 +290,187 @@ struct NvidiaMbarBackend[num_stages: Int](PipelineBackend):
             self.full[i].init(producer_arrive_count)
             self.empty[i].init(consumer_arrive_count)
 
-    @always_inline
+    @inline(.always)
     def wait_full[
         ticks: Optional[UInt32] = None
     ](self, stage: UInt32, phase: UInt32):
         # mbarrier tracks a single parity bit; `& 1` reduces the lap to it.
         self.full[stage].wait[ticks=ticks](phase & 1)
 
-    @always_inline
+    @inline(.always)
     def wait_empty[
         ticks: Optional[UInt32] = None
     ](self, stage: UInt32, phase: UInt32):
         self.empty[stage].wait[ticks=ticks](phase & 1)
 
-    @always_inline
+    @inline(.always)
     def try_full(self, stage: UInt32, phase: UInt32) -> Bool:
         return self.full[stage].try_wait(phase & 1)
 
-    @always_inline
+    @inline(.always)
     def try_empty(self, stage: UInt32, phase: UInt32) -> Bool:
         return self.empty[stage].try_wait(phase & 1)
 
-    @always_inline
+    @inline(.always)
     def arrive_full(self, stage: UInt32):
         _ = self.full[stage].arrive()
 
-    @always_inline
+    @inline(.always)
     def arrive_empty(self, stage: UInt32):
         _ = self.empty[stage].arrive()
 
-    @always_inline
+    @inline(.always)
     def full_handle(self, stage: UInt32) -> Self.Handle:
         return self.full + stage
 
-    @always_inline
+    @inline(.always)
     def empty_handle(self, stage: UInt32) -> Self.Handle:
         return self.empty + stage
+
+
+# ===----------------------------------------------------------------------=== #
+# AMD atomic-counter backend
+# ===----------------------------------------------------------------------=== #
+comptime AmdCounterPtr = UnsafePointer[
+    Int64, MutUntrackedOrigin, address_space=AddressSpace.SHARED
+]
+
+
+@always_inline
+def _amd_wait_for_counter(counter: AmdCounterPtr, threshold: Int64):
+    """Spin-wait until counter reaches threshold."""
+    while Atomic.load(counter) < threshold:
+        inlined_assembly[
+            "s_sleep 0", NoneType, constraints="", has_side_effect=True
+        ]()
+
+
+@always_inline
+def _amd_counter_try(counter: AmdCounterPtr, threshold: Int64) -> Bool:
+    """Non-blocking counter check."""
+    return Atomic.load(counter) >= threshold
+
+
+@always_inline
+def _amd_increment_if_warp_leader(counter: AmdCounterPtr):
+    """Atomically increment counter, but only from the first thread in warp."""
+    if lane_id() == 0:
+        _ = Atomic.fetch_add(counter, Int64(1))
+
+
+struct AmdCounterBackend[
+    producer_arrivals: Int32,
+    consumer_arrivals: Int32,
+](PipelineBackend):
+    """`PipelineBackend` using shared-memory atomic counters.
+
+    Mirrors `NvidiaMbarBackend`'s layout: `2 * num_stages` `Int64` counters as
+    `full[0..num_stages)` then `empty[0..num_stages)`. `full` is bumped by the
+    producer (consumer waits on it); `empty` is bumped by the consumer (producer
+    waits on it). Counters are monotonic; the wait threshold is derived from the
+    pipeline's monotonic `phase` — no parity bit.
+
+    The arrive counts are compile-time parameters (not fields) because the
+    pipeline is register-passed and copied per thread: a field written by one
+    thread in `init_barriers` would not be visible to other warps. On AMD these
+    counts are comptime-known anyway (producer warps per slot / consumer warps
+    per slot).
+
+    NOTE: the data-before-signal `s_waitcnt lgkmcnt(0)` fence is the CALLER's
+    responsibility — it cannot live here.
+    """
+
+    comptime BarrierStorage = AmdCounterPtr.T
+    comptime Handle = AmdCounterPtr
+
+    # Producer bumps (arrive_full), consumer waits (wait_full)
+    var full: AmdCounterPtr
+    # Consumer bumps(arrive_empty), producer waits (wait_empty)
+    var empty: AmdCounterPtr
+
+    @always_inline
+    def __init__[num_stages: Int](out self, ptr: AmdCounterPtr):
+        self.full = ptr
+        self.empty = ptr + num_stages
+
+    @staticmethod
+    @always_inline
+    def storage_elems[num_stages: Int]() -> Int:
+        return 2 * num_stages
+
+    @always_inline
+    def init_barriers[
+        num_stages: Int
+    ](self, producer_arrive_count: Int32, consumer_arrive_count: Int32,):
+        # Counts come from comptime params; the runtime args are redundant.
+        # Debug-assert they match so a misuse is caught early.
+        debug_assert(
+            producer_arrive_count == Self.producer_arrivals
+            and consumer_arrive_count == Self.consumer_arrivals,
+            "AmdCounterBackend arrive counts must match comptime parameters",
+        )
+        for i in range(num_stages):
+            self.full[i] = Int64(0)
+            self.empty[i] = Int64(0)
+
+    # --- Threshold derivation (the crux — verify on hardware) ------------------
+    # Pipeline inits _consumer_phase=0, _producer_phase=1 (pipeline.mojo:147-148)
+    # and hands us a monotonic lap number. Counters count total arrivals.
+    #
+    #   consumer wait_full(phase): needs the (phase+1)-th fill of this slot
+    #       => full[stage]  >= (phase + 1) * producer_arrive_count
+    #       (phase 0 -> threshold prod_cnt -> blocks until first fill)
+    #
+    #   producer wait_empty(phase): before its phase-th fill, needs the
+    #       (phase-1)-th drain done (phase starts at 1, only increments)
+    #       => empty[stage] >= (phase - 1) * consumer_arrive_count
+    #       (phase 1 -> threshold 0 -> passes trivially so it can fill first)
+
+    @always_inline
+    def wait_full[
+        ticks: Optional[UInt32] = None
+    ](self, stage: UInt32, phase: UInt32):
+        # `ticks` are ignored on AMD.
+        _amd_wait_for_counter(
+            self.full + Int(stage),
+            Int64(phase + 1) * Int64(Self.producer_arrivals),
+        )
+
+    @always_inline
+    def wait_empty[
+        ticks: Optional[UInt32] = None
+    ](self, stage: UInt32, phase: UInt32):
+        _amd_wait_for_counter(
+            self.empty + Int(stage),
+            Int64(phase - 1) * Int64(Self.consumer_arrivals),
+        )
+
+    @always_inline
+    def try_full(self, stage: UInt32, phase: UInt32) -> Bool:
+        return _amd_counter_try(
+            self.full + Int(stage),
+            Int64(phase + 1) * Int64(Self.producer_arrivals),
+        )
+
+    @always_inline
+    def try_empty(self, stage: UInt32, phase: UInt32) -> Bool:
+        return _amd_counter_try(
+            self.empty + Int(stage),
+            Int64(phase - 1) * Int64(Self.consumer_arrivals),
+        )
+
+    @always_inline
+    def arrive_full(self, stage: UInt32):
+        _amd_increment_if_warp_leader(self.full + Int(stage))
+
+    @always_inline
+    def arrive_empty(self, stage: UInt32):
+        _amd_increment_if_warp_leader(self.empty + Int(stage))
+
+    @always_inline
+    def full_handle(self, stage: UInt32) -> Self.Handle:
+        return self.full + Int(stage)
+
+    @always_inline
+    def empty_handle(self, stage: UInt32) -> Self.Handle:
+        return self.empty + Int(stage)

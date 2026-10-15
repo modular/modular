@@ -13,7 +13,8 @@
 """Llama 3 transformer architecture for text generation."""
 
 from .arch import llama_modulev3_arch
-from .model import Llama3Inputs, Llama3Model
+from .inputs import Llama3Inputs
+from .model import Llama3Model
 from .model_config import Llama3Config
 
 __all__ = [

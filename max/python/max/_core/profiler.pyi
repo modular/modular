@@ -55,122 +55,106 @@ def is_profiling_enabled() -> bool:
 def set_gpu_profiling_state(arg: str, /) -> None:
     """Sets the GPU profiling state."""
 
-def kineto_enable() -> None:
+def range_begin_with_id(correlation_id: int, name: str) -> int:
     """
-    Enable the libkineto-backed profiler.
+    Begins a CPU range whose libkineto ``External id`` is ``correlation_id``.
 
-    Subscribes to CUPTI activity callbacks. On builds without libkineto
-    (it is linked only in ``--config=kineto`` builds on Linux x86_64) or
-    hosts without a live CUDA primary context, this is a safe no-op.
-    """
+    Kernels launched on this thread inside the range, outside any nested
+    range, carry the ID. Work launched from other threads, such as AsyncRT
+    workers, relates to it only by time. The ID is stored in 32 bits, and
+    libkineto omits an ID of 0.
 
-def kineto_disable() -> None:
-    """
-    Disable the profiler.
+    Pass the result to :func:`range_end` on the same thread.
 
-    Flushes the trace. On builds where libkineto isn't linked, this is
-    a no-op.
-    """
+    Args:
+        correlation_id: Caller-supplied join key, such as a batch ID.
+        name: The range's label in the trace.
 
-def kineto_wait_for_trace() -> None:
-    """
-    Block until the most recent disable has finished serializing.
-
-    The Python wrapper in ``InferenceSession.profiling.wait_for_trace``
-    surfaces serialization failures as ``ProfilingError`` in a follow-up
-    PR; today this binding only blocks.
+    Returns:
+        A nonzero range ID, or 0 if no libkineto trace is live, in which
+        case nothing is recorded.
     """
 
-def kineto_state() -> str:
+def range_end(range_id: int) -> None:
     """
-    Return the current profiler state.
+    Ends a range that :func:`range_begin_with_id` opened.
 
-    One of ``"idle"``, ``"warmup"``, ``"active"``, or ``"flushing"``.
-    """
+    Does nothing for an ID of 0. Otherwise warns and ends nothing unless
+    the range is the innermost one :func:`range_begin_with_id` opened on
+    this thread. Ranges opened inside it by other APIs must end first.
 
-def kineto_is_enabled() -> bool:
-    """
-    Return ``True`` while the profiler is enabled.
-
-    Reflects only the session API's enable intent (``start()`` /
-    ``stop()``): it stays ``False`` during Dynolog daemon-driven on-demand
-    traces, when ranges do record.  To elide range-annotation work on the
-    hot path, gate on :func:`kineto_is_recording` instead.
+    Args:
+        range_id: The ID :func:`range_begin_with_id` returned.
     """
 
-def kineto_is_recording() -> bool:
+def load_profiler_plugin() -> bool:
     """
-    Return ``True`` while a trace is live and ranges record.
+    Loads the profiler plugin if it can be found.
 
-    Covers traces of either origin — ``start()`` via the session API or a
-    Dynolog daemon-driven on-demand request — so it is the right hot-path
-    gate for eliding expensive range-name construction: unlike
-    :func:`kineto_is_enabled`, it does not opt the caller out of
-    daemon-trace annotation.  Single relaxed atomic load.
-    """
+    On AMD, call it before any device is created; loaded later, the plugin
+    can't record.
 
-def kineto_range_begin(name: str, color: int = 0) -> None:
-    """
-    Begin a semantic CPU range on the calling thread.
-
-    The range is recorded by libkineto as a Chrome-trace CPU span and
-    correlated to the GPU kernels launched while it is open.  When no
-    trace is live this is a single predicted branch, so calling it
-    unconditionally is safe — but constructing the ``name`` string still
-    costs Python-side work; gate on :func:`kineto_is_recording` in tight
-    loops (not :func:`kineto_is_enabled`, which stays ``False`` during
-    Dynolog daemon-driven traces even though ranges record).
-
-    Must be paired with :func:`kineto_range_end` on the same thread.
-    Prefer the ``session.profiling.range(...)`` context manager, which
-    guarantees pairing.  Unbalanced begins while a trace is live hold
-    memory per call until the per-thread depth cap (2^20), beyond which
-    they are dropped.
+    Returns:
+        True if a profiler is available.
     """
 
-def kineto_range_end() -> None:
+def start_capture() -> bool:
     """
-    End the innermost open semantic range on the calling thread.
+    Starts a libkineto capture if the profiler is idle.
 
-    Pairing is tracked per-thread in the C++ runtime: an end without a
-    matching begin (for example after the profiler was stopped between
-    the two calls) is a safe no-op.
-    """
+    Call it on a thread with a current device context, such as the thread
+    that created the devices; otherwise the capture doesn't start until a
+    device is next initialized. The capture runs until :func:`stop_capture`,
+    ignoring the session's profiling step-window settings. Blocks while a
+    :func:`stop_capture` is saving.
 
-def kineto_last_trace_error() -> str:
-    """
-    Return the most recent trace-serialization error message.
-
-    Empty string on success, or before any disable has run.  Used by
-    ``InferenceSession.profiling.wait_for_trace()`` to raise
-    :class:`max.engine.ProfilingError` when the configured output path
-    was unwritable or libkineto could not serialize the in-memory trace.
-    Cleared automatically at the next ``start()``.
+    Returns:
+        True if this call started a capture. False if no profiler is
+        available, or if a capture or a Dynolog on-demand trace is already
+        running, which this call leaves alone.
     """
 
-def kineto_have_libkineto() -> bool:
+def stop_capture(output_path: str) -> str:
     """
-    Return ``True`` iff the libkineto backend is linked into this process.
+    Stops the capture :func:`start_capture` started, saving its trace.
 
-    Runtime check on the registered ``:ProfilingKineto`` backend, which is
-    linked into ``max._core`` only in ``--config=kineto`` builds on Linux
-    x86_64 (#91288) — default builds, including the shipped wheels, carry
-    no libkineto and return ``False``, and the recording paths in
-    ``start()`` / ``stop()`` are no-ops there.
+    Leaves any other capture running, such as one the session's profiling
+    config started. May be called from any thread.
+
+    Args:
+        output_path: File to write the trace to, expanded like
+            ``MODULAR_MAX_DEBUG_PROFILING_OUTPUT_PATH``.
+
+    Returns:
+        An empty string on success, otherwise why the trace is missing or
+        incomplete.
     """
 
-def kineto_can_record() -> bool:
+def request_burst(reason: str) -> bool:
     """
-    Return ``True`` iff this process can actually record a trace right now.
+    Requests an extra step-window burst for an event, opened now.
 
-    Stricter than :func:`kineto_have_libkineto`: also requires that a
-    CUDA primary context is bound on the calling thread.  Without one,
-    ``enable()`` skips ``libkineto.prepareTrace`` / ``startTrace`` and
-    ``disable()`` symmetrically skips trace serialization, so no file is
-    produced.
+    Applies only to a capture with ``profiling-period-steps`` set, where it
+    adds a burst between scheduled ones for an event the schedule would
+    likely miss, such as a prefill batch. Call it just before the execute
+    the burst should start with. The burst covers ``profiling-active-steps``
+    steps and is saved to ``<output>.event<k>.json``, labeled with
+    ``reason``. At most one request is honored per gap between scheduled
+    bursts, and none before the first scheduled burst.
 
-    Used by ``test_kineto_profiling.py`` to skip end-to-end file-creation
-    and ``ProfilingError`` assertions on hosts that cannot record (no
-    libkineto in the build, or no live CUDA context — e.g. CI runners
-    without NVIDIA hardware).
+    Args:
+        reason: Why the burst was requested, recorded in the trace.
+            Characters outside ``[A-Za-z0-9_.-]`` become ``_``.
+
+    Returns:
+        True if a burst opened. False when profiling is off, which costs a
+        single check, or when the request was not honored.
+    """
+
+def is_capture_recording() -> bool:
+    """
+    Returns whether a capture is recording.
+
+    Covers a capture from :func:`start_capture` or the session's profiling
+    config.
     """

@@ -22,17 +22,30 @@ swapAB small-M strategy.
 from std.math import ceildiv
 from std.sys import simd_width_of, size_of
 
-from std.gpu.globals import WARPGROUP_SIZE
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.sync import named_barrier
-from layout import Coord, Idx, Layout, TensorLayout, TileTensor, row_major
+from max.gpu.globals import WARPGROUP_SIZE
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.sync import named_barrier
+from layout import (
+    Coord,
+    DefaultEngine,
+    Idx,
+    Layout,
+    TensorLayout,
+    TileTensor,
+    row_major,
+)
 from layout.swizzle import make_ldmatrix_swizzle
-from layout.tensor_storage import TensorStorage
+from layout.tensor_engine import TensorEngine
 from layout.tma_async import TMATensorTile
 
 from std.utils.index import IndexList
 
-from ....utils import elementwise_compute_lambda_type, elementwise_epilogue_type
+from ....utils import (
+    ElementwiseComputeFn,
+    ElementwiseEpilogueFn,
+    no_compute_fn,
+    no_epilogue_fn,
+)
 from std.collections import OptionalReg
 from ....structuring import (
     RegTile,
@@ -50,7 +63,7 @@ import std.itertools
 struct MatmulTileWriter[
     dtype: DType,
     tensor_layout: TensorLayout,
-    tensor_storage: TensorStorage,
+    output_engine: TensorEngine,
     linear_idx_type: DType,
     smem_tile_layout: TensorLayout,
     //,
@@ -62,10 +75,6 @@ struct MatmulTileWriter[
     wgmma_shape: IndexList[3],
     num_consumer: Int = 1,
     use_tma_store: Bool = False,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
-    elementwise_compute_lambda_fn: Optional[
-        elementwise_compute_lambda_type
-    ] = None,
     swapAB: Bool = False,
 ](TrivialRegisterPassable):
     """Writes WGMMA accumulator register tiles to global memory for SM90 matmul.
@@ -80,7 +89,7 @@ struct MatmulTileWriter[
             (inferred).
         tensor_layout: Memory layout of the output tensor in global memory
             (inferred).
-        tensor_storage: Storage backing the output tensor in global memory
+        output_engine: Engine backing the output tensor in global memory
             (inferred).
         linear_idx_type: Integer type used for linear index arithmetic
             into the output tensor (inferred).
@@ -97,14 +106,6 @@ struct MatmulTileWriter[
             tile (defaults to 1).
         use_tma_store: Whether to use TMA async stores for shared memory
             to global memory copies (defaults to `False`).
-        elementwise_lambda_fn: Optional epilogue lambda invoked with
-            each output element's global coordinates and value,
-            writing directly to global memory
-            (defaults to `None`).
-        elementwise_compute_lambda_fn: Optional compute lambda that
-            transforms each output element value before it is written
-            back to shared memory and then to global memory (defaults
-            to `None`).
         swapAB: Whether to swap the A and B operand roles for the small-M
             strategy, transposing the tile and block coordinate mapping
             (defaults to `False`).
@@ -125,16 +126,16 @@ struct MatmulTileWriter[
 
     comptime CTensorType = TileTensor[
         mut=True,
-        dtype=Self.dtype,
+        Self.dtype,
         LayoutType=Self.tensor_layout,
         origin=MutAnyOrigin,
-        Storage=Self.tensor_storage,
-        address_space=AddressSpace.GENERIC,
+        Engine=Self.output_engine,
+        address_space=.GENERIC,
         linear_idx_type=Self.linear_idx_type,
     ]
     comptime lambda_type = def[
-        dtype: DType, width: SIMDSize, *, alignment: Int = 1
-    ](IndexList[2], mut SIMD[dtype, width]) -> None
+        dtype: DType, width: SIMDLength, *, alignment: Int = 1
+    ](Coord, mut SIMD[dtype, width]) -> None
 
     # Instance fields
     @__allow_legacy_any_origin_fields
@@ -143,10 +144,12 @@ struct MatmulTileWriter[
     @__allow_legacy_any_origin_fields
     var smem_tile: TileTensor[
         mut=True,
-        dtype=Self.dtype,
+        Self.dtype,
         LayoutType=Self.smem_tile_layout,
         origin=MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        # Shared memory is raw-pointer addressed so pin DefaultEngine.
+        Engine=DefaultEngine[element_width=1],
+        address_space=.SHARED,
     ]
     var warp_group_thread_idx: Int
     var local_warp_group_idx: Int
@@ -154,16 +157,18 @@ struct MatmulTileWriter[
     var block_y: Int
     var block_x: Int
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self,
         tensor: Self.CTensorType,
         smem_tile: TileTensor[
             mut=True,
-            dtype=Self.dtype,
+            Self.dtype,
             LayoutType=Self.smem_tile_layout,
             origin=MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            # Shared memory is raw-pointer addressed so pin DefaultEngine.
+            Engine=DefaultEngine[element_width=1],
+            address_space=.SHARED,
         ],
         warp_group_thread_idx: Int,
         local_warp_group_idx: Int,
@@ -179,7 +184,7 @@ struct MatmulTileWriter[
         self.block_y = block_y
         self.block_x = block_x
 
-    @always_inline
+    @inline(.always)
     def _calculate_output_bounds(self) -> Tuple[UInt32, UInt32]:
         """Calculate valid output bounds for the current block's tile."""
         var rows = self.tensor.dim[0]()
@@ -197,7 +202,7 @@ struct MatmulTileWriter[
 
         return max_row, max_col
 
-    @always_inline
+    @inline(.always)
     def _apply_epilogue[
         F: ImplicitlyCopyable & RegisterPassable & Self.lambda_type
     ](
@@ -245,17 +250,27 @@ struct MatmulTileWriter[
                 var shared_value = shared_fragment.load(Coord(Idx[i], Idx[0]))
                 epilogue[
                     dtype=type_of(shared_value).dtype,
-                    width=type_of(shared_value).size,
-                ](IndexList[2](Int(row), Int(col)), shared_value)
+                    width=type_of(shared_value).length,
+                ](Coord(Int(row), Int(col)), shared_value)
                 shared_fragment.store(Coord(Idx[i], Idx[0]), shared_value)
 
-    @always_inline
+    @inline(.always)
     def _write_tile_to_gmem[
         accum_type: DType,
         reg_tile_layout: Layout,
+        EpilogueFnType: ElementwiseEpilogueFn,
+        ComputeFnType: ElementwiseComputeFn,
         //,
         check_runtime_bounds: Bool = False,
-    ](self, reg_tile: RegTile[accum_type, reg_tile_layout]):
+        *,
+        has_epilogue_fn: Bool,
+        has_compute_fn: Bool,
+    ](
+        self,
+        reg_tile: RegTile[accum_type, reg_tile_layout],
+        epilogue_fn: EpilogueFnType,
+        compute_fn: ComputeFnType,
+    ):
         """Write from registers to global memory."""
 
         comptime out_tile_size_m = Self.BM if not Self.swapAB else Self.BN
@@ -288,10 +303,7 @@ struct MatmulTileWriter[
         var tile_coords: OptionalReg[TileCoordinates] = None
         var max_row: OptionalReg[UInt32] = None
 
-        comptime if (
-            Self.elementwise_lambda_fn is not None
-            or Self.elementwise_compute_lambda_fn is not None
-        ):
+        comptime if has_epilogue_fn or has_compute_fn:
             tile_coords = TileCoordinates(
                 IndexList[2](tile_origin[0], tile_origin[1]),
                 IndexList[2](consumer_coords[0], consumer_coords[1]),
@@ -302,8 +314,6 @@ struct MatmulTileWriter[
             wgmma_shape=Self.wgmma_shape,
             num_consumer=Self.num_consumer,
             N=Self.N,
-            epilogue_fn=Self.elementwise_lambda_fn,
-            compute_lambda_fn=Self.elementwise_compute_lambda_fn,
             check_runtime_bounds=check_runtime_bounds,
             swapAB=Self.swapAB,
         ](
@@ -317,38 +327,45 @@ struct MatmulTileWriter[
         comptime for row_tile, col_tile in std.itertools.product(
             range(Self.num_m_mmas), range(Self.num_n_mmas)
         ):
-            reg_writer.write_tile(
-                reg_tile,
-                (row_tile, col_tile),
-            )
+            reg_writer._write_tile[
+                has_epilogue_fn=has_epilogue_fn, has_compute_fn=has_compute_fn
+            ](reg_tile, (row_tile, col_tile), epilogue_fn, compute_fn)
 
-    @always_inline
+    @inline(.always)
     def _write_tile_stmatrix[
-        tma_rank: Int,
-        tma_tile_shape: IndexList[tma_rank],
-        tma_desc_shape: IndexList[tma_rank],
+        tma_tile_shape: Coord,
+        tma_desc_shape: Coord,
         accum_type: DType,
         reg_tile_layout: Layout,
+        EpilogueFnType: ElementwiseEpilogueFn,
+        ComputeFnType: ElementwiseComputeFn,
         //,
+        *,
+        has_epilogue_fn: Bool,
+        has_compute_fn: Bool,
     ](
         self,
-        tma_op: TMATensorTile[
-            Self.dtype, tma_rank, tma_tile_shape, tma_desc_shape
-        ],
+        tma_op: TMATensorTile[Self.dtype, tma_tile_shape, tma_desc_shape],
         reg_tile: RegTile[accum_type, reg_tile_layout],
         output_tile: TileTensor[mut=True, Self.dtype, ...],
         tile_origin: IndexList[2],
+        value_epilogue_fn: EpilogueFnType,
+        value_compute_fn: ComputeFnType,
     ):
         """Use st.matrix instructions for optimized bf16 output."""
         var max_row, max_col = self._calculate_output_bounds()
 
-        comptime TMA_BN_regular = tma_tile_shape[
-            1
-        ] if Self.use_tma_store else Self.WG_BN
+        comptime TMA_BN_regular = (
+            tma_tile_shape.element_types[
+                1
+            ].static_value if Self.use_tma_store else Self.WG_BN
+        )
 
-        comptime TMA_BN_swapAB = tma_tile_shape[
-            0
-        ] if Self.use_tma_store else Self.WG_BM
+        comptime TMA_BN_swapAB = (
+            tma_tile_shape.element_types[
+                0
+            ].static_value if Self.use_tma_store else Self.WG_BM
+        )
 
         comptime TMA_BN = TMA_BN_swapAB if Self.swapAB else TMA_BN_regular
 
@@ -418,7 +435,7 @@ struct MatmulTileWriter[
 
             def apply_epilogue[
                 F: ImplicitlyCopyable & RegisterPassable & Self.lambda_type
-            ](epilogue_fn: F):
+            ](epilogue_fn: F) {imm}:
                 self._apply_epilogue(
                     epilogue_fn,
                     workgroup_tile,
@@ -428,43 +445,59 @@ struct MatmulTileWriter[
                     max_col,
                 )
 
-            comptime if Self.elementwise_compute_lambda_fn:
-                comptime compute_fn = Self.elementwise_compute_lambda_fn.value()
+            comptime if has_compute_fn:
 
-                def _compute[
-                    dtype: DType, width: SIMDSize, *, alignment: Int = 1
-                ](index: IndexList[2], mut val: SIMD[dtype, width]) {}:
-                    val = compute_fn[alignment=alignment](index, val)
+                def _value_compute[
+                    dtype: DType, width: SIMDLength, *, alignment: Int = 1
+                ](index: Coord, mut val: SIMD[dtype, width]) {
+                    var value_compute_fn
+                }:
+                    comptime assert (
+                        index.rank == 2
+                    ), "the matmul epilogue contract is rank 2"
+                    val = value_compute_fn[dtype, width, alignment=alignment](
+                        index, val
+                    )
 
-                apply_epilogue(_compute)
+                apply_epilogue(_value_compute)
                 named_barrier[Int32(Self.num_consumer_threads)](10)
 
-            comptime if Self.elementwise_lambda_fn:
-                comptime epilogue_fn = Self.elementwise_lambda_fn.value()
+            comptime if has_epilogue_fn:
 
-                def _epilogue[
-                    dtype: DType, width: SIMDSize, *, alignment: Int = 1
-                ](index: IndexList[2], mut val: SIMD[dtype, width]) {}:
-                    _ = epilogue_fn[alignment=alignment](index, val)
+                def _value_epilogue[
+                    dtype: DType, width: SIMDLength, *, alignment: Int = 1
+                ](index: Coord, mut val: SIMD[dtype, width]) {
+                    var value_epilogue_fn
+                }:
+                    comptime assert (
+                        index.rank == 2
+                    ), "the matmul epilogue contract is rank 2"
+                    value_epilogue_fn[dtype, width, alignment=alignment](
+                        index, val
+                    )
 
-                apply_epilogue(_epilogue)
+                apply_epilogue(_value_epilogue)
             else:
                 comptime if Self.use_tma_store and not is_partial_tile:
                     var tma_writer = TileWriterTMA(Pointer(to=tma_op))
 
                     if self.local_thread_idx < (Self.WG_BN // TMA_BN):
-                        var smem_offset = self.smem_tile.ptr + (
+                        var smem_offset = self.smem_tile._storage + (
                             Self.WG_BM * TMA_BN * self.local_thread_idx
                         )
                         comptime tma_smem_layout = row_major[
-                            tma_tile_shape[0], tma_tile_shape[1]
+                            tma_tile_shape.element_types[0].static_value,
+                            tma_tile_shape.element_types[1].static_value,
                         ]()
                         var tma_tile = TileTensor[
                             mut=True,
-                            dtype=Self.dtype,
+                            Self.dtype,
                             LayoutType=type_of(tma_smem_layout),
                             origin=MutAnyOrigin,
-                            address_space=AddressSpace.SHARED,
+                            # Shared memory is raw-pointer addressed so pin
+                            # DefaultEngine.
+                            Engine=DefaultEngine[element_width=1],
+                            address_space=.SHARED,
                         ](smem_offset, tma_smem_layout)
 
                         var tma_coords = (
@@ -488,9 +521,7 @@ struct MatmulTileWriter[
                         half_tile=is_partial_tile,
                         swapAB=Self.swapAB,
                     ](
-                        workgroup_tile.address_space_cast[
-                            AddressSpace.GENERIC
-                        ](),
+                        workgroup_tile.address_space_cast[.GENERIC](),
                         self.local_thread_idx,
                     )
 
@@ -498,20 +529,24 @@ struct MatmulTileWriter[
 
             named_barrier[Int32(Self.num_consumer_threads)](10)
 
-    @always_inline
+    @inline(.always)
     def write_tile[
-        tma_rank: Int,
-        tma_tile_shape: IndexList[tma_rank],
-        tma_desc_shape: IndexList[tma_rank],
+        tma_tile_shape: Coord,
+        tma_desc_shape: Coord,
         accum_type: DType,
         reg_tile_layout: Layout,
+        EpilogueFnType: ElementwiseEpilogueFn = type_of(no_epilogue_fn),
+        ComputeFnType: ElementwiseComputeFn = type_of(no_compute_fn),
         //,
+        *,
+        has_epilogue_fn: Bool = False,
+        has_compute_fn: Bool = False,
     ](
         self,
-        tma_op: TMATensorTile[
-            Self.dtype, tma_rank, tma_tile_shape, tma_desc_shape
-        ],
+        tma_op: TMATensorTile[Self.dtype, tma_tile_shape, tma_desc_shape],
         reg_tile: RegTile[accum_type, reg_tile_layout],
+        epilogue_fn: EpilogueFnType = no_epilogue_fn,
+        compute_fn: ComputeFnType = no_compute_fn,
     ):
         """Write output from registers to global memory.
 
@@ -519,19 +554,25 @@ struct MatmulTileWriter[
         otherwise uses general register-to-global path.
 
         Parameters:
-            tma_rank: Number of dimensions in the TMA tensor descriptor.
-            tma_tile_shape: Shape of each TMA store tile per async copy, as
-                an index list of length `tma_rank`.
-            tma_desc_shape: Full shape of the TMA tensor descriptor as an
-                index list of length `tma_rank`.
+            tma_tile_shape: Shape of each TMA store tile per async copy.
+            tma_desc_shape: Full shape of the TMA tensor descriptor.
             accum_type: Data type of the WGMMA accumulator register tile.
             reg_tile_layout: Memory layout of the accumulator register tile.
+            EpilogueFnType: Type of `epilogue_fn` (inferred).
+            ComputeFnType: Type of `compute_fn` (inferred).
+            has_epilogue_fn: Whether `epilogue_fn` stores the output.
+            has_compute_fn: Whether `compute_fn` maps each output before
+                it is stored.
 
         Args:
             tma_op: TMA tensor tile descriptor used for async stores from
                 shared memory to global memory.
             reg_tile: WGMMA accumulator register tile containing the matmul
                 result to write.
+            epilogue_fn: Stores each output element at its global
+                coordinates.
+            compute_fn: Maps each output element at its global coordinates
+                to the value to store.
         """
         # Output tile dimensions and block coordinates
         # For normal: tile is BM x BN, positioned at (block_y, block_x)
@@ -545,15 +586,17 @@ struct MatmulTileWriter[
             tile_m, tile_n
         ](Coord(block_row, block_col))
 
-        comptime TMA_BN = tma_tile_shape[
-            1
-        ] if Self.use_tma_store else Self.WG_BN
+        comptime TMA_BN = (
+            tma_tile_shape.element_types[
+                1
+            ].static_value if Self.use_tma_store else Self.WG_BN
+        )
         comptime row_size_aligned = Self.N * size_of[Self.dtype]() % 16 == 0
 
         # Check if st.matrix optimization can be used
         # fmt: off
         comptime can_use_stmatrix_normal = (
-            accum_type == DType.float32 and Self.dtype == DType.bfloat16  # F32→BF16
+            accum_type == .float32 and Self.dtype == .bfloat16  # F32→BF16
             and Self.frag_size % 4 == 0                               # Register count
             and Self.BM % Self.wgmma_shape[0] == 0                              # M alignment
             and Self.WG_BN % 16 == 0                                  # Shared memory
@@ -564,7 +607,7 @@ struct MatmulTileWriter[
         )
 
         comptime can_use_stmatrix_swapAB = (
-            accum_type == DType.float32 and Self.dtype == DType.bfloat16             # F32→BF16
+            accum_type == .float32 and Self.dtype == .bfloat16             # F32→BF16
             and Self.frag_size % 4 == 0                                              # Register count (at least stmatrix x2 can be used)
             and Self.BM % Self.wgmma_shape[0] == 0                                   # each consumer should get one wgmma tile
             and Self.WG_BM % 8 == 0                                                  # Shared memory, must have at least 8 rows for swapAB
@@ -578,16 +621,22 @@ struct MatmulTileWriter[
         comptime can_use_stmatrix = can_use_stmatrix_swapAB if Self.swapAB else can_use_stmatrix_normal
 
         comptime if can_use_stmatrix:
-            self._write_tile_stmatrix(
+            self._write_tile_stmatrix[
+                has_epilogue_fn=has_epilogue_fn, has_compute_fn=has_compute_fn
+            ](
                 tma_op,
                 reg_tile,
                 output_tile,
                 tile_origin,
+                epilogue_fn,
+                compute_fn,
             )
         else:
             comptime check_bounds = (
                 Self.N % Self.BN != 0
             ) if not Self.swapAB else (Self.N % Self.BM != 0)
-            self._write_tile_to_gmem[check_runtime_bounds=check_bounds](
-                reg_tile
-            )
+            self._write_tile_to_gmem[
+                check_runtime_bounds=check_bounds,
+                has_epilogue_fn=has_epilogue_fn,
+                has_compute_fn=has_compute_fn,
+            ](reg_tile, epilogue_fn, compute_fn)

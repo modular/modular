@@ -16,7 +16,8 @@ from std.os import abort
 from std.random import randn
 from std.sys import get_defined_int, size_of
 
-from std.algorithm.functional import elementwise
+from max.algorithm.functional import elementwise
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     Bencher,
@@ -24,9 +25,13 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from layout import Coord, TileTensor, row_major, coord_to_index_list
-from nn.concat import _concat_gpu_elementwise, _concat_inner_most_single_dim
+from nn.concat import (
+    _concat_gpu_elementwise,
+    _concat_inner_most_single_dim,
+    _no_epilogue,
+)
 
 from std.utils import IndexList, StaticTuple
 
@@ -99,12 +104,12 @@ def bench_concat[
             type,
             input0_device.LayoutType,
             ImmutAnyOrigin,
-            Storage=input0_device.Storage,
+            Engine=input0_device.Engine,
         ],
         num_inputs,
     ](
-        input0_device.as_unsafe_any_origin().as_immut(),
-        input1_device.as_unsafe_any_origin().as_immut(),
+        input0_device.as_unsafe_any_origin().as_imm(),
+        input1_device.as_unsafe_any_origin().as_imm(),
     )
 
     # Create host TileTensors for verification
@@ -129,19 +134,24 @@ def bench_concat[
         input1_host.as_unsafe_any_origin(),
     )
 
-    @parameter
-    @always_inline
-    def bench_func(mut b: Bencher, shape: IndexList[rank]) raises:
-        @parameter
-        @always_inline
-        def kernel_launch(ctx: DeviceContext) raises:
-            _concat_gpu_elementwise[epilogue_fn=None](
-                output_device.as_unsafe_any_origin(), axis, inputs, ctx
+    @inline(.always)
+    def bench_func(
+        mut b: Bencher, shape: IndexList[rank]
+    ) raises {mut output_device, imm}:
+        @inline(.always)
+        def kernel_launch(ctx: DeviceContext) raises {mut output_device, imm}:
+            _concat_gpu_elementwise[has_epilogue=False](
+                output_device.as_unsafe_any_origin(),
+                axis,
+                inputs,
+                _no_epilogue,
+                ctx,
             )
 
-        b.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom(b, kernel_launch, ctx)
 
-    b.bench_with_input[IndexList[rank], bench_func](
+    b.bench_with_input(
+        bench_func,
         BenchId("concat", name),
         out_shape,
         # TODO: Pick relevant benchmetric.
@@ -178,7 +188,7 @@ def bench_concat[
     _ = output_device_buffer
 
 
-# A/B arm for the FusedConcatSlice static-divisor fold. Benches
+# A/B arm for the fused concat static-divisor fold. Benches
 # `_concat_inner_most_single_dim` (the inner-most-single-dim concat kernel that
 # carries the per-thread row -> n-D `divmod`) twice on identical work: with a
 # fully static output layout (`row_major[...]()`, all `ComptimeInt` dims, so the
@@ -209,12 +219,10 @@ def bench_concat_inner_most_single_dim[
     var out_dev = ctx.enqueue_create_buffer[dtype](n_out)
     ctx.synchronize()
 
-    @parameter
-    @always_inline
-    def bench_fn(mut b: Bencher) raises:
-        @parameter
-        @always_inline
-        def kernel_launch(ctx: DeviceContext) raises:
+    @inline(.always)
+    def bench_fn(mut b: Bencher) raises {mut out_dev, imm}:
+        @inline(.always)
+        def kernel_launch(ctx: DeviceContext) raises {mut out_dev, imm}:
             comptime if static_shape:
                 # Fully static layouts -> the row -> n-D divisors fold.
                 comptime input_layout = row_major[d0, d1, d2, d3, d4]()
@@ -222,12 +230,12 @@ def bench_concat_inner_most_single_dim[
                 var output = TileTensor(
                     out_dev, row_major[d0, d1, d2, d3, num_inputs]()
                 )
-                # Name the input tile type so the kernel's `InputStorage` param
+                # Name the input tile type so the kernel's `InputEngine` param
                 # matches the `DeviceBuffer` constructor's storage exactly.
                 comptime InTile = type_of(
                     TileTensor(in_dev[0], input_layout)
                     .as_unsafe_any_origin()
-                    .as_immut()
+                    .as_imm()
                 )
                 var inputs = StaticTuple[InTile, num_inputs]()
 
@@ -235,24 +243,26 @@ def bench_concat_inner_most_single_dim[
                     inputs[n] = (
                         TileTensor(in_dev[n], input_layout)
                         .as_unsafe_any_origin()
-                        .as_immut()
+                        .as_imm()
                     )
 
                 comptime kernel = _concat_inner_most_single_dim[
                     OutputLayoutType=output.LayoutType,
                     output_origin=MutAnyOrigin,
-                    OutputStorage=output.Storage,
+                    OutputEngine=output.Engine,
                     InputLayoutType=InLayout,
                     input_origin=ImmutAnyOrigin,
-                    InputStorage=InTile.Storage,
+                    InputEngine=InTile.Engine,
                     dtype=dtype,
                     num_inputs=num_inputs,
                     block_size=B_SIZE,
-                    epilogue_fn=None,
+                    has_epilogue=False,
+                    EpilogueFnType=type_of(_no_epilogue),
                 ]
                 ctx.enqueue_function[kernel](
                     output.as_unsafe_any_origin(),
                     inputs,
+                    host_arg=_no_epilogue,
                     grid_dim=(ceildiv(n_rows, B_SIZE)),
                     block_dim=(B_SIZE),
                 )
@@ -262,12 +272,12 @@ def bench_concat_inner_most_single_dim[
                 var out_shape = IndexList[rank](d0, d1, d2, d3, num_inputs)
                 comptime InLayout = type_of(row_major(Coord(in_shape)))
                 var output = TileTensor(out_dev, row_major(Coord(out_shape)))
-                # Name the input tile type so the kernel's `InputStorage` param
+                # Name the input tile type so the kernel's `InputEngine` param
                 # matches the `DeviceBuffer` constructor's storage exactly.
                 comptime InTile = type_of(
                     TileTensor(in_dev[0], row_major(Coord(in_shape)))
                     .as_unsafe_any_origin()
-                    .as_immut()
+                    .as_imm()
                 )
                 var inputs = StaticTuple[InTile, num_inputs]()
 
@@ -275,32 +285,35 @@ def bench_concat_inner_most_single_dim[
                     inputs[n] = (
                         TileTensor(in_dev[n], row_major(Coord(in_shape)))
                         .as_unsafe_any_origin()
-                        .as_immut()
+                        .as_imm()
                     )
 
                 comptime kernel = _concat_inner_most_single_dim[
                     OutputLayoutType=output.LayoutType,
                     output_origin=MutAnyOrigin,
-                    OutputStorage=output.Storage,
+                    OutputEngine=output.Engine,
                     InputLayoutType=InLayout,
                     input_origin=ImmutAnyOrigin,
-                    InputStorage=InTile.Storage,
+                    InputEngine=InTile.Engine,
                     dtype=dtype,
                     num_inputs=num_inputs,
                     block_size=B_SIZE,
-                    epilogue_fn=None,
+                    has_epilogue=False,
+                    EpilogueFnType=type_of(_no_epilogue),
                 ]
                 ctx.enqueue_function[kernel](
                     output.as_unsafe_any_origin(),
                     inputs,
+                    host_arg=_no_epilogue,
                     grid_dim=(ceildiv(n_rows, B_SIZE)),
                     block_dim=(B_SIZE),
                 )
 
-        b.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom(b, kernel_launch, ctx)
 
     comptime shape_tag = "static" if static_shape else "dynamic"
-    b.bench_function[bench_fn](
+    b.bench_function(
+        bench_fn,
         BenchId(
             "concat_inner_most_single_dim",
             input_id=String(shape_tag, dtype, d0, d1, d2, d3, d4, sep="/"),
@@ -335,7 +348,7 @@ def main() raises:
             axis=axis,
         )
 
-        # FusedConcatSlice static-divisor fold A/B: rank-5 dims with non-trivial
+        # Fused concat static-divisor fold A/B: rank-5 dims with non-trivial
         # outer dims (rank-2 would hit the no-divide fast path) so dims 1..rank-2
         # actually decompose. Shape is sized to the instruction-bound regime
         # (~65K rows): small enough that the per-thread divide is on the critical

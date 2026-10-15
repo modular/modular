@@ -21,6 +21,7 @@ projection. Shared by the Kimi K2.5 and DeepseekV3 Eagle3 draft paths.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import replace
 
 from max.dtype import DType
@@ -51,6 +52,7 @@ from max.nn.transformer.distributed_transformer import (
     extract_hs,
     forward_sharded_layers,
 )
+from max.nn.transformer.transformer import fuse_captured_hidden_states
 
 from ..deepseekV3.deepseekV3 import DeepseekV3DecoderLayer
 from ..deepseekV3.model_config import DeepseekV3Config
@@ -242,7 +244,8 @@ class Eagle3MLADraft(Module):
     def __call__(
         self,
         tokens: TensorValue,
-        fused_target_hs: list[TensorValue],
+        fused_target_hs: Sequence[TensorValue]
+        | Sequence[Sequence[TensorValue]],
         signal_buffers: list[BufferValue],
         kv_collections: list[PagedCacheValues],
         return_n_logits: TensorValue,
@@ -256,21 +259,30 @@ class Eagle3MLADraft(Module):
 
         Args:
             tokens: Input token IDs.
-            fused_target_hs: Per-device hidden states — either the 3 fused
-                target-layer captures (shape ``[local_seq, hidden_size * 3]``
-                per device) or the previous draft step's output (shape
-                ``[local_seq, hidden_size]`` per device). The caller must
-                produce per-device tensors already sharded to each device's
-                local DP batch; the ``fc`` projection runs per-device when
-                the last dim is ``hidden_size * 3``.
+            fused_target_hs: Per-device hidden states — either the target's 3
+                captured layers (a list per device) at step 0, or the previous
+                draft step's output (one ``[local_seq, hidden_size]`` tensor
+                per device). The caller must produce per-device values already
+                sharded to each device's local DP batch; ``fc`` runs
+                per-device on the captures.
             split_prefix: Prefix for symbolic dim names. Must be unique per
                 graph invocation to avoid dim conflicts between prefill
                 (step 0) and decode (step 1+).
         """
         devices = self.config.devices
 
-        fused_hs: list[TensorValue] = list(fused_target_hs)
+        captures_per_dev = [
+            [hs] if isinstance(hs, TensorValue) else list(hs)
+            for hs in fused_target_hs
+        ]
+        fused_hs = fuse_captured_hidden_states(captures_per_dev)
         if fused_hs[0].shape[-1] != self.config.hidden_size:
+            fused_width = self.config.hidden_size * 3
+            assert fused_hs[0].shape[-1] == fused_width, (
+                f"Eagle3MLADraft expects 3 captures or one already-fused "
+                f"[seq, {fused_width}] hidden state per device, got width "
+                f"{fused_hs[0].shape[-1]}"
+            )
             fused_hs = forward_sharded_layers(self.fc_shards, fused_hs)
 
         h_embed = self.embed_tokens(tokens, signal_buffers)

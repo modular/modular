@@ -46,6 +46,12 @@ def _rebuild_wheel(rctx):
     )
 
     rctx.execute(["bash", "-c", "mv */platlib/max/_core.*.so max/"])
+
+    # One stable-ABI module serves every Python version, so each wheel above
+    # extracts the same file. Wheels built before max._kv_core shipped lack it;
+    # tolerate that so the tree still analyzes against them (presubmit's OSS
+    # smoke test pins the last nightly), though importing max.nn needs it.
+    rctx.execute(["bash", "-c", "mv */platlib/max/_kv_core.so max/ 2>/dev/null || true"])
     rctx.execute(["mkdir", "-p", "max/_mlir/_mlir_libs"])
     rctx.execute(["bash", "-c", "mv */platlib/max/_mlir/_mlir_libs/_mlir.*.so max/_mlir/_mlir_libs/"])
 
@@ -59,9 +65,7 @@ load("@rules_cc//cc:defs.bzl", "cc_import")
 load("@rules_mojo//mojo:mojo_import.bzl", "mojo_import")
 load("@@//bazel:mojo_aliases.bzl", "INTERNAL_PACKAGES")
 
-# Subdirectories of the wheel that are part of this repo and therefore should
-# be removed so that they're not accidentally used when testing changes that
-# depend on some closed-source portions of the wheel.
+# Only pull the parts of the wheels that are not included in this repo.
 py_library(
     name = "max",
     data = glob([
@@ -70,10 +74,7 @@ py_library(
         "modular/**",
     ], exclude = [
         "modular/lib/mojo/*",
-    ]),
-    pyi_srcs = glob([
-        "max/**/*.pyi",
-    ]),
+    ]) + glob(["max/_kv_core.so"], allow_empty = True),
     visibility = ["//visibility:public"],
     imports = ["."],
 )
@@ -84,6 +85,12 @@ filegroup(
         "max/_mlir/dialects/mo.py",
         "max/_mlir/dialects/rmo.py",
     ],
+    visibility = ["//visibility:public"],
+)
+
+cc_import(
+    name = "CompilerRT_lib",
+    shared_library = glob(["modular/lib/libKGENCompilerRTShared.*"])[0],
     visibility = ["//visibility:public"],
 )
 
@@ -99,6 +106,7 @@ INDIRECT_DEPENDENCIES = [
     cc_import(
         name = "{}_lib".format(lib_name),
         shared_library = glob(["modular/lib/lib{}.*".format(lib_name)])[0],
+        visibility = ["//visibility:public"],
     )
     for lib_name in INDIRECT_DEPENDENCIES
 ]
@@ -202,6 +210,26 @@ alias(
     visibility = ["//visibility:public"],
 )
 
+alias(
+    name = "AsyncRTMojoBindings_lib",
+    actual = select({
+        "@//:linux_aarch64": "@module_platlib_linux_aarch64//:AsyncRTMojoBindings_lib",
+        "@//:linux_x86_64": "@module_platlib_linux_x86_64//:AsyncRTMojoBindings_lib",
+        "@platforms//os:macos": "@module_platlib_macos_arm64//:AsyncRTMojoBindings_lib",
+    }),
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "CompilerRT_lib",
+    actual = select({
+        "@//:linux_aarch64": "@module_platlib_linux_aarch64//:CompilerRT_lib",
+        "@//:linux_x86_64": "@module_platlib_linux_x86_64//:CompilerRT_lib",
+        "@platforms//os:macos": "@module_platlib_macos_arm64//:CompilerRT_lib",
+    }),
+    visibility = ["//visibility:public"],
+)
+
 [
     alias(
         name = lib.split("/")[-1],
@@ -214,27 +242,6 @@ alias(
     )
     for lib in INTERNAL_PACKAGES
 ]
-
-pycross_wheel_library(
-    name = "mblack-lib",
-    tags = ["manual"],
-    wheel = "@mblack_wheel//file",
-)
-
-py_binary(
-    name = "mblack",
-    srcs = ["@@//bazel:mblack-main.py"],
-    main = "@@//bazel:mblack-main.py",
-    visibility = ["//visibility:public"],
-    deps = [
-        ":mblack-lib",
-        requirement("click"),
-        requirement("mypy-extensions"),
-        requirement("pathspec"),
-        requirement("platformdirs"),
-        requirement("tomli"),
-    ],
-)
 """)  # buildifier: disable=canonical-repository
 
 modular_wheel_repository = repository_rule(

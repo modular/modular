@@ -73,6 +73,7 @@ modular_py_test(
     ],
     deps = [
         ":utils",
+        "//max/python/max:tree",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
@@ -168,6 +169,18 @@ modular_py_test(
         requirement("numpy"),
         requirement("pillow"),
         requirement("transformers"),
+    ],
+)
+
+modular_py_test(
+    name = "test_preprocess_cache",
+    srcs = ["test_preprocess_cache.py"],
+    deps = [
+        "//max/python/max/pipelines/architectures/qwen3vl_moe",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/support",
+        requirement("numpy"),
+        requirement("pillow"),
     ],
 )
 

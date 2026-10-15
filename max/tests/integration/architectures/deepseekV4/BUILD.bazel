@@ -1,0 +1,88 @@
+load("//bazel:api.bzl", "modular_py_test", "requirement")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+modular_py_test(
+    name = "test_encoding",
+    srcs = ["test_encoding.py"],
+    data = ["//max/tests/integration/architectures/deepseekV4/testdata"],
+    env = {
+        "PIPELINES_TESTDATA": "max/tests/integration/architectures/deepseekV4/testdata",
+    },
+    deps = [
+        "//max/python/max/pipelines/architectures/deepseekV4",
+        "//max/python/max/pipelines/modeling",
+    ],
+)
+
+modular_py_test(
+    name = "test_reasoning",
+    srcs = ["test_reasoning.py"],
+    deps = [
+        "//max/python/max/pipelines/architectures/deepseekV4",
+        requirement("numpy"),
+        requirement("pytest-asyncio"),
+    ],
+)
+
+modular_py_test(
+    name = "test_tool_parser",
+    srcs = ["test_tool_parser.py"],
+    data = ["//max/tests/integration/architectures/deepseekV4/testdata"],
+    env = {
+        "PIPELINES_TESTDATA": "max/tests/integration/architectures/deepseekV4/testdata",
+    },
+    deps = [
+        "//max/python/max/pipelines/architectures/deepseekV4",
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
+modular_py_test(
+    name = "test_top_k_per_row_gpu",
+    srcs = ["test_top_k_per_row_gpu.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = ["//:has_gpu"],
+    precompile_mefs = True,
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        requirement("numpy"),
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+    ],
+)
+
+modular_py_test(
+    name = "test_memory_planner",
+    srcs = ["test_memory_planner.py"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/pipelines/architectures/deepseekV4",
+        "//max/python/max/pipelines/kv_cache",
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
+modular_py_test(
+    name = "test_tensor_parallel_shards",
+    srcs = ["test_tensor_parallel_shards.py"],
+    deps = [
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/deepseekV4",
+    ],
+)

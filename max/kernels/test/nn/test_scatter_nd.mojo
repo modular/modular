@@ -12,14 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 
 from layout import TileTensor, row_major
-from std.gpu.host import DeviceContext
-from nn.gather_scatter import scatter_nd_generator
+from max.gpu.host import DeviceContext
+from nn.gather_scatter import _atomic_reduce, scatter_nd_generator
 from std.testing import assert_equal
 
 
-@always_inline
+@inline(.always)
 def use_update[
-    dtype: DType, width: SIMDSize, //
+    dtype: DType, width: SIMDLength, //
 ](input_val: SIMD[dtype, width], update_val: SIMD[dtype, width]) -> SIMD[
     dtype, width
 ]:
@@ -31,7 +31,7 @@ def main() raises:
         print("== test_scatternd")
         # data: 4x4x4 = 64 elements
         var data_ptr = List(length=64, fill=Float32(0))
-        var data_vals: InlineArray[Float32, 64] = [
+        var data_vals: Array[Float32, 64] = [
             Float32(1),
             2,
             3,
@@ -110,7 +110,7 @@ def main() raises:
 
         # updates: 2x4x4 = 32 elements
         var updates_ptr = List(length=32, fill=Float32(0))
-        var updates_vals: InlineArray[Float32, 32] = [
+        var updates_vals: Array[Float32, 32] = [
             Float32(5),
             5,
             5,
@@ -154,7 +154,7 @@ def main() raises:
         var output = TileTensor(output_ptr, row_major[4, 4, 4]())
 
         # expected output
-        var expected: InlineArray[Float32, 64] = [
+        var expected: Array[Float32, 64] = [
             Float32(5),
             5,
             5,
@@ -221,7 +221,7 @@ def main() raises:
             8,
         ]
 
-        scatter_nd_generator[reduce_fn=use_update](
+        scatter_nd_generator[atomic_update_fn=_atomic_reduce[use_update]](
             data, indices, updates, output, DeviceContext(api="cpu")
         )
 
@@ -238,7 +238,7 @@ def main() raises:
         print("== test_scatternd_add")
         # data: 4x4x4 = 64 elements
         var data_ptr = List(length=64, fill=Float32(0))
-        var data_vals: InlineArray[Float32, 64] = [
+        var data_vals: Array[Float32, 64] = [
             Float32(1),
             2,
             3,
@@ -316,7 +316,7 @@ def main() raises:
 
         # updates: 2x4x4 = 32 elements
         var updates_ptr = List(length=32, fill=Float32(0))
-        var updates_vals: InlineArray[Float32, 32] = [
+        var updates_vals: Array[Float32, 32] = [
             Float32(5),
             5,
             5,
@@ -360,7 +360,7 @@ def main() raises:
         var output = TileTensor(output_ptr, row_major[4, 4, 4]())
 
         # expected output (add reduction)
-        var expected: InlineArray[Float32, 64] = [
+        var expected: Array[Float32, 64] = [
             Float32(7),
             8,
             9,
@@ -427,13 +427,13 @@ def main() raises:
             8,
         ]
 
-        @always_inline
+        @inline(.always)
         def _add[
-            ty: DType, width: SIMDSize
+            ty: DType, width: SIMDLength
         ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
             return v1 + v2
 
-        scatter_nd_generator[reduce_fn=_add](
+        scatter_nd_generator[atomic_update_fn=_atomic_reduce[_add]](
             data, indices, updates, output, DeviceContext(api="cpu")
         )
 
@@ -450,7 +450,7 @@ def main() raises:
         print("== test_scatternd_max")
         # data: 4x4x4 = 64 elements
         var data_ptr = List(length=64, fill=Float32(0))
-        var data_vals: InlineArray[Float32, 64] = [
+        var data_vals: Array[Float32, 64] = [
             Float32(1),
             2,
             3,
@@ -528,7 +528,7 @@ def main() raises:
 
         # updates: 2x4x4 = 32 elements
         var updates_ptr = List(length=32, fill=Float32(0))
-        var updates_vals: InlineArray[Float32, 32] = [
+        var updates_vals: Array[Float32, 32] = [
             Float32(5),
             5,
             5,
@@ -572,7 +572,7 @@ def main() raises:
         var output = TileTensor(output_ptr, row_major[4, 4, 4]())
 
         # expected output (max reduction)
-        var expected: InlineArray[Float32, 64] = [
+        var expected: Array[Float32, 64] = [
             Float32(5),
             5,
             5,
@@ -639,13 +639,13 @@ def main() raises:
             8,
         ]
 
-        @always_inline
+        @inline(.always)
         def _max[
-            ty: DType, width: SIMDSize
+            ty: DType, width: SIMDLength
         ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
             return max(v1, v2)
 
-        scatter_nd_generator[reduce_fn=_max](
+        scatter_nd_generator[atomic_update_fn=_atomic_reduce[_max]](
             data, indices, updates, output, DeviceContext(api="cpu")
         )
 
@@ -662,7 +662,7 @@ def main() raises:
         print("== test_scatternd_min")
         # data: 4x4x4 = 64 elements
         var data_ptr = List(length=64, fill=Float32(0))
-        var data_vals: InlineArray[Float32, 64] = [
+        var data_vals: Array[Float32, 64] = [
             Float32(1),
             2,
             3,
@@ -740,7 +740,7 @@ def main() raises:
 
         # updates: 2x4x4 = 32 elements
         var updates_ptr = List(length=32, fill=Float32(0))
-        var updates_vals: InlineArray[Float32, 32] = [
+        var updates_vals: Array[Float32, 32] = [
             Float32(5),
             5,
             5,
@@ -784,7 +784,7 @@ def main() raises:
         var output = TileTensor(output_ptr, row_major[4, 4, 4]())
 
         # expected output (min reduction)
-        var expected: InlineArray[Float32, 64] = [
+        var expected: Array[Float32, 64] = [
             Float32(1),
             1,
             1,
@@ -851,13 +851,13 @@ def main() raises:
             8,
         ]
 
-        @always_inline
+        @inline(.always)
         def _min[
-            ty: DType, width: SIMDSize
+            ty: DType, width: SIMDLength
         ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
             return min(v1, v2)
 
-        scatter_nd_generator[reduce_fn=_min](
+        scatter_nd_generator[atomic_update_fn=_atomic_reduce[_min]](
             data, indices, updates, output, DeviceContext(api="cpu")
         )
 
@@ -874,7 +874,7 @@ def main() raises:
         print("== test_scatternd_multiply")
         # data: 4x4x4 = 64 elements
         var data_ptr = List(length=64, fill=Float32(0))
-        var data_vals: InlineArray[Float32, 64] = [
+        var data_vals: Array[Float32, 64] = [
             Float32(1),
             2,
             3,
@@ -952,7 +952,7 @@ def main() raises:
 
         # updates: 2x4x4 = 32 elements
         var updates_ptr = List(length=32, fill=Float32(0))
-        var updates_vals: InlineArray[Float32, 32] = [
+        var updates_vals: Array[Float32, 32] = [
             Float32(5),
             5,
             5,
@@ -996,7 +996,7 @@ def main() raises:
         var output = TileTensor(output_ptr, row_major[4, 4, 4]())
 
         # expected output (multiply reduction)
-        var expected: InlineArray[Float32, 64] = [
+        var expected: Array[Float32, 64] = [
             Float32(5),
             10,
             15,
@@ -1063,13 +1063,13 @@ def main() raises:
             8,
         ]
 
-        @always_inline
+        @inline(.always)
         def _mul[
-            ty: DType, width: SIMDSize
+            ty: DType, width: SIMDLength
         ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
             return v1 * v2
 
-        scatter_nd_generator[reduce_fn=_mul](
+        scatter_nd_generator[atomic_update_fn=_atomic_reduce[_mul]](
             data, indices, updates, output, DeviceContext(api="cpu")
         )
 
@@ -1109,13 +1109,13 @@ def main() raises:
         var output_ptr = List(length=rows * cols, fill=Float32(0))
         var output = TileTensor(output_ptr, row_major[rows, cols]())
 
-        @always_inline
+        @inline(.always)
         def _add[
-            ty: DType, width: SIMDSize
+            ty: DType, width: SIMDLength
         ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
             return v1 + v2
 
-        scatter_nd_generator[reduce_fn=_add](
+        scatter_nd_generator[atomic_update_fn=_atomic_reduce[_add]](
             data, indices, updates, output, DeviceContext(api="cpu")
         )
 

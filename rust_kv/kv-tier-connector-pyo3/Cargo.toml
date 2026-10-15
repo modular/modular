@@ -1,0 +1,23 @@
+[package]
+name = "kv-tier-connector-pyo3"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Python bindings for the Rust host/disk tiered KV connector"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+kv-tier-connector = { path = "../kv-tier-connector" }
+max-profiler = { path = "../max-profiler" }
+pyo3 = { version = "0.29", features = ["extension-module", "abi3-py310"] }
+# Registered only so the Bazel rust_pyo3_toolchain's mandatory
+# pyo3_introspection attribute is satisfied (stubs = False here).
+pyo3-introspection = "0.29"
+
+[build-dependencies]
+pyo3-build-config = "0.29"
+
+[lints]
+workspace = true

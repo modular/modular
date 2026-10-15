@@ -20,12 +20,17 @@
 from std.sys import size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
-from std.gpu.host import DeviceContext
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.primitives.grid_controls import PDLLevel
+from max.gpu.host import DeviceContext
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.primitives.grid_controls import PDLLevel
 from internal_utils import assert_almost_equal
 from std.random import rand
-from layout import TileTensor, Coord, CoordLike, row_major, Idx
+from layout import (
+    TileTensor,
+    CoordLike,
+    row_major,
+    Idx,
+)
 from linalg.matmul.gpu.sm100_structured.default.matmul import (
     blackwell_matmul_tma_umma_warp_specialized,
 )
@@ -68,14 +73,12 @@ def test_blackwell_matmul_with_weight_prefetch[
         t" swapAB={swapAB} prefetch_tiles_n={prefetch_tiles_n}"
     )
 
-    var a_shape = row_major(Coord(m, Idx[KType.static_value]))
+    var a_shape = row_major(m, Idx[KType.static_value])
     var b_shape = row_major(
-        Coord(
-            Idx[NType.static_value if transpose_b else KType.static_value],
-            Idx[KType.static_value if transpose_b else NType.static_value],
-        )
+        Idx[NType.static_value if transpose_b else KType.static_value],
+        Idx[KType.static_value if transpose_b else NType.static_value],
     )
-    var c_shape = row_major(Coord(m, Idx[NType.static_value]))
+    var c_shape = row_major(m, Idx[NType.static_value])
 
     var a_size = Int(m.value()) * Int(k.value())
     var b_size = (
@@ -103,8 +106,8 @@ def test_blackwell_matmul_with_weight_prefetch[
     var c_device_ref = ctx.enqueue_create_buffer[c_type](c_size)
     var c_ref_tensor = TileTensor(c_device_ref, c_shape)
 
-    rand(a_host.ptr, a_host.num_elements())
-    rand(b_host.ptr, b_host.num_elements())
+    rand(a_host.as_span())
+    rand(b_host.as_span())
 
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)
@@ -132,20 +135,16 @@ def test_blackwell_matmul_with_weight_prefetch[
         ctx,
     )
 
-    comptime assert a_type != DType.float8_e4m3fn or transpose_b, (
+    comptime assert a_type != .float8_e4m3fn or transpose_b, (
         "Testing is only supported for transposed_b==True when"
         " a_type==float8_e4m3fn. Add the non-transposed case if needed."
     )
 
-    var a_lt = a_tensor.to_layout_tensor()
-    var b_lt = b_tensor.to_layout_tensor()
-    var c_ref_tensor_lt = c_ref_tensor.to_layout_tensor()
-
     vendor_blas.matmul(
         ctx,
-        c_ref_tensor_lt,
-        a_lt,
-        b_lt,
+        c_ref_tensor,
+        a_tensor,
+        b_tensor,
         c_row_major=True,
         transpose_b=transpose_b,
     )
@@ -158,8 +157,8 @@ def test_blackwell_matmul_with_weight_prefetch[
 
     comptime rtol = 1e-2
     assert_almost_equal(
-        c_host.ptr,
-        c_host_ref.ptr,
+        c_host._storage,
+        c_host_ref._storage,
         c_host.num_elements(),
         atol=0.0001,
         rtol=rtol,
@@ -200,7 +199,7 @@ def main() raises:
                     test_blackwell_matmul_with_weight_prefetch[
                         dtype,
                         dtype,
-                        DType.bfloat16,
+                        .bfloat16,
                         block_tile_shape,
                         umma_shape,
                         cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
@@ -220,7 +219,7 @@ def main() raises:
                         test_blackwell_matmul_with_weight_prefetch[
                             dtype,
                             dtype,
-                            DType.bfloat16,
+                            .bfloat16,
                             block_tile_shape,
                             umma_shape,
                             cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
@@ -239,7 +238,7 @@ def main() raises:
                         test_blackwell_matmul_with_weight_prefetch[
                             dtype,
                             dtype,
-                            DType.bfloat16,
+                            .bfloat16,
                             block_tile_shape,
                             umma_shape,
                             cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
@@ -259,7 +258,7 @@ def main() raises:
                     test_blackwell_matmul_with_weight_prefetch[
                         dtype,
                         dtype,
-                        DType.bfloat16,
+                        .bfloat16,
                         block_tile_shape,
                         umma_shape,
                         cluster_shape=StaticTuple[Int32, 3](8, 2, 1),
@@ -278,7 +277,7 @@ def main() raises:
                     test_blackwell_matmul_with_weight_prefetch[
                         dtype,
                         dtype,
-                        DType.bfloat16,
+                        .bfloat16,
                         block_tile_shape,
                         umma_shape,
                         cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
@@ -313,7 +312,7 @@ def main() raises:
             test_blackwell_matmul_with_weight_prefetch[
                 dtype,
                 dtype,
-                DType.bfloat16,
+                .bfloat16,
                 block_tile_shape=Index(64, 128, 64),
                 mma_shape=Index(128, 256, 16),
                 cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
@@ -327,7 +326,7 @@ def main() raises:
             test_blackwell_matmul_with_weight_prefetch[
                 dtype,
                 dtype,
-                DType.bfloat16,
+                .bfloat16,
                 block_tile_shape=Index(64, 128, 64),
                 mma_shape=Index(128, 256, 16),
                 cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
@@ -341,7 +340,7 @@ def main() raises:
             test_blackwell_matmul_with_weight_prefetch[
                 dtype,
                 dtype,
-                DType.bfloat16,
+                .bfloat16,
                 block_tile_shape=Index(64, 128, 64),
                 mma_shape=Index(128, 256, 16),
                 cluster_shape=StaticTuple[Int32, 3](4, 4, 1),

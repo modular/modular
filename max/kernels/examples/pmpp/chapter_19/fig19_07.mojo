@@ -23,24 +23,25 @@ The grid dimensions are organized as:
 - blockIdx.z: Batch index (n)
 """
 
-from std.gpu import block_idx, thread_idx, grid_dim
-from std.gpu.host import DeviceContext
+from max.gpu import block_idx, thread_idx, grid_dim
+from max.gpu.host import DeviceContext
 
 from conv_utils import idx_x, idx_f, idx_y, conv_cpu, init_data, verify_results
+from std.math import ceildiv
 
 comptime TILE_WIDTH = 16
 
 
 def conv_layer_forward_kernel(
-    N: Int,
-    C: Int,
-    H: Int,
-    W: Int,
-    K: Int,
-    W_grid: Int,
-    X: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-    F: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-    Y: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    N_dev: Int32,
+    C_dev: Int32,
+    H_dev: Int32,
+    W_dev: Int32,
+    K_dev: Int32,
+    W_grid_dev: Int32,
+    X: UnsafePointer[Float32, ImmutAnyOrigin],
+    F: UnsafePointer[Float32, ImmutAnyOrigin],
+    Y: UnsafePointer[Float32, MutAnyOrigin],
 ):
     """Convolution layer forward kernel.
 
@@ -48,16 +49,23 @@ def conv_layer_forward_kernel(
     The tile-based indexing allows processing large feature maps.
 
     Args:
-        N: Batch size.
-        C: Input channels.
-        H: Input height.
-        W: Input width.
-        K: Kernel size.
-        W_grid: Width grid dimension (W_out / TILE_WIDTH).
+        N_dev: Batch size.
+        C_dev: Input channels.
+        H_dev: Input height.
+        W_dev: Input width.
+        K_dev: Kernel size.
+        W_grid_dev: Width grid dimension (W_out / TILE_WIDTH).
         X: Input tensor pointer.
         F: Filter tensor pointer.
         Y: Output tensor pointer.
     """
+    # Int is not device-passable; widen the fixed-width args.
+    var N = Int(N_dev)
+    var C = Int(C_dev)
+    var H = Int(H_dev)
+    var W = Int(W_dev)
+    var K = Int(K_dev)
+    var W_grid = Int(W_grid_dev)
     var m = block_idx.x  # Output feature map index
     var h_grid, w_grid = divmod(block_idx.y, W_grid)
     var h = h_grid * TILE_WIDTH + thread_idx.y  # Output H index
@@ -121,17 +129,17 @@ def main() raises:
     var ctx = DeviceContext()
 
     # Allocate device memory
-    var d_X = ctx.enqueue_create_buffer[DType.float32](size_X)
-    var d_F = ctx.enqueue_create_buffer[DType.float32](size_F)
-    var d_Y = ctx.enqueue_create_buffer[DType.float32](size_Y)
+    var d_X = ctx.enqueue_create_buffer[.float32](size_X)
+    var d_F = ctx.enqueue_create_buffer[.float32](size_F)
+    var d_Y = ctx.enqueue_create_buffer[.float32](size_Y)
 
     # Copy to device
     ctx.enqueue_copy(d_X, h_X)
     ctx.enqueue_copy(d_F, h_F)
 
     # Figure 19.5: Host code for kernel launch
-    var W_grid = (W_out + TILE_WIDTH - 1) // TILE_WIDTH  # Ceiling division
-    var H_grid = (H_out + TILE_WIDTH - 1) // TILE_WIDTH
+    var W_grid = ceildiv(W_out, TILE_WIDTH)
+    var H_grid = ceildiv(H_out, TILE_WIDTH)
     var T = H_grid * W_grid
 
     print(
@@ -149,12 +157,12 @@ def main() raises:
     )
 
     ctx.enqueue_function[conv_layer_forward_kernel](
-        N,
-        C,
-        H,
-        W,
-        K,
-        W_grid,
+        Int32(N),
+        Int32(C),
+        Int32(H),
+        Int32(W),
+        Int32(K),
+        Int32(W_grid),
         d_X,
         d_F,
         d_Y,

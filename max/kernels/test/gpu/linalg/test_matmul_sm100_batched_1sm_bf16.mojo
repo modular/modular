@@ -14,13 +14,11 @@
 from std.sys import argv, size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
-from std.gpu.host import DeviceContext
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.memory import alloc
+from max.gpu.host import DeviceContext
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from internal_utils import assert_almost_equal
 from std.random import rand
 from layout import (
-    Coord,
     CoordLike,
     Idx,
     TileTensor,
@@ -79,15 +77,13 @@ def test_blackwell_batched_matmul_tma_umma_warp_specialized[
         t" swapAB={swapAB} k_group_size={k_group_size}"
     )
 
-    var a_shape = row_major(Coord(batch, m, Idx[KType.static_value]))
+    var a_shape = row_major(batch, m, Idx[KType.static_value])
     var b_shape = row_major(
-        Coord(
-            batch,
-            Idx[NType.static_value if transpose_b else KType.static_value],
-            Idx[KType.static_value if transpose_b else NType.static_value],
-        )
+        batch,
+        Idx[NType.static_value if transpose_b else KType.static_value],
+        Idx[KType.static_value if transpose_b else NType.static_value],
     )
-    var c_shape = row_major(Coord(batch, m, Idx[NType.static_value]))
+    var c_shape = row_major(batch, m, Idx[NType.static_value])
 
     var a_size = Int(batch.value()) * Int(m.value()) * Int(k.value())
     var b_size = Int(batch.value()) * Int(n.value()) * Int(k.value())
@@ -126,8 +122,8 @@ def test_blackwell_batched_matmul_tma_umma_warp_specialized[
                         b_type
                     ]()
     else:
-        rand(a_host.ptr, a_host.num_elements())
-        rand(b_host.ptr, b_host.num_elements())
+        rand(a_host.as_span())
+        rand(b_host.as_span())
 
     # Move operands to device
     ctx.enqueue_copy(a_device, a_host_ptr)
@@ -153,15 +149,15 @@ def test_blackwell_batched_matmul_tma_umma_warp_specialized[
     # Reference: per-batch vendor_blas.matmul
     for b in range(B):
         var a_2d = TileTensor(
-            a_tensor.ptr + b * M * K,
+            a_tensor._storage + b * M * K,
             row_major((M, K)),
         )
         var b_2d = TileTensor(
-            b_tensor.ptr + b * N * K,
+            b_tensor._storage + b * N * K,
             row_major((N, K)),
         )
         var c_ref_2d = TileTensor(
-            c_ref_tensor.ptr + b * M * N,
+            c_ref_tensor._storage + b * M * N,
             row_major((M, N)),
         )
 
@@ -180,8 +176,8 @@ def test_blackwell_batched_matmul_tma_umma_warp_specialized[
     ctx.synchronize()
 
     assert_almost_equal(
-        c_host.ptr,
-        c_host_ref.ptr,
+        c_host._storage,
+        c_host_ref._storage,
         c_host.num_elements(),
         atol=0.0001,
         rtol=1e-2,

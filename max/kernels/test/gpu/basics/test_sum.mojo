@@ -13,10 +13,11 @@
 
 from std.math import ceildiv, iota
 
-from std.gpu import global_idx
-from std.gpu.primitives import block, warp
-from std.gpu.globals import WARP_SIZE
-from std.gpu.host import DeviceContext
+from max.gpu import global_idx
+from max.gpu.primitives import warp
+from max.gpu.primitives import block
+from max.gpu.globals import WARP_SIZE
+from max.gpu.host import DeviceContext
 from std.testing import assert_equal
 
 comptime dtype = DType.uint64
@@ -25,10 +26,11 @@ comptime dtype = DType.uint64
 def warp_sum_kernel[
     dtype: DType,
 ](
-    output: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    input: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    size: Int,
+    output: MutPointer[Scalar[dtype], MutAnyOrigin],
+    input: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
+    size_dev: Int32,
 ):
+    var size = Int(size_dev)
     var tid = global_idx.x
     if tid >= size:
         return
@@ -55,7 +57,7 @@ def test_warp_sum(ctx: DeviceContext) raises:
     ctx.enqueue_function[kernel](
         out_device,
         in_device,
-        size,
+        Int32(size),
         block_dim=BLOCK_SIZE,
         grid_dim=grid_dim,
     )
@@ -79,10 +81,11 @@ def block_sum_kernel[
     dtype: DType,
     block_size: Int,
 ](
-    output: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    input: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    size: Int,
+    output: MutPointer[Scalar[dtype], MutAnyOrigin],
+    input: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
+    size_dev: Int32,
 ):
+    var size = Int(size_dev)
     var tid = global_idx.x
     if tid >= size:
         return
@@ -111,7 +114,7 @@ def test_block_sum(ctx: DeviceContext) raises:
     ctx.enqueue_function[kernel](
         out_device,
         in_device,
-        size,
+        Int32(size),
         block_dim=BLOCK_SIZE,
         grid_dim=grid_dim,
     )

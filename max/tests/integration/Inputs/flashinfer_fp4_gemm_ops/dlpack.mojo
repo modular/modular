@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -82,7 +82,7 @@ struct DLDataType(ImplicitlyCopyable, Movable):
 
     @staticmethod
     def from_dtype[dtype: DType](lanes: UInt16 = 1) -> Self:
-        comptime assert [dtype in Self.CODE_MAP]
+        comptime assert dtype in Self.CODE_MAP
         comptime code: UInt8 = Self.CODE_MAP.get(dtype, 0)
         return Self(code, UInt8(bit_width_of[dtype]()), lanes)
 
@@ -125,10 +125,10 @@ struct DLTensor[rank: Int, dtype: DType](ImplicitlyCopyable):
     var data_type: DLDataType
 
     @__allow_legacy_any_origin_fields
-    var _shape_ptr: UnsafePointer[Int64, MutAnyOrigin]
+    var _shape_ptr: Pointer[Int64, MutAnyOrigin]
 
     @__allow_legacy_any_origin_fields
-    var _strides_ptr: Optional[UnsafePointer[Int64, MutAnyOrigin]]
+    var _strides_ptr: Optional[Pointer[Int64, MutAnyOrigin]]
     var byte_offset: UInt64
 
     # Implementation detail: shape and strides are stored inline after
@@ -152,7 +152,9 @@ struct DLTensor[rank: Int, dtype: DType](ImplicitlyCopyable):
         self.byte_offset = 0
 
         self._shape_ptr = (
-            UnsafePointer(to=self.shape).bitcast[Int64]().as_unsafe_any_origin()
+            Pointer(to=self.shape)
+            .unsafe_bitcast[Int64]()
+            .as_unsafe_any_origin()
         )
 
         # DLPack convention is that null strides mean the tensor isrow-major
@@ -162,8 +164,8 @@ struct DLTensor[rank: Int, dtype: DType](ImplicitlyCopyable):
             self._strides_ptr = {}
         else:
             self._strides_ptr = (
-                UnsafePointer(to=self.strides)
-                .bitcast[Int64]()
+                Pointer(to=self.strides)
+                .unsafe_bitcast[Int64]()
                 .as_unsafe_any_origin()
             )
 
@@ -184,10 +186,12 @@ struct DLTensor[rank: Int, dtype: DType](ImplicitlyCopyable):
 
         # Fix up self-referential pointers to our own inline storage.
         self._shape_ptr = (
-            UnsafePointer(to=self.shape).bitcast[Int64]().as_unsafe_any_origin()
+            Pointer(to=self.shape)
+            .unsafe_bitcast[Int64]()
+            .as_unsafe_any_origin()
         )
         self._strides_ptr = (
-            UnsafePointer(to=self.strides)
-            .bitcast[Int64]()
+            Pointer(to=self.strides)
+            .unsafe_bitcast[Int64]()
             .as_unsafe_any_origin()
         )

@@ -36,3 +36,10 @@ shape lands one config file plus one matrix entry.
 2. Add a matching entry to `PIPELINES` in
    `max/tests/integration/accuracy/llm_fuzz_matrix.py` with the
    runner, GPU layout, instance type, and timeout.
+3. Add the same `<owner>/<name>` string to the `pipeline` input's
+   `options` list in `.github/workflows/llmFuzzAdHoc.yaml`, so the
+   value is dispatchable.
+4. If the config names a `model_profile` that doesn't exist yet,
+   register it in `MODEL_PROFILES`
+   (`max/tests/integration/accuracy/llm_fuzz/model_config.py`) —
+   `fuzz.py` validates `--model-profile` against those keys.

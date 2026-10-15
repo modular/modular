@@ -32,9 +32,9 @@ Usage:
 
 from std.sys import size_of
 
-from std.gpu.host import DeviceContext, FuncAttribute
-from std.gpu.host.info import B200
-from layout import TileTensor, flatten_leading
+from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host.info import B200
+from layout import TileTensor, coord, flatten_leading
 from structured_kernels.tile_types import create_tma_tile
 
 from std.utils.index import Index, IndexList
@@ -93,7 +93,7 @@ def grouped_matmul_1d2d_blockwise_fp8[
     comptime c_type = config.c_type
     comptime assert transpose_b, "Only support transposed B"
     comptime assert (
-        a_type == b_type and a_type == DType.float8_e4m3fn
+        a_type == b_type and a_type == .float8_e4m3fn
     ), "Only support float8_e4m3fn"
     comptime assert (
         a_scales_type == b_scales_type
@@ -158,6 +158,11 @@ def grouped_matmul_1d2d_blockwise_fp8[
             Int32(config.cluster_shape[1]),
             Int32(config.cluster_shape[2]),
         ),
+        b_scales_engine=type_of(b_scales_2d).Engine,
+        c_device_engine=type_of(c_device).Engine,
+        offsets_engine=type_of(a_offsets).Engine,
+        expert_ids_engine=type_of(expert_ids).Engine,
+        expert_scales_engine=type_of(expert_scales).Engine,
     ]
     comptime kernel = KernelType.run
 
@@ -165,25 +170,28 @@ def grouped_matmul_1d2d_blockwise_fp8[
     var a_tma_op = create_tma_tile[
         KernelType.ATileLayout,
         KernelType.ADescLayout,
-        Index(BM // config.cluster_shape[1], BK),
+        coord[BM // config.cluster_shape[1], BK],
         swizzle_mode=config.a_swizzle,
     ](ctx, a_device)
 
     var b_tma_op = create_tma_tile[
         KernelType.BTileLayout,
         KernelType.BDescLayout,
-        Index(
-            BN // (config.cluster_shape[0] // config.cta_group), BK
-        ) if transpose_b else Index(
-            BK, BN // (config.cluster_shape[0] // config.cta_group)
-        ),
+        coord[
+            BN
+            // (
+                config.cluster_shape[0] // config.cta_group
+            ) if transpose_b else BK,
+            BK if transpose_b else BN
+            // (config.cluster_shape[0] // config.cta_group),
+        ],
         swizzle_mode=config.b_swizzle,
     ](ctx, b_2d)
 
     var a_scales_tma_op = create_tma_tile[
         KernelType.AScalesLayout,
         KernelType.AScalesLayout,
-        Index(1, BM),
+        coord[1, BM],
     ](ctx, a_scales)
 
     var grid_dim = (
@@ -206,7 +214,7 @@ def grouped_matmul_1d2d_blockwise_fp8[
         expert_ids,
         expert_scales,
         c_device,
-        num_active_experts,
+        Int32(num_active_experts),
         UInt32(K),
         grid_dim=grid_dim,
         block_dim=(32 * (load_warps + mma_warps + epilogue_warps)),

@@ -11,26 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu import *
-from std.gpu.host import DeviceContext
+from max.gpu import *
+from max.gpu.host import DeviceContext
 from std.random import randn
-from layout import (
-    Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-    TileTensor,
-    lt_to_tt,
-    UNKNOWN_VALUE,
-    row_major,
-)
+from layout import Idx, TileTensor, row_major
 from nn.attention.gpu.mha import mha_gpu_naive
 from nn.attention.mha_mask import CausalMask
-from nn.attention.mha_operand import LayoutTensorMHAOperand
+from nn.attention.mha_operand import TileTensorMHAOperand
 from nn.attention.gpu.mla import flare_mla_prefill
 from std.testing import assert_almost_equal
-
-from std.utils.index import Index
 
 
 def test_prefill[
@@ -44,6 +33,7 @@ def test_prefill[
     cache_num_heads: Int,
     batch_size: Int = 1,
     use_causal_mask: Bool = True,
+    v_depth: Int = kv_depth,
 ](seq_len: Int, num_keys: Int, ctx: DeviceContext,) raises:
     print(
         "test_mla_prefill",
@@ -63,6 +53,8 @@ def test_prefill[
         depth,
         "kv_depth:",
         kv_depth,
+        "v_depth:",
+        v_depth,
         "cache_depth:",
         cache_depth,
         "cache_num_heads:",
@@ -73,8 +65,8 @@ def test_prefill[
 
     var q_size = batch_size * seq_len * num_heads * depth
     var k_size = batch_size * num_keys * num_heads * kv_depth
-    var v_size = k_size
-    var o_size = batch_size * seq_len * num_heads * kv_depth
+    var v_size = batch_size * num_keys * num_heads * v_depth
+    var o_size = batch_size * seq_len * num_heads * v_depth
     var cache_size = batch_size * num_keys * cache_num_heads * cache_depth
 
     var q_ptr = ctx.enqueue_create_host_buffer[qkv_type](q_size)
@@ -83,12 +75,10 @@ def test_prefill[
     var cache_ptr = ctx.enqueue_create_host_buffer[k_rope_type](cache_size)
     var output_ptr = ctx.enqueue_create_host_buffer[output_type](o_size)
 
-    var q_bf16_ptr = ctx.enqueue_create_host_buffer[DType.bfloat16](q_size)
-    var k_bf16_ptr = ctx.enqueue_create_host_buffer[DType.bfloat16](k_size)
-    var v_bf16_ptr = ctx.enqueue_create_host_buffer[DType.bfloat16](v_size)
-    var cache_bf16_ptr = ctx.enqueue_create_host_buffer[DType.bfloat16](
-        cache_size
-    )
+    var q_bf16_ptr = ctx.enqueue_create_host_buffer[.bfloat16](q_size)
+    var k_bf16_ptr = ctx.enqueue_create_host_buffer[.bfloat16](k_size)
+    var v_bf16_ptr = ctx.enqueue_create_host_buffer[.bfloat16](v_size)
+    var cache_bf16_ptr = ctx.enqueue_create_host_buffer[.bfloat16](cache_size)
 
     randn(q_bf16_ptr.as_span())
     randn(k_bf16_ptr.as_span())
@@ -105,28 +95,28 @@ def test_prefill[
     for i in range(q_size):
         var q_val = (q_bf16_ptr[i] * scale_factor).cast[qkv_type]()
         q_ptr[i] = q_val
-        q_bf16_ptr[i] = q_val.cast[DType.bfloat16]()
+        q_bf16_ptr[i] = q_val.cast[.bfloat16]()
 
     for i in range(k_size):
         var k_val = (k_bf16_ptr[i] * scale_factor).cast[qkv_type]()
         k_ptr[i] = k_val
-        k_bf16_ptr[i] = k_val.cast[DType.bfloat16]()
+        k_bf16_ptr[i] = k_val.cast[.bfloat16]()
 
     for i in range(v_size):
         var v_val = (v_bf16_ptr[i] * scale_factor).cast[qkv_type]()
         v_ptr[i] = v_val
-        v_bf16_ptr[i] = v_val.cast[DType.bfloat16]()
+        v_bf16_ptr[i] = v_val.cast[.bfloat16]()
 
     for i in range(cache_size):
         var cache_val = (cache_bf16_ptr[i] * scale_factor).cast[k_rope_type]()
         cache_ptr[i] = cache_val
-        cache_bf16_ptr[i] = cache_val.cast[DType.bfloat16]()
+        cache_bf16_ptr[i] = cache_val.cast[.bfloat16]()
 
     # input row offsets and cache row offsets
-    var input_row_offsets = ctx.enqueue_create_host_buffer[DType.uint32](
+    var input_row_offsets = ctx.enqueue_create_host_buffer[.uint32](
         batch_size + 1
     )
-    var cache_row_offsets = ctx.enqueue_create_host_buffer[DType.uint32](
+    var cache_row_offsets = ctx.enqueue_create_host_buffer[.uint32](
         batch_size + 1
     )
     for i in range(batch_size):
@@ -146,7 +136,7 @@ def test_prefill[
     )
     var v = TileTensor(
         v_bf16_ptr,
-        row_major((batch_size * num_keys, Idx[num_heads], Idx[kv_depth])),
+        row_major((batch_size * num_keys, Idx[num_heads], Idx[v_depth])),
     )
     var cache = TileTensor(
         cache_bf16_ptr,
@@ -161,7 +151,7 @@ def test_prefill[
     )
     var output = TileTensor(
         output_ptr,
-        row_major((batch_size * seq_len, Idx[num_heads], Idx[kv_depth])),
+        row_major((batch_size * seq_len, Idx[num_heads], Idx[v_depth])),
     )
 
     # device pointers
@@ -170,10 +160,10 @@ def test_prefill[
     var v_device_ptr = ctx.enqueue_create_buffer[qkv_type](v_size)
     var cache_device_ptr = ctx.enqueue_create_buffer[k_rope_type](cache_size)
     var output_device_ptr = ctx.enqueue_create_buffer[output_type](o_size)
-    var input_row_offsets_device_ptr = ctx.enqueue_create_buffer[DType.uint32](
+    var input_row_offsets_device_ptr = ctx.enqueue_create_buffer[.uint32](
         batch_size + 1
     )
-    var cache_row_offsets_device_ptr = ctx.enqueue_create_buffer[DType.uint32](
+    var cache_row_offsets_device_ptr = ctx.enqueue_create_buffer[.uint32](
         batch_size + 1
     )
 
@@ -196,7 +186,7 @@ def test_prefill[
     )
     var v_device = TileTensor(
         v_device_ptr,
-        row_major((batch_size * num_keys, Idx[num_heads], Idx[kv_depth])),
+        row_major((batch_size * num_keys, Idx[num_heads], Idx[v_depth])),
     )
     var cache_device = TileTensor(
         cache_device_ptr,
@@ -211,7 +201,7 @@ def test_prefill[
     )
     var output_device = TileTensor(
         output_device_ptr,
-        row_major((batch_size * seq_len, Idx[num_heads], Idx[kv_depth])),
+        row_major((batch_size * seq_len, Idx[num_heads], Idx[v_depth])),
     )
     var input_row_offsets_device = TileTensor(
         input_row_offsets_device_ptr,
@@ -222,18 +212,19 @@ def test_prefill[
         row_major(batch_size + 1),
     )
 
-    @parameter
-    @always_inline
-    @__copy_capture(
-        q_device,
-        k_device,
-        v_device,
-        cache_device,
-        input_row_offsets_device,
-        cache_row_offsets_device,
-        output_device,
-    )
-    def kernel_launch(ctx: DeviceContext) raises:
+    @inline(.always)
+    def kernel_launch(
+        ctx: DeviceContext,
+    ) raises {
+        var q_device,
+        var k_device,
+        var v_device,
+        var cache_device,
+        var input_row_offsets_device,
+        var cache_row_offsets_device,
+        var output_device,
+        imm,
+    }:
         flare_mla_prefill[rank=3](
             output_device,
             q_device,
@@ -255,10 +246,11 @@ def test_prefill[
 
     # create reference K and V
     # unlike flare_mla_prefill, K_ref and V_ref each head is of size depth (not kv_depth)
-    var k_ref_ptr = ctx.enqueue_create_host_buffer[DType.bfloat16](
+    comptime assert v_depth <= depth, "v_depth must not exceed the padded depth"
+    var k_ref_ptr = ctx.enqueue_create_host_buffer[.bfloat16](
         batch_size * num_keys * num_heads * depth
     )
-    var v_ref_ptr = ctx.enqueue_create_host_buffer[DType.bfloat16](
+    var v_ref_ptr = ctx.enqueue_create_host_buffer[.bfloat16](
         batch_size * num_keys * num_heads * depth
     )
     var output_ref_ptr = ctx.enqueue_create_host_buffer[output_type](
@@ -266,35 +258,28 @@ def test_prefill[
     )
 
     # create reference K and V
-    var k_ref = LayoutTensor[DType.bfloat16, Layout.row_major[4]()](
-        k_ref_ptr,
-        RuntimeLayout[Layout.row_major[4]()].row_major(
-            Index(batch_size, num_keys, num_heads, depth)
-        ),
+    var k_ref = TileTensor(
+        k_ref_ptr, row_major(batch_size, num_keys, num_heads, depth)
     )
-    var v_ref = LayoutTensor[DType.bfloat16, Layout.row_major[4]()](
-        v_ref_ptr,
-        RuntimeLayout[Layout.row_major[4]()].row_major(
-            Index(batch_size, num_keys, num_heads, depth)
-        ),
+    var v_ref = TileTensor(
+        v_ref_ptr, row_major(batch_size, num_keys, num_heads, depth)
     )
-    var output_ref = LayoutTensor[output_type, Layout.row_major[4]()](
-        output_ref_ptr,
-        RuntimeLayout[Layout.row_major[4]()].row_major(
-            Index(batch_size, seq_len, num_heads, depth)
-        ),
+    var output_ref = TileTensor(
+        output_ref_ptr, row_major(batch_size, seq_len, num_heads, depth)
     )
 
-    # the first kv_depth elements of each head in K_ref and V_ref are the same as K and V
+    # the first kv_depth elements of each head in K_ref are the same as K;
+    # the first v_depth elements of each head in V_ref are the same as V.
     for b in range(batch_size):
         for s in range(num_keys):
             for h in range(num_heads):
-                for d in range(kv_depth):
-                    k_ref[b, s, h, d] = k[b * num_keys + s, h, d]
-                    v_ref[b, s, h, d] = v[b * num_keys + s, h, d]
+                for dk in range(kv_depth):
+                    k_ref[b, s, h, dk] = k[b * num_keys + s, h, dk]
+                for dv in range(v_depth):
+                    v_ref[b, s, h, dv] = v[b * num_keys + s, h, dv]
 
-    # the rest of the elements in K_ref are broadcasted from the last (depth - kv_depth) elements of the head in cache
-    # the rest of the elements in V_ref are zeros
+    # Pad K_ref and zero V_ref out to the canonical reference depth.
+    # K_ref relays the last (depth - kv_depth) elements of the head in cache.
     for b in range(batch_size):
         for s in range(num_keys):
             for h in range(num_heads):
@@ -302,76 +287,55 @@ def test_prefill[
                     k_ref[b, s, h, d + kv_depth] = cache[
                         b, s, 0, cache_depth - (depth - kv_depth) + d
                     ][0]
-                    v_ref[b, s, h, d + kv_depth] = 0
+                for d in range(depth - v_depth):
+                    v_ref[b, s, h, d + v_depth] = 0
 
     # Create bf16 Q on device for the naive reference kernel.
     # This uses the roundtripped values (bf16 -> fp8 -> bf16) so both
     # the kernel under test and the reference see identical values.
-    var q_ref_device_ptr = ctx.enqueue_create_buffer[DType.bfloat16](q_size)
+    var q_ref_device_ptr = ctx.enqueue_create_buffer[.bfloat16](q_size)
     ctx.enqueue_copy(q_ref_device_ptr, q_bf16_ptr)
 
-    comptime q_layout_4d = Layout.row_major(
-        Index(UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth)
-    )
-    var q_device_rank4 = LayoutTensor[DType.bfloat16, q_layout_4d](
-        q_ref_device_ptr.unsafe_ptr(),
-        RuntimeLayout[q_layout_4d].row_major(
-            Index(batch_size, seq_len, num_heads, depth)
-        ),
+    var q_device_rank4 = TileTensor(
+        q_ref_device_ptr,
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
 
     # create device pointers for K_ref and V_ref
-    var k_ref_device_ptr = ctx.enqueue_create_buffer[DType.bfloat16](
+    var k_ref_device_ptr = ctx.enqueue_create_buffer[.bfloat16](
         batch_size * num_keys * num_heads * depth
     )
-    var v_ref_device_ptr = ctx.enqueue_create_buffer[DType.bfloat16](
+    var v_ref_device_ptr = ctx.enqueue_create_buffer[.bfloat16](
         batch_size * num_keys * num_heads * depth
     )
     var output_ref_device_ptr = ctx.enqueue_create_buffer[output_type](
         batch_size * seq_len * num_heads * depth
     )
     # create device buffers for K_ref and V_ref
-    comptime k_layout_4d = Layout.row_major(
-        Index(UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth)
+    var k_ref_device = TileTensor(
+        k_ref_device_ptr,
+        row_major((batch_size, num_keys, Idx[num_heads], Idx[depth])),
     )
-    var k_ref_device = LayoutTensor[DType.bfloat16, k_layout_4d](
-        k_ref_device_ptr.unsafe_ptr(),
-        RuntimeLayout[k_layout_4d].row_major(
-            Index(batch_size, num_keys, num_heads, depth)
-        ),
+    var v_ref_device = TileTensor(
+        v_ref_device_ptr,
+        row_major((batch_size, num_keys, Idx[num_heads], Idx[depth])),
     )
-    comptime v_layout_4d = Layout.row_major(
-        Index(UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth)
-    )
-    var v_ref_device = LayoutTensor[DType.bfloat16, v_layout_4d](
-        v_ref_device_ptr.unsafe_ptr(),
-        RuntimeLayout[v_layout_4d].row_major(
-            Index(batch_size, num_keys, num_heads, depth)
-        ),
-    )
-    comptime output_layout_4d = Layout.row_major(
-        Index(UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth)
-    )
-    var output_ref_device = LayoutTensor[output_type, output_layout_4d](
-        output_ref_device_ptr.unsafe_ptr(),
-        RuntimeLayout[output_layout_4d].row_major(
-            Index(batch_size, seq_len, num_heads, depth)
-        ),
+    var output_ref_device = TileTensor(
+        output_ref_device_ptr,
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
 
     # copy from host to device
     ctx.enqueue_copy(k_ref_device_ptr, k_ref_ptr)
     ctx.enqueue_copy(v_ref_device_ptr, v_ref_ptr)
 
-    var null_valid_length = LayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
-    ](
-        None,
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(Index(0)),
+    var null_valid_length = TileTensor(
+        MutPointer[UInt32, MutAnyOrigin].unsafe_dangling(),
+        row_major(Idx[0]),
     )
 
-    var k_ref_operand = LayoutTensorMHAOperand(lt_to_tt(k_ref_device))
-    var v_ref_operand = LayoutTensorMHAOperand(lt_to_tt(v_ref_device))
+    var k_ref_operand = TileTensorMHAOperand(k_ref_device)
+    var v_ref_operand = TileTensorMHAOperand(v_ref_device)
 
     # create reference output
     mha_gpu_naive[_is_cache_length_accurate=True](
@@ -395,11 +359,8 @@ def test_prefill[
     ctx.synchronize()
 
     # view output as a rank 4 buffer
-    var output_rank4 = LayoutTensor[output_type, Layout.row_major[4]()](
-        output_ptr,
-        RuntimeLayout[Layout.row_major[4]()].row_major(
-            Index(batch_size, seq_len, num_heads, kv_depth)
-        ),
+    var output_rank4 = TileTensor(
+        output_ptr, row_major(batch_size, seq_len, num_heads, v_depth)
     )
 
     # compare output with reference
@@ -407,18 +368,22 @@ def test_prefill[
     #  - 3 mantissa bits vs 7, so each multiply has ~16x coarser rounding
     #  - softmax probabilities stored as FP8 in TMEM lose precision
     #  - error accumulates across KV tiles (seq_len/BN iterations)
+    var max_error = Float32(0)
     for b in range(batch_size):
         for s in range(seq_len):
             for h in range(num_heads):
-                for d in range(kv_depth):
-                    lhs = output_rank4[b, s, h, d]
-                    rhs = output_ref[b, s, h, d]
+                for d in range(v_depth):
+                    var lhs = output_rank4[b, s, h, d]
+                    var rhs = output_ref[b, s, h, d]
+                    var diff = abs(Float32(lhs[0]) - Float32(rhs[0]))
+                    max_error = max(max_error, diff)
                     assert_almost_equal(
                         lhs,
                         rhs,
                         atol=5e-2,
                         rtol=2e-2,
                     )
+    print("max_error:", max_error)
 
     _ = q_device_ptr
     _ = k_device_ptr
@@ -521,6 +486,45 @@ def test_mla_prefill_qkv_fp8[
         cache_num_heads=1,
         batch_size=batch_size,
     ](120, 240, ctx)
+    test_prefill_glm[
+        qkv_type,
+        k_rope_type,
+        output_type,
+        batch_size=batch_size,
+    ](ctx)
+
+
+def test_prefill_glm[
+    qkv_type: DType,
+    k_rope_type: DType,
+    output_type: DType,
+    batch_size: Int = 1,
+](ctx: DeviceContext) raises:
+    """GLM-5.3 shape: qk_nope=192, qk_rope=64, v_head_dim=256."""
+    test_prefill[
+        qkv_type,
+        k_rope_type,
+        output_type,
+        depth=256,
+        num_heads=8,
+        kv_depth=192,
+        cache_depth=576,
+        cache_num_heads=1,
+        batch_size=batch_size,
+        v_depth=256,
+    ](128, 128, ctx)
+    test_prefill[
+        qkv_type,
+        k_rope_type,
+        output_type,
+        depth=256,
+        num_heads=8,
+        kv_depth=192,
+        cache_depth=576,
+        cache_num_heads=1,
+        batch_size=batch_size,
+        v_depth=256,
+    ](150, 150, ctx)
 
 
 def main() raises:

@@ -17,6 +17,7 @@ from __future__ import annotations
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
 from max.pipelines.lib import SupportedArchitecture
+from max.pipelines.lib.tokenizer import ReasoningTextTokenizer
 from max.pipelines.modeling.types import PipelineTask
 
 # Nemotron-3's chat template is Qwen-format: it pre-fills ``<think>\n`` in the
@@ -33,20 +34,22 @@ from ..qwen3_5.tool_parser import (
 )
 from .model import NemotronHModel
 from .model_config import NemotronHConfig
-from .tokenizer import NemotronHTokenizer
 from .weight_adapters import convert_nemotron_h_state_dict
 
 nemotron_h_arch = SupportedArchitecture(
     name="NemotronHForCausalLM",
     task=PipelineTask.TEXT_GENERATION,
-    example_repo_ids=["nvidia/NVIDIA-Nemotron-3-Nano-4B-FP8"],
+    example_repo_ids=[
+        "nvidia/NVIDIA-Nemotron-3-Nano-4B-FP8",
+        "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-FP8",
+    ],
     default_weights_format=WeightsFormat.safetensors,
-    default_encoding="bfloat16",
+    default_encoding=NemotronHConfig.DEFAULT_ENCODING,
     # modelopt per-tensor static FP8 on the (non-excluded) mamba in/out_proj and
     # MLP up/down projections; attention, conv1d, norms, lm_head stay bf16.
-    supported_encodings={"bfloat16", "float8_e4m3fn"},
+    supported_encodings=NemotronHConfig.SUPPORTED_ENCODINGS,
     pipeline_model=NemotronHModel,
-    tokenizer=NemotronHTokenizer,
+    tokenizer=ReasoningTextTokenizer,
     context_type=TextContext,
     # NoPE: attention adds no rotary embedding (position flows through the SSM).
     weight_adapters={

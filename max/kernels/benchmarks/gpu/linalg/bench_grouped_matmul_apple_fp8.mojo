@@ -34,10 +34,10 @@ the fixed per-launch overhead is amortized and the ratio is a conservative lower
 bound on the pure kernel delta.
 """
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.time import perf_counter
 
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Idx, TileTensor, row_major
 
 from linalg.grouped_matmul import naive_grouped_matmul
 from linalg.matmul.gpu.apple.matmul2d_fp8 import enqueue_grouped_matmul2d_fp8
@@ -61,22 +61,22 @@ def _bench_grouped[
     """
     var total_M = num_active * tokens_per_expert
 
-    var act_host = ctx.enqueue_create_host_buffer[DType.bfloat16](total_M * K)
-    var b_fp8_host = ctx.enqueue_create_host_buffer[DType.float8_e4m3fn](
+    var act_host = ctx.enqueue_create_host_buffer[.bfloat16](total_M * K)
+    var b_fp8_host = ctx.enqueue_create_host_buffer[.float8_e4m3fn](
         num_experts * N * K
     )
-    var b_bf16_host = ctx.enqueue_create_host_buffer[DType.bfloat16](
+    var b_bf16_host = ctx.enqueue_create_host_buffer[.bfloat16](
         num_experts * N * K
     )
-    var off_host = ctx.enqueue_create_host_buffer[DType.uint32](num_experts + 1)
-    var eid_host = ctx.enqueue_create_host_buffer[DType.int32](num_experts)
+    var off_host = ctx.enqueue_create_host_buffer[.uint32](num_experts + 1)
+    var eid_host = ctx.enqueue_create_host_buffer[.int32](num_experts)
 
     for i in range(total_M * K):
-        act_host[i] = Scalar[DType.bfloat16](Float32((i % 5) - 2))
+        act_host[i] = BFloat16(Float32((i % 5) - 2))
     for i in range(num_experts * N * K):
         var v = Float32((i % 7) - 3) * Float32(0.5)
-        b_fp8_host[i] = v.cast[DType.float8_e4m3fn]()
-        b_bf16_host[i] = v.cast[DType.bfloat16]()
+        b_fp8_host[i] = v.cast[.float8_e4m3fn]()
+        b_bf16_host[i] = v.cast[.bfloat16]()
     for i in range(num_experts + 1):
         off_host[i] = 0
     for i in range(num_experts):
@@ -85,39 +85,33 @@ def _bench_grouped[
         off_host[i + 1] = off_host[i] + UInt32(tokens_per_expert)
         eid_host[i] = Int32(i)
 
-    var act_dev = ctx.enqueue_create_buffer[DType.bfloat16](total_M * K)
-    var b_fp8_dev = ctx.enqueue_create_buffer[DType.float8_e4m3fn](
+    var act_dev = ctx.enqueue_create_buffer[.bfloat16](total_M * K)
+    var b_fp8_dev = ctx.enqueue_create_buffer[.float8_e4m3fn](
         num_experts * N * K
     )
-    var b_bf16_dev = ctx.enqueue_create_buffer[DType.bfloat16](
-        num_experts * N * K
-    )
-    var out_dev = ctx.enqueue_create_buffer[DType.float32](total_M * N)
-    var off_dev_buf = ctx.enqueue_create_buffer[DType.uint32](num_experts + 1)
-    var eid_dev_buf = ctx.enqueue_create_buffer[DType.int32](num_experts)
+    var b_bf16_dev = ctx.enqueue_create_buffer[.bfloat16](num_experts * N * K)
+    var out_dev = ctx.enqueue_create_buffer[.float32](total_M * N)
+    var off_dev_buf = ctx.enqueue_create_buffer[.uint32](num_experts + 1)
+    var eid_dev_buf = ctx.enqueue_create_buffer[.int32](num_experts)
     ctx.enqueue_copy(act_dev, act_host)
     ctx.enqueue_copy(b_fp8_dev, b_fp8_host)
     ctx.enqueue_copy(b_bf16_dev, b_bf16_host)
     ctx.enqueue_copy(off_dev_buf, off_host)
     ctx.enqueue_copy(eid_dev_buf, eid_host)
 
-    var a_tt = TileTensor(
-        act_dev.unsafe_ptr(), row_major(Coord(total_M, Idx[K]))
-    )
+    var a_tt = TileTensor(act_dev.unsafe_ptr(), row_major(total_M, Idx[K]))
     var b_fp8_tt = TileTensor(
         b_fp8_dev.unsafe_ptr(), row_major[num_experts, N, K]()
     )
     var b_bf16_tt = TileTensor(
         b_bf16_dev.unsafe_ptr(), row_major[num_experts, N, K]()
     )
-    var out_tt = TileTensor(
-        out_dev.unsafe_ptr(), row_major(Coord(total_M, Idx[N]))
-    )
+    var out_tt = TileTensor(out_dev.unsafe_ptr(), row_major(total_M, Idx[N]))
     var off_tt = TileTensor(
-        off_dev_buf.unsafe_ptr(), row_major(Coord(num_experts + 1))
+        off_dev_buf.unsafe_ptr(), row_major(num_experts + 1)
     )
     var eid_tt = TileTensor(
-        eid_dev_buf.unsafe_ptr(), row_major(Coord(Idx[num_experts]))
+        eid_dev_buf.unsafe_ptr(), row_major(Idx[num_experts])
     )
     ctx.synchronize()
 

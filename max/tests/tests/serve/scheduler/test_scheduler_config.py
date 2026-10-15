@@ -11,7 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from unittest.mock import MagicMock
+
 import pytest
+from max.pipelines.lib import MemoryPlan
 from max.serve.scheduler import TokenGenerationSchedulerConfig
 
 
@@ -32,4 +35,135 @@ def test_scheduler_max_batch_size_less_than_target_tokens_per_batch_ce() -> (
         TokenGenerationSchedulerConfig(
             max_batch_size=101,
             target_tokens_per_batch_ce=100,
+        )
+
+
+def test_scheduler_max_request_input_tokens_non_negative() -> None:
+    with pytest.raises(
+        ValueError,
+        match=r"`max_request_input_tokens` must be non-negative, found -1",
+    ):
+        TokenGenerationSchedulerConfig(
+            max_batch_size=100,
+            target_tokens_per_batch_ce=100,
+            max_request_input_tokens=-1,
+        )
+
+
+def test_scheduler_min_chunk_size_fits_under_max_request_input_tokens() -> None:
+    # ok
+    TokenGenerationSchedulerConfig(
+        max_batch_size=100,
+        target_tokens_per_batch_ce=100,
+        chunked_prefill_min_chunk_size=64,
+        max_request_input_tokens=128,
+    )
+
+    # not ok because the floor forbids every split the cap would make
+    with pytest.raises(
+        ValueError,
+        match=r"`chunked_prefill_min_chunk_size` must not exceed `max_request_input_tokens`, found 129 > 128",
+    ):
+        TokenGenerationSchedulerConfig(
+            max_batch_size=100,
+            target_tokens_per_batch_ce=100,
+            chunked_prefill_min_chunk_size=129,
+            max_request_input_tokens=128,
+        )
+
+
+def test_from_pipeline_config_reads_the_memory_plan() -> None:
+    """The planned sequence length and batch token budget come from the
+    memory plan, not from the (possibly divergent) config fields."""
+    pipeline_config = MagicMock()
+    pipeline_config.runtime.max_batch_input_tokens = 8192
+    pipeline_config.runtime.max_batch_total_tokens = 1
+    pipeline_config.runtime.enable_chunked_prefill = True
+    pipeline_config.runtime.chunked_prefill_min_chunk_size = 0
+    pipeline_config.runtime.max_request_input_tokens = 0
+    pipeline_config.runtime.enable_in_flight_batching = False
+    pipeline_config.runtime.prefill_coalesce_min_pending = 0
+    pipeline_config.runtime.prefill_coalesce_max_held_steps = 0
+    pipeline_config.runtime.prefill_schedule_interval = 1
+    pipeline_config.runtime.dp_ce_balance_threshold = 0.8
+    pipeline_config.runtime.decode_stall_timeout_s = None
+    pipeline_config.runtime.decode_request_ttl_s = None
+    pipeline_config.model.max_length = 1
+    pipeline_config.model.data_parallel_degree = 1
+    pipeline_config.speculative = None
+    memory_plan = MemoryPlan(
+        planned_max_batch_size=1,
+        footprint=0,
+        planned_max_length=2048,
+        planned_max_batch_total_tokens=8192,
+    )
+
+    config = TokenGenerationSchedulerConfig.from_pipeline_config(
+        pipeline_config, max_batch_size=1, memory_plan=memory_plan
+    )
+
+    assert config.max_seq_len == 2048
+    assert config.max_batch_total_tokens == 8192
+
+
+def test_from_pipeline_config_without_a_memory_plan() -> None:
+    """``None`` (pipelines sized without a plan) leaves both bounds unset."""
+    pipeline_config = MagicMock()
+    pipeline_config.runtime.max_batch_input_tokens = 8192
+    pipeline_config.runtime.enable_chunked_prefill = True
+    pipeline_config.runtime.chunked_prefill_min_chunk_size = 0
+    pipeline_config.runtime.max_request_input_tokens = 0
+    pipeline_config.runtime.enable_in_flight_batching = False
+    pipeline_config.runtime.prefill_coalesce_min_pending = 0
+    pipeline_config.runtime.prefill_coalesce_max_held_steps = 0
+    pipeline_config.runtime.prefill_schedule_interval = 1
+    pipeline_config.runtime.dp_ce_balance_threshold = 0.8
+    pipeline_config.runtime.decode_stall_timeout_s = None
+    pipeline_config.runtime.decode_request_ttl_s = None
+    pipeline_config.model.data_parallel_degree = 1
+    pipeline_config.speculative = None
+
+    config = TokenGenerationSchedulerConfig.from_pipeline_config(
+        pipeline_config, max_batch_size=1, memory_plan=None
+    )
+
+    assert config.max_seq_len is None
+    assert config.max_batch_total_tokens is None
+
+
+def test_prefill_schedule_interval_must_be_at_least_one() -> None:
+    # ok: 1 is the default, admitting prefill every step
+    TokenGenerationSchedulerConfig(
+        max_batch_size=100,
+        target_tokens_per_batch_ce=100,
+        prefill_schedule_interval=1,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=r"`prefill_schedule_interval` must be at least 1, found 0",
+    ):
+        TokenGenerationSchedulerConfig(
+            max_batch_size=100,
+            target_tokens_per_batch_ce=100,
+            prefill_schedule_interval=0,
+        )
+
+
+def test_prefill_coalesce_max_held_steps_must_be_non_negative() -> None:
+    # ok: 0 is the default, falling back to prefill_coalesce_min_pending
+    TokenGenerationSchedulerConfig(
+        max_batch_size=100,
+        target_tokens_per_batch_ce=100,
+        prefill_coalesce_max_held_steps=0,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=r"`prefill_coalesce_max_held_steps` must be non-negative, found -1",
+    ):
+        TokenGenerationSchedulerConfig(
+            max_batch_size=100,
+            target_tokens_per_batch_ce=100,
+            prefill_coalesce_max_held_steps=-1,
         )

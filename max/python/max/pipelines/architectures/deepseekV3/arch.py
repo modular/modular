@@ -11,6 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from max.experimental.cascade.pipelines.common_textgen import (
+    CommonTextGenPipeline,
+)
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
 from max.pipelines.lib import SupportedArchitecture, TextTokenizer
@@ -29,12 +32,8 @@ deepseekV3_arch = SupportedArchitecture(
     example_repo_ids=[
         "deepseek-ai/DeepSeek-V3",
     ],
-    default_encoding="bfloat16",
-    supported_encodings={
-        "bfloat16",
-        "float8_e4m3fn",
-        "float4_e2m1fnx2",
-    },
+    default_encoding=DeepseekV3Config.DEFAULT_ENCODING,
+    supported_encodings=DeepseekV3Config.SUPPORTED_ENCODINGS,
     multi_gpu_supported=True,
     pipeline_model=DeepseekV3Model,
     tokenizer=TextTokenizer,
@@ -49,4 +48,5 @@ deepseekV3_arch = SupportedArchitecture(
     config=DeepseekV3Config,
     tool_parser=resolve_deepseekv3_tool_parser,
     memory_planner=DeepseekV3MemoryPlanner,
+    cascade_pipeline_factory=CommonTextGenPipeline,
 )

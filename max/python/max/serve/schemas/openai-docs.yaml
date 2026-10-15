@@ -3,52 +3,8 @@ info:
   title: MAX REST API reference
   description: |
 
-    MAX is a high-performance, Python-based inference server for
-    deploying large language models (LLMs) locally or in the cloud. It provides
-    efficient request handling through advanced batching and scheduling, and
-    an OpenAI-compatible REST endpoint.
-
-    ## Get started
-
-    With just a few commands, you can start a local endpoint with the GenAI
-    model of your choice using our [`max`](/max/cli) CLI
-    and start sending requests.
-
-    When you want to deploy your model to a cloud-hosted endpoint, you can use
-    our [MAX container](/max/container)—see our [Get started with
-    MAX](/max/get-started) and then see our tutorials on using MAX:
-
-    - [Start a chat endpoint](/max/inference/text-to-text)
-    - [Serve an embedding model](/max/inference/embeddings)
-    - [Image-to-text use cases](/max/inference/image-to-text)
-    - [Image generation](/max/inference/image-generation)
-    - [Deploy MAX on GPU in the cloud](/max/deploy/local-to-cloud/)
-
-    ## OpenAI API compatibility
-
-    The MAX REST API is compatible with a subset of the [OpenAI REST
-    API](https://platform.openai.com/docs/api-reference/introduction). This
-    allows you to use many existing OpenAI client applications with MAX
-    endpoints.
-
-    - **Supported endpoints:**
-
-        - [Responses](#POST/v1/responses) (`/v1/responses`)
-        - [Chat completions](#POST/v1/chat/completions) (`/v1/chat/completions`)
-        - [Completions](#POST/v1/completions) (`/v1/completions`)
-        - [Embeddings](#POST/v1/embeddings) (`/v1/embeddings`)
-        - [List models](#GET/v1/models) (`/v1/models`)
-        - [Health check](#GET/health) (`/health`)
-
-    - **Parameter handling:** While aiming for high compatibility, not all
-    OpenAI body parameters are implemented. Some may be accepted as no-ops
-    (ignored but won't cause errors) to maintain client compatibility. The
-    specific endpoint documentation below details only the parameters that
-    actively affect behavior in MAX.
-
-    In addition to the OpenAI APIs, MAX provides a Prometheus-formatted
-    [metrics endpoint](/max/container#metrics) to help track your model's
-    performance.
+    The MAX REST API provides an OpenAI-compatible REST endpoint for deploying
+    LLMs and other GenAI models locally or in the cloud.
 
 paths:
   /v1/responses:
@@ -57,8 +13,8 @@ paths:
       summary: Create response
       description: |
         Creates a response for the given input. Supports image generation
-        (text-to-image, image-to-image) and video generation (text-to-video,
-        image-to-video). This endpoint follows the
+        (text-to-image, image-to-image), video generation (text-to-video,
+        image-to-video), and audio generation. This endpoint follows the
         [Open Responses](https://huggingface.co/blog/open-responses)
         specification.
 
@@ -70,8 +26,9 @@ paths:
         ```
 
         For detailed usage examples, see the
-        [image generation guide](/max/inference/image-generation) and the
-        [video generation guide](/max/inference/video-generation).
+        [image generation guide](/serve/image-generation), the
+        [video generation guide](/serve/video-generation), and the
+        [audio generation guide](/serve/audio-generation).
       requestBody:
         required: true
         content:
@@ -135,7 +92,8 @@ paths:
                   type: object
                   description: |
                     Provider-specific generation options. Use the `image` key
-                    for image generation models and the `video` key for video
+                    for image generation models, the `video` key for video
+                    generation models, and the `audio` key for audio
                     generation models. The `max` key applies to all models.
                   properties:
                     image:
@@ -342,6 +300,46 @@ paths:
                             inline in `output[0].content[0].video_data`.
                           default: url
                           enum: [url, b64_json]
+                    audio:
+                      type: object
+                      description: |
+                        Configuration options for audio generation models.
+                      properties:
+                        lyrics:
+                          type: string
+                          description: |
+                            The lyrics to sing. Applies to music generation
+                            models.
+                        audio_duration:
+                          type: number
+                          description: |
+                            The maximum length of the generated audio, in
+                            seconds. If you omit
+                            this field, the model uses its default duration.
+                          exclusiveMinimum: 0.0
+                        steps:
+                          type: integer
+                          description: |
+                            The number of denoising steps to run. Applies to
+                            models that generate audio with a diffusion or
+                            flow-matching stage. If you omit this field, the
+                            model uses its default number of steps.
+                          minimum: 1
+                        guidance_scale:
+                          type: number
+                          description: |
+                            The classifier-free guidance scale. If you omit
+                            this field, the model uses its own scales. Audio
+                            models often guide their autoregressive and
+                            denoising stages at different strengths.
+                          exclusiveMinimum: 0.0
+                        audio_format:
+                          type: string
+                          description: |
+                            The format for the returned audio. Only
+                            `wav` is supported.
+                          default: wav
+                          enum: [wav]
             examples:
               textToImage:
                 summary: Text-to-image generation
@@ -401,6 +399,16 @@ paths:
                       num_frames: 81
                       frames_per_second: 16
                       response_format: b64_json
+              audioGeneration:
+                summary: Music generation from a caption and lyrics
+                value:
+                  model: "MiniMaxAI/MiniMax-Music3"
+                  input: "Global Metadata: dream pop, 92 BPM, A minor. Vocal Details: female lead, airy breathy timbre. Arrangement: shimmering electric guitar, soft brushed drums."
+                  seed: 1235
+                  provider_options:
+                    audio:
+                      lyrics: "[verse]\nHeadlights paint the empty road\n[chorus]\nHold the night a little longer"
+                      audio_duration: 30
       responses:
         '200':
           description: OK
@@ -460,6 +468,108 @@ paths:
                                   is `url` (the default for video models).
                                   Download from
                                   `GET /v1/videos/{video_id}/content`.
+                              type:
+                                type: string
+                                description: |
+                                  Content-part discriminator. For audio
+                                  output this is `output_audio`.
+                              audio_url:
+                                type: string
+                                description: |
+                                  URL to download the generated audio.
+                              format:
+                                type: string
+                                description: |
+                                  Format of the generated audio. Only
+                                  `wav` is supported.
+                              sample_rate:
+                                type: integer
+                                description: |
+                                  Sample rate of the generated audio, in
+                                  hertz.
+                              num_samples:
+                                type: integer
+                                description: |
+                                  Number of samples per channel in the
+                                  generated audio.
+                  usage:
+                    type: object
+                    description: |
+                      Token and resource usage for the response. For image
+                      generation, token counts are 0; see
+                      `image_generation_details` for image-specific metadata.
+                    properties:
+                      input_tokens:
+                        type: integer
+                        description: The total number of input tokens.
+                      output_tokens:
+                        type: integer
+                        description: The total number of output tokens.
+                      total_tokens:
+                        type: integer
+                        description: The total number of input and output tokens.
+                      input_tokens_details:
+                        type: object
+                        description: Detailed breakdown of input token counts.
+                      output_tokens_details:
+                        type: object
+                        description: Detailed breakdown of output token counts.
+                      image_generation_details:
+                        type: object
+                        description: |
+                          Image generation metadata, present when the response
+                          contains generated images.
+                        required:
+                          - width
+                          - height
+                          - megapixels
+                          - steps
+                          - image_count
+                        properties:
+                          width:
+                            type: integer
+                            description: The width of each generated image in pixels.
+                          height:
+                            type: integer
+                            description: The height of each generated image in pixels.
+                          megapixels:
+                            type: number
+                            description: The megapixels per image.
+                          steps:
+                            type: integer
+                            description: The number of denoising steps used per image.
+                          image_count:
+                            type: integer
+                            description: The number of images generated for the request.
+                      audio_generation_details:
+                        type: object
+                        description: |
+                          Audio generation metadata. Only present when the
+                          response contains generated audio.
+                        required:
+                          - duration_seconds
+                          - sample_rate
+                          - channels
+                          - num_samples
+                          - steps
+                        properties:
+                          duration_seconds:
+                            type: number
+                            description: Duration of the generated audio, in seconds.
+                          sample_rate:
+                            type: integer
+                            description: Sample rate of the generated audio, in hertz.
+                          channels:
+                            type: integer
+                            description: Number of channels in the generated audio.
+                          num_samples:
+                            type: integer
+                            description: Number of samples per channel.
+                          steps:
+                            type: integer
+                            description: |
+                              Number of denoising steps used to generate
+                              the audio.
         '400':
           description: Bad request
           content:
@@ -866,6 +976,235 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /v1/decisions:
+    post:
+      operationId: createDecisions
+      summary: Create decisions
+      description: |
+        Answers typed questions about an input with a probability for every
+        option, read from the model's next-token scores at the answer position.
+        No text is generated, so `usage.completion_tokens` is always 0. Each
+        question is rendered as its own chat prompt, so adding or reordering
+        questions never changes another question's answer. Any text generation
+        model serves this endpoint. The wire format matches SGLang's
+        `/v1/decisions`.
+      x-codeSamples:
+        - lang: curl
+          source: |
+            curl -X POST http://0.0.0.0:8000/v1/decisions \
+              -H "Content-Type: application/json" \
+              -d '{
+                "model": "Qwen/Qwen3.5-2B",
+                "input": "I was charged twice for order A-104. Please refund one.",
+                "questions": [
+                  {
+                    "id": "team",
+                    "type": "choice",
+                    "question": "Which team should handle this?",
+                    "options": [
+                      {"name": "billing", "description": "Charges and refunds"},
+                      {"name": "technical", "description": "Bugs and outages"}
+                    ]
+                  },
+                  {"id": "refund", "type": "yes_no", "question": "Is a refund requested?"}
+                ]
+              }'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateDecisionsRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateDecisionsResponse'
+        '400':
+          description: |
+            The request is invalid for this model: blank input, duplicate
+            option names, an answer label that is not a single token, a prompt
+            that exceeds the context length, a thinking-enabled chat template,
+            or a server that uses speculative decoding, LoRA, or variable
+            logits.
+        '422':
+          description: |
+            The body does not match the schema (for example, a blank input, an
+            unknown field, or more than 64 questions).
+
+  /v1/systemone:
+    post:
+      operationId: createSystemOne
+      summary: Create System One answers
+      description: |
+        Answers System One `noul` (yes/no), `choice`, and `score` questions with
+        the same label scorer as `/v1/decisions`, so System One clients can
+        point at a MAX server. Any text generation model serves this endpoint.
+        Fields that exist only on `/v1/decisions`
+        (`temperature`, `prompt_format_version`, `return_prompt_token_ids`) are
+        refused.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SystemOneRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemOneResponse'
+        '400':
+          description: |
+            The request is invalid for this model: an unknown model, an answer
+            label that is not a single token, a prompt that exceeds the context
+            length, or a server that uses speculative decoding, LoRA, or
+            variable logits.
+        '422':
+          description: |
+            The body does not match the schema (for example, an unknown
+            question type, too many options or levels, or more than 64
+            questions).
+
+  /v1/audio/speech:
+    post:
+      operationId: createSpeech
+      summary: Create speech
+      description: |
+        Generates audio from a text prompt. Only compatible with
+        audio or music generation models.
+
+        For a full walkthrough, see the
+        [audio generation guide](/serve/audio-generation).
+      x-codeSamples:
+        - lang: Python
+          source: |
+            from openai import OpenAI
+
+            client = OpenAI(
+                base_url="http://0.0.0.0:8000/v1",
+                api_key="EMPTY",
+            )
+
+            response = client.audio.speech.create(
+                model="MiniMaxAI/MiniMax-Music3",
+                input="[verse]\nHeadlights paint the empty road\n[chorus]\nHold the night a little longer",
+                instructions="Global Metadata: dream pop, 92 BPM, A minor. Vocal Details: female lead, airy breathy timbre. Arrangement: shimmering electric guitar, soft brushed drums.",
+                voice="",
+                response_format="wav",
+                extra_body={"audio_duration": 30, "seed": 1235},
+            )
+
+            response.write_to_file("song.wav")
+        - lang: curl
+          source: |
+            curl -X POST http://0.0.0.0:8000/v1/audio/speech \
+              -H "Content-Type: application/json" \
+              -o song.wav \
+              -d '{
+                "model": "MiniMaxAI/MiniMax-Music3",
+                "instructions": "Global Metadata: dream pop, 92 BPM, A minor. Vocal Details: female lead, airy breathy timbre. Arrangement: shimmering electric guitar, soft brushed drums.",
+                "input": "[verse]\nHeadlights paint the empty road\n[chorus]\nHold the night a little longer",
+                "audio_duration": 30,
+                "seed": 1235
+              }'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - model
+                - input
+                - instructions
+              properties:
+                model:
+                  type: string
+                  description: The ID of the audio generation model to use.
+                input:
+                  type: string
+                  description: |
+                    The text the model renders as audio. For a model
+                    that sings, this field holds the lyrics.
+                instructions:
+                  type: string
+                  description: |
+                    A description of how the audio sounds,
+                    such as the genre, tempo, key, mood, vocal, and
+                    arrangement. Music models require this field.
+                voice:
+                  type: string
+                  description: |
+                    The voice to use. Exists for OpenAI compatibility only;
+                    MAX accepts the field and ignores its value.
+                response_format:
+                  type: string
+                  description: |
+                    The container format for the returned audio. MAX
+                    supports only `wav`. Any other value, such as `mp3`,
+                    returns a `400` error.
+                  default: wav
+                  enum: [wav]
+                audio_duration:
+                  type: number
+                  description: |
+                    The maximum length of the generated audio, in seconds.
+                    If you omit this field, the
+                    model uses its own default duration.
+                  default: 60
+                  exclusiveMinimum: 0.0
+                steps:
+                  type: integer
+                  description: |
+                    The number of denoising steps in the flow-matching
+                    stage. Higher values improve the audio quality and
+                    increase the latency. If you omit this field, the model
+                    uses its own default.
+                  default: 30
+                  minimum: 1
+                guidance_scale:
+                  type: number
+                  description: |
+                    The classifier-free guidance scale.
+                  default: 1.7
+                  exclusiveMinimum: 0.0
+                seed:
+                  type: integer
+                  description: |
+                    The seed for the sampling and noise draws. The same seed
+                    and the same prompt reproduce the same audio.
+                  default: 0
+            examples:
+              musicGeneration:
+                summary: Music generation from a caption and lyrics
+                value:
+                  model: "MiniMaxAI/MiniMax-Music3"
+                  input: "[verse]\nHeadlights paint the empty road\n[chorus]\nHold the night a little longer"
+                  instructions: "Global Metadata: dream pop, 92 BPM, A minor. Vocal Details: female lead, airy breathy timbre. Arrangement: shimmering electric guitar, soft brushed drums."
+                  audio_duration: 30
+                  seed: 1235
+      responses:
+        '200':
+          description: OK
+          content:
+            audio/wav:
+              schema:
+                type: string
+                format: binary
+                description: |
+                  The generated audio as 16-bit PCM WAV at the model's own
+                  sample rate.
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /v1/models:
     get:
       operationId: listModels
@@ -986,38 +1325,77 @@ components:
             The maximum number of tokens to generate in the chat completion.
             Preferred alias for `max_tokens`. If both are supplied,
             `max_completion_tokens` takes precedence (no error is raised).
+        reasoning_effort:
+          type: string
+          enum: [none, minimal, low, medium, high, xhigh, max]
+          description: |
+            Controls how much effort the model spends on reasoning. Set to
+            `none` to disable thinking, or `minimal`, `low`, `medium`,
+            `high`, `xhigh`, or `max` to control the trade-off between speed
+            and reasoning depth. How a level is applied depends on the
+            model's chat template. If the request also includes
+            `reasoning.effort`, this field takes precedence.
         thinking:
           type: object
           required:
             - type
           description: |
-            Controls model reasoning, translated to the chat template's thinking
-            flags. The effect is model-dependent: only models whose chat
-            template reads these flags honor it.
+            Controls model reasoning. Useful if the model expects `thinking`
+            rather than `reasoning` parameters.
           properties:
             type:
               type: string
               enum: [enabled, disabled, adaptive]
               description: The reasoning mode.
+        reasoning:
+          type: object
+          description: |
+            Sets the reasoning configuration. See the
+            [Reasoning](/serve/reasoning/) guide for more information.
+
+            Note that some fields are non-functional and only exist
+            to maintain compatibility with different providers.
+          properties:
+            enabled:
+              type: boolean
+              description: Whether to enable reasoning.
+            effort:
+              type: string
+              enum: [none, minimal, low, medium, high, xhigh, max]
+              description: |
+                Controls reasoning effort when `reasoning.enabled` is not set.
+                Set to `none` to disable thinking, or `minimal`, `low`,
+                `medium`, `high`, `xhigh`, or `max` to enable reasoning at the
+                specified level. Ignored when `enabled` is explicitly set.
+            max_tokens:
+              type: integer
+              description: Accepted for client compatibility. Not used by MAX Serve.
+            exclude:
+              type: boolean
+              description: Accepted for client compatibility. Not used by MAX Serve.
         logprobs:
           type: boolean
           description: |
             Whether to return log probabilities of the output tokens or not.
+        return_token_ids:
+          type: boolean
+          default: false
+          description: |
+            If `true`, adds `token_ids` and `prompt_token_ids` to each
+            choice. `token_ids` contains the generated token IDs, and
+            `prompt_token_ids` contains the prompt token IDs after the chat
+            template is applied. When streaming, each chunk's `token_ids`
+            contains only that chunk's new tokens, and `prompt_token_ids`
+            appears only once.
         cache_salt:
           type: string
           maxLength: 512
           description: |
             Per-request salt that isolates this prompt's prefix-cache
             entries in multi-tenant deployments. Requires
-            `kv_cache_hash_algo=sha256` or `sha256_64`.
-        reasoning_split:
-          type: boolean
-          default: true
-          description: |
-            Controls whether reasoning text is returned in a separate
-            `reasoning` field. Setting `false` folds reasoning into
-            `content` wrapped in `<think>...</think>` and is honored only
-            by MiniMax M3.
+            `MAX_SERVE_USE_CLIENT_CACHE_SALT` to be enabled. If both this
+            field and the `X-Cache-Salt` header are present, the header
+            takes precedence. Works with any `kv_cache_hash_algo`.
         response_format:
           type: object
           description: |
@@ -1181,6 +1559,22 @@ components:
                             description: |
                               Optional sizing hint. Downscale the video so its
                               longest side is at most this many pixels.
+        reasoning:
+          type: string
+          description: |
+            The reasoning model's chain-of-thought, populated in response
+            messages when the model produces reasoning text. This is the
+            default field; the opt-in `emit_reasoning_content` server
+            config emits it under `reasoning_content` instead. Exactly one
+            of the two is populated per response.
+        reasoning_content:
+          type: string
+          description: |
+            Alternate chain-of-thought field, populated in response
+            messages instead of `reasoning` when the
+            `emit_reasoning_content` server config is enabled (the naming
+            used by vLLM, SGLang, and the DeepSeek API). Also accepted in
+            request messages to pass prior reasoning back to the model.
         name:
           type: string
           description: |
@@ -1292,6 +1686,20 @@ components:
         message:
           $ref: '#/components/schemas/ChatCompletionMessage'
           description: The chat completion message
+        token_ids:
+          type: array
+          items:
+            type: integer
+          description: |
+            The generated token IDs. Only returned when the request sets
+            `return_token_ids` to `true`.
+        prompt_token_ids:
+          type: array
+          items:
+            type: integer
+          description: |
+            The prompt token IDs. Only returned when the request sets
+            `return_token_ids` to `true`.
 
     CreateCompletionRequest:
       type: object
@@ -1331,6 +1739,15 @@ components:
           minimum: 0
           description: |
             Include the log probabilities on the logprobs most likely tokens.
+        return_token_ids:
+          type: boolean
+          default: false
+          description: |
+            If `true`, adds `token_ids` and `prompt_token_ids` to each
+            choice. `token_ids` contains the generated token IDs, and
+            `prompt_token_ids` contains the prompt token IDs. When streaming,
+            each chunk's `token_ids` contains only that chunk's new tokens,
+            and `prompt_token_ids` appears only once.
 
     CreateCompletionResponse:
       type: object
@@ -1380,6 +1797,20 @@ components:
           type: string
           enum: [stop, length, content_filter, null]
           description: The reason the completion finished
+        token_ids:
+          type: array
+          items:
+            type: integer
+          description: |
+            The generated token IDs. Only returned when the request sets
+            `return_token_ids` to `true`.
+        prompt_token_ids:
+          type: array
+          items:
+            type: integer
+          description: |
+            The prompt token IDs. Only returned when the request sets
+            `return_token_ids` to `true`.
 
     CreateEmbeddingRequest:
       type: object
@@ -1415,6 +1846,279 @@ components:
           type: string
           description: |
             A unique identifier representing your end-user.
+
+    CreateDecisionsRequest:
+      type: object
+      required:
+        - input
+        - questions
+      properties:
+        input:
+          description: |
+            The text (a string, object, or array) the questions are about.
+            Objects and arrays are rendered into the prompt as compact JSON.
+          oneOf:
+            - type: string
+            - type: object
+            - type: array
+        questions:
+          type: array
+          minItems: 1
+          maxItems: 64
+          description: |
+            Typed questions with distinct `id`s. A `choice` has 2-26 options
+            labeled A-Z, a `score` has 2-10 levels labeled 0-9, and a `yes_no`
+            is answered by the labels yes and no.
+          items:
+            oneOf:
+              - $ref: '#/components/schemas/DecisionChoiceQuestion'
+              - $ref: '#/components/schemas/DecisionScoreQuestion'
+              - $ref: '#/components/schemas/DecisionYesNoQuestion'
+            discriminator:
+              propertyName: type
+              mapping:
+                choice: '#/components/schemas/DecisionChoiceQuestion'
+                score: '#/components/schemas/DecisionScoreQuestion'
+                yes_no: '#/components/schemas/DecisionYesNoQuestion'
+        temperature:
+          type: number
+          exclusiveMinimum: 0
+          default: 1.0
+          description: |
+            Divides the label scores before the softmax. It scales
+            `probabilities` only, not `label_mass`.
+        chat_template_kwargs:
+          type: object
+          description: |
+            Extra chat template arguments. Thinking is turned off by default
+            and may not be turned on.
+        prompt_format_version:
+          type: integer
+          description: |
+            Pins the server-owned prompt wording. A different version than the
+            one served is rejected.
+        return_prompt_token_ids:
+          type: boolean
+          default: false
+          description: |
+            Returns the exact prompt and label token IDs scored for each answer.
+        model:
+          type: string
+          description: ID of the model to use.
+
+    DecisionChoiceQuestion:
+      type: object
+      required: [id, type, question, options]
+      properties:
+        id: {type: string}
+        type: {type: string, enum: [choice]}
+        question:
+          description: The question text (string, object, or array).
+        options:
+          type: array
+          minItems: 2
+          maxItems: 26
+          items:
+            type: object
+            required: [name]
+            properties:
+              name: {type: string}
+              description: {}
+
+    DecisionScoreQuestion:
+      type: object
+      required: [id, type, question, levels]
+      properties:
+        id: {type: string}
+        type: {type: string, enum: [score]}
+        question:
+          description: The question text (string, object, or array).
+        levels:
+          type: array
+          minItems: 2
+          maxItems: 10
+          description: Level descriptions, labeled 0-9 in order.
+
+    DecisionYesNoQuestion:
+      type: object
+      required: [id, type, question]
+      properties:
+        id: {type: string}
+        type: {type: string, enum: [yes_no]}
+        question:
+          description: The question text (string, object, or array).
+        yes:
+          description: Optional description of the yes answer.
+        "no":
+          description: Optional description of the no answer.
+
+    SystemOneRequest:
+      type: object
+      required: [state, model, questions]
+      properties:
+        state:
+          description: |
+            The text (a string, object, or array) the questions are about. It
+            may be empty.
+        model:
+          type: string
+          description: ID of the model to use.
+        questions:
+          type: object
+          minProperties: 1
+          maxProperties: 64
+          description: Questions keyed by their ID.
+          additionalProperties:
+            oneOf:
+              - $ref: '#/components/schemas/SystemOneNoulQuestion'
+              - $ref: '#/components/schemas/SystemOneChoiceQuestion'
+              - $ref: '#/components/schemas/SystemOneScoreQuestion'
+            discriminator:
+              propertyName: type
+              mapping:
+                noul: '#/components/schemas/SystemOneNoulQuestion'
+                choice: '#/components/schemas/SystemOneChoiceQuestion'
+                score: '#/components/schemas/SystemOneScoreQuestion'
+        chat_template_kwargs:
+          type: object
+          description: |
+            Extra chat template arguments. Thinking is turned off by default
+            and may not be turned on.
+
+    SystemOneNoulQuestion:
+      type: object
+      required: [type]
+      properties:
+        type: {type: string, enum: [noul]}
+        instructions:
+          description: What to decide.
+        criteria:
+          type: object
+          properties:
+            "true": {description: What makes the answer yes.}
+            "false": {description: What makes the answer no.}
+
+    SystemOneChoiceQuestion:
+      type: object
+      required: [type, criteria]
+      properties:
+        type: {type: string, enum: [choice]}
+        instructions:
+          description: What to decide.
+        criteria:
+          type: object
+          minProperties: 1
+          maxProperties: 26
+          description: |
+            Maps each option name to its description, in label order A-Z.
+          additionalProperties: {}
+
+    SystemOneScoreQuestion:
+      type: object
+      required: [type, criteria]
+      properties:
+        type: {type: string, enum: [score]}
+        instructions:
+          description: What to decide.
+        criteria:
+          type: array
+          minItems: 1
+          maxItems: 10
+          description: Level descriptions, scored from 0 in order.
+
+    SystemOneResponse:
+      type: object
+      required: [model, answers, usage]
+      properties:
+        model: {type: string}
+        answers:
+          type: object
+          description: |
+            Answers keyed by question ID. A `noul` answer has `noul` (the
+            probability of yes), a `choice` answer has `choice`, `confidence`,
+            and `probabilities`, and a `score` answer has `score`,
+            `confidence`, `legend`, and `probabilities`. Each also has
+            `x_label_mass`, the full-vocabulary probability of the labels.
+          additionalProperties:
+            type: object
+            required: [type, x_label_mass]
+            properties:
+              type: {type: string, enum: [noul, choice, score]}
+              x_label_mass: {type: number}
+        usage:
+          type: object
+          required: [input_tokens, output_tokens]
+          properties:
+            input_tokens: {type: integer}
+            output_tokens:
+              type: integer
+              description: Always 0, since nothing is generated.
+
+    CreateDecisionsResponse:
+      type: object
+      required: [object, model, prompt_format_version, answers, usage]
+      properties:
+        object:
+          type: string
+          enum: [decisions]
+        model:
+          type: string
+        prompt_format_version:
+          type: integer
+        answers:
+          type: object
+          description: Answers keyed by question `id`.
+          additionalProperties:
+            type: object
+            required: [type, probabilities, label_mass]
+            properties:
+              type:
+                type: string
+                enum: [choice, score, yes_no]
+              probabilities:
+                type: object
+                additionalProperties:
+                  type: number
+                description: |
+                  Probability of each candidate, summing to 1 over the
+                  candidates. This is a softmax of label scores, not a
+                  guarantee of correctness.
+              label_mass:
+                type: number
+                description: |
+                  Full-vocabulary probability of all answer labels at the
+                  answer position. A low value means the model wanted to say
+                  something other than a label.
+              choice:
+                type: string
+                description: The most probable option (`choice` questions).
+              score:
+                type: number
+                description: Expected level (`score` questions).
+              prompt_token_ids:
+                type: array
+                items: {type: integer}
+              label_token_ids:
+                type: array
+                items: {type: integer}
+        usage:
+          type: object
+          required: [prompt_tokens, completion_tokens, total_tokens]
+          properties:
+            prompt_tokens:
+              type: integer
+            completion_tokens:
+              type: integer
+              description: Always 0, since nothing is generated.
+            total_tokens:
+              type: integer
+            prompt_tokens_details:
+              type: object
+              description: Present when the server reports prefix-cache hits.
+              properties:
+                cached_tokens:
+                  type: integer
+                  description: Prompt tokens served from the prefix cache.
 
     CreateEmbeddingResponse:
       type: object

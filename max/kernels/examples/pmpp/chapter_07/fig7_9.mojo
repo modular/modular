@@ -18,8 +18,8 @@
 
 from std.random import random_float64
 from std.math import ceildiv
-from std.gpu import block_idx, thread_idx
-from std.gpu.host import DeviceContext
+from max.gpu import block_idx, thread_idx
+from max.gpu.host import DeviceContext
 from std.itertools import product
 
 # ========================== KERNEL CODE ==========================
@@ -29,9 +29,9 @@ def convolution_2D_const_mem_kernel(
     N: UnsafePointer[Float32, ImmutAnyOrigin],
     F: UnsafePointer[Float32, ImmutAnyOrigin],
     P: UnsafePointer[Float32, MutAnyOrigin],
-    r: Int,
-    width: Int,
-    height: Int,
+    r_dev: Int32,
+    width_dev: Int32,
+    height_dev: Int32,
 ):
     """2D convolution kernel using constant memory for filter.
 
@@ -39,10 +39,14 @@ def convolution_2D_const_mem_kernel(
         N: Input array (device).
         F: Filter array in constant/global memory (device).
         P: Output array (device).
-        r: Filter radius (filter size = 2*r + 1).
-        width: Input width.
-        height: Input height.
+        r_dev: Filter radius (filter size = 2*r + 1).
+        width_dev: Input width.
+        height_dev: Input height.
     """
+    # `Int` is not device-passable; widen the fixed-width args.
+    var r = Int(r_dev)
+    var width = Int(width_dev)
+    var height = Int(height_dev)
     comptime BLOCK_DIM = 16
     var outCol = block_idx.x * BLOCK_DIM + thread_idx.x
     var outRow = block_idx.y * BLOCK_DIM + thread_idx.y
@@ -110,9 +114,9 @@ def convolution_2d_const_mem(
         d_in,
         d_filter,
         d_out,
-        r,
-        width,
-        height,
+        Int32(r),
+        Int32(width),
+        Int32(height),
         grid_dim=(grid_dim_x, grid_dim_y, 1),
         block_dim=(BLOCK_DIM, BLOCK_DIM, 1),
     )
@@ -175,9 +179,9 @@ def main() raises:
 
     # Initialize input and filter with random values
     for i in range(in_elements):
-        h_in[i] = random_float64().cast[DType.float32]()
+        h_in[i] = random_float64().cast[.float32]()
     for i in range(filter_elements):
-        h_filter[i] = random_float64().cast[DType.float32]()
+        h_filter[i] = random_float64().cast[.float32]()
 
     # Run GPU convolution
     with DeviceContext() as ctx:

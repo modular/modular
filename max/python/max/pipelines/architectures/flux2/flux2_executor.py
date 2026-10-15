@@ -27,10 +27,8 @@ from max.engine import InferenceSession
 from max.experimental.tensor import Tensor
 from max.graph import Module as GraphModule
 from max.pipelines.context import PixelContext
-from max.pipelines.diffusion.cache import (
-    DenoisingCacheConfig,
-    TaylorSeerCache,
-)
+from max.pipelines.diffusion.cache import TaylorSeerCache
+from max.pipelines.diffusion.config import DenoisingCacheConfig
 from max.pipelines.lib import float32_array_to_buffer
 from max.pipelines.lib.compiled_component import CompiledComponent
 from max.pipelines.lib.config.model_config import (
@@ -240,21 +238,11 @@ class Flux2Executor(
         self._session = session
         self._runtime_config = runtime_config
 
-        # Cache configuration (TaylorSeer / First-Block-Cache).  The two
-        # denoising-cache strategies are mutually exclusive alternatives:
-        # reject enabling both rather than silently picking a precedence.
+        # Cache configuration (TaylorSeer / First-Block-Cache). The config
+        # type enforces that the two strategies are mutually exclusive.
         self._cache_config: DenoisingCacheConfig = (
             runtime_config.denoising_cache
         )
-        if (
-            self._cache_config.taylorseer
-            and self._cache_config.first_block_caching
-        ):
-            raise ValueError(
-                "TaylorSeer and first-block caching are mutually exclusive; "
-                "enable only one (--taylorseer OR --first-block-caching)."
-            )
-        self._resolve_cache_defaults()
 
         # Derive VAE scale factor from manifest config, falling back to 8.
         vae_config = (
@@ -1010,22 +998,3 @@ class Flux2Executor(
             Buffer.from_dlpack(timesteps),
             Buffer.from_dlpack(dts),
         )
-
-    # -- Cache defaults -------------------------------------------------------
-
-    # Flux2 model-specific defaults.
-    _DEFAULT_TAYLORSEER_CACHE_INTERVAL: int = 5
-    _DEFAULT_TAYLORSEER_WARMUP_STEPS: int = 9
-    _DEFAULT_TAYLORSEER_MAX_ORDER: int = 1
-
-    def _resolve_cache_defaults(self) -> None:
-        """Fill nullable DenoisingCacheConfig fields with Flux2 defaults."""
-        cc = self._cache_config
-        if cc.taylorseer_cache_interval is None:
-            cc.taylorseer_cache_interval = (
-                self._DEFAULT_TAYLORSEER_CACHE_INTERVAL
-            )
-        if cc.taylorseer_warmup_steps is None:
-            cc.taylorseer_warmup_steps = self._DEFAULT_TAYLORSEER_WARMUP_STEPS
-        if cc.taylorseer_max_order is None:
-            cc.taylorseer_max_order = self._DEFAULT_TAYLORSEER_MAX_ORDER

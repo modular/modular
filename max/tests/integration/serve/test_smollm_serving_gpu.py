@@ -21,7 +21,7 @@ from async_asgi_testclient import TestClient
 from fastapi import FastAPI
 from max.driver import DeviceSpec
 from max.pipelines import PipelineArgs
-from max.pipelines.lib import KVCacheConfig
+from max.pipelines.lib import KVCacheConfig, PipelineRuntimeConfig
 from max.serve.mocks.mock_api_requests import simple_openai_request
 from max.serve.schemas.openai import (
     CreateChatCompletionResponse,
@@ -42,7 +42,7 @@ MAX_READ_SIZE = 10 * 1024
             quantization_encoding="bfloat16",
             kv_cache=KVCacheConfig(),
             max_length=512,
-            max_batch_size=16,
+            runtime=PipelineRuntimeConfig(max_batch_size=16),
         )
     ],
     indirect=True,
@@ -88,7 +88,7 @@ async def test_smollm_serve_gpu(app: FastAPI) -> None:
             quantization_encoding="bfloat16",
             kv_cache=KVCacheConfig(),
             max_length=512,
-            max_batch_size=16,
+            runtime=PipelineRuntimeConfig(max_batch_size=16),
         )
     ],
     indirect=True,
@@ -130,7 +130,7 @@ async def test_smollm_serve_gpu_nonchat_completions(
             quantization_encoding="bfloat16",
             kv_cache=KVCacheConfig(),
             max_length=512,
-            max_batch_size=16,
+            runtime=PipelineRuntimeConfig(max_batch_size=16),
         )
     ],
     indirect=True,

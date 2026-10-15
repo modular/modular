@@ -16,8 +16,8 @@ Same recipe as prefill, plus split-K partitioning of the KV span across
 blocks for grid-level parallelism.
 """
 
-from std.collections import OptionalReg
-from std.gpu import barrier, block_idx
+from max.gpu import block_idx
+from max.gpu.sync import barrier
 from std.utils.numerics import get_accum_type, min_or_neg_inf
 
 from nn.attention.mha_utils import get_start_and_end_for_partitions
@@ -28,7 +28,7 @@ from .mma import rdna_mma
 
 
 __extension AttentionRDNA:
-    @always_inline
+    @inline(.always)
     def mha_decode(
         mut self,
         exp_sum_ptr: UnsafePointer[
@@ -44,11 +44,12 @@ __extension AttentionRDNA:
             Self.output_depth == Self.depth
         ), "RDNA decode requires output_depth == depth (no MLA)"
 
-        @always_inline
-        @parameter
+        @inline(.always)
         def loop_over_kvcache[
             tile_size: Int
-        ](kv_tile_start_row: Int, end: Int, not_last_iter: Bool):
+        ](kv_tile_start_row: Int, end: Int, not_last_iter: Bool) {
+            mut self, imm
+        }:
             if self.mask_skip_and_advance(UInt32(kv_tile_start_row)):
                 return
 
@@ -152,7 +153,7 @@ __extension AttentionRDNA:
                 barrier()
             barrier()
 
-        start, end = get_start_and_end_for_partitions[Self.BN](
+        var start, end = get_start_and_end_for_partitions[Self.BN](
             self.num_keys, num_partitions, block_idx.x
         )
 

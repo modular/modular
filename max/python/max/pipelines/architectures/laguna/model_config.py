@@ -22,13 +22,16 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from typing import ClassVar
 
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.comm.ep import EPConfig
 from max.nn.kv_cache import KVCacheParams, KVCacheQuantizationConfig
 from max.pipelines.architectures.llama3.model_config import Llama3Config
+from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
+from max.pipelines.modeling.config_enums import SupportedEncoding
 from transformers.models.auto.configuration_auto import AutoConfig
 from typing_extensions import Self, override
 
@@ -50,6 +53,12 @@ class LagunaConfig(Llama3Config):
     - **Routed scaling factor + shared experts + softplus attention
       output gate**: applied per token / per element as Laguna requires.
     """
+
+    DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
+    SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {
+        "bfloat16",
+        "float4_e2m1fnx2",
+    }
 
     # --- MoE (routed expert collection) ---
     num_local_experts: int = 256
@@ -127,6 +136,8 @@ class LagunaConfig(Llama3Config):
         devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
+        *,
+        allow_kv_head_replication: bool = False,
     ) -> KVCacheParams:
         """Constructs KV cache parameters using explicit head_dim from config.
 
@@ -170,6 +181,7 @@ class LagunaConfig(Llama3Config):
                 scale_dtype=DType.int8, quantization_granularity=32
             )
         return kv_cache_config.to_params(
+            allow_kv_head_replication=allow_kv_head_replication,
             dtype=cache_dtype,
             n_kv_heads=huggingface_config.num_key_value_heads,
             head_dim=huggingface_config.head_dim,
@@ -201,6 +213,8 @@ class LagunaConfig(Llama3Config):
         cls,
         pipeline_config: PipelineConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         """Initializes a LagunaConfig from pipeline configuration.
 
@@ -218,7 +232,9 @@ class LagunaConfig(Llama3Config):
                 "but config could not be loaded. "
                 "Please ensure the model repository contains a valid config.json file."
             )
-        return cls.initialize_from_config(pipeline_config, huggingface_config)
+        return cls.initialize_from_config(
+            pipeline_config, huggingface_config, max_seq_len=max_seq_len
+        )
 
     @override
     @classmethod
@@ -227,6 +243,8 @@ class LagunaConfig(Llama3Config):
         pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         """Initializes a LagunaConfig from pipeline and HuggingFace configs.
 
@@ -260,7 +278,10 @@ class LagunaConfig(Llama3Config):
 
         try:
             base_config = Llama3Config.initialize_from_config(
-                pipeline_config, huggingface_config, model_config
+                pipeline_config,
+                huggingface_config,
+                model_config,
+                max_seq_len=max_seq_len,
             )
         finally:
             # Restore the originals so downstream readers see the
@@ -273,7 +294,10 @@ class LagunaConfig(Llama3Config):
                 pass
 
         kv_cache_config = pipeline_config.model.kv_cache
-        cache_dtype = pipeline_config.model.kv_cache.cache_dtype
+        cache_dtype = cache_dtype_for_encoding(
+            base_config.quantization_encoding,
+            pipeline_config.model.kv_cache.kv_cache_format,
+        )
         n_devices = len(pipeline_config.model.device_specs)
 
         device_refs = [
@@ -372,6 +396,7 @@ class LagunaConfig(Llama3Config):
             clip_qkv=base_config.clip_qkv,
             use_subgraphs=base_config.use_subgraphs,
             data_parallel_degree=base_config.data_parallel_degree,
+            quantization_encoding=base_config.quantization_encoding,
             num_local_experts=num_local_experts,
             num_experts_per_tok=num_experts_per_tok,
             moe_intermediate_size=moe_intermediate_size,

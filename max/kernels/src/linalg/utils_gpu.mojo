@@ -19,7 +19,6 @@ from std.math.uutils import uceildiv
 from std.sys import (
     get_defined_int,
     get_defined_bool,
-    has_nvidia_gpu_accelerator,
     size_of,
 )
 from std.ffi import external_call, _get_global_or_null
@@ -27,11 +26,10 @@ from std.memory import dealloc
 from std.memory.alloc import Layout as AllocLayout
 from std.os import getenv
 
-from std.gpu import WARP_SIZE
-from std.gpu.primitives.grid_controls import PDLLevel
-from std.gpu.host import DeviceContext
-from std.gpu.host.device_context import DeviceBuffer
-from std.gpu.host.info import A100
+from max.gpu import WARP_SIZE
+from max.gpu.primitives.grid_controls import PDLLevel
+from max.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host.info import A100
 from layout.tensor_core import get_mma_shape
 
 from std.utils.index import Index, IndexList
@@ -60,7 +58,7 @@ def block_swizzle(
     return _block_swizzle_by_scale[3](block_idx, grid_dim)
 
 
-@always_inline
+@inline(.always)
 def _block_swizzle_by_scale[
     scale0: Int
 ](block_idx: IndexList[2, ...], grid_dim: type_of(block_idx)) -> type_of(
@@ -297,20 +295,20 @@ struct MatmulConfig[
         Args:
             hasher: The hasher instance.
         """
-        hasher.update(Self.a_type)
-        hasher.update(Self.b_type)
-        hasher.update(Self.c_type)
-        hasher.update(Self.transpose_b)
-        hasher.update(self.block_tile_shape)
-        hasher.update(self.warp_tile_shape)
-        hasher.update(self.cluster_shape)
-        hasher.update(self.num_pipeline_stages)
-        hasher.update(self.num_k_partitions)
-        hasher.update(self.num_warp_k_partitions)
-        hasher.update(self.k_group_size)
-        hasher.update(self.split_k_reduction_scheme)
-        hasher.update(self.num_consumer)
-        hasher.update(self.partitioned_multicast)
+        Self.a_type.__hash__(hasher)
+        Self.b_type.__hash__(hasher)
+        Self.c_type.__hash__(hasher)
+        Self.transpose_b.__hash__(hasher)
+        self.block_tile_shape.__hash__(hasher)
+        self.warp_tile_shape.__hash__(hasher)
+        self.cluster_shape.__hash__(hasher)
+        self.num_pipeline_stages.__hash__(hasher)
+        self.num_k_partitions.__hash__(hasher)
+        self.num_warp_k_partitions.__hash__(hasher)
+        self.k_group_size.__hash__(hasher)
+        self.split_k_reduction_scheme.__hash__(hasher)
+        self.num_consumer.__hash__(hasher)
+        self.partitioned_multicast.__hash__(hasher)
 
 
 # Helper for choosing the base of BK based on type.
@@ -330,7 +328,7 @@ def _bk_base[type: DType, amd_kernel: Bool = False]() -> Int:
         return 16
 
 
-@always_inline
+@inline(.always)
 def _shared_memory_usage[
     a_type: DType, b_type: DType, c_type: DType
 ](block_mnk: IndexList[3], num_pipeline_stages: Int, slice_k: Int = 1) -> Int:
@@ -458,7 +456,7 @@ def select_config[
     comptime gpu_info = ctx.default_device_info
 
     # TODO(KERN-1310): This disables split-k for AMD, enable it after fixing KERN-1310.
-    comptime max_num_k_partitions = 8 if has_nvidia_gpu_accelerator() else 1
+    comptime max_num_k_partitions = 8 if ctx.target.is_nvidia_gpu() else 1
     comptime min_k_partition = 1024
 
     # Initial values overwritten in loop
@@ -570,9 +568,16 @@ def _apple_m5_allow_lossy_f32_matmul() -> Bool:
     return getenv("MODULAR_APPLE_M5_ALLOW_LOSSY_F32_MATMUL", "1") != "0"
 
 
+def _apple_m5_allow_lossy_f32_attention() -> Bool:
+    """Whether fp32 q/k/v may use the M5 attention prefill, whose simdgroup MMA
+    truncates them to fp19. On by default; 0 selects the precise naive path.
+    """
+    return getenv("MODULAR_APPLE_M5_ALLOW_LOSSY_F32_ATTENTION", "1") != "0"
+
+
 def create_hilbert_lut(
     ctx: DeviceContext, grid_x: Int, grid_y: Int
-) raises -> DeviceBuffer[DType.uint32]:
+) raises -> DeviceBuffer[.uint32]:
     """Precompute Hilbert-curve block swizzle lookup-table for a rectangular grid.
 
     The returned device pointer refers to a 1-D UInt32 array of length
@@ -587,7 +592,7 @@ def create_hilbert_lut(
     """
     var num_blocks = grid_x * grid_y
     # Allocate temporary host buffer.
-    var host = alloc(AllocLayout[UInt32](count=num_blocks)).into_deletable()
+    var host = alloc(AllocLayout[UInt32](count=num_blocks)).into_managed()
 
     # Next power-of-two square dimension enclosing the rectangle.
     var dim_pow2 = 1
@@ -624,15 +629,15 @@ def create_hilbert_lut(
         d += 1
 
     # Allocate device buffer and copy.
-    var device_buf = ctx.enqueue_create_buffer[DType.uint32](num_blocks)
+    var device_buf = ctx.enqueue_create_buffer[.uint32](num_blocks)
     ctx.enqueue_copy(device_buf, host.unsafe_span())
-    dealloc(host^.into_allocation())
+    dealloc(host^)
     return device_buf
 
 
 def get_hilbert_lut_with_cache(
     ctx: DeviceContext, grid_x: Int, grid_y: Int
-) raises -> DeviceBuffer[DType.uint32]:
+) raises -> DeviceBuffer[.uint32]:
     """Get Hilbert lookup table using global cache (no struct needed).
 
     Args:
@@ -646,13 +651,11 @@ def get_hilbert_lut_with_cache(
     # use runtime lookup since key is computed at runtime
     var cached_ptr = _get_global_or_null(key_str)
 
-    if cached_ptr:
-        var device_ptr = cached_ptr.unsafe_value().bitcast[UInt32]()
+    if case .Some(cached_ptr) = cached_ptr:
+        var device_ptr = cached_ptr.unsafe_bitcast[UInt32]()
         var num_blocks = grid_x * grid_y
         # the cached buffer stays alive as long as the program runs
-        return DeviceBuffer[DType.uint32](
-            ctx, device_ptr, num_blocks, owning=False
-        )
+        return DeviceBuffer[.uint32](ctx, device_ptr, num_blocks, owning=False)
 
     # not in cache :(
     var buf = create_hilbert_lut(ctx, grid_x, grid_y)
@@ -668,4 +671,4 @@ def get_hilbert_lut_with_cache(
     # the buffer will live for the duration of the program
     _ = buf.take_ptr()
 
-    return DeviceBuffer[DType.uint32](ctx, device_ptr, num_blocks, owning=False)
+    return DeviceBuffer[.uint32](ctx, device_ptr, num_blocks, owning=False)

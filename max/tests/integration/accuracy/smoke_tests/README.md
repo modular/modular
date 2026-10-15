@@ -24,6 +24,20 @@ with a chat template (typically `-instruct`, `-it`, `-chat`) are supported.
 The first local run compiles the model graph, which can take several minutes for
 a large model (subsequent runs reuse the compile cache).
 
+## What CI runs: nightly vs manual
+
+`smoke_test_github_matrix.py` maps every model CI knows how to smoke test
+(`MODELS`) to the HW it runs on. The nightly suite (`--tier nightly`) runs only
+the models whose entry also carries the `NIGHTLY` tag, for example
+`NIGHTLY | _1xB200 | _1xMI355`.
+
+To run a model without the `NIGHTLY` tag, dispatch the Serve Smoke Tests
+workflow (`.github/workflows/serveSmokeTest.yaml`) with `model_tier: all`, the
+default for a manual run, or name the models in `models_override`.
+
+The `NIGHTLY` tag is opt-in: adding a model to `MODELS` does not add it to the
+nightly.
+
 ## Task overrides
 
 By default the harness runs `gsm8k_cot_llama` (plus `chartqa` for vision
@@ -51,16 +65,6 @@ confirmed work end-to-end and give a meaningful accuracy signal.
 ## Gotchas when running locally
 
 These bite when running smoke tests outside CI. None are model bugs.
-
-### `HF_TOKEN` must be set, even for a public model
-
-`validate_hf_token()` (`eval_runner.py`) hard-exits before the server starts if
-`HF_TOKEN` is unset. The token is not used to authenticate a public
-(non-gated) model, but the environment variable must be present:
-
-```bash
-export HF_TOKEN=hf_...   # any value works for a public model
-```
 
 ### `--serve-extra-args` for local serve tuning
 
@@ -91,8 +95,8 @@ optimization and does not affect accuracy. Try one of:
 
 ### KV-connector recipes force connector-only prefix hits
 
-For any recipe with a `kv_connector` (`local` or `tiered`), the harness sets
-`MODULAR_ONLY_USE_KV_CONNECTOR_LAST_LEVEL_CACHE=1` (`smoke_test.py`). This
+For any recipe with a `kv_connector` (`tiered` or `rust_tiered`), the harness
+sets `MODULAR_ONLY_USE_KV_CONNECTOR_LAST_LEVEL_CACHE=1` (`smoke_test.py`). This
 disables the device prefix cache so every prefix-cache hit is served through the
 connector — intentional, so the test exercises the CPU/disk offload path it is
 meant to cover. Per-step connector metrics (`D2H`/`H2D` blocks, disk

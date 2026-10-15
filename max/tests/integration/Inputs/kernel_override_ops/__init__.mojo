@@ -16,7 +16,7 @@ can only mean the user registration shadowed the built-in.
 """
 
 import extensibility
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from extensibility import (
     ElementwiseBinaryOp,
     InputTensor,
@@ -37,7 +37,7 @@ struct AddOverride(ElementwiseBinaryOp):
     @staticmethod
     def elementwise[
         dtype: DType,
-        width: SIMDSize,
+        width: SIMDLength,
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return lhs + rhs + 1000
 

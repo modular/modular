@@ -43,7 +43,11 @@ from max.experimental.torch import torch_dtype_to_max
 from max.graph import BufferType, DeviceRef, Graph, TensorType, ops
 from max.nn.attention import MHAMaskVariant
 from max.nn.kernels import flash_attention_ragged
-from max.nn.kv_cache import MHAKVCacheParams, PagedCacheValues
+from max.nn.kv_cache import (
+    MHAKVCacheParams,
+    PagedCacheValues,
+    packed_page_stride,
+)
 
 # Try importing external libraries (installed via Bazel pycross_wheel_library)
 _flashinfer: types.ModuleType | None
@@ -382,6 +386,7 @@ def bench_max(
             lookup_table.tensor,
             max_prompt_length.tensor,
             max_cache_length.tensor,
+            page_stride=packed_page_stride(blocks.buffer),
             attention_dispatch_metadata=attention_dispatch_metadata.tensor,
         )
 
@@ -430,12 +435,14 @@ def bench_max(
 
     # Use bench_kineto to profile the kernel.
     # Split-K decode launches up to two kernels:
-    #   sm100_mha_1q_depth128_..._<hash>         (main decode)
-    #   mha_splitk_reduce_..._<hash>              (reduction, when partitions > 1)
-    # The substring "mha_" matches both (and nothing else in this graph).
+    #   sm100_mha_1q_depth128_..._<hash>    (FA4 SM100MHA2Q main decode; the
+    #                                       num_q=1 variant of the @__name
+    #                                       "sm100_mha_{nq}q_depth{d}_...")
+    #   sm100_splitk_combine_..._<hash>     (fa4_splitk_combine reduction,
+    #                                       when partitions > 1)
     time_s = bench_kineto(
         run_kernel,
-        kernel_names="mha_",
+        kernel_names="sm100_mha_",
         num_tests=100,
         suppress_kineto_output=True,
         flush_l2=True,

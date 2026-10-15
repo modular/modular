@@ -28,6 +28,7 @@ from collections.abc import Callable, Iterable, Sequence
 from enum import Enum, auto
 from typing import Any
 
+from max import tree
 from max.dtype import DType
 from max.graph import (
     BufferType,
@@ -46,10 +47,19 @@ from max.nn.comm.allreduce import Allreduce
 from max.nn.comm.ep import EPBatchManager
 from max.nn.data_parallelism import split_batch_replicated
 from max.nn.embedding import VocabParallelEmbedding
-from max.nn.kv_cache import KVCacheParamInterface, PagedCacheValues
-from max.nn.layer import LayerList, Module, SubgraphInput
+from max.nn.kv_cache import (
+    KVCacheParamInterface,
+    KVCacheParams,
+    MultiKVCacheParams,
+    PagedCacheValues,
+)
+from max.nn.layer import LayerList, Module
 from max.nn.linear import MLP, ColumnParallelLinear, Linear
-from max.nn.moe import MoE, make_concatenated_gated_activation_fn
+from max.nn.moe import (
+    GatedActivation,
+    MoE,
+    make_concatenated_gated_activation_fn,
+)
 from max.nn.moe.expert_parallel import forward_moe_sharded_layers
 from max.nn.norm import RMSNorm
 from max.nn.rotary_embedding import (
@@ -61,6 +71,7 @@ from max.nn.transformer.distributed_transformer import (
     DistributedLogitsPostprocessMixin,
     forward_sharded_layers,
 )
+from max.tree import Tree
 
 from .layers.attention import Step3p5Attention
 from .layers.moe_gate import Step3p5MoEGate
@@ -211,6 +222,8 @@ class Step3p5TransformerBlock(Module):
         self,
         config: Step3p5Config,
         layer_idx: int,
+        cache_layer_idx: int,
+        kv_params: KVCacheParams,
         rope: Llama3RotaryEmbedding,
         create_norm: Callable[..., RMSNorm],
         linear_cls: Callable[..., Linear],
@@ -223,10 +236,7 @@ class Step3p5TransformerBlock(Module):
         self.mode = mode
         self.ep_manager = ep_manager
 
-        # Determine if this is a sliding window layer
-        is_sliding = False
-        if config.layer_types and layer_idx < len(config.layer_types):
-            is_sliding = config.layer_types[layer_idx] == "sliding_attention"
+        is_sliding = config.layer_types[layer_idx] == "sliding_attention"
         self.is_sliding = is_sliding
         self.is_moe = layer_idx in config.moe_layers
 
@@ -243,8 +253,8 @@ class Step3p5TransformerBlock(Module):
             num_attention_heads=num_heads,
             num_key_value_heads=num_kv_heads,
             hidden_size=config.hidden_size,
-            kv_params=config.kv_params,
-            layer_idx=layer_idx,
+            kv_params=kv_params,
+            layer_idx=cache_layer_idx,
             is_sliding=is_sliding,
             sliding_window=config.sliding_window,
             use_head_wise_attn_gate=config.use_head_wise_attn_gate,
@@ -468,11 +478,13 @@ class Step3p5MoEWithSharedExpert(Module):
                 norm_topk_prob=config.norm_expert_weight,
             ),
             dtype=config.dtype,
-            gated_activation_fn=make_concatenated_gated_activation_fn(
-                ops.silu, swiglu_limit
-            )
-            if swiglu_limit > 0
-            else None,
+            activation=GatedActivation(
+                gated_activation_fn=make_concatenated_gated_activation_fn(
+                    ops.silu, swiglu_limit
+                )
+                if swiglu_limit > 0
+                else None
+            ),
             ep_size=ep_size,
             ep_batch_manager=ep_batch_manager,
         )
@@ -541,7 +553,9 @@ class Step3p5MoEWithSharedExpert(Module):
         expert_inputs: tuple[TensorValue, ...],
         x: TensorValue,
         estimated_total_m: TensorValue,
-    ) -> TensorValue:
+    ) -> TensorValue | None:
+        # Pure delegation, so it inherits the wrapped layer's contract:
+        # `None` means that layer already sent its output to the peers.
         return self.moe._local_ep_compute(expert_inputs, x, estimated_total_m)
 
     @property
@@ -592,6 +606,9 @@ class Step3p5(DistributedLogitsPostprocessMixin, Module):
     inference.
     """
 
+    layers: LayerList
+    embed_tokens: VocabParallelEmbedding
+
     def __init__(
         self,
         config: Step3p5Config,
@@ -617,7 +634,7 @@ class Step3p5(DistributedLogitsPostprocessMixin, Module):
         # We store RoPE objects keyed by (theta, rotary_dim, use_scaling) and
         # a per-layer mapping.  freqs_cis access is deferred to __call__
         # (inside the Graph context) since RoPE computation emits graph ops.
-        full_head_dim = config.kv_params.head_dim
+        full_head_dim = config.head_dim
         num_layers = config.num_hidden_layers
         yarn_only = set(config.yarn_only_types)
 
@@ -636,11 +653,7 @@ class Step3p5(DistributedLogitsPostprocessMixin, Module):
             )
             prf = per_layer_prf[i] if i < len(per_layer_prf) else 1.0
             rotary_dim = int(full_head_dim * prf)
-            layer_type = (
-                config.layer_types[i]
-                if config.layer_types and i < len(config.layer_types)
-                else "full_attention"
-            )
+            layer_type = config.layer_types[i]
             use_scaling = layer_type in yarn_only
             key = (theta, rotary_dim, use_scaling)
             if key not in rope_cache:
@@ -697,20 +710,32 @@ class Step3p5(DistributedLogitsPostprocessMixin, Module):
 
         # Transformer layers (all share self.rope for the interleaved flag;
         # actual per-layer freqs_cis is passed at call time via _layer_freqs).
-        self.layers = LayerList(
-            [
+        assert isinstance(config.kv_params, MultiKVCacheParams)
+        kv_params_by_type: dict[str, KVCacheParams] = {}
+        for layer_type_key, kv_params_leaf in config.kv_params.children.items():
+            assert isinstance(kv_params_leaf, KVCacheParams)
+            kv_params_by_type[layer_type_key] = kv_params_leaf
+
+        layer_type_counts = {"sliding_attention": 0, "full_attention": 0}
+        layers = []
+        for i in range(config.num_hidden_layers):
+            layer_type = config.layer_types[i]
+            cache_layer_idx = layer_type_counts[layer_type]
+            layer_type_counts[layer_type] += 1
+            layers.append(
                 Step3p5TransformerBlock(
                     config=config,
                     layer_idx=i,
+                    cache_layer_idx=cache_layer_idx,
+                    kv_params=kv_params_by_type[layer_type],
                     rope=self.rope,
                     create_norm=create_norm,
                     linear_cls=linear_cls,
                     mode=self.mode,
                     ep_manager=ep_manager,
                 )
-                for i in range(config.num_hidden_layers)
-            ]
-        )
+            )
+        self.layers = LayerList(layers)
 
         self.subgraph_layer_groups: list[list[int]] = []
         if config.use_subgraphs:
@@ -754,7 +779,8 @@ class Step3p5(DistributedLogitsPostprocessMixin, Module):
     def __call__(
         self,
         tokens: TensorValueLike,
-        kv_collections: list[PagedCacheValues],
+        sliding_kv_collections: list[PagedCacheValues],
+        global_kv_collections: list[PagedCacheValues],
         return_n_logits: TensorValue,
         input_row_offsets: TensorValue,
         signal_buffers: list[BufferValue],
@@ -794,9 +820,20 @@ class Step3p5(DistributedLogitsPostprocessMixin, Module):
 
         def inputs_for_layer(
             idx: int, hs: list[TensorValue]
-        ) -> list[SubgraphInput]:
-            values: list[SubgraphInput] = [
-                ops.constant(idx, DType.uint32, device=DeviceRef.CPU()),
+        ) -> list[Tree[Any]]:
+            layer = self.layers[idx]
+            assert isinstance(layer, Step3p5TransformerBlock)
+            kv_collections = (
+                sliding_kv_collections
+                if layer.is_sliding
+                else global_kv_collections
+            )
+            values: list[Tree[Any]] = [
+                ops.constant(
+                    layer.self_attn.layer_idx,
+                    DType.uint32,
+                    device=DeviceRef.CPU(),
+                ),
                 hs,
                 signal_buffers,
                 kv_collections,
@@ -919,7 +956,7 @@ class Step3p5(DistributedLogitsPostprocessMixin, Module):
         signals = Signals(devices=self.devices)
         signal_buffer_types = signals.input_types()
 
-        flattened_kv_types = kv_inputs.flatten()
+        flattened_kv_types = tree.leaves(kv_inputs)
 
         # EP communication buffers are appended at the very end so the
         # graph-builder can split off ``len(ep_manager.input_types())``

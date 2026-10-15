@@ -15,13 +15,12 @@
 
 from __future__ import annotations
 
-import contextvars
 import math
-from collections.abc import Iterator
-from contextlib import contextmanager
+from collections.abc import Sequence
+from contextvars import ContextVar
 from dataclasses import dataclass
 
-from max.driver import CPU, Device
+from max.driver import Device
 
 
 @dataclass(frozen=True)
@@ -76,17 +75,29 @@ class DeviceMesh:
         """The total number of devices."""
         return len(self.devices)
 
-    def axis_size(self, axis: str | int) -> int:
+    def axis_size(self, axis: str | int | Sequence[str | int]) -> int:
         """Returns the size of a mesh axis by name or index.
+
+        For several axes, returns the number of devices they span together,
+        which is the product of their sizes. On a ``(2, 3)`` mesh,
+        ``mesh.axis_size((0, 1)) == 6``.
+
+        Args:
+            axis: The mesh axis or axes, by name or integer index.
+
+        Returns:
+            The number of devices along ``axis``.
 
         Raises:
             ValueError: If ``axis`` is a name not on the mesh.
             IndexError: If ``axis`` is an integer outside ``[0, ndim)``.
         """
-        idx = self._resolve_axis(axis)
-        return self.mesh_shape[idx]
+        axes = [axis] if isinstance(axis, (str, int)) else axis
+        return math.prod(self.mesh_shape[self._resolve_axis(a)] for a in axes)
 
-    def device_coord(self, device_idx: int, axis: str | int) -> int:
+    def device_coord(
+        self, device_idx: int, axis: str | int | Sequence[str | int]
+    ) -> int:
         """Returns *device_idx*'s coordinate along the given mesh axis.
 
         For a mesh shaped ``(2, 3)`` with row-major device ordering, the
@@ -94,12 +105,17 @@ class DeviceMesh:
         ``mesh.device_coord(4, 0) == 1`` and
         ``mesh.device_coord(4, 1) == 1``.
 
+        For several axes, returns the device's index among the devices they
+        span, counted in row-major order over the axes as given, so
+        ``mesh.device_coord(4, (0, 1)) == 4``.
+
         Args:
             device_idx: The flat device index in row-major order.
-            axis: The mesh axis to query, by name or integer index.
+            axis: The mesh axis or axes to query, by name or integer index.
 
         Returns:
-            The device's coordinate along *axis*, in ``[0, axis_size)``.
+            The device's coordinate along *axis*, in
+            ``[0, axis_size(axis))``.
 
         Raises:
             IndexError: If ``device_idx`` is out of range, or if ``axis``
@@ -111,6 +127,14 @@ class DeviceMesh:
                 f"device_idx {device_idx} out of range for mesh with "
                 f"{self.num_devices} devices"
             )
+        if not isinstance(axis, (str, int)):
+            coord = 0
+            for a in axis:
+                idx = self._resolve_axis(a)
+                coord = coord * self.mesh_shape[idx] + self.device_coord(
+                    device_idx, idx
+                )
+            return coord
         idx = self._resolve_axis(axis)
         stride = math.prod(self.mesh_shape[idx + 1 :])
         return (device_idx // stride) % self.mesh_shape[idx]
@@ -144,69 +168,11 @@ class DeviceMesh:
         """Creates a trivial single-device mesh."""
         return DeviceMesh(devices=(device,), mesh_shape=(1,), axis_names=("_",))
 
-    @staticmethod
-    def default() -> DeviceMesh:
-        """Returns a single-device mesh on the default device (CPU)."""
-        return DeviceMesh.single(CPU())
 
-    @property
-    def is_single(self) -> bool:
-        """Returns ``True`` if this mesh contains exactly one device."""
-        return self.num_devices == 1
-
-    @property
-    def is_simulated(self) -> bool:
-        """Returns ``True`` if all mesh slots reference the same device.
-
-        A simulated mesh uses graph-level ops to emulate multi-device
-        collectives on a single CPU or GPU.
-        """
-        return self.num_devices > 1 and len(set(self.devices)) == 1
+# Set by ``max.experimental.tensor.default_device``.
+_DEFAULT_DEVICE: ContextVar[DeviceMesh] = ContextVar("_DEFAULT_DEVICE")
 
 
-_active_mesh: contextvars.ContextVar[DeviceMesh | None] = (
-    contextvars.ContextVar("active_mesh", default=None)
-)
-
-
-def get_active_mesh() -> DeviceMesh | None:
-    """Returns the mesh from the current :func:`mesh_context`, or ``None``."""
-    return _active_mesh.get(None)
-
-
-@contextmanager
-def mesh_context(mesh: DeviceMesh) -> Iterator[DeviceMesh]:
-    """Publishes ``mesh`` to spec-first :class:`NamedMapping` constructions.
-
-    JAX-style: when a :class:`NamedMapping` is created without an explicit
-    mesh inside this block, it picks up ``mesh`` from this context and
-    resolves the spec against it.
-
-    .. code-block:: python
-
-        from max.driver import CPU
-        from max.experimental.sharding import (
-            DeviceMesh,
-            get_active_mesh,
-            mesh_context,
-        )
-
-        mesh = DeviceMesh(
-            devices=(CPU(), CPU()), mesh_shape=(2,), axis_names=("tp",)
-        )
-
-        with mesh_context(mesh):
-            # Spec-first constructions inside this block resolve against
-            # ``mesh`` without naming it explicitly.
-            active = get_active_mesh()
-
-    .. invisible-code-block: python
-
-        assert active is mesh
-        assert get_active_mesh() is None  # cleared on block exit
-    """
-    token = _active_mesh.set(mesh)
-    try:
-        yield mesh
-    finally:
-        _active_mesh.reset(token)
+def get_default_mesh() -> DeviceMesh | None:
+    """Returns the default device mesh, or ``None`` if none is set."""
+    return _DEFAULT_DEVICE.get(None)

@@ -1,4 +1,5 @@
 load("//bazel:api.bzl", "mojo_test")
+load("//max/kernels/src:deprecations.bzl", "IGNORED_POINTER_DEPRECATIONS_COPTS")
 
 package(default_visibility = ["//max:consumers"])
 
@@ -20,12 +21,14 @@ exports_files([
 mojo_test(
     name = "positive_control_memcheck_oob.mojo.test",
     srcs = ["positive_control_memcheck_oob.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     tags = [
         "gpu",
         "manual",
     ],
     target_compatible_with = ["//:has_gpu"],
     deps = [
+        "//max:max_mojo",
         "@mojo//:std",
     ],
 )
@@ -38,12 +41,14 @@ mojo_test(
 mojo_test(
     name = "positive_control_poison_uninit.mojo.test",
     srcs = ["positive_control_poison_uninit.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     tags = [
         "gpu",
         "manual",
     ],
     target_compatible_with = ["//:has_gpu"],
     deps = [
+        "//max:max_mojo",
         "@mojo//:std",
     ],
 )

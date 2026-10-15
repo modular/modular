@@ -28,7 +28,7 @@ For example, generate a short completion from a prompt:
     :::
 
     For more information on how to use the `generate` command with vision models,
-    see [Image to text](/max/inference/image-to-text).
+    see [Image to text](/serve/image-to-text).
 
 .. click:: max._entrypoints.pipelines:cli_pipeline
   :prog: max generate

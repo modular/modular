@@ -14,20 +14,32 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import ClassVar
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.graph.weights import WeightData, WeightsFormat, weights_format
+from max.graph.weights import WeightData
 from max.nn import ReturnLogits, YarnScalingParams
-from max.nn.kv_cache import KVCacheParams
-from max.pipelines.lib import MAXModelConfig, PipelineConfig
+from max.nn.kv_cache import KVCacheParamInterface, MultiKVCacheParams
+from max.pipelines.architectures.gpt_oss.hybrid_kv_params_util import (
+    hybrid_swa_full_kv_params,
+)
+from max.pipelines.kv_cache import cache_dtype_for_encoding
+from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
+from max.pipelines.lib.config.model_config import (
+    _interleaved_rope_weights,
+    _select_quantization_encoding,
+)
 from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithKVCache,
     ArchConfigWithPermissiveMaxSeqLen,
     ArchConfigWithStoredKVParams,
 )
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
-from max.pipelines.modeling.config_enums import supported_encoding_dtype
+from max.pipelines.modeling.config_enums import (
+    SupportedEncoding,
+    supported_encoding_dtype,
+)
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
@@ -43,6 +55,9 @@ class Olmo3Config(
     Contains parameters specific to the Olmo3 architecture, typically
     extracted from a HuggingFace configuration object's text config.
     """
+
+    DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
+    SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {"bfloat16"}
 
     vocab_size: int
     """Vocabulary size of the Olmo3 model."""
@@ -135,8 +150,45 @@ class Olmo3Config(
     return_logits: ReturnLogits
     """Whether to return the last token, all logits, or a variable number of logits."""
 
-    kv_params: KVCacheParams
-    """KV cache parameters."""
+    kv_params: KVCacheParamInterface
+    """KV cache parameters (sliding-window and full-attention groups)."""
+
+    quantization_encoding: SupportedEncoding | None = None
+
+    @classmethod
+    def construct_kv_params(
+        cls,
+        huggingface_config: AutoConfig,
+        pipeline_config: PipelineConfig,
+        devices: list[DeviceRef],
+        kv_cache_config: KVCacheConfig,
+        cache_dtype: DType,
+        *,
+        allow_kv_head_replication: bool = False,
+    ) -> MultiKVCacheParams:
+        """Constructor for hybrid sliding + full KV tree."""
+        layer_types = getattr(
+            huggingface_config,
+            "layer_types",
+            [
+                "sliding_attention",
+                "sliding_attention",
+                "sliding_attention",
+                "full_attention",
+            ]
+            * (huggingface_config.num_hidden_layers // 4),
+        )
+        return hybrid_swa_full_kv_params(
+            layer_types=layer_types,
+            sliding_window=huggingface_config.sliding_window,
+            pipeline_config=pipeline_config,
+            devices=devices,
+            kv_cache_config=kv_cache_config,
+            cache_dtype=cache_dtype,
+            n_kv_heads=huggingface_config.num_key_value_heads,
+            head_dim=cls.get_head_dim(huggingface_config),
+            allow_kv_head_replication=allow_kv_head_replication,
+        )
 
     @override
     @classmethod
@@ -144,6 +196,8 @@ class Olmo3Config(
         cls,
         pipeline_config: PipelineConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         """Initializes a Olmo3Config instance from pipeline configuration.
 
@@ -162,17 +216,15 @@ class Olmo3Config(
         huggingface_config = model_config.huggingface_config
         assert huggingface_config is not None
         kv_cache_config = model_config.kv_cache
-        quantization_encoding = model_config.quantization_encoding
-        if quantization_encoding is None:
-            raise ValueError("quantization_encoding must not be None")
-        dtype = supported_encoding_dtype(quantization_encoding)
-        cache_dtype = model_config.kv_cache.cache_dtype
-
-        _weights_format = weights_format(model_config.weight_path)
-        interleaved_rope_weights = (
-            _weights_format == WeightsFormat.gguf
-            and model_config.rope_type == "normal"
+        quantization_encoding = _select_quantization_encoding(
+            model_config, cls.DEFAULT_ENCODING
         )
+        dtype = supported_encoding_dtype(quantization_encoding)
+        cache_dtype = cache_dtype_for_encoding(
+            quantization_encoding, model_config.kv_cache.kv_cache_format
+        )
+
+        interleaved_rope_weights = _interleaved_rope_weights(model_config)
         device_refs = [
             DeviceRef(spec.device_type, spec.id)
             for spec in model_config.device_specs
@@ -260,7 +312,7 @@ class Olmo3Config(
             num_key_value_heads=huggingface_config.num_key_value_heads,
             head_dim=Olmo3Config.get_head_dim(huggingface_config),
             hidden_activation=hidden_activation,
-            max_position_embeddings=huggingface_config.max_position_embeddings,
+            max_position_embeddings=max_seq_len,
             rms_norm_eps=huggingface_config.rms_norm_eps,
             rope_theta=get_rope_theta(huggingface_config),
             attention_bias=huggingface_config.attention_bias,
@@ -283,6 +335,7 @@ class Olmo3Config(
             kv_params=kv_params,
             tie_word_embeddings=False,
             return_logits=ReturnLogits.LAST_TOKEN,
+            quantization_encoding=quantization_encoding,
         )
 
     def finalize(

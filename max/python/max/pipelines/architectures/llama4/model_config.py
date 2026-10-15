@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from typing import ClassVar
 
 from max.dtype import DType
 from max.graph import DeviceRef
@@ -32,17 +33,23 @@ from max.nn.quant_config import (
 )
 from max.nn.rotary_embedding import Llama3RopeScalingParams
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import (
     KVCacheConfig,
     MAXModelConfig,
     PipelineConfig,
 )
+from max.pipelines.lib.config.model_config import _select_quantization_encoding
 from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithKVCache,
     ArchConfigWithStoredKVParams,
 )
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
-from max.pipelines.modeling.config_enums import supported_encoding_dtype
+from max.pipelines.modeling.config_enums import (
+    SupportedEncoding,
+    supported_encoding_dtype,
+    supported_encoding_quantization,
+)
 from max.pipelines.weights import gptq_quant_config
 from transformers import AutoConfig
 from typing_extensions import Self, override
@@ -183,6 +190,12 @@ def _build_llama4_fp8_quant_config(
 class Llama4Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
     """Model configuration for Llama4 (text-only) graph construction."""
 
+    DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
+    SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {
+        "bfloat16",
+        "float8_e4m3fn",
+    }
+
     hidden_size: int
     num_attention_heads: int
     num_key_value_heads: int
@@ -224,6 +237,7 @@ class Llama4Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
     return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN
     return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE
     data_parallel_degree: int = 1
+    quantization_encoding: SupportedEncoding | None = None
 
     @staticmethod
     @override
@@ -243,9 +257,8 @@ class Llama4Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
     @override
     def calculate_max_seq_len(
         cls,
-        pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
-        model_config: MAXModelConfig | None = None,
+        model_config: MAXModelConfig,
     ) -> int:
         """Bounds ``max_length`` by the text config's ``max_position_embeddings``.
 
@@ -254,7 +267,6 @@ class Llama4Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         top-level config, so route it through :func:`get_text_config` first.
         """
         return super().calculate_max_seq_len(
-            pipeline_config,
             huggingface_config=get_text_config(huggingface_config),
             model_config=model_config,
         )
@@ -268,9 +280,12 @@ class Llama4Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
+        *,
+        allow_kv_head_replication: bool = False,
     ) -> KVCacheParams:
         text_config = get_text_config(huggingface_config)
         return kv_cache_config.to_params(
+            allow_kv_head_replication=allow_kv_head_replication,
             dtype=cache_dtype,
             n_kv_heads=text_config.num_key_value_heads,
             head_dim=cls.get_head_dim(huggingface_config),
@@ -285,6 +300,8 @@ class Llama4Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         cls,
         pipeline_config: PipelineConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         model_config = model_config or pipeline_config.model
         huggingface_config = model_config.huggingface_config
@@ -295,7 +312,10 @@ class Llama4Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
                 "repository contains a valid config.json file."
             )
         return cls.initialize_from_config(
-            pipeline_config, huggingface_config, model_config
+            pipeline_config,
+            huggingface_config,
+            model_config,
+            max_seq_len=max_seq_len,
         )
 
     @classmethod
@@ -304,15 +324,19 @@ class Llama4Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         model_config = model_config or pipeline_config.model
         text_config = get_text_config(huggingface_config)
         kv_cache_config = model_config.kv_cache
-        quantization_encoding = model_config.quantization_encoding
-        if quantization_encoding is None:
-            raise ValueError("quantization_encoding must not be None")
+        quantization_encoding = _select_quantization_encoding(
+            model_config, cls.DEFAULT_ENCODING
+        )
         dtype = supported_encoding_dtype(quantization_encoding)
-        cache_dtype = model_config.kv_cache.cache_dtype
+        cache_dtype = cache_dtype_for_encoding(
+            quantization_encoding, model_config.kv_cache.kv_cache_format
+        )
         n_devices = len(pipeline_config.model.device_specs)
         device_refs = [
             DeviceRef(spec.device_type, spec.id)
@@ -357,16 +381,14 @@ class Llama4Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
             intermediate_size_mlp=text_config.intermediate_size_mlp,
             vocab_size=text_config.vocab_size,
             dtype=dtype,
-            model_quantization_encoding=pipeline_config.model.graph_quantization_encoding,
+            model_quantization_encoding=supported_encoding_quantization(
+                quantization_encoding
+            ),
             quantization_config=gptq_quant_config(
-                pipeline_config.model.quantization_encoding,
+                quantization_encoding,
                 pipeline_config.model.huggingface_config,
             ),
-            max_seq_len=cls.calculate_max_seq_len(
-                pipeline_config,
-                huggingface_config=huggingface_config,
-                model_config=model_config,
-            ),
+            max_seq_len=max_seq_len,
             kv_params=cls.construct_kv_params(
                 huggingface_config=huggingface_config,
                 pipeline_config=pipeline_config,
@@ -399,6 +421,7 @@ class Llama4Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
             attention_bias=bool(getattr(text_config, "attention_bias", False)),
             attention_multiplier=math.sqrt(1.0 / float(head_dim)),
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
+            quantization_encoding=quantization_encoding,
         )
 
     def finalize(
@@ -417,10 +440,7 @@ class Llama4Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         normalized_state_dict = {
             _strip(k): v
             for k, v in state_dict.items()
-            if not (
-                k.startswith("vision_model.")
-                or k.startswith("multi_modal_projector.")
-            )
+            if not (k.startswith(("vision_model.", "multi_modal_projector.")))
         }
 
         self.quant_config = _build_llama4_fp8_quant_config(

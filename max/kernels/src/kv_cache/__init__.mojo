@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Contains implementations for several types of key-value caches.
 
-[KV caches](/glossary/ai/kv-cache) are used in transformer models to store
+KV caches are used in transformer models to store
 key-value tensors output from self-attention layers, allowing previously
 computed results to be reused across decoding steps.
 

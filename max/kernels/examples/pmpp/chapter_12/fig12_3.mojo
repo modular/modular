@@ -11,12 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu import block_idx, thread_idx
-from std.gpu.host import DeviceContext
-from std.gpu.primitives.warp import vote, shuffle_idx
-from std.gpu.primitives.id import lane_id
+from max.gpu import block_idx, thread_idx
+from max.gpu.host import DeviceContext
+from max.gpu.primitives.warp import vote, shuffle_idx
+from max.gpu.primitives.id import lane_id
 from std.bit import pop_count, count_trailing_zeros
 from std.atomic import Atomic
+from std.math import ceildiv
 
 
 # ========================== CONFIGURATION ==========================
@@ -24,7 +25,7 @@ comptime BLOCK_DIM = 256
 
 
 # ========================== DEVICE FUNCTIONS ==========================
-@always_inline
+@inline(.always)
 def cond(val: UInt32) -> Bool:
     """Filter: keep only even numbers.
 
@@ -60,7 +61,7 @@ def filter_kernel(
         passes = cond(val)
 
     # Get active threads mask (only threads passing the filter vote True)
-    var active_threads = vote[DType.uint32](passes)
+    var active_threads = vote[.uint32](passes)
 
     if passes:
         var j: UInt32 = 0
@@ -107,7 +108,7 @@ def main() raises:
             h_size[0] = UInt32(0)
 
         # Launch kernel
-        var num_blocks = (N + BLOCK_DIM - 1) // BLOCK_DIM
+        var num_blocks = ceildiv(N, BLOCK_DIM)
         print(
             (
                 "Launching unstable filter kernel with coalesced atomics (Fig"

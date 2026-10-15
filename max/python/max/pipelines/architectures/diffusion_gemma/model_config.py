@@ -23,7 +23,7 @@ read-only config view, and adds the block-diffusion fields (``canvas_length``).
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, ClassVar
 
 from max.graph.weights import WeightData
 from max.nn.transformer import ReturnLogits
@@ -31,6 +31,7 @@ from max.pipelines.architectures.gemma4.model_config import (
     Gemma4ForConditionalGenerationConfig,
 )
 from max.pipelines.lib import PipelineConfig
+from max.pipelines.modeling.config_enums import SupportedEncoding
 from transformers import AutoConfig
 from typing_extensions import Self
 
@@ -93,6 +94,12 @@ class DiffusionGemmaForBlockDiffusionConfig(
     which reads them through the view installed by ``initialize_from_config``.
     """
 
+    DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "float4_e2m1fnx2"
+    SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {
+        "float4_e2m1fnx2",
+        "bfloat16",
+    }
+
     canvas_length: int = 256
     """Number of tokens denoised per block-diffusion canvas."""
 
@@ -107,9 +114,13 @@ class DiffusionGemmaForBlockDiffusionConfig(
         cls,
         pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
+        *,
+        max_seq_len: int,
     ) -> Self:
         view = _diffusion_hf_config_view(huggingface_config)
-        cfg = super().initialize_from_config(pipeline_config, view)
+        cfg = super().initialize_from_config(
+            pipeline_config, view, max_seq_len=max_seq_len
+        )
         cfg.canvas_length = huggingface_config.canvas_length
         cfg.boi_token_id = huggingface_config.boi_token_id
         cfg.eoi_token_id = huggingface_config.eoi_token_id

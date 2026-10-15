@@ -34,6 +34,7 @@ from max.pipelines.lib import (
     ModelOutputs,
     PipelineConfig,
 )
+from max.pipelines.lib.memory_estimation import MemoryPlan
 
 from .batch_processor import MPNetBatchProcessor
 from .graph import build_graph
@@ -72,6 +73,8 @@ class MPNetPipelineModel(GraphPipelineModel[TextContext]):
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
+        *,
+        memory_plan: MemoryPlan,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.ALL,
         max_batch_size: int = 1,
@@ -82,9 +85,10 @@ class MPNetPipelineModel(GraphPipelineModel[TextContext]):
             devices,
             kv_cache_config,
             weights,
-            adapter,
-            return_logits,
+            adapter=adapter,
+            return_logits=return_logits,
             max_batch_size=max_batch_size,
+            memory_plan=memory_plan,
         )
         self.model = self.load_model(session)
 
@@ -99,7 +103,7 @@ class MPNetPipelineModel(GraphPipelineModel[TextContext]):
 
     def _create_model_config(self, state_dict: dict[str, Any]) -> MPNetConfig:
         del state_dict
-        return MPNetConfig.initialize(self.pipeline_config)
+        return self.arch_config_as(MPNetConfig)
 
     def _build_graph_for_compile(
         self,
