@@ -698,6 +698,8 @@ static int linkOutput(LinkProduct product, const State &state,
   std::vector<std::string> extraLinkerArgs =
       args.getAllArgValues(options::OPT_Xlinker);
 
+  StringRef wasiSysroot = args.getLastArgValue(options::OPT_wasi_sysroot, "");
+
   // Assert that we've parsed all command line arguments.
   state.assertNoUnusedArguments(args);
 
@@ -730,6 +732,136 @@ static int linkOutput(LinkProduct product, const State &state,
     }
 
     return EXIT_SUCCESS;
+  }
+
+  // When the user requested a wasm* triple, the host C compiler can't link
+  // the archive. Route through `wasm-ld` (i.e. `lld -flavor wasm`) instead.
+  // The archive is written to a temp file. With `--wasi-sysroot`, link a
+  // standard WASI command; otherwise fall back to a bare `--no-entry
+  // --export-all` module.
+  {
+    StringRef tripleStr = args.getLastArgValue(options::OPT_target_triple, "");
+    if (!tripleStr.empty()) {
+      llvm::Triple triple(llvm::Triple::normalize(tripleStr));
+      if (triple.isWasm()) {
+        if (product != LinkProduct::kExecutable) {
+          return state.reportError(
+              "wasm targets support executable output only");
+        }
+        auto wasmArchiveOr = writeTempFile("mojo_archive-%%%%%%%" + libExt,
+                                           archive->getBuffer());
+        if (wasmArchiveOr.isError()) {
+          return state.reportError(
+              "unable to write temporary files for linking: " +
+              Twine(wasmArchiveOr.getError()));
+        }
+        std::string wasmArchivePath = wasmArchiveOr->getPath().string();
+
+        // Resolve the wasm linker. Prefer `wasm-ld` on PATH; fall back to
+        // the configured lld (MojoConfig lld_path, honoring --lld-path),
+        // which is the driver build that accepts `-flavor wasm`. A bare
+        // `lld` on PATH is upstream LLVM, which removed `-flavor` in LLVM
+        // 14, so it is not a usable fallback.
+        std::string wasmLdProgram;
+        SmallVector<StringRef> wasmFlavorPrefix;
+        if (auto p = llvm::sys::findProgramByName("wasm-ld")) {
+          wasmLdProgram = *p;
+        } else {
+          llvm::ErrorOr<std::string> configuredLld = config.getLLDPath().str();
+          if (configuredLld && !configuredLld->empty() &&
+              std::filesystem::exists(*configuredLld, ec)) {
+            wasmLdProgram = *configuredLld;
+            wasmFlavorPrefix.push_back("-flavor");
+            wasmFlavorPrefix.push_back("wasm");
+          } else {
+            return state.reportError(
+                "unable to locate 'wasm-ld' for wasm link step (install "
+                "wasm-ld or set --lld-path)");
+          }
+        }
+
+        SmallVector<StringRef> wasmArgs;
+        wasmArgs.emplace_back(wasmLdProgram);
+        for (StringRef p : wasmFlavorPrefix)
+          wasmArgs.emplace_back(p);
+
+        // wasm-ld defaults to wasm32; wasm64 object files require -mwasm64.
+        if (triple.getArch() == llvm::Triple::wasm64)
+          wasmArgs.emplace_back("-mwasm64");
+
+        // Own the sysroot path strings for the lifetime of the link so the
+        // StringRefs in wasmArgs stay valid through ExecuteAndWait.
+        std::string crt1, libFlag, builtins, emulatedClocks, glue;
+        if (!wasiSysroot.empty()) {
+          if (!triple.isOSWASI())
+            return state.reportError(
+                "--wasi-sysroot requires a WASI target triple, e.g. "
+                "wasm64-unknown-wasip1");
+          // crt1-command.o provides `_start`; the remaining archives are
+          // linked when the sysroot provides them.
+          std::string libDir = (wasiSysroot + "/lib/").str() +
+                               triple.getArchName().str() + "-wasip1";
+          if (!std::filesystem::exists(libDir, ec) || ec)
+            return state.reportError(
+                "unable to locate WASI sysroot library directory: " + libDir);
+          crt1 = libDir + "/crt1-command.o";
+          libFlag = "-L" + libDir;
+          builtins = libDir + "/libclang_rt.builtins-" +
+                     triple.getArchName().str() + ".a";
+          // wasi-libc stubs out CLOCK_PROCESS_CPUTIME_ID /
+          // CLOCK_THREAD_CPUTIME_ID unless the emulated process-clocks
+          // archive is linked in.
+          emulatedClocks = libDir + "/libwasi-emulated-process-clocks.a";
+          glue = libDir + "/libkgen_compilerrt_wasi.a";
+          wasmArgs.emplace_back(crt1);
+          wasmArgs.emplace_back(libFlag);
+          wasmArgs.emplace_back("-lc");
+          if (std::filesystem::exists(builtins, ec) && !ec)
+            wasmArgs.emplace_back(builtins);
+          if (std::filesystem::exists(emulatedClocks, ec) && !ec)
+            wasmArgs.emplace_back(emulatedClocks);
+          if (std::filesystem::exists(glue, ec) && !ec)
+            wasmArgs.emplace_back(glue);
+          // crt1-command.o reaches the user entry point through a weak
+          // reference chain, which does not pull `__main_argc_argv` out of
+          // the archive on its own; keep the symbol explicitly.
+          wasmArgs.emplace_back("--undefined=__main_argc_argv");
+        } else {
+          // No real entry point is needed; export everything so the host can
+          // invoke the entry directly (`main` on freestanding triples,
+          // `__main_argc_argv` on WASI triples, where ObjectCompiler
+          // renames it).
+          wasmArgs.emplace_back("--no-entry");
+          wasmArgs.emplace_back("--export-all");
+        }
+
+        wasmArgs.emplace_back(wasmArchivePath);
+        // Propagate user-supplied linker flags (`-Xlinker <path.a>` or
+        // `-Xlinker -l<name>`).
+        for (const auto &extraArg : extraLinkerArgs)
+          wasmArgs.emplace_back(extraArg.c_str());
+        wasmArgs.emplace_back("-o");
+        wasmArgs.emplace_back(outputName);
+
+        LLVM_DEBUG({
+          for (auto a : wasmArgs)
+            llvm::errs() << a << " ";
+          llvm::errs() << "\n";
+        });
+
+        std::string wasmErr;
+        int wasmExit = llvm::sys::ExecuteAndWait(
+            wasmLdProgram, wasmArgs, /*Env=*/std::nullopt,
+            /*Redirects=*/{}, /*SecondsToWait=*/0, /*MemoryLimit=*/0,
+            /*ErrMsg=*/&wasmErr);
+        if (wasmExit) {
+          if (!wasmErr.empty())
+            wasmErr.insert(0, ": ");
+          return state.reportError("failed to link wasm module" + wasmErr);
+        }
+        return EXIT_SUCCESS;
+      }
+    }
   }
 
   // Write the archive to a temporary file.

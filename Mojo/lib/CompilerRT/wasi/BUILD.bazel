@@ -1,0 +1,92 @@
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
+load(":wasm64_sysroot.bzl", "wasm64_sysroot")
+
+package(default_visibility = ["//Mojo:consumers"])
+
+# wasi CompilerRT backend — C-language glue for the KGEN_CompilerRT_* symbols
+# Mojo programs reach when targeting wasm. There is no wasm64 toolchain
+# registered in the repo, so the wasm64 backend is built with the repo's
+# pinned clang-22; it compiles the KGEN_CompilerRT_* glue sources
+# (kgen_compilerrt_wasi, wasi_alloc, wasi_stubs) against the real wasi-libc
+# wasm64 sysroot into the glue archive that `mojo build` auto-links from a
+# `--wasi-sysroot`.
+
+# Hermetic wasm64 toolchain: builds the wasi-libc wasm64 sysroot (pinned
+# PR #444 sources), the compiler-rt builtins archive, and the
+# KGEN_CompilerRT_* glue archive with the repo's pinned clang-22. The output
+# is a tree artifact usable directly as `mojo build --wasi-sysroot`, with
+# the shim archive at lib/wasm64-wasip1/libkgen_compilerrt_wasi.a.
+wasm64_sysroot(
+    name = "wasi_sysroot",
+    build_script = "build_wasm64_sysroot_action.sh",
+    builtins_list = "wasm64_builtins_sources.txt",
+    builtins_root = "@llvm-raw//:compiler-rt/lib/builtins/absvdi2.c",
+    builtins_srcs = ["@llvm-raw//:compiler-rt-builtins-srcs"],
+    clang_tools = select({
+        "//:linux_aarch64": [
+            "@clang-linux-aarch64//:bin/clang-22",
+            "@clang-linux-aarch64//:bin/llvm-ar",
+            "@clang-linux-aarch64//:bin/llvm-nm",
+        ],
+        "//:linux_x86_64": [
+            "@clang-linux-x86_64//:bin/clang-22",
+            "@clang-linux-x86_64//:bin/llvm-ar",
+            "@clang-linux-x86_64//:bin/llvm-nm",
+        ],
+        "@platforms//os:macos": [
+            "@clang-macos//:bin/clang-22",
+            "@clang-macos//:bin/llvm-ar",
+            "@clang-macos//:bin/llvm-nm",
+        ],
+    }),
+    resource_dir = select({
+        "//:linux_aarch64": ["@clang-linux-aarch64//:resource_directory"],
+        "//:linux_x86_64": ["@clang-linux-x86_64//:resource_directory"],
+        "@platforms//os:macos": ["@clang-macos//:resource_directory"],
+    }),
+    shim_srcs = [
+        "kgen_compilerrt_wasi.c",
+        "wasi_alloc.c",
+        "wasi_libc_shims.c",
+        "wasi_stubs.c",
+    ],
+    visibility = ["//visibility:public"],
+    wasi_libc_root = "@wasi_libc_wasm64//:Makefile",
+    wasi_libc_srcs = ["@wasi_libc_wasm64//:srcs"],
+)
+
+# End-to-end wasm64 smoke gate: cross-compiles tests/*.mojo with the
+# bazel-built mojo compiler against the :wasi_sysroot tree artifact and runs
+# them on a real WASI runtime that implements the wasm64 preview1 ABI
+# (WAVM locally, wasmtime on CI via WASM64_RUNTIME=wasmtime). Tagged
+# `manual` because it needs the bazel-bin mojo compiler + stdlib from the
+# real repo root:
+#   WASM64_REPO_ROOT=$PWD bazel test \
+#     --test_env=WASM64_REPO_ROOT --test_env=PATH \
+#     //Mojo/lib/CompilerRT/wasi:wasm64_smoke_test
+# PATH must be inherited so the mojo compiler can find wasm-ld; for
+# wasmtime (no WAVM needed) also add --test_env=WASM64_RUNTIME.
+sh_test(
+    name = "wasm64_smoke_test",
+    srcs = ["wasm64_smoke_test.sh"],
+    data = [
+        "_locate_clang.sh",
+        "build_wasm64_shim.sh",
+        "kgen_compilerrt_wasi.c",
+        "tests/hello.mojo",
+        "tests/smoke.mojo",
+        "tests/wasi_features.mojo",
+        "wasi_alloc.c",
+        "wasi_libc_shims.c",
+        "wasi_stubs.c",
+        ":wasi_sysroot",
+        "//tools/wasm64:wasmtime-runner.py",
+    ],
+    # no-remote-exec: the gate drives the host's mojo compiler, wasm-ld and
+    # a python wasmtime install from the host PATH, none of which exist on
+    # the remote execution workers.
+    tags = [
+        "manual",
+        "no-remote-exec",
+    ],
+)

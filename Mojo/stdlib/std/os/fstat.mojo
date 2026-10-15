@@ -29,6 +29,8 @@ from ._linux_x86 import _lstat as _lstat_linux_x86
 from ._linux_x86 import _stat as _stat_linux_x86
 from ._macos import _lstat as _lstat_macos
 from ._macos import _stat as _stat_macos
+from ._wasm import _lstat as _lstat_wasm
+from ._wasm import _stat as _stat_wasm
 
 
 # ===----------------------------------------------------------------------=== #
@@ -197,6 +199,13 @@ def stat[PathLike: stdPathLike](path: PathLike) raises -> stat_result:
         return _stat_macos(fspath^)._to_stat_result()
     elif CompilationTarget.has_neon():
         return _stat_linux_arm(fspath^)._to_stat_result()
+    elif CompilationTarget.is_wasm64():
+        return _stat_wasm(fspath^)._to_stat_result()
+    elif CompilationTarget.is_wasi():
+        CompilationTarget.unsupported_target_error[
+            operation="stat",
+            note="wasm32 WASI is not supported yet.",
+        ]()
     else:
         return _stat_linux_x86(fspath^)._to_stat_result()
 
@@ -226,5 +235,12 @@ def lstat[PathLike: stdPathLike](path: PathLike) raises -> stat_result:
         return _lstat_macos(fspath^)._to_stat_result()
     elif CompilationTarget.has_neon():
         return _lstat_linux_arm(fspath^)._to_stat_result()
+    elif CompilationTarget.is_wasm64():
+        return _lstat_wasm(fspath^)._to_stat_result()
+    elif CompilationTarget.is_wasi():
+        CompilationTarget.unsupported_target_error[
+            operation="lstat",
+            note="wasm32 WASI is not supported yet.",
+        ]()
     else:
         return _lstat_linux_x86(fspath^)._to_stat_result()

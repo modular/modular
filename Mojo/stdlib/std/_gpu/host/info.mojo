@@ -25,6 +25,7 @@ memory specifications, thread organization, and performance characteristics.
 from std.sys.info import (
     CompilationTarget,
     _accelerator_arch,
+    _current_target,
     _TargetType,
 )
 
@@ -52,7 +53,12 @@ def get_gpu_target[
 # can't fold while types are parsed; inlining it would embed the whole
 # accelerator table in every type and symbol name that mentions the target.
 def _gpu_mlir_target[target_arch: StaticString]() -> _TargetType:
-    return TargetAccelerator.from_arch[target_arch].mlir_target
+    # Wasm targets have no accelerator table entry; the GPU target is the
+    # current (wasm) target so stdlib GPU code paths still typecheck.
+    comptime if CompilationTarget.is_wasm():
+        return _current_target()
+    else:
+        return TargetAccelerator.from_arch[target_arch].mlir_target
 
 
 # ===----------------------------------------------------------------------=== #

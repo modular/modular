@@ -36,7 +36,7 @@ from std.os import PathLike as stdPathLike, abort, makedirs
 from std.os import SEEK_SET, SEEK_END
 from std.os.path import dirname
 from std.ffi import c_int, c_ssize_t, external_call
-from std.sys import size_of
+from std.sys import CompilationTarget, size_of
 from std.sys._libc_errno import get_errno
 from std.sys.info import platform_map
 
@@ -47,27 +47,31 @@ from std.collections import Span
 # ===----------------------------------------------------------------------=== #
 
 # File access modes
-comptime O_RDONLY = 0x0000
+comptime O_RDONLY = 0x04000000 if CompilationTarget.is_wasi() else 0x0000
 """Open file for reading only."""
-comptime O_WRONLY = 0x0001
+comptime O_WRONLY = 0x10000000 if CompilationTarget.is_wasi() else 0x0001
 """Open file for writing only."""
-comptime O_RDWR = 0x0002
+comptime O_RDWR = 0x14000000 if CompilationTarget.is_wasi() else 0x0002
 """Open file for reading and writing."""
 
 # File creation flags
-comptime O_CREAT = platform_map[T=Int, "O_CREAT", linux=0x0040, macos=0x0200]()
+comptime O_CREAT = platform_map[
+    T=Int, "O_CREAT", linux=0x0040, macos=0x0200, wasi=0x1000
+]()
 """Create file if it doesn't exist."""
 
-comptime O_TRUNC = platform_map[T=Int, "O_TRUNC", linux=0x0200, macos=0x0400]()
+comptime O_TRUNC = platform_map[
+    T=Int, "O_TRUNC", linux=0x0200, macos=0x0400, wasi=0x8000
+]()
 """Truncate file to zero length."""
 
 comptime O_APPEND = platform_map[
-    T=Int, "O_APPEND", linux=0x0400, macos=0x0008
+    T=Int, "O_APPEND", linux=0x0400, macos=0x0008, wasi=0x0001
 ]()
 """Append mode: writes always go to end of file."""
 
 comptime O_CLOEXEC = platform_map[
-    T=Int, "O_CLOEXEC", linux=0x80000, macos=0x1000000
+    T=Int, "O_CLOEXEC", linux=0x80000, macos=0x1000000, wasi=0x0000
 ]()
 """Close file descriptor on exec."""
 
@@ -454,7 +458,9 @@ struct FileHandle(Defaultable, Movable, Writer):
 
         var fd = self._get_raw_fd()
         # lseek returns off_t which is typically Int64 on Unix systems
-        var pos = external_call["lseek", Int64](fd, Int64(offset), Int(whence))
+        var pos = external_call["lseek", Int64](
+            c_int(fd), Int64(offset), c_int(whence)
+        )
 
         if pos < 0:
             var err = get_errno()

@@ -1,0 +1,17 @@
+diff --git a/Include/WAVM/Platform/Error.h b/Include/WAVM/Platform/Error.h
+--- a/Include/WAVM/Platform/Error.h
++++ b/Include/WAVM/Platform/Error.h
+@@ -4,11 +4,11 @@
+ #include "WAVM/Inline/BasicTypes.h"
+ 
+ namespace WAVM { namespace Platform {
+-	WAVM_PACKED_STRUCT(struct AssertMetadata {
++	struct AssertMetadata {
+ 		const char* condition;
+ 		const char* file;
+ 		U32 line;
+-	});
++	};
+ 
+ 	WAVM_API void handleAssertionFailure(const AssertMetadata& metadata);
+ 	[[noreturn]] WAVM_API void handleFatalError(const char* messageFormat,

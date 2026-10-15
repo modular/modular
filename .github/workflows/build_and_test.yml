@@ -46,6 +46,7 @@ jobs:
     outputs:
       mojo: ${{ steps.filter.outputs.mojo }}
       max: ${{ steps.filter.outputs.max }}
+      wasm64: ${{ steps.filter.outputs.wasm64 }}
     steps:
       # NOTE: Only on pull requests, where the action reads the changed files
       # from the API. On any other event it would shell out to git and need the
@@ -77,6 +78,14 @@ jobs:
             # ships. These depend on functionality that only the prebuilt Mojo has.
             max:
               - "max/**"
+            # The wasm64 cross-compile gate needs a from-source Mojo build,
+            # so run it only when these files or the pinned toolchain change.
+            wasm64:
+              - "Mojo/lib/CompilerRT/wasi/**"
+              - "tools/wasm64/**"
+              - "bazel/public-patches/**"
+              - "bazel/mojo.MODULE.bazel"
+              - "bazel/common.MODULE.bazel"
 
       - name: Reject changes to both Mojo and MAX
         if: steps.filter.outputs.mojo == 'true' && steps.filter.outputs.max == 'true'
@@ -170,5 +179,57 @@ jobs:
             --config="$mojo_config" \
             -- \
             "${targets[@]}"
+        env:
+          BUILDBUDDY_TOKEN: ${{ secrets.BUILDBUDDY_TOKEN }}
+
+      - name: Test wasm64 cross-compile
+        # Needs `--config=build-mojo` (a full from-source Mojo compiler
+        # build); prebuilt-toolchain runs skip it.
+        if: needs.detect-changes.outputs.mojo == 'true' || needs.detect-changes.outputs.wasm64 == 'true'
+        run: |
+          if [[ -n "${BUILDBUDDY_TOKEN:-}" ]]; then
+            # NOTE: Read+write token that only runs on trusted PRs.
+            args=(
+              --remote_header=x-buildbuddy-api-key=$BUILDBUDDY_TOKEN
+            )
+          else
+            # NOTE: Readonly token that we're ok with being here.
+            args=(
+              --remote_header=x-buildbuddy-api-key=********************
+              --remote_upload_local_results=false
+            )
+          fi
+
+          export BB_DISABLE_SIDECAR=1
+
+          # The wasm64 target needs this repo's Mojo/LLVM build (WebAssembly
+          # backend enabled in BACKENDS; compiler-rt builtins sources), so
+          # the mojo compiler is built from source here rather than taken
+          # from the prebuilt toolchain.
+          ./bazelw build --config=ci \
+            --config=public-cache \
+            "${args[@]}" \
+            --config=build-mojo \
+            //Mojo/tools/mojo:mojo \
+            @mojo//:std
+
+          # Cross-compile the wasm64 smoke programs against the Bazel-built
+          # wasi-libc sysroot (//Mojo/lib/CompilerRT/wasi:wasi_sysroot, a
+          # data dep of the test) and run them under wasmtime. WAVM is
+          # validated locally; see Mojo/lib/CompilerRT/wasi/PINS.md.
+          # The wasmtime module is not on the hosted image: install the
+          # pinned version, since 47+ regress f32x4 relaxed_madd fusion
+          # that the smoke gate's fused mul-add check depends on.
+          python3 -m pip install wasmtime==45.0.0
+
+          WASM64_REPO_ROOT=$PWD WASM64_RUNTIME=wasmtime \
+            ./bazelw test --config=ci \
+            --config=public-cache \
+            "${args[@]}" \
+            --config=build-mojo \
+            --test_env=WASM64_REPO_ROOT \
+            --test_env=WASM64_RUNTIME \
+            --test_env=PATH \
+            //Mojo/lib/CompilerRT/wasi:wasm64_smoke_test
         env:
           BUILDBUDDY_TOKEN: ${{ secrets.BUILDBUDDY_TOKEN }}

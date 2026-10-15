@@ -20,6 +20,7 @@ from std.collections.string.string_span import get_static_string
 from std.format._utils import _FixedWriteBuffer, _FlushingWriteBuffer
 from std.sys import _libc as libc
 from std.ffi import (
+    c_int,
     c_size_t,
     c_ssize_t,
     external_call,
@@ -73,10 +74,18 @@ struct _fdopen[mode: StaticString = "a"](ImplicitlyCopyable, RegisterPassable):
             stream_id: The stream id
         """
 
-        self.handle = fdopen(
-            dup(stream_id.value),
-            Self.mode.as_c_string_span(),
-        )
+        comptime if CompilationTarget.is_wasi():
+            # No dup(2) on WASI, and fclose would close the fd, so __exit__
+            # only flushes. Reuse one cached FILE per std fd instead of
+            # leaking a new FILE on every print.
+            self.handle = external_call["KGEN_CompilerRT_fdopen_std", FILE_ptr](
+                Int32(stream_id.value), Self.mode.as_c_string_span()
+            )
+        else:
+            self.handle = fdopen(
+                dup(stream_id.value),
+                Self.mode.as_c_string_span(),
+            )
 
     def __enter__(self) -> Self:
         """Open the file handle for use within a context manager"""
@@ -84,7 +93,10 @@ struct _fdopen[mode: StaticString = "a"](ImplicitlyCopyable, RegisterPassable):
 
     def __exit__(self):
         """Closes the file handle."""
-        _ = fclose(self.handle)
+        comptime if CompilationTarget.is_wasi():
+            _ = fflush(self.handle)
+        else:
+            _ = fclose(self.handle)
 
     def readline(self) raises -> String:
         """Reads an entire line from stdin or until EOF. Lines are delimited by a newline character.
@@ -150,7 +162,7 @@ struct _fdopen[mode: StaticString = "a"](ImplicitlyCopyable, RegisterPassable):
         var bytes_read = external_call["getdelim", c_ssize_t](
             Pointer(to=buffer),
             Pointer(to=n),
-            ord(delimiter),
+            c_int(ord(delimiter)),
             self.handle,
         )
         # Per man getdelim(3), getdelim will return -1 if an error occurs

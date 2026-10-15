@@ -566,6 +566,22 @@ ErrorOrSuccess M::parseTargetOptions(
       compilationOptions.targetFeatures =
           encodeFeatures(TargetInfo({}, {}, std::move(*featuresOr)));
     }
+    // LLVM's default wasm feature set leaves `simd128` off, which scalarizes
+    // every Mojo SIMD op on the target. The wasm vector ISA is baseline
+    // across engines, so default it on for wasm targets; an explicit
+    // --target-features (or -march/-mcpu) still wins over these defaults.
+    // Also default `+relaxed-simd`: it lets LLVM contract mul+add chains
+    // into fused relaxed ops (e.g. `f32x4.relaxed_madd`) that engines
+    // lower to a single FMA where the host has one (measured 1.87x on
+    // throughput-shaped FP loops under wasmtime). Relaxed ops permit
+    // engine-dependent rounding, matching native fp-contract; engines
+    // without the proposal reject the module, so an explicit
+    // `--target-features=+simd128` remains the compatibility escape hatch.
+    if (llvm::Triple(compilationOptions.targetTriple).isWasm()) {
+      if (!compilationOptions.targetFeatures.empty())
+        compilationOptions.targetFeatures += ",";
+      compilationOptions.targetFeatures += "+simd128,+relaxed-simd";
+    }
   }
   if (!targetAccelerator.empty()) {
     compilationOptions.targetAccelerator = targetAccelerator.str();

@@ -116,7 +116,7 @@ struct RawFileDescriptor(TrivialRegisterPassable, Writer):
             CompilationTarget.is_macos() or CompilationTarget.is_linux()
         ), "`read_bytes()` is not yet implemented for unknown platform."
         var read = external_call["read", c_ssize_t](
-            self.value, buffer.unsafe_ptr(), len(buffer)
+            c_int(self.value), buffer.unsafe_ptr(), len(buffer)
         )
         if read < 0:
             raise Error("Failed to read bytes.")
@@ -156,7 +156,13 @@ struct RawFileDescriptor(TrivialRegisterPassable, Writer):
             If the operations fails. In particular if the fd is
             not a directory.
         """
-        var result = external_call["fchdir", c_int](self.value)
-        if result < 0:
-            var err = get_errno()
-            raise Error("fchdir failed err: ", String(err))
+        comptime if CompilationTarget.is_wasi():
+            CompilationTarget.unsupported_target_error[
+                operation="fchdir",
+                note="fchdir is not supported on WASI.",
+            ]()
+        else:
+            var result = external_call["fchdir", c_int](self.value)
+            if result < 0:
+                var err = get_errno()
+                raise Error("fchdir failed err: ", String(err))

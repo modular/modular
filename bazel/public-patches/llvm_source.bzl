@@ -61,7 +61,17 @@ def _llvm_source_impl(module_ctx):
 
     http_archive(
         name = "llvm-raw",
-        build_file_content = "exports_files(glob([\"**\"]))",
+        # The compiler-rt builtins filegroup feeds the wasm64
+        # libclang_rt.builtins-wasm64.a build in //Mojo/lib/CompilerRT/wasi.
+        build_file_content = """
+exports_files(glob(["**"]))
+
+filegroup(
+    name = "compiler-rt-builtins-srcs",
+    srcs = glob(["compiler-rt/lib/builtins/**"]),
+    visibility = ["//visibility:public"],
+)
+""",
         patch_strip = 1,
         patches = patches,
         sha256 = LLVM_SHA,

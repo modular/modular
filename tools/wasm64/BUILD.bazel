@@ -1,0 +1,8 @@
+package(default_visibility = ["//visibility:public"])
+
+# wasm64 WASI tooling: the wasmtime host runner for wasm64 WASI commands.
+# Exported as a plain file so sh_tests (e.g. //Mojo/lib/CompilerRT/wasi) can
+# invoke it from runfiles.
+exports_files([
+    "wasmtime-runner.py",
+])

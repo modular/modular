@@ -32,6 +32,8 @@ from std.sys.info import (
     is_nvidia_gpu,
 )
 
+from std.ffi import external_call
+
 
 # ===-----------------------------------------------------------------------===#
 # Helper functions
@@ -46,6 +48,17 @@ def _verify_xyz[dim: StaticString]():
     comptime assert (
         dim == "x" or dim == "y" or dim == "z"
     ), "the dimension must be x, y, or z"
+
+
+# Dispatches `dim` to the corresponding `_wasm_get_<prefix>_idx_{x,y,z}` host call.
+@inline(.nodebug)
+def _wasm_idx[dim: StaticString, prefix: StaticString]() -> Int:
+    comptime if dim == "x":
+        return external_call["_wasm_get_" + prefix + "_idx_x", Int]()
+    elif dim == "y":
+        return external_call["_wasm_get_" + prefix + "_idx_y", Int]()
+    else:
+        return external_call["_wasm_get_" + prefix + "_idx_z", Int]()
 
 
 @inline(.always)
@@ -150,9 +163,14 @@ struct _ThreadIdx(Defaultable, TrivialRegisterPassable):
             The `x`, `y`, or `z` coordinates of a thread within a block.
         """
         _verify_xyz[dim]()
-        comptime intrinsic_name = Self._get_intrinsic_name[dim]()
-        var i = llvm_intrinsic[intrinsic_name, UInt32, has_side_effect=False]()
-        return Int(i)
+        comptime if CompilationTarget.is_wasm():
+            return _wasm_idx[dim, "thread"]()
+        else:
+            comptime intrinsic_name = Self._get_intrinsic_name[dim]()
+            var i = llvm_intrinsic[
+                intrinsic_name, UInt32, has_side_effect=False
+            ]()
+            return Int(i)
 
 
 comptime thread_idx = _ThreadIdx()
@@ -195,9 +213,14 @@ struct _BlockIdx(Defaultable, TrivialRegisterPassable):
             The `x`, `y`, or `z` coordinates of a block within a grid.
         """
         _verify_xyz[dim]()
-        comptime intrinsic_name = Self._get_intrinsic_name[dim]()
-        var i = llvm_intrinsic[intrinsic_name, UInt32, has_side_effect=False]()
-        return Int(i)
+        comptime if CompilationTarget.is_wasm():
+            return _wasm_idx[dim, "block"]()
+        else:
+            comptime intrinsic_name = Self._get_intrinsic_name[dim]()
+            var i = llvm_intrinsic[
+                intrinsic_name, UInt32, has_side_effect=False
+            ]()
+            return Int(i)
 
 
 comptime block_idx = _BlockIdx()
@@ -225,7 +248,9 @@ struct _BlockDim(Defaultable, TrivialRegisterPassable):
         """
         _verify_xyz[dim]()
 
-        comptime if is_nvidia_gpu():
+        comptime if CompilationTarget.is_wasm():
+            return _wasm_idx[dim, "block_dim"]()
+        elif is_nvidia_gpu():
             comptime intrinsic_name = "llvm.nvvm.read.ptx.sreg.ntid." + dim
             var i = llvm_intrinsic[
                 intrinsic_name, Int32, has_side_effect=False
@@ -286,7 +311,9 @@ struct _GridDim(Defaultable, TrivialRegisterPassable):
         """
         _verify_xyz[dim]()
 
-        comptime if is_nvidia_gpu():
+        comptime if CompilationTarget.is_wasm():
+            return _wasm_idx[dim, "grid"]()
+        elif is_nvidia_gpu():
             comptime intrinsic_name = "llvm.nvvm.read.ptx.sreg.nctaid." + dim
             var i = llvm_intrinsic[
                 intrinsic_name, Int32, has_side_effect=False

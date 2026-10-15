@@ -1,0 +1,32 @@
+Add the preview1 `sock_accept` syscall as an unimplemented stub (returns
+ENOSYS). Without it, WAVM refuses to instantiate any wasm64 module that
+imports `sock_accept_wasm64` (e.g. programs linked against wasi-libc that
+reference accept(2)). This keeps such modules loadable; the syscall itself
+still reports ENOSYS until a real socket implementation lands.
+
+diff --git a/Lib/WASI/WASIOther.h b/Lib/WASI/WASIOther.h
+index 6cfd3b8..867ea23 100644
+--- a/Lib/WASI/WASIOther.h
++++ b/Lib/WASI/WASIOther.h
+@@ -64,6 +64,21 @@ WAVM_DEFINE_INTRINSIC_FUNCTION_IPTR(wasi,
+ 	return TRACE_SYSCALL_RETURN(result);
+ }
+ 
++WAVM_DEFINE_INTRINSIC_FUNCTION_IPTR(wasi,
++									"sock_accept",
++									__wasi_errno_return_t,
++									wasi_sock_accept,
++									__wasi_fd_t sock,
++									__wasi_fdflags_t fdflags,
++									WASIAddressIPtr fd_out)
++{
++	UNIMPLEMENTED_SYSCALL_IPTR("sock_accept",
++							   "(%u, 0x%04x, " WASIADDRESSIPTR_FORMAT ")",
++							   sock,
++							   fdflags,
++							   fd_out);
++}
++
+ WAVM_DEFINE_INTRINSIC_FUNCTION_IPTR(wasi,
+ 									"sock_recv",
+ 									__wasi_errno_return_t,

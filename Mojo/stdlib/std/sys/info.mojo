@@ -611,6 +611,33 @@ struct CompilationTarget[_mlir_value: _TargetType = _current_target(), //](
         )
 
     @staticmethod
+    def is_wasm32() -> Bool:
+        """Checks if the target is 32-bit WebAssembly.
+
+        Returns:
+            True if the target is 32-bit WebAssembly, False otherwise.
+        """
+        return Self._is_triple_arch["wasm32"]()
+
+    @staticmethod
+    def is_wasm64() -> Bool:
+        """Checks if the target is 64-bit WebAssembly.
+
+        Returns:
+            True if the target is 64-bit WebAssembly, False otherwise.
+        """
+        return Self._is_triple_arch["wasm64"]()
+
+    @staticmethod
+    def is_wasm() -> Bool:
+        """Checks if the target is WebAssembly (32- or 64-bit).
+
+        Returns:
+            True if the target is WebAssembly, False otherwise.
+        """
+        return Self.is_wasm32() or Self.is_wasm64()
+
+    @staticmethod
     def is_riscv() -> Bool:
         """Checks if the target is a RISC-V architecture.
 
@@ -833,6 +860,15 @@ struct CompilationTarget[_mlir_value: _TargetType = _current_target(), //](
         """
         return Self._os() in ["darwin", "macosx"]
 
+    @staticmethod
+    def is_wasi() -> Bool:
+        """Returns True if the host operating system is WASI.
+
+        Returns:
+            True if the host operating system is WASI and False otherwise.
+        """
+        return Self._os() == "wasi" or Self._os() == "wasip1"
+
 
 def platform_map[
     T: Copyable,
@@ -841,6 +877,7 @@ def platform_map[
     *,
     linux: Optional[T] = None,
     macos: Optional[T] = None,
+    wasi: Optional[T] = None,
 ]() -> T:
     """Helper for defining a compile time value depending
     on the current compilation target, raising a compilation
@@ -851,6 +888,8 @@ def platform_map[
         operation: Optional operation name for error messages.
         linux: The value to use on Linux platforms.
         macos: The value to use on macOS platforms.
+        wasi: The value to use on WASI platforms (falls back to the Linux
+            value when unset).
 
     Returns:
         The platform-specific value for the current target.
@@ -860,12 +899,16 @@ def platform_map[
     ```mojo
     from std.sys.info import platform_map
 
-    comptime EDEADLK = platform_map["EDEADLK", linux=35, macos=11]()
+    comptime EDEADLK = platform_map["EDEADLK", linux=35, macos=11, wasi=16]()
     ```
     """
 
     comptime if CompilationTarget.is_macos() and macos:
         return materialize[macos.value()]()
+    elif CompilationTarget.is_wasi() and wasi:
+        return materialize[wasi.value()]()
+    elif CompilationTarget.is_wasi() and linux:
+        return materialize[linux.value()]()
     elif CompilationTarget.is_linux() and linux:
         return materialize[linux.value()]()
     else:

@@ -1056,6 +1056,19 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(OwningOpRef<ModuleOp> module,
         return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
             Error("failed to link bitcode libraries"), moduleLoc));
 
+      // wasi-libc's crt1 calls `__main_argc_argv` (the wasm ABI name clang
+      // gives to `main(int argc, char **argv)`); the Mojo frontend emits the
+      // entry shim as `main`. Rename it for WASI targets; freestanding wasm
+      // targets keep `main`. This fires on every *defined* `main` in a WASI
+      // module (the entry shim is the only one the frontend produces), and
+      // a pre-existing `__main_argc_argv` definition would uniquify under
+      // LLVM's setName and surface as an undefined-symbol link error.
+      if (llvm::Triple(options.targetTriple).isOSWASI()) {
+        if (llvm::Function *mainFn = llvmModule->getFunction("main"))
+          if (!mainFn->isDeclaration())
+            mainFn->setName("__main_argc_argv");
+      }
+
       // Split the module into multiple slices and compile each in parallel.
       [[maybe_unused]] bool needsOriginalOrder =
           backend.requiresOriginalFunctionOrder();

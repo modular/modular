@@ -106,5 +106,10 @@ def run(cmd: String) raises -> String:
         * There is an IO error reading from the subprocess.
         * The data written by the subprocess is not valid UTF-8.
     """
+    comptime if CompilationTarget.is_wasi():
+        CompilationTarget.unsupported_target_error[
+            operation="subprocess.run",
+            note="popen/pclose are not supported on WASI.",
+        ]()
     var hdl = _POpenHandle(cmd)
     return hdl.read()

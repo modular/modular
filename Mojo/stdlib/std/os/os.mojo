@@ -86,6 +86,16 @@ struct _dirent_macos(Copyable):
     """Name of entry."""
 
 
+struct _dirent_wasm(Copyable):
+    comptime MAX_NAME_SIZE = 256
+    var d_ino: Int64
+    """File serial number."""
+    var d_type: Int8
+    """Type of file."""
+    var name: Array[c_char, Self.MAX_NAME_SIZE]
+    """Name of entry."""
+
+
 struct _DirHandle:
     """Handle to an open directory descriptor opened via opendir."""
 
@@ -129,8 +139,52 @@ struct _DirHandle:
 
         comptime if CompilationTarget.is_linux():
             return self._list_linux()
+        elif CompilationTarget.is_wasm64():
+            return self._list_wasm()
+        elif CompilationTarget.is_wasi():
+            CompilationTarget.unsupported_target_error[
+                operation="list",
+                note="wasm32 WASI is not supported yet.",
+            ]()
         else:
             return self._list_macos()
+
+    def _list_wasm(self) -> List[String]:
+        """Returns the names in this directory."""
+        # d_name is a flexible array, so only the fixed prefix is checked.
+        comptime if CompilationTarget.is_wasm64():
+            comptime assert (
+                reflect[_dirent_wasm].field_offset[name="d_ino"]() == 0
+            ), "d_ino offset"
+            comptime assert (
+                reflect[_dirent_wasm].field_offset[name="d_type"]() == 8
+            ), "d_type offset"
+            comptime assert (
+                reflect[_dirent_wasm].field_offset[name="name"]() == 9
+            ), "d_name offset"
+        var res = List[String]()
+
+        while True:
+            var ep = external_call[
+                "readdir", OptionalPointer[_dirent_wasm, MutUntrackedOrigin]
+            ](self._handle)
+            if not ep:
+                break
+            ref name = ep.unsafe_value().unsafe_take_pointee().name
+            var name_ptr = name.unsafe_ptr().unsafe_bitcast[Byte]()
+            var name_str = StringSlice[origin_of(name)](
+                unsafe_from_utf8=Span[Byte, origin_of(name)](
+                    unsafe_ptr=name_ptr,
+                    length=Int(
+                        _unsafe_strlen(name_ptr, _dirent_wasm.MAX_NAME_SIZE)
+                    ),
+                )
+            )
+            if name_str == "." or name_str == "..":
+                continue
+            res.append(String(name_str))
+
+        return res^
 
     def _list_linux(self) -> List[String]:
         """Reads all the data from the handle.
@@ -205,7 +259,13 @@ def getuid() -> Int:
     Constraints:
         This function is constrained to run on Linux or macOS operating systems only.
     """
-    return Int(external_call["getuid", UInt32]())
+    comptime if CompilationTarget.is_wasi():
+        CompilationTarget.unsupported_target_error[
+            operation="getuid",
+            note="getuid is not supported on WASI.",
+        ]()
+    else:
+        return Int(external_call["getuid", UInt32]())
 
 
 # ===----------------------------------------------------------------------=== #
@@ -521,7 +581,9 @@ def mkdir[PathLike: stdPathLike](path: PathLike, mode: Int = 0o777) raises:
     """
 
     var fspath = path.__fspath__()
-    var error = external_call["mkdir", Int32](fspath.as_c_string_span(), mode)
+    var error = external_call["mkdir", Int32](
+        fspath.as_c_string_span(), c_int(mode)
+    )
     if error != 0:
         var err = get_errno()
         raise Error("Can not create directory: ", fspath, " Err: ", String(err))

@@ -38,6 +38,7 @@ _linux_uapi_stub = repository_rule(implementation = _linux_uapi_stub_impl)
 BACKENDS = [
     "AArch64",
     "RISCV",
+    "WebAssembly",
     "X86",
 ]
 

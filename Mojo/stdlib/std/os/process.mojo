@@ -127,6 +127,11 @@ struct Pipe:
         Raises:
             Error: If the pipe could not be created or configured.
         """
+        comptime if CompilationTarget.is_wasi():
+            CompilationTarget.unsupported_target_error[
+                operation="Pipe",
+                note="pipe is not supported on WASI.",
+            ]()
         var pipe_fds = Array[c_int, 2](fill=0)
         if pipe(pipe_fds.unsafe_ptr()) < 0:
             raise Error("Failed to create pipe")
@@ -255,6 +260,11 @@ struct Process:
             pass
 
     def _kill(mut self, signal: Int) -> Bool:
+        comptime if CompilationTarget.is_wasi():
+            CompilationTarget.unsupported_target_error[
+                operation="kill",
+                note="kill is not supported on WASI.",
+            ]()
         # We need to check the "cached" status to avoid trying to
         # kill a process after already having waited upon its exit.
         # Such a process no longer exists and its pid could be reused
@@ -342,6 +352,11 @@ struct Process:
         Raises:
             Error: If `waitpid` fails.
         """
+        comptime if CompilationTarget.is_wasi():
+            CompilationTarget.unsupported_target_error[
+                operation="poll",
+                note="waitpid is not supported on WASI.",
+            ]()
         if case .Some(cached) = self.status:
             return cached
 
@@ -364,6 +379,11 @@ struct Process:
         Raises:
             Error: If `waitpid` fails or the process does not exit.
         """
+        comptime if CompilationTarget.is_wasi():
+            CompilationTarget.unsupported_target_error[
+                operation="wait",
+                note="waitpid is not supported on WASI.",
+            ]()
         if case .Some(cached) = self.status:
             return cached
 

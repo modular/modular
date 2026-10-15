@@ -35,10 +35,20 @@ from std.sys import (
 
 # Enums used in time.h 's glibc
 comptime _CLOCK_REALTIME = 0
-comptime _CLOCK_MONOTONIC = 1 if CompilationTarget.is_linux() else 6
-comptime _CLOCK_PROCESS_CPUTIME_ID = 2 if CompilationTarget.is_linux() else 12
-comptime _CLOCK_THREAD_CPUTIME_ID = 3 if CompilationTarget.is_linux() else 16
-comptime _CLOCK_MONOTONIC_RAW = 4
+comptime _CLOCK_MONOTONIC = (
+    1 if CompilationTarget.is_linux() or CompilationTarget.is_wasi() else 6
+)
+comptime _CLOCK_PROCESS_CPUTIME_ID = (
+    2 if CompilationTarget.is_linux() or CompilationTarget.is_wasi() else 12
+)
+comptime _CLOCK_THREAD_CPUTIME_ID = (
+    3 if CompilationTarget.is_linux() or CompilationTarget.is_wasi() else 16
+)
+# wasi-libc has no CLOCK_MONOTONIC_RAW; WASI clocks have no NTP frequency
+# adjustment, so raw == monotonic there.
+comptime _CLOCK_MONOTONIC_RAW = (
+    _CLOCK_MONOTONIC if CompilationTarget.is_wasi() else 4
+)
 
 # Constants
 comptime _NSEC_PER_USEC = 1000
@@ -74,6 +84,7 @@ def _clock_gettime(clockid: Int) -> _CTimeSpec:
 
 @inline(.always)
 def _gettime_as_nsec_unix(clockid: Int) -> Int:
+    # wasi-libc clockid_t is a pointer, not 0/1. clock_gettime_nsec_np maps it.
     comptime if CompilationTarget.is_linux():
         var ts = _clock_gettime(clockid)
         return ts.as_nanoseconds()
@@ -130,14 +141,24 @@ def _monotonic_raw_nanoseconds() -> Int:
 def _process_cputime_nanoseconds() -> Int:
     """Returns the high-resolution per-process timer from the CPU"""
 
-    return _gettime_as_nsec_unix(_CLOCK_PROCESS_CPUTIME_ID)
+    comptime if CompilationTarget.is_wasi():
+        return Int(external_call["process_cputime_nsec_np", Int64]())
+    else:
+        return _gettime_as_nsec_unix(_CLOCK_PROCESS_CPUTIME_ID)
 
 
 @inline(.always)
 def _thread_cputime_nanoseconds() -> Int:
-    """Returns the thread-specific CPU-time clock"""
+    """Returns the thread-specific CPU-time clock.
 
-    return _gettime_as_nsec_unix(_CLOCK_THREAD_CPUTIME_ID)
+    On WASI this aliases the process-wide emulated CPU clock (WASI has no
+    per-thread clock), so all threads report the same value.
+    """
+
+    comptime if CompilationTarget.is_wasi():
+        return Int(external_call["process_cputime_nsec_np", Int64]())
+    else:
+        return _gettime_as_nsec_unix(_CLOCK_THREAD_CPUTIME_ID)
 
 
 # ===-----------------------------------------------------------------------===#

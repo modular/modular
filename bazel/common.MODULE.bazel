@@ -556,6 +556,17 @@ http_archive(
     url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/llvm-macos/23.1.1/84003683b6574d9be56e92f6397a56c1c49ff14739277cb2f7ef3c3d1fb11ac3/llvm-macos.tar.xz",
 )
 
+# wasi-libc with the wasm64 fork patches (WebAssembly/wasi-libc PR #444),
+# pinned to the PR head the wasm64 sysroot was validated against. Built into
+# a wasm64 sysroot by //Mojo/lib/CompilerRT/wasi:wasi_sysroot.
+http_archive(
+    name = "wasi_libc_wasm64",
+    build_file = "//bazel/public-patches:wasi_libc.BUILD",
+    sha256 = "d9e5c5ef438e57e68d4a7949f3ac0cbef64046b3235ef437beed2af39be3d214",
+    strip_prefix = "wasi-libc-33983baf671eaa50da2ec0f7c9e9eeceb1f089b1",
+    url = "https://github.com/WebAssembly/wasi-libc/archive/33983baf671eaa50da2ec0f7c9e9eeceb1f089b1.tar.gz",
+)
+
 SHELLCHECK_VERSION = "v0.11.0"
 
 [

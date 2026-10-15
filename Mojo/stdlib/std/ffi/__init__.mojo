@@ -305,6 +305,11 @@ struct OwnedDLHandle(Boolable, Movable):
         Raises:
             If `dlopen(nullptr, flags)` fails.
         """
+        comptime if CompilationTarget.is_wasi():
+            CompilationTarget.unsupported_target_error[
+                operation="OwnedDLHandle",
+                note="dlopen is not supported on WASI.",
+            ]()
         self._handle = _DLHandle(flags)
 
     def __init__[
@@ -323,6 +328,11 @@ struct OwnedDLHandle(Boolable, Movable):
         Raises:
             If `dlopen(path, flags)` fails.
         """
+        comptime if CompilationTarget.is_wasi():
+            CompilationTarget.unsupported_target_error[
+                operation="OwnedDLHandle",
+                note="dlopen is not supported on WASI.",
+            ]()
         self._handle = _DLHandle(path, flags)
 
     @doc_hidden

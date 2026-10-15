@@ -88,6 +88,11 @@ def getpwuid(uid: Int) raises -> Passwd:
 
     comptime if CompilationTarget.is_macos():
         return _getpw_macos(UInt32(uid))
+    elif CompilationTarget.is_wasi():
+        CompilationTarget.unsupported_target_error[
+            operation="getpwuid",
+            note="getpwuid is not supported on WASI.",
+        ]()
     else:
         return _getpw_linux(UInt32(uid))
 
@@ -115,5 +120,10 @@ def getpwnam(var name: String) raises -> Passwd:
 
     comptime if CompilationTarget.is_macos():
         return _getpw_macos(name)
+    elif CompilationTarget.is_wasi():
+        CompilationTarget.unsupported_target_error[
+            operation="getpwnam",
+            note="getpwnam is not supported on WASI.",
+        ]()
     else:
         return _getpw_linux(name)

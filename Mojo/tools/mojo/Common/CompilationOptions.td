@@ -203,6 +203,13 @@ defm lld_path : CommandOption<["--", "-"], "lld-path",
            "precedence over the `MODULAR_MOJO_MAX_LLD_PATH` environment "
            "variable and the `mojo-max.lld_path` configuration value.">>;
 
+defm wasi_sysroot : CommandOption<["--", "-"], "wasi-sysroot",
+  LinkOptionGroup, Index<3>, MetaVarName<"PATH">,
+  HelpText<"Path to the WASI sysroot used when linking wasm targets "
+           "(experimental, wasm64-wasip1 only). When set, `mojo build` "
+           "links a standard WASI command (crt1 + libc + compiler-rt "
+           "builtins) instead of a bare `--no-entry` module.">>;
+
 //===----------------------------------------------------------------------===//
 // Experimental Compilation Options
 //===----------------------------------------------------------------------===//

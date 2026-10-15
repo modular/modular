@@ -34,6 +34,8 @@ from .._linux_x86 import _lstat as _lstat_linux_x86
 from .._linux_x86 import _stat as _stat_linux_x86
 from .._macos import _lstat as _lstat_macos
 from .._macos import _stat as _stat_macos
+from .._wasm import _lstat as _lstat_wasm
+from .._wasm import _stat as _stat_wasm
 from ..env import getenv
 from ..fstat import stat
 from ..os import sep
@@ -50,6 +52,13 @@ def _get_stat_st_mode(var path: String) raises -> Int:
         return Int(_stat_macos(path^).st_mode)
     elif CompilationTarget.has_neon():
         return Int(_stat_linux_arm(path^).st_mode)
+    elif CompilationTarget.is_wasm64():
+        return Int(_stat_wasm(path^).st_mode)
+    elif CompilationTarget.is_wasi():
+        CompilationTarget.unsupported_target_error[
+            operation="stat",
+            note="wasm32 WASI is not supported yet.",
+        ]()
     else:
         return Int(_stat_linux_x86(path^).st_mode)
 
@@ -60,6 +69,13 @@ def _get_lstat_st_mode(var path: String) raises -> Int:
         return Int(_lstat_macos(path^).st_mode)
     elif CompilationTarget.has_neon():
         return Int(_lstat_linux_arm(path^).st_mode)
+    elif CompilationTarget.is_wasm64():
+        return Int(_lstat_wasm(path^).st_mode)
+    elif CompilationTarget.is_wasi():
+        CompilationTarget.unsupported_target_error[
+            operation="lstat",
+            note="wasm32 WASI is not supported yet.",
+        ]()
     else:
         return Int(_lstat_linux_x86(path^).st_mode)
 
