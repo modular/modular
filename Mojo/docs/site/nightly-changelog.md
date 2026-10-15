@@ -196,6 +196,9 @@ This version is still a work in progress.
 
 ## Library changes
 
+- `ascii()` now pre-allocates capacity to avoid repeated reallocations when
+  building the result string.
+
 - `Defaultable` now provides a default `__init__()` implementation that
   default-constructs each field using reflection. A struct can conform to
   `Defaultable` without defining an initializer when all its fields also
