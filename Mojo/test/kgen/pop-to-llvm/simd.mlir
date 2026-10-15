@@ -270,7 +270,7 @@ kgen.func @cmp_sint(%lhs: !kgen.simd<4, si32>, %rhs: !kgen.simd<4, si32>) {
 kgen.func @cmp_fp(%lhs: !kgen.simd<4, f32>, %rhs: !kgen.simd<4, f32>) {
   // CHECK: llvm.fcmp "oeq"
   %0 = pop.cmp eq(%lhs, %rhs) : !kgen.simd<4, f32>
-  // CHECK: llvm.fcmp "one"
+  // CHECK: llvm.fcmp "une"
   %1 = pop.cmp ne(%lhs, %rhs) : !kgen.simd<4, f32>
   // CHECK: llvm.fcmp "olt"
   %2 = pop.cmp lt(%lhs, %rhs) : !kgen.simd<4, f32>
