@@ -611,3 +611,6 @@ This version is still a work in progress.
 - `log()`, `log2()`, and `log1p()` of `inf` now return `inf` instead of `nan`.
 - `float64` `log1p()` is now accurate for inputs whose `1 + x` falls in
   `[sqrt(2)/2, sqrt(2))`, where it was off by up to about 7e9 ulp.
+- `RawFileDescriptor.write_bytes()`: Fixed silent data loss on partial
+  writes by looping until all bytes are written, matching
+  `FileHandle.write_bytes()`.
