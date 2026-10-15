@@ -2237,6 +2237,24 @@ def _gemv_gpu_dispatch_impl[
     comptime static_N = c.static_shape[1] if has_N else UNKNOWN_VALUE
     comptime static_K = a.static_shape[1]
 
+    comptime if transpose_b:
+        if n == 1:
+            return _gemv_gpu_dispatch_impl[
+                transpose_b=False,
+                has_epilogue_fn=has_epilogue_fn,
+                has_compute_fn=has_compute_fn,
+                pdl_level=pdl_level,
+                tile_m=tile_m,
+            ](
+                kernel_func,
+                c,
+                a,
+                b.reshape(row_major(k, 1)),
+                epilogue_fn,
+                compute_fn,
+                ctx,
+            )
+
     match kernel_func:
         case GEMVAlgorithm.GemvSplitK:
             logger.info("Executing: GEMV_SPLIT_K kernel")
