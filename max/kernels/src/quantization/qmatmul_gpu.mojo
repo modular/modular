@@ -194,6 +194,7 @@ def multistage_mma_q[
     b_next_smem_layout: Layout = Layout(),
     next_op_b_iter_alignment: Int = align_of[b_type](),
     native_scale_stream: Bool = False,
+    mask_a: Bool = False,
 ](
     # The prefetch pipeline still runs on legacy `LayoutTensorIter`s: no
     # native TileTensor iterator exists yet.
@@ -229,6 +230,7 @@ def multistage_mma_q[
     /,
     *,
     num_b_rows: Optional[Int] = None,
+    num_a_rows: OptionalReg[Int] = None,
 ):
     """Performs the multi-stage tensor-core MMA loop for a quantized matrix multiplication tile.
 
@@ -267,6 +269,10 @@ def multistage_mma_q[
         b_next_smem_layout: The shared-memory layout of the next op's B matrix.
         next_op_b_iter_alignment: The required alignment for the next op's B iterator.
         native_scale_stream: Whether to use native scale views for complete groups.
+        mask_a: When `True`, the A-tile global-to-shared copies are bounds-checked
+            against `num_a_rows` so rows past the valid M extent are zero-filled
+            instead of read out of bounds. Defaults to `False` (the legacy
+            unmasked copy) so non-quant callers are unchanged.
 
     Args:
         c: The local accumulator tile receiving the MMA results.
@@ -280,6 +286,9 @@ def multistage_mma_q[
         scales_native_ring: The native shared-memory scale ring for this partition.
         num_iters: The number of K-tile iterations to execute.
         num_b_rows: The runtime row count of the B matrix, if known.
+        num_a_rows: The number of valid A rows in this block's M-tile
+            (`clamp(M - block_m * BM, 0, BM)`), used as the masked bound when
+            `mask_a` is `True`. `None` disables the bound (full-tile copy).
     """
     comptime assert c.rank == c.flat_rank == 2
     comptime assert c.element_size == 1
@@ -383,17 +392,34 @@ def multistage_mma_q[
         src: TileTensor[
             a_type, address_space=.GENERIC, linear_idx_type=a_idx_t, ...
         ],
+        num_valid_rows: OptionalReg[Int],
     ):
         comptime assert dst.rank == dst.flat_rank == 2
         comptime assert src.rank == src.flat_rank == 2
         comptime assert dst.element_size == src.element_size == 1
-        GenericToSharedAsyncTileCopier[
-            async_copy_a_layout_tt,
-            swizzle=async_swizzle_a,
-        ]().copy(
-            dst.vectorize[1, simd_size](),
-            src.vectorize[1, simd_size](),
-        )
+        # A comes from `a.tiled_iterator[BM, BK]`, whose tile view carries a
+        # static `BM` row dim and does not runtime-clip dim0. When `mask_a` is
+        # set, bound the copy to `num_valid_rows` (the valid M rows of this
+        # block) so rows `>= M` are zero-filled by `cp.async` instead of read
+        # out of bounds. See issue modular#7069.
+        comptime if mask_a:
+            GenericToSharedAsyncTileCopier[
+                async_copy_a_layout_tt,
+                swizzle=async_swizzle_a,
+                masked=True,
+            ]().copy_bounded(
+                dst.vectorize[1, simd_size](),
+                src.vectorize[1, simd_size](),
+                num_valid_rows,
+            )
+        else:
+            GenericToSharedAsyncTileCopier[
+                async_copy_a_layout_tt,
+                swizzle=async_swizzle_a,
+            ]().copy(
+                dst.vectorize[1, simd_size](),
+                src.vectorize[1, simd_size](),
+            )
 
     @inline(.always)
     def _async_copy_b_tile(
@@ -431,6 +457,7 @@ def multistage_mma_q[
                             a_type, target_address_space=.GENERIC
                         ]()
                     ),
+                    num_a_rows,
                 )
 
                 a_iter._incr()
@@ -717,6 +744,7 @@ def multistage_mma_q[
                                     a_type, target_address_space=.GENERIC
                                 ]()
                             ),
+                            num_a_rows,
                         )
 
                         a_iter._incr()
@@ -1055,6 +1083,13 @@ def multistage_qgemm_kernel[
     # Reduction and epilogue helpers still consume the legacy scalar view.
     var c_reg_tile = c_reg_tile_native.to_layout_tensor()
 
+    # Valid A rows for this block's M-tile. Configs with BM > M (every decode
+    # shape, M=1) or a partial tail block (M % BM != 0) would otherwise copy
+    # rows past the [M, K] A buffer; mask the copy to this bound. `block_idx`
+    # here is the (swizzled) block coordinate, so this must be computed at the
+    # call site, not from the raw builtin inside multistage_mma_q. See #7069.
+    var a_valid_rows = max(0, min(Int(BM), M - block_idx[1] * BM))
+
     multistage_mma_q[
         BM,
         BN,
@@ -1067,6 +1102,7 @@ def multistage_qgemm_kernel[
         group_size,
         pack_factor,
         native_scale_stream=native_scale_stream,
+        mask_a=True,
     ](
         c_reg_tile_native,
         a_gmem_iter,
@@ -1078,6 +1114,7 @@ def multistage_qgemm_kernel[
         scales_native_src,
         scales_native_ring,
         ceildiv(K // num_warp_k_partitions, BK),
+        num_a_rows=OptionalReg[Int](a_valid_rows),
     )
 
     # reduce within the threadblock

@@ -101,6 +101,7 @@ _EXTRA_CONSTRAINTS = {
         ["**/*.mojo"],
         exclude = [
             "test_multistage_gemm_q.mojo",
+            "test_qmatmul_guardpage_7069.mojo",
             "test_repack_q4_0.mojo",
             "test_repack_gptq.mojo",
         ] + _FP8_FP4_TESTS,
@@ -135,6 +136,21 @@ mojo_test(
     name = "test_repack_gptq.mojo.test",
     srcs = ["test_repack_gptq.mojo"],
     copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    tags = ["gpu"],
+    target_compatible_with = ["//:nvidia_gpu"],
+    deps = _DEPS,
+)
+
+# modular#7069 guard-page regression test. NVIDIA-only: it builds a CUDA VMM
+# guard page via the driver API (libcuda) so the M<BM A-tile over-read faults
+# deterministically instead of depending on the pooled allocator's layout.
+mojo_test(
+    name = "test_qmatmul_guardpage_7069.mojo.test",
+    srcs = ["test_qmatmul_guardpage_7069.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    exec_properties = {
+        "test.resources:gpu-memory": "3",
+    },
     tags = ["gpu"],
     target_compatible_with = ["//:nvidia_gpu"],
     deps = _DEPS,
