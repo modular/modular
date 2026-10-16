@@ -13,7 +13,7 @@
 
 """Provides GPU matmul configuration selection, block-swizzling, and Hilbert-curve tile-ordering utilities."""
 
-from std.hashlib.hasher import Hasher
+from std.hash.hasher import Hasher
 from std.math import ceildiv
 from std.math.uutils import uceildiv
 from std.sys import (

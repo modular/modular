@@ -30,12 +30,16 @@ from types import TracebackType
 from max.driver import accelerator_api
 from max.pipelines.context import TextContext
 from max.pipelines.modeling.types import PipelineTask
-from pydantic import BaseModel
 from transformers import AutoTokenizer as _HFAutoTokenizer
 from transformers import BatchEncoding, PreTrainedTokenizerBase
 
 from .config import PipelineArgs, PipelineConfig
-from .generate import Batch, GenerateResult, _check_supported, generate
+from .generate import (
+    GenerateIterator,
+    GenerateResult,
+    _check_supported,
+    generate,
+)
 from .pipeline_variants.overlap_text_generation import (
     OverlapTextGenerationPipeline,
 )
@@ -69,42 +73,6 @@ def _clobbered_sections(config_overrides: Mapping[str, object]) -> list[str]:
     return sorted(sections)
 
 
-def _config_sections(config: PipelineConfig) -> tuple[BaseModel, ...]:
-    return (
-        config,
-        config.runtime,
-        config.sampling,
-        config.model,
-        config.model.kv_cache,
-    )
-
-
-def _config_fields(
-    config: PipelineConfig, values: Mapping[str, object]
-) -> dict[str, object]:
-    """Returns the entries of ``values`` that name a field of ``config``."""
-    return {
-        name: value
-        for name, value in values.items()
-        if any(
-            name in type(section).model_fields
-            for section in _config_sections(config)
-        )
-    }
-
-
-def _unmet_values(
-    config: PipelineConfig, required: Mapping[str, object]
-) -> dict[str, object]:
-    return {
-        name: value
-        for name, value in required.items()
-        for section in _config_sections(config)
-        if name in type(section).model_fields
-        and getattr(section, name) != value
-    }
-
-
 def _build_config(
     model_path: str,
     max_batch_size: int,
@@ -132,30 +100,15 @@ def _build_config(
         PipelineArgs.from_flat_kwargs(model_path=model_path, **flat)
     )
     _check_supported(pipeline_config, "AutoModel")
-    if (
-        not pipeline_config.runtime.enable_overlap_scheduler
-        or device_graph_capture
-        or "force" in config_overrides
-        or config_overrides.get("enable_overlap_scheduler", False) is not False
-    ):
-        return pipeline_config
-    # Only force keeps an architecture's overlap auto-enable off, and force
-    # also skips the architecture's required arguments.
+    # The registry falls back to an architecture of another task, such as
+    # embeddings, and fails partway through building it.
     arch = PIPELINE_REGISTRY.architecture_for_config(
         pipeline_config, task=PipelineTask.TEXT_GENERATION
     )
-    required = _config_fields(
-        pipeline_config, arch.required_arguments if arch is not None else {}
-    )
-    pipeline_config = PipelineConfig.from_args(
-        PipelineArgs.from_flat_kwargs(
-            model_path=model_path, **{**flat, **required, "force": True}
-        )
-    )
-    if unmet := _unmet_values(pipeline_config, required):
+    if arch is not None and arch.task != PipelineTask.TEXT_GENERATION:
         raise ValueError(
-            f"The architecture requires {unmet}, which the config overrides "
-            "contradict."
+            f"AutoModel runs text generation models only, and {model_path} "
+            f"loads {arch.name} for {arch.task.value.replace('_', ' ')}."
         )
     return pipeline_config
 
@@ -243,15 +196,12 @@ class AutoModel:
     The config turns off the overlap scheduler, device graph capture, prefix
     caching and chunked prefill. On AMD it also turns off the vendor BLAS
     fallback, as serve does with capture on, so matmuls compile to serve's
-    kernels. Where an architecture turns overlap on by itself, the caller
-    passes no ``force``, and ``enable_overlap_scheduler`` is unset or
-    ``False``, AutoModel rebuilds the config with ``force=True`` and passes
-    the architecture's ``required_arguments`` explicitly. As in serve, these
-    required arguments win over flat overrides.
+    kernels. As in serve, the architecture's ``required_arguments`` win over
+    the overrides.
 
     References to the pipeline, its KV cache manager, an open
-    :class:`~max.pipelines.lib.generate.Batch`, or a live traceback from
-    inside the pipeline keep device memory alive past :meth:`close`.
+    :class:`~max.pipelines.lib.generate.GenerateIterator`, or a live traceback
+    from inside the pipeline keep device memory alive past :meth:`close`.
 
     Args:
         model_path: A Hugging Face repo ID or a local model directory.
@@ -277,10 +227,8 @@ class AutoModel:
             or a ``model_override`` entry sets one of them whole.
         ValueError: If the config needs a feature that only ``max serve``
             runs, such as LoRA, if the model takes image inputs or does not
-            generate text, if a
-            ``model_override`` entry contradicts an argument the architecture
-            requires, or if ``device_graph_capture=True`` builds a pipeline
-            that cannot capture graphs.
+            generate text, or if ``device_graph_capture=True`` builds a
+            pipeline that cannot capture graphs.
     """
 
     def __init__(
@@ -318,9 +266,15 @@ class AutoModel:
             model_path, max_batch_size, device_graph_capture, config_overrides
         )
         _, pipeline = PIPELINE_REGISTRY.retrieve(self._pipeline_config)
-        assert isinstance(pipeline, TextGenerationPipelineInterface), (
-            f"{model_path} does not load as a text generation pipeline"
-        )
+        if not isinstance(pipeline, TextGenerationPipelineInterface):
+            pipeline_class = type(pipeline).__name__
+            # The traceback's frame would hold the pipeline's device memory.
+            del pipeline
+            gc.collect()
+            raise ValueError(
+                f"AutoModel runs text generation models only, and {model_path} "
+                f"loads as {pipeline_class}."
+            )
         self._pipeline: TextGenerationPipelineInterface[TextContext] | None = (
             pipeline
         )
@@ -416,7 +370,7 @@ class AutoModel:
             output_logprobs=output_logprobs,
         )
 
-    def batch(
+    def generate_iter(
         self,
         input_ids: Iterable[Sequence[int]],
         attention_mask: Iterable[Sequence[int]] | None = None,
@@ -435,21 +389,21 @@ class AutoModel:
         seed: int = 0,
         output_logits: bool = False,
         output_logprobs: int = 0,
-    ) -> Batch:
-        """Opens a :class:`~max.pipelines.lib.generate.Batch` on :attr:`pipeline`.
+    ) -> GenerateIterator:
+        """Opens a :class:`~max.pipelines.lib.generate.GenerateIterator` on :attr:`pipeline`.
 
-        Takes the same keyword arguments. Use the batch as a context manager
-        so its rows are released.
+        Takes the same keyword arguments. Use it as a context manager so its
+        rows are released.
 
         Raises:
             TypeError: As described for
-                :class:`~max.pipelines.lib.generate.Batch`.
+                :class:`~max.pipelines.lib.generate.GenerateIterator`.
             ValueError: As described for
-                :class:`~max.pipelines.lib.generate.Batch`.
+                :class:`~max.pipelines.lib.generate.GenerateIterator`.
             RuntimeError: If the model has been closed, or as described for
-                :class:`~max.pipelines.lib.generate.Batch`.
+                :class:`~max.pipelines.lib.generate.GenerateIterator`.
         """
-        return Batch(
+        return GenerateIterator(
             self.pipeline,
             input_ids,
             attention_mask,

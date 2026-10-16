@@ -102,6 +102,33 @@ ASTDecl &DeclResolver::addDecl(DeclIRValue irValue, SMLoc loc,
   return decl;
 }
 
+TopLevelModuleASTDecl &
+DeclResolver::addDecl(ModuleOp op, SMLoc loc, StringAttr baseName,
+                      ASTDecl *parentDecl, LexerCursor cursor,
+                      LexerCursor endCursor, ssize_t indentation) {
+  return cast<TopLevelModuleASTDecl>(addDecl(DeclIRValue(op.getOperation()),
+                                             loc, baseName, parentDecl, cursor,
+                                             endCursor, indentation));
+}
+
+ImportASTDecl &DeclResolver::addDecl(ImportOp op, SMLoc loc,
+                                     StringAttr baseName, ASTDecl *parentDecl,
+                                     LexerCursor cursor, LexerCursor endCursor,
+                                     ssize_t indentation) {
+  return cast<ImportASTDecl>(addDecl(DeclIRValue(op.getOperation()), loc,
+                                     baseName, parentDecl, cursor, endCursor,
+                                     indentation));
+}
+
+ImportASTDecl &DeclResolver::addDecl(UnresolvedImportOp op, SMLoc loc,
+                                     StringAttr baseName, ASTDecl *parentDecl,
+                                     LexerCursor cursor, LexerCursor endCursor,
+                                     ssize_t indentation) {
+  return cast<ImportASTDecl>(addDecl(DeclIRValue(op.getOperation()), loc,
+                                     baseName, parentDecl, cursor, endCursor,
+                                     indentation));
+}
+
 ASTDecl &DeclResolver::addBytecodeDecl(Operation *op, StringAttr baseName,
                                        ASTDecl *parentDecl,
                                        DeclResolvedness resolvedness) {
@@ -154,7 +181,16 @@ ASTDecl &DeclResolver::createUnlistedDecl(DeclIRValue irValue, SMLoc loc,
                                           ssize_t indentation) {
   ASTDecl *decl;
   Operation *op = dyn_cast<Operation *>(irValue);
-  if (auto structOp = dyn_cast_if_present<StructDeclOp>(op)) {
+  if (auto moduleOp = dyn_cast_if_present<ModuleOp>(op)) {
+    decl = shared.persistentAllocator.create<TopLevelModuleASTDecl>(
+        shared, moduleOp, loc, parentDecl, cursor, endCursor, indentation);
+  } else if (auto fileModuleOp = dyn_cast_if_present<FileModuleOp>(op)) {
+    decl = shared.persistentAllocator.create<FileModuleASTDecl>(
+        shared, fileModuleOp, loc, parentDecl, cursor, endCursor, indentation);
+  } else if (auto packageOp = dyn_cast_if_present<PackageOp>(op)) {
+    decl = shared.persistentAllocator.create<PackageASTDecl>(
+        shared, packageOp, loc, parentDecl, cursor, endCursor, indentation);
+  } else if (auto structOp = dyn_cast_if_present<StructDeclOp>(op)) {
     decl = shared.persistentAllocator.create<StructASTDecl>(
         shared, structOp, loc, parentDecl, cursor, endCursor, indentation);
   } else if (auto traitOp = dyn_cast_if_present<TraitDeclOp>(op)) {
@@ -166,9 +202,28 @@ ASTDecl &DeclResolver::createUnlistedDecl(DeclIRValue irValue, SMLoc loc,
   } else if (auto aliasOp = dyn_cast_if_present<AliasDeclOp>(op)) {
     decl = shared.persistentAllocator.create<AliasASTDecl>(
         shared, aliasOp, loc, parentDecl, cursor, endCursor, indentation);
+  } else if (auto conformanceOp = dyn_cast_if_present<ConformanceOp>(op)) {
+    decl = shared.persistentAllocator.create<ConformanceASTDecl>(
+        shared, conformanceOp, loc, parentDecl, cursor, endCursor, indentation);
   } else if (auto fnOp = dyn_cast_if_present<FnOp>(op)) {
     decl = shared.persistentAllocator.create<DefASTDecl>(
         shared, fnOp, loc, parentDecl, cursor, endCursor, indentation);
+  } else if (auto caseOp = dyn_cast_if_present<EnumCaseOp>(op)) {
+    decl = shared.persistentAllocator.create<EnumCaseASTDecl>(
+        shared, caseOp, loc, parentDecl, cursor, endCursor, indentation);
+  } else if (isa_and_nonnull<ImportOp, UnresolvedImportOp,
+                             UnresolvedWildcardImportOp>(op)) {
+    decl = shared.persistentAllocator.create<ImportASTDecl>(
+        shared, op, loc, parentDecl, cursor, endCursor, indentation);
+  } else if (auto fieldOp = dyn_cast_if_present<StructFieldOp>(op)) {
+    decl = shared.persistentAllocator.create<StructFieldASTDecl>(
+        shared, fieldOp, loc, parentDecl, cursor, endCursor, indentation);
+  } else if (auto varOp = dyn_cast_if_present<VarDeclOp>(op)) {
+    decl = shared.persistentAllocator.create<VarASTDecl>(
+        shared, varOp, loc, parentDecl, cursor, endCursor, indentation);
+  } else if (op) {
+    decl = shared.persistentAllocator.create<OtherOpASTDecl>(
+        shared, op, loc, parentDecl, cursor, endCursor, indentation);
   } else {
     decl = shared.persistentAllocator.create<ASTDecl>(
         shared, irValue, loc, parentDecl, cursor, endCursor, indentation);
@@ -191,6 +246,24 @@ ASTDecl &DeclResolver::createUnlistedDecl(Operation *declOp, SMLoc loc,
                                           ssize_t indentation) {
   return createUnlistedDecl(DeclIRValue(declOp), loc, parentDecl, cursor,
                             endCursor, indentation);
+}
+
+FileModuleASTDecl &DeclResolver::createUnlistedDecl(FileModuleOp op, SMLoc loc,
+                                                    ASTDecl *parentDecl,
+                                                    LexerCursor cursor,
+                                                    LexerCursor endCursor,
+                                                    ssize_t indentation) {
+  return cast<FileModuleASTDecl>(createUnlistedDecl(
+      op.getOperation(), loc, parentDecl, cursor, endCursor, indentation));
+}
+
+PackageASTDecl &DeclResolver::createUnlistedDecl(PackageOp op, SMLoc loc,
+                                                 ASTDecl *parentDecl,
+                                                 LexerCursor cursor,
+                                                 LexerCursor endCursor,
+                                                 ssize_t indentation) {
+  return cast<PackageASTDecl>(createUnlistedDecl(
+      op.getOperation(), loc, parentDecl, cursor, endCursor, indentation));
 }
 
 WitnessASTDecl &
@@ -232,13 +305,12 @@ canMergeSingleNamespaceDecls(ArrayRef<ASTDecl *> incoming,
   bool structFound = false;
 
   for (ASTDecl *decl : llvm::concat<ASTDecl *const>(existing, incoming)) {
-    auto op = decl->getIfOperation();
-    bool couldContribute = isa_and_nonnull<StructDeclOp>(op) ||
-                           isa_and_nonnull<ExtensionDeclOp>(op) ||
-                           isa_and_nonnull<UnresolvedImportOp>(op);
+    auto *importDecl = dyn_cast<ImportASTDecl>(decl);
+    bool couldContribute = isa<StructASTDecl, ExtensionASTDecl>(decl) ||
+                           (importDecl && importDecl->getIfUnresolvedOp());
     if (!couldContribute)
       return failure();
-    if (isa_and_nonnull<StructDeclOp>(op)) {
+    if (isa<StructASTDecl>(decl)) {
       if (structFound) {
         // User is trying to add a second struct with the same name, fail.
         return failure();
@@ -291,20 +363,18 @@ void DeclResolver::attachDeclToParentNameTable(ASTDecl *decl, StringAttr name) {
 
   // Structs and extensions can both have the same name in the same scope.
   // TODO(MOCO-522): Reference some arcana docs on this
-  bool addingStruct = isa_and_nonnull<StructDeclOp>(decl->getIfOperation());
-  bool addingExtension =
-      isa_and_nonnull<ExtensionDeclOp>(decl->getIfOperation());
+  bool addingStruct = isa<StructASTDecl>(decl);
+  bool addingExtension = isa<ExtensionASTDecl>(decl);
   if (addingStruct || addingExtension) {
     // Verify that all previous entries are also structs or extensions.  Note
     // that we can't check the overload set is compatible with each other
     // because the signatures aren't all resolved.
     for (ASTDecl *previous : entries) {
-      bool previousIsStruct =
-          isa_and_nonnull<StructDeclOp>(previous->getIfOperation());
-      bool previousIsExtension =
-          isa_and_nonnull<ExtensionDeclOp>(previous->getIfOperation());
+      bool previousIsStruct = isa<StructASTDecl>(previous);
+      bool previousIsExtension = isa<ExtensionASTDecl>(previous);
+      auto *previousImport = dyn_cast<ImportASTDecl>(previous);
       bool previousIsImport =
-          isa_and_nonnull<UnresolvedImportOp>(previous->getIfOperation());
+          previousImport && previousImport->getIfUnresolvedOp();
       bool previousNotStructRelated =
           !previousIsStruct && !previousIsExtension && !previousIsImport;
       // This checks that we're not giving e.g. a function and a struct the same
@@ -357,12 +427,15 @@ void DeclResolver::attachDeclToParentNameTable(ASTDecl *decl, StringAttr name) {
   // For any other type of declaration, check for conflicts
   if (!entries.empty()) {
     // Check if we are adding an identical unresolved import.
-    auto op = decl->getIfOperation();
-    if (auto import = dyn_cast_or_null<UnresolvedImportOp>(op)) {
+    auto *importDecl = dyn_cast<ImportASTDecl>(decl);
+    if (UnresolvedImportOp import = importDecl ? importDecl->getIfUnresolvedOp()
+                                               : UnresolvedImportOp()) {
       // First check for duplicate imports
       for (ASTDecl *existing : entries) {
-        if (auto prevImportOp = dyn_cast_or_null<UnresolvedImportOp>(
-                existing->getIfOperation())) {
+        auto *existingImport = dyn_cast<ImportASTDecl>(existing);
+        if (UnresolvedImportOp prevImportOp =
+                existingImport ? existingImport->getIfUnresolvedOp()
+                               : UnresolvedImportOp()) {
           if (import.getModulePathAttr() == prevImportOp.getModulePathAttr() &&
               import.getDeclNameAttr() == prevImportOp.getDeclNameAttr()) {
             // This is a duplicate UnresolvedImportOp, just ignore it.
@@ -551,8 +624,9 @@ LogicalResult DeclResolver::checkImportNamingConflict(
                      ASTDecl *skip = nullptr) -> DeclKinds {
     DeclKinds result;
     for (ASTDecl *d : decls) {
-      if (isa_and_nonnull<UnresolvedImportOp>(d->getIfOperation()))
-        continue;
+      if (auto *importDecl = dyn_cast<ImportASTDecl>(d))
+        if (importDecl->getIfUnresolvedOp())
+          continue;
       if (d == skip)
         continue;
       if (auto *defDecl = dyn_cast<DefASTDecl>(d);
@@ -620,17 +694,20 @@ LogicalResult DeclResolver::aliasDeclsImpl(
   // replacement is only known when the import decl is referenced (and thus
   // resolved), so we can't alias the import directly.
   ASTDecl *frontDecl = decls.front();
-  if (auto importOp =
-          dyn_cast_or_null<UnresolvedImportOp>(frontDecl->getIfOperation())) {
+  auto *frontImportDecl = dyn_cast<ImportASTDecl>(frontDecl);
+  if (UnresolvedImportOp importOp = frontImportDecl
+                                        ? frontImportDecl->getIfUnresolvedOp()
+                                        : UnresolvedImportOp()) {
     // If the import is overlapping with an existing declaration, let it slide.
     // FIXME: This is assuming that the import would resolve to the same decl.
     if (ArrayRef<ASTDecl *> decls = context.lookupInCurrentScope(name);
         !decls.empty())
       return success();
 
-    ASTDecl &importDecl = addDecl(
-        frontDecl->getIfOperation(), frontDecl->getLoc(), name, &context,
-        frontDecl->getCursor(), frontDecl->getCursor(), /*indentation=*/-1);
+    ImportASTDecl &importDecl =
+        addDecl(importOp, frontDecl->getLoc(), name, &context,
+                frontDecl->getCursor(), frontDecl->getCursor(),
+                /*indentation=*/-1);
     return success(!importDecl.isErroneous());
   }
 
@@ -667,8 +744,10 @@ LogicalResult DeclResolver::aliasDeclsImpl(
     // remove all matching imports (see test MSWGHRI).
     bool foundMatchingImport = false;
     for (int i = entries.size() - 1; i >= 0; --i) {
-      if (auto importOp = dyn_cast_or_null<UnresolvedImportOp>(
-              entries[i]->getIfOperation());
+      auto *importDecl = dyn_cast<ImportASTDecl>(entries[i]);
+      if (UnresolvedImportOp importOp = importDecl
+                                            ? importDecl->getIfUnresolvedOp()
+                                            : UnresolvedImportOp();
           importOp && importOp.getModulePathAttr() == modulePath &&
           importOp.getDeclNameAttr() == declNameInModule) {
         // Mark the import we're replacing as resolved in case anyone sees it
@@ -787,61 +866,20 @@ LogicalResult DeclResolver::aliasDeclsImpl(
   return failure();
 }
 
-ASTDecl &DeclResolver::createImportOp(ASTDecl &dest, mlir::OpBuilder &builder,
-                                      StringAttr name,
-                                      ImportPathAttr modulePath,
-                                      mlir::Location loc) {
+ImportASTDecl &DeclResolver::createImportOp(ASTDecl &dest,
+                                            mlir::OpBuilder &builder,
+                                            StringAttr name,
+                                            ImportPathAttr modulePath,
+                                            mlir::Location loc) {
   auto importOp = ImportOp::create(builder, loc,
                                    /*sym_name=*/name, modulePath);
   SMLoc smloc = shared.diags.convertLocToSMLoc(loc);
-  ASTDecl &importDecl =
-      addDecl(static_cast<Operation *>(importOp), smloc, name, &dest,
-              LexerCursor(), LexerCursor(), /*indentation=*/-1);
+  auto &importDecl = addDecl(importOp, smloc, name, &dest, LexerCursor(),
+                             LexerCursor(), /*indentation=*/-1);
   // ImportOp has no body to parse — mark as fully resolved so that name
   // lookup through parent scopes doesn't trip the resolvedness assertion.
   importDecl.resolvedness = DeclResolvedness::body;
   return importDecl;
-}
-
-ImportPathAttr DeclResolver::getAbsoluteModuleName(ASTDecl &moduleDecl) {
-  SymbolRefAttr ref = moduleDecl.getSymbolRef();
-  if (!ref)
-    return {};
-  SmallVector<StringRef> components;
-  components.push_back(ref.getRootReference().getValue());
-  for (FlatSymbolRefAttr nested : ref.getNestedReferences())
-    components.push_back(nested.getValue());
-  return ImportPathAttr::get(getContext(), /*relativeLevel=*/0, components);
-}
-
-FailureOr<ASTDecl *> DeclResolver::bodyResolvePackageInit(ASTDecl &package,
-                                                          SMLoc loc) {
-  // Not a package — nothing to do.
-  auto packageOp = dyn_cast_or_null<PackageOp>(package.getIfOperation());
-  if (!packageOp)
-    return nullptr;
-  // The package's scope is empty; its __init__ holds the package's symbols.
-  if (!shared.hasNestedModule(packageOp, "__init__"))
-    return nullptr;
-  ASTDecl &initDecl = shared.importModule(
-      SharedState::ImportPath({"__init__"}, /*relativeLevel=*/1), packageOp,
-      loc);
-  if (initDecl.isErroneous())
-    return nullptr;
-  // If __init__'s body is itself mid-resolution - e.g. we are resolving a
-  // statement that lives inside __init__ - do not recurse into it. Return null
-  // so the caller treats the package scope as empty and falls back to
-  // resolving the name as a submodule from the filesystem.
-  //
-  // Note: this guards the case where __init__'s body is still resolving. The
-  // related guard in importDeclFromModule handles the narrower lazy case where
-  // __init__'s body is fully resolved but a specific `from . import sub`
-  // binding within it is the import currently in flight.
-  if (isAlreadyProcessing(initDecl))
-    return nullptr;
-  if (failed(resolveBody(initDecl, loc)))
-    return failure();
-  return &initDecl;
 }
 
 namespace {
@@ -1262,21 +1300,23 @@ LogicalResult DeclResolver::importDeclFromModule(
   // the very __init__ we are currently resolving and find this same import - a
   // spurious self recursion.
   //
-  // This is the lazy-import counterpart to bodyResolvePackageInit's
+  // This is the lazy-import counterpart to resolveInitModule's
   // `isAlreadyProcessing(initDecl)` guard: that one fires while __init__'s body
   // is still resolving; this one fires once the body is resolved but a specific
   // re-export binding inside it is being resolved on demand.
   bool selfReferential = false;
   ASTDecl *initDecl = nullptr;
-  if (auto initOrFail = bodyResolvePackageInit(module, loc);
-      succeeded(initOrFail)) {
-    initDecl = *initOrFail;
-    if (initDecl == &dest) {
-      for (ASTDecl *d : dest.lookupInCurrentScope(sourceName))
-        if (isAlreadyProcessing(*d)) {
-          selfReferential = true;
-          break;
-        }
+  if (auto *package = dyn_cast<PackageASTDecl>(&module)) {
+    if (auto initOrFail = package->resolveInitModule(loc);
+        succeeded(initOrFail)) {
+      initDecl = *initOrFail;
+      if (initDecl == &dest) {
+        for (ASTDecl *d : dest.lookupInCurrentScope(sourceName))
+          if (isAlreadyProcessing(*d)) {
+            selfReferential = true;
+            break;
+          }
+      }
     }
   }
 
@@ -1294,16 +1334,14 @@ LogicalResult DeclResolver::importDeclFromModule(
     // The name was not bound in the module's (or, for a package, its
     // __init__'s) scope. It may instead be a submodule of the package -
     // resolve it lazily from the filesystem.
-    if (ASTDecl *sub =
-            shared.tryImportSubModule(module, sourceName, sourceNameLoc)) {
+    if (ASTDecl *sub = shared.tryImportSubModule(cast<ModuleASTDecl>(module),
+                                                 sourceName, sourceNameLoc)) {
       results.push_back(sub);
     } else {
       StringRef name =
           cast_or_null<mlir::SymbolOpInterface>(module.getIfOperation())
               .getName();
-      StringRef declType = isa_and_nonnull<PackageOp>(module.getIfOperation())
-                               ? "package"
-                               : "module";
+      StringRef declType = isa<PackageASTDecl>(module) ? "package" : "module";
       emitError(sourceNameLoc, declType + " '" + name + "' does not contain '" +
                                    sourceName.getValue() + "'");
       return failure();
@@ -1336,10 +1374,9 @@ LogicalResult DeclResolver::importDeclFromModule(
   // from a relative import `from . import sub` where the current package is
   // `a.b`.
   ImportPathAttr gatePath;
-  if (results.size() == 1 && isa_and_nonnull<PackageOp, FileModuleOp>(
-                                 results.front()->getIfOperation())) {
+  if (results.size() == 1 && isa<ModuleASTDecl>(results.front())) {
     if (moduleName.getRelativeLevel() > 0) {
-      gatePath = getAbsoluteModuleName(*results.front());
+      gatePath = cast<ModuleASTDecl>(results.front())->getAbsoluteModuleName();
     } else {
       SharedState::ImportPath submodulePath = modulePath;
       submodulePath.components.push_back(sourceName.getValue());
@@ -1352,15 +1389,17 @@ LogicalResult DeclResolver::importDeclFromModule(
     // this resolution (a later resolve-body pass dereferences it), so it must
     // end up pointing at a live op; re-pointing it also keeps name lookups for
     // `destName` from returning the now-superseded UnresolvedImportOp.
-    ASTDecl *placeholderDecl = nullptr;
+    ImportASTDecl *placeholderDecl = nullptr;
     if (dest.declsInScope) {
       auto it = dest.declsInScope->find(destName);
       if (it != dest.declsInScope->end())
         for (ASTDecl *d : it->second) {
-          auto imp = dyn_cast_or_null<UnresolvedImportOp>(d->getIfOperation());
+          auto *importDecl = dyn_cast<ImportASTDecl>(d);
+          UnresolvedImportOp imp = importDecl ? importDecl->getIfUnresolvedOp()
+                                              : UnresolvedImportOp();
           if (imp && imp.getModulePathAttr() == moduleName &&
               imp.getDeclNameAttr() == sourceName) {
-            placeholderDecl = d;
+            placeholderDecl = importDecl;
             break;
           }
         }
@@ -1371,7 +1410,7 @@ LogicalResult DeclResolver::importDeclFromModule(
       auto gateOp =
           ImportOp::create(fromBuilder, shared.translateLocation(destNameLoc),
                            /*sym_name=*/destName, gatePath);
-      placeholderDecl->setIRValue(gateOp.getOperation());
+      placeholderDecl->setResolvedOp(gateOp);
       placeholderDecl->resolvedness = DeclResolvedness::body;
       registerDeclSymbol(placeholderDecl);
       // The placeholder op is now superseded by the gate and has no live use.
@@ -1404,8 +1443,8 @@ LogicalResult DeclResolver::importWildcardDeclsFromModule(
   ImportPathAttr moduleName = unresolvedImport.moduleName;
   SMLoc loc = unresolvedImport.importLoc;
   auto modulePath = SharedState::ImportPath::fromAttr(moduleName);
-  PackageOp currentPackage =
-      dyn_cast_or_null<PackageOp>(context.getIfOperation());
+  auto *packageDecl = dyn_cast<PackageASTDecl>(&context);
+  PackageOp currentPackage = packageDecl ? packageDecl->getOp() : PackageOp();
   if (!currentPackage && context.getIfOperation())
     currentPackage = context.getIfOperation()->getParentOfType<PackageOp>();
 
@@ -1418,10 +1457,14 @@ LogicalResult DeclResolver::importWildcardDeclsFromModule(
   // For packages, wildcard-import from __init__'s scope: it holds all
   // re-exported symbols and any sibling-module stubs. A PackageOp's own scope
   // is always empty.
-  FailureOr<ASTDecl *> initOrFailure = bodyResolvePackageInit(module, loc);
-  if (failed(initOrFailure))
-    return failure();
-  ASTDecl &iterScope = *initOrFailure ? **initOrFailure : module;
+  ASTDecl *initDecl = nullptr;
+  if (auto *package = dyn_cast<PackageASTDecl>(&module)) {
+    FailureOr<ASTDecl *> initOrFailure = package->resolveInitModule(loc);
+    if (failed(initOrFailure))
+      return failure();
+    initDecl = *initOrFailure;
+  }
+  ASTDecl &iterScope = initDecl ? *initDecl : module;
 
   // Imports a wildcard decl into the current scope. Returns true on failure.
   auto importWildcardDecl = [this, moduleName, &context,
@@ -1487,9 +1530,8 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
       if (!name)
         return;
       diag << " '";
-      if (auto structOp = dyn_cast_or_null<StructDeclOp>(
-              decl->getParentDecl()->getIfOperation()))
-        diag << structOp.getDeclName().getValue() << ".";
+      if (auto *structDecl = dyn_cast<StructASTDecl>(decl->getParentDecl()))
+        diag << structDecl->getOp().getDeclName().getValue() << ".";
       diag << *name << "'";
     };
 
@@ -1526,84 +1568,18 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
 
   // If the signature hasn't been parsed, do so.
   if (decl.resolvedness < DeclResolvedness::signature) {
-    // Handle each operation that can be name bound.  We handle this by
-    // restoring the lexer to the position where parsing can continue, calling
-    // the `resolveSignature` method for the op, and re-saving the new cursor
-    // for the next stage of resolution.
-    if (auto declOp = decl.getIfOperation()) {
-      TypeSwitch<Operation &>(*declOp)
-          .Case<FnOp, StructDeclOp, StructFieldOp, EnumCaseOp, TraitDeclOp,
-                ExtensionDeclOp, AliasDeclOp>([&](auto op) {
-            // If this is a synthetic decl, resolve it specially.
-            if (decl.getCursor().isInvalid()) {
-              if constexpr (std::is_same_v<FnOp, decltype(op)>) {
-                if (failed(
-                        resolveSyntheticSignature(op, cast<DefASTDecl>(decl))))
-                  decl.setErroneous();
-                return;
-              }
-              if constexpr (std::is_same_v<AliasDeclOp, decltype(op)>) {
-                if (failed(resolveSyntheticSignature(op,
-                                                     cast<AliasASTDecl>(decl))))
-                  decl.setErroneous();
-                return;
-              }
-            }
-
-            // Generate pretty stack traces if a crash happens in this scope.
-            CrashReporter crashReporter(decl.getLoc(),
-                                        "resolving decl signature", shared);
-
-            // Resolve the signature: on a parse error, we note that the
-            // decl is malformed and should not be referenced to silence
-            // downstream errors.
-            Lexer lexer(shared.diags, decl.getCursor());
-            auto resolveTypedSignature = [&](auto &typedDecl) {
-              if (failed(resolveSignature(op, lexer, typedDecl)))
-                decl.setErroneous();
-            };
-            if constexpr (std::is_same_v<FnOp, decltype(op)>) {
-              resolveTypedSignature(cast<DefASTDecl>(decl));
-            } else if constexpr (std::is_same_v<StructDeclOp, decltype(op)>) {
-              resolveTypedSignature(cast<StructASTDecl>(decl));
-            } else if constexpr (std::is_same_v<TraitDeclOp, decltype(op)>) {
-              resolveTypedSignature(cast<TraitASTDecl>(decl));
-            } else if constexpr (std::is_same_v<ExtensionDeclOp,
-                                                decltype(op)>) {
-              resolveTypedSignature(cast<ExtensionASTDecl>(decl));
-            } else if constexpr (std::is_same_v<AliasDeclOp, decltype(op)>) {
-              resolveTypedSignature(cast<AliasASTDecl>(decl));
-            } else {
-              resolveTypedSignature(decl);
-            }
-            decl.getCursor() = lexer.getCursor();
-          })
-          .Case<UnresolvedImportOp>([&](auto op) {
-            // Resolve the signature: on a parse error, we note that the decl
-            // is malformed and should not be referenced to silence downstream
-            // errors.
-            if (failed(resolveSignature(op, decl)))
-              decl.setErroneous();
-          })
-          .Case<LIT::FileModuleOp, ModuleOp, PackageOp, ImportOp,
-                UnresolvedWildcardImportOp>([&](auto op) { /*Nothing*/ })
-          .Default([&](Operation &attr) {
-            llvm_unreachable(
-                "do not know how to resolve the signature of this decl!");
-          });
-    } else if (auto typeValue = decl.getIfTypeValue()) {
-      auto traitType = dyn_cast_or_null<TraitType>(decl.getIfTypeValue());
-      assert(traitType && "do not know how to resolve the signature of this "
-                          "decl!");
-      if (failed(resolveSignature(traitType, decl)))
-        decl.setErroneous();
-    } else if (auto *witness = dyn_cast<WitnessASTDecl>(&decl)) {
-      if (failed(resolveSignature(*witness)))
+    if (decl.getCursor().isInvalid()) {
+      if (failed(decl.resolveSyntheticSignature()))
         decl.setErroneous();
     } else {
-      llvm_unreachable(
-          "do not know how to resolve the signature of this decl!");
+      CrashReporter crashReporter(decl.getLoc(), "resolving decl signature",
+                                  shared);
+      Lexer lexer(shared.diags, decl.getCursor());
+      if (failed(decl.resolveSignature(lexer)))
+        decl.setErroneous();
+      decl.getCursor() = lexer.getCursor();
     }
+
     // Never regress resolvedness. In the case of non inlined nested functions,
     // the body is fully resolved when the signature is resolved in order
     // to identify the value of 'capturing'
@@ -1637,87 +1613,24 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
       }
     };
 
-    // Mark the body as already resolved so that name lookup can be performed
-    // in the decl during resolution.
-    //    decl.resolvedness = DeclResolvedness::body;
-
-    // Handle each operation that can be name bound.
     if (decl.isErroneous()) {
       // If the decl is already erroneous, trying to process further may crash
       // or cause spurious error messages.
-    } else if (auto declOp = decl.getIfOperation()) {
-      TypeSwitch<Operation &>(*declOp)
-          .Case<FileModuleOp, FnOp, StructDeclOp, StructFieldOp,
-                ExtensionDeclOp, TraitDeclOp, AliasDeclOp>([&](auto op) {
-            // A deferred source module opens + lexes its file lazily here, on
-            // first body resolution, mirroring how a bytecode child
-            // materializes from its reader. This sets up its parse cursor.
-            if constexpr (std::is_same_v<FileModuleOp, decltype(op)>) {
-              if (decl.getCursor().isInvalid() &&
-                  failed(shared.materializeDeferredModule(decl, loc))) {
-                decl.setErroneous();
-                return;
-              }
-            }
-
-            // If this is a synthetic decl, complete it specially.
-            if (decl.getCursor().isInvalid()) {
-              if constexpr (std::is_same_v<FnOp, decltype(op)>) {
-                if (op.isSynthetic() &&
-                    failed(resolveSyntheticBody(op, cast<DefASTDecl>(decl))))
-                  decl.setErroneous();
-                return;
-              }
-            }
-
-            // Generate pretty stack traces if a crash happens in this scope.
-            CrashReporter crashReporter(decl.getLoc(), "resolving decl body",
-                                        shared);
-
-            // Parse the body of the declaration from the correct point.
-            Lexer lexer(shared.diags, decl.getCursor());
-            bool bodyFailed = [&] {
-              if constexpr (std::is_same_v<FnOp, decltype(op)>)
-                return bool(resolveBody(op, lexer, cast<DefASTDecl>(decl)));
-              else if constexpr (std::is_same_v<StructDeclOp, decltype(op)>)
-                return bool(resolveBody(op, lexer, cast<StructASTDecl>(decl)));
-              else if constexpr (std::is_same_v<TraitDeclOp, decltype(op)>)
-                return bool(resolveBody(op, lexer, cast<TraitASTDecl>(decl)));
-              else if constexpr (std::is_same_v<ExtensionDeclOp, decltype(op)>)
-                return bool(
-                    resolveBody(op, lexer, cast<ExtensionASTDecl>(decl)));
-              else if constexpr (std::is_same_v<AliasDeclOp, decltype(op)>)
-                return bool(resolveBody(op, lexer, cast<AliasASTDecl>(decl)));
-              else
-                return bool(resolveBody(op, lexer, decl));
-            }();
-            if (bodyFailed)
-              return;
-
-            checkEndOfBodyCursor(lexer);
-          })
-          .Case<ConformanceOp>([&](auto op) {
-            if (failed(resolveBody(op, decl)))
-              decl.setErroneous();
-          })
-          .Case<PackageOp>([&](auto op) { (void)resolveBody(op, decl); })
-          .Case<ModuleOp, ImportOp, UnresolvedImportOp,
-                UnresolvedWildcardImportOp, EnumCaseOp>(
-              [&](auto op) { /*Nothing*/ })
-          .Default([&](Operation &attr) {
-            llvm_unreachable(
-                "do not know how to resolve the body of this decl!");
-          });
-    } else if (auto typeVal = decl.getIfTypeValue()) {
-      auto traitType = dyn_cast_or_null<TraitType>(decl.getIfTypeValue());
-      assert(traitType && "do not know how to resolve the body of this decl!");
-      if (failed(resolveBody(traitType, decl)))
-        decl.setErroneous();
-    } else if (auto *witness = dyn_cast<WitnessASTDecl>(&decl)) {
-      if (failed(resolveBody(*witness)))
-        decl.setErroneous();
     } else {
-      llvm_unreachable("do not know how to resolve the body of this decl!");
+      // Deferred source modules materialize their lexer cursor on first use.
+      if (isa<FileModuleASTDecl>(decl) && decl.getCursor().isInvalid() &&
+          failed(shared.materializeDeferredModule(decl, loc))) {
+        decl.setErroneous();
+      } else if (decl.getCursor().isInvalid()) {
+        if (failed(decl.resolveSyntheticBody()))
+          decl.setErroneous();
+      } else {
+        CrashReporter crashReporter(decl.getLoc(), "resolving decl body",
+                                    shared);
+        Lexer lexer(shared.diags, decl.getCursor());
+        if (succeeded(decl.resolveBody(lexer)))
+          checkEndOfBodyCursor(lexer);
+      }
     }
 
     if (decl.resolvedness == DeclResolvedness::signature)
@@ -1771,10 +1684,9 @@ void DeclResolver::resolveReferencedDecls() {
       if (decl.resolvedness == DeclResolvedness::unparsed) {
         // Some decls always need to be resolved if their parents were resolved,
         // allowlist the decls that we can safely ignore when unparsed.
-        if (isa_and_nonnull<FnOp, FileModuleOp, PackageOp, ImportOp,
-                            UnresolvedImportOp, UnresolvedWildcardImportOp,
-                            StructDeclOp, TraitDeclOp, AliasDeclOp>(
-                decl.getIfOperation())) {
+        if ((isa<DefASTDecl>(decl) && cast<DefASTDecl>(decl).getOp()) ||
+            isa<FileModuleASTDecl, PackageASTDecl, ImportASTDecl, StructASTDecl,
+                TraitASTDecl, AliasASTDecl>(decl)) {
           deferredDecls.insert(&decl);
           continue;
         }
@@ -1800,8 +1712,7 @@ void DeclResolver::resolveReferencedDecls() {
   } while (parsedDeclIt != parsedDeclList.size());
 }
 
-void DeclResolver::resolveAllReferencedFrom(ASTDecl &decl,
-                                            bool eraseUnparsedDecls) {
+void DeclResolver::resolveAllReferencedFrom(ASTDecl &decl) {
   CompilerTimeTraceScope traceScope("resolveAllReferencedFrom", [&] {
     return decl.getUserNameIfOperation().value_or("").str();
   });
@@ -1824,8 +1735,8 @@ void DeclResolver::resolveAllReferencedFrom(ASTDecl &decl,
     // If this is a package, resolve all of the modules within it as a pre-step.
     // Normally these get lazily resolved, but if we're forcing pulling them in,
     // we need to do it now.
-    if (auto packageOp =
-            dyn_cast_or_null<PackageOp>(declIt->getIfOperation())) {
+    if (auto *packageDecl = dyn_cast<PackageASTDecl>(declIt)) {
+      PackageOp packageOp = packageDecl->getOp();
       for (ASTDecl *sub : shared.getNestedModuleDecls(packageOp)) {
         (void)resolveBody(*sub, declIt->getLoc());
         worklist.push_front(sub);
@@ -1849,54 +1760,57 @@ void DeclResolver::resolveAllReferencedFrom(ASTDecl &decl,
   if (!shared.diags.isErrorEmitted())
     resolveReferencedDecls();
 
-  // Erase unresolved operations from source.
-  if (eraseUnparsedDecls) {
-    // Several decls can share one operation, so collect before erasing:
-    // erasing inside the walk leaves the aliases dangling.
-    llvm::SmallPtrSet<Operation *, 8> opsToErase;
-    for (ASTDecl *decl : parsedDeclList) {
-      // Trait-body decls alias their parent trait's FnOps. Such a decl must not
-      // drive the erase, but is still removed below.
-      if (decl->getCursor().isInvalid())
-        continue;
-      if (decl->resolvedness == DeclResolvedness::unparsed &&
-          !decl->loadedFromBytecode) {
-        if (Operation *op = decl->getIfOperation()) {
-          if (!isa<UnresolvedImportOp>(op))
-            opsToErase.insert(op);
-        }
+  eraseDeadImportPlaceholders();
+}
+
+void DeclResolver::eraseUnparsedDecls() {
+  // Several decls can share one operation, so collect before erasing:
+  // erasing inside the walk leaves the aliases dangling.
+  llvm::SmallPtrSet<Operation *, 8> opsToErase;
+  for (ASTDecl *decl : parsedDeclList) {
+    // Trait-body decls alias their parent trait's FnOps. Such a decl must not
+    // drive the erase, but is still removed below.
+    if (decl->getCursor().isInvalid())
+      continue;
+    if (decl->resolvedness == DeclResolvedness::unparsed &&
+        !decl->loadedFromBytecode) {
+      if (Operation *op = decl->getIfOperation()) {
+        if (!isa<UnresolvedImportOp>(op))
+          opsToErase.insert(op);
       }
     }
-
-    SmallVector<ASTDecl *> declsToErase;
-    for (ASTDecl *decl : parsedDeclList)
-      if (opsToErase.contains(decl->getIfOperation()))
-        declsToErase.push_back(decl);
-    for (ASTDecl *decl : declsToErase)
-      if (llvm::is_contained(parsedDeclList, decl))
-        eraseDecl(*decl);
-
-    for (Operation *op : opsToErase)
-      op->erase();
-
-    // Erase from-import placeholders that resolved to a submodule and were
-    // superseded by an ImportOp (see importDeclFromModule). This runs
-    // after all resolution, so any sibling decl surfaced over the same op has
-    // already been re-pointed at its own gate; remove any decl that still
-    // references one before erasing it.
-    if (!deadImportPlaceholders.empty()) {
-      SmallVector<ASTDecl *> placeholderDecls;
-      for (ASTDecl *decl : parsedDeclList)
-        if (deadImportPlaceholders.contains(decl->getIfOperation()))
-          placeholderDecls.push_back(decl);
-      for (ASTDecl *decl : placeholderDecls)
-        if (llvm::is_contained(parsedDeclList, decl))
-          eraseDecl(*decl);
-      for (Operation *op : deadImportPlaceholders)
-        op->erase();
-      deadImportPlaceholders.clear();
-    }
   }
+
+  SmallVector<ASTDecl *> declsToErase;
+  for (ASTDecl *decl : parsedDeclList)
+    if (opsToErase.contains(decl->getIfOperation()))
+      declsToErase.push_back(decl);
+  for (ASTDecl *decl : declsToErase)
+    if (llvm::is_contained(parsedDeclList, decl))
+      eraseDecl(*decl);
+
+  for (Operation *op : opsToErase)
+    op->erase();
+}
+
+void DeclResolver::eraseDeadImportPlaceholders() {
+  // Erase from-import placeholders that resolved to a submodule and were
+  // superseded by an ImportOp (see importDeclFromModule). This runs
+  // after all resolution, so any sibling decl surfaced over the same op has
+  // already been re-pointed at its own gate; remove any decl that still
+  // references one before erasing it.
+  if (deadImportPlaceholders.empty())
+    return;
+  SmallVector<ASTDecl *> placeholderDecls;
+  for (ASTDecl *decl : parsedDeclList)
+    if (deadImportPlaceholders.contains(decl->getIfOperation()))
+      placeholderDecls.push_back(decl);
+  for (ASTDecl *decl : placeholderDecls)
+    if (llvm::is_contained(parsedDeclList, decl))
+      eraseDecl(*decl);
+  for (Operation *op : deadImportPlaceholders)
+    op->erase();
+  deadImportPlaceholders.clear();
 }
 
 void DeclResolver::expandWildcardsForName(ASTDecl &scope, StringAttr name,
@@ -1920,7 +1834,7 @@ void DeclResolver::expandWildcardsForName(ASTDecl &scope, StringAttr name,
 }
 
 void DeclResolver::completeModuleScope(ASTDecl &decl) {
-  if (!isa_and_nonnull<FileModuleOp>(decl.getIfOperation()))
+  if (!isa<FileModuleASTDecl>(decl))
     return;
   expandWildcardsForName(decl, shared.extensionsScopeMarker);
 }
@@ -1957,10 +1871,10 @@ LogicalResult DeclResolver::importModuleExtensions(ASTDecl &module,
 
   // collectTypeAndExtensions finds extensions by their specific name.
   for (ASTDecl *extensionDecl : allExtensions) {
-    auto extOp =
-        dyn_cast_or_null<ExtensionDeclOp>(extensionDecl->getIfOperation());
-    if (!extOp)
+    auto *extensionASTDecl = dyn_cast<ExtensionASTDecl>(extensionDecl);
+    if (!extensionASTDecl)
       continue;
+    ExtensionDeclOp extOp = extensionASTDecl->getOp();
     std::optional<StringRef> targetStructName = extOp.getTargetStructName();
     if (!targetStructName)
       continue;

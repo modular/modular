@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""``Batch`` on a real GPU pipeline, before and after graph capture warmup.
+"""``GenerateIterator`` on a real GPU pipeline, before and after capture warmup.
 
 The same greedy batches run eagerly, then again after
 ``warmup_graph_capture()``, where every decode step replays a captured graph.
@@ -42,7 +42,7 @@ from max.pipelines.lib import (
     PipelineConfig,
     PipelineRuntimeConfig,
 )
-from max.pipelines.lib.generate import Batch
+from max.pipelines.lib.generate import GenerateIterator
 from max.pipelines.modeling.types import TextGenerationInputs
 
 MODEL = "HuggingFaceTB/SmolLM2-135M"
@@ -148,7 +148,7 @@ def _run_scenario(
 ) -> ScenarioRun:
     eager_before, replay_before = eager.calls, replay.calls
     step_seconds: list[float] = []
-    with Batch(
+    with GenerateIterator(
         pipeline,
         input_ids,
         max_new_tokens=MAX_NEW_TOKENS,

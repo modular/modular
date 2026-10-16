@@ -21,21 +21,19 @@ import numpy as np
 import numpy.typing as npt
 from max import tree
 from max.driver import Buffer, Device
-from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Graph, TensorType
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.comm import Signals
 from max.nn.transformer import ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
-    GraphPipelineModelWithKVCache,
     KVCacheConfig,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
+    PipelineModelWithKVCache,
 )
+from max.pipelines.lib.graph_specs import GraphRole, GraphSpec
 from max.pipelines.lib.memory_estimation import MemoryPlan
 
 from .batch_processor import GptOssBatchProcessor
@@ -69,7 +67,8 @@ class GptOssInputs(ModelInputs):
 
 
 class GptOssModel(
-    AlwaysSignalBuffersMixin, GraphPipelineModelWithKVCache[TextContext]
+    AlwaysSignalBuffersMixin,
+    PipelineModelWithKVCache[TextContext, GptOssConfig, Model],
 ):
     """A GPT OSS pipeline model for text generation.
 
@@ -83,8 +82,7 @@ class GptOssModel(
         GptOssBatchProcessor
     )
 
-    model: Model
-    """The compiled and initialized MAX Engine model ready for inference."""
+    _language_weights_dict: dict[str, Any]
 
     # For text-only models, we should be using all the weights.
     _strict_state_dict_loading = True
@@ -128,7 +126,16 @@ class GptOssModel(
             memory_plan=memory_plan,
         )
 
-        self.model = self.load_model(session)
+        self._models = self.load_graphs(session)
+
+    @property
+    def model(self) -> Model:
+        """The compiled and initialized MAX Engine model ready for inference."""
+        return self._models[GraphRole.DECODER]
+
+    def _load_state_dict(self) -> dict[str, Any]:
+        self._language_weights_dict = super()._load_state_dict()
+        return self._language_weights_dict
 
     def _create_model_config(self, state_dict: dict[str, Any]) -> GptOssConfig:
         model_config = GptOssConfig.initialize(
@@ -141,86 +148,24 @@ class GptOssModel(
         )
         return model_config
 
-    def _build_graph_for_compile(
-        self,
-        session: InferenceSession,
-        state_dict: dict[str, Any],
-        model_config: GptOssConfig,
-    ) -> tuple[Graph, dict[str, Any]]:
-        del session
-        device0 = self.devices[0]
-        device_ref = DeviceRef(device0.label, device0.id)
-        tokens_type = TensorType(
-            DType.int64, shape=["total_seq_len"], device=device_ref
-        )
-        # NOTE: input_row_offsets_len should be batch_size + 1.
-        # Create input_row_offsets_type for each device
-        input_row_offsets_types = [
-            TensorType(
-                DType.uint32,
-                shape=["input_row_offsets_len"],
-                device=DeviceRef(device.label, device.id),
-            )
-            for device in self.devices
-        ]
-        return_n_logits_type = TensorType(
-            DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
-        )
-        signals = Signals(
-            devices=(DeviceRef(d.label, d.id) for d in self.devices)
-        )
-
+    def graph_specs(self, model_config: GptOssConfig) -> dict[str, GraphSpec]:
+        """Returns the decoder graph."""
         nn_model = GptOss(model_config)
         nn_model.load_state_dict(
-            state_dict,
+            self._language_weights_dict,
             weight_alignment=1,
             strict=self._strict_state_dict_loading,
         )
-        weights_registry = nn_model.state_dict(auto_initialize=False)
-
-        kv_inputs = self.kv_params.get_symbolic_inputs()
-        flattened_kv_types = tree.leaves(kv_inputs)
-
-        with Graph(
-            getattr(self.huggingface_config, "model_type", "GptOss"),
-            input_types=[
-                tokens_type,
-                return_n_logits_type,
-                *input_row_offsets_types,
-                *signals.input_types(),
-                *flattened_kv_types,
-            ],
-        ) as graph:
-            # Unpack inputs following InternVL pattern
-            tokens, return_n_logits, *variadic_args = graph.inputs
-
-            # Extract input_row_offsets (one per device)
-            input_row_offsets = [
-                v.tensor for v in variadic_args[: len(self.devices)]
-            ]
-            variadic_args = variadic_args[len(self.devices) :]
-
-            # Extract signal buffers (one per device)
-            signal_buffers = [
-                v.buffer for v in variadic_args[: len(self.devices)]
-            ]
-            variadic_args = variadic_args[len(self.devices) :]
-
-            # Extract KV cache inputs from the unified {sliding, global} tree.
-            kv_cache_local, kv_cache_global = (
-                self.kv_params.unflatten_basic_kv_tree(iter(variadic_args))
+        # The graph's weights registry holds what it binds; drop the rest.
+        self._language_weights_dict = {}
+        return {
+            GraphRole.DECODER: GraphSpec(
+                nn_model,
+                getattr(self.huggingface_config, "model_type", "GptOss"),
+                self._bind_graph_inputs(nn_model.input_tree()),
+                weights=nn_model.state_dict(auto_initialize=False),
             )
-
-            outputs = nn_model(
-                tokens=tokens.tensor,
-                signal_buffers=signal_buffers,
-                sliding_kv_collections=kv_cache_local,
-                global_kv_collections=kv_cache_global,
-                return_n_logits=return_n_logits.tensor,
-                input_row_offsets=input_row_offsets,
-            )
-            graph.output(*outputs)
-        return graph, weights_registry
+        }
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         """Executes the GPT OSS model with the prepared inputs.

@@ -34,6 +34,9 @@ class GraphOp;
 
 namespace M::KGEN::LIT {
 
+class PackageASTDecl;
+class ModuleASTDecl;
+
 /// The binding a module name is about to make: which entity it names, where
 /// that lands, and whether some other name already binds it.
 struct BindingSpec {
@@ -178,7 +181,8 @@ public:
 
   /// Try to import a direct submodule with the given name, returning the
   /// submodule's decl, or null if no such submodule exists.
-  ASTDecl *tryImportSubModule(ASTDecl &parent, StringRef name, llvm::SMLoc loc);
+  ASTDecl *tryImportSubModule(ModuleASTDecl &parent, StringRef name,
+                              llvm::SMLoc loc);
 
   /// Return true if the package has a nested module with the given name in the
   /// module-state cache. The package body must be resolved before calling this
@@ -195,7 +199,7 @@ public:
   /// file and a (already-deferred) `PackageOp` for each sub-package. The
   /// children are unlisted (in the module-state cache + package IR, never the
   /// package's importable scope) and their bodies/files are opened lazily.
-  void registerSourcePackageChildren(ASTDecl &packageDecl);
+  void registerSourcePackageChildren(PackageASTDecl &packageDecl);
 
   //===--------------------------------------------------------------------===//
   // Loading

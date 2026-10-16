@@ -20,6 +20,7 @@ Submodules
    max.pipelines.lib.arch_lookup
    max.pipelines.lib.interfaces
    max.pipelines.lib.log_probabilities
+   max.pipelines.lib.pipeline_parallel
 
 .. toctree::
    :maxdepth: 1
@@ -29,6 +30,7 @@ Submodules
    pipelines.lib.generate
    pipelines.lib.interfaces
    pipelines.lib.log_probabilities
+   pipelines.lib.pipeline_parallel
 
 Configuration
 -------------
@@ -66,9 +68,16 @@ Model interface
    :template: autosummary/class.rst
 
    AlwaysSignalBuffersMixin
+   GraphPipelineModel
+   GraphPipelineModelWithKVCache
+   ModuleV3MultiGraphPipelineModelWithKVCache
+   ModuleV3Outputs
    ModuleV3PipelineModelWithKVCache
+   MultiGraphPipelineModelWithKVCache
    PipelineModelWithKVCache
+   SupportsSSMStateWarmup
    UnifiedEagleOutputs
+   UnifiedSpecDecodeInputs
 
 Tokenizers
 ----------
@@ -115,8 +124,52 @@ Functions
    get_default_max_config_file_section_name
    max_tokens_to_generate
    parse_quant_config
+   process_ragged_kv_outputs
+   ragged_kv_symbolic_inputs
    resolve_eos_token_ids
    resolve_max_config_inheritance
    try_to_load_from_cache
    validate_hf_repo_access
 
+Expert load balancing
+---------------------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/class.rst
+
+   ~max.pipelines.lib.eplb_stats.EplbStatsAccumulator
+   ~max.pipelines.lib.eplb_stats.EplbStatsMetadata
+   ~max.pipelines.lib.eplb_stats.EplbStatsSnapshot
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/function.rst
+
+   ~max.pipelines.lib.eplb_rebalance.balanced_packing
+   ~max.pipelines.lib.eplb_rebalance.rebalance_experts
+   ~max.pipelines.lib.eplb_rebalance.rebalance_experts_hierarchical
+   ~max.pipelines.lib.eplb_rebalance.replicate_experts
+
+Output parsers
+--------------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/function.rst
+
+   ~max.pipelines.lib.reasoning.get_parser_cls
+   ~max.pipelines.lib.tool_parsing.get_parser_cls
+
+Constants
+---------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/data.rst
+
+   ~max.pipelines.lib.config.DEFAULT_MAX_BATCH_INPUT_TOKENS

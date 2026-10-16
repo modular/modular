@@ -155,3 +155,22 @@ kgen.func export @calls_arg_metadata_follows_live_args(%arg: index) -> index {
   %0 = kgen.call @arg_metadata_follows_live_args(%arg, %arg, %arg, %arg) : (index, index, index, index) -> index
   hlcf.return %0: index
 }
+
+// -----
+
+// COM: A dead argument that flows only into pure ops whose final result is
+// COM: dead (never used) must not crash the pass. The value is not provably
+// COM: live, so the argument and the dead pure op are removed.
+// CHECK-LABEL: kgen.func @dead_end_pure_chain() -> index
+kgen.func @dead_end_pure_chain(%dead_arg: index) -> index {
+  %0 = index.add %dead_arg, %dead_arg
+  %1 = index.constant 0
+  hlcf.return %1: index
+}
+
+// CHECK-LABEL: kgen.func export @calls_dead_end_pure_chain
+kgen.func export @calls_dead_end_pure_chain(%arg: index) -> index {
+  // CHECK: kgen.call @dead_end_pure_chain() : () -> index
+  %0 = kgen.call @dead_end_pure_chain(%arg) : (index) -> index
+  hlcf.return %0: index
+}

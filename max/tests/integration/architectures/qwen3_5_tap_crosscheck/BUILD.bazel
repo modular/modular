@@ -23,13 +23,14 @@ modular_py_test(
     size = "large",
     srcs = ["test_tap_matches_huggingface.py"],
     exec_properties = {
-        "test.resources:gpu-memory": "8",
+        "test.resources:gpu-memory": "3",
     },
     gpu_constraints = ["//:has_gpu"] + select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
     precompile_mefs = True,
+    precompile_shards = 4,
     tags = ["gpu"],
     deps = [
         "//max/python/max/driver",

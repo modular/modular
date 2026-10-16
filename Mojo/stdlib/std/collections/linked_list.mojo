@@ -23,7 +23,7 @@ from std.builtin.rebind import downcast
 from std.collections import check_bounds
 from std.reflection import call_location
 import std.format._utils as fmt
-from std.hashlib.hasher import Hasher
+from std.hash.hasher import Hasher
 from std.memory.alloc import alloc, dealloc, ThinAllocation, Layout
 
 

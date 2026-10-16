@@ -256,7 +256,7 @@ struct Foo[width: Int](Movable where False):
 # COM: The closure parameter's trait instance quotes `self`'s three Builder
 # COM: origin params directly, in order (`origin.mut`, `origin._mlir_origin`,
 # COM: `origin`), so no per-signature trait alias witnesses them.
-# S9-SAME: *"work.T{{.*}}": trait<@"##__mojo_closure__##"
+# S9-SAME: *"work.T{{[^"]*}}": trait<@"##__mojo_closure__##"
 # S9-SAME: #kgen.quote<!lit.ref<!lit.struct<#Builder <:!Bool *"origin.mut`", :origin<{{.*}}> *"origin._mlir_origin`1", :!lit.struct<{{.*}}> origin>>, mut
 # S9: lit.call
 # S9-SAME: #kgen.get_witness<:trait<@"##__mojo_closure__##"

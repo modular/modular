@@ -19,6 +19,7 @@ and composed.
 from __future__ import annotations
 
 from collections.abc import Iterator
+from contextlib import nullcontext
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import numpy as np
@@ -326,3 +327,41 @@ def test_a_no_op_parent_span_leaves_the_phase_parent_unset() -> None:
     set_phase_parent(otel_trace.get_current_span(inbound))
 
     assert _phase_parent_ctx.get() is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("fails", [False, True], ids=["ok", "failed"])
+@pytest.mark.parametrize(
+    "generator_type",
+    [OpenAIChatResponseGenerator, OpenAICompletionResponseGenerator],
+    ids=["chat", "completions"],
+)
+async def test_a_streamed_request_span_parents_the_phases(
+    tracer: otel_trace.Tracer,
+    finished: InMemorySpanExporter,
+    generator_type: type[
+        OpenAIChatResponseGenerator | OpenAICompletionResponseGenerator
+    ],
+    fails: bool,
+) -> None:
+    seen: list[otel_trace.Span] = []
+
+    async def next_token_chunk(request: object, **_: object) -> object:
+        seen.append(otel_trace.get_current_span(_phase_parent_ctx.get()))
+        if fails:
+            raise RuntimeError("the model worker is gone")
+        return MagicMock()
+
+    pipeline = Mock(next_token_chunk=next_token_chunk)
+
+    with (
+        patch("max.serve.router.openai_routes._tracer", tracer),
+        pytest.raises(RuntimeError) if fails else nullcontext(),
+    ):
+        stream = await generator_type(pipeline).stream(_mock_request())
+        assert not finished.get_finished_spans()
+        async for _ in stream:
+            pass
+
+    (request_span,) = finished.get_finished_spans()
+    assert seen[0].get_span_context().span_id == request_span.context.span_id

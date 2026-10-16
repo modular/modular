@@ -48,7 +48,7 @@ from std.collections.string.string import (
     _calc_initial_buffer_size_int64,
     _calc_initial_buffer_size,
 )
-from std.hashlib.hasher import Hasher
+from std.hash.hasher import Hasher
 from std.math import Ceilable, CeilDivable, Floorable, Truncable
 from std.math.math import _call_ptx_intrinsic, trunc
 from std.sys import (
@@ -2993,6 +2993,15 @@ struct SIMD[dtype: DType, length: SIMDLength](
                 input_width == 1
             ), "the input width must be 1 if the size is 1"
             return value[0]
+
+        # `llvm.vector.insert` needs a vector as its subvector operand, but a
+        # width-1 `SIMD` lowers to a scalar. The Metal backend does not
+        # support the intrinsic at all.
+        comptime if input_width == 1 or is_apple_gpu():
+            var result = self
+            comptime for i in range(input_width):
+                result[offset + i] = value[i]
+            return result
 
         return llvm_intrinsic[
             "llvm.vector.insert", Self, has_side_effect=False

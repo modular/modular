@@ -203,7 +203,7 @@ def _probe_rms_norm[
     var in_buf = TileTensor(in_d, row_major(Coord(shape)))
     var out_buf = TileTensor(out_d, row_major(Coord(shape)))
     var gamma = TileTensor(gamma_d, row_major(Coord(Index(cols))))
-    var epsilon = Scalar[dtype](1e-5)
+    comptime epsilon = Float32(1e-5)
 
     @inline(.always)
     def input_fn[
@@ -227,14 +227,14 @@ def _probe_rms_norm[
     var nans = 0
     for _run in range(_NUM_RUNS):
         ctx.enqueue_memset(out_d, Scalar[dtype](0))
-        rms_norm[dtype, 2, target="gpu"](
+        rms_norm[
+            dtype, 2, target="gpu", epsilon=epsilon, weight_offset=Float32(0)
+        ](
             input_fn,
             output_fn,
             Coord(shape),
             ComptimeInt[cols](),
             gamma,
-            epsilon,
-            Scalar[dtype](0),
             ctx,
         )
         ctx.enqueue_copy(out_h, out_d)

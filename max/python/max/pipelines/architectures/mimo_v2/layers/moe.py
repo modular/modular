@@ -10,16 +10,31 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""MiMo-V2 routed experts: stacked MXFP4 weights, run W4A8."""
+"""MiMo-V2 routed experts: MXFP4 weights, run W4A4."""
 
 from __future__ import annotations
 
 import functools
 
 from max.dtype import DType
-from max.graph import DeviceRef
-from max.nn.moe import SigmoidTopKRouter, StackedMoE
+from max.graph import DeviceRef, TensorValue, ops
+from max.nn.moe import MoEQuantized, SigmoidTopKRouter
 from max.nn.quant_config import QuantConfig
+
+
+class MiMoV2Router(SigmoidTopKRouter):
+    """Sigmoid top-k router whose logits are computed in float32.
+
+    The reference scores with ``F.linear(hidden.float(), weight.float())``
+    on the BF16 gate weight; the weight's cast runs once, at model init.
+    """
+
+    def _gate_logits(self, hidden_states: TensorValue) -> TensorValue:
+        hidden = ops.cast(hidden_states, DType.float32)
+        weight = ops.cast(self.gate_score.weight, DType.float32).to(
+            hidden.device
+        )
+        return hidden @ ops.transpose(weight, -1, -2)
 
 
 def mimo_v2_moe(
@@ -31,25 +46,21 @@ def mimo_v2_moe(
     norm_topk_prob: bool,
     quant_config: QuantConfig,
     devices: list[DeviceRef],
-) -> StackedMoE:
+) -> MoEQuantized:
     """Returns MiMo-V2's sigmoid-routed MoE, with no shared expert.
 
-    The router runs in float32 from float32 weights, as the reference does;
-    the correction bias steers selection only, and the combine weights are
-    the unbiased sigmoid scores renormalized over the top k, accumulated with
-    the expert outputs in float32. The experts run W4A8 from stacked MXFP4
-    weights, gate rows then up rows.
+    The correction bias steers selection only; the combine weights are the
+    unbiased sigmoid scores renormalized over the top k, accumulated with the
+    expert outputs in float32. The experts run W4A4: each projection's input
+    is quantized to MXFP4 per expert at runtime.
     """
-    return StackedMoE(
+    return MoEQuantized(
         devices=devices,
         hidden_dim=hidden_dim,
         num_experts=num_experts,
         num_experts_per_token=num_experts_per_tok,
         moe_dim=moe_dim,
-        gate_cls=functools.partial(
-            SigmoidTopKRouter, norm_topk_prob=norm_topk_prob
-        ),
+        gate_cls=functools.partial(MiMoV2Router, norm_topk_prob=norm_topk_prob),
+        dtype=DType.uint8,
         quant_config=quant_config,
-        router_dtype=DType.float32,
-        mxfp8_activations=True,
     )

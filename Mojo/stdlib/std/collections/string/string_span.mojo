@@ -37,7 +37,7 @@ from std.collections.string.iterators import (
     GraphemeIndicesIter,
     GraphemeSliceIter,
 )
-from std.hashlib.hasher import Hasher
+from std.hash.hasher import Hasher
 from std.format._utils import _TotalWritableBytes, _FlushingWriteBuffer
 from std.math import align_down
 from std.os import PathLike, abort

@@ -180,9 +180,10 @@ modular_py_test(
     size = "large",
     srcs = ["test_auto_model.py"],
     ignore_extra_deps = [
-        # Resolve SmolLM and its EAGLE draft by name at runtime.
+        # Resolve SmolLM, its EAGLE draft and MPNet by name at runtime.
         "//max/python/max/pipelines/architectures/eagle_llama3",
         "//max/python/max/pipelines/architectures/llama3",
+        "//max/python/max/pipelines/architectures/mpnet",
     ],
     tags = [
         "no-sandbox",
@@ -193,9 +194,29 @@ modular_py_test(
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/architectures/eagle_llama3",
         "//max/python/max/pipelines/architectures/llama3",
+        "//max/python/max/pipelines/architectures/mpnet",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/modeling",
         requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_auto_pipeline",
+    size = "large",
+    srcs = ["test_auto_pipeline.py"],
+    ignore_extra_deps = [
+        # Resolves SmolLM by name at runtime.
+        "//max/python/max/pipelines/architectures/llama3",
+    ],
+    tags = [
+        "no-sandbox",
+        "requires-network",
+    ],
+    deps = [
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/architectures/llama3",
+        "//max/python/max/pipelines/lib",
     ],
 )
 
@@ -246,6 +267,7 @@ modular_py_test(
             "test_structured_output_spec_decode_gpu.py",
             "test_model_manifest.py",
             "test_auto_model.py",
+            "test_auto_pipeline.py",
             "test_video.py",
             "test_weight_loader.py",
         ],

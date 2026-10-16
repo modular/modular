@@ -61,6 +61,6 @@ trait Foo:
         return Int()
 
     # CHECK: lit.fn @"bar
-    # CHECK-SAME: attributes {sourceName = "bar", specialFnKind = 0 : i8}
+    # CHECK-SAME: sourceName = "bar", specialFnKind = 0 : i8}
     def bar(self, x: Int) capturing raises -> Int:
         ...

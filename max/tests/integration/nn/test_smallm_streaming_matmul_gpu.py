@@ -10,11 +10,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""MI355X small-M streaming matmul op over a CPU-preshuffled weight.
+"""MI355X small-M streaming matmul op.
 
 Covers the graph custom op (`mo.smallm.streaming.matmul`) contract and, by
-comparing against a plain matmul on the ORIGINAL weight, the layout parity
-between the numpy `preshuffle_smallm_b` and the Mojo reader kernel.
+comparing against a plain matmul, the parity between the op's in-graph weight
+permutation and the layout the Mojo kernel reads.
 """
 
 from __future__ import annotations
@@ -25,7 +25,6 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
 from max.nn.kernels import smallm_streaming_matmul
-from max.pipelines.weights.smallm_preshuffle import preshuffle_smallm_b
 from torch.utils.dlpack import from_dlpack
 
 N = 512
@@ -38,11 +37,10 @@ def _build_op_graph(m: int) -> Graph:
         input_types=(
             TensorType(DType.bfloat16, [m, K], device=DeviceRef.GPU()),
             TensorType(DType.bfloat16, [N, K], device=DeviceRef.GPU()),
-            TensorType(DType.bfloat16, [N, K], device=DeviceRef.GPU()),
         ),
     ) as graph:
-        a, b_shuffled, b = (v.tensor for v in graph.inputs)
-        graph.output(smallm_streaming_matmul(a, b_shuffled, b))
+        a, b = (v.tensor for v in graph.inputs)
+        graph.output(smallm_streaming_matmul(a, b))
     return graph
 
 
@@ -52,21 +50,13 @@ def _build_op_graph(m: int) -> Graph:
 def test_smallm_streaming_matmul_op(
     gpu_session: InferenceSession, m: int
 ) -> None:
-    """The op over the numpy-shuffled weight equals a @ w.T on the original."""
+    """The op equals a @ w.T."""
     torch.manual_seed(0)
     a = torch.randn(m, K, dtype=torch.bfloat16, device="cuda") * 0.5
     w = torch.randn(N, K, dtype=torch.bfloat16, device="cuda") * 0.5
 
-    w_shuffled = (
-        torch.from_numpy(
-            preshuffle_smallm_b(w.cpu().view(torch.uint16).numpy())
-        )
-        .view(torch.bfloat16)
-        .cuda()
-    )
-
     compiled = gpu_session.load(_build_op_graph(m))
-    got = from_dlpack(compiled.execute(a, w_shuffled, w)[0])
+    got = from_dlpack(compiled.execute(a, w)[0])
 
     assert tuple(got.shape) == (m, N)
     assert got.dtype == torch.bfloat16
@@ -91,9 +81,9 @@ def test_smallm_streaming_matmul_validation() -> None:
     ) as graph:
         a, b_badn, b_badk, b_f32 = (v.tensor for v in graph.inputs)
         with pytest.raises(ValueError, match="N % 16"):
-            smallm_streaming_matmul(a, b_badn, b_badn)
+            smallm_streaming_matmul(a, b_badn)
         with pytest.raises(ValueError, match="N % 16"):
-            smallm_streaming_matmul(a, b_badk, b_badk)
+            smallm_streaming_matmul(a, b_badk)
         with pytest.raises(ValueError):
-            smallm_streaming_matmul(a, b_f32, b_f32)
+            smallm_streaming_matmul(a, b_f32)
         graph.output(a)

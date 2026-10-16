@@ -26,7 +26,8 @@ This test exercises that tensor-core path through the same graph ops a wired-up
 
 It quantizes random bf16 activations and weights to MXFP8 in-graph, runs the
 block-scaled matmul, and checks the result against an fp32 reference of the
-original (un-quantized) ``a @ b.T``. The tolerance is loose enough to absorb
+original (un-quantized) ``a @ b.T``. The ``fused_scale`` cases add an
+elementwise consumer that the graph compiler fuses into the matmul epilogue. The tolerance is loose enough to absorb
 MXFP8 round-trip error but tight enough to catch a wrong layout / wrong kernel
 (which would destroy the cosine similarity).
 """
@@ -72,8 +73,9 @@ def _skip_if_not_supported() -> None:
         ("q_proj_decode", 1, 8192, 6144),
     ],
 )
+@pytest.mark.parametrize("fused_scale", [None, 2.0])
 def test_dense_mxfp8_block_scaled_matmul(
-    label: str, M: int, N: int, K: int
+    label: str, M: int, N: int, K: int, fused_scale: float | None
 ) -> None:
     _skip_if_not_supported()
 
@@ -117,6 +119,8 @@ def test_dense_mxfp8_block_scaled_matmul(
             sf_vector_size=32,
             out_type=DType.bfloat16,
         )
+        if fused_scale is not None:
+            out = out * fused_scale
         graph.output(out)
 
     model = session.load(graph)
@@ -132,6 +136,8 @@ def test_dense_mxfp8_block_scaled_matmul(
     out = torch.from_dlpack(out_buf).to(torch.float32).cpu().numpy()
 
     ref = a_np @ b_np.T
+    if fused_scale is not None:
+        ref = ref * fused_scale
 
     out_flat = out.reshape(-1)
     ref_flat = ref.reshape(-1)
@@ -143,7 +149,7 @@ def test_dense_mxfp8_block_scaled_matmul(
         np.linalg.norm(out_flat - ref_flat) / (np.linalg.norm(ref_flat) + 1e-12)
     )
     print(
-        f"\n=== {label} (M={M}, N={N}, K={K}) ===\n"
+        f"\n=== {label} (M={M}, N={N}, K={K}, fused_scale={fused_scale}) ===\n"
         f"  cosine similarity : {cos:.5f}\n"
         f"  relative L2 error : {rel_err:.5f}",
         flush=True,

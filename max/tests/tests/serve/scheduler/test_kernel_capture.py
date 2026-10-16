@@ -122,6 +122,8 @@ class _Harness:
     def add(
         self, level: str | None = None, parent: SpanContext | None = None
     ) -> RequestID:
+        if level is not None and parent is None:
+            parent = _request_span(99)  # Only sampled requests are traced.
         ctx = TextContext(
             request_id=RequestID(),
             max_length=100,
@@ -161,12 +163,12 @@ class _Harness:
         return list(self.scheduler._batch_links._links)
 
 
-def _request_span(n: int) -> SpanContext:
+def _request_span(n: int, sampled: bool = True) -> SpanContext:
     return SpanContext(
         trace_id=n,
         span_id=n,
         is_remote=True,
-        trace_flags=TraceFlags(TraceFlags.SAMPLED),
+        trace_flags=TraceFlags(sampled),
     )
 
 
@@ -319,9 +321,16 @@ def test_two_traced_requests_share_one_capture(
     # Traced passes emit max.batch although the global level is off.
     spans = h.exporter.get_finished_spans()
     batch_spans = [s for s in spans if s.name == "max.batch"]
+    assert all(s.parent is None for s in batch_spans)
     assert [p.batch_span_context for p in passes] == [
         s.get_span_context() for s in batch_spans
     ]
+    # Launch lag counts from the max.batch span's start, which follows the
+    # host time the clock-offset bound uses.
+    assert [p.batch_start_ns for p in passes] == [
+        s.start_time for s in batch_spans
+    ]
+    assert all(p.host_start_ns <= p.batch_start_ns for p in passes)
 
 
 @pytest.mark.parametrize("exit_by", ["release", "cancel"])
@@ -552,6 +561,15 @@ def test_no_binding_call_unless_traced(
     assert not [
         s for s in h.exporter.get_finished_spans() if s.name == "max.batch"
     ]
+
+
+def test_an_unsampled_request_arms_no_capture(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    h = _harness(monkeypatch)
+    request = h.add("kernel", parent=_request_span(1, sampled=False))
+    h.step(request)
+    assert h.events == []
 
 
 def test_global_batch_links_every_member(

@@ -47,7 +47,7 @@ from layout import (
     TileTensor,
     row_major,
 )
-from layout.layout_tensor import LayoutTensorIter
+from layout.tile_iterator import TileTensorIter
 from layout.swizzle import make_ldmatrix_swizzle
 from nn.attention.mha_mask import (
     CausalMask,
@@ -513,11 +513,11 @@ def _copy_frag_to_smem_nvidia[
     frag_simd_width: Int,
     *,
     type0: DType,
-    layout0: Layout,
+    layout0: TensorLayout,
     type1: DType,
     layout1: TensorLayout,
 ](
-    p_smem_iter: LayoutTensorIter[
+    p_smem_iter: TileTensorIter[
         mut=True, type0, layout0, address_space=.SHARED, ...
     ],
     p_reg_tile: TileTensor[type1, layout1, address_space=.LOCAL, ...],
@@ -600,9 +600,7 @@ def _copy_frag_to_smem_nvidia[
                 ]()
                 # Grep the right BMxBK tile and store the casted vec.
                 var tile_BMxBK = p_smem_iter.next_unsafe(
-                    p_smem_iter.linear_uint_type(
-                        Int((offset_BMxBN % OffsetType(BN)) // OffsetType(BK))
-                    )
+                    Int((offset_BMxBN % OffsetType(BN)) // OffsetType(BK))
                 )[]
                 comptime align = align_of[
                     SIMD[p_smem_iter.dtype, frag_simd_width]
@@ -622,11 +620,11 @@ def _copy_frag_to_smem_amd[
     frag_simd_width: Int,
     *,
     type0: DType,
-    layout0: Layout,
+    layout0: TensorLayout,
     type1: DType,
     layout1: TensorLayout,
 ](
-    p_smem_iter: LayoutTensorIter[
+    p_smem_iter: TileTensorIter[
         mut=True, type0, layout0, address_space=.SHARED, ...
     ],
     p_reg_tile: TileTensor[type1, layout1, address_space=.LOCAL, ...],
@@ -686,9 +684,7 @@ def _copy_frag_to_smem_amd[
                 ]()
                 # Grep the right BMxBK tile and store the casted vec.
                 var tile_BMxBK = p_smem_iter.next_unsafe(
-                    p_smem_iter.linear_uint_type(
-                        Int((offset_BMxBN % OffsetType(BN)) // OffsetType(BK))
-                    )
+                    Int((offset_BMxBN % OffsetType(BN)) // OffsetType(BK))
                 )[]
                 tile_BMxBK.ptr.store(offset_BMxBK, vec)
 
@@ -705,11 +701,11 @@ def _copy_frag_to_smem[
     frag_simd_width: Int,
     *,
     type0: DType,
-    layout0: Layout,
+    layout0: TensorLayout,
     type1: DType,
     layout1: TensorLayout,
 ](
-    p_smem_iter: LayoutTensorIter[
+    p_smem_iter: TileTensorIter[
         mut=True, type0, layout0, address_space=.SHARED, ...
     ],
     p_reg_tile: TileTensor[type1, layout1, address_space=.LOCAL, ...],

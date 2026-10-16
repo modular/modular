@@ -166,6 +166,7 @@ Usage and tokens
 
    AudioGenerationDetails
    Error
+   ImageGenerationDetails
    IncludeEnum
    IncompleteDetails
    InputTokensDetails
@@ -188,4 +189,5 @@ Protocols
    :template: autosummary/class.rst
 
    FastAPIRequestProtocol
+   MediaDataUriFetcher
 

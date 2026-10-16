@@ -21,7 +21,7 @@ from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.compute.mma_operand_descriptor import MMAOperandDescriptor
 
 from std.utils.index import IndexList
-from std.hashlib.hasher import Hasher
+from std.hash.hasher import Hasher
 
 # ===----------------------------------------------------------------------=== #
 # MMA Instruction Descriptor

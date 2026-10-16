@@ -27,6 +27,8 @@
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
 
 namespace M::KGEN::LIT {
+class TraitASTDecl;
+
 // Naming schemes used for emitting closure related-struct.
 inline constexpr llvm::StringLiteral kClosurePrefix = "closure$";
 inline constexpr llvm::StringLiteral kClosureInflatedPrefix = "inflated$";
@@ -39,7 +41,7 @@ public:
   ClosureEmitter(SharedState &shared);
 
   /// Return true if \p type provably conforms to \p traitDecl.
-  static bool provenConformsToTrait(ASTType type, ASTDecl *traitDecl,
+  static bool provenConformsToTrait(ASTType type, TraitASTDecl &traitDecl,
                                     SharedState &shared,
                                     ArrayRef<ConstraintAttr> callerAssumptions);
 
@@ -122,7 +124,7 @@ public:
     bool isEmpty() const { return closureMethod == ClosureMethod::NONE; }
     ClosureMethod getClosureMethod() const { return closureMethod; }
 
-    TraitDeclOp getTrait(SharedState &shared) const;
+    TraitASTDecl &getTrait(SharedState &shared) const;
 
     FnTypeGeneratorType getSignature() const { return signature; }
 

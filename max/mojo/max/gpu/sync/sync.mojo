@@ -610,7 +610,8 @@ def mbarrier_arrive[
     """Signal thread arrival at a shared memory barrier.
 
     Records that the calling thread has reached the barrier synchronization point.
-    Only supported on NVIDIA GPUs.
+    When the last expected thread arrives, the barrier completes its current
+    phase and starts the next one. Only supported on NVIDIA GPUs.
 
     Parameters:
         type: The data type stored at the barrier location.
@@ -619,7 +620,9 @@ def mbarrier_arrive[
         shared_mem: Pointer to the shared memory barrier.
 
     Returns:
-        An integer representing the current state of the memory barrier.
+        An opaque token that identifies the barrier phase this arrival belongs
+        to. Pass it to `mbarrier_test_wait()` to check whether that phase has
+        completed.
     """
 
     comptime if is_nvidia_gpu():
@@ -640,20 +643,24 @@ def mbarrier_test_wait[
     shared_mem: Pointer[mut=True, type, _, address_space=.SHARED],
     state: Int,
 ) -> Bool:
-    """Test if all threads have arrived at the memory barrier.
+    """Test whether the barrier phase identified by a token has completed.
 
-    Non-blocking check to see if all participating threads have reached the barrier.
-    Only supported on NVIDIA GPUs.
+    Non-blocking check: it returns immediately, so call it in a loop to wait.
+    The token must come from `mbarrier_arrive()` on the same barrier, during
+    the barrier's current phase or the one immediately before it. Only
+    supported on NVIDIA GPUs.
 
     Parameters:
         type: The data type stored at the barrier location.
 
     Args:
         shared_mem: Pointer to the shared memory barrier.
-        state: Expected state of the memory barrier.
+        state: The token that `mbarrier_arrive()` returned for the phase to
+            check. Any other value, such as a thread count, is invalid.
 
     Returns:
-        True if all threads have arrived, False otherwise.
+        True if the phase identified by `state` has completed, False
+        otherwise.
     """
 
     comptime if is_nvidia_gpu():
@@ -663,7 +670,7 @@ def mbarrier_test_wait[
     else:
         CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name(),
-            note="mbarrier_test_wair() is only supported when targeting NVIDIA GPUs",
+            note="mbarrier_test_wait() is only supported when targeting NVIDIA GPUs",
         ]()
 
 
@@ -767,18 +774,19 @@ def mbarrier_try_wait_parity_shared[
     phase: Int32,
     ticks: Int32,
 ):
-    """Wait for completion of a barrier phase with timeout.
+    """Block until the barrier completes the phase with the given parity.
 
-    Waits for the shared memory barrier to complete the specified phase,
-    or until the timeout period expires. Only supported on NVIDIA GPUs.
+    Repeats `mbarrier.try_wait.parity` until the phase completes, so the call
+    does not return early when `ticks` elapses. Only supported on NVIDIA GPUs.
 
     Parameters:
         type: The type of the memory barrier.
 
     Args:
         addr: Pointer to the shared memory barrier.
-        phase: Phase number to wait for.
-        ticks: Timeout period in nanoseconds.
+        phase: Parity of the phase to wait for: 0 for even phases, 1 for odd.
+        ticks: Hint, in nanoseconds, for how long each attempt may suspend the
+            thread before it checks again. It is not a timeout.
     """
 
     comptime if is_nvidia_gpu():

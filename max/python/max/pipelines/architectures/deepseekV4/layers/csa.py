@@ -20,9 +20,11 @@ the windows its chunks touch (:class:`~.ragged.WindowRows`, one per ratio,
 shared by the two streams of a layer), it
 
 1. stores the tokens' raw ``wkv`` / ``wgate`` projections into the state leaf;
-2. assembles every window's ``coff * ratio`` source rows, from the state leaf
+2. pools every window's ``coff * ratio`` source rows, from the state leaf
    for positions before the request's ``P`` and from the fresh projections at
-   or after it, and pools them into one candidate entry per window;
+   or after it, into one candidate entry per window -- in one op that reads
+   the leaf in place (:meth:`~.compressor.DeepseekV4Compressor.pool_paged`),
+   or without a cache from per-window tables;
 3. stores the candidates into the zone leaf at entry slots ``P // ratio ...``
    of their request;
 4. hands back the candidates and where the closed entries live, so a reader
@@ -71,7 +73,9 @@ class CompressedStream:
     """
 
     fresh: TensorValue
-    """``[W, head_dim]`` candidate entries, all requests' windows end to end."""
+    """``[W, head_dim]`` candidate entries, all requests' windows end to end.
+    With a cache the row count only bounds ``W``; the rows past it are
+    unwritten and never read."""
     windows: WindowRows
     rows: RaggedRows
     cap: int
@@ -197,59 +201,48 @@ def compressed_stream(
             indexed by ``layer.zone``.
     """
     ratio = compressor.compress_ratio
-    coff = compressor.coff
-    proj = compressor.proj_dim
     assert windows.ratio == ratio
-    w = windows.total
-    assert layer.zone is not None and layer.zone_rows is not None
+    assert layer.zone is not None
 
     kv_proj, score_proj = compressor.projections(x32)
-    if state_leaf is not None:
+    cap = ceildiv(max_seq_len, ratio)
+    if state_leaf is None:
+        # Every position is in the chunk. Rows past a request's end are
+        # clamped to its last one, so a window not yet closed still reads
+        # finite rows; ``present`` masks positions below 0.
+        tables = windows.tables
+        assert tables is not None, "a batch without a cache needs its W"
+        w = tables.total
+        coff = compressor.coff
+        shape: list[int | Dim] = [w, coff, ratio, compressor.proj_dim]
+        fresh = compressor(
+            ops.reshape(ops.gather(kv_proj, tables.fresh_row, axis=0), shape),
+            ops.reshape(
+                ops.gather(score_proj, tables.fresh_row, axis=0), shape
+            ),
+            ops.reshape(tables.present, [w, coff, ratio]),
+            ops.unsqueeze(ops.gather(freqs_table, tables.start, axis=0), 1),
+        )
+        fresh = ops.reshape(fresh, [w, compressor.head_dim])
+    else:
+        assert zone_leaf is not None
         state_leaf.store(layer.zone, KEY, kv_proj, rows.offsets)
         state_leaf.store(layer.zone, VALUE, score_proj, rows.offsets)
-
-    # Rows at or after the request's ``P`` come from the chunk (the index is
-    # clamped so a not-yet-closed window reads a real, finite row); rows
-    # before it from the state leaf; ``present`` masks positions below 0.
-    fresh_kv = ops.gather(kv_proj, windows.fresh_row, axis=0)
-    fresh_score = ops.gather(score_proj, windows.fresh_row, axis=0)
-    if state_leaf is not None:
-        mask = ops.unsqueeze(windows.from_cache, -1)
-        kv_rows = ops.where(
-            mask,
-            state_leaf.gather(
-                layer.zone_rows, KEY, windows.cache_slot, lut_rows=windows.bid
-            ),
-            fresh_kv,
+        woff = ops.cast(windows.woff, DType.uint32)
+        fresh = compressor.pool_paged(
+            kv_proj,
+            score_proj,
+            rows,
+            woff,
+            freqs_table,
+            state_leaf.values,
+            layer.zone,
         )
-        score_rows = ops.where(
-            mask,
-            state_leaf.gather(
-                layer.zone_rows,
-                VALUE,
-                windows.cache_slot,
-                lut_rows=windows.bid,
-            ),
-            fresh_score,
-        )
-    else:
-        kv_rows, score_rows = fresh_kv, fresh_score
-    shape: list[int | Dim] = [w, coff, ratio, proj]
-    fresh = compressor(
-        ops.reshape(kv_rows, shape),
-        ops.reshape(score_rows, shape),
-        ops.reshape(windows.present, [w, coff, ratio]),
-        ops.unsqueeze(ops.gather(freqs_table, windows.start, axis=0), 1),
-    )
-    fresh = ops.reshape(fresh, [w, compressor.head_dim])
-
-    cap = ceildiv(max_seq_len, ratio)
-    if zone_leaf is not None:
         zone_leaf.store(
             layer.zone,
             KEY,
             fresh,
-            ops.cast(windows.woff, DType.uint32),
+            woff,
             cache_lengths=windows.base,
             rows_per_seq=cap,
             ratio=ratio,

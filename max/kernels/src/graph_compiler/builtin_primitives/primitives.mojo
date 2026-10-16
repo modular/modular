@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.logger import Logger
-from std.math import fma, gcd
+from std.math import gcd
 from std.ffi import external_call, c_size_t
 from std.sys import size_of, align_of
 
@@ -1356,71 +1356,6 @@ def _get_scalar_from_managed_tensor_slice[
 
 
 # ===-----------------------------------------------------------------------===#
-# Opaque Test Primitives
-# ===-----------------------------------------------------------------------===#
-
-
-struct MyInt(Movable):
-    var val: Int
-
-    def __init__(out self, val: Int):
-        self.val = val
-
-    def __init__(out self, *, deinit move: MyInt):
-        print("MyInt.__moveinit__", move.val)
-        self.val = move.val
-
-    def __deinit__(deinit self):
-        print("MyInt.__deinit__", self.val)
-
-
-@register_internal("testfuse.my_int.from_index")
-@inline(.never)
-def test_my_int_from_index(x: Int) -> MyInt:
-    return MyInt(x)
-
-
-@register_internal("testfuse.my_int.square")
-@inline(.never)
-def test_my_int_square(x: MyInt) -> MyInt:
-    return MyInt(x.val * x.val)
-
-
-@register_internal("testfuse.my_int.to_index")
-@inline(.never)
-def test_my_int_to_index(x: MyInt) -> Int:
-    return x.val
-
-
-struct MyIntReg2(ImplicitlyCopyable, RegisterPassable):
-    var val: Int
-
-    def __init__(out self, val: Int):
-        self.val = val
-
-    def __deinit__(deinit self):
-        print("MyIntReg2.__deinit__", self.val)
-
-
-@register_internal("testfuse.my_int_reg2.from_index")
-@inline(.never)
-def test_my_int_reg2_from_index(x: Int) -> MyIntReg2:
-    return MyIntReg2(x)
-
-
-@register_internal("testfuse.my_int_reg2.square")
-@inline(.never)
-def test_my_int_reg2_square(x: MyIntReg2) -> MyIntReg2:
-    return MyIntReg2(x.val * x.val)
-
-
-@register_internal("testfuse.my_int_reg2.to_index")
-@inline(.never)
-def test_my_int_reg2_to_index(x: MyIntReg2) -> Int:
-    return x.val
-
-
-# ===-----------------------------------------------------------------------===#
 # Mojo generation hooks
 # ===-----------------------------------------------------------------------===#
 
@@ -1952,76 +1887,6 @@ def all_zeros(indices: IndexList) -> Bool:
 # ===----------------------------------------------------------------------===#
 
 
-@register_internal("mo.split_dim")
-@inline(.always)
-def split_dim_indices[
-    rank: Int, axis: Int
-](indices: IndexList[rank], new_shape_dim: Int) -> IndexList[rank + 1]:
-    var out = IndexList[rank + 1]()
-
-    # This op is transforming the INDICES of an access into a reshaped tensor.
-    # Consider the tensor is [40, 30, 2] and we reshape it to [5, 8, 30, 2].
-    # If we are accessing the index [21, 16, 1] in the original shape then to
-    # preserve the reshape we would need to transform the indices into [2, 5, 16, 1].
-    # Or [21 // 8, 21 % 8, ...old dims...].
-    # In this case, the axis = 0 and the new_shape_dim = 8.
-
-    comptime for i in range(rank + 1):
-        comptime if i == axis:
-            out[i] = indices[axis] // new_shape_dim
-        elif i == axis + 1:
-            out[i] = indices[axis] % new_shape_dim
-        elif i < axis:
-            out[i] = indices[i]
-        elif i > axis:
-            out[i] = indices[i - 1]
-
-    return out
-
-
-@register_internal("mo.merge_dim")
-@inline(.always)
-def merge_dim_indices[
-    rank: Int, axis: Int
-](indices: IndexList[rank], old_shape_dim: Int) -> IndexList[rank - 1]:
-    var out = IndexList[rank - 1]()
-
-    # This op is transforming the INDICES of an access into a reshaped tensor.
-    # Consider the tensor is [5, 8, 30, 2] and we reshape it to [40, 30, 2].
-    # If we are accessing the index [2, 5, 16, 1] in the original shape then to
-    # preserve the reshape we would need to transform the indices into [21, 16, 1].
-    # Or [2 * 8 + 5, 16, 1].
-    # In this case, the axis = 0 and the old_shape_dim = 8.
-
-    comptime for i in range(rank - 1):
-        comptime if i == axis:
-            out[i] = fma(indices[i], old_shape_dim, indices[i + 1])
-        elif i < axis:
-            out[i] = indices[i]
-        elif i > axis:
-            out[i] = indices[i + 1]
-
-    return out
-
-
-@register_internal("mo.add_singleton_dim")
-@inline(.always)
-def insert_index[
-    rank: Int, axis: Int, value: Int
-](indices: IndexList[rank]) -> IndexList[rank + 1]:
-    var out = IndexList[rank + 1]()
-
-    comptime for i in range(rank + 1):
-        comptime if i < axis:
-            out[i] = indices[i]
-        elif i > axis:
-            out[i] = indices[i - 1]
-        else:
-            out[i] = value
-
-    return out
-
-
 @inline(.always)
 def _reshape_num_non_ones(shape: IntTuple, upto: Int) -> Int:
     # Count of non-1 dims in shape[0:upto].
@@ -2348,7 +2213,6 @@ def simd_select[
 # ===-----------------------------------------------------------------------===#
 
 
-@register_internal("mogg.elemwise_for_each")
 @inline(.never)
 def foreach[
     dtype: DType,
@@ -3067,7 +2931,6 @@ def foreach_fusion_tile[
     )
 
 
-@register_internal("mogg.for_each.out_func")
 @inline(.never)
 def foreach_out_func[
     dtype: DType,
@@ -3113,7 +2976,6 @@ def foreach_out_func[
 
 # TensorCopy intrinsic used by the view ops (slice, reshape, transpose, ...).
 # z is a kernel output, and x a view of the input.
-@register_internal("mogg.call.materialize")
 @doc_hidden
 @inline(.never)
 def view_copy_impl[

@@ -35,7 +35,6 @@ from nn.conv.conv_transpose import (
     conv_transposed_cpu,
     conv_transposed_gpu,
 )
-from nn.conv.conv_utils import elementwise_simd_epilogue_type
 from nn.pad import pad_constant, pad_reflect, pad_repeat, pad_shape
 from nn.pad_gpu import (
     pad_constant as pad_constant_gpu,
@@ -395,9 +394,126 @@ def pad_reflect_shape(
     )
 
 
-@extensibility.register("mo.conv")
-struct Conv:
-    """Registers the `mo.conv` graph op with the graph compiler."""
+def _index_list[size: Int](values: InputTensor) -> IndexList[size]:
+    var result = IndexList[size](0)
+
+    comptime for i in range(size):
+        result[i] = Int(values._ptr[i])
+    return result
+
+
+def _check_conv_attrs[
+    spatial_rank: Int
+](strides: InputTensor, dilation: InputTensor, paddings: InputTensor) raises:
+    comptime assert (
+        strides.dtype.is_integral() and dilation.dtype.is_integral()
+    ), "stride and dilation must have integral type"
+
+    if strides.size() != spatial_rank:
+        raise Error("(input_rank-2) values expected in conv strides")
+
+    if dilation.size() != spatial_rank:
+        raise Error("(input_rank-2) values expected in conv dilation")
+
+    if paddings.size() != 2 * spatial_rank:
+        raise Error("(2*(input_rank-2)) value expected in conv paddings")
+
+
+@extensibility.register("mo.conv", type="cpu")
+struct ConvCPU:
+    """Registers the `mo.conv` graph op for CPU devices."""
+
+    @staticmethod
+    def execute[
+        input_layout: StaticString,
+        filter_layout: StaticString,
+        has_epilogue_fusion: Bool,
+        static_strides: IntTuple,
+        static_dilations: IntTuple,
+        static_padding: IntTuple,
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        output: FusedOutputTensor[...],
+        input: InputTensor[rank=output.rank, ...],
+        filter: InputTensor,
+        strides: InputTensor,
+        dilation: InputTensor,
+        paddings: InputTensor,
+        num_groups: Scalar,
+        ctx: DeviceContext,
+    ) capturing raises:
+        @inline(.always)
+        def output_fn[
+            _dtype: DType, _width: SIMDLength, _alignment: Int = 1
+        ](coords: Coord, val: SIMD[_dtype, _width]) {var output}:
+            output._lambda_store[width=_width, element_alignment=_alignment](
+                coords, rebind[SIMD[output.dtype, _width]](val)
+            )
+
+        comptime assert (
+            input_layout == "NHWC"
+        ), "only NHWC input layout is supported"
+        comptime assert (
+            filter_layout != "FCRS"
+        ), "Filter layout FCRS is not supported on CPU"
+
+        _check_conv_attrs[input.rank - 2](strides, dilation, paddings)
+
+        var pad_d_tuple = IndexList[2](0)
+        var pad_h_tuple = IndexList[2](0)
+        var pad_w_tuple = IndexList[2](0)
+
+        comptime match input.rank:
+            case 3:
+                pad_w_tuple = Index(paddings._ptr[0], paddings._ptr[1])
+            case 4:
+                pad_h_tuple = Index(paddings._ptr[0], paddings._ptr[1])
+                pad_w_tuple = Index(paddings._ptr[2], paddings._ptr[3])
+            case 5:
+                pad_d_tuple = Index(paddings._ptr[0], paddings._ptr[1])
+                pad_h_tuple = Index(paddings._ptr[2], paddings._ptr[3])
+                pad_w_tuple = Index(paddings._ptr[4], paddings._ptr[5])
+
+        comptime input_shape_val = Int(
+            input._static_shape_tuple[input.rank - 1]
+        )  # input C, NHWC
+        comptime filter_shape_val = Int(
+            filter._static_shape_tuple[filter.rank - 2]
+        )  # filter C, RSCF or FRSCf
+        comptime conv_attr = ConvInfoStatic[input.rank - 2](
+            static_padding,
+            static_strides,
+            static_dilations,
+            input_shape_val,
+            filter_shape_val,
+        )
+
+        conv_nhwc_direct[
+            input.dtype,
+            filter.dtype,
+            output.dtype,
+            filter_layout == "FRSCf" or filter_layout == "FQRSCf",
+            conv_attr,
+            has_epilogue_fusion,
+        ](
+            input.to_tile_tensor[.int64](),
+            filter.to_tile_tensor[.int64](),
+            output.to_tile_tensor[.int64](),
+            _index_list[input.rank - 2](strides),
+            _index_list[input.rank - 2](dilation),
+            pad_d_tuple,
+            pad_h_tuple,
+            pad_w_tuple,
+            Int(num_groups),
+            output_fn,
+            Optional(ctx.assert_cpu_target()),
+        )
+
+
+@extensibility.register("mo.conv", type="gpu")
+struct ConvGPU:
+    """Registers the `mo.conv` graph op for GPU devices."""
 
     @staticmethod
     def execute[
@@ -430,118 +546,33 @@ struct Conv:
             )
 
         comptime assert (
-            strides.dtype.is_integral() and dilation.dtype.is_integral()
-        ), "stride and dilation must have integral type"
-
-        comptime assert (
             input_layout == "NHWC"
         ), "only NHWC input layout is supported"
+        comptime assert (input.rank == 4 and filter.rank == 4) or (
+            input.rank == 5 and filter.rank == 5
+        ), "only rank 4 or 5 tensor is supported on cuda gpu"
+        comptime assert (
+            filter_layout != "FRSCf" and filter_layout != "FQRSCf"
+        ), "only unpacked filter is supported on cuda gpu"
 
-        if strides.size() != input.rank - 2:
-            raise Error("(input_rank-2) values expected in conv strides")
+        _check_conv_attrs[input.rank - 2](strides, dilation, paddings)
 
-        if dilation.size() != input.rank - 2:
-            raise Error("(input_rank-2) values expected in conv dilation")
-
-        if paddings.size() != 2 * (input.rank - 2):
-            raise Error("(2*(input_rank-2)) value expected in conv paddings")
-
-        var stride_tuple = IndexList[input.rank - 2](0)
-        var dilation_tuple = IndexList[input.rank - 2](0)
-
-        comptime for i in range(input.rank - 2):
-            stride_tuple[i] = Int(strides._ptr[i])
-            dilation_tuple[i] = Int(dilation._ptr[i])
-
-        var pad_d_tuple = IndexList[2](0)
-        var pad_h_tuple = IndexList[2](0)
-        var pad_w_tuple = IndexList[2](0)
-
-        comptime match input.rank:
-            case 3:
-                pad_w_tuple = Index(paddings._ptr[0], paddings._ptr[1])
-            case 4:
-                pad_h_tuple = Index(paddings._ptr[0], paddings._ptr[1])
-                pad_w_tuple = Index(paddings._ptr[2], paddings._ptr[3])
-            case 5:
-                pad_d_tuple = Index(paddings._ptr[0], paddings._ptr[1])
-                pad_h_tuple = Index(paddings._ptr[2], paddings._ptr[3])
-                pad_w_tuple = Index(paddings._ptr[4], paddings._ptr[5])
-
-        comptime input_shape_val = Int(
-            input._static_shape_tuple[input.rank - 1]
-        )  # input C, NHWC
-        comptime filter_shape_val = Int(
-            filter._static_shape_tuple[filter.rank - 2]
-        )  # filter C, RSCF or FRSCf
-        comptime conv_attr = ConvInfoStatic[input.rank - 2](
-            static_padding,
-            static_strides,
-            static_dilations,
-            input_shape_val,
-            filter_shape_val,
+        conv_gpu[
+            input.dtype,
+            filter.dtype,
+            output.dtype,
+            output_fn,
+            filter_layout == "FCRS",
+        ](
+            input.to_tile_tensor[.int64](),
+            filter.to_tile_tensor[.int64](),
+            output.to_tile_tensor[.int64](),
+            _index_list[input.rank - 2](strides),
+            _index_list[input.rank - 2](dilation),
+            _index_list[2 * (input.rank - 2)](paddings),
+            Int(num_groups),
+            ctx,
         )
-
-        comptime filter_packed = filter_layout == "FRSCf" or filter_layout == "FQRSCf"
-        comptime filter_is_fcrs = filter_layout == "FCRS"
-
-        var input_tt = input.to_tile_tensor[.int64]()
-        var filter_tt = filter.to_tile_tensor[.int64]()
-        var output_tt = output.to_tile_tensor[.int64]()
-
-        comptime if is_cpu[target]():
-            comptime assert (
-                not filter_is_fcrs
-            ), "Filter layout FCRS is not supported on CPU"
-            conv_nhwc_direct[
-                input.dtype,
-                filter.dtype,
-                output.dtype,
-                filter_packed,
-                conv_attr,
-                has_epilogue_fusion,
-                output_fn,
-            ](
-                input_tt,
-                filter_tt,
-                output_tt,
-                stride_tuple,
-                dilation_tuple,
-                pad_d_tuple,
-                pad_h_tuple,
-                pad_w_tuple,
-                Int(num_groups),
-                Optional(ctx.assert_cpu_target()),
-            )
-        else:
-            comptime assert (input.rank == 4 and filter.rank == 4) or (
-                input.rank == 5 and filter.rank == 5
-            ), "only rank 4 or 5 tensor is supported on cuda gpu"
-            comptime assert (
-                filter_packed == False
-            ), "only unpacked filter is supported on cuda gpu"
-
-            var pad_tuple = IndexList[2 * (input.rank - 2)](0)
-
-            comptime for i in range(2 * (input.rank - 2)):
-                pad_tuple[i] = Int(paddings._ptr[i])
-
-            conv_gpu[
-                input.dtype,
-                filter.dtype,
-                output.dtype,
-                output_fn,
-                filter_is_fcrs,
-            ](
-                input_tt,
-                filter_tt,
-                output_tt,
-                stride_tuple,
-                dilation_tuple,
-                pad_tuple,
-                Int(num_groups),
-                ctx,
-            )
 
 
 @extensibility.register_shape_function("mo.conv")
@@ -667,9 +698,40 @@ def conv2d_residual_add_shape(
     )
 
 
-@extensibility.register("mo.conv_transpose")
-struct ConvTranspose:
-    """Registers the `mo.conv_transpose` graph op with the graph compiler."""
+def _check_conv_transpose_attrs[
+    spatial_rank: Int
+](
+    strides: InputTensor,
+    dilation: InputTensor,
+    paddings: InputTensor,
+    output_paddings: InputTensor,
+) raises:
+    comptime assert (
+        strides.dtype.is_integral()
+        and dilation.dtype.is_integral()
+        and output_paddings.dtype.is_integral()
+    )
+
+    if strides.size() != spatial_rank:
+        raise Error("(input_rank-2) values expected in convTranspose stride")
+
+    if dilation.size() != spatial_rank:
+        raise Error("(input_rank-2) values expected in convTranspose dilation")
+
+    if output_paddings.size() != spatial_rank:
+        raise Error(
+            "(input_rank-2) values expected in convTranspose output paddings"
+        )
+
+    if paddings.size() != 2 * spatial_rank:
+        raise Error(
+            "(2*(input_rank-2)) value expected in convTranspose paddings"
+        )
+
+
+@extensibility.register("mo.conv_transpose", type="cpu")
+struct ConvTransposeCPU:
+    """Registers the `mo.conv_transpose` graph op for CPU devices."""
 
     @staticmethod
     def execute[
@@ -687,43 +749,17 @@ struct ConvTranspose:
         output_paddings: InputTensor[rank=1, ...],
         ctx: DeviceContext,
     ) capturing raises:
-        comptime assert (
-            strides.dtype.is_integral()
-            and dilation.dtype.is_integral()
-            and output_paddings.dtype.is_integral()
+        @inline(.always)
+        def output_fn[
+            _dtype: DType, _width: SIMDLength, _alignment: Int = 1
+        ](coords: Coord, val: SIMD[_dtype, _width]) {var output}:
+            output._lambda_store[width=_width, element_alignment=_alignment](
+                coords, rebind[SIMD[output.dtype, _width]](val)
+            )
+
+        _check_conv_transpose_attrs[input.rank - 2](
+            strides, dilation, paddings, output_paddings
         )
-
-        if strides.size() != input.rank - 2:
-            raise Error(
-                "(input_rank-2) values expected in convTranspose stride"
-            )
-
-        if dilation.size() != input.rank - 2:
-            raise Error(
-                "(input_rank-2) values expected in convTranspose dilation"
-            )
-
-        if output_paddings.size() != input.rank - 2:
-            raise Error(
-                "(input_rank-2) values expected in convTranspose output"
-                " paddings"
-            )
-
-        if paddings.size() != 2 * (input.rank - 2):
-            raise Error(
-                "(2*(input_rank-2)) value expected in convTranspose paddings"
-            )
-
-        var stride_tuple = IndexList[
-            type_of(input.to_tile_tensor[.int64]()).rank - 2
-        ](0)
-        var dilation_tuple = IndexList[
-            type_of(input.to_tile_tensor[.int64]()).rank - 2
-        ](0)
-
-        comptime for i in range(input.rank - 2):
-            stride_tuple[i] = Int(strides._ptr[i])
-            dilation_tuple[i] = Int(dilation._ptr[i])
 
         var pad_d = IndexList[2](0)
         var pad_h = IndexList[2](0)
@@ -739,69 +775,92 @@ struct ConvTranspose:
             pad_h = Index(paddings[2], paddings[3])
             pad_w = Index(paddings[4], paddings[5])
 
-        @__parameter
+        conv_transposed_cpu[
+            filter_layout == "FRSCf" or filter_layout == "FQRSCf",
+            filter_layout == "CFRS",
+            has_epilogue_fusion,
+        ](
+            output.to_tile_tensor[.int64](),
+            input.to_tile_tensor[.int64](),
+            filter.to_tile_tensor[.int64](),
+            _index_list[type_of(input.to_tile_tensor[.int64]()).rank - 2](
+                strides
+            ),
+            _index_list[type_of(input.to_tile_tensor[.int64]()).rank - 2](
+                dilation
+            ),
+            pad_d,
+            pad_h,
+            pad_w,
+            output_fn,
+            Optional(ctx.assert_cpu_target()),
+        )
+
+
+@extensibility.register("mo.conv_transpose", type="gpu")
+struct ConvTransposeGPU:
+    """Registers the `mo.conv_transpose` graph op for GPU devices."""
+
+    @staticmethod
+    def execute[
+        input_layout: StaticString,
+        filter_layout: StaticString,
+        has_epilogue_fusion: Bool,
+        target: StaticString,
+    ](
+        output: FusedOutputTensor[...],
+        input: InputTensor[rank=output.rank, ...],
+        filter: InputTensor,
+        strides: InputTensor[rank=1, ...],
+        dilation: InputTensor[rank=1, ...],
+        paddings: InputTensor[rank=1, ...],
+        output_paddings: InputTensor[rank=1, ...],
+        ctx: DeviceContext,
+    ) capturing raises:
         @inline(.always)
         def output_fn[
             _dtype: DType, _width: SIMDLength, _alignment: Int = 1
-        ](coords: Coord, val: SIMD[_dtype, _width]):
+        ](coords: Coord, val: SIMD[_dtype, _width]) {var output}:
             output._lambda_store[width=_width, element_alignment=_alignment](
                 coords, rebind[SIMD[output.dtype, _width]](val)
             )
 
-        comptime filter_packed = filter_layout == "FRSCf" or filter_layout == "FQRSCf"
-        comptime filter_is_cfrs = filter_layout == "CFRS"
+        comptime assert (
+            input.rank == 4 and filter.rank == 4
+        ), "only rank 4 tensor is supported on cuda gpu"
+        comptime assert (
+            filter_layout != "FRSCf" and filter_layout != "FQRSCf"
+        ), "only unpacked filter is supported on cuda gpu"
 
-        comptime if is_cpu[target]():
-            conv_transposed_cpu[
-                filter_packed,
-                filter_is_cfrs,
-                has_epilogue_fusion,
-                output_fn,
-            ](
-                output.to_tile_tensor[.int64](),
-                input.to_tile_tensor[.int64](),
-                filter.to_tile_tensor[.int64](),
-                stride_tuple,
-                dilation_tuple,
-                pad_d,
-                pad_h,
-                pad_w,
-                Optional(ctx.assert_cpu_target()),
-            )
-        else:
-            comptime assert (
-                input.rank == 4 and filter.rank == 4
-            ), "only rank 4 tensor is supported on cuda gpu"
-            comptime assert (
-                filter_packed == False
-            ), "only unpacked filter is supported on cuda gpu"
+        _check_conv_transpose_attrs[input.rank - 2](
+            strides, dilation, paddings, output_paddings
+        )
 
-            var pad_tuple = IndexList[
-                type_of(input.to_tile_tensor[.int64]()).rank - 2
-            ](0)
+        var pad_tuple = IndexList[
+            type_of(input.to_tile_tensor[.int64]()).rank - 2
+        ](0)
+        pad_tuple[0] = Int(paddings[0])
+        pad_tuple[1] = Int(paddings[2])
 
-            comptime if input.rank == 4:
-                pad_tuple[0] = pad_h[0]
-                pad_tuple[1] = pad_w[0]
-
-            conv_transposed_gpu[
-                input.dtype,
-                filter.dtype,
-                output.dtype,
-                elementwise_epilogue=Optional[elementwise_simd_epilogue_type](
-                    output_fn
-                ) if has_epilogue_fusion else Optional[
-                    elementwise_simd_epilogue_type
-                ](),
-            ](
-                output.to_tile_tensor[.int64](),
-                input.to_tile_tensor[.int64](),
-                filter.to_tile_tensor[.int64](),
-                stride_tuple,
-                dilation_tuple,
-                pad_tuple,
-                ctx,
-            )
+        conv_transposed_gpu[
+            input.dtype,
+            filter.dtype,
+            output.dtype,
+            has_epilogue_fusion,
+        ](
+            output.to_tile_tensor[.int64](),
+            input.to_tile_tensor[.int64](),
+            filter.to_tile_tensor[.int64](),
+            _index_list[type_of(input.to_tile_tensor[.int64]()).rank - 2](
+                strides
+            ),
+            _index_list[type_of(input.to_tile_tensor[.int64]()).rank - 2](
+                dilation
+            ),
+            pad_tuple,
+            output_fn,
+            ctx,
+        )
 
 
 @extensibility.register_shape_function("mo.conv_transpose")

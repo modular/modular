@@ -28,7 +28,8 @@ from the HF config's ``mlp_layer_types``.
 from __future__ import annotations
 
 import functools
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterable, Sequence
+from pathlib import Path
 from typing import Any
 
 from max import tree
@@ -37,18 +38,23 @@ from max.graph import (
     BufferType,
     BufferValue,
     DeviceRef,
+    Graph,
     ShardingStrategy,
     TensorType,
     TensorValue,
     TensorValueLike,
+    Type,
+    Value,
     ops,
 )
+from max.graph import Module as GraphModule
 from max.graph.quantization import QuantizationEncoding
 from max.nn.comm import Signals
 from max.nn.comm.ep import EPBatchManager
 from max.nn.data_parallelism import split_batch_replicated
 from max.nn.embedding import VocabParallelEmbedding
 from max.nn.kv_cache import (
+    KVCacheInputsPerDevice,
     KVCacheParamInterface,
     PagedCacheValues,
 )
@@ -560,4 +566,79 @@ class Laguna(DistributedLogitsPostprocessMixin, Module):
             + signal_buffer_types
             + flattened_kv_types
             + ep_input_types
+        )
+
+    def trace(
+        self,
+        *input_types: Type[Any],
+        name: str | None = None,
+        module: GraphModule | None = None,
+        custom_extensions: Iterable[Path] = (),
+        is_device_graph: bool = False,
+    ) -> Graph:
+        """Traces the graph, whose inputs are :meth:`input_types`.
+
+        Adapts the flat graph inputs to :meth:`__call__`: splits them into
+        the batch, the data-parallel splits, a signal buffer per device, the
+        KV cache and the expert-parallel buffers.
+
+        Args:
+            *input_types: The graph's input types, as :meth:`input_types`
+                returns them.
+            name: The name of the graph. Defaults to the class's qualified
+                name.
+            module: The MLIR module to add the graph to. Defaults to a new
+                module.
+            custom_extensions: Paths to custom kernel libraries the graph
+                uses.
+            is_device_graph: Whether to build a device graph.
+
+        Returns:
+            The traced :class:`~max.graph.Graph`.
+        """
+        n_devices = len(self.devices)
+
+        def forward(*inputs: Value[Any]) -> tuple[TensorValue, ...]:
+            inputs_iter = iter(inputs)
+            tokens = next(inputs_iter)
+            input_row_offsets = next(inputs_iter)
+            return_n_logits = next(inputs_iter)
+            data_parallel_splits = None
+            host_input_row_offsets = None
+            if self.config.data_parallel_degree > 1:
+                data_parallel_splits = next(inputs_iter).tensor
+                host_input_row_offsets = next(inputs_iter).tensor
+
+            signal_buffers = [
+                next(inputs_iter).buffer for _ in range(n_devices)
+            ]
+            num_kv_inputs = len(self.kv_params.flattened_kv_inputs())
+            kv_inputs = [next(inputs_iter) for _ in range(num_kv_inputs)]
+            kv_collections = tree.leaves(
+                self.kv_params.unflatten_kv_inputs(iter(kv_inputs)),
+                leaf=KVCacheInputsPerDevice,
+            )
+            ep_inputs: list[TensorValue | BufferValue] = []
+            for value in inputs_iter:
+                assert isinstance(value, TensorValue | BufferValue)
+                ep_inputs.append(value)
+
+            return self(
+                tokens.tensor,
+                kv_collections,
+                return_n_logits.tensor,
+                input_row_offsets.tensor,
+                signal_buffers,
+                ep_inputs,
+                data_parallel_splits,
+                host_input_row_offsets,
+            )
+
+        return Graph(
+            type(self).__qualname__ if name is None else name,
+            forward,
+            input_types=input_types,
+            custom_extensions=list(custom_extensions),
+            module=module,
+            is_device_graph=is_device_graph,
         )

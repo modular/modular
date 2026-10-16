@@ -16,7 +16,7 @@ These are Mojo built-ins, so you don't need to import them.
 """
 
 
-from std.hashlib.hasher import Hasher
+from std.hash.hasher import Hasher
 from std.os import abort
 from std.sys import bit_width_of
 

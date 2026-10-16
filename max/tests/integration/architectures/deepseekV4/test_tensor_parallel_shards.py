@@ -207,14 +207,13 @@ def test_fp8_linears_keep_their_class(
     source, replicas = models
     for replica in replicas:
         for src, rep in zip(_blocks(source), _blocks(replica), strict=True):
-            for name in ("wq_a", "wq_b", "wkv", "wo_b"):
+            # ``wo_a`` is stored fp8 too and dequantized in the graph.
+            for name in ("wq_a", "wq_b", "wkv", "wo_a", "wo_b"):
                 assert isinstance(getattr(src.attn, name), DeepseekV4Fp8Linear)
                 assert isinstance(getattr(rep.attn, name), DeepseekV4Fp8Linear)
                 assert getattr(rep.attn, name).weight.dtype == (
                     DType.float8_e4m3fn
                 )
-            # ``wo_a`` is bf16 in the reference and host-dequantized.
-            assert type(rep.attn.wo_a) is Linear
 
 
 @pytest.mark.parametrize("quantized", [True, False])

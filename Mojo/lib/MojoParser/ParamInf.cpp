@@ -1276,8 +1276,7 @@ LogicalResult ParamInf::finalizeWithUnbound() {
 
   auto emitInferenceFailure = [&](size_t paramIdx) {
     MojoInflightDiag &diag = getMojoDiag(paramBindings.getExprLoc());
-    if (declIfKnown &&
-        isa_and_nonnull<StructDeclOp>(declIfKnown->getIfOperation()))
+    if (isa_and_nonnull<StructASTDecl>(declIfKnown))
       diag << "'" << *declIfKnown->getUserNameIfOperation() << "' ";
 
     {
@@ -1807,11 +1806,8 @@ LogicalResult CallParamInf::inferCTADParams() {
 
   // We need to convert named parameters like "T", which are ParamDeclRefAttr
   // into ParamIndexRefAttr(0) style of representation.
-  if (auto structDecl =
-          dyn_cast_or_null<StructDeclOp>(decl->getIfOperation())) {
-    IndexRefRemapper remapper(structDecl.getParams(), /*resultParams*/ {});
-    selfType = remapper.replace(selfType.mlirType);
-  }
+  IndexRefRemapper remapper(decl->getOp().getParams(), /*resultParams*/ {});
+  selfType = remapper.replace(selfType.mlirType);
 
   // If passing self by reference, wrap the Self type with the RefType
   // paraphernalia like origins.

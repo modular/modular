@@ -66,12 +66,12 @@ from max.runtime.tracing import Trace, TraceLevel, trace_arg
 from std.utils.index import Index, IndexList
 
 from .conv_utils import (
+    ConvEpilogueFn,
     ConvInfoStatic,
     ConvPartition,
     ConvShape,
+    ConvSimdEpilogueFn,
     align_down_residual,
-    elementwise_epilogue_type,
-    elementwise_simd_epilogue_type,
     get_conv_num_tasks,
     get_conv_shape,
     get_conv_tile_shape,
@@ -428,7 +428,8 @@ struct ConvTransposedPacked[
     filter_type: DType,
     output_type: DType,
     conv_attr: ConvInfoStatic[conv_attr_rank],
-    elementwise_epilogue: Optional[elementwise_epilogue_type] = None,
+    has_epilogue: Bool,
+    EpilogueFnType: ConvEpilogueFn,
 ](ImplicitlyCopyable):
     """Holds the packed tensors and partition state for one task of a direct transposed convolution.
 
@@ -455,8 +456,9 @@ struct ConvTransposedPacked[
         output_type: Element type of the output tensor.
         conv_attr: Static convolution attributes carrying strides, pads,
             dilations, and group count.
-        elementwise_epilogue: Optional elementwise epilogue applied to the output
-            after accumulation (defaults to `None`).
+        has_epilogue: True when `epilogue_fn` is applied to the output after
+            accumulation.
+        EpilogueFnType: Type of the epilogue function.
     """
 
     var output: TileTensor[
@@ -490,7 +492,12 @@ struct ConvTransposedPacked[
 
     var cf_tile_size: DynamicCoord[.int64, 2]
 
+    var epilogue_fn: Self.EpilogueFnType
+
+    # `epilogue_fn` reads back the rows of `output` that `run` writes, which
+    # is safe: each row is read only after it has been fully written.
     @staticmethod
+    @__unsafe_nested_origins_read_only
     def run(
         output: TileTensor[
             mut=True,
@@ -521,6 +528,7 @@ struct ConvTransposedPacked[
             ...,
         ],
         conv_shape: ConvShape[Self.conv_attr_rank],
+        epilogue_fn: Self.EpilogueFnType,
         ctx: Optional[DeviceContext.CPU] = None,
     ) raises:
         comptime assert input.rank - 2 == Self.conv_attr_rank
@@ -578,7 +586,8 @@ struct ConvTransposedPacked[
                 Self.filter_type,
                 Self.output_type,
                 Self.conv_attr,
-                elementwise_epilogue=Self.elementwise_epilogue,
+                Self.has_epilogue,
+                Self.EpilogueFnType,
             ](
                 output,
                 input,
@@ -586,6 +595,7 @@ struct ConvTransposedPacked[
                 conv_shape,
                 partition,
                 Coord(task_tile_size),
+                epilogue_fn,
             )
             instance._batch_group_loop()
 
@@ -1024,20 +1034,22 @@ struct ConvTransposedPacked[
             self.output.ptr + n * num_rows * self.conv_shape.f + f_offset
         )
 
-        comptime if case .Some(epilogue) = Self.elementwise_epilogue:
+        comptime if Self.has_epilogue:
             var output_ptr = output_base
 
             comptime if Self.InputLayoutType.rank == 4:  # 2D ConvTransposed.
                 for ho in range(self.conv_shape.ho()):
                     for wo in range(self.conv_shape.wo()):
-                        epilogue((n, ho, wo, f_offset), self.partition.f_size)
+                        self.epilogue_fn(
+                            (n, ho, wo, f_offset), self.partition.f_size
+                        )
                         output_ptr += self.conv_shape.f
 
             elif Self.InputLayoutType.rank == 5:  # 3D ConvTransposed.
                 for do in range(self.conv_shape.do()):
                     for ho in range(self.conv_shape.ho()):
                         for wo in range(self.conv_shape.wo()):
-                            epilogue(
+                            self.epilogue_fn(
                                 (n, do, ho, wo, f_offset),
                                 self.partition.f_size,
                             )
@@ -1539,11 +1551,15 @@ def pack_filter(
 # ===----------------------------------------------------------------------=== #
 
 
+# `elementwise_lambda` may read and write `output`, which is safe: it is
+# applied to each output row only after that row has been fully written.
+@__unsafe_nested_origins_read_only
 def conv_transposed_cpu[
+    EpilogueFnType: ConvSimdEpilogueFn,
+    //,
     filter_packed: Bool,
     filter_is_cfrs: Bool,
     has_epilogue_fusion: Bool,
-    elementwise_lambda: elementwise_simd_epilogue_type,
 ](
     output: TileTensor[mut=True, address_space=.GENERIC, ...],
     input: TileTensor[mut=False, address_space=.GENERIC, ...],
@@ -1553,6 +1569,7 @@ def conv_transposed_cpu[
     pad_d: IndexList[2],
     pad_h: IndexList[2],
     pad_w: IndexList[2],
+    elementwise_lambda: EpilogueFnType,
     ctx: Optional[DeviceContext.CPU] = None,
 ) raises:
     """Runs a transposed convolution on the CPU using the direct register-tiled kernel.
@@ -1562,10 +1579,10 @@ def conv_transposed_cpu[
     elementwise epilogue.
 
     Parameters:
+        EpilogueFnType: Type of `elementwise_lambda` (inferred).
         filter_packed: Whether the filter is already in packed FRSCf layout.
         filter_is_cfrs: Whether the filter is in CFRS layout, which is unsupported.
         has_epilogue_fusion: Whether to fuse an elementwise epilogue into the kernel.
-        elementwise_lambda: Elementwise epilogue closure applied to each output row segment.
 
     Args:
         output: Output tensor that receives the transposed convolution result.
@@ -1576,6 +1593,8 @@ def conv_transposed_cpu[
         pad_d: Padding in the depth dimension.
         pad_h: Padding in the height dimension.
         pad_w: Padding in the width dimension.
+        elementwise_lambda: Elementwise epilogue closure applied to each output
+            vector when `has_epilogue_fusion` is set.
         ctx: Optional device context used to query the parallelism level.
     """
 
@@ -1649,14 +1668,13 @@ def conv_transposed_cpu[
 
         # The closure updates a row segment of the output.
         @inline(.always)
-        @__parameter
-        def elementwise_epilogue(coords: Coord, f_size: Int):
+        def elementwise_epilogue(coords: Coord, f_size: Int) {imm}:
             comptime simd_size = simd_width_of[output.dtype]()
             comptime input_rank = input.rank
             comptime assert coords.rank == input_rank
 
             @inline(.always)
-            def body[width: Int](idx: Int) {coords, output, mut}:
+            def body[width: Int](idx: Int) {coords, output, imm}:
                 # Coordinates of the current index.
                 var curr_coords = coords
                 curr_coords.replace_dynamic[input_rank - 1](
@@ -1678,10 +1696,11 @@ def conv_transposed_cpu[
             filter.dtype,
             output.dtype,
             conv_attr,
-            Optional[elementwise_epilogue_type](
-                elementwise_epilogue
-            ) if has_epilogue_fusion else None,
-        ].run(output, input, packed_filter, conv_shape, ctx)
+            has_epilogue_fusion,
+            type_of(elementwise_epilogue),
+        ].run(
+            output, input, packed_filter, conv_shape, elementwise_epilogue, ctx
+        )
 
         comptime if not filter_packed:
             dealloc(
@@ -1697,10 +1716,12 @@ def conv_transposed_cpu[
 
 
 def conv_transposed_gpu[
+    EpilogueFnType: ConvSimdEpilogueFn,
+    //,
     input_type: DType,
     filter_type: DType,
     output_type: DType,
-    elementwise_epilogue: Optional[elementwise_simd_epilogue_type] = None,
+    has_epilogue_fusion: Bool,
 ](
     output: TileTensor[mut=True, output_type, address_space=.GENERIC, ...],
     input: TileTensor[mut=False, input_type, address_space=.GENERIC, ...],
@@ -1708,6 +1729,7 @@ def conv_transposed_gpu[
     stride: IndexList[input.rank - 2],
     dilation: IndexList[input.rank - 2],
     padding: IndexList[input.rank - 2],
+    elementwise_epilogue: EpilogueFnType,
     ctx: DeviceContext,
 ) raises:
     """Runs a transposed convolution on the GPU via the cuDNN backward-data path.
@@ -1716,10 +1738,12 @@ def conv_transposed_gpu[
     is provided, applies it as a separate elementwise pass over a temporary buffer.
 
     Parameters:
+        EpilogueFnType: Type of `elementwise_epilogue` (inferred).
         input_type: Element type of the input tensor.
         filter_type: Element type of the filter tensor.
         output_type: Element type of the output tensor.
-        elementwise_epilogue: Optional elementwise epilogue closure applied after the convolution.
+        has_epilogue_fusion: Whether to apply `elementwise_epilogue` after the
+            convolution.
 
     Args:
         output: Output tensor that receives the transposed convolution result.
@@ -1728,9 +1752,11 @@ def conv_transposed_gpu[
         stride: Stride along each spatial axis.
         dilation: Dilation value along each spatial axis of the filter.
         padding: Padding along each spatial axis.
+        elementwise_epilogue: Elementwise epilogue closure applied after the
+            convolution when `has_epilogue_fusion` is set.
         ctx: Device context used to access the cuDNN handle and device buffers.
     """
-    comptime if case .Some(epilogue) = elementwise_epilogue:
+    comptime if has_epilogue_fusion:
         var output_tmp_data = ctx.enqueue_create_buffer[output_type](
             output.num_elements()
         )
@@ -1754,7 +1780,7 @@ def conv_transposed_gpu[
             comptime align = align_of[SIMD[output_type, _width]]()
             var idx = output_tmp.layout(coords)
             var vec = output_tmp.raw_load[width=_width, alignment=align](idx)
-            epilogue(coords, vec)
+            elementwise_epilogue(coords, vec)
 
         elementwise[simd_width_of[output_type](), target="gpu"](
             epilogue_wrapper, output.layout.shape_coord(), ctx
@@ -1801,10 +1827,10 @@ def _conv_transposed_cudnn[
             cudnn_handle[].ptr_filter_desc,
             cudnnDataType_t.CUDNN_DATA_FLOAT,
             cudnnTensorFormat_t.CUDNN_TENSOR_NCHW,  # cudnn documentation correction: cudnnSetFilter4dDescriptor() takes CKRS, not KCRS
-            Int16(filter.dim[0]()),  # C (out channels)
-            Int16(filter.dim[1]()),  # K (in channels)
-            Int16(filter.dim[2]()),  # R (kernel height)
-            Int16(filter.dim[3]()),  # S (kernel width)
+            Int32(filter.dim[0]()),  # C (out channels)
+            Int32(filter.dim[1]()),  # K (in channels)
+            Int32(filter.dim[2]()),  # R (kernel height)
+            Int32(filter.dim[3]()),  # S (kernel width)
         )
     )
 
@@ -1813,10 +1839,10 @@ def _conv_transposed_cudnn[
             cudnn_handle[].ptr_input_desc,
             cudnnTensorFormat_t.CUDNN_TENSOR_NCHW,
             cudnnDataType_t.CUDNN_DATA_FLOAT,
-            Int16(input.dim[0]()),  # N
-            Int16(input.dim[1]()),  # C_in
-            Int16(input.dim[2]()),  # H_in
-            Int16(input.dim[3]()),  # W_in
+            Int32(input.dim[0]()),  # N
+            Int32(input.dim[1]()),  # C_in
+            Int32(input.dim[2]()),  # H_in
+            Int32(input.dim[3]()),  # W_in
         )
     )
 
@@ -1825,22 +1851,22 @@ def _conv_transposed_cudnn[
             cudnn_handle[].ptr_output_desc,
             cudnnTensorFormat_t.CUDNN_TENSOR_NCHW,
             cudnnDataType_t.CUDNN_DATA_FLOAT,
-            Int16(output.dim[0]()),  # N
-            Int16(output.dim[1]()),  # C_out
-            Int16(output.dim[2]()),  # H_out
-            Int16(output.dim[3]()),  # W_out
+            Int32(output.dim[0]()),  # N
+            Int32(output.dim[1]()),  # C_out
+            Int32(output.dim[2]()),  # H_out
+            Int32(output.dim[3]()),  # W_out
         )
     )
 
     check_cudnn_error(
         cudnnSetConvolution2dDescriptor(
             cudnn_handle[].ptr_conv_desc,
-            Int16(padding[0]),
-            Int16(padding[1]),
-            Int16(stride[0]),
-            Int16(stride[1]),
-            Int16(dilation[0]),
-            Int16(dilation[1]),
+            Int32(padding[0]),
+            Int32(padding[1]),
+            Int32(stride[0]),
+            Int32(stride[1]),
+            Int32(dilation[0]),
+            Int32(dilation[1]),
             cudnnConvolutionMode_t.CUDNN_CROSS_CORRELATION,
             cudnnDataType_t.CUDNN_DATA_FLOAT,
         )

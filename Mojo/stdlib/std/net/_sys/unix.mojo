@@ -14,11 +14,33 @@
 platforms, Linux and macOS.
 """
 
-from std.ffi import c_int, c_size_t, c_ssize_t, c_uint, external_call
+from std.ffi import (
+    c_int,
+    c_long,
+    c_size_t,
+    c_ssize_t,
+    c_uint,
+    external_call,
+)
 from std.sys.info import platform_map, platform_type_map
 
-from .linux import sockaddr as linux_sockaddr
-from .macos import sockaddr as macos_sockaddr
+from .inet import SockaddrIn, SockaddrIn6
+from .linux import (
+    AF_INET6 as linux_AF_INET6,
+    sockaddr as linux_sockaddr,
+    sockaddr_in as linux_sockaddr_in,
+    sockaddr_in6 as linux_sockaddr_in6,
+    sockaddr_storage as linux_sockaddr_storage,
+    sockaddr_un as linux_sockaddr_un,
+)
+from .macos import (
+    AF_INET6 as macos_AF_INET6,
+    sockaddr as macos_sockaddr,
+    sockaddr_in as macos_sockaddr_in,
+    sockaddr_in6 as macos_sockaddr_in6,
+    sockaddr_storage as macos_sockaddr_storage,
+    sockaddr_un as macos_sockaddr_un,
+)
 
 comptime socklen_t = c_uint
 """C `socklen_t`: the size of a socket address or option value, in bytes."""
@@ -38,7 +60,9 @@ comptime AF_UNIX: c_int = 1
 """Unix domain (local) sockets."""
 comptime AF_INET: c_int = 2
 """IPv4 internet protocols."""
-comptime AF_INET6: c_int = constant["AF_INET6", linux=10, macos=30]()
+comptime AF_INET6: c_int = constant[
+    "AF_INET6", linux=linux_AF_INET6, macos=macos_AF_INET6
+]()
 """IPv6 internet protocols."""
 
 # ===----------------------------------------------------------------------=== #
@@ -108,6 +132,36 @@ comptime TCP_NODELAY: c_int = 1
 """Disable Nagle's algorithm (level `IPPROTO_TCP`)."""
 
 # ===----------------------------------------------------------------------=== #
+# IP option names
+# ===----------------------------------------------------------------------=== #
+
+comptime IP_TTL: c_int = constant["IP_TTL", linux=2, macos=4]()
+"""Time-to-live of outgoing unicast packets (level `IPPROTO_IP`)."""
+comptime IP_MULTICAST_TTL: c_int = constant[
+    "IP_MULTICAST_TTL", linux=33, macos=10
+]()
+"""Time-to-live of outgoing multicast packets; takes a `u_char`."""
+comptime IP_MULTICAST_LOOP: c_int = constant[
+    "IP_MULTICAST_LOOP", linux=34, macos=11
+]()
+"""Loop outgoing multicast packets back to local sockets; takes a `u_char`."""
+
+# ===----------------------------------------------------------------------=== #
+# IPv6 option names
+# ===----------------------------------------------------------------------=== #
+
+comptime IPV6_MULTICAST_HOPS: c_int = constant[
+    "IPV6_MULTICAST_HOPS", linux=18, macos=10
+]()
+"""Hop limit of outgoing multicast packets (level `IPPROTO_IPV6`)."""
+comptime IPV6_MULTICAST_LOOP: c_int = constant[
+    "IPV6_MULTICAST_LOOP", linux=19, macos=11
+]()
+"""Loop outgoing multicast packets back to local sockets."""
+comptime IPV6_V6ONLY: c_int = constant["IPV6_V6ONLY", linux=26, macos=27]()
+"""Restrict an IPv6 socket to IPv6 traffic."""
+
+# ===----------------------------------------------------------------------=== #
 # `send` and `recv` flags
 # ===----------------------------------------------------------------------=== #
 
@@ -161,16 +215,87 @@ comptime O_NONBLOCK: c_int = constant[
 ]()
 """Non-blocking file status flag."""
 
+# ===----------------------------------------------------------------------=== #
+# `fcntl` commands
+# ===----------------------------------------------------------------------=== #
+
+comptime F_GETFL: c_int = 3
+"""Get the file status flags."""
+comptime F_SETFL: c_int = 4
+"""Set the file status flags."""
+comptime F_DUPFD_CLOEXEC: c_int = constant[
+    "F_DUPFD_CLOEXEC", linux=1030, macos=67
+]()
+"""Duplicate a descriptor with close-on-exec set on the copy."""
+
+# ===----------------------------------------------------------------------=== #
+# Socket option values
+# ===----------------------------------------------------------------------=== #
+
+comptime time_t = c_long
+"""C `time_t`: a time in whole seconds."""
+comptime suseconds_t = Scalar[
+    platform_map[
+        T=DType, "suseconds_t", linux=c_long.dtype, macos=DType.int32
+    ]()
+]
+"""C `suseconds_t`: a time in microseconds."""
+
+
+@fieldwise_init
+struct timeval(TrivialRegisterPassable, Writable):
+    """C `struct timeval`: the value of `SO_RCVTIMEO` and `SO_SNDTIMEO`."""
+
+    var tv_sec: time_t
+    var tv_usec: suseconds_t
+
+
+@fieldwise_init
+struct linger(TrivialRegisterPassable, Writable):
+    """C `struct linger`: the value of `SO_LINGER`."""
+
+    var l_onoff: c_int
+    var l_linger: c_int
+
 
 # ===----------------------------------------------------------------------=== #
 # Socket addresses
 # ===----------------------------------------------------------------------=== #
 
 comptime sockaddr = platform_type_map[
+    Trait=Copyable,
     linux=linux_sockaddr,
     macos=macos_sockaddr,
 ]
 """The compilation target's C `struct sockaddr`."""
+
+comptime sockaddr_in = platform_type_map[
+    Trait=SockaddrIn,
+    linux=linux_sockaddr_in,
+    macos=macos_sockaddr_in,
+]
+"""The compilation target's C `struct sockaddr_in`."""
+
+comptime sockaddr_in6 = platform_type_map[
+    Trait=SockaddrIn6,
+    linux=linux_sockaddr_in6,
+    macos=macos_sockaddr_in6,
+]
+"""The compilation target's C `struct sockaddr_in6`."""
+
+comptime sockaddr_un = platform_type_map[
+    Trait=Copyable,
+    linux=linux_sockaddr_un,
+    macos=macos_sockaddr_un,
+]
+"""The compilation target's C `struct sockaddr_un`."""
+
+comptime sockaddr_storage = platform_type_map[
+    Trait=Copyable,
+    linux=linux_sockaddr_storage,
+    macos=macos_sockaddr_storage,
+]
+"""The compilation target's C `struct sockaddr_storage`."""
 
 
 # ===----------------------------------------------------------------------=== #
@@ -395,3 +520,41 @@ def getsockopt(
     return external_call["getsockopt", c_int](
         sockfd, level, optname, optval, optlen
     )
+
+
+def sendto(
+    sockfd: c_int,
+    buf: ImmPointer[UInt8, _],
+    len: c_size_t,
+    flags: c_int,
+    dest_addr: ImmPointer[sockaddr, _],
+    addrlen: socklen_t,
+) -> c_ssize_t:
+    """C `sendto(2)`: sends bytes to the given address."""
+    return external_call["sendto", c_ssize_t](
+        sockfd, buf, len, flags, dest_addr, addrlen
+    )
+
+
+def recvfrom(
+    sockfd: c_int,
+    buf: MutPointer[UInt8, _],
+    len: c_size_t,
+    flags: c_int,
+    src_addr: OptionalMutPointer[sockaddr, _],
+    addrlen: OptionalMutPointer[socklen_t, _],
+) -> c_ssize_t:
+    """C `recvfrom(2)`: receives bytes and the address they came from."""
+    return external_call["recvfrom", c_ssize_t](
+        sockfd, buf, len, flags, src_addr, addrlen
+    )
+
+
+def socketpair(
+    domain: c_int,
+    type: c_int,
+    protocol: c_int,
+    sv: MutPointer[Array[c_int, 2], _],
+) -> c_int:
+    """C `socketpair(2)`: creates a pair of connected sockets."""
+    return external_call["socketpair", c_int](domain, type, protocol, sv)

@@ -16,7 +16,7 @@ from std.reflection.location import SourceLocation
 
 from std.utils.coord import Coord
 from std.utils.index import IndexList
-from std.math.math import _ExpPluginHookFnType, _TanhPluginHookFnType
+from std.math.math import _UnaryMathPluginHookFnType
 from std.memory.stack_allocation import _StackAllocationPluginHookFnType
 from std.memory.unsafe_pointer import _UnsafeDanglingPluginHookFnType
 from std.io.io import _PrintEmitPluginHookFnType
@@ -79,10 +79,20 @@ trait PluginHooks:
     # Math & Algorithm Operations
     # ===------------------------------------------------------------------=== #
 
-    comptime exp_fn: OptionalReg[_ExpPluginHookFnType] = None
-    """Elementwise exponential override.
+    comptime unary_math_fn[
+        name: StaticString, dtype: DType, width: Int
+    ]: OptionalReg[_UnaryMathPluginHookFnType] = None
+    """Elementwise override for the `std.math` function called `name`.
+
+    Consulted by `exp`, `exp2`, `sqrt`, `rsqrt`, `sin`, `cos`, and `tanh`
+    for floating-point inputs, before the stdlib converts the input to another
+    `dtype`, so the hook sees the caller's `dtype`. Returning `None` for a
+    `name`, `dtype`, and `width` keeps the stdlib's own lowering for that
+    case. The hook is not called when the function is evaluated at compile
+    time, because the compile-time interpreter cannot run backend intrinsics.
 
     Parameters:
+        name: The `std.math` function being lowered, such as `"sqrt"`.
         dtype: The `dtype` of the input and output SIMD vector.
         width: The width of the input and output SIMD vector.
 
@@ -90,23 +100,18 @@ trait PluginHooks:
         x: The input SIMD vector.
 
     Returns:
-        Elementwise `exp(x)` computed on the vendor backend.
+        Elementwise `name(x)` computed on the vendor backend.
     """
 
-    comptime tanh_fn[dtype: DType, width: Int]: OptionalReg[
-        _TanhPluginHookFnType
-    ] = None
-    """Elementwise hyperbolic tangent override.
+    comptime flushes_subnormals[dtype: DType]: Bool = False
+    """Whether the target flushes `dtype` subnormals to zero.
+
+    A target that does reads subnormal operands as zero and flushes subnormal
+    results of arithmetic and conversions. `std.math` then rebuilds those
+    values from their bits so subnormal results are not lost.
 
     Parameters:
-        dtype: The `dtype` of the input and output SIMD vector.
-        width: The width of the input and output SIMD vector.
-
-    Args:
-        x: The input SIMD vector.
-
-    Returns:
-        Elementwise `tanh(x)` computed on the vendor backend.
+        dtype: The floating-point `dtype` being queried.
     """
 
     comptime reduce_generator_fn: OptionalReg[

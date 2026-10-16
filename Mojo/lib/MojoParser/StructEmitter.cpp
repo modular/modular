@@ -51,18 +51,16 @@ fieldConditionallyConformsToBuiltin(ASTType fieldType, StringRef traitName,
   if (!paramType)
     return {};
 
-  ASTDecl *requiredTraitDecl =
+  TraitASTDecl *traitDecl =
       shared.lookupBuiltinTrait(traitName, structDecl.getLoc());
-  if (!requiredTraitDecl)
+  if (!traitDecl)
     return {};
 
-  auto traitOp = dyn_cast<TraitDeclOp>(requiredTraitDecl->getIfOperation());
-  if (!traitOp)
-    return {};
+  TraitDeclOp traitOp = traitDecl->getOp();
 
   TypedAttr fieldParam = getCanonicalAttr(paramType.getParam());
   SmallVector<TraitSymbolAttr> traitSymbols = {
-      TraitSymbolAttr::get(requiredTraitDecl->getSymbolRef())};
+      TraitSymbolAttr::get(traitDecl->getSymbolRef())};
   auto traitType = TraitType::get(fieldParam.getContext(), traitSymbols);
   auto conformsTo =
       TypeConformsToTraitAttr::get(fieldParam, traitType.getPValue());
@@ -412,7 +410,7 @@ StructEmitter::populateDefaultedTraitFunction(DefASTDecl &fnDecl) {
   assert(result.succeeded() && "failed to resolve signature");
 
   TraitType parentTrait =
-      cast<TraitDeclOp>(parentTraitDecl->getIfOperation()).getCanonicalTrait();
+      cast<TraitASTDecl>(parentTraitDecl)->getOp().getCanonicalTrait();
   SyntheticNode synthNode(structDecl.getLoc());
   CValue selfTypeCValue(structSelfType.mlirType);
   PValue selfAsTrait = emitter.emitMetaTypeToTraitConversion(
@@ -523,11 +521,11 @@ std::pair<FnOp, ASTDecl *> StructEmitter::synthesizeMethodInStruct(
 
 /// Given a struct and a trait declaration, make the struct inherit from the
 /// trait if it does not already.
-static void addTraitParent(StructDeclOp structOp, ASTDecl *traitDecl) {
+static void addTraitParent(StructDeclOp structOp, TraitASTDecl &traitDecl) {
   // Pull in the entire ancestor chain of the new symbol.
   SmallVector<TraitSymbolAttr> newSymbols = {
-      TraitSymbolAttr::get(traitDecl->getSymbolRef())};
-  canonicalizeTraitCompositionSymbols(traitDecl->getShared(), newSymbols);
+      TraitSymbolAttr::get(traitDecl.getSymbolRef())};
+  canonicalizeTraitCompositionSymbols(traitDecl.getShared(), newSymbols);
   // Merge the new canonical symbols with the existing canonical trait symbols.
   TraitType trait = structOp.getCanonicalTrait();
   llvm::append_range(newSymbols, trait.getSymbols());
@@ -1029,10 +1027,10 @@ std::optional<ValueInfo> StructEmitter::addMissingValueMemberStubsToStruct(
     valueInfo->del = synthesizeEmptyDtor();
 
   auto addCopyOrMoveBuiltinTrait = [&](StringRef traitName) {
-    ASTDecl *traitDecl =
+    TraitASTDecl *traitDecl =
         shared.lookupBuiltinTrait(traitName, structDecl.getLoc());
     if (traitDecl) // Don't crash if the builtin trait is not found.
-      addTraitParent(structDeclOp, traitDecl);
+      addTraitParent(structDeclOp, *traitDecl);
   };
 
   if (!valueInfo->copyctor && !structDeclOp.isRegisterPassableTrivial())
@@ -1046,7 +1044,7 @@ std::optional<ValueInfo> StructEmitter::addMissingValueMemberStubsToStruct(
 }
 
 /// Synthesize an unresolved alias into the struct with the specified name .
-ASTDecl *StructEmitter::synthesizeUnresolvedAlias(StringRef name) {
+AliasASTDecl *StructEmitter::synthesizeUnresolvedAlias(StringRef name) {
   auto paramDecl =
       ParamDeclAttr::get(name, LIT::UnresolvedType::get(getContext()));
 
@@ -1055,9 +1053,9 @@ ASTDecl *StructEmitter::synthesizeUnresolvedAlias(StringRef name) {
   auto declOp = AliasDeclOp::create(builder, paramDecl);
 
   // Create an ASTDecl so it can be resolved with name lookup.
-  ASTDecl &aliasDecl = getDeclResolver().addDecl(
+  auto &aliasDecl = cast<AliasASTDecl>(getDeclResolver().addDecl(
       declOp, structDecl.getLoc(), StringAttr::get(getContext(), name),
-      &structDecl, LexerCursor(), LexerCursor(), /*indentation=*/0);
+      &structDecl, LexerCursor(), LexerCursor(), /*indentation=*/0));
   aliasDecl.resolvedness = DeclResolvedness::unparsed;
   return &aliasDecl;
 }
@@ -1116,7 +1114,7 @@ TypedAttr StructEmitter::populateSpecialFnIsTrivial(SpecialFunctionKind kind) {
     return getCanonicalAttr(i1);
   };
 
-  ASTDecl *traitDecl =
+  TraitASTDecl *traitDecl =
       shared.lookupBuiltinTrait(traitName, structDecl.getLoc());
   auto witnessName =
       StringAttr::get(getContext(), Twine(baseName) + "is_trivial");
@@ -1238,8 +1236,8 @@ ASTDecl *LIT::lookupEnumSupportDecl(SharedState &shared, StringRef name,
 }
 
 /// Return the `EnumLike` trait, emitting an error if it is missing.
-static ASTDecl *lookupEnumLikeTrait(SharedState &shared, SMLoc loc) {
-  ASTDecl *traitDecl = shared.lookupBuiltinTrait("EnumLike", loc);
+static TraitASTDecl *lookupEnumLikeTrait(SharedState &shared, SMLoc loc) {
+  TraitASTDecl *traitDecl = shared.lookupBuiltinTrait("EnumLike", loc);
   if (!traitDecl)
     shared.emitError(loc) << "internal error: enums require 'EnumLike'";
   return traitDecl;
@@ -1461,13 +1459,13 @@ LogicalResult StructEmitter::synthesizeEnumMembers() {
   ASTType noneType = shared.lookupBuiltinType("NoneType", structDecl, loc);
   if (!enumStorageDecl || !anyTypeTrait || noneType.isTypeCheckErrorType())
     return failure();
-  auto enumStorageDeclOp =
-      dyn_cast_or_null<StructDeclOp>(enumStorageDecl->getIfOperation());
-  if (!enumStorageDeclOp) {
+  auto *enumStorageStruct = dyn_cast<StructASTDecl>(enumStorageDecl);
+  if (!enumStorageStruct) {
     emitError(loc) << "internal error: '__EnumStorage' in "
                       "'std.builtin._enum' is not a struct";
     return failure();
   }
+  StructDeclOp enumStorageDeclOp = enumStorageStruct->getOp();
 
   FailureOr<std::pair<ParamListAttr, ParamListAttr>> lists =
       computeEnumCaseNamesAndTypes(structDecl, cases, anyTypeTrait, noneType);
@@ -1482,9 +1480,9 @@ LogicalResult StructEmitter::synthesizeEnumMembers() {
       // TODO: the member is a `comptime` value, and one whose type is not
       // `ImplicitlyCopyable` does not materialize at run time, although a case
       // without a payload owns nothing.
-      ASTDecl *aliasDecl = synthesizeUnresolvedAlias(caseName);
+      AliasASTDecl *aliasDecl = synthesizeUnresolvedAlias(caseName);
       aliasDecl->setLoc(caseLoc);
-      auto aliasOp = cast<AliasDeclOp>(aliasDecl->getIfOperation());
+      AliasDeclOp aliasOp = aliasDecl->getOp();
       aliasOp->setLoc(caseOp.getLoc());
       continue;
     }
@@ -1511,10 +1509,9 @@ static TypedAttr getEnumCaseIndexValue(IREmitter &emitter, size_t caseIndex,
 /// enum's `_enum_case_types` member lists for it.
 static TypedAttr getEnumCaseTypeValue(ASTDecl &enumDecl, size_t caseIndex) {
   ArrayRef<ASTDecl *> decls = enumDecl.lookupInCurrentScope(kEnumCaseTypesName);
-  auto aliasOp =
-      decls.size() == 1
-          ? dyn_cast_or_null<AliasDeclOp>(decls.front()->getIfOperation())
-          : AliasDeclOp();
+  auto *aliasDecl =
+      decls.size() == 1 ? dyn_cast<AliasASTDecl>(decls.front()) : nullptr;
+  AliasDeclOp aliasOp = aliasDecl ? aliasDecl->getOp() : AliasDeclOp();
   auto types = aliasOp ? dyn_cast_or_null<ParamListAttr>(aliasOp.getValueAttr())
                        : ParamListAttr();
   if (!types || caseIndex >= types.getValues().size())
@@ -1578,8 +1575,8 @@ static bool enumExhaustiveDeclFailedConformance(ASTDecl &enumDecl, SMLoc loc) {
          conformanceDecl.isErroneous();
 }
 
-LogicalResult StructEmitter::populateEnumCaseConstructor(ASTDecl &fnDecl) {
-  auto fn = cast<FnOp>(fnDecl.getIfOperation());
+LogicalResult StructEmitter::populateEnumCaseConstructor(DefASTDecl &fnDecl) {
+  FnOp fn = fnDecl.getOp();
   // The enum's own errors are already diagnosed, and the `EnumLike`
   // conformance reports a wrong `_enum_is_exhaustive`.
   if (structDecl.isErroneous() ||
@@ -1630,8 +1627,8 @@ LogicalResult StructEmitter::populateEnumCaseConstructor(ASTDecl &fnDecl) {
   return success();
 }
 
-LogicalResult StructEmitter::resolveEnumCaseAlias(ASTDecl &aliasDecl) {
-  auto aliasOp = cast<AliasDeclOp>(aliasDecl.getIfOperation());
+LogicalResult StructEmitter::resolveEnumCaseAlias(AliasASTDecl &aliasDecl) {
+  AliasDeclOp aliasOp = aliasDecl.getOp();
   StringRef name = aliasOp.getDeclName();
   auto enumCase = lookupEnumCase(structDeclOp, name);
   if (!enumCase || !getEnumCasePayload(enumCase->second).empty())

@@ -2054,6 +2054,14 @@ ErrorTreeOrSuccess Elaborator::bundleCompileOffloadOp(CompileOffloadOp op,
         });
     symbol = cast<SymbolConstantAttr>(replacer.replace(symbol));
 
+    // The replacer above reaches the offload function's parameters only, so a
+    // struct referenced solely by `opaque_plugin` would never be exported.
+    // `compileOffloads` stamps the rewritten target on the slice.
+    if (target.getOpaquePlugin()) {
+      offloadInfo.slicedTarget =
+          dyn_cast_or_null<TargetInfoAttr>(replacer.replace(Attribute(target)));
+    }
+
     auto iter =
         offloadInfo.symbols.insert({func, OffloadInfo::Group::SymbolInfo{}})
             .first;

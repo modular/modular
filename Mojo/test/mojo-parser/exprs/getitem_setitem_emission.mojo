@@ -13,6 +13,8 @@
 
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
+from std.builtin.builtin_slice import ContiguousSlice
+
 
 struct WeirdArray(Movable where False):
     def __getitem__(self, x: Int) -> Int:
@@ -98,6 +100,28 @@ def test_getitem_slice(a: WeirdArray, i: Int, j: Int, k: Int):
     # CHECK-SAME: :!AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable_RegisterPassable_TrivialRegisterPassable !Int, :!AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable_RegisterPassable_TrivialRegisterPassable !Int>(%i, %j, %k, {{.*}}) :
     # CHECK-NEXT: lit.call {{.*}}@WeirdArray::@"__getitem__{{.*}}(%a, [[SLICE]])
     _ = a[i:j:k]
+
+
+struct ParamAndSliceArray(Movable where False):
+    def __getitem__(self, s: ContiguousSlice) -> Int:
+        return 1
+
+    def __getitem_param__[idx: Int](self) -> Int:
+        return idx
+
+
+# CHECK-LABEL: lit.fn @"test_slice_literal_with_param_getter
+def test_slice_literal_with_param_getter(a: ParamAndSliceArray, i: Int, j: Int):
+    # CHECK: lit.call {{.*}}@ContiguousSlice::@"__init__
+    # CHECK: lit.call {{.*}}@ParamAndSliceArray::@"__getitem__{{.*}}::ContiguousSlice)"
+    _ = a[0:2]
+
+    # CHECK: lit.call {{.*}}@ContiguousSlice::@"__init__
+    # CHECK: lit.call {{.*}}@ParamAndSliceArray::@"__getitem__{{.*}}::ContiguousSlice)"
+    _ = a[i:j]
+
+    # CHECK: lit.call {{.*}}@ParamAndSliceArray::@"__getitem_param__
+    _ = a[3]
 
 
 struct IndexArray(Movable where False):

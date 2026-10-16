@@ -85,6 +85,7 @@ from nn.attention.gpu.mla_graph import (
     mla_prefill_decode_graph_bf16,
 )
 from nn.attention.gpu.mla_index_fp8 import mla_indexer_ragged_float8_paged
+from nn.attention.compress_windows import compress_windows_ragged_paged
 from nn.attention.indexer_score import indexer_score_ragged_paged
 from nn.attention.latent_sparse_attention import (
     latent_sparse_attention_ragged_paged,
@@ -5009,5 +5010,65 @@ struct Struct_indexer_score_ragged_paged:
             base.to_tile_tensor(),
             cutoff.to_tile_tensor(),
             collection.get_key_cache(Int(layer)),
+            context,
+        )
+
+
+@extensibility.register("mo.compress_windows.ragged.paged")
+struct Struct_compress_windows_ragged_paged:
+    """Registers the `mo.compress_windows.ragged.paged` graph op with the graph compiler.
+
+    DeepSeek-V4's compressor over the windows of a ragged chunk, reading the
+    positions before the chunk from a paged state leaf. See
+    `nn.attention.compress_windows`.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        dtype: DType,
+        //,
+        rotate: Bool,
+    ](
+        output: OutputTensor[dtype=dtype, rank=2, ...],
+        kv: InputTensor[dtype=.float32, rank=2, ...],
+        score: InputTensor[dtype=.float32, rank=2, ...],
+        ape: InputTensor[dtype=.float32, rank=2, ...],
+        norm_weight: InputTensor[dtype=dtype, rank=1, ...],
+        freqs: InputTensor[dtype=.float32, rank=3, ...],
+        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+        window_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+        starts: InputTensor[dtype=.int32, rank=1, ...],
+        kv_blocks: MutableInputTensor[dtype=.float32, rank=6, ...],
+        page_stride: InputTensor[dtype=.int64, rank=1, ...],
+        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
+        max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
+        layer: UInt32,
+        epsilon: Float32,
+        context: DeviceContext,
+    ) raises:
+        var collection = generic_get_paged_cache(
+            kv_blocks,
+            page_stride,
+            cache_lengths,
+            kv_lookup_table,
+            max_prompt_length,
+            max_cache_length,
+        )
+        compress_windows_ragged_paged[rotate=rotate](
+            output.to_tile_tensor(),
+            kv.to_tile_tensor(),
+            score.to_tile_tensor(),
+            ape.to_tile_tensor(),
+            norm_weight.to_tile_tensor(),
+            freqs.to_tile_tensor(),
+            input_row_offsets.to_tile_tensor(),
+            window_offsets.to_tile_tensor(),
+            starts.to_tile_tensor(),
+            collection.get_key_cache(Int(layer)),
+            collection.get_value_cache(Int(layer)),
+            epsilon,
             context,
         )

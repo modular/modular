@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# DOC: max/develop/custom-kernels-pytorch.mdx
+# DOC: develop/custom-kernels-pytorch.mdx
 
 from pathlib import Path
 

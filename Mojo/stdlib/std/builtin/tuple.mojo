@@ -20,7 +20,7 @@ from std.format._utils import (
     TypeNames,
     FormatStruct,
 )
-from std.hashlib.hasher import Hasher
+from std.hash.hasher import Hasher
 
 from std.utils._visualizers import lldb_formatter_wrapping_type
 

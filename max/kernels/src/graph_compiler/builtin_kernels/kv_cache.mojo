@@ -377,6 +377,8 @@ struct Struct_rms_norm_kv_cache_ragged_paged:
         cache_dtype: DType,
         //,
         target: StaticString,
+        epsilon: Float32,
+        weight_offset: Float32,
     ](
         kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
         page_stride: InputTensor[dtype=.int64, rank=1, ...],
@@ -385,11 +387,9 @@ struct Struct_rms_norm_kv_cache_ragged_paged:
         max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
         max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
         gamma: InputTensor[dtype=dtype, rank=1, ...],
-        epsilon: Float32,
         layer_idx: UInt32,
         total_seq_len: UInt32,
         input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-        weight_offset: Scalar[dtype=dtype],
         context: DeviceContext,
     ) raises:
         var kv_collection = generic_get_paged_cache(
@@ -404,11 +404,11 @@ struct Struct_rms_norm_kv_cache_ragged_paged:
             target=target,
             multiply_before_cast=multiply_before_cast,
             per_head_norm=per_head_norm,
+            epsilon=epsilon,
+            weight_offset=weight_offset,
         ](
             kv_collection,
             gamma.to_tile_tensor[.int64](),
-            epsilon,
-            weight_offset,
             layer_idx,
             total_seq_len,
             input_row_offsets.to_tile_tensor[.int64](),
@@ -1088,6 +1088,8 @@ struct Struct_rms_norm_value_cache_ragged_paged:
         cache_dtype: DType,
         //,
         target: StaticString,
+        epsilon: Float32,
+        weight_offset: Float32,
     ](
         kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
         page_stride: InputTensor[dtype=.int64, rank=1, ...],
@@ -1096,11 +1098,9 @@ struct Struct_rms_norm_value_cache_ragged_paged:
         max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
         max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
         gamma: InputTensor[dtype=dtype, rank=1, ...],
-        epsilon: Float32,
         layer_idx: UInt32,
         total_seq_len: UInt32,
         input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-        weight_offset: Scalar[dtype=dtype],
         context: DeviceContext,
     ) raises:
         var kv_collection = generic_get_paged_cache(
@@ -1115,11 +1115,11 @@ struct Struct_rms_norm_value_cache_ragged_paged:
             target=target,
             multiply_before_cast=multiply_before_cast,
             per_head_norm=per_head_norm,
+            epsilon=epsilon,
+            weight_offset=weight_offset,
         ](
             kv_collection,
             gamma.to_tile_tensor[.int64](),
-            epsilon,
-            weight_offset,
             layer_idx,
             total_seq_len,
             input_row_offsets.to_tile_tensor[.int64](),

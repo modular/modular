@@ -72,7 +72,7 @@ from nn.kv_cache_ragged import (
 from internal_utils._cache_busting import CacheBustingBuffer
 from internal_utils._utils import InitializationType
 
-from std.math import ceildiv
+from std.math import align_up, ceildiv
 from std.sys import size_of
 from std.utils import IndexList
 
@@ -160,7 +160,7 @@ def bench_shape(
 
     # ---- paged lookup table (sequential distinct blocks; shared by both
     # caches since main/index blocks are separate allocations) ----
-    var lut_cols = ((ceildiv(max_ctx, page_size) + 7) // 8) * 8 + 16
+    var lut_cols = align_up(ceildiv(max_ctx, page_size), 8) + 16
     var lut_host = List[UInt32](length=batch_size * lut_cols, fill=UInt32(0))
     var block_counter = 0
     for b in range(batch_size):

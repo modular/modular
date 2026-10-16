@@ -14,15 +14,17 @@
 
 from __future__ import annotations
 
-from max.graph import TensorValue
 from max.nn.embedding import Embedding
 from max.nn.kv_cache import KVCacheParamInterface, MultiKVCacheParams
-from max.pipelines.speculative.block_driver import BlockDriver
 from max.pipelines.speculative.spec_input_types import SpecDecodeInputTypeSpec
 from typing_extensions import override
 
 from ..dspark_draft.dspark_speculators_draft import DSparkSpeculatorsDraft
-from ..gemma4.block_spec_adapters import SLIDING_KV, Gemma4BlockTarget
+from ..gemma4.block_spec_adapters import (
+    SLIDING_KV,
+    Gemma4BlockDriver,
+    Gemma4BlockTarget,
+)
 from ..gemma4.gemma4 import Gemma4TextModel
 from .model_config import UnifiedDSparkGemma4_31BConfig
 from .spec_adapters import DSparkGemma4_31BProposer
@@ -30,7 +32,7 @@ from .spec_adapters import DSparkGemma4_31BProposer
 __all__ = ["SLIDING_KV", "UnifiedDSparkGemma4_31B"]
 
 
-class UnifiedDSparkGemma4_31B(BlockDriver[TensorValue, TensorValue]):
+class UnifiedDSparkGemma4_31B(Gemma4BlockDriver):
     """Spark + Gemma4-31B: the Speculators block draft on the block driver
 
     The draft ships its own embedding, head and d2t map, so it reuses

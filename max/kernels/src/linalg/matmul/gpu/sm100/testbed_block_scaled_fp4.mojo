@@ -32,6 +32,9 @@ from layout import (
     row_major,
     Idx,
 )
+from .block_scaled_matmul import (
+    blackwell_block_scaled_matmul_tma_umma_warp_specialized,
+)
 from .block_scaled_matmul_small_bn import (
     blackwell_block_scaled_matmul_tma_umma_warp_specialized as _small_bn_kernel,
 )
@@ -42,7 +45,7 @@ from .config import BlockScaledMatmulConfig
 from std.sys import size_of
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
-from linalg.utils import elementwise_epilogue_type
+from linalg.utils import _as_compute_fn
 from linalg.fp4_utils import (
     NVFP4_SF_DTYPE,
     NVFP4_SF_VECTOR_SIZE,
@@ -107,7 +110,8 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     num_clc_pipeline_stages: Int = 2,
     SF_VECTOR_SIZE: Int = NVFP4_SF_VECTOR_SIZE,
     is_small_bn: Bool = False,
-    normal_epilogue: Bool = False,
+    value_epilogue: Bool = False,
+    value_compute: Bool = False,
 ](
     ctx: DeviceContext,
     m: MType,
@@ -146,7 +150,8 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         num_clc_pipeline_stages: Number of CLC pipeline stages to use.
         SF_VECTOR_SIZE: Number of FP4 elements covered by one scale factor.
         is_small_bn: Selects the small-BN (1SM/2SM cooperative) kernel variant.
-        normal_epilogue: Applies a 2x scaling epilogue to verify the lambda runs.
+        value_epilogue: Applies the 2x epilogue as an epilogue closure.
+        value_compute: Applies the 2x epilogue as a compute closure.
 
     Args:
         ctx: Device context used for allocation and kernel dispatch.
@@ -340,33 +345,53 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         is_small_bn=is_small_bn,
     )
 
-    # Epilogue multiplies output by 2 so we can verify the lambda is actually
-    # invoked — if TileWriter skips the lambda the result will be 1x, not 2x,
-    # and the comparison against 2x reference will fail.
-    @__parameter
-    @inline(.always)
-    @__copy_capture(c_tensor)
-    def epilogue_fn[
-        _dtype: DType,
-        width: SIMDLength,
-        *,
-        alignment: Int = 1,
-    ](idx: Coord, val: SIMD[_dtype, width]) capturing -> None:
+    def store_doubled[
+        _dtype: DType, width: SIMDLength, *, alignment: Int
+    ](idx: Coord, val: SIMD[_dtype, width]) {var c_tensor}:
         comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
         var scaled = rebind[SIMD[c_type, width]](val) * Scalar[c_type](2)
         c_tensor.store[alignment=alignment * size_of[c_type]()](idx, scaled)
 
-    comptime epi = Optional[elementwise_epilogue_type](
-        epilogue_fn
-    ) if normal_epilogue else None
+    def double[
+        _dtype: DType, width: SIMDLength, *, alignment: Int
+    ](idx: Coord, val: SIMD[_dtype, width]) -> SIMD[_dtype, width]:
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
+        return val * 2
 
-    comptime if is_small_bn:
-        comptime K_phys = KType.static_value
+    comptime K_phys = KType.static_value
+    comptime if value_epilogue:
+        # `store_doubled` owns `c_tensor`, so `c_ref_tensor` (written by the
+        # reference below) carries the output shape.
+        blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+            transpose_b=transpose_b, K=K_phys, config=matmul_config
+        ](
+            c_ref_tensor,
+            a_tensor,
+            b_tensor,
+            a_scales_tensor,
+            b_scales_tensor,
+            store_doubled,
+            ctx,
+            alpha,
+        )
+    elif value_compute:
+        blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+            transpose_b=transpose_b, K=K_phys, config=matmul_config
+        ](
+            c_tensor,
+            a_tensor,
+            b_tensor,
+            a_scales_tensor,
+            b_scales_tensor,
+            _as_compute_fn(double),
+            ctx,
+            alpha,
+        )
+    elif is_small_bn:
         _small_bn_kernel[
             transpose_b=transpose_b,
             config=matmul_config,
             K=K_phys,
-            elementwise_lambda_fn=epi,
         ](
             c_tensor,
             a_tensor,
@@ -424,7 +449,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     ctx.synchronize()
 
     # When epilogue multiplies by 2, scale reference to match.
-    comptime if normal_epilogue:
+    comptime if value_epilogue or value_compute:
         for i in range(c_host_ref.num_elements()):
             c_host_ref.raw_store(i, c_host_ref.raw_load(i) * Scalar[c_type](2))
 

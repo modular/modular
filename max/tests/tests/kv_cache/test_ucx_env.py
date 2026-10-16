@@ -68,6 +68,12 @@ def _make_ib_device(
     (port / "state").write_text(state + "\n")
 
 
+def _make_gpu(pci_devices: Path, bus_id: str, leaf: Path) -> None:
+    (leaf / "vendor").write_text("0x10de\n")
+    (leaf / "class").write_text("0x030200\n")
+    os.symlink(leaf, pci_devices / bus_id)
+
+
 @pytest.fixture
 def fake_sysfs(tmp_path: Path) -> tuple[Path, Path]:
     """A synthetic /sys with a GPU and three RDMA devices.
@@ -88,7 +94,7 @@ def fake_sysfs(tmp_path: Path) -> tuple[Path, Path]:
 
     pci_devices = tmp_path / "pci_devices"
     pci_devices.mkdir()
-    os.symlink(gpu, pci_devices / "0000:65:00.0")
+    _make_gpu(pci_devices, "0000:65:00.0", gpu)
 
     ib = tmp_path / "infiniband"
     _make_ib_device(ib, "mlx5_same_bridge", near, "InfiniBand", "4: ACTIVE")
@@ -285,6 +291,7 @@ def _patch_topology(
     pci_devices: Path,
     ib: Path,
     tmp_path: Path,
+    bus_id: str = "0000:65:00.0",
 ) -> None:
     """Points configure_ucx_env's NIC probe at a fake sysfs and a usable GPU."""
     monkeypatch.setattr(os, "environ", dict(os.environ))
@@ -293,7 +300,15 @@ def _patch_topology(
     # Empty verbs mapping: don't filter by exposure, whatever the host has.
     no_verbs = tmp_path / "no_verbs"
     monkeypatch.setattr(_ucx_env, "_verbs_usable", lambda: True)
-    monkeypatch.setattr(_ucx_env, "_gpu_pci_bus_id", lambda _: "0000:65:00.0")
+    monkeypatch.setattr(_ucx_env, "_gpu_pci_bus_id", lambda _: bus_id)
+    monkeypatch.setattr(
+        _ucx_env,
+        "_host_gpu_bus_ids",
+        functools.partial(
+            _ucx_env._host_gpu_bus_ids, pci_devices_root=pci_devices
+        ),
+    )
+    monkeypatch.setattr(_ucx_env, "_ethernet_netdevs", lambda: ["eth0"])
     monkeypatch.setattr(
         _ucx_env,
         "local_ib_device",
@@ -346,3 +361,112 @@ def test_configure_ucx_env_pins_same_root_complex_ib(
     configure_ucx_env(_FakeDevice(api="cuda", id=0))
     assert os.environ["UCX_NET_DEVICES"] == "mlx5_same_bridge:1"
     assert "rc" in os.environ["UCX_TLS"].split(",")
+    assert "tcp" not in os.environ["UCX_TLS"].split(",")
+
+
+def _add_gpu_without_local_ib(pci_devices: Path, tmp_path: Path) -> None:
+    """Adds GPU 0000:85:00.0 under pci0000:80, a root complex with no IB."""
+    leaf = _make_pci_leaf(
+        tmp_path / "devices", "pci0000:80", "0000:80:01.0", "0000:85:00.0"
+    )
+    _make_gpu(pci_devices, "0000:85:00.0", leaf)
+
+
+def test_host_gpu_bus_ids_skips_non_gpus(
+    fake_sysfs: tuple[Path, Path], tmp_path: Path
+) -> None:
+    pci_devices, _ = fake_sysfs
+    _add_gpu_without_local_ib(pci_devices, tmp_path)
+    nvswitch = _make_pci_leaf(
+        tmp_path / "devices", "pci0000:90", "0000:90:01.0", "0000:91:00.0"
+    )
+    (nvswitch / "vendor").write_text("0x10de\n")
+    (nvswitch / "class").write_text("0x068000\n")
+    os.symlink(nvswitch, pci_devices / "0000:91:00.0")
+    assert _ucx_env._host_gpu_bus_ids(pci_devices_root=pci_devices) == [
+        "0000:65:00.0",
+        "0000:85:00.0",
+    ]
+
+
+def test_ethernet_netdevs_skips_loopback_ipoib_and_down(
+    tmp_path: Path,
+) -> None:
+    for name, arp_type, state in [
+        ("eth0", "1", "up"),
+        ("v4if0", "1", "up"),
+        ("lo", "772", "unknown"),
+        ("ibp115s0f0", "32", "up"),
+        ("eth1", "1", "down"),
+    ]:
+        (tmp_path / name).mkdir()
+        (tmp_path / name / "type").write_text(arp_type + "\n")
+        (tmp_path / name / "operstate").write_text(state + "\n")
+    assert _ucx_env._ethernet_netdevs(net_class_root=tmp_path) == [
+        "eth0",
+        "v4if0",
+    ]
+
+
+def _am_transports(env: dict[str, str]) -> set[str]:
+    """Network transports a worker with this env can carry NIXL AM on.
+
+    NIXL endpoints need peer-failure handling, so the shared-memory transports
+    (posix, sysv, cma) never qualify, nor do the cuda ones (no am bcopy); only
+    rc and tcp remain. Assumes the fake host's IB device is ``mlx5_*`` and its
+    Ethernet interface is ``eth0``.
+    """
+    tls = env.get("UCX_TLS", "all")
+    if tls == "all":
+        enabled = {"rc", "tcp"}
+    elif tls.startswith("^"):
+        excluded = set(tls[1:].split(","))
+        enabled = {"tcp"} if "ib" in excluded else {"rc", "tcp"}
+    else:
+        enabled = set(tls.split(",")) & {"rc", "tcp"}
+    devices = env.get("UCX_NET_DEVICES", "all").split(",")
+    usable = set()
+    if "rc" in enabled and (
+        "all" in devices or any(d.startswith("mlx5") for d in devices)
+    ):
+        usable.add("rc")
+    if "tcp" in enabled and ("all" in devices or "eth0" in devices):
+        usable.add("tcp")
+    return usable
+
+
+def test_configure_ucx_env_mixed_locality_workers_can_connect(
+    monkeypatch: pytest.MonkeyPatch,
+    fake_sysfs: tuple[Path, Path],
+    tmp_path: Path,
+) -> None:
+    # B200 Coder pods have IB local to GPUs 4-7 only. A worker there pins the
+    # NIC while one on GPU 0 runs UCX_TLS=^ib; without a shared AM-capable
+    # transport, connect() fails with "no active messages transport".
+    pci_devices, ib = fake_sysfs
+    _add_gpu_without_local_ib(pci_devices, tmp_path)
+
+    envs = {}
+    for bus_id in ("0000:65:00.0", "0000:85:00.0"):
+        _patch_topology(monkeypatch, pci_devices, ib, tmp_path, bus_id)
+        configure_ucx_env(_FakeDevice(api="cuda", id=0))
+        envs[bus_id] = {
+            k: os.environ[k]
+            for k in ("UCX_TLS", "UCX_NET_DEVICES")
+            if k in os.environ
+        }
+
+    pinned, no_ib = envs["0000:65:00.0"], envs["0000:85:00.0"]
+    assert pinned["UCX_NET_DEVICES"] == "mlx5_same_bridge:1,eth0"
+    assert {"rc", "tcp"} <= set(pinned["UCX_TLS"].split(","))
+    assert no_ib == {"UCX_TLS": "^ib"}
+    assert _am_transports(pinned) & _am_transports(no_ib)
+
+
+def test_am_transports_finds_no_overlap_without_tcp() -> None:
+    # Guards the model against passing the mixed-locality test vacuously.
+    pinned = {
+        "UCX_TLS": default_ucx_tls(gdr_copy=False),
+        "UCX_NET_DEVICES": "mlx5_0:1",
+    }
+    assert not _am_transports(pinned) & _am_transports({"UCX_TLS": "^ib"})

@@ -47,6 +47,16 @@ def sign(x: Int) -> String:
         return "negative"
 
 
+def describe(x: Int) -> String:
+    match x:
+        case 2:
+            return "is exactly two"
+        case _ if x.is_power_of_two():
+            return "power of two"
+        case _:
+            return "not power of two"
+
+
 @fieldwise_init
 struct Point:
     var x: Int
@@ -127,6 +137,10 @@ def test_control_flow() raises:
     assert_equal(sign(5), "positive")
     assert_equal(sign(0), "zero")
     assert_equal(sign(-5), "negative")
+    # 2 also satisfies the power-of-two guard, so this pins first-match order.
+    assert_equal(describe(2), "is exactly two")
+    assert_equal(describe(8), "power of two")
+    assert_equal(describe(6), "not power of two")
     var x = 3
     var kind = "even" if x % 2 == 0 else "odd"
     assert_equal(kind, "odd")

@@ -149,7 +149,6 @@ def test_blockwise_fp8_matmul_amd[
                 scales_granularity_mnk=Index(
                     BLOCK_SCALE_M, BLOCK_SCALE_N, BLOCK_SCALE_K
                 ),
-                elementwise_lambda_fn=None,
                 device_info=ctx.default_device_info,
                 a_static_k=type_of(a_dev).static_shape[1],
                 c_static_n=type_of(c_my_dev).static_shape[1],

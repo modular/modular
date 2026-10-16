@@ -48,6 +48,68 @@ def gated_group_rmsnorm(
 
     Returns:
         The ``[N, intermediate]`` result in ``y.dtype``.
+
+    The following example normalizes a 256-wide intermediate in groups of
+    64:
+
+    .. code-block:: python
+
+        import numpy as np
+        from max.driver import CPU, Accelerator, Buffer, accelerator_count
+        from max.dtype import DType
+        from max.engine import InferenceSession
+        from max.graph import DeviceRef, Graph, TensorType
+        from max.nn.state_space import gated_group_rmsnorm
+
+        device = Accelerator() if accelerator_count() > 0 else CPU()
+        device_ref = DeviceRef.from_device(device)
+        num_tokens, intermediate, group_size = 4, 256, 64
+
+        with Graph(
+            "gated_group_rmsnorm_example",
+            input_types=(
+                TensorType(
+                    DType.float32, [num_tokens, intermediate], device=device_ref
+                ),
+                TensorType(
+                    DType.float32, [num_tokens, intermediate], device=device_ref
+                ),
+                TensorType(DType.float32, [intermediate], device=device_ref),
+            ),
+        ) as graph:
+            y, gate, norm_weight = (value.tensor for value in graph.inputs)
+            output = gated_group_rmsnorm(
+                y, gate, norm_weight, eps=1e-5, group_size=group_size
+            )
+            graph.output(output)
+
+        rng = np.random.default_rng(0)
+        y_np = rng.standard_normal((num_tokens, intermediate), dtype=np.float32)
+        gate_np = rng.standard_normal(
+            (num_tokens, intermediate), dtype=np.float32
+        )
+        weight_np = rng.uniform(0.5, 1.5, intermediate).astype(np.float32)
+
+        model = InferenceSession(devices=[device]).load(graph)
+        inputs = [
+            Buffer.from_numpy(x).to(device) for x in (y_np, gate_np, weight_np)
+        ]
+        result = model.execute(*inputs)[0].to_numpy()
+        # result.shape is (4, 256), in y's dtype (float32).
+
+    .. invisible-code-block: python
+
+        assert result.shape == (num_tokens, intermediate)
+        assert result.dtype == np.float32
+
+        # gated = y * silu(gate), then RMS-normalize each group of 64 and
+        # scale by norm_weight.
+        y64, gate64 = y_np.astype(np.float64), gate_np.astype(np.float64)
+        gated = y64 * gate64 / (1 + np.exp(-gate64))
+        groups = gated.reshape(num_tokens, -1, group_size)
+        rms = np.sqrt((groups**2).mean(axis=-1, keepdims=True) + 1e-5)
+        expected = (groups / rms).reshape(num_tokens, intermediate) * weight_np
+        np.testing.assert_allclose(result, expected, rtol=1e-4, atol=1e-5)
     """
     device = y.device
     out_type = TensorType(y.dtype, [y.shape[0], y.shape[1]], device)

@@ -1244,6 +1244,8 @@ class EPCommInitializer:
             config: EP configuration.
         """
         self.config = config
+        self._eplb_log2phy: list[Buffer] = []
+        self._eplb_logcnt: list[Buffer] = []
         # Allocated based on the EPLocalSyncCounters struct in ep_comm.mojo
         self.atomic_counter_size = _ep_counter_words(
             config.n_experts,
@@ -1467,15 +1469,52 @@ class EPCommInitializer:
             f" {token_block}"
         )
 
+    def set_eplb_placement(
+        self, log2phy: Sequence[Buffer], logcnt: Sequence[Buffer]
+    ) -> None:
+        """Supplies the per-device EPLB tables :meth:`model_inputs` returns.
+
+        Args:
+            log2phy: One ``[num_moe_layers, num_logical, max_replicas]``
+                buffer per local GPU.
+            logcnt: One ``[num_moe_layers, num_logical]`` buffer per local
+                GPU.
+
+        Raises:
+            ValueError: If EPLB is disabled in the config or a list does not
+                have one buffer per local GPU.
+        """
+        if not self.config.eplb_enabled:
+            raise ValueError("EPLB placement given but eplb_enabled is False")
+        n_gpus = self.config.n_gpus_per_node
+        if len(log2phy) != n_gpus or len(logcnt) != n_gpus:
+            raise ValueError(
+                f"EPLB placement needs {n_gpus} buffers per table, got "
+                f"{len(log2phy)} log2phy and {len(logcnt)} logcnt"
+            )
+        self._eplb_log2phy = list(log2phy)
+        self._eplb_logcnt = list(logcnt)
+
     def model_inputs(self) -> list[Buffer]:
         """Get the model inputs for the MoE model.
 
         Returns:
-            list[Buffer]: List of all tensors needed as model inputs.
+            list[Buffer]: List of all tensors needed as model inputs, in the
+            order of :meth:`EPBatchManager.input_types`.
+
+        Raises:
+            ValueError: If EPLB is enabled but no placement was supplied.
         """
-        return (
+        inputs = (
             self.atomic_counters
             + self.send_buf_ptrs
             + self.recv_buf_ptrs
             + self.recv_count_ptrs
         )
+        if self.config.eplb_enabled:
+            if not self._eplb_log2phy:
+                raise ValueError(
+                    "eplb_enabled is True but set_eplb_placement was not called"
+                )
+            inputs += self._eplb_log2phy + self._eplb_logcnt
+        return inputs

@@ -178,8 +178,8 @@ def bench_rms_norm_gpu[
 
     var data_buf = TileTensor(data_d, row_major(Coord(shape)))
     var gamma = TileTensor(gamma_d, row_major(Coord(param_shape)))
-    var epsilon = Float32(0.001)
-    var weight_offset = Scalar[dtype](0.0)
+    comptime epsilon = Float32(0.001)
+    comptime weight_offset = Float32(0.0)
 
     ctx.enqueue_copy(data_d, data_h)
     ctx.enqueue_copy(gamma_d, gamma_h)
@@ -210,14 +210,13 @@ def bench_rms_norm_gpu[
     @inline(.always)
     def kernel_launch(ctx: DeviceContext) raises {mut data_d, imm}:
         rms_norm_gpu[
-            rank, input_fn, identity_output_fn, multiply_before_cast=True
-        ](
-            Coord(shape),
-            gamma,
-            epsilon,
-            weight_offset,
-            ctx,
-        )
+            rank,
+            input_fn,
+            identity_output_fn,
+            epsilon=epsilon,
+            weight_offset=weight_offset,
+            multiply_before_cast=True,
+        ](Coord(shape), gamma, ctx)
 
     @inline(.always)
     def bench_fn(mut b: Bencher) raises {imm}:

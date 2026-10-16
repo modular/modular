@@ -191,7 +191,7 @@ def main() raises:
         var a_iter0 = TileTensor(cb_a.offset_ptr(0), a_shape)
         var b_iter0 = TileTensor(cb_b.offset_ptr(0), b_shape)
 
-        var eps = Float32(0.001)
+        comptime eps = Float32(0.001)
 
         # Kernel-internal scratch: reused across iters by design.
         var counter_buf = ctx.enqueue_create_buffer[.int32](1)
@@ -251,12 +251,13 @@ def main() raises:
                     ctx,
                 )
             else:
-                gemv_and_partial_norm_unfused_with_scratch[transpose_b=True](
+                gemv_and_partial_norm_unfused_with_scratch[
+                    transpose_b=True, eps=eps
+                ](
                     normed_tensor,
                     a_tensor,
                     b_tensor,
                     gamma_tensor,
-                    eps,
                     cb_y.offset_ptr(iteration).as_unsafe_any_origin(),
                     ctx,
                 )

@@ -13,8 +13,8 @@
 """AutoModel with device graph capture on a real GPU model.
 
 Every decode step must replay a captured graph, and the greedy tokens and
-the logits Batch records must match an AutoModel built without capture. The
-basic example from the AutoModel design runs here as written.
+the logits GenerateIterator records must match an AutoModel built without
+capture. The basic example from the AutoModel design runs here as written.
 """
 
 from __future__ import annotations
@@ -118,7 +118,7 @@ def test_graph_capture_replays_and_matches_eager(
         monkeypatch.setattr(runner, "replay", count_replay)
 
         steps = 0
-        with model.batch(
+        with model.generate_iter(
             input_ids,
             max_new_tokens=MAX_NEW_TOKENS,
             top_k=1,

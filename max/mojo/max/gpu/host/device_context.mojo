@@ -3450,12 +3450,8 @@ struct DeviceFunction[
                 .as_unsafe_any_origin()
             )
 
-        @__parameter
-        def _populate_arg_sizes[i: Int]():
-            dense_args_sizes[unsafe_offset=i] = UInt64(size_of[Ts[i]]())
-
         comptime for i in range(num_args):
-            _populate_arg_sizes[i]()
+            dense_args_sizes[unsafe_offset=i] = UInt64(size_of[Ts[i]]())
 
         if case .Some(cluster_dim) = cluster_dim:
             attributes.append(LaunchAttribute.from_cluster_dim(cluster_dim))

@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.hashlib._fnv1a import Fnv1a
+from std.hash._fnv1a import Fnv1a
 
 from std.memory import unsafe_memset_zero
 from test_utils import (
@@ -130,7 +130,7 @@ def test_hash_simd_values() raises:
     def hash(value: SIMD) -> UInt64:
         var hasher = Fnv1a()
         hasher._update_with_simd(value)
-        return hasher^.finish()
+        return hasher.finish()
 
     assert_equal(hash(Float16(1.5)), 12636464265834235359)
     assert_equal(hash(Float32(1.5)), 8026467504136239071)

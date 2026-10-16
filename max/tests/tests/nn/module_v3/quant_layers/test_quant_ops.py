@@ -28,15 +28,15 @@ import pytest
 from max.driver import CPU
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.tensor import Tensor
-from max.nn.comm.ep import EPConfig
-from max.nn.quant_config import QuantConfig, QuantFormat
-from max.pipelines.architectures.deepseekV3_modulev3.layers import quant_ops
-from max.pipelines.architectures.deepseekV3_modulev3.layers.quant_tensor import (
+from max.experimental.nn.common_layers import quant_ops
+from max.experimental.nn.common_layers.quant_tensor import (
     FP8BlockTensor,
     NVFP4Activation,
     NVFP4Tensor,
 )
+from max.experimental.tensor import Tensor
+from max.nn.comm.ep import EPConfig
+from max.nn.quant_config import QuantConfig, QuantFormat
 
 _HIDDEN_DIM = 256
 _MOE_DIM = 128

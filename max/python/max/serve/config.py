@@ -356,7 +356,8 @@ class Settings(BaseSettings):
             "plugin, and is refused when kernel_trace_level is 'kernel'. "
             "Passes run while another capture, such as a Dynolog trace, "
             "holds the profiler are not captured. Ignored while tracing is "
-            "off. Off by default: the header is then never read."
+            "off, and for a request whose span is unsampled. Off by default: "
+            "the header is then never read."
         ),
         alias="MAX_SERVE_KERNEL_TRACE_HEADERS",
     )

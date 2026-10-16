@@ -55,6 +55,9 @@ modular_py_test(
         "//max/tests/integration/Inputs/test_user_op",
         "@mojo//:std",
     ],
+    per_test_tags = {
+        "ops/test_ep_ffn_combine_send.py": ["skip-external-ci"],
+    },
     tags = [
         "enable-sanitizers",
     ],

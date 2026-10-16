@@ -45,7 +45,7 @@ struct MojoParserContext::Impl {
   KGEN::LIT::SharedState sharedState;
 
   /// The top level decl for everything being parsed.
-  KGEN::LIT::ASTDecl *topLevelDecl = nullptr;
+  KGEN::LIT::TopLevelModuleASTDecl *topLevelDecl = nullptr;
 
   /// The main module we are parsing into.
   mlir::OwningOpRef<ModuleOp> module;

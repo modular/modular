@@ -13,7 +13,6 @@
 
 """Provides blockwise-scaled FP8 grouped GEMM kernels for SM100 (B200) GPUs."""
 
-from std.collections import Optional
 from std.math import ceildiv, gcd
 from std.math.uutils import umod, ufloordiv
 from std.sys import align_of, size_of, simd_width_of
@@ -112,7 +111,7 @@ from structured_kernels.tile_types import (
     swizzle_mode_to_bytes,
 )
 from .grouped_matmul_tile_scheduler import TileScheduler
-from .utils import elementwise_epilogue_type
+from .utils import ElementwiseEpilogueFn, no_epilogue_fn
 
 comptime logger = Logger()
 
@@ -153,7 +152,7 @@ def _accum_row[mma_shape: IndexList[3], cta_group: Int](lane: Int) -> Int:
 @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
 @__name(
-    t"matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_{a_type}_{b_type}_{c_type}",
+    t"matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_{a_type}_{b_type}_{c_type}{"_epilogue_fn" if has_epilogue_fn else ""}",
 )
 def matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
     a_type: DType,
@@ -180,7 +179,8 @@ def matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     num_threads: Int = 128,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    EpilogueFnType: ElementwiseEpilogueFn = type_of(no_epilogue_fn),
+    has_epilogue_fn: Bool = False,
 ](
     a_tma_op: TMATensorTile[a_type, a_tile_shape, a_desc_shape],
     b_tma_op: TMATensorTile[b_type, b_tile_shape, b_desc_shape],
@@ -190,6 +190,7 @@ def matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
     a_scales: TileTensor[a_scales_type, a_scales_layout, ImmutAnyOrigin],
     b_scales: TileTensor[b_scales_type, b_scales_layout, ImmutAnyOrigin],
     num_iters: Int32,
+    epilogue_fn: EpilogueFnType,
 ):
     comptime assert a_offsets.flat_rank == expert_ids.flat_rank == 1
     comptime assert c.flat_rank == a_scales.flat_rank == 2
@@ -518,9 +519,9 @@ def matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
                             c_frag[2 * i_vec], c_frag[2 * i_vec + 1]
                         ).cast[c_type]()
 
-                        comptime if case .Some(ep) = elementwise_lambda_fn:
+                        comptime if has_epilogue_fn:
                             comptime alignment = align_of[SIMD[c_type, 2]]()
-                            ep[alignment=alignment](
+                            epilogue_fn[c_type, 2, alignment=alignment](
                                 (Int(a_start_row + m), Int(n)), c_mn
                             )
                         else:
@@ -541,7 +542,6 @@ def grouped_matmul_sm100_blockwise_scaled_fp8[
     //,
     *,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: TileTensor[mut=True, c_type, address_space=.GENERIC, ...],
     a: TileTensor[mut=False, a_type, address_space=.GENERIC, ...],
@@ -578,8 +578,6 @@ def grouped_matmul_sm100_blockwise_scaled_fp8[
             `True`.
         config: Matmul configuration specifying block tile shape, MMA
             shape, and TMA swizzle modes.
-        elementwise_lambda_fn: Optional epilogue function applied to each
-            output element before storing (defaults to `None`).
 
     Args:
         c: Output tensor of shape `[total_tokens, N]` holding the
@@ -601,6 +599,132 @@ def grouped_matmul_sm100_blockwise_scaled_fp8[
             matmul, used to size the grid Z dimension.
         ctx: Device context used to enqueue the kernel.
     """
+    _grouped_matmul_sm100_blockwise_scaled_fp8_impl[
+        config=config, has_epilogue_fn=False
+    ](
+        c,
+        a,
+        b,
+        a_scales,
+        b_scales,
+        a_offsets,
+        expert_ids,
+        max_num_tokens_per_expert,
+        num_active_experts,
+        no_epilogue_fn,
+        ctx,
+    )
+
+
+def grouped_matmul_sm100_blockwise_scaled_fp8[
+    EpilogueFnType: ElementwiseEpilogueFn,
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    a_scales_type: DType,
+    b_scales_type: DType,
+    a_offsets_type: DType,
+    expert_ids_type: DType,
+    transpose_b: Bool,
+    //,
+    *,
+    config: MatmulConfig[a_type, b_type, c_type, transpose_b],
+](
+    c: TileTensor[mut=True, c_type, address_space=.GENERIC, ...],
+    a: TileTensor[mut=False, a_type, address_space=.GENERIC, ...],
+    b: TileTensor[mut=False, b_type, address_space=.GENERIC, ...],
+    a_scales: TileTensor[mut=False, a_scales_type, address_space=.GENERIC, ...],
+    b_scales: TileTensor[mut=False, b_scales_type, address_space=.GENERIC, ...],
+    a_offsets: TileTensor[
+        mut=False, a_offsets_type, address_space=.GENERIC, ...
+    ],
+    expert_ids: TileTensor[
+        mut=False, expert_ids_type, address_space=.GENERIC, ...
+    ],
+    max_num_tokens_per_expert: Int,
+    num_active_experts: Int,
+    epilogue_fn: EpilogueFnType,
+    ctx: DeviceContext,
+) raises:
+    """Same as the plain overload, storing each output through `epilogue_fn`.
+
+    The kernel never writes `c`; it only supplies the output shape.
+
+    Parameters:
+        EpilogueFnType: Type of `epilogue_fn` (inferred).
+        c_type: Element type of the output `C` tensor (inferred).
+        a_type: Element type of the input `A` tensor (inferred).
+        b_type: Element type of the input `B` tensor (inferred).
+        a_scales_type: Element type of the `a_scales` tensor (inferred).
+        b_scales_type: Element type of the `b_scales` tensor (inferred).
+        a_offsets_type: Element type of the `a_offsets` tensor (inferred).
+        expert_ids_type: Element type of the `expert_ids` tensor (inferred).
+        transpose_b: Whether `B` is stored transposed (inferred).
+        config: Matmul configuration specifying block tile shape, MMA
+            shape, and TMA swizzle modes.
+
+    Args:
+        c: Output tensor of shape `[total_tokens, N]`; carries the shape.
+        a: Input activation tensor of shape `[total_tokens, K]` in FP8.
+        b: Input weight tensor of shape `[num_experts, N, K]` in FP8.
+        a_scales: Per-block scales for `A`.
+        b_scales: Per-block scales for `B`.
+        a_offsets: Cumulative row offsets per expert.
+        expert_ids: Expert index for each active expert slot.
+        max_num_tokens_per_expert: Maximum number of tokens assigned to any
+            single expert.
+        num_active_experts: Number of active experts in this grouped matmul.
+        epilogue_fn: Stores each output value at its global `(m, n)`.
+        ctx: Device context used to enqueue the kernel.
+    """
+    _grouped_matmul_sm100_blockwise_scaled_fp8_impl[
+        config=config, has_epilogue_fn=True
+    ](
+        c,
+        a,
+        b,
+        a_scales,
+        b_scales,
+        a_offsets,
+        expert_ids,
+        max_num_tokens_per_expert,
+        num_active_experts,
+        epilogue_fn,
+        ctx,
+    )
+
+
+def _grouped_matmul_sm100_blockwise_scaled_fp8_impl[
+    EpilogueFnType: ElementwiseEpilogueFn,
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    a_scales_type: DType,
+    b_scales_type: DType,
+    a_offsets_type: DType,
+    expert_ids_type: DType,
+    transpose_b: Bool,
+    //,
+    *,
+    config: MatmulConfig[a_type, b_type, c_type, transpose_b],
+    has_epilogue_fn: Bool,
+](
+    c: TileTensor[mut=True, c_type, address_space=.GENERIC, ...],
+    a: TileTensor[mut=False, a_type, address_space=.GENERIC, ...],
+    b: TileTensor[mut=False, b_type, address_space=.GENERIC, ...],
+    a_scales: TileTensor[mut=False, a_scales_type, address_space=.GENERIC, ...],
+    b_scales: TileTensor[mut=False, b_scales_type, address_space=.GENERIC, ...],
+    a_offsets: TileTensor[
+        mut=False, a_offsets_type, address_space=.GENERIC, ...
+    ],
+    expert_ids: TileTensor[
+        mut=False, expert_ids_type, address_space=.GENERIC, ...
+    ],
+    max_num_tokens_per_expert: Int,
+    num_active_experts: Int,
+    epilogue_fn: EpilogueFnType,
+    ctx: DeviceContext,
+) raises:
     comptime assert config.transpose_b, "Only support transposed B"
 
     comptime assert (
@@ -708,7 +832,8 @@ def grouped_matmul_sm100_blockwise_scaled_fp8[
         a_swizzle=config.a_swizzle,
         b_swizzle=config.b_swizzle,
         num_threads=block_dim,
-        elementwise_lambda_fn=elementwise_lambda_fn,
+        EpilogueFnType=EpilogueFnType,
+        has_epilogue_fn=has_epilogue_fn,
     ]
 
     ctx.enqueue_function[kernel](
@@ -720,6 +845,7 @@ def grouped_matmul_sm100_blockwise_scaled_fp8[
         a_scales.as_unsafe_any_origin(),
         b_scales.as_unsafe_any_origin(),
         Int32(ceildiv(K, BK)),
+        host_arg=epilogue_fn,
         grid_dim=(
             ceildiv(N, BN),
             ceildiv(max_num_tokens_per_expert, BM),
@@ -2489,7 +2615,6 @@ def grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
     //,
     *,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: TileTensor[mut=True, c_type, address_space=.GENERIC, ...],
     a: TileTensor[mut=False, a_type, address_space=.GENERIC, ...],
@@ -2531,8 +2656,6 @@ def grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
         config: Matmul configuration specifying block tile shape, MMA
             shape, and TMA swizzle modes. Must have `cta_group == 1` and
             `cluster_shape == (1, 1, 1)`.
-        elementwise_lambda_fn: Optional epilogue function applied to each
-            output element before storing (defaults to `None`).
 
     Args:
         c: Output tensor of shape `[total_tokens, N]` holding the

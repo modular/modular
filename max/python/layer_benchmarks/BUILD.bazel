@@ -252,9 +252,7 @@ modular_py_test(
     env = {
         "LAYER_BENCHMARK_MEFS": "$(rlocationpaths :harness_text_encoder_mefs)",
     },
-    # Production UMT5 (24-layer, d_model=4096) needs ~40GB for weights +
-    # activations. Default (10GB) suffices for the small smoke config.
-    exec_properties = {"test.resources:gpu-memory": "10"},
+    exec_properties = {"test.resources:gpu-memory": "3"},
     gpu_constraints = _GPU_CONSTRAINTS,
     ignore_extra_deps = [
         "//max/python/max/pipelines/context",
@@ -281,11 +279,7 @@ modular_py_test(
     env = {
         "LAYER_BENCHMARK_MEFS": "$(rlocationpaths :harness_wan_vae_attention_mefs)",
     },
-    # Smoke config (dim=96, 8x8) fits easily. Production tiers
-    # (dim=384, 60x106 at 480p / 90x160 at 720p) use ~40GB because
-    # torch SDPA materializes the NxN attention matrix for head_dim
-    # larger than the flash-attn threshold.
-    exec_properties = {"test.resources:gpu-memory": "38"},
+    exec_properties = {"test.resources:gpu-memory": "3"},
     gpu_constraints = _GPU_CONSTRAINTS,
     ignore_extra_deps = [
         "//max/python/max/pipelines/context",
@@ -302,7 +296,7 @@ modular_py_test(
 modular_py_test(
     name = "testbed_validation",
     srcs = ["test_testbed_validation.py"],
-    exec_properties = {"test.resources:gpu-memory": "10"},
+    exec_properties = {"test.resources:gpu-memory": "2"},
     gpu_constraints = _GPU_CONSTRAINTS,
     ignore_extra_deps = ["//max/python/max/pipelines/context"],
     imports = ["."],

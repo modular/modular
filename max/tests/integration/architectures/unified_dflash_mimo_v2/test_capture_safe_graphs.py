@@ -39,7 +39,7 @@ from max.pipelines.architectures.unified_dflash_mimo_v2 import (
 from max.pipelines.architectures.unified_dflash_mimo_v2.model_config import (
     DRAFT,
 )
-from mimo_dflash_harness import Model, base_graph, tiny_configs
+from mimo_dflash_harness import Model, tiny_configs
 
 DEVICES = 2
 GPU_TO_GPU = re.compile(r"mo\.transfer\[[^\n]*, gpu:\d+> to <\"gpu\", \d+>")
@@ -83,14 +83,3 @@ def test_the_fused_spec_graph_crosses_devices_only_in_collectives(
             ),
         )
     )
-
-
-def test_the_base_ctx_graph_crosses_devices_only_in_collectives(
-    model: Model,
-) -> None:
-    graph, _, _ = base_graph(
-        model.target(_refs(), speculative=False),
-        None,
-        drafter=model.drafter(_refs(), speculative=False),
-    )
-    _assert_capturable(graph)

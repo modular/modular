@@ -26,11 +26,8 @@ from std.utils import StaticTuple
 # ===-----------------------------------------------------------------------===#
 
 comptime CUDA_CUDNN_LIBRARY_PATHS: List[Path] = [
-    "libcudnn.so",
     "libcudnn.so.9",
-    "libcudnn.so.8",
     "/usr/lib/x86_64-linux-gnu/libcudnn.so.9",
-    "/usr/lib/x86_64-linux-gnu/libcudnn.so.8",
 ]
 
 
@@ -113,12 +110,12 @@ comptime cudnnRuntimeTag_t = NoneType
 struct cudnnSoftmaxMode_t(
     Equatable, Identifiable, TrivialRegisterPassable, Writable
 ):
-    var _value: Int8
+    var _value: Int32
     comptime CUDNN_SOFTMAX_MODE_INSTANCE = Self(0)
     comptime CUDNN_SOFTMAX_MODE_CHANNEL = Self(1)
 
     def __init__(out self, value: Int):
-        self._value = Int8(value)
+        self._value = Int32(value)
 
     def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -144,7 +141,7 @@ struct cudnnSoftmaxMode_t(
 
 def cudnnDestroyAlgorithmPerformance(
     algo_perf: DoubleNestedPointer[cudnnAlgorithmPerformanceStruct],
-    number_to_destroy: Int16,
+    number_to_destroy: Int32,
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnDestroyAlgorithmPerformance",
@@ -167,12 +164,12 @@ def cudnnCreate(
 struct cudnnReduceTensorIndices_t(
     Equatable, Identifiable, TrivialRegisterPassable, Writable
 ):
-    var _value: Int8
+    var _value: Int32
     comptime CUDNN_REDUCE_TENSOR_NO_INDICES = Self(0)
     comptime CUDNN_REDUCE_TENSOR_FLATTENED_INDICES = Self(1)
 
     def __init__(out self, value: Int):
-        self._value = Int8(value)
+        self._value = Int32(value)
 
     def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -312,7 +309,7 @@ def cudnnSetPoolingNdDescriptor(
     pooling_desc: UnsafePointer[cudnnPoolingStruct, _],
     mode: cudnnPoolingMode_t,
     maxpooling_nan_opt: cudnnNanPropagation_t,
-    nb_dims: Int16,
+    nb_dims: Int32,
     window_dim_a: OpaquePointer,
     padding_a: OpaquePointer,
     stride_a: OpaquePointer,
@@ -341,7 +338,7 @@ def cudnnSetPoolingNdDescriptor(
 
 @fieldwise_init
 struct cudnnReduceTensorOp_t(Equatable, TrivialRegisterPassable, Writable):
-    var _value: Int8
+    var _value: Int32
     comptime CUDNN_REDUCE_TENSOR_ADD = Self(0)
     comptime CUDNN_REDUCE_TENSOR_MUL = Self(1)
     comptime CUDNN_REDUCE_TENSOR_MIN = Self(2)
@@ -353,7 +350,7 @@ struct cudnnReduceTensorOp_t(Equatable, TrivialRegisterPassable, Writable):
     comptime CUDNN_REDUCE_TENSOR_MUL_NO_ZEROS = Self(8)
 
     def __init__(out self, value: Int):
-        self._value = Int8(value)
+        self._value = Int32(value)
 
     def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -395,10 +392,10 @@ def cudnnSetTensor4dDescriptor(
     tensor_desc: UnsafePointer[cudnnTensorStruct, _],
     format: cudnnTensorFormat_t,
     data_type: cudnnDataType_t,
-    n: Int16,
-    c: Int16,
-    h: Int16,
-    w: Int16,
+    n: Int32,
+    c: Int32,
+    h: Int32,
+    w: Int32,
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnSetTensor4dDescriptor",
@@ -445,12 +442,12 @@ def cudnnLRNCrossChannelForward(
 struct cudnnDeterminism_t(
     Equatable, Identifiable, TrivialRegisterPassable, Writable
 ):
-    var _value: Int8
+    var _value: Int32
     comptime CUDNN_NON_DETERMINISTIC = Self(0)
     comptime CUDNN_DETERMINISTIC = Self(1)
 
     def __init__(out self, value: Int):
-        self._value = Int8(value)
+        self._value = Int32(value)
 
     def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -483,62 +480,61 @@ comptime cudnnActivationDescriptor_t = UnsafePointer[cudnnActivationStruct, _]
 struct cudnnStatus_t(Equatable, TrivialRegisterPassable, Writable):
     var _value: Int32
     comptime CUDNN_STATUS_SUCCESS = Self(0)
-    comptime CUDNN_STATUS_NOT_INITIALIZED = Self(1)
-    comptime CUDNN_STATUS_ALLOC_FAILED = Self(2)
-    comptime CUDNN_STATUS_BAD_PARAM = Self(3)
-    comptime CUDNN_STATUS_INTERNAL_ERROR = Self(4)
-    comptime CUDNN_STATUS_INVALID_VALUE = Self(5)
-    comptime CUDNN_STATUS_ARCH_MISMATCH = Self(6)
-    comptime CUDNN_STATUS_MAPPING_ERROR = Self(7)
-    comptime CUDNN_STATUS_EXECUTION_FAILED = Self(8)
-    comptime CUDNN_STATUS_NOT_SUPPORTED = Self(9)
-    comptime CUDNN_STATUS_LICENSE_ERROR = Self(10)
-    comptime CUDNN_STATUS_RUNTIME_PREREQUISITE_MISSING = Self(11)
-    comptime CUDNN_STATUS_RUNTIME_IN_PROGRESS = Self(12)
-    comptime CUDNN_STATUS_RUNTIME_FP_OVERFLOW = Self(13)
-    comptime CUDNN_STATUS_VERSION_MISMATCH = Self(14)
-
-    # cuDNN 9 renumbered the status enum and added several new entries.
-    comptime CUDNN_STATUS_NOT_INITIALIZED_V9 = Self(1001)
-    comptime CUDNN_STATUS_LEARNING_RATE_NOT_INITIALIZED = Self(1002)
-    comptime CUDNN_STATUS_ALLOC_FAILED_V9 = Self(2000)
-    comptime CUDNN_STATUS_ALLOC_FAILED_DEVICE_MEMORY = Self(2001)
-    comptime CUDNN_STATUS_ALLOC_FAILED_HOST_MEMORY = Self(2002)
-    comptime CUDNN_STATUS_BAD_PARAM_V9 = Self(3000)
-    comptime CUDNN_STATUS_BAD_PARAM_NULL_POINTER = Self(3001)
-    comptime CUDNN_STATUS_BAD_PARAM_MISALIGNED_POINTER = Self(3002)
-    comptime CUDNN_STATUS_BAD_PARAM_NOT_FINALIZED = Self(3003)
-    comptime CUDNN_STATUS_BAD_PARAM_OUT_OF_BOUND = Self(3004)
-    comptime CUDNN_STATUS_BAD_PARAM_SIZE_INSUFFICIENT = Self(3005)
-    comptime CUDNN_STATUS_BAD_PARAM_STREAM_MISMATCH = Self(3006)
-    comptime CUDNN_STATUS_BAD_PARAM_SHAPE_MISMATCH = Self(3007)
-    comptime CUDNN_STATUS_BAD_PARAM_DUPLICATED_ENTRIES = Self(3008)
-    comptime CUDNN_STATUS_BAD_PARAM_ATTRIBUTE_TYPE = Self(3009)
-    comptime CUDNN_STATUS_ARCH_MISMATCH_V9 = Self(6000)
-    comptime CUDNN_STATUS_MAPPING_ERROR_V9 = Self(7000)
-    comptime CUDNN_STATUS_INTERNAL_ERROR_V9 = Self(4000)
+    comptime CUDNN_STATUS_NOT_INITIALIZED = Self(1001)
+    comptime CUDNN_STATUS_SUBLIBRARY_VERSION_MISMATCH = Self(1002)
+    comptime CUDNN_STATUS_SERIALIZATION_VERSION_MISMATCH = Self(1003)
+    comptime CUDNN_STATUS_DEPRECATED = Self(1004)
+    comptime CUDNN_STATUS_LICENSE_ERROR = Self(1005)
+    comptime CUDNN_STATUS_RUNTIME_IN_PROGRESS = Self(1006)
+    comptime CUDNN_STATUS_RUNTIME_FP_OVERFLOW = Self(1007)
+    comptime CUDNN_STATUS_SUBLIBRARY_LOADING_FAILED = Self(1008)
+    comptime CUDNN_STATUS_BAD_PARAM = Self(2000)
+    comptime CUDNN_STATUS_BAD_PARAM_NULL_POINTER = Self(2002)
+    comptime CUDNN_STATUS_BAD_PARAM_MISALIGNED_POINTER = Self(2003)
+    comptime CUDNN_STATUS_BAD_PARAM_NOT_FINALIZED = Self(2004)
+    comptime CUDNN_STATUS_BAD_PARAM_OUT_OF_BOUND = Self(2005)
+    comptime CUDNN_STATUS_BAD_PARAM_SIZE_INSUFFICIENT = Self(2006)
+    comptime CUDNN_STATUS_BAD_PARAM_STREAM_MISMATCH = Self(2007)
+    comptime CUDNN_STATUS_BAD_PARAM_SHAPE_MISMATCH = Self(2008)
+    comptime CUDNN_STATUS_BAD_PARAM_DUPLICATED_ENTRIES = Self(2009)
+    comptime CUDNN_STATUS_BAD_PARAM_ATTRIBUTE_TYPE = Self(2010)
+    comptime CUDNN_STATUS_BAD_PARAM_CUDA_GRAPH_MISMATCH = Self(2011)
+    comptime CUDNN_STATUS_BAD_PARAM_DESCRIPTOR_TYPE = Self(2012)
+    comptime CUDNN_STATUS_NOT_SUPPORTED = Self(3000)
+    comptime CUDNN_STATUS_NOT_SUPPORTED_GRAPH_PATTERN = Self(3001)
+    comptime CUDNN_STATUS_NOT_SUPPORTED_SHAPE = Self(3002)
+    comptime CUDNN_STATUS_NOT_SUPPORTED_DATA_TYPE = Self(3003)
+    comptime CUDNN_STATUS_NOT_SUPPORTED_LAYOUT = Self(3004)
+    comptime CUDNN_STATUS_NOT_SUPPORTED_INCOMPATIBLE_CUDA_DRIVER = Self(3005)
+    comptime CUDNN_STATUS_NOT_SUPPORTED_INCOMPATIBLE_CUDART = Self(3006)
+    comptime CUDNN_STATUS_NOT_SUPPORTED_ARCH_MISMATCH = Self(3007)
+    comptime CUDNN_STATUS_NOT_SUPPORTED_RUNTIME_PREREQUISITE_MISSING = Self(
+        3008
+    )
+    comptime CUDNN_STATUS_NOT_SUPPORTED_SUBLIBRARY_UNAVAILABLE = Self(3009)
+    comptime CUDNN_STATUS_NOT_SUPPORTED_SHARED_MEMORY_INSUFFICIENT = Self(3010)
+    comptime CUDNN_STATUS_NOT_SUPPORTED_PADDING = Self(3011)
+    comptime CUDNN_STATUS_NOT_SUPPORTED_BAD_LAUNCH_PARAM = Self(3012)
+    comptime CUDNN_STATUS_NOT_SUPPORTED_CUDA_GRAPH_NATIVE_API = Self(3013)
+    comptime CUDNN_STATUS_NOT_SUPPORTED_INVALID_DYNAMIC_SHAPE = Self(3014)
+    comptime CUDNN_STATUS_INTERNAL_ERROR = Self(4000)
     comptime CUDNN_STATUS_INTERNAL_ERROR_COMPILATION_FAILED = Self(4001)
     comptime CUDNN_STATUS_INTERNAL_ERROR_UNEXPECTED_VALUE = Self(4002)
     comptime CUDNN_STATUS_INTERNAL_ERROR_HOST_ALLOCATION_FAILED = Self(4003)
     comptime CUDNN_STATUS_INTERNAL_ERROR_DEVICE_ALLOCATION_FAILED = Self(4004)
     comptime CUDNN_STATUS_INTERNAL_ERROR_BAD_LAUNCH_PARAM = Self(4005)
     comptime CUDNN_STATUS_INTERNAL_ERROR_TEXTURE_CREATION_FAILED = Self(4006)
-    comptime CUDNN_STATUS_EXECUTION_FAILED_V9 = Self(8000)
-    comptime CUDNN_STATUS_NOT_SUPPORTED_V9 = Self(9000)
-    comptime CUDNN_STATUS_NOT_SUPPORTED_GRAPH_PATTERN = Self(9001)
-    comptime CUDNN_STATUS_NOT_SUPPORTED_SHAPE = Self(9002)
-    comptime CUDNN_STATUS_NOT_SUPPORTED_DATA_TYPE = Self(9003)
-    comptime CUDNN_STATUS_NOT_SUPPORTED_LAYOUT = Self(9004)
-    comptime CUDNN_STATUS_NOT_SUPPORTED_INCOMPATIBLE_CUDART = Self(9005)
-    comptime CUDNN_STATUS_NOT_SUPPORTED_ARCH_MISMATCH = Self(9006)
-    comptime CUDNN_STATUS_NOT_SUPPORTED_RUNTIME_PREREQUISITE_MISSING = Self(
-        9007
-    )
-    comptime CUDNN_STATUS_NOT_SUPPORTED_SUBLIBRARY_UNAVAILABLE = Self(9008)
-    comptime CUDNN_STATUS_NOT_SUPPORTED_SHARED_MEMORY_INSUFFICIENT = Self(9009)
-    comptime CUDNN_STATUS_NOT_SUPPORTED_PADDING = Self(9010)
-    comptime CUDNN_STATUS_NOT_SUPPORTED_BAD_LAUNCH_PARAM = Self(9011)
-    comptime CUDNN_STATUS_VERSION_MISMATCH_V9 = Self(14000)
+    comptime CUDNN_STATUS_EXECUTION_FAILED = Self(5000)
+    comptime CUDNN_STATUS_EXECUTION_FAILED_CUDA_DRIVER = Self(5001)
+    comptime CUDNN_STATUS_EXECUTION_FAILED_CUBLAS = Self(5002)
+    comptime CUDNN_STATUS_EXECUTION_FAILED_CUDART = Self(5003)
+    comptime CUDNN_STATUS_EXECUTION_FAILED_CURAND = Self(5004)
+    comptime CUDNN_STATUS_ALLOC_FAILED = Self(4003)
+    comptime CUDNN_STATUS_INVALID_VALUE = Self(2001)
+    comptime CUDNN_STATUS_ARCH_MISMATCH = Self(3007)
+    comptime CUDNN_STATUS_MAPPING_ERROR = Self(4006)
+    comptime CUDNN_STATUS_RUNTIME_PREREQUISITE_MISSING = Self(3008)
+    comptime CUDNN_STATUS_VERSION_MISMATCH = Self(1002)
 
     def __init__(out self, value: Int):
         self._value = Int32(value)
@@ -555,49 +551,25 @@ struct cudnnStatus_t(Equatable, TrivialRegisterPassable, Writable):
             return writer.write_string("CUDNN_STATUS_SUCCESS")
         if self is Self.CUDNN_STATUS_NOT_INITIALIZED:
             return writer.write_string("CUDNN_STATUS_NOT_INITIALIZED")
-        if self is Self.CUDNN_STATUS_ALLOC_FAILED:
-            return writer.write_string("CUDNN_STATUS_ALLOC_FAILED")
-        if self is Self.CUDNN_STATUS_BAD_PARAM:
-            return writer.write_string("CUDNN_STATUS_BAD_PARAM")
-        if self is Self.CUDNN_STATUS_INTERNAL_ERROR:
-            return writer.write_string("CUDNN_STATUS_INTERNAL_ERROR")
-        if self is Self.CUDNN_STATUS_INVALID_VALUE:
-            return writer.write_string("CUDNN_STATUS_INVALID_VALUE")
-        if self is Self.CUDNN_STATUS_ARCH_MISMATCH:
-            return writer.write_string("CUDNN_STATUS_ARCH_MISMATCH")
-        if self is Self.CUDNN_STATUS_MAPPING_ERROR:
-            return writer.write_string("CUDNN_STATUS_MAPPING_ERROR")
-        if self is Self.CUDNN_STATUS_EXECUTION_FAILED:
-            return writer.write_string("CUDNN_STATUS_EXECUTION_FAILED")
-        if self is Self.CUDNN_STATUS_NOT_SUPPORTED:
-            return writer.write_string("CUDNN_STATUS_NOT_SUPPORTED")
+        if self is Self.CUDNN_STATUS_SUBLIBRARY_VERSION_MISMATCH:
+            return writer.write_string(
+                "CUDNN_STATUS_SUBLIBRARY_VERSION_MISMATCH"
+            )
+        if self is Self.CUDNN_STATUS_SERIALIZATION_VERSION_MISMATCH:
+            return writer.write_string(
+                "CUDNN_STATUS_SERIALIZATION_VERSION_MISMATCH"
+            )
+        if self is Self.CUDNN_STATUS_DEPRECATED:
+            return writer.write_string("CUDNN_STATUS_DEPRECATED")
         if self is Self.CUDNN_STATUS_LICENSE_ERROR:
             return writer.write_string("CUDNN_STATUS_LICENSE_ERROR")
-        if self is Self.CUDNN_STATUS_RUNTIME_PREREQUISITE_MISSING:
-            return writer.write_string(
-                "CUDNN_STATUS_RUNTIME_PREREQUISITE_MISSING"
-            )
         if self is Self.CUDNN_STATUS_RUNTIME_IN_PROGRESS:
             return writer.write_string("CUDNN_STATUS_RUNTIME_IN_PROGRESS")
         if self is Self.CUDNN_STATUS_RUNTIME_FP_OVERFLOW:
             return writer.write_string("CUDNN_STATUS_RUNTIME_FP_OVERFLOW")
-        if self is Self.CUDNN_STATUS_VERSION_MISMATCH:
-            return writer.write_string("CUDNN_STATUS_VERSION_MISMATCH")
-        if self is Self.CUDNN_STATUS_NOT_INITIALIZED_V9:
-            return writer.write_string("CUDNN_STATUS_NOT_INITIALIZED")
-        if self is Self.CUDNN_STATUS_LEARNING_RATE_NOT_INITIALIZED:
-            return writer.write_string(
-                "CUDNN_STATUS_LEARNING_RATE_NOT_INITIALIZED"
-            )
-        if self is Self.CUDNN_STATUS_ALLOC_FAILED_V9:
-            return writer.write_string("CUDNN_STATUS_ALLOC_FAILED")
-        if self is Self.CUDNN_STATUS_ALLOC_FAILED_DEVICE_MEMORY:
-            return writer.write_string(
-                "CUDNN_STATUS_ALLOC_FAILED_DEVICE_MEMORY"
-            )
-        if self is Self.CUDNN_STATUS_ALLOC_FAILED_HOST_MEMORY:
-            return writer.write_string("CUDNN_STATUS_ALLOC_FAILED_HOST_MEMORY")
-        if self is Self.CUDNN_STATUS_BAD_PARAM_V9:
+        if self is Self.CUDNN_STATUS_SUBLIBRARY_LOADING_FAILED:
+            return writer.write_string("CUDNN_STATUS_SUBLIBRARY_LOADING_FAILED")
+        if self is Self.CUDNN_STATUS_BAD_PARAM:
             return writer.write_string("CUDNN_STATUS_BAD_PARAM")
         if self is Self.CUDNN_STATUS_BAD_PARAM_NULL_POINTER:
             return writer.write_string("CUDNN_STATUS_BAD_PARAM_NULL_POINTER")
@@ -623,39 +595,13 @@ struct cudnnStatus_t(Equatable, TrivialRegisterPassable, Writable):
             )
         if self is Self.CUDNN_STATUS_BAD_PARAM_ATTRIBUTE_TYPE:
             return writer.write_string("CUDNN_STATUS_BAD_PARAM_ATTRIBUTE_TYPE")
-        if self is Self.CUDNN_STATUS_ARCH_MISMATCH_V9:
-            return writer.write_string("CUDNN_STATUS_ARCH_MISMATCH")
-        if self is Self.CUDNN_STATUS_MAPPING_ERROR_V9:
-            return writer.write_string("CUDNN_STATUS_MAPPING_ERROR")
-        if self is Self.CUDNN_STATUS_INTERNAL_ERROR_V9:
-            return writer.write_string("CUDNN_STATUS_INTERNAL_ERROR")
-        if self is Self.CUDNN_STATUS_INTERNAL_ERROR_COMPILATION_FAILED:
+        if self is Self.CUDNN_STATUS_BAD_PARAM_CUDA_GRAPH_MISMATCH:
             return writer.write_string(
-                "CUDNN_STATUS_INTERNAL_ERROR_COMPILATION_FAILED"
+                "CUDNN_STATUS_BAD_PARAM_CUDA_GRAPH_MISMATCH"
             )
-        if self is Self.CUDNN_STATUS_INTERNAL_ERROR_UNEXPECTED_VALUE:
-            return writer.write_string(
-                "CUDNN_STATUS_INTERNAL_ERROR_UNEXPECTED_VALUE"
-            )
-        if self is Self.CUDNN_STATUS_INTERNAL_ERROR_HOST_ALLOCATION_FAILED:
-            return writer.write_string(
-                "CUDNN_STATUS_INTERNAL_ERROR_HOST_ALLOCATION_FAILED"
-            )
-        if self is Self.CUDNN_STATUS_INTERNAL_ERROR_DEVICE_ALLOCATION_FAILED:
-            return writer.write_string(
-                "CUDNN_STATUS_INTERNAL_ERROR_DEVICE_ALLOCATION_FAILED"
-            )
-        if self is Self.CUDNN_STATUS_INTERNAL_ERROR_BAD_LAUNCH_PARAM:
-            return writer.write_string(
-                "CUDNN_STATUS_INTERNAL_ERROR_BAD_LAUNCH_PARAM"
-            )
-        if self is Self.CUDNN_STATUS_INTERNAL_ERROR_TEXTURE_CREATION_FAILED:
-            return writer.write_string(
-                "CUDNN_STATUS_INTERNAL_ERROR_TEXTURE_CREATION_FAILED"
-            )
-        if self is Self.CUDNN_STATUS_EXECUTION_FAILED_V9:
-            return writer.write_string("CUDNN_STATUS_EXECUTION_FAILED")
-        if self is Self.CUDNN_STATUS_NOT_SUPPORTED_V9:
+        if self is Self.CUDNN_STATUS_BAD_PARAM_DESCRIPTOR_TYPE:
+            return writer.write_string("CUDNN_STATUS_BAD_PARAM_DESCRIPTOR_TYPE")
+        if self is Self.CUDNN_STATUS_NOT_SUPPORTED:
             return writer.write_string("CUDNN_STATUS_NOT_SUPPORTED")
         if self is Self.CUDNN_STATUS_NOT_SUPPORTED_GRAPH_PATTERN:
             return writer.write_string(
@@ -667,6 +613,10 @@ struct cudnnStatus_t(Equatable, TrivialRegisterPassable, Writable):
             return writer.write_string("CUDNN_STATUS_NOT_SUPPORTED_DATA_TYPE")
         if self is Self.CUDNN_STATUS_NOT_SUPPORTED_LAYOUT:
             return writer.write_string("CUDNN_STATUS_NOT_SUPPORTED_LAYOUT")
+        if self is Self.CUDNN_STATUS_NOT_SUPPORTED_INCOMPATIBLE_CUDA_DRIVER:
+            return writer.write_string(
+                "CUDNN_STATUS_NOT_SUPPORTED_INCOMPATIBLE_CUDA_DRIVER"
+            )
         if self is Self.CUDNN_STATUS_NOT_SUPPORTED_INCOMPATIBLE_CUDART:
             return writer.write_string(
                 "CUDNN_STATUS_NOT_SUPPORTED_INCOMPATIBLE_CUDART"
@@ -693,7 +643,65 @@ struct cudnnStatus_t(Equatable, TrivialRegisterPassable, Writable):
             return writer.write_string(
                 "CUDNN_STATUS_NOT_SUPPORTED_BAD_LAUNCH_PARAM"
             )
-        if self is Self.CUDNN_STATUS_VERSION_MISMATCH_V9:
+        if self is Self.CUDNN_STATUS_NOT_SUPPORTED_CUDA_GRAPH_NATIVE_API:
+            return writer.write_string(
+                "CUDNN_STATUS_NOT_SUPPORTED_CUDA_GRAPH_NATIVE_API"
+            )
+        if self is Self.CUDNN_STATUS_NOT_SUPPORTED_INVALID_DYNAMIC_SHAPE:
+            return writer.write_string(
+                "CUDNN_STATUS_NOT_SUPPORTED_INVALID_DYNAMIC_SHAPE"
+            )
+        if self is Self.CUDNN_STATUS_INTERNAL_ERROR:
+            return writer.write_string("CUDNN_STATUS_INTERNAL_ERROR")
+        if self is Self.CUDNN_STATUS_INTERNAL_ERROR_COMPILATION_FAILED:
+            return writer.write_string(
+                "CUDNN_STATUS_INTERNAL_ERROR_COMPILATION_FAILED"
+            )
+        if self is Self.CUDNN_STATUS_INTERNAL_ERROR_UNEXPECTED_VALUE:
+            return writer.write_string(
+                "CUDNN_STATUS_INTERNAL_ERROR_UNEXPECTED_VALUE"
+            )
+        if self is Self.CUDNN_STATUS_INTERNAL_ERROR_HOST_ALLOCATION_FAILED:
+            return writer.write_string(
+                "CUDNN_STATUS_INTERNAL_ERROR_HOST_ALLOCATION_FAILED"
+            )
+        if self is Self.CUDNN_STATUS_INTERNAL_ERROR_DEVICE_ALLOCATION_FAILED:
+            return writer.write_string(
+                "CUDNN_STATUS_INTERNAL_ERROR_DEVICE_ALLOCATION_FAILED"
+            )
+        if self is Self.CUDNN_STATUS_INTERNAL_ERROR_BAD_LAUNCH_PARAM:
+            return writer.write_string(
+                "CUDNN_STATUS_INTERNAL_ERROR_BAD_LAUNCH_PARAM"
+            )
+        if self is Self.CUDNN_STATUS_INTERNAL_ERROR_TEXTURE_CREATION_FAILED:
+            return writer.write_string(
+                "CUDNN_STATUS_INTERNAL_ERROR_TEXTURE_CREATION_FAILED"
+            )
+        if self is Self.CUDNN_STATUS_EXECUTION_FAILED:
+            return writer.write_string("CUDNN_STATUS_EXECUTION_FAILED")
+        if self is Self.CUDNN_STATUS_EXECUTION_FAILED_CUDA_DRIVER:
+            return writer.write_string(
+                "CUDNN_STATUS_EXECUTION_FAILED_CUDA_DRIVER"
+            )
+        if self is Self.CUDNN_STATUS_EXECUTION_FAILED_CUBLAS:
+            return writer.write_string("CUDNN_STATUS_EXECUTION_FAILED_CUBLAS")
+        if self is Self.CUDNN_STATUS_EXECUTION_FAILED_CUDART:
+            return writer.write_string("CUDNN_STATUS_EXECUTION_FAILED_CUDART")
+        if self is Self.CUDNN_STATUS_EXECUTION_FAILED_CURAND:
+            return writer.write_string("CUDNN_STATUS_EXECUTION_FAILED_CURAND")
+        if self is Self.CUDNN_STATUS_ALLOC_FAILED:
+            return writer.write_string("CUDNN_STATUS_ALLOC_FAILED")
+        if self is Self.CUDNN_STATUS_INVALID_VALUE:
+            return writer.write_string("CUDNN_STATUS_INVALID_VALUE")
+        if self is Self.CUDNN_STATUS_ARCH_MISMATCH:
+            return writer.write_string("CUDNN_STATUS_ARCH_MISMATCH")
+        if self is Self.CUDNN_STATUS_MAPPING_ERROR:
+            return writer.write_string("CUDNN_STATUS_MAPPING_ERROR")
+        if self is Self.CUDNN_STATUS_RUNTIME_PREREQUISITE_MISSING:
+            return writer.write_string(
+                "CUDNN_STATUS_RUNTIME_PREREQUISITE_MISSING"
+            )
+        if self is Self.CUDNN_STATUS_VERSION_MISMATCH:
             return writer.write_string("CUDNN_STATUS_VERSION_MISMATCH")
         t"cudnnStatus_t(unknown={self._value})".write_to(writer)
 
@@ -709,12 +717,12 @@ struct cudnnStatus_t(Equatable, TrivialRegisterPassable, Writable):
 struct cudnnCTCLossAlgo_t(
     Equatable, Identifiable, TrivialRegisterPassable, Writable
 ):
-    var _value: Int8
+    var _value: Int32
     comptime CUDNN_CTC_LOSS_ALGO_DETERMINISTIC = Self(0)
     comptime CUDNN_CTC_LOSS_ALGO_NON_DETERMINISTIC = Self(1)
 
     def __init__(out self, value: Int):
-        self._value = Int8(value)
+        self._value = Int32(value)
 
     def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -742,10 +750,10 @@ def cudnnGetFilter4dDescriptor(
     filter_desc: UnsafePointer[cudnnFilterStruct, _],
     data_type: UnsafePointer[cudnnDataType_t, _],
     format: UnsafePointer[cudnnTensorFormat_t, _],
-    k: UnsafePointer[Int16, _],
-    c: UnsafePointer[Int16, _],
-    h: UnsafePointer[Int16, _],
-    w: UnsafePointer[Int16, _],
+    k: UnsafePointer[Int32, _],
+    c: UnsafePointer[Int32, _],
+    h: UnsafePointer[Int32, _],
+    w: UnsafePointer[Int32, _],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetFilter4dDescriptor",
@@ -765,13 +773,13 @@ def cudnnGetFilter4dDescriptor(
 struct cudnnTensorFormat_t(
     Equatable, Identifiable, TrivialRegisterPassable, Writable
 ):
-    var _value: Int8
+    var _value: Int32
     comptime CUDNN_TENSOR_NCHW = Self(0)
     comptime CUDNN_TENSOR_NHWC = Self(1)
     comptime CUDNN_TENSOR_NCHW_VECT_C = Self(2)
 
     def __init__(out self, value: Int):
-        self._value = Int8(value)
+        self._value = Int32(value)
 
     def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -869,7 +877,7 @@ def cudnnGetCudartVersion() raises -> Int:
 
 
 def cudnnGetCallback(
-    mask: UnsafePointer[Int16, _],
+    mask: UnsafePointer[Int32, _],
     udata: UnsafePointer[OpaquePointer[UntrackedOrigin[mut=True]], _],
     fptr: OpaquePointer,
 ) raises -> cudnnStatus_t:
@@ -922,12 +930,12 @@ def cudnnSetActivationDescriptor(
 struct cudnnNormAlgo_t(
     Equatable, Identifiable, TrivialRegisterPassable, Writable
 ):
-    var _value: Int8
+    var _value: Int32
     comptime CUDNN_NORM_ALGO_STANDARD = Self(0)
     comptime CUDNN_NORM_ALGO_PERSIST = Self(1)
 
     def __init__(out self, value: Int):
-        self._value = Int8(value)
+        self._value = Int32(value)
 
     def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -955,7 +963,7 @@ struct cudnnNormAlgo_t(
 struct cudnnOpTensorOp_t(
     Equatable, Identifiable, TrivialRegisterPassable, Writable
 ):
-    var _value: Int8
+    var _value: Int32
     comptime CUDNN_OP_TENSOR_ADD = Self(0)
     comptime CUDNN_OP_TENSOR_MUL = Self(1)
     comptime CUDNN_OP_TENSOR_MIN = Self(2)
@@ -964,7 +972,7 @@ struct cudnnOpTensorOp_t(
     comptime CUDNN_OP_TENSOR_NOT = Self(5)
 
     def __init__(out self, value: Int):
-        self._value = Int8(value)
+        self._value = Int32(value)
 
     def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -1008,7 +1016,7 @@ def cudnnCreateReduceTensorDescriptor(
 def cudnnGetPoolingNdForwardOutputDim(
     pooling_desc: UnsafePointer[cudnnPoolingStruct, _],
     input_tensor_desc: UnsafePointer[cudnnTensorStruct, _],
-    nb_dims: Int16,
+    nb_dims: Int32,
     output_tensor_dim_a: OpaquePointer,
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
@@ -1116,7 +1124,7 @@ def cudnnBatchNormalizationForwardInference(
 
 def cudnnCreateAlgorithmPerformance(
     algo_perf: DoubleNestedPointer[cudnnAlgorithmPerformanceStruct],
-    number_to_create: Int16,
+    number_to_create: Int32,
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnCreateAlgorithmPerformance",
@@ -1247,7 +1255,7 @@ def cudnnDeriveBNTensorDescriptor(
 struct cudnnActivationMode_t(
     Equatable, Identifiable, TrivialRegisterPassable, Writable
 ):
-    var _value: Int8
+    var _value: Int32
     comptime CUDNN_ACTIVATION_SIGMOID = Self(0)
     comptime CUDNN_ACTIVATION_RELU = Self(1)
     comptime CUDNN_ACTIVATION_TANH = Self(2)
@@ -1257,7 +1265,7 @@ struct cudnnActivationMode_t(
     comptime CUDNN_ACTIVATION_SWISH = Self(6)
 
     def __init__(out self, value: Int):
-        self._value = Int8(value)
+        self._value = Int32(value)
 
     def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -1322,7 +1330,7 @@ def cudnnGetTensorSizeInBytes(
 struct cudnnConvolutionBwdDataAlgo_t(
     Equatable, Identifiable, TrivialRegisterPassable, Writable
 ):
-    var _value: Int8
+    var _value: Int32
     comptime CUDNN_CONVOLUTION_BWD_DATA_ALGO_0 = Self(0)
     comptime CUDNN_CONVOLUTION_BWD_DATA_ALGO_1 = Self(1)
     comptime CUDNN_CONVOLUTION_BWD_DATA_ALGO_FFT = Self(2)
@@ -1332,7 +1340,7 @@ struct cudnnConvolutionBwdDataAlgo_t(
     comptime CUDNN_CONVOLUTION_BWD_DATA_ALGO_COUNT = Self(6)
 
     def __init__(out self, value: Int):
-        self._value = Int8(value)
+        self._value = Int32(value)
 
     def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -1374,10 +1382,10 @@ struct cudnnConvolutionBwdDataAlgo_t(
 
 def cudnnGetFilterNdDescriptor(
     filter_desc: UnsafePointer[cudnnFilterStruct, _],
-    nb_dims_requested: Int16,
+    nb_dims_requested: Int32,
     data_type: UnsafePointer[cudnnDataType_t, _],
     format: UnsafePointer[cudnnTensorFormat_t, _],
-    nb_dims: UnsafePointer[Int16, _],
+    nb_dims: UnsafePointer[Int32, _],
     filter_dim_a: OpaquePointer,
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
@@ -1398,10 +1406,10 @@ def cudnnGetFilterNdDescriptor(
 def cudnnGetPooling2dForwardOutputDim(
     pooling_desc: UnsafePointer[cudnnPoolingStruct, _],
     input_tensor_desc: UnsafePointer[cudnnTensorStruct, _],
-    n: UnsafePointer[Int16, _],
-    c: UnsafePointer[Int16, _],
-    h: UnsafePointer[Int16, _],
-    w: UnsafePointer[Int16, _],
+    n: UnsafePointer[Int32, _],
+    c: UnsafePointer[Int32, _],
+    h: UnsafePointer[Int32, _],
+    w: UnsafePointer[Int32, _],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetPooling2dForwardOutputDim",
@@ -1423,11 +1431,11 @@ comptime cudnnLRNDescriptor_t = UnsafePointer[cudnnLRNStruct, _]
 struct cudnnSamplerType_t(
     Equatable, Identifiable, TrivialRegisterPassable, Writable
 ):
-    var _value: Int8
+    var _value: Int32
     comptime CUDNN_SAMPLER_BILINEAR = Self(0)
 
     def __init__(out self, value: Int):
-        self._value = Int8(value)
+        self._value = Int32(value)
 
     def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -1480,12 +1488,12 @@ def cudnnSpatialTfSamplerForward(
 struct cudnnNormMode_t(
     Equatable, Identifiable, TrivialRegisterPassable, Writable
 ):
-    var _value: Int8
+    var _value: Int32
     comptime CUDNN_NORM_PER_ACTIVATION = Self(0)
     comptime CUDNN_NORM_PER_CHANNEL = Self(1)
 
     def __init__(out self, value: Int):
-        self._value = Int8(value)
+        self._value = Int32(value)
 
     def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -1513,12 +1521,12 @@ def cudnnSetPooling2dDescriptor(
     pooling_desc: UnsafePointer[cudnnPoolingStruct, _],
     mode: cudnnPoolingMode_t,
     maxpooling_nan_opt: cudnnNanPropagation_t,
-    window_height: Int16,
-    window_width: Int16,
-    vertical_padding: Int16,
-    horizontal_padding: Int16,
-    vertical_stride: Int16,
-    horizontal_stride: Int16,
+    window_height: Int32,
+    window_width: Int32,
+    vertical_padding: Int32,
+    horizontal_padding: Int32,
+    vertical_stride: Int32,
+    horizontal_stride: Int32,
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnSetPooling2dDescriptor",
@@ -1550,12 +1558,12 @@ def cudnnGetPooling2dDescriptor(
     pooling_desc: UnsafePointer[cudnnPoolingStruct, _],
     mode: UnsafePointer[cudnnPoolingMode_t, _],
     maxpooling_nan_opt: UnsafePointer[cudnnNanPropagation_t, _],
-    window_height: UnsafePointer[Int16, _],
-    window_width: UnsafePointer[Int16, _],
-    vertical_padding: UnsafePointer[Int16, _],
-    horizontal_padding: UnsafePointer[Int16, _],
-    vertical_stride: UnsafePointer[Int16, _],
-    horizontal_stride: UnsafePointer[Int16, _],
+    window_height: UnsafePointer[Int32, _],
+    window_width: UnsafePointer[Int32, _],
+    vertical_padding: UnsafePointer[Int32, _],
+    horizontal_padding: UnsafePointer[Int32, _],
+    vertical_stride: UnsafePointer[Int32, _],
+    horizontal_stride: UnsafePointer[Int32, _],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetPooling2dDescriptor",
@@ -1587,13 +1595,13 @@ def cudnnGetPooling2dDescriptor(
 struct cudnnNormOps_t(
     Equatable, Identifiable, TrivialRegisterPassable, Writable
 ):
-    var _value: Int8
+    var _value: Int32
     comptime CUDNN_NORM_OPS_NORM = Self(0)
     comptime CUDNN_NORM_OPS_NORM_ACTIVATION = Self(1)
     comptime CUDNN_NORM_OPS_NORM_ADD_ACTIVATION = Self(2)
 
     def __init__(out self, value: Int):
-        self._value = Int8(value)
+        self._value = Int32(value)
 
     def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -1655,13 +1663,13 @@ comptime cudnnSpatialTransformerDescriptor_t = UnsafePointer[
 struct cudnnSoftmaxAlgorithm_t(
     Equatable, Identifiable, TrivialRegisterPassable, Writable
 ):
-    var _value: Int8
+    var _value: Int32
     comptime CUDNN_SOFTMAX_FAST = Self(0)
     comptime CUDNN_SOFTMAX_ACCURATE = Self(1)
     comptime CUDNN_SOFTMAX_LOG = Self(2)
 
     def __init__(out self, value: Int):
-        self._value = Int8(value)
+        self._value = Int32(value)
 
     def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -1738,13 +1746,13 @@ def cudnnGetStream(
 struct cudnnBatchNormOps_t(
     Equatable, Identifiable, TrivialRegisterPassable, Writable
 ):
-    var _value: Int8
+    var _value: Int32
     comptime CUDNN_BATCHNORM_OPS_BN = Self(0)
     comptime CUDNN_BATCHNORM_OPS_BN_ACTIVATION = Self(1)
     comptime CUDNN_BATCHNORM_OPS_BN_ADD_ACTIVATION = Self(2)
 
     def __init__(out self, value: Int):
-        self._value = Int8(value)
+        self._value = Int32(value)
 
     def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -1772,7 +1780,7 @@ struct cudnnBatchNormOps_t(
 
 @fieldwise_init
 struct cudnnConvolutionFwdAlgo_t(Equatable, TrivialRegisterPassable, Writable):
-    var _value: Int8
+    var _value: Int32
     comptime CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_GEMM = Self(0)
     comptime CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_PRECOMP_GEMM = Self(1)
     comptime CUDNN_CONVOLUTION_FWD_ALGO_GEMM = Self(2)
@@ -1784,7 +1792,7 @@ struct cudnnConvolutionFwdAlgo_t(Equatable, TrivialRegisterPassable, Writable):
     comptime CUDNN_CONVOLUTION_FWD_ALGO_COUNT = Self(8)
 
     def __init__(out self, value: Int):
-        self._value = Int8(value)
+        self._value = Int32(value)
 
     def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -1863,7 +1871,7 @@ def cudnnDeriveNormTensorDescriptor(
     derived_norm_mean_var_desc: UnsafePointer[cudnnTensorStruct, _],
     x_desc: UnsafePointer[cudnnTensorStruct, _],
     mode: cudnnNormMode_t,
-    group_cnt: Int16,
+    group_cnt: Int32,
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnDeriveNormTensorDescriptor",
@@ -1985,7 +1993,7 @@ struct libraryPropertyType_t(TrivialRegisterPassable):
 
 
 def cudnnGetProperty(
-    type: libraryPropertyType_t, value: UnsafePointer[Int16, _]
+    type: libraryPropertyType_t, value: UnsafePointer[Int32, _]
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetProperty",
@@ -2016,11 +2024,11 @@ def cudnnGetFilterSizeInBytes(
 struct cudnnLRNMode_t(
     Equatable, Identifiable, TrivialRegisterPassable, Writable
 ):
-    var _value: Int8
+    var _value: Int32
     comptime CUDNN_LRN_CROSS_CHANNEL_DIM1 = Self(0)
 
     def __init__(out self, value: Int):
-        self._value = Int8(value)
+        self._value = Int32(value)
 
     def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -2046,7 +2054,7 @@ def cudnnSetTensorNdDescriptorEx(
     tensor_desc: UnsafePointer[cudnnTensorStruct, _],
     format: cudnnTensorFormat_t,
     data_type: cudnnDataType_t,
-    nb_dims: Int16,
+    nb_dims: Int32,
     dim_a: OpaquePointer,
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
@@ -2064,7 +2072,7 @@ def cudnnSetTensorNdDescriptorEx(
 def cudnnSetTensorNdDescriptor(
     tensor_desc: UnsafePointer[cudnnTensorStruct, _],
     data_type: cudnnDataType_t,
-    nb_dims: Int16,
+    nb_dims: Int32,
     dim_a: OpaquePointer,
     stride_a: OpaquePointer,
 ) raises -> cudnnStatus_t:
@@ -2131,12 +2139,12 @@ def cudnnGetAlgorithmDescriptor(
 struct cudnnFoldingDirection_t(
     Equatable, Identifiable, TrivialRegisterPassable, Writable
 ):
-    var _value: Int8
+    var _value: Int32
     comptime CUDNN_TRANSFORM_FOLD = Self(0)
     comptime CUDNN_TRANSFORM_UNFOLD = Self(1)
 
     def __init__(out self, value: Int):
-        self._value = Int8(value)
+        self._value = Int32(value)
 
     def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -2162,9 +2170,9 @@ struct cudnnFoldingDirection_t(
 
 def cudnnGetTensorNdDescriptor(
     tensor_desc: UnsafePointer[cudnnTensorStruct, _],
-    nb_dims_requested: Int16,
+    nb_dims_requested: Int32,
     data_type: UnsafePointer[cudnnDataType_t, _],
-    nb_dims: UnsafePointer[Int16, _],
+    nb_dims: UnsafePointer[Int32, _],
     dim_a: OpaquePointer,
     stride_a: OpaquePointer,
 ) raises -> cudnnStatus_t:
@@ -2185,13 +2193,13 @@ def cudnnGetTensorNdDescriptor(
 struct cudnnErrQueryMode_t(
     Equatable, Identifiable, TrivialRegisterPassable, Writable
 ):
-    var _value: Int8
+    var _value: Int32
     comptime CUDNN_ERRQUERY_RAWCODE = Self(0)
     comptime CUDNN_ERRQUERY_NONBLOCKING = Self(1)
     comptime CUDNN_ERRQUERY_BLOCKING = Self(2)
 
     def __init__(out self, value: Int):
-        self._value = Int8(value)
+        self._value = Int32(value)
 
     def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -2295,14 +2303,14 @@ comptime cudnnDropoutDescriptor_t = UnsafePointer[cudnnDropoutStruct, _]
 def cudnnSetTensor4dDescriptorEx(
     tensor_desc: UnsafePointer[cudnnTensorStruct, _],
     data_type: cudnnDataType_t,
-    n: Int16,
-    c: Int16,
-    h: Int16,
-    w: Int16,
-    n_stride: Int16,
-    c_stride: Int16,
-    h_stride: Int16,
-    w_stride: Int16,
+    n: Int32,
+    c: Int32,
+    h: Int32,
+    w: Int32,
+    n_stride: Int32,
+    c_stride: Int32,
+    h_stride: Int32,
+    w_stride: Int32,
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnSetTensor4dDescriptorEx",
@@ -2336,13 +2344,13 @@ def cudnnSetTensor4dDescriptorEx(
 struct cudnnBatchNormMode_t(
     Equatable, Identifiable, TrivialRegisterPassable, Writable
 ):
-    var _value: Int8
+    var _value: Int32
     comptime CUDNN_BATCHNORM_PER_ACTIVATION = Self(0)
     comptime CUDNN_BATCHNORM_SPATIAL = Self(1)
     comptime CUDNN_BATCHNORM_SPATIAL_PERSISTENT = Self(2)
 
     def __init__(out self, value: Int):
-        self._value = Int8(value)
+        self._value = Int32(value)
 
     def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -2373,7 +2381,7 @@ comptime cudnnCTCLossDescriptor_t = UnsafePointer[cudnnCTCLossStruct, _]
 
 def cudnnGetLRNDescriptor(
     norm_desc: UnsafePointer[cudnnLRNStruct, _],
-    lrn_n: UnsafePointer[Int16, _],
+    lrn_n: UnsafePointer[Int32, _],
     lrn_alpha: UnsafePointer[Float64, _],
     lrn_beta: UnsafePointer[Float64, _],
     lrn_k: UnsafePointer[Float64, _],
@@ -2416,14 +2424,14 @@ def cudnnScaleTensor(
 struct cudnnSeverity_t(
     Equatable, Identifiable, TrivialRegisterPassable, Writable
 ):
-    var _value: Int8
+    var _value: Int32
     comptime CUDNN_SEV_FATAL = Self(0)
     comptime CUDNN_SEV_ERROR = Self(1)
     comptime CUDNN_SEV_WARNING = Self(2)
     comptime CUDNN_SEV_INFO = Self(3)
 
     def __init__(out self, value: Int):
-        self._value = Int8(value)
+        self._value = Int32(value)
 
     def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -2458,14 +2466,14 @@ comptime cudnnDebug_t = cudnnDebugStruct
 struct cudnnMathType_t(
     Equatable, Identifiable, TrivialRegisterPassable, Writable
 ):
-    var _value: Int8
+    var _value: Int32
     comptime CUDNN_DEFAULT_MATH = Self(0)
     comptime CUDNN_TENSOR_OP_MATH = Self(1)
     comptime CUDNN_TENSOR_OP_MATH_ALLOW_CONVERSION = Self(2)
     comptime CUDNN_FMA_MATH = Self(3)
 
     def __init__(out self, value: Int):
-        self._value = Int8(value)
+        self._value = Int32(value)
 
     def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -2497,12 +2505,12 @@ struct cudnnMathType_t(
 struct cudnnNanPropagation_t(
     Equatable, Identifiable, TrivialRegisterPassable, Writable
 ):
-    var _value: Int8
+    var _value: Int32
     comptime CUDNN_NOT_PROPAGATE_NAN = Self(0)
     comptime CUDNN_PROPAGATE_NAN = Self(1)
 
     def __init__(out self, value: Int):
-        self._value = Int8(value)
+        self._value = Int32(value)
 
     def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -2533,7 +2541,7 @@ comptime cudnnFilterDescriptor_t = UnsafePointer[cudnnFilterStruct, _]
 struct cudnnRNNAlgo_t(
     Equatable, Identifiable, TrivialRegisterPassable, Writable
 ):
-    var _value: Int8
+    var _value: Int32
     comptime CUDNN_RNN_ALGO_STANDARD = Self(0)
     comptime CUDNN_RNN_ALGO_PERSIST_STATIC = Self(1)
     comptime CUDNN_RNN_ALGO_PERSIST_DYNAMIC = Self(2)
@@ -2541,7 +2549,7 @@ struct cudnnRNNAlgo_t(
     comptime CUDNN_RNN_ALGO_COUNT = Self(4)
 
     def __init__(out self, value: Int):
-        self._value = Int8(value)
+        self._value = Int32(value)
 
     def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -2605,10 +2613,10 @@ def cudnnSetFilter4dDescriptor(
     filter_desc: UnsafePointer[cudnnFilterStruct, _],
     data_type: cudnnDataType_t,
     format: cudnnTensorFormat_t,
-    k: Int16,
-    c: Int16,
-    h: Int16,
-    w: Int16,
+    k: Int32,
+    c: Int32,
+    h: Int32,
+    w: Int32,
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnSetFilter4dDescriptor",
@@ -2650,7 +2658,7 @@ def cudnnGetAlgorithmSpaceSize(
 
 @fieldwise_init
 struct cudnnDataType_t(Equatable, TrivialRegisterPassable, Writable):
-    var _value: Int8
+    var _value: Int32
     comptime CUDNN_DATA_FLOAT = Self(0)
     comptime CUDNN_DATA_DOUBLE = Self(1)
     comptime CUDNN_DATA_HALF = Self(2)
@@ -2666,9 +2674,16 @@ struct cudnnDataType_t(Equatable, TrivialRegisterPassable, Writable):
     comptime CUDNN_DATA_FP8_E4M3 = Self(12)
     comptime CUDNN_DATA_FP8_E5M2 = Self(13)
     comptime CUDNN_DATA_FAST_FLOAT_FOR_FP8 = Self(14)
+    comptime CUDNN_DATA_FP8_E8M0 = Self(15)
+    comptime CUDNN_DATA_FP4_E2M1 = Self(16)
+    comptime CUDNN_DATA_INT4 = Self(17)
+    comptime CUDNN_DATA_UINT4 = Self(18)
+    comptime CUDNN_DATA_UINT32 = Self(19)
+    comptime CUDNN_DATA_COMPLEX_FP32 = Self(20)
+    comptime CUDNN_DATA_COMPLEX_FP64 = Self(21)
 
     def __init__(out self, value: Int):
-        self._value = Int8(value)
+        self._value = Int32(value)
 
     def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -2708,6 +2723,20 @@ struct cudnnDataType_t(Equatable, TrivialRegisterPassable, Writable):
             return writer.write_string("CUDNN_DATA_FP8_E5M2")
         if self is Self.CUDNN_DATA_FAST_FLOAT_FOR_FP8:
             return writer.write_string("CUDNN_DATA_FAST_FLOAT_FOR_FP8")
+        if self is Self.CUDNN_DATA_FP8_E8M0:
+            return writer.write_string("CUDNN_DATA_FP8_E8M0")
+        if self is Self.CUDNN_DATA_FP4_E2M1:
+            return writer.write_string("CUDNN_DATA_FP4_E2M1")
+        if self is Self.CUDNN_DATA_INT4:
+            return writer.write_string("CUDNN_DATA_INT4")
+        if self is Self.CUDNN_DATA_UINT4:
+            return writer.write_string("CUDNN_DATA_UINT4")
+        if self is Self.CUDNN_DATA_UINT32:
+            return writer.write_string("CUDNN_DATA_UINT32")
+        if self is Self.CUDNN_DATA_COMPLEX_FP32:
+            return writer.write_string("CUDNN_DATA_COMPLEX_FP32")
+        if self is Self.CUDNN_DATA_COMPLEX_FP64:
+            return writer.write_string("CUDNN_DATA_COMPLEX_FP64")
         abort("invalid cudnnDataType_t entry")
 
     @inline(.never)
@@ -2720,7 +2749,7 @@ struct cudnnDataType_t(Equatable, TrivialRegisterPassable, Writable):
 
 def cudnnSetLRNDescriptor(
     norm_desc: UnsafePointer[cudnnLRNStruct, _],
-    lrn_n: Int16,
+    lrn_n: Int32,
     lrn_alpha: Float64,
     lrn_beta: Float64,
     lrn_k: Float64,
@@ -2749,14 +2778,14 @@ def cudnnDestroyDropoutDescriptor(
 def cudnnGetTensor4dDescriptor(
     tensor_desc: UnsafePointer[cudnnTensorStruct, _],
     data_type: UnsafePointer[cudnnDataType_t, _],
-    n: UnsafePointer[Int16, _],
-    c: UnsafePointer[Int16, _],
-    h: UnsafePointer[Int16, _],
-    w: UnsafePointer[Int16, _],
-    n_stride: UnsafePointer[Int16, _],
-    c_stride: UnsafePointer[Int16, _],
-    h_stride: UnsafePointer[Int16, _],
-    w_stride: UnsafePointer[Int16, _],
+    n: UnsafePointer[Int32, _],
+    c: UnsafePointer[Int32, _],
+    h: UnsafePointer[Int32, _],
+    w: UnsafePointer[Int32, _],
+    n_stride: UnsafePointer[Int32, _],
+    c_stride: UnsafePointer[Int32, _],
+    h_stride: UnsafePointer[Int32, _],
+    w_stride: UnsafePointer[Int32, _],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetTensor4dDescriptor",
@@ -2806,18 +2835,18 @@ def cudnnGetAlgorithmPerformance(
 
 
 struct cudnnDebugStruct(ImplicitlyCopyable, RegisterPassable):
-    var cudnn_version: Int16
+    var cudnn_version: Int32
     var cudnnStatus: cudnnStatus_t
-    var time_sec: Int16
-    var time_usec: Int16
-    var time_delta: Int16
+    var time_sec: Int32
+    var time_usec: Int32
+    var time_delta: Int32
 
     @__allow_legacy_any_origin_fields
     var handle: UnsafePointer[cudnnContext, UntrackedOrigin[mut=True]]
     var stream: CUstream
     var pid: Int64
     var tid: Int64
-    var cudaDeviceId: Int16
+    var cudaDeviceId: Int32
     var reserved: StaticTuple[Int32, 15]
 
 
@@ -2825,7 +2854,7 @@ def cudnnSetSpatialTransformerNdDescriptor(
     st_desc: UnsafePointer[cudnnSpatialTransformerStruct, _],
     sampler_type: cudnnSamplerType_t,
     data_type: cudnnDataType_t,
-    nb_dims: Int16,
+    nb_dims: Int32,
     dim_a: OpaquePointer,
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
@@ -2847,14 +2876,14 @@ comptime cudnnAlgorithm_t = cudnnAlgorithmUnionStruct
 struct cudnnIndicesType_t(
     Equatable, Identifiable, TrivialRegisterPassable, Writable
 ):
-    var _value: Int8
+    var _value: Int32
     comptime CUDNN_32BIT_INDICES = Self(0)
     comptime CUDNN_64BIT_INDICES = Self(1)
     comptime CUDNN_16BIT_INDICES = Self(2)
     comptime CUDNN_8BIT_INDICES = Self(3)
 
     def __init__(out self, value: Int):
-        self._value = Int8(value)
+        self._value = Int32(value)
 
     def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -3007,7 +3036,7 @@ def cudnnSetActivationDescriptorSwishBeta(
 
 
 def cudnnSetCallback(
-    mask: Int16,
+    mask: Int32,
     udata: OpaquePointer,
     fptr: def(
         cudnnSeverity_t,
@@ -3065,7 +3094,7 @@ def cudnnNormalizationForwardInference(
     y_desc: UnsafePointer[cudnnTensorStruct, _],
     y: OpaquePointer,
     epsilon: Float64,
-    group_cnt: Int16,
+    group_cnt: Int32,
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnNormalizationForwardInference",
@@ -3121,7 +3150,7 @@ def cudnnNormalizationForwardInference(
 struct cudnnConvolutionBwdFilterAlgo_t(
     Equatable, Identifiable, TrivialRegisterPassable, Writable
 ):
-    var _value: Int8
+    var _value: Int32
     comptime CUDNN_CONVOLUTION_BWD_FILTER_ALGO_0 = Self(0)
     comptime CUDNN_CONVOLUTION_BWD_FILTER_ALGO_1 = Self(1)
     comptime CUDNN_CONVOLUTION_BWD_FILTER_ALGO_FFT = Self(2)
@@ -3132,7 +3161,7 @@ struct cudnnConvolutionBwdFilterAlgo_t(
     comptime CUDNN_CONVOLUTION_BWD_FILTER_ALGO_COUNT = Self(7)
 
     def __init__(out self, value: Int):
-        self._value = Int8(value)
+        self._value = Int32(value)
 
     def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -3276,14 +3305,14 @@ def cudnnDestroyOpTensorDescriptor(
 struct cudnnPoolingMode_t(
     Equatable, Identifiable, TrivialRegisterPassable, Writable
 ):
-    var _value: Int8
+    var _value: Int32
     comptime CUDNN_POOLING_MAX = Self(0)
     comptime CUDNN_POOLING_AVERAGE_COUNT_INCLUDE_PADDING = Self(1)
     comptime CUDNN_POOLING_AVERAGE_COUNT_EXCLUDE_PADDING = Self(2)
     comptime CUDNN_POOLING_MAX_DETERMINISTIC = Self(3)
 
     def __init__(out self, value: Int):
-        self._value = Int8(value)
+        self._value = Int32(value)
 
     def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -3374,11 +3403,11 @@ def cudnnGetDropoutDescriptor(
 struct cudnnDivNormMode_t(
     Equatable, Identifiable, TrivialRegisterPassable, Writable
 ):
-    var _value: Int8
+    var _value: Int32
     comptime CUDNN_DIVNORM_PRECOMPUTED_MEANS = Self(0)
 
     def __init__(out self, value: Int):
-        self._value = Int8(value)
+        self._value = Int32(value)
 
     def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -3413,7 +3442,7 @@ def cudnnSetFilterNdDescriptor(
     filter_desc: UnsafePointer[cudnnFilterStruct, _],
     data_type: cudnnDataType_t,
     format: cudnnTensorFormat_t,
-    nb_dims: Int16,
+    nb_dims: Int32,
     filter_dim_a: OpaquePointer,
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
@@ -3447,10 +3476,10 @@ def cudnnRestoreAlgorithm(
 
 def cudnnGetPoolingNdDescriptor(
     pooling_desc: UnsafePointer[cudnnPoolingStruct, _],
-    nb_dims_requested: Int16,
+    nb_dims_requested: Int32,
     mode: UnsafePointer[cudnnPoolingMode_t, _],
     maxpooling_nan_opt: UnsafePointer[cudnnNanPropagation_t, _],
-    nb_dims: UnsafePointer[Int16, _],
+    nb_dims: UnsafePointer[Int32, _],
     window_dim_a: OpaquePointer,
     padding_a: OpaquePointer,
     stride_a: OpaquePointer,

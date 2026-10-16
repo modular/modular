@@ -13,7 +13,7 @@
 """Shared SM100 attention primitives used by both MHA and MLA kernels.
 
 This module contains generic SM100 (Blackwell) GPU primitives including:
-- TMEM access helpers (TMemTile, STMatrixLayout)
+- TMEM access helpers (TMemTile)
 - Pipeline synchronization (StagedPipeline, RolePipeline, etc.)
 - FTZ arithmetic (add_ftz, sub_ftz, mul_ftz, etc.)
 - Barrier helpers (FA4MiscMBars)
@@ -43,7 +43,6 @@ from max.gpu.host.info import B200
 from layout import (
     IntTuple,
     Layout,
-    LayoutTensor,
     TensorEngine,
     TileTensor,
     row_major,
@@ -117,18 +116,6 @@ comptime SharedMemTensor[
     address_space=.SHARED,
 ]
 
-# Legacy LayoutTensor alias: `STMatrixLayout.TensorType` builds local
-# register tiles for the tcgen05 TMEM `st_matrix` store path, which has no
-# TileTensor equivalent yet.
-comptime LocalLT[
-    dtype: DType, layout: Layout, element_layout: Layout = Layout(1, 1)
-] = LayoutTensor[
-    dtype,
-    layout,
-    MutAnyOrigin,
-    address_space=.LOCAL,
-    element_layout=element_layout,
-]
 comptime SharedMemPointer[type: AnyType] = Pointer[
     type, MutAnyOrigin, address_space=.SHARED
 ]
@@ -252,137 +239,6 @@ def break_into_powers_of_two[
                 func[pow_two, coffset]()
     # final call for possible pipeline cleanup
     func[0, N]()
-
-
-struct STMatrixLayout[
-    BM: Int,
-    BN: Int,
-    *,
-    num_threads: Int,
-    accum_dtype_size: Int,
-](TrivialRegisterPassable):
-    """
-    Layout for using `st_matrix` for writing the final accumulator to smem.
-
-    Parameters:
-        BM: Number of rows in the `BM` x `BN` output tile written via
-            `st_matrix`.
-        BN: Number of columns in the `BM` x `BN` output tile written via
-            `st_matrix`.
-        num_threads: Number of threads participating in the `st_matrix`
-            store, used to derive the warp-group count.
-        accum_dtype_size: Size in bytes of the accumulator element dtype,
-            used to compute the per-store bit width.
-    """
-
-    # We have a BM x BN tile
-    #
-    # The st_matrix layout wants to map it to threads in 16x8 blocks
-    # shape  (2,8), (2,4)
-    # stride (0,4), (0,1)
-    # Layout = ((2,8),(2,4)):((0,4),(0,1))
-    # Where `0` stride indicates that the same thread is repeated across these.
-    # We also need a layout for this local memory, which we define here.
-
-    # look at figure 108 https://docs.nvidia.com/cuda/parallel-thread-execution/#mma-stmatrix-fragments
-
-    # That first `2` is
-    comptime num_row_blocks_per_mma = 2
-    # The second `2` is
-    comptime frag_simdwidth: Int = 2
-
-    comptime thread_cols = 4
-    # When using tcgen05 ld/st we must repeat across all columns:
-    comptime repeat = Self.BN // (Self.thread_cols * Self.frag_simdwidth)
-
-    comptime num_warpgroups = ceildiv(Self.num_threads, 128)
-    # 2 = 32 // 16, i.e. we need to load 2 sets of 16
-    comptime num_m_tiles_total = ceildiv(2 * Self.BM, 128)
-    comptime num_m_tiles = Self.num_m_tiles_total // Self.num_warpgroups
-
-    comptime frag_size = Self.BN * Self.num_row_blocks_per_mma // Self.thread_cols
-
-    comptime elements_per_repeat = Self.frag_simdwidth * Self.num_row_blocks_per_mma
-
-    comptime vec_local_layout: Layout = Layout(
-        IntTuple(
-            IntTuple(Self.num_row_blocks_per_mma, Self.num_m_tiles),
-            IntTuple(Self.repeat),
-        ),
-        IntTuple(
-            IntTuple(
-                Self.frag_simdwidth, Self.frag_size
-            ),  # distance between vertical m tiles and local fragments
-            IntTuple(
-                Self.num_row_blocks_per_mma * Self.frag_simdwidth
-            ),  # distance between bn repeats
-        ),
-    )
-    comptime element_layout: Layout = Layout.row_major(1, Self.frag_simdwidth)
-    comptime TensorType[dtype: DType] = LocalLT[
-        dtype, Self.vec_local_layout, Self.element_layout
-    ]
-    comptime row_of_frags_layout: Layout = Layout.row_major(
-        Self.num_m_tiles, Self.frag_size
-    )
-
-    comptime bits_per_byte = 8
-    comptime bits = Self.bits_per_byte * Self.frag_simdwidth * Self.thread_cols * Self.accum_dtype_size
-
-    @inline(.always)
-    def __init__(out self):
-        pass
-
-
-struct STMatrixOffsets[
-    BM: Int,
-    BN: Int,
-    *,
-    num_threads: Int,
-    accum_dtype_size: Int,
-    curr_repeat: Int,
-    cumulative_repeat: Int,
-    m_mma: Int,
-](TrivialRegisterPassable):
-    """Precomputed TMEM and local-fragment offsets for one `st_matrix` repeat column.
-
-    Parameters:
-        BM: Number of rows in the `BM` x `BN` output tile (forwarded to
-            `STMatrixLayout`).
-        BN: Number of columns in the `BM` x `BN` output tile (forwarded to
-            `STMatrixLayout`).
-        num_threads: Number of threads participating in the `st_matrix` store
-            (forwarded to `STMatrixLayout`).
-        accum_dtype_size: Size in bytes of the accumulator element dtype
-            (forwarded to `STMatrixLayout`).
-        curr_repeat: Number of repeat columns in this power-of-two chunk of
-            the `st_matrix` store.
-        cumulative_repeat: Number of repeat columns already stored before
-            this chunk, used as the TMEM column and local-fragment base
-            offset.
-        m_mma: M-tile index of the `st_matrix` store within the `BM`-row
-            tile, selecting the 16-row TMEM quadrant.
-    """
-
-    comptime STLayout = STMatrixLayout[
-        Self.BM,
-        Self.BN,
-        num_threads=Self.num_threads,
-        accum_dtype_size=Self.accum_dtype_size,
-    ]
-
-    comptime tmem_col_offset = Self.cumulative_repeat * Self.STLayout.frag_simdwidth * Self.STLayout.thread_cols
-    comptime tmem_row_offset = 16 * Self.m_mma
-    comptime tmem_offset = (Self.tmem_row_offset << 16) + Self.tmem_col_offset
-    comptime b32_per_repeat = Self.STLayout.elements_per_repeat * Self.accum_dtype_size // 4
-    comptime local_frag_size_b32 = Self.curr_repeat * Self.b32_per_repeat
-    comptime ptr_offset = Self.b32_per_repeat * (
-        Self.STLayout.repeat * Self.m_mma + Self.cumulative_repeat
-    )
-
-    @inline(.always)
-    def __init__(out self):
-        pass
 
 
 @inline(.always)
@@ -829,175 +685,6 @@ struct TMemTile[
             ]()
 
             return self.tmem_addr + UInt32(linear)
-
-    @staticmethod
-    @inline(.always)
-    def allocate_register_tile[
-        *, num_threads: Int
-    ](
-        out res: STMatrixLayout[
-            Self.BM,
-            Self.BN,
-            num_threads=num_threads,
-            accum_dtype_size=Self.dtype_size,
-        ].TensorType[Self.dtype],
-    ):
-        res = type_of(res).stack_allocation()
-
-    @inline(.always)
-    def store_async[
-        *, num_threads: Int
-    ](
-        self,
-        src: STMatrixLayout[
-            Self.BM,
-            Self.BN,
-            num_threads=num_threads,
-            accum_dtype_size=Self.dtype_size,
-        ].TensorType[Self.dtype],
-    ):
-        comptime assert Self.dtype_size <= 4
-        var ptr = src.ptr.unsafe_bitcast[UInt32]()
-        comptime st_mat_layout = STMatrixLayout[
-            Self.BM,
-            Self.BN,
-            num_threads=num_threads,
-            accum_dtype_size=Self.dtype_size,
-        ]
-        comptime assert st_mat_layout.bits == 128 or st_mat_layout.bits == 256
-
-        @inline(.always)
-        def store_fn[pow_two: Int, offset: Int]() {var}:
-            # pow_two is current repeat, offset total so far
-            comptime if pow_two > 0:
-                comptime for m_mma in range(st_mat_layout.num_m_tiles):
-                    comptime offsets = STMatrixOffsets[
-                        Self.BM,
-                        Self.BN,
-                        num_threads=num_threads,
-                        accum_dtype_size=Self.dtype_size,
-                        curr_repeat=pow_two,
-                        cumulative_repeat=offset,
-                        m_mma=m_mma,
-                    ]()
-                    var tmem = self.tmem_addr + UInt32(offsets.tmem_offset)
-                    var frag = Array[_, offsets.local_frag_size_b32](
-                        fill_with_unrolled=lambda [i: Int]() -> UInt32: (
-                            ptr.unsafe_load(offsets.ptr_offset + i)
-                        )
-                    )
-                    # 16 x 256b results in repeated 8x4 matrix of <1,2> vector pattern
-                    tcgen05_st[
-                        datapaths=16,  # first dimension of the shape
-                        bits=st_mat_layout.bits,  # second dimension of the shape
-                        repeat=pow_two,
-                        pack=False,
-                    ](tmem, frag)
-
-        comptime max_value = 64 if st_mat_layout.bits == 128 else 32
-        break_into_powers_of_two[N=st_mat_layout.repeat, max_value=max_value](
-            store_fn
-        )
-
-    @inline(.always)
-    def load_async_with_st_matrix_layout[
-        *, num_threads: Int
-    ](
-        self,
-        out dst: STMatrixLayout[
-            Self.BM,
-            Self.BN,
-            num_threads=num_threads,
-            accum_dtype_size=Self.dtype_size,
-        ].TensorType[Self.dtype],
-    ):
-        comptime assert (
-            Self.dtype_size <= 4
-        ), "Loading for st matrix requires elements to be <= 4 bytes."
-        comptime st_mat_layout = STMatrixLayout[
-            Self.BM,
-            Self.BN,
-            num_threads=num_threads,
-            accum_dtype_size=Self.dtype_size,
-        ]()
-        comptime assert (st_mat_layout.num_m_tiles == 1) or (
-            st_mat_layout.num_m_tiles == 2
-        ), (
-            "Only 1 or 2 m tiles are supported, but"
-            " st_mat_layout.num_m_tiles == "
-            + String(st_mat_layout.num_m_tiles)
-        )
-
-        dst = type_of(dst).stack_allocation()
-        self.load_st_matrix_chunk[
-            num_threads=num_threads,
-            start_repeat=0,
-            num_repeats=st_mat_layout.repeat,
-        ](dst)
-
-    @inline(.always)
-    def load_st_matrix_chunk[
-        *, num_threads: Int, start_repeat: Int, num_repeats: Int
-    ](
-        self,
-        dst: STMatrixLayout[
-            Self.BM,
-            Self.BN,
-            num_threads=num_threads,
-            accum_dtype_size=Self.dtype_size,
-        ].TensorType[Self.dtype],
-    ):
-        """Load a range of repeat columns from tmem into a pre-allocated
-        tensor.
-
-        Parameters:
-            num_threads: Number of threads in the warp group.
-            start_repeat: First repeat index to load (0-based).
-            num_repeats: Number of repeats to load.
-
-        Args:
-            dst: Pre-allocated register tensor.
-        """
-        comptime st_mat_layout = STMatrixLayout[
-            Self.BM,
-            Self.BN,
-            num_threads=num_threads,
-            accum_dtype_size=Self.dtype_size,
-        ]()
-        comptime load_dtype = DType.uint32
-        var ptr = rebind[
-            Pointer[Scalar[load_dtype], MutAnyOrigin, address_space=.LOCAL]
-        ](dst.ptr)
-
-        @inline(.always)
-        def load_fn[pow_two: Int, local_offset: Int]() {var}:
-            comptime assert pow_two + local_offset <= num_repeats
-            comptime if pow_two > 0:
-                comptime for m_mma in range(st_mat_layout.num_m_tiles):
-                    comptime offsets = STMatrixOffsets[
-                        Self.BM,
-                        Self.BN,
-                        num_threads=num_threads,
-                        accum_dtype_size=Self.dtype_size,
-                        curr_repeat=pow_two,
-                        cumulative_repeat=start_repeat + local_offset,
-                        m_mma=m_mma,
-                    ]()
-                    var tmem = self.tmem_addr + UInt32(offsets.tmem_offset)
-                    var frag = tcgen05_ld[
-                        datapaths=16,
-                        bits=st_mat_layout.bits,
-                        repeat=pow_two,
-                        dtype=load_dtype,
-                        pack=False,
-                        width=offsets.local_frag_size_b32,
-                    ](tmem)
-
-                    comptime for _i in range(offsets.local_frag_size_b32):
-                        ptr.unsafe_store(offsets.ptr_offset + _i, frag[_i])
-
-        comptime max_value = 64 if st_mat_layout.bits == 128 else 32
-        break_into_powers_of_two[N=num_repeats, max_value=max_value](load_fn)
 
     @inline(.always)
     def load_async(
@@ -4293,10 +3980,14 @@ def splitk_window(
 @inline(.always)
 def peel_mask[
     num_sets: Int,
+    LoadFnType: def[mask_strategy: MaskStrategy](UInt32) -> Float32,
     //,
     mask_strategies: StaticTuple[MaskStrategy, num_sets],
-    load_fn: def[mask_strategy: MaskStrategy](UInt32) capturing -> Float32,
-](mut mask_iters: StaticTuple[UInt32, num_sets], kv_row: UInt32,) -> Float32:
+](
+    load_fn: LoadFnType,
+    mut mask_iters: StaticTuple[UInt32, num_sets],
+    kv_row: UInt32,
+) -> Float32:
     """Determine which mask strategy applies to the peeled first iteration.
 
     Walks through mask sets to find the first with remaining iterations,
@@ -4306,14 +3997,15 @@ def peel_mask[
 
     Parameters:
         num_sets: Number of mask sets to walk through (inferred).
+        LoadFnType: Type of `load_fn` (inferred).
         mask_strategies: `MaskStrategy` per set, in evaluation order;
             the first set with remaining iterations supplies the
             strategy.
+
+    Args:
         load_fn: Callback invoked as
             `load_fn[strategy](kv_row)` to load the mask value for the
             selected strategy.
-
-    Args:
         mask_iters: Remaining iteration count per set; the selected
             set's count is decremented in place.
         kv_row: KV row index forwarded to `load_fn`.

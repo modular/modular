@@ -22,11 +22,8 @@ import huggingface_hub
 from huggingface_hub.errors import EntryNotFoundError
 from max import tree
 from max.driver import Buffer, Device
-from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Graph, TensorType
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.comm import Signals
 from max.nn.transformer import ReturnLogits
 from max.pipelines.architectures.gpt_oss.batch_processor import (
     GptOssBatchProcessor,
@@ -42,10 +39,11 @@ from max.pipelines.lib import (
     ModelOutputs,
     PipelineConfig,
 )
+from max.pipelines.lib.graph_specs import GraphRole, GraphSpec
 from max.pipelines.lib.memory_estimation import MemoryPlan
 from max.pipelines.weights import HuggingFaceRepo
 
-from .mimo_v2 import MiMoV2, TapHook
+from .mimo_v2 import MiMoV2
 from .model_config import MiMoV2Config
 
 _WEIGHT_INDEX = "model.safetensors.index.json"
@@ -88,6 +86,8 @@ def text_model_weights(
     return {name: w for name, w in weights.items() if name in names}
 
 
+# Still a GraphPipelineModelWithKVCache: the DFlash subclass builds its fused
+# graph through load_model until it registers graph specs of its own.
 class MiMoV2Model(
     AlwaysSignalBuffersMixin, GraphPipelineModelWithKVCache[TextContext]
 ):
@@ -104,7 +104,7 @@ class MiMoV2Model(
     )
     _strict_state_dict_loading = True
 
-    model: Model
+    _language_weights_dict: dict[str, Any]
 
     def __init__(
         self,
@@ -130,7 +130,12 @@ class MiMoV2Model(
             max_batch_size=max_batch_size,
             memory_plan=memory_plan,
         )
-        self.model = self.load_model(session)
+        self._models = self.load_graphs(session)
+
+    @property
+    def model(self) -> Model:
+        """The compiled and initialized model."""
+        return self._models[GraphRole.DECODER]
 
     def _load_state_dict(self) -> dict[str, Any]:
         """Adapts the text model's tensors, :func:`text_model_weights`.
@@ -139,7 +144,7 @@ class MiMoV2Model(
         ignored.
         """
         assert self.adapter is not None
-        return self.adapter(
+        self._language_weights_dict = self.adapter(
             text_model_weights(
                 self.pipeline_config.model.huggingface_weight_repo,
                 self.weights,
@@ -147,6 +152,7 @@ class MiMoV2Model(
             huggingface_config=self.huggingface_config,
             pipeline_config=self.pipeline_config,
         )
+        return self._language_weights_dict
 
     def _create_model_config(self, state_dict: dict[str, Any]) -> MiMoV2Config:
         del state_dict
@@ -156,71 +162,24 @@ class MiMoV2Model(
         config.return_logits = self.return_logits
         return config
 
-    def _build_graph_for_compile(
-        self,
-        session: InferenceSession,
-        state_dict: dict[str, Any],
-        model_config: MiMoV2Config,
-    ) -> tuple[Graph, dict[str, Any]]:
-        del session
-        device_refs = [DeviceRef(d.label, d.id) for d in self.devices]
-        tokens_type = TensorType(
-            DType.int64, shape=["total_seq_len"], device=device_refs[0]
-        )
-        input_row_offsets_types = [
-            TensorType(
-                DType.uint32, shape=["input_row_offsets_len"], device=device
-            )
-            for device in device_refs
-        ]
-        return_n_logits_type = TensorType(
-            DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
-        )
-        signals = Signals(devices=device_refs)
-
-        nn_model = MiMoV2(model_config, tap_hook=self._tap_hook(model_config))
+    def graph_specs(self, model_config: MiMoV2Config) -> dict[str, GraphSpec]:
+        """Returns the decoder graph."""
+        nn_model = MiMoV2(model_config)
         nn_model.load_state_dict(
-            state_dict,
+            self._language_weights_dict,
             weight_alignment=1,
             strict=self._strict_state_dict_loading,
         )
-        weights_registry = nn_model.state_dict(auto_initialize=False)
-
-        kv_types = tree.leaves(self.kv_params.get_symbolic_inputs())
-        with Graph(
-            "mimo_v2",
-            input_types=[
-                tokens_type,
-                return_n_logits_type,
-                *input_row_offsets_types,
-                *signals.input_types(),
-                *kv_types,
-            ],
-        ) as graph:
-            tokens, return_n_logits, *rest = graph.inputs
-            n = len(device_refs)
-            input_row_offsets = [v.tensor for v in rest[:n]]
-            signal_buffers = [v.buffer for v in rest[n : 2 * n]]
-            sliding_kv, full_kv, *tail = self.kv_params.unflatten_basic_kv_tree(
-                iter(rest[2 * n :])
+        # The graph's weights registry holds what it binds; drop the rest.
+        self._language_weights_dict = {}
+        return {
+            GraphRole.DECODER: GraphSpec(
+                nn_model,
+                "mimo_v2",
+                self._bind_graph_inputs(nn_model.input_tree()),
+                weights=nn_model.state_dict(auto_initialize=False),
             )
-            outputs = nn_model(
-                tokens=tokens.tensor,
-                signal_buffers=signal_buffers,
-                sliding_kv_collections=sliding_kv,
-                full_kv_collections=full_kv,
-                return_n_logits=return_n_logits.tensor,
-                input_row_offsets=input_row_offsets,
-                tail_kv_collections=tail[0] if tail else None,
-            )
-            graph.output(*outputs)
-        return graph, weights_registry
-
-    def _tap_hook(self, model_config: MiMoV2Config) -> TapHook | None:
-        """What reads the layer taps inside the graph, with a KV group of its
-        own after the target's two; the plain base graph has none."""
-        del model_config
-        return None
+        }
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         """Runs the model on inputs from :class:`GptOssBatchProcessor`."""

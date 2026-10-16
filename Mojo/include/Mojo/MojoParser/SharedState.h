@@ -54,6 +54,7 @@ class ASTType;
 class ClosureEmitter;
 class DeclResolver;
 class ModuleLoader;
+class ModuleASTDecl;
 class ExprNode;
 struct ModuleOrigin;
 struct ModuleState;
@@ -69,6 +70,8 @@ class LookupAllResult;
 class PackageOp;
 class ParserListener;
 class StructDeclOp;
+class TopLevelModuleASTDecl;
+class TraitASTDecl;
 class TraitType;
 class CallOperands;
 class ParserEvaluationContext;
@@ -188,11 +191,11 @@ public:
   StringRef getDocsBasePath() const { return docsBasePath; }
 
   /// Initialize the shared state for the given top-level decl.
-  void initialize(ASTDecl &topLevelDecl);
+  void initialize(TopLevelModuleASTDecl &topLevelDecl);
 
   /// Return the top-level decl where modules can created in. This can only be
   /// used after the SharedState has been initialized.
-  ASTDecl &getTopLevelDecl();
+  TopLevelModuleASTDecl &getTopLevelDecl();
 
   /// This is the AST type that corresponds to TypeCheckErrorType.
   ASTType getTypeCheckErrorType() const;
@@ -347,7 +350,8 @@ public:
 
   /// Try to import a direct submodule with the given name, returning the
   /// submodule's decl, or null if no such submodule exists.
-  ASTDecl *tryImportSubModule(ASTDecl &parent, StringRef name, llvm::SMLoc loc);
+  ASTDecl *tryImportSubModule(ModuleASTDecl &parent, StringRef name,
+                              llvm::SMLoc loc);
 
   /// Return the decls of every nested module/package currently materialized in
   /// the package's module-state cache. These are navigable but unlisted (not
@@ -372,7 +376,7 @@ public:
 
   /// Return the source path for the given module decl, or nullopt if the decl
   /// doesn't have a source path.
-  std::optional<std::string> getModuleSourcePath(ASTDecl &module);
+  std::optional<std::string> getModuleSourcePath(ModuleASTDecl &module);
 
   /// Resolve a declaration that originated from bytecode to the given
   /// resolvedness.
@@ -540,7 +544,7 @@ public:
 
   /// Lookup a builtin trait like `AnyType`, `Copyable`, `Movable` etc.  On
   /// error this returns null but does not print an error.
-  ASTDecl *lookupBuiltinTrait(StringRef traitName, SMLoc loc);
+  TraitASTDecl *lookupBuiltinTrait(StringRef traitName, SMLoc loc);
 
   /// A handy version of lookupBuiltinTrait, which returns the trait type.
   TraitType lookupBuiltinTraitType(StringRef traitName, SMLoc loc);
@@ -560,7 +564,7 @@ public:
   /// Get a builtin type, or emit an error and return TypeCheckErrorType if
   /// invalid. These never return null.
   ASTDecl *getBuiltinCoroutineType(llvm::SMLoc loc);
-  ASTDecl *getBuiltinDevicePassableTrait(llvm::SMLoc loc);
+  TraitASTDecl *getBuiltinDevicePassableTrait(llvm::SMLoc loc);
   ASTDecl *getBuiltinRaisingCoroutineType(llvm::SMLoc loc);
   ASTType getStandardCollectionType(llvm::SMLoc loc, StringRef name);
   ASTType getBuiltinSliceType(llvm::SMLoc loc, StringRef name);
@@ -584,7 +588,7 @@ public:
 
   /// Get or create the universal closure trait, we don't care about the
   /// signatures and we can adapt the trait to any signature.
-  ASTDecl *getUniversalParametricClosureTrait();
+  TraitASTDecl *getUniversalParametricClosureTrait();
 
   FnTypeGeneratorType getClosureFnSig(TraitSymbolAttr closureInst);
   // Get the closure fn sig without self, this is the signature that we used to
@@ -593,9 +597,7 @@ public:
   FnTypeGeneratorType getClosureFnSigWithoutSelf(TraitSymbolAttr closureInst);
 
   bool isUniversalParametricClosureTrait(TraitSymbolAttr symbol);
-  bool isUniversalParametricClosureTrait(ASTDecl *trait) {
-    return trait == getUniversalParametricClosureTrait();
-  }
+  bool isUniversalParametricClosureTrait(ASTDecl *trait);
 
   /// Function used to create a thunk. This API is limited intentionally to
   /// ensure that the creation is transaction. This is important to retain

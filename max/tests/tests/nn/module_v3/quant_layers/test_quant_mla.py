@@ -18,6 +18,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from unittest.mock import MagicMock
 
+import numpy as np
 import pytest
 from max import tree
 from max.driver import CPU, Device
@@ -25,6 +26,14 @@ from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
 from max.experimental.nn.common_layers.mesh_axis import TP
+from max.experimental.nn.common_layers.quant_mla import (
+    QuantizedLatentAttentionWithRope,
+    tensor_parallel_latent_attention_with_rope,
+)
+from max.experimental.nn.common_layers.quant_tensor import (
+    FP8BlockTensor,
+    NVFP4Tensor,
+)
 from max.experimental.sharding import (
     DeviceMapping,
     DeviceMesh,
@@ -46,13 +55,9 @@ from max.nn.kv_cache import (
     MLAKVCacheParams,
 )
 from max.nn.quant_config import QuantConfig
-from max.pipelines.architectures.deepseekV3_modulev3.layers.quant_mla import (
-    QuantizedLatentAttentionWithRope,
-    tensor_parallel_latent_attention_with_rope,
-)
-from max.pipelines.architectures.deepseekV3_modulev3.layers.quant_tensor import (
-    FP8BlockTensor,
-    NVFP4Tensor,
+from max.pipelines.architectures.deepseekV3_2_modulev3.layers.sparse_mla import (
+    QuantizedSparseLatentAttentionWithRope,
+    tensor_parallel_sparse_latent_attention_with_rope,
 )
 
 # Block-aligned dimensions (multiples of 128 on the quantized axes) so the FP8
@@ -478,6 +483,153 @@ def test_mla_fp8_tensor_parallel(
     # o_proj is row-parallel, so the attention output is a partial sum; the
     # all-reduce that resolves it lives in the transformer block.
     assert out.mapping.placements == (Partial(),)
+
+
+# --------------------------------------------------------------------------- #
+# Sparse MLA tensor parallelism with ragged per-head scales
+# --------------------------------------------------------------------------- #
+
+# GLM-5.x head geometry: qk_nope + v = 448 rows per head against a 128-row FP8
+# scale block, so head boundaries fall mid-block and the per-head B-scales are
+# gathered (``_ragged_scales``). 16 heads split evenly 2- and 8-way.
+_SPARSE_N_HEADS = 16
+_SPARSE_KV_LORA_RANK = 512
+_SPARSE_QK_NOPE_HEAD_DIM = 192
+_SPARSE_V_HEAD_DIM = 256
+_SPARSE_CACHE_HEAD_DIM = _SPARSE_KV_LORA_RANK + _QK_ROPE_HEAD_DIM
+_SPARSE_SCALE_WEIGHTS = ("w_uk", "w_uv", "w_k")
+
+
+def _make_sparse_layer(
+    devices: Sequence[Device], quant_config: QuantConfig
+) -> QuantizedSparseLatentAttentionWithRope:
+    kv_params = MLAKVCacheParams(
+        dtype=DType.float32,
+        head_dim=_SPARSE_CACHE_HEAD_DIM,
+        num_layers=1,
+        devices=[DeviceRef.from_device(device) for device in devices],
+        num_q_heads=_SPARSE_N_HEADS,
+        page_size=_PAGE_SIZE,
+    )
+    return QuantizedSparseLatentAttentionWithRope(
+        num_attention_heads=_SPARSE_N_HEADS,
+        num_key_value_heads=1,
+        hidden_size=_HIDDEN_SIZE,
+        kv_params=kv_params,
+        layer_idx=0,
+        q_lora_rank=_Q_LORA_RANK,
+        kv_lora_rank=_SPARSE_KV_LORA_RANK,
+        qk_nope_head_dim=_SPARSE_QK_NOPE_HEAD_DIM,
+        qk_rope_head_dim=_QK_ROPE_HEAD_DIM,
+        v_head_dim=_SPARSE_V_HEAD_DIM,
+        graph_mode="decode",
+        quant_config=quant_config,
+        index_n_heads=4,
+        index_head_dim=128,
+        index_topk=64,
+        indexer_quant_config=quant_config,
+    )
+
+
+def _scale_of(
+    layer: QuantizedSparseLatentAttentionWithRope, name: str
+) -> tuple[Tensor, Tensor]:
+    weight, scale = getattr(layer, name)
+    assert scale is not None
+    return weight, scale
+
+
+@pytest.mark.parametrize("num_devices", [2, 8])
+def test_sparse_mla_fp8_tensor_parallel_ragged_scale_placement(
+    mock_accelerator: MagicMock,
+    fp8_quant_config: QuantConfig,
+    num_devices: int,
+) -> None:
+    """Gathered per-head scales shard on the head axis with their weights.
+
+    ``kv_b_proj``'s scale stays replicated so the gather can index it by
+    global head; each gathered scale then takes its weight's head sharding.
+    """
+    with F.lazy():
+        devices = [mock_accelerator(i) for i in range(num_devices)]
+        mesh = DeviceMesh(tuple(devices), (num_devices,), (TP,))
+        with default_device(mesh):
+            layer = tensor_parallel_sparse_latent_attention_with_rope(
+                _make_sparse_layer(devices, fp8_quant_config), num_devices
+            )
+        assert layer._ragged_scales
+
+        assert isinstance(layer.kv_b_proj, FP8BlockTensor)
+        assert layer.kv_b_proj.data.mapping.placements == (Sharded(0),)
+        assert layer.kv_b_proj.weight_scale_inv.mapping.placements == (
+            Replicated(),
+        )
+
+        heads_per_device = _SPARSE_N_HEADS // num_devices
+        for name in _SPARSE_SCALE_WEIGHTS:
+            weight, scale = _scale_of(layer, name)
+            assert weight.mapping.placements == (Sharded(0),), name
+            assert scale.mapping == weight.mapping, name
+            rows_per_head = int(scale.shape[0]) // _SPARSE_N_HEADS
+            for shard in scale.local_shards:
+                assert int(shard.shape[0]) == heads_per_device * rows_per_head
+
+
+@pytest.mark.parametrize("num_devices", [2, 8])
+def test_sparse_mla_fp8_tensor_parallel_ragged_scale_values(
+    fp8_quant_config: QuantConfig, num_devices: int
+) -> None:
+    """Each device's gathered scales equal its heads' single-device slice."""
+    scale_rows = (
+        _SPARSE_N_HEADS * (_SPARSE_QK_NOPE_HEAD_DIM + _SPARSE_V_HEAD_DIM) // 128
+    )
+    on_disk = np.arange(
+        scale_rows * (_SPARSE_KV_LORA_RANK // 128), dtype=np.float32
+    ).reshape(scale_rows, -1)
+
+    devices = [CPU() for _ in range(num_devices)]
+    mesh = DeviceMesh(tuple(devices), (num_devices,), (TP,))
+    # Realized up front so the scales enter the graph as inputs, like loaded
+    # weights, rather than as foldable constants.
+    single_scale = F.constant(on_disk, device=CPU())
+    replicated_scale = F.constant(
+        on_disk, device=DeviceMapping(mesh, (Replicated(),))
+    )
+
+    # The layers' FP8 weights stay pending in a context that is never
+    # realized: realizing compiles every pending op, and CPU targets without
+    # FP8 support reject them.
+    with F.lazy():
+        single = _make_sparse_layer([CPU()], fp8_quant_config)
+        with default_device(mesh):
+            layer = tensor_parallel_sparse_latent_attention_with_rope(
+                _make_sparse_layer(devices, fp8_quant_config), num_devices
+            )
+    assert isinstance(single.kv_b_proj, FP8BlockTensor)
+    assert isinstance(layer.kv_b_proj, FP8BlockTensor)
+    single.kv_b_proj.weight_scale_inv = single_scale
+    layer.kv_b_proj.weight_scale_inv = replicated_scale
+    head_sharded = DeviceMapping(mesh, (Sharded(0),))
+
+    for start_row_offset, n_rows in (
+        (0, _SPARSE_QK_NOPE_HEAD_DIM),
+        (_SPARSE_QK_NOPE_HEAD_DIM, _SPARSE_V_HEAD_DIM),
+    ):
+        with F.lazy():
+            reference = single._gather_per_head_scale(
+                start_row_offset=start_row_offset, n_rows=n_rows
+            )
+            tp_scale = layer._gather_per_head_scale(
+                start_row_offset=start_row_offset, n_rows=n_rows
+            ).to(head_sharded)
+        expected = reference.to_numpy()
+        shards = tp_scale.local_shards
+        assert len(shards) == num_devices
+        heads = _SPARSE_N_HEADS // num_devices
+        for i, shard in enumerate(shards):
+            np.testing.assert_array_equal(
+                shard.to_numpy(), expected[i * heads : (i + 1) * heads]
+            )
 
 
 # --------------------------------------------------------------------------- #

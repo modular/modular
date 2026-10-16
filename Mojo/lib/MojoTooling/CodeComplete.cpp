@@ -169,10 +169,9 @@ struct CodeCompletionListener : public BaseCompletionListener {
     // getChildren() iterates below). Thus we enumerate them from the cache
     // instead. This lets a relative import (`from . import X`) complete any
     // sibling module or sub-package.
-    if (auto pkgOp =
-            dyn_cast_or_null<PackageOp>(packageDecl.getIfOperation())) {
+    if (auto *package = dyn_cast<PackageASTDecl>(&*packageDecl)) {
       SharedState &shared = parserContext->getSharedState();
-      for (ASTDecl *sub : shared.getNestedModuleDecls(pkgOp)) {
+      for (ASTDecl *sub : shared.getNestedModuleDecls(package->getOp())) {
         MojoASTDeclRef subRef(sub);
         StringAttr nameAttr =
             TypeSwitch<Operation *, StringAttr>(subRef.getIfOperation())
@@ -229,7 +228,9 @@ struct CodeCompletionListener : public BaseCompletionListener {
     // An import gate's own scope holds only the submodules explicitly imported
     // through it; the imported entity's own members live in its target module.
     // Enumerate the gate's nested children, then resolve to the target.
-    if (auto importOp = dyn_cast_or_null<ImportOp>(decl.getIfOperation())) {
+    if (auto *importDecl = dyn_cast<ImportASTDecl>(&*decl);
+        importDecl && importDecl->getIfResolvedOp()) {
+      ImportOp importOp = importDecl->getIfResolvedOp();
       collectDeclChildren(decl);
       SharedState &shared = parserContext->getSharedState();
       SMLoc importLoc = shared.diags.convertLocToSMLoc(importOp->getLoc());
@@ -243,11 +244,10 @@ struct CodeCompletionListener : public BaseCompletionListener {
     // A package's own scope is empty; its public surface lives in its
     // __init__. Redirect a package target to its __init__ so member access
     // (`pkg.<...>`) completes exactly what __init__ re-exports.
-    if (auto pkgOp = dyn_cast_or_null<PackageOp>(decl.getIfOperation())) {
+    if (auto *package = dyn_cast<PackageASTDecl>(&*decl)) {
       SharedState &shared = parserContext->getSharedState();
-      SMLoc loc = shared.diags.convertLocToSMLoc(pkgOp->getLoc());
-      if (auto initOrFail =
-              shared.getDeclResolver().bodyResolvePackageInit(*decl, loc);
+      SMLoc loc = shared.diags.convertLocToSMLoc(package->getOp()->getLoc());
+      if (auto initOrFail = package->resolveInitModule(loc);
           succeeded(initOrFail) && *initOrFail)
         decl = MojoASTDeclRef(*initOrFail);
     }
@@ -284,8 +284,8 @@ struct CodeCompletionListener : public BaseCompletionListener {
     if (!result.isSuccess()) {
       // The name may be a submodule of a package rather than a symbol in its
       // scope.
-      return MojoASTDeclRef(
-          shared.tryImportSubModule(module, declName.getValue(), loc));
+      return MojoASTDeclRef(shared.tryImportSubModule(
+          cast<ModuleASTDecl>(module), declName.getValue(), loc));
     }
     return MojoASTDeclRef(result.getIfSuccess().front());
   }

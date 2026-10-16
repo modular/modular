@@ -662,6 +662,63 @@ def test_graph_stages_end_to_end(
         graph.output(*outputs)
 
 
+@pytest.mark.parametrize("structured_output", [False, True])
+def test_trace_builds_the_hand_wired_graph(
+    virtual_gpu: None, structured_output: bool
+) -> None:
+    """``trace`` routes the decoded inputs exactly as a hand-wired graph
+    does, so the pipeline's spec-decode graph is unchanged."""
+
+    def build() -> UnifiedDflashGemma4_31B:
+        # A module caches values from the graph it first traces into, so
+        # each graph gets its own instance.
+        module = UnifiedDflashGemma4_31B(
+            _make_unified_real(skips_draft=True),
+            enable_structured_output=structured_output,
+        )
+        for name, weight in module.raw_state_dict().items():
+            weight.name = name
+        return module
+
+    nn_model = build()
+    with Graph(
+        "unified_dflash_gemma4_31b", input_types=nn_model.input_types()
+    ) as expected:
+        graph_inputs = nn_model.decode_inputs(expected.inputs)
+        expected.output(
+            *nn_model(
+                tokens=graph_inputs.tokens,
+                input_row_offsets=graph_inputs.input_row_offsets,
+                draft_tokens=graph_inputs.draft_tokens,
+                signal_buffers=graph_inputs.signal_buffers,
+                kv_collections=graph_inputs.kv("target", "full_attention"),
+                passthrough_kv={
+                    SLIDING_KV: graph_inputs.kv("target", "sliding_attention")
+                },
+                draft_kv_collections=graph_inputs.kv("draft"),
+                return_n_logits=graph_inputs.return_n_logits,
+                seed=graph_inputs.seed,
+                temperature=graph_inputs.temperature,
+                top_k=graph_inputs.top_k,
+                max_k=graph_inputs.max_k,
+                top_p=graph_inputs.top_p,
+                min_top_p=graph_inputs.min_top_p,
+                draft_probs_full=graph_inputs.draft_probs_full,
+                in_thinking_phase=graph_inputs.thinking_phase,
+                pinned_bitmask=graph_inputs.pinned_bitmask,
+                wait_payload=graph_inputs.wait_payload,
+                device_bitmask_scratch=graph_inputs.device_bitmask_scratch,
+            )
+        )
+
+    traced_model = build()
+    traced = traced_model.trace(
+        *traced_model.input_types(), name="unified_dflash_gemma4_31b"
+    )
+
+    assert str(traced) == str(expected)
+
+
 def test_structured_output_rejects_synthetic_acceptance(
     virtual_gpu: None,
 ) -> None:

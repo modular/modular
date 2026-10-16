@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# DOC: max/layout/tensors.mdx
+# DOC: layout/tensors.mdx
 
 from layout import (
     IntTuple,

@@ -314,6 +314,16 @@ def test_mixed_steps_that_do_not_verify_resolve_to_width_zero() -> None:
     assert not policy.verifies_mixed_steps
 
 
+def test_max_mixed_width_bounds_what_a_mixed_step_verifies() -> None:
+    """The scheduler reserves this many tokens per decode row."""
+    off = _policy(_config(None), 3, mixed_steps_verify=False)
+    assert off.max_mixed_width == 0
+    assert _policy(_config(None), 3).max_mixed_width == 3
+    assert _policy(_config(None, mixed_width=1), 3).max_mixed_width == 1
+    # The schedule picks a width by batch size, which is not known ahead.
+    assert _policy(_config([(1, 8, 1)]), 3).max_mixed_width == 3
+
+
 # ---------------------------------------------------------------------------
 # the schedule as it arrives from SpeculativeConfig
 # ---------------------------------------------------------------------------

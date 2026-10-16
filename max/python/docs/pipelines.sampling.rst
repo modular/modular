@@ -27,6 +27,7 @@ Configuration
    :toctree: generated
    :template: autosummary/data.rst
 
+   DEFAULT_STRUCTURED_OUTPUT_ANY_WHITESPACE
    DEFAULT_STRUCTURED_OUTPUT_BACKEND
 
 Processors
@@ -73,9 +74,11 @@ Logits processing
    :template: autosummary/function.rst
 
    apply_logits_processors
+   batch_max_k
    build_greedy_acceptance_sampler_graph
    build_stochastic_acceptance_sampler_graph
    build_synthetic_acceptance_sampler_graph
+   request_row_seed
 
 Label scoring
 -------------

@@ -587,8 +587,9 @@ def _amdgpu_matmul_config_from_block_shape[
     var num_warp_k_partitions: Int = 1
 
     # TODO(KERN-2432): Merge these configurations into the below logic.
+    # Both need K >= 2 * BK: the AMD kernel loads two K tiles before its loop.
     if block_m == 16 and a_type.is_float8() and transpose_b:
-        if block_n == 32:
+        if block_n == 32 and K >= 2 * 256:
             return MatmulConfig[a_type, b_type, c_type, transpose_b](
                 block_tile_shape=Index(16, 32, 256),
                 warp_tile_shape=Index(16, 32, 256),
@@ -597,7 +598,7 @@ def _amdgpu_matmul_config_from_block_shape[
                 num_warp_k_partitions=4,
                 pdl_level=pdl_level,
             )
-        if block_n == 64:
+        if block_n == 64 and K >= 2 * 1024:
             return MatmulConfig[a_type, b_type, c_type, transpose_b](
                 block_tile_shape=Index(16, 64, 1024),
                 warp_tile_shape=Index(16, 16, 1024),

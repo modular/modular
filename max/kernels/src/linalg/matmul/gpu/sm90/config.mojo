@@ -13,7 +13,7 @@
 
 """Provides static configuration and heuristic config builders for SM90 (Hopper) GPU warp-specialized matmul kernels."""
 
-from std.hashlib.hasher import Hasher
+from std.hash.hasher import Hasher
 
 from std.collections.set import Set
 from std.math.uutils import ualign_down, ualign_up, ufloordiv, uceildiv

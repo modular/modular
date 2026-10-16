@@ -180,8 +180,11 @@ class Gemma4Model(
         if model_config.vision_config is None:
             return None
 
+        # The vision tower is never quantized (modelopt ignore-lists it);
+        # always build it in the unquantized (BF16) dtype so its leaves
+        # match the checkpoint storage even under NVFP4.
         device_ref = DeviceRef.from_device(self.devices[0])
-        with F.lazy(), default_dtype(model_config.dtype):
+        with F.lazy(), default_dtype(model_config.unquantized_dtype):
             vision_nn = Gemma4VisionModel(model_config)
             vision_nn.to(self.devices[0])
 
@@ -214,9 +217,19 @@ class Gemma4Model(
     ) -> Callable[..., Any]:
         n_devices = len(self.devices)
         mesh = DeviceMesh(tuple(self.devices), (n_devices,), ("tp",))
+        # Under NVFP4 the checkpoint's model dtype is packed uint8, which
+        # only the quantized linears consume; every unquantized leaf (norms,
+        # embeddings, layer_scalar, BF16 attention) must build in the
+        # checkpoint's unquantized dtype instead, matching the graph arch's
+        # ``unquantized_dtype`` handling.
+        build_dtype = (
+            model_config.unquantized_dtype
+            if model_config.text_config.quant_config is not None
+            else model_config.dtype
+        )
         with (
             F.lazy(),
-            default_dtype(model_config.dtype),
+            default_dtype(build_dtype),
             default_device(mesh),
         ):
             language_nn = Gemma4(model_config, self.kv_params, mesh)

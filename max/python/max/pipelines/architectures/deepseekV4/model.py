@@ -23,15 +23,10 @@ from typing import Any, ClassVar, cast
 import numpy as np
 from max import tree
 from max.driver import Buffer, Device
-from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import BufferType, DeviceRef, Graph, TensorType, ops
+from max.graph import BufferType, DeviceRef, TensorType
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.kv_cache import (
-    KVCacheInputs,
-    KVCacheParamInterface,
-    MultiKVCacheParams,
-)
+from max.nn.kv_cache import KVCacheInputs, KVCacheParamInterface
 from max.nn.transformer import ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
@@ -41,6 +36,7 @@ from max.pipelines.lib import (
     ModelOutputs,
     PipelineConfig,
 )
+from max.pipelines.lib.graph_specs import GraphRole, GraphSpec
 from max.pipelines.lib.interfaces.batch_processor import (
     BatchProcessor,
     RaggableContext,
@@ -52,9 +48,7 @@ from max.pipelines.lib.interfaces.batch_processor import (
 from max.pipelines.lib.memory_estimation import MemoryPlan
 
 from .deepseekV4 import DeepseekV4
-from .layers import DeepseekV4Cache
 from .layers.quantization import fp8_block_quant_config
-from .layers.ragged import window_count
 from .model_config import DeepseekV4Config
 
 logger = logging.getLogger("max.pipelines")
@@ -73,10 +67,6 @@ class DeepseekV4Inputs(ModelInputs):
     return_n_logits: Buffer
     """Number of trailing logits to return."""
 
-    window_rows: list[Buffer] = field(default_factory=list)
-    """Host, one per compression ratio; only the length is read, the window
-    count (:func:`~.layers.ragged.window_count`)."""
-
     signal_buffers: list[Buffer] = field(default_factory=list)
     """One per device when there is more than one, else empty."""
 
@@ -87,7 +77,6 @@ class DeepseekV4Inputs(ModelInputs):
             self.tokens,
             self.input_row_offsets,
             self.return_n_logits,
-            *self.window_rows,
             *self.signal_buffers,
             *tree.leaves(self.kv_cache_inputs),
         )
@@ -110,22 +99,13 @@ class DeepseekV4BatchProcessor(
     ) -> list[TensorType | BufferType]:
         # A single device keeps the signal-free signature, and with it the
         # compiled graph, of the single-device bringup.
-        inputs = ragged_kv_symbolic_inputs(
+        return ragged_kv_symbolic_inputs(
             kv_params=kv_params,
             device_refs=device_refs,
             include_signal_buffers=(
                 self._include_signal_buffers and len(device_refs) > 1
             ),
         )
-        window_rows = [
-            TensorType(DType.uint8, [f"windows_r{r}"], device=DeviceRef.CPU())
-            for r in self._window_ratios
-        ]
-        return [*inputs[:3], *window_rows, *inputs[3:]]
-
-    @property
-    def _window_ratios(self) -> Sequence[int]:
-        return self.config.window_ratios
 
     def prepare_initial_token_inputs(
         self,
@@ -139,7 +119,6 @@ class DeepseekV4BatchProcessor(
         tokens_np, offsets_np = build_single_replica_ragged_token_arrays(
             cast(Sequence[RaggableContext], context_batch)
         )
-        lengths = np.diff(offsets_np)
         device0 = self.runtime.devices[0]
         return DeepseekV4Inputs(
             tokens=Buffer.from_numpy(tokens_np).to(device0),
@@ -147,17 +126,13 @@ class DeepseekV4BatchProcessor(
             return_n_logits=Buffer.from_numpy(
                 np.array([return_n_logits], dtype=np.int64)
             ),
-            window_rows=[
-                Buffer.from_numpy(
-                    np.zeros(window_count(lengths, r), dtype=np.uint8)
-                )
-                for r in self._window_ratios
-            ],
             kv_cache_inputs=kv_cache_inputs,
             signal_buffers=list(self.runtime.signal_buffers),
         )
 
 
+# Still a GraphPipelineModelWithKVCache: the DSpark subclass builds its fused
+# graph through load_model until it registers graph specs of its own.
 class DeepseekV4Model(GraphPipelineModelWithKVCache[TextContext]):
     """A DeepSeek-V4-Flash pipeline model for text generation."""
 
@@ -167,10 +142,9 @@ class DeepseekV4Model(GraphPipelineModelWithKVCache[TextContext]):
         DeepseekV4BatchProcessor
     )
 
-    model: Model
-    """The compiled and initialized MAX Engine model."""
-
     _strict_state_dict_loading = True
+
+    _language_weights_dict: dict[str, Any]
 
     def __init__(
         self,
@@ -196,7 +170,16 @@ class DeepseekV4Model(GraphPipelineModelWithKVCache[TextContext]):
             max_batch_size=max_batch_size,
             memory_plan=memory_plan,
         )
-        self.model = self.load_model(session)
+        self._models = self.load_graphs(session)
+
+    @property
+    def model(self) -> Model:
+        """The compiled and initialized MAX Engine model."""
+        return self._models[GraphRole.DECODER]
+
+    def _load_state_dict(self) -> dict[str, Any]:
+        self._language_weights_dict = super()._load_state_dict()
+        return self._language_weights_dict
 
     def _create_model_config(
         self, state_dict: dict[str, Any]
@@ -211,8 +194,8 @@ class DeepseekV4Model(GraphPipelineModelWithKVCache[TextContext]):
             # The encoding names the fp8 projections only. The activation
             # dtype is the reference's default dtype, bf16, which is also
             # what the checkpoint stores ``embed`` / ``ffn.gate`` /
-            # ``indexer.weights_proj`` / ``wo_a`` in and the reference declares
-            # them as; those follow ``config.dtype``. The weights the reference
+            # ``indexer.weights_proj`` in and the reference declares them as;
+            # those follow ``config.dtype``. The weights the reference
             # declares float32 (norms, head, compressor ``wkv`` / ``wgate``)
             # are declared so by the modules and upcast by the adapter.
             quant_config = fp8_block_quant_config(
@@ -230,81 +213,27 @@ class DeepseekV4Model(GraphPipelineModelWithKVCache[TextContext]):
         model_config.dspark_stages = False
         return model_config
 
-    def _build_graph_for_compile(
-        self,
-        session: InferenceSession,
-        state_dict: dict[str, Any],
-        model_config: DeepseekV4Config,
-    ) -> tuple[Graph, dict[str, Any]]:
-        del session
+    def graph_specs(
+        self, model_config: DeepseekV4Config
+    ) -> dict[str, GraphSpec]:
+        """Returns the decoder graph, tensor parallel on several devices."""
         nn_model = DeepseekV4(model_config)
         nn_model.load_state_dict(
-            state_dict,
+            self._language_weights_dict,
             weight_alignment=1,
             strict=self._strict_state_dict_loading,
         )
-        weights_registry = nn_model.state_dict(auto_initialize=False)
-
-        assert self.batch_processor is not None
-        input_types = self.batch_processor.get_symbolic_inputs(
-            kv_params=self.kv_params, device_refs=self.device_refs
-        )
-        with Graph("deepseekV4", input_types=input_types) as graph:
-            tokens, input_row_offsets, return_n_logits, *variadic_args = (
-                graph.inputs
+        # The graph's weights registry holds what it binds; drop the rest.
+        self._language_weights_dict = {}
+        return {
+            GraphRole.DECODER: GraphSpec(
+                nn_model,
+                "deepseekV4",
+                self._bind_graph_inputs(nn_model.input_tree()),
+                # Taken before the trace shards the weights.
+                weights=nn_model.state_dict(auto_initialize=False),
             )
-            n_ratios = len(model_config.window_ratios)
-            windows = {
-                r: v.tensor.shape[0]
-                for r, v in zip(
-                    model_config.window_ratios,
-                    variadic_args[:n_ratios],
-                    strict=True,
-                )
-            }
-            variadic_args = variadic_args[n_ratios:]
-            assert isinstance(self.kv_params, MultiKVCacheParams)
-            n_dev = len(self.device_refs)
-            if n_dev == 1:
-                cache = DeepseekV4Cache.from_groups(
-                    model_config,
-                    self.kv_params.unflatten_basic_kv_tree(iter(variadic_args)),
-                )
-                outputs = nn_model.serve(
-                    tokens.tensor,
-                    input_row_offsets.tensor,
-                    return_n_logits.tensor,
-                    windows,
-                    cache,
-                )
-            else:
-                signal_buffers = [v.buffer for v in variadic_args[:n_dev]]
-                groups = self.kv_params.unflatten_basic_kv_tree(
-                    iter(variadic_args[n_dev:])
-                )
-                caches = [
-                    DeepseekV4Cache.from_groups(
-                        model_config, groups, device_idx=i
-                    )
-                    for i in range(n_dev)
-                ]
-                tokens_per_dev = ops.distributed_broadcast(
-                    tokens.tensor, signal_buffers
-                )
-                offsets_per_dev = ops.distributed_broadcast(
-                    input_row_offsets.tensor, signal_buffers
-                )
-                outputs = DeepseekV4.serve_tensor_parallel(
-                    nn_model.tensor_parallel_replicas(self.device_refs),
-                    tokens_per_dev,
-                    offsets_per_dev,
-                    return_n_logits.tensor,
-                    windows,
-                    caches,
-                    signal_buffers,
-                )
-            graph.output(*outputs)
-        return graph, weights_registry
+        }
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         model_inputs = cast(DeepseekV4Inputs, model_inputs)

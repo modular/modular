@@ -1284,6 +1284,21 @@ def test_insert() raises:
         SIMD[.uint, 8](9, 6, 3, 7, 5, 6, 7, 8),
     )
 
+    assert_equal(
+        SIMD[.int64, 2](1, 2).insert[offset=1](Scalar[.int64](99)),
+        SIMD[.int64, 2](1, 99),
+    )
+
+    assert_equal(
+        SIMD[.int64, 2](1, 2).insert[offset=0](Scalar[.int64](99)),
+        SIMD[.int64, 2](99, 2),
+    )
+
+    assert_equal(
+        SIMD[.float32, 4](0, 1, 2, 3).insert[offset=3](Float32(9)),
+        SIMD[.float32, 4](0, 1, 2, 9),
+    )
+
 
 def test_join() raises:
     comptime I2 = SIMD[.int32, 2]

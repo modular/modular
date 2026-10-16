@@ -190,7 +190,6 @@ class UnifiedDSparkNemotronHModel(  # type: ignore[misc]
         return convert_draft_state_dict(
             {name: weight.data() for name, weight in draft_weights.items()},
             config.draft,
-            num_devices=len(self.devices),
             target_embedding=embedding,
         )
 

@@ -1,0 +1,28 @@
+load("//bazel:api.bzl", "modular_py_library", "requirement")
+
+package(default_visibility = ["//max:consumers"])
+
+modular_py_library(
+    name = "unified_mtp_gemma4_modulev3",
+    srcs = glob(["**/*.py"]),
+    deps = [
+        requirement("transformers"),
+        requirement("typing-extensions"),
+        "//max/python/max:tree",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/experimental",
+        "//max/python/max/experimental/nn",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/gemma3_modulev3",
+        "//max/python/max/pipelines/architectures/gemma4",
+        "//max/python/max/pipelines/architectures/gemma4_assistant",
+        "//max/python/max/pipelines/architectures/gemma4_modulev3",
+        "//max/python/max/pipelines/architectures/unified_mtp_gemma4",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/speculative",
+        "//max/python/max/profiler",
+    ],
+)

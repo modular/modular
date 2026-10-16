@@ -42,6 +42,7 @@ covered by `test_mla_decode_sparse_kv_fp8.mojo` and friends.
 """
 
 from std.math import ceildiv, exp, isnan
+from std.memory import bitcast
 from std.sys import default_accelerator
 
 from max.gpu.host import DeviceContext
@@ -54,7 +55,7 @@ from layout import (
     row_major,
 )
 from layout.tile_layout import Layout as TileLayout
-from nn.attention.gpu.mla import flare_mla_decoding
+from nn.attention.gpu.mla import flare_mla_decoding, flare_mla_decoding_rows
 from nn.attention.gpu.mla_graph import (
     _AMD_SPARSE_MLA_GATHER_VEC,
     _AMD_SPARSE_MLA_ROW_VALID_LENGTHS_THREADS,
@@ -63,6 +64,7 @@ from nn.attention.gpu.mla_graph import (
     mla_decode_branch_fp8,
 )
 from nn.attention.mha_mask import NullMask, PaddingMask
+from nn.attention.mha_operand import KVCacheMHAOperand, SparseRowsMHAOperand
 from nn.attention.mha_utils import MHAConfig, NonNullPointer
 from std.testing import assert_raises, assert_true
 from std.utils import IndexList
@@ -137,6 +139,7 @@ def _run_case[
     num_heads: Int,
     sparse_mla: Bool,
     use_derived_valid_lengths: Bool = False,
+    fused: Bool = False,
 ](
     batch_size: Int,
     cache_len: Int,
@@ -152,6 +155,9 @@ def _run_case[
 
     When `use_derived_valid_lengths=True` (only valid with `sparse_mla=True`),
     the dense decode uses `SparseIndexMask` instead of `PaddingMask`.
+
+    `fused=True` (only with `sparse_mla=True`) reads the selected rows in
+    place through `SparseRowsMHAOperand` instead of gathering them first.
     """
     comptime dtype = DType.float8_e4m3fn
     comptime out_dtype = DType.bfloat16
@@ -337,7 +343,35 @@ def _run_case[
         scalar_args_dev.unsafe_ptr(), row_major[3]()
     )
 
-    comptime if sparse_mla:
+    comptime if sparse_mla and fused:
+        var zero_row_buf = ctx.enqueue_create_buffer[dtype](K_CACHE_DIM)
+        ctx.enqueue_memset(zero_row_buf, 0)
+        var k_rows = SparseRowsMHAOperand[row_width=K_CACHE_DIM](
+            KVCacheMHAOperand(k_cache),
+            k_cache.blocks_raw_ptr(),
+            zero_row_buf.unsafe_ptr(),
+            d_indices_device.unsafe_ptr(),
+            topk_lengths_device.unsafe_ptr().bitcast[UInt32](),
+            indices_stride,
+        )
+        var topk_lengths_tt = TileTensor(
+            topk_lengths_device.unsafe_ptr().bitcast[UInt32](),
+            row_major(batch_size),
+        )
+        flare_mla_decoding_rows[
+            config=MHAConfig[dtype](num_heads, K_CACHE_DIM)
+        ](
+            out_padded,
+            q_padded,
+            k_rows,
+            indices_stride,
+            PaddingMask(topk_lengths_tt),
+            scale,
+            ctx,
+            scalar_args_buf_tt,
+        )
+        _ = zero_row_buf
+    elif sparse_mla:
         # Mirrors mla_decode_branch_fp8's AMD sparse branch exactly: gather
         # the selected rows into a dense scratch, then run the validated
         # dense decode kernel over it with a padding-only mask.
@@ -1120,6 +1154,10 @@ def _run_sentinel_case[
     # feeds it the production kernel's derived per-row length.
     var derived_lengths = ctx.enqueue_create_buffer[.uint32](batch_size)
     comptime if use_derived_valid_lengths:
+        # The kernel also clears the zero row the in-place reader uses; start
+        # it non-zero so the check below sees the clear.
+        var zero_row = ctx.enqueue_create_buffer[.uint8](K_CACHE_DIM)
+        zero_row.enqueue_fill(255)
         ctx.enqueue_function[
             _amd_sparse_mla_row_valid_lengths[
                 _AMD_SPARSE_MLA_ROW_VALID_LENGTHS_THREADS
@@ -1131,9 +1169,16 @@ def _run_sentinel_case[
             ).unsafe_ptr(),
             derived_lengths.unsafe_ptr(),
             Int32(indices_stride),
+            zero_row.unsafe_ptr(),
+            Int32(K_CACHE_DIM),
             grid_dim=(batch_size, 1, 1),
             block_dim=(_AMD_SPARSE_MLA_ROW_VALID_LENGTHS_THREADS, 1, 1),
         )
+        var zero_row_host = ctx.enqueue_create_host_buffer[.uint8](K_CACHE_DIM)
+        ctx.enqueue_copy(zero_row_host, zero_row)
+        ctx.synchronize()
+        for i in range(K_CACHE_DIM):
+            assert_true(zero_row_host[i] == 0, "zero row not cleared")
         var topk_lengths_tt = TileTensor(
             derived_lengths.unsafe_ptr(), row_major(batch_size)
         )
@@ -1368,6 +1413,48 @@ def _check_sentinel[
         print("  RED CONTROL FIRED AS EXPECTED (PaddingMask diverges)")
 
 
+def _check_fused_matches_gather[
+    num_heads: Int
+](
+    batch_size: Int,
+    cache_len: Int,
+    topk_lengths_list: List[Int],
+    indices_stride: Int,
+    ctx: DeviceContext,
+) raises:
+    """Reading the selected rows in place must reproduce the gather path bit
+    for bit: both fill the same LDS image from the same cache rows (zeros for
+    the slots past a batch's top-k length) and run the same decode kernel."""
+    var out_size = batch_size * num_heads * KV_LATENT_DIM
+    var gathered = ctx.enqueue_create_host_buffer[.bfloat16](out_size)
+    var fused = ctx.enqueue_create_host_buffer[.bfloat16](out_size)
+    ctx.synchronize()
+    _run_case[num_heads=num_heads, sparse_mla=True](
+        batch_size,
+        cache_len,
+        topk_lengths_list,
+        indices_stride,
+        gathered.unsafe_ptr().as_unsafe_any_origin(),
+        ctx,
+    )
+    _run_case[num_heads=num_heads, sparse_mla=True, fused=True](
+        batch_size,
+        cache_len,
+        topk_lengths_list,
+        indices_stride,
+        fused.unsafe_ptr().as_unsafe_any_origin(),
+        ctx,
+    )
+    var mismatches = 0
+    for i in range(out_size):
+        if bitcast[DType.uint16](gathered[i]) != bitcast[DType.uint16](
+            fused[i]
+        ):
+            mismatches += 1
+    print("fused_matches_gather mismatches:", mismatches, "of", out_size)
+    assert_true(mismatches == 0, "fused sparse rows differ from the gather")
+
+
 def main() raises:
     # `PaddingMask` is AMD-only by design (mirrors mla_decode_branch_fp8's
     # own `default_accelerator().is_amd_gpu() and sparse_mla` gate): the SM100 native
@@ -1393,6 +1480,13 @@ def main() raises:
                 indices_stride=2048,
                 ctx=ctx,
                 expect_pass=True,
+            )
+            _check_fused_matches_gather[num_heads=8](
+                batch_size=3,
+                cache_len=4096,
+                topk_lengths_list=topk_lengths,
+                indices_stride=2048,
+                ctx=ctx,
             )
             # RED control: identical (poisoned) cache, dense NullMask
             # decode over the whole cache -- must fail.

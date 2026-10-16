@@ -144,6 +144,39 @@ def test_stacked_gate_up_matches_per_half_layout(
             )
 
 
+@pytest.mark.parametrize(
+    ("lane_bytes", "expected"),
+    [(_MFMA_LANE_BYTES, _expected_b_5d), (MXFP6_LANE_BYTES, _expected_planes)],
+)
+def test_bf16_permutes_as_its_bytes(
+    session: InferenceSession,
+    lane_bytes: int,
+    expected: Callable[[np.ndarray], np.ndarray],
+) -> None:
+    """A bf16 weight lands where the byte layout puts its bytes.
+
+    With 16-byte lanes that is the B layout of ``smallm_streaming_matmul``,
+    eight bf16 per lane.
+    """
+    src = np.random.default_rng(2).integers(0, 2**16, (1, 32, 192), np.uint16)
+    cpu = DeviceRef.CPU()
+    with Graph(
+        "preshuffle_bf16",
+        input_types=[TensorType(DType.bfloat16, src.shape, cpu)],
+    ) as graph:
+        graph.output(
+            preshuffle_block_scaled_b(
+                graph.inputs[0].tensor, lane_bytes=lane_bytes
+            )
+        )
+    (out,) = session.load(graph).execute(
+        Buffer.from_numpy(src).view(DType.bfloat16)
+    )
+    got = cast(Buffer, out).view(DType.uint16).to_numpy()
+    want = expected(src[0].view(np.uint8)).view(np.uint16)
+    np.testing.assert_array_equal(got[0], want)
+
+
 def test_scales_match_cell_layout(session: InferenceSession) -> None:
     src = _bytes(1, (2, 64, 16))
     got = _run(session, preshuffle_block_scaled_b_scales, src)

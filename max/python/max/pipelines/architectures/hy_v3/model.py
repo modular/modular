@@ -22,13 +22,13 @@ from max._core.engine import Model
 from max.driver import Buffer, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import Graph
 from max.nn.comm.ep import EPCommInitializer, EPConfig
 from max.nn.comm.ep.ep_config import calculate_ep_max_tokens_per_rank
 from max.pipelines.architectures.llama3.model import (
     Llama3Inputs,
     LlamaModelBase,
 )
+from max.pipelines.lib.graph_specs import GraphRole, GraphSpec
 from max.pipelines.lib.interfaces import AlwaysSignalBuffersMixin
 from typing_extensions import override
 
@@ -151,58 +151,21 @@ class HYV3Model(AlwaysSignalBuffersMixin, LlamaModelBase):
             )
 
     @override
-    def _build_graph_for_compile(
-        self,
-        session: InferenceSession,
-        state_dict: dict[str, Any],
-        model_config: HYV3Config,
-    ) -> tuple[Graph, dict[str, Any]]:
-        del session
-        num_devices = len(self.devices)
-
+    def graph_specs(self, model_config: HYV3Config) -> dict[str, GraphSpec]:
+        """Returns the decoder."""
         nn_model = HYV3(model_config)
         graph_inputs = nn_model.input_types(self.kv_params)
-
         nn_model.load_state_dict(
-            state_dict,
+            self.state_dict,
             override_quantization_encoding=True,
             weight_alignment=1,
             strict=True,
         )
-        weights_registry = nn_model.state_dict()
-
-        with Graph("hy_v3", input_types=graph_inputs) as graph:
-            inputs_iter = iter(graph.inputs)
-            tokens = next(inputs_iter)
-            input_row_offsets = next(inputs_iter)
-            return_n_logits = next(inputs_iter)
-            if model_config.data_parallel_degree > 1:
-                data_parallel_splits = next(inputs_iter).tensor
-                host_input_row_offsets = next(inputs_iter).tensor
-            else:
-                data_parallel_splits = None
-                host_input_row_offsets = None
-
-            signal_buffers = [
-                next(inputs_iter).buffer for _ in range(num_devices)
-            ]
-
-            num_kv_inputs = len(nn_model.kv_params.flattened_kv_inputs())
-            kv_cache_inputs = [next(inputs_iter) for _ in range(num_kv_inputs)]
-            kv_collections = self._unflatten_kv_inputs(kv_cache_inputs)
-
-            ep_inputs = list(inputs_iter)
-
-            outputs = nn_model(
-                tokens.tensor,
-                kv_collections,
-                return_n_logits.tensor,
-                input_row_offsets.tensor,
-                signal_buffers,
-                ep_inputs,  # type: ignore[arg-type]
-                data_parallel_splits,
-                host_input_row_offsets,
+        return {
+            GraphRole.DECODER: GraphSpec(
+                nn_model,
+                "hy_v3",
+                graph_inputs,
+                weights=nn_model.state_dict(),
             )
-
-            graph.output(*outputs)
-            return graph, weights_registry
+        }

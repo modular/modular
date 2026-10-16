@@ -163,6 +163,7 @@ class NemotronHBackbone(
         state: RecurrentStateInputsPerDevice[Tensor, Tensor],
         input_row_offsets: Tensor,
         capture_rows: Tensor | None = None,
+        update_state: Tensor | None = None,
     ) -> tuple[Tensor, tuple[Tensor, ...], tuple[MambaReplayRows[Tensor], ...]]:
         """Runs the layer stack.
 
@@ -175,6 +176,10 @@ class NemotronHBackbone(
             capture_rows: The token rows to capture each Mamba layer's replay
                 inputs of. Required when the config sets
                 ``capture_mamba_replay``.
+            update_state: The ``[batch_size]`` bool flags selecting which
+                requests write their new Mamba state back to their rows. A
+                request with the flag false only reads its state. ``None``
+                updates every request.
 
         Returns:
             The final pre-norm hidden states, the hidden states selected by
@@ -192,6 +197,8 @@ class NemotronHBackbone(
         has_initial_state = F.full(
             [batch_size], True, dtype=DType.bool, device=h.mesh
         )
+        if update_state is None:
+            update_state = has_initial_state
         mamba_idx = 0
         for index, (kind, layer) in enumerate(
             zip(self.layer_kinds, self.layers, strict=True)
@@ -225,11 +232,18 @@ class NemotronHBackbone(
                         access,
                         query_start_loc,
                         has_initial_state,
+                        update_state,
                         capture_rows,
                     )
                     replays.append(replay)
                 else:
-                    h = call(h, access, query_start_loc, has_initial_state)
+                    h = call(
+                        h,
+                        access,
+                        query_start_loc,
+                        has_initial_state,
+                        update_state,
+                    )
                 mamba_idx += 1
             else:
                 h = call(h)
@@ -342,6 +356,7 @@ class NemotronH(Module[..., ModuleV3Outputs]):
         kv_collection: PagedCacheValues,
         state: RecurrentStateInputsPerDevice[Tensor, Tensor],
         capture_rows: Tensor,
+        update_state: Tensor,
     ) -> tuple[ModuleV3Outputs, Tensor, tuple[MambaReplayRows[Tensor], ...]]:
         """Runs a speculative verify pass on the given Mamba state.
 
@@ -350,11 +365,12 @@ class NemotronH(Module[..., ModuleV3Outputs]):
             return_n_logits: How many tokens of logits each request returns.
             input_row_offsets: The single-device ragged offsets.
             kv_collection: The attention layers' cache, on the mesh.
-            state: The Mamba state the verify advances. Pass the scratch
-                leaves in the live leaves' place to leave the live state at
-                its pre-verify value.
+            state: The Mamba state the verify runs on.
             capture_rows: The token rows to capture each Mamba layer's replay
                 inputs of.
+            update_state: The ``[batch_size]`` bool flags selecting which
+                requests advance their state. A request with drafts must not,
+                since its accepted prefix is not known until the replay.
 
         Returns:
             The model outputs, the selected hidden states as one tensor
@@ -371,6 +387,7 @@ class NemotronH(Module[..., ModuleV3Outputs]):
             kv_collection,
             state,
             capture_rows,
+            update_state,
         )
         assert hidden is not None, "a verify pass returns hidden states"
         return outputs, hidden, replays
@@ -384,6 +401,7 @@ class NemotronH(Module[..., ModuleV3Outputs]):
         kv_collection: PagedCacheValues,
         state: RecurrentStateInputsPerDevice[Tensor, Tensor],
         capture_rows: Tensor | None,
+        update_state: Tensor | None = None,
     ) -> tuple[
         ModuleV3Outputs,
         Tensor | None,
@@ -391,7 +409,12 @@ class NemotronH(Module[..., ModuleV3Outputs]):
     ]:
         mesh = self.backbone.norm_f.weight.mesh
         h, captures, replays = self.backbone(
-            tokens, kv_collection, state, input_row_offsets, capture_rows
+            tokens,
+            kv_collection,
+            state,
+            input_row_offsets,
+            capture_rows,
+            update_state,
         )
 
         # One projection and one gather serve both outputs when ALL logits
@@ -410,9 +433,6 @@ class NemotronH(Module[..., ModuleV3Outputs]):
             offsets = row_offsets
         elif self.return_logits == ReturnLogits.VARIABLE:
             assert count is not None, "variable logits need a host count"
-            last = self._logits(
-                F.gather(h, input_row_offsets[1:] - 1, axis=0)
-            ).local_shards[0]
             distance = F.range(
                 count,
                 0,
@@ -425,6 +445,13 @@ class NemotronH(Module[..., ModuleV3Outputs]):
                 (-1,)
             )
             logits = self._logits(F.gather(h, indices, axis=0)).local_shards[0]
+            # The last token of each request is the final row of its window
+            # (`distance` ends at 1), so the head need not run on it again.
+            # Only `verify` reaches this branch and it reads only `logits`, so
+            # `next_token_logits` aliases the whole window: its shape here is
+            # `[B * count, V]`, not `[B, V]`. A reader that needs the last rows
+            # takes rows `count - 1, 2 * count - 1, ...` of `logits`.
+            last = logits
             offsets = F.range(
                 0,
                 indices.shape[0] + count,

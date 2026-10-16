@@ -167,6 +167,18 @@ def _use_initial_state(
 
 
 @inline(.always)
+def _write_state(update_state: TileTensor[DType.bool, ...], b: Int) -> Bool:
+    """Whether sequence `b` writes its new window back to `conv_states`.
+
+    An empty `update_state` means every sequence does. Unlike an empty
+    `has_initial_state`, which means none continues a stored state.
+    """
+    return Int(update_state.dim[0]()) == 0 or Bool(
+        update_state.load[width=1]((b,))
+    )
+
+
+@inline(.always)
 def _cache_slot[
     SlotFn: ImplicitlyCopyable
     & RegisterPassable
@@ -429,6 +441,7 @@ def causal_conv1d_varlen_fwd_cpu[
     bias: TileTensor[mut=False, dtype, ...],
     query_start_loc: TileTensor[mut=False, .int32, ...],
     has_initial_state: TileTensor[mut=False, .bool, ...],
+    update_state: TileTensor[mut=False, .bool, ...],
     conv_states: TileTensor[mut=True, ...],
     output: TileTensor[mut=True, dtype, ...],
     x_fn: XFn,
@@ -459,6 +472,9 @@ def causal_conv1d_varlen_fwd_cpu[
         query_start_loc: Cumulative sequence lengths of shape `(batch + 1,)`.
         has_initial_state: Per-sequence flags of shape `(batch,)` selecting
             whether to continue the stored state, or empty.
+        update_state: Per-sequence flags of shape `(batch,)` selecting whether
+            the sequence writes its new window to `conv_states`, or empty to
+            write every sequence's. A clear flag leaves the slot untouched.
         conv_states: Convolution states of shape `(max_slots, dim, width - 1)`,
             updated in place, or empty.
         output: Output tensor of shape `(dim, total_seqlen)`.
@@ -521,7 +537,7 @@ def causal_conv1d_varlen_fwd_cpu[
                     ](),
                 )
 
-            if has_conv_states:
+            if has_conv_states and _write_state(update_state, b):
                 for s in range(width_minus_1):
                     var src_l = seqlen - width_minus_1 + s
                     var val = Scalar[state_dtype](0)
@@ -799,6 +815,7 @@ def _causal_conv1d_varlen_fwd_kernel[
     bias_LT: TensorLayout,
     query_start_loc_LT: TensorLayout,
     has_initial_state_LT: TensorLayout,
+    update_state_LT: TensorLayout,
     conv_states_LT: TensorLayout,
     output_LT: TensorLayout,
     Engine: TensorEngine,
@@ -819,6 +836,9 @@ def _causal_conv1d_varlen_fwd_kernel[
     ],
     has_initial_state: TileTensor[
         .bool, has_initial_state_LT, ImmUntrackedOrigin, Engine=Engine
+    ],
+    update_state: TileTensor[
+        .bool, update_state_LT, ImmUntrackedOrigin, Engine=Engine
     ],
     conv_states: TileTensor[
         conv_states_dtype, conv_states_LT, MutUntrackedOrigin, Engine=Engine
@@ -858,6 +878,7 @@ def _causal_conv1d_varlen_fwd_kernel[
         bias_LT: Layout type of `bias`.
         query_start_loc_LT: Layout type of `query_start_loc`.
         has_initial_state_LT: Layout type of `has_initial_state`.
+        update_state_LT: Layout type of `update_state`.
         conv_states_LT: Layout type of `conv_states`.
         output_LT: Layout type of `output`.
         Engine: Engine shared by all tile operands.
@@ -875,6 +896,9 @@ def _causal_conv1d_varlen_fwd_kernel[
         bias: Bias tensor of shape `(dim,)`, or empty.
         query_start_loc: Cumulative sequence lengths of shape `(batch + 1,)`.
         has_initial_state: Per-sequence flags of shape `(batch,)`, or empty.
+        update_state: Per-sequence flags of shape `(batch,)` selecting whether
+            the sequence writes its new window to `conv_states`, or empty to
+            write every sequence's. A clear flag leaves the slot untouched.
         conv_states: Convolution states of shape `(max_slots, dim, width - 1)`,
             updated in place, or empty.
         output: Output tensor, same shape as `x`.
@@ -931,6 +955,7 @@ def _causal_conv1d_varlen_fwd_kernel[
     var use_initial_state = _use_initial_state(
         has_initial_state, conv_states, b
     )
+    var write_state = _write_state(update_state, b)
     var bias_val = io.load_bias[VEC](d).cast[accum_dtype]()
     var tap_weights = Array[AccVec, WIDTH](fill=AccVec(0))
     comptime for w in range(WIDTH):
@@ -1007,7 +1032,7 @@ def _causal_conv1d_varlen_fwd_kernel[
     # the tail, the sequence is longer than WIDTH-1 and its new state is
     # plain `x`; otherwise the window holds it, with the continued state
     # filling any entries a short chunk lacks.
-    if Int(conv_states.dim[0]()) > 0 and tile_start == 0:
+    if Int(conv_states.dim[0]()) > 0 and tile_start == 0 and write_state:
         comptime for i in range(WIDTH_MINUS_1):
             if tile_end != seqlen:
                 win[i] = io.load_x[VEC](
@@ -1026,6 +1051,7 @@ def causal_conv1d_varlen_fwd_gpu[
     bias_LT: TensorLayout,
     query_start_loc_LT: TensorLayout,
     has_initial_state_LT: TensorLayout,
+    update_state_LT: TensorLayout,
     conv_states_LT: TensorLayout,
     output_LT: TensorLayout,
     Engine: TensorEngine,
@@ -1047,6 +1073,7 @@ def causal_conv1d_varlen_fwd_gpu[
     has_initial_state: TileTensor[
         .bool, has_initial_state_LT, _, Engine=Engine
     ],
+    update_state: TileTensor[.bool, update_state_LT, _, Engine=Engine],
     conv_states: TileTensor[
         conv_states_dtype, conv_states_LT, _, Engine=Engine
     ],
@@ -1082,6 +1109,7 @@ def causal_conv1d_varlen_fwd_gpu[
         bias_LT: Layout type of `bias`.
         query_start_loc_LT: Layout type of `query_start_loc`.
         has_initial_state_LT: Layout type of `has_initial_state`.
+        update_state_LT: Layout type of `update_state`.
         conv_states_LT: Layout type of `conv_states`.
         output_LT: Layout type of `output`.
         Engine: Engine shared by all tile operands.
@@ -1100,6 +1128,9 @@ def causal_conv1d_varlen_fwd_gpu[
         bias: Bias tensor of shape `(dim,)`, or empty.
         query_start_loc: Cumulative sequence lengths of shape `(batch + 1,)`.
         has_initial_state: Per-sequence flags of shape `(batch,)`, or empty.
+        update_state: Per-sequence flags of shape `(batch,)` selecting whether
+            the sequence writes its new window to `conv_states`, or empty to
+            write every sequence's. A clear flag leaves the slot untouched.
         conv_states: Convolution states of shape `(max_slots, dim, width - 1)`,
             updated in place, or empty.
         output: Output tensor, same shape as `x`.
@@ -1132,6 +1163,7 @@ def causal_conv1d_varlen_fwd_gpu[
             bias_LT,
             query_start_loc_LT,
             has_initial_state_LT,
+            update_state_LT,
             conv_states_LT,
             output_LT,
             Engine,
@@ -1146,6 +1178,7 @@ def causal_conv1d_varlen_fwd_gpu[
             bias,
             query_start_loc,
             has_initial_state,
+            update_state,
             conv_states,
             output,
             host_arg=x_fn,

@@ -90,6 +90,7 @@ def _conv_cpu[
     query_start_loc: TileTensor[mut=False, .int32, ...],
     cache_indices: TileTensor[mut=False, .uint32, ...],
     has_initial_state: TileTensor[mut=False, .bool, ...],
+    update_state: TileTensor[mut=False, .bool, ...],
     conv_states: TileTensor[mut=True, ...],
     output: TileTensor[mut=True, dtype, ...],
 ):
@@ -115,6 +116,7 @@ def _conv_cpu[
         bias,
         query_start_loc,
         has_initial_state,
+        update_state,
         conv_states,
         output,
         x_fn,
@@ -233,6 +235,9 @@ def run_one_case(
     var qsl_g = TileTensor(qsl_d, row_major(batch + 1))
     var slot_g = TileTensor(slot_d, row_major(batch))
     var his_g = TileTensor(his_d, row_major(his_len))
+    # Empty: every sequence writes its new window.
+    var us_d = ctx.enqueue_create_buffer[.bool](1)
+    var us_g = TileTensor(us_d, row_major(0))
     var pool_g = TileTensor(pool_d, row_major(pool_slots, dim, state_len))
     var y_g = TileTensor(y_d, row_major(total, dim))
 
@@ -255,6 +260,7 @@ def run_one_case(
         bias_g,
         qsl_g,
         his_g,
+        us_g,
         pool_g,
         y_g,
         x_addr,
@@ -274,6 +280,7 @@ def run_one_case(
         var qsl_t = TileTensor(qsl_h, row_major(batch + 1))
         var slot_t = TileTensor(slot_h, row_major(batch))
         var his_t = TileTensor(his_h, row_major(his_len))
+        var us_t = TileTensor(his_h, row_major(0))
         var pool_t = TileTensor(
             pool_ref_h, row_major(pool_slots, dim, state_len)
         )
@@ -288,6 +295,7 @@ def run_one_case(
             qsl_t,
             slot_t,
             his_t,
+            us_t,
             pool_t,
             y_t,
         )
@@ -325,6 +333,7 @@ def run_one_case(
     _ = weight_d
     _ = bias_d
     _ = his_d
+    _ = us_d
     _ = qsl_d
     _ = slot_d
     _ = pool_d

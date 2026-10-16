@@ -18,7 +18,7 @@ import logging
 import os
 from abc import ABC, abstractmethod
 from collections import OrderedDict
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from functools import cached_property
 from pathlib import Path
@@ -47,6 +47,12 @@ from max.pipelines.kv_cache.config import (
 )
 from max.pipelines.lib.config.model_config import (
     _select_quantization_encoding,
+)
+from max.pipelines.lib.graph_specs import (
+    CompiledArtifacts,
+    GraphSpec,
+    compile_graphs,
+    init_graphs,
 )
 from max.pipelines.lib.utils import (
     CompilationTimer,
@@ -413,6 +419,10 @@ class PipelineModel(
     #: The ModuleV3 LoRA target projections this arch wraps. Read by the base
     #: to construct ``LoRAManagerV3``; empty for non-ModuleV3-LoRA archs.
     lora_targets: ClassVar[tuple[LoRATargetModule, ...]] = ()
+    #: The graphs this model compiled, by role. Empty for a model that
+    #: compiles its graphs without registering them (see
+    #: :func:`~max.pipelines.lib.graph_specs.compile_graphs`).
+    compiled_artifacts: CompiledArtifacts = CompiledArtifacts()
 
     def __init__(
         self,
@@ -737,6 +747,54 @@ class PipelineModel(
             "or set batch_processor_cls."
         )
 
+    def _load_state_dict(self) -> dict[str, Any]:
+        """Loads the weights, through the weight adapter if there is one."""
+        if self.adapter:
+            return self.adapter(dict(self.weights.items()))
+        return {key: value.data() for key, value in self.weights.items()}
+
+    def _create_model_config(self, state_dict: dict[str, Any]) -> _ModelConfigT:
+        """Builds the model config from ``state_dict``."""
+        raise NotImplementedError(
+            f"{type(self).__qualname__} must implement `_create_model_config`."
+        )
+
+    def graph_specs(
+        self, model_config: _ModelConfigT
+    ) -> Mapping[str, GraphSpec]:
+        """Returns the graphs this model runs, keyed by role.
+
+        Implement this to load the model with :meth:`load_graphs`.
+
+        Args:
+            model_config: The config :meth:`_create_model_config` returned.
+        """
+        raise NotImplementedError(
+            f"{type(self).__qualname__} must implement `graph_specs`."
+        )
+
+    @traced
+    def load_graphs(self, session: InferenceSession) -> dict[str, Model]:
+        """Compiles and initializes the graphs :meth:`graph_specs` returns.
+
+        Keeps the compiled artifacts as :attr:`compiled_artifacts`.
+
+        Args:
+            session: The session that compiles and initializes the graphs.
+
+        Returns:
+            The initialized models, keyed by role.
+        """
+        state_dict = self._load_state_dict()
+        model_config = self._create_model_config(state_dict)
+        with CompilationTimer("model") as timer:
+            specs = self.graph_specs(model_config)
+            timer.mark_build_complete()
+            self.compiled_artifacts = compile_graphs(session, specs)
+            models = init_graphs(session, self.compiled_artifacts, specs)
+        self._maybe_release_host_weights(*models.values())
+        return models
+
     def _wire_batch_processor(
         self, model: _CompiledModelT, model_config: _ModelConfigT
     ) -> None:
@@ -1007,12 +1065,28 @@ class PipelineModelWithKVCache(
     ) -> None:
         """Post-compile wiring into the batch processor (EP bind, vision and so on)."""
         del model, model_config
+        self._bind_ep_comm_initializer()
+
+    def _bind_ep_comm_initializer(self) -> None:
         batch_processor = self.batch_processor
         if batch_processor is None:
             return
         bind_ep = getattr(batch_processor, "bind_ep_comm_initializer", None)
         if bind_ep is not None:
             bind_ep(getattr(self, "ep_comm_initializer", None))
+
+    def load_graphs(self, session: InferenceSession) -> dict[str, Model]:
+        """Loads the graphs, then binds the EP comm initializer.
+
+        Args:
+            session: The session that compiles and initializes the graphs.
+
+        Returns:
+            The initialized models, keyed by role.
+        """
+        models = super().load_graphs(session)
+        self._bind_ep_comm_initializer()
+        return models
 
 
 class GraphPipelineModelWithKVCache(

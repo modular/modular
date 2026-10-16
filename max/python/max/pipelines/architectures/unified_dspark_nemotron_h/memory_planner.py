@@ -26,9 +26,8 @@ from .model_config import UnifiedDSparkNemotronHConfig
 class UnifiedDSparkNemotronHMemoryPlanner(NemotronHMemoryPlanner):
     """The Nemotron-H planner, driven by the fused config's target half.
 
-    The target's KV tree already carries its verify scratch leaves, and the
-    draft's KV leaf is priced through the fused config's KV tree. What differs
-    is the weights: the draft loads from a second checkpoint that
+    The draft's KV leaf is priced through the fused config's KV tree. What
+    differs is the weights: the draft loads from a second checkpoint that
     ``pipeline_config.model`` does not describe.
     """
 

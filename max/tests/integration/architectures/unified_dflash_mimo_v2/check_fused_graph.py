@@ -26,12 +26,13 @@ Each subcommand loads one graph, so the target is on the GPUs once:
   decode path (``--path decode``) teacher-forced on the reference fixtures'
   gold sequences and scored with their BF16 tolerance; ``pair`` compares the
   two.
-* ``kvdump``: one sequence's drafter context from the fused graph, whole or
-  in chunks, or from base-ctx in chunks and after a prefix hit on the fused
-  graph's pages; ``kvcompare`` compares the dumps position by position.
-* ``chunks``: base-ctx's logits and KV along one sequence prefilled whole and
-  in chunks of each size: where the chunked run first departs, in which
-  layers and by how much, and how far each run sits from the F32 gold.
+* ``kvdump``: one sequence's drafter context from the fused graph, prefilled
+  whole, in chunks, and after a prefix hit on the whole run's pages;
+  ``kvcompare`` compares the chunked and prefix-hit dumps with the whole one
+  position by position.
+* ``chunks``: the base graph's logits and KV along one sequence prefilled
+  whole and in chunks of each size: where the chunked run first departs, in
+  which layers and by how much, and how far each run sits from the F32 gold.
 
 Needs the checkpoint, the fixtures and the GPUs, so it runs by hand.
 """
@@ -126,7 +127,7 @@ def load(checkpoint: Path, max_seq_len: int) -> Model:
     mask = draft_state.pop(MASK_EMBEDDING)
     t0 = time.time()
     weights = SafetensorWeights(sorted(checkpoint.glob("*.safetensors")))
-    target_state = convert_target(dict(weights.items()), hf)
+    target_state = convert_target(dict(weights.items()))
     _log(
         f"adapted {len(target_state)} target tensors in {time.time() - t0:.0f} s"
     )
@@ -163,7 +164,7 @@ def _fused(
 
 
 def _base(
-    args: argparse.Namespace, model: Model, *, writer: bool
+    args: argparse.Namespace, model: Model
 ) -> tuple[BaseRunner, PagedTree]:
     devices, refs = _devices(args.devices)
     runner = BaseRunner(
@@ -171,8 +172,6 @@ def _base(
         model.target_state,
         devices,
         InferenceSession(devices=devices),
-        drafter=model.drafter(refs, speculative=False) if writer else None,
-        draft_state=model.draft_state if writer else None,
     )
     return runner, PagedTree(runner.groups, devices, args.pages)
 
@@ -252,7 +251,7 @@ def specoff(args: argparse.Namespace) -> dict[str, Any]:
     run = json.loads(args.run.read_text())["requests"]
     model = load(args.checkpoint, args.max_seq_len)
     sampleable = sampleable_vocab(args.checkpoint)
-    runner, caches = _base(args, model, writer=False)
+    runner, caches = _base(args, model)
     _log("compiled")
     gaps: list[float] = []
     per_request: list[dict[str, float]] = []
@@ -462,7 +461,7 @@ def calibrate(args: argparse.Namespace) -> dict[str, Any]:
             runner, caches, seqs, [p for *_, p in gold]
         )
     else:
-        base, caches = _base(args, model, writer=False)
+        base, caches = _base(args, model)
         _log("compiled")
         logits = decode_teacher_forced(
             base, caches, seqs, [p for *_, p in gold]
@@ -524,57 +523,44 @@ def kvdump(args: argparse.Namespace) -> dict[str, Any]:
     hit = args.hit_pages * PAGE_SIZE
     block = int(model.dflash["block_size"])
     pages = Pages()
-    dump: dict[str, Any] = {}
-    if args.graph == "fused":
-        runner, caches = _fused(args, model, 1)
-        own = pages.take(len(tokens) + 2 * block)
-        step = args.fused_chunk or len(tokens)
-        for start in range(0, len(tokens), step):
-            runner.step(caches, [Row(tokens[start : start + step], start, own)])
-        dump["fused"] = caches.read(DRAFT, own, range(len(tokens)))
-        exported: dict[str, Any] = {
-            f"{g}.{d}": a
-            for g, arrays in caches.export_pages(own[: args.hit_pages]).items()
-            for d, a in enumerate(arrays)
-        }
-        np.savez(args.out.with_suffix(".pages.npz"), **exported)
-    else:
-        runner_b, caches = _base(args, model, writer=True)
-        chunked = pages.take(len(tokens) + 2 * block)
-        for start in range(0, len(tokens), args.chunk):
-            runner_b.step(
-                caches,
-                [Row(tokens[start : start + args.chunk], start, chunked)],
-            )
-        dump["chunked"] = caches.read(DRAFT, chunked, range(len(tokens)))
-        saved = np.load(args.hit_from)
-        hit_pages = pages.take(hit)
-        caches.import_pages(
-            hit_pages,
-            {
-                g: [saved[f"{g}.{d}"] for d in range(args.devices)]
-                for g in caches.blocks
-            },
+    runner, caches = _fused(args, model, 1)
+    whole = pages.take(len(tokens) + 2 * block)
+    runner.step(caches, [Row(tokens, 0, whole)])
+    chunked = pages.take(len(tokens) + 2 * block)
+    for start in range(0, len(tokens), args.chunk):
+        runner.step(
+            caches, [Row(tokens[start : start + args.chunk], start, chunked)]
         )
-        restored = hit_pages + pages.take(len(tokens) - hit + 2 * block)
-        runner_b.step(caches, [Row(tokens[hit:], hit, restored)])
-        dump["prefix_hit"] = caches.read(DRAFT, restored, range(len(tokens)))
+    # The hit's pages are the whole run's; the rest is computed on top of
+    # that run's target KV.
+    restored = whole[: args.hit_pages] + pages.take(
+        len(tokens) - hit + 2 * block
+    )
+    runner.step(caches, [Row(tokens[hit:], hit, restored)])
+    dump: dict[str, Any] = {
+        name: caches.read(DRAFT, own, range(len(tokens)))
+        for name, own in (
+            ("whole", whole),
+            ("chunked", chunked),
+            ("prefix_hit", restored),
+        )
+    }
     np.savez(
         args.out.with_suffix(".kv.npz"),
         **{k: v.astype(np.float16) for k, v in dump.items()},
     )
-    return {"graph": args.graph, "positions": len(tokens), "hit": hit}
+    return {"positions": len(tokens), "hit": hit}
 
 
 def kvcompare(args: argparse.Namespace) -> dict[str, Any]:
-    fused = np.load(args.fused)["fused"].astype(np.float32)
-    other = np.load(args.base_ctx)
+    dump = np.load(args.dump)
+    whole = dump["whole"].astype(np.float32)
     result: dict[str, Any] = {}
     for name in ("chunked", "prefix_hit"):
-        got = other[name].astype(np.float32)
+        got = dump[name].astype(np.float32)
         for index, what in enumerate("KV"):
             a = np.moveaxis(got[index], 1, 0).reshape(got.shape[2], -1)
-            b = np.moveaxis(fused[index], 1, 0).reshape(fused.shape[2], -1)
+            b = np.moveaxis(whole[index], 1, 0).reshape(whole.shape[2], -1)
             err = np.linalg.norm(a - b, axis=1) / np.linalg.norm(b, axis=1)
             result[f"{name}_{what}"] = {
                 "max": float(err.max()),
@@ -586,9 +572,10 @@ def kvcompare(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def chunks(args: argparse.Namespace) -> dict[str, Any]:
-    """Where a chunked prefill through base-ctx first departs from a whole
-    one, in the logits and in each KV group, for each ``--sizes`` chunk; and
-    how far each sits from the F32 gold past the first page boundary."""
+    """Where a chunked prefill through the base graph first departs from a
+    whole one, in the logits and in each KV group, for each ``--sizes``
+    chunk; and how far each sits from the F32 gold past the first page
+    boundary."""
     scorer = _p2_scorer(args.p2_harness)
     seq = _gold(args.gold)
     full, prompt_len = next((s, p) for tag, s, p in seq if tag == args.tag)
@@ -605,7 +592,7 @@ def chunks(args: argparse.Namespace) -> dict[str, Any]:
         }
 
     model = load(args.checkpoint, args.max_seq_len)
-    runner, caches = _base(args, model, writer=True)
+    runner, caches = _base(args, model)
     _log("compiled")
     pages = Pages()
     whole, own = pages.take(n), pages.take(n)
@@ -712,19 +699,11 @@ def main() -> None:
     p.add_argument("--out", type=Path, required=True)
     p = sub.add_parser("kvdump")
     common(p)
-    p.add_argument("--graph", choices=["fused", "base-ctx"], required=True)
     p.add_argument("--gold", type=Path, required=True)
     p.add_argument("--tag", default="p07_long_code_9k")
     p.add_argument("--length", type=int, default=3000)
     p.add_argument("--chunk", type=int, default=1000)
     p.add_argument("--hit-pages", type=int, default=15)
-    p.add_argument("--hit-from", type=Path)
-    p.add_argument(
-        "--fused-chunk",
-        type=int,
-        default=0,
-        help="Prefill the fused graph in chunks of this size, not whole.",
-    )
     p = sub.add_parser("chunks")
     common(p)
     p.add_argument("--gold", type=Path, required=True)
@@ -733,8 +712,7 @@ def main() -> None:
     p.add_argument("--sizes", type=int, nargs="+", default=[1000, 1024])
     p.add_argument("--p2-harness", type=Path, required=True)
     p = sub.add_parser("kvcompare")
-    p.add_argument("--fused", type=Path, required=True)
-    p.add_argument("--base-ctx", type=Path, required=True)
+    p.add_argument("--dump", type=Path, required=True)
     p.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()
 

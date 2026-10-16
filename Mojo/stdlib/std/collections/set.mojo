@@ -19,7 +19,7 @@ from std.format._utils import (
     Named,
     TypeNames,
 )
-from std.hashlib import Hasher, default_hasher
+from std.hash import Hasher, default_hasher
 
 from .dict import (
     Dict,
@@ -38,7 +38,7 @@ from .dict import (
 )
 struct Set[
     T: KeyElement,
-    H: Hasher = default_hasher,
+    H: Hasher & Defaultable & Deinitable = default_hasher,
 ](
     Boolable,
     Comparable where conforms_to(T, Copyable) and conforms_to(T, Equatable),

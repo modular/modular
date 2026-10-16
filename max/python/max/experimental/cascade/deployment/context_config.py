@@ -63,7 +63,12 @@ class ContextFactory:
 
 
 class HttpContextFactory(ContextFactory):
-    """Build pickle-over-HTTP worker runtimes."""
+    """Build pickle-over-HTTP worker runtimes.
+
+    Local development and testing only: the HTTP server is unauthenticated
+    and unpickles request bodies, so never point ``http://`` worker URLs at
+    a server reachable by untrusted peers.
+    """
 
     def local_runtimes(self, count: int) -> list[Runtime]:
         """Launch ``count`` HTTP worker subprocesses."""

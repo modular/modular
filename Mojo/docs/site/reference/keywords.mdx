@@ -11,7 +11,7 @@ description: >
 {/* VERIFIED: TokenKinds.def, Lexer.cpp, Signatures.h, Signatures.cpp,
      ExprNode.h, ParserExprs.cpp, ParserStmts.cpp, ParserBase.h
      Compiler verified: 2026-10-02, Mojo 1.2.0.dev2026100205 (7791487a)
-     Last updated: 2026-10-02 (refs review draft) */}
+     Last updated: 2026-10-15 (adds match, case, and reserved but unused keywords) */}
 
 {/* In TokenKinds.def, `_` is declared with TOK_KEYWORD rather than
      TOK_PUNCTUATION. This is an internal classification used by the
@@ -78,7 +78,7 @@ Empty backtick identifiers are not allowed.
 
 ## Keywords
 
-*Keywords* are reserved words with fixed meaning. They cannot be used as
+*Keywords* are reserved words with fixed meaning. They can't be used as
 ordinary identifiers (use an escaped identifier if you need to).
 
 ### Control flow
@@ -96,6 +96,8 @@ These keywords control which code runs and in what order.
 | `continue` | Skips to the next loop iteration        |
 | `pass`     | No-op placeholder statement             |
 | `return`   | Returns from a function                 |
+| `match`    | Pattern matching                        |
+| `case`     | Case clause in a `match` statement      |
 | `with`     | Context manager statement               |
 
 ### Error handling
@@ -166,6 +168,20 @@ These keywords are also literals. They produce a value directly.
 |---------|---------------------------------|---------|--------------------|
 | `True`  | boolean true                    | `False` | boolean false      |
 | `None`  | Absence of a value (`NoneType`) | `Self`  | The enclosing type |
+
+### Reserved but unused
+
+These words are keywords with no current use. Like other keywords, they
+can't be used as names unless escaped.
+
+| Keyword    | Notes                    |
+|------------|--------------------------|
+| `class`    | Use `struct`             |
+| `del`      |                          |
+| `fn`       | Removed; use `def`       |
+| `global`   |                          |
+| `nonlocal` |                          |
+| `yield`    |                          |
 
 ### Case sensitivity
 
@@ -238,7 +254,7 @@ struct CountingTool:
 def make_point(out result: Point):        # OK
     result = Point(0, 0)
 
-def make_point(out result: Point) -> Point:  # Error: function cannot have
+def make_point(out result: Point) -> Point:  # Error: function can't have
     result = Point(0, 0)                     # both an 'out' argument and
                                              # an explicit result type
 ```

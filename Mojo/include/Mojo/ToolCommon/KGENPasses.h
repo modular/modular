@@ -152,6 +152,10 @@ struct OffloadInfo {
     /// group key includes it, so a group cannot mix dictionaries. Stamped onto
     /// each sliced clone in `compileOffloads`.
     mlir::DictionaryAttr targetAttrs;
+    /// The target with `opaque_plugin` references rewritten to generator
+    /// references, so they resolve against the sliced module. Null when the
+    /// target carries no payload.
+    TargetInfoAttr slicedTarget;
   };
 
   /// Groups are keyed by `makeOffloadGroupKey`, so kernels differing in any

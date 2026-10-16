@@ -25,7 +25,7 @@ from std.format._utils import (
     FormatStruct,
     TypeNames,
 )
-from std.hashlib.hasher import Hasher
+from std.hash.hasher import Hasher
 from std.memory.maybe_uninit import MaybeUninit
 from std.memory.alloc import (
     alloc,

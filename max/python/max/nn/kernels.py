@@ -15,8 +15,8 @@
 from __future__ import annotations
 
 import math
-from collections.abc import MutableMapping, MutableSequence
-from typing import Any
+from collections.abc import Mapping, MutableMapping, MutableSequence
+from typing import Any, cast
 
 import numpy as np
 from max._core.dialects import builtin, kgen, mo
@@ -41,6 +41,7 @@ from max.graph import (
 )
 from max.graph.ops import assert_same_device
 from max.graph.ops.quantized import repack_gguf_quantized_weights
+from max.graph.ops.rms_norm import _float32_attr
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.nn.quant_config import InputScaleSpec, QuantConfig, WeightScaleSpec
 
@@ -4285,6 +4286,81 @@ def flash_attention_gpu(
     Returns:
         The output tensor, of shape ``[batch, seq_len, num_heads,
         head_dim]``.
+
+    The following example applies causal attention to a batch of
+    queries on a GPU:
+
+    .. Skipped without an NVIDIA or AMD GPU: the kernel has no CPU
+       implementation, and Apple GPUs are untested. The ``start``/``end``
+       pair also covers the invisible check, which reads this block's
+       results.
+    .. skip: start if(__import__("max.driver").driver.accelerator_count() == 0 or __import__("sys").platform == "darwin", reason="requires an NVIDIA or AMD GPU")
+
+    .. code-block:: python
+
+        import numpy as np
+        from max.driver import Accelerator, Buffer
+        from max.dtype import DType
+        from max.engine import InferenceSession
+        from max.graph import DeviceRef, Graph, TensorType
+        from max.nn.attention import MHAMaskVariant
+        from max.nn.kernels import flash_attention_gpu
+
+        batch, seq_len, num_heads, head_dim = 2, 8, 4, 128
+        shape = [batch, seq_len, num_heads, head_dim]
+        qkv_type = TensorType(DType.float32, shape, device=DeviceRef.GPU())
+
+        with Graph(
+            "flash_attention_gpu_example",
+            input_types=(qkv_type, qkv_type, qkv_type),
+        ) as graph:
+            # NumPy has no bfloat16, so cast at the graph boundary.
+            q, k, v = (
+                value.tensor.cast(DType.bfloat16) for value in graph.inputs
+            )
+            output = flash_attention_gpu(
+                q,
+                k,
+                v,
+                mask_variant=MHAMaskVariant.CAUSAL_MASK,
+                scale=head_dim**-0.5,
+            )
+            graph.output(output.cast(DType.float32))
+
+        rng = np.random.default_rng(0)
+        q_np, k_np, v_np = (
+            rng.standard_normal(shape, dtype=np.float32) for _ in range(3)
+        )
+        gpu = Accelerator()
+        model = InferenceSession(devices=[gpu]).load(graph)
+        inputs = [Buffer.from_numpy(x).to(gpu) for x in (q_np, k_np, v_np)]
+        result = model.execute(*inputs)[0].to_numpy()
+        # result.shape is (2, 8, 4, 128): one attention output per query.
+
+    .. invisible-code-block: python
+
+        def round_to_bf16(x):
+            bits = x.view(np.uint32)
+            bits = bits + np.uint32(0x7FFF) + ((bits >> 16) & np.uint32(1))
+            return (bits & np.uint32(0xFFFF0000)).view(np.float32)
+
+        assert output.dtype == DType.bfloat16
+        assert result.shape == (batch, seq_len, num_heads, head_dim)
+        assert result.dtype == np.float32
+
+        # softmax(Q K^T * scale) V for each batch and head, causal mask.
+        qr, kr, vr = (
+            round_to_bf16(x).astype(np.float64) for x in (q_np, k_np, v_np)
+        )
+        scores = np.einsum("bqhd,bkhd->bhqk", qr, kr) * head_dim**-0.5
+        future = np.triu(np.ones((seq_len, seq_len), dtype=bool), k=1)
+        scores = np.where(future, -np.inf, scores)
+        probs = np.exp(scores - scores.max(axis=-1, keepdims=True))
+        probs /= probs.sum(axis=-1, keepdims=True)
+        expected = np.einsum("bhqk,bkhd->bqhd", probs, vr)
+        np.testing.assert_allclose(result, expected, rtol=2e-2, atol=2e-2)
+
+    .. skip: end
     """
     if q.dtype != k.dtype or q.dtype != v.dtype:
         raise ValueError(
@@ -4661,6 +4737,107 @@ def flash_attention_ragged_gpu(
     Returns:
         The output tensor, of shape ``[total_seq_len, num_heads,
         head_dim]``.
+
+    The following example applies causal attention to a ragged batch of
+    two sequences, of lengths 3 and 5, on a GPU:
+
+    .. Skipped without an NVIDIA or AMD GPU: the kernel has no CPU
+       implementation, and Apple GPUs are untested. The ``start``/``end``
+       pair also covers the invisible check, which reads this block's
+       results.
+    .. skip: start if(__import__("max.driver").driver.accelerator_count() == 0 or __import__("sys").platform == "darwin", reason="requires an NVIDIA or AMD GPU")
+
+    .. code-block:: python
+
+        import numpy as np
+        from max.driver import Accelerator, Buffer
+        from max.dtype import DType
+        from max.engine import InferenceSession
+        from max.graph import DeviceRef, Graph, TensorType
+        from max.nn.attention import MHAMaskVariant
+        from max.nn.kernels import flash_attention_ragged_gpu
+
+        seq_lens = [3, 5]
+        total_seq_len, num_heads, head_dim = sum(seq_lens), 4, 128
+        shape = [total_seq_len, num_heads, head_dim]
+        qkv_type = TensorType(DType.float32, shape, device=DeviceRef.GPU())
+
+        with Graph(
+            "flash_attention_ragged_gpu_example",
+            input_types=(
+                qkv_type,
+                qkv_type,
+                qkv_type,
+                TensorType(
+                    DType.uint32, [len(seq_lens) + 1], device=DeviceRef.GPU()
+                ),
+                TensorType(DType.uint32, [1], device=DeviceRef.CPU()),
+            ),
+        ) as graph:
+            q, k, v, input_row_offsets, max_seq_len = (
+                value.tensor for value in graph.inputs
+            )
+            # NumPy has no bfloat16, so cast at the graph boundary.
+            output = flash_attention_ragged_gpu(
+                q.cast(DType.bfloat16),
+                k.cast(DType.bfloat16),
+                v.cast(DType.bfloat16),
+                input_row_offsets,
+                max_seq_len,
+                mask_variant=MHAMaskVariant.CAUSAL_MASK,
+                scale=head_dim**-0.5,
+            )
+            graph.output(output.cast(DType.float32))
+
+        rng = np.random.default_rng(0)
+        q_np, k_np, v_np = (
+            rng.standard_normal(shape, dtype=np.float32) for _ in range(3)
+        )
+        offsets = np.array([0, 3, 8], dtype=np.uint32)
+        max_len = np.array([max(seq_lens)], dtype=np.uint32)
+
+        gpu = Accelerator()
+        model = InferenceSession(devices=[gpu]).load(graph)
+        inputs = [
+            Buffer.from_numpy(x).to(gpu) for x in (q_np, k_np, v_np, offsets)
+        ]
+        # max_seq_len stays on the host.
+        inputs.append(Buffer.from_numpy(max_len))
+        result = model.execute(*inputs)[0].to_numpy()
+        # result.shape is (8, 4, 128): one attention output per token.
+
+    .. invisible-code-block: python
+
+        def round_to_bf16(x):
+            bits = x.view(np.uint32)
+            bits = bits + np.uint32(0x7FFF) + ((bits >> 16) & np.uint32(1))
+            return (bits & np.uint32(0xFFFF0000)).view(np.float32)
+
+        assert output.dtype == DType.bfloat16
+        assert result.shape == (total_seq_len, num_heads, head_dim)
+        assert result.dtype == np.float32
+
+        # Each sequence attends only to its own earlier tokens:
+        # softmax(Q K^T * scale) V per sequence and head, causal mask.
+        qr, kr, vr = (
+            round_to_bf16(x).astype(np.float64) for x in (q_np, k_np, v_np)
+        )
+        expected = np.empty_like(qr)
+        for start, end in zip(offsets[:-1], offsets[1:]):
+            n = end - start
+            scores = np.einsum(
+                "qhd,khd->hqk", qr[start:end], kr[start:end]
+            ) * head_dim**-0.5
+            future = np.triu(np.ones((n, n), dtype=bool), k=1)
+            scores = np.where(future, -np.inf, scores)
+            probs = np.exp(scores - scores.max(axis=-1, keepdims=True))
+            probs /= probs.sum(axis=-1, keepdims=True)
+            expected[start:end] = np.einsum(
+                "hqk,khd->qhd", probs, vr[start:end]
+            )
+        np.testing.assert_allclose(result, expected, rtol=2e-2, atol=2e-2)
+
+    .. skip: end
     """
     q = TensorValue(q)
     k = TensorValue(k)
@@ -6038,9 +6215,11 @@ def rms_norm_key_cache(
             f" {kv_params.dtype}"
         )
 
-    parameters: dict[str, int | str | DType | bool] = {
+    parameters: dict[str, int | float | str | DType | bool] = {
         "multiply_before_cast": multiply_before_cast,
         "per_head_norm": per_head_norm,
+        "epsilon": float(epsilon),
+        "weight_offset": float(weight_offset),
     }
     assert kv_params.page_size is not None
 
@@ -6050,11 +6229,9 @@ def rms_norm_key_cache(
         values=[
             *kv_collection.flatten_without_attention_dispatch_metadata(),
             gamma,
-            ops.constant(epsilon, DType.float32, device=DeviceRef.CPU()),
             layer_idx,
             ops.cast(TensorValue(total_seq_len), DType.uint32),
             input_row_offsets,
-            ops.constant(weight_offset, gamma.dtype, device=DeviceRef.CPU()),
         ],
         parameters=parameters,
     )
@@ -6104,9 +6281,11 @@ def rms_norm_value_cache(
             f"expected gamma dtype {gamma.dtype} to match KV dtype"
             f" {kv_params.dtype}"
         )
-    parameters: dict[str, int | str | DType | bool] = {
+    parameters: dict[str, int | float | str | DType | bool] = {
         "multiply_before_cast": multiply_before_cast,
         "per_head_norm": per_head_norm,
+        "epsilon": float(epsilon),
+        "weight_offset": float(weight_offset),
     }
     assert kv_params.page_size is not None
     ops.inplace_custom(
@@ -6115,11 +6294,9 @@ def rms_norm_value_cache(
         values=[
             *kv_collection.flatten_without_attention_dispatch_metadata(),
             gamma,
-            ops.constant(epsilon, DType.float32, device=DeviceRef.CPU()),
             layer_idx,
             ops.cast(TensorValue(total_seq_len), DType.uint32),
             input_row_offsets,
-            ops.constant(weight_offset, gamma.dtype, device=DeviceRef.CPU()),
         ],
         parameters=parameters,
     )
@@ -6146,9 +6323,94 @@ def moe_create_indices(
           group in the reordered sequence.
         - restore_token_order: The indices that restore the original token
           ordering after expert computation.
-        - expert_ids: The IDs of the active experts selected for tokens.
+        - expert_ids: The expert ID of each group in the reordered
+          sequence.
         - expert_usage_stats: The maximum number of tokens assigned to
-          any expert, and the number of active experts.
+          any expert, and the number of expert groups
+          (``num_local_experts``), including empty ones.
+
+    The following example groups eight token assignments by expert, for
+    eight experts on a GPU:
+
+    .. Skipped without an NVIDIA or AMD GPU: the kernel has no CPU
+       implementation, and Apple GPUs are untested. The ``start``/``end``
+       pair also covers the invisible check, which reads this block's
+       results.
+    .. skip: start if(__import__("max.driver").driver.accelerator_count() == 0 or __import__("sys").platform == "darwin", reason="requires an NVIDIA or AMD GPU")
+
+    .. code-block:: python
+
+        import numpy as np
+        from max.driver import Accelerator, Buffer
+        from max.dtype import DType
+        from max.engine import InferenceSession
+        from max.graph import DeviceRef, Graph, TensorType
+        from max.nn.kernels import moe_create_indices
+
+        num_experts = 8
+        topk_ids = np.array([3, 0, 3, 5, 0, 3, 7, 5], dtype=np.int32)
+
+        with Graph(
+            "moe_create_indices_example",
+            input_types=(
+                TensorType(
+                    DType.int32, [len(topk_ids)], device=DeviceRef.GPU()
+                ),
+            ),
+        ) as graph:
+            outputs = moe_create_indices(
+                graph.inputs[0].tensor, num_local_experts=num_experts
+            )
+            graph.output(*outputs)
+
+        gpu = Accelerator()
+        model = InferenceSession(devices=[gpu]).load(graph)
+        outputs = model.execute(Buffer.from_numpy(topk_ids).to(gpu))
+        (
+            token_expert_order,
+            expert_start_indices,
+            restore_token_order,
+            expert_ids,
+            expert_usage_stats,
+        ) = (buffer.to_numpy() for buffer in outputs)
+        # expert_start_indices is [0, 2, 2, 2, 5, 5, 7, 7, 8]: expert 0
+        # owns positions 0-1, expert 3 owns 2-4, expert 5 owns 5-6, and
+        # expert 7 owns position 7. expert_usage_stats is [3, 8].
+
+    .. invisible-code-block: python
+
+        assert token_expert_order.shape == (len(topk_ids),)
+        assert token_expert_order.dtype == np.uint32
+        assert restore_token_order.shape == (len(topk_ids),)
+        assert restore_token_order.dtype == np.uint32
+        assert expert_start_indices.shape == (num_experts + 1,)
+        assert expert_start_indices.dtype == np.uint32
+        assert expert_ids.shape == (num_experts,)
+        assert expert_ids.dtype == np.int32
+        assert expert_usage_stats.shape == (2,)
+        assert expert_usage_stats.dtype == np.uint32
+
+        counts = np.bincount(topk_ids, minlength=num_experts)
+        np.testing.assert_array_equal(
+            expert_start_indices, np.concatenate([[0], np.cumsum(counts)])
+        )
+        # Order within an expert's group is unspecified, so check the
+        # expert that each reordered token maps to.
+        np.testing.assert_array_equal(
+            topk_ids[token_expert_order],
+            np.repeat(np.arange(num_experts), counts),
+        )
+        np.testing.assert_array_equal(
+            np.sort(token_expert_order), np.arange(len(topk_ids))
+        )
+        np.testing.assert_array_equal(
+            token_expert_order[restore_token_order], np.arange(len(topk_ids))
+        )
+        np.testing.assert_array_equal(expert_ids, np.arange(num_experts))
+        assert expert_usage_stats[0] == counts.max()
+        assert expert_usage_stats[1] == num_experts
+
+    .. skip: end
     """
 
     op_name = "mo.moe.create.indices"
@@ -6303,6 +6565,109 @@ def moe_router_group_limited(
           token. Shape: ``[num_tokens, n_experts_per_tok]``.
         - expert_weights: The weights of the routed experts for each
           token. Shape: ``[num_tokens, n_experts_per_tok]``.
+
+    The following example routes each of four tokens to two of 16 experts
+    on a GPU. The experts form four groups of four, and each token draws
+    its experts from its two best groups:
+
+    .. Skipped without an NVIDIA or AMD GPU: the kernel has no CPU
+       implementation, and Apple GPUs are untested. The ``start``/``end``
+       pair also covers the invisible check, which reads this block's
+       results.
+    .. skip: start if(__import__("max.driver").driver.accelerator_count() == 0 or __import__("sys").platform == "darwin", reason="requires an NVIDIA or AMD GPU")
+
+    .. code-block:: python
+
+        import numpy as np
+        from max.driver import Accelerator, Buffer
+        from max.dtype import DType
+        from max.engine import InferenceSession
+        from max.graph import DeviceRef, Graph, TensorType
+        from max.nn.kernels import moe_router_group_limited
+
+        num_tokens, n_routed_experts = 4, 16
+
+        with Graph(
+            "moe_router_group_limited_example",
+            input_types=(
+                TensorType(
+                    DType.float32,
+                    [num_tokens, n_routed_experts],
+                    device=DeviceRef.GPU(),
+                ),
+                TensorType(
+                    DType.float32, [n_routed_experts], device=DeviceRef.GPU()
+                ),
+            ),
+        ) as graph:
+            expert_scores, expert_bias = (
+                value.tensor for value in graph.inputs
+            )
+            expert_indices, expert_weights = moe_router_group_limited(
+                expert_scores,
+                expert_bias,
+                n_routed_experts=n_routed_experts,
+                n_experts_per_tok=2,
+                n_groups=4,
+                topk_group=2,
+                norm_weights=True,
+                routed_scaling_factor=2.5,
+            )
+            graph.output(expert_indices, expert_weights)
+
+        rng = np.random.default_rng(0)
+        # The router takes activated scores, such as sigmoid outputs.
+        logits = rng.standard_normal((num_tokens, n_routed_experts))
+        scores = (1 / (1 + np.exp(-logits))).astype(np.float32)
+        bias = rng.uniform(-0.1, 0.1, n_routed_experts).astype(np.float32)
+
+        gpu = Accelerator()
+        model = InferenceSession(devices=[gpu]).load(graph)
+        outputs = model.execute(
+            Buffer.from_numpy(scores).to(gpu), Buffer.from_numpy(bias).to(gpu)
+        )
+        indices, weights = (buffer.to_numpy() for buffer in outputs)
+        # indices and weights have shape (4, 2). Each token's two weights
+        # sum to routed_scaling_factor (2.5).
+
+    .. invisible-code-block: python
+
+        assert indices.shape == (num_tokens, 2)
+        assert indices.dtype == np.int32
+        assert weights.shape == (num_tokens, 2)
+        assert weights.dtype == np.float32
+
+        # Rank groups by the sum of their top two biased scores, keep the
+        # top two groups, then take the top two biased scores among them.
+        # Weights are the unbiased scores, normalized, then scaled.
+        biased = scores + bias
+        grouped = biased.reshape(num_tokens, 4, 4)
+        group_scores = np.sort(grouped, axis=-1)[..., -2:].sum(axis=-1)
+        top_groups = np.argsort(-group_scores, axis=-1)[:, :2]
+        group_of_expert = np.arange(n_routed_experts) // 4
+        allowed = (group_of_expert[None, None, :] == top_groups[..., None])
+        candidates = np.where(allowed.any(axis=1), biased, -np.inf)
+        expected_indices = np.sort(
+            np.argsort(-candidates, axis=-1)[:, :2], axis=-1
+        )
+        expected_weights = np.take_along_axis(scores, expected_indices, -1)
+        expected_weights = (
+            2.5 * expected_weights / expected_weights.sum(-1, keepdims=True)
+        )
+
+        # Sort by expert index, since the kernel's slot order is unspecified.
+        order = np.argsort(indices, axis=-1)
+        np.testing.assert_array_equal(
+            np.take_along_axis(indices, order, -1), expected_indices
+        )
+        np.testing.assert_allclose(
+            np.take_along_axis(weights, order, -1),
+            expected_weights,
+            rtol=1e-5,
+            atol=1e-6,
+        )
+
+    .. skip: end
     """
 
     if expert_bias.rank != 1:
@@ -6738,34 +7103,27 @@ def _router_gate_mixed_gemv(
     )[0].tensor
 
 
-def smallm_streaming_matmul(
-    a: TensorValue,
-    b_shuffled: TensorValue,
-    b: TensorValue,
-) -> TensorValue:
-    """Computes bf16 ``a @ b^T`` over a smallm-preshuffled weight.
+def smallm_streaming_matmul(a: TensorValue, b: TensorValue) -> TensorValue:
+    """Computes bf16 ``a @ b^T`` with the MI355X small-M streaming kernel.
 
-    ``b_shuffled`` must already be in the fragment-major layout produced by
-    :func:`max.pipelines.weights.smallm_preshuffle.preshuffle_smallm_b` (a
-    one-time CPU permutation at weight-load time); the layout is private to
-    this op pair and a row-major weight here computes garbage. ``b`` is the
-    same weight row-major: the streaming kernel serves ``M <= 32`` (its
-    measured win band) and larger batches fall back to generic matmul
-    dispatch over ``b`` at execute time, so the op is never worse than the
-    dispatch it replaces. MiniMax-M3's MTP draft emits this op explicitly on
-    MI355X for its decode-band vocab projections; nothing routes here through
+    The kernel reads ``b`` in a fragment-major layout that this op permutes
+    in the graph with :func:`preshuffle_block_scaled_b`; for a weight ``b``
+    the graph compiler runs that once, at model init. The streaming kernel
+    serves ``M <= 32`` (its measured win band) and larger batches fall back
+    to generic matmul dispatch over the row-major ``b`` at execute time, so
+    the op is never worse than the dispatch it replaces. Callers emit this op
+    explicitly for decode-band vocab projections; nothing routes here through
     generic matmul dispatch.
     """
-    _check_rank(2, a=a, b_shuffled=b_shuffled, b=b)
-    _check_dtype(DType.bfloat16, a=a, b_shuffled=b_shuffled, b=b)
-    _check_same_device(a=a, b_shuffled=b_shuffled, b=b)
+    _check_rank(2, a=a, b=b)
+    _check_dtype(DType.bfloat16, a=a, b=b)
+    _check_same_device(a=a, b=b)
 
-    n_dim = b_shuffled.shape[0]
-    k_dim = b_shuffled.shape[1]
+    n_dim, k_dim = b.shape
     if not isinstance(n_dim, StaticDim) or not isinstance(k_dim, StaticDim):
         raise ValueError(
             "smallm_streaming_matmul requires a static weight shape, got"
-            f" {b_shuffled.shape}"
+            f" {b.shape}"
         )
     if int(n_dim) % 16 != 0 or int(k_dim) % 256 != 0:
         raise ValueError(
@@ -6776,11 +7134,9 @@ def smallm_streaming_matmul(
         raise ValueError(
             f"activation K must match weight K, got {a.shape[1]} and {k_dim}"
         )
-    if b.shape != b_shuffled.shape:
-        raise ValueError(
-            "the row-major weight must match the shuffled weight shape, got"
-            f" {b.shape} and {b_shuffled.shape}"
-        )
+    b_shuffled = preshuffle_block_scaled_b(
+        b.reshape([1, n_dim, k_dim])
+    ).reshape([n_dim, k_dim])
 
     # The second output is a graph-managed workspace for the op's activation
     # shuffle (32 rows covers every streaming band; m > 32 falls back and
@@ -7033,6 +7389,103 @@ def grouped_matmul_ragged(
 
     Returns:
         The ragged matmul output.
+
+    The following example multiplies four groups of tokens by the
+    weights of four experts on a GPU. The groups hold 3, 1, 2, and 2
+    tokens and map to experts 2, 0, 3, and 1:
+
+    .. Skipped without an NVIDIA or AMD GPU: the kernel has no CPU
+       implementation, and Apple GPUs are untested. The ``start``/``end``
+       pair also covers the invisible check, which reads this block's
+       results.
+    .. skip: start if(__import__("max.driver").driver.accelerator_count() == 0 or __import__("sys").platform == "darwin", reason="requires an NVIDIA or AMD GPU")
+
+    .. code-block:: python
+
+        import numpy as np
+        from max.driver import Accelerator, Buffer
+        from max.dtype import DType
+        from max.engine import InferenceSession
+        from max.graph import DeviceRef, Graph, TensorType
+        from max.nn.kernels import grouped_matmul_ragged
+
+        num_experts, total_tokens, in_features, out_features = 4, 8, 64, 32
+        gpu = DeviceRef.GPU()
+
+        with Graph(
+            "grouped_matmul_ragged_example",
+            input_types=(
+                TensorType(
+                    DType.float32, [total_tokens, in_features], device=gpu
+                ),
+                TensorType(
+                    DType.float32,
+                    [num_experts, out_features, in_features],
+                    device=gpu,
+                ),
+                TensorType(DType.uint32, [num_experts + 1], device=gpu),
+                TensorType(DType.int32, [num_experts], device=gpu),
+                TensorType(DType.uint32, [2], device=DeviceRef.CPU()),
+            ),
+        ) as graph:
+            (
+                hidden_states,
+                weight,
+                expert_start_indices,
+                expert_ids,
+                expert_usage_stats,
+            ) = (value.tensor for value in graph.inputs)
+            # NumPy has no bfloat16, so cast at the graph boundary.
+            output = grouped_matmul_ragged(
+                hidden_states.cast(DType.bfloat16),
+                weight.cast(DType.bfloat16),
+                expert_start_indices,
+                expert_ids,
+                expert_usage_stats,
+            )
+            graph.output(output.cast(DType.float32))
+
+        rng = np.random.default_rng(0)
+        hidden = rng.uniform(-1, 1, (total_tokens, in_features))
+        hidden = hidden.astype(np.float32)
+        weights = rng.uniform(-1, 1, (num_experts, out_features, in_features))
+        weights = weights.astype(np.float32)
+        starts = np.array([0, 3, 4, 6, 8], dtype=np.uint32)
+        ids = np.array([2, 0, 3, 1], dtype=np.int32)
+        # [max tokens in any group, number of groups]
+        usage = np.array([3, num_experts], dtype=np.uint32)
+
+        gpu = Accelerator()
+        model = InferenceSession(devices=[gpu]).load(graph)
+        inputs = [
+            Buffer.from_numpy(x).to(gpu) for x in (hidden, weights, starts, ids)
+        ]
+        # The usage stats stay on the host.
+        inputs.append(Buffer.from_numpy(usage))
+        result = model.execute(*inputs)[0].to_numpy()
+        # result.shape is (8, 32): each token's row of its expert's output.
+
+    .. invisible-code-block: python
+
+        def round_to_bf16(x):
+            bits = x.view(np.uint32)
+            bits = bits + np.uint32(0x7FFF) + ((bits >> 16) & np.uint32(1))
+            return (bits & np.uint32(0xFFFF0000)).view(np.float32)
+
+        assert output.dtype == DType.bfloat16
+        assert result.shape == (total_tokens, out_features)
+        assert result.dtype == np.float32
+
+        # Each group computes group @ weight[expert].T.
+        hidden_r = round_to_bf16(hidden).astype(np.float64)
+        weights_r = round_to_bf16(weights).astype(np.float64)
+        expected = np.empty((total_tokens, out_features))
+        for group, expert in enumerate(ids):
+            start, end = starts[group : group + 2]
+            expected[start:end] = hidden_r[start:end] @ weights_r[expert].T
+        np.testing.assert_allclose(result, expected, rtol=1e-2, atol=5e-2)
+
+    .. skip: end
     """
     if weight.rank != 3:
         raise ValueError(f"expected weight of rank 3 but got {weight.rank}")
@@ -7222,6 +7675,12 @@ def grouped_dynamic_block_scaled_matmul_amd_swiglu_quant(
         scales_rows = hidden_states.shape[0]
 
     MXFP8_SF_VECTOR_SIZE = 32
+    parameters: Mapping[str, bool | int | float | str | DType] = {
+        # MXFP8 is one element per byte, so a lane always covers 32 bytes.
+        "lane_bytes": 32,
+        "scales_max_padded_m": out_scales_max_padded_m,
+        **(activation or GatedActivation()).kernel_parameters(),
+    }
     outputs = ops.custom(
         "mo.grouped.matmul.block.scaled.amd.swiglu.quant",
         device=hidden_states.device,
@@ -7253,12 +7712,7 @@ def grouped_dynamic_block_scaled_matmul_amd_swiglu_quant(
                 device=hidden_states.device,
             ),
         ],
-        parameters={
-            # MXFP8 is one element per byte, so a lane always covers 32 bytes.
-            "lane_bytes": 32,
-            "scales_max_padded_m": out_scales_max_padded_m,
-            **(activation or GatedActivation()).kernel_parameters(),
-        },
+        parameters=parameters,
     )
     return outputs[0].tensor, outputs[1].tensor
 
@@ -7289,10 +7743,12 @@ def preshuffle_block_scaled_b(
     the ``b_5d_grouped_layout`` the kernel reads with coalesced loads. With
     :data:`MXFP6_LANE_BYTES`, no power-of-two load covers a lane, so each MFMA
     tile stores the first 16 bytes of every lane fragment as one plane and the
-    last 8 as a second, each ordered ``(KLane, NLane, byte)``.
+    last 8 as a second, each ordered ``(KLane, NLane, byte)``. Lanes are
+    counted in bytes, so a wider element type permutes as its bytes would: a
+    bf16 weight lands in the B layout of :func:`smallm_streaming_matmul`.
 
     Args:
-        weight: Row-major expert weights ``[E, N, K_BYTES]`` as the checkpoint
+        weight: Row-major expert weights ``[E, N, K]`` as the checkpoint
             stores them, with any graph-side reordering of N already applied.
         lane_bytes: Bytes one lane feeds the MFMA: 16, or
             :data:`MXFP6_LANE_BYTES` for MXFP6.
@@ -7302,7 +7758,7 @@ def preshuffle_block_scaled_b(
 
     Raises:
         ValueError: If the weight is not rank 3, ``N`` is not a multiple of 16,
-            or ``K_BYTES`` is not a whole number of MFMA K tiles.
+            or a row is not a whole number of MFMA K tiles.
     """
     if lane_bytes not in (_MFMA_LANE_BYTES, MXFP6_LANE_BYTES):
         raise ValueError(
@@ -7311,27 +7767,26 @@ def preshuffle_block_scaled_b(
         )
     if weight.rank != 3:
         raise ValueError(f"expected weight of rank 3 but got {weight.rank}")
-    e, n, k_bytes = (int(d) for d in weight.shape)
+    e, n, k = (int(d) for d in weight.shape)
+    elem_bytes = weight.dtype.size_in_bytes
     tile_k_bytes = _MFMA_K_LANES * lane_bytes
-    if n % _MFMA_MN_LANES or k_bytes % tile_k_bytes:
+    if n % _MFMA_MN_LANES or (k * elem_bytes) % tile_k_bytes:
         raise ValueError(
             f"preb weights need N % {_MFMA_MN_LANES} == 0 and K_BYTES %"
-            f" {tile_k_bytes} == 0, got {weight.shape}"
+            f" {tile_k_bytes} == 0, got {weight.shape} {weight.dtype}"
         )
-    n0, k0 = n // _MFMA_MN_LANES, k_bytes // tile_k_bytes
-    w = weight.reshape([e, n0, _MFMA_MN_LANES, k0, _MFMA_K_LANES, lane_bytes])
+    lane = lane_bytes // elem_bytes
+    n0, k0 = n // _MFMA_MN_LANES, k // (_MFMA_K_LANES * lane)
+    w = weight.reshape([e, n0, _MFMA_MN_LANES, k0, _MFMA_K_LANES, lane])
     # (n0, nlane, k0, klane, byte) -> (n0, k0, klane, nlane, byte)
     w = ops.permute(w, [0, 1, 3, 4, 2, 5])
     if lane_bytes == MXFP6_LANE_BYTES:
-        planes = ops.split(
-            w,
-            [_MFMA_LANE_BYTES, MXFP6_LANE_BYTES - _MFMA_LANE_BYTES],
-            axis=-1,
-        )
+        plane = _MFMA_LANE_BYTES // elem_bytes
+        planes = ops.split(w, [plane, lane - plane], axis=-1)
         w = ops.concat(
             [plane.reshape([e, n0, k0, -1]) for plane in planes], axis=-1
         )
-    return w.reshape([e, n, k_bytes])
+    return w.reshape([e, n, k])
 
 
 def preshuffle_block_scaled_b_scales(scales: TensorValue) -> TensorValue:
@@ -8194,9 +8649,13 @@ def grouped_matmul_blocked_swiglu(
             f"{hidden_k}] but got {weight.shape}"
         )
 
-    activation_parameters = (
-        activation or GatedActivation()
-    ).kernel_parameters()
+    activation_params = (activation or GatedActivation()).kernel_parameters()
+    activation_name = activation_params["activation"]
+    swiglu_alpha = activation_params["swiglu_alpha"]
+    swiglu_limit = activation_params["swiglu_limit"]
+    activation_name = cast(str, activation_name)
+    swiglu_alpha = cast(float, swiglu_alpha)
+    swiglu_limit = cast(float, swiglu_limit)
 
     # N = 2D, so weight.shape[1] must be even and D = N // 2.
     n_dim = weight.shape[1]
@@ -8235,7 +8694,8 @@ def grouped_matmul_blocked_swiglu(
     # Emitted as a first-class composite op (lowers 1:1 to the
     # `mo.composite.grouped_matmul_swiglu_nvfp4` kernel) so the MegaFFN fusion
     # can match a typed op rather than a string-keyed `mo.custom`. The
-    # activation rides as string attributes, one per kernel parameter.
+    # activation name rides as a string attribute; its constants ride as
+    # rank-0 f32 scalars (see `MO_F32ScalarAttr`).
     results = Graph.current._add_op_generated(
         mo.CompositeGroupedMatmulSwigluNvfp4Op,
         c_packed_type,
@@ -8256,10 +8716,9 @@ def grouped_matmul_blocked_swiglu(
         else expert_usage_stats_host[0],
         expert_usage_stats_host[1],
         has_a_row_scales=builtin.BoolAttr(a_row_scales is not None),
-        **{
-            name: builtin.StringAttr(value)
-            for name, value in activation_parameters.items()
-        },
+        activation=builtin.StringAttr(activation_name),
+        swiglu_alpha=_float32_attr(swiglu_alpha),
+        swiglu_limit=_float32_attr(swiglu_limit),
     )
 
     return results[0].tensor, results[1].tensor
@@ -8905,14 +9364,13 @@ def quantize_dynamic_scaled_float8(
         op_name += ".row_bounded"
         values.append(row_offsets)
 
-    # The kernel takes the floor string-encoded (the extensibility bridge has no
-    # float parameter), and the RMS-norm fusion pattern only matches a quantize
-    # op carrying exactly one parameter, so leave it off at the default.
-    parameters: dict[str, bool | int | str | DType] = {
+    # The RMS-norm fusion pattern only matches a quantize op carrying exactly
+    # one parameter, so leave `amax_floor` off at its default.
+    parameters: dict[str, bool | int | float | str | DType] = {
         "group_size_or_per_token": group_size,
     }
     if amax_floor > 0.0:
-        parameters["amax_floor"] = repr(amax_floor)
+        parameters["amax_floor"] = amax_floor
 
     result = ops.custom(
         op_name,
@@ -10226,6 +10684,118 @@ def grouped_quantize_dynamic_block_scaled(
     return result[0].tensor, result[1].tensor
 
 
+def grouped_quantize_nvfp4_row_scaled(
+    input: TensorValue,
+    row_offsets: TensorValue,
+    scales_offsets: TensorValue,
+    indices: TensorValue | None = None,
+    indices_divisor: int = 1,
+    relu2: bool = False,
+) -> tuple[TensorValue, TensorValue, TensorValue]:
+    """Quantizes grouped rows to NVFP4, each row with its own global scale.
+
+    Fuses the row amax into the quantize kernel. The result is bit-identical
+    to this chain of ops, which it replaces::
+
+        amax = ops.max(ops.abs(ops.cast(x, float32)), axis=-1)
+        row_scales = ops.cast(ops.max(amax / (6 * 448), 1e-30), bfloat16)
+        scaled = ops.cast(
+            ops.cast(x, float32) * (1.0 / ops.cast(row_scales, float32)),
+            bfloat16,
+        )
+        x_fp4, scales = grouped_quantize_dynamic_block_scaled(
+            scaled, ..., sf_tensor=ones, indices=indices
+        )
+
+    ``row_scales`` is the ``a_row_scales`` of
+    :func:`grouped_matmul_block_scaled`. SM100 only.
+
+    Args:
+        input: The BF16 rows, ``[source rows, K]``.
+        row_offsets: Cumulative row offsets per expert, ``[num_experts +
+            1]``, dtype ``uint32``.
+        scales_offsets: Per-expert scale tile offset corrections,
+            ``[num_experts]``, dtype ``uint32``.
+        indices: Optional source row indices per output row, ``[rows]``,
+            dtype ``int32`` or ``uint32``. Output row ``i`` quantizes input
+            row ``indices[i] // indices_divisor``, with its own scale. The
+            output has ``indices.shape[0]`` rows instead of
+            ``input.shape[0]``.
+        indices_divisor: The divisor applied to each entry of ``indices``.
+        relu2: Whether to quantize ``relu(x) * relu(x)``, rounded to BF16,
+            in place of ``x``.
+
+    Returns:
+        The packed FP4 rows ``[rows, K // 2]``, the E4M3 block scales in the
+        rank-5 interleaved layout ``[total_m_tiles, K_tiles, 32, 4, 4]``, and
+        the BF16 row scales ``[rows]``.
+    """
+    if input.rank != 2:
+        raise ValueError("input tensor must be rank 2")
+    if input.dtype != DType.bfloat16:
+        raise ValueError("input tensor dtype must be bfloat16")
+    if int(input.shape[1]) % 8:
+        raise ValueError("input columns must be a multiple of 8")
+    if indices is not None:
+        if indices.dtype not in (DType.int32, DType.uint32):
+            raise ValueError("indices dtype must be int32 or uint32")
+        if indices_divisor < 1:
+            raise ValueError("indices_divisor must be positive")
+
+    SF_ATOM_M = [32, 4]
+    SF_ATOM_K = 4
+    SF_MN_GROUP_SIZE = SF_ATOM_M[0] * SF_ATOM_M[1]  # 128
+    SF_K_GROUP_SIZE = SF_ATOM_K * 16
+
+    num_rows = indices.shape[0] if indices is not None else input.shape[0]
+    # The same tile bound as grouped_quantize_dynamic_block_scaled: a row
+    # belongs to one expert, so at most min(experts, rows) tiles are partial.
+    total_m_tiles = ceildiv(num_rows, Dim(SF_MN_GROUP_SIZE))
+    total_m_tiles += AlgebraicDim.apply(
+        kgen.POC.min, scales_offsets.shape[0], num_rows
+    )
+
+    op_name = "mo.grouped.quantize.nvfp4.row_scaled"
+    values = [input, row_offsets, scales_offsets]
+    parameters: dict[str, int] = {"apply_relu2": int(relu2)}
+    if indices is not None:
+        op_name += ".with_row_indices"
+        values.append(indices)
+        parameters["row_index_divisor"] = indices_divisor
+
+    result = ops.custom(
+        op_name,
+        device=input.device,
+        values=values,
+        parameters=parameters,
+        out_types=[
+            TensorType(
+                dtype=DType.uint8,
+                shape=[num_rows, input.shape[1] // 2],
+                device=input.device,
+            ),
+            TensorType(
+                dtype=DType.float8_e4m3fn,
+                shape=[
+                    total_m_tiles,
+                    ceildiv(input.shape[1], Dim(SF_K_GROUP_SIZE)),
+                    SF_ATOM_M[0],
+                    SF_ATOM_M[1],
+                    SF_ATOM_K,
+                ],
+                device=input.device,
+            ),
+            TensorType(
+                dtype=DType.bfloat16,
+                shape=[num_rows],
+                device=input.device,
+            ),
+        ],
+    )
+
+    return result[0].tensor, result[1].tensor, result[2].tensor
+
+
 def quantize_dynamic_block_scaled_mxfp4(
     input: TensorValue,
     scales_type: DType = DType.float8_e8m0fnu,
@@ -11287,9 +11857,11 @@ def top_k_per_row(
     """:func:`~max.graph.ops.top_k` over the last axis, with a count per row.
 
     Row ``r`` gets the first ``k[r]`` picks ``ops.top_k(input, max_k)`` makes
-    for it, in the same order; the rest of its ``max_k`` slots hold the lowest
-    value of the dtype (``-inf`` for floats) and index ``-1``. The kernel stops
-    after a row's count, so its cost follows the counts rather than ``max_k``.
+    for it, in descending order; the rest of its ``max_k`` slots hold the
+    lowest value of the dtype (``-inf`` for floats) and index ``-1``. Equal
+    values may come out in any order, and which of them fill the last slots
+    is unspecified. ``input`` must not contain NaN; mask it to ``-inf``
+    first if it may.
 
     Args:
         input: ``[rows, n]`` values to select from.
@@ -11690,6 +12262,62 @@ def gumbel_argmax_from_probs(
         out_types=[
             TensorType(
                 dtype=DType.int64, shape=[probs.shape[0]], device=probs.device
+            )
+        ],
+    )[0].tensor
+
+
+def argmax_with_bias(
+    logits: TensorValue, bias: TensorValue, *, position: int
+) -> TensorValue:
+    """Takes each row's argmax of one position's logits plus a bias.
+
+    Computes ``argmax(logits[:, position, :].cast(float32) +
+    bias.cast(float32), axis=-1)`` in one pass, adding in float32 in
+    registers. The upcast is exact for 16-bit inputs, so the index equals the
+    one ``ops.argmax`` returns on the materialized float32 sum: the lowest
+    index wins a tie and NaN never wins. ``logits`` is read in place, so a
+    caller that walks the positions of a ``[rows, positions, vocab]`` tensor
+    never relays it out. GPU-only.
+
+    Args:
+        logits: ``[rows, positions, vocab_size]`` logits.
+        bias: ``[rows, vocab_size]`` bias.
+        position: The position of ``logits`` to read.
+
+    Returns:
+        The argmax per row, ``int64 [rows]``.
+
+    Raises:
+        ValueError: If the ranks are wrong, the position is out of range, or
+            the inputs are on the CPU.
+    """
+    if logits.rank != 3 or bias.rank != 2:
+        raise ValueError(
+            "argmax_with_bias requires rank-3 logits and rank-2 bias, got "
+            f"{logits.rank} and {bias.rank}"
+        )
+    if logits.device == DeviceRef.CPU():
+        raise ValueError("argmax_with_bias is GPU-only")
+    positions = logits.shape[1]
+    if isinstance(positions, StaticDim) and not 0 <= position < int(positions):
+        raise ValueError(
+            f"position {position} is outside the {int(positions)} positions"
+        )
+
+    return ops.custom(
+        "sampler.argmax_with_bias",
+        device=logits.device,
+        values=[
+            ops.constant(position, DType.int64, device=DeviceRef.CPU()),
+            logits,
+            bias,
+        ],
+        out_types=[
+            TensorType(
+                dtype=DType.int64,
+                shape=[logits.shape[0]],
+                device=logits.device,
             )
         ],
     )[0].tensor
@@ -12950,6 +13578,115 @@ def indexer_score_ragged(
             TensorType(DType.float32, [q.shape[0], num_candidates], q.device)
         ],
         parameters={"num_heads": int(q.shape[1])},
+    )[0].tensor
+
+
+def compress_windows_ragged(
+    kv: TensorValue,
+    score: TensorValue,
+    ape: TensorValue,
+    norm_weight: TensorValue,
+    freqs: TensorValue,
+    input_row_offsets: TensorValue,
+    window_offsets: TensorValue,
+    starts: TensorValue,
+    state: PagedCacheValues,
+    layer: TensorValue,
+    *,
+    epsilon: float,
+    rotate: bool,
+) -> TensorValue:
+    """Pools every window of a ragged chunk into one compressed entry.
+
+    DeepSeek-V4's compressor. Request ``b``'s chunk touches
+    ``ceil(len_b / ratio)`` windows of ``ratio`` positions, the first at
+    ``P - P % ratio`` for ``P = starts[b]``. A window's entry is a per-channel
+    softmax over ``score + ape`` weighting ``kv`` across its positions, and
+    its predecessor's when ``ape`` is twice the entry's width (the
+    predecessor's low half, then the window's high half). Positions before
+    ``P`` are read from the state leaf, later ones from ``kv`` and ``score``.
+    The entry is then RMS-normed, its trailing ``2 * freqs.shape[1]`` channels
+    rotated at the window's first position, and snapped to the FP8 grid on the
+    other channels, or with ``rotate`` Hadamard-rotated and snapped to FP4.
+
+    Args:
+        kv: ``[total_rows, proj_dim]`` float32 raw ``wkv`` rows of the chunk.
+        score: ``[total_rows, proj_dim]`` float32 raw ``wgate`` rows.
+        ape: ``[ratio, proj_dim]`` float32 per-slot gate bias.
+        norm_weight: ``[head_dim]`` RMSNorm weight, in the entries' dtype.
+        freqs: ``[positions, rope_dim // 2, 2]`` float32 rotary cos/sin.
+        input_row_offsets: ``[batch + 1]`` uint32 row offsets of ``kv``.
+        window_offsets: ``[batch + 1]`` uint32 window offsets, request ``b``
+            owning ``ceil(len_b / ratio)`` entries.
+        starts: ``[batch]`` int32 tokens cached before the chunk.
+        state: The state leaf, one head of ``proj_dim`` float32 channels
+            holding ``wkv`` as K and ``wgate`` as V by position.
+        layer: uint32 scalar, this layer's index in the leaf.
+        epsilon: RMSNorm epsilon.
+        rotate: The indexer's variant.
+
+    Returns:
+        ``[rows, head_dim]`` entries in ``norm_weight``'s dtype, where
+        ``rows = (total_rows + batch * (ratio - 1)) // ratio`` bounds the
+        window count. Rows past ``window_offsets[batch]`` are left unwritten;
+        the ragged store skips them.
+    """
+    _check_rank(2, kv=kv, score=score, ape=ape)
+    _check_rank(
+        1,
+        norm_weight=norm_weight,
+        input_row_offsets=input_row_offsets,
+        window_offsets=window_offsets,
+        starts=starts,
+    )
+    _check_rank(3, freqs=freqs)
+    _check_rank(6, kv_blocks=state.kv_blocks)
+    _check_dtype(DType.float32, kv=kv, score=score, ape=ape, freqs=freqs)
+    _check_dtype(
+        DType.uint32,
+        input_row_offsets=input_row_offsets,
+        window_offsets=window_offsets,
+        layer=layer,
+    )
+    _check_dtype(DType.int32, starts=starts)
+    ratio = int(ape.shape[0])
+    head_dim = int(norm_weight.shape[0])
+    if ape.shape[1] not in (head_dim, 2 * head_dim):
+        raise ValueError(
+            f"ape width {ape.shape[1]} is neither the entry width {head_dim}"
+            " nor twice it"
+        )
+    if kv.shape[1] != ape.shape[1] or score.shape[1] != ape.shape[1]:
+        raise ValueError(
+            f"kv and score must be {ape.shape[1]} wide, got {kv.shape[1]}"
+            f" and {score.shape[1]}"
+        )
+
+    batch = window_offsets.shape[0] - 1
+    rows = (kv.shape[0] + batch * (ratio - 1)) // ratio
+    return ops.inplace_custom(
+        "mo.compress_windows.ragged.paged",
+        device=kv.device,
+        values=[
+            kv,
+            score,
+            ape,
+            norm_weight,
+            freqs,
+            input_row_offsets,
+            window_offsets,
+            starts,
+            state.kv_blocks,
+            state.page_stride,
+            state.cache_lengths,
+            state.lookup_table,
+            state.max_prompt_length,
+            state.max_cache_length,
+            layer,
+            ops.constant(epsilon, DType.float32, DeviceRef.CPU()),
+        ],
+        out_types=[TensorType(norm_weight.dtype, [rows, head_dim], kv.device)],
+        parameters={"rotate": rotate},
     )[0].tensor
 
 

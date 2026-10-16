@@ -370,8 +370,8 @@ class SupportedArchitecture:
     """Whether this architecture supports auto-enabling the overlap scheduler.
 
     When ``False``, the overlap scheduler is not auto-enabled for this
-    architecture even when otherwise eligible. Users can still force-enable
-    via ``--enable-overlap-scheduler --force``.
+    architecture even when otherwise eligible. Users can still enable it
+    via ``--enable-overlap-scheduler``.
     """
 
     supports_nvfp4_kv_cache: bool = False
@@ -799,10 +799,22 @@ class ArchLookup:
         Declaration order is preserved, so it is also the tie-break when two
         speculators would accept the same draft.
         """
-        for module, symbol, package in self._lazy_speculators.pop(target, []):
-            imported = importlib.import_module(module, package)
-            self.register(getattr(imported, symbol))
-        return list(self._speculators.get(target, []))
+        names = [target]
+        if (
+            target not in self.architectures
+            and target not in self._lazy_architectures
+        ):
+            # Speculators are filed under their base's registered name, which
+            # for a ModuleV3-only target is "<target>_ModuleV3". Matched by
+            # name so that resolving it never imports the target.
+            names.append(f"{target}_ModuleV3")
+        for name in names:
+            for module, symbol, package in self._lazy_speculators.pop(name, []):
+                imported = importlib.import_module(module, package)
+                self.register(getattr(imported, symbol))
+            if speculators := self._speculators.get(name):
+                return list(speculators)
+        return []
 
     def import_custom_architectures(
         self, custom_architectures: list[str]

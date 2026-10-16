@@ -23,9 +23,7 @@ from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.nn import Module
 from max.experimental.nn.common_layers.mesh_axis import TP
-from max.experimental.sharding import DeviceMesh, Sharded
-from max.experimental.tensor import Tensor
-from max.pipelines.architectures.deepseekV3_modulev3.layers.quant_tensor import (
+from max.experimental.nn.common_layers.quant_tensor import (
     FP8BlockTensor,
     NVFP4Activation,
     NVFP4Tensor,
@@ -33,6 +31,8 @@ from max.pipelines.architectures.deepseekV3_modulev3.layers.quant_tensor import 
     all_fp8_block,
     all_nvfp4,
 )
+from max.experimental.sharding import DeviceMesh, Sharded
+from max.experimental.tensor import Tensor
 
 
 def test_init_stores_tensors_and_block_size() -> None:

@@ -39,7 +39,6 @@ from ..deepseekV4.layers import DeepseekV4Cache, RaggedRows
 from ..deepseekV4.model_config import DeepseekV4Config
 
 __all__ = [
-    "VERIFY_WINDOWS",
     "WINDOW_LEAF",
     "DSparkDeepseekV4Proposer",
     "DeepseekV4BlockTarget",
@@ -49,10 +48,6 @@ __all__ = [
 
 WINDOW_LEAF = "swa"
 """The leaf the stages' windows live in; the driver's primary and draft KV."""
-
-VERIFY_WINDOWS = "verify_windows"
-"""The :attr:`BlockBatch.extra` key of the verify forward's per-ratio window
-counts (the ``windows`` of :meth:`RaggedRows.from_offsets`)."""
 
 TrunkHidden = tuple[list[TensorValue], list[RaggedRows]]
 """Per device: the trunk states DSpark reads, ``[1, T, d * n_targets]``, and
@@ -101,7 +96,7 @@ class DeepseekV4BlockTarget:
             self.config, batch.kv_collections, batch.passthrough_kv
         )
         t = batch.merged_tokens.shape[0]
-        windows = batch.extra[VERIFY_WINDOWS]
+        windows = dict.fromkeys(self.config.window_ratios)
         rows = [
             RaggedRows.from_offsets(offsets, t, cache.cache_lengths, windows)
             for offsets, cache in zip(

@@ -583,13 +583,13 @@ def _gemv_partial_norm_unfused_with_scratch[
     a_type: DType,
     //,
     transpose_b: Bool,
+    eps: Float32,
     pdl_level: PDLLevel,
 ](
     normed_output: TileTensor[mut=True, c_type, ...],
     act: TileTensor[mut=False, a_type, ...],
     weight: TileTensor[mut=False, a_type, ...],
     gamma: TileTensor[mut=False, a_type, ...],
-    eps: Float32,
     y_scratch: MutPointer[Scalar[c_type], _],
     ctx: DeviceContext,
 ) raises:
@@ -648,12 +648,16 @@ def _gemv_partial_norm_unfused_with_scratch[
     # `rms_norm_gpu` migrated to a `Coord` shape boundary (softmax PR #88203);
     # `[M, N_normed]` is built at runtime so an all-dynamic `Coord` is passed.
     rms_norm_gpu[
-        2, input_fn, output_fn, multiply_before_cast=True, pdl_level=pdl_level
+        2,
+        input_fn,
+        output_fn,
+        epsilon=eps,
+        weight_offset=Float32(0.0),
+        multiply_before_cast=True,
+        pdl_level=pdl_level,
     ](
         Coord(m, n_normed),
         gamma_c,
-        eps,
-        Scalar[c_type](0.0),
         ctx,
     )
 
@@ -668,6 +672,7 @@ def gemv_and_partial_norm[
     a_type: DType,
     //,
     *,
+    eps: Float32,
     transpose_b: Bool = True,
     fused: Bool = True,
     tile_n: Int = 4,
@@ -679,7 +684,6 @@ def gemv_and_partial_norm[
     act: TileTensor[mut=False, a_type, ...],
     weight: TileTensor[mut=False, a_type, ...],
     gamma: TileTensor[mut=False, a_type, ...],
-    eps: Float32,
     ctx: DeviceContext,
 ) raises:
     """Computes `y = act @ weight.T`, then partitions `y` into a normed
@@ -688,6 +692,7 @@ def gemv_and_partial_norm[
     Parameters:
         c_type: Output dtype.
         a_type: Activation / weight / gamma dtype.
+        eps: RMS norm epsilon.
         transpose_b: If `True`, `weight` is row-major `[N, K]` used as
             `weight.T`.
         fused: Compile-time flag. `True` (default) selects the single-
@@ -709,7 +714,6 @@ def gemv_and_partial_norm[
         act: `[M, K]` activations.
         weight: `[N, K]` weights (when `transpose_b=True`).
         gamma: `[N_normed]` RMS norm scale.
-        eps: RMS norm epsilon.
         ctx: Device context.
 
     Raises:
@@ -745,13 +749,13 @@ def gemv_and_partial_norm[
         var y_buf = ctx.enqueue_create_buffer[c_type](m * n)
         _gemv_partial_norm_unfused_with_scratch[
             transpose_b=transpose_b,
+            eps=eps,
             pdl_level=pdl_level,
         ](
             normed_output,
             act,
             weight,
             gamma,
-            eps,
             y_buf.unsafe_ptr(),
             ctx,
         )
@@ -763,6 +767,7 @@ def gemv_and_partial_norm_unfused_with_scratch[
     a_type: DType,
     //,
     *,
+    eps: Float32,
     transpose_b: Bool = True,
     pdl_level: PDLLevel = PDLLevel(),
 ](
@@ -770,7 +775,6 @@ def gemv_and_partial_norm_unfused_with_scratch[
     act: TileTensor[mut=False, a_type, ...],
     weight: TileTensor[mut=False, a_type, ...],
     gamma: TileTensor[mut=False, a_type, ...],
-    eps: Float32,
     y_scratch: MutPointer[Scalar[c_type], MutAnyOrigin],
     ctx: DeviceContext,
 ) raises:
@@ -792,6 +796,7 @@ def gemv_and_partial_norm_unfused_with_scratch[
         a_type: Activation / weight / gamma dtype. Must equal
             `c_type`; `rms_norm_gpu` uses a single dtype for input
             and gamma.
+        eps: RMS norm epsilon.
         transpose_b: If `True`, `weight` is row-major `[N, K]` used
             as `weight.T`.
         pdl_level: Programmatic Dependent Launch level, forwarded to
@@ -803,7 +808,6 @@ def gemv_and_partial_norm_unfused_with_scratch[
         act: `[M, K]` activations.
         weight: `[N, K]` weights (when `transpose_b=True`).
         gamma: `[N_normed]` RMS norm scale.
-        eps: RMS norm epsilon.
         y_scratch: Caller-provided `[M, N]` device buffer (at least
             `M * N` elements of `c_type`). Holds the full matmul
             output `y = act @ weight.T` on return.
@@ -813,13 +817,12 @@ def gemv_and_partial_norm_unfused_with_scratch[
         Error: If either kernel launch fails.
     """
     _gemv_partial_norm_unfused_with_scratch[
-        transpose_b=transpose_b, pdl_level=pdl_level
+        transpose_b=transpose_b, eps=eps, pdl_level=pdl_level
     ](
         normed_output,
         act,
         weight,
         gamma,
-        eps,
         y_scratch,
         ctx,
     )

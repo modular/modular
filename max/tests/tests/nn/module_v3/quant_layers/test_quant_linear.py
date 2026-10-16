@@ -19,16 +19,16 @@ from unittest.mock import MagicMock
 
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.tensor import Tensor, default_dtype
-from max.nn.quant_config import QuantConfig
-from max.pipelines.architectures.deepseekV3_modulev3.layers.quant_linear import (
+from max.experimental.nn.common_layers.quant_linear import (
     QuantizedLinear,
     QuantizedMLP,
 )
-from max.pipelines.architectures.deepseekV3_modulev3.layers.quant_tensor import (
+from max.experimental.nn.common_layers.quant_tensor import (
     FP8BlockTensor,
     NVFP4Tensor,
 )
+from max.experimental.tensor import Tensor, default_dtype
+from max.nn.quant_config import QuantConfig
 
 # Dimensions are multiples of the 128x128 weight block so the FP8 scale grid
 # divides evenly and stays easy to reason about.

@@ -154,13 +154,13 @@ struct RMSNormTileSM100:
         dtype: DType,
         rank: Int,
         target: StaticString,
+        epsilon: Float32,
+        weight_offset: Float32,
         multiply_before_cast: Bool = True,
     ](
         output: _FusedOutputTileTensor[dtype=dtype, rank=rank, ...],
         input: InputTensor[dtype=dtype, rank=rank, ...],
         gamma: InputTensor[dtype=dtype, rank=1, ...],
-        epsilon: Float32,
-        weight_offset: Scalar[dtype=dtype],
         ctx: DeviceContext,
     ) capturing raises:
         # The tile programming model (`tile_based_fusion=True`) binds `output`
@@ -198,7 +198,7 @@ struct RMSNormTileSM100:
             gamma.to_tile_tensor(),
             n_dim,
             epsilon,
-            weight_offset,
+            weight_offset.cast[dtype](),
             _tile_store_consumer(output),
         )
         ctx.enqueue_function(

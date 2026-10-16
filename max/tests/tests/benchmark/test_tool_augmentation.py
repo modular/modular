@@ -22,7 +22,8 @@ from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
-from max.benchmark.benchmark_serving import parse_tools
+from max.benchmark.benchmark_serving import parse_args
+from max.benchmark.benchmark_shared.config import ServingBenchmarkConfig
 from max.benchmark.benchmark_shared.datasets.chat_judge import (
     ChatJudgeChatSamples,
 )
@@ -329,22 +330,24 @@ def test_seed_makes_selection_reproducible() -> None:
     assert selected_with(7) != selected_with(8)
 
 
-def test_parse_tools_reads_inline_json_and_files(tmp_path: Path) -> None:
+def test_tools_flag_reads_inline_json_and_files(tmp_path: Path) -> None:
+    """Every spelling goes through the CLI parser, which wraps the token."""
     tools_file = tmp_path / "tools.json"
     tools_file.write_text(json.dumps(_TOOLS))
-    assert parse_tools(json.dumps(_TOOLS)) == _TOOLS
-    assert parse_tools(f"@{tools_file}") == _TOOLS
+    for value in (json.dumps(_TOOLS), str(tools_file)):
+        args = parse_args(["--model", "m", "--tools", value])
+        assert args.tools == _TOOLS
 
 
 @pytest.mark.parametrize(
-    ("arg", "match"),
+    ("value", "match"),
     [
-        ("[]", "empty"),
-        ("{not json", "Invalid tools"),
+        ("[]", "at least one tool definition"),
+        ("[not json", "Failed to parse tools"),
         ('[{"type": "function"}]', "Invalid tools"),
-        ("@/nonexistent/tools.json", "not found"),
+        ("/nonexistent/tools.json", "not a readable file path"),
     ],
 )
-def test_parse_tools_rejects_malformed_input(arg: str, match: str) -> None:
+def test_tools_flag_rejects_malformed_input(value: str, match: str) -> None:
     with pytest.raises(ValueError, match=match):
-        parse_tools(arg)
+        ServingBenchmarkConfig.model_validate({"model": "m", "tools": value})

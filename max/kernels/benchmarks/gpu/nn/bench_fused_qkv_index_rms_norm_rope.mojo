@@ -83,7 +83,7 @@ from nn.kv_cache import (
     fused_dual_qk_rms_norm_rope_ragged_paged,
     fused_qk_rms_norm_rope_ragged_paged,
 )
-from std.utils import Index, IndexList
+from std.utils import IndexList
 
 # Ring size per cache-busted tensor. 1 GiB comfortably exceeds a few x the MI355
 # last-level cache and, even at the largest window (bs=512 decode main-K is
@@ -410,9 +410,7 @@ def bench_fused_qkv_index_rms_norm_rope[
             ](token: Int, head: Int, col: Int) {var q_main_src} -> SIMD[
                 dtype, width
             ]:
-                return q_main_src.load[width=width](
-                    Coord(Index(token, head, col))
-                )
+                return q_main_src.load[width=width](Coord(token, head, col))
 
             @inline(.always)
             def q_index_fn[
@@ -420,9 +418,7 @@ def bench_fused_qkv_index_rms_norm_rope[
             ](token: Int, head: Int, col: Int) {var q_index_src} -> SIMD[
                 dtype, width
             ]:
-                return q_index_src.load[width=width](
-                    Coord(Index(token, head, col))
-                )
+                return q_index_src.load[width=width](Coord(token, head, col))
 
             fused_qk_rms_norm_rope_ragged_paged[
                 target="gpu",
@@ -533,9 +529,7 @@ def bench_fused_qkv_index_rms_norm_rope[
             ](token: Int, head: Int, col: Int) {var q_main_src} -> SIMD[
                 dtype, width
             ]:
-                return q_main_src.load[width=width](
-                    Coord(Index(token, head, col))
-                )
+                return q_main_src.load[width=width](Coord(token, head, col))
 
             @inline(.always)
             def q_index_fn[
@@ -543,9 +537,7 @@ def bench_fused_qkv_index_rms_norm_rope[
             ](token: Int, head: Int, col: Int) {var q_index_src} -> SIMD[
                 dtype, width
             ]:
-                return q_index_src.load[width=width](
-                    Coord(Index(token, head, col))
-                )
+                return q_index_src.load[width=width](Coord(token, head, col))
 
             # Exercises the merged dual op (`mo.fused_qk_rms_norm_rope.ragged.paged.dual`,
             # landed separately), which collapses the two single-pair launches above

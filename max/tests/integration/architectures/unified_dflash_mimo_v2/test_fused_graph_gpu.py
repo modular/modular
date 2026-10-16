@@ -10,14 +10,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Tests the fused MiMo-V2 DFlash graph and the base-ctx graph together.
+"""Tests the fused MiMo-V2 DFlash graph, which serves every step of a spec-on
+deployment.
 
-A random-weight model runs every graph a spec-on deployment serves, sharing
-one set of paged caches, at tensor parallelism 2 when two GPUs are present:
+A random-weight model runs it, sharing one set of paged caches, at tensor
+parallelism 2 when two GPUs are present:
 
-* the drafter's context that base-ctx writes, over chunks and after a prefix
-  hit restored from another request's pages, is the context the fused graph
-  writes for the same tokens;
+* the drafter's context it writes over chunks, and after a prefix hit
+  restored from another request's pages, is the context it writes for the
+  whole prompt;
 * every token the fused graph commits is the target's argmax, bitmask
   applied, in the forward that committed it, at K 3 and 7, and a graph that
   accepts one extra draft fails that;
@@ -91,13 +92,6 @@ def fused(
 
 
 @pytest.fixture(scope="module")
-def base_ctx(
-    model: Model, devices: list[Device], session: InferenceSession
-) -> BaseRunner:
-    return base_runner("base_ctx", model, devices, session)
-
-
-@pytest.fixture(scope="module")
 def base(
     model: Model, devices: list[Device], session: InferenceSession
 ) -> BaseRunner:
@@ -117,9 +111,8 @@ def _per_position_error(
     return diff / np.linalg.norm(want.reshape(len(want), -1), axis=1)
 
 
-def test_base_ctx_writes_the_context_the_fused_graph_writes(
+def test_chunks_and_prefix_hits_write_the_whole_prompts_context(
     fused: dict[int, FusedRunner],
-    base_ctx: BaseRunner,
     devices: list[Device],
 ) -> None:
     caches = _caches(fused[7], devices)
@@ -130,15 +123,15 @@ def test_base_ctx_writes_the_context_the_fused_graph_writes(
 
     chunked = pages.take(CONTEXT + 2 * BLOCK)
     for start in range(0, CONTEXT, CHUNK):
-        base_ctx.step(
+        fused[7].step(
             caches, [Row(tokens[start : start + CHUNK], start, chunked)]
         )
 
-    # The hit's pages are the fused request's; base-ctx computes the rest on
-    # top of that request's target KV.
+    # The hit's pages are the whole request's; the rest is computed on top of
+    # that request's target KV.
     hit = HIT_PAGES * PAGE_SIZE
     restored = whole[:HIT_PAGES] + pages.take(CONTEXT - hit + 2 * BLOCK)
-    base_ctx.step(caches, [Row(tokens[hit:], hit, restored)])
+    fused[7].step(caches, [Row(tokens[hit:], hit, restored)])
 
     print(f"devices: {len(devices)}")
     want = caches.read(DRAFT, whole, range(CONTEXT))

@@ -20,7 +20,6 @@ from typing import Any, ClassVar
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import Graph
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import (
@@ -29,6 +28,7 @@ from max.pipelines.lib import (
     ModelOutputs,
     PipelineConfig,
 )
+from max.pipelines.lib.graph_specs import GraphRole, GraphSpec
 from max.pipelines.lib.memory_estimation import MemoryPlan
 from max.pipelines.modeling.types import RequestID
 from typing_extensions import override
@@ -262,40 +262,23 @@ class LFM2Model(LlamaModelBase):
         return model_config
 
     @override
-    def _build_graph_for_compile(
-        self,
-        session: InferenceSession,
-        state_dict: dict[str, Any],
-        model_config: LFM2Config,
-    ) -> tuple[Graph, dict[str, Any]]:
-        del session
+    def graph_specs(self, model_config: LFM2Config) -> dict[str, GraphSpec]:
+        """Returns the single-device decoder."""
         model = LFM2(model_config)
         model.load_state_dict(
-            state_dict,
+            self.state_dict,
             override_quantization_encoding=True,
             weight_alignment=1,
             strict=True,
         )
-        weights_registry = model.state_dict()
-        self._num_kv_inputs = len(self.kv_params.flattened_kv_inputs())
-
-        with Graph(
-            "lfm2",
-            input_types=model.input_types(self.kv_params),
-        ) as graph:
-            tokens, input_row_offsets, return_n_logits, *variadic = graph.inputs
-            kv_inputs = variadic[: self._num_kv_inputs]
-            conv_inputs = [v.tensor for v in variadic[self._num_kv_inputs :]]
-            kv_collections = self._unflatten_kv_inputs(kv_inputs)
-            outputs = model(
-                tokens=tokens.tensor,
-                kv_collection=kv_collections[0],
-                return_n_logits=return_n_logits.tensor,
-                input_row_offsets=input_row_offsets.tensor,
-                conv_states=conv_inputs,
+        return {
+            GraphRole.DECODER: GraphSpec(
+                model,
+                "lfm2",
+                model.input_types(self.kv_params),
+                weights=model.state_dict(),
             )
-            graph.output(*outputs)
-            return graph, weights_registry
+        }
 
     def _num_logit_outputs(self) -> int:
         has_offsets = self.return_logits in (

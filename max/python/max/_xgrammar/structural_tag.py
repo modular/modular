@@ -96,6 +96,8 @@ class JSONSchemaFormat(BaseModel):
     """Disallow properties and items not specified in the schema."""
     xml_tag_prefix: str = ""
     """Prefix emitted before every XML open and close tag."""
+    xml_require_paired_tags: bool = False
+    """Require declared, paired XML member tags instead of variable keys."""
     any_whitespace: bool = True
     """Allow any whitespace between JSON elements."""
     indent: Optional[int] = None

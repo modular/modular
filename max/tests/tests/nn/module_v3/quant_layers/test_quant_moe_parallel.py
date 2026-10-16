@@ -26,6 +26,14 @@ from max.experimental.nn.common_layers.functional_kernels import (
     moe_create_indices,
 )
 from max.experimental.nn.common_layers.mesh_axis import TP
+from max.experimental.nn.common_layers.quant_moe import (
+    ExpertParallelMoE,
+    TensorParallelMoE,
+)
+from max.experimental.nn.common_layers.quant_tensor import (
+    FP8BlockTensor,
+    NVFP4Tensor,
+)
 from max.experimental.sharding import (
     DeviceMapping,
     DeviceMesh,
@@ -42,13 +50,8 @@ from max.nn.comm.ep.ep_manager import (
     get_ep_local_sync_counters_size,
 )
 from max.nn.quant_config import QuantConfig
-from max.pipelines.architectures.deepseekV3_modulev3.layers.quant_moe import (
-    ExpertParallelMoE,
-    TensorParallelMoE,
-)
-from max.pipelines.architectures.deepseekV3_modulev3.layers.quant_tensor import (
-    FP8BlockTensor,
-    NVFP4Tensor,
+from max.pipelines.architectures.deepseekV3_2_modulev3.layers.moe_gate import (
+    DeepseekV3_2TopKRouter,
 )
 
 _HIDDEN_DIM = 256
@@ -664,3 +667,46 @@ def test_expert_parallel_moe_nvfp4_fused_swiglu_permutes_gate_up(
                 2 * _MOE_DIM,
                 _HIDDEN_DIM // 16,
             ]
+
+
+# --------------------------------------------------------------------------- #
+# GLM-5.x router
+# --------------------------------------------------------------------------- #
+
+
+def test_glm_router_outputs_keep_input_placement(
+    mock_accelerator: MagicMock,
+) -> None:
+    """The DeepSeek-V3.2 router claims its top-k outputs' placement.
+
+    ``moe_router_group_limited`` has no sharding rule, so its outputs are
+    ``Unknown`` until claimed, and the expert-parallel MoE casts them next.
+    """
+    with F.lazy():
+        devices = [mock_accelerator(0), mock_accelerator(1)]
+        mesh = DeviceMesh(tuple(devices), (len(devices),), (TP,))
+        replicated = DeviceMapping(mesh, (Replicated(),))
+
+        with default_dtype(DType.bfloat16), default_device(mesh):
+            router = DeepseekV3_2TopKRouter(
+                hidden_dim=_HIDDEN_DIM,
+                num_experts=_NUM_EXPERTS,
+                num_experts_per_token=_NUM_EXPERTS_PER_TOKEN,
+                routed_scaling_factor=1.0,
+                scoring_func="sigmoid",
+                topk_method="noaux_tc",
+                n_group=2,
+                topk_group=1,
+                norm_topk_prob=True,
+                correction_bias_dtype=DType.float32,
+            )
+            x = Tensor.zeros(
+                [_SEQ_LEN, _HIDDEN_DIM],
+                dtype=DType.bfloat16,
+                device=replicated,
+            )
+            topk_idx, topk_weight = router(x)
+            topk_idx = topk_idx.cast(DType.int32)
+
+        assert topk_idx.mapping == replicated
+        assert topk_weight.mapping == replicated

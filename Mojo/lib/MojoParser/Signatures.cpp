@@ -59,12 +59,11 @@ TypedAttr ASTType::extractStructField(TypedAttr value, StringRef fieldName,
   auto lookupResult = lookup.getIfSuccess()[0];
   if (!lookupResult)
     return {};
-  auto fieldOp =
-      dyn_cast_or_null<StructFieldOp>(lookupResult->getIfOperation());
-  if (!fieldOp)
+  auto *fieldDecl = dyn_cast<StructFieldASTDecl>(lookupResult);
+  if (!fieldDecl)
     return {};
 
-  return LIT::StructExtractAttr::get(value, fieldOp);
+  return LIT::StructExtractAttr::get(value, fieldDecl->getOp());
 }
 
 /// Given an expression that can be used in `origin_of` or a ref expression,
@@ -1098,8 +1097,8 @@ static ASTType typeCheckVariadicParams(ASTType elementType, ParsedArgument &arg,
     emitter.emitError(arg.loc, "malformed ParameterList");
     return {};
   }
-  auto structDeclOp =
-      dyn_cast_if_present<StructDeclOp>(*listDecl->getIfOperation());
+  auto *structDecl = dyn_cast<StructASTDecl>(listDecl);
+  StructDeclOp structDeclOp = structDecl ? structDecl->getOp() : nullptr;
   if (!structDeclOp || structDeclOp.getParams().size() != 2) {
     emitter.emitError(arg.loc, "malformed ParameterList");
     return {};
@@ -1846,8 +1845,8 @@ static ASTType typeCheckVariadicPack(ParsedArgument &arg, size_t argIdx,
     emitter.emitError(arg.loc, "malformed VariadicPack");
     return {};
   }
-  auto packStruct =
-      dyn_cast_if_present<StructDeclOp>(*packDecl->getIfOperation());
+  auto *packStructDecl = dyn_cast<StructASTDecl>(packDecl);
+  StructDeclOp packStruct = packStructDecl ? packStructDecl->getOp() : nullptr;
   if (!packStruct || packStruct.getParams().size() != 7) {
     emitter.emitError(arg.loc, "malformed VariadicPack");
     return {};
@@ -1909,8 +1908,8 @@ static ASTType typeCheckVariadicList(ParsedArgument &arg, IREmitter &emitter,
     emitter.emitError(arg.loc, "malformed VariadicList");
     return {};
   }
-  auto structDeclOp =
-      dyn_cast_if_present<StructDeclOp>(*listDecl->getIfOperation());
+  auto *structDecl = dyn_cast<StructASTDecl>(listDecl);
+  StructDeclOp structDeclOp = structDecl ? structDecl->getOp() : nullptr;
   if (!structDeclOp || structDeclOp.getParams().size() != 5) {
     emitter.emitError(arg.loc, "malformed VariadicList");
     return {};
@@ -2746,8 +2745,7 @@ void TypeCheckedFnSignature::verifyFunctionNameBinding(DefASTDecl &decl,
   ASTType selfType;
   constexpr size_t kSelfArgNo = 0;
   if (ASTDecl *parent = decl.getParentDecl();
-      parent &&
-      isa_and_nonnull<StructDeclOp, TraitDeclOp>(parent->getIfOperation())) {
+      parent && isa<TypeASTDecl>(parent)) {
     // The parent decl must be fully resolved in order to resolve any of its
     // members.
     assert(parent->resolvedness == DeclResolvedness::body);
@@ -2925,8 +2923,7 @@ void TypeCheckedFnSignature::checkSelfArgument(ASTDecl &decl,
     // the explicit self type is very hard to specify in mojo, so we
     // suggest to use 'Self' instead.
     auto diag = emitErrorLoc(selfArg.loc) << "'self' argument must have type ";
-    if (decl.getParentDecl() &&
-        isa_and_nonnull<TraitDeclOp>(decl.getParentDecl()->getIfOperation()))
+    if (decl.getParentDecl() && isa<TraitASTDecl>(decl.getParentDecl()))
       diag << "'Self' in trait method declaration";
     else
       diag << selfType;

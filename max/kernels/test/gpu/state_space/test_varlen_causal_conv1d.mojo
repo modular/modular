@@ -62,6 +62,7 @@ def _conv_cpu[
     query_start_loc: TileTensor[mut=False, .int32, ...],
     cache_indices: TileTensor[mut=False, .uint32, ...],
     has_initial_state: TileTensor[mut=False, .bool, ...],
+    update_state: TileTensor[mut=False, .bool, ...],
     conv_states: TileTensor[mut=True, ...],
     output: TileTensor[mut=True, dtype, ...],
 ):
@@ -87,6 +88,7 @@ def _conv_cpu[
         bias,
         query_start_loc,
         has_initial_state,
+        update_state,
         conv_states,
         output,
         x_fn,
@@ -109,6 +111,8 @@ def run_varlen_causal_conv1d_fwd_gpu[
     dtype: DType,
     activation: StaticString,
     use_residual: Bool = False,
+    # Clears update_state on every odd sequence, whose slot must keep its seed.
+    update_flags: Bool = False,
 ](
     batch: Int,
     dim: Int,
@@ -182,6 +186,15 @@ def run_varlen_causal_conv1d_fwd_gpu[
     for i in range(batch):
         has_initial_state_h.raw_store(i, Scalar[.bool](nonzero_initial_state))
 
+    # update_state: (batch,), or empty to write every sequence's window
+    var update_state_heap = List(length=batch, fill=Scalar[.bool](True))
+    var update_state_h = TileTensor(update_state_heap, row_major(batch))
+    for i in range(batch):
+        update_state_h.raw_store(
+            i, Scalar[.bool](not update_flags or i % 2 == 0)
+        )
+    var update_len = batch if update_flags else 0
+
     # conv_states: (batch, dim, width - 1)
     var state_len = width - 1
     var conv_states_heap = List(
@@ -238,6 +251,7 @@ def run_varlen_causal_conv1d_fwd_gpu[
     var query_start_loc_device = ctx.enqueue_create_buffer[.int32](batch + 1)
     var cache_indices_device = ctx.enqueue_create_buffer[.uint32](batch)
     var has_initial_state_device = ctx.enqueue_create_buffer[.bool](batch)
+    var update_state_device = ctx.enqueue_create_buffer[.bool](batch)
     var conv_states_device = ctx.enqueue_create_buffer[dtype](
         batch * dim * state_len
     )
@@ -250,6 +264,7 @@ def run_varlen_causal_conv1d_fwd_gpu[
     ctx.enqueue_copy(query_start_loc_device, query_start_loc_buf._storage)
     ctx.enqueue_copy(cache_indices_device, cache_indices_buf._storage)
     ctx.enqueue_copy(has_initial_state_device, has_initial_state_buf._storage)
+    ctx.enqueue_copy(update_state_device, update_state_h._storage)
     ctx.enqueue_copy(conv_states_device, conv_states_buf._storage)
 
     # Create TileTensors for GPU kernel
@@ -285,6 +300,9 @@ def run_varlen_causal_conv1d_fwd_gpu[
             batch,
         ),
     )
+    var update_state_device_tt = TileTensor(
+        update_state_device, row_major(update_len)
+    )
     var conv_states_device_tt = TileTensor(
         conv_states_device,
         row_major(batch, dim, state_len),
@@ -315,6 +333,7 @@ def run_varlen_causal_conv1d_fwd_gpu[
             bias_device_tt,
             query_start_loc_device_tt,
             has_initial_state_device_tt,
+            update_state_device_tt,
             conv_states_device_tt,
             output_device_tt,
             x_addr,
@@ -360,6 +379,10 @@ def run_varlen_causal_conv1d_fwd_gpu[
                 for s in range(state_len):
                     var offset = seqlen - state_len + s
                     var expected: Scalar[dtype]
+                    comptime if update_flags:
+                        if b % 2 == 1:
+                            # No update: the slot keeps its seed.
+                            offset = s - state_len
                     if offset >= 0:
                         expected = x_h.raw_load(
                             UInt32(d) * UInt32(total_seqlen)
@@ -402,6 +425,9 @@ def run_varlen_causal_conv1d_fwd_gpu[
             batch,
         ),
     )
+    var update_state_cpu_tt = TileTensor(
+        update_state_h._storage, row_major(update_len)
+    )
     var conv_states_cpu_tt = TileTensor(
         conv_states_buf._storage,
         row_major(batch, dim, state_len),
@@ -421,6 +447,7 @@ def run_varlen_causal_conv1d_fwd_gpu[
         query_start_loc_cpu_tt,
         cache_indices_cpu_tt,
         has_initial_state_cpu_tt,
+        update_state_cpu_tt,
         conv_states_cpu_tt,
         output_cpu_tt,
     )
@@ -450,6 +477,7 @@ def run_varlen_causal_conv1d_fwd_gpu[
     _ = query_start_loc_heap^
     _ = cache_indices_heap^
     _ = has_initial_state_heap^
+    _ = update_state_heap^
     _ = conv_states_heap^
     _ = output_gpu_heap^
     _ = output_cpu_heap^
@@ -1146,6 +1174,22 @@ def test_varlen_causal_conv1d_fwd_gpu_zero_length_sequence() raises:
     )
 
 
+def test_varlen_causal_conv1d_fwd_gpu_update_state_flag() raises:
+    """A cleared `update_state` flag leaves that sequence's slot as seeded.
+
+    Odd sequences keep their seed while even ones write their new window, on
+    a decode batch, a short chunk, and a multi-tile prefill. The outputs are
+    unaffected by the flag.
+    """
+    with DeviceContext() as ctx:
+        run_varlen_causal_conv1d_fwd_gpu[.float32, "silu", update_flags=True](
+            5, 64, Index(1, 1, 1, 1, 1), 4, ctx, nonzero_initial_state=True
+        )
+        run_varlen_causal_conv1d_fwd_gpu[.float32, "silu", update_flags=True](
+            4, 64, Index(2, 7, 1, 300), 4, ctx, nonzero_initial_state=True
+        )
+
+
 def test_varlen_causal_conv1d_fwd_gpu_many_short_sequences() raises:
     """More sequences than a warp has lanes, most shorter than a tile, with
     empty ones mixed in, so grid rows find their sequence in more than one
@@ -1296,6 +1340,9 @@ def test_varlen_causal_conv1d_fwd_gpu_conv_states_deep_row_no_alias() raises:
     var has_initial_state_device_tt = TileTensor(
         has_initial_state_device, row_major(batch)
     )
+    # Empty: every sequence writes its new window.
+    var update_state_device = ctx.enqueue_create_buffer[.bool](1)
+    var update_state_device_tt = TileTensor(update_state_device, row_major(0))
     var output_device_tt = TileTensor(
         output_device, row_major(dim, total_seqlen)
     )
@@ -1340,6 +1387,7 @@ def test_varlen_causal_conv1d_fwd_gpu_conv_states_deep_row_no_alias() raises:
         bias_device_tt,
         query_start_loc_device_tt,
         has_initial_state_device_tt,
+        update_state_device_tt,
         conv_states_device_tt,
         output_device_tt,
         x_addr,

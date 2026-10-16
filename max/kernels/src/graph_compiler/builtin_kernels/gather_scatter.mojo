@@ -2081,18 +2081,16 @@ struct Concat:
         comptime for i in range(inputs.size):
             input_shapes[i] = inputs[i].shape()
 
-        # Copy-capture `inputs` into the device-kernel closure via
-        # `@__copy_capture`. Without it the closure captures `inputs` by
-        # reference, so on Metal the GPU kernel holds a host-side pointer to the
-        # capture and reads garbage (concat with >=3 inputs silently returned
-        # all-zeros). `inputs` (`FusedInputVariadicTensors`) stores its tensors
-        # by value, so the copy brings their device pointers into the kernel.
+        # Copy-capture `inputs` into the device-kernel closure. A by-reference
+        # capture leaves the GPU kernel holding a host-side pointer to the
+        # capture on Metal, so it reads garbage (concat with >=3 inputs
+        # silently returned all-zeros). `inputs` (`FusedInputVariadicTensors`)
+        # stores its tensors by value, so the copy brings their device pointers
+        # into the kernel.
         @inline(.always)
-        @__parameter
-        @__copy_capture(inputs)
         def inputs_lambda[
             input_index: Int, width: Int, alignment: Int = 1
-        ](coords: Coord) -> SIMD[dtype, width]:
+        ](coords: Coord) {var inputs} -> SIMD[dtype, width]:
             comptime assert (
                 input_index < inputs.size
             ), "tensor index out of bounds"
@@ -2104,11 +2102,9 @@ struct Concat:
         # by-reference capture leaves the device kernel holding a host pointer
         # to the output tensor on Metal.
         @inline(.always)
-        @__parameter
-        @__copy_capture(output)
         def epilogue_wrapper[
-            _dtype: DType, width: SIMDLength, *, alignment: Int = 1
-        ](coords: Coord, value: SIMD[_dtype, width]):
+            _dtype: DType, width: SIMDLength, *, alignment: Int
+        ](coords: Coord, value: SIMD[_dtype, width]) {var output}:
             output._lambda_store[width=width, element_alignment=alignment](
                 coords,
                 rebind[SIMD[output.dtype, width]](value),
@@ -2117,13 +2113,13 @@ struct Concat:
         fused_concat[
             dtype,
             rank,
-            inputs_lambda,
-            epilogue_wrapper,
             axis=normalize_neg_index(axis, rank),
             target=target,
         ](
             input_shapes,
             output.runtime_layout(),
+            inputs_lambda,
+            epilogue_wrapper,
             ctx,
         )
 

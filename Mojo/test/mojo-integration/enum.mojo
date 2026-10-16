@@ -16,7 +16,7 @@
 """End-to-end `__enum`: construction, `match` over the synthesized
 `EnumLike` conformance, ownership of payloads, and conformances."""
 
-from std.hashlib import Hasher
+from std.hash import Hasher
 from std.iter import map
 
 

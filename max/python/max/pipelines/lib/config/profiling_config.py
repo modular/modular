@@ -56,9 +56,9 @@ class ProfilingConfig(ConfigFileModel):
 
     When tracing exports spans and ``MAX_SERVE_KERNEL_TRACE_HEADERS`` is on,
     ``max serve`` captures the GPU kernels of the forward passes that run a
-    request whose ``x-max-trace-level`` header asks for them. A capture
-    stops after this many passes, traced or not, and its requests are
-    traced no further."""
+    sampled request whose ``x-max-trace-level`` header asks for them. A
+    capture stops after this many passes, traced or not, and its requests
+    are traced no further."""
 
     kernel_trace_max_batch_links: int = Field(
         default=128,

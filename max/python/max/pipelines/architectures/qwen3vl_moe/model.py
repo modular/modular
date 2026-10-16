@@ -21,16 +21,6 @@ from max import tree
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import (
-    DeviceRef,
-    Graph,
-    TensorType,
-    TensorValue,
-    Type,
-)
-from max.graph import (
-    Module as GraphModule,
-)
 from max.graph.buffer_utils import cast_tensors_to
 from max.graph.weights import (
     SafetensorWeights,
@@ -38,7 +28,6 @@ from max.graph.weights import (
     Weights,
     WeightsAdapter,
 )
-from max.nn.comm import Signals
 from max.nn.kv_cache import KVCacheInputs
 from max.nn.layer import Module
 from max.nn.transformer import ReturnLogits
@@ -47,18 +36,23 @@ from max.pipelines.lib import (
     KVCacheConfig,
     ModelInputs,
     ModelOutputs,
-    MultiGraphPipelineModelWithKVCache,
     PipelineConfig,
+    PipelineModelWithKVCache,
 )
+from max.pipelines.lib.graph_specs import GraphRole, GraphSpec
 from max.pipelines.lib.memory_estimation import MemoryPlan
 
 from .batch_processor import Qwen3VLMoeBatchProcessor
 from .context import Qwen3VLTextAndVisionContext
 from .model_config import Qwen3VLConfig
+from .nn.decoder import Qwen3VLMoEDecoder
 from .qwen3vl import Qwen3VL
 from .weight_adapters import convert_qwen3vl_model_state_dict
 
 logger = logging.getLogger("max.pipelines")
+
+# The vision and language graphs compile into one artifact.
+_COMPILE_GROUP = "qwen3vl_moe"
 
 
 @dataclass
@@ -128,9 +122,7 @@ class Qwen3VLInputs(ModelInputs):
 
 class Qwen3VLModel(
     AlwaysSignalBuffersMixin,
-    MultiGraphPipelineModelWithKVCache[
-        Qwen3VLTextAndVisionContext, Qwen3VLConfig
-    ],
+    PipelineModelWithKVCache[Qwen3VLTextAndVisionContext, Qwen3VLConfig, Model],
 ):
     """A Qwen3VL pipeline model for multimodal text generation."""
 
@@ -139,11 +131,8 @@ class Qwen3VLModel(
         Qwen3VLMoeBatchProcessor
     )
 
-    vision_model: Model | None
-    """The compiled vision model for processing images."""
-
-    language_model: Model
-    """The compiled language model for text generation."""
+    _vision_weights_dict: dict[str, WeightData]
+    _language_weights_dict: dict[str, WeightData]
 
     model_config: Qwen3VLConfig | None
     """The Qwen3VL model configuration."""
@@ -176,7 +165,17 @@ class Qwen3VLModel(
         self.model_config = None
         self._session = session  # reuse for on-device casts
 
-        self.vision_model, self.language_model = self.load_model(session)
+        self._models = self.load_graphs(session)
+
+    @property
+    def vision_model(self) -> Model:
+        """The compiled vision model for processing images."""
+        return self._models[GraphRole.VISION]
+
+    @property
+    def language_model(self) -> Model:
+        """The compiled language model for text generation."""
+        return self._models[GraphRole.DECODER]
 
     def _load_state_dict(self) -> dict[str, Any]:
         # Validate SafetensorWeights requirement
@@ -236,366 +235,34 @@ class Qwen3VLModel(
         )
         return qwen3vl_config
 
-    def _build_vision_graph(
-        self,
-        config: Qwen3VLConfig,
-        state_dict: dict[str, WeightData],
-        module: GraphModule,
-    ) -> tuple[Graph, dict[str, WeightData]]:
-        """Build the vision model graph for processing images."""
-        del state_dict
+    def graph_specs(self, model_config: Qwen3VLConfig) -> dict[str, GraphSpec]:
+        """Returns the vision encoder and the decoder, in one compile group.
+
+        Both trace towers of the ``Qwen3VL`` module that
+        :meth:`_create_model_config` builds and loads, and bind the weights
+        :meth:`_load_state_dict` split between them.
+        """
+        del model_config
         assert isinstance(self.model, Qwen3VL)
         vision_encoder = self.model.vision_encoder
-
-        # Define vision graph input types - one per device
-        pixel_values_types = [
-            TensorType(
-                DType.float32,
-                shape=["vision_seq_len", vision_encoder.patch_embed.patch_dim],
-                device=DeviceRef.from_device(device),
-            )
-            for device in self.devices
-        ]
-
-        # Own dimension, not `vision_seq_len`: the bilinear position grid is
-        # interpolated once per FRAME while the pixels and rotary ids carry one
-        # row per temporal PATCH. The two coincide only for still images, and
-        # this arch shares `Qwen3VLTokenizer`, which now emits clips.
-        weights_types = [
-            TensorType(
-                DType.float32,
-                shape=[4, "vision_pos_len", 1],
-                device=DeviceRef.from_device(device),
-            )
-            for device in self.devices
-        ]
-
-        indices_types = [
-            TensorType(
-                DType.int64,
-                shape=[4, "vision_pos_len"],
-                device=DeviceRef.from_device(device),
-            )
-            for device in self.devices
-        ]
-
-        vision_rot_pos_ids_types = [
-            TensorType(
-                DType.int32,
-                shape=["vision_seq_len", 2],
-                device=DeviceRef.from_device(device),
-            )
-            for device in self.devices
-        ]
-
-        max_grid_size_types = [
-            TensorType(
-                DType.int32,
-                shape=[],
-                device=DeviceRef.CPU(),
-            )
-            for _ in self.devices
-        ]
-
-        grid_thw_types = [
-            TensorType(
-                DType.int64,
-                shape=["n_images", 3],
-                device=DeviceRef.from_device(device),
-            )
-            for device in self.devices
-        ]
-
-        cu_seqlens_types = [
-            TensorType(
-                DType.uint32,
-                shape=["n_seqlens"],
-                device=DeviceRef.from_device(device),
-            )
-            for device in self.devices
-        ]
-
-        max_seqlen_types = [
-            TensorType(
-                DType.uint32,
-                shape=[1],
-                device=DeviceRef.CPU(),
-            )
-            for _ in self.devices
-        ]
-
-        # Create signal types for distributed communication
-        signals = Signals(
-            devices=(DeviceRef(d.label, d.id) for d in self.devices)
-        )
-
-        # Build the vision graph
-        with Graph(
-            "qwen3vl_vision",
-            input_types=(
-                *pixel_values_types,
-                *weights_types,
-                *indices_types,
-                *vision_rot_pos_ids_types,
-                *max_grid_size_types,
-                *grid_thw_types,
-                *cu_seqlens_types,
-                *max_seqlen_types,
-                *signals.input_types(),
-            ),
-            module=module,
-        ) as graph:
-            # Extract inputs
-            all_inputs = graph.inputs
-            n_devices = len(self.devices)
-
-            pixel_values_list = [inp.tensor for inp in all_inputs[:n_devices]]
-            all_inputs = all_inputs[n_devices:]
-
-            weights_list = [inp.tensor for inp in all_inputs[:n_devices]]
-            all_inputs = all_inputs[n_devices:]
-
-            indices_list = [inp.tensor for inp in all_inputs[:n_devices]]
-            all_inputs = all_inputs[n_devices:]
-
-            rot_pos_ids_list = [inp.tensor for inp in all_inputs[:n_devices]]
-            all_inputs = all_inputs[n_devices:]
-
-            max_grid_size_list = [inp.tensor for inp in all_inputs[:n_devices]]
-            all_inputs = all_inputs[n_devices:]
-
-            grid_thw_list = [inp.tensor for inp in all_inputs[:n_devices]]
-            all_inputs = all_inputs[n_devices:]
-
-            cu_seqlens_list = [inp.tensor for inp in all_inputs[:n_devices]]
-            all_inputs = all_inputs[n_devices:]
-
-            max_seqlen_list = [inp.tensor for inp in all_inputs[:n_devices]]
-            all_inputs = all_inputs[n_devices:]
-
-            signal_buffers = [inp.buffer for inp in all_inputs]
-
-            # Execute vision transformer
-            image_embeddings, deepstack_image_embeddings = vision_encoder(
-                pixel_values=pixel_values_list,
-                idxs=indices_list,
-                weights=weights_list,
-                grid_thw=grid_thw_list,
-                rot_pos_ids=rot_pos_ids_list,
-                max_grid_size=max_grid_size_list,
-                cu_seqlens=cu_seqlens_list,
-                max_seqlen=max_seqlen_list,
-                signal_buffers=signal_buffers,
-            )
-            # Ensure we have a valid output
-            assert image_embeddings is not None, (
-                "Vision encoder must return a valid output"
-            )
-
-            graph.output(
-                *[
-                    *image_embeddings,
-                    *[
-                        item
-                        for sublist in deepstack_image_embeddings
-                        for item in sublist
-                    ],
-                ]
-            )
-
-            return graph, self._vision_weights_dict
-
-    def _language_graph_input_types(self) -> tuple[Type[Any], ...]:
-        """Generate input types for the language model graph."""
-        device_ref = DeviceRef.from_device(self.devices[0])
-
-        return_n_logits_type = TensorType(
-            DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
-        )
-
-        kv_inputs = self.kv_params.get_symbolic_inputs()
-
-        tokens_type = TensorType(
-            DType.int64, shape=["total_seq_len"], device=device_ref
-        )
-        input_row_offsets_types = [
-            TensorType(
-                DType.uint32,
-                shape=["input_row_offsets_len"],
-                device=DeviceRef.from_device(dev),
-            )
-            for dev in self.devices
-        ]
-
-        # Add image embeddings type - one per device, can be empty for text-only inputs
-        assert self.model_config is not None, "Model config must be initialized"
-        n_deepstack_layers = len(
-            self.model_config.vision_config.deepstack_visual_indexes
-        )
-        # shape: (vision_seq_len // (spatial_merge_size**2), out_hidden_size)
-        image_embeddings_types = [
-            TensorType(
-                self.dtype,
-                shape=[
-                    "vision_merged_seq_len",
-                    self.model_config.llm_config.hidden_size,
-                ],
-                device=DeviceRef.from_device(device),
-            )
-            for device in self.devices
-        ]
-        n_deepstack_layers = len(
-            self.model_config.vision_config.deepstack_visual_indexes
-        )
-        deepstack_embeddings_types = []
-        for _ in range(n_deepstack_layers):
-            for device in self.devices:
-                deepstack_embeddings_types.append(
-                    TensorType(
-                        self.dtype,
-                        shape=[
-                            "vision_merged_seq_len",
-                            self.model_config.llm_config.hidden_size,
-                        ],
-                        device=DeviceRef.from_device(device),
-                    )
-                )
-
-        # Add image token indices type - one per device
-        image_token_indices_types = [
-            TensorType(
-                DType.int32,
-                shape=["total_image_tokens"],
-                device=DeviceRef.from_device(device),
-            )
-            for device in self.devices
-        ]
-
-        # Add decoder position IDs type
-        position_ids_type = TensorType(
-            DType.int64,
-            shape=[3, "total_seq_len"],
-            device=DeviceRef.CPU(),
-        )
-
-        # Flatten kv types for each device
-        flattened_kv_types = tree.leaves(kv_inputs)
-
-        signals = Signals(
-            devices=(DeviceRef(d.label, d.id) for d in self.devices)
-        )
-
-        return (
-            tokens_type,
-            return_n_logits_type,
-            *input_row_offsets_types,
-            *image_embeddings_types,
-            *deepstack_embeddings_types,
-            *image_token_indices_types,
-            position_ids_type,
-            *signals.input_types(),
-            *flattened_kv_types,
-        )
-
-    def _build_language_graph(
-        self,
-        config: Qwen3VLConfig,
-        state_dict: dict[str, WeightData],
-        module: GraphModule,
-    ) -> tuple[Graph, dict[str, WeightData]]:
-        """Build the language model graph for text generation with image embeddings."""
-        del state_dict
-        assert isinstance(self.model, Qwen3VL)
         language_model = self.model.language_model
-        assert language_model is not None, "Language model must be initialized"
-
-        # Get the number of deepstack layers
-        num_deepstack_layers = len(
-            config.vision_config.deepstack_visual_indexes
-        )
-
-        # Get input types from the helper method
-        input_types = self._language_graph_input_types()
-
-        with Graph(
-            "qwen3vl_moe_language", input_types=input_types, module=module
-        ) as graph:
-            # Extract inputs
-            (
-                input_ids,
-                return_n_logits,
-                *variadic_args,
-            ) = graph.inputs
-
-            # Extract input_row_offsets (one per device)
-            input_row_offsets = [
-                v.tensor for v in variadic_args[: len(self.devices)]
-            ]
-            variadic_args = variadic_args[len(self.devices) :]
-
-            # Extract image embeddings (one per device)
-            image_embeddings = [
-                v.tensor for v in variadic_args[: len(self.devices)]
-            ]
-            variadic_args = variadic_args[len(self.devices) :]
-
-            # Extract deepstack visual embeddings (they come after KV cache inputs)
-            # Structure: list[list[Buffer]] where outer is per layer, inner is per device
-            deepstack_visual_embeds: list[list[TensorValue]] = []
-            for layer_idx in range(num_deepstack_layers):
-                layer_start = layer_idx * len(self.devices)
-                layer_embeds = [
-                    variadic_args[layer_start + device_idx].tensor
-                    for device_idx in range(len(self.devices))
-                ]
-                deepstack_visual_embeds.append(layer_embeds)
-            # Update variadic_args after extracting deepstack embeddings
-            num_deepstack_inputs = num_deepstack_layers * len(self.devices)
-            variadic_args = variadic_args[num_deepstack_inputs:]
-
-            # Extract image token indices (one per device)
-            image_token_indices = [
-                v.tensor for v in variadic_args[: len(self.devices)]
-            ]
-            variadic_args = variadic_args[len(self.devices) :]
-
-            # Extract position_ids
-            position_ids = variadic_args[0].tensor
-            variadic_args = variadic_args[1:]
-
-            # Extract signal buffers (one per device)
-            signal_buffers = [
-                v.buffer for v in variadic_args[: len(self.devices)]
-            ]
-            variadic_args = variadic_args[len(self.devices) :]
-
-            # Calculate how many KV cache inputs there are
-            kv_inputs = self.kv_params.get_symbolic_inputs()
-            flattened_kv_types = tree.leaves(kv_inputs)
-            num_kv_inputs = len(flattened_kv_types)
-
-            # Extract KV cache inputs (they come after signal buffers in the graph)
-            kv_inputs_flat = variadic_args[:num_kv_inputs]
-            kv_collections = self._unflatten_kv_inputs(kv_inputs_flat)
-            variadic_args = variadic_args[num_kv_inputs:]
-
-            # Execute language model: text + image embeddings -> logits
-            outputs = language_model(
-                tokens=input_ids.tensor,
-                return_n_logits=return_n_logits.tensor,
-                image_embeddings=image_embeddings,
-                image_token_indices=image_token_indices,
-                position_ids=position_ids,
-                mrope_section=config.mrope_section,
-                kv_collections=kv_collections,
-                input_row_offsets=input_row_offsets,
-                signal_buffers=signal_buffers,
-                deepstack_visual_embeds=deepstack_visual_embeds,
-            )
-
-            graph.output(*outputs)
-
-        return graph, self._language_weights_dict
+        assert isinstance(language_model, Qwen3VLMoEDecoder)
+        return {
+            GraphRole.VISION: GraphSpec(
+                vision_encoder,
+                "qwen3vl_vision",
+                tuple(tree.leaves(vision_encoder.input_tree())),
+                weights=self._vision_weights_dict,
+                group=_COMPILE_GROUP,
+            ),
+            GraphRole.DECODER: GraphSpec(
+                language_model,
+                "qwen3vl_moe_language",
+                tuple(tree.leaves(language_model.input_tree(self.kv_params))),
+                weights=self._language_weights_dict,
+                group=_COMPILE_GROUP,
+            ),
+        }
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         """Executes the Qwen3VL model with the prepared inputs."""

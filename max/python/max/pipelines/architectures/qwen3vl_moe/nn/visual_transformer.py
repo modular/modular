@@ -13,22 +13,29 @@
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
+from max import tree
 from max.dtype import DType
 from max.graph import (
     BufferValue,
     DeviceRef,
     Dim,
     DimLike,
+    Graph,
     ShardingStrategy,
+    TensorType,
     TensorValue,
+    Type,
     Value,
     ops,
 )
-from max.nn.comm import Allreduce
+from max.graph import Module as GraphModule
+from max.nn.comm import Allreduce, Signals
 from max.nn.embedding import Embedding
 from max.nn.kernels import spatial_merge
 from max.nn.layer import LayerList, Module, Shardable
@@ -806,6 +813,103 @@ class VisionTransformer(Module):
         )
         self.merger_shards = self.merger.shard(self.devices)
         self.merger_allreduce = Allreduce(num_accelerators=len(self.devices))
+
+    def input_tree(self) -> OrderedDict[str, object]:
+        """Names the vision graph's inputs, keyed by :meth:`__call__`'s
+        arguments.
+
+        Each argument takes one input per device. ``vision_seq_len`` is the
+        number of patches in the batch.
+
+        Returns:
+            The input types, in graph order.
+        """
+
+        def per_device(
+            dtype: DType, shape: list[int | str], on_host: bool = False
+        ) -> tuple[TensorType, ...]:
+            return tuple(
+                TensorType(
+                    dtype,
+                    shape=shape,
+                    device=DeviceRef.CPU() if on_host else device,
+                )
+                for device in self.devices
+            )
+
+        return OrderedDict(
+            pixel_values=per_device(
+                DType.float32, ["vision_seq_len", self.patch_embed.patch_dim]
+            ),
+            # Own dimension, not `vision_seq_len`: the bilinear position grid
+            # is interpolated once per FRAME while the pixels and rotary ids
+            # carry one row per temporal PATCH. The two coincide only for
+            # still images, and the tokenizer also emits clips.
+            weights=per_device(DType.float32, [4, "vision_pos_len", 1]),
+            idxs=per_device(DType.int64, [4, "vision_pos_len"]),
+            rot_pos_ids=per_device(DType.int32, ["vision_seq_len", 2]),
+            max_grid_size=per_device(DType.int32, [], on_host=True),
+            grid_thw=per_device(DType.int64, ["n_images", 3]),
+            cu_seqlens=per_device(DType.uint32, ["n_seqlens"]),
+            max_seqlen=per_device(DType.uint32, [1], on_host=True),
+            signal_buffers=tuple(Signals(devices=self.devices).input_types()),
+        )
+
+    def trace(
+        self,
+        *input_types: Type[Any],
+        name: str | None = None,
+        module: GraphModule | None = None,
+        custom_extensions: Iterable[Path] = (),
+        is_device_graph: bool = False,
+    ) -> Graph:
+        """Traces the vision graph, whose inputs are :meth:`input_tree`'s
+        leaves.
+
+        The graph outputs the image embeddings, one per device, then the
+        deepstack embeddings, per device within each deepstack layer.
+
+        Args:
+            *input_types: The graph's input types, the leaves of
+                :meth:`input_tree`.
+            name: The name of the graph. Defaults to the class's qualified
+                name.
+            module: The MLIR module to add the graph to. Defaults to a new
+                module.
+            custom_extensions: Paths to custom kernel libraries the graph
+                uses.
+            is_device_graph: Whether to build a device graph.
+
+        Returns:
+            The traced :class:`~max.graph.Graph`.
+        """
+        treedef = tree.flatten(self.input_tree())[1]
+
+        def forward(*inputs: Value[Any]) -> list[TensorValue]:
+            named = tree.unflatten(treedef, iter(inputs))
+            assert isinstance(named, OrderedDict)
+            tensors = {
+                key: [v.tensor for v in values]
+                for key, values in named.items()
+                if key != "signal_buffers"
+            }
+            image_embeddings, deepstack_embeddings = self(
+                **tensors,
+                signal_buffers=[v.buffer for v in named["signal_buffers"]],
+            )
+            return [
+                *image_embeddings,
+                *(item for layer in deepstack_embeddings for item in layer),
+            ]
+
+        return Graph(
+            type(self).__qualname__ if name is None else name,
+            forward,
+            input_types=input_types,
+            custom_extensions=list(custom_extensions),
+            module=module,
+            is_device_graph=is_device_graph,
+        )
 
     def __call__(
         self,

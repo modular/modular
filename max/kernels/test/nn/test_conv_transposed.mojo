@@ -202,8 +202,8 @@ def test_conv_transposed[
         row_major(Coord(extend_shape_5d(output_dims, N, F))),
     )
 
-    # Bias for epilogue. Kept as raw alloc because it's captured by
-    # `@__copy_capture` closures, which require ImplicitlyCopyable.
+    # Bias for epilogue. Kept as raw alloc because it's copy-captured by
+    # closures, which requires ImplicitlyCopyable.
     var bias_ptr = alloc[Scalar[dtype]](F)
     rand(bias_ptr, F)
 
@@ -249,9 +249,7 @@ def test_conv_transposed[
 
     # Test epilogue
     @inline(.always)
-    @__copy_capture(output, bias_ptr)
-    @__parameter
-    def epilogue(coords: Coord, f_size: Int):
+    def epilogue(coords: Coord, f_size: Int) {var output, var bias_ptr}:
         @inline(.always)
         def body1[width: Int](idx: Int) {var}:
             var f = Int(coords[rank + 1].value()) + idx
@@ -276,12 +274,14 @@ def test_conv_transposed[
         dtype,
         dtype,
         conv_attr,
-        epilogue,
+        True,
+        type_of(epilogue),
     ].run(
         output,
         input,
         packed_filter,
         rebind[ConvShape[rank]](conv_shape),
+        epilogue,
     )
 
     # Check results, return on the first failed comparison.

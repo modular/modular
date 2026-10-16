@@ -233,6 +233,129 @@ def _load_to_lds[
         )
 
 
+@inline(.always)
+def _global_load_to_lds[
+    dtype: DType,
+    //,
+    width: Int,
+](
+    global_ptr: UnsafePointer[Scalar[dtype], _, address_space=.GLOBAL],
+    shared_ptr: UnsafePointer[Scalar[dtype], _, address_space=.SHARED],
+):
+    """Loads one global-memory vector into LDS with TileIO's async-copy scope.
+
+    The per-lane counterpart of `_load_to_lds`: each lane names its own 64-bit
+    source address, so a wave can gather rows from anywhere in a buffer larger
+    than the 4 GiB a buffer resource reaches. The LDS side is unchanged: lane
+    `l`'s `width` elements land at `shared_ptr + l * width`, and `shared_ptr`
+    lowers to M0, so it must be wave-uniform. Waits are software-owned exactly
+    as for `_load_to_lds`.
+
+    Parameters:
+        dtype: Element type of both the source and the LDS destination.
+        width: Number of elements loaded by each lane.
+
+    Args:
+        global_ptr: This lane's source address.
+        shared_ptr: Wave-uniform LDS tile base; hardware adds the lane stride.
+    """
+    comptime assert is_amd_gpu(), "_global_load_to_lds is AMD-only"
+    comptime num_bytes_per_lane = size_of[dtype]() * width
+    # The size is an I32Attr, emitted as a literal for the same reason as
+    # `_load_to_lds`'s aux; only the gfx950 dwordx4 form is needed so far.
+    comptime assert (
+        num_bytes_per_lane == 16
+    ), "_global_load_to_lds supports 16 bytes per lane (gfx950 dwordx4)"
+    var global_ptr1 = __mlir_op.`builtin.unrealized_conversion_cast`[
+        _type=__mlir_type.`!llvm.ptr<1>`
+    ](global_ptr)
+    var shared_ptr3 = __mlir_op.`builtin.unrealized_conversion_cast`[
+        _type=__mlir_type.`!llvm.ptr<3>`
+    ](shared_ptr)
+    __mlir_op.`rocdl.global.load.lds`[
+        alias_scopes=_alias_scope_attr,
+        size=__mlir_attr.`16 : i32`,
+        offset=__mlir_attr.`0 : i32`,
+        aux=__mlir_attr.`0 : i32`,
+        _type=None,
+    ](global_ptr1, shared_ptr3)
+
+
+struct _IndexedSubTileLayout[
+    dtype: DType,
+    rows: Int,
+    cols: Int,
+    swizzle: Optional[Swizzle],
+]:
+    """The lane-to-chunk map `SubTileLoaderLDS.load` uses for one sub-tile.
+
+    One `global_load_lds` per `sub_rows`-row strip: lane `l` copies
+    `chunk_width` elements of strip row `row(l, strip)` at column
+    `col(l, strip)`, and the hardware writes them at the strip's LDS base plus
+    `l * chunk_width`. Reproducing the map, swizzle included, keeps the LDS
+    image byte-identical to a contiguous load of the same rows.
+
+    Parameters:
+        dtype: Element type.
+        rows: Sub-tile rows.
+        cols: Sub-tile columns (one LDS block width).
+        swizzle: The swizzle `SubTileLoaderLDS` applies for this tile.
+    """
+
+    comptime block_rows = 32 if Self.rows >= 32 else Self.rows
+    comptime _raw_load_bytes = (Self.cols * size_of[Self.dtype]()) // 4
+    comptime lane_rows = 16 if Self._raw_load_bytes <= 16 else 8
+    comptime lane_cols = 4 if Self._raw_load_bytes <= 16 else 8
+    comptime chunk_width = Self.cols // Self.lane_cols
+    comptime sub_rows = (
+        Self.lane_rows if Self.block_rows >= Self.lane_rows else Self.block_rows
+    )
+    comptime num_strips = Self.rows // Self.sub_rows
+
+    @staticmethod
+    @inline(.always)
+    def lane_row_col(strip: Int) -> Tuple[Int, Int]:
+        """Returns this lane's `(row, column)` within the sub-tile for `strip`.
+
+        Args:
+            strip: Strip index in `[0, num_strips)`.
+
+        Returns:
+            The sub-tile row and the first column of this lane's chunk.
+        """
+        var block, sub = divmod(strip, Self.block_rows // Self.sub_rows)
+        var worker = Int(lane_id()) + sub * WARP_SIZE
+        comptime if Self.swizzle:
+            worker = Self.swizzle.value()(worker)
+        var row, col_chunk = divmod(umod(worker, WARP_SIZE), Self.lane_cols)
+        return (
+            block * Self.block_rows + sub * Self.sub_rows + row,
+            col_chunk * Self.chunk_width,
+        )
+
+    @staticmethod
+    @inline(.always)
+    def load_strip(
+        dst: TileTensor[Self.dtype, _, _, address_space=.SHARED, ...],
+        strip: Int,
+        src: UnsafePointer[Scalar[Self.dtype], _],
+    ):
+        """Copies this lane's chunk of `strip` from `src` into `dst`.
+
+        Args:
+            dst: Destination `(rows, cols)` LDS sub-tile, row-major.
+            strip: Strip index in `[0, num_strips)`.
+            src: This lane's source chunk, from `lane_row_col`.
+        """
+        comptime assert type_of(dst).static_stride[1] == 1
+        comptime assert type_of(dst).static_stride[0] == Self.cols
+        var dst_ptr = dst.ptr + strip * Self.sub_rows * Self.cols
+        _global_load_to_lds[width=Self.chunk_width](
+            src.unsafe_address_space_cast[.GLOBAL](),
+            dst_ptr.unsafe_address_space_cast[.SHARED](),
+        )
+
+
 # ===----------------------------------------------------------------------=== #
 # LDS transposed reads
 # ===----------------------------------------------------------------------=== #

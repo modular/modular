@@ -39,6 +39,7 @@ from max.graph.weights import WeightData
 from max.nn.kv_cache import KVCacheInputsPerDevice
 from max.pipelines.architectures.gemma4.model import Gemma3_MultiModalModel
 from max.pipelines.lib import CompilationTimer
+from max.pipelines.lib.graph_specs import GraphRole
 
 from .diffusion_gemma import (
     DiffusionGemmaDecoderTextModel,
@@ -66,7 +67,7 @@ class DiffusionGemmaForBlockDiffusionModel(Gemma3_MultiModalModel):
 
     decoder_model: Model
 
-    def load_model(self, session: InferenceSession) -> tuple[Model, Model]:
+    def load_graphs(self, session: InferenceSession) -> dict[str, Model]:
         assert self.max_batch_size, "Expected max_batch_size to be set"
 
         weights_dict = dict(self.weights.items())
@@ -122,9 +123,12 @@ class DiffusionGemmaForBlockDiffusionModel(Gemma3_MultiModalModel):
             encoder_model = models[encoder_graph.name]
             self.decoder_model = models[decoder_graph.name]
 
-        # The donor base class calls the language graph `language_model` and
-        # routes its `execute`/graph-capture paths through it.
-        return vision_model, encoder_model
+        # The donor base class runs the decoder role as its language model,
+        # through its `execute`/graph-capture paths; here that is the encoder.
+        return {
+            GraphRole.DECODER: encoder_model,
+            GraphRole.VISION: vision_model,
+        }
 
     def _build_encoder_graph(
         self,

@@ -1942,6 +1942,11 @@ class DKVConnector(KVConnector):
                     dkv_peers_dropped=m["peers_dropped"],
                     dkv_peer_loads=m["peer_loads"],
                     dkv_peer_load_failures=m["peer_load_failures"],
+                    dkv_peer_transfer_failures=m["peer_transfer_failures"],
+                    dkv_peer_metadata_refreshes=m["peer_metadata_refreshes"],
+                    dkv_peer_metadata_refresh_failures=m[
+                        "peer_metadata_refresh_failures"
+                    ],
                     dkv_hints_rejected=m["hints_rejected"],
                     dkv_hints_rejected_by_reason=dict(
                         m["hints_rejected_by_reason"]

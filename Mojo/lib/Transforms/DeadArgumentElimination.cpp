@@ -319,9 +319,7 @@ DeadArgumentElimination::surveyUse(OpOperand &inputUse, CallGraphNode *node,
     }
   }
 
-  // Should not be reachable here because all uses should eventually reach a
-  // return in a function if not before.
-  llvm::llvm_unreachable_internal("DeadArgumentElimination surveyUse failed.");
+  return MaybeLive;
 }
 
 DeadArgumentElimination::Liveness

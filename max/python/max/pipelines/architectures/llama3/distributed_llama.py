@@ -17,14 +17,26 @@ from __future__ import annotations
 import functools
 import logging
 from collections import OrderedDict, defaultdict
+from collections.abc import Iterable
+from pathlib import Path
+from typing import Any
 
 from max import tree
 from max.dtype import DType
-from max.graph import BufferType, DeviceRef, TensorType
+from max.graph import (
+    BufferType,
+    DeviceRef,
+    Graph,
+    TensorType,
+    TensorValue,
+    Type,
+    Value,
+)
+from max.graph import Module as GraphModule
 from max.graph.quantization import QuantizationEncoding
 from max.nn.attention import TensorParallelAttentionWithRope
 from max.nn.embedding import VocabParallelEmbedding
-from max.nn.kv_cache import KVCacheParamInterface
+from max.nn.kv_cache import KVCacheInputsPerDevice, KVCacheParamInterface
 from max.nn.linear import MLP, ColumnParallelLinear, Linear
 from max.nn.norm import RMSNorm
 from max.nn.transformer import (
@@ -212,3 +224,63 @@ class DistributedLlama3(DistributedTransformer):
         self, kv_params: KVCacheParamInterface
     ) -> tuple[TensorType | BufferType, ...]:
         return tuple(tree.leaves(self.input_tree(kv_params)))
+
+    def trace(
+        self,
+        *input_types: Type[Any],
+        name: str | None = None,
+        module: GraphModule | None = None,
+        custom_extensions: Iterable[Path] = (),
+        is_device_graph: bool = False,
+    ) -> Graph:
+        """Traces the graph, whose inputs are :meth:`input_tree`'s leaves.
+
+        Adapts the flat graph inputs to :meth:`__call__`: splits off a
+        signal buffer per device and unflattens the KV cache inputs into
+        each device's KV collection.
+
+        Args:
+            *input_types: The graph's input types, the leaves of
+                :meth:`input_tree`.
+            name: The name of the graph. Defaults to the class's qualified
+                name.
+            module: The MLIR module to add the graph to. Defaults to a new
+                module.
+            custom_extensions: Paths to custom kernel libraries the graph
+                uses.
+            is_device_graph: Whether to build a device graph.
+
+        Returns:
+            The traced :class:`~max.graph.Graph`.
+        """
+        n_devices = len(self.devices)
+
+        def forward(
+            tokens: Value[Any],
+            input_row_offsets: Value[Any],
+            return_n_logits: Value[Any],
+            *variadic_args: Value[Any],
+        ) -> tuple[TensorValue, ...]:
+            signal_buffers = [v.buffer for v in variadic_args[:n_devices]]
+            kv_collections = tree.leaves(
+                self.kv_params.unflatten_kv_inputs(
+                    iter(variadic_args[n_devices:])
+                ),
+                leaf=KVCacheInputsPerDevice,
+            )
+            return self(
+                tokens.tensor,
+                signal_buffers,
+                kv_collections,
+                return_n_logits.tensor,
+                input_row_offsets.tensor,
+            )
+
+        return Graph(
+            type(self).__qualname__ if name is None else name,
+            forward,
+            input_types=input_types,
+            custom_extensions=list(custom_extensions),
+            module=module,
+            is_device_graph=is_device_graph,
+        )

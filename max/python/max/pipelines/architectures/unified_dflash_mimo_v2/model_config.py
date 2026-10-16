@@ -13,9 +13,8 @@
 """KV trees and drafter settings for MiMo-V2.6-Flash with its DFlash drafter.
 
 The drafter's context cache is always the last KV group, after the target's
-``sliding_attention`` and ``full_attention``. The fused speculative graph nests
-the target's two under ``target``; the base graph that writes the drafter's
-context lists all three flat. Both flatten to the same group order.
+``sliding_attention`` and ``full_attention``, which the fused speculative
+graph nests under ``target``.
 """
 
 from __future__ import annotations
@@ -43,13 +42,10 @@ from transformers import AutoConfig
 from typing_extensions import override
 
 from ..dflash_mimo_v2 import DFlashMiMoV2Config
-from ..mimo_v2.model_config import FULL, SLIDING, MiMoV2Config
+from ..mimo_v2.model_config import MiMoV2Config
 
 DRAFT = "draft"
 """The drafter's KV group, the tail of every MiMo tree that has one."""
-
-DFLASH_DIR = "dflash"
-"""Where both MiMo-V2.6-Flash checkpoints keep the drafter."""
 
 
 def mimo_dflash_draft_width(
@@ -223,52 +219,3 @@ class UnifiedDflashMiMoV2Config(MiMoV2Config):
             draft.num_draft_tokens,
         )
         return MultiKVCacheParams.from_params({"target": target, DRAFT: draft})
-
-
-class MiMoV2DFlashContextConfig(MiMoV2Config):
-    """The base graph's config with the drafter's group as a third, tail group.
-
-    The drafter is the one the target checkpoint ships in ``dflash/``.
-    """
-
-    @override
-    @classmethod
-    def construct_kv_params(
-        cls,
-        huggingface_config: AutoConfig,
-        pipeline_config: PipelineConfig,
-        devices: list[DeviceRef],
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-        *,
-        allow_kv_head_replication: bool = False,
-    ) -> MultiKVCacheParams:
-        """Builds ``{sliding, full, draft}``."""
-        if pipeline_config.speculative is not None:
-            raise ValueError(
-                "The MiMo-V2 base graph that writes the drafter's context"
-                " verifies nothing; build it without a speculative config."
-            )
-        dflash = read_dflash_config(
-            repo_file(
-                pipeline_config.model.huggingface_weight_repo,
-                f"{DFLASH_DIR}/config.json",
-            )
-        )
-        target = super().construct_kv_params(
-            huggingface_config,
-            pipeline_config,
-            devices,
-            kv_cache_config,
-            cache_dtype,
-            allow_kv_head_replication=allow_kv_head_replication,
-        )
-        return MultiKVCacheParams.from_params(
-            {
-                SLIDING: target.children[SLIDING],
-                FULL: target.children[FULL],
-                DRAFT: drafter_kv_params(
-                    dflash, pipeline_config, devices, kv_cache_config
-                ),
-            }
-        )

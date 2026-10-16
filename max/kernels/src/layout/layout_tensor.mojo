@@ -249,6 +249,7 @@ def _distribute_is_masked[
     return False
 
 
+@deprecated("Use TileTensor instead")
 struct LayoutTensor[
     mut: Bool,
     //,
@@ -7545,6 +7546,7 @@ def copy_local_to_local(dst: LayoutTensor[mut=True, ...], src: LayoutTensor):
 # ===-----------------------------------------------------------------------===#
 
 
+@deprecated("Use TileTensor instead")
 struct LayoutTensorIter[
     mut: Bool,
     //,

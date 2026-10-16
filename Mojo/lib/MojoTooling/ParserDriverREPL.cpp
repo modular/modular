@@ -515,9 +515,10 @@ static void processVariablesForPersistence(MojoParserREPLListener &listener,
   SmallVector<std::pair<StringAttr, ASTDecl *>> variables;
   auto addVars = [&](ASTDecl &decl) {
     for (auto &[name, decls] : decl.getDeclsInScope())
-      if (decls.size() == 1 &&
-          isa_and_nonnull<VarDeclOp>(decls.front()->getIfOperation()))
-        variables.emplace_back(name, decls.front());
+      if (decls.size() == 1)
+        if (auto *varDecl = dyn_cast<VarASTDecl>(decls.front());
+            varDecl && varDecl->getOp())
+          variables.emplace_back(name, varDecl);
   };
   addVars(exprFnDecl);
   addVars(lookupSingleDecl(exprFnDecl, "__mojo_repl_expr_body__"));
@@ -598,7 +599,8 @@ static void processVariablesForPersistence(MojoParserREPLListener &listener,
 
   for (auto &[name, decl] : variables) {
     // Handle memory based decls.
-    if (auto varOp = dyn_cast_or_null<LIT::VarDeclOp>(decl->getIfOperation())) {
+    if (auto *varDecl = dyn_cast<LIT::VarASTDecl>(decl)) {
+      LIT::VarDeclOp varOp = varDecl->getOp();
       if (MRValue field = checkInsertPersistentVar(varOp)) {
         varOp.replaceAllUsesWith(field);
         varOp.erase();
@@ -808,8 +810,7 @@ static ASTDecl &buildAndResolveREPLModule(
       resolveSignaturesForLSP(*sharedState.declResolver);
   } else {
     // Keep unparsed decls alive — later cells may reference them.
-    sharedState.declResolver->resolveAllReferencedFrom(
-        moduleDecl, /*eraseUnparsedDecls=*/false);
+    sharedState.declResolver->resolveAllReferencedFrom(moduleDecl);
   }
 
   // Resolve any imported wildcard decls, this ensures those decls will be

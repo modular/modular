@@ -24,10 +24,10 @@ package_group(
         "//Mojo/docs/site/...",
         "//bazel/...",
         "//docs/...",
+        "//max/docs/site/...",
         "//max/python/max/_core/max_license/...",
         "//max/tests/internal/API/c/...",  # Only when testing internally
         "//oss/modular/bazel/...",
-        "//oss/modular/docs/...",
         "//oss/modular/max/python/max/_core/max_license/...",  # Only when testing internally
         "//plugins/...",
         "//utils/...",

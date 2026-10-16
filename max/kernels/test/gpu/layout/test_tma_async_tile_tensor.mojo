@@ -167,6 +167,9 @@ def test_tma_load_tile_tensor[
     )
 
     dst.to_host()
+    # The descriptor holds a raw pointer, so the source must outlive the
+    # kernel rather than end at its last use above.
+    _ = src_device^
     var dst_host = dst.host_tensor()
 
     # In-bounds elements keep their values, and the region rounded up to

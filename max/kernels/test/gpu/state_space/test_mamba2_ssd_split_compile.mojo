@@ -28,7 +28,10 @@ from std.testing import TestSuite, assert_true
 
 
 def compile_split[
-    target_name: StaticString, entry_marker: StaticString
+    target_name: StaticString,
+    entry_marker: StaticString,
+    DSTATE_SPLIT: Int = 8,
+    CH_PER_THREAD: Int = 1,
 ](ctx: DeviceContext) raises:
     # The shapes only fix the layout types; nothing is launched.
     var x_d = ctx.enqueue_create_buffer[.bfloat16](1)
@@ -67,7 +70,7 @@ def compile_split[
             .bfloat16,
             .float32,
             128,
-            8,
+            DSTATE_SPLIT,
             T1.LayoutType,
             T1.LayoutType,
             T1.LayoutType,
@@ -75,12 +78,14 @@ def compile_split[
             Pool.LayoutType,
             Qsl.LayoutType,
             His.LayoutType,
+            His.LayoutType,
             T3.Engine,
             type_of(x_fn),
             type_of(dt_fn),
             type_of(x_fn),
             type_of(x_fn),
             type_of(slot_fn),
+            CH_PER_THREAD=CH_PER_THREAD,
         ],
         target=get_gpu_target[target_name](),
     ]()
@@ -95,6 +100,9 @@ def test_compile_split_nvidia() raises:
         compile_split["sm_90a", ".entry"](ctx)
         compile_split["sm_100a", ".entry"](ctx)
         compile_split["sm_103a", ".entry"](ctx)
+        # The production dstate-128 tile on NVIDIA.
+        compile_split["sm_90a", ".entry", 16, 4](ctx)
+        compile_split["sm_100a", ".entry", 16, 4](ctx)
 
 
 def test_compile_split_amd() raises:

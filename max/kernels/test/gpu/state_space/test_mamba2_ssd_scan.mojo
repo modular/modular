@@ -49,6 +49,7 @@ def _scan_cpu[
     ssm_pool: TileTensor[mut=True, state_dtype, ...],
     query_start_loc: TileTensor[mut=False, .int32, ...],
     has_initial_state: TileTensor[mut=False, .bool, ...],
+    update_state: TileTensor[mut=False, .bool, ...],
     cache_indices: TileTensor[mut=False, .uint32, ...],
 ):
     """Runs the CPU scan with operand functions that read these tensors."""
@@ -88,6 +89,7 @@ def _scan_cpu[
         ssm_pool,
         query_start_loc,
         has_initial_state,
+        update_state,
         x_fn,
         dt_fn,
         b_fn,
@@ -197,6 +199,264 @@ def _check_outputs[
             )
 
 
+def _bf16_ulp_distance(a: BFloat16, b: BFloat16) -> Int:
+    """Number of representable bf16 steps between `a` and `b`."""
+
+    def ordered(v: BFloat16) -> Int:
+        var bits = Int(v.to_bits())
+        return -(bits & 0x7FFF) if bits & 0x8000 else bits
+
+    return abs(ordered(a) - ordered(b))
+
+
+def _check_tile_parity[
+    dtype: DType, state_dtype: DType
+](
+    y_base: MutPointer[Scalar[dtype], MutUntrackedOrigin],
+    y_new: MutPointer[Scalar[dtype], MutUntrackedOrigin],
+    pool_base: MutPointer[Scalar[state_dtype], MutUntrackedOrigin],
+    pool_new: MutPointer[Scalar[state_dtype], MutUntrackedOrigin],
+    y_size: Int,
+    pool_size: Int,
+) raises:
+    """Two tiles on the same input: identical final-state bits, and outputs
+    within one bf16 ulp (only the y reduction order differs)."""
+    comptime assert dtype == .bfloat16, "y parity is stated in bf16 ulps"
+    for i in range(pool_size):
+        if pool_base.load(i).to_bits() != pool_new.load(i).to_bits():
+            raise Error(
+                "tile parity: final state bits differ at pool index "
+                + String(i)
+                + ": "
+                + String(pool_base.load(i))
+                + " vs "
+                + String(pool_new.load(i))
+            )
+    for i in range(y_size):
+        var a = y_base.load(i).cast[.bfloat16]()
+        var b = y_new.load(i).cast[.bfloat16]()
+        if _bf16_ulp_distance(a, b) > 1:
+            raise Error(
+                "tile parity: y differs by more than one bf16 ulp at index "
+                + String(i)
+                + ": "
+                + String(a)
+                + " vs "
+                + String(b)
+            )
+
+
+def _run_gpu[
+    dtype: DType,
+    state_dtype: DType,
+    //,
+    DSTATE: Int,
+    DSTATE_SPLIT: Int,
+    CH_PER_THREAD: Int,
+    prefill: Bool,
+](
+    ctx: DeviceContext,
+    nheads: Int,
+    head_dim: Int,
+    ngroups: Int,
+    max_slots: Int,
+    batch: Int,
+    total_len: Int,
+    x_row: Int,
+    bc_row: Int,
+    D_size: Int,
+    dt_bias_size: Int,
+    his_size: Int,
+    us_size: Int,
+    x_h: MutPointer[Scalar[dtype], MutUntrackedOrigin],
+    dt_h: MutPointer[Scalar[dtype], MutUntrackedOrigin],
+    A_h: MutPointer[Scalar[dtype], MutUntrackedOrigin],
+    B_h: MutPointer[Scalar[dtype], MutUntrackedOrigin],
+    C_h: MutPointer[Scalar[dtype], MutUntrackedOrigin],
+    D_h: MutPointer[Scalar[dtype], MutUntrackedOrigin],
+    dt_bias_h: MutPointer[Scalar[dtype], MutUntrackedOrigin],
+    qsl_h: MutPointer[Int32, MutUntrackedOrigin],
+    his_h: MutPointer[Scalar[.bool], MutUntrackedOrigin],
+    us_h: MutPointer[Scalar[.bool], MutUntrackedOrigin],
+    slot_h: MutPointer[UInt32, MutUntrackedOrigin],
+    y_out: MutPointer[Scalar[dtype], MutUntrackedOrigin],
+    pool: MutPointer[Scalar[state_dtype], MutUntrackedOrigin],
+) raises:
+    """Runs one GPU kernel: the cooperative split when `DSTATE_SPLIT > 0`,
+    else the Apple kernel. `pool` holds the initial pool on entry and the
+    final pool on return."""
+    comptime dstate = DSTATE
+    var y_size = total_len * nheads * head_dim
+    var pool_size = max_slots * nheads * head_dim * dstate
+    var x_layout = MixedLayout(
+        (total_len, nheads, head_dim), (x_row, head_dim, 1)
+    )
+    var bc_layout = MixedLayout(
+        (total_len, ngroups, dstate), (bc_row, dstate, 1)
+    )
+
+    var x_d = ctx.enqueue_create_buffer[dtype](total_len * x_row)
+    var dt_d = ctx.enqueue_create_buffer[dtype](total_len * nheads)
+    var A_d = ctx.enqueue_create_buffer[dtype](nheads)
+    var B_d = ctx.enqueue_create_buffer[dtype](total_len * bc_row)
+    var C_d = ctx.enqueue_create_buffer[dtype](total_len * bc_row)
+    var D_d = ctx.enqueue_create_buffer[dtype](nheads)
+    var dt_bias_d = ctx.enqueue_create_buffer[dtype](nheads)
+    var qsl_d = ctx.enqueue_create_buffer[.int32](batch + 1)
+    var his_d = ctx.enqueue_create_buffer[.bool](batch)
+    var us_d = ctx.enqueue_create_buffer[.bool](batch)
+    var slot_d = ctx.enqueue_create_buffer[.uint32](batch)
+    var y_d = ctx.enqueue_create_buffer[dtype](y_size)
+    var pool_d = ctx.enqueue_create_buffer[state_dtype](pool_size)
+    ctx.enqueue_copy(x_d, x_h)
+    ctx.enqueue_copy(dt_d, dt_h)
+    ctx.enqueue_copy(A_d, A_h)
+    ctx.enqueue_copy(B_d, B_h)
+    ctx.enqueue_copy(C_d, C_h)
+    ctx.enqueue_copy(D_d, D_h)
+    ctx.enqueue_copy(dt_bias_d, dt_bias_h)
+    ctx.enqueue_copy(qsl_d, qsl_h)
+    ctx.enqueue_copy(his_d, his_h)
+    ctx.enqueue_copy(us_d, us_h)
+    ctx.enqueue_copy(slot_d, slot_h)
+    ctx.enqueue_copy(pool_d, pool)
+
+    var x_g = TileTensor(x_d, x_layout)
+    var dt_g = TileTensor(dt_d, row_major(total_len, nheads))
+    var A_g = TileTensor(A_d, row_major(nheads))
+    var B_g = TileTensor(B_d, bc_layout)
+    var C_g = TileTensor(C_d, bc_layout)
+    var D_g = TileTensor(D_d, row_major(D_size))
+    var dt_bias_g = TileTensor(dt_bias_d, row_major(dt_bias_size))
+    var qsl_g = TileTensor(qsl_d, row_major(batch + 1))
+    var his_g = TileTensor(his_d, row_major(his_size))
+    var us_g = TileTensor(us_d, row_major(us_size))
+    var slot_g = TileTensor(slot_d, row_major(batch))
+    var y_g = TileTensor(y_d, row_major(total_len, nheads, head_dim))
+    var pool_g = TileTensor(
+        pool_d, row_major(max_slots, nheads, head_dim, dstate)
+    )
+
+    comptime elt = size_of[dtype]()
+
+    def x_fn[
+        width: Int, alignment: Int
+    ](t: Int, h: Int, p: Int) {var x_g} -> SIMD[dtype, width]:
+        return x_g.load[width=width, alignment=alignment * elt]((t, h, p))
+
+    def dt_fn[
+        width: Int, alignment: Int
+    ](t: Int, h: Int) {var dt_g} -> SIMD[dtype, width]:
+        return dt_g.load[width=width, alignment=alignment * elt]((t, h))
+
+    def b_fn[
+        width: Int, alignment: Int
+    ](t: Int, g: Int, n: Int) {var B_g} -> SIMD[dtype, width]:
+        return B_g.load[width=width, alignment=alignment * elt]((t, g, n))
+
+    def c_fn[
+        width: Int, alignment: Int
+    ](t: Int, g: Int, n: Int) {var C_g} -> SIMD[dtype, width]:
+        return C_g.load[width=width, alignment=alignment * elt]((t, g, n))
+
+    def slot_fn[
+        width: Int, alignment: Int
+    ](b: Int) {var slot_g} -> SIMD[.uint32, width]:
+        return slot_g.load[width=width]((b,))
+
+    comptime if DSTATE_SPLIT > 0:
+        # Mirrors the production launch in kernels.mojo.
+        comptime ROWS = 128 // DSTATE_SPLIT
+        comptime CH_PER_BLOCK = ROWS * CH_PER_THREAD
+        comptime kernel = mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split[
+            dtype,
+            state_dtype,
+            DSTATE,
+            DSTATE_SPLIT,
+            A_g.LayoutType,
+            D_g.LayoutType,
+            dt_bias_g.LayoutType,
+            y_g.LayoutType,
+            pool_g.LayoutType,
+            qsl_g.LayoutType,
+            his_g.LayoutType,
+            us_g.LayoutType,
+            y_g.Engine,
+            type_of(x_fn),
+            type_of(dt_fn),
+            type_of(b_fn),
+            type_of(c_fn),
+            type_of(slot_fn),
+            prefill=prefill,
+            CH_PER_THREAD=CH_PER_THREAD,
+        ]
+        ctx.enqueue_function[kernel](
+            Int32(ngroups),
+            A_g,
+            D_g,
+            dt_bias_g,
+            y_g,
+            pool_g,
+            qsl_g,
+            his_g,
+            us_g,
+            host_arg=x_fn,
+            host_arg2=dt_fn,
+            host_arg3=b_fn,
+            host_arg4=c_fn,
+            host_arg5=slot_fn,
+            grid_dim=(
+                ceildiv(head_dim, CH_PER_BLOCK),
+                nheads,
+                batch,
+            ),
+            block_dim=(DSTATE_SPLIT, ROWS, 1),
+        )
+    else:
+        comptime BLOCK_SIZE = 64
+        comptime kernel = mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_apple[
+            dtype,
+            state_dtype,
+            DSTATE,
+            A_g.LayoutType,
+            D_g.LayoutType,
+            dt_bias_g.LayoutType,
+            y_g.LayoutType,
+            pool_g.LayoutType,
+            qsl_g.LayoutType,
+            his_g.LayoutType,
+            us_g.LayoutType,
+            y_g.Engine,
+            type_of(x_fn),
+            type_of(dt_fn),
+            type_of(b_fn),
+            type_of(c_fn),
+            type_of(slot_fn),
+        ]
+        ctx.enqueue_function[kernel](
+            Int32(ngroups),
+            A_g,
+            D_g,
+            dt_bias_g,
+            y_g,
+            pool_g,
+            qsl_g,
+            his_g,
+            us_g,
+            host_arg=x_fn,
+            host_arg2=dt_fn,
+            host_arg3=b_fn,
+            host_arg4=c_fn,
+            host_arg5=slot_fn,
+            grid_dim=(ceildiv(head_dim, BLOCK_SIZE), nheads, batch),
+            block_dim=(BLOCK_SIZE, 1, 1),
+        )
+
+    ctx.enqueue_copy(y_out, y_d)
+    ctx.enqueue_copy(pool, pool_d)
+    ctx.synchronize()
+
+
 def run_mamba2_ssd[
     dtype: DType,
     DSTATE: Int,
@@ -209,6 +469,17 @@ def run_mamba2_ssd[
     init_state: Bool = False,
     has_D: Bool = True,
     has_dt_bias: Bool = True,
+    # Clears update_state on every odd sequence: its slot must keep its initial
+    # state while the outputs still match the reference.
+    update_flags: Bool = False,
+    # Channels per thread of the cooperative split, and whether its staged
+    # (multi-token) path is enabled, as the production launch picks it.
+    CH_PER_THREAD: Int = 1,
+    prefill: Bool = True,
+    # Also runs the previous tile (split 8, one channel per thread) on the
+    # same inputs and initial pool, and requires bit-identical final states
+    # and outputs within one bf16 ulp of it.
+    check_parity: Bool = False,
 ](
     nheads: Int,
     head_dim: Int,
@@ -246,6 +517,7 @@ def run_mamba2_ssd[
     var D_h = alloc[Scalar[dtype]](nheads)
     var dt_bias_h = alloc[Scalar[dtype]](nheads)
     var his_h = alloc[Scalar[.bool]](batch)
+    var us_h = alloc[Scalar[.bool]](batch)
     var qsl_h = alloc[Int32](batch + 1)
     var slot_h = alloc[UInt32](batch)
     var is_h = alloc[Float32](batch * state_size)
@@ -272,6 +544,9 @@ def run_mamba2_ssd[
         is_h.store(i, is_h.load(i).cast[state_dtype]().cast[.float32]())
     for i in range(batch):
         his_h.store(i, Scalar[.bool](init_state))
+        us_h.store(i, Scalar[.bool](not update_flags or i % 2 == 0))
+    # An empty update_state writes every sequence.
+    var us_size = batch if update_flags else 0
     # Sequence b uses slot b + 1, so slot 0 must stay untouched.
     for i in range(batch):
         slot_h.store(i, UInt32(i + 1))
@@ -315,6 +590,19 @@ def run_mamba2_ssd[
                 is_h.load(b * state_size + i).cast[state_dtype](),
             )
 
+    comptime if update_flags:
+        # A sequence that does not update leaves its slot as it was seeded.
+        for b in range(batch):
+            if b % 2 == 1:
+                var slot = Int(slot_h.load(b))
+                for i in range(state_size):
+                    fs_ref_h.store(
+                        b * state_size + i,
+                        pool_init_h.load(slot * state_size + i).cast[
+                            .float32
+                        ](),
+                    )
+
     var x_layout = MixedLayout(
         (total_len, nheads, head_dim), (x_row, head_dim, 1)
     )
@@ -340,6 +628,7 @@ def run_mamba2_ssd[
         TileTensor(pool_cpu_h, row_major(max_slots, nheads, head_dim, dstate)),
         TileTensor(qsl_h, row_major(batch + 1)),
         TileTensor(his_h, row_major(his_size)),
+        TileTensor(us_h, row_major(us_size)),
         TileTensor(slot_h, row_major(batch)),
     )
     _check_outputs(
@@ -356,158 +645,38 @@ def run_mamba2_ssd[
     )
 
     # ---- GPU kernel ----
-    var x_d = ctx.enqueue_create_buffer[dtype](total_len * x_row)
-    var dt_d = ctx.enqueue_create_buffer[dtype](total_len * nheads)
-    var A_d = ctx.enqueue_create_buffer[dtype](nheads)
-    var B_d = ctx.enqueue_create_buffer[dtype](total_len * bc_row)
-    var C_d = ctx.enqueue_create_buffer[dtype](total_len * bc_row)
-    var D_d = ctx.enqueue_create_buffer[dtype](nheads)
-    var dt_bias_d = ctx.enqueue_create_buffer[dtype](nheads)
-    var qsl_d = ctx.enqueue_create_buffer[.int32](batch + 1)
-    var his_d = ctx.enqueue_create_buffer[.bool](batch)
-    var slot_d = ctx.enqueue_create_buffer[.uint32](batch)
-    var y_d = ctx.enqueue_create_buffer[dtype](y_size)
-    var pool_d = ctx.enqueue_create_buffer[state_dtype](pool_size)
-    ctx.enqueue_copy(x_d, x_h)
-    ctx.enqueue_copy(dt_d, dt_h)
-    ctx.enqueue_copy(A_d, A_h)
-    ctx.enqueue_copy(B_d, B_h)
-    ctx.enqueue_copy(C_d, C_h)
-    ctx.enqueue_copy(D_d, D_h)
-    ctx.enqueue_copy(dt_bias_d, dt_bias_h)
-    ctx.enqueue_copy(qsl_d, qsl_h)
-    ctx.enqueue_copy(his_d, his_h)
-    ctx.enqueue_copy(slot_d, slot_h)
-    ctx.enqueue_copy(pool_d, pool_init_h)
-
-    var x_g = TileTensor(x_d, x_layout)
-    var dt_g = TileTensor(dt_d, row_major(total_len, nheads))
-    var A_g = TileTensor(A_d, row_major(nheads))
-    var B_g = TileTensor(B_d, bc_layout)
-    var C_g = TileTensor(C_d, bc_layout)
-    var D_g = TileTensor(D_d, row_major(D_size))
-    var dt_bias_g = TileTensor(dt_bias_d, row_major(dt_bias_size))
-    var qsl_g = TileTensor(qsl_d, row_major(batch + 1))
-    var his_g = TileTensor(his_d, row_major(his_size))
-    var slot_g = TileTensor(slot_d, row_major(batch))
-    var y_g = TileTensor(y_d, row_major(total_len, nheads, head_dim))
-    var pool_g = TileTensor(
-        pool_d, row_major(max_slots, nheads, head_dim, dstate)
-    )
-
-    comptime elt = size_of[dtype]()
-
-    def x_fn[
-        width: Int, alignment: Int
-    ](t: Int, h: Int, p: Int) {var x_g} -> SIMD[dtype, width]:
-        return x_g.load[width=width, alignment=alignment * elt]((t, h, p))
-
-    def dt_fn[
-        width: Int, alignment: Int
-    ](t: Int, h: Int) {var dt_g} -> SIMD[dtype, width]:
-        return dt_g.load[width=width, alignment=alignment * elt]((t, h))
-
-    def b_fn[
-        width: Int, alignment: Int
-    ](t: Int, g: Int, n: Int) {var B_g} -> SIMD[dtype, width]:
-        return B_g.load[width=width, alignment=alignment * elt]((t, g, n))
-
-    def c_fn[
-        width: Int, alignment: Int
-    ](t: Int, g: Int, n: Int) {var C_g} -> SIMD[dtype, width]:
-        return C_g.load[width=width, alignment=alignment * elt]((t, g, n))
-
-    def slot_fn[
-        width: Int, alignment: Int
-    ](b: Int) {var slot_g} -> SIMD[.uint32, width]:
-        return slot_g.load[width=width]((b,))
-
-    comptime if DSTATE_SPLIT > 0:
-        # Mirrors the production launch in kernels.mojo.
-        comptime CH_PER_BLOCK = 128 // DSTATE_SPLIT
-        comptime kernel = mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split[
-            dtype,
-            state_dtype,
-            DSTATE,
-            DSTATE_SPLIT,
-            A_g.LayoutType,
-            D_g.LayoutType,
-            dt_bias_g.LayoutType,
-            y_g.LayoutType,
-            pool_g.LayoutType,
-            qsl_g.LayoutType,
-            his_g.LayoutType,
-            y_g.Engine,
-            type_of(x_fn),
-            type_of(dt_fn),
-            type_of(b_fn),
-            type_of(c_fn),
-            type_of(slot_fn),
-        ]
-        ctx.enqueue_function[kernel](
-            Int32(ngroups),
-            A_g,
-            D_g,
-            dt_bias_g,
-            y_g,
-            pool_g,
-            qsl_g,
-            his_g,
-            host_arg=x_fn,
-            host_arg2=dt_fn,
-            host_arg3=b_fn,
-            host_arg4=c_fn,
-            host_arg5=slot_fn,
-            grid_dim=(
-                ceildiv(head_dim, CH_PER_BLOCK),
-                nheads,
-                batch,
-            ),
-            block_dim=(DSTATE_SPLIT, CH_PER_BLOCK, 1),
-        )
-    else:
-        comptime BLOCK_SIZE = 64
-        comptime kernel = mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_apple[
-            dtype,
-            state_dtype,
-            DSTATE,
-            A_g.LayoutType,
-            D_g.LayoutType,
-            dt_bias_g.LayoutType,
-            y_g.LayoutType,
-            pool_g.LayoutType,
-            qsl_g.LayoutType,
-            his_g.LayoutType,
-            y_g.Engine,
-            type_of(x_fn),
-            type_of(dt_fn),
-            type_of(b_fn),
-            type_of(c_fn),
-            type_of(slot_fn),
-        ]
-        ctx.enqueue_function[kernel](
-            Int32(ngroups),
-            A_g,
-            D_g,
-            dt_bias_g,
-            y_g,
-            pool_g,
-            qsl_g,
-            his_g,
-            host_arg=x_fn,
-            host_arg2=dt_fn,
-            host_arg3=b_fn,
-            host_arg4=c_fn,
-            host_arg5=slot_fn,
-            grid_dim=(ceildiv(head_dim, BLOCK_SIZE), nheads, batch),
-            block_dim=(BLOCK_SIZE, 1, 1),
-        )
-
     var y_gpu_h = alloc[Scalar[dtype]](y_size)
     var pool_gpu_h = alloc[Scalar[state_dtype]](pool_size)
-    ctx.enqueue_copy(y_gpu_h, y_d)
-    ctx.enqueue_copy(pool_gpu_h, pool_d)
-    ctx.synchronize()
+    for i in range(pool_size):
+        pool_gpu_h.store(i, pool_init_h.load(i))
+    _run_gpu[DSTATE, DSTATE_SPLIT, CH_PER_THREAD, prefill](
+        ctx,
+        nheads,
+        head_dim,
+        ngroups,
+        max_slots,
+        batch,
+        total_len,
+        x_row,
+        bc_row,
+        D_size,
+        dt_bias_size,
+        his_size,
+        us_size,
+        x_h,
+        dt_h,
+        A_h,
+        B_h,
+        C_h,
+        D_h,
+        dt_bias_h,
+        qsl_h,
+        his_h,
+        us_h,
+        slot_h,
+        y_gpu_h,
+        pool_gpu_h,
+    )
     # A bf16 pool adds one rounding at the final write-back (<= 2^-9
     # relative), well inside rtol.
     _check_outputs(
@@ -523,6 +692,46 @@ def run_mamba2_ssd[
         "GPU",
     )
 
+    comptime if check_parity:
+        comptime assert DSTATE_SPLIT > 0, "parity compares split tiles"
+        var y_base_h = alloc[Scalar[dtype]](y_size)
+        var pool_base_h = alloc[Scalar[state_dtype]](pool_size)
+        for i in range(pool_size):
+            pool_base_h.store(i, pool_init_h.load(i))
+        _run_gpu[DSTATE, 8, 1, prefill](
+            ctx,
+            nheads,
+            head_dim,
+            ngroups,
+            max_slots,
+            batch,
+            total_len,
+            x_row,
+            bc_row,
+            D_size,
+            dt_bias_size,
+            his_size,
+            us_size,
+            x_h,
+            dt_h,
+            A_h,
+            B_h,
+            C_h,
+            D_h,
+            dt_bias_h,
+            qsl_h,
+            his_h,
+            us_h,
+            slot_h,
+            y_base_h,
+            pool_base_h,
+        )
+        _check_tile_parity(
+            y_base_h, y_gpu_h, pool_base_h, pool_gpu_h, y_size, pool_size
+        )
+        y_base_h.free()
+        pool_base_h.free()
+
     x_h.free()
     dt_h.free()
     A_h.free()
@@ -531,6 +740,7 @@ def run_mamba2_ssd[
     D_h.free()
     dt_bias_h.free()
     his_h.free()
+    us_h.free()
     qsl_h.free()
     slot_h.free()
     is_h.free()
@@ -579,6 +789,7 @@ def test_mamba2_ssd_varlen_no_cross_sequence_bleed() raises:
     var D_tt = TileTensor(D_h, row_major(nheads))
     var dt_bias_tt = TileTensor(dt_bias_h, row_major(nheads))
     var his_tt = TileTensor(his_h, row_major(0))
+    var us_tt = TileTensor(his_h, row_major(0))
 
     # Packed run: sequence b writes pool slot b.
     var y_packed = alloc[Scalar[dtype]](total_len * nheads * head_dim)
@@ -603,6 +814,7 @@ def test_mamba2_ssd_varlen_no_cross_sequence_bleed() raises:
         TileTensor(pool_packed, row_major(batch, nheads, head_dim, dstate)),
         TileTensor(qsl_h, row_major(batch + 1)),
         his_tt,
+        us_tt,
         TileTensor(slot_h, row_major(batch)),
     )
 
@@ -642,6 +854,7 @@ def test_mamba2_ssd_varlen_no_cross_sequence_bleed() raises:
             ),
             TileTensor(qsl_s_h, row_major(2)),
             his_tt,
+            us_tt,
             TileTensor(slot_s_h, row_major(1)),
         )
         off += slen
@@ -792,6 +1005,113 @@ def test_mamba2_ssd_dstate_split_chunk_boundaries() raises:
         )
 
 
+def _channel_blocked_decode_shapes[
+    update_flags: Bool
+](ctx: DeviceContext) raises:
+    """Verify/replay rows 1 to 8 (one masked staged chunk) and a decode."""
+    run_mamba2_ssd[
+        .bfloat16,
+        128,
+        16,
+        init_state=True,
+        update_flags=update_flags,
+        CH_PER_THREAD=4,
+        check_parity=True,
+    ](
+        nheads=32,
+        head_dim=64,
+        ngroups=4,
+        max_slots=9,
+        seq_lengths=Index(1, 2, 3, 4, 5, 6, 7, 8),
+        ctx=ctx,
+        row_pad=32,
+    )
+    run_mamba2_ssd[
+        .bfloat16,
+        128,
+        16,
+        init_state=True,
+        update_flags=update_flags,
+        CH_PER_THREAD=4,
+        prefill=False,
+        check_parity=True,
+    ](
+        nheads=32,
+        head_dim=64,
+        ngroups=4,
+        max_slots=5,
+        seq_lengths=Index(1, 1, 1, 1),
+        ctx=ctx,
+    )
+
+
+def test_mamba2_ssd_dstate_split_channel_blocked() raises:
+    """Several channels per thread, the production tiling for dstate 128.
+
+    Nemotron-3.5-Lightning per-device grouping (32 heads, 8 per group,
+    head_dim 64) at the speculative decode shapes: every verify/replay length
+    from 1 to 8 rows, which the staged path takes as one masked chunk, longer
+    sequences that end in a partial chunk, and the single-token decode
+    launch. Each runs with every slot updated and with alternate slots
+    left untouched. A head_dim that is not a multiple of the block's channels
+    covers the channel guards. The bf16 cases also run the previous split-8,
+    one-channel tile on the same input: final states must match it bit for
+    bit and outputs within one bf16 ulp.
+    """
+    with DeviceContext() as ctx:
+        comptime if not (ctx.target.is_nvidia_gpu() or ctx.target.is_amd_gpu()):
+            return
+        _channel_blocked_decode_shapes[update_flags=False](ctx)
+        _channel_blocked_decode_shapes[update_flags=True](ctx)
+        run_mamba2_ssd[
+            .bfloat16,
+            128,
+            16,
+            init_state=True,
+            CH_PER_THREAD=4,
+            check_parity=True,
+        ](
+            nheads=32,
+            head_dim=64,
+            ngroups=4,
+            max_slots=4,
+            seq_lengths=Index(9, 21, 40),
+            ctx=ctx,
+        )
+        run_mamba2_ssd[.bfloat16, 128, 16, CH_PER_THREAD=4, check_parity=True](
+            nheads=8,
+            head_dim=72,
+            ngroups=2,
+            max_slots=4,
+            seq_lengths=Index(13, 1, 6),
+            ctx=ctx,
+        )
+        run_mamba2_ssd[
+            .bfloat16,
+            128,
+            16,
+            CH_PER_THREAD=4,
+            prefill=False,
+            check_parity=True,
+        ](
+            nheads=8,
+            head_dim=72,
+            ngroups=2,
+            max_slots=4,
+            seq_lengths=Index(3, 1, 2),
+            ctx=ctx,
+        )
+        run_mamba2_ssd[.float32, 64, 8, CH_PER_THREAD=2](
+            nheads=12,
+            head_dim=16,
+            ngroups=4,
+            max_slots=4,
+            seq_lengths=Index(10, 6, 1),
+            ctx=ctx,
+            rtol=1e-4,
+        )
+
+
 def test_mamba2_ssd_no_D_no_bias() raises:
     """Empty D and dt_bias drop their terms."""
     with DeviceContext() as ctx:
@@ -879,6 +1199,45 @@ def test_mamba2_ssd_bf16_state() raises:
                 ngroups=2,
                 max_slots=4,
                 seq_lengths=Index(64, 1),
+                ctx=ctx,
+            )
+
+
+def test_mamba2_ssd_update_state_flag() raises:
+    """A cleared `update_state` flag leaves that sequence's slot untouched.
+
+    Odd sequences keep their seeded state while even ones advance it, on the
+    CPU kernel, the Apple kernel and (on CUDA/HIP) the cooperative split, for
+    a decode batch and a prefill long enough to take the staged path.
+    """
+    with DeviceContext() as ctx:
+        run_mamba2_ssd[.bfloat16, 128, init_state=True, update_flags=True](
+            nheads=8,
+            head_dim=16,
+            ngroups=2,
+            max_slots=6,
+            seq_lengths=Index(1, 1, 3, 1, 2),
+            ctx=ctx,
+        )
+        comptime if ctx.target.is_nvidia_gpu() or ctx.target.is_amd_gpu():
+            run_mamba2_ssd[
+                .bfloat16, 128, 8, init_state=True, update_flags=True
+            ](
+                nheads=8,
+                head_dim=16,
+                ngroups=2,
+                max_slots=6,
+                seq_lengths=Index(1, 1, 3, 1, 2),
+                ctx=ctx,
+            )
+            run_mamba2_ssd[
+                .bfloat16, 128, 8, init_state=True, update_flags=True
+            ](
+                nheads=8,
+                head_dim=16,
+                ngroups=2,
+                max_slots=5,
+                seq_lengths=Index(17, 9, 24, 1),
                 ctx=ctx,
             )
 

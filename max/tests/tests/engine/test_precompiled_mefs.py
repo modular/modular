@@ -230,6 +230,31 @@ def test_setting_mef_dirs_is_undone_on_scope_exit(tmp_path: Path) -> None:
     assert after == recorded
 
 
+def test_module_compiles_in_the_given_session(tmp_path: Path) -> None:
+    # A pipeline configures its own session's MEF directories, not the
+    # process-wide ones, so the store must come from the session passed in.
+    exporting = InferenceSession(devices=[CPU()], export_mefs=tmp_path)
+    exported = _linear().compile(
+        _module_input_type(), session=exporting, name="linear"
+    )
+    expected = exported(_module_input()).to_numpy()
+
+    manifest = json.loads((tmp_path / "manifest.json").read_text())
+    assert [entry["name"] for entry in manifest["graphs"]] == ["linear"]
+
+    reusing = InferenceSession(devices=[CPU()], precompiled_mefs=tmp_path)
+    reused = _linear().compile(
+        _module_input_type(), session=reusing, name="linear"
+    )
+    np.testing.assert_allclose(reused(_module_input()).to_numpy(), expected)
+
+
+def test_module_trace_takes_a_name() -> None:
+    assert _linear().trace(_module_input_type(), name="linear").graph.name == (
+        "linear"
+    )
+
+
 def _graph_adding(name: str, addend: float, *, width: int = 4) -> Graph:
     """A graph whose name and signature say nothing about what it computes."""
     dtype = TensorType(DType.float32, [width], device=DeviceRef.CPU())

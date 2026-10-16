@@ -59,6 +59,7 @@ from max._interpreter_ops import (
 from max.driver import CPU, Buffer, Device
 from max.dtype import DType
 from max.experimental import custom
+from max.graph.ops.rms_norm import _float32_attr_value
 
 
 class _HasAxis(Protocol):
@@ -1294,32 +1295,34 @@ def _handle_rms_norm(
     """Routes eager rms_norm through a GC model.
 
     Looks up the rank-2 rms_norm :class:`~max.engine.Model` for the realized
-    input's device, dtype, and compile-time ``multiply_before_cast`` variant
-    (see :func:`rms_norm_gc.rms_norm_model`), view-shims the input to
-    canonical rank 2 ``[rows, features]``, executes the model, and
-    view-shims the result back. All views are zero-copy.
+    input's device and dtype and the op's compile-time ``epsilon``,
+    ``weight_offset`` and ``multiply_before_cast`` (see
+    :func:`rms_norm_gc.rms_norm_model`), view-shims the input to canonical
+    rank 2 ``[rows, features]``, executes the model, and view-shims the
+    result back. All views are zero-copy.
 
     Args:
         op: The rms_norm operation being handled.
-        inputs: Input buffers -- input tensor, weight, epsilon,
-            weight_offset. Epsilon and weight_offset are always on CPU
-            (MO_SingleDeviceWithHostOperands).
+        inputs: Input buffers -- input tensor and weight.
 
     Returns:
         A single-element list holding the normalized tensor buffer.
     """
-    x, weight, epsilon, weight_offset = inputs
+    x, weight = inputs
     assert isinstance(x, Buffer)
     assert isinstance(weight, Buffer)
-    assert isinstance(epsilon, Buffer)
-    assert isinstance(weight_offset, Buffer)
 
-    multiply_before_cast = bool(op.multiply_before_cast)
-    model = rms_norm_gc.rms_norm_model(x.device, x.dtype, multiply_before_cast)
+    model = rms_norm_gc.rms_norm_model(
+        x.device,
+        x.dtype,
+        _float32_attr_value(op.epsilon),
+        _float32_attr_value(op.weight_offset),
+        bool(op.multiply_before_cast),
+    )
 
     rows, features = rms_norm_gc.canonical_rank2(x.shape)
     x_view = x.view(x.dtype, (rows, features))
-    (out,) = model(x_view, weight, epsilon, weight_offset)
+    (out,) = model(x_view, weight)
 
     return [out.view(out.dtype, x.shape)]
 

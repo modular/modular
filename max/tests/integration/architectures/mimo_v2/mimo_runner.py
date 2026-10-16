@@ -24,7 +24,6 @@ import json
 import time
 from pathlib import Path
 from typing import Any
-from unittest import mock
 
 import numpy as np
 import numpy.typing as npt
@@ -32,7 +31,7 @@ from max import tree
 from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef, Graph, ShardingStrategy, TensorType
+from max.graph import DeviceRef, Graph, TensorType, ops
 from max.graph.weights import SafetensorWeights
 from max.nn.comm import Signals
 from max.nn.kv_cache import MHAKVCacheParams, MultiKVCacheParams
@@ -55,7 +54,7 @@ from max.pipelines.kv_cache.paged_kv_cache.jenga_cache_manager import (
 from max.pipelines.modeling.types import RequestID
 from transformers.configuration_utils import PretrainedConfig
 
-SABOTAGES = ("window_129", "bias_bf16", "mispaired_gate_up")
+SABOTAGES = ("window_129", "bias_bf16")
 """Defects :class:`Runner` can build in, for checking that a gate fails."""
 
 
@@ -110,7 +109,7 @@ class Runner:
         """Adapts the checkpoint, then compiles and loads the model.
 
         Args:
-            checkpoint: A directory with ``config.json`` and the export's
+            checkpoint: A directory with ``config.json`` and Xiaomi-format
                 safetensors.
             num_devices: The GPUs to shard over.
             max_seq_len: The longest sequence to run.
@@ -136,23 +135,11 @@ class Runner:
         config.target_layer_ids = list(range(self.hf.num_hidden_layers))
         if sabotage == "window_129":
             config.sliding_window += 1
-        elif sabotage == "mispaired_gate_up":
-            # StackedMoE's MXFP4 split: an even cut of the stacked gate|up axis,
-            # which gives one device only gate rows and the other only up rows.
-            mock.patch.object(
-                ShardingStrategy,
-                "gate_up",
-                staticmethod(
-                    lambda num_devices, axis=2: ShardingStrategy.axiswise(
-                        axis=axis, num_devices=num_devices
-                    )
-                ),
-            ).start()
         self.num_layers = self.hf.num_hidden_layers
 
         t0 = time.time()
         weights = SafetensorWeights(sorted(checkpoint.glob("*.safetensors")))
-        state = convert_safetensor_state_dict(dict(weights.items()), self.hf)
+        state = convert_safetensor_state_dict(dict(weights.items()))
         print(f"adapted {len(state)} tensors in {time.time() - t0:.0f} s")
         if sabotage == "bias_bf16":
             for name in state:
@@ -205,11 +192,24 @@ class Runner:
             )
             if isolated:
                 kv = {SLIDING: sliding, FULL: full}
+                freqs = {
+                    group: [
+                        ops.cast(rope.freqs_cis, DType.bfloat16).to(r)
+                        for r in refs
+                    ]
+                    for group, rope in model.ropes.items()
+                }
                 outputs = [
                     layer(
+                        ops.constant(
+                            model.kv_layer_indices[i],
+                            DType.uint32,
+                            device=DeviceRef.CPU(),
+                        ),
                         [inputs[i].tensor.to(r) for r in refs],
                         signal_buffers,
                         kv[config.layer_types[i]],
+                        freqs[config.layer_types[i]],
                         offsets,
                     )[0]
                     for i, layer in enumerate(model.layers)

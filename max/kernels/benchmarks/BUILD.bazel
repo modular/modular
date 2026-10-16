@@ -297,6 +297,8 @@ mojo_binary(
             # Same reason: `--sweep=1` takes the whole top-k A/B grid in
             # one process, and timing that needs a test target.
             "gpu/nn/bench_topk_mt.mojo",
+            # Same reason, timed on remote MI355.
+            "gpu/nn/bench_mla_decode_sparse_rows_amd.mojo",
             # Dedicated target below: the Qwen3.8 prod shape is carried in
             # `-D` defines, which the generic glob cannot pass.
             "gpu/nn/bench_qwen38_decode_attn.mojo",
@@ -331,6 +333,8 @@ mojo_binary(
             # Same reason: `--sweep=1` takes the whole top-k A/B grid in
             # one process, and timing that needs a test target.
             "gpu/nn/bench_topk_mt.mojo",
+            # Same reason, timed on remote MI355.
+            "gpu/nn/bench_mla_decode_sparse_rows_amd.mojo",
             # Dedicated target below: the Qwen3.8 prod shape is carried in
             # `-D` defines, which the generic glob cannot pass.
             "gpu/nn/bench_qwen38_decode_attn.mojo",
@@ -575,6 +579,37 @@ build_test(
     name = "gpu/nn/bench_topk_mt.mojo.test",
     tags = ["gpu"],
     targets = ["gpu/nn/bench_topk_mt.mojo.run"],
+)
+
+# Out of the `gpu/**` glob so it can be timed on remote MI355; `manual` keeps
+# it out of `//...` and the `build_test` keeps it compiling.
+mojo_test(
+    name = "gpu/nn/bench_mla_decode_sparse_rows_amd.mojo.run",
+    size = "enormous",
+    srcs = ["gpu/nn/bench_mla_decode_sparse_rows_amd.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    enable_assertions = False,
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = ["//:mi355_gpu"],
+    deps = [
+        "//max:internal_utils",
+        "//max:layout",
+        "//max:max_mojo",
+        "//max:nn",
+        "@mojo//:std",
+    ],
+)
+
+build_test(
+    name = "gpu/nn/bench_mla_decode_sparse_rows_amd.mojo.test",
+    tags = ["gpu"],
+    targets = ["gpu/nn/bench_mla_decode_sparse_rows_amd.mojo.run"],
 )
 
 # Deps/data/env shared by the softmax / m3 benchmark targets below.

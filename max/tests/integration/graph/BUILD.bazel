@@ -141,12 +141,14 @@ modular_py_test(
     # Every case compiles its own graph, which times the file out as one shard.
     per_test_shard_count = {
         "test_horizontal_fusion.py": 4,
+        "test_mamba2_fused_inputs.py": 4,
     },
     per_test_tags = {
         "test_epilogue_fusion.py": ["postsubmit"],
     },
     precompile_mefs = True,
     precompile_shards = {
+        "test_mamba2_fused_inputs.py": 4,
         "test_resize_nearest.py": 8,
     },
     tags = [
@@ -634,6 +636,7 @@ modular_py_test(
         "skip-ci-asan",
         "skip-ci-m7g",
         "skip-ci-ubsan",
+        "skip-external-ci",
     ],
     # The virtual CUDA (sm_100a) graphs need the NVPTX compiler to elaborate
     # kernels, which is Linux-only (CUDACompilationDevice).

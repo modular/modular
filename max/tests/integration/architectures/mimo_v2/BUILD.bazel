@@ -34,7 +34,7 @@ modular_py_test(
 )
 
 # Builds (never compiles) the graph, whose allreduce binds real accelerators.
-# The W4A8 experts run only on SM100.
+# The W4A4 experts run only on SM100.
 modular_py_test(
     name = "mimo_v2_gpu",
     size = "small",
@@ -101,7 +101,7 @@ modular_py_test(
     srcs = ["test_serving_numerics_gpu.py"],
     data = [":tiny_goldens"],
     exec_properties = {
-        "test.resources:gpu-memory": "4",
+        "test.resources:gpu-memory": "3",
     },
     gpu_constraints = [
         "//:b200_gpu",
@@ -124,24 +124,6 @@ modular_py_test(
     ],
 )
 
-# Real-checkpoint validation; needs both MiMo-V2.6-Flash snapshots on disk, so
-# it runs by hand on a host that has them, never in CI.
-modular_py_binary(
-    name = "check_real_checkpoint",
-    testonly = True,
-    srcs = ["check_real_checkpoint.py"],
-    main = "check_real_checkpoint.py",
-    tags = ["manual"],
-    deps = [
-        "//max/python/max/driver",
-        "//max/python/max/dtype",
-        "//max/python/max/graph",
-        "//max/python/max/pipelines/architectures/mimo_v2",
-        requirement("numpy"),
-        requirement("transformers"),
-    ],
-)
-
 # Scores MAX against the golden fixtures on a real or random checkpoint; needs
 # the checkpoint and fixtures on disk and a GPU, so it runs by hand.
 modular_py_binary(
@@ -155,26 +137,6 @@ modular_py_binary(
         ":mimo_runner",
         requirement("numpy"),
         requirement("safetensors"),
-    ],
-)
-
-# Checks the W4A8 MoE layer (interleave, usage stats, error against an exact
-# host reference) at production width; needs a B200, so it runs by hand.
-modular_py_binary(
-    name = "check_serving_moe",
-    testonly = True,
-    srcs = ["check_serving_moe.py"],
-    main = "check_serving_moe.py",
-    tags = ["manual"],
-    deps = [
-        "//max/python/max/driver",
-        "//max/python/max/dtype",
-        "//max/python/max/engine",
-        "//max/python/max/graph",
-        "//max/python/max/nn",
-        "//max/python/max/pipelines/architectures/mimo_v2",
-        requirement("numpy"),
-        requirement("transformers"),
     ],
 )
 

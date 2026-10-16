@@ -39,6 +39,9 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.experimental import functional as F
 from max.experimental.compilation import CompiledCallable
+from max.experimental.nn.common_layers.quant_ops import (
+    routed_weight_dtype,
+)
 from max.experimental.sharding import (
     DeviceMapping,
     DeviceMesh,
@@ -72,9 +75,6 @@ from max.pipelines.lib.vision_encoder_cache import VisionEncodeResult
 from max.pipelines.weights.quant import parse_quant_config
 from transformers import AutoConfig
 
-from ..deepseekV3_modulev3.layers.quant_ops import (
-    routed_weight_dtype,
-)
 from .batch_processor import KimiK2_5BatchProcessor
 from .context import KimiK2_5TextAndVisionContext
 from .inputs import KimiK2_5ModelInputs

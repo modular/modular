@@ -70,7 +70,7 @@ from max.nn.kv_cache import (
     KVCacheParamInterface,
     KVConnectorType,
 )
-from max.nn.kv_cache.cache_params import HostStagingAlloc, connector_type
+from max.nn.kv_cache.cache_params import HostStagingAlloc
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.kv_cache.paged_kv_cache.jenga_block_pool import (
     compute_jenga_ratios,
@@ -592,7 +592,7 @@ class TierConnector(KVConnector):
         _validate_leaves(leaves)
         leaf0 = next(iter(leaves.keys()))
         cfg = params.kv_connector_config
-        connector = connector_type(cfg)
+        connector = cfg.type
         # Resolve the extension before anything is checked or acquired, so a
         # build without it fails before the offload directory is taken.
         native_class = _native_connector_class()

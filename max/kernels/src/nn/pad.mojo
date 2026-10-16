@@ -647,33 +647,17 @@ def _memcpy_regions_fast[
     pre_pad_start_ptr: UnsafePointer[mut=True, Scalar[dtype], _],
 ):
     @inline(.always)
-    def modulo_inc(mut cnt: Int, modulo: Int):
-        """
-        Returns '(cnt+1)%modulo', provided that 'cnt' is initialized to zero
-        and all the increments are via this function.
-        """
-        cnt += 1
-        if cnt == modulo:
-            cnt = 0
-
-    def _common_loop[pre_copy: Bool, singleton: Bool]() {var}:
-        var curr_rem: Int = 0
-        var num_iters = pre_pad if pre_copy else post_pad
-        var copy_to: Int = (pre_pad - 1) if pre_copy else (pre_pad + non_pad)
-
-        for curr in range(num_iters):
-            var copy_from: Int
-
-            comptime if singleton:  # non_pad == 1
-                # handle singleton case
-                copy_from = pre_pad
-            else:
-                # curr_rem = (curr % (non_pad - 1))
-                var fwd: Int = (curr_rem + 1) * 2
-                modulo_inc(curr_rem, non_pad - 1)
-
-                # copy_from = copy_to +- ((curr % (non_pad - 1)) + 1) * 2
-                copy_from = (copy_to + fwd) if pre_copy else (copy_to - fwd)
+    def _copy_reflected_rows[pre_copy: Bool]() {var}:
+        # Padded output positions map to in-bounds input positions via the
+        # shared reflect fold (`_pad_reflect_repeat_src_index`); every copy
+        # reads the input region and writes a padded position, so the
+        # iteration order is irrelevant.
+        var first = 0 if pre_copy else pre_pad + non_pad
+        var count = pre_pad if pre_copy else post_pad
+        for copy_to in range(first, first + count):
+            var copy_from = pre_pad + _pad_reflect_repeat_src_index["reflect"](
+                copy_to, non_pad, pre_pad
+            )
 
             var copy_to_ptr = pre_pad_start_ptr + (copy_to * output_axis_stride)
             var copy_from_ptr = pre_pad_start_ptr + (
@@ -689,14 +673,9 @@ def _memcpy_regions_fast[
                 src=copy_from_ptr.as_unsafe_any_origin(),
                 count=output_axis_stride,
             )
-            copy_to += -1 if pre_copy else +1
 
-    if non_pad == 1:
-        _common_loop[pre_copy=True, singleton=True]()
-        _common_loop[pre_copy=False, singleton=True]()
-    else:
-        _common_loop[pre_copy=True, singleton=False]()
-        _common_loop[pre_copy=False, singleton=False]()
+    _copy_reflected_rows[pre_copy=True]()
+    _copy_reflected_rows[pre_copy=False]()
 
 
 struct _AxisParamsReflect[rank: Int, dtype: DType, paddings_type: DType](

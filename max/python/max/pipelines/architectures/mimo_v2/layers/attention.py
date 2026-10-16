@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import dataclasses
 from collections.abc import Iterable
+from dataclasses import dataclass
 
 from max.dtype import DType
 from max.graph import DeviceRef, ShardingStrategy, TensorValue, Weight, ops
@@ -28,11 +29,154 @@ from max.nn.kernels import (
 )
 from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.layer import Module, Shardable
-from max.nn.linear import Linear
+from max.nn.linear import Linear, linear
 from max.nn.quant_config import QuantConfig
-from max.nn.rotary_embedding import RotaryEmbedding
 
-from ..weight_adapters import QkvChunkLayout
+from ..quant import FP8_BLOCK
+
+
+@dataclass(frozen=True)
+class QkvChunkLayout:
+    """Row layout of one layer's fused ``qkv_proj`` in Xiaomi's chunk order.
+
+    The weight is ``chunks`` repeats of ``[q | k | v]``: chunk ``r`` holds the
+    ``r``-th equal slice of the query heads and of the KV heads, the rows one
+    rank of the tensor-parallel run that saved the checkpoint held. Each
+    chunk's FP8 block scales cover it padded to a whole 128-row block.
+    """
+
+    chunks: int
+    q_rows: int
+    k_rows: int
+    v_rows: int
+
+    @property
+    def rows(self) -> int:
+        """Rows of real weights per chunk."""
+        return self.q_rows + self.k_rows + self.v_rows
+
+    @property
+    def padded_rows(self) -> int:
+        """Rows per chunk on the FP8 block-scale grid."""
+        return -(-self.rows // FP8_BLOCK) * FP8_BLOCK
+
+
+class ChunkedQkvProj(Module, Shardable):
+    """``qkv_proj`` as the checkpoint stores it, padded per chunk in the graph.
+
+    The checkpoint's FP8 scales cover each chunk padded to whole 128-row
+    blocks, but its weight holds only the real rows, and the block-scaled
+    matmul reads row ``r``'s scale at ``r // 128``. The pad depends on the
+    weight alone, so the graph compiler runs it once, at model init. The pad
+    rows' outputs are zero.
+    """
+
+    weight: Weight
+    weight_scale: Weight
+
+    def __init__(
+        self,
+        layout: QkvChunkLayout,
+        hidden_size: int,
+        quant_config: QuantConfig,
+        device: DeviceRef,
+        is_sharding: bool = False,
+    ) -> None:
+        """Initializes the projection.
+
+        Args:
+            layout: The chunk layout this module holds.
+            hidden_size: The model width.
+            quant_config: The dense FP8 block-scaled config.
+            device: The device the projection runs on.
+            is_sharding: Whether :meth:`shard` is building this instance and
+                will assign its weights.
+        """
+        super().__init__()
+        self.layout = layout
+        self.hidden_size = hidden_size
+        self.quant_config = quant_config
+        if is_sharding:
+            return
+        self.weight = Weight(
+            "weight",
+            DType.float8_e4m3fn,
+            [layout.chunks * layout.rows, hidden_size],
+            device=device,
+        )
+        self.weight_scale = Weight(
+            "weight_scale",
+            quant_config.weight_scale.dtype,
+            [
+                layout.chunks * layout.padded_rows // FP8_BLOCK,
+                hidden_size // FP8_BLOCK,
+            ],
+            device=DeviceRef.CPU(),
+        )
+
+    def __call__(self, x: TensorValue) -> TensorValue:
+        """Returns ``[tokens, chunks * padded_rows]``, the pad columns zero."""
+        layout = self.layout
+        weight: TensorValue = self.weight.to(x.device)
+        if layout.padded_rows != layout.rows:
+            chunks = weight.reshape(
+                [layout.chunks, layout.rows, self.hidden_size]
+            )
+            chunks = ops.pad(
+                chunks, [0, 0, 0, layout.padded_rows - layout.rows, 0, 0]
+            )
+            weight = chunks.reshape(
+                [layout.chunks * layout.padded_rows, self.hidden_size]
+            )
+        return linear(
+            x,
+            weight,
+            quant_config=self.quant_config,
+            weight_scale=self.weight_scale,
+        )
+
+    @property
+    def sharding_strategy(self) -> ShardingStrategy | None:
+        """The weight sharding strategy."""
+        return self.weight.sharding_strategy
+
+    @sharding_strategy.setter
+    def sharding_strategy(self, strategy: ShardingStrategy) -> None:
+        if not strategy.is_rowwise:
+            raise ValueError("ChunkedQkvProj only shards by rows.")
+        if self.layout.chunks % strategy.num_devices:
+            raise ValueError(
+                f"ChunkedQkvProj: {strategy.num_devices} devices do not "
+                f"divide the {self.layout.chunks} qkv_proj chunks."
+            )
+        # An even row split of either tensor is whole chunks per device.
+        self.weight.sharding_strategy = strategy
+        self.weight_scale.sharding_strategy = strategy
+
+    def shard(self, devices: Iterable[DeviceRef]) -> list[ChunkedQkvProj]:
+        """Returns one projection per device, each with whole chunks."""
+        devices = list(devices)
+        layout = dataclasses.replace(
+            self.layout, chunks=self.layout.chunks // len(devices)
+        )
+        shards = []
+        for device, weight, scale in zip(
+            devices,
+            self.weight.shard(devices),
+            self.weight_scale.shard(devices),
+            strict=True,
+        ):
+            shard = ChunkedQkvProj(
+                layout,
+                self.hidden_size,
+                self.quant_config,
+                device,
+                is_sharding=True,
+            )
+            shard.weight = weight
+            shard.weight_scale = scale
+            shards.append(shard)
+        return shards
 
 
 def _split_heads(x: TensorValue, head_dim: int) -> TensorValue:
@@ -67,12 +211,15 @@ class MiMoV2Attention(Module, Shardable):
     """Attention for one MiMo-V2 decoder layer.
 
     ``qkv_proj`` is FP8 in Xiaomi's chunk order: each chunk holds a slice of
-    the query heads, the KV heads they read, and zero rows up to a whole FP8
-    block. The pad rows' outputs are dropped here. Q and K are ``head_dim``
-    wide and V is ``v_head_dim`` wide; each is zero-padded to the KV cache
-    head dim after the projection, which leaves ``QK^T`` unchanged, and the
-    output is cut back to ``v_head_dim`` before ``o_proj``. RoPE rotates the
-    leading ``rope.head_dim`` dims, NeoX style.
+    the query heads and the KV heads they read (see :class:`ChunkedQkvProj`).
+    The pad rows' outputs are dropped here. Q and K are ``head_dim`` wide and
+    V is ``v_head_dim`` wide; each is zero-padded to the KV cache head dim
+    after the projection, which leaves ``QK^T`` unchanged, and the output is
+    cut back to ``v_head_dim`` before ``o_proj``. RoPE rotates the leading
+    dims that ``freqs_cis`` covers, NeoX style.
+
+    The layer's KV-group index and ``freqs_cis`` are call arguments, so that
+    every layer of a group can share one compiled subgraph.
     """
 
     attention_sink_bias: Weight | None = None
@@ -85,8 +232,6 @@ class MiMoV2Attention(Module, Shardable):
         v_head_dim: int,
         hidden_size: int,
         kv_params: KVCacheParams,
-        layer_idx: int,
-        rope: RotaryEmbedding,
         scale: float,
         value_scale: float,
         sliding_window: int | None,
@@ -103,8 +248,6 @@ class MiMoV2Attention(Module, Shardable):
             v_head_dim: The V head dim.
             hidden_size: The model width.
             kv_params: The KV cache group this layer writes.
-            layer_idx: The layer's index within its KV group.
-            rope: The rotary embedding of the layer's group.
             scale: The softmax scale.
             value_scale: The factor V is multiplied by before the cache write.
             sliding_window: Keys attended to, the query included; ``None``
@@ -121,8 +264,6 @@ class MiMoV2Attention(Module, Shardable):
         self.v_head_dim = v_head_dim
         self.hidden_size = hidden_size
         self.kv_params = kv_params
-        self.layer_idx = layer_idx
-        self.rope = rope
         self.scale = scale
         self.value_scale = value_scale
         self.sliding_window = sliding_window
@@ -134,12 +275,8 @@ class MiMoV2Attention(Module, Shardable):
         self._sharding_strategy: ShardingStrategy | None = None
         if is_sharding:
             return
-        self.qkv_proj = Linear(
-            in_dim=hidden_size,
-            out_dim=layout.chunks * layout.padded_rows,
-            dtype=DType.float8_e4m3fn,
-            device=devices[0],
-            quant_config=quant_config,
+        self.qkv_proj = ChunkedQkvProj(
+            layout, hidden_size, quant_config, devices[0]
         )
         self.o_proj = Linear(
             in_dim=self.n_heads * v_head_dim,
@@ -157,15 +294,27 @@ class MiMoV2Attention(Module, Shardable):
 
     def __call__(
         self,
+        layer_idx: TensorValue,
         x: TensorValue,
         kv_collection: PagedCacheValues,
+        freqs_cis: TensorValue,
         input_row_offsets: TensorValue,
     ) -> TensorValue:
+        """Runs the layer.
+
+        Args:
+            layer_idx: The layer's index within its KV group, a ``uint32``
+                scalar on the host.
+            x: The ``[tokens, hidden]`` input.
+            kv_collection: The layer's KV group on this device.
+            freqs_cis: The group's RoPE table on this device, in ``x.dtype``.
+            input_row_offsets: Each sequence's first row in ``x``.
+
+        Returns:
+            This device's partial ``o_proj`` output.
+        """
         layout = self.layout
         tokens = x.shape[0]
-        layer_idx = ops.constant(
-            self.layer_idx, DType.uint32, device=DeviceRef.CPU()
-        )
 
         qkv = ops.reshape(
             self.qkv_proj(x),
@@ -191,7 +340,6 @@ class MiMoV2Attention(Module, Shardable):
         store_v_cache_ragged(
             kv_collection, _pad_heads(v, depth), input_row_offsets, layer_idx
         )
-        freqs_cis = ops.cast(self.rope.freqs_cis, q.dtype).to(q.device)
         q = fused_qk_ragged_rope(
             self.kv_params,
             q,
@@ -199,7 +347,7 @@ class MiMoV2Attention(Module, Shardable):
             kv_collection,
             freqs_cis,
             layer_idx,
-            interleaved=self.rope.interleaved,
+            interleaved=False,
         )
 
         attn = flash_attention_ragged(
@@ -235,13 +383,7 @@ class MiMoV2Attention(Module, Shardable):
                 "MiMoV2Attention only supports tensor parallelism."
             )
         n = strategy.num_devices
-        if self.layout.chunks % n:
-            raise ValueError(
-                f"MiMoV2Attention: {n} devices do not divide the "
-                f"{self.layout.chunks} qkv_proj chunks."
-            )
-        # Rows split on chunk boundaries, so each device gets whole chunks and
-        # whole FP8 blocks, and its heads in order.
+        # Each device gets whole chunks, so its heads in order.
         self.qkv_proj.sharding_strategy = ShardingStrategy.rowwise(n)
         self.o_proj.sharding_strategy = ShardingStrategy.head_aware_columnwise(
             n, self.n_heads, self.v_head_dim
@@ -275,8 +417,6 @@ class MiMoV2Attention(Module, Shardable):
                 v_head_dim=self.v_head_dim,
                 hidden_size=self.hidden_size,
                 kv_params=self.kv_params,
-                layer_idx=self.layer_idx,
-                rope=self.rope,
                 scale=self.scale,
                 value_scale=self.value_scale,
                 sliding_window=self.sliding_window,

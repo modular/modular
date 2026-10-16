@@ -94,7 +94,6 @@ from structured_kernels.amd_tile_io import (
 from ....utils import (
     ElementwiseComputeFn,
     ElementwiseEpilogueFn,
-    elementwise_epilogue_type,
     no_compute_fn,
     no_epilogue_fn,
 )
@@ -828,7 +827,6 @@ struct BlockScaledMatmulAMD[
     MMA_K: Int = 128,
     num_stages: Int = 1,
     matrix_format: CDNA4F8F6F4MatrixFormat = CDNA4F8F6F4MatrixFormat.FLOAT4_E2M1,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     b_matrix_format: CDNA4F8F6F4MatrixFormat = matrix_format,
 ]:
     """Native block-scaled matmul for AMD CDNA4.
@@ -854,11 +852,6 @@ struct BlockScaledMatmulAMD[
         matrix_format: Encoding of A (FP4 E2M1 by default). `BK_ELEMS`
             counts logical elements; payload and LDS widths follow each
             operand's own encoding.
-        elementwise_lambda_fn: Optional fused epilogue. When set, each
-            output fragment is handed to the lambda with its global
-            `(m, n)` instead of being stored to `c`, which lets a caller
-            route output bands elsewhere (e.g. scattering K/V into a
-            paged KV cache). Requires `MMA_M == 16` and `num_splits == 1`.
         b_matrix_format: Encoding of B. Defaults to `matrix_format` (A).
     """
 
@@ -1015,8 +1008,7 @@ struct BlockScaledMatmulAMD[
         """Same as `run` without split-K, storing the output through
         `epilogue_fn`.
 
-        Launch with `host_arg=epilogue_fn`. Requires `MMA_M == 16` and
-        `elementwise_lambda_fn` to be unset.
+        Launch with `host_arg=epilogue_fn`. Requires `MMA_M == 16`.
 
         Parameters:
             out_dtype: Element type of the output tensor `c`.
@@ -1081,8 +1073,7 @@ struct BlockScaledMatmulAMD[
         """Same as `run` without split-K, storing `compute_fn(idx, value)`
         into `c`.
 
-        Launch with `host_arg=compute_fn`. Requires `MMA_M == 16` and
-        `elementwise_lambda_fn` to be unset.
+        Launch with `host_arg=compute_fn`. Requires `MMA_M == 16`.
 
         Parameters:
             out_dtype: Element type of the output tensor `c`.
@@ -1340,11 +1331,7 @@ struct BlockScaledMatmulAMD[
         # the reduce kernel instead. The 32x32 MFMA's per-lane fragment is
         # spread over non-contiguous columns, which the chunked writer below
         # cannot address as one span.
-        comptime has_fused_epilogue = (
-            Bool(Self.elementwise_lambda_fn)
-            or has_epilogue_fn
-            or has_compute_fn
-        )
+        comptime has_fused_epilogue = has_epilogue_fn or has_compute_fn
         comptime if has_fused_epilogue:
             comptime assert num_splits == 1, (
                 "fused epilogue is unsupported with split-K: it would fire on"
@@ -1357,7 +1344,6 @@ struct BlockScaledMatmulAMD[
         var c_epilogue = RegTileEpilogue[
             out_dtype,
             Self.c_frag_size,
-            elementwise_lambda_fn=Self.elementwise_lambda_fn,
         ](c_split)
 
         # === Pipeline helpers ===
@@ -1721,7 +1707,7 @@ struct BlockScaledMatmulAMD[
         # reorders them via the CDNA 32x32 register permutation
         # (`src[4*n + 16*m]` → fragment position `4*m + n`).
         comptime if has_fused_epilogue:
-            # The lambda mode addresses the output by global (m, n) rather than
+            # The fused epilogue addresses the output by global (m, n) rather than
             # through the buffer resource, so it loses the V#'s row clamp and
             # has to gate `m` itself. For the 16x16 MFMA each lane owns
             # `c_frag_size` contiguous columns of one row: row = lane % MMA_M,
@@ -1780,7 +1766,6 @@ def _launch_block_scaled[
     MMA_N: Int = 16,
     MMA_K: Int = 128,
     matrix_format: CDNA4F8F6F4MatrixFormat = CDNA4F8F6F4MatrixFormat.FLOAT4_E2M1,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     b_matrix_format: CDNA4F8F6F4MatrixFormat = matrix_format,
 ](
     c: TileTensor[mut=True, ...],
@@ -1802,7 +1787,6 @@ def _launch_block_scaled[
         MMA_N=MMA_N,
         MMA_K=MMA_K,
         matrix_format=matrix_format,
-        elementwise_lambda_fn=elementwise_lambda_fn,
         b_matrix_format=b_matrix_format,
         has_epilogue_fn=False,
         has_compute_fn=False,
@@ -1832,7 +1816,6 @@ def _launch_block_scaled_impl[
     MMA_N: Int = 16,
     MMA_K: Int = 128,
     matrix_format: CDNA4F8F6F4MatrixFormat = CDNA4F8F6F4MatrixFormat.FLOAT4_E2M1,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     b_matrix_format: CDNA4F8F6F4MatrixFormat = matrix_format,
     *,
     has_epilogue_fn: Bool,
@@ -1893,7 +1876,6 @@ def _launch_block_scaled_impl[
         num_stages=num_stages,
         matrix_format=matrix_format,
         b_matrix_format=b_matrix_format,
-        elementwise_lambda_fn=elementwise_lambda_fn,
     ]
     comptime N = type_of(c).static_shape[1]
 
@@ -1989,7 +1971,6 @@ def _launch_block_scaled_split_k[
         CDNA4F8F6F4MatrixFormat.FLOAT4_E2M1 if lane_bytes
         == 16 else CDNA4F8F6F4MatrixFormat.FLOAT8_E4M3
     ),
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: TileTensor[mut=True, ...],
     a: TileTensor,
@@ -2014,7 +1995,6 @@ def _launch_block_scaled_split_k[
         MMA_N=MMA_N,
         MMA_K=MMA_K,
         matrix_format=matrix_format,
-        elementwise_lambda_fn=elementwise_lambda_fn,
         has_epilogue_fn=False,
         has_compute_fn=False,
     ](
@@ -2044,7 +2024,6 @@ def _launch_block_scaled_split_k_impl[
     MMA_N: Int = 16,
     MMA_K: Int = 128,
     matrix_format: CDNA4F8F6F4MatrixFormat = CDNA4F8F6F4MatrixFormat.FLOAT4_E2M1,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     *,
     has_epilogue_fn: Bool,
     has_compute_fn: Bool,
@@ -2067,11 +2046,11 @@ def _launch_block_scaled_split_k_impl[
     region), then run `_split_k_reduce_kernel` on the same stream to sum
     the partials and cast to `c`'s dtype.
 
-    `elementwise_lambda_fn`, `epilogue_fn` and `compute_fn` ride the REDUCE
-    so they fire once on the summed value: per-split firing would be wrong
-    arithmetic and would repeat the fused QKV+index consumer's KV-cache
-    scatter. With a lambda or `epilogue_fn` the reduce routes every element
-    through it and never stores to `c`.
+    `epilogue_fn` and `compute_fn` ride the REDUCE so they fire once on the
+    summed value: per-split firing would be wrong arithmetic and would
+    repeat the fused QKV+index consumer's KV-cache scatter. With
+    `epilogue_fn` the reduce routes every element through it and never
+    stores to `c`.
     """
     # The kernel below is instantiated at the default MFMA shape; refuse any
     # other request rather than silently downgrading it to 16x16x128.
@@ -2090,7 +2069,7 @@ def _launch_block_scaled_split_k_impl[
     comptime N = type_of(c).static_shape[1]
     comptime c_dtype = type_of(c).dtype
 
-    # Without the lambda the matmul stores the f32 workspace through
+    # The matmul stores the f32 workspace through
     # `RegTileWriter`, which spills an unaligned last column block into the next
     # row (see `_sk_n_aligned`); this backstops a direct caller.
     comptime assert (
@@ -2169,9 +2148,7 @@ def _launch_block_scaled_split_k_impl[
             block_dim=block_dim_x,
         )
     else:
-        comptime reduce_kernel = _split_k_reduce_kernel[
-            num_splits, c_dtype, elementwise_lambda_fn
-        ]
+        comptime reduce_kernel = _split_k_reduce_kernel[num_splits, c_dtype]
         ctx.enqueue_function[reduce_kernel](
             workspace.scratch.unsafe_ptr(),
             c.ptr,
@@ -2252,7 +2229,6 @@ def block_scaled_matmul_amd[
     MMA_N: Int = 16,
     MMA_K: Int = 128,
     lane_bytes: Int = 16,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: TileTensor[mut=True, ...],
     a: TileTensor[mut=False, .uint8, ...],
@@ -2281,10 +2257,6 @@ def block_scaled_matmul_amd[
         MMA_K: MFMA K-depth in logical FP4 elements. Default 128.
         lane_bytes: Operand bytes per lane per MFMA: 16 (MXFP4, default) or
             32 (MXFP8), which selects the operand format and byte extents.
-        elementwise_lambda_fn: Optional fused epilogue receiving each output
-            fragment with its global `(m, n)`; `c` is left untouched. Split-K
-            carries it too, on the reduce — one scalar per cell rather than a
-            fragment, still exactly once per cell.
 
     Args:
         c: Output [M, N] (any float dtype, e.g. float32 or bfloat16).
@@ -2299,7 +2271,6 @@ def block_scaled_matmul_amd[
         MMA_N=MMA_N,
         MMA_K=MMA_K,
         lane_bytes=lane_bytes,
-        elementwise_lambda_fn=elementwise_lambda_fn,
         has_epilogue_fn=False,
         has_compute_fn=False,
     ](c, a, b, a_scales, b_scales, no_epilogue_fn, no_compute_fn, ctx)
@@ -2348,7 +2319,6 @@ def block_scaled_matmul_amd[
         MMA_N=MMA_N,
         MMA_K=MMA_K,
         lane_bytes=lane_bytes,
-        elementwise_lambda_fn=None,
         has_epilogue_fn=True,
         has_compute_fn=False,
     ](c, a, b, a_scales, b_scales, epilogue_fn, no_compute_fn, ctx)
@@ -2396,7 +2366,6 @@ def block_scaled_matmul_amd[
         MMA_N=MMA_N,
         MMA_K=MMA_K,
         lane_bytes=lane_bytes,
-        elementwise_lambda_fn=None,
         has_epilogue_fn=False,
         has_compute_fn=True,
     ](c, a, b, a_scales, b_scales, no_epilogue_fn, compute_fn, ctx)
@@ -2411,7 +2380,6 @@ def _block_scaled_matmul_amd_impl[
     MMA_N: Int,
     MMA_K: Int,
     lane_bytes: Int,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type],
     has_epilogue_fn: Bool,
     has_compute_fn: Bool,
 ](
@@ -2614,7 +2582,6 @@ def _block_scaled_matmul_amd_impl[
                 MMA_N=MMA_N,
                 MMA_K=MMA_K,
                 matrix_format=_fmt,
-                elementwise_lambda_fn=elementwise_lambda_fn,
                 has_epilogue_fn=has_epilogue_fn,
                 has_compute_fn=has_compute_fn,
             ](c, a, b, a_scales, b_scales, M, epilogue_fn, compute_fn, ctx)
@@ -2633,7 +2600,6 @@ def _block_scaled_matmul_amd_impl[
                 MMA_N=MMA_N,
                 MMA_K=MMA_K,
                 matrix_format=_fmt,
-                elementwise_lambda_fn=elementwise_lambda_fn,
                 has_epilogue_fn=has_epilogue_fn,
                 has_compute_fn=has_compute_fn,
             ](c, a, b, a_scales, b_scales, M, epilogue_fn, compute_fn, ctx)
@@ -2648,7 +2614,6 @@ def _block_scaled_matmul_amd_impl[
                 WM=16,
                 WN=16,
                 matrix_format=_fmt,
-                elementwise_lambda_fn=elementwise_lambda_fn,
                 has_epilogue_fn=has_epilogue_fn,
                 has_compute_fn=has_compute_fn,
             ](c, a, b, a_scales, b_scales, M, epilogue_fn, compute_fn, ctx)
@@ -2669,7 +2634,6 @@ def _block_scaled_matmul_amd_impl[
                 MMA_N=MMA_N,
                 MMA_K=MMA_K,
                 matrix_format=_fmt,
-                elementwise_lambda_fn=elementwise_lambda_fn,
                 has_epilogue_fn=has_epilogue_fn,
                 has_compute_fn=has_compute_fn,
             ](c, a, b, a_scales, b_scales, M, epilogue_fn, compute_fn, ctx)
@@ -2684,7 +2648,6 @@ def _block_scaled_matmul_amd_impl[
                 MMA_N=MMA_N,
                 MMA_K=MMA_K,
                 matrix_format=_fmt,
-                elementwise_lambda_fn=elementwise_lambda_fn,
                 has_epilogue_fn=has_epilogue_fn,
                 has_compute_fn=has_compute_fn,
             ](c, a, b, a_scales, b_scales, M, epilogue_fn, compute_fn, ctx)
@@ -2699,7 +2662,6 @@ def _block_scaled_matmul_amd_impl[
                 MMA_N=MMA_N,
                 MMA_K=MMA_K,
                 matrix_format=_fmt,
-                elementwise_lambda_fn=elementwise_lambda_fn,
                 has_epilogue_fn=has_epilogue_fn,
                 has_compute_fn=has_compute_fn,
             ](c, a, b, a_scales, b_scales, M, epilogue_fn, compute_fn, ctx)
@@ -2717,7 +2679,6 @@ def _block_scaled_matmul_amd_impl[
                     MMA_N=MMA_N,
                     MMA_K=MMA_K,
                     matrix_format=_fmt,
-                    elementwise_lambda_fn=elementwise_lambda_fn,
                     has_epilogue_fn=has_epilogue_fn,
                     has_compute_fn=has_compute_fn,
                 ](c, a, b, a_scales, b_scales, M, epilogue_fn, compute_fn, ctx)
@@ -2737,7 +2698,6 @@ def _block_scaled_matmul_amd_impl[
                     MMA_N=MMA_N,
                     MMA_K=MMA_K,
                     matrix_format=_fmt,
-                    elementwise_lambda_fn=elementwise_lambda_fn,
                     has_epilogue_fn=has_epilogue_fn,
                     has_compute_fn=has_compute_fn,
                 ](c, a, b, a_scales, b_scales, M, epilogue_fn, compute_fn, ctx)
@@ -2761,7 +2721,6 @@ def _block_scaled_matmul_amd_impl[
                     MMA_N=MMA_N,
                     MMA_K=MMA_K,
                     matrix_format=_fmt,
-                    elementwise_lambda_fn=elementwise_lambda_fn,
                     has_epilogue_fn=has_epilogue_fn,
                     has_compute_fn=has_compute_fn,
                 ](c, a, b, a_scales, b_scales, M, epilogue_fn, compute_fn, ctx)
@@ -2776,7 +2735,6 @@ def _block_scaled_matmul_amd_impl[
                     MMA_N=MMA_N,
                     MMA_K=MMA_K,
                     matrix_format=_fmt,
-                    elementwise_lambda_fn=elementwise_lambda_fn,
                     has_epilogue_fn=has_epilogue_fn,
                     has_compute_fn=has_compute_fn,
                 ](c, a, b, a_scales, b_scales, M, epilogue_fn, compute_fn, ctx)
@@ -2810,7 +2768,6 @@ def _block_scaled_matmul_amd_impl[
                     MMA_N=MMA_N,
                     MMA_K=MMA_K,
                     matrix_format=_fmt,
-                    elementwise_lambda_fn=elementwise_lambda_fn,
                     has_epilogue_fn=has_epilogue_fn,
                     has_compute_fn=has_compute_fn,
                 ](c, a, b, a_scales, b_scales, M, epilogue_fn, compute_fn, ctx)
@@ -2825,7 +2782,6 @@ def _block_scaled_matmul_amd_impl[
                     MMA_N=MMA_N,
                     MMA_K=MMA_K,
                     matrix_format=_fmt,
-                    elementwise_lambda_fn=elementwise_lambda_fn,
                     has_epilogue_fn=has_epilogue_fn,
                     has_compute_fn=has_compute_fn,
                 ](c, a, b, a_scales, b_scales, M, epilogue_fn, compute_fn, ctx)
@@ -2840,7 +2796,6 @@ def _block_scaled_matmul_amd_impl[
                 MMA_N=MMA_N,
                 MMA_K=MMA_K,
                 matrix_format=_fmt,
-                elementwise_lambda_fn=elementwise_lambda_fn,
                 has_epilogue_fn=has_epilogue_fn,
                 has_compute_fn=has_compute_fn,
             ](c, a, b, a_scales, b_scales, M, epilogue_fn, compute_fn, ctx)
@@ -2897,7 +2852,6 @@ def _preb_grid_kernel[
     StoreSFB: TensorEngine,
     N: Int,
     K_BYTES: Int,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: TileTensor[mut=True, out_dtype, LayoutC, MutAnyOrigin, Engine=StoreC],
     a: TileTensor[DType.uint8, LayoutA, ImmutAnyOrigin, Engine=StoreA],
@@ -2919,7 +2873,6 @@ def _preb_grid_kernel[
         BK_ELEMS=BK_ELEMS,
         WN=WN,
         matrix_format=matrix_format,
-        elementwise_lambda_fn=elementwise_lambda_fn,
     ].run[
         out_dtype,
         LayoutC,
@@ -3137,7 +3090,6 @@ def _launch_block_scaled_preb[
     BK_ELEMS: Int,
     WN: Int,
     matrix_format: CDNA4F8F6F4MatrixFormat,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: TileTensor[mut=True, ...],
     a: TileTensor[mut=False, DType.uint8, ...],
@@ -3165,9 +3117,6 @@ def _launch_block_scaled_preb[
         BK_ELEMS: K tile size in FP6 elements per outer-K iteration.
         WN: Per-warp tile size along N.
         matrix_format: FP6 encoding of both operands.
-        elementwise_lambda_fn: Optional epilogue applied to each output
-            element in registers instead of storing it. The fused QKV ops
-            use it to scatter K/V into the paged cache.
     """
     _launch_block_scaled_preb_impl[
         BM,
@@ -3175,7 +3124,6 @@ def _launch_block_scaled_preb[
         BK_ELEMS,
         WN,
         matrix_format,
-        elementwise_lambda_fn=elementwise_lambda_fn,
         has_epilogue_fn=False,
         has_compute_fn=False,
     ](
@@ -3200,7 +3148,6 @@ def _launch_block_scaled_preb_impl[
     BK_ELEMS: Int,
     WN: Int,
     matrix_format: CDNA4F8F6F4MatrixFormat,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     *,
     has_epilogue_fn: Bool,
     has_compute_fn: Bool,
@@ -3356,7 +3303,6 @@ def _launch_block_scaled_preb_impl[
             type_of(b_scales_pre).Engine,
             N,
             K_BYTES,
-            elementwise_lambda_fn,
         ]
         ctx.enqueue_function[kernel](
             c,
@@ -3380,7 +3326,6 @@ def mxfp6_block_scaled_matmul_amd[
     fp6_format: CDNA4F8F6F4MatrixFormat = CDNA4F8F6F4MatrixFormat.FLOAT6_E2M3,
     num_splits: Int = 1,
     preshuffled_b: Bool = False,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     allow_lds_pingpong: Bool = True,
 ](
     c: TileTensor[mut=True, ...],
@@ -3425,11 +3370,8 @@ def mxfp6_block_scaled_matmul_amd[
             to the row-major dispatch) when `M <= DECODE_M_MAX`, where the
             existing split-K tile already performs well and preshuffling has
             not been validated. Incompatible with `num_splits > 1`.
-        elementwise_lambda_fn: Optional epilogue applied to each output
-            element in registers instead of storing it. The fused QKV ops
-            use it to scatter K/V into the paged cache.
         allow_lds_pingpong: Whether the depth-2 LDS ping-pong tile may be
-            selected. Callers whose `elementwise_lambda_fn` is expensive pass
+            selected. Callers whose epilogue is expensive pass
             False: the tile was measured with a plain store epilogue, and a
             heavier one spills past the GPU stack-frame limit at BM=128.
 
@@ -3447,7 +3389,6 @@ def mxfp6_block_scaled_matmul_amd[
         fp6_format=fp6_format,
         num_splits=num_splits,
         preshuffled_b=preshuffled_b,
-        elementwise_lambda_fn=elementwise_lambda_fn,
         allow_lds_pingpong=allow_lds_pingpong,
         has_epilogue_fn=False,
         has_compute_fn=False,
@@ -3494,7 +3435,6 @@ def mxfp6_block_scaled_matmul_amd[
         fp6_format=fp6_format,
         num_splits=num_splits,
         preshuffled_b=preshuffled_b,
-        elementwise_lambda_fn=None,
         allow_lds_pingpong=allow_lds_pingpong,
         has_epilogue_fn=True,
         has_compute_fn=False,
@@ -3541,7 +3481,6 @@ def mxfp6_block_scaled_matmul_amd[
         fp6_format=fp6_format,
         num_splits=num_splits,
         preshuffled_b=preshuffled_b,
-        elementwise_lambda_fn=None,
         allow_lds_pingpong=allow_lds_pingpong,
         has_epilogue_fn=False,
         has_compute_fn=True,
@@ -3556,7 +3495,6 @@ def _mxfp6_block_scaled_matmul_amd_impl[
     fp6_format: CDNA4F8F6F4MatrixFormat,
     num_splits: Int,
     preshuffled_b: Bool,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type],
     allow_lds_pingpong: Bool,
     has_epilogue_fn: Bool,
     has_compute_fn: Bool,
@@ -3611,7 +3549,6 @@ def _mxfp6_block_scaled_matmul_amd_impl[
                 WN=T_WN,
                 num_splits=T_NUM_SPLITS,
                 matrix_format=fp6_format,
-                elementwise_lambda_fn=elementwise_lambda_fn,
                 has_epilogue_fn=has_epilogue_fn,
                 has_compute_fn=has_compute_fn,
             ](c, a, b, a_scales, b_scales, M, epilogue_fn, compute_fn, ctx)
@@ -3623,7 +3560,6 @@ def _mxfp6_block_scaled_matmul_amd_impl[
                 WM=T_WM,
                 WN=T_WN,
                 matrix_format=fp6_format,
-                elementwise_lambda_fn=elementwise_lambda_fn,
                 has_epilogue_fn=has_epilogue_fn,
                 has_compute_fn=has_compute_fn,
             ](c, a, b, a_scales, b_scales, M, epilogue_fn, compute_fn, ctx)
@@ -3693,7 +3629,6 @@ def _mxfp6_block_scaled_matmul_amd_impl[
                 WN=W_WN,
                 num_splits=W_SPLITS,
                 matrix_format=fp6_format,
-                elementwise_lambda_fn=elementwise_lambda_fn,
                 has_epilogue_fn=has_epilogue_fn,
                 has_compute_fn=has_compute_fn,
             ](c, a, b, a_scales, b_scales, M, epilogue_fn, compute_fn, ctx)
@@ -3747,7 +3682,6 @@ def _mxfp6_block_scaled_matmul_amd_impl[
                 WN=D_WN,
                 num_splits=_decode_splits,
                 matrix_format=fp6_format,
-                elementwise_lambda_fn=elementwise_lambda_fn,
                 has_epilogue_fn=has_epilogue_fn,
                 has_compute_fn=has_compute_fn,
             ](c, a, b, a_scales, b_scales, M, epilogue_fn, compute_fn, ctx)
@@ -3801,7 +3735,6 @@ def _mxfp6_block_scaled_matmul_amd_impl[
                     BK_ELEMS=P_BK_ELEMS,
                     WN=P_WN,
                     matrix_format=fp6_format,
-                    elementwise_lambda_fn=elementwise_lambda_fn,
                     has_epilogue_fn=has_epilogue_fn,
                     has_compute_fn=has_compute_fn,
                 ](c, a, b, a_scales, b_scales, M, epilogue_fn, compute_fn, ctx)
@@ -3812,7 +3745,6 @@ def _mxfp6_block_scaled_matmul_amd_impl[
             BK_ELEMS=P_BK_ELEMS,
             WN=P_WN,
             matrix_format=fp6_format,
-            elementwise_lambda_fn=elementwise_lambda_fn,
             has_epilogue_fn=has_epilogue_fn,
             has_compute_fn=has_compute_fn,
         ](c, a, b, a_scales, b_scales, M, epilogue_fn, compute_fn, ctx)
@@ -3827,7 +3759,6 @@ def _mxfp6_block_scaled_matmul_amd_impl[
             WN=WN,
             num_splits=num_splits,
             matrix_format=fp6_format,
-            elementwise_lambda_fn=elementwise_lambda_fn,
             has_epilogue_fn=has_epilogue_fn,
             has_compute_fn=has_compute_fn,
         ](c, a, b, a_scales, b_scales, M, epilogue_fn, compute_fn, ctx)
@@ -3872,7 +3803,6 @@ def _mxfp6_block_scaled_matmul_amd_impl[
             WM=P2_WM,
             WN=P2_WN,
             matrix_format=fp6_format,
-            elementwise_lambda_fn=elementwise_lambda_fn,
             has_epilogue_fn=has_epilogue_fn,
             has_compute_fn=has_compute_fn,
         ](c, a, b, a_scales, b_scales, M, epilogue_fn, compute_fn, ctx)
@@ -3885,7 +3815,6 @@ def _mxfp6_block_scaled_matmul_amd_impl[
         WM=WM,
         WN=WN,
         matrix_format=fp6_format,
-        elementwise_lambda_fn=elementwise_lambda_fn,
         has_epilogue_fn=has_epilogue_fn,
         has_compute_fn=has_compute_fn,
     ](c, a, b, a_scales, b_scales, M, epilogue_fn, compute_fn, ctx)

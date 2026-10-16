@@ -603,3 +603,35 @@ def test_priming_one_width_does_not_disturb_another(
     )
     narrow_rows = multi_width_state.pinned_for(narrow).to_numpy()
     assert (narrow_rows[:_MAX_BATCH, :narrow, :] == 0).all()
+
+
+def test_prime_all_valid_skips_rewrites_until_another_writer(
+    multi_width_state: StructuredOutputOverlapState,
+) -> None:
+    """``prime_all_valid`` writes -1 rows, signals only when asked, and
+    rewrites them once another writer touched the buffer."""
+    state = multi_width_state
+    width = _WIDTHS[-1]
+    pinned = state.pinned_for(width).to_numpy()
+    pinned[...] = 0
+
+    # A callback that will signal is still running: write, do not signal.
+    state.prime_all_valid(1, width, signal=False)
+    assert state.bitmask_flag.load() == 0
+    assert (pinned[:1] == -1).all()
+    assert (pinned[1:] == 0).all(), "rows past the batch were written"
+
+    state.prime_all_valid(1, width)
+    assert state.bitmask_flag.load() == 1
+
+    # Rows already all-valid are not rewritten: a canary survives.
+    pinned[0, 0, 0] = 7
+    state.prime_all_valid(1, width)
+    assert pinned[0, 0, 0] == 7
+
+    # A larger batch, or another writer, forces a rewrite.
+    state.prime_all_valid(_MAX_BATCH, width)
+    assert (pinned[:_MAX_BATCH] == -1).all()
+    state.prime(np.zeros((1, width, state.packed_vocab_size), np.int32))
+    state.prime_all_valid(1, width)
+    assert (pinned[:1] == -1).all()

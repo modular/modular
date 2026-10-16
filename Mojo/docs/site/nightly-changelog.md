@@ -191,6 +191,8 @@ This version is still a work in progress.
   unprefixed spellings still work but emit a warning that async is unstable,
   with a fix-it to the prefixed spelling. The prefixed spelling suppresses the
   warning but doesn't make async stable.
+- The empty tuple `()` now always refers to a tuple value and not a type. The
+  type of an empty tuple should now always be written as `Tuple[]`.
 
 ## Library stabilizations
 
@@ -221,6 +223,14 @@ This version is still a work in progress.
           launch_1stage()
       case .TWO_STAGE | .LAMPORT:
           launch_2stage()
+  ```
+
+- `Array` now supports slicing with contiguous slices, returning a `Span` over
+  the selected elements whose mutability matches the array reference:
+
+  ```mojo
+  var arr = [1, 2, 3, 4]
+  var middle = arr[1:3]  # Span over [2, 3]
   ```
 
 - `Tuple` gained `first_of[T]()`, which returns a reference to the first
@@ -261,6 +271,14 @@ This version is still a work in progress.
 
   `hash()` keeps its `Hashable` meaning, so `hash(my_list)` still hashes a list
   element-by-element while `hash_bytes(my_list)` hashes its bytes.
+
+- `std.hashlib` was renamed to `std.hash`
+
+- `Hasher.finish` no longer takes its argument by movable convention
+
+- `Hasher` no longer requires an `__init__` method. Some usages will need to
+  be updated to require `Defaultable`. No changes have (yet) been made to how
+  collection hashers are seeded.
 
 - `Coord.product()` has a new parameterized overload, `product[T: DType]()`,
   which accumulates and returns the product at `T` rather than at
@@ -611,3 +629,7 @@ This version is still a work in progress.
 - `log()`, `log2()`, and `log1p()` of `inf` now return `inf` instead of `nan`.
 - `float64` `log1p()` is now accurate for inputs whose `1 + x` falls in
   `[sqrt(2)/2, sqrt(2))`, where it was off by up to about 7e9 ulp.
+- `SIMD.insert()` now compiles when the inserted value is a `Scalar`, and on
+  Apple GPUs.
+- Fixed Mojo tools sending the headers in `OTEL_EXPORTER_OTLP_HEADERS`, or
+  its signal-specific forms, to Modular's telemetry collector.

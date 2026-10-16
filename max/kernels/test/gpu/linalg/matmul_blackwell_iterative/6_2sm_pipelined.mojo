@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.hashlib import default_comp_time_hasher
+from std.hash import default_comp_time_hasher
 from std.math import align_up
 from std.math.uutils import umod, ufloordiv, udivmod
 from std.memory import bitcast

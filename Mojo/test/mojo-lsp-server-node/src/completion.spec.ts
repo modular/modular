@@ -213,7 +213,7 @@ def function(arg: Foo):
       `
 from std.collections import Deque
 from std.collections import Deque as RenamedDeque
-from std.hashlib import Hasher
+from std.hash import Hasher
 from std.math import sqrt
 from std import collections
 

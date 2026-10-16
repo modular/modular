@@ -57,30 +57,32 @@ def run_rms_norm_cpu[
         gamma_ptr,
         row_major(Coord(param_shape)),
     )
-    var epsilon = Float32(0.0001)
-    var weight_offset = Scalar[dtype](0.0)
+    comptime epsilon = Float32(0.0001)
+    comptime weight_offset = Float32(0.0)
 
-    @__copy_capture(input_buf)
     @inline(.always)
-    def input_fn[width: Int](coords: Coord) {imm} -> SIMD[dtype, width]:
+    def input_fn[
+        width: Int
+    ](coords: Coord) {var input_buf} -> SIMD[dtype, width]:
         var idx = input_buf.layout(coords)
         return input_buf.raw_load[width=width](idx)
 
     @inline(.always)
-    @__copy_capture(output_buf)
     def identity_output_fn[
         width: SIMDLength, alignment: Int
-    ](coords: Coord, val: SIMD[dtype, width]) {imm} -> None:
+    ](coords: Coord, val: SIMD[dtype, width]) {var output_buf} -> None:
         var idx = output_buf.layout(coords)
         output_buf.raw_store[width=width, alignment=alignment](idx, val)
 
-    rms_norm_cpu[multiply_before_cast=True](
+    rms_norm_cpu[
+        epsilon=epsilon,
+        weight_offset=weight_offset,
+        multiply_before_cast=True,
+    ](
         input_fn,
         identity_output_fn,
         Coord(shape),
         gamma,
-        epsilon,
-        weight_offset,
     )
 
     var input_ptr_ptr: MutPointer[
@@ -96,7 +98,7 @@ def run_rms_norm_cpu[
         # PyTorch converts the input to float32 before computing the RMS norm
         # https://github.com/meta-llama/llama/blob/689c7f261b9c5514636ecc3c5fefefcbb3e6eed7/llama/model.py#L76
         var val = (input_ptr[idx].cast[.float32]() / rms_ref).cast[dtype]() * (
-            gamma_ptr[c] + weight_offset
+            gamma_ptr[c] + weight_offset.cast[dtype]()
         )
         assert_almost_equal(val, output_ptr[idx], rtol=rtol)
 

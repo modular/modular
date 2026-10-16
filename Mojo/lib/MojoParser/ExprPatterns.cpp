@@ -561,14 +561,15 @@ CallNode::buildCheckList(PatternMatchBuilder &builder, CValue subject,
           << operand.expr->getRange();
       return failure();
     }
-    auto fieldOp = dyn_cast_or_null<StructFieldOp>(
-        lookup.getIfSuccess().front()->getIfOperation());
-    if (!fieldOp) {
+    auto *fieldDecl =
+        dyn_cast<StructFieldASTDecl>(lookup.getIfSuccess().front());
+    if (!fieldDecl) {
       builder.emitError(operand.getLoc(), "'")
           << fieldName.getValue() << "' is not a stored field of "
           << subjectType << operand.expr->getRange();
       return failure();
     }
+    StructFieldOp fieldOp = fieldDecl->getOp();
 
     if (!seenFields.insert(fieldName).second) {
       builder.emitError(operand.getLoc(), "duplicate field '")
@@ -1829,10 +1830,10 @@ static bool collectFiniteDims(PatternMatchBuilder &builder,
   ASTDecl *typeDecl = type.getDecl(builder.shared);
   if (!structType || !typeDecl)
     return false;
-  auto structDeclOp =
-      dyn_cast_or_null<LIT::StructDeclOp>(typeDecl->getIfOperation());
-  if (!structDeclOp)
+  auto *structDecl = dyn_cast<LIT::StructASTDecl>(typeDecl);
+  if (!structDecl)
     return false;
+  LIT::StructDeclOp structDeclOp = structDecl->getOp();
 
   for (LIT::StructFieldOp fieldOp : structDeclOp.getFieldDecls()) {
     ASTType fieldType = fieldOp.getReboundType(

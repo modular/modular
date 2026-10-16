@@ -29,6 +29,7 @@ from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.nn import Module, as_subgraph
 from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
+from max.experimental.nn.common_layers.quant_moe import QuantizedMoE
 from max.experimental.sharding import (
     DeviceMapping,
     Replicated,
@@ -46,7 +47,6 @@ from ...deepseekV3_modulev3.deepseekV3 import (
     gather_last_tokens,
     split_replicated_batch,
 )
-from ...deepseekV3_modulev3.layers.quant_moe import QuantizedMoE
 from ...deepseekV3_modulev3.model_config import DeepseekV3Config
 
 

@@ -13,7 +13,7 @@
 """Covers the fused-epilogue closures inside the CPU conv wrappers.
 
 `conv_nhwc_direct` and `conv_transposed_cpu` each build an internal
-`elementwise_epilogue_type` closure around the caller's SIMD epilogue. Those
+`ConvEpilogueFn` closure around the caller's SIMD epilogue. Those
 two closures are reached only through op registration, so no other Mojo test
 elaborates them; `test_conv_epilogue.mojo` calls `ConvDirectNHWC` directly and
 bypasses both wrappers.
@@ -99,10 +99,11 @@ def test_conv_nhwc_direct_fused() raises:
     # Scale each computed element, so a coordinate the wrapper's internal
     # closure mis-translates lands on the wrong element and fails the compare.
     @inline(.always)
-    @__copy_capture(out_ptr, col_stride, row_stride, plane_stride)
     def scale_epilogue[
         _dtype: DType, _width: SIMDLength, _alignment: Int = 1
-    ](coords: Coord, val: SIMD[_dtype, _width]) capturing:
+    ](coords: Coord, val: SIMD[_dtype, _width]) {
+        var out_ptr, var col_stride, var row_stride, var plane_stride
+    }:
         comptime assert coords.rank == 4
         var flat = (
             Int(coords[0].value()) * plane_stride
@@ -120,7 +121,7 @@ def test_conv_nhwc_direct_fused() raises:
     @inline(.always)
     def null_epilogue[
         _dtype: DType, _width: SIMDLength, _alignment: Int = 1
-    ](coords: Coord, val: SIMD[_dtype, _width]) capturing:
+    ](coords: Coord, val: SIMD[_dtype, _width]):
         pass
 
     conv_nhwc_direct[
@@ -130,7 +131,6 @@ def test_conv_nhwc_direct_fused() raises:
         False,
         conv_attr,
         False,
-        null_epilogue,
     ](
         input_tt,
         filter_tt,
@@ -141,6 +141,7 @@ def test_conv_nhwc_direct_fused() raises:
         Index(0, 0),
         Index(0, 0),
         1,
+        null_epilogue,
     )
 
     conv_nhwc_direct[
@@ -150,7 +151,6 @@ def test_conv_nhwc_direct_fused() raises:
         False,
         conv_attr,
         True,
-        scale_epilogue,
     ](
         input_tt,
         filter_tt,
@@ -161,6 +161,7 @@ def test_conv_nhwc_direct_fused() raises:
         Index(0, 0),
         Index(0, 0),
         1,
+        scale_epilogue,
     )
 
     for i in range(output_size):
@@ -221,10 +222,11 @@ def test_conv_transposed_cpu_fused() raises:
     var plane_stride = output_dims[0] * row_stride
 
     @inline(.always)
-    @__copy_capture(out_ptr, col_stride, row_stride, plane_stride)
     def scale_epilogue[
         _dtype: DType, _width: SIMDLength, _alignment: Int = 1
-    ](coords: Coord, val: SIMD[_dtype, _width]) capturing:
+    ](coords: Coord, val: SIMD[_dtype, _width]) {
+        var out_ptr, var col_stride, var row_stride, var plane_stride
+    }:
         comptime assert coords.rank == 4
         var flat = (
             Int(coords[0].value()) * plane_stride
@@ -237,10 +239,10 @@ def test_conv_transposed_cpu_fused() raises:
     @inline(.always)
     def null_epilogue[
         _dtype: DType, _width: SIMDLength, _alignment: Int = 1
-    ](coords: Coord, val: SIMD[_dtype, _width]) capturing:
+    ](coords: Coord, val: SIMD[_dtype, _width]):
         pass
 
-    conv_transposed_cpu[False, False, False, null_epilogue](
+    conv_transposed_cpu[False, False, False](
         plain_tt,
         input_tt,
         filter_tt,
@@ -249,9 +251,10 @@ def test_conv_transposed_cpu_fused() raises:
         Index(0, 0),
         Index(0, 0),
         Index(0, 0),
+        null_epilogue,
     )
 
-    conv_transposed_cpu[False, False, True, scale_epilogue](
+    conv_transposed_cpu[False, False, True](
         fused_tt,
         input_tt,
         filter_tt,
@@ -260,6 +263,7 @@ def test_conv_transposed_cpu_fused() raises:
         Index(0, 0),
         Index(0, 0),
         Index(0, 0),
+        scale_epilogue,
     )
 
     for i in range(output_size):

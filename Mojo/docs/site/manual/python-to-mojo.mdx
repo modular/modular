@@ -205,8 +205,8 @@ one-element `SIMD` values. Use `SIMD` directly for fixed-size vectors.
 
 ### Watch division types
 
-Division depends on the operands. In current Mojo, dividing two `Int` values
-with `/` produces an `Int`:
+Division depends on the operands. Dividing two `Int` values with `/` produces
+an `Int`:
 
 ```mojo
 var a: Int = 7
@@ -240,11 +240,11 @@ struct Point:
 The `out self` convention gives the initializer an uninitialized result value
 that it must initialize before returning.
 
+Use `@fieldwise_init` to have Mojo synthesize the initializer instead.
+
 Don't translate `class` to `struct` mechanically. Identify what the type
 guarantees, then express those guarantees through its fields, methods, and
 traits.
-
-Use `@fieldwise_init` to have Mojo synthesize the initializer instead.
 
 ## Traits make interfaces explicit
 

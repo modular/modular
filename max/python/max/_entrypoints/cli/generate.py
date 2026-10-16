@@ -41,7 +41,7 @@ from max.pipelines.lib import (
     PipelineArgs,
     PipelineConfig,
 )
-from max.pipelines.lib.generate import Batch, BatchPipeline
+from max.pipelines.lib.generate import BatchPipeline, GenerateIterator
 from max.pipelines.logging_utils import log_basic_config
 from max.pipelines.modeling.types import (
     ImageContentPart,
@@ -84,7 +84,7 @@ async def stream_context(
     Yields to the event loop after every step, so a SIGINT's cancellation
     lands before the next step and the batch releases the row.
     """
-    with Batch.from_contexts(
+    with GenerateIterator.from_contexts(
         pipeline, [context], caller="max generate"
     ) as batch:
         while not batch.done:

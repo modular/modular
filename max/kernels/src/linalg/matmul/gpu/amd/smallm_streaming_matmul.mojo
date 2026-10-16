@@ -19,10 +19,11 @@ else. Each 16-column tile of C is owned by one block; its warps split K and
 run mfma 16x16x32 bf16 with the B fragment loaded straight from global memory.
 
 B must be preshuffled into the fragment-major layout produced by
-``smallm_preshuffle_b`` (run once at weight-load time): a plain 16B load per
-lane then lands a full warp instruction on 1KB of contiguous memory. Reading a
-row-major B here is silently wrong — the layout is private to this pair, so
-the op must be invoked explicitly, never via generic matmul dispatch.
+``smallm_preshuffle_b`` (the graph op builds it once, at model init): a plain
+16B load per lane then lands a full warp instruction on 1KB of contiguous
+memory. Reading a row-major B here is silently wrong — the layout is private
+to this pair, so the op must be invoked explicitly, never via generic matmul
+dispatch.
 
 A stays row-major ``[m, k]`` (contiguous, row stride == K) and is small enough
 to be L2-resident. C is ``[m, n]``.
@@ -364,7 +365,9 @@ def smallm_preshuffle_b[
     n: Int,
     ctx: DeviceContext,
 ) raises:
-    """Launches the one-shot weight preshuffle (run at weight-load time).
+    """Launches the one-shot weight preshuffle that defines the B layout.
+
+    The graph op builds the same bytes with ``preshuffle_block_scaled_b``.
 
     Constraints:
         ``n % 16 == 0`` and ``k_static % (warps_per_block * 32) == 0``; both

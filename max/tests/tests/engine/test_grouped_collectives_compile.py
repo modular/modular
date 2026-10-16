@@ -46,6 +46,7 @@ from max.driver import CPU, Accelerator, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
+from max.graph.ops.rms_norm import _float32_attr
 from max.graph.type import _ChainType
 from max.graph.value import _ChainValue
 from max.nn import Signals
@@ -257,8 +258,6 @@ def _allgather_rms_norm_graph_unvalidated(cols_per_device: list[int]) -> Graph:
             )
             for i, device in enumerate(signals.devices)
         ]
-        eps = ops.constant(EPS, DType.float32, DeviceRef.CPU())
-        offset = ops.constant(WEIGHT_OFFSET, DType.bfloat16, DeviceRef.CPU())
         *results, out_chain = graph._add_op_generated(
             mo.CompositeDistributedAllgatherRmsNormOp,
             gathered_types,
@@ -267,9 +266,9 @@ def _allgather_rms_norm_graph_unvalidated(cols_per_device: list[int]) -> Graph:
             [v.tensor for v in graph.inputs[:NUM_GPUS]],
             [v.buffer for v in graph.inputs[2 * NUM_GPUS :]],
             [v.tensor for v in graph.inputs[NUM_GPUS : 2 * NUM_GPUS]],
-            [eps] * NUM_GPUS,
-            [offset] * NUM_GPUS,
             graph.device_chains.merge_for(signals.devices),
+            _float32_attr(EPS),
+            _float32_attr(WEIGHT_OFFSET),
             IntegerAttr(IntegerType(64), GROUP_SIZE),
         )
         assert isinstance(out_chain, _ChainValue)

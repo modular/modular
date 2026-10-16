@@ -113,7 +113,7 @@ def test_dynamic_async_copy[
     ctx.enqueue_function[kernel_type](
         input_view,
         output_view,
-        grid_dim=(ceildiv(M, BM), ceildiv(M, BN)),
+        grid_dim=(ceildiv(M, BM), ceildiv(N, BN)),
         block_dim=(1, 1),
     )
     output.to_host()

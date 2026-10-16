@@ -23,17 +23,30 @@ lives here while each arch keeps its own proposer.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
+from pathlib import Path
+from typing import Any
 
 import numpy as np
 from max.dtype import DType
-from max.graph import BufferType, DeviceRef, TensorType, TensorValue, ops
+from max.graph import (
+    BufferType,
+    DeviceRef,
+    Graph,
+    TensorType,
+    TensorValue,
+    Type,
+    Value,
+    ops,
+)
+from max.graph import Module as GraphModule
 from max.nn.transformer.transformer import (
     captures_by_device,
     fuse_captured_hidden_states,
 )
 from max.pipelines.speculative.block_driver import (
     BlockBatch,
+    BlockDriver,
     block_dispatch_metadata,
     block_kv_with_dispatch,
 )
@@ -43,6 +56,7 @@ from .gemma4 import Gemma4TextModel
 
 __all__ = [
     "SLIDING_KV",
+    "Gemma4BlockDriver",
     "Gemma4BlockTarget",
     "block_dispatch_metadata",
     "block_kv_with_dispatch",
@@ -110,3 +124,74 @@ class Gemma4BlockTarget:
 
     def ep_input_types(self) -> Sequence[TensorType | BufferType]:
         return ()
+
+
+class Gemma4BlockDriver(BlockDriver[TensorValue, TensorValue]):
+    """A block draft on the block driver, behind a Gemma4 target.
+
+    Traces the unified spec-decode graph with the target's paired caches
+    routed the same way for every block draft: the target verifies on its
+    full-attention cache and carries the sliding cache through.
+    """
+
+    def trace(
+        self,
+        *input_types: Type[Any],
+        name: str | None = None,
+        module: GraphModule | None = None,
+        custom_extensions: Iterable[Path] = (),
+        is_device_graph: bool = False,
+    ) -> Graph:
+        """Traces one spec-decode step, whose inputs are :meth:`input_types`.
+
+        Decodes the flat graph inputs by :meth:`decode_inputs`. Inputs the
+        signature doesn't declare reach :meth:`__call__` as ``None``.
+
+        Args:
+            *input_types: The graph's input types, :meth:`input_types`.
+            name: The name of the graph. Defaults to the class's qualified
+                name.
+            module: The MLIR module to add the graph to. Defaults to a new
+                module.
+            custom_extensions: Paths to custom kernel libraries the graph
+                uses.
+            is_device_graph: Whether to build a device graph.
+
+        Returns:
+            The traced :class:`~max.graph.Graph`.
+        """
+
+        def forward(*inputs: Value[Any]) -> tuple[TensorValue, ...]:
+            graph_inputs = self.decode_inputs(inputs)
+            return self(
+                tokens=graph_inputs.tokens,
+                input_row_offsets=graph_inputs.input_row_offsets,
+                draft_tokens=graph_inputs.draft_tokens,
+                signal_buffers=graph_inputs.signal_buffers,
+                kv_collections=graph_inputs.kv("target", "full_attention"),
+                passthrough_kv={
+                    SLIDING_KV: graph_inputs.kv("target", SLIDING_KV)
+                },
+                draft_kv_collections=graph_inputs.kv("draft"),
+                return_n_logits=graph_inputs.return_n_logits,
+                seed=graph_inputs.seed,
+                temperature=graph_inputs.temperature,
+                top_k=graph_inputs.top_k,
+                max_k=graph_inputs.max_k,
+                top_p=graph_inputs.top_p,
+                min_top_p=graph_inputs.min_top_p,
+                draft_probs_full=graph_inputs.draft_probs_full,
+                in_thinking_phase=graph_inputs.in_thinking_phase,
+                pinned_bitmask=graph_inputs.pinned_bitmask,
+                wait_payload=graph_inputs.wait_payload,
+                device_bitmask_scratch=graph_inputs.device_bitmask_scratch,
+            )
+
+        return Graph(
+            type(self).__qualname__ if name is None else name,
+            forward,
+            input_types=input_types,
+            custom_extensions=list(custom_extensions),
+            module=module,
+            is_device_graph=is_device_graph,
+        )

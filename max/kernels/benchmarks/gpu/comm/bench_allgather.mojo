@@ -63,23 +63,24 @@ def _compute_lengths[
     var base_length = num_bytes // elem_size
     var lengths = Array[Int, ngpus](fill=base_length)
 
-    comptime if length_mode == "uniform":
-        pass
-    elif length_mode == "halved_last":
-        lengths[ngpus - 1] = base_length // 2
-    elif length_mode == "doubled_first":
-        lengths[0] = base_length * 2
-    elif length_mode == "staircase":
-        for i in range(ngpus):
-            lengths[i] = base_length * (i + 1) // ngpus
-    elif length_mode == "uneven":
-        # First ceil(ngpus/2) GPUs get base_length, rest get base_length - 1.
-        # If base_length is 0 the shorter ones clamp to 0.
-        var half = (ngpus + 1) // 2
-        for i in range(half, ngpus):
-            lengths[i] = max(base_length - 1, 0)
-    else:
-        comptime assert False, "unknown length_mode: " + length_mode
+    comptime match length_mode:
+        case "uniform":
+            pass
+        case "halved_last":
+            lengths[ngpus - 1] = base_length // 2
+        case "doubled_first":
+            lengths[0] = base_length * 2
+        case "staircase":
+            for i in range(ngpus):
+                lengths[i] = base_length * (i + 1) // ngpus
+        case "uneven":
+            # First ceil(ngpus/2) GPUs get base_length, rest get base_length - 1.
+            # If base_length is 0 the shorter ones clamp to 0.
+            var half = (ngpus + 1) // 2
+            for i in range(half, ngpus):
+                lengths[i] = max(base_length - 1, 0)
+        case _:
+            comptime assert False, t"unknown length_mode: {length_mode}"
 
     return lengths^
 

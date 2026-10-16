@@ -14,23 +14,25 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
 from max.driver import Buffer, Device
 from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Graph
+from max.graph import DeviceRef
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn.transformer import ReturnLogits
 from max.pipelines.lib import (
-    GraphPipelineModel,
     KVCacheConfig,
     ModelInputs,
     PipelineConfig,
+    PipelineModel,
 )
+from max.pipelines.lib.graph_specs import GraphRole, GraphSpec
 from max.pipelines.lib.memory_estimation import MemoryPlan
 
-from .graph import build_graph
+from .encoder import WhisperEncoder
 
 logger = logging.getLogger("max.pipelines")
 
@@ -56,8 +58,9 @@ class WhisperInputs(ModelInputs):
 
 
 # TODO: Need specific Context type, not just this base type.
-class Whisper(GraphPipelineModel[Any]):
-    model: Model
+class Whisper(PipelineModel[Any, None, Model]):
+    state_dict: dict[str, Any]
+    """The weights, kept for :meth:`graph_specs`."""
 
     def __init__(
         self,
@@ -83,19 +86,31 @@ class Whisper(GraphPipelineModel[Any]):
             max_batch_size=max_batch_size,
             memory_plan=memory_plan,
         )
-        self.model = self.load_model(session)
+        self._models = self.load_graphs(session)
 
-    def _build_graph_for_compile(
-        self,
-        session: InferenceSession,
-        state_dict: dict[str, Any],
-        model_config: Any,
-    ) -> tuple[Graph, dict[str, Any]]:
-        del session, model_config
-        graph = build_graph(
-            state_dict,
+    @property
+    def model(self) -> Model:
+        """The compiled and initialized audio encoder."""
+        return self._models[GraphRole.ENCODER]
+
+    def _load_state_dict(self) -> dict[str, Any]:
+        self.state_dict = super()._load_state_dict()
+        return self.state_dict
+
+    def _create_model_config(self, state_dict: dict[str, Any]) -> None:
+        del state_dict
+
+    def graph_specs(self, model_config: None) -> Mapping[str, GraphSpec]:
+        """Returns the audio encoder graph."""
+        del model_config
+        encoder = WhisperEncoder(
             self.huggingface_config,
             self.dtype,
             DeviceRef.from_device(self.devices[0]),
         )
-        return graph, state_dict
+        encoder.load_state_dict(self.state_dict)
+        return {
+            GraphRole.ENCODER: GraphSpec(
+                encoder, "whisper_audio_encoder", encoder.input_types()
+            )
+        }
