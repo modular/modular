@@ -4724,9 +4724,12 @@ ErrorOrSuccess ParamOperatorAttr::validateForElaborator() const {
             for (const DTypeValue &lane : rhs.getValues()) {
               const APSInt &amount = lane.getData();
               if (amount.isNegative() || amount.uge(width)) {
+                SmallVector<char, 16> amountStr;
+                amount.toString(amountStr);
                 std::string typeName =
                     getTypeAsString(operands[0].getType()).str();
-                return Error("shift amount " + amount.toString(10) +
+                return Error("shift amount " +
+                             StringRef(amountStr.data(), amountStr.size()).str() +
                              " is outside the valid range 0.." +
                              std::to_string(width - 1) + " for " + typeName);
               }
