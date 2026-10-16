@@ -1103,6 +1103,12 @@ This version is still a work in progress.
   draft under any other method now fails at startup with a message naming
   the method to use.
 
+- Changed shape functions registered with
+  `@extensibility.register_shape_function()`
+  to require tensor-trait arguments. Use `Some[Tensor]` for shapes,
+  `Some[TileTensorable]` for element values, or `TensorTuple` for variadic
+  inputs. Legacy tensor aliases remain supported on `execute()`.
+
 - Removed `max.pipelines.GenerateMixin` and the `generate()` and
   `generate_async()` methods it gave text generation pipelines. Build
   contexts with `pipeline.tokenizer.new_context()` and run them with

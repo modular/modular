@@ -196,6 +196,13 @@ def add_one_shape(x: Some[Tensor]) -> IndexList[type_of(x).rank]:
     )
 ```
 
+Shape functions must use tensor traits for tensor arguments. If a shape function
+reads element values, use `Some[TileTensorable]` and access them through
+`to_tile_tensor()`. For variadic inputs, use a `TensorTuple` whose elements bind
+the traits they need. Legacy aliases such as `InputTensor` and
+`InputVariadicTensors` are not accepted on shape functions; `execute()` can
+still use them.
+
 ### Add the custom op to a Python graph
 
 Let's now look at the corresponding
