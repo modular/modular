@@ -17,4 +17,7 @@
 # CHECK: shift amount 9 is outside the valid range 0..7 for {{UInt8|uint8|scalar<ui8>}}
 # CHECK-NOT: could not simplify operator shr(1, 9)
 def main():
-    _ = UInt8(1) >> 9
+    # Force the parameter evaluator to materialize the shift result instead of
+    # silently discarding the expression.
+    var x = UInt8(1) >> 9
+    _ = x
