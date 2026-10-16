@@ -56,4 +56,3 @@ def main():
     # CHECK: 1
     # CHECK: 2
     visit_a(0, children)
-
