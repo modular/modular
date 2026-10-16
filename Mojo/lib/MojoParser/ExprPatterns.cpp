@@ -188,6 +188,12 @@ void PatternCommand::dump() const { print(llvm::errs()); }
 // Per-ExprNode Support for Matching.
 //===----------------------------------------------------------------------===//
 
+static bool isNegatedNumericLiteral(const ExprNode *expr) {
+  return expr->kind == ExprNode::kNeg &&
+         isa<IntLiteralNode, FloatLiteralNode>(
+             cast<UnaryOpNode>(expr)->subExpr->getWithoutParens());
+}
+
 LogicalResult
 ExprNode::buildCheckList(PatternMatchBuilder &builder, CValue subject,
                          const PatternPath *path,
@@ -210,6 +216,17 @@ StringRef ExprNode::getLiteralSpelling() const { return {}; }
 StringRef IntLiteralNode::getLiteralSpelling() const { return spelling; }
 
 StringRef FloatLiteralNode::getLiteralSpelling() const { return spelling; }
+
+StringRef UnaryOpNode::getLiteralSpelling() const {
+  if (isNegatedNumericLiteral(this)) {
+    const char *startPos = opLoc.getPointer();
+    const char *lastPos = isa<ParenNode>(subExpr)
+                              ? subExpr->getRangeEnd().getPointer() + 1
+                              : subExpr->getLiteralSpelling().end();
+    return StringRef(startPos, lastPos - startPos);
+  }
+  return {};
+}
 
 StringRef BoolLiteralNode::getLiteralSpelling() const {
   return value ? "True" : "False";
@@ -363,12 +380,18 @@ LogicalResult UnaryOpNode::buildCheckList(
   if (kind == kPrefixEQ) {
     const ExprNode *value = subExpr->getWithoutParens();
     if (isa<BoolLiteralNode, IntLiteralNode, FloatLiteralNode,
-            StringLiteralNode, SetInitLiteralNode>(value)) {
+            StringLiteralNode, SetInitLiteralNode>(value) ||
+        isNegatedNumericLiteral(value)) {
       builder.emitWarning(getLoc())
           << "'==' is redundant when matching a literal; remove it"
           << FixIt::remove(getLoc());
     }
     out.push_back(builder.createEqual(path, this->subExpr));
+    return success();
+  }
+
+  if (isNegatedNumericLiteral(this)) {
+    out.push_back(builder.createEqual(path, this));
     return success();
   }
 
