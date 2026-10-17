@@ -415,7 +415,7 @@ private:
     case CmpPredicate::EQ:
       return LLVM::FCmpPredicate::oeq;
     case CmpPredicate::NE:
-      return LLVM::FCmpPredicate::one;
+      return LLVM::FCmpPredicate::une;
     case CmpPredicate::LT:
       return LLVM::FCmpPredicate::olt;
     case CmpPredicate::GT:

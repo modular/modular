@@ -17,6 +17,7 @@ from std.sys.info import Endian, is_64bit
 from std.bit import count_leading_zeros
 from std.memory import alloc, Layout
 from std.memory.unsafe import bitcast
+from std.benchmark import black_box
 from std.builtin._format_float import _write_float
 from std.simd import _modf
 from std.itertools import product
@@ -2205,6 +2206,17 @@ def test_comparison() raises:
         test_dtype[dtype]()
 
     test_dtype[.bfloat16]()
+
+
+def test_nan_comparison() raises:
+    var n = black_box(nan[DType.float64]())
+    var v = black_box(SIMD[DType.float64, 4](1.0, 2.0, n, 4.0))
+    var lit = black_box(SIMD[DType.float64, 4](2.0))
+
+    assert_equal(v.ne(lit), ~v.eq(lit))
+    assert_true(v.ne(lit)[2])
+    assert_true(n.ne(2.0))
+    assert_true(Bool(n))
 
 
 def test_float_conversion() raises:
