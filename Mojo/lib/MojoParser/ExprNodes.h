@@ -747,6 +747,7 @@ struct UnaryOpNode final : public ExprNode {
   ELVIITResult
   emitLValueIfImplicitlyTyped(IREmitter &emitter, PatternDeclKind kind,
                               bool hasInferrableRHS) const override;
+  llvm::StringRef getLiteralSpelling() const override;
   void print(mlir::raw_indented_ostream &os) const override;
   AnyValue emitTransfer(AnyValue argValue, ExprDest &dest,
                         IREmitter &emitter) const;

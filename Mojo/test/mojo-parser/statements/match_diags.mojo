@@ -536,6 +536,13 @@ def match_exhaustivity_literal_subjects(n: Int, s: String):
     case 1:
         pass
 
+    match n:
+    case -1:
+        pass
+    # expected-warning @+1 {{case is unreachable; '-1' is already covered by a previous case}}
+    case -1:
+        pass
+
     # Or of literals covers each alternative; a later duplicate is unreachable.
     match n:
     case 0 | 1 | 2:
@@ -670,6 +677,13 @@ def match_redundant_explicit_literal_patterns(
     case _:
         pass
 
+    match value:
+    # expected-warning @+1 {{'==' is redundant when matching a literal; remove it}}
+    case == -1:
+        pass
+    case _:
+        pass
+
     match pair:
     # expected-warning @+1 {{'==' is redundant when matching a literal; remove it}}
     case (_, == "expected"):
@@ -684,6 +698,12 @@ def match_expression_patterns_require_explicit_equality(
     match value:
     # expected-error @+1 {{expression is not a valid match pattern; use '==' to compare against its value}}
     case pair[0]:
+        pass
+    # expected-error @+1 {{expression is not a valid match pattern; use '==' to compare against its value}}
+    case -value:
+        pass
+    # expected-error @+1 {{expression is not a valid match pattern; use '==' to compare against its value}}
+    case -(1 + 0):
         pass
     case _:
         pass

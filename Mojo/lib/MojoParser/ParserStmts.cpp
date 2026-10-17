@@ -2095,6 +2095,19 @@ void StmtParser::emitComptimeCases(ArrayRef<MatchCaseEntry> caseEntries,
   }
 }
 
+/// Return whether clustering should be skipped for a leading command.
+static bool shouldSkipClustering(const PatternCommand *command) {
+  if (command->kind != PatternCommand::Kind::Equal)
+    return command->kind != PatternCommand::Kind::EnumTag;
+
+  // Non-literal value patterns (`.float16`, `Self.HOST`, `{}`) are equality
+  // tests with no literal spelling.
+  // Clustering requires a stable sort key, so emit each as its own case.
+  // Preserve case order: -0 and 0 compare equal.
+  const ExprNode *exp = command->expr;
+  return exp->getLiteralSpelling().empty() || exp->kind == ExprNode::kNeg;
+}
+
 /// Determine if some number of the specified cases can be emitted as a cluster
 /// - this is possible when they share a common leading test, and that test can
 /// be expressed as a logical "switch" statement.  This includes tests against
@@ -2106,17 +2119,8 @@ static size_t findClusterSize(ArrayRef<MatchCaseEntry> caseEntries) {
   if (firstCaseCommands.empty())
     return 1;
 
-  // Only support literal equality and enum tag checks in clusters.
   const PatternCommand *firstCommand = firstCaseCommands.front();
-  if (firstCommand->kind != PatternCommand::Kind::Equal &&
-      firstCommand->kind != PatternCommand::Kind::EnumTag)
-    return 1;
-
-  // Non-literal value patterns (`.float16`, `Self.HOST`, `{}`) are equality
-  // tests with no literal spelling. Clustering requires a stable sort key, so
-  // emit each one as its own case instead.
-  if (firstCommand->kind == PatternCommand::Kind::Equal &&
-      firstCommand->expr->getLiteralSpelling().empty())
+  if (shouldSkipClustering(firstCommand))
     return 1;
 
   // Great, now we check to see how big of a cluster we can make.  Absorb as
@@ -2145,7 +2149,8 @@ static size_t findClusterSize(ArrayRef<MatchCaseEntry> caseEntries) {
       break;
     const PatternCommand *nextCommand = currentCase.commandList.front();
     if (nextCommand->kind != firstCommand->kind ||
-        nextCommand->path != firstCommand->path)
+        nextCommand->path != firstCommand->path ||
+        shouldSkipClustering(nextCommand))
       break;
 
     // The cases we find are only exclusive if subsequent matches don't exist.
