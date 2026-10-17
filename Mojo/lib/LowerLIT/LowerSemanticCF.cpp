@@ -115,7 +115,8 @@ private:
   /// Pass through an `HLCF::MatchOp`, rewriting nested regions.
   /// Returns true when the match does not fall through (caller should stop).
   bool lowerMatchOp(HLCF::MatchOp matchOp, CodeEffects &effects);
-  bool checkSelfRecursion(Block &block, bool isConditional);
+  bool checkSelfRecursion(Block &block, bool isConditional,
+                          bool &doesBreak);
 };
 } // end anonymous namespace
 
@@ -1011,7 +1012,8 @@ void LowerSemanticCF::lowerBlock(Block &block, CodeEffects &effects) {
 /// called in a conditional context (e.g. under an if check).  This returns
 /// `true` if the block might early return out of the enclosing function with a
 /// return or throw, `false` if it will fall through.
-bool LowerSemanticCF::checkSelfRecursion(Block &block, bool isConditional) {
+bool LowerSemanticCF::checkSelfRecursion(Block &block, bool isConditional,
+                                         bool &doesBreak) {
   for (Operation &op : llvm::make_early_inc_range(block)) {
     // Notice self-recursive calls so we can check them out later.  If we are
     // invoked in an unconditional area, we can emit the warning.
@@ -1029,6 +1031,11 @@ bool LowerSemanticCF::checkSelfRecursion(Block &block, bool isConditional) {
     if (isa<HLCF::ReturnOp, LIT::ErrorReturnOp>(op))
       return true;
 
+    if (isa<HLCF::BreakOp, HLCF::ComptimeForBreakOp>(op)) {
+      doesBreak = true;
+      return false;
+    }
+
     // Most ops don't have regions and are just fallthrough.
     if (!op.getNumRegions())
       continue;
@@ -1037,14 +1044,30 @@ bool LowerSemanticCF::checkSelfRecursion(Block &block, bool isConditional) {
     if (isa<LIT::FnOp>(op))
       continue;
 
+    // Loops consume break from body.
+    if (isa<HLCF::LoopOp, HLCF::ComptimeForOp>(op)) {
+      for (auto &region : op.getRegions()) {
+        bool loopBreaks = false;
+        if (checkSelfRecursion(region.front(), isConditional, loopBreaks))
+          return true;
+      }
+      continue;
+    }
+
     // If we are already in conditional code, or if this is an 'if'-like
     // operation, then the subregions are executed conditionally.
     bool isSubregionConditional =
         isConditional || isa<HLCF::ComptimeIfOp, HLCF::IfOp, HLCF::MatchOp>(op);
-    // Handle things like if statements, HLCF::Loop, try, etc.
+    // Handle things like if statements, try, etc.
     for (auto &region : op.getRegions()) {
-      if (checkSelfRecursion(region.front(), isSubregionConditional))
+      bool regionBreaks = false;
+      if (checkSelfRecursion(region.front(), isSubregionConditional,
+                             regionBreaks))
         return true;
+      if (regionBreaks) {
+        doesBreak = true;
+        isConditional = true;
+      }
     }
   }
 
@@ -1079,8 +1102,11 @@ void LowerSemanticCF::run() {
   // unconditionally executed.  If so, they are infinite recursion.  We need
   // control flow information to avoid diagnosing recursive calls in if
   // statements.
-  if (hasRecursiveCalls)
-    (void)checkSelfRecursion(*theFunc.getBody(), /*isConditional=*/false);
+  if (hasRecursiveCalls) {
+    bool doesBreak = false;
+    (void)checkSelfRecursion(*theFunc.getBody(), /*isConditional=*/false,
+                             doesBreak);
+  }
 }
 
 //===----------------------------------------------------------------------===//

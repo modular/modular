@@ -34,6 +34,12 @@ def yet_another_unsafe_factorial(next: Int, thusFar: Int) -> Int:
     return another_unsafe_factorial(next, thusFar)
 
 
+def visit_a(node: Int, children: List[List[Int]]):
+    print(node)
+    for c in children[node]:
+        visit_a(c, children)
+
+
 def main():
     var x = unsafe_factorial(3, 1)
     var y = another_unsafe_factorial(3, 1)
@@ -41,3 +47,12 @@ def main():
     print(x)
     # CHECK: 6
     print(y)
+
+    var children = List[List[Int]]()
+    children.append([1, 2])
+    children.append(List[Int]())
+    children.append(List[Int]())
+    # CHECK: 0
+    # CHECK: 1
+    # CHECK: 2
+    visit_a(0, children)
