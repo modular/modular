@@ -43,6 +43,10 @@ domain-specific libraries for machine learning and scientific computing.
 import std.math
 from std.collections import Array
 from std.collections.interval import IntervalElement
+from std.collections.string.string_span import (
+    _get_kgen_string,
+    get_static_string,
+)
 from std.collections.string.string import (
     _calc_initial_buffer_size_int32,
     _calc_initial_buffer_size_int64,
@@ -83,6 +87,7 @@ from std.builtin.simd_length import SIMDLength
 from std.builtin.int import _FromInt
 from std.math import DivModable, Powable
 from std.memory import bitcast, unsafe_memcpy, pack_bits
+from std.os import abort
 from std.python import (
     ConvertibleToPython,
     ConvertibleFromPython,
@@ -460,6 +465,398 @@ struct FastMathFlag(EnumLike, Equatable, ImplicitlyCopyable, RegisterPassable):
             return __mlir_attr.`#pop.fmf<fast>`
 
         return __mlir_attr.`#pop.fmf<none>`
+
+
+# ===----------------------------------------------------------------------=== #
+# Overflow-checked SIMD wrappers
+# ===----------------------------------------------------------------------=== #
+
+
+@fieldwise_init
+struct OverflowError[dtype: DType, length: SIMDLength](
+    TrivialRegisterPassable, Writable
+):
+    """The error raised when an integer `RaisingSIMD` operation overflows.
+
+    Parameters:
+        dtype: The element type of the operands.
+        length: The number of lanes of the operands.
+    """
+
+    var overflow_bits: SIMD[Self.dtype, Self.length]
+    """The wrapped (two's complement) result of the operation."""
+
+    var overflowed: SIMD[.bool, Self.length]
+    """A mask of the lanes whose result overflowed."""
+
+    def write_to(self, mut writer: Some[Writer]):
+        """Writes a description of the overflow to the writer.
+
+        Args:
+            writer: The writer to write to.
+        """
+        writer.write(
+            "OverflowError(overflow_bits=",
+            self.overflow_bits,
+            ", overflowed=",
+            self.overflowed,
+            ")",
+        )
+
+
+@always_inline
+def _llvm_digit_str[d: Int]() -> StaticString:
+    comptime match d:
+        case 0:
+            return "0"
+        case 1:
+            return "1"
+        case 2:
+            return "2"
+        case 3:
+            return "3"
+        case 4:
+            return "4"
+        case 5:
+            return "5"
+        case 6:
+            return "6"
+        case 7:
+            return "7"
+        case 8:
+            return "8"
+        case _:
+            return "9"
+
+
+@always_inline
+def _llvm_int_str[n: Int]() -> StaticString:
+    """Formats a non-negative integer as a compile-time decimal string."""
+    comptime digit = _llvm_digit_str[n % 10]()
+    comptime if n < 10:
+        return digit
+    else:
+        return get_static_string[_llvm_int_str[n // 10](), digit]()
+
+
+@always_inline
+def _llvm_simd_type_str[dtype: DType, length: Int]() -> StaticString:
+    """Spells the LLVM type that an integral or boolean `SIMD` lowers to."""
+    comptime elt = "i1" if dtype == .bool else get_static_string[
+        "i", _llvm_int_str[bit_width_of[dtype]()]()
+    ]()
+    comptime if length == 1:
+        return elt
+    else:
+        return get_static_string[
+            "vector<", _llvm_int_str[length](), "x", elt, ">"
+        ]()
+
+
+@always_inline
+def _op_with_overflow[
+    signed_intrin: StaticString,
+    unsigned_intrin: StaticString,
+    dtype: DType,
+    length: SIMDLength,
+](a: SIMD[dtype, length], b: SIMD[dtype, length]) -> Tuple[
+    SIMD[dtype, length], SIMD[.bool, length]
+]:
+    """Applies an `llvm.*.with.overflow` intrinsic lane-wise.
+
+    The intrinsic returns `{<N x T>, <N x i1>}`. `_RegisterPackType` can't
+    express that for vectors because it pads the struct to the Mojo layout of
+    `SIMD[.bool, N]`, so the result is typed as an `!llvm.struct` directly and
+    its fields are extracted in the LLVM dialect.
+
+    Returns:
+        The wrapped result and a mask of the lanes that overflowed.
+    """
+    comptime assert dtype.is_integral(), "must be an integral type"
+    comptime T = SIMD[dtype, length]
+    comptime Mask = SIMD[.bool, length]
+    comptime intrin = signed_intrin if dtype.is_signed() else unsigned_intrin
+    comptime value_ty = _llvm_simd_type_str[dtype, Int(length)]()
+    comptime mask_ty = _llvm_simd_type_str[.bool, Int(length)]()
+
+    var res = __mlir_op.`pop.call_llvm_intrinsic`[
+        intrin=_get_kgen_string[intrin](),
+        _type=__mlir_deferred_type[
+            `!llvm.struct<(`,
+            +_get_kgen_string[value_ty](),
+            `, `,
+            +_get_kgen_string[mask_ty](),
+            `)>`,
+        ],
+        hasSideEffects=False.__mlir_i1__(),
+    ](a._mlir_value, b._mlir_value)
+    var value = __mlir_op.`llvm.extractvalue`[
+        position=__mlir_attr.`array<i64: 0>`,
+        _type=__mlir_deferred_type[+_get_kgen_string[value_ty]()],
+    ](res)
+    var overflowed = __mlir_op.`llvm.extractvalue`[
+        position=__mlir_attr.`array<i64: 1>`,
+        _type=__mlir_deferred_type[+_get_kgen_string[mask_ty]()],
+    ](res)
+    return (
+        T(
+            mlir_value=__mlir_op.`builtin.unrealized_conversion_cast`[
+                _type=T._mlir_type
+            ](value)
+        ),
+        Mask(
+            mlir_value=__mlir_op.`builtin.unrealized_conversion_cast`[
+                _type=Mask._mlir_type
+            ](overflowed)
+        ),
+    )
+
+
+@always_inline
+def _add_with_overflow[
+    dtype: DType, length: SIMDLength
+](a: SIMD[dtype, length], b: SIMD[dtype, length]) -> Tuple[
+    SIMD[dtype, length], SIMD[.bool, length]
+]:
+    return _op_with_overflow[
+        "llvm.sadd.with.overflow", "llvm.uadd.with.overflow"
+    ](a, b)
+
+
+@always_inline
+def _sub_with_overflow[
+    dtype: DType, length: SIMDLength
+](a: SIMD[dtype, length], b: SIMD[dtype, length]) -> Tuple[
+    SIMD[dtype, length], SIMD[.bool, length]
+]:
+    return _op_with_overflow[
+        "llvm.ssub.with.overflow", "llvm.usub.with.overflow"
+    ](a, b)
+
+
+@always_inline
+def _mul_with_overflow[
+    dtype: DType, length: SIMDLength
+](a: SIMD[dtype, length], b: SIMD[dtype, length]) -> Tuple[
+    SIMD[dtype, length], SIMD[.bool, length]
+]:
+    return _op_with_overflow[
+        "llvm.smul.with.overflow", "llvm.umul.with.overflow"
+    ](a, b)
+
+
+@fieldwise_init
+struct RaisingSIMD[dtype: DType, length: SIMDLength](TrivialRegisterPassable):
+    """An integer SIMD vector whose arithmetic raises `OverflowError` if any
+    lane overflows.
+
+    Parameters:
+        dtype: The integral element type.
+        length: The number of lanes.
+    """
+
+    var value: SIMD[Self.dtype, Self.length]
+    """The underlying SIMD vector."""
+
+    @always_inline
+    def __add__(
+        self, rhs: Self
+    ) raises OverflowError[Self.dtype, Self.length] -> Self:
+        """Computes `self + rhs`, raising if any lane overflows.
+
+        Args:
+            rhs: The rhs value.
+
+        Returns:
+            The lane-wise sum.
+
+        Raises:
+            OverflowError: If the sum overflows in any lane.
+        """
+        var res = _add_with_overflow(self.value, rhs.value)
+        if res[1].reduce_or():
+            raise OverflowError(res[0], res[1])
+        return Self(res[0])
+
+    @always_inline
+    def __sub__(
+        self, rhs: Self
+    ) raises OverflowError[Self.dtype, Self.length] -> Self:
+        """Computes `self - rhs`, raising if any lane overflows.
+
+        Args:
+            rhs: The rhs value.
+
+        Returns:
+            The lane-wise difference.
+
+        Raises:
+            OverflowError: If the difference overflows in any lane.
+        """
+        var res = _sub_with_overflow(self.value, rhs.value)
+        if res[1].reduce_or():
+            raise OverflowError(res[0], res[1])
+        return Self(res[0])
+
+    @always_inline
+    def __mul__(
+        self, rhs: Self
+    ) raises OverflowError[Self.dtype, Self.length] -> Self:
+        """Computes `self * rhs`, raising if any lane overflows.
+
+        Args:
+            rhs: The rhs value.
+
+        Returns:
+            The lane-wise product.
+
+        Raises:
+            OverflowError: If the product overflows in any lane.
+        """
+        var res = _mul_with_overflow(self.value, rhs.value)
+        if res[1].reduce_or():
+            raise OverflowError(res[0], res[1])
+        return Self(res[0])
+
+
+@fieldwise_init
+struct SaturatingSIMD[dtype: DType, length: SIMDLength](
+    TrivialRegisterPassable
+):
+    """An integer SIMD vector whose arithmetic clamps each lane to the
+    representable range of `dtype` instead of wrapping.
+
+    Parameters:
+        dtype: The integral element type.
+        length: The number of lanes.
+    """
+
+    var value: SIMD[Self.dtype, Self.length]
+    """The underlying SIMD vector."""
+
+    @always_inline
+    def __add__(self, rhs: Self) -> Self:
+        """Computes `self + rhs` with lane-wise saturation.
+
+        Args:
+            rhs: The rhs value.
+
+        Returns:
+            The lane-wise saturated sum.
+        """
+        comptime assert Self.dtype.is_integral(), "must be an integral type"
+        comptime intrin = (
+            "llvm.sadd.sat" if Self.dtype.is_signed() else "llvm.uadd.sat"
+        )
+        return Self(
+            llvm_intrinsic[
+                intrin,
+                SIMD[Self.dtype, Self.length],
+                has_side_effect=False,
+            ](self.value, rhs.value)
+        )
+
+    @always_inline
+    def __sub__(self, rhs: Self) -> Self:
+        """Computes `self - rhs` with lane-wise saturation.
+
+        Args:
+            rhs: The rhs value.
+
+        Returns:
+            The lane-wise saturated difference.
+        """
+        comptime assert Self.dtype.is_integral(), "must be an integral type"
+        comptime intrin = (
+            "llvm.ssub.sat" if Self.dtype.is_signed() else "llvm.usub.sat"
+        )
+        return Self(
+            llvm_intrinsic[
+                intrin,
+                SIMD[Self.dtype, Self.length],
+                has_side_effect=False,
+            ](self.value, rhs.value)
+        )
+
+    @always_inline
+    def __mul__(self, rhs: Self) -> Self:
+        """Computes `self * rhs` with lane-wise saturation.
+
+        Args:
+            rhs: The rhs value.
+
+        Returns:
+            The lane-wise saturated product.
+        """
+        comptime T = SIMD[Self.dtype, Self.length]
+        var res = _mul_with_overflow(self.value, rhs.value)
+        var saturated: T
+        comptime if Self.dtype.is_signed():
+            # The exact product is negative iff the operand signs differ.
+            var negative = (self.value ^ rhs.value).lt(0)
+            saturated = negative.select(T.MIN, T.MAX)
+        else:
+            saturated = T.MAX
+        return Self(res[1].select(saturated, res[0]))
+
+
+@fieldwise_init
+struct TrappingSIMD[dtype: DType, length: SIMDLength](TrivialRegisterPassable):
+    """An integer SIMD vector whose arithmetic aborts the program if any lane
+    overflows.
+
+    Parameters:
+        dtype: The integral element type.
+        length: The number of lanes.
+    """
+
+    var value: SIMD[Self.dtype, Self.length]
+    """The underlying SIMD vector."""
+
+    @always_inline
+    def __add__(self, rhs: Self) -> Self:
+        """Computes `self + rhs`, aborting if any lane overflows.
+
+        Args:
+            rhs: The rhs value.
+
+        Returns:
+            The lane-wise sum.
+        """
+        var res = _add_with_overflow(self.value, rhs.value)
+        if res[1].reduce_or():
+            abort("integer overflow in TrappingSIMD.__add__")
+        return Self(res[0])
+
+    @always_inline
+    def __sub__(self, rhs: Self) -> Self:
+        """Computes `self - rhs`, aborting if any lane overflows.
+
+        Args:
+            rhs: The rhs value.
+
+        Returns:
+            The lane-wise difference.
+        """
+        var res = _sub_with_overflow(self.value, rhs.value)
+        if res[1].reduce_or():
+            abort("integer overflow in TrappingSIMD.__sub__")
+        return Self(res[0])
+
+    @always_inline
+    def __mul__(self, rhs: Self) -> Self:
+        """Computes `self * rhs`, aborting if any lane overflows.
+
+        Args:
+            rhs: The rhs value.
+
+        Returns:
+            The lane-wise product.
+        """
+        var res = _mul_with_overflow(self.value, rhs.value)
+        if res[1].reduce_or():
+            abort("integer overflow in TrappingSIMD.__mul__")
+        return Self(res[0])
 
 
 # ===----------------------------------------------------------------------=== #
@@ -3096,6 +3493,248 @@ struct SIMD[dtype: DType, length: SIMDLength](
             has_side_effect=False,
         ](self)
         return res[0], res[1]
+
+    # ===------------------------------------------------------------------=== #
+    # Overflow-checked arithmetic
+    # ===------------------------------------------------------------------=== #
+
+    @always_inline
+    def raising(self) -> RaisingSIMD[Self.dtype, Self.length]:
+        """Wraps this vector so that its arithmetic raises on overflow.
+
+        Returns:
+            A `RaisingSIMD` holding this vector.
+
+        Examples:
+            ```mojo
+            var a = SIMD[.int8, 4](127, 1, 2, 3)
+            try:
+                _ = a.raising() + SIMD[.int8, 4](1).raising()
+            except e:
+                print(e.overflowed)  # => [True, False, False, False]
+            ```
+        """
+        return RaisingSIMD(self)
+
+    @always_inline
+    def trapping(self) -> TrappingSIMD[Self.dtype, Self.length]:
+        """Wraps this vector so that its arithmetic aborts on overflow.
+
+        Returns:
+            A `TrappingSIMD` holding this vector.
+
+        Examples:
+            ```mojo
+            var a = SIMD[.int32, 4](1, 2, 3, 4)
+            print((a.trapping() * a.trapping()).value)  # => [1, 4, 9, 16]
+            ```
+        """
+        return TrappingSIMD(self)
+
+    @always_inline
+    def saturating(self) -> SaturatingSIMD[Self.dtype, Self.length]:
+        """Wraps this vector so that its arithmetic saturates on overflow.
+
+        Returns:
+            A `SaturatingSIMD` holding this vector.
+
+        Examples:
+            ```mojo
+            var a = SIMD[.uint8, 2](250, 3)
+            var b = SIMD[.uint8, 2](10, 4)
+            print((a.saturating() + b.saturating()).value)  # => [255, 7]
+            ```
+        """
+        return SaturatingSIMD(self)
+
+    @always_inline
+    def raising_add(
+        self, rhs: Self
+    ) raises OverflowError[Self.dtype, Self.length] -> Self:
+        """Computes `self + rhs`, raising if any lane overflows.
+
+        Args:
+            rhs: The rhs value.
+
+        Returns:
+            The lane-wise sum.
+
+        Raises:
+            OverflowError: If the sum overflows in any lane.
+
+        Examples:
+            ```mojo
+            var a = SIMD[.int8, 2](100, 1)
+            try:
+                _ = a.raising_add(SIMD[.int8, 2](100, 1))
+            except e:
+                print(e.overflowed)
+            ```
+        """
+        return (self.raising() + rhs.raising()).value
+
+    @always_inline
+    def raising_sub(
+        self, rhs: Self
+    ) raises OverflowError[Self.dtype, Self.length] -> Self:
+        """Computes `self - rhs`, raising if any lane overflows.
+
+        Args:
+            rhs: The rhs value.
+
+        Returns:
+            The lane-wise difference.
+
+        Raises:
+            OverflowError: If the difference overflows in any lane.
+
+        Examples:
+            ```mojo
+            var a = SIMD[.int8, 2](100, 1)
+            try:
+                _ = a.raising_sub(SIMD[.int8, 2](100, 1))
+            except e:
+                print(e.overflowed)
+            ```
+        """
+        return (self.raising() - rhs.raising()).value
+
+    @always_inline
+    def raising_mul(
+        self, rhs: Self
+    ) raises OverflowError[Self.dtype, Self.length] -> Self:
+        """Computes `self * rhs`, raising if any lane overflows.
+
+        Args:
+            rhs: The rhs value.
+
+        Returns:
+            The lane-wise product.
+
+        Raises:
+            OverflowError: If the product overflows in any lane.
+
+        Examples:
+            ```mojo
+            var a = SIMD[.int8, 2](100, 1)
+            try:
+                _ = a.raising_mul(SIMD[.int8, 2](100, 1))
+            except e:
+                print(e.overflowed)
+            ```
+        """
+        return (self.raising() * rhs.raising()).value
+
+    @always_inline
+    def trapping_add(self, rhs: Self) -> Self:
+        """Computes `self + rhs`, aborting if any lane overflows.
+
+        Args:
+            rhs: The rhs value.
+
+        Returns:
+            The lane-wise sum.
+
+        Examples:
+            ```mojo
+            var a = SIMD[.int32, 2](6, 7)
+            print(a.trapping_add(SIMD[.int32, 2](2, 3)))
+            ```
+        """
+        return (self.trapping() + rhs.trapping()).value
+
+    @always_inline
+    def trapping_sub(self, rhs: Self) -> Self:
+        """Computes `self - rhs`, aborting if any lane overflows.
+
+        Args:
+            rhs: The rhs value.
+
+        Returns:
+            The lane-wise difference.
+
+        Examples:
+            ```mojo
+            var a = SIMD[.int32, 2](6, 7)
+            print(a.trapping_sub(SIMD[.int32, 2](2, 3)))
+            ```
+        """
+        return (self.trapping() - rhs.trapping()).value
+
+    @always_inline
+    def trapping_mul(self, rhs: Self) -> Self:
+        """Computes `self * rhs`, aborting if any lane overflows.
+
+        Args:
+            rhs: The rhs value.
+
+        Returns:
+            The lane-wise product.
+
+        Examples:
+            ```mojo
+            var a = SIMD[.int32, 2](6, 7)
+            print(a.trapping_mul(SIMD[.int32, 2](2, 3)))
+            ```
+        """
+        return (self.trapping() * rhs.trapping()).value
+
+    @always_inline
+    def saturating_add(self, rhs: Self) -> Self:
+        """Computes `self + rhs`, clamping each lane to the representable
+        range of `dtype`.
+
+        Args:
+            rhs: The rhs value.
+
+        Returns:
+            The lane-wise saturated sum.
+
+        Examples:
+            ```mojo
+            var a = SIMD[.uint8, 2](200, 3)
+            print(a.saturating_add(SIMD[.uint8, 2](100, 2)))
+            ```
+        """
+        return (self.saturating() + rhs.saturating()).value
+
+    @always_inline
+    def saturating_sub(self, rhs: Self) -> Self:
+        """Computes `self - rhs`, clamping each lane to the representable
+        range of `dtype`.
+
+        Args:
+            rhs: The rhs value.
+
+        Returns:
+            The lane-wise saturated difference.
+
+        Examples:
+            ```mojo
+            var a = SIMD[.uint8, 2](200, 3)
+            print(a.saturating_sub(SIMD[.uint8, 2](100, 2)))
+            ```
+        """
+        return (self.saturating() - rhs.saturating()).value
+
+    @always_inline
+    def saturating_mul(self, rhs: Self) -> Self:
+        """Computes `self * rhs`, clamping each lane to the representable
+        range of `dtype`.
+
+        Args:
+            rhs: The rhs value.
+
+        Returns:
+            The lane-wise saturated product.
+
+        Examples:
+            ```mojo
+            var a = SIMD[.uint8, 2](200, 3)
+            print(a.saturating_mul(SIMD[.uint8, 2](100, 2)))
+            ```
+        """
+        return (self.saturating() * rhs.saturating()).value
 
     # ===------------------------------------------------------------------=== #
     # Reduce operations
