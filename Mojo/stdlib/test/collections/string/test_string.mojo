@@ -816,6 +816,11 @@ def test_splitlines() raises:
 
     # Test with an empty string
     assert_equal(S("").splitlines(), L())
+    # \t is not a line break
+    assert_equal(
+        S("name\tage\nbob\t42\n").splitlines(),
+        [StaticString("name\tage"), "bob\t42"],
+    )
     # test \v \f \x1c \x1d
     var s2 = S("hello\vworld\fmojo\x1clanguage\x1d")
     assert_equal(s2.splitlines(), hello_mojo)
