@@ -9,7 +9,10 @@ _SRCS = glob(["**/*.mojo"])
 
 # Benchmarks that construct `PythonObject`s start an interpreter in process,
 # so their targets need a Python toolchain. The rest must not request one.
-_PYTHON_SRCS = ["python/bench_python_object.mojo"]
+_PYTHON_SRCS = [
+    "python/bench_bool_to_pyobject.mojo",
+    "python/bench_python_object.mojo",
+]
 
 _PYTHON_VERSION = DEFAULT_PYTHON_VERSION.replace("_", ".")
 

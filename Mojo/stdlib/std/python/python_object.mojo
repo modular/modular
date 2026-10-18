@@ -235,8 +235,7 @@ struct PythonObject(
         Args:
             value: The boolean value.
         """
-        ref cpy = Python().cpython()
-        self = Self(from_owned=cpy.PyBool_FromLong(c_long(Int(value))))
+        self = _bool_to_pyobject(value)
 
     @implicit
     def __init__[dtype: DType](out self, value: Scalar[dtype]):
@@ -253,8 +252,7 @@ struct PythonObject(
         ref cpy = Python().cpython()
 
         comptime if dtype == .bool:
-            var val = c_long(Int(value))
-            self = Self(from_owned=cpy.PyBool_FromLong(val))
+            self = _bool_to_pyobject(Bool(value))
         elif dtype.is_unsigned():
             var val = c_size_t(value.cast[.uint]())
             self = Self(from_owned=cpy.PyLong_FromSize_t(val))
@@ -1631,6 +1629,20 @@ def _unsafe_alloc_init[
 # ===-----------------------------------------------------------------------===#
 # Helper functions
 # ===-----------------------------------------------------------------------===#
+
+
+@inline(.always)
+def _bool_to_pyobject(value: Bool) -> PythonObject:
+    """Wrap a Mojo `Bool` as a Python object via the cached `Py_True` /
+    `Py_False` singletons. Skips the `PyBool_FromLong` `ExternalFunction`
+    dispatch (CPython's `PyBool_FromLong` internally just picks the
+    singleton and `Py_INCREF`s it). The `Py_IncRef` is inlined here rather
+    than going through `from_borrowed` to avoid a second
+    `Python().cpython()` lookup on the hot path."""
+    ref cpy = Python().cpython()
+    var ptr = cpy.Py_True() if value else cpy.Py_False()
+    cpy.Py_IncRef(ptr)
+    return PythonObject(from_owned=ptr)
 
 
 @inline(.always)
