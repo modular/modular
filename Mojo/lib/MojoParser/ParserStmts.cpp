@@ -2627,23 +2627,20 @@ void StmtParser::emitCases(ArrayRef<MatchCaseEntry> caseEntries,
     emitCaseBody(caseEntry, /*inMatchCase*/ true, /*needsScope=*/false);
   }
 
-  // The match else is fallthrough when the cases are incomplete; when a
-  // concluding case covers every subject value, nothing can reach the else.
+  // Failure advances the enclosing match or falls through at top level.
+  // Exhaustive matches cannot reach the else region.
   builder.setInsertionPointToStart(&matchOp.getElseRegion().front());
   if (matchIsConcluding)
     HLCF::UnreachableOp::create(builder, emissionState.matchLocation);
+  else if (inMatchCase)
+    HLCF::MatchNextOp::create(builder, emissionState.matchLocation);
   else
     HLCF::YieldOp::create(builder, emissionState.matchLocation);
   builder.setInsertionPointAfter(matchOp);
 
-  // If in a nested hlcf.match.case, failure to match is a failure of the case
-  // that encloses us — unless this nested match already concluded.
-  if (inMatchCase) {
-    if (matchIsConcluding)
-      HLCF::UnreachableOp::create(builder, emissionState.matchLocation);
-    else
-      HLCF::MatchNextOp::create(builder, emissionState.matchLocation);
-  }
+  // A successful nested match completes the enclosing case.
+  if (inMatchCase)
+    HLCF::MatchCompleteOp::create(builder, emissionState.matchLocation);
 }
 
 /// for_stmt ::=  "for" target_list "in" starred_list ":" suite

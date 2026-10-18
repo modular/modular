@@ -267,6 +267,63 @@ def match_with_guard(x: Int, c: Int):
         case_callee[1]()
 
 
+# CHECK-LABEL: lit.fn @"match_guarded_literal_fallback
+# CHECK:       [[MODE:%.*]] = lit.var.decl "mode" var
+# CHECK:       hlcf.match {
+# CHECK:         hlcf.if %{{.*}} {
+# CHECK-NEXT:      hlcf.match {
+# CHECK:           case {
+# CHECK:             lit.ref.store {{.*}}, [[MODE]]
+# CHECK-NEXT:        hlcf.match.complete
+# CHECK-NEXT:      } else {
+# CHECK-NEXT:        hlcf.unreachable
+# CHECK-NEXT:      }
+# CHECK-NEXT:      hlcf.match.complete
+# CHECK-NEXT:    } else {
+# CHECK-NEXT:      hlcf.yield
+# CHECK-NEXT:    }
+# CHECK-NEXT:    hlcf.match.next
+# CHECK:         hlcf.match.complete
+# CHECK:       [[RESULT:%.*]] = lit.ref.load [[MODE]]
+# CHECK-NEXT:  lit.return [[RESULT]]
+def match_guarded_literal_fallback(x: Int) -> Int:
+    var mode = 0
+    match x:
+    case 1 if mode == 0:
+        mode = 2
+    case 1:
+        mode = 3
+    case _:
+        pass
+    return mode
+
+
+# CHECK-LABEL: lit.fn @"match_guarded_literal_fallthrough
+# CHECK:       hlcf.match {
+# CHECK:         hlcf.if %{{.*}} {
+# CHECK-NEXT:      hlcf.match {
+# CHECK:             lit.call {{.*}}@"case_callee{{.*}}<index> 1
+# CHECK-NEXT:        hlcf.match.complete
+# CHECK-NEXT:      } else {
+# CHECK-NEXT:        hlcf.match.next
+# CHECK-NEXT:      }
+# CHECK-NEXT:      hlcf.match.complete
+# CHECK-NEXT:    } else {
+# CHECK-NEXT:      hlcf.yield
+# CHECK-NEXT:    }
+# CHECK-NEXT:    hlcf.match.next
+# CHECK:         lit.call {{.*}}@"case_callee{{.*}}<index> 2
+# CHECK-NEXT:    hlcf.match.complete
+def match_guarded_literal_fallthrough(x: Int, c: Bool, d: Bool):
+    match x:
+    case 1 if c:
+        case_callee[0]()
+    case 1 if d:
+        case_callee[1]()
+    case _:
+        case_callee[2]()
+
+
 # CHECK-LABEL: lit.fn @"match_case_body
 # CHECK:       kgen.param.constant: !Int = <{:scalar<index> 0}>
 # CHECK:       lit.call {{.*}}@"__eq__(
