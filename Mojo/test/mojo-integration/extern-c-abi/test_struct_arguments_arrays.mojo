@@ -10,7 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# C reference: c_abi_test_array_structs.c
+# C reference: c_abi_test_multi_args.c (MultiHfa3D {double a, b, c;}, the same
+# layout)
 # RUN: mkdir -p %t.dir
 # RUN: mojo build -Xlinker $(dirname %s)/libc_abi_reference.lo %s -o %t.dir/test_arrays
 # RUN: %t.dir/test_arrays | FileCheck %s
@@ -30,35 +31,34 @@ struct Vec3d(Copyable):
     var v: Array[Float64, 3]
 
 
-# `external_call` cannot return a struct that is not `RegisterPassable`.
-@extern("c_func_array_double_24byte")
-def c_func_array_double_24byte(s: Vec3d) abi("C") -> Vec3d:
+# `external_call` cannot pass or return a struct that is not
+# `RegisterPassable`.
+@extern("c_func_hfa3d_sum")
+def c_func_hfa3d_sum(s: Vec3d) abi("C") -> Float64:
     ...
 
 
-def test_array_double_24byte():
-    var result = c_func_array_double_24byte(Vec3d([1.0, 2.0, 3.0]))
-    print("array_double_24byte:", result.v[0], result.v[1], result.v[2])
+@extern("c_func_hfa3d_make")
+def c_func_hfa3d_make(base: Float64, step: Float64) abi("C") -> Vec3d:
+    ...
 
 
-# CHECK: array_double_24byte: 2.0 3.0 4.0
+def test_array_double_24byte_argument():
+    var result = c_func_hfa3d_sum(Vec3d([1.0, 2.0, 3.0]))
+    print("array_double_24byte_argument:", result)
 
 
-def weigh_vec3d(s: Vec3d) abi("C") -> Float64:
-    return s.v[0] + 10 * s.v[1] + 100 * s.v[2]
+# CHECK: array_double_24byte_argument: 3002001.0
 
 
-def test_array_double_24byte_callback():
-    # C builds the Vec3d and passes it to an abi("C") Mojo function.
-    var result = external_call["c_call_array_double_24byte", Float64](
-        weigh_vec3d
-    )
-    print("array_double_24byte_callback:", result)
+def test_array_double_24byte_return():
+    var result = c_func_hfa3d_make(10.0, 0.5)
+    print("array_double_24byte_return:", result.v[0], result.v[1], result.v[2])
 
 
-# CHECK: array_double_24byte_callback: 321.0
+# CHECK: array_double_24byte_return: 10.5 11.0 11.5
 
 
 def main():
-    test_array_double_24byte()
-    test_array_double_24byte_callback()
+    test_array_double_24byte_argument()
+    test_array_double_24byte_return()
