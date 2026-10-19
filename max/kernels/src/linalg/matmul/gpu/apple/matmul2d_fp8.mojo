@@ -312,17 +312,14 @@ struct Matmul2dFp8[
                     return
                 comptime if bounded:
                     if acol + 3 < N:
-                        c_vec.store[alignment=elem_align](
-                            Coord(lrow, lcol // 4), y
-                        )
+                        c_vec.store[alignment=elem_align]((lrow, lcol // 4), y)
                     else:
                         for e in range(min(4, N - acol)):
-                            c_sub.store[width=1, alignment=elem_align](
-                                Coord(lrow, lcol + e),
-                                SIMD[Self.c_type, 1](y[e]),
+                            c_sub.store[alignment=elem_align](
+                                (lrow, lcol + e), y[e]
                             )
                 else:
-                    c_vec.store[alignment=elem_align](Coord(lrow, lcol // 4), y)
+                    c_vec.store[alignment=elem_align]((lrow, lcol // 4), y)
 
             comptime for mi in range(Self.NUM_MMA_M):
                 comptime for ni in range(Self.NUM_MMA_N):
@@ -433,11 +430,13 @@ struct Matmul2dFp8[
             comptime assert (
                 idx.rank == 2
             ), "the matmul epilogue contract is rank 2"
-            var row = a_start + Int(idx[0].value())
-            var col = Int(idx[1].value())
+            var row = a_start + Int(idx[0])
+            var col = Int(idx[1])
             var row_idx = Coord(row, col)
             comptime if has_compute_fn:
-                (c_ptr + row * N + col).store[alignment=alignment](
+                c_ptr.unsafe_offset(row * N).unsafe_offset(col).store[
+                    alignment=alignment
+                ](
                     rebind[SIMD[Self.c_type, width]](
                         compute_fn[dtype, width, alignment=alignment](
                             row_idx, val

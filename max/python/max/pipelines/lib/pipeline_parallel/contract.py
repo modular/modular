@@ -30,6 +30,7 @@ from max.graph import (
     Value,
 )
 from max.pipelines.context import BaseContextType
+from max.tree import Tree
 
 from ..interfaces import PipelineModel
 from ..pipeline_stage import PipelineStage
@@ -38,7 +39,7 @@ from ..pipeline_stage import PipelineStage
 class StageTraced(Exception):
     """Ends a traced stage's build once it knows what it hands the next."""
 
-    def __init__(self, boundary_types: object) -> None:
+    def __init__(self, boundary_types: Tree[TensorType]) -> None:
         super().__init__("A traced pipeline stage ends before it compiles.")
         self.boundary_types = boundary_types
         """The types of what the stage's decoder returned, in the tree it
@@ -50,7 +51,22 @@ def _crossing_type(value: TensorValue) -> TensorType:
     return value.type
 
 
-def raise_stage_traced(boundary_types: object) -> NoReturn:
+def _boundary_type(crossing: Type[Any]) -> TensorType:
+    if not isinstance(crossing, TensorType):
+        raise ValueError(
+            f"Only tensors can cross a pipeline cut, got {crossing}."
+        )
+    if odd := [
+        d for d in crossing.shape if not isinstance(d, (StaticDim, SymbolicDim))
+    ]:
+        raise ValueError(
+            f"A tensor crossing a pipeline cut has algebraic dim {odd[0]}."
+            " Only static or symbolic dims can cross a cut."
+        )
+    return crossing
+
+
+def raise_stage_traced(boundary_types: Tree[Type[Any]]) -> NoReturn:
     """Ends a stage that only traces, with what it hands the next stage.
 
     :func:`stage_outputs` calls this for a model that builds through
@@ -62,22 +78,13 @@ def raise_stage_traced(boundary_types: object) -> NoReturn:
 
     Raises:
         StageTraced: Always, carrying ``boundary_types``.
-        ValueError: If a tensor crossing the cut has an algebraic dim.
+        ValueError: If something crossing the cut is not a tensor, or has an
+            algebraic dim.
     """
-    for crossing in tree.leaves(boundary_types):
-        if odd := [
-            d
-            for d in crossing.shape
-            if not isinstance(d, (StaticDim, SymbolicDim))
-        ]:
-            raise ValueError(
-                f"A tensor crossing a pipeline cut has algebraic dim {odd[0]}."
-                " Only static or symbolic dims can cross a cut."
-            )
-    raise StageTraced(boundary_types)
+    raise StageTraced(tree.map(_boundary_type, boundary_types))
 
 
-def _boundary_types(stage: PipelineStage | None) -> object:
+def _boundary_types(stage: PipelineStage | None) -> Tree[TensorType] | None:
     if stage is None or stage.is_first:
         return None
     if stage.boundary_types is None:

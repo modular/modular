@@ -139,11 +139,11 @@ def test_conv2d_fused_apple_dynamic_round(
         var y = x.cast[_dtype]()
         comptime assert coords.rank == 4
         var flat = (
-            Int(coords[0].value()) * HW_out_i
-            + Int(coords[1].value()) * W_out_i
-            + Int(coords[2].value())
-        ) * C_out_i + Int(coords[3].value())
-        (out_ptr + flat).store(rebind[SIMD[.bfloat16, _width]](y))
+            Int(coords[0]) * HW_out_i
+            + Int(coords[1]) * W_out_i
+            + Int(coords[2])
+        ) * C_out_i + Int(coords[3])
+        (out_ptr.unsafe_offset(flat)).store(rebind[SIMD[.bfloat16, _width]](y))
 
     var handled = dispatch_fused_im2col_conv2d_apple[
         maybe_epilogue_func=Optional[elementwise_simd_epilogue_type](

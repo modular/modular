@@ -24,7 +24,17 @@ from typing import Any, ClassVar
 
 from max.dtype import DType
 from max.graph import DeviceRef
+from max.nn.comm.ep import EPConfig
+from max.nn.comm.ep.ep_config import calculate_ep_max_tokens_per_rank
 from max.nn.kv_cache import KVCacheParamInterface
+from max.nn.quant_config import (
+    InputScaleSpec,
+    QuantConfig,
+    QuantFormat,
+    ScaleGranularity,
+    ScaleOrigin,
+    WeightScaleSpec,
+)
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
@@ -77,6 +87,134 @@ NVFP4_SF_ATOM_COLS = 4
 def nvfp4_sf_preinterleave_enabled() -> bool:
     """Whether stacked routed-expert NVFP4 scales are host-interleaved."""
     return _env_switch(NVFP4_SF_PREINTERLEAVE_ENV)
+
+
+# Elements per E4M3 block scale of NVFP4 (``quantization_config.group_size``).
+NVFP4_BLOCK = 16
+
+# NVFP4 activations: a static tensor-wise input scale and dynamic per-16 E4M3
+# block scales. What the expert-parallel dispatch and the fused SwiGLU
+# quantize read off their config.
+NVFP4_ACTIVATION_QUANT_CONFIG = QuantConfig(
+    input_scale=InputScaleSpec(
+        granularity=ScaleGranularity.BLOCK,
+        origin=ScaleOrigin.STATIC,
+        dtype=DType.float32,
+        block_size=(1, NVFP4_BLOCK),
+    ),
+    weight_scale=WeightScaleSpec(
+        granularity=ScaleGranularity.BLOCK,
+        dtype=DType.float8_e4m3fn,
+        block_size=(1, NVFP4_BLOCK),
+    ),
+    mlp_quantized_layers=set(),
+    attn_quantized_layers=set(),
+    format=QuantFormat.NVFP4,
+)
+
+
+def ep_dispatch_active(data_parallel_degree: int) -> bool:
+    """Whether the routed experts run behind expert-parallel dispatch."""
+    return data_parallel_degree > 1
+
+
+def data_parallel_ep_config(
+    pipeline_config: PipelineConfig, text_config: Any
+) -> EPConfig | None:
+    """The routed experts' expert-parallel dispatch, or ``None`` without DP.
+
+    Under data parallelism each device quantizes its rows to NVFP4 against
+    one global gate/up input scale and sends the routed copies to the
+    devices owning their experts. Each rank holds up to
+    ``max_batch_input_tokens`` rows, plus with DSpark the draft rows that
+    verification adds for each of up to ``max_batch_size`` requests.
+
+    Raises:
+        ValueError: If the devices are not ``0`` to ``n - 1``, a device
+            would hold more than :data:`MEGAFFN_MAX_LOCAL_EXPERTS` routed
+            experts, chunked prefill is off, so a forward step's rows are not
+            bounded by ``max_batch_input_tokens``, or DSpark runs without
+            ``max_batch_size``.
+    """
+    model_config = pipeline_config.model
+    dp = int(model_config.data_parallel_degree)
+    if not ep_dispatch_active(dp):
+        return None
+    device_ids = [int(spec.id) for spec in model_config.device_specs]
+    if device_ids != list(range(len(device_ids))):
+        raise ValueError(
+            "DeepSeek-V4.1 expert-parallel dispatch under data parallelism "
+            f"needs devices 0 to {len(device_ids) - 1}, got {device_ids}"
+        )
+    local_experts = int(text_config.n_routed_experts) // dp
+    if local_experts > MEGAFFN_MAX_LOCAL_EXPERTS:
+        raise ValueError(
+            "DeepSeek-V4.1 data parallelism runs each device's routed "
+            f"experts in one fused kernel, which holds at most "
+            f"{MEGAFFN_MAX_LOCAL_EXPERTS}; data_parallel_degree {dp} leaves "
+            f"{local_experts} per device"
+        )
+    runtime = pipeline_config.runtime
+    if not runtime.enable_chunked_prefill:
+        # The receive buffers hold max_batch_input_tokens rows per rank, which
+        # only chunked prefill bounds a forward step to.
+        raise ValueError(
+            "DeepSeek-V4.1 expert-parallel dispatch under data parallelism "
+            "needs chunked prefill, which bounds each forward step to "
+            "max_batch_input_tokens rows per replica"
+        )
+    rows = runtime.max_batch_input_tokens
+    speculative = pipeline_config.speculative
+    if speculative is not None and speculative.is_dspark():
+        # Verification runs each request's drafts beside its active tokens,
+        # and the scheduler's token budget counts only the active tokens.
+        if runtime.max_batch_size is None:
+            raise ValueError(
+                "DeepSeek-V4.1 DSpark under data parallelism needs "
+                "max_batch_size, which bounds the draft rows a verification "
+                "step adds to max_batch_input_tokens"
+            )
+        rows += runtime.max_batch_size * (
+            speculative.num_speculative_tokens or 0
+        )
+    n_devices = len(model_config.device_specs)
+    return EPConfig(
+        dispatch_dtype=DType.uint8,
+        dispatch_quant_config=NVFP4_ACTIVATION_QUANT_CONFIG,
+        combine_dtype=DType.bfloat16,
+        hidden_size=int(text_config.hidden_size),
+        top_k=int(text_config.num_experts_per_tok),
+        n_experts=int(text_config.n_routed_experts),
+        max_tokens_per_rank=calculate_ep_max_tokens_per_rank(
+            max_batch_input_tokens=rows,
+            ep_size=n_devices,
+            data_parallel_degree=dp,
+        ),
+        n_gpus_per_node=n_devices,
+        n_nodes=1,
+    )
+
+
+# The most experts one device's fused gate/up + down kernel schedules.
+MEGAFFN_MAX_LOCAL_EXPERTS = 128
+
+
+def gate_up_rows_interleaved(
+    n_routed_experts: int, data_parallel_degree: int
+) -> bool:
+    """Whether the trunk's routed ``gate_up_proj`` rows alternate gate, up.
+
+    Under data parallelism the routed experts run behind expert-parallel
+    dispatch, whose statically sized receive buffers let each device's
+    gate/up GEMM, SwiGLU and down GEMM fuse into one kernel when it holds at
+    most :data:`MEGAFFN_MAX_LOCAL_EXPERTS` experts. That kernel reads each
+    gate row next to its up row.
+    """
+    return (
+        ep_dispatch_active(data_parallel_degree)
+        and n_routed_experts // data_parallel_degree
+        <= MEGAFFN_MAX_LOCAL_EXPERTS
+    )
 
 
 def nvfp4_sf_preinterleaved(rows: int, scale_cols: int) -> bool:
@@ -144,6 +282,9 @@ class DeepseekV41Config(ArchConfigWithKVCache):
     max_seq_len: int
     quantization_encoding: SupportedEncoding | None = None
     data_parallel_degree: int = 1
+    ep_config: EPConfig | None = None
+    """Expert-parallel dispatch of the routed experts; only under data
+    parallelism (:func:`data_parallel_ep_config`)."""
     forward_max_rows: int | None = None
     """Most query rows one forward step carries (``None``: ``max_seq_len``).
 
@@ -281,6 +422,27 @@ class DeepseekV41Config(ArchConfigWithKVCache):
     def get_text_config(huggingface_config: AutoConfig) -> AutoConfig:
         """DeepSeek-V4.1-Flash nests every text field under ``text_config``."""
         return huggingface_config.text_config
+
+    @classmethod
+    def estimate_vision_cache_entry_bytes(
+        cls, huggingface_config: AutoConfig
+    ) -> int:
+        """One largest image span's bf16 embeddings; 0 without a tower."""
+        vision_config = getattr(huggingface_config, "vision_config", None)
+        if vision_config is None:
+            return 0
+        hidden_size = cls.get_text_config(huggingface_config).hidden_size
+        return vision_config.max_image_tokens * hidden_size * 2
+
+    @classmethod
+    def get_vision_cache_row_spec(
+        cls, huggingface_config: AutoConfig
+    ) -> tuple[int, DType] | None:
+        """One bf16 text-width row per image span position."""
+        if getattr(huggingface_config, "vision_config", None) is None:
+            return None
+        hidden_size = cls.get_text_config(huggingface_config).hidden_size
+        return hidden_size, DType.bfloat16
 
     @classmethod
     def construct_kv_params(
@@ -435,6 +597,13 @@ class DeepseekV41Config(ArchConfigWithKVCache):
             DeviceRef(spec.device_type, spec.id)
             for spec in model_config.device_specs
         ]
+        if model_config.data_parallel_degree not in (1, len(device_refs)):
+            raise ValueError(
+                "DeepSeek-V4.1 supports data_parallel_degree 1 (tensor-"
+                "parallel attention) or the device count (data-parallel "
+                f"attention), got {model_config.data_parallel_degree} for "
+                f"{len(device_refs)} devices"
+            )
         kv_params = cls.construct_kv_params(
             config,
             pipeline_config,
@@ -450,6 +619,7 @@ class DeepseekV41Config(ArchConfigWithKVCache):
             max_seq_len=max_seq_len,
             quantization_encoding=quantization_encoding,
             data_parallel_degree=model_config.data_parallel_degree,
+            ep_config=data_parallel_ep_config(pipeline_config, text_config),
             forward_max_rows=forward_row_bound(
                 runtime.max_num_input_tokens,
                 runtime.max_batch_input_tokens,
@@ -458,6 +628,40 @@ class DeepseekV41Config(ArchConfigWithKVCache):
             **cls.resolve_text_fields(text_config),
             **cls.resolve_quantization_fields(config),
         )
+
+
+MAX_IMAGES_PER_REQUEST = "max_images_per_request"
+"""The one ``--vision-config-overrides`` key DeepSeek-V4.1 reads."""
+
+
+def max_images_per_request(pipeline_config: PipelineConfig) -> int | None:
+    """Returns the per-request image cap, ``None`` for no cap.
+
+    Set with ``--vision-config-overrides '{"max_images_per_request": N}'``,
+    as vLLM's ``--limit-mm-per-prompt``. ``0`` serves text only: the vision
+    model is neither loaded nor planned, and the router rejects any request
+    with an image.
+
+    Raises:
+        ValueError: On any other override key, or a cap that is not a
+            non-negative integer.
+    """
+    overrides = dict(pipeline_config.model.vision_config_overrides)
+    unknown = sorted(overrides.keys() - {MAX_IMAGES_PER_REQUEST})
+    if unknown:
+        raise ValueError(
+            f"DeepSeek-V4.1 vision_config_overrides accepts only "
+            f"{MAX_IMAGES_PER_REQUEST!r}, got {unknown}"
+        )
+    cap = overrides.get(MAX_IMAGES_PER_REQUEST)
+    if cap is not None and (
+        isinstance(cap, bool) or not isinstance(cap, int) or cap < 0
+    ):
+        raise ValueError(
+            f"{MAX_IMAGES_PER_REQUEST} must be a non-negative integer, "
+            f"got {cap!r}"
+        )
+    return cap
 
 
 def forward_row_bound(

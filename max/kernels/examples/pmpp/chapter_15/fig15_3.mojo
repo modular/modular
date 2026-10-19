@@ -30,7 +30,7 @@ comptime NUM_THREADS_PER_BLOCK = 128
 
 @inline(.always)
 def loadTile(
-    T: UnsafePointer[Float32, _],
+    T: Pointer[Float32, _],
     lda: Int,
     maxRow: Int,
     maxCol: Int,
@@ -67,9 +67,9 @@ def loadTile(
 
 
 def mm_tiled_kernel(
-    A: UnsafePointer[Float32, ImmutAnyOrigin],
-    B: UnsafePointer[Float32, ImmutAnyOrigin],
-    C: UnsafePointer[Float32, MutAnyOrigin],
+    A: ImmPointer[Float32, ImmutAnyOrigin],
+    B: ImmPointer[Float32, ImmutAnyOrigin],
+    C: MutPointer[Float32, MutAnyOrigin],
     M: UInt32,
     N: UInt32,
     K: UInt32,
@@ -115,8 +115,8 @@ def mm_tiled_kernel(
     for i in range(ceildiv(Int(K), bK)):
         # Load tiles into shared memory
         var curr_offset = i * bK
-        var addr_A = A + bRow * Int(K) + curr_offset
-        var addr_B = B + curr_offset * Int(N) + bCol
+        var addr_A = A.unsafe_offset(bRow * Int(K)).unsafe_offset(curr_offset)
+        var addr_B = B.unsafe_offset(curr_offset * Int(N)).unsafe_offset(bCol)
 
         loadTile(
             addr_A, Int(K), Int(M) - bRow, Int(K) - curr_offset, A_s, bK, bM, bK
@@ -148,8 +148,8 @@ def mm_tiled_kernel(
 
 
 def cpu_mm(
-    A: UnsafePointer[Float32, _],
-    B: UnsafePointer[Float32, _],
+    A: Pointer[Float32, _],
+    B: Pointer[Float32, _],
     C: MutPointer[Float32, _],
     M: Int,
     N: Int,

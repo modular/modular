@@ -205,7 +205,7 @@ def amd_4wave_conv[
     # by the kernel only when has_residual=False — the args are then
     # dead-code-eliminated by the compiler (still in the launch packet,
     # 16 bytes overhead per launch).
-    source_ptr: UnsafePointer[Scalar[c_type], ImmutAnyOrigin] = UnsafePointer[
+    source_ptr: ImmPointer[Scalar[c_type], ImmutAnyOrigin] = ImmPointer[
         Scalar[c_type], ImmutAnyOrigin
     ].unsafe_dangling(),
     source_row_stride: Int = 0,

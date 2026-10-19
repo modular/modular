@@ -128,10 +128,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
             comptime if gpu_ctx.target.is_nvidia_gpu():
                 comptime assert out_tt.rank == out_tt.flat_rank == 2
                 var output_strides = out_tt.layout.stride_coord()
-                if (
-                    Int(output_strides[0].value()) != N
-                    or Int(output_strides[1].value()) != 1
-                ):
+                if Int(output_strides[0]) != N or Int(output_strides[1]) != 1:
                     raise Error(
                         "NVIDIA tensor-core examples require row-major output"
                     )
@@ -1510,11 +1507,11 @@ def mma_tile_buffers[
     @inline(.always)
     def load_tiles_from_shared[k_tile_idx: Int]() {imm}:
         var a_block = TileTensor(
-            a_smem.ptr + k_tile_idx * BM * k_tile_size,
+            a_smem.ptr.unsafe_offset(k_tile_idx * BM * k_tile_size),
             row_major[BM, k_tile_size](),
         )
         var b_block = TileTensor(
-            b_smem.ptr + k_tile_idx * BN * k_tile_size,
+            b_smem.ptr.unsafe_offset(k_tile_idx * BN * k_tile_size),
             row_major[BN, k_tile_size](),
         )
         mma_op.load_frag[k_tile_idx](

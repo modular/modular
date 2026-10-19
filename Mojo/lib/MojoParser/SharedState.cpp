@@ -577,8 +577,8 @@ void SharedState::addBuiltinTypes(ASTDecl &builtinsDecl) {
   auto anyNonStructTypeType = NonStructTypeType::get(getContext());
   auto addMagicMLIRDecl = [&](StringRef name, Type magicType) {
     TypedAttr value = TypeParamAttr::get(magicType, anyNonStructTypeType);
-    resolver.addFullyResolvedDecl(PValue(value), name, builtinsDecl.getLoc(),
-                                  &builtinsDecl);
+    resolver.addFullyResolvedDecl(PValue(value), StringAttr::get(context, name),
+                                  builtinsDecl.getLoc(), &builtinsDecl);
   };
 
   addMagicMLIRDecl("__mlir_attr", MagicMLIRAttrType::get(context));
@@ -909,13 +909,13 @@ void SharedState::materializePrecompiledStdlibOp(Operation *op) {
     (void)reader.materialize(op);
 }
 
-ASTDecl &SharedState::importModule(const ImportPath &path,
-                                   PackageOp currentPackage, llvm::SMLoc loc,
-                                   ASTDecl *importer) {
+ModuleASTDecl &SharedState::importModule(const ImportPath &path,
+                                         PackageOp currentPackage,
+                                         llvm::SMLoc loc, ASTDecl *importer) {
   return getModuleLoader().importModule(path, currentPackage, loc, importer);
 }
 
-SmallVector<ASTDecl *>
+SmallVector<ModuleASTDecl *>
 SharedState::getNestedModuleDecls(PackageOp packageOp) const {
   return getModuleLoader().getNestedModuleDecls(packageOp);
 }
@@ -938,8 +938,9 @@ const llvm::MemoryBuffer *SharedState::openModuleFile(StringRef path,
   return getSourceMgr().getMemoryBuffer(fileID);
 }
 
-ASTDecl *SharedState::tryImportSubModule(ModuleASTDecl &parent, StringRef name,
-                                         llvm::SMLoc loc) {
+ModuleASTDecl *SharedState::tryImportSubModule(ModuleASTDecl &parent,
+                                               StringRef name,
+                                               llvm::SMLoc loc) {
   return getModuleLoader().tryImportSubModule(parent, name, loc);
 }
 
@@ -1144,7 +1145,7 @@ ArrayRef<ASTDecl *> SharedState::getBuiltinFunction(ASTDecl &module,
   }
   ArrayRef<ASTDecl *> decls = result.getIfSuccess();
   auto *defDecl = dyn_cast<DefASTDecl>(decls.front());
-  if (!defDecl || !defDecl->getOp()) {
+  if (!defDecl) {
     emitError(loc, "internal error: builtin '")
         << fnName << "' does not refer to a function";
     return {};
@@ -1152,7 +1153,7 @@ ArrayRef<ASTDecl *> SharedState::getBuiltinFunction(ASTDecl &module,
   return decls;
 }
 
-void SharedState::importBuiltinModules(ASTDecl &moduleDecl) {
+void SharedState::importBuiltinModules(ModuleASTDecl &moduleDecl) {
   // Check if this is the first attempt at resolving the builtin modules.
   if (impl->implicitBuiltinImports.empty()) {
     // Import the main standard library package.
@@ -1194,7 +1195,7 @@ void SharedState::importBuiltinModules(ASTDecl &moduleDecl) {
   // Child modules must be explicitly imported by the user or re-exported by
   // std's __init__.mojo.
   StringAttr stdAttr = StringAttr::get(getContext(), "std");
-  auto &block = moduleDecl.getIfOperation()->getRegion(0).front();
+  auto &block = moduleDecl.getOp()->getRegion(0).front();
   OpBuilder builder = OpBuilder::atBlockEnd(&block);
   declResolver->createImportOp(
       moduleDecl, builder, stdAttr,
@@ -1207,9 +1208,10 @@ void SharedState::importBuiltinModules(ASTDecl &moduleDecl) {
   }
 }
 
-ASTDecl &SharedState::createModule(StringRef moduleName,
-                                   const llvm::MemoryBuffer *moduleBuffer,
-                                   FileLineColLoc loc) {
+FileModuleASTDecl &
+SharedState::createModule(StringRef moduleName,
+                          const llvm::MemoryBuffer *moduleBuffer,
+                          FileLineColLoc loc) {
   // Create a new module state.
   ModuleSpec spec{moduleName.str(),
                   /*path=*/std::string(moduleBuffer->getBufferIdentifier()),
@@ -1218,10 +1220,10 @@ ASTDecl &SharedState::createModule(StringRef moduleName,
   ModuleState &state = loader.createModuleState(
       StringAttr::get(getContext(), moduleName), moduleBuffer,
       loader.getTopLevelState(), loc, spec, /*importLoc=*/{});
-  return *state.decl;
+  return cast<FileModuleASTDecl>(*state.decl);
 }
 
-ASTDecl &SharedState::createPackage(StringRef path, StringRef name) {
+PackageASTDecl &SharedState::createPackage(StringRef path, StringRef name) {
   // Note the importLoc here is empty as this is a top-level package and so
   // isn't imported from anywhere.
   ModuleSpec spec{name.str(), path.str(), ModuleSpec::Kind::SourcePackage};
@@ -1229,15 +1231,16 @@ ASTDecl &SharedState::createPackage(StringRef path, StringRef name) {
   ModuleState &state =
       loader.createPackageState(spec, loader.getTopLevelState(),
                                 /*importLoc=*/{});
-  return *state.decl;
+  return cast<PackageASTDecl>(*state.decl);
 }
 
-ASTDecl &SharedState::createBinaryPackage(StringRef path, StringRef name) {
+PackageASTDecl &SharedState::createBinaryPackage(StringRef path,
+                                                 StringRef name) {
   ModuleSpec spec{name.str(), path.str(), ModuleSpec::Kind::Precompiled};
   ModuleLoader &loader = getModuleLoader();
   ModuleState &state =
       loader.createBinaryPackageState(SMLoc(), spec, loader.getTopLevelState());
-  return *state.decl;
+  return cast<PackageASTDecl>(*state.decl);
 }
 
 std::optional<std::string>
@@ -1248,7 +1251,8 @@ SharedState::getModuleSourcePath(ModuleASTDecl &module) {
   return state->sourcePath();
 }
 
-LogicalResult SharedState::materializeDeferredModule(ASTDecl &decl, SMLoc loc) {
+LogicalResult SharedState::materializeDeferredModule(ModuleASTDecl &decl,
+                                                     SMLoc loc) {
   // Only a deferred source module (FileModuleOp with an invalid cursor and a
   // recorded source path) needs materializing; everything else is a no-op.
   ModuleState *state = getModuleLoader().lookupState(&decl);
@@ -1610,16 +1614,18 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
             auto &structDecl =
                 cast<StructASTDecl>(addDeclForOp(op, op.getSymNameAttr()));
             structDecl.setSelfType(StructASTDecl::computeSelfType(op));
-            for (ParamDeclAttr param : op.getParams()) {
+            for (auto [paramIndex, param] : llvm::enumerate(op.getParams())) {
               // Add the parameters as accessible member decls. Make sure
               // to only demangle user-visible names. Synthetic closure structs
               // use internal parameter names that should remain hidden.
               StringRef paramName =
                   op.isSynthetic() ? param.getName()
                                    : demangleParameterName(param.getName());
-              declResolver->addFullyResolvedDecl(
-                  PValue(ParamDeclRefAttr::get(param)), paramName,
-                  structDecl.getLoc(), &structDecl);
+              auto &paramDecl = declResolver->addFullyResolvedDecl(
+                  PValue(ParamDeclRefAttr::get(param)),
+                  StringAttr::get(getContext(), paramName), structDecl.getLoc(),
+                  &structDecl);
+              paramDecl.setArgOrParamNumber(static_cast<ssize_t>(paramIndex));
             }
           })
           .Case([&](TraitDeclOp op) {
@@ -1651,17 +1657,18 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
             // stamp on an import loc.
             diags.recordImportedFileIncludeLoc(op->getLoc(), packageImportLoc);
             ASTDecl &decl = addDeclForOp(op, name);
+            auto &moduleDecl = cast<ModuleASTDecl>(decl);
 
             // Record a nested module state for this decl. The child is a
             // module inside the artifact's one file, so it shares the
             // enclosing package's origin and holds no spec of its own: it was
             // never resolved, so there is no candidate to describe.
-            auto childState = std::make_unique<ModuleState>(&decl);
+            auto childState = std::make_unique<ModuleState>(&moduleDecl);
             childState->origin = packageState->origin;
             ModuleState &moduleState =
                 packageState->insertNestedModule(name, std::move(childState));
 
-            getModuleLoader().setState(decl, moduleState);
+            getModuleLoader().setState(moduleDecl, moduleState);
             if constexpr (std::is_same_v<decltype(op), PackageOp>)
               getModuleLoader().setPackageState(op, moduleState);
           })
@@ -1857,7 +1864,7 @@ void SharedState::addCaptureToScope(ASTDecl &scope, ASTDecl *captureDecl,
                                     Capture capture) {
   getImpl().capturesInScope[&scope].insert({capture.getSpelling(), capture});
   if (captureDecl->getParentDecl() != scope.getParentDecl()) {
-    if (scope.getNearestDeclOfType<FnOp>())
+    if (scope.getNearestDeclOfType<DefASTDecl>())
       addCaptureToScope(*scope.getParentDecl(), captureDecl, capture);
   }
 }
@@ -2051,6 +2058,12 @@ void SharedState::notifyListenerOnVariableDecl(ASTDecl &decl,
                                                SMLoc identifierLoc) {
   if (isListenerInterestedInLoc(parserListener, identifierLoc))
     parserListener->onVariableDecl(&decl, identifierLoc);
+}
+
+void SharedState::notifyListenerOnDeclReplaced(ASTDecl &oldDecl,
+                                               ASTDecl &newDecl) {
+  if (parserListener)
+    parserListener->onDeclReplaced(&oldDecl, &newDecl);
 }
 
 void SharedState::notifyListenerOnRef(ArrayRef<ASTDecl *> decls,

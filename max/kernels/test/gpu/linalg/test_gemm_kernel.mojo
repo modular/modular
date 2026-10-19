@@ -501,15 +501,11 @@ def matmul_kernel_naive[
 
     comptime if transpose_b:
         for i in range(k):
-            accum += rebind[Scalar[s_type]](a[x, i].cast[s_type]()) * rebind[
-                Scalar[s_type]
-            ](b[y, i].cast[s_type]())
+            accum += a[x, i].cast[s_type]() * b[y, i].cast[s_type]()
 
     else:
         for i in range(k):
-            accum += rebind[Scalar[s_type]](a[x, i].cast[s_type]()) * rebind[
-                Scalar[s_type]
-            ](b[i, y].cast[s_type]())
+            accum += a[x, i].cast[s_type]() * b[i, y].cast[s_type]()
 
     comptime assert c.flat_rank >= 2
     c[x, y] = accum.cast[c.dtype]()

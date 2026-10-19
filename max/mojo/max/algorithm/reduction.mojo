@@ -913,7 +913,7 @@ def reduce[
     ](idx: Coord) {imm} -> SIMD[_dtype, width]:
         return (
             src.unsafe_ptr()
-            .unsafe_load[width=width](Int(idx[0].value()))
+            .unsafe_load[width=width](Int(idx[0]))
             ._refine[_dtype]()
         )
 
@@ -1119,7 +1119,7 @@ def sum[
     def input_fn_nd[
         _dtype: DType, width: Int
     ](idx: Coord) {var input_fn_1d} -> SIMD[_dtype, width]:
-        return input_fn_1d[dtype, width](Int(idx[0].value()))._refine[_dtype]()
+        return input_fn_1d[dtype, width](Int(idx[0]))._refine[_dtype]()
 
     var out: Scalar[dtype] = 0
 
@@ -1344,7 +1344,7 @@ def variance[
         _dtype: DType, width: Int
     ](idx: Coord) {var input_fn_1d, var mean_value} -> SIMD[_dtype, width]:
         var mean_simd = SIMD[mean_value.dtype, width](mean_value).cast[_dtype]()
-        var x = input_fn_1d[_dtype, width](Int(idx[0].value()))
+        var x = input_fn_1d[_dtype, width](Int(idx[0]))
         var diff = x.cast[_dtype]() - mean_simd
         return (diff * diff)._refine[_dtype]()
 

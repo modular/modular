@@ -31,7 +31,7 @@ from .types import (
 from .utils import _get_dylib_function
 
 
-def rocblas_create_handle(handle: UnsafePointer[Handle, _]) raises -> Status:
+def rocblas_create_handle(handle: Pointer[Handle, _]) raises -> Status:
     return _get_dylib_function[
         "rocblas_create_handle",
         def(type_of(handle)) thin -> Status,
@@ -52,7 +52,7 @@ def rocblas_ctpsv_64(
     diag: Diagonal,
     n: Int64,
     _ap: ImmPointer[ComplexFloat32, _],
-    x: UnsafePointer[ComplexFloat32, _],
+    x: Pointer[ComplexFloat32, _],
     incx: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -80,7 +80,7 @@ def rocblas_ctbsv_strided_batched(
     _a: ImmPointer[ComplexFloat32, _],
     lda: Int32,
     stride__a: Int64,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: Pointer[ComplexFloat32, _],
     incx: Int32,
     stride_x: Int64,
     batch_count: Int32,
@@ -130,7 +130,7 @@ def rocblas_sdgmm_strided_batched(
     x: ImmPointer[Float32, _],
     incx: Int32,
     stride_x: Int64,
-    _c: UnsafePointer[Float32, _],
+    _c: Pointer[Float32, _],
     ldc: Int32,
     stride__c: Int64,
     batch_count: Int32,
@@ -239,7 +239,7 @@ def rocblas_dtbsv_strided_batched(
     _a: ImmPointer[Float64, _],
     lda: Int32,
     stride__a: Int64,
-    x: UnsafePointer[Float64, _],
+    x: Pointer[Float64, _],
     incx: Int32,
     stride_x: Int64,
     batch_count: Int32,
@@ -289,7 +289,7 @@ def rocblas_chbmv(
     x: ImmPointer[ComplexFloat32, _],
     incx: Int32,
     beta: ImmPointer[ComplexFloat32, _],
-    y: UnsafePointer[ComplexFloat32, _],
+    y: Pointer[ComplexFloat32, _],
     incy: Int32,
 ) raises -> Status:
     """
@@ -390,10 +390,8 @@ def rocblas_ctpmv_batched(
     trans_a: Operation,
     diag: Diagonal,
     n: Int32,
-    _a: UnsafePointer[
-        mut=False, UnsafePointer[ComplexFloat32, MutAnyOrigin], _
-    ],
-    x: UnsafePointer[UnsafePointer[ComplexFloat32, MutAnyOrigin], _],
+    _a: ImmPointer[MutPointer[ComplexFloat32, MutAnyOrigin], _],
+    x: Pointer[MutPointer[ComplexFloat32, MutAnyOrigin], _],
     incx: Int32,
     batch_count: Int32,
 ) raises -> Status:
@@ -421,7 +419,7 @@ def rocblas_ctrtri_strided_batched(
     _a: ImmPointer[ComplexFloat32, _],
     lda: Int32,
     stride_a: Int64,
-    inv_a: UnsafePointer[ComplexFloat32, _],
+    inv_a: Pointer[ComplexFloat32, _],
     ldinv_a: Int32,
     stride_inv_a: Int64,
     batch_count: Int32,
@@ -539,7 +537,7 @@ def rocblas_bfdot_64(
     incx: Int64,
     y: ImmPointer[BFloat16, _],
     incy: Int64,
-    result: UnsafePointer[BFloat16, _],
+    result: Pointer[BFloat16, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_bfdot_64",
@@ -599,7 +597,7 @@ def rocblas_sdot(
     incx: Int32,
     y: ImmPointer[Float32, _],
     incy: Int32,
-    result: UnsafePointer[Float32, _],
+    result: Pointer[Float32, _],
 ) raises -> Status:
     """
     \\brief <b> BLAS Level 1 API </b>.
@@ -662,7 +660,7 @@ def rocblas_zgbmv_64(
     x: ImmPointer[ComplexFloat64, _],
     incx: Int64,
     beta: ImmPointer[ComplexFloat64, _],
-    y: UnsafePointer[ComplexFloat64, _],
+    y: Pointer[ComplexFloat64, _],
     incy: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -690,7 +688,7 @@ def rocblas_sscal_strided_batched(
     handle: Handle,
     n: Int32,
     alpha: ImmPointer[Float32, _],
-    x: UnsafePointer[Float32, _],
+    x: Pointer[Float32, _],
     incx: Int32,
     stride_x: Int64,
     batch_count: Int32,
@@ -744,10 +742,10 @@ def rocblas_sscal_strided_batched(
 def rocblas_srotm_strided_batched(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[Float32, _],
+    x: Pointer[Float32, _],
     incx: Int32,
     stride_x: Int64,
-    y: UnsafePointer[Float32, _],
+    y: Pointer[Float32, _],
     incy: Int32,
     stride_y: Int64,
     param: ImmPointer[Float32, _],
@@ -951,7 +949,7 @@ def rocblas_stbmv_strided_batched_64(
     _a: ImmPointer[Float32, _],
     lda: Int64,
     stride__a: Int64,
-    x: UnsafePointer[Float32, _],
+    x: Pointer[Float32, _],
     incx: Int64,
     stride_x: Int64,
     batch_count: Int64,
@@ -1001,7 +999,7 @@ def rocblas_dsyr2_strided_batched_64(
     y: ImmPointer[Float64, _],
     incy: Int64,
     stridey: Int64,
-    _a: UnsafePointer[Float64, _],
+    _a: Pointer[Float64, _],
     lda: Int64,
     stride_a: Int64,
     batch_count: Int64,
@@ -1049,7 +1047,7 @@ def rocblas_ssyr_64(
     alpha: ImmPointer[Float32, _],
     x: ImmPointer[Float32, _],
     incx: Int64,
-    _a: UnsafePointer[Float32, _],
+    _a: Pointer[Float32, _],
     lda: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -1074,7 +1072,7 @@ def rocblas_zdotu(
     incx: Int32,
     y: ImmPointer[ComplexFloat64, _],
     incy: Int32,
-    result: UnsafePointer[ComplexFloat64, _],
+    result: Pointer[ComplexFloat64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdotu",
@@ -1266,7 +1264,7 @@ def rocblas_csyr2k_strided_batched(
     ldb: Int32,
     stride__b: Int64,
     beta: ImmPointer[ComplexFloat32, _],
-    _c: UnsafePointer[ComplexFloat32, _],
+    _c: Pointer[ComplexFloat32, _],
     ldc: Int32,
     stride__c: Int64,
     batch_count: Int32,
@@ -1323,7 +1321,7 @@ def rocblas_hdot_strided_batched_64(
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
-    result: UnsafePointer[Float16, _],
+    result: Pointer[Float16, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_hdot_strided_batched_64",
@@ -1403,7 +1401,7 @@ def rocblas_strsm_64(
     alpha: ImmPointer[Float32, _],
     _a: ImmPointer[Float32, _],
     lda: Int64,
-    _b: UnsafePointer[Float32, _],
+    _b: Pointer[Float32, _],
     ldb: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -1431,7 +1429,7 @@ def rocblas_dzasum_batched_64(
     x: OpaquePointer[_],
     incx: Int64,
     batch_count: Int64,
-    results: UnsafePointer[Float64, _],
+    results: Pointer[Float64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dzasum_batched_64",
@@ -1451,7 +1449,7 @@ def rocblas_snrm2(
     n: Int32,
     x: ImmPointer[Float32, _],
     incx: Int32,
-    result: UnsafePointer[Float32, _],
+    result: Pointer[Float32, _],
 ) raises -> Status:
     """
     \\brief <b> BLAS Level 1 API </b>.
@@ -1496,7 +1494,7 @@ def rocblas_dsyrk_strided_batched(
     lda: Int32,
     stride__a: Int64,
     beta: ImmPointer[Float64, _],
-    _c: UnsafePointer[Float64, _],
+    _c: Pointer[Float64, _],
     ldc: Int32,
     stride__c: Int64,
     batch_count: Int32,
@@ -1590,7 +1588,7 @@ def rocblas_zscal_strided_batched_64(
     handle: Handle,
     n: Int64,
     alpha: ImmPointer[ComplexFloat64, _],
-    x: UnsafePointer[ComplexFloat64, _],
+    x: Pointer[ComplexFloat64, _],
     incx: Int64,
     stride_x: Int64,
     batch_count: Int64,
@@ -1616,7 +1614,7 @@ def rocblas_cher_64(
     alpha: ImmPointer[Float32, _],
     x: ImmPointer[ComplexFloat32, _],
     incx: Int64,
-    _a: UnsafePointer[ComplexFloat32, _],
+    _a: Pointer[ComplexFloat32, _],
     lda: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -1641,7 +1639,7 @@ def rocblas_cdotu(
     incx: Int32,
     y: ImmPointer[ComplexFloat32, _],
     incy: Int32,
-    result: UnsafePointer[ComplexFloat32, _],
+    result: Pointer[ComplexFloat32, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cdotu",
@@ -1663,7 +1661,7 @@ def rocblas_sasum_batched(
     x: OpaquePointer[_],
     incx: Int32,
     batch_count: Int32,
-    results: UnsafePointer[Float32, _],
+    results: Pointer[Float32, _],
 ) raises -> Status:
     """
     \\brief <b> BLAS Level 1 API </b>.
@@ -1712,8 +1710,8 @@ def rocblas_dtpmv_batched_64(
     trans_a: Operation,
     diag: Diagonal,
     n: Int64,
-    _a: ImmPointer[UnsafePointer[Float64, MutAnyOrigin], _],
-    x: UnsafePointer[UnsafePointer[Float64, MutAnyOrigin], _],
+    _a: ImmPointer[MutPointer[Float64, MutAnyOrigin], _],
+    x: Pointer[MutPointer[Float64, MutAnyOrigin], _],
     incx: Int64,
     batch_count: Int64,
 ) raises -> Status:
@@ -1743,7 +1741,7 @@ def rocblas_dtbmv_strided_batched(
     _a: ImmPointer[Float64, _],
     lda: Int32,
     stride__a: Int64,
-    x: UnsafePointer[Float64, _],
+    x: Pointer[Float64, _],
     incx: Int32,
     stride_x: Int64,
     batch_count: Int32,
@@ -1881,7 +1879,7 @@ def rocblas_ztbsv_strided_batched_64(
     _a: ImmPointer[ComplexFloat64, _],
     lda: Int64,
     stride__a: Int64,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: Pointer[ComplexFloat64, _],
     incx: Int64,
     stride_x: Int64,
     batch_count: Int64,
@@ -1931,7 +1929,7 @@ def rocblas_cher2_strided_batched(
     y: ImmPointer[ComplexFloat32, _],
     incy: Int32,
     stride_y: Int64,
-    _a: UnsafePointer[ComplexFloat32, _],
+    _a: Pointer[ComplexFloat32, _],
     lda: Int32,
     stride__a: Int64,
     batch_count: Int32,
@@ -2038,10 +2036,10 @@ def rocblas_cher2_strided_batched(
 def rocblas_srot_strided_batched_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[Float32, _],
+    x: Pointer[Float32, _],
     incx: Int64,
     stride_x: Int64,
-    y: UnsafePointer[Float32, _],
+    y: Pointer[Float32, _],
     incy: Int64,
     stride_y: Int64,
     c: ImmPointer[Float32, _],
@@ -2119,7 +2117,7 @@ def rocblas_sscal(
     handle: Handle,
     n: Int32,
     alpha: ImmPointer[Float32, _],
-    x: UnsafePointer[Float32, _],
+    x: Pointer[Float32, _],
     incx: Int32,
 ) raises -> Status:
     """
@@ -2161,7 +2159,7 @@ def rocblas_ztbmv_strided_batched(
     _a: ImmPointer[ComplexFloat64, _],
     lda: Int32,
     stride__a: Int64,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: Pointer[ComplexFloat64, _],
     incx: Int32,
     stride_x: Int64,
     batch_count: Int32,
@@ -2203,10 +2201,10 @@ def rocblas_ztbmv_strided_batched(
 def rocblas_dswap_strided_batched(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[Float64, _],
+    x: Pointer[Float64, _],
     incx: Int32,
     stridex: Int64,
-    y: UnsafePointer[Float64, _],
+    y: Pointer[Float64, _],
     incy: Int32,
     stridey: Int64,
     batch_count: Int32,
@@ -2237,7 +2235,7 @@ def rocblas_dsymv(
     x: ImmPointer[Float64, _],
     incx: Int32,
     beta: ImmPointer[Float64, _],
-    y: UnsafePointer[Float64, _],
+    y: Pointer[Float64, _],
     incy: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -2263,7 +2261,7 @@ def rocblas_dnrm2_64(
     n: Int64,
     x: ImmPointer[Float64, _],
     incx: Int64,
-    result: UnsafePointer[Float64, _],
+    result: Pointer[Float64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dnrm2_64",
@@ -2281,7 +2279,7 @@ def rocblas_ssyrk(
     _a: ImmPointer[Float32, _],
     lda: Int32,
     beta: ImmPointer[Float32, _],
-    _c: UnsafePointer[Float32, _],
+    _c: Pointer[Float32, _],
     ldc: Int32,
 ) raises -> Status:
     """
@@ -2381,7 +2379,7 @@ def rocblas_strtri_strided_batched(
     _a: ImmPointer[Float32, _],
     lda: Int32,
     stride_a: Int64,
-    inv_a: UnsafePointer[Float32, _],
+    inv_a: Pointer[Float32, _],
     ldinv_a: Int32,
     stride_inv_a: Int64,
     batch_count: Int32,
@@ -2473,7 +2471,7 @@ def rocblas_chpr_strided_batched_64(
     x: ImmPointer[ComplexFloat32, _],
     incx: Int64,
     stride_x: Int64,
-    _ap: UnsafePointer[ComplexFloat32, _],
+    _ap: Pointer[ComplexFloat32, _],
     stride__a: Int64,
     batch_count: Int64,
 ) raises -> Status:
@@ -2501,7 +2499,7 @@ def rocblas_izamax_strided_batched(
     incx: Int32,
     stridex: Int64,
     batch_count: Int32,
-    result: UnsafePointer[Int32, _],
+    result: Pointer[Int32, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_izamax_strided_batched",
@@ -2557,7 +2555,7 @@ def rocblas_zhbmv_strided_batched(
     incx: Int32,
     stride_x: Int64,
     beta: ImmPointer[ComplexFloat64, _],
-    y: UnsafePointer[ComplexFloat64, _],
+    y: Pointer[ComplexFloat64, _],
     incy: Int32,
     stride_y: Int64,
     batch_count: Int32,
@@ -2609,7 +2607,7 @@ def rocblas_dspr(
     alpha: ImmPointer[Float64, _],
     x: ImmPointer[Float64, _],
     incx: Int32,
-    _ap: UnsafePointer[Float64, _],
+    _ap: Pointer[Float64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dspr",
@@ -2851,7 +2849,7 @@ def rocblas_dzasum(
     n: Int32,
     x: ImmPointer[ComplexFloat64, _],
     incx: Int32,
-    result: UnsafePointer[Float64, _],
+    result: Pointer[Float64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dzasum",
@@ -2974,15 +2972,15 @@ def rocblas_ztbmv_batched(
 
 def rocblas_srotmg_strided_batched(
     handle: Handle,
-    d1: UnsafePointer[Float32, _],
+    d1: Pointer[Float32, _],
     stride_d1: Int64,
-    d2: UnsafePointer[Float32, _],
+    d2: Pointer[Float32, _],
     stride_d2: Int64,
-    x1: UnsafePointer[Float32, _],
+    x1: Pointer[Float32, _],
     stride_x1: Int64,
     y1: ImmPointer[Float32, _],
     stride_y1: Int64,
-    param: UnsafePointer[Float32, _],
+    param: Pointer[Float32, _],
     stride_param: Int64,
     batch_count: Int32,
 ) raises -> Status:
@@ -3083,7 +3081,7 @@ def rocblas_zaxpy_64(
     alpha: ImmPointer[ComplexFloat64, _],
     x: ImmPointer[ComplexFloat64, _],
     incx: Int64,
-    y: UnsafePointer[ComplexFloat64, _],
+    y: Pointer[ComplexFloat64, _],
     incy: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -3106,11 +3104,9 @@ def rocblas_ctrmv_batched_64(
     trans_a: Operation,
     diag: Diagonal,
     n: Int64,
-    _a: UnsafePointer[
-        mut=False, UnsafePointer[ComplexFloat32, MutAnyOrigin], _
-    ],
+    _a: ImmPointer[MutPointer[ComplexFloat32, MutAnyOrigin], _],
     lda: Int64,
-    x: UnsafePointer[UnsafePointer[ComplexFloat32, MutAnyOrigin], _],
+    x: Pointer[MutPointer[ComplexFloat32, MutAnyOrigin], _],
     incx: Int64,
     batch_count: Int64,
 ) raises -> Status:
@@ -3139,10 +3135,10 @@ def rocblas_zgeru_strided_batched_64(
     x: ImmPointer[ComplexFloat64, _],
     incx: Int64,
     stridex: Int64,
-    y: UnsafePointer[ComplexFloat64, _],
+    y: Pointer[ComplexFloat64, _],
     incy: Int64,
     stridey: Int64,
-    _a: UnsafePointer[ComplexFloat64, _],
+    _a: Pointer[ComplexFloat64, _],
     lda: Int64,
     stride_a: Int64,
     batch_count: Int64,
@@ -3243,7 +3239,7 @@ def rocblas_zsyrk_strided_batched(
     lda: Int32,
     stride__a: Int64,
     beta: ImmPointer[ComplexFloat64, _],
-    _c: UnsafePointer[ComplexFloat64, _],
+    _c: Pointer[ComplexFloat64, _],
     ldc: Int32,
     stride__c: Int64,
     batch_count: Int32,
@@ -3462,7 +3458,7 @@ def rocblas_ztbmv(
     k: Int32,
     _a: ImmPointer[ComplexFloat64, _],
     lda: Int32,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: Pointer[ComplexFloat64, _],
     incx: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -3490,7 +3486,7 @@ def rocblas_ztrsv(
     n: Int32,
     _a: ImmPointer[ComplexFloat64, _],
     lda: Int32,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: Pointer[ComplexFloat64, _],
     incx: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -3519,7 +3515,7 @@ def rocblas_zsymv_64(
     x: ImmPointer[ComplexFloat64, _],
     incx: Int64,
     beta: ImmPointer[ComplexFloat64, _],
-    y: UnsafePointer[ComplexFloat64, _],
+    y: Pointer[ComplexFloat64, _],
     incy: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -3548,7 +3544,7 @@ def rocblas_dtrsv(
     n: Int32,
     _a: ImmPointer[Float64, _],
     lda: Int32,
-    x: UnsafePointer[Float64, _],
+    x: Pointer[Float64, _],
     incx: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -3604,8 +3600,8 @@ def rocblas_stpmv_batched(
     trans_a: Operation,
     diag: Diagonal,
     n: Int32,
-    _a: ImmPointer[UnsafePointer[Float32, MutAnyOrigin], _],
-    x: UnsafePointer[UnsafePointer[Float32, MutAnyOrigin], _],
+    _a: ImmPointer[MutPointer[Float32, MutAnyOrigin], _],
+    x: Pointer[MutPointer[Float32, MutAnyOrigin], _],
     incx: Int32,
     batch_count: Int32,
 ) raises -> Status:
@@ -3684,7 +3680,7 @@ def rocblas_icamax_strided_batched_64(
     incx: Int64,
     stridex: Int64,
     batch_count: Int64,
-    result: UnsafePointer[Int64, _],
+    result: Pointer[Int64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_icamax_strided_batched_64",
@@ -3759,7 +3755,7 @@ def rocblas_zsyr(
     alpha: ImmPointer[ComplexFloat64, _],
     x: ImmPointer[ComplexFloat64, _],
     incx: Int32,
-    _a: UnsafePointer[ComplexFloat64, _],
+    _a: Pointer[ComplexFloat64, _],
     lda: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -3787,7 +3783,7 @@ def rocblas_cdotc_strided_batched(
     incy: Int32,
     stridey: Int64,
     batch_count: Int32,
-    result: UnsafePointer[ComplexFloat32, _],
+    result: Pointer[ComplexFloat32, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cdotc_strided_batched",
@@ -3813,7 +3809,7 @@ def rocblas_dzasum_strided_batched_64(
     incx: Int64,
     stridex: Int64,
     batch_count: Int64,
-    results: UnsafePointer[Float64, _],
+    results: Pointer[Float64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dzasum_strided_batched_64",
@@ -3837,7 +3833,7 @@ def rocblas_cher_strided_batched_64(
     x: ImmPointer[ComplexFloat32, _],
     incx: Int64,
     stride_x: Int64,
-    _a: UnsafePointer[ComplexFloat32, _],
+    _a: Pointer[ComplexFloat32, _],
     lda: Int64,
     stride__a: Int64,
     batch_count: Int64,
@@ -3881,7 +3877,7 @@ def rocblas_zhpmv_64(
     x: ImmPointer[ComplexFloat64, _],
     incx: Int64,
     beta: ImmPointer[ComplexFloat64, _],
-    y: UnsafePointer[ComplexFloat64, _],
+    y: Pointer[ComplexFloat64, _],
     incy: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -3912,7 +3908,7 @@ def rocblas_zhbmv_64(
     x: ImmPointer[ComplexFloat64, _],
     incx: Int64,
     beta: ImmPointer[ComplexFloat64, _],
-    y: UnsafePointer[ComplexFloat64, _],
+    y: Pointer[ComplexFloat64, _],
     incy: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -4146,7 +4142,7 @@ def rocblas_cher2k_strided_batched(
     ldb: Int32,
     stride__b: Int64,
     beta: ImmPointer[Float32, _],
-    _c: UnsafePointer[ComplexFloat32, _],
+    _c: Pointer[ComplexFloat32, _],
     ldc: Int32,
     stride__c: Int64,
     batch_count: Int32,
@@ -4292,7 +4288,7 @@ def rocblas_sscal_strided_batched_64(
     handle: Handle,
     n: Int64,
     alpha: ImmPointer[Float32, _],
-    x: UnsafePointer[Float32, _],
+    x: Pointer[Float32, _],
     incx: Int64,
     stride_x: Int64,
     batch_count: Int64,
@@ -4322,7 +4318,7 @@ def rocblas_zherk_strided_batched(
     lda: Int32,
     stride__a: Int64,
     beta: ImmPointer[Float64, _],
-    _c: UnsafePointer[ComplexFloat64, _],
+    _c: Pointer[ComplexFloat64, _],
     ldc: Int32,
     stride__c: Int64,
     batch_count: Int32,
@@ -4449,7 +4445,7 @@ def rocblas_dtrsm(
     alpha: ImmPointer[Float64, _],
     _a: ImmPointer[Float64, _],
     lda: Int32,
-    _b: UnsafePointer[Float64, _],
+    _b: Pointer[Float64, _],
     ldb: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -4478,7 +4474,7 @@ def rocblas_isamax_strided_batched(
     incx: Int32,
     stridex: Int64,
     batch_count: Int32,
-    result: UnsafePointer[Int32, _],
+    result: Pointer[Int32, _],
 ) raises -> Status:
     """
     \\brief <b> BLAS Level 1 API </b>.
@@ -4594,7 +4590,7 @@ def rocblas_zhpr2(
     incx: Int32,
     y: ImmPointer[ComplexFloat64, _],
     incy: Int32,
-    _ap: UnsafePointer[ComplexFloat64, _],
+    _ap: Pointer[ComplexFloat64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhpr2",
@@ -4678,7 +4674,7 @@ def rocblas_strsm(
     alpha: ImmPointer[Float32, _],
     _a: ImmPointer[Float32, _],
     lda: Int32,
-    _b: UnsafePointer[Float32, _],
+    _b: Pointer[Float32, _],
     ldb: Int32,
 ) raises -> Status:
     """
@@ -4798,7 +4794,7 @@ def rocblas_stpsv_strided_batched(
     n: Int32,
     _ap: ImmPointer[Float32, _],
     stride__a: Int64,
-    x: UnsafePointer[Float32, _],
+    x: Pointer[Float32, _],
     incx: Int32,
     stride_x: Int64,
     batch_count: Int32,
@@ -4903,7 +4899,7 @@ def rocblas_dtrsv_strided_batched_64(
     _a: ImmPointer[Float64, _],
     lda: Int64,
     stride__a: Int64,
-    x: UnsafePointer[Float64, _],
+    x: Pointer[Float64, _],
     incx: Int64,
     stride_x: Int64,
     batch_count: Int64,
@@ -4946,7 +4942,7 @@ def rocblas_zcopy_strided_batched(
     x: ImmPointer[ComplexFloat64, _],
     incx: Int32,
     stridex: Int64,
-    y: UnsafePointer[ComplexFloat64, _],
+    y: Pointer[ComplexFloat64, _],
     incy: Int32,
     stridey: Int64,
     batch_count: Int32,
@@ -4969,13 +4965,13 @@ def rocblas_zcopy_strided_batched(
 
 def rocblas_crotg_strided_batched_64(
     handle: Handle,
-    a: UnsafePointer[ComplexFloat32, _],
+    a: Pointer[ComplexFloat32, _],
     stride_a: Int64,
-    b: UnsafePointer[ComplexFloat32, _],
+    b: Pointer[ComplexFloat32, _],
     stride_b: Int64,
-    c: UnsafePointer[Float32, _],
+    c: Pointer[Float32, _],
     stride_c: Int64,
-    s: UnsafePointer[ComplexFloat32, _],
+    s: Pointer[ComplexFloat32, _],
     stride_s: Int64,
     batch_count: Int64,
 ) raises -> Status:
@@ -5057,7 +5053,7 @@ def rocblas_dcopy_strided_batched(
     x: ImmPointer[Float64, _],
     incx: Int32,
     stridex: Int64,
-    y: UnsafePointer[Float64, _],
+    y: Pointer[Float64, _],
     incy: Int32,
     stridey: Int64,
     batch_count: Int32,
@@ -5080,10 +5076,10 @@ def rocblas_dcopy_strided_batched(
 
 def rocblas_zrotg_64(
     handle: Handle,
-    a: UnsafePointer[ComplexFloat64, _],
-    b: UnsafePointer[ComplexFloat64, _],
-    c: UnsafePointer[Float64, _],
-    s: UnsafePointer[ComplexFloat64, _],
+    a: Pointer[ComplexFloat64, _],
+    b: Pointer[ComplexFloat64, _],
+    c: Pointer[Float64, _],
+    s: Pointer[ComplexFloat64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zrotg_64",
@@ -5105,7 +5101,7 @@ def rocblas_cdotu_batched(
     y: OpaquePointer[_],
     incy: Int32,
     batch_count: Int32,
-    result: UnsafePointer[ComplexFloat32, _],
+    result: Pointer[ComplexFloat32, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cdotu_batched",
@@ -5128,7 +5124,7 @@ def rocblas_saxpy_64(
     alpha: ImmPointer[Float32, _],
     x: ImmPointer[Float32, _],
     incx: Int64,
-    y: UnsafePointer[Float32, _],
+    y: Pointer[Float32, _],
     incy: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -5350,11 +5346,11 @@ def rocblas_ssymv_batched_64(
 
 def rocblas_drotmg(
     handle: Handle,
-    d1: UnsafePointer[Float64, _],
-    d2: UnsafePointer[Float64, _],
-    x1: UnsafePointer[Float64, _],
+    d1: Pointer[Float64, _],
+    d2: Pointer[Float64, _],
+    x1: Pointer[Float64, _],
     y1: ImmPointer[Float64, _],
-    param: UnsafePointer[Float64, _],
+    param: Pointer[Float64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_drotmg",
@@ -5376,7 +5372,7 @@ def rocblas_daxpy_strided_batched_64(
     x: ImmPointer[Float64, _],
     incx: Int64,
     stridex: Int64,
-    y: UnsafePointer[Float64, _],
+    y: Pointer[Float64, _],
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
@@ -5496,7 +5492,7 @@ def rocblas_caxpy_64(
     alpha: ImmPointer[ComplexFloat32, _],
     x: ImmPointer[ComplexFloat32, _],
     incx: Int64,
-    y: UnsafePointer[ComplexFloat32, _],
+    y: Pointer[ComplexFloat32, _],
     incy: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -5528,7 +5524,7 @@ def rocblas_dgemm_strided_batched(
     ldb: Int32,
     stride_b: Int64,
     beta: ImmPointer[Float64, _],
-    _c: UnsafePointer[Float64, _],
+    _c: Pointer[Float64, _],
     ldc: Int32,
     stride_c: Int64,
     batch_count: Int32,
@@ -5587,7 +5583,7 @@ def rocblas_cdotu_strided_batched(
     incy: Int32,
     stridey: Int64,
     batch_count: Int32,
-    result: UnsafePointer[ComplexFloat32, _],
+    result: Pointer[ComplexFloat32, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cdotu_strided_batched",
@@ -5691,7 +5687,7 @@ def rocblas_haxpy(
     alpha: ImmPointer[Float16, _],
     x: ImmPointer[Float16, _],
     incx: Int32,
-    y: UnsafePointer[Float16, _],
+    y: Pointer[Float16, _],
     incy: Int32,
 ) raises -> Status:
     """
@@ -5745,7 +5741,7 @@ def rocblas_dsyr2(
     incx: Int32,
     y: ImmPointer[Float64, _],
     incy: Int32,
-    _a: UnsafePointer[Float64, _],
+    _a: Pointer[Float64, _],
     lda: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -5772,7 +5768,7 @@ def rocblas_dtpmv(
     diag: Diagonal,
     n: Int32,
     _a: ImmPointer[Float64, _],
-    x: UnsafePointer[Float64, _],
+    x: Pointer[Float64, _],
     incx: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -5837,7 +5833,7 @@ def rocblas_zdotc_strided_batched(
     incy: Int32,
     stridey: Int64,
     batch_count: Int32,
-    result: UnsafePointer[ComplexFloat64, _],
+    result: Pointer[ComplexFloat64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdotc_strided_batched",
@@ -5864,7 +5860,7 @@ def rocblas_ssyr_strided_batched_64(
     x: ImmPointer[Float32, _],
     incx: Int64,
     stridex: Int64,
-    _a: UnsafePointer[Float32, _],
+    _a: Pointer[Float32, _],
     lda: Int64,
     stride_a: Int64,
     batch_count: Int64,
@@ -5896,7 +5892,7 @@ def rocblas_idamax_strided_batched(
     incx: Int32,
     stridex: Int64,
     batch_count: Int32,
-    result: UnsafePointer[Int32, _],
+    result: Pointer[Int32, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_idamax_strided_batched",
@@ -5925,7 +5921,7 @@ def rocblas_ztrmm(
     lda: Int32,
     _b: ImmPointer[ComplexFloat64, _],
     ldb: Int32,
-    _c: UnsafePointer[ComplexFloat64, _],
+    _c: Pointer[ComplexFloat64, _],
     ldc: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -5975,7 +5971,7 @@ def rocblas_csyrk_strided_batched(
     lda: Int32,
     stride__a: Int64,
     beta: ImmPointer[ComplexFloat32, _],
-    _c: UnsafePointer[ComplexFloat32, _],
+    _c: Pointer[ComplexFloat32, _],
     ldc: Int32,
     stride__c: Int64,
     batch_count: Int32,
@@ -6019,9 +6015,9 @@ def rocblas_csyrk_strided_batched(
 def rocblas_csrot_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: Pointer[ComplexFloat32, _],
     incx: Int64,
-    y: UnsafePointer[ComplexFloat32, _],
+    y: Pointer[ComplexFloat32, _],
     incy: Int64,
     c: ImmPointer[Float32, _],
     s: ImmPointer[Float32, _],
@@ -6098,7 +6094,7 @@ def rocblas_hdot_batched_64(
     y: OpaquePointer[_],
     incy: Int64,
     batch_count: Int64,
-    result: UnsafePointer[Float16, _],
+    result: Pointer[Float16, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_hdot_batched_64",
@@ -6126,7 +6122,7 @@ def rocblas_ssbmv(
     x: ImmPointer[Float32, _],
     incx: Int32,
     beta: ImmPointer[Float32, _],
-    y: UnsafePointer[Float32, _],
+    y: Pointer[Float32, _],
     incy: Int32,
 ) raises -> Status:
     """
@@ -6196,9 +6192,9 @@ def rocblas_ssbmv(
 def rocblas_drotm(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[Float64, _],
+    x: Pointer[Float64, _],
     incx: Int32,
-    y: UnsafePointer[Float64, _],
+    y: Pointer[Float64, _],
     incy: Int32,
     param: ImmPointer[Float64, _],
 ) raises -> Status:
@@ -6257,10 +6253,10 @@ def rocblas_zgerc_strided_batched_64(
     x: ImmPointer[ComplexFloat64, _],
     incx: Int64,
     stridex: Int64,
-    y: UnsafePointer[ComplexFloat64, _],
+    y: Pointer[ComplexFloat64, _],
     incy: Int64,
     stridey: Int64,
-    _a: UnsafePointer[ComplexFloat64, _],
+    _a: Pointer[ComplexFloat64, _],
     lda: Int64,
     stride_a: Int64,
     batch_count: Int64,
@@ -6310,7 +6306,7 @@ def rocblas_strmv_strided_batched_64(
     _a: ImmPointer[Float32, _],
     lda: Int64,
     stride__a: Int64,
-    x: UnsafePointer[Float32, _],
+    x: Pointer[Float32, _],
     incx: Int64,
     stride_x: Int64,
     batch_count: Int64,
@@ -6355,7 +6351,7 @@ def rocblas_cspr_strided_batched_64(
     x: ImmPointer[ComplexFloat32, _],
     incx: Int64,
     stride_x: Int64,
-    _ap: UnsafePointer[ComplexFloat32, _],
+    _ap: Pointer[ComplexFloat32, _],
     stride__a: Int64,
     batch_count: Int64,
 ) raises -> Status:
@@ -6387,7 +6383,7 @@ def rocblas_sgemv_64(
     x: ImmPointer[Float32, _],
     incx: Int64,
     beta: ImmPointer[Float32, _],
-    y: UnsafePointer[Float32, _],
+    y: Pointer[Float32, _],
     incy: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -6443,7 +6439,7 @@ def rocblas_dsbmv_strided_batched_64(
     incx: Int64,
     stridex: Int64,
     beta: ImmPointer[Float64, _],
-    y: UnsafePointer[Float64, _],
+    y: Pointer[Float64, _],
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
@@ -6497,7 +6493,7 @@ def rocblas_sdgmm(
     lda: Int32,
     x: ImmPointer[Float32, _],
     incx: Int32,
-    _c: UnsafePointer[Float32, _],
+    _c: Pointer[Float32, _],
     ldc: Int32,
 ) raises -> Status:
     """
@@ -6570,7 +6566,7 @@ def rocblas_dtbsv_strided_batched_64(
     _a: ImmPointer[Float64, _],
     lda: Int64,
     stride__a: Int64,
-    x: UnsafePointer[Float64, _],
+    x: Pointer[Float64, _],
     incx: Int64,
     stride_x: Int64,
     batch_count: Int64,
@@ -6647,7 +6643,7 @@ def rocblas_cgbmv(
     x: ImmPointer[ComplexFloat32, _],
     incx: Int32,
     beta: ImmPointer[ComplexFloat32, _],
-    y: UnsafePointer[ComplexFloat32, _],
+    y: Pointer[ComplexFloat32, _],
     incy: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -6679,7 +6675,7 @@ def rocblas_cdotu_batched_64(
     y: OpaquePointer[_],
     incy: Int64,
     batch_count: Int64,
-    result: UnsafePointer[ComplexFloat32, _],
+    result: Pointer[ComplexFloat32, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cdotu_batched_64",
@@ -6778,7 +6774,7 @@ def rocblas_zgeam(
     beta: ImmPointer[ComplexFloat64, _],
     _b: ImmPointer[ComplexFloat64, _],
     ldb: Int32,
-    _c: UnsafePointer[ComplexFloat64, _],
+    _c: Pointer[ComplexFloat64, _],
     ldc: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -6809,7 +6805,7 @@ def rocblas_ctrsv(
     n: Int32,
     _a: ImmPointer[ComplexFloat32, _],
     lda: Int32,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: Pointer[ComplexFloat32, _],
     incx: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -6841,7 +6837,7 @@ def rocblas_zgemv_strided_batched_64(
     incx: Int64,
     stridex: Int64,
     beta: ImmPointer[ComplexFloat64, _],
-    y: UnsafePointer[ComplexFloat64, _],
+    y: Pointer[ComplexFloat64, _],
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
@@ -6934,7 +6930,7 @@ def rocblas_zgemm(
     _b: ImmPointer[ComplexFloat64, _],
     ldb: Int32,
     beta: ImmPointer[ComplexFloat64, _],
-    _c: UnsafePointer[ComplexFloat64, _],
+    _c: Pointer[ComplexFloat64, _],
     ldc: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -7042,7 +7038,7 @@ def rocblas_cgemv_64(
     x: ImmPointer[ComplexFloat32, _],
     incx: Int64,
     beta: ImmPointer[ComplexFloat32, _],
-    y: UnsafePointer[ComplexFloat32, _],
+    y: Pointer[ComplexFloat32, _],
     incy: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -7073,7 +7069,7 @@ def rocblas_dtrmv_strided_batched(
     _a: ImmPointer[Float64, _],
     lda: Int32,
     stride__a: Int64,
-    x: UnsafePointer[Float64, _],
+    x: Pointer[Float64, _],
     incx: Int32,
     stride_x: Int64,
     batch_count: Int32,
@@ -7112,15 +7108,15 @@ def rocblas_dtrmv_strided_batched(
 
 def rocblas_drotmg_strided_batched(
     handle: Handle,
-    d1: UnsafePointer[Float64, _],
+    d1: Pointer[Float64, _],
     stride_d1: Int64,
-    d2: UnsafePointer[Float64, _],
+    d2: Pointer[Float64, _],
     stride_d2: Int64,
-    x1: UnsafePointer[Float64, _],
+    x1: Pointer[Float64, _],
     stride_x1: Int64,
     y1: ImmPointer[Float64, _],
     stride_y1: Int64,
-    param: UnsafePointer[Float64, _],
+    param: Pointer[Float64, _],
     stride_param: Int64,
     batch_count: Int32,
 ) raises -> Status:
@@ -7194,7 +7190,7 @@ def rocblas_daxpy_strided_batched(
     x: ImmPointer[Float64, _],
     incx: Int32,
     stridex: Int64,
-    y: UnsafePointer[Float64, _],
+    y: Pointer[Float64, _],
     incy: Int32,
     stridey: Int64,
     batch_count: Int32,
@@ -7219,9 +7215,9 @@ def rocblas_daxpy_strided_batched(
 def rocblas_crot(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: Pointer[ComplexFloat32, _],
     incx: Int32,
-    y: UnsafePointer[ComplexFloat32, _],
+    y: Pointer[ComplexFloat32, _],
     incy: Int32,
     c: ImmPointer[Float32, _],
     s: ImmPointer[ComplexFloat32, _],
@@ -7250,7 +7246,7 @@ def rocblas_zhpr2_64(
     incx: Int64,
     y: ImmPointer[ComplexFloat64, _],
     incy: Int64,
-    _ap: UnsafePointer[ComplexFloat64, _],
+    _ap: Pointer[ComplexFloat64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhpr2_64",
@@ -7286,10 +7282,10 @@ def rocblas_initialize() raises:
 def rocblas_drotm_strided_batched(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[Float64, _],
+    x: Pointer[Float64, _],
     incx: Int32,
     stride_x: Int64,
-    y: UnsafePointer[Float64, _],
+    y: Pointer[Float64, _],
     incy: Int32,
     stride_y: Int64,
     param: ImmPointer[Float64, _],
@@ -7341,7 +7337,7 @@ def rocblas_sgemmt_strided_batched(
     ldb: Int32,
     stride_b: Int64,
     beta: ImmPointer[Float32, _],
-    _c: UnsafePointer[Float32, _],
+    _c: Pointer[Float32, _],
     ldc: Int32,
     stride_c: Int64,
     batch_count: Int32,
@@ -7472,8 +7468,8 @@ def rocblas_dtpmv_batched(
     trans_a: Operation,
     diag: Diagonal,
     n: Int32,
-    _a: ImmPointer[UnsafePointer[Float64, MutAnyOrigin], _],
-    x: UnsafePointer[UnsafePointer[Float64, MutAnyOrigin], _],
+    _a: ImmPointer[MutPointer[Float64, MutAnyOrigin], _],
+    x: Pointer[MutPointer[Float64, MutAnyOrigin], _],
     incx: Int32,
     batch_count: Int32,
 ) raises -> Status:
@@ -7498,7 +7494,7 @@ def rocblas_dasum(
     n: Int32,
     x: ImmPointer[Float64, _],
     incx: Int32,
-    result: UnsafePointer[Float64, _],
+    result: Pointer[Float64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dasum",
@@ -7513,7 +7509,7 @@ def rocblas_csyr_64(
     alpha: ImmPointer[ComplexFloat32, _],
     x: ImmPointer[ComplexFloat32, _],
     incx: Int64,
-    _a: UnsafePointer[ComplexFloat32, _],
+    _a: Pointer[ComplexFloat32, _],
     lda: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -7537,7 +7533,7 @@ def rocblas_dasum_batched(
     x: OpaquePointer[_],
     incx: Int32,
     batch_count: Int32,
-    results: UnsafePointer[Float64, _],
+    results: Pointer[Float64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dasum_batched",
@@ -7555,10 +7551,10 @@ def rocblas_dasum_batched(
 def rocblas_sswap_strided_batched_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[Float32, _],
+    x: Pointer[Float32, _],
     incx: Int64,
     stridex: Int64,
-    y: UnsafePointer[Float32, _],
+    y: Pointer[Float32, _],
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
@@ -7591,7 +7587,7 @@ def rocblas_zherkx(
     _b: ImmPointer[ComplexFloat64, _],
     ldb: Int32,
     beta: ImmPointer[Float64, _],
-    _c: UnsafePointer[ComplexFloat64, _],
+    _c: Pointer[ComplexFloat64, _],
     ldc: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -7653,7 +7649,7 @@ def rocblas_strmv_64(
     n: Int64,
     _a: ImmPointer[Float32, _],
     lda: Int64,
-    x: UnsafePointer[Float32, _],
+    x: Pointer[Float32, _],
     incx: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -7732,7 +7728,7 @@ def rocblas_idamin_batched_64(
     x: OpaquePointer[_],
     incx: Int64,
     batch_count: Int64,
-    result: UnsafePointer[Int64, _],
+    result: Pointer[Int64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_idamin_batched_64",
@@ -7760,7 +7756,7 @@ def rocblas_tssgemv_strided_batched_64(
     incx: Int64,
     stridex: Int64,
     beta: ImmPointer[Float32, _],
-    y: UnsafePointer[Float32, _],
+    y: Pointer[Float32, _],
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
@@ -7816,7 +7812,7 @@ def rocblas_chpmv_strided_batched(
     incx: Int32,
     stride_x: Int64,
     beta: ImmPointer[ComplexFloat32, _],
-    y: UnsafePointer[ComplexFloat32, _],
+    y: Pointer[ComplexFloat32, _],
     incy: Int32,
     stride_y: Int64,
     batch_count: Int32,
@@ -7949,7 +7945,7 @@ def rocblas_zsyr2k(
     _b: ImmPointer[ComplexFloat64, _],
     ldb: Int32,
     beta: ImmPointer[ComplexFloat64, _],
-    _c: UnsafePointer[ComplexFloat64, _],
+    _c: Pointer[ComplexFloat64, _],
     ldc: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -8208,7 +8204,7 @@ def rocblas_ztrtri(
     n: Int32,
     _a: ImmPointer[ComplexFloat64, _],
     lda: Int32,
-    inv_a: UnsafePointer[ComplexFloat64, _],
+    inv_a: Pointer[ComplexFloat64, _],
     ldinv_a: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -8234,7 +8230,7 @@ def rocblas_ctrmv(
     n: Int32,
     _a: ImmPointer[ComplexFloat32, _],
     lda: Int32,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: Pointer[ComplexFloat32, _],
     incx: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -8259,9 +8255,9 @@ def rocblas_dtrmv_batched_64(
     trans_a: Operation,
     diag: Diagonal,
     n: Int64,
-    _a: ImmPointer[UnsafePointer[Float64, MutAnyOrigin], _],
+    _a: ImmPointer[MutPointer[Float64, MutAnyOrigin], _],
     lda: Int64,
-    x: UnsafePointer[UnsafePointer[Float64, MutAnyOrigin], _],
+    x: Pointer[MutPointer[Float64, MutAnyOrigin], _],
     incx: Int64,
     batch_count: Int64,
 ) raises -> Status:
@@ -8290,10 +8286,10 @@ def rocblas_sger_strided_batched_64(
     x: ImmPointer[Float32, _],
     incx: Int64,
     stridex: Int64,
-    y: UnsafePointer[Float32, _],
+    y: Pointer[Float32, _],
     incy: Int64,
     stridey: Int64,
-    _a: UnsafePointer[Float32, _],
+    _a: Pointer[Float32, _],
     lda: Int64,
     stride_a: Int64,
     batch_count: Int64,
@@ -8369,7 +8365,7 @@ def rocblas_sdot_batched_64(
     y: OpaquePointer[_],
     incy: Int64,
     batch_count: Int64,
-    result: UnsafePointer[Float32, _],
+    result: Pointer[Float32, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_sdot_batched_64",
@@ -8392,7 +8388,7 @@ def rocblas_dznrm2_batched(
     x: OpaquePointer[_],
     incx: Int32,
     batch_count: Int32,
-    results: UnsafePointer[Float64, _],
+    results: Pointer[Float64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dznrm2_batched",
@@ -8440,13 +8436,13 @@ def rocblas_ddgmm_batched(
 
 def rocblas_srotg_strided_batched_64(
     handle: Handle,
-    a: UnsafePointer[Float32, _],
+    a: Pointer[Float32, _],
     stride_a: Int64,
-    b: UnsafePointer[Float32, _],
+    b: Pointer[Float32, _],
     stride_b: Int64,
-    c: UnsafePointer[Float32, _],
+    c: Pointer[Float32, _],
     stride_c: Int64,
-    s: UnsafePointer[Float32, _],
+    s: Pointer[Float32, _],
     stride_s: Int64,
     batch_count: Int64,
 ) raises -> Status:
@@ -8480,7 +8476,7 @@ def rocblas_dgbmv_64(
     x: ImmPointer[Float64, _],
     incx: Int64,
     beta: ImmPointer[Float64, _],
-    y: UnsafePointer[Float64, _],
+    y: Pointer[Float64, _],
     incy: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -8510,7 +8506,7 @@ def rocblas_sasum_batched_64(
     x: OpaquePointer[_],
     incx: Int64,
     batch_count: Int64,
-    results: UnsafePointer[Float32, _],
+    results: Pointer[Float32, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_sasum_batched_64",
@@ -8536,7 +8532,7 @@ def rocblas_dspmv_strided_batched(
     incx: Int32,
     stridex: Int64,
     beta: ImmPointer[Float64, _],
-    y: UnsafePointer[Float64, _],
+    y: Pointer[Float64, _],
     incy: Int32,
     stridey: Int64,
     batch_count: Int32,
@@ -8590,7 +8586,7 @@ def rocblas_chbmv_strided_batched_64(
     incx: Int64,
     stride_x: Int64,
     beta: ImmPointer[ComplexFloat32, _],
-    y: UnsafePointer[ComplexFloat32, _],
+    y: Pointer[ComplexFloat32, _],
     incy: Int64,
     stride_y: Int64,
     batch_count: Int64,
@@ -8671,7 +8667,7 @@ def rocblas_sgemv_strided_batched(
     incx: Int32,
     stridex: Int64,
     beta: ImmPointer[Float32, _],
-    y: UnsafePointer[Float32, _],
+    y: Pointer[Float32, _],
     incy: Int32,
     stridey: Int64,
     batch_count: Int32,
@@ -8811,7 +8807,7 @@ def rocblas_idamin_batched(
     x: OpaquePointer[_],
     incx: Int32,
     batch_count: Int32,
-    result: UnsafePointer[Int32, _],
+    result: Pointer[Int32, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_idamin_batched",
@@ -8829,9 +8825,9 @@ def rocblas_idamin_batched(
 def rocblas_zswap_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: Pointer[ComplexFloat64, _],
     incx: Int64,
-    y: UnsafePointer[ComplexFloat64, _],
+    y: Pointer[ComplexFloat64, _],
     incy: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -8945,7 +8941,7 @@ def rocblas_zhbmv(
     x: ImmPointer[ComplexFloat64, _],
     incx: Int32,
     beta: ImmPointer[ComplexFloat64, _],
-    y: UnsafePointer[ComplexFloat64, _],
+    y: Pointer[ComplexFloat64, _],
     incy: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -8970,10 +8966,10 @@ def rocblas_zhbmv(
 def rocblas_zrot_strided_batched_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: Pointer[ComplexFloat64, _],
     incx: Int64,
     stride_x: Int64,
-    y: UnsafePointer[ComplexFloat64, _],
+    y: Pointer[ComplexFloat64, _],
     incy: Int64,
     stride_y: Int64,
     c: ImmPointer[Float64, _],
@@ -9006,7 +9002,7 @@ def rocblas_zher_strided_batched_64(
     x: ImmPointer[ComplexFloat64, _],
     incx: Int64,
     stride_x: Int64,
-    _a: UnsafePointer[ComplexFloat64, _],
+    _a: Pointer[ComplexFloat64, _],
     lda: Int64,
     stride__a: Int64,
     batch_count: Int64,
@@ -9078,7 +9074,7 @@ def rocblas_dtrmv_64(
     n: Int64,
     _a: ImmPointer[Float64, _],
     lda: Int64,
-    x: UnsafePointer[Float64, _],
+    x: Pointer[Float64, _],
     incx: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -9099,10 +9095,10 @@ def rocblas_dtrmv_64(
 
 def rocblas_crotg(
     handle: Handle,
-    a: UnsafePointer[ComplexFloat32, _],
-    b: UnsafePointer[ComplexFloat32, _],
-    c: UnsafePointer[Float32, _],
-    s: UnsafePointer[ComplexFloat32, _],
+    a: Pointer[ComplexFloat32, _],
+    b: Pointer[ComplexFloat32, _],
+    c: Pointer[Float32, _],
+    s: Pointer[ComplexFloat32, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_crotg",
@@ -9208,7 +9204,7 @@ def rocblas_caxpy_strided_batched(
     x: ImmPointer[ComplexFloat32, _],
     incx: Int32,
     stridex: Int64,
-    y: UnsafePointer[ComplexFloat32, _],
+    y: Pointer[ComplexFloat32, _],
     incy: Int32,
     stridey: Int64,
     batch_count: Int32,
@@ -9236,7 +9232,7 @@ def rocblas_izamin_batched(
     x: OpaquePointer[_],
     incx: Int32,
     batch_count: Int32,
-    result: UnsafePointer[Int32, _],
+    result: Pointer[Int32, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_izamin_batched",
@@ -9316,7 +9312,7 @@ def rocblas_cdotc(
     incx: Int32,
     y: ImmPointer[ComplexFloat32, _],
     incy: Int32,
-    result: UnsafePointer[ComplexFloat32, _],
+    result: Pointer[ComplexFloat32, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cdotc",
@@ -9360,10 +9356,10 @@ def rocblas_sspr_batched_64(
 def rocblas_csrot_strided_batched(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: Pointer[ComplexFloat32, _],
     incx: Int32,
     stride_x: Int64,
-    y: UnsafePointer[ComplexFloat32, _],
+    y: Pointer[ComplexFloat32, _],
     incy: Int32,
     stride_y: Int64,
     c: ImmPointer[Float32, _],
@@ -9482,7 +9478,7 @@ def rocblas_sasum_strided_batched_64(
     incx: Int64,
     stridex: Int64,
     batch_count: Int64,
-    results: UnsafePointer[Float32, _],
+    results: Pointer[Float32, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_sasum_strided_batched_64",
@@ -9503,7 +9499,7 @@ def rocblas_isamin_64(
     n: Int64,
     x: ImmPointer[Float32, _],
     incx: Int64,
-    result: UnsafePointer[Int64, _],
+    result: Pointer[Int64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_isamin_64",
@@ -9518,7 +9514,7 @@ def rocblas_dsyr(
     alpha: ImmPointer[Float64, _],
     x: ImmPointer[Float64, _],
     incx: Int32,
-    _a: UnsafePointer[Float64, _],
+    _a: Pointer[Float64, _],
     lda: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -9628,10 +9624,8 @@ def rocblas_ctpmv_batched_64(
     trans_a: Operation,
     diag: Diagonal,
     n: Int64,
-    _a: UnsafePointer[
-        mut=False, UnsafePointer[ComplexFloat32, MutAnyOrigin], _
-    ],
-    x: UnsafePointer[UnsafePointer[ComplexFloat32, MutAnyOrigin], _],
+    _a: ImmPointer[MutPointer[ComplexFloat32, MutAnyOrigin], _],
+    x: Pointer[MutPointer[ComplexFloat32, MutAnyOrigin], _],
     incx: Int64,
     batch_count: Int64,
 ) raises -> Status:
@@ -9652,8 +9646,8 @@ def rocblas_ctpmv_batched_64(
 
 
 def rocblas_device_malloc_ptr(
-    ptr: UnsafePointer[MallocBase, _],
-    res: UnsafePointer[OpaquePointer[MutAnyOrigin], _],
+    ptr: Pointer[MallocBase, _],
+    res: Pointer[OpaquePointer[MutAnyOrigin], _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_device_malloc_ptr",
@@ -9672,10 +9666,10 @@ def rocblas_sger_strided_batched(
     x: ImmPointer[Float32, _],
     incx: Int32,
     stridex: Int64,
-    y: UnsafePointer[Float32, _],
+    y: Pointer[Float32, _],
     incy: Int32,
     stridey: Int64,
-    _a: UnsafePointer[Float32, _],
+    _a: Pointer[Float32, _],
     lda: Int32,
     stride_a: Int64,
     batch_count: Int32,
@@ -9779,7 +9773,7 @@ def rocblas_daxpy(
     alpha: ImmPointer[Float64, _],
     x: ImmPointer[Float64, _],
     incx: Int32,
-    y: UnsafePointer[Float64, _],
+    y: Pointer[Float64, _],
     incy: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -9802,7 +9796,7 @@ def rocblas_icamin_batched_64(
     x: OpaquePointer[_],
     incx: Int64,
     batch_count: Int64,
-    result: UnsafePointer[Int64, _],
+    result: Pointer[Int64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_icamin_batched_64",
@@ -9828,7 +9822,7 @@ def rocblas_ssyr2_strided_batched(
     y: ImmPointer[Float32, _],
     incy: Int32,
     stridey: Int64,
-    _a: UnsafePointer[Float32, _],
+    _a: Pointer[Float32, _],
     lda: Int32,
     stride_a: Int64,
     batch_count: Int32,
@@ -9935,7 +9929,7 @@ def rocblas_hssgemv_strided_batched(
     incx: Int32,
     stridex: Int64,
     beta: ImmPointer[Float32, _],
-    y: UnsafePointer[Float32, _],
+    y: Pointer[Float32, _],
     incy: Int32,
     stridey: Int64,
     batch_count: Int32,
@@ -10020,7 +10014,7 @@ def rocblas_ctrmv_strided_batched_64(
     _a: ImmPointer[ComplexFloat32, _],
     lda: Int64,
     stride__a: Int64,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: Pointer[ComplexFloat32, _],
     incx: Int64,
     stride_x: Int64,
     batch_count: Int64,
@@ -10066,7 +10060,7 @@ def rocblas_chpmv_64(
     x: ImmPointer[ComplexFloat32, _],
     incx: Int64,
     beta: ImmPointer[ComplexFloat32, _],
-    y: UnsafePointer[ComplexFloat32, _],
+    y: Pointer[ComplexFloat32, _],
     incy: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -10146,7 +10140,7 @@ def rocblas_dgeam_strided_batched(
     _b: ImmPointer[Float64, _],
     ldb: Int32,
     stride__b: Int64,
-    _c: UnsafePointer[Float64, _],
+    _c: Pointer[Float64, _],
     ldc: Int32,
     stride__c: Int64,
     batch_count: Int32,
@@ -10208,7 +10202,7 @@ def rocblas_dgbmv_strided_batched(
     incx: Int32,
     stride_x: Int64,
     beta: ImmPointer[Float64, _],
-    y: UnsafePointer[Float64, _],
+    y: Pointer[Float64, _],
     incy: Int32,
     stride_y: Int64,
     batch_count: Int32,
@@ -10267,7 +10261,7 @@ def rocblas_ssymv(
     x: ImmPointer[Float32, _],
     incx: Int32,
     beta: ImmPointer[Float32, _],
-    y: UnsafePointer[Float32, _],
+    y: Pointer[Float32, _],
     incy: Int32,
 ) raises -> Status:
     """
@@ -10346,7 +10340,7 @@ def rocblas_ssbmv_strided_batched_64(
     incx: Int64,
     stridex: Int64,
     beta: ImmPointer[Float32, _],
-    y: UnsafePointer[Float32, _],
+    y: Pointer[Float32, _],
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
@@ -10472,7 +10466,7 @@ def rocblas_izamax_batched(
     x: OpaquePointer[_],
     incx: Int32,
     batch_count: Int32,
-    result: UnsafePointer[Int32, _],
+    result: Pointer[Int32, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_izamax_batched",
@@ -10502,7 +10496,7 @@ def rocblas_cgbmv_strided_batched_64(
     incx: Int64,
     stride_x: Int64,
     beta: ImmPointer[ComplexFloat32, _],
-    y: UnsafePointer[ComplexFloat32, _],
+    y: Pointer[ComplexFloat32, _],
     incy: Int64,
     stride_y: Int64,
     batch_count: Int64,
@@ -10555,7 +10549,7 @@ def rocblas_csscal_strided_batched(
     handle: Handle,
     n: Int32,
     alpha: ImmPointer[Float32, _],
-    x: UnsafePointer[ComplexFloat32, _],
+    x: Pointer[ComplexFloat32, _],
     incx: Int32,
     stride_x: Int64,
     batch_count: Int32,
@@ -10614,7 +10608,7 @@ def rocblas_dspr2(
     incx: Int32,
     y: ImmPointer[Float64, _],
     incy: Int32,
-    _ap: UnsafePointer[Float64, _],
+    _ap: Pointer[Float64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dspr2",
@@ -10640,7 +10634,7 @@ def rocblas_zspr_strided_batched_64(
     x: ImmPointer[ComplexFloat64, _],
     incx: Int64,
     stride_x: Int64,
-    _ap: UnsafePointer[ComplexFloat64, _],
+    _ap: Pointer[ComplexFloat64, _],
     stride__a: Int64,
     batch_count: Int64,
 ) raises -> Status:
@@ -10668,7 +10662,7 @@ def rocblas_scnrm2_strided_batched(
     incx: Int32,
     stridex: Int64,
     batch_count: Int32,
-    results: UnsafePointer[Float32, _],
+    results: Pointer[Float32, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_scnrm2_strided_batched",
@@ -10753,7 +10747,7 @@ def rocblas_csymm_strided_batched(
     ldb: Int32,
     stride__b: Int64,
     beta: ImmPointer[ComplexFloat32, _],
-    _c: UnsafePointer[ComplexFloat32, _],
+    _c: Pointer[ComplexFloat32, _],
     ldc: Int32,
     stride__c: Int64,
     batch_count: Int32,
@@ -10872,7 +10866,7 @@ def rocblas_sgeam(
     beta: ImmPointer[Float32, _],
     _b: ImmPointer[Float32, _],
     ldb: Int32,
-    _c: UnsafePointer[Float32, _],
+    _c: Pointer[Float32, _],
     ldc: Int32,
 ) raises -> Status:
     """
@@ -10955,7 +10949,7 @@ def rocblas_dznrm2_strided_batched_64(
     incx: Int64,
     stridex: Int64,
     batch_count: Int64,
-    results: UnsafePointer[Float64, _],
+    results: Pointer[Float64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dznrm2_strided_batched_64",
@@ -11014,7 +11008,7 @@ def rocblas_strsm_strided_batched_64(
     _a: ImmPointer[Float32, _],
     lda: Int64,
     stride_a: Int64,
-    _b: UnsafePointer[Float32, _],
+    _b: Pointer[Float32, _],
     ldb: Int64,
     stride_b: Int64,
     batch_count: Int64,
@@ -11098,7 +11092,7 @@ def rocblas_csyrk(
     _a: ImmPointer[ComplexFloat32, _],
     lda: Int32,
     beta: ImmPointer[ComplexFloat32, _],
-    _c: UnsafePointer[ComplexFloat32, _],
+    _c: Pointer[ComplexFloat32, _],
     ldc: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -11240,7 +11234,7 @@ def rocblas_zrotg_batched(
 
 
 def rocblas_get_version_string(
-    buf: UnsafePointer[Int8, _], len: Int
+    buf: Pointer[Int8, _], len: Int
 ) raises -> Status:
     """\\brief   Loads char* buf with the rocblas library version. size_t len
     is the maximum length of char* buf.
@@ -11271,7 +11265,7 @@ def rocblas_csyr2_strided_batched_64(
     y: ImmPointer[ComplexFloat32, _],
     incy: Int64,
     stridey: Int64,
-    _a: UnsafePointer[ComplexFloat32, _],
+    _a: Pointer[ComplexFloat32, _],
     lda: Int64,
     stride_a: Int64,
     batch_count: Int64,
@@ -11320,7 +11314,7 @@ def rocblas_dsyr_strided_batched(
     x: ImmPointer[Float64, _],
     incx: Int32,
     stridex: Int64,
-    _a: UnsafePointer[Float64, _],
+    _a: Pointer[Float64, _],
     lda: Int32,
     stride_a: Int64,
     batch_count: Int32,
@@ -11359,7 +11353,7 @@ def rocblas_ssymm_strided_batched(
     ldb: Int32,
     stride__b: Int64,
     beta: ImmPointer[Float32, _],
-    _c: UnsafePointer[Float32, _],
+    _c: Pointer[Float32, _],
     ldc: Int32,
     stride__c: Int64,
     batch_count: Int32,
@@ -11500,7 +11494,7 @@ def rocblas_idamax_strided_batched_64(
     incx: Int64,
     stridex: Int64,
     batch_count: Int64,
-    result: UnsafePointer[Int64, _],
+    result: Pointer[Int64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_idamax_strided_batched_64",
@@ -11637,7 +11631,7 @@ def rocblas_sdot_batched(
     y: OpaquePointer[_],
     incy: Int32,
     batch_count: Int32,
-    result: UnsafePointer[Float32, _],
+    result: Pointer[Float32, _],
 ) raises -> Status:
     """
     \\brief <b> BLAS Level 1 API </b>.
@@ -11705,7 +11699,7 @@ def rocblas_dtrsm_strided_batched_64(
     _a: ImmPointer[Float64, _],
     lda: Int64,
     stride_a: Int64,
-    _b: UnsafePointer[Float64, _],
+    _b: Pointer[Float64, _],
     ldb: Int64,
     stride_b: Int64,
     batch_count: Int64,
@@ -11755,7 +11749,7 @@ def rocblas_isamin_strided_batched(
     incx: Int32,
     stridex: Int64,
     batch_count: Int32,
-    result: UnsafePointer[Int32, _],
+    result: Pointer[Int32, _],
 ) raises -> Status:
     """
     \\brief <b> BLAS Level 1 API </b>.
@@ -11814,7 +11808,7 @@ def rocblas_cgeam_strided_batched(
     _b: ImmPointer[ComplexFloat32, _],
     ldb: Int32,
     stride__b: Int64,
-    _c: UnsafePointer[ComplexFloat32, _],
+    _c: Pointer[ComplexFloat32, _],
     ldc: Int32,
     stride__c: Int64,
     batch_count: Int32,
@@ -11897,7 +11891,7 @@ def rocblas_sgbmv_64(
     x: ImmPointer[Float32, _],
     incx: Int64,
     beta: ImmPointer[Float32, _],
-    y: UnsafePointer[Float32, _],
+    y: Pointer[Float32, _],
     incy: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -11922,7 +11916,7 @@ def rocblas_sgbmv_64(
 
 
 def rocblas_device_malloc_success(
-    ptr: UnsafePointer[MallocBase, _],
+    ptr: Pointer[MallocBase, _],
 ) raises -> Bool:
     return _get_dylib_function[
         "rocblas_device_malloc_success",
@@ -11937,7 +11931,7 @@ def rocblas_chpr_64(
     alpha: ImmPointer[Float32, _],
     x: ImmPointer[ComplexFloat32, _],
     incx: Int64,
-    _ap: UnsafePointer[ComplexFloat32, _],
+    _ap: Pointer[ComplexFloat32, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_chpr_64",
@@ -11960,7 +11954,7 @@ def rocblas_stpsv(
     diag: Diagonal,
     n: Int32,
     _ap: ImmPointer[Float32, _],
-    x: UnsafePointer[Float32, _],
+    x: Pointer[Float32, _],
     incx: Int32,
 ) raises -> Status:
     """
@@ -12042,7 +12036,7 @@ def rocblas_csyrkx_strided_batched(
     ldb: Int32,
     stride__b: Int64,
     beta: ImmPointer[ComplexFloat32, _],
-    _c: UnsafePointer[ComplexFloat32, _],
+    _c: Pointer[ComplexFloat32, _],
     ldc: Int32,
     stride__c: Int64,
     batch_count: Int32,
@@ -12097,10 +12091,10 @@ def rocblas_dger_strided_batched_64(
     x: ImmPointer[Float64, _],
     incx: Int64,
     stridex: Int64,
-    y: UnsafePointer[Float64, _],
+    y: Pointer[Float64, _],
     incy: Int64,
     stridey: Int64,
-    _a: UnsafePointer[Float64, _],
+    _a: Pointer[Float64, _],
     lda: Int64,
     stride_a: Int64,
     batch_count: Int64,
@@ -12150,7 +12144,7 @@ def rocblas_ctrmv_strided_batched(
     _a: ImmPointer[ComplexFloat32, _],
     lda: Int32,
     stride__a: Int64,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: Pointer[ComplexFloat32, _],
     incx: Int32,
     stride_x: Int64,
     batch_count: Int32,
@@ -12190,10 +12184,10 @@ def rocblas_ctrmv_strided_batched(
 def rocblas_zrot_strided_batched(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: Pointer[ComplexFloat64, _],
     incx: Int32,
     stride_x: Int64,
-    y: UnsafePointer[ComplexFloat64, _],
+    y: Pointer[ComplexFloat64, _],
     incy: Int32,
     stride_y: Int64,
     c: ImmPointer[Float64, _],
@@ -12233,7 +12227,7 @@ def rocblas_hgemm_kernel_name(
     ldb: Int32,
     stride_b: Int64,
     beta: ImmPointer[Float16, _],
-    _c: UnsafePointer[Float16, _],
+    _c: Pointer[Float16, _],
     ldc: Int32,
     stride_c: Int64,
     batch_count: Int32,
@@ -12288,7 +12282,7 @@ def rocblas_scopy_strided_batched_64(
     x: ImmPointer[Float32, _],
     incx: Int64,
     stridex: Int64,
-    y: UnsafePointer[Float32, _],
+    y: Pointer[Float32, _],
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
@@ -12316,7 +12310,7 @@ def rocblas_icamax_strided_batched(
     incx: Int32,
     stridex: Int64,
     batch_count: Int32,
-    result: UnsafePointer[Int32, _],
+    result: Pointer[Int32, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_icamax_strided_batched",
@@ -12340,7 +12334,7 @@ def rocblas_zhpr_strided_batched_64(
     x: ImmPointer[ComplexFloat64, _],
     incx: Int64,
     stride_x: Int64,
-    _ap: UnsafePointer[ComplexFloat64, _],
+    _ap: Pointer[ComplexFloat64, _],
     stride__a: Int64,
     batch_count: Int64,
 ) raises -> Status:
@@ -12372,7 +12366,7 @@ def rocblas_ztrsm_64(
     alpha: ImmPointer[ComplexFloat64, _],
     _a: ImmPointer[ComplexFloat64, _],
     lda: Int64,
-    _b: UnsafePointer[ComplexFloat64, _],
+    _b: Pointer[ComplexFloat64, _],
     ldb: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -12402,7 +12396,7 @@ def rocblas_stpsv_strided_batched_64(
     n: Int64,
     _ap: ImmPointer[Float32, _],
     stride__a: Int64,
-    x: UnsafePointer[Float32, _],
+    x: Pointer[Float32, _],
     incx: Int64,
     stride_x: Int64,
     batch_count: Int64,
@@ -12471,7 +12465,7 @@ def rocblas_ctpmv_64(
     diag: Diagonal,
     n: Int64,
     _a: ImmPointer[ComplexFloat32, _],
-    x: UnsafePointer[ComplexFloat32, _],
+    x: Pointer[ComplexFloat32, _],
     incx: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -12682,7 +12676,7 @@ def rocblas_ztrsm(
     alpha: ImmPointer[ComplexFloat64, _],
     _a: ImmPointer[ComplexFloat64, _],
     lda: Int32,
-    _b: UnsafePointer[ComplexFloat64, _],
+    _b: Pointer[ComplexFloat64, _],
     ldb: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -12715,7 +12709,7 @@ def rocblas_zdgmm_strided_batched(
     x: ImmPointer[ComplexFloat64, _],
     incx: Int32,
     stride_x: Int64,
-    _c: UnsafePointer[ComplexFloat64, _],
+    _c: Pointer[ComplexFloat64, _],
     ldc: Int32,
     stride__c: Int64,
     batch_count: Int32,
@@ -12761,7 +12755,7 @@ def rocblas_icamin_64(
     n: Int64,
     x: ImmPointer[ComplexFloat32, _],
     incx: Int64,
-    result: UnsafePointer[Int64, _],
+    result: Pointer[Int64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_icamin_64",
@@ -12787,7 +12781,7 @@ def rocblas_dsyr2k(
     _b: ImmPointer[Float64, _],
     ldb: Int32,
     beta: ImmPointer[Float64, _],
-    _c: UnsafePointer[Float64, _],
+    _c: Pointer[Float64, _],
     ldc: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -12846,7 +12840,7 @@ def rocblas_dtrmm_strided_batched(
     _b: ImmPointer[Float64, _],
     ldb: Int32,
     stride__b: Int64,
-    _c: UnsafePointer[Float64, _],
+    _c: Pointer[Float64, _],
     ldc: Int32,
     stride__c: Int64,
     batch_count: Int32,
@@ -12935,7 +12929,7 @@ def rocblas_zgemv_strided_batched(
     incx: Int32,
     stridex: Int64,
     beta: ImmPointer[ComplexFloat64, _],
-    y: UnsafePointer[ComplexFloat64, _],
+    y: Pointer[ComplexFloat64, _],
     incy: Int32,
     stridey: Int64,
     batch_count: Int32,
@@ -13053,7 +13047,7 @@ def rocblas_strmv_strided_batched(
     _a: ImmPointer[Float32, _],
     lda: Int32,
     stride__a: Int64,
-    x: UnsafePointer[Float32, _],
+    x: Pointer[Float32, _],
     incx: Int32,
     stride_x: Int64,
     batch_count: Int32,
@@ -13161,7 +13155,7 @@ def rocblas_dznrm2_64(
     n: Int64,
     x: ImmPointer[ComplexFloat64, _],
     incx: Int64,
-    result: UnsafePointer[Float64, _],
+    result: Pointer[Float64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dznrm2_64",
@@ -13179,7 +13173,7 @@ def rocblas_zdscal_strided_batched(
     handle: Handle,
     n: Int32,
     alpha: ImmPointer[Float64, _],
-    x: UnsafePointer[ComplexFloat64, _],
+    x: Pointer[ComplexFloat64, _],
     incx: Int32,
     stride_x: Int64,
     batch_count: Int32,
@@ -13318,7 +13312,7 @@ def rocblas_dcopy_strided_batched_64(
     x: ImmPointer[Float64, _],
     incx: Int64,
     stridex: Int64,
-    y: UnsafePointer[Float64, _],
+    y: Pointer[Float64, _],
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
@@ -13345,7 +13339,7 @@ def rocblas_zcopy_strided_batched_64(
     x: ImmPointer[ComplexFloat64, _],
     incx: Int64,
     stridex: Int64,
-    y: UnsafePointer[ComplexFloat64, _],
+    y: Pointer[ComplexFloat64, _],
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
@@ -13378,7 +13372,7 @@ def rocblas_ssyr2k(
     _b: ImmPointer[Float32, _],
     ldb: Int32,
     beta: ImmPointer[Float32, _],
-    _c: UnsafePointer[Float32, _],
+    _c: Pointer[Float32, _],
     ldc: Int32,
 ) raises -> Status:
     """
@@ -13564,7 +13558,7 @@ def rocblas_izamin(
     n: Int32,
     x: ImmPointer[ComplexFloat64, _],
     incx: Int32,
-    result: UnsafePointer[Int32, _],
+    result: Pointer[Int32, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_izamin",
@@ -13586,7 +13580,7 @@ def rocblas_sspr_strided_batched_64(
     x: ImmPointer[Float32, _],
     incx: Int64,
     stride_x: Int64,
-    _ap: UnsafePointer[Float32, _],
+    _ap: Pointer[Float32, _],
     stride__a: Int64,
     batch_count: Int64,
 ) raises -> Status:
@@ -13614,7 +13608,7 @@ def rocblas_dzasum_strided_batched(
     incx: Int32,
     stridex: Int64,
     batch_count: Int32,
-    results: UnsafePointer[Float64, _],
+    results: Pointer[Float64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dzasum_strided_batched",
@@ -13635,7 +13629,7 @@ def rocblas_icamax(
     n: Int32,
     x: ImmPointer[ComplexFloat32, _],
     incx: Int32,
-    result: UnsafePointer[Int32, _],
+    result: Pointer[Int32, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_icamax",
@@ -13820,7 +13814,7 @@ def rocblas_zhpmv_strided_batched(
     incx: Int32,
     stride_x: Int64,
     beta: ImmPointer[ComplexFloat64, _],
-    y: UnsafePointer[ComplexFloat64, _],
+    y: Pointer[ComplexFloat64, _],
     incy: Int32,
     stride_y: Int64,
     batch_count: Int32,
@@ -13868,7 +13862,7 @@ def rocblas_dspr_64(
     alpha: ImmPointer[Float64, _],
     x: ImmPointer[Float64, _],
     incx: Int64,
-    _ap: UnsafePointer[Float64, _],
+    _ap: Pointer[Float64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dspr_64",
@@ -13898,7 +13892,7 @@ def rocblas_ssyr2k_strided_batched(
     ldb: Int32,
     stride__b: Int64,
     beta: ImmPointer[Float32, _],
-    _c: UnsafePointer[Float32, _],
+    _c: Pointer[Float32, _],
     ldc: Int32,
     stride__c: Int64,
     batch_count: Int32,
@@ -14049,7 +14043,7 @@ def rocblas_stpsv_64(
     diag: Diagonal,
     n: Int64,
     _ap: ImmPointer[Float32, _],
-    x: UnsafePointer[Float32, _],
+    x: Pointer[Float32, _],
     incx: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -14073,7 +14067,7 @@ def rocblas_scasum_batched(
     x: OpaquePointer[_],
     incx: Int32,
     batch_count: Int32,
-    results: UnsafePointer[Float32, _],
+    results: Pointer[Float32, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_scasum_batched",
@@ -14096,7 +14090,7 @@ def rocblas_ztpsv_strided_batched_64(
     n: Int64,
     _ap: ImmPointer[ComplexFloat64, _],
     stride__a: Int64,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: Pointer[ComplexFloat64, _],
     incx: Int64,
     stride_x: Int64,
     batch_count: Int64,
@@ -14134,9 +14128,9 @@ def rocblas_ztpsv_strided_batched_64(
 def rocblas_zswap(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: Pointer[ComplexFloat64, _],
     incx: Int32,
-    y: UnsafePointer[ComplexFloat64, _],
+    y: Pointer[ComplexFloat64, _],
     incy: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -14157,7 +14151,7 @@ def rocblas_scnrm2_64(
     n: Int64,
     x: ImmPointer[ComplexFloat32, _],
     incx: Int64,
-    result: UnsafePointer[Float32, _],
+    result: Pointer[Float32, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_scnrm2_64",
@@ -14180,7 +14174,7 @@ def rocblas_strsv_strided_batched_64(
     _a: ImmPointer[Float32, _],
     lda: Int64,
     stride__a: Int64,
-    x: UnsafePointer[Float32, _],
+    x: Pointer[Float32, _],
     incx: Int64,
     stride_x: Int64,
     batch_count: Int64,
@@ -14222,7 +14216,7 @@ def rocblas_dcopy(
     n: Int32,
     x: ImmPointer[Float64, _],
     incx: Int32,
-    y: UnsafePointer[Float64, _],
+    y: Pointer[Float64, _],
     incy: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -14246,7 +14240,7 @@ def rocblas_zdotu_batched_64(
     y: OpaquePointer[_],
     incy: Int64,
     batch_count: Int64,
-    result: UnsafePointer[ComplexFloat64, _],
+    result: Pointer[ComplexFloat64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdotu_batched_64",
@@ -14271,7 +14265,7 @@ def rocblas_bfdot_batched(
     y: OpaquePointer[_],
     incy: Int32,
     batch_count: Int32,
-    result: UnsafePointer[BFloat16, _],
+    result: Pointer[BFloat16, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_bfdot_batched",
@@ -14297,7 +14291,7 @@ def rocblas_stbmv_64(
     k: Int64,
     _a: ImmPointer[Float32, _],
     lda: Int64,
-    x: UnsafePointer[Float32, _],
+    x: Pointer[Float32, _],
     incx: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -14375,7 +14369,7 @@ def rocblas_icamin_batched(
     x: OpaquePointer[_],
     incx: Int32,
     batch_count: Int32,
-    result: UnsafePointer[Int32, _],
+    result: Pointer[Int32, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_icamin_batched",
@@ -14398,7 +14392,7 @@ def rocblas_ztrmv(
     n: Int32,
     _a: ImmPointer[ComplexFloat64, _],
     lda: Int32,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: Pointer[ComplexFloat64, _],
     incx: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -14429,7 +14423,7 @@ def rocblas_cher2k(
     _b: ImmPointer[ComplexFloat32, _],
     ldb: Int32,
     beta: ImmPointer[Float32, _],
-    _c: UnsafePointer[ComplexFloat32, _],
+    _c: Pointer[ComplexFloat32, _],
     ldc: Int32,
 ) raises -> Status:
     """
@@ -14538,7 +14532,7 @@ def rocblas_zspr_64(
     alpha: ImmPointer[ComplexFloat64, _],
     x: ImmPointer[ComplexFloat64, _],
     incx: Int64,
-    _ap: UnsafePointer[ComplexFloat64, _],
+    _ap: Pointer[ComplexFloat64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zspr_64",
@@ -14561,9 +14555,9 @@ def rocblas_cgeru_64(
     alpha: ImmPointer[ComplexFloat32, _],
     x: ImmPointer[ComplexFloat32, _],
     incx: Int64,
-    y: UnsafePointer[ComplexFloat32, _],
+    y: Pointer[ComplexFloat32, _],
     incy: Int64,
-    _a: UnsafePointer[ComplexFloat32, _],
+    _a: Pointer[ComplexFloat32, _],
     lda: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -14649,7 +14643,7 @@ def rocblas_zsyrkx(
     _b: ImmPointer[ComplexFloat64, _],
     ldb: Int32,
     beta: ImmPointer[ComplexFloat64, _],
-    _c: UnsafePointer[ComplexFloat64, _],
+    _c: Pointer[ComplexFloat64, _],
     ldc: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -14681,7 +14675,7 @@ def rocblas_ddgmm(
     lda: Int32,
     x: ImmPointer[Float64, _],
     incx: Int32,
-    _c: UnsafePointer[Float64, _],
+    _c: Pointer[Float64, _],
     ldc: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -14765,7 +14759,7 @@ def rocblas_sspmv(
     x: ImmPointer[Float32, _],
     incx: Int32,
     beta: ImmPointer[Float32, _],
-    y: UnsafePointer[Float32, _],
+    y: Pointer[Float32, _],
     incy: Int32,
 ) raises -> Status:
     """
@@ -14834,7 +14828,7 @@ def rocblas_ctbmv_strided_batched(
     _a: ImmPointer[ComplexFloat32, _],
     lda: Int32,
     stride__a: Int64,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: Pointer[ComplexFloat32, _],
     incx: Int32,
     stride_x: Int64,
     batch_count: Int32,
@@ -14887,7 +14881,7 @@ def rocblas_chemm_strided_batched(
     ldb: Int32,
     stride__b: Int64,
     beta: ImmPointer[ComplexFloat32, _],
-    _c: UnsafePointer[ComplexFloat32, _],
+    _c: Pointer[ComplexFloat32, _],
     ldc: Int32,
     stride__c: Int64,
     batch_count: Int32,
@@ -15035,7 +15029,7 @@ def rocblas_dtbsv_64(
     k: Int64,
     _a: ImmPointer[Float64, _],
     lda: Int64,
-    x: UnsafePointer[Float64, _],
+    x: Pointer[Float64, _],
     incx: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -15064,7 +15058,7 @@ def rocblas_ztbmv_64(
     k: Int64,
     _a: ImmPointer[ComplexFloat64, _],
     lda: Int64,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: Pointer[ComplexFloat64, _],
     incx: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -15096,7 +15090,7 @@ def rocblas_chemv_strided_batched(
     incx: Int32,
     stride_x: Int64,
     beta: ImmPointer[ComplexFloat32, _],
-    y: UnsafePointer[ComplexFloat32, _],
+    y: Pointer[ComplexFloat32, _],
     incy: Int32,
     stride_y: Int64,
     batch_count: Int32,
@@ -15254,7 +15248,7 @@ def rocblas_zgemmt(
     _b: ImmPointer[ComplexFloat64, _],
     ldb: Int32,
     beta: ImmPointer[ComplexFloat64, _],
-    _c: UnsafePointer[ComplexFloat64, _],
+    _c: Pointer[ComplexFloat64, _],
     ldc: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -15298,7 +15292,7 @@ def rocblas_idamin(
     n: Int32,
     x: ImmPointer[Float64, _],
     incx: Int32,
-    result: UnsafePointer[Int32, _],
+    result: Pointer[Int32, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_idamin",
@@ -15309,9 +15303,9 @@ def rocblas_idamin(
 def rocblas_drotm_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[Float64, _],
+    x: Pointer[Float64, _],
     incx: Int64,
-    y: UnsafePointer[Float64, _],
+    y: Pointer[Float64, _],
     incy: Int64,
     param: ImmPointer[Float64, _],
 ) raises -> Status:
@@ -15333,7 +15327,7 @@ def rocblas_cscal_strided_batched_64(
     handle: Handle,
     n: Int64,
     alpha: ImmPointer[ComplexFloat32, _],
-    x: UnsafePointer[ComplexFloat32, _],
+    x: Pointer[ComplexFloat32, _],
     incx: Int64,
     stride_x: Int64,
     batch_count: Int64,
@@ -15362,7 +15356,7 @@ def rocblas_zsyrk(
     _a: ImmPointer[ComplexFloat64, _],
     lda: Int32,
     beta: ImmPointer[ComplexFloat64, _],
-    _c: UnsafePointer[ComplexFloat64, _],
+    _c: Pointer[ComplexFloat64, _],
     ldc: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -15392,7 +15386,7 @@ def rocblas_dspr2_64(
     incx: Int64,
     y: ImmPointer[Float64, _],
     incy: Int64,
-    _ap: UnsafePointer[Float64, _],
+    _ap: Pointer[Float64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dspr2_64",
@@ -15417,7 +15411,7 @@ def rocblas_icamin_strided_batched(
     incx: Int32,
     stridex: Int64,
     batch_count: Int32,
-    result: UnsafePointer[Int32, _],
+    result: Pointer[Int32, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_icamin_strided_batched",
@@ -15442,7 +15436,7 @@ def rocblas_dsyr2_64(
     incx: Int64,
     y: ImmPointer[Float64, _],
     incy: Int64,
-    _a: UnsafePointer[Float64, _],
+    _a: Pointer[Float64, _],
     lda: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -15469,9 +15463,9 @@ def rocblas_cgerc(
     alpha: ImmPointer[ComplexFloat32, _],
     x: ImmPointer[ComplexFloat32, _],
     incx: Int32,
-    y: UnsafePointer[ComplexFloat32, _],
+    y: Pointer[ComplexFloat32, _],
     incy: Int32,
-    _a: UnsafePointer[ComplexFloat32, _],
+    _a: Pointer[ComplexFloat32, _],
     lda: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -15505,7 +15499,7 @@ def rocblas_zsyrkx_strided_batched(
     ldb: Int32,
     stride__b: Int64,
     beta: ImmPointer[ComplexFloat64, _],
-    _c: UnsafePointer[ComplexFloat64, _],
+    _c: Pointer[ComplexFloat64, _],
     ldc: Int32,
     stride__c: Int64,
     batch_count: Int32,
@@ -15567,7 +15561,7 @@ def rocblas_cgemmt_strided_batched(
     ldb: Int32,
     stride_b: Int64,
     beta: ImmPointer[ComplexFloat32, _],
-    _c: UnsafePointer[ComplexFloat32, _],
+    _c: Pointer[ComplexFloat32, _],
     ldc: Int32,
     stride_c: Int64,
     batch_count: Int32,
@@ -15625,7 +15619,7 @@ def rocblas_dtrmv_strided_batched_64(
     _a: ImmPointer[Float64, _],
     lda: Int64,
     stride__a: Int64,
-    x: UnsafePointer[Float64, _],
+    x: Pointer[Float64, _],
     incx: Int64,
     stride_x: Int64,
     batch_count: Int64,
@@ -15726,7 +15720,7 @@ def rocblas_sspr2_64(
     incx: Int64,
     y: ImmPointer[Float32, _],
     incy: Int64,
-    _ap: UnsafePointer[Float32, _],
+    _ap: Pointer[Float32, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_sspr2_64",
@@ -15753,7 +15747,7 @@ def rocblas_zher2_64(
     incx: Int64,
     y: ImmPointer[ComplexFloat64, _],
     incy: Int64,
-    _a: UnsafePointer[ComplexFloat64, _],
+    _a: Pointer[ComplexFloat64, _],
     lda: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -15973,7 +15967,7 @@ def rocblas_ztpmv_strided_batched_64(
     n: Int64,
     _a: ImmPointer[ComplexFloat64, _],
     stride__a: Int64,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: Pointer[ComplexFloat64, _],
     incx: Int64,
     stride_x: Int64,
     batch_count: Int64,
@@ -16019,7 +16013,7 @@ def rocblas_zsyr2_strided_batched(
     y: ImmPointer[ComplexFloat64, _],
     incy: Int32,
     stridey: Int64,
-    _a: UnsafePointer[ComplexFloat64, _],
+    _a: Pointer[ComplexFloat64, _],
     lda: Int32,
     stride_a: Int64,
     batch_count: Int32,
@@ -16069,7 +16063,7 @@ def rocblas_zsyr2_64(
     incx: Int64,
     y: ImmPointer[ComplexFloat64, _],
     incy: Int64,
-    _a: UnsafePointer[ComplexFloat64, _],
+    _a: Pointer[ComplexFloat64, _],
     lda: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -16090,7 +16084,7 @@ def rocblas_zsyr2_64(
 
 
 def rocblas_device_malloc_free(
-    ptr: UnsafePointer[MallocBase, _],
+    ptr: Pointer[MallocBase, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_device_malloc_free",
@@ -16109,7 +16103,7 @@ def rocblas_zhpr2_strided_batched_64(
     y: ImmPointer[ComplexFloat64, _],
     incy: Int64,
     stride_y: Int64,
-    _ap: UnsafePointer[ComplexFloat64, _],
+    _ap: Pointer[ComplexFloat64, _],
     stride__a: Int64,
     batch_count: Int64,
 ) raises -> Status:
@@ -16154,7 +16148,7 @@ def rocblas_icamin_strided_batched_64(
     incx: Int64,
     stridex: Int64,
     batch_count: Int64,
-    result: UnsafePointer[Int64, _],
+    result: Pointer[Int64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_icamin_strided_batched_64",
@@ -16175,7 +16169,7 @@ def rocblas_idamax(
     n: Int32,
     x: ImmPointer[Float64, _],
     incx: Int32,
-    result: UnsafePointer[Int32, _],
+    result: Pointer[Int32, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_idamax",
@@ -16219,7 +16213,7 @@ def rocblas_zaxpy_strided_batched(
     x: ImmPointer[ComplexFloat64, _],
     incx: Int32,
     stridex: Int64,
-    y: UnsafePointer[ComplexFloat64, _],
+    y: Pointer[ComplexFloat64, _],
     incy: Int32,
     stridey: Int64,
     batch_count: Int32,
@@ -16254,7 +16248,7 @@ def rocblas_cgemm(
     _b: ImmPointer[ComplexFloat32, _],
     ldb: Int32,
     beta: ImmPointer[ComplexFloat32, _],
-    _c: UnsafePointer[ComplexFloat32, _],
+    _c: Pointer[ComplexFloat32, _],
     ldc: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -16295,10 +16289,10 @@ def rocblas_cgemm(
 
 def rocblas_crotg_64(
     handle: Handle,
-    a: UnsafePointer[ComplexFloat32, _],
-    b: UnsafePointer[ComplexFloat32, _],
-    c: UnsafePointer[Float32, _],
-    s: UnsafePointer[ComplexFloat32, _],
+    a: Pointer[ComplexFloat32, _],
+    b: Pointer[ComplexFloat32, _],
+    c: Pointer[Float32, _],
+    s: Pointer[ComplexFloat32, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_crotg_64",
@@ -16315,10 +16309,10 @@ def rocblas_crotg_64(
 def rocblas_srot_strided_batched(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[Float32, _],
+    x: Pointer[Float32, _],
     incx: Int32,
     stride_x: Int64,
-    y: UnsafePointer[Float32, _],
+    y: Pointer[Float32, _],
     incy: Int32,
     stride_y: Int64,
     c: ImmPointer[Float32, _],
@@ -16384,9 +16378,9 @@ def rocblas_srot_strided_batched(
 def rocblas_srot(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[Float32, _],
+    x: Pointer[Float32, _],
     incx: Int32,
-    y: UnsafePointer[Float32, _],
+    y: Pointer[Float32, _],
     incy: Int32,
     c: ImmPointer[Float32, _],
     s: ImmPointer[Float32, _],
@@ -16445,7 +16439,7 @@ def rocblas_zdotc_strided_batched_64(
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
-    result: UnsafePointer[ComplexFloat64, _],
+    result: Pointer[ComplexFloat64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdotc_strided_batched_64",
@@ -16568,7 +16562,7 @@ def rocblas_cscal_strided_batched(
     handle: Handle,
     n: Int32,
     alpha: ImmPointer[ComplexFloat32, _],
-    x: UnsafePointer[ComplexFloat32, _],
+    x: Pointer[ComplexFloat32, _],
     incx: Int32,
     stride_x: Int64,
     batch_count: Int32,
@@ -16598,7 +16592,7 @@ def rocblas_dspr2_strided_batched(
     y: ImmPointer[Float64, _],
     incy: Int32,
     stride_y: Int64,
-    _ap: UnsafePointer[Float64, _],
+    _ap: Pointer[Float64, _],
     stride__a: Int64,
     batch_count: Int32,
 ) raises -> Status:
@@ -16642,7 +16636,7 @@ def rocblas_dnrm2_batched(
     x: OpaquePointer[_],
     incx: Int32,
     batch_count: Int32,
-    results: UnsafePointer[Float64, _],
+    results: Pointer[Float64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dnrm2_batched",
@@ -16665,7 +16659,7 @@ def rocblas_ddot_batched(
     y: OpaquePointer[_],
     incy: Int32,
     batch_count: Int32,
-    result: UnsafePointer[Float64, _],
+    result: Pointer[Float64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ddot_batched",
@@ -16687,7 +16681,7 @@ def rocblas_idamax_64(
     n: Int64,
     x: ImmPointer[Float64, _],
     incx: Int64,
-    result: UnsafePointer[Int64, _],
+    result: Pointer[Int64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_idamax_64",
@@ -16706,7 +16700,7 @@ def rocblas_csyr2_strided_batched(
     y: ImmPointer[ComplexFloat32, _],
     incy: Int32,
     stridey: Int64,
-    _a: UnsafePointer[ComplexFloat32, _],
+    _a: Pointer[ComplexFloat32, _],
     lda: Int32,
     stride_a: Int64,
     batch_count: Int32,
@@ -16757,7 +16751,7 @@ def rocblas_cdotu_strided_batched_64(
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
-    result: UnsafePointer[ComplexFloat32, _],
+    result: Pointer[ComplexFloat32, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cdotu_strided_batched_64",
@@ -16791,7 +16785,7 @@ def rocblas_hgemm_strided_batched(
     ldb: Int32,
     stride_b: Int64,
     beta: ImmPointer[Float16, _],
-    _c: UnsafePointer[Float16, _],
+    _c: Pointer[Float16, _],
     ldc: Int32,
     stride_c: Int64,
     batch_count: Int32,
@@ -16978,7 +16972,7 @@ def rocblas_ssbmv_strided_batched(
     incx: Int32,
     stridex: Int64,
     beta: ImmPointer[Float32, _],
-    y: UnsafePointer[Float32, _],
+    y: Pointer[Float32, _],
     incy: Int32,
     stridey: Int64,
     batch_count: Int32,
@@ -17099,7 +17093,7 @@ def rocblas_zsymm(
     _b: ImmPointer[ComplexFloat64, _],
     ldb: Int32,
     beta: ImmPointer[ComplexFloat64, _],
-    _c: UnsafePointer[ComplexFloat64, _],
+    _c: Pointer[ComplexFloat64, _],
     ldc: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -17130,7 +17124,7 @@ def rocblas_dtpmv_strided_batched(
     n: Int32,
     _a: ImmPointer[Float64, _],
     stride__a: Int64,
-    x: UnsafePointer[Float64, _],
+    x: Pointer[Float64, _],
     incx: Int32,
     stride_x: Int64,
     batch_count: Int32,
@@ -17192,7 +17186,7 @@ def rocblas_izamax_batched_64(
     x: OpaquePointer[_],
     incx: Int64,
     batch_count: Int64,
-    result: UnsafePointer[Int64, _],
+    result: Pointer[Int64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_izamax_batched_64",
@@ -17252,10 +17246,10 @@ def rocblas_cgerc_strided_batched(
     x: ImmPointer[ComplexFloat32, _],
     incx: Int32,
     stridex: Int64,
-    y: UnsafePointer[ComplexFloat32, _],
+    y: Pointer[ComplexFloat32, _],
     incy: Int32,
     stridey: Int64,
-    _a: UnsafePointer[ComplexFloat32, _],
+    _a: Pointer[ComplexFloat32, _],
     lda: Int32,
     stride_a: Int64,
     batch_count: Int32,
@@ -17309,7 +17303,7 @@ def rocblas_dgemv_strided_batched_64(
     incx: Int64,
     stridex: Int64,
     beta: ImmPointer[Float64, _],
-    y: UnsafePointer[Float64, _],
+    y: Pointer[Float64, _],
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
@@ -17367,7 +17361,7 @@ def rocblas_dgemm(
     _b: ImmPointer[Float64, _],
     ldb: Int32,
     beta: ImmPointer[Float64, _],
-    _c: UnsafePointer[Float64, _],
+    _c: Pointer[Float64, _],
     ldc: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -17410,7 +17404,7 @@ def rocblas_zscal_64(
     handle: Handle,
     n: Int64,
     alpha: ImmPointer[ComplexFloat64, _],
-    x: UnsafePointer[ComplexFloat64, _],
+    x: Pointer[ComplexFloat64, _],
     incx: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -17432,7 +17426,7 @@ def rocblas_csyr(
     alpha: ImmPointer[ComplexFloat32, _],
     x: ImmPointer[ComplexFloat32, _],
     incx: Int32,
-    _a: UnsafePointer[ComplexFloat32, _],
+    _a: Pointer[ComplexFloat32, _],
     lda: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -17462,7 +17456,7 @@ def rocblas_ztrsm_strided_batched_64(
     _a: ImmPointer[ComplexFloat64, _],
     lda: Int64,
     stride_a: Int64,
-    _b: UnsafePointer[ComplexFloat64, _],
+    _b: Pointer[ComplexFloat64, _],
     ldb: Int64,
     stride_b: Int64,
     batch_count: Int64,
@@ -17516,7 +17510,7 @@ def rocblas_dsbmv(
     x: ImmPointer[Float64, _],
     incx: Int32,
     beta: ImmPointer[Float64, _],
-    y: UnsafePointer[Float64, _],
+    y: Pointer[Float64, _],
     incy: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -17545,9 +17539,9 @@ def rocblas_dger_64(
     alpha: ImmPointer[Float64, _],
     x: ImmPointer[Float64, _],
     incx: Int64,
-    y: UnsafePointer[Float64, _],
+    y: Pointer[Float64, _],
     incy: Int64,
-    _a: UnsafePointer[Float64, _],
+    _a: Pointer[Float64, _],
     lda: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -17704,7 +17698,7 @@ def rocblas_cdotc_64(
     incx: Int64,
     y: ImmPointer[ComplexFloat32, _],
     incy: Int64,
-    result: UnsafePointer[ComplexFloat32, _],
+    result: Pointer[ComplexFloat32, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cdotc_64",
@@ -17780,7 +17774,7 @@ def rocblas_zher2(
     incx: Int32,
     y: ImmPointer[ComplexFloat64, _],
     incy: Int32,
-    _a: UnsafePointer[ComplexFloat64, _],
+    _a: Pointer[ComplexFloat64, _],
     lda: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -17803,9 +17797,9 @@ def rocblas_zher2(
 def rocblas_dswap_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[Float64, _],
+    x: Pointer[Float64, _],
     incx: Int64,
-    y: UnsafePointer[Float64, _],
+    y: Pointer[Float64, _],
     incy: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -17831,7 +17825,7 @@ def rocblas_dsyrk(
     _a: ImmPointer[Float64, _],
     lda: Int32,
     beta: ImmPointer[Float64, _],
-    _c: UnsafePointer[Float64, _],
+    _c: Pointer[Float64, _],
     ldc: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -17855,10 +17849,10 @@ def rocblas_dsyrk(
 def rocblas_csrot_strided_batched_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: Pointer[ComplexFloat32, _],
     incx: Int64,
     stride_x: Int64,
-    y: UnsafePointer[ComplexFloat32, _],
+    y: Pointer[ComplexFloat32, _],
     incy: Int64,
     stride_y: Int64,
     c: ImmPointer[Float32, _],
@@ -17886,9 +17880,9 @@ def rocblas_csrot_strided_batched_64(
 def rocblas_sswap_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[Float32, _],
+    x: Pointer[Float32, _],
     incx: Int64,
-    y: UnsafePointer[Float32, _],
+    y: Pointer[Float32, _],
     incy: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -17911,7 +17905,7 @@ def rocblas_saxpy_strided_batched_64(
     x: ImmPointer[Float32, _],
     incx: Int64,
     stridex: Int64,
-    y: UnsafePointer[Float32, _],
+    y: Pointer[Float32, _],
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
@@ -17995,7 +17989,7 @@ def rocblas_ctbsv(
     k: Int32,
     _a: ImmPointer[ComplexFloat32, _],
     lda: Int32,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: Pointer[ComplexFloat32, _],
     incx: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -18016,7 +18010,7 @@ def rocblas_ctbsv(
 
 
 def rocblas_stop_device_memory_size_query(
-    handle: Handle, size: UnsafePointer[Int, _]
+    handle: Handle, size: Pointer[Int, _]
 ) raises -> Status:
     """\\brief
     \\details
@@ -18094,9 +18088,9 @@ def rocblas_daxpy_batched(
 def rocblas_dswap(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[Float64, _],
+    x: Pointer[Float64, _],
     incx: Int32,
-    y: UnsafePointer[Float64, _],
+    y: Pointer[Float64, _],
     incy: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -18251,7 +18245,7 @@ def rocblas_stpmv_strided_batched_64(
     n: Int64,
     _a: ImmPointer[Float32, _],
     stride__a: Int64,
-    x: UnsafePointer[Float32, _],
+    x: Pointer[Float32, _],
     incx: Int64,
     stride_x: Int64,
     batch_count: Int64,
@@ -18294,7 +18288,7 @@ def rocblas_ztrtri_strided_batched(
     _a: ImmPointer[ComplexFloat64, _],
     lda: Int32,
     stride_a: Int64,
-    inv_a: UnsafePointer[ComplexFloat64, _],
+    inv_a: Pointer[ComplexFloat64, _],
     ldinv_a: Int32,
     stride_inv_a: Int64,
     batch_count: Int32,
@@ -18359,7 +18353,7 @@ def rocblas_idamin_64(
     n: Int64,
     x: ImmPointer[Float64, _],
     incx: Int64,
-    result: UnsafePointer[Int64, _],
+    result: Pointer[Int64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_idamin_64",
@@ -18401,7 +18395,7 @@ def rocblas_ztbsv_64(
     k: Int64,
     _a: ImmPointer[ComplexFloat64, _],
     lda: Int64,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: Pointer[ComplexFloat64, _],
     incx: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -18550,7 +18544,7 @@ def rocblas_cspr(
     alpha: ImmPointer[ComplexFloat32, _],
     x: ImmPointer[ComplexFloat32, _],
     incx: Int32,
-    _ap: UnsafePointer[ComplexFloat32, _],
+    _ap: Pointer[ComplexFloat32, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cspr",
@@ -18574,7 +18568,7 @@ def rocblas_ztrsv_64(
     n: Int64,
     _a: ImmPointer[ComplexFloat64, _],
     lda: Int64,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: Pointer[ComplexFloat64, _],
     incx: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -18604,7 +18598,7 @@ def rocblas_chpmv_strided_batched_64(
     incx: Int64,
     stride_x: Int64,
     beta: ImmPointer[ComplexFloat32, _],
-    y: UnsafePointer[ComplexFloat32, _],
+    y: Pointer[ComplexFloat32, _],
     incy: Int64,
     stride_y: Int64,
     batch_count: Int64,
@@ -18656,7 +18650,7 @@ def rocblas_chpr2_strided_batched(
     y: ImmPointer[ComplexFloat32, _],
     incy: Int32,
     stride_y: Int64,
-    _ap: UnsafePointer[ComplexFloat32, _],
+    _ap: Pointer[ComplexFloat32, _],
     stride__a: Int64,
     batch_count: Int32,
 ) raises -> Status:
@@ -18783,7 +18777,7 @@ def rocblas_dsbmv_64(
     x: ImmPointer[Float64, _],
     incx: Int64,
     beta: ImmPointer[Float64, _],
-    y: UnsafePointer[Float64, _],
+    y: Pointer[Float64, _],
     incy: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -18811,7 +18805,7 @@ def rocblas_dasum_batched_64(
     x: OpaquePointer[_],
     incx: Int64,
     batch_count: Int64,
-    results: UnsafePointer[Float64, _],
+    results: Pointer[Float64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dasum_batched_64",
@@ -18830,7 +18824,7 @@ def rocblas_zscal(
     handle: Handle,
     n: Int32,
     alpha: ImmPointer[ComplexFloat64, _],
-    x: UnsafePointer[ComplexFloat64, _],
+    x: Pointer[ComplexFloat64, _],
     incx: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -18852,7 +18846,7 @@ def rocblas_ztpsv(
     diag: Diagonal,
     n: Int32,
     _ap: ImmPointer[ComplexFloat64, _],
-    x: UnsafePointer[ComplexFloat64, _],
+    x: Pointer[ComplexFloat64, _],
     incx: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -19007,7 +19001,7 @@ def rocblas_ctrmv_64(
     n: Int64,
     _a: ImmPointer[ComplexFloat32, _],
     lda: Int64,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: Pointer[ComplexFloat32, _],
     incx: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -19039,7 +19033,7 @@ def rocblas_zhbmv_strided_batched_64(
     incx: Int64,
     stride_x: Int64,
     beta: ImmPointer[ComplexFloat64, _],
-    y: UnsafePointer[ComplexFloat64, _],
+    y: Pointer[ComplexFloat64, _],
     incy: Int64,
     stride_y: Int64,
     batch_count: Int64,
@@ -19096,7 +19090,7 @@ def rocblas_csyr2k(
     _b: ImmPointer[ComplexFloat32, _],
     ldb: Int32,
     beta: ImmPointer[ComplexFloat32, _],
-    _c: UnsafePointer[ComplexFloat32, _],
+    _c: Pointer[ComplexFloat32, _],
     ldc: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -19126,7 +19120,7 @@ def rocblas_izamin_strided_batched_64(
     incx: Int64,
     stridex: Int64,
     batch_count: Int64,
-    result: UnsafePointer[Int64, _],
+    result: Pointer[Int64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_izamin_strided_batched_64",
@@ -19151,7 +19145,7 @@ def rocblas_ctrsv_strided_batched(
     _a: ImmPointer[ComplexFloat32, _],
     lda: Int32,
     stride__a: Int64,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: Pointer[ComplexFloat32, _],
     incx: Int32,
     stride_x: Int64,
     batch_count: Int32,
@@ -19224,7 +19218,7 @@ def rocblas_zsyr2(
     incx: Int32,
     y: ImmPointer[ComplexFloat64, _],
     incy: Int32,
-    _a: UnsafePointer[ComplexFloat64, _],
+    _a: Pointer[ComplexFloat64, _],
     lda: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -19253,7 +19247,7 @@ def rocblas_dtbmv_64(
     k: Int64,
     _a: ImmPointer[Float64, _],
     lda: Int64,
-    x: UnsafePointer[Float64, _],
+    x: Pointer[Float64, _],
     incx: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -19286,7 +19280,7 @@ def rocblas_sgbmv(
     x: ImmPointer[Float32, _],
     incx: Int32,
     beta: ImmPointer[Float32, _],
-    y: UnsafePointer[Float32, _],
+    y: Pointer[Float32, _],
     incy: Int32,
 ) raises -> Status:
     """
@@ -19385,7 +19379,7 @@ def rocblas_ctrtri(
     n: Int32,
     _a: ImmPointer[ComplexFloat32, _],
     lda: Int32,
-    inv_a: UnsafePointer[ComplexFloat32, _],
+    inv_a: Pointer[ComplexFloat32, _],
     ldinv_a: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -19409,7 +19403,7 @@ def rocblas_scnrm2_batched(
     x: OpaquePointer[_],
     incx: Int32,
     batch_count: Int32,
-    results: UnsafePointer[Float32, _],
+    results: Pointer[Float32, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_scnrm2_batched",
@@ -19514,7 +19508,7 @@ def rocblas_cscal_64(
     handle: Handle,
     n: Int64,
     alpha: ImmPointer[ComplexFloat32, _],
-    x: UnsafePointer[ComplexFloat32, _],
+    x: Pointer[ComplexFloat32, _],
     incx: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -19532,10 +19526,10 @@ def rocblas_cscal_64(
 def rocblas_cswap_strided_batched(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: Pointer[ComplexFloat32, _],
     incx: Int32,
     stridex: Int64,
-    y: UnsafePointer[ComplexFloat32, _],
+    y: Pointer[ComplexFloat32, _],
     incy: Int32,
     stridey: Int64,
     batch_count: Int32,
@@ -19567,7 +19561,7 @@ def rocblas_cher2_strided_batched_64(
     y: ImmPointer[ComplexFloat32, _],
     incy: Int64,
     stride_y: Int64,
-    _a: UnsafePointer[ComplexFloat32, _],
+    _a: Pointer[ComplexFloat32, _],
     lda: Int64,
     stride__a: Int64,
     batch_count: Int64,
@@ -19723,7 +19717,7 @@ def rocblas_ztrmv_strided_batched_64(
     _a: ImmPointer[ComplexFloat64, _],
     lda: Int64,
     stride__a: Int64,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: Pointer[ComplexFloat64, _],
     incx: Int64,
     stride_x: Int64,
     batch_count: Int64,
@@ -19766,10 +19760,8 @@ def rocblas_ztpmv_batched(
     trans_a: Operation,
     diag: Diagonal,
     n: Int32,
-    _a: UnsafePointer[
-        mut=False, UnsafePointer[ComplexFloat64, MutAnyOrigin], _
-    ],
-    x: UnsafePointer[UnsafePointer[ComplexFloat64, MutAnyOrigin], _],
+    _a: ImmPointer[MutPointer[ComplexFloat64, MutAnyOrigin], _],
+    x: Pointer[MutPointer[ComplexFloat64, MutAnyOrigin], _],
     incx: Int32,
     batch_count: Int32,
 ) raises -> Status:
@@ -19833,7 +19825,7 @@ def rocblas_strmm(
     lda: Int32,
     _b: ImmPointer[Float32, _],
     ldb: Int32,
-    _c: UnsafePointer[Float32, _],
+    _c: Pointer[Float32, _],
     ldc: Int32,
 ) raises -> Status:
     """
@@ -20002,7 +19994,7 @@ def rocblas_isamin_batched_64(
     x: OpaquePointer[_],
     incx: Int64,
     batch_count: Int64,
-    result: UnsafePointer[Int64, _],
+    result: Pointer[Int64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_isamin_batched_64",
@@ -20059,7 +20051,7 @@ def rocblas_scasum_64(
     n: Int64,
     x: ImmPointer[ComplexFloat32, _],
     incx: Int64,
-    result: UnsafePointer[Float32, _],
+    result: Pointer[Float32, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_scasum_64",
@@ -20117,7 +20109,7 @@ def rocblas_ssyrk_strided_batched(
     lda: Int32,
     stride__a: Int64,
     beta: ImmPointer[Float32, _],
-    _c: UnsafePointer[Float32, _],
+    _c: Pointer[Float32, _],
     ldc: Int32,
     stride__c: Int64,
     batch_count: Int32,
@@ -20245,7 +20237,7 @@ def rocblas_dscal_strided_batched_64(
     handle: Handle,
     n: Int64,
     alpha: ImmPointer[Float64, _],
-    x: UnsafePointer[Float64, _],
+    x: Pointer[Float64, _],
     incx: Int64,
     stride_x: Int64,
     batch_count: Int64,
@@ -20276,7 +20268,7 @@ def rocblas_dsymv_strided_batched_64(
     incx: Int64,
     stridex: Int64,
     beta: ImmPointer[Float64, _],
-    y: UnsafePointer[Float64, _],
+    y: Pointer[Float64, _],
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
@@ -20358,13 +20350,13 @@ def rocblas_dgemv_batched(
 
 def rocblas_crotg_strided_batched(
     handle: Handle,
-    a: UnsafePointer[ComplexFloat32, _],
+    a: Pointer[ComplexFloat32, _],
     stride_a: Int64,
-    b: UnsafePointer[ComplexFloat32, _],
+    b: Pointer[ComplexFloat32, _],
     stride_b: Int64,
-    c: UnsafePointer[Float32, _],
+    c: Pointer[Float32, _],
     stride_c: Int64,
-    s: UnsafePointer[ComplexFloat32, _],
+    s: Pointer[ComplexFloat32, _],
     stride_s: Int64,
     batch_count: Int32,
 ) raises -> Status:
@@ -20574,10 +20566,10 @@ def rocblas_trsm_batched_ex(
 def rocblas_dswap_strided_batched_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[Float64, _],
+    x: Pointer[Float64, _],
     incx: Int64,
     stridex: Int64,
-    y: UnsafePointer[Float64, _],
+    y: Pointer[Float64, _],
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
@@ -20601,9 +20593,9 @@ def rocblas_dswap_strided_batched_64(
 def rocblas_zrot_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: Pointer[ComplexFloat64, _],
     incx: Int64,
-    y: UnsafePointer[ComplexFloat64, _],
+    y: Pointer[ComplexFloat64, _],
     incy: Int64,
     c: ImmPointer[Float64, _],
     s: ImmPointer[ComplexFloat64, _],
@@ -20628,7 +20620,7 @@ def rocblas_scnrm2(
     n: Int32,
     x: ImmPointer[ComplexFloat32, _],
     incx: Int32,
-    result: UnsafePointer[Float32, _],
+    result: Pointer[Float32, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_scnrm2",
@@ -20650,7 +20642,7 @@ def rocblas_zdotc_batched(
     y: OpaquePointer[_],
     incy: Int32,
     batch_count: Int32,
-    result: UnsafePointer[ComplexFloat64, _],
+    result: Pointer[ComplexFloat64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdotc_batched",
@@ -20671,7 +20663,7 @@ def rocblas_csscal_64(
     handle: Handle,
     n: Int64,
     alpha: ImmPointer[Float32, _],
-    x: UnsafePointer[ComplexFloat32, _],
+    x: Pointer[ComplexFloat32, _],
     incx: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -20689,9 +20681,9 @@ def rocblas_csscal_64(
 def rocblas_sswap(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[Float32, _],
+    x: Pointer[Float32, _],
     incx: Int32,
-    y: UnsafePointer[Float32, _],
+    y: Pointer[Float32, _],
     incy: Int32,
 ) raises -> Status:
     """
@@ -20741,7 +20733,7 @@ def rocblas_dtpsv_64(
     diag: Diagonal,
     n: Int64,
     _ap: ImmPointer[Float64, _],
-    x: UnsafePointer[Float64, _],
+    x: Pointer[Float64, _],
     incx: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -20764,7 +20756,7 @@ def rocblas_icamax_64(
     n: Int64,
     x: ImmPointer[ComplexFloat32, _],
     incx: Int64,
-    result: UnsafePointer[Int64, _],
+    result: Pointer[Int64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_icamax_64",
@@ -20825,7 +20817,7 @@ def rocblas_sdot_strided_batched(
     incy: Int32,
     stridey: Int64,
     batch_count: Int32,
-    result: UnsafePointer[Float32, _],
+    result: Pointer[Float32, _],
 ) raises -> Status:
     """
     \\brief <b> BLAS Level 1 API </b>.
@@ -20902,7 +20894,7 @@ def rocblas_dgbmv(
     x: ImmPointer[Float64, _],
     incx: Int32,
     beta: ImmPointer[Float64, _],
-    y: UnsafePointer[Float64, _],
+    y: Pointer[Float64, _],
     incy: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -20934,7 +20926,7 @@ def rocblas_stpmv_strided_batched(
     n: Int32,
     _a: ImmPointer[Float32, _],
     stride__a: Int64,
-    x: UnsafePointer[Float32, _],
+    x: Pointer[Float32, _],
     incx: Int32,
     stride_x: Int64,
     batch_count: Int32,
@@ -21042,7 +21034,7 @@ def rocblas_dsymv_strided_batched(
     incx: Int32,
     stridex: Int64,
     beta: ImmPointer[Float64, _],
-    y: UnsafePointer[Float64, _],
+    y: Pointer[Float64, _],
     incy: Int32,
     stridey: Int64,
     batch_count: Int32,
@@ -21140,7 +21132,7 @@ def rocblas_cdgmm(
     lda: Int32,
     x: ImmPointer[ComplexFloat32, _],
     incx: Int32,
-    _c: UnsafePointer[ComplexFloat32, _],
+    _c: Pointer[ComplexFloat32, _],
     ldc: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -21200,7 +21192,7 @@ def rocblas_dgbmv_strided_batched_64(
     incx: Int64,
     stride_x: Int64,
     beta: ImmPointer[Float64, _],
-    y: UnsafePointer[Float64, _],
+    y: Pointer[Float64, _],
     incy: Int64,
     stride_y: Int64,
     batch_count: Int64,
@@ -21283,7 +21275,7 @@ def rocblas_sdot_64(
     incx: Int64,
     y: ImmPointer[Float32, _],
     incy: Int64,
-    result: UnsafePointer[Float32, _],
+    result: Pointer[Float32, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_sdot_64",
@@ -21430,7 +21422,7 @@ def rocblas_tstgemv_strided_batched_64(
     incx: Int64,
     stridex: Int64,
     beta: ImmPointer[Float32, _],
-    y: UnsafePointer[BFloat16, _],
+    y: Pointer[BFloat16, _],
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
@@ -21478,10 +21470,10 @@ def rocblas_tstgemv_strided_batched_64(
 def rocblas_srotm_strided_batched_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[Float32, _],
+    x: Pointer[Float32, _],
     incx: Int64,
     stride_x: Int64,
-    y: UnsafePointer[Float32, _],
+    y: Pointer[Float32, _],
     incy: Int64,
     stride_y: Int64,
     param: ImmPointer[Float32, _],
@@ -21553,7 +21545,7 @@ def rocblas_dsyrkx(
     _b: ImmPointer[Float64, _],
     ldb: Int32,
     beta: ImmPointer[Float64, _],
-    _c: UnsafePointer[Float64, _],
+    _c: Pointer[Float64, _],
     ldc: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -21579,10 +21571,10 @@ def rocblas_dsyrkx(
 def rocblas_zswap_strided_batched_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: Pointer[ComplexFloat64, _],
     incx: Int64,
     stridex: Int64,
-    y: UnsafePointer[ComplexFloat64, _],
+    y: Pointer[ComplexFloat64, _],
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
@@ -21663,10 +21655,10 @@ def rocblas_cgeru_strided_batched_64(
     x: ImmPointer[ComplexFloat32, _],
     incx: Int64,
     stridex: Int64,
-    y: UnsafePointer[ComplexFloat32, _],
+    y: Pointer[ComplexFloat32, _],
     incy: Int64,
     stridey: Int64,
-    _a: UnsafePointer[ComplexFloat32, _],
+    _a: Pointer[ComplexFloat32, _],
     lda: Int64,
     stride_a: Int64,
     batch_count: Int64,
@@ -21716,7 +21708,7 @@ def rocblas_zdgmm(
     lda: Int32,
     x: ImmPointer[ComplexFloat64, _],
     incx: Int32,
-    _c: UnsafePointer[ComplexFloat64, _],
+    _c: Pointer[ComplexFloat64, _],
     ldc: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -21886,7 +21878,7 @@ def rocblas_chemv(
     x: ImmPointer[ComplexFloat32, _],
     incx: Int32,
     beta: ImmPointer[ComplexFloat32, _],
-    y: UnsafePointer[ComplexFloat32, _],
+    y: Pointer[ComplexFloat32, _],
     incy: Int32,
 ) raises -> Status:
     """
@@ -21969,7 +21961,7 @@ def rocblas_ztrsv_strided_batched_64(
     _a: ImmPointer[ComplexFloat64, _],
     lda: Int64,
     stride__a: Int64,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: Pointer[ComplexFloat64, _],
     incx: Int64,
     stride_x: Int64,
     batch_count: Int64,
@@ -22140,10 +22132,10 @@ def rocblas_ssyr2k_batched(
 
 def rocblas_srotg_64(
     handle: Handle,
-    a: UnsafePointer[Float32, _],
-    b: UnsafePointer[Float32, _],
-    c: UnsafePointer[Float32, _],
-    s: UnsafePointer[Float32, _],
+    a: Pointer[Float32, _],
+    b: Pointer[Float32, _],
+    c: Pointer[Float32, _],
+    s: Pointer[Float32, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_srotg_64",
@@ -22164,7 +22156,7 @@ def rocblas_snrm2_strided_batched_64(
     incx: Int64,
     stridex: Int64,
     batch_count: Int64,
-    results: UnsafePointer[Float32, _],
+    results: Pointer[Float32, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_snrm2_strided_batched_64",
@@ -22186,7 +22178,7 @@ def rocblas_snrm2_batched(
     x: OpaquePointer[_],
     incx: Int32,
     batch_count: Int32,
-    results: UnsafePointer[Float32, _],
+    results: Pointer[Float32, _],
 ) raises -> Status:
     """
     \\brief <b> BLAS Level 1 API </b>.
@@ -22238,7 +22230,7 @@ def rocblas_zhpr_strided_batched(
     x: ImmPointer[ComplexFloat64, _],
     incx: Int32,
     stride_x: Int64,
-    _ap: UnsafePointer[ComplexFloat64, _],
+    _ap: Pointer[ComplexFloat64, _],
     stride__a: Int64,
     batch_count: Int32,
 ) raises -> Status:
@@ -22266,7 +22258,7 @@ def rocblas_caxpy_strided_batched_64(
     x: ImmPointer[ComplexFloat32, _],
     incx: Int64,
     stridex: Int64,
-    y: UnsafePointer[ComplexFloat32, _],
+    y: Pointer[ComplexFloat32, _],
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
@@ -22291,9 +22283,9 @@ def rocblas_caxpy_strided_batched_64(
 def rocblas_srotm(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[Float32, _],
+    x: Pointer[Float32, _],
     incx: Int32,
-    y: UnsafePointer[Float32, _],
+    y: Pointer[Float32, _],
     incy: Int32,
     param: ImmPointer[Float32, _],
 ) raises -> Status:
@@ -22418,7 +22410,7 @@ def rocblas_ddot_strided_batched_64(
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
-    result: UnsafePointer[Float64, _],
+    result: Pointer[Float64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ddot_strided_batched_64",
@@ -22477,9 +22469,9 @@ def rocblas_dger(
     alpha: ImmPointer[Float64, _],
     x: ImmPointer[Float64, _],
     incx: Int32,
-    y: UnsafePointer[Float64, _],
+    y: Pointer[Float64, _],
     incy: Int32,
-    _a: UnsafePointer[Float64, _],
+    _a: Pointer[Float64, _],
     lda: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -22559,11 +22551,9 @@ def rocblas_ztrmv_batched_64(
     trans_a: Operation,
     diag: Diagonal,
     n: Int64,
-    _a: UnsafePointer[
-        mut=False, UnsafePointer[ComplexFloat64, MutAnyOrigin], _
-    ],
+    _a: ImmPointer[MutPointer[ComplexFloat64, MutAnyOrigin], _],
     lda: Int64,
-    x: UnsafePointer[UnsafePointer[ComplexFloat64, MutAnyOrigin], _],
+    x: Pointer[MutPointer[ComplexFloat64, MutAnyOrigin], _],
     incx: Int64,
     batch_count: Int64,
 ) raises -> Status:
@@ -22588,7 +22578,7 @@ def rocblas_sscal_64(
     handle: Handle,
     n: Int64,
     alpha: ImmPointer[Float32, _],
-    x: UnsafePointer[Float32, _],
+    x: Pointer[Float32, _],
     incx: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -22857,7 +22847,7 @@ def rocblas_dtbmv_strided_batched_64(
     _a: ImmPointer[Float64, _],
     lda: Int64,
     stride__a: Int64,
-    x: UnsafePointer[Float64, _],
+    x: Pointer[Float64, _],
     incx: Int64,
     stride_x: Int64,
     batch_count: Int64,
@@ -22907,7 +22897,7 @@ def rocblas_dgemv(
     x: ImmPointer[Float64, _],
     incx: Int32,
     beta: ImmPointer[Float64, _],
-    y: UnsafePointer[Float64, _],
+    y: Pointer[Float64, _],
     incy: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -22938,7 +22928,7 @@ def rocblas_chpmv(
     x: ImmPointer[ComplexFloat32, _],
     incx: Int32,
     beta: ImmPointer[ComplexFloat32, _],
-    y: UnsafePointer[ComplexFloat32, _],
+    y: Pointer[ComplexFloat32, _],
     incy: Int32,
 ) raises -> Status:
     """
@@ -23037,7 +23027,7 @@ def rocblas_dgeam(
     beta: ImmPointer[Float64, _],
     _b: ImmPointer[Float64, _],
     ldb: Int32,
-    _c: UnsafePointer[Float64, _],
+    _c: Pointer[Float64, _],
     ldc: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -23070,7 +23060,7 @@ def rocblas_zhemv_64(
     x: ImmPointer[ComplexFloat64, _],
     incx: Int64,
     beta: ImmPointer[ComplexFloat64, _],
-    y: UnsafePointer[ComplexFloat64, _],
+    y: Pointer[ComplexFloat64, _],
     incy: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -23102,7 +23092,7 @@ def rocblas_sspr2_strided_batched_64(
     y: ImmPointer[Float32, _],
     incy: Int64,
     stride_y: Int64,
-    _ap: UnsafePointer[Float32, _],
+    _ap: Pointer[Float32, _],
     stride__a: Int64,
     batch_count: Int64,
 ) raises -> Status:
@@ -23142,11 +23132,11 @@ def rocblas_sspr2_strided_batched_64(
 
 def rocblas_srotmg_64(
     handle: Handle,
-    d1: UnsafePointer[Float32, _],
-    d2: UnsafePointer[Float32, _],
-    x1: UnsafePointer[Float32, _],
+    d1: Pointer[Float32, _],
+    d2: Pointer[Float32, _],
+    x1: Pointer[Float32, _],
     y1: ImmPointer[Float32, _],
-    param: UnsafePointer[Float32, _],
+    param: Pointer[Float32, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_srotmg_64",
@@ -23172,7 +23162,7 @@ def rocblas_zsyr2_strided_batched_64(
     y: ImmPointer[ComplexFloat64, _],
     incy: Int64,
     stridey: Int64,
-    _a: UnsafePointer[ComplexFloat64, _],
+    _a: Pointer[ComplexFloat64, _],
     lda: Int64,
     stride_a: Int64,
     batch_count: Int64,
@@ -23221,10 +23211,10 @@ def rocblas_zgerc_strided_batched(
     x: ImmPointer[ComplexFloat64, _],
     incx: Int32,
     stridex: Int64,
-    y: UnsafePointer[ComplexFloat64, _],
+    y: Pointer[ComplexFloat64, _],
     incy: Int32,
     stridey: Int64,
-    _a: UnsafePointer[ComplexFloat64, _],
+    _a: Pointer[ComplexFloat64, _],
     lda: Int32,
     stride_a: Int64,
     batch_count: Int32,
@@ -23272,7 +23262,7 @@ def rocblas_izamin_strided_batched(
     incx: Int32,
     stridex: Int64,
     batch_count: Int32,
-    result: UnsafePointer[Int32, _],
+    result: Pointer[Int32, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_izamin_strided_batched",
@@ -23295,7 +23285,7 @@ def rocblas_bfdot(
     incx: Int32,
     y: ImmPointer[BFloat16, _],
     incy: Int32,
-    result: UnsafePointer[BFloat16, _],
+    result: Pointer[BFloat16, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_bfdot",
@@ -23346,7 +23336,7 @@ def rocblas_ssyrkx_strided_batched(
     ldb: Int32,
     stride__b: Int64,
     beta: ImmPointer[Float32, _],
-    _c: UnsafePointer[Float32, _],
+    _c: Pointer[Float32, _],
     ldc: Int32,
     stride__c: Int64,
     batch_count: Int32,
@@ -23500,7 +23490,7 @@ def rocblas_stpmv(
     diag: Diagonal,
     n: Int32,
     _a: ImmPointer[Float32, _],
-    x: UnsafePointer[Float32, _],
+    x: Pointer[Float32, _],
     incx: Int32,
 ) raises -> Status:
     """
@@ -23588,9 +23578,9 @@ def rocblas_cgeru(
     alpha: ImmPointer[ComplexFloat32, _],
     x: ImmPointer[ComplexFloat32, _],
     incx: Int32,
-    y: UnsafePointer[ComplexFloat32, _],
+    y: Pointer[ComplexFloat32, _],
     incy: Int32,
-    _a: UnsafePointer[ComplexFloat32, _],
+    _a: Pointer[ComplexFloat32, _],
     lda: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -23622,7 +23612,7 @@ def rocblas_dtrsm_strided_batched(
     _a: ImmPointer[Float64, _],
     lda: Int32,
     stride_a: Int64,
-    _b: UnsafePointer[Float64, _],
+    _b: Pointer[Float64, _],
     ldb: Int32,
     stride_b: Int64,
     batch_count: Int32,
@@ -23673,7 +23663,7 @@ def rocblas_ddot_batched_64(
     y: OpaquePointer[_],
     incy: Int64,
     batch_count: Int64,
-    result: UnsafePointer[Float64, _],
+    result: Pointer[Float64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ddot_batched_64",
@@ -23693,9 +23683,9 @@ def rocblas_ddot_batched_64(
 def rocblas_zdrot_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: Pointer[ComplexFloat64, _],
     incx: Int64,
-    y: UnsafePointer[ComplexFloat64, _],
+    y: Pointer[ComplexFloat64, _],
     incy: Int64,
     c: ImmPointer[Float64, _],
     s: ImmPointer[Float64, _],
@@ -23723,7 +23713,7 @@ def rocblas_ztpsv_strided_batched(
     n: Int32,
     _ap: ImmPointer[ComplexFloat64, _],
     stride__a: Int64,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: Pointer[ComplexFloat64, _],
     incx: Int32,
     stride_x: Int64,
     batch_count: Int32,
@@ -23765,7 +23755,7 @@ def rocblas_cspr_64(
     alpha: ImmPointer[ComplexFloat32, _],
     x: ImmPointer[ComplexFloat32, _],
     incx: Int64,
-    _ap: UnsafePointer[ComplexFloat32, _],
+    _ap: Pointer[ComplexFloat32, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cspr_64",
@@ -23792,7 +23782,7 @@ def rocblas_dtrsm_64(
     alpha: ImmPointer[Float64, _],
     _a: ImmPointer[Float64, _],
     lda: Int64,
-    _b: UnsafePointer[Float64, _],
+    _b: Pointer[Float64, _],
     ldb: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -23827,7 +23817,7 @@ def rocblas_dgemv_strided_batched(
     incx: Int32,
     stridex: Int64,
     beta: ImmPointer[Float64, _],
-    y: UnsafePointer[Float64, _],
+    y: Pointer[Float64, _],
     incy: Int32,
     stridey: Int64,
     batch_count: Int32,
@@ -23877,7 +23867,7 @@ def rocblas_izamax_64(
     n: Int64,
     x: ImmPointer[ComplexFloat64, _],
     incx: Int64,
-    result: UnsafePointer[Int64, _],
+    result: Pointer[Int64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_izamax_64",
@@ -23902,7 +23892,7 @@ def rocblas_sspr2_strided_batched(
     y: ImmPointer[Float32, _],
     incy: Int32,
     stride_y: Int64,
-    _ap: UnsafePointer[Float32, _],
+    _ap: Pointer[Float32, _],
     stride__a: Int64,
     batch_count: Int32,
 ) raises -> Status:
@@ -24021,9 +24011,9 @@ def rocblas_sspr2_strided_batched(
 def rocblas_zdrot(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: Pointer[ComplexFloat64, _],
     incx: Int32,
-    y: UnsafePointer[ComplexFloat64, _],
+    y: Pointer[ComplexFloat64, _],
     incy: Int32,
     c: ImmPointer[Float64, _],
     s: ImmPointer[Float64, _],
@@ -24047,7 +24037,7 @@ def rocblas_zdscal(
     handle: Handle,
     n: Int32,
     alpha: ImmPointer[Float64, _],
-    x: UnsafePointer[ComplexFloat64, _],
+    x: Pointer[ComplexFloat64, _],
     incx: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -24299,7 +24289,7 @@ def rocblas_csyr_strided_batched(
     x: ImmPointer[ComplexFloat32, _],
     incx: Int32,
     stridex: Int64,
-    _a: UnsafePointer[ComplexFloat32, _],
+    _a: Pointer[ComplexFloat32, _],
     lda: Int32,
     stride_a: Int64,
     batch_count: Int32,
@@ -24338,7 +24328,7 @@ def rocblas_dsyr2k_strided_batched(
     ldb: Int32,
     stride__b: Int64,
     beta: ImmPointer[Float64, _],
-    _c: UnsafePointer[Float64, _],
+    _c: Pointer[Float64, _],
     ldc: Int32,
     stride__c: Int64,
     batch_count: Int32,
@@ -24392,7 +24382,7 @@ def rocblas_dtpmv_64(
     diag: Diagonal,
     n: Int64,
     _a: ImmPointer[Float64, _],
-    x: UnsafePointer[Float64, _],
+    x: Pointer[Float64, _],
     incx: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -24425,7 +24415,7 @@ def rocblas_dgemmt_strided_batched(
     ldb: Int32,
     stride_b: Int64,
     beta: ImmPointer[Float64, _],
-    _c: UnsafePointer[Float64, _],
+    _c: Pointer[Float64, _],
     ldc: Int32,
     stride_c: Int64,
     batch_count: Int32,
@@ -24482,7 +24472,7 @@ def rocblas_dtpmv_strided_batched_64(
     n: Int64,
     _a: ImmPointer[Float64, _],
     stride__a: Int64,
-    x: UnsafePointer[Float64, _],
+    x: Pointer[Float64, _],
     incx: Int64,
     stride_x: Int64,
     batch_count: Int64,
@@ -24528,7 +24518,7 @@ def rocblas_sspmv_strided_batched_64(
     incx: Int64,
     stridex: Int64,
     beta: ImmPointer[Float32, _],
-    y: UnsafePointer[Float32, _],
+    y: Pointer[Float32, _],
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
@@ -24580,7 +24570,7 @@ def rocblas_dgemv_64(
     x: ImmPointer[Float64, _],
     incx: Int64,
     beta: ImmPointer[Float64, _],
-    y: UnsafePointer[Float64, _],
+    y: Pointer[Float64, _],
     incy: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -24613,7 +24603,7 @@ def rocblas_zher2_strided_batched_64(
     y: ImmPointer[ComplexFloat64, _],
     incy: Int64,
     stride_y: Int64,
-    _a: UnsafePointer[ComplexFloat64, _],
+    _a: Pointer[ComplexFloat64, _],
     lda: Int64,
     stride__a: Int64,
     batch_count: Int64,
@@ -24662,7 +24652,7 @@ def rocblas_strsv(
     n: Int32,
     _a: ImmPointer[Float32, _],
     lda: Int32,
-    x: UnsafePointer[Float32, _],
+    x: Pointer[Float32, _],
     incx: Int32,
 ) raises -> Status:
     """
@@ -24745,7 +24735,7 @@ def rocblas_hdot_strided_batched(
     incy: Int32,
     stridey: Int64,
     batch_count: Int32,
-    result: UnsafePointer[Float16, _],
+    result: Pointer[Float16, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_hdot_strided_batched",
@@ -24772,7 +24762,7 @@ def rocblas_ctpsv_strided_batched_64(
     n: Int64,
     _ap: ImmPointer[ComplexFloat32, _],
     stride__a: Int64,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: Pointer[ComplexFloat32, _],
     incx: Int64,
     stride_x: Int64,
     batch_count: Int64,
@@ -24813,7 +24803,7 @@ def rocblas_daxpy_64(
     alpha: ImmPointer[Float64, _],
     x: ImmPointer[Float64, _],
     incx: Int64,
-    y: UnsafePointer[Float64, _],
+    y: Pointer[Float64, _],
     incy: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -24835,7 +24825,7 @@ def rocblas_dcopy_64(
     n: Int64,
     x: ImmPointer[Float64, _],
     incx: Int64,
-    y: UnsafePointer[Float64, _],
+    y: Pointer[Float64, _],
     incy: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -24876,13 +24866,13 @@ def rocblas_ccopy_batched_64(
 
 def rocblas_zrotg_strided_batched_64(
     handle: Handle,
-    a: UnsafePointer[ComplexFloat64, _],
+    a: Pointer[ComplexFloat64, _],
     stride_a: Int64,
-    b: UnsafePointer[ComplexFloat64, _],
+    b: Pointer[ComplexFloat64, _],
     stride_b: Int64,
-    c: UnsafePointer[Float64, _],
+    c: Pointer[Float64, _],
     stride_c: Int64,
-    s: UnsafePointer[ComplexFloat64, _],
+    s: Pointer[ComplexFloat64, _],
     stride_s: Int64,
     batch_count: Int64,
 ) raises -> Status:
@@ -24909,7 +24899,7 @@ def rocblas_dznrm2_batched_64(
     x: OpaquePointer[_],
     incx: Int64,
     batch_count: Int64,
-    results: UnsafePointer[Float64, _],
+    results: Pointer[Float64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dznrm2_batched_64",
@@ -24930,7 +24920,7 @@ def rocblas_dzasum_batched(
     x: OpaquePointer[_],
     incx: Int32,
     batch_count: Int32,
-    results: UnsafePointer[Float64, _],
+    results: Pointer[Float64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dzasum_batched",
@@ -24981,7 +24971,7 @@ def rocblas_sspmv_64(
     x: ImmPointer[Float32, _],
     incx: Int64,
     beta: ImmPointer[Float32, _],
-    y: UnsafePointer[Float32, _],
+    y: Pointer[Float32, _],
     incy: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -25016,7 +25006,7 @@ def rocblas_dgemm_kernel_name(
     ldb: Int32,
     stride_b: Int64,
     beta: ImmPointer[Float64, _],
-    _c: UnsafePointer[Float64, _],
+    _c: Pointer[Float64, _],
     ldc: Int32,
     stride_c: Int64,
     batch_count: Int32,
@@ -25296,7 +25286,7 @@ def rocblas_zhemm(
     _b: ImmPointer[ComplexFloat64, _],
     ldb: Int32,
     beta: ImmPointer[ComplexFloat64, _],
-    _c: UnsafePointer[ComplexFloat64, _],
+    _c: Pointer[ComplexFloat64, _],
     ldc: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -25364,7 +25354,7 @@ def rocblas_zsymm_strided_batched(
     ldb: Int32,
     stride__b: Int64,
     beta: ImmPointer[ComplexFloat64, _],
-    _c: UnsafePointer[ComplexFloat64, _],
+    _c: Pointer[ComplexFloat64, _],
     ldc: Int32,
     stride__c: Int64,
     batch_count: Int32,
@@ -25421,7 +25411,7 @@ def rocblas_stbsv_strided_batched(
     _a: ImmPointer[Float32, _],
     lda: Int32,
     stride__a: Int64,
-    x: UnsafePointer[Float32, _],
+    x: Pointer[Float32, _],
     incx: Int32,
     stride_x: Int64,
     batch_count: Int32,
@@ -25619,7 +25609,7 @@ def rocblas_dasum_strided_batched_64(
     incx: Int64,
     stridex: Int64,
     batch_count: Int64,
-    results: UnsafePointer[Float64, _],
+    results: Pointer[Float64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dasum_strided_batched_64",
@@ -25650,7 +25640,7 @@ def rocblas_sgbmv_strided_batched(
     incx: Int32,
     stride_x: Int64,
     beta: ImmPointer[Float32, _],
-    y: UnsafePointer[Float32, _],
+    y: Pointer[Float32, _],
     incy: Int32,
     stride_y: Int64,
     batch_count: Int32,
@@ -25789,7 +25779,7 @@ def rocblas_cdotc_batched(
     y: OpaquePointer[_],
     incy: Int32,
     batch_count: Int32,
-    result: UnsafePointer[ComplexFloat32, _],
+    result: Pointer[ComplexFloat32, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cdotc_batched",
@@ -25815,7 +25805,7 @@ def rocblas_chpr2_64(
     incx: Int64,
     y: ImmPointer[ComplexFloat32, _],
     incy: Int64,
-    _ap: UnsafePointer[ComplexFloat32, _],
+    _ap: Pointer[ComplexFloat32, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_chpr2_64",
@@ -25868,7 +25858,7 @@ def rocblas_dtpsv_strided_batched_64(
     n: Int64,
     _ap: ImmPointer[Float64, _],
     stride__a: Int64,
-    x: UnsafePointer[Float64, _],
+    x: Pointer[Float64, _],
     incx: Int64,
     stride_x: Int64,
     batch_count: Int64,
@@ -25910,7 +25900,7 @@ def rocblas_strtri(
     n: Int32,
     _a: ImmPointer[Float32, _],
     lda: Int32,
-    inv_a: UnsafePointer[Float32, _],
+    inv_a: Pointer[Float32, _],
     ldinv_a: Int32,
 ) raises -> Status:
     """
@@ -26083,9 +26073,7 @@ def rocblas_dot_batched_ex(
     )
 
 
-def rocblas_get_version_string_size(
-    len: UnsafePointer[Int, _]
-) raises -> Status:
+def rocblas_get_version_string_size(len: Pointer[Int, _]) raises -> Status:
     """\\brief   Queries the minimum buffer size for a successful call to
     \\ref rocblas_get_version_string.
 
@@ -26106,7 +26094,7 @@ def rocblas_dnrm2(
     n: Int32,
     x: ImmPointer[Float64, _],
     incx: Int32,
-    result: UnsafePointer[Float64, _],
+    result: Pointer[Float64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dnrm2",
@@ -26118,7 +26106,7 @@ def rocblas_dscal_64(
     handle: Handle,
     n: Int64,
     alpha: ImmPointer[Float64, _],
-    x: UnsafePointer[Float64, _],
+    x: Pointer[Float64, _],
     incx: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -26160,7 +26148,7 @@ def rocblas_isamax_batched_64(
     x: OpaquePointer[_],
     incx: Int64,
     batch_count: Int64,
-    result: UnsafePointer[Int64, _],
+    result: Pointer[Int64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_isamax_batched_64",
@@ -26184,7 +26172,7 @@ def rocblas_csyr2_64(
     incx: Int64,
     y: ImmPointer[ComplexFloat32, _],
     incy: Int64,
-    _a: UnsafePointer[ComplexFloat32, _],
+    _a: Pointer[ComplexFloat32, _],
     lda: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -26281,9 +26269,9 @@ def rocblas_cgerc_64(
     alpha: ImmPointer[ComplexFloat32, _],
     x: ImmPointer[ComplexFloat32, _],
     incx: Int64,
-    y: UnsafePointer[ComplexFloat32, _],
+    y: Pointer[ComplexFloat32, _],
     incy: Int64,
-    _a: UnsafePointer[ComplexFloat32, _],
+    _a: Pointer[ComplexFloat32, _],
     lda: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -26316,7 +26304,7 @@ def rocblas_tstgemv_strided_batched(
     incx: Int32,
     stridex: Int64,
     beta: ImmPointer[Float32, _],
-    y: UnsafePointer[BFloat16, _],
+    y: Pointer[BFloat16, _],
     incy: Int32,
     stridey: Int64,
     batch_count: Int32,
@@ -26372,7 +26360,7 @@ def rocblas_dspmv_strided_batched_64(
     incx: Int64,
     stridex: Int64,
     beta: ImmPointer[Float64, _],
-    y: UnsafePointer[Float64, _],
+    y: Pointer[Float64, _],
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
@@ -26416,10 +26404,10 @@ def rocblas_dspmv_strided_batched_64(
 def rocblas_drotm_strided_batched_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[Float64, _],
+    x: Pointer[Float64, _],
     incx: Int64,
     stride_x: Int64,
-    y: UnsafePointer[Float64, _],
+    y: Pointer[Float64, _],
     incy: Int64,
     stride_y: Int64,
     param: ImmPointer[Float64, _],
@@ -26465,7 +26453,7 @@ def rocblas_ztrsv_strided_batched(
     _a: ImmPointer[ComplexFloat64, _],
     lda: Int32,
     stride__a: Int64,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: Pointer[ComplexFloat64, _],
     incx: Int32,
     stride_x: Int64,
     batch_count: Int32,
@@ -26514,7 +26502,7 @@ def rocblas_ssymv_strided_batched(
     incx: Int32,
     stridex: Int64,
     beta: ImmPointer[Float32, _],
-    y: UnsafePointer[Float32, _],
+    y: Pointer[Float32, _],
     incy: Int32,
     stridey: Int64,
     batch_count: Int32,
@@ -26664,11 +26652,11 @@ def rocblas_axpy_ex_64(
 
 def rocblas_drotmg_64(
     handle: Handle,
-    d1: UnsafePointer[Float64, _],
-    d2: UnsafePointer[Float64, _],
-    x1: UnsafePointer[Float64, _],
+    d1: Pointer[Float64, _],
+    d2: Pointer[Float64, _],
+    x1: Pointer[Float64, _],
     y1: ImmPointer[Float64, _],
-    param: UnsafePointer[Float64, _],
+    param: Pointer[Float64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_drotmg_64",
@@ -26691,7 +26679,7 @@ def rocblas_csyr_strided_batched_64(
     x: ImmPointer[ComplexFloat32, _],
     incx: Int64,
     stridex: Int64,
-    _a: UnsafePointer[ComplexFloat32, _],
+    _a: Pointer[ComplexFloat32, _],
     lda: Int64,
     stride_a: Int64,
     batch_count: Int64,
@@ -26780,7 +26768,7 @@ def rocblas_zhemv_strided_batched_64(
     incx: Int64,
     stride_x: Int64,
     beta: ImmPointer[ComplexFloat64, _],
-    y: UnsafePointer[ComplexFloat64, _],
+    y: Pointer[ComplexFloat64, _],
     incy: Int64,
     stride_y: Int64,
     batch_count: Int64,
@@ -26908,7 +26896,7 @@ def rocblas_hdot(
     incx: Int32,
     y: ImmPointer[Float16, _],
     incy: Int32,
-    result: UnsafePointer[Float16, _],
+    result: Pointer[Float16, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_hdot",
@@ -26994,7 +26982,7 @@ def rocblas_zher2_strided_batched(
     y: ImmPointer[ComplexFloat64, _],
     incy: Int32,
     stride_y: Int64,
-    _a: UnsafePointer[ComplexFloat64, _],
+    _a: Pointer[ComplexFloat64, _],
     lda: Int32,
     stride__a: Int64,
     batch_count: Int32,
@@ -27116,7 +27104,7 @@ def rocblas_sgemv_strided_batched_64(
     incx: Int64,
     stridex: Int64,
     beta: ImmPointer[Float32, _],
-    y: UnsafePointer[Float32, _],
+    y: Pointer[Float32, _],
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
@@ -27166,7 +27154,7 @@ def rocblas_scopy(
     n: Int32,
     x: ImmPointer[Float32, _],
     incx: Int32,
-    y: UnsafePointer[Float32, _],
+    y: Pointer[Float32, _],
     incy: Int32,
 ) raises -> Status:
     """
@@ -27216,7 +27204,7 @@ def rocblas_ctrsv_64(
     n: Int64,
     _a: ImmPointer[ComplexFloat32, _],
     lda: Int64,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: Pointer[ComplexFloat32, _],
     incx: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -27242,7 +27230,7 @@ def rocblas_zdotc_64(
     incx: Int64,
     y: ImmPointer[ComplexFloat64, _],
     incy: Int64,
-    result: UnsafePointer[ComplexFloat64, _],
+    result: Pointer[ComplexFloat64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdotc_64",
@@ -27261,9 +27249,9 @@ def rocblas_zdotc_64(
 def rocblas_drot_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[Float64, _],
+    x: Pointer[Float64, _],
     incx: Int64,
-    y: UnsafePointer[Float64, _],
+    y: Pointer[Float64, _],
     incy: Int64,
     c: ImmPointer[Float64, _],
     s: ImmPointer[Float64, _],
@@ -27298,7 +27286,7 @@ def rocblas_zgemmt_strided_batched(
     ldb: Int32,
     stride_b: Int64,
     beta: ImmPointer[ComplexFloat64, _],
-    _c: UnsafePointer[ComplexFloat64, _],
+    _c: Pointer[ComplexFloat64, _],
     ldc: Int32,
     stride_c: Int64,
     batch_count: Int32,
@@ -27350,10 +27338,10 @@ def rocblas_zgemmt_strided_batched(
 def rocblas_drot_strided_batched_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[Float64, _],
+    x: Pointer[Float64, _],
     incx: Int64,
     stride_x: Int64,
-    y: UnsafePointer[Float64, _],
+    y: Pointer[Float64, _],
     incy: Int64,
     stride_y: Int64,
     c: ImmPointer[Float64, _],
@@ -27387,7 +27375,7 @@ def rocblas_cher2(
     incx: Int32,
     y: ImmPointer[ComplexFloat32, _],
     incy: Int32,
-    _a: UnsafePointer[ComplexFloat32, _],
+    _a: Pointer[ComplexFloat32, _],
     lda: Int32,
 ) raises -> Status:
     """
@@ -27467,7 +27455,7 @@ def rocblas_ctbsv_64(
     k: Int64,
     _a: ImmPointer[ComplexFloat32, _],
     lda: Int64,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: Pointer[ComplexFloat32, _],
     incx: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -27498,7 +27486,7 @@ def rocblas_dspr2_strided_batched_64(
     y: ImmPointer[Float64, _],
     incy: Int64,
     stride_y: Int64,
-    _ap: UnsafePointer[Float64, _],
+    _ap: Pointer[Float64, _],
     stride__a: Int64,
     batch_count: Int64,
 ) raises -> Status:
@@ -27539,10 +27527,10 @@ def rocblas_dspr2_strided_batched_64(
 def rocblas_cswap_strided_batched_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: Pointer[ComplexFloat32, _],
     incx: Int64,
     stridex: Int64,
-    y: UnsafePointer[ComplexFloat32, _],
+    y: Pointer[ComplexFloat32, _],
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
@@ -27575,7 +27563,7 @@ def rocblas_chemv_strided_batched_64(
     incx: Int64,
     stride_x: Int64,
     beta: ImmPointer[ComplexFloat32, _],
-    y: UnsafePointer[ComplexFloat32, _],
+    y: Pointer[ComplexFloat32, _],
     incy: Int64,
     stride_y: Int64,
     batch_count: Int64,
@@ -27663,7 +27651,7 @@ def rocblas_zsyr2k_strided_batched(
     ldb: Int32,
     stride__b: Int64,
     beta: ImmPointer[ComplexFloat64, _],
-    _c: UnsafePointer[ComplexFloat64, _],
+    _c: Pointer[ComplexFloat64, _],
     ldc: Int32,
     stride__c: Int64,
     batch_count: Int32,
@@ -27717,7 +27705,7 @@ def rocblas_zher_64(
     alpha: ImmPointer[Float64, _],
     x: ImmPointer[ComplexFloat64, _],
     incx: Int64,
-    _a: UnsafePointer[ComplexFloat64, _],
+    _a: Pointer[ComplexFloat64, _],
     lda: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -27740,7 +27728,7 @@ def rocblas_icamin(
     n: Int32,
     x: ImmPointer[ComplexFloat32, _],
     incx: Int32,
-    result: UnsafePointer[Int32, _],
+    result: Pointer[Int32, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_icamin",
@@ -27759,7 +27747,7 @@ def rocblas_sasum(
     n: Int32,
     x: ImmPointer[Float32, _],
     incx: Int32,
-    result: UnsafePointer[Float32, _],
+    result: Pointer[Float32, _],
 ) raises -> Status:
     """
     \\brief <b> BLAS Level 1 API </b>.
@@ -27804,7 +27792,7 @@ def rocblas_dgemmt(
     _b: ImmPointer[Float64, _],
     ldb: Int32,
     beta: ImmPointer[Float64, _],
-    _c: UnsafePointer[Float64, _],
+    _c: Pointer[Float64, _],
     ldc: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -27849,7 +27837,7 @@ def rocblas_isamin_batched(
     x: OpaquePointer[_],
     incx: Int32,
     batch_count: Int32,
-    result: UnsafePointer[Int32, _],
+    result: Pointer[Int32, _],
 ) raises -> Status:
     """
     \\brief <b> BLAS Level 1 API </b>.
@@ -27892,15 +27880,15 @@ def rocblas_isamin_batched(
 
 def rocblas_drotmg_strided_batched_64(
     handle: Handle,
-    d1: UnsafePointer[Float64, _],
+    d1: Pointer[Float64, _],
     stride_d1: Int64,
-    d2: UnsafePointer[Float64, _],
+    d2: Pointer[Float64, _],
     stride_d2: Int64,
-    x1: UnsafePointer[Float64, _],
+    x1: Pointer[Float64, _],
     stride_x1: Int64,
     y1: ImmPointer[Float64, _],
     stride_y1: Int64,
-    param: UnsafePointer[Float64, _],
+    param: Pointer[Float64, _],
     stride_param: Int64,
     batch_count: Int64,
 ) raises -> Status:
@@ -27948,7 +27936,7 @@ def rocblas_ztrsm_strided_batched(
     _a: ImmPointer[ComplexFloat64, _],
     lda: Int32,
     stride_a: Int64,
-    _b: UnsafePointer[ComplexFloat64, _],
+    _b: Pointer[ComplexFloat64, _],
     ldb: Int32,
     stride_b: Int64,
     batch_count: Int32,
@@ -27998,7 +27986,7 @@ def rocblas_dasum_strided_batched(
     incx: Int32,
     stridex: Int64,
     batch_count: Int32,
-    results: UnsafePointer[Float64, _],
+    results: Pointer[Float64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dasum_strided_batched",
@@ -28027,7 +28015,7 @@ def rocblas_hshgemv_strided_batched_64(
     incx: Int64,
     stridex: Int64,
     beta: ImmPointer[Float32, _],
-    y: UnsafePointer[Float16, _],
+    y: Pointer[Float16, _],
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
@@ -28106,9 +28094,9 @@ def rocblas_zher2_batched_64(
 def rocblas_srot_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[Float32, _],
+    x: Pointer[Float32, _],
     incx: Int64,
-    y: UnsafePointer[Float32, _],
+    y: Pointer[Float32, _],
     incy: Int64,
     c: ImmPointer[Float32, _],
     s: ImmPointer[Float32, _],
@@ -28141,7 +28129,7 @@ def rocblas_hshgemv_strided_batched(
     incx: Int32,
     stridex: Int64,
     beta: ImmPointer[Float32, _],
-    y: UnsafePointer[Float16, _],
+    y: Pointer[Float16, _],
     incy: Int32,
     stridey: Int64,
     batch_count: Int32,
@@ -28196,7 +28184,7 @@ def rocblas_ddot_strided_batched(
     incy: Int32,
     stridey: Int64,
     batch_count: Int32,
-    result: UnsafePointer[Float64, _],
+    result: Pointer[Float64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ddot_strided_batched",
@@ -28222,7 +28210,7 @@ def rocblas_izamax_strided_batched_64(
     incx: Int64,
     stridex: Int64,
     batch_count: Int64,
-    result: UnsafePointer[Int64, _],
+    result: Pointer[Int64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_izamax_strided_batched_64",
@@ -28241,10 +28229,10 @@ def rocblas_izamax_strided_batched_64(
 def rocblas_crot_strided_batched_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: Pointer[ComplexFloat32, _],
     incx: Int64,
     stride_x: Int64,
-    y: UnsafePointer[ComplexFloat32, _],
+    y: Pointer[ComplexFloat32, _],
     incy: Int64,
     stride_y: Int64,
     c: ImmPointer[Float32, _],
@@ -28275,10 +28263,8 @@ def rocblas_ztpmv_batched_64(
     trans_a: Operation,
     diag: Diagonal,
     n: Int64,
-    _a: UnsafePointer[
-        mut=False, UnsafePointer[ComplexFloat64, MutAnyOrigin], _
-    ],
-    x: UnsafePointer[UnsafePointer[ComplexFloat64, MutAnyOrigin], _],
+    _a: ImmPointer[MutPointer[ComplexFloat64, MutAnyOrigin], _],
+    x: Pointer[MutPointer[ComplexFloat64, MutAnyOrigin], _],
     incx: Int64,
     batch_count: Int64,
 ) raises -> Status:
@@ -28305,7 +28291,7 @@ def rocblas_dsyr_64(
     alpha: ImmPointer[Float64, _],
     x: ImmPointer[Float64, _],
     incx: Int64,
-    _a: UnsafePointer[Float64, _],
+    _a: Pointer[Float64, _],
     lda: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -28406,7 +28392,7 @@ def rocblas_ssyr(
     alpha: ImmPointer[Float32, _],
     x: ImmPointer[Float32, _],
     incx: Int32,
-    _a: UnsafePointer[Float32, _],
+    _a: Pointer[Float32, _],
     lda: Int32,
 ) raises -> Status:
     """
@@ -28463,10 +28449,10 @@ def rocblas_ssyr(
 
 def rocblas_drotg(
     handle: Handle,
-    a: UnsafePointer[Float64, _],
-    b: UnsafePointer[Float64, _],
-    c: UnsafePointer[Float64, _],
-    s: UnsafePointer[Float64, _],
+    a: Pointer[Float64, _],
+    b: Pointer[Float64, _],
+    c: Pointer[Float64, _],
+    s: Pointer[Float64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_drotg",
@@ -28482,7 +28468,7 @@ def rocblas_drotg(
 
 def rocblas_device_malloc_alloc(
     handle: Handle,
-    res: UnsafePointer[UnsafePointer[MallocBase, MutAnyOrigin], _],
+    res: Pointer[MutPointer[MallocBase, MutAnyOrigin], _],
     count: Int,
 ) raises -> Status:
     return _get_dylib_function[
@@ -28501,11 +28487,9 @@ def rocblas_ztrmv_batched(
     trans_a: Operation,
     diag: Diagonal,
     n: Int32,
-    _a: UnsafePointer[
-        mut=False, UnsafePointer[ComplexFloat64, MutAnyOrigin], _
-    ],
+    _a: ImmPointer[MutPointer[ComplexFloat64, MutAnyOrigin], _],
     lda: Int32,
-    x: UnsafePointer[UnsafePointer[ComplexFloat64, MutAnyOrigin], _],
+    x: Pointer[MutPointer[ComplexFloat64, MutAnyOrigin], _],
     incx: Int32,
     batch_count: Int32,
 ) raises -> Status:
@@ -28533,9 +28517,9 @@ def rocblas_zgerc_64(
     alpha: ImmPointer[ComplexFloat64, _],
     x: ImmPointer[ComplexFloat64, _],
     incx: Int64,
-    y: UnsafePointer[ComplexFloat64, _],
+    y: Pointer[ComplexFloat64, _],
     incy: Int64,
-    _a: UnsafePointer[ComplexFloat64, _],
+    _a: Pointer[ComplexFloat64, _],
     lda: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -28567,7 +28551,7 @@ def rocblas_csymm(
     _b: ImmPointer[ComplexFloat32, _],
     ldb: Int32,
     beta: ImmPointer[ComplexFloat32, _],
-    _c: UnsafePointer[ComplexFloat32, _],
+    _c: Pointer[ComplexFloat32, _],
     ldc: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -28648,7 +28632,7 @@ def rocblas_dtrmv(
     n: Int32,
     _a: ImmPointer[Float64, _],
     lda: Int32,
-    x: UnsafePointer[Float64, _],
+    x: Pointer[Float64, _],
     incx: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -28680,7 +28664,7 @@ def rocblas_hssgemv_strided_batched_64(
     incx: Int64,
     stridex: Int64,
     beta: ImmPointer[Float32, _],
-    y: UnsafePointer[Float32, _],
+    y: Pointer[Float32, _],
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
@@ -28872,7 +28856,7 @@ def rocblas_cdotc_strided_batched_64(
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
-    result: UnsafePointer[ComplexFloat32, _],
+    result: Pointer[ComplexFloat32, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cdotc_strided_batched_64",
@@ -28894,10 +28878,10 @@ def rocblas_cdotc_strided_batched_64(
 def rocblas_sswap_strided_batched(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[Float32, _],
+    x: Pointer[Float32, _],
     incx: Int32,
     stridex: Int64,
-    y: UnsafePointer[Float32, _],
+    y: Pointer[Float32, _],
     incy: Int32,
     stridey: Int64,
     batch_count: Int32,
@@ -28972,7 +28956,7 @@ def rocblas_dsymm_strided_batched(
     ldb: Int32,
     stride__b: Int64,
     beta: ImmPointer[Float64, _],
-    _c: UnsafePointer[Float64, _],
+    _c: Pointer[Float64, _],
     ldc: Int32,
     stride__c: Int64,
     batch_count: Int32,
@@ -29026,7 +29010,7 @@ def rocblas_scasum_strided_batched(
     incx: Int32,
     stridex: Int64,
     batch_count: Int32,
-    results: UnsafePointer[Float32, _],
+    results: Pointer[Float32, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_scasum_strided_batched",
@@ -29154,7 +29138,7 @@ def rocblas_ctrmm_strided_batched(
     _b: ImmPointer[ComplexFloat32, _],
     ldb: Int32,
     stride__b: Int64,
-    _c: UnsafePointer[ComplexFloat32, _],
+    _c: Pointer[ComplexFloat32, _],
     ldc: Int32,
     stride__c: Int64,
     batch_count: Int32,
@@ -29211,7 +29195,7 @@ def rocblas_cdotc_batched_64(
     y: OpaquePointer[_],
     incy: Int64,
     batch_count: Int64,
-    result: UnsafePointer[ComplexFloat32, _],
+    result: Pointer[ComplexFloat32, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cdotc_batched_64",
@@ -29242,7 +29226,7 @@ def rocblas_zgeam_strided_batched(
     _b: ImmPointer[ComplexFloat64, _],
     ldb: Int32,
     stride__b: Int64,
-    _c: UnsafePointer[ComplexFloat64, _],
+    _c: Pointer[ComplexFloat64, _],
     ldc: Int32,
     stride__c: Int64,
     batch_count: Int32,
@@ -29295,7 +29279,7 @@ def rocblas_ccopy_strided_batched(
     x: ImmPointer[ComplexFloat32, _],
     incx: Int32,
     stridex: Int64,
-    y: UnsafePointer[ComplexFloat32, _],
+    y: Pointer[ComplexFloat32, _],
     incy: Int32,
     stridey: Int64,
     batch_count: Int32,
@@ -29325,7 +29309,7 @@ def rocblas_ztrmv_strided_batched(
     _a: ImmPointer[ComplexFloat64, _],
     lda: Int32,
     stride__a: Int64,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: Pointer[ComplexFloat64, _],
     incx: Int32,
     stride_x: Int64,
     batch_count: Int32,
@@ -29370,7 +29354,7 @@ def rocblas_dtrtri_strided_batched(
     _a: ImmPointer[Float64, _],
     lda: Int32,
     stride_a: Int64,
-    inv_a: UnsafePointer[Float64, _],
+    inv_a: Pointer[Float64, _],
     ldinv_a: Int32,
     stride_inv_a: Int64,
     batch_count: Int32,
@@ -29589,7 +29573,7 @@ def rocblas_ctbmv(
     k: Int32,
     _a: ImmPointer[ComplexFloat32, _],
     lda: Int32,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: Pointer[ComplexFloat32, _],
     incx: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -29685,7 +29669,7 @@ def rocblas_dnrm2_strided_batched(
     incx: Int32,
     stridex: Int64,
     batch_count: Int32,
-    results: UnsafePointer[Float64, _],
+    results: Pointer[Float64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dnrm2_strided_batched",
@@ -29759,7 +29743,7 @@ def rocblas_csymv_strided_batched_64(
     incx: Int64,
     stridex: Int64,
     beta: ImmPointer[ComplexFloat32, _],
-    y: UnsafePointer[ComplexFloat32, _],
+    y: Pointer[ComplexFloat32, _],
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
@@ -29815,7 +29799,7 @@ def rocblas_dtrmm(
     lda: Int32,
     _b: ImmPointer[Float64, _],
     ldb: Int32,
-    _c: UnsafePointer[Float64, _],
+    _c: Pointer[Float64, _],
     ldc: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -29862,7 +29846,7 @@ def rocblas_chpr_strided_batched(
     x: ImmPointer[ComplexFloat32, _],
     incx: Int32,
     stride_x: Int64,
-    _ap: UnsafePointer[ComplexFloat32, _],
+    _ap: Pointer[ComplexFloat32, _],
     stride__a: Int64,
     batch_count: Int32,
 ) raises -> Status:
@@ -29959,9 +29943,9 @@ def rocblas_strmv_batched_64(
     trans_a: Operation,
     diag: Diagonal,
     n: Int64,
-    _a: ImmPointer[UnsafePointer[Float32, MutAnyOrigin], _],
+    _a: ImmPointer[MutPointer[Float32, MutAnyOrigin], _],
     lda: Int64,
-    x: UnsafePointer[UnsafePointer[Float32, MutAnyOrigin], _],
+    x: Pointer[MutPointer[Float32, MutAnyOrigin], _],
     incx: Int64,
     batch_count: Int64,
 ) raises -> Status:
@@ -30027,7 +30011,7 @@ def rocblas_chemm(
     _b: ImmPointer[ComplexFloat32, _],
     ldb: Int32,
     beta: ImmPointer[ComplexFloat32, _],
-    _c: UnsafePointer[ComplexFloat32, _],
+    _c: Pointer[ComplexFloat32, _],
     ldc: Int32,
 ) raises -> Status:
     """
@@ -30130,7 +30114,7 @@ def rocblas_izamin_64(
     n: Int64,
     x: ImmPointer[ComplexFloat64, _],
     incx: Int64,
-    result: UnsafePointer[Int64, _],
+    result: Pointer[Int64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_izamin_64",
@@ -30155,7 +30139,7 @@ def rocblas_chpr2_strided_batched_64(
     y: ImmPointer[ComplexFloat32, _],
     incy: Int64,
     stride_y: Int64,
-    _ap: UnsafePointer[ComplexFloat32, _],
+    _ap: Pointer[ComplexFloat32, _],
     stride__a: Int64,
     batch_count: Int64,
 ) raises -> Status:
@@ -30201,7 +30185,7 @@ def rocblas_ctpmv_strided_batched(
     n: Int32,
     _a: ImmPointer[ComplexFloat32, _],
     stride__a: Int64,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: Pointer[ComplexFloat32, _],
     incx: Int32,
     stride_x: Int64,
     batch_count: Int32,
@@ -30238,10 +30222,10 @@ def rocblas_ctpmv_strided_batched(
 
 def rocblas_srotg(
     handle: Handle,
-    a: UnsafePointer[Float32, _],
-    b: UnsafePointer[Float32, _],
-    c: UnsafePointer[Float32, _],
-    s: UnsafePointer[Float32, _],
+    a: Pointer[Float32, _],
+    b: Pointer[Float32, _],
+    c: Pointer[Float32, _],
+    s: Pointer[Float32, _],
 ) raises -> Status:
     """
     \\brief <b> BLAS Level 1 API </b>.
@@ -30306,7 +30290,7 @@ def rocblas_strsm_strided_batched(
     _a: ImmPointer[Float32, _],
     lda: Int32,
     stride_a: Int64,
-    _b: UnsafePointer[Float32, _],
+    _b: Pointer[Float32, _],
     ldb: Int32,
     stride_b: Int64,
     batch_count: Int32,
@@ -30450,7 +30434,7 @@ def rocblas_sgemm_kernel_name(
     ldb: Int32,
     stride_b: Int64,
     beta: ImmPointer[Float32, _],
-    _c: UnsafePointer[Float32, _],
+    _c: Pointer[Float32, _],
     ldc: Int32,
     stride_c: Int64,
     batch_count: Int32,
@@ -30513,7 +30497,7 @@ def rocblas_zherkx_strided_batched(
     ldb: Int32,
     stride__b: Int64,
     beta: ImmPointer[Float64, _],
-    _c: UnsafePointer[ComplexFloat64, _],
+    _c: Pointer[ComplexFloat64, _],
     ldc: Int32,
     stride__c: Int64,
     batch_count: Int32,
@@ -30565,7 +30549,7 @@ def rocblas_ccopy(
     n: Int32,
     x: ImmPointer[ComplexFloat32, _],
     incx: Int32,
-    y: UnsafePointer[ComplexFloat32, _],
+    y: Pointer[ComplexFloat32, _],
     incy: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -30589,10 +30573,10 @@ def rocblas_cgerc_strided_batched_64(
     x: ImmPointer[ComplexFloat32, _],
     incx: Int64,
     stridex: Int64,
-    y: UnsafePointer[ComplexFloat32, _],
+    y: Pointer[ComplexFloat32, _],
     incy: Int64,
     stridey: Int64,
-    _a: UnsafePointer[ComplexFloat32, _],
+    _a: Pointer[ComplexFloat32, _],
     lda: Int64,
     stride_a: Int64,
     batch_count: Int64,
@@ -30737,7 +30721,7 @@ def rocblas_ccopy_strided_batched_64(
     x: ImmPointer[ComplexFloat32, _],
     incx: Int64,
     stridex: Int64,
-    y: UnsafePointer[ComplexFloat32, _],
+    y: Pointer[ComplexFloat32, _],
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
@@ -30768,7 +30752,7 @@ def rocblas_zherk(
     _a: ImmPointer[ComplexFloat64, _],
     lda: Int32,
     beta: ImmPointer[Float64, _],
-    _c: UnsafePointer[ComplexFloat64, _],
+    _c: Pointer[ComplexFloat64, _],
     ldc: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -30804,7 +30788,7 @@ def rocblas_strmm_strided_batched(
     _b: ImmPointer[Float32, _],
     ldb: Int32,
     stride__b: Int64,
-    _c: UnsafePointer[Float32, _],
+    _c: Pointer[Float32, _],
     ldc: Int32,
     stride__c: Int64,
     batch_count: Int32,
@@ -31005,7 +30989,7 @@ def rocblas_ssyr2_strided_batched_64(
     y: ImmPointer[Float32, _],
     incy: Int64,
     stridey: Int64,
-    _a: UnsafePointer[Float32, _],
+    _a: Pointer[Float32, _],
     lda: Int64,
     stride_a: Int64,
     batch_count: Int64,
@@ -31053,7 +31037,7 @@ def rocblas_zaxpy_strided_batched_64(
     x: ImmPointer[ComplexFloat64, _],
     incx: Int64,
     stridex: Int64,
-    y: UnsafePointer[ComplexFloat64, _],
+    y: Pointer[ComplexFloat64, _],
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
@@ -31143,7 +31127,7 @@ def rocblas_zgbmv(
     x: ImmPointer[ComplexFloat64, _],
     incx: Int32,
     beta: ImmPointer[ComplexFloat64, _],
-    y: UnsafePointer[ComplexFloat64, _],
+    y: Pointer[ComplexFloat64, _],
     incy: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -31375,7 +31359,7 @@ def rocblas_bfdot_batched_64(
     y: OpaquePointer[_],
     incy: Int64,
     batch_count: Int64,
-    result: UnsafePointer[BFloat16, _],
+    result: Pointer[BFloat16, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_bfdot_batched_64",
@@ -31402,7 +31386,7 @@ def rocblas_sdot_strided_batched_64(
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
-    result: UnsafePointer[Float32, _],
+    result: Pointer[Float32, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_sdot_strided_batched_64",
@@ -31517,7 +31501,7 @@ def rocblas_zher(
     alpha: ImmPointer[Float64, _],
     x: ImmPointer[ComplexFloat64, _],
     incx: Int32,
-    _a: UnsafePointer[ComplexFloat64, _],
+    _a: Pointer[ComplexFloat64, _],
     lda: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -31547,7 +31531,7 @@ def rocblas_zher2k(
     _b: ImmPointer[ComplexFloat64, _],
     ldb: Int32,
     beta: ImmPointer[Float64, _],
-    _c: UnsafePointer[ComplexFloat64, _],
+    _c: Pointer[ComplexFloat64, _],
     ldc: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -31825,7 +31809,7 @@ def rocblas_snrm2_batched_64(
     x: OpaquePointer[_],
     incx: Int64,
     batch_count: Int64,
-    results: UnsafePointer[Float32, _],
+    results: Pointer[Float32, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_snrm2_batched_64",
@@ -31850,7 +31834,7 @@ def rocblas_chemv_64(
     x: ImmPointer[ComplexFloat32, _],
     incx: Int64,
     beta: ImmPointer[ComplexFloat32, _],
-    y: UnsafePointer[ComplexFloat32, _],
+    y: Pointer[ComplexFloat32, _],
     incy: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -31882,7 +31866,7 @@ def rocblas_ctrsm_64(
     alpha: ImmPointer[ComplexFloat32, _],
     _a: ImmPointer[ComplexFloat32, _],
     lda: Int64,
-    _b: UnsafePointer[ComplexFloat32, _],
+    _b: Pointer[ComplexFloat32, _],
     ldb: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -31944,7 +31928,7 @@ def rocblas_cgbmv_64(
     x: ImmPointer[ComplexFloat32, _],
     incx: Int64,
     beta: ImmPointer[ComplexFloat32, _],
-    y: UnsafePointer[ComplexFloat32, _],
+    y: Pointer[ComplexFloat32, _],
     incy: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -31980,7 +31964,7 @@ def rocblas_cherkx(
     _b: ImmPointer[ComplexFloat32, _],
     ldb: Int32,
     beta: ImmPointer[Float32, _],
-    _c: UnsafePointer[ComplexFloat32, _],
+    _c: Pointer[ComplexFloat32, _],
     ldc: Int32,
 ) raises -> Status:
     """
@@ -32090,7 +32074,7 @@ def rocblas_zdotu_64(
     incx: Int64,
     y: ImmPointer[ComplexFloat64, _],
     incy: Int64,
-    result: UnsafePointer[ComplexFloat64, _],
+    result: Pointer[ComplexFloat64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdotu_64",
@@ -32114,7 +32098,7 @@ def rocblas_zsyr_strided_batched(
     x: ImmPointer[ComplexFloat64, _],
     incx: Int32,
     stridex: Int64,
-    _a: UnsafePointer[ComplexFloat64, _],
+    _a: Pointer[ComplexFloat64, _],
     lda: Int32,
     stride_a: Int64,
     batch_count: Int32,
@@ -32179,7 +32163,7 @@ def rocblas_csyr2(
     incx: Int32,
     y: ImmPointer[ComplexFloat32, _],
     incy: Int32,
-    _a: UnsafePointer[ComplexFloat32, _],
+    _a: Pointer[ComplexFloat32, _],
     lda: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -32212,7 +32196,7 @@ def rocblas_dsbmv_strided_batched(
     incx: Int32,
     stridex: Int64,
     beta: ImmPointer[Float64, _],
-    y: UnsafePointer[Float64, _],
+    y: Pointer[Float64, _],
     incy: Int32,
     stridey: Int64,
     batch_count: Int32,
@@ -32319,7 +32303,7 @@ def rocblas_icamax_batched_64(
     x: OpaquePointer[_],
     incx: Int64,
     batch_count: Int64,
-    result: UnsafePointer[Int64, _],
+    result: Pointer[Int64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_icamax_batched_64",
@@ -32341,7 +32325,7 @@ def rocblas_idamin_strided_batched(
     incx: Int32,
     stridex: Int64,
     batch_count: Int32,
-    result: UnsafePointer[Int32, _],
+    result: Pointer[Int32, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_idamin_strided_batched",
@@ -32416,7 +32400,7 @@ def rocblas_haxpy_strided_batched(
     x: ImmPointer[Float16, _],
     incx: Int32,
     stridex: Int64,
-    y: UnsafePointer[Float16, _],
+    y: Pointer[Float16, _],
     incy: Int32,
     stridey: Int64,
     batch_count: Int32,
@@ -32629,7 +32613,7 @@ def rocblas_scasum_strided_batched_64(
     incx: Int64,
     stridex: Int64,
     batch_count: Int64,
-    results: UnsafePointer[Float32, _],
+    results: Pointer[Float32, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_scasum_strided_batched_64",
@@ -32660,7 +32644,7 @@ def rocblas_cgemm_strided_batched(
     ldb: Int32,
     stride_b: Int64,
     beta: ImmPointer[ComplexFloat32, _],
-    _c: UnsafePointer[ComplexFloat32, _],
+    _c: Pointer[ComplexFloat32, _],
     ldc: Int32,
     stride_c: Int64,
     batch_count: Int32,
@@ -32794,7 +32778,7 @@ def rocblas_strsv_strided_batched(
     _a: ImmPointer[Float32, _],
     lda: Int32,
     stride__a: Int64,
-    x: UnsafePointer[Float32, _],
+    x: Pointer[Float32, _],
     incx: Int32,
     stride_x: Int64,
     batch_count: Int32,
@@ -32906,7 +32890,7 @@ def rocblas_ztbmv_strided_batched_64(
     _a: ImmPointer[ComplexFloat64, _],
     lda: Int64,
     stride__a: Int64,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: Pointer[ComplexFloat64, _],
     incx: Int64,
     stride_x: Int64,
     batch_count: Int64,
@@ -33041,7 +33025,7 @@ def rocblas_zhemv_strided_batched(
     incx: Int32,
     stride_x: Int64,
     beta: ImmPointer[ComplexFloat64, _],
-    y: UnsafePointer[ComplexFloat64, _],
+    y: Pointer[ComplexFloat64, _],
     incy: Int32,
     stride_y: Int64,
     batch_count: Int32,
@@ -33139,7 +33123,7 @@ def rocblas_sasum_strided_batched(
     incx: Int32,
     stridex: Int64,
     batch_count: Int32,
-    results: UnsafePointer[Float32, _],
+    results: Pointer[Float32, _],
 ) raises -> Status:
     """
     \\brief <b> BLAS Level 1 API </b>.
@@ -33197,7 +33181,7 @@ def rocblas_dtbmv(
     k: Int32,
     _a: ImmPointer[Float64, _],
     lda: Int32,
-    x: UnsafePointer[Float64, _],
+    x: Pointer[Float64, _],
     incx: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -33226,7 +33210,7 @@ def rocblas_ctbmv_64(
     k: Int64,
     _a: ImmPointer[ComplexFloat32, _],
     lda: Int64,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: Pointer[ComplexFloat32, _],
     incx: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -33253,7 +33237,7 @@ def rocblas_dznrm2_strided_batched(
     incx: Int32,
     stridex: Int64,
     batch_count: Int32,
-    results: UnsafePointer[Float64, _],
+    results: Pointer[Float64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dznrm2_strided_batched",
@@ -33309,7 +33293,7 @@ def rocblas_ssyr2(
     incx: Int32,
     y: ImmPointer[Float32, _],
     incy: Int32,
-    _a: UnsafePointer[Float32, _],
+    _a: Pointer[Float32, _],
     lda: Int32,
 ) raises -> Status:
     """
@@ -33378,7 +33362,7 @@ def rocblas_zsyr_64(
     alpha: ImmPointer[ComplexFloat64, _],
     x: ImmPointer[ComplexFloat64, _],
     incx: Int64,
-    _a: UnsafePointer[ComplexFloat64, _],
+    _a: Pointer[ComplexFloat64, _],
     lda: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -33408,7 +33392,7 @@ def rocblas_ctrsm_strided_batched_64(
     _a: ImmPointer[ComplexFloat32, _],
     lda: Int64,
     stride_a: Int64,
-    _b: UnsafePointer[ComplexFloat32, _],
+    _b: Pointer[ComplexFloat32, _],
     ldb: Int64,
     stride_b: Int64,
     batch_count: Int64,
@@ -33465,7 +33449,7 @@ def rocblas_sgeam_strided_batched(
     _b: ImmPointer[Float32, _],
     ldb: Int32,
     stride__b: Int64,
-    _c: UnsafePointer[Float32, _],
+    _c: Pointer[Float32, _],
     ldc: Int32,
     stride__c: Int64,
     batch_count: Int32,
@@ -33612,7 +33596,7 @@ def rocblas_ztrmm_strided_batched(
     _b: ImmPointer[ComplexFloat64, _],
     ldb: Int32,
     stride__b: Int64,
-    _c: UnsafePointer[ComplexFloat64, _],
+    _c: Pointer[ComplexFloat64, _],
     ldc: Int32,
     stride__c: Int64,
     batch_count: Int32,
@@ -33677,7 +33661,7 @@ def rocblas_zdotc(
     incx: Int32,
     y: ImmPointer[ComplexFloat64, _],
     incy: Int32,
-    result: UnsafePointer[ComplexFloat64, _],
+    result: Pointer[ComplexFloat64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdotc",
@@ -33806,9 +33790,9 @@ def rocblas_dotc_strided_batched_ex(
 def rocblas_cswap(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: Pointer[ComplexFloat32, _],
     incx: Int32,
-    y: UnsafePointer[ComplexFloat32, _],
+    y: Pointer[ComplexFloat32, _],
     incy: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -33979,9 +33963,9 @@ def rocblas_dswap_batched_64(
 def rocblas_crot_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: Pointer[ComplexFloat32, _],
     incx: Int64,
-    y: UnsafePointer[ComplexFloat32, _],
+    y: Pointer[ComplexFloat32, _],
     incy: Int64,
     c: ImmPointer[Float32, _],
     s: ImmPointer[ComplexFloat32, _],
@@ -34007,7 +33991,7 @@ def rocblas_isamax_batched(
     x: OpaquePointer[_],
     incx: Int32,
     batch_count: Int32,
-    result: UnsafePointer[Int32, _],
+    result: Pointer[Int32, _],
 ) raises -> Status:
     """
     \\brief <b> BLAS Level 1 API </b>.
@@ -34050,10 +34034,10 @@ def rocblas_isamax_batched(
 
 def rocblas_drotg_64(
     handle: Handle,
-    a: UnsafePointer[Float64, _],
-    b: UnsafePointer[Float64, _],
-    c: UnsafePointer[Float64, _],
-    s: UnsafePointer[Float64, _],
+    a: Pointer[Float64, _],
+    b: Pointer[Float64, _],
+    c: Pointer[Float64, _],
+    s: Pointer[Float64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_drotg_64",
@@ -34104,7 +34088,7 @@ def rocblas_cgeam(
     beta: ImmPointer[ComplexFloat32, _],
     _b: ImmPointer[ComplexFloat32, _],
     ldb: Int32,
-    _c: UnsafePointer[ComplexFloat32, _],
+    _c: Pointer[ComplexFloat32, _],
     ldc: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -34219,7 +34203,7 @@ def rocblas_stbmv(
     k: Int32,
     _a: ImmPointer[Float32, _],
     lda: Int32,
-    x: UnsafePointer[Float32, _],
+    x: Pointer[Float32, _],
     incx: Int32,
 ) raises -> Status:
     """
@@ -34345,7 +34329,7 @@ def rocblas_dscal_strided_batched(
     handle: Handle,
     n: Int32,
     alpha: ImmPointer[Float64, _],
-    x: UnsafePointer[Float64, _],
+    x: Pointer[Float64, _],
     incx: Int32,
     stride_x: Int64,
     batch_count: Int32,
@@ -34424,7 +34408,7 @@ def rocblas_cher_strided_batched(
     x: ImmPointer[ComplexFloat32, _],
     incx: Int32,
     stride_x: Int64,
-    _a: UnsafePointer[ComplexFloat32, _],
+    _a: Pointer[ComplexFloat32, _],
     lda: Int32,
     stride__a: Int64,
     batch_count: Int32,
@@ -34571,7 +34555,7 @@ def rocblas_dasum_64(
     n: Int64,
     x: ImmPointer[Float64, _],
     incx: Int64,
-    result: UnsafePointer[Float64, _],
+    result: Pointer[Float64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dasum_64",
@@ -34585,9 +34569,9 @@ def rocblas_strmv_batched(
     trans_a: Operation,
     diag: Diagonal,
     n: Int32,
-    _a: ImmPointer[UnsafePointer[Float32, MutAnyOrigin], _],
+    _a: ImmPointer[MutPointer[Float32, MutAnyOrigin], _],
     lda: Int32,
-    x: UnsafePointer[UnsafePointer[Float32, MutAnyOrigin], _],
+    x: Pointer[MutPointer[Float32, MutAnyOrigin], _],
     incx: Int32,
     batch_count: Int32,
 ) raises -> Status:
@@ -34674,7 +34658,7 @@ def rocblas_ssymv_64(
     x: ImmPointer[Float32, _],
     incx: Int64,
     beta: ImmPointer[Float32, _],
-    y: UnsafePointer[Float32, _],
+    y: Pointer[Float32, _],
     incy: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -34702,9 +34686,9 @@ def rocblas_zgerc(
     alpha: ImmPointer[ComplexFloat64, _],
     x: ImmPointer[ComplexFloat64, _],
     incx: Int32,
-    y: UnsafePointer[ComplexFloat64, _],
+    y: Pointer[ComplexFloat64, _],
     incy: Int32,
-    _a: UnsafePointer[ComplexFloat64, _],
+    _a: Pointer[ComplexFloat64, _],
     lda: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -34726,13 +34710,13 @@ def rocblas_zgerc(
 
 def rocblas_drotg_strided_batched(
     handle: Handle,
-    a: UnsafePointer[Float64, _],
+    a: Pointer[Float64, _],
     stride_a: Int64,
-    b: UnsafePointer[Float64, _],
+    b: Pointer[Float64, _],
     stride_b: Int64,
-    c: UnsafePointer[Float64, _],
+    c: Pointer[Float64, _],
     stride_c: Int64,
-    s: UnsafePointer[Float64, _],
+    s: Pointer[Float64, _],
     stride_s: Int64,
     batch_count: Int32,
 ) raises -> Status:
@@ -34763,7 +34747,7 @@ def rocblas_stbsv_strided_batched_64(
     _a: ImmPointer[Float32, _],
     lda: Int64,
     stride__a: Int64,
-    x: UnsafePointer[Float32, _],
+    x: Pointer[Float32, _],
     incx: Int64,
     stride_x: Int64,
     batch_count: Int64,
@@ -34861,7 +34845,7 @@ def rocblas_dtpsv(
     diag: Diagonal,
     n: Int32,
     _ap: ImmPointer[Float64, _],
-    x: UnsafePointer[Float64, _],
+    x: Pointer[Float64, _],
     incx: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -34890,7 +34874,7 @@ def rocblas_zgemv(
     x: ImmPointer[ComplexFloat64, _],
     incx: Int32,
     beta: ImmPointer[ComplexFloat64, _],
-    y: UnsafePointer[ComplexFloat64, _],
+    y: Pointer[ComplexFloat64, _],
     incy: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -34920,7 +34904,7 @@ def rocblas_sspr_strided_batched(
     x: ImmPointer[Float32, _],
     incx: Int32,
     stride_x: Int64,
-    _ap: UnsafePointer[Float32, _],
+    _ap: Pointer[Float32, _],
     stride__a: Int64,
     batch_count: Int32,
 ) raises -> Status:
@@ -35015,7 +34999,7 @@ def rocblas_zscal_strided_batched(
     handle: Handle,
     n: Int32,
     alpha: ImmPointer[ComplexFloat64, _],
-    x: UnsafePointer[ComplexFloat64, _],
+    x: Pointer[ComplexFloat64, _],
     incx: Int32,
     stride_x: Int64,
     batch_count: Int32,
@@ -35043,7 +35027,7 @@ def rocblas_dtbsv(
     k: Int32,
     _a: ImmPointer[Float64, _],
     lda: Int32,
-    x: UnsafePointer[Float64, _],
+    x: Pointer[Float64, _],
     incx: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -35092,7 +35076,7 @@ def rocblas_icamax_batched(
     x: OpaquePointer[_],
     incx: Int32,
     batch_count: Int32,
-    result: UnsafePointer[Int32, _],
+    result: Pointer[Int32, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_icamax_batched",
@@ -35114,9 +35098,9 @@ def rocblas_sger_64(
     alpha: ImmPointer[Float32, _],
     x: ImmPointer[Float32, _],
     incx: Int64,
-    y: UnsafePointer[Float32, _],
+    y: Pointer[Float32, _],
     incy: Int64,
-    _a: UnsafePointer[Float32, _],
+    _a: Pointer[Float32, _],
     lda: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -35141,7 +35125,7 @@ def rocblas_izamax(
     n: Int32,
     x: ImmPointer[ComplexFloat64, _],
     incx: Int32,
-    result: UnsafePointer[Int32, _],
+    result: Pointer[Int32, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_izamax",
@@ -35162,7 +35146,7 @@ def rocblas_zhpr(
     alpha: ImmPointer[Float64, _],
     x: ImmPointer[ComplexFloat64, _],
     incx: Int32,
-    _ap: UnsafePointer[ComplexFloat64, _],
+    _ap: Pointer[ComplexFloat64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhpr",
@@ -35241,7 +35225,7 @@ def rocblas_cgemv(
     x: ImmPointer[ComplexFloat32, _],
     incx: Int32,
     beta: ImmPointer[ComplexFloat32, _],
-    y: UnsafePointer[ComplexFloat32, _],
+    y: Pointer[ComplexFloat32, _],
     incy: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -35303,7 +35287,7 @@ def rocblas_sgemm(
     _b: ImmPointer[Float32, _],
     ldb: Int32,
     beta: ImmPointer[Float32, _],
-    _c: UnsafePointer[Float32, _],
+    _c: Pointer[Float32, _],
     ldc: Int32,
 ) raises -> Status:
     """
@@ -35455,7 +35439,7 @@ def rocblas_strsv_64(
     n: Int64,
     _a: ImmPointer[Float32, _],
     lda: Int64,
-    x: UnsafePointer[Float32, _],
+    x: Pointer[Float32, _],
     incx: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -35508,7 +35492,7 @@ def rocblas_dzasum_64(
     n: Int64,
     x: ImmPointer[ComplexFloat64, _],
     incx: Int64,
-    result: UnsafePointer[Float64, _],
+    result: Pointer[Float64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dzasum_64",
@@ -35529,7 +35513,7 @@ def rocblas_ddot(
     incx: Int32,
     y: ImmPointer[Float64, _],
     incy: Int32,
-    result: UnsafePointer[Float64, _],
+    result: Pointer[Float64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ddot",
@@ -35554,7 +35538,7 @@ def rocblas_cher2_64(
     incx: Int64,
     y: ImmPointer[ComplexFloat32, _],
     incy: Int64,
-    _a: UnsafePointer[ComplexFloat32, _],
+    _a: Pointer[ComplexFloat32, _],
     lda: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -35578,7 +35562,7 @@ def rocblas_csscal_strided_batched_64(
     handle: Handle,
     n: Int64,
     alpha: ImmPointer[Float32, _],
-    x: UnsafePointer[ComplexFloat32, _],
+    x: Pointer[ComplexFloat32, _],
     incx: Int64,
     stride_x: Int64,
     batch_count: Int64,
@@ -35672,7 +35656,7 @@ def rocblas_hdot_64(
     incx: Int64,
     y: ImmPointer[Float16, _],
     incy: Int64,
-    result: UnsafePointer[Float16, _],
+    result: Pointer[Float16, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_hdot_64",
@@ -35828,11 +35812,9 @@ def rocblas_ctrmv_batched(
     trans_a: Operation,
     diag: Diagonal,
     n: Int32,
-    _a: UnsafePointer[
-        mut=False, UnsafePointer[ComplexFloat32, MutAnyOrigin], _
-    ],
+    _a: ImmPointer[MutPointer[ComplexFloat32, MutAnyOrigin], _],
     lda: Int32,
-    x: UnsafePointer[UnsafePointer[ComplexFloat32, MutAnyOrigin], _],
+    x: Pointer[MutPointer[ComplexFloat32, MutAnyOrigin], _],
     incx: Int32,
     batch_count: Int32,
 ) raises -> Status:
@@ -35864,7 +35846,7 @@ def rocblas_cherk_strided_batched(
     lda: Int32,
     stride__a: Int64,
     beta: ImmPointer[Float32, _],
-    _c: UnsafePointer[ComplexFloat32, _],
+    _c: Pointer[ComplexFloat32, _],
     ldc: Int32,
     stride__c: Int64,
     batch_count: Int32,
@@ -35999,7 +35981,7 @@ def rocblas_hgemm(
     _b: ImmPointer[Float16, _],
     ldb: Int32,
     beta: ImmPointer[Float16, _],
-    _c: UnsafePointer[Float16, _],
+    _c: Pointer[Float16, _],
     ldc: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -36040,10 +36022,10 @@ def rocblas_hgemm(
 
 def rocblas_zrotg(
     handle: Handle,
-    a: UnsafePointer[ComplexFloat64, _],
-    b: UnsafePointer[ComplexFloat64, _],
-    c: UnsafePointer[Float64, _],
-    s: UnsafePointer[ComplexFloat64, _],
+    a: Pointer[ComplexFloat64, _],
+    b: Pointer[ComplexFloat64, _],
+    c: Pointer[Float64, _],
+    s: Pointer[ComplexFloat64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zrotg",
@@ -36065,7 +36047,7 @@ def rocblas_cspr_strided_batched(
     x: ImmPointer[ComplexFloat32, _],
     incx: Int32,
     stride_x: Int64,
-    _ap: UnsafePointer[ComplexFloat32, _],
+    _ap: Pointer[ComplexFloat32, _],
     stride__a: Int64,
     batch_count: Int32,
 ) raises -> Status:
@@ -36120,7 +36102,7 @@ def rocblas_ddot_64(
     incx: Int64,
     y: ImmPointer[Float64, _],
     incy: Int64,
-    result: UnsafePointer[Float64, _],
+    result: Pointer[Float64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ddot_64",
@@ -36142,7 +36124,7 @@ def rocblas_idamax_batched_64(
     x: OpaquePointer[_],
     incx: Int64,
     batch_count: Int64,
-    result: UnsafePointer[Int64, _],
+    result: Pointer[Int64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_idamax_batched_64",
@@ -36208,10 +36190,10 @@ def rocblas_dger_strided_batched(
     x: ImmPointer[Float64, _],
     incx: Int32,
     stridex: Int64,
-    y: UnsafePointer[Float64, _],
+    y: Pointer[Float64, _],
     incy: Int32,
     stridey: Int64,
-    _a: UnsafePointer[Float64, _],
+    _a: Pointer[Float64, _],
     lda: Int32,
     stride_a: Int64,
     batch_count: Int32,
@@ -36260,7 +36242,7 @@ def rocblas_ztrmv_64(
     n: Int64,
     _a: ImmPointer[ComplexFloat64, _],
     lda: Int64,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: Pointer[ComplexFloat64, _],
     incx: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -36292,7 +36274,7 @@ def rocblas_ctrmm(
     lda: Int32,
     _b: ImmPointer[ComplexFloat32, _],
     ldb: Int32,
-    _c: UnsafePointer[ComplexFloat32, _],
+    _c: Pointer[ComplexFloat32, _],
     ldc: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -36340,7 +36322,7 @@ def rocblas_chpr2(
     incx: Int32,
     y: ImmPointer[ComplexFloat32, _],
     incy: Int32,
-    _ap: UnsafePointer[ComplexFloat32, _],
+    _ap: Pointer[ComplexFloat32, _],
 ) raises -> Status:
     """
     \\brief <b> BLAS Level 2 API </b>.
@@ -36429,7 +36411,7 @@ def rocblas_zcopy_64(
     n: Int64,
     x: ImmPointer[ComplexFloat64, _],
     incx: Int64,
-    y: UnsafePointer[ComplexFloat64, _],
+    y: Pointer[ComplexFloat64, _],
     incy: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -36451,7 +36433,7 @@ def rocblas_scopy_strided_batched(
     x: ImmPointer[Float32, _],
     incx: Int32,
     stridex: Int64,
-    y: UnsafePointer[Float32, _],
+    y: Pointer[Float32, _],
     incy: Int32,
     stridey: Int64,
     batch_count: Int32,
@@ -36519,7 +36501,7 @@ def rocblas_sasum_64(
     n: Int64,
     x: ImmPointer[Float32, _],
     incx: Int64,
-    result: UnsafePointer[Float32, _],
+    result: Pointer[Float32, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_sasum_64",
@@ -36540,7 +36522,7 @@ def rocblas_cgemv_strided_batched(
     incx: Int32,
     stridex: Int64,
     beta: ImmPointer[ComplexFloat32, _],
-    y: UnsafePointer[ComplexFloat32, _],
+    y: Pointer[ComplexFloat32, _],
     incy: Int32,
     stridey: Int64,
     batch_count: Int32,
@@ -36600,7 +36582,7 @@ def rocblas_zgbmv_strided_batched_64(
     incx: Int64,
     stride_x: Int64,
     beta: ImmPointer[ComplexFloat64, _],
-    y: UnsafePointer[ComplexFloat64, _],
+    y: Pointer[ComplexFloat64, _],
     incy: Int64,
     stride_y: Int64,
     batch_count: Int64,
@@ -36651,11 +36633,11 @@ def rocblas_zgbmv_strided_batched_64(
 
 def rocblas_srotmg(
     handle: Handle,
-    d1: UnsafePointer[Float32, _],
-    d2: UnsafePointer[Float32, _],
-    x1: UnsafePointer[Float32, _],
+    d1: Pointer[Float32, _],
+    d2: Pointer[Float32, _],
+    x1: Pointer[Float32, _],
     y1: ImmPointer[Float32, _],
-    param: UnsafePointer[Float32, _],
+    param: Pointer[Float32, _],
 ) raises -> Status:
     """
     \\brief <b> BLAS Level 1 API </b>.
@@ -36722,7 +36704,7 @@ def rocblas_zher2k_strided_batched(
     ldb: Int32,
     stride__b: Int64,
     beta: ImmPointer[Float64, _],
-    _c: UnsafePointer[ComplexFloat64, _],
+    _c: Pointer[ComplexFloat64, _],
     ldc: Int32,
     stride__c: Int64,
     batch_count: Int32,
@@ -36776,7 +36758,7 @@ def rocblas_sspr(
     alpha: ImmPointer[Float32, _],
     x: ImmPointer[Float32, _],
     incx: Int32,
-    _ap: UnsafePointer[Float32, _],
+    _ap: Pointer[Float32, _],
 ) raises -> Status:
     """
     \\brief <b> BLAS Level 2 API </b>.
@@ -36914,7 +36896,7 @@ def rocblas_idamax_batched(
     x: OpaquePointer[_],
     incx: Int32,
     batch_count: Int32,
-    result: UnsafePointer[Int32, _],
+    result: Pointer[Int32, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_idamax_batched",
@@ -36939,7 +36921,7 @@ def rocblas_zhemv(
     x: ImmPointer[ComplexFloat64, _],
     incx: Int32,
     beta: ImmPointer[ComplexFloat64, _],
-    y: UnsafePointer[ComplexFloat64, _],
+    y: Pointer[ComplexFloat64, _],
     incy: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -36970,7 +36952,7 @@ def rocblas_csymv_64(
     x: ImmPointer[ComplexFloat32, _],
     incx: Int64,
     beta: ImmPointer[ComplexFloat32, _],
-    y: UnsafePointer[ComplexFloat32, _],
+    y: Pointer[ComplexFloat32, _],
     incy: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -37019,7 +37001,7 @@ def rocblas_snrm2_64(
     n: Int64,
     x: ImmPointer[Float32, _],
     incx: Int64,
-    result: UnsafePointer[Float32, _],
+    result: Pointer[Float32, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_snrm2_64",
@@ -37031,7 +37013,7 @@ def rocblas_zdscal_64(
     handle: Handle,
     n: Int64,
     alpha: ImmPointer[Float64, _],
-    x: UnsafePointer[ComplexFloat64, _],
+    x: Pointer[ComplexFloat64, _],
     incx: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -37165,7 +37147,7 @@ def rocblas_sgemmt(
     _b: ImmPointer[Float32, _],
     ldb: Int32,
     beta: ImmPointer[Float32, _],
-    _c: UnsafePointer[Float32, _],
+    _c: Pointer[Float32, _],
     ldc: Int32,
 ) raises -> Status:
     """
@@ -37274,7 +37256,7 @@ def rocblas_zhpmv(
     x: ImmPointer[ComplexFloat64, _],
     incx: Int32,
     beta: ImmPointer[ComplexFloat64, _],
-    y: UnsafePointer[ComplexFloat64, _],
+    y: Pointer[ComplexFloat64, _],
     incy: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -37327,7 +37309,7 @@ def rocblas_ctbsv_strided_batched_64(
     _a: ImmPointer[ComplexFloat32, _],
     lda: Int64,
     stride__a: Int64,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: Pointer[ComplexFloat32, _],
     incx: Int64,
     stride_x: Int64,
     batch_count: Int64,
@@ -37374,10 +37356,10 @@ def rocblas_zgeru_strided_batched(
     x: ImmPointer[ComplexFloat64, _],
     incx: Int32,
     stridex: Int64,
-    y: UnsafePointer[ComplexFloat64, _],
+    y: Pointer[ComplexFloat64, _],
     incy: Int32,
     stridey: Int64,
-    _a: UnsafePointer[ComplexFloat64, _],
+    _a: Pointer[ComplexFloat64, _],
     lda: Int32,
     stride_a: Int64,
     batch_count: Int32,
@@ -37471,7 +37453,7 @@ def rocblas_zdscal_strided_batched_64(
     handle: Handle,
     n: Int64,
     alpha: ImmPointer[Float64, _],
-    x: UnsafePointer[ComplexFloat64, _],
+    x: Pointer[ComplexFloat64, _],
     incx: Int64,
     stride_x: Int64,
     batch_count: Int64,
@@ -37500,7 +37482,7 @@ def rocblas_cherk(
     _a: ImmPointer[ComplexFloat32, _],
     lda: Int32,
     beta: ImmPointer[Float32, _],
-    _c: UnsafePointer[ComplexFloat32, _],
+    _c: Pointer[ComplexFloat32, _],
     ldc: Int32,
 ) raises -> Status:
     """
@@ -37600,7 +37582,7 @@ def rocblas_dsyr2_strided_batched(
     y: ImmPointer[Float64, _],
     incy: Int32,
     stridey: Int64,
-    _a: UnsafePointer[Float64, _],
+    _a: Pointer[Float64, _],
     lda: Int32,
     stride_a: Int64,
     batch_count: Int32,
@@ -37687,7 +37669,7 @@ def rocblas_cgbmv_strided_batched(
     incx: Int32,
     stride_x: Int64,
     beta: ImmPointer[ComplexFloat32, _],
-    y: UnsafePointer[ComplexFloat32, _],
+    y: Pointer[ComplexFloat32, _],
     incy: Int32,
     stride_y: Int64,
     batch_count: Int32,
@@ -37856,7 +37838,7 @@ def rocblas_dspmv_64(
     x: ImmPointer[Float64, _],
     incx: Int64,
     beta: ImmPointer[Float64, _],
-    y: UnsafePointer[Float64, _],
+    y: Pointer[Float64, _],
     incy: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -37932,7 +37914,7 @@ def rocblas_snrm2_strided_batched(
     incx: Int32,
     stridex: Int64,
     batch_count: Int32,
-    results: UnsafePointer[Float32, _],
+    results: Pointer[Float32, _],
 ) raises -> Status:
     """
     \\brief <b> BLAS Level 1 API </b>.
@@ -38084,7 +38066,7 @@ def rocblas_ccopy_64(
     n: Int64,
     x: ImmPointer[ComplexFloat32, _],
     incx: Int64,
-    y: UnsafePointer[ComplexFloat32, _],
+    y: Pointer[ComplexFloat32, _],
     incy: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -38138,7 +38120,7 @@ def rocblas_ctpmv(
     diag: Diagonal,
     n: Int32,
     _a: ImmPointer[ComplexFloat32, _],
-    x: UnsafePointer[ComplexFloat32, _],
+    x: Pointer[ComplexFloat32, _],
     incx: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -38159,10 +38141,10 @@ def rocblas_ctpmv(
 def rocblas_drot_strided_batched(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[Float64, _],
+    x: Pointer[Float64, _],
     incx: Int32,
     stride_x: Int64,
-    y: UnsafePointer[Float64, _],
+    y: Pointer[Float64, _],
     incy: Int32,
     stride_y: Int64,
     c: ImmPointer[Float64, _],
@@ -38223,7 +38205,7 @@ def rocblas_isamax_64(
     n: Int64,
     x: ImmPointer[Float32, _],
     incx: Int64,
-    result: UnsafePointer[Int64, _],
+    result: Pointer[Int64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_isamax_64",
@@ -38239,7 +38221,7 @@ def rocblas_zsyr_strided_batched_64(
     x: ImmPointer[ComplexFloat64, _],
     incx: Int64,
     stridex: Int64,
-    _a: UnsafePointer[ComplexFloat64, _],
+    _a: Pointer[ComplexFloat64, _],
     lda: Int64,
     stride_a: Int64,
     batch_count: Int64,
@@ -38307,7 +38289,7 @@ def rocblas_scasum_batched_64(
     x: OpaquePointer[_],
     incx: Int64,
     batch_count: Int64,
-    results: UnsafePointer[Float32, _],
+    results: Pointer[Float32, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_scasum_batched_64",
@@ -38361,7 +38343,7 @@ def rocblas_ssyr_strided_batched(
     x: ImmPointer[Float32, _],
     incx: Int32,
     stridex: Int64,
-    _a: UnsafePointer[Float32, _],
+    _a: Pointer[Float32, _],
     lda: Int32,
     stride_a: Int64,
     batch_count: Int32,
@@ -38566,7 +38548,7 @@ def rocblas_ztpsv_64(
     diag: Diagonal,
     n: Int64,
     _ap: ImmPointer[ComplexFloat64, _],
-    x: UnsafePointer[ComplexFloat64, _],
+    x: Pointer[ComplexFloat64, _],
     incx: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -38591,7 +38573,7 @@ def rocblas_zspr(
     alpha: ImmPointer[ComplexFloat64, _],
     x: ImmPointer[ComplexFloat64, _],
     incx: Int32,
-    _ap: UnsafePointer[ComplexFloat64, _],
+    _ap: Pointer[ComplexFloat64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zspr",
@@ -38618,7 +38600,7 @@ def rocblas_sgemv(
     x: ImmPointer[Float32, _],
     incx: Int32,
     beta: ImmPointer[Float32, _],
-    y: UnsafePointer[Float32, _],
+    y: Pointer[Float32, _],
     incy: Int32,
 ) raises -> Status:
     """
@@ -38693,7 +38675,7 @@ def rocblas_dtrsv_64(
     n: Int64,
     _a: ImmPointer[Float64, _],
     lda: Int64,
-    x: UnsafePointer[Float64, _],
+    x: Pointer[Float64, _],
     incx: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -38747,7 +38729,7 @@ def rocblas_ssymv_strided_batched_64(
     incx: Int64,
     stridex: Int64,
     beta: ImmPointer[Float32, _],
-    y: UnsafePointer[Float32, _],
+    y: Pointer[Float32, _],
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
@@ -38833,7 +38815,7 @@ def rocblas_ztpmv_strided_batched(
     n: Int32,
     _a: ImmPointer[ComplexFloat64, _],
     stride__a: Int64,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: Pointer[ComplexFloat64, _],
     incx: Int32,
     stride_x: Int64,
     batch_count: Int32,
@@ -38927,7 +38909,7 @@ def rocblas_cscal(
     handle: Handle,
     n: Int32,
     alpha: ImmPointer[ComplexFloat32, _],
-    x: UnsafePointer[ComplexFloat32, _],
+    x: Pointer[ComplexFloat32, _],
     incx: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -38956,7 +38938,7 @@ def rocblas_cherkx_strided_batched(
     ldb: Int32,
     stride__b: Int64,
     beta: ImmPointer[Float32, _],
-    _c: UnsafePointer[ComplexFloat32, _],
+    _c: Pointer[ComplexFloat32, _],
     ldc: Int32,
     stride__c: Int64,
     batch_count: Int32,
@@ -39140,7 +39122,7 @@ def rocblas_zgbmv_strided_batched(
     incx: Int32,
     stride_x: Int64,
     beta: ImmPointer[ComplexFloat64, _],
-    y: UnsafePointer[ComplexFloat64, _],
+    y: Pointer[ComplexFloat64, _],
     incy: Int32,
     stride_y: Int64,
     batch_count: Int32,
@@ -39245,7 +39227,7 @@ def rocblas_dsyr_strided_batched_64(
     x: ImmPointer[Float64, _],
     incx: Int64,
     stridex: Int64,
-    _a: UnsafePointer[Float64, _],
+    _a: Pointer[Float64, _],
     lda: Int64,
     stride_a: Int64,
     batch_count: Int64,
@@ -39330,7 +39312,7 @@ def rocblas_zspr_strided_batched(
     x: ImmPointer[ComplexFloat64, _],
     incx: Int32,
     stride_x: Int64,
-    _ap: UnsafePointer[ComplexFloat64, _],
+    _ap: Pointer[ComplexFloat64, _],
     stride__a: Int64,
     batch_count: Int32,
 ) raises -> Status:
@@ -39360,7 +39342,7 @@ def rocblas_ztbsv(
     k: Int32,
     _a: ImmPointer[ComplexFloat64, _],
     lda: Int32,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: Pointer[ComplexFloat64, _],
     incx: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -39385,7 +39367,7 @@ def rocblas_isamin(
     n: Int32,
     x: ImmPointer[Float32, _],
     incx: Int32,
-    result: UnsafePointer[Int32, _],
+    result: Pointer[Int32, _],
 ) raises -> Status:
     """
     \\brief <b> BLAS Level 1 API </b>.
@@ -39423,7 +39405,7 @@ def rocblas_dtrtri(
     n: Int32,
     _a: ImmPointer[Float64, _],
     lda: Int32,
-    inv_a: UnsafePointer[Float64, _],
+    inv_a: Pointer[Float64, _],
     ldinv_a: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -39448,7 +39430,7 @@ def rocblas_cher(
     alpha: ImmPointer[Float32, _],
     x: ImmPointer[ComplexFloat32, _],
     incx: Int32,
-    _a: UnsafePointer[ComplexFloat32, _],
+    _a: Pointer[ComplexFloat32, _],
     lda: Int32,
 ) raises -> Status:
     """
@@ -39523,7 +39505,7 @@ def rocblas_zhpmv_strided_batched_64(
     incx: Int64,
     stride_x: Int64,
     beta: ImmPointer[ComplexFloat64, _],
-    y: UnsafePointer[ComplexFloat64, _],
+    y: Pointer[ComplexFloat64, _],
     incy: Int64,
     stride_y: Int64,
     batch_count: Int64,
@@ -39567,9 +39549,9 @@ def rocblas_zhpmv_strided_batched_64(
 def rocblas_srotm_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[Float32, _],
+    x: Pointer[Float32, _],
     incx: Int64,
-    y: UnsafePointer[Float32, _],
+    y: Pointer[Float32, _],
     incy: Int64,
     param: ImmPointer[Float32, _],
 ) raises -> Status:
@@ -39591,7 +39573,7 @@ def rocblas_dscal(
     handle: Handle,
     n: Int32,
     alpha: ImmPointer[Float64, _],
-    x: UnsafePointer[Float64, _],
+    x: Pointer[Float64, _],
     incx: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -39637,7 +39619,7 @@ def rocblas_csymv_strided_batched(
     incx: Int32,
     stridex: Int64,
     beta: ImmPointer[ComplexFloat32, _],
-    y: UnsafePointer[ComplexFloat32, _],
+    y: Pointer[ComplexFloat32, _],
     incy: Int32,
     stridey: Int64,
     batch_count: Int32,
@@ -39687,7 +39669,7 @@ def rocblas_ctpsv(
     diag: Diagonal,
     n: Int32,
     _ap: ImmPointer[ComplexFloat32, _],
-    x: UnsafePointer[ComplexFloat32, _],
+    x: Pointer[ComplexFloat32, _],
     incx: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -39707,13 +39689,13 @@ def rocblas_ctpsv(
 
 def rocblas_srotg_strided_batched(
     handle: Handle,
-    a: UnsafePointer[Float32, _],
+    a: Pointer[Float32, _],
     stride_a: Int64,
-    b: UnsafePointer[Float32, _],
+    b: Pointer[Float32, _],
     stride_b: Int64,
-    c: UnsafePointer[Float32, _],
+    c: Pointer[Float32, _],
     stride_c: Int64,
-    s: UnsafePointer[Float32, _],
+    s: Pointer[Float32, _],
     stride_s: Int64,
     batch_count: Int32,
 ) raises -> Status:
@@ -39780,7 +39762,7 @@ def rocblas_ssbmv_64(
     x: ImmPointer[Float32, _],
     incx: Int64,
     beta: ImmPointer[Float32, _],
-    y: UnsafePointer[Float32, _],
+    y: Pointer[Float32, _],
     incy: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -39832,7 +39814,7 @@ def rocblas_stbsv(
     k: Int32,
     _a: ImmPointer[Float32, _],
     lda: Int32,
-    x: UnsafePointer[Float32, _],
+    x: Pointer[Float32, _],
     incx: Int32,
 ) raises -> Status:
     """
@@ -39923,7 +39905,7 @@ def rocblas_ddgmm_strided_batched(
     x: ImmPointer[Float64, _],
     incx: Int32,
     stride_x: Int64,
-    _c: UnsafePointer[Float64, _],
+    _c: Pointer[Float64, _],
     ldc: Int32,
     stride__c: Int64,
     batch_count: Int32,
@@ -39973,7 +39955,7 @@ def rocblas_dspmv(
     x: ImmPointer[Float64, _],
     incx: Int32,
     beta: ImmPointer[Float64, _],
-    y: UnsafePointer[Float64, _],
+    y: Pointer[Float64, _],
     incy: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -40088,7 +40070,7 @@ def rocblas_csyrkx(
     _b: ImmPointer[ComplexFloat32, _],
     ldb: Int32,
     beta: ImmPointer[ComplexFloat32, _],
-    _c: UnsafePointer[ComplexFloat32, _],
+    _c: Pointer[ComplexFloat32, _],
     ldc: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -40119,7 +40101,7 @@ def rocblas_strmv(
     n: Int32,
     _a: ImmPointer[Float32, _],
     lda: Int32,
-    x: UnsafePointer[Float32, _],
+    x: Pointer[Float32, _],
     incx: Int32,
 ) raises -> Status:
     """
@@ -40250,10 +40232,10 @@ def rocblas_cgeru_strided_batched(
     x: ImmPointer[ComplexFloat32, _],
     incx: Int32,
     stridex: Int64,
-    y: UnsafePointer[ComplexFloat32, _],
+    y: Pointer[ComplexFloat32, _],
     incy: Int32,
     stridey: Int64,
-    _a: UnsafePointer[ComplexFloat32, _],
+    _a: Pointer[ComplexFloat32, _],
     lda: Int32,
     stride_a: Int64,
     batch_count: Int32,
@@ -40436,7 +40418,7 @@ def rocblas_cdgmm_strided_batched(
     x: ImmPointer[ComplexFloat32, _],
     incx: Int32,
     stride_x: Int64,
-    _c: UnsafePointer[ComplexFloat32, _],
+    _c: Pointer[ComplexFloat32, _],
     ldc: Int32,
     stride__c: Int64,
     batch_count: Int32,
@@ -40484,7 +40466,7 @@ def rocblas_chpr(
     alpha: ImmPointer[Float32, _],
     x: ImmPointer[ComplexFloat32, _],
     incx: Int32,
-    _ap: UnsafePointer[ComplexFloat32, _],
+    _ap: Pointer[ComplexFloat32, _],
 ) raises -> Status:
     """
     \\brief <b> BLAS Level 2 API </b>.
@@ -40571,7 +40553,7 @@ def rocblas_stbmv_strided_batched(
     _a: ImmPointer[Float32, _],
     lda: Int32,
     stride__a: Int64,
-    x: UnsafePointer[Float32, _],
+    x: Pointer[Float32, _],
     incx: Int32,
     stride_x: Int64,
     batch_count: Int32,
@@ -40700,10 +40682,10 @@ def rocblas_stbmv_strided_batched(
 def rocblas_crot_strided_batched(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: Pointer[ComplexFloat32, _],
     incx: Int32,
     stride_x: Int64,
-    y: UnsafePointer[ComplexFloat32, _],
+    y: Pointer[ComplexFloat32, _],
     incy: Int32,
     stride_y: Int64,
     c: ImmPointer[Float32, _],
@@ -40735,7 +40717,7 @@ def rocblas_ztpmv(
     diag: Diagonal,
     n: Int32,
     _a: ImmPointer[ComplexFloat64, _],
-    x: UnsafePointer[ComplexFloat64, _],
+    x: Pointer[ComplexFloat64, _],
     incx: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -41033,7 +41015,7 @@ def rocblas_zsymv_strided_batched_64(
     incx: Int64,
     stridex: Int64,
     beta: ImmPointer[ComplexFloat64, _],
-    y: UnsafePointer[ComplexFloat64, _],
+    y: Pointer[ComplexFloat64, _],
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
@@ -41116,7 +41098,7 @@ def rocblas_isamin_strided_batched_64(
     incx: Int64,
     stridex: Int64,
     batch_count: Int64,
-    result: UnsafePointer[Int64, _],
+    result: Pointer[Int64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_isamin_strided_batched_64",
@@ -41140,7 +41122,7 @@ def rocblas_zdotc_batched_64(
     y: OpaquePointer[_],
     incy: Int64,
     batch_count: Int64,
-    result: UnsafePointer[ComplexFloat64, _],
+    result: Pointer[ComplexFloat64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdotc_batched_64",
@@ -41166,7 +41148,7 @@ def rocblas_ssyr2_64(
     incx: Int64,
     y: ImmPointer[Float32, _],
     incy: Int64,
-    _a: UnsafePointer[Float32, _],
+    _a: Pointer[Float32, _],
     lda: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -41195,7 +41177,7 @@ def rocblas_dtrsv_strided_batched(
     _a: ImmPointer[Float64, _],
     lda: Int32,
     stride__a: Int64,
-    x: UnsafePointer[Float64, _],
+    x: Pointer[Float64, _],
     incx: Int32,
     stride_x: Int64,
     batch_count: Int32,
@@ -41272,7 +41254,7 @@ def rocblas_sgbmv_strided_batched_64(
     incx: Int64,
     stride_x: Int64,
     beta: ImmPointer[Float32, _],
-    y: UnsafePointer[Float32, _],
+    y: Pointer[Float32, _],
     incy: Int64,
     stride_y: Int64,
     batch_count: Int64,
@@ -41329,7 +41311,7 @@ def rocblas_hdot_batched(
     y: OpaquePointer[_],
     incy: Int32,
     batch_count: Int32,
-    result: UnsafePointer[Float16, _],
+    result: Pointer[Float16, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_hdot_batched",
@@ -41357,7 +41339,7 @@ def rocblas_chbmv_64(
     x: ImmPointer[ComplexFloat32, _],
     incx: Int64,
     beta: ImmPointer[ComplexFloat32, _],
-    y: UnsafePointer[ComplexFloat32, _],
+    y: Pointer[ComplexFloat32, _],
     incy: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -41406,8 +41388,8 @@ def rocblas_stpmv_batched_64(
     trans_a: Operation,
     diag: Diagonal,
     n: Int64,
-    _a: ImmPointer[UnsafePointer[Float32, MutAnyOrigin], _],
-    x: UnsafePointer[UnsafePointer[Float32, MutAnyOrigin], _],
+    _a: ImmPointer[MutPointer[Float32, MutAnyOrigin], _],
+    x: Pointer[MutPointer[Float32, MutAnyOrigin], _],
     incx: Int64,
     batch_count: Int64,
 ) raises -> Status:
@@ -41434,7 +41416,7 @@ def rocblas_cdotu_64(
     incx: Int64,
     y: ImmPointer[ComplexFloat32, _],
     incy: Int64,
-    result: UnsafePointer[ComplexFloat32, _],
+    result: Pointer[ComplexFloat32, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cdotu_64",
@@ -41458,7 +41440,7 @@ def rocblas_dspr_strided_batched(
     x: ImmPointer[Float64, _],
     incx: Int32,
     stride_x: Int64,
-    _ap: UnsafePointer[Float64, _],
+    _ap: Pointer[Float64, _],
     stride__a: Int64,
     batch_count: Int32,
 ) raises -> Status:
@@ -41486,7 +41468,7 @@ def rocblas_scnrm2_strided_batched_64(
     incx: Int64,
     stridex: Int64,
     batch_count: Int64,
-    results: UnsafePointer[Float32, _],
+    results: Pointer[Float32, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_scnrm2_strided_batched_64",
@@ -41505,9 +41487,9 @@ def rocblas_scnrm2_strided_batched_64(
 def rocblas_csrot(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: Pointer[ComplexFloat32, _],
     incx: Int32,
-    y: UnsafePointer[ComplexFloat32, _],
+    y: Pointer[ComplexFloat32, _],
     incy: Int32,
     c: ImmPointer[Float32, _],
     s: ImmPointer[Float32, _],
@@ -41592,10 +41574,10 @@ def rocblas_device_malloc_set_default_memory_size(size: Int) raises:
 def rocblas_zswap_strided_batched(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: Pointer[ComplexFloat64, _],
     incx: Int32,
     stridex: Int64,
-    y: UnsafePointer[ComplexFloat64, _],
+    y: Pointer[ComplexFloat64, _],
     incy: Int32,
     stridey: Int64,
     batch_count: Int32,
@@ -41726,9 +41708,9 @@ def rocblas_zgeru_64(
     alpha: ImmPointer[ComplexFloat64, _],
     x: ImmPointer[ComplexFloat64, _],
     incx: Int64,
-    y: UnsafePointer[ComplexFloat64, _],
+    y: Pointer[ComplexFloat64, _],
     incy: Int64,
-    _a: UnsafePointer[ComplexFloat64, _],
+    _a: Pointer[ComplexFloat64, _],
     lda: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -41756,7 +41738,7 @@ def rocblas_ctpmv_strided_batched_64(
     n: Int64,
     _a: ImmPointer[ComplexFloat32, _],
     stride__a: Int64,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: Pointer[ComplexFloat32, _],
     incx: Int64,
     stride_x: Int64,
     batch_count: Int64,
@@ -41797,7 +41779,7 @@ def rocblas_caxpy(
     alpha: ImmPointer[ComplexFloat32, _],
     x: ImmPointer[ComplexFloat32, _],
     incx: Int32,
-    y: UnsafePointer[ComplexFloat32, _],
+    y: Pointer[ComplexFloat32, _],
     incy: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -41825,7 +41807,7 @@ def rocblas_zgemv_64(
     x: ImmPointer[ComplexFloat64, _],
     incx: Int64,
     beta: ImmPointer[ComplexFloat64, _],
-    y: UnsafePointer[ComplexFloat64, _],
+    y: Pointer[ComplexFloat64, _],
     incy: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -41930,7 +41912,7 @@ def rocblas_cgemmt(
     _b: ImmPointer[ComplexFloat32, _],
     ldb: Int32,
     beta: ImmPointer[ComplexFloat32, _],
-    _c: UnsafePointer[ComplexFloat32, _],
+    _c: Pointer[ComplexFloat32, _],
     ldc: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -41975,7 +41957,7 @@ def rocblas_izamin_batched_64(
     x: OpaquePointer[_],
     incx: Int64,
     batch_count: Int64,
-    result: UnsafePointer[Int64, _],
+    result: Pointer[Int64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_izamin_batched_64",
@@ -41992,7 +41974,7 @@ def rocblas_izamin_batched_64(
 
 def rocblas_status_to_string(
     status: Status,
-) raises -> UnsafePointer[Int8, MutAnyOrigin]:
+) raises -> MutPointer[Int8, MutAnyOrigin]:
     """BLAS Auxiliary API.
 
     \\details
@@ -42007,7 +41989,7 @@ def rocblas_status_to_string(
     """
     return _get_dylib_function[
         "rocblas_status_to_string",
-        def(Status) thin -> UnsafePointer[Int8, MutAnyOrigin],
+        def(Status) thin -> MutPointer[Int8, MutAnyOrigin],
     ]()(status)
 
 
@@ -42017,7 +41999,7 @@ def rocblas_saxpy(
     alpha: ImmPointer[Float32, _],
     x: ImmPointer[Float32, _],
     incx: Int32,
-    y: UnsafePointer[Float32, _],
+    y: Pointer[Float32, _],
     incy: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -42126,7 +42108,7 @@ def rocblas_ztpmv_64(
     diag: Diagonal,
     n: Int64,
     _a: ImmPointer[ComplexFloat64, _],
-    x: UnsafePointer[ComplexFloat64, _],
+    x: Pointer[ComplexFloat64, _],
     incx: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -42155,7 +42137,7 @@ def rocblas_sspmv_strided_batched(
     incx: Int32,
     stridex: Int64,
     beta: ImmPointer[Float32, _],
-    y: UnsafePointer[Float32, _],
+    y: Pointer[Float32, _],
     incy: Int32,
     stridey: Int64,
     batch_count: Int32,
@@ -42257,9 +42239,9 @@ def rocblas_sspmv_strided_batched(
 def rocblas_drot(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[Float64, _],
+    x: Pointer[Float64, _],
     incx: Int32,
-    y: UnsafePointer[Float64, _],
+    y: Pointer[Float64, _],
     incy: Int32,
     c: ImmPointer[Float64, _],
     s: ImmPointer[Float64, _],
@@ -42289,7 +42271,7 @@ def rocblas_zsymv(
     x: ImmPointer[ComplexFloat64, _],
     incx: Int32,
     beta: ImmPointer[ComplexFloat64, _],
-    y: UnsafePointer[ComplexFloat64, _],
+    y: Pointer[ComplexFloat64, _],
     incy: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -42314,7 +42296,7 @@ def rocblas_csscal(
     handle: Handle,
     n: Int32,
     alpha: ImmPointer[Float32, _],
-    x: UnsafePointer[ComplexFloat32, _],
+    x: Pointer[ComplexFloat32, _],
     incx: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -42332,9 +42314,9 @@ def rocblas_csscal(
 def rocblas_zrot(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: Pointer[ComplexFloat64, _],
     incx: Int32,
-    y: UnsafePointer[ComplexFloat64, _],
+    y: Pointer[ComplexFloat64, _],
     incy: Int32,
     c: ImmPointer[Float64, _],
     s: ImmPointer[ComplexFloat64, _],
@@ -42369,7 +42351,7 @@ def rocblas_zgemm_strided_batched(
     ldb: Int32,
     stride_b: Int64,
     beta: ImmPointer[ComplexFloat64, _],
-    _c: UnsafePointer[ComplexFloat64, _],
+    _c: Pointer[ComplexFloat64, _],
     ldc: Int32,
     stride_c: Int64,
     batch_count: Int32,
@@ -42421,10 +42403,10 @@ def rocblas_zgemm_strided_batched(
 def rocblas_zdrot_strided_batched(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: Pointer[ComplexFloat64, _],
     incx: Int32,
     stride_x: Int64,
-    y: UnsafePointer[ComplexFloat64, _],
+    y: Pointer[ComplexFloat64, _],
     incy: Int32,
     stride_y: Int64,
     c: ImmPointer[Float64, _],
@@ -42460,7 +42442,7 @@ def rocblas_ctrsm(
     alpha: ImmPointer[ComplexFloat32, _],
     _a: ImmPointer[ComplexFloat32, _],
     lda: Int32,
-    _b: UnsafePointer[ComplexFloat32, _],
+    _b: Pointer[ComplexFloat32, _],
     ldb: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -42491,7 +42473,7 @@ def rocblas_ctrsv_strided_batched_64(
     _a: ImmPointer[ComplexFloat32, _],
     lda: Int64,
     stride__a: Int64,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: Pointer[ComplexFloat32, _],
     incx: Int64,
     stride_x: Int64,
     batch_count: Int64,
@@ -42533,7 +42515,7 @@ def rocblas_isamax(
     n: Int32,
     x: ImmPointer[Float32, _],
     incx: Int32,
-    result: UnsafePointer[Int32, _],
+    result: Pointer[Int32, _],
 ) raises -> Status:
     """
     \\brief <b> BLAS Level 1 API </b>.
@@ -42605,7 +42587,7 @@ def rocblas_ssymm(
     _b: ImmPointer[Float32, _],
     ldb: Int32,
     beta: ImmPointer[Float32, _],
-    _c: UnsafePointer[Float32, _],
+    _c: Pointer[Float32, _],
     ldc: Int32,
 ) raises -> Status:
     """
@@ -42740,9 +42722,9 @@ def rocblas_sger(
     alpha: ImmPointer[Float32, _],
     x: ImmPointer[Float32, _],
     incx: Int32,
-    y: UnsafePointer[Float32, _],
+    y: Pointer[Float32, _],
     incy: Int32,
-    _a: UnsafePointer[Float32, _],
+    _a: Pointer[Float32, _],
     lda: Int32,
 ) raises -> Status:
     """
@@ -42825,15 +42807,15 @@ def rocblas_crotg_batched(
 
 def rocblas_srotmg_strided_batched_64(
     handle: Handle,
-    d1: UnsafePointer[Float32, _],
+    d1: Pointer[Float32, _],
     stride_d1: Int64,
-    d2: UnsafePointer[Float32, _],
+    d2: Pointer[Float32, _],
     stride_d2: Int64,
-    x1: UnsafePointer[Float32, _],
+    x1: Pointer[Float32, _],
     stride_x1: Int64,
     y1: ImmPointer[Float32, _],
     stride_y1: Int64,
-    param: UnsafePointer[Float32, _],
+    param: Pointer[Float32, _],
     stride_param: Int64,
     batch_count: Int64,
 ) raises -> Status:
@@ -42870,9 +42852,9 @@ def rocblas_srotmg_strided_batched_64(
 
 
 def rocblas_device_malloc_get(
-    ptr: UnsafePointer[MallocBase, _],
+    ptr: Pointer[MallocBase, _],
     index: Int,
-    res: UnsafePointer[OpaquePointer[MutAnyOrigin], _],
+    res: Pointer[OpaquePointer[MutAnyOrigin], _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_device_malloc_get",
@@ -43021,7 +43003,7 @@ def rocblas_zaxpy(
     alpha: ImmPointer[ComplexFloat64, _],
     x: ImmPointer[ComplexFloat64, _],
     incx: Int32,
-    y: UnsafePointer[ComplexFloat64, _],
+    y: Pointer[ComplexFloat64, _],
     incy: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -43045,7 +43027,7 @@ def rocblas_dnrm2_strided_batched_64(
     incx: Int64,
     stridex: Int64,
     batch_count: Int64,
-    results: UnsafePointer[Float64, _],
+    results: Pointer[Float64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dnrm2_strided_batched_64",
@@ -43235,9 +43217,9 @@ def rocblas_nrm2_strided_batched_ex(
 def rocblas_cswap_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: Pointer[ComplexFloat32, _],
     incx: Int64,
-    y: UnsafePointer[ComplexFloat32, _],
+    y: Pointer[ComplexFloat32, _],
     incy: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -43411,7 +43393,7 @@ def rocblas_zdotu_strided_batched_64(
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
-    result: UnsafePointer[ComplexFloat64, _],
+    result: Pointer[ComplexFloat64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdotu_strided_batched_64",
@@ -43435,7 +43417,7 @@ def rocblas_scopy_64(
     n: Int64,
     x: ImmPointer[Float32, _],
     incx: Int64,
-    y: UnsafePointer[Float32, _],
+    y: Pointer[Float32, _],
     incy: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -43458,7 +43440,7 @@ def rocblas_idamin_strided_batched_64(
     incx: Int64,
     stridex: Int64,
     batch_count: Int64,
-    result: UnsafePointer[Int64, _],
+    result: Pointer[Int64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_idamin_strided_batched_64",
@@ -43480,7 +43462,7 @@ def rocblas_haxpy_64(
     alpha: ImmPointer[Float16, _],
     x: ImmPointer[Float16, _],
     incx: Int64,
-    y: UnsafePointer[Float16, _],
+    y: Pointer[Float16, _],
     incy: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -43632,7 +43614,7 @@ def rocblas_sspr_64(
     alpha: ImmPointer[Float32, _],
     x: ImmPointer[Float32, _],
     incx: Int64,
-    _ap: UnsafePointer[Float32, _],
+    _ap: Pointer[Float32, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_sspr_64",
@@ -43655,7 +43637,7 @@ def rocblas_zhpr_64(
     alpha: ImmPointer[Float64, _],
     x: ImmPointer[ComplexFloat64, _],
     incx: Int64,
-    _ap: UnsafePointer[ComplexFloat64, _],
+    _ap: Pointer[ComplexFloat64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhpr_64",
@@ -43681,7 +43663,7 @@ def rocblas_dsymv_64(
     x: ImmPointer[Float64, _],
     incx: Int64,
     beta: ImmPointer[Float64, _],
-    y: UnsafePointer[Float64, _],
+    y: Pointer[Float64, _],
     incy: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -43763,7 +43745,7 @@ def rocblas_sspr2(
     incx: Int32,
     y: ImmPointer[Float32, _],
     incy: Int32,
-    _ap: UnsafePointer[Float32, _],
+    _ap: Pointer[Float32, _],
 ) raises -> Status:
     """
     \\brief <b> BLAS Level 2 API </b>.
@@ -43933,7 +43915,7 @@ def rocblas_cher_batched_64(
 
 
 def rocblas_get_device_memory_size(
-    handle: Handle, size: UnsafePointer[Int, _]
+    handle: Handle, size: Pointer[Int, _]
 ) raises -> Status:
     """\\brief
     \\details
@@ -43993,7 +43975,7 @@ def rocblas_zhpr2_strided_batched(
     y: ImmPointer[ComplexFloat64, _],
     incy: Int32,
     stride_y: Int64,
-    _ap: UnsafePointer[ComplexFloat64, _],
+    _ap: Pointer[ComplexFloat64, _],
     stride__a: Int64,
     batch_count: Int32,
 ) raises -> Status:
@@ -44066,7 +44048,7 @@ def rocblas_csymv(
     x: ImmPointer[ComplexFloat32, _],
     incx: Int32,
     beta: ImmPointer[ComplexFloat32, _],
-    y: UnsafePointer[ComplexFloat32, _],
+    y: Pointer[ComplexFloat32, _],
     incy: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -44121,7 +44103,7 @@ def rocblas_cgemv_strided_batched_64(
     incx: Int64,
     stridex: Int64,
     beta: ImmPointer[ComplexFloat32, _],
-    y: UnsafePointer[ComplexFloat32, _],
+    y: Pointer[ComplexFloat32, _],
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
@@ -44175,7 +44157,7 @@ def rocblas_stbsv_64(
     k: Int64,
     _a: ImmPointer[Float32, _],
     lda: Int64,
-    x: UnsafePointer[Float32, _],
+    x: Pointer[Float32, _],
     incx: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -44209,7 +44191,7 @@ def rocblas_zhemm_strided_batched(
     ldb: Int32,
     stride__b: Int64,
     beta: ImmPointer[ComplexFloat64, _],
-    _c: UnsafePointer[ComplexFloat64, _],
+    _c: Pointer[ComplexFloat64, _],
     ldc: Int32,
     stride__c: Int64,
     batch_count: Int32,
@@ -44262,7 +44244,7 @@ def rocblas_dnrm2_batched_64(
     x: OpaquePointer[_],
     incx: Int64,
     batch_count: Int64,
-    results: UnsafePointer[Float64, _],
+    results: Pointer[Float64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dnrm2_batched_64",
@@ -44284,9 +44266,9 @@ def rocblas_zgeru(
     alpha: ImmPointer[ComplexFloat64, _],
     x: ImmPointer[ComplexFloat64, _],
     incx: Int32,
-    y: UnsafePointer[ComplexFloat64, _],
+    y: Pointer[ComplexFloat64, _],
     incy: Int32,
-    _a: UnsafePointer[ComplexFloat64, _],
+    _a: Pointer[ComplexFloat64, _],
     lda: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -44311,7 +44293,7 @@ def rocblas_zcopy(
     n: Int32,
     x: ImmPointer[ComplexFloat64, _],
     incx: Int32,
-    y: UnsafePointer[ComplexFloat64, _],
+    y: Pointer[ComplexFloat64, _],
     incy: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -44339,7 +44321,7 @@ def rocblas_ssyrkx(
     _b: ImmPointer[Float32, _],
     ldb: Int32,
     beta: ImmPointer[Float32, _],
-    _c: UnsafePointer[Float32, _],
+    _c: Pointer[Float32, _],
     ldc: Int32,
 ) raises -> Status:
     """
@@ -44454,7 +44436,7 @@ def rocblas_zdotu_batched(
     y: OpaquePointer[_],
     incy: Int32,
     batch_count: Int32,
-    result: UnsafePointer[ComplexFloat64, _],
+    result: Pointer[ComplexFloat64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdotu_batched",
@@ -44479,7 +44461,7 @@ def rocblas_ctpsv_strided_batched(
     n: Int32,
     _ap: ImmPointer[ComplexFloat32, _],
     stride__a: Int64,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: Pointer[ComplexFloat32, _],
     incx: Int32,
     stride_x: Int64,
     batch_count: Int32,
@@ -44522,7 +44504,7 @@ def rocblas_zher_strided_batched(
     x: ImmPointer[ComplexFloat64, _],
     incx: Int32,
     stride_x: Int64,
-    _a: UnsafePointer[ComplexFloat64, _],
+    _a: Pointer[ComplexFloat64, _],
     lda: Int32,
     stride__a: Int64,
     batch_count: Int32,
@@ -44595,7 +44577,7 @@ def rocblas_tssgemv_strided_batched(
     incx: Int32,
     stridex: Int64,
     beta: ImmPointer[Float32, _],
-    y: UnsafePointer[Float32, _],
+    y: Pointer[Float32, _],
     incy: Int32,
     stridey: Int64,
     batch_count: Int32,
@@ -44647,7 +44629,7 @@ def rocblas_isamax_strided_batched_64(
     incx: Int64,
     stridex: Int64,
     batch_count: Int64,
-    result: UnsafePointer[Int64, _],
+    result: Pointer[Int64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_isamax_strided_batched_64",
@@ -44665,13 +44647,13 @@ def rocblas_isamax_strided_batched_64(
 
 def rocblas_drotg_strided_batched_64(
     handle: Handle,
-    a: UnsafePointer[Float64, _],
+    a: Pointer[Float64, _],
     stride_a: Int64,
-    b: UnsafePointer[Float64, _],
+    b: Pointer[Float64, _],
     stride_b: Int64,
-    c: UnsafePointer[Float64, _],
+    c: Pointer[Float64, _],
     stride_c: Int64,
-    s: UnsafePointer[Float64, _],
+    s: Pointer[Float64, _],
     stride_s: Int64,
     batch_count: Int64,
 ) raises -> Status:
@@ -44698,7 +44680,7 @@ def rocblas_scnrm2_batched_64(
     x: OpaquePointer[_],
     incx: Int64,
     batch_count: Int64,
-    results: UnsafePointer[Float32, _],
+    results: Pointer[Float32, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_scnrm2_batched_64",
@@ -44716,10 +44698,10 @@ def rocblas_scnrm2_batched_64(
 def rocblas_zdrot_strided_batched_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: Pointer[ComplexFloat64, _],
     incx: Int64,
     stride_x: Int64,
-    y: UnsafePointer[ComplexFloat64, _],
+    y: Pointer[ComplexFloat64, _],
     incy: Int64,
     stride_y: Int64,
     c: ImmPointer[Float64, _],
@@ -44785,7 +44767,7 @@ def rocblas_bfdot_strided_batched(
     incy: Int32,
     stridey: Int64,
     batch_count: Int32,
-    result: UnsafePointer[BFloat16, _],
+    result: Pointer[BFloat16, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_bfdot_strided_batched",
@@ -44848,7 +44830,7 @@ def rocblas_stpmv_64(
     diag: Diagonal,
     n: Int64,
     _a: ImmPointer[Float32, _],
-    x: UnsafePointer[Float32, _],
+    x: Pointer[Float32, _],
     incx: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -44916,7 +44898,7 @@ def rocblas_dznrm2(
     n: Int32,
     x: ImmPointer[ComplexFloat64, _],
     incx: Int32,
-    result: UnsafePointer[Float64, _],
+    result: Pointer[Float64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dznrm2",
@@ -44940,7 +44922,7 @@ def rocblas_ctbmv_strided_batched_64(
     _a: ImmPointer[ComplexFloat32, _],
     lda: Int64,
     stride__a: Int64,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: Pointer[ComplexFloat32, _],
     incx: Int64,
     stride_x: Int64,
     batch_count: Int64,
@@ -44989,7 +44971,7 @@ def rocblas_ztbsv_strided_batched(
     _a: ImmPointer[ComplexFloat64, _],
     lda: Int32,
     stride__a: Int64,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: Pointer[ComplexFloat64, _],
     incx: Int32,
     stride_x: Int64,
     batch_count: Int32,
@@ -45065,9 +45047,9 @@ def rocblas_dtrmv_batched(
     trans_a: Operation,
     diag: Diagonal,
     n: Int32,
-    _a: ImmPointer[UnsafePointer[Float64, MutAnyOrigin], _],
+    _a: ImmPointer[MutPointer[Float64, MutAnyOrigin], _],
     lda: Int32,
-    x: UnsafePointer[UnsafePointer[Float64, MutAnyOrigin], _],
+    x: Pointer[MutPointer[Float64, MutAnyOrigin], _],
     incx: Int32,
     batch_count: Int32,
 ) raises -> Status:
@@ -45096,7 +45078,7 @@ def rocblas_dtpsv_strided_batched(
     n: Int32,
     _ap: ImmPointer[Float64, _],
     stride__a: Int64,
-    x: UnsafePointer[Float64, _],
+    x: Pointer[Float64, _],
     incx: Int32,
     stride_x: Int64,
     batch_count: Int32,
@@ -45143,7 +45125,7 @@ def rocblas_zsymv_strided_batched(
     incx: Int32,
     stridex: Int64,
     beta: ImmPointer[ComplexFloat64, _],
-    y: UnsafePointer[ComplexFloat64, _],
+    y: Pointer[ComplexFloat64, _],
     incy: Int32,
     stridey: Int64,
     batch_count: Int32,
@@ -45229,7 +45211,7 @@ def rocblas_dsyrkx_strided_batched(
     ldb: Int32,
     stride__b: Int64,
     beta: ImmPointer[Float64, _],
-    _c: UnsafePointer[Float64, _],
+    _c: Pointer[Float64, _],
     ldc: Int32,
     stride__c: Int64,
     batch_count: Int32,
@@ -45283,7 +45265,7 @@ def rocblas_haxpy_strided_batched_64(
     x: ImmPointer[Float16, _],
     incx: Int64,
     stridex: Int64,
-    y: UnsafePointer[Float16, _],
+    y: Pointer[Float16, _],
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
@@ -45307,13 +45289,13 @@ def rocblas_haxpy_strided_batched_64(
 
 def rocblas_zrotg_strided_batched(
     handle: Handle,
-    a: UnsafePointer[ComplexFloat64, _],
+    a: Pointer[ComplexFloat64, _],
     stride_a: Int64,
-    b: UnsafePointer[ComplexFloat64, _],
+    b: Pointer[ComplexFloat64, _],
     stride_b: Int64,
-    c: UnsafePointer[Float64, _],
+    c: Pointer[Float64, _],
     stride_c: Int64,
-    s: UnsafePointer[ComplexFloat64, _],
+    s: Pointer[ComplexFloat64, _],
     stride_s: Int64,
     batch_count: Int32,
 ) raises -> Status:
@@ -45382,7 +45364,7 @@ def rocblas_sgemm_strided_batched(
     ldb: Int32,
     stride_b: Int64,
     beta: ImmPointer[Float32, _],
-    _c: UnsafePointer[Float32, _],
+    _c: Pointer[Float32, _],
     ldc: Int32,
     stride_c: Int64,
     batch_count: Int32,
@@ -45509,7 +45491,7 @@ def rocblas_saxpy_strided_batched(
     x: ImmPointer[Float32, _],
     incx: Int32,
     stridex: Int64,
-    y: UnsafePointer[Float32, _],
+    y: Pointer[Float32, _],
     incy: Int32,
     stridey: Int64,
     batch_count: Int32,
@@ -45544,7 +45526,7 @@ def rocblas_chbmv_strided_batched(
     incx: Int32,
     stride_x: Int64,
     beta: ImmPointer[ComplexFloat32, _],
-    y: UnsafePointer[ComplexFloat32, _],
+    y: Pointer[ComplexFloat32, _],
     incy: Int32,
     stride_y: Int64,
     batch_count: Int32,
@@ -45682,7 +45664,7 @@ def rocblas_dspr_strided_batched_64(
     x: ImmPointer[Float64, _],
     incx: Int64,
     stride_x: Int64,
-    _ap: UnsafePointer[Float64, _],
+    _ap: Pointer[Float64, _],
     stride__a: Int64,
     batch_count: Int64,
 ) raises -> Status:
@@ -45708,7 +45690,7 @@ def rocblas_scasum(
     n: Int32,
     x: ImmPointer[ComplexFloat32, _],
     incx: Int32,
-    result: UnsafePointer[Float32, _],
+    result: Pointer[Float32, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_scasum",
@@ -45818,7 +45800,7 @@ def rocblas_bfdot_strided_batched_64(
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
-    result: UnsafePointer[BFloat16, _],
+    result: Pointer[BFloat16, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_bfdot_strided_batched_64",
@@ -45847,7 +45829,7 @@ def rocblas_zdotu_strided_batched(
     incy: Int32,
     stridey: Int64,
     batch_count: Int32,
-    result: UnsafePointer[ComplexFloat64, _],
+    result: Pointer[ComplexFloat64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdotu_strided_batched",
@@ -45970,7 +45952,7 @@ def rocblas_dsymm(
     _b: ImmPointer[Float64, _],
     ldb: Int32,
     beta: ImmPointer[Float64, _],
-    _c: UnsafePointer[Float64, _],
+    _c: Pointer[Float64, _],
     ldc: Int32,
 ) raises -> Status:
     return _get_dylib_function[

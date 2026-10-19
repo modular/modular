@@ -244,9 +244,7 @@ def _copy_tile_to_smem[
     comptime rows = src.static_shape[0]
     comptime cols = src.static_shape[1]
     for i in range(Int(thread_idx.x), rows * cols, WARP_SIZE):
-        dst.store[width=1](
-            (i // cols, i % cols), src.load[width=1]((i // cols, i % cols))
-        )
+        dst.store((i // cols, i % cols), src[i // cols, i % cols])
 
 
 def mma_load_and_print_operands_kernel_ldmatrix[

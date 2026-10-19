@@ -24,8 +24,8 @@ comptime BLOCK_DIM = 256
 
 # ========================== KERNEL CODE ==========================
 def shared_memory_sum_reduction_kernel(
-    input: UnsafePointer[Float32, ImmutAnyOrigin],
-    output: UnsafePointer[Float32, MutAnyOrigin],
+    input: ImmPointer[Float32, ImmutAnyOrigin],
+    output: MutPointer[Float32, MutAnyOrigin],
 ):
     """Shared memory sum reduction kernel.
 

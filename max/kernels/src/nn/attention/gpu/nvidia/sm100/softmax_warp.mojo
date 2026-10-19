@@ -192,11 +192,12 @@ def fa4_scale_write_output[
             ](o_tmem_arg.tmem_addr + UInt32(j * chunk))
             packed = scale_pack_o_row[output_type, w=chunk](o_vals, inv_row_sum)
         (
-            o_smem_arg
-            + o_smem_chunk_offset[output_type, output_swizzle_mode, BM](
-                Int(local_row), j
+            o_smem_arg.unsafe_offset(
+                o_smem_chunk_offset[output_type, output_swizzle_mode, BM](
+                    Int(local_row), j
+                )
             )
-        ).bitcast[UInt32]().store(packed)
+        ).unsafe_bitcast[UInt32]().store(packed)
 
     @inline(.always)
     def write_blocks[lo: Int, hi: Int]() {imm}:
@@ -397,11 +398,12 @@ def fa4_lse_combine_write[
             own_arr, peer_arr, final_scale_local, final_scale_peer
         )
         (
-            o_smem_arg
-            + o_smem_chunk_offset[output_type, output_swizzle_mode, BM](
-                Int(local_row), j
+            o_smem_arg.unsafe_offset(
+                o_smem_chunk_offset[output_type, output_swizzle_mode, BM](
+                    Int(local_row), j
+                )
             )
-        ).bitcast[UInt32]().store(packed)
+        ).unsafe_bitcast[UInt32]().store(packed)
 
     comptime if cross_wg:
         named_barrier[Int32(2 * WARPGROUP_SIZE)](2)
@@ -547,7 +549,7 @@ def fa4_ws_exchange4[
     ), "fa4_ws_exchange4 slot map needs m_pack * rows == WARPGROUP_SIZE"
 
     # Warpgroup `wg` at parity `p` owns [(wg*2 + p)*WARPGROUP_SIZE, +128).
-    var buf = xchg_smem + (
+    var buf = xchg_smem.unsafe_offset(
         (warp_group_idx * 2 + (exchange_seq & 1)) * UInt32(WARPGROUP_SIZE)
     )
     buf[partition_g * UInt32(rows) + local_row] = partial
@@ -793,9 +795,9 @@ def fa4_ws_intracta_combine[
                 comptime for k in range(stage_K):
                     v[k] = c_frag[sb * stage_K + k]
                 (
-                    stage_smem
-                    + (g * stage_blocks + sblk) * rows * stage_K
-                    + r * stage_K
+                    stage_smem.unsafe_offset(
+                        (g * stage_blocks + sblk) * rows * stage_K
+                    ).unsafe_offset(r * stage_K)
                 ).store(v)
     maxsum_smem[(g * rows + r) * 2] = own_max
     maxsum_smem[(g * rows + r) * 2 + 1] = own_sum
@@ -855,20 +857,22 @@ def fa4_ws_intracta_combine[
                 var acc = mul_ftz(
                     f32x2(scale[0]),
                     (
-                        stage_smem
-                        + (0 * stage_blocks + sblk) * rows * stage_K
-                        + r * stage_K
-                        + 2 * hc
+                        stage_smem.unsafe_offset(
+                            (0 * stage_blocks + sblk) * rows * stage_K
+                        )
+                        .unsafe_offset(r * stage_K)
+                        .unsafe_offset(2 * hc)
                     ).load[width=2](),
                 )
                 comptime for p in range(1, m_pack):
                     acc = fma_ftz(
                         f32x2(scale[p]),
                         (
-                            stage_smem
-                            + (p * stage_blocks + sblk) * rows * stage_K
-                            + r * stage_K
-                            + 2 * hc
+                            stage_smem.unsafe_offset(
+                                (p * stage_blocks + sblk) * rows * stage_K
+                            )
+                            .unsafe_offset(r * stage_K)
+                            .unsafe_offset(2 * hc)
                         ).load[width=2](),
                         acc,
                     )
@@ -991,9 +995,9 @@ def fa4_ws_level1_combine[
                 comptime for k in range(stage_K):
                     v[k] = c_frag[sb * stage_K + k]
                 (
-                    stage_smem
-                    + (g * stage_blocks + sblk) * rows * stage_K
-                    + r * stage_K
+                    stage_smem.unsafe_offset(
+                        (g * stage_blocks + sblk) * rows * stage_K
+                    ).unsafe_offset(r * stage_K)
                 ).store(v)
     maxsum_smem[(g * rows + r) * 2] = own_max
     maxsum_smem[(g * rows + r) * 2 + 1] = own_sum
@@ -1048,20 +1052,22 @@ def fa4_ws_level1_combine[
             var acc = mul_ftz(
                 f32x2(scale[0]),
                 (
-                    stage_smem
-                    + (0 * stage_blocks + sblk) * rows * stage_K
-                    + r * stage_K
-                    + 2 * hc
+                    stage_smem.unsafe_offset(
+                        (0 * stage_blocks + sblk) * rows * stage_K
+                    )
+                    .unsafe_offset(r * stage_K)
+                    .unsafe_offset(2 * hc)
                 ).load[width=2](),
             )
             comptime for p in range(1, m_pack):
                 acc = fma_ftz(
                     f32x2(scale[p]),
                     (
-                        stage_smem
-                        + (p * stage_blocks + sblk) * rows * stage_K
-                        + r * stage_K
-                        + 2 * hc
+                        stage_smem.unsafe_offset(
+                            (p * stage_blocks + sblk) * rows * stage_K
+                        )
+                        .unsafe_offset(r * stage_K)
+                        .unsafe_offset(2 * hc)
                     ).load[width=2](),
                     acc,
                 )
@@ -1215,7 +1221,11 @@ def fa4_ws_level2_reduce_scatter_write[
                 var v = SIMD[accum_dtype, stage_K]()
                 comptime for k in range(stage_K):
                     v[k] = o_band[lb * stage_K + k]
-                (l2_stage_smem + sblk * rows * stage_K + r * stage_K).store(v)
+                (
+                    l2_stage_smem.unsafe_offset(
+                        sblk * rows * stage_K
+                    ).unsafe_offset(r * stage_K)
+                ).store(v)
             # `(m_1, l_1)` are depth-independent, so only the FIRST tile
             # transports them and later tiles read what it left. Folds to
             # unconditional at the default `depth_base == 0`.
@@ -1277,10 +1287,9 @@ def fa4_ws_level2_reduce_scatter_write[
                     var o1 = f32x2(0)
                     comptime if not single_wg:
                         o1 = (
-                            l2_stage_smem
-                            + sblk * rows * stage_K
-                            + r * stage_K
-                            + 2 * hc
+                            l2_stage_smem.unsafe_offset(sblk * rows * stage_K)
+                            .unsafe_offset(r * stage_K)
+                            .unsafe_offset(2 * hc)
                         ).load[width=2]()
                     comptime obase = lsblk * stage_K + 2 * hc
                     var o0 = f32x2(o_band[obase], o_band[obase + 1])
@@ -1406,7 +1415,11 @@ def fa4_ws_level2_combine_partial[
             var v = SIMD[accum_dtype, stage_K]()
             comptime for k in range(stage_K):
                 v[k] = o_band[lb * stage_K + k]
-            (l2_stage_smem + sblk * rows * stage_K + r * stage_K).store(v)
+            (
+                l2_stage_smem.unsafe_offset(
+                    sblk * rows * stage_K
+                ).unsafe_offset(r * stage_K)
+            ).store(v)
         if band_g == UInt32(0):  # WG1 warp 0's 32 lanes own all 32 rows' (m,l)
             l2_maxsum_smem[r * 2] = own_max
             l2_maxsum_smem[r * 2 + 1] = own_sum
@@ -1439,7 +1452,9 @@ def fa4_ws_level2_combine_partial[
             var sblk = g * own_sblocks + lb  # global stage-block for this band
             comptime for hc in range(2):  # two f32x2 halves per stage-block
                 var o1 = (
-                    l2_stage_smem + sblk * rows * stage_K + r * stage_K + 2 * hc
+                    l2_stage_smem.unsafe_offset(sblk * rows * stage_K)
+                    .unsafe_offset(r * stage_K)
+                    .unsafe_offset(2 * hc)
                 ).load[width=2]()
                 comptime obase = lb * stage_K + 2 * hc
                 var o0 = f32x2(o_band[obase], o_band[obase + 1])
@@ -1573,7 +1588,9 @@ def fa4_ws_splitk_reduce_scatter_write[
         comptime for k in range(stage_K):
             v[k] = o_band_norm[lb * stage_K + k]
         (
-            stage_smem + sblk * UInt32(rows * stage_K) + lrow * UInt32(stage_K)
+            stage_smem.unsafe_offset(
+                sblk * UInt32(rows * stage_K)
+            ).unsafe_offset(lrow * UInt32(stage_K))
         ).store(v)
     if band_g == UInt32(0):
         maxsum_smem[r * 2] = own_max
@@ -1612,7 +1629,7 @@ def fa4_ws_splitk_reduce_scatter_write[
                         comptime for pp in range(P_static - 1):
                             var rr = pp if pp < b_rank else pp + 1
                             var ms = load_cluster_smem[.float32, 2](
-                                maxsum_smem + lrow * 2, UInt32(rr)
+                                maxsum_smem.unsafe_offset(lrow * 2), UInt32(rr)
                             )
                             pmax[pp + 1] = ms[0]
                             psum[pp + 1] = ms[1]
@@ -1652,9 +1669,9 @@ def fa4_ws_splitk_reduce_scatter_write[
                                 var vec = load_cluster_smem[
                                     DType.float32, stage_K
                                 ](
-                                    stage_smem
-                                    + UInt32(sblk * rows * stage_K)
-                                    + lrow * UInt32(stage_K),
+                                    stage_smem.unsafe_offset(
+                                        UInt32(sblk * rows * stage_K)
+                                    ).unsafe_offset(lrow * UInt32(stage_K)),
                                     UInt32(rr),
                                 )
                                 comptime for c in range(stage_K // 2):
@@ -1966,9 +1983,11 @@ def fa4_splitk_stage_partial[
                     # Peer-visible block -> stage_smem (16 B v4 f32, block-major).
                     comptime for sb in range(subblocks):
                         comptime fblk = col // F + sb
-                        (stage_smem + UInt32(fblk * BM * F) + row_F).store(
-                            vblk[sb]
-                        )
+                        (
+                            stage_smem.unsafe_offset(
+                                UInt32(fblk * BM * F)
+                            ).unsafe_offset(row_F)
+                        ).store(vblk[sb])
 
 
 @inline(.always)
@@ -2094,7 +2113,7 @@ def fa4_splitk_combine_write[
     comptime for p in range(P - 1):
         var r = p if p < b else p + 1
         var ms = load_cluster_smem[.float32, 2](
-            maxsum_smem + tid * 2, UInt32(r)
+            maxsum_smem.unsafe_offset(tid * 2), UInt32(r)
         )
         pmax[p + 1] = ms[0]
         psum[p + 1] = ms[1]
@@ -2163,7 +2182,12 @@ def fa4_splitk_combine_write[
                 comptime ocol = iter * o_sw_K + sb * F
                 var vec: SIMD[accum_dtype, F] = load_cluster_smem[
                     DType.float32, F
-                ](stage_smem + UInt32(fblk * BM * F) + row_F, UInt32(r))
+                ](
+                    stage_smem.unsafe_offset(
+                        UInt32(fblk * BM * F)
+                    ).unsafe_offset(row_F),
+                    UInt32(r),
+                )
                 comptime for c in range(F // 2):
                     var acc = SIMD[accum_dtype, 2](
                         o_final[ocol + 2 * c], o_final[ocol + 2 * c + 1]
@@ -2195,7 +2219,7 @@ def fa4_splitk_combine_write[
     comptime o_own_shift = wg_j_offset * (f32_per_out - 1) * BM * o_sw_K
     comptime chunk = 16 // size_of[output_type]()
     comptime chunks_per_blk = o_sw_K // chunk
-    var o_smem_own = o_smem_arg + o_own_shift
+    var o_smem_own = o_smem_arg.unsafe_offset(o_own_shift)
     comptime for iter in range(iters_per_wg):
         comptime j = wg_j_offset + iter
         comptime for c in range(chunks_per_blk):
@@ -2586,8 +2610,8 @@ def fa4_softmax[
     # `tmem_addr` passed in by register (read once post-barrier in the kernel
     # prologue); do NOT re-read `smem.tmem_addr_ptr()` here.
     var o_smem = smem.o_smem[output_type]()
-    var o_prod_mbar: MBarType = (
-        mbars.mbar_base + MiscMBarsType.O_producer_offset
+    var o_prod_mbar: MBarType = mbars.mbar_base.unsafe_offset(
+        MiscMBarsType.O_producer_offset
     )
     var s_tmem: UInt32 = tmem_addr + UInt32(config.TMEM_S0)
 
@@ -2683,7 +2707,7 @@ def fa4_softmax[
         )
 
     var scale_log2e: Scalar[accum_dtype] = scale
-    var correction_smem = smem.correction_smem() + tid
+    var correction_smem = smem.correction_smem().unsafe_offset(tid)
 
     comptime if not MaskType.apply_log2e_after_mask:
         scale_log2e *= log2e
@@ -2858,7 +2882,7 @@ def fa4_softmax[
                     # `WSLSEType.dtype` with `accum_dtype`, which the assert at
                     # the top of the function pins to the same f32.
                     var _ws_lse = rebind[
-                        UnsafePointer[Scalar[accum_dtype], MutAnyOrigin]
+                        MutPointer[Scalar[accum_dtype], MutAnyOrigin]
                     ](ws_lse_ptr.value().unsafe_mut_cast[True]())
                     _ws_lse[Int(_off)] = _lse
 
@@ -3350,7 +3374,9 @@ def fa4_softmax[
             # release below lets the MMA overwrite S.
             tcgen05_load_wait()
             store_p_quadrant[BN=config.BN, p_tile_rows=config.BM](
-                smem.p_smem() + warp_group_idx * UInt32(config.BM * config.BN),
+                smem.p_smem().unsafe_offset(
+                    warp_group_idx * UInt32(config.BM * config.BN)
+                ),
                 s,
                 thread_tile_row,
                 partition_g,
@@ -3607,11 +3633,15 @@ def fa4_softmax[
                     comptime WS_STAGE = config.ws_epilogue_stage_f32()
                     comptime WS_ML = config.ws_epilogue_ml_f32()
                     var ws_f32e = smem.o_smem[.float32]()
-                    var ws_maxsum1e = ws_f32e + (2 * WS_STAGE + WS_ML)
-                    var ws_l2_stagee = ws_f32e + (2 * WS_STAGE + 2 * WS_ML)
+                    var ws_maxsum1e = ws_f32e.unsafe_offset(
+                        2 * WS_STAGE + WS_ML
+                    )
+                    var ws_l2_stagee = ws_f32e.unsafe_offset(
+                        2 * WS_STAGE + 2 * WS_ML
+                    )
                     var ws_o_e = (
-                        ws_f32e + config.ws_epilogue_o_f32_offset()
-                    ).bitcast[Scalar[output_type]]()
+                        ws_f32e.unsafe_offset(config.ws_epilogue_o_f32_offset())
+                    ).unsafe_bitcast[Scalar[output_type]]()
                     var o_band_zero = Array[
                         Float32,
                         config.ov_depth // config.m_pack,
@@ -3644,7 +3674,9 @@ def fa4_softmax[
                     )
                 elif splitk_combine_active:
                     var stage = smem.o_smem[.float32]()
-                    var maxsum = stage + (config.BM * padded_ov_depth)
+                    var maxsum = stage.unsafe_offset(
+                        config.BM * padded_ov_depth
+                    )
                     # Neutral (max,sum): -inf never wins the cluster Gmax, and
                     # sum 0 zeroes this partition's combine weight regardless.
                     maxsum[row * 2] = min_or_neg_inf[.float32]()
@@ -3878,7 +3910,7 @@ def fa4_softmax[
 
     comptime if not SinkType.is_null:
         var sink_weights_ptr = rebind[
-            UnsafePointer[Scalar[qkv_type], ImmutAnyOrigin]
+            ImmPointer[Scalar[qkv_type], ImmutAnyOrigin]
         ](sink_weights.value())
 
         comptime if use_fma:
@@ -4302,7 +4334,9 @@ def fa4_softmax[
                 warp_idx & 3,
                 warp_group_idx,
                 inv_row_sum,
-                o_smem + warp_group_idx * UInt32(HalfBM * padded_ov_depth),
+                o_smem.unsafe_offset(
+                    warp_group_idx * UInt32(HalfBM * padded_ov_depth)
+                ),
                 o_tile,
                 ragged_tma_store,
                 num_output_rows,
@@ -4428,15 +4462,17 @@ def fa4_softmax[
             ), "WS two-level combine staging must fit the dead Q+KV span"
             var ws_f32 = smem.o_smem[.float32]()
             var ws_stage0 = ws_f32
-            var ws_stage1 = ws_stage0 + WS_STAGE
-            var ws_maxsum0 = ws_stage1 + WS_STAGE
-            var ws_maxsum1 = ws_maxsum0 + WS_ML
-            var ws_l2_stage = ws_maxsum1 + WS_ML
-            var ws_l2_maxsum = ws_l2_stage + WS_L2STAGE
+            var ws_stage1 = ws_stage0.unsafe_offset(WS_STAGE)
+            var ws_maxsum0 = ws_stage1.unsafe_offset(WS_STAGE)
+            var ws_maxsum1 = ws_maxsum0.unsafe_offset(WS_ML)
+            var ws_l2_stage = ws_maxsum1.unsafe_offset(WS_ML)
+            var ws_l2_maxsum = ws_l2_stage.unsafe_offset(WS_L2STAGE)
             comptime assert (
                 2 * WS_STAGE + 2 * WS_ML + WS_L2STAGE + WS_L2MS <= WS_O_OFF
             )
-            var ws_o = (ws_f32 + WS_O_OFF).bitcast[Scalar[output_type]]()
+            var ws_o = ws_f32.unsafe_offset(WS_O_OFF).unsafe_bitcast[
+                Scalar[output_type]
+            ]()
 
             var ws_row_sum = row_sum.reduce_add()
 
@@ -4574,7 +4610,9 @@ def fa4_softmax[
                             # so one shared window is a WAR race. Summed over
                             # the tiles this is exactly `WS_L2STAGE` -- the fix
                             # costs no SMEM and no barrier.
-                            ws_l2_stage + t * config.pv_mma_n() * config.BM,
+                            ws_l2_stage.unsafe_offset(
+                                t * config.pv_mma_n() * config.BM
+                            ),
                             ws_l2_maxsum,
                             ws_o,
                         )
@@ -4918,7 +4956,7 @@ def fa4_softmax[
                 # partition here carries the data; trailing empty partitions take
                 # the empty-partition path above and combine their bands from it.)
                 var stage = smem.o_smem[.float32]()
-                var maxsum = stage + (config.BM * padded_ov_depth)
+                var maxsum = stage.unsafe_offset(config.BM * padded_ov_depth)
                 # o0 tile typed with `config.BM` exactly — `o_tile`'s
                 # `BM // config.num_q` does not fold to `config.BM` at parse
                 # time, so it can't convert to stage_partial's param type.
@@ -5136,7 +5174,7 @@ def fa4_softmax[
                 <= type_of(smem).q_bytes + type_of(smem).kv_bytes
             ), "split-K f32 O+(max,sum) staging must fit in the dead Q+KV span"
             var stage = smem.o_smem[.float32]()
-            var maxsum = stage + (config.BM * config.padded_ov_depth)
+            var maxsum = stage.unsafe_offset(config.BM * config.padded_ov_depth)
 
             # --- Publish (max,sum) for both WGs, then stage + reduce-scatter. ---
             tid = warp_group_idx * UInt32(WARPGROUP_SIZE) + row

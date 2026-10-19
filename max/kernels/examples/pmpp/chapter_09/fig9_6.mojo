@@ -23,8 +23,8 @@ comptime NUM_BINS = 256
 
 # ========================== KERNEL CODE ==========================
 def histogram_kernel(
-    image: UnsafePointer[UInt8, ImmutAnyOrigin],
-    bins: UnsafePointer[UInt32, MutAnyOrigin],
+    image: ImmPointer[UInt8, ImmutAnyOrigin],
+    bins: MutPointer[UInt32, MutAnyOrigin],
     width: UInt32,
     height: UInt32,
 ):
@@ -40,7 +40,7 @@ def histogram_kernel(
 
     if i < width * height:
         var b = image[Int(i)]
-        _ = Atomic.fetch_add(bins + Int(b), UInt32(1))
+        _ = Atomic.fetch_add(bins.unsafe_offset(Int(b)), UInt32(1))
 
 
 # ========================== TEST CODE ==========================

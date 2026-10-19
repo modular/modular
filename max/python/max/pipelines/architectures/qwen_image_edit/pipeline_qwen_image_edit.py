@@ -25,12 +25,11 @@ from typing import Any, Literal
 
 import numpy as np
 import numpy.typing as npt
-from max.driver import CPU, Buffer, Device
+from max.driver import CPU, Buffer, Device, float32_to_bfloat16_as_uint16
 from max.dtype import DType
 from max.graph import TensorType, TensorValue, ops
 from max.pipelines.context import PixelContext, TokenBuffer
 from max.pipelines.diffusion.interface import DiffusionPipeline, max_compile
-from max.pipelines.lib.bfloat16_utils import float32_to_bfloat16_as_uint16
 from max.pipelines.lib.config.model_config import (
     _resolve_component_encoding_and_weights,
     _select_quantization_encoding,

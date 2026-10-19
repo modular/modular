@@ -81,9 +81,7 @@ def mandelbrot(out_ptr: MutPointer[Scalar[int_type], MutAnyOrigin]):
             float_type, simd_width
         ](scale_y)
         var c = ComplexSIMD[float_type, simd_width](cx, cy)
-        out.store[width=simd_width](
-            (row, col), mandelbrot_kernel[simd_width](c)
-        )
+        out.store((row, col), mandelbrot_kernel[simd_width](c))
 
     # We vectorize the call to compute_vector where call gets a chunk of
     # pixels.

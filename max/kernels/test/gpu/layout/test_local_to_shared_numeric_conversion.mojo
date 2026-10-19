@@ -50,8 +50,9 @@ def copy_kernel[
     barrier()
     # Read the physical shared allocation without reversing the permutation.
     var tid = thread_idx.x
+    var shared_flat = shared.reshape[M * 16]()
     for i in range(tid, M * 16, 64):
-        output[i + 8] = shared.raw_load[width=1](i)
+        output[i + 8] = shared_flat[i]
 
 
 def test_copy[

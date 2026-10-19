@@ -22,6 +22,7 @@ from .contract import (
     stage_outputs,
 )
 from .partition import (
+    ArchConfigWithPartitionSpec,
     PartitionSpec,
     PipelineStage,
     partition_spec,
@@ -32,6 +33,7 @@ from .partition import (
 )
 
 __all__ = [
+    "ArchConfigWithPartitionSpec",
     "PartitionSpec",
     "PipelineStage",
     "PipelinedModel",

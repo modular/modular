@@ -85,9 +85,6 @@ def causal_conv1d_varlen_fwd(
     lengths 3 and 2, with a width-4 kernel. The first sequence continues
     from the history stored in slot 2. The second starts fresh in slot 0:
 
-    .. Skipped: on Metal the example's GPU kernel returns all zeros.
-    .. skip: start if(__import__("sys").platform == "darwin", reason="causal_conv1d_varlen_fwd returns zeros on Metal")
-
     .. code-block:: python
 
         import numpy as np
@@ -191,8 +188,6 @@ def causal_conv1d_varlen_fwd(
         np.testing.assert_allclose(
             states.to_numpy(), expected_states, rtol=1e-6, atol=1e-6
         )
-
-    .. skip: end
     """
     device = x.device
 

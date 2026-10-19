@@ -129,10 +129,7 @@ def test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
         c_type: DType, width: SIMDLength, *, alignment: Int
     ](coord: Coord, val: SIMD[c_type, width]) {var output_any}:
         comptime assert output_any.flat_rank >= coord.flat_rank
-        output_any.store[width=width](
-            coord,
-            rebind[SIMD[dtype, width]](val + 1),
-        )
+        output_any.store(coord, rebind[SIMD[dtype, width]](val + 1))
 
     comptime kernel = _concat_inner_most_single_dim[
         OutputLayoutType=output_dyn.LayoutType,

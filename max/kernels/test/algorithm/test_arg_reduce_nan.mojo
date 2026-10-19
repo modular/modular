@@ -93,7 +93,7 @@ def _run_splitk_arg[
     def input_fn[
         width: Int, alignment: Int
     ](coords: Coord) {input_ptr} -> SIMD[dtype, width]:
-        return input_ptr.unsafe_load[width=width](Int(coords[1].value()))
+        return input_ptr.unsafe_load[width=width](Int(coords[1]))
 
     @inline(.always)
     def output_fn[

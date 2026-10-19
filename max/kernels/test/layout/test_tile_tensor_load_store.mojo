@@ -107,8 +107,8 @@ def host_scalar_byte_aligned_kernel(
     tensor: TileTensor[mut=True, DType.float16, _4x4, MutAnyOrigin],
 ):
     """The same access asking for byte alignment, as the control arm."""
-    var val = tensor.load[width=1, alignment=1](coord[0, 0])
-    tensor.store[width=1, alignment=1](coord[1, 0], val)
+    var val = tensor.load[alignment=1](coord[0, 0])
+    tensor.store[alignment=1](coord[1, 0], val)
 
 
 # ===-----------------------------------------------------------------------===#

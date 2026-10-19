@@ -22,9 +22,9 @@ from std.math import ceildiv, min, max
 
 def co_rank(
     k: Int,
-    A: UnsafePointer[Int32, _],
+    A: Pointer[Int32, _],
     m: Int,
-    B: UnsafePointer[Int32, _],
+    B: Pointer[Int32, _],
     n: Int,
 ) -> Int:
     """Find the co-rank of k in the merged sequence of A and B.
@@ -62,9 +62,9 @@ def co_rank(
 
 def co_rank_circular(
     k: Int,
-    A: UnsafePointer[Int32, _, address_space=.SHARED],
+    A: Pointer[Int32, _, address_space=.SHARED],
     m: Int,
-    B: UnsafePointer[Int32, _, address_space=.SHARED],
+    B: Pointer[Int32, _, address_space=.SHARED],
     n: Int,
     A_S_start: Int,
     B_S_start: Int,
@@ -115,11 +115,11 @@ def co_rank_circular(
 
 
 def merge_sequential_circular(
-    A: UnsafePointer[Int32, _, address_space=.SHARED],
+    A: Pointer[Int32, _, address_space=.SHARED],
     m: Int,
-    B: UnsafePointer[Int32, _, address_space=.SHARED],
+    B: Pointer[Int32, _, address_space=.SHARED],
     n: Int,
-    C: UnsafePointer[Int32, MutAnyOrigin],
+    C: MutPointer[Int32, MutAnyOrigin],
     A_S_start: Int,
     B_S_start: Int,
     tile_size: Int,
@@ -167,11 +167,11 @@ def merge_sequential_circular(
 
 
 def merge_circular_buffer_kernel(
-    A: UnsafePointer[Int32, ImmutAnyOrigin],
+    A: ImmPointer[Int32, ImmutAnyOrigin],
     m_dev: Int32,
-    B: UnsafePointer[Int32, ImmutAnyOrigin],
+    B: ImmPointer[Int32, ImmutAnyOrigin],
     n_dev: Int32,
-    C: UnsafePointer[Int32, MutAnyOrigin],
+    C: MutPointer[Int32, MutAnyOrigin],
     tile_size_dev: Int32,
 ):
     """Figures 13.16, 13.18, 13.19, 13.20: Circular buffer merge kernel.
@@ -298,7 +298,9 @@ def merge_circular_buffer_kernel(
             a_next - a_curr,
             B_S,
             b_next - b_curr,
-            C + C_curr + C_completed + c_curr,
+            C.unsafe_offset(C_curr)
+            .unsafe_offset(C_completed)
+            .unsafe_offset(c_curr),
             A_S_start + a_curr,
             B_S_start + b_curr,
             tile_size,
@@ -329,9 +331,9 @@ def merge_circular_buffer_kernel(
 
 
 def cpu_merge(
-    A: UnsafePointer[Int32, _],
+    A: Pointer[Int32, _],
     m: Int,
-    B: UnsafePointer[Int32, _],
+    B: Pointer[Int32, _],
     n: Int,
     C: MutPointer[Int32, _],
 ):

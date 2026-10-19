@@ -1116,7 +1116,7 @@ void FnSigDecorators::applyCopyOrMoveCapture(SMLoc decoratorLoc,
       return;
 
     // How is this transferring the RValue into the closure?
-    DeclIRValue resultVal;
+    CValue resultVal;
     if (auto srVal = captureRVal.getIfSRValue())
       resultVal = srVal;
     else {
@@ -1130,8 +1130,9 @@ void FnSigDecorators::applyCopyOrMoveCapture(SMLoc decoratorLoc,
     // e.g. an op that produces a ref to the value in the capture list.  Instead
     // we are still forming references outside the closure for things that are
     // copied and moved into the closure.
-    emitter.getDeclResolver().addFullyResolvedDecl(resultVal, declRef->spelling,
-                                                   sigDecl.getLoc(), &sigDecl);
+    emitter.getDeclResolver().addFullyResolvedDecl(
+        resultVal, StringAttr::get(sigDecl.getContext(), declRef->spelling),
+        sigDecl.getLoc(), &sigDecl);
 
     // Both move and copy captures are the same here - a move capture just does
     // the transfer above to generate its RValue.
@@ -1729,7 +1730,7 @@ emitClosureInstance(ArrayRef<Capture> captures, DefASTDecl &nestedFnDecl,
   assert(nestedFnDecl.getParentDecl() &&
          "closure instance must have a parent function");
 
-  ASTDecl *moduleDecl = nestedFnDecl.getNearestDeclOfType<FileModuleOp>();
+  auto *moduleDecl = nestedFnDecl.getNearestDeclOfType<FileModuleASTDecl>();
   auto [capturedRefs, _] =
       DeclResolver::createSelfContainedSignature(closureSig);
 
@@ -1807,7 +1808,7 @@ static BodyCaptures collectBodyCaptures(SharedState &shared, DefASTDecl &decl,
 
 /// Construct the runtime value for a fully-resolved non-legacy nested-`def`
 /// closure: promote a stateless closure to a top-level function, or otherwise
-/// materialize a storage-struct instance. Sets the decl's IR value on success.
+/// materialize a storage-struct instance.
 static LogicalResult constructClosure(SharedState &shared, DefASTDecl &decl,
                                       FnOp funcOp, ArrayRef<Capture> captures,
                                       ArrayRef<ParamDeclRefAttr> paramCaptures,
@@ -1833,7 +1834,7 @@ static LogicalResult constructClosure(SharedState &shared, DefASTDecl &decl,
   MLValue instance = emitClosureInstance(captures, decl, shared, paramCaptures);
   if (!instance)
     return failure();
-  decl.setIRValue(instance);
+  shared.declResolver->replaceDecl(decl, instance);
   return success();
 }
 
@@ -1876,7 +1877,7 @@ static LogicalResult createCaptureValues(ParserBase &p, ASTDecl &sigDecl,
 /// generator / mangled-symbol attributes. Returns the (implicit-origin-indexed)
 /// generator signature, or null on failure.
 static FnTypeGeneratorType
-finalizeResolvedFnOp(SharedState &shared, FnOp funcOp, ASTDecl &decl,
+finalizeResolvedFnOp(SharedState &shared, FnOp funcOp, DefASTDecl &decl,
                      TypeCheckedFnSignature &tcSignature,
                      TypeCheckedParamList &paramList, StringAttr baseName) {
   OpBuilder builder = decl.getDeclEndBuilder();
@@ -1967,7 +1968,7 @@ AnyValue DeclResolver::resolveAnonymousClosure(const LambdaNode *node,
     }
     // Anchor the synthetic def at the nearest enclosing decl op (a `def`,
     // struct, alias, ...) -- the param-list scope isn't an op, so walk up.
-    ASTDecl *anchor = parentScope.getNearestDeclOfType<ASTDeclInterface>();
+    OpASTDecl *anchor = parentScope.getNearestDeclOfType<OpASTDecl>();
     if (!anchor) {
       emitter.emitErrorForDynamicValueInParameter(
           node, "cannot use a lambda expression");
@@ -2139,14 +2140,17 @@ AnyValue DeclResolver::resolveAnonymousClosure(const LambdaNode *node,
          return ASTType(type).isSingleton(shared);
        }))) {
     resolveAllWithin(decl);
-    shared.closureEmitter->promoteClosure(decl, bodyCaptures.paramRefs);
+    ClosureEmitter::PromotedClosure promoted =
+        shared.closureEmitter->promoteClosure(decl, bodyCaptures.paramRefs);
     // Two folds, keyed on whether enclosing parameters were baked in. With
     // parameters (comptime _values_, not runtime captures -- e.g.
     // `comptime add[N: Int] = lambda (x: Int) {} -> Int: x + N`),
-    // `promoteClosure` leaves a bound func-literal generator as the decl's IR
-    // value; fold to it.
-    if (CValue boundLiteral = decl.getIfIRValue())
+    // `promoteClosure` replaces the source binding with a bound func-literal
+    // generator when enclosing parameters were baked in.
+    if (promoted.valueDecl) {
+      CValue boundLiteral = promoted.valueDecl->getIfIRValue();
       return emitter.emitResult(AnyValue(boundLiteral), node, dest);
+    }
     // With no parameters baked in, no such value is left, so build the promoted
     // function's own func-literal here -- the value a `def` reference yields.
     PValue literal(
@@ -2220,9 +2224,11 @@ LogicalResult DefASTDecl::resolveSignature(Lexer &lexer) {
       // If we found it, it must be a parameter declaration.
       assert(paramDecls.size() == 1 &&
              "expected exactly one parameter declaration");
-      ASTDecl *paramDecl = paramDecls.front();
-      resolver.addFullyResolvedDecl(paramDecl->getIfIRValue(), paramName,
-                                    paramDecl->getLoc(), &sigDecl);
+      auto &paramDecl = cast<IRASTDecl>(*paramDecls.front());
+      auto &copiedDecl = resolver.addFullyResolvedDecl(
+          paramDecl.getIfIRValue(), StringAttr::get(getContext(), paramName),
+          paramDecl.getLoc(), &sigDecl);
+      copiedDecl.setArgOrParamNumber(paramDecl.getParamNumber());
     }
   }
 
@@ -2715,17 +2721,14 @@ LogicalResult DefASTDecl::resolveBody(Lexer &lexer) {
 
     assert(argDeclList.size() == 1 &&
            "Argument should be added by signature resolution");
-    ASTDecl &argDecl = *argDeclList[0];
+    auto &argDecl = cast<IRASTDecl>(*argDeclList[0]);
 
     // The argDecl is already set up with a basic representation when the
-    // function signature was type checked.  We have to hack it a bit for
-    // variadics and other cases that aren't modeled right.
-    // TODO: Move variadics to be formed on the caller side not the callee side.
-
-    // This function sets the argument decl to be fully resolved with the
-    // specified IR representation.
-    auto setDecl = [&](DeclIRValue value) {
-      argDecl.setIRValue(std::move(value));
+    // function signature was type checked.  Now that we have the body, this
+    // function sets the argument decl to be fully resolved with the
+    // correct IR representation.
+    auto setDecl = [&](CValue value) {
+      argDecl.setValue(std::move(value));
       shared.notifyListenerOnArgumentDecl(argDecl, argName, argDecl.getLoc());
     };
 
@@ -2771,8 +2774,10 @@ LogicalResult DefASTDecl::resolveBody(Lexer &lexer) {
                     : VarDeclKind::Arg;
     VarDeclOp varDecl = emitter.emitVarDecl(
         resultName, funcOp.getUserResultType(), funcOp.getLoc(), kind);
-    ASTDecl &argDecl = resolver.addFullyResolvedDecl(
-        MLValue(varDecl), resultName, getLoc(), this);
+    ssize_t argNumber = static_cast<ssize_t>(funcSignature.getNumArguments());
+    auto &argDecl = cast<VarASTDecl>(resolver.addFullyResolvedDecl(
+        varDecl.getOperation(), resultName, getLoc(), this));
+    argDecl.setArgNumber(argNumber);
     shared.notifyListenerOnArgumentDecl(argDecl, resultName, argDecl.getLoc());
   }
 
@@ -2857,11 +2862,11 @@ LogicalResult PackageASTDecl::resolveSyntheticBody() {
   return resolvePackage();
 }
 
-FailureOr<ASTDecl *> PackageASTDecl::resolveInitModule(SMLoc loc) {
+FailureOr<ModuleASTDecl *> PackageASTDecl::resolveInitModule(SMLoc loc) {
   PackageOp packageOp = getOp();
   if (!shared.hasNestedModule(packageOp, "__init__"))
     return nullptr;
-  ASTDecl &initDecl = shared.importModule(
+  ModuleASTDecl &initDecl = shared.importModule(
       SharedState::ImportPath({"__init__"}, /*relativeLevel=*/1), packageOp,
       loc);
   if (initDecl.isErroneous())
@@ -2909,10 +2914,8 @@ LogicalResult PackageASTDecl::resolvePackage() {
     if (!initModule.isErroneous()) {
       if (failed(resolver.resolveBody(initModule, getLoc())))
         return failure();
-      if (auto initDeclOp =
-              dyn_cast_or_null<ASTDeclInterface>(initModule.getIfOperation()))
-        if (auto docstring = initDeclOp.getDocStringAttr())
-          op.setDocStringAttr(docstring);
+      if (auto docstring = initModule.getDocString())
+        op.setDocStringAttr(docstring);
     }
   }
 
@@ -4200,9 +4203,8 @@ static FnOp lookupSpecialInit(StructASTDecl &structDecl,
 
   for (ASTDecl *candidate : inits.getIfSuccess()) {
     auto *defDecl = dyn_cast<DefASTDecl>(candidate);
-    if (!defDecl || !defDecl->getOp() ||
-        failed(shared.getDeclResolver().resolveSignature(*candidate,
-                                                         candidate->getLoc())))
+    if (!defDecl || failed(shared.getDeclResolver().resolveSignature(
+                        *candidate, candidate->getLoc())))
       continue;
     FnOp func = defDecl->getOp();
 
@@ -4229,7 +4231,7 @@ static FnOp findFieldwiseInit(StructASTDecl &structDecl) {
                                      structOp.getFieldDecls().end());
   for (ASTDecl *declaration : inits.getIfSuccess()) {
     auto *defDecl = dyn_cast<DefASTDecl>(declaration);
-    if (!defDecl || !defDecl->getOp())
+    if (!defDecl)
       continue;
     auto func = defDecl->getOp();
     auto signature = func.getFuncTypeGenerator();
@@ -4699,8 +4701,7 @@ LogicalResult StructASTDecl::resolveBody(Lexer &lexer) {
       for (ASTDecl *childDecl : childDecls) {
         LogicalResult result = success();
         if (auto *fnDecl = dyn_cast<DefASTDecl>(childDecl)) {
-          if (FnOp fnOp = fnDecl->getOp())
-            result = insertDefaultDecl(fnOp, childName, childDecl);
+          result = insertDefaultDecl(fnDecl->getOp(), childName, childDecl);
         } else if (auto *aliasDecl = dyn_cast<AliasASTDecl>(childDecl)) {
           result = insertDefaultDecl(aliasDecl->getOp(), childName, childDecl);
         }
@@ -5423,11 +5424,12 @@ LogicalResult ExtensionASTDecl::resolveBody(Lexer &lexer) {
 
   // Copy struct param decls into the extension, so extension methods and
   // aliases can reference the struct's param decls.
-  for (ParamDeclAttr param : structDeclOp.getParams()) {
+  for (auto [paramIndex, param] : llvm::enumerate(structDeclOp.getParams())) {
     StringAttr demangledName =
         StringAttr::get(getContext(), demangleParameterName(param.getName()));
-    resolver.addFullyResolvedDecl(PValue(ParamDeclRefAttr::get(param)),
-                                  demangledName, getLoc(), this);
+    auto &paramDecl = resolver.addFullyResolvedDecl(
+        PValue(ParamDeclRefAttr::get(param)), demangledName, getLoc(), this);
+    paramDecl.setArgOrParamNumber(static_cast<ssize_t>(paramIndex));
   }
   // Set extension's parameters to match target struct. This is to make it so
   // the verifier can see the param-decls and be aware of them when it's
@@ -5732,7 +5734,7 @@ ParseResult DeclResolver::resolveBody(TraitType traitType, ASTDecl &traitDecl) {
     for (auto &[name, decls] : parentDecl.getDeclsInScope()) {
       for (ASTDecl *decl : decls) {
         auto *fnDecl = dyn_cast<DefASTDecl>(decl);
-        bool isFunction = fnDecl && fnDecl->getOp();
+        bool isFunction = fnDecl;
         if (!isFunction && !isa<AliasASTDecl>(decl)) {
           // If the decl is not a function or alias, it is an error.
           return emitError(parentDecl.getLoc(), "unexpected decl in trait")

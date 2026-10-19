@@ -31,6 +31,7 @@ modular_py_test(
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
     deps = [
+        "//max/python/max:tree",
         "//max/python/max/_entrypoints",
         "//max/python/max/_xgrammar",
         "//max/python/max/config",

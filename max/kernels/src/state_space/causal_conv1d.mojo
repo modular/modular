@@ -56,7 +56,8 @@ Activation Support:
 """
 
 from std.algorithm import vectorize
-from std.sys import simd_width_of
+from std.math import ceildiv
+from std.sys import align_of, simd_width_of
 
 from max.algorithm import sync_parallelize
 from max.gpu.host import DeviceContext
@@ -65,7 +66,13 @@ from max.gpu import (
     block_idx,
     thread_idx,
 )
-from layout import TensorLayout, TensorEngine, TileTensor
+from layout import (
+    ImmTileTensor,
+    MutTileTensor,
+    TensorEngine,
+    TensorLayout,
+    TileTensor,
+)
 from nn.activations import silu
 
 
@@ -195,7 +202,7 @@ def causal_conv1d_channel_first_fwd_cpu[
                     conv_sum[i] = lane_sum
             if silu_activation:
                 conv_sum = _silu_cast(conv_sum)
-            output.store[width=simd_width]((b, c, l), conv_sum)
+            output.store((b, c, l), conv_sum)
 
         vectorize[simd_width_of[output_dtype]()](seqlen, conv_chunk)
 
@@ -293,7 +300,7 @@ def causal_conv1d_channel_first_fwd_cpu_no_bias[
                     conv_sum[i] = lane_sum
             if silu_activation:
                 conv_sum = _silu_cast(conv_sum)
-            output.store[width=simd_width]((b, c, l), conv_sum)
+            output.store((b, c, l), conv_sum)
 
         vectorize[simd_width_of[output_dtype]()](seqlen, conv_chunk)
 
@@ -307,7 +314,7 @@ def _load_channels[
     """Loads `t[c:c + width]`, honoring a non-unit stride of the 1-D `t`."""
     var vals = SIMD[dtype, width]()
     comptime for i in range(width):
-        vals[i] = t.load[width=1]((c + i,))[0]
+        vals[i] = t.load[width=1]((c + i,))
     return vals
 
 
@@ -318,7 +325,7 @@ def _load_weight_taps[
     """Loads tap `w` of channels `c:c + width` from a (C, W) weight."""
     var vals = SIMD[dtype, width]()
     comptime for i in range(width):
-        vals[i] = t.load[width=1]((c + i, w))[0]
+        vals[i] = t.load[width=1]((c + i, w))
     return vals
 
 
@@ -394,7 +401,7 @@ def causal_conv1d_channel_last_fwd_cpu[
                         ).cast[output_dtype]()
                 if silu_activation:
                     conv_sum = _apply_silu(conv_sum)
-                output.store[width=simd_width]((b, l, c), conv_sum)
+                output.store((b, l, c), conv_sum)
 
             vectorize[simd_width_of[output_dtype]()](dim, conv_chunk)
 
@@ -452,7 +459,7 @@ def causal_conv1d_channel_last_fwd_cpu_no_bias[
                     ]()
                 if silu_activation:
                     conv_sum = _apply_silu(conv_sum)
-                output.store[width=simd_width]((b, l, c), conv_sum)
+                output.store((b, l, c), conv_sum)
 
             vectorize[simd_width_of[output_dtype]()](dim, conv_chunk)
 
@@ -522,7 +529,7 @@ def causal_conv1d_channel_last_fwd_cpu_with_seq_idx[
                     ]()
                 if silu_activation:
                     conv_sum = _apply_silu(conv_sum)
-                output.store[width=simd_width]((b, l, c), conv_sum)
+                output.store((b, l, c), conv_sum)
 
             vectorize[simd_width_of[output_dtype]()](dim, conv_chunk)
 
@@ -587,7 +594,7 @@ def causal_conv1d_channel_last_fwd_cpu_no_bias_with_seq_idx[
                     ]()
                 if silu_activation:
                     conv_sum = _apply_silu(conv_sum)
-                output.store[width=simd_width]((b, l, c), conv_sum)
+                output.store((b, l, c), conv_sum)
 
             vectorize[simd_width_of[output_dtype]()](dim, conv_chunk)
 
@@ -734,6 +741,29 @@ def causal_conv1d_channel_first_fwd_gpu[
         return
     var silu_active = Bool(Int(silu_activation) != 0)
 
+    var input_taps: SIMD[x_dtype, 8] = 0
+    comptime if kWidth == 4 and kNElts == 4:
+        comptime for i in range(3):
+            var input_l = seq_start - 3 + i
+            if input_l >= 0:
+                input_taps[i] = Scalar[x_dtype](
+                    x.load[width=1]((batch_id, channel_id, input_l))
+                )
+        if x.dynamic_stride(2) == 1 and seq_start + 4 <= nSeqLen:
+            # A channel row or subview need not have full-vector alignment.
+            var current = x.load[
+                width=4, alignment=align_of[Scalar[x_dtype]]()
+            ]((batch_id, channel_id, seq_start))
+            comptime for i in range(4):
+                input_taps[3 + i] = current[i]
+        else:
+            comptime for i in range(4):
+                var input_l = seq_start + i
+                if input_l < nSeqLen:
+                    input_taps[3 + i] = Scalar[x_dtype](
+                        x.load[width=1]((batch_id, channel_id, input_l))
+                    )
+
     comptime for i in range(kNElts):
         var seq_idx: Int = seq_start + i
         if seq_idx >= seq_end:
@@ -764,12 +794,16 @@ def causal_conv1d_channel_first_fwd_gpu[
             case 4:
                 var input_window: SIMD[x_dtype, 4] = 0
 
-                comptime for w in range(4):
-                    var input_l: Int = seq_idx - (3 - w)
-                    if input_l >= 0 and input_l < nSeqLen:
-                        input_window[w] = Scalar[x_dtype](
-                            x.load[width=1]((batch_id, channel_id, input_l))
-                        )
+                comptime if kNElts == 4:
+                    comptime for w in range(4):
+                        input_window[w] = input_taps[i + w]
+                else:
+                    comptime for w in range(4):
+                        var input_l: Int = seq_idx - (3 - w)
+                        if input_l >= 0 and input_l < nSeqLen:
+                            input_window[w] = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, channel_id, input_l))
+                            )
                 var tmp: SIMD[x_dtype, 4] = W_4 * input_window
                 conv_result = tmp.reduce_add[1]()
             case _:
@@ -808,9 +842,7 @@ def causal_conv1d_channel_first_fwd_gpu[
         var seq_idx: Int = seq_start + i
         if seq_idx >= seq_end:
             break
-        output.store[width=1](
-            (batch_id, channel_id, seq_idx), Scalar[output_dtype](out_vals[i])
-        )
+        output.store((batch_id, channel_id, seq_idx), out_vals[i])
 
 
 # Optimized GPU version without bias
@@ -1005,7 +1037,7 @@ def causal_conv1d_channel_first_fwd_gpu_no_bias[
         var seq_idx: Int = seq_start + i
         if seq_idx >= seq_end:
             break
-        output.store[width=1](
+        output.store(
             (batch_id, channel_id, seq_idx), Scalar[output_dtype](out_vals[i])
         )
 
@@ -1108,7 +1140,7 @@ def causal_conv1d_channel_last_fwd_gpu[
         var W = SIMD[weight_dtype, kWidth](0)
 
         comptime for tap in range(kWidth):
-            W[tap] = weight.load[width=1]((c_idx, tap))[0]
+            W[tap] = weight.load[width=1]((c_idx, tap))
         var out_vals_channel: SIMD[output_dtype, kNElts] = 0
         var silu_active = Bool(Int(silu_activation) != 0)
 
@@ -1148,9 +1180,7 @@ def causal_conv1d_channel_last_fwd_gpu[
             var seq_idx: Int = seq_start + i
             if seq_idx >= seq_end:
                 break
-            output.store[width=1](
-                (batch_id, seq_idx, c_idx), out_vals_channel[i]
-            )
+            output.store((batch_id, seq_idx, c_idx), out_vals_channel[i])
 
 
 # Optimized GPU version without bias for channel last
@@ -1230,7 +1260,7 @@ def causal_conv1d_channel_last_fwd_gpu_no_bias[
         var W = SIMD[weight_dtype, kWidth](0)
 
         comptime for tap in range(kWidth):
-            W[tap] = weight.load[width=1]((c_idx, tap))[0]
+            W[tap] = weight.load[width=1]((c_idx, tap))
         var out_vals_channel: SIMD[output_dtype, kNElts] = 0
         var silu_active = Bool(Int(silu_activation) != 0)
 
@@ -1270,9 +1300,7 @@ def causal_conv1d_channel_last_fwd_gpu_no_bias[
             var seq_idx: Int = seq_start + i
             if seq_idx >= seq_end:
                 break
-            output.store[width=1](
-                (batch_id, seq_idx, c_idx), out_vals_channel[i]
-            )
+            output.store((batch_id, seq_idx, c_idx), out_vals_channel[i])
 
 
 # ============================================================================
@@ -1427,16 +1455,16 @@ def causal_conv1d_channel_last_fwd_gpu_with_seq_idx[
         var w3: Scalar[weight_dtype] = 0
 
         comptime if kWidth >= 1:
-            w0 = Scalar[weight_dtype](weight.load[width=1]((c_idx, 0)))
+            w0 = weight.load[width=1]((c_idx, 0))
 
         comptime if kWidth >= 2:
-            w1 = Scalar[weight_dtype](weight.load[width=1]((c_idx, 1)))
+            w1 = weight.load[width=1]((c_idx, 1))
 
         comptime if kWidth >= 3:
-            w2 = Scalar[weight_dtype](weight.load[width=1]((c_idx, 2)))
+            w2 = weight.load[width=1]((c_idx, 2))
 
         comptime if kWidth >= 4:
-            w3 = Scalar[weight_dtype](weight.load[width=1]((c_idx, 3)))
+            w3 = weight.load[width=1]((c_idx, 3))
 
         var out_vals_channel: SIMD[output_dtype, kNElts] = 0
         var silu_active = Bool(Int(silu_activation) != 0)
@@ -1591,9 +1619,7 @@ def causal_conv1d_channel_last_fwd_gpu_with_seq_idx[
             var seq_pos: Int = seq_start + i
             if seq_pos >= seq_end:
                 break
-            output.store[width=1](
-                (batch_id, seq_pos, c_idx), out_vals_channel[i]
-            )
+            output.store((batch_id, seq_pos, c_idx), out_vals_channel[i])
 
 
 # Optimized GPU implementation for channel-last without bias but with seq_idx as TileTensor
@@ -1685,16 +1711,16 @@ def causal_conv1d_channel_last_fwd_gpu_no_bias_with_seq_idx[
         var w3: Scalar[weight_dtype] = 0
 
         comptime if kWidth >= 1:
-            w0 = Scalar[weight_dtype](weight.load[width=1]((c_idx, 0)))
+            w0 = weight.load[width=1]((c_idx, 0))
 
         comptime if kWidth >= 2:
-            w1 = Scalar[weight_dtype](weight.load[width=1]((c_idx, 1)))
+            w1 = weight.load[width=1]((c_idx, 1))
 
         comptime if kWidth >= 3:
-            w2 = Scalar[weight_dtype](weight.load[width=1]((c_idx, 2)))
+            w2 = weight.load[width=1]((c_idx, 2))
 
         comptime if kWidth >= 4:
-            w3 = Scalar[weight_dtype](weight.load[width=1]((c_idx, 3)))
+            w3 = weight.load[width=1]((c_idx, 3))
 
         var out_vals_channel: SIMD[output_dtype, kNElts] = 0
         var silu_active = Bool(Int(silu_activation) != 0)
@@ -1849,9 +1875,7 @@ def causal_conv1d_channel_last_fwd_gpu_no_bias_with_seq_idx[
             var seq_pos: Int = seq_start + i
             if seq_pos >= seq_end:
                 break
-            output.store[width=1](
-                (batch_id, seq_pos, c_idx), out_vals_channel[i]
-            )
+            output.store((batch_id, seq_pos, c_idx), out_vals_channel[i])
 
 
 # ============================================================================
@@ -1960,16 +1984,16 @@ def causal_conv1d_channel_first_fwd_gpu_with_seq_idx[
         var w3: Scalar[weight_dtype] = 0
 
         comptime if kWidth >= 1:
-            w0 = Scalar[weight_dtype](weight.load[width=1]((c_idx, 0)))
+            w0 = weight.load[width=1]((c_idx, 0))
 
         comptime if kWidth >= 2:
-            w1 = Scalar[weight_dtype](weight.load[width=1]((c_idx, 1)))
+            w1 = weight.load[width=1]((c_idx, 1))
 
         comptime if kWidth >= 3:
-            w2 = Scalar[weight_dtype](weight.load[width=1]((c_idx, 2)))
+            w2 = weight.load[width=1]((c_idx, 2))
 
         comptime if kWidth >= 4:
-            w3 = Scalar[weight_dtype](weight.load[width=1]((c_idx, 3)))
+            w3 = weight.load[width=1]((c_idx, 3))
         var out_vals_channel: SIMD[output_dtype, kNElts] = 0
         var silu_active = Bool(Int(silu_activation) != 0)
 
@@ -2123,9 +2147,7 @@ def causal_conv1d_channel_first_fwd_gpu_with_seq_idx[
             var seq_pos: Int = seq_start + i
             if seq_pos >= seq_end:
                 break
-            output.store[width=1](
-                (batch_id, c_idx, seq_pos), out_vals_channel[i]
-            )
+            output.store((batch_id, c_idx, seq_pos), out_vals_channel[i])
 
 
 # Optimized GPU implementation for channel-first without bias but with seq_idx as TileTensor
@@ -2210,16 +2232,16 @@ def causal_conv1d_channel_first_fwd_gpu_no_bias_with_seq_idx[
         var w3: Scalar[weight_dtype] = 0
 
         comptime if kWidth >= 1:
-            w0 = Scalar[weight_dtype](weight.load[width=1]((c_idx, 0)))
+            w0 = weight.load[width=1]((c_idx, 0))
 
         comptime if kWidth >= 2:
-            w1 = Scalar[weight_dtype](weight.load[width=1]((c_idx, 1)))
+            w1 = weight.load[width=1]((c_idx, 1))
 
         comptime if kWidth >= 3:
-            w2 = Scalar[weight_dtype](weight.load[width=1]((c_idx, 2)))
+            w2 = weight.load[width=1]((c_idx, 2))
 
         comptime if kWidth >= 4:
-            w3 = Scalar[weight_dtype](weight.load[width=1]((c_idx, 3)))
+            w3 = weight.load[width=1]((c_idx, 3))
         var out_vals_channel: SIMD[output_dtype, kNElts] = 0
         var silu_active = Bool(Int(silu_activation) != 0)
 
@@ -2373,9 +2395,7 @@ def causal_conv1d_channel_first_fwd_gpu_no_bias_with_seq_idx[
             var seq_pos: Int = seq_start + i
             if seq_pos >= seq_end:
                 break
-            output.store[width=1](
-                (batch_id, c_idx, seq_pos), out_vals_channel[i]
-            )
+            output.store((batch_id, c_idx, seq_pos), out_vals_channel[i])
 
 
 # ============================================================================
@@ -2483,7 +2503,7 @@ def causal_conv1d_update_cpu[
                         out_val = silu(out_val.cast[.float32]()).cast[
                             output_dtype
                         ]()
-                output.store[width=1]((b, c, l), out_val)
+                output.store((b, c, l), out_val)
 
             # Update conv_state: shift old values and add new x values
             if seqlen >= state_len:
@@ -2491,19 +2511,17 @@ def causal_conv1d_update_cpu[
                 for s in range(state_len):
                     var x_l_pos = seqlen - state_len + s
                     var x_val = x.load[width=1]((b, c, x_l_pos))
-                    conv_state.store[width=1](
-                        (b, c, s), Scalar[conv_state_dtype](x_val)
-                    )
+                    conv_state.store((b, c, s), Scalar[conv_state_dtype](x_val))
             else:
                 # Shift conv_state left by seqlen positions, then append x
                 for s in range(state_len - seqlen):
                     var val = conv_state.load[width=1]((b, c, (s + seqlen)))
-                    conv_state.store[width=1]((b, c, s), val)
+                    conv_state.store((b, c, s), val)
 
                 # Copy x values to the end
                 for l in range(seqlen):
                     var x_val = x.load[width=1]((b, c, l))
-                    conv_state.store[width=1](
+                    conv_state.store(
                         (b, c, (state_len - seqlen + l)),
                         Scalar[conv_state_dtype](x_val),
                     )
@@ -2591,24 +2609,22 @@ def causal_conv1d_update_cpu_no_bias[
                         out_val = silu(out_val.cast[.float32]()).cast[
                             output_dtype
                         ]()
-                output.store[width=1]((b, c, l), out_val)
+                output.store((b, c, l), out_val)
 
             # Update conv_state
             if seqlen >= state_len:
                 for s in range(state_len):
                     var x_l_pos = seqlen - state_len + s
                     var x_val = x.load[width=1]((b, c, x_l_pos))
-                    conv_state.store[width=1](
-                        (b, c, s), Scalar[conv_state_dtype](x_val)
-                    )
+                    conv_state.store((b, c, s), Scalar[conv_state_dtype](x_val))
             else:
                 for s in range(state_len - seqlen):
                     var val = conv_state.load[width=1]((b, c, (s + seqlen)))
-                    conv_state.store[width=1]((b, c, s), val)
+                    conv_state.store((b, c, s), val)
 
                 for l in range(seqlen):
                     var x_val = x.load[width=1]((b, c, l))
-                    conv_state.store[width=1](
+                    conv_state.store(
                         (b, c, (state_len - seqlen + l)),
                         Scalar[conv_state_dtype](x_val),
                     )
@@ -2741,9 +2757,132 @@ def causal_conv1d_update_gpu[
                 out_val = silu(out_val)
             else:
                 out_val = silu(out_val.cast[.float32]()).cast[output_dtype]()
-        output.store[width=1]((b, c, l), out_val)
+        output.store((b, c, l), out_val)
 
     # Update conv_state
+    if _seqlen >= _state_len:
+        for s in range(_state_len):
+            var x_l_pos = _seqlen - _state_len + s
+            var x_val = x.load[width=1]((b, c, x_l_pos))
+            conv_state.store((b, c, s), Scalar[conv_state_dtype](x_val))
+    else:
+        for s in range(_state_len - _seqlen):
+            var val = conv_state.load[width=1]((b, c, (s + _seqlen)))
+            conv_state.store((b, c, s), val)
+
+        for l in range(_seqlen):
+            var x_val = x.load[width=1]((b, c, l))
+            conv_state.store(
+                (b, c, (_state_len - _seqlen + l)),
+                Scalar[conv_state_dtype](x_val),
+            )
+
+
+def causal_conv1d_update_gpu_functional[
+    x_dtype: DType,
+    conv_state_dtype: DType,
+    weight_dtype: DType,
+    output_dtype: DType,
+    bias_dtype: DType,
+    kNThreads: Int,
+    x_LT: TensorLayout,
+    conv_state_LT: TensorLayout,
+    weight_LT: TensorLayout,
+    output_LT: TensorLayout,
+    bias_LT: TensorLayout,
+    x_engine: TensorEngine,
+    conv_state_engine: TensorEngine,
+    weight_engine: TensorEngine,
+    output_engine: TensorEngine,
+    bias_engine: TensorEngine,
+    conv_state_in_LT: TensorLayout,
+    conv_state_in_engine: TensorEngine,
+](
+    batch: Int32,
+    dim: Int32,
+    seqlen: Int32,
+    width: Int32,
+    state_len: Int32,
+    x: TileTensor[x_dtype, x_LT, ImmUntrackedOrigin, Engine=x_engine],
+    conv_state: TileTensor[
+        conv_state_dtype,
+        conv_state_LT,
+        MutUntrackedOrigin,
+        Engine=conv_state_engine,
+    ],
+    conv_state_in: TileTensor[
+        conv_state_dtype,
+        conv_state_in_LT,
+        ImmUntrackedOrigin,
+        Engine=conv_state_in_engine,
+    ],
+    weight: TileTensor[
+        weight_dtype, weight_LT, ImmUntrackedOrigin, Engine=weight_engine
+    ],
+    output: TileTensor[
+        output_dtype, output_LT, MutUntrackedOrigin, Engine=output_engine
+    ],
+    bias: TileTensor[
+        bias_dtype, bias_LT, ImmUntrackedOrigin, Engine=bias_engine
+    ],
+    silu_activation: Int8,
+):
+    """Reads the previous state separately while writing the complete next state.
+
+    Uses the original scalar channel-per-thread update and arithmetic. Identical
+    input/output state views may alias: convolution finishes before state writes,
+    and the ascending shift only reads the current or a later state position.
+    State input loads are non-invariant because the output may alias them.
+    Distinct state layouts are supported when the allocations do not overlap.
+    Partially overlapping state views or aliases with different layouts are
+    unsupported.
+    """
+    var _batch = Int(batch)
+    var _dim = Int(dim)
+    var _seqlen = Int(seqlen)
+    var _width = Int(width)
+    var _state_len = Int(state_len)
+    var b = block_idx.x
+    var c_base = block_idx.y * kNThreads
+    var c = c_base + thread_idx.x
+
+    if b >= _batch or c >= _dim:
+        return
+
+    var width_minus_1: Int = _width - 1
+    var cur_bias: Scalar[output_dtype] = Scalar[output_dtype](
+        bias.load[width=1]((c,))
+    )
+    var silu_active = Bool(silu_activation != 0)
+
+    for l in range(_seqlen):
+        var conv_sum: Scalar[output_dtype] = cur_bias
+
+        for w in range(_width):
+            var src_pos = _state_len + l - (width_minus_1 - w)
+            var input_val: Scalar[x_dtype] = 0.0
+
+            if src_pos >= _state_len:
+                var x_l_pos = src_pos - _state_len
+                input_val = x.load[width=1]((b, c, x_l_pos))
+            elif src_pos >= 0:
+                input_val = Scalar[x_dtype](
+                    conv_state_in.load[width=1, invariant=False](
+                        (b, c, src_pos)
+                    )
+                )
+            var weight_val: Scalar[weight_dtype] = weight.load[width=1]((c, w))
+            conv_sum = conv_sum + Scalar[output_dtype](
+                input_val * Scalar[x_dtype](weight_val)
+            )
+        var out_val: Scalar[output_dtype] = conv_sum
+        if silu_active:
+            comptime if output_dtype.is_floating_point():
+                out_val = silu(out_val)
+            else:
+                out_val = silu(out_val.cast[.float32]()).cast[output_dtype]()
+        output.store[width=1]((b, c, l), out_val)
+
     if _seqlen >= _state_len:
         for s in range(_state_len):
             var x_l_pos = _seqlen - _state_len + s
@@ -2753,7 +2892,9 @@ def causal_conv1d_update_gpu[
             )
     else:
         for s in range(_state_len - _seqlen):
-            var val = conv_state.load[width=1]((b, c, (s + _seqlen)))
+            var val = conv_state_in.load[width=1, invariant=False](
+                (b, c, (s + _seqlen))
+            )
             conv_state.store[width=1]((b, c, s), val)
 
         for l in range(_seqlen):
@@ -2762,6 +2903,117 @@ def causal_conv1d_update_gpu[
                 (b, c, (_state_len - _seqlen + l)),
                 Scalar[conv_state_dtype](x_val),
             )
+
+
+def enqueue_causal_conv1d_update_gpu[
+    dtype: DType,
+    //,
+    separate_state: Bool = False,
+](
+    ctx: DeviceContext,
+    batch: Int,
+    dim: Int,
+    seqlen: Int,
+    width: Int,
+    state_len: Int,
+    x: ImmTileTensor[dtype, address_space=.GENERIC, ...],
+    conv_state_in: ImmTileTensor[dtype, address_space=.GENERIC, ...],
+    conv_state: MutTileTensor[dtype, address_space=.GENERIC, ...],
+    weight: ImmTileTensor[dtype, address_space=.GENERIC, ...],
+    output: MutTileTensor[dtype, address_space=.GENERIC, ...],
+    bias: ImmTileTensor[dtype, address_space=.GENERIC, ...],
+    silu_activation: Bool,
+) raises:
+    """Enqueues the functional update, retaining copy-plus-update by default.
+
+    The separate-state arm avoids materializing the previous state
+    in the output allocation. Both the registered operation and its benchmark
+    use this launcher so the measured operation matches production dispatch.
+    The default preserves the original in-place kernel ABI and copy-plus-update
+    operation for existing callers and benchmark comparisons.
+    The copy-plus-update arm requires dense state storage. Independent strided
+    state layouts are supported only by the separate-state arm.
+    State views must be disjoint or exactly alias with identical layouts.
+    """
+    comptime threads = 128
+    comptime if separate_state:
+        ctx.enqueue_function[
+            causal_conv1d_update_gpu_functional[
+                dtype,
+                dtype,
+                dtype,
+                dtype,
+                dtype,
+                threads,
+                x.LayoutType,
+                conv_state.LayoutType,
+                weight.LayoutType,
+                output.LayoutType,
+                bias.LayoutType,
+                x.Engine,
+                conv_state.Engine,
+                weight.Engine,
+                output.Engine,
+                bias.Engine,
+                conv_state_in.LayoutType,
+                conv_state_in.Engine,
+            ]
+        ](
+            Int32(batch),
+            Int32(dim),
+            Int32(seqlen),
+            Int32(width),
+            Int32(state_len),
+            x,
+            conv_state,
+            conv_state_in,
+            weight,
+            output,
+            bias,
+            Int8(silu_activation),
+            grid_dim=(batch, ceildiv(dim, threads)),
+            block_dim=(threads,),
+        )
+    else:
+        ctx.enqueue_copy(
+            conv_state.unsafe_ptr(),
+            conv_state_in.unsafe_ptr(),
+            batch * dim * state_len,
+        )
+        ctx.enqueue_function[
+            causal_conv1d_update_gpu[
+                dtype,
+                dtype,
+                dtype,
+                dtype,
+                dtype,
+                threads,
+                x.LayoutType,
+                conv_state.LayoutType,
+                weight.LayoutType,
+                output.LayoutType,
+                bias.LayoutType,
+                x.Engine,
+                conv_state.Engine,
+                weight.Engine,
+                output.Engine,
+                bias.Engine,
+            ]
+        ](
+            Int32(batch),
+            Int32(dim),
+            Int32(seqlen),
+            Int32(width),
+            Int32(state_len),
+            x,
+            conv_state,
+            weight,
+            output,
+            bias,
+            Int8(silu_activation),
+            grid_dim=(batch, ceildiv(dim, threads)),
+            block_dim=(threads,),
+        )
 
 
 def causal_conv1d_update_gpu_no_bias[
@@ -2878,23 +3130,21 @@ def causal_conv1d_update_gpu_no_bias[
                 out_val = silu(out_val)
             else:
                 out_val = silu(out_val.cast[.float32]()).cast[output_dtype]()
-        output.store[width=1]((b, c, l), out_val)
+        output.store((b, c, l), out_val)
 
     if _seqlen >= _state_len:
         for s in range(_state_len):
             var x_l_pos = _seqlen - _state_len + s
             var x_val = x.load[width=1]((b, c, x_l_pos))
-            conv_state.store[width=1](
-                (b, c, s), Scalar[conv_state_dtype](x_val)
-            )
+            conv_state.store((b, c, s), Scalar[conv_state_dtype](x_val))
     else:
         for s in range(_state_len - _seqlen):
             var val = conv_state.load[width=1]((b, c, (s + _seqlen)))
-            conv_state.store[width=1]((b, c, s), val)
+            conv_state.store((b, c, s), val)
 
         for l in range(_seqlen):
             var x_val = x.load[width=1]((b, c, l))
-            conv_state.store[width=1](
+            conv_state.store(
                 (b, c, (_state_len - _seqlen + l)),
                 Scalar[conv_state_dtype](x_val),
             )

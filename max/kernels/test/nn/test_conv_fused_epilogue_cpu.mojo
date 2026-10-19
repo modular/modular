@@ -91,12 +91,12 @@ def test_conv_nhwc_direct_fused() raises:
     }:
         comptime assert coords.rank == 4
         var flat = (
-            Int(coords[0].value()) * plane_stride
-            + Int(coords[1].value()) * row_stride
-            + Int(coords[2].value()) * col_stride
-            + Int(coords[3].value())
+            Int(coords[0]) * plane_stride
+            + Int(coords[1]) * row_stride
+            + Int(coords[2]) * col_stride
+            + Int(coords[3])
         )
-        (out_ptr + flat).store(val.cast[dtype]() * SCALE)
+        (out_ptr.unsafe_offset(flat)).store(val.cast[dtype]() * SCALE)
 
     @inline(.always)
     def null_epilogue[
@@ -209,12 +209,12 @@ def test_conv_transposed_cpu_fused() raises:
     }:
         comptime assert coords.rank == 4
         var flat = (
-            Int(coords[0].value()) * plane_stride
-            + Int(coords[1].value()) * row_stride
-            + Int(coords[2].value()) * col_stride
-            + Int(coords[3].value())
+            Int(coords[0]) * plane_stride
+            + Int(coords[1]) * row_stride
+            + Int(coords[2]) * col_stride
+            + Int(coords[3])
         )
-        (out_ptr + flat).store(val.cast[dtype]() * SCALE)
+        (out_ptr.unsafe_offset(flat)).store(val.cast[dtype]() * SCALE)
 
     @inline(.always)
     def null_epilogue[

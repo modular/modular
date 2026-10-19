@@ -33,7 +33,7 @@ from std.math import (
     sqrt,
     tanh,
 )
-from std.sys import llvm_intrinsic
+from std.sys import align_of, llvm_intrinsic
 import extensibility
 
 # ===-----------------------------------------------------------------------===#
@@ -55,7 +55,7 @@ from extensibility import (
     ElementwiseUnaryMixedOp,
     ElementwiseUnaryOp,
 )
-from layout import Idx, DefaultEngine, TensorEngine, TileTensor
+from layout import Coord, Idx, DefaultEngine, TensorEngine, TileTensor
 from layout.tile_layout import TensorLayout
 from std.logger import Logger
 
@@ -95,12 +95,11 @@ def _elementwise_tile[
     comptime num_elements = LayoutType.static_product
 
     comptime for i in range(num_elements):
-        var lhs_off = lhs.layout(Idx[i])
-        var rhs_off = rhs.layout(Idx[i])
-        var lhs_val = lhs.raw_load[width=element_size](lhs_off)
-        var rhs_val = rhs.raw_load[width=element_size](rhs_off)
-        lhs.raw_store[width=element_size](
-            lhs_off, Op.elementwise[dtype, element_size](lhs_val, rhs_val)
+        var lhs_val = lhs.load[alignment=align_of[dtype]()](Coord(Idx[i]))
+        var rhs_val = rhs.load[alignment=align_of[dtype]()](Coord(Idx[i]))
+        lhs.store[alignment=align_of[dtype]()](
+            Coord(Idx[i]),
+            Op.elementwise[dtype, element_size](lhs_val, rhs_val),
         )
     return lhs
 

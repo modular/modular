@@ -55,9 +55,9 @@ def test_partial_n_tile_compute_epilogue[
     transpose_b: Bool = True,
     swapAB: Bool = False,
 ](ctx: DeviceContext, m: MType, n: NType, k: KType) raises:
-    var M = Int(m.value())
-    var N = Int(n.value())
-    var K = Int(k.value())
+    var M = Int(m)
+    var N = Int(n)
+    var K = Int(k)
 
     print(
         t"MXF-338 regression: in/out=({a_type},{b_type},{c_type})"

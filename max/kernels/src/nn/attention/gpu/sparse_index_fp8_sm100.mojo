@@ -127,6 +127,8 @@ from nn.attention.gpu.sparse_index_fp8_sm100_prefill import (
     _is_mxfp4,
     _k_box_rows,
     _k_tile_fits_pages,
+    IndexerScoreHook,
+    NoScoreHook,
     fp8_index_score_sm100_prefill,
 )
 
@@ -362,19 +364,25 @@ def _fp8_index_body[
         name="fp8_index_sm100_smem",
     ]()
     var k_smem = smem
-    var q_smem = smem + k_elems
-    var qs_smem = (smem + k_elems + q_elems).bitcast[Float32]()
-    var ks_smem = qs_smem + _N_Q_BUF * MMA_N
+    var q_smem = smem.unsafe_offset(k_elems)
+    var qs_smem = (
+        smem.unsafe_offset(k_elems)
+        .unsafe_offset(q_elems)
+        .unsafe_bitcast[Float32]()
+    )
+    var ks_smem = qs_smem.unsafe_offset(_N_Q_BUF * MMA_N)
     # mbar[0] = K staging-done (one-shot); then one Q staging-done per Q buffer;
     # then the accumulator handshake, a (full, empty) pair per stage; the last
     # slot holds the tcgen05 TMEM base address.
-    var mbar = (ks_smem + BM_key).bitcast[SharedMemBarrier]()
+    var mbar = ks_smem.unsafe_offset(BM_key).unsafe_bitcast[SharedMemBarrier]()
     var k_mbar = mbar
-    var q_mbar = mbar + 1
-    var s_full = mbar + 1 + _N_Q_BUF
-    var s_empty = s_full + _N_S_STAGES
-    var ptr_tmem = (mbar + _N_MBARS - 1).bitcast[UInt32]()
-    var q1_smem = smem + _Q1SmemOffset[dtype, BM_key, MMA_N, depth]
+    var q_mbar = mbar.unsafe_offset(1)
+    var s_full = mbar.unsafe_offset(1).unsafe_offset(_N_Q_BUF)
+    var s_empty = s_full.unsafe_offset(_N_S_STAGES)
+    var ptr_tmem = (
+        mbar.unsafe_offset(_N_MBARS).unsafe_offset(-1).unsafe_bitcast[UInt32]()
+    )
+    var q1_smem = smem.unsafe_offset(_Q1SmemOffset[dtype, BM_key, MMA_N, depth])
 
     comptime k_flat_layout = tt_row_major[k_elems]()
     comptime assert (
@@ -428,7 +436,7 @@ def _fp8_index_body[
             )
             var k_dst = TileTensor[
                 dtype, type_of(k_box_layout), address_space=.SHARED
-            ](k_smem + c * K_BOX * depth, k_box_layout)
+            ](k_smem.unsafe_offset(c * K_BOX * depth), k_box_layout)
             k_tma.async_copy_4d(
                 k_dst,
                 k_mbar[0],
@@ -561,7 +569,7 @@ def _fp8_index_body[
                 c_scale=0,
                 elect=e,
             )
-            elect_mma_arrive(s_full + st, elect=e)
+            elect_mma_arrive(s_full.unsafe_offset(st), elect=e)
             p_state.step()
 
         var cs = Int(c_state.index())
@@ -628,10 +636,9 @@ def _fp8_index_body[
                         ) // kpool
                         if key_local < key_bound and tok_local < tok_hi:
                             var out_row = out_row0 + tok_local
-                            output.raw_store(
-                                out_row * max_num_keys + key_local,
-                                (k_scale * (acc[0] + acc[1])).cast[out_dtype](),
-                            )
+                            output[out_row, key_local] = (
+                                k_scale * (acc[0] + acc[1])
+                            ).cast[out_dtype]()
                         acc = SIMD[AT, 2](0)
         tcgen05_load_wait()
         _ = s_empty[cs].arrive()
@@ -1326,7 +1333,7 @@ def mxfp4_index_score_sm100[
 ](
     output: MutTileTensor[out_dtype, output_layout, _],
     q: ImmTileTensor[dtype, q_layout, _],
-    q_sf: UnsafePointer[UInt32, ImmutAnyOrigin],
+    q_sf: ImmPointer[UInt32, ImmutAnyOrigin],
     weights: ImmTileTensor[.float32, qs_layout, _],
     k_operand: KOperand,
     ks_operand: KSOperand,
@@ -1380,6 +1387,71 @@ def mxfp4_index_score_sm100[
         ctx: Device context.
         out_row_begin: Global token row that `output` row 0 holds.
     """
+    mxfp4_index_score_sm100[
+        KOperand,
+        KSOperand,
+        num_heads,
+        _is_cache_length_accurate,
+        kpool,
+        pool_row_tokens,
+        k_box_rows,
+    ](
+        output,
+        q,
+        q_sf,
+        weights,
+        k_operand,
+        ks_operand,
+        k_tma,
+        valid_length,
+        batch_size,
+        max_seq_len,
+        max_num_keys,
+        causal,
+        ctx,
+        out_row_begin,
+        NoScoreHook(),
+    )
+
+
+def mxfp4_index_score_sm100[
+    dtype: DType,
+    out_dtype: DType,
+    output_layout: TensorLayout,
+    q_layout: TensorLayout,
+    qs_layout: TensorLayout,
+    vl_layout: TensorLayout,
+    H: IndexerScoreHook,
+    //,
+    KOperand: MHAOperand,
+    KSOperand: MHAOperand,
+    num_heads: Int,
+    _is_cache_length_accurate: Bool,
+    kpool: Int = 1,
+    pool_row_tokens: Int = 1,
+    k_box_rows: Int = _BM_KEY,
+](
+    output: MutTileTensor[out_dtype, output_layout, _],
+    q: ImmTileTensor[dtype, q_layout, _],
+    q_sf: ImmPointer[UInt32, ImmutAnyOrigin],
+    weights: ImmTileTensor[.float32, qs_layout, _],
+    k_operand: KOperand,
+    ks_operand: KSOperand,
+    k_tma: KTMATileT[dtype, k_box_rows, 64],
+    valid_length: ImmTileTensor[.uint32, vl_layout, _],
+    batch_size: Int,
+    max_seq_len: Int,
+    max_num_keys: Int,
+    causal: Bool,
+    ctx: DeviceContext,
+    out_row_begin: Int,
+    score_hook: H,
+) raises:
+    """Launch the SM100 MXFP4 indexer scorer into `output` with a score hook.
+
+    `score_hook` runs on every score the epilogue stores. Its rows count from
+    the window's first row, so its row 0 is `output`'s row 0.
+    """
     comptime assert _is_mxfp4[dtype](), "MXFP4 rows are packed in uint8"
     # An MXFP4 row is 128 E2M1 values in 64 bytes.
     comptime depth = 64
@@ -1426,4 +1498,5 @@ def mxfp4_index_score_sm100[
         ctx,
         out_row_begin,
         q_sf,
+        score_hook,
     )

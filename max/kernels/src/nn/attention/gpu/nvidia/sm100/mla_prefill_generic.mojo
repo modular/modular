@@ -118,7 +118,7 @@ struct WarpRole(EnumLike, Equatable, TrivialRegisterPassable):
     ].values
 
     comptime _enum_case_types = TypeList.splat[
-        ParameterList[Self._enum_case_names].size, NoneType
+        ParameterList[Self._enum_case_names].length, NoneType
     ].values
 
     @inline(.always)
@@ -945,7 +945,7 @@ __extension SM100MLA:
                 k_rope_coord[0] = UInt32(Self.cache_depth - Self.rope_depth)
                 k_rope_tma_op.async_copy_elect(
                     KRopeSubType(
-                        smem_base_ptr + _p * k_rope_sub_elems,
+                        smem_base_ptr.unsafe_offset(_p * k_rope_sub_elems),
                         tt_row_major[k_rope_sub_elems](),
                     ),
                     mbar[],
@@ -1026,17 +1026,17 @@ __extension SM100MLA:
                 `rope_smem_base` is already `KRopeType`-typed the bitcast
                 is a no-op.
                 """
-                return rope_smem_base.bitcast[
+                return rope_smem_base.unsafe_bitcast[
                     Scalar[KRopeType.dtype]
-                ]() + idx * UInt32(rope_stage_elems)
+                ]().unsafe_offset(idx * UInt32(rope_stage_elems))
 
             @inline(.always)
             def _fused_v_smem_ptr() {
                 imm
             } -> SharedMemPointer[Scalar[Self.KVLUTType.dtype]]:
                 """V destination smem ptr at the current KV stage."""
-                return k_smem_base + kv_pipeline.state.index() * UInt32(
-                    kv_stage_elems
+                return k_smem_base.unsafe_offset(
+                    kv_pipeline.state.index() * UInt32(kv_stage_elems)
                 )
 
             comptime produce_k_fused_paged_type = type_of(paged_rows)
@@ -1086,8 +1086,9 @@ __extension SM100MLA:
                     )
                 paged.tma_copy_k[needs_partial=partial](
                     k_nope_tma_op,
-                    k_smem_base
-                    + kv_pipeline.state.index() * UInt32(kv_stage_elems),
+                    k_smem_base.unsafe_offset(
+                        kv_pipeline.state.index() * UInt32(kv_stage_elems)
+                    ),
                     mbar[],
                     kv_head_idx=kv_head_idx,
                     elect=e,
@@ -1351,7 +1352,10 @@ __extension SM100MLA:
                 expect_bytes_pred(q1_mbar, Int32(q_bytes), e)
                 # Elect-predicated in-PTX via `_elect`; no Mojo `if e != 0:`.
                 q_tma_op.async_copy_elect(
-                    QType(q_smem + q_elements, tt_row_major[q_elems]()),
+                    QType(
+                        q_smem.unsafe_offset(q_elements),
+                        tt_row_major[q_elems](),
+                    ),
                     q1_mbar[0],
                     q_coord[
                         depth=Self.qk_depth,
@@ -1556,8 +1560,8 @@ __extension SM100MLA:
                         ](q_gmem_row, q_head_idx),
                         e,
                     )
-                var smem_ptr = k_smem_base + k_pipeline.state.index() * UInt32(
-                    k_elements_per_stage
+                var smem_ptr = k_smem_base.unsafe_offset(
+                    k_pipeline.state.index() * UInt32(k_elements_per_stage)
                 )
                 var k_nope_smem_local, k_rope_smem_local = split_smem[
                     KVPipeType.k_nope_tma_layout,
@@ -1610,7 +1614,10 @@ __extension SM100MLA:
                 expect_bytes_pred(q1_mbar, Int32(q_bytes), e)
                 # Q1 — elect-predicated in-PTX via `_elect`.
                 q_tma_op.async_copy_elect(
-                    QType(q_smem + q_elements, tt_row_major[q_elems]()),
+                    QType(
+                        q_smem.unsafe_offset(q_elements),
+                        tt_row_major[q_elems](),
+                    ),
                     q1_mbar[0],
                     q_coord[
                         depth=Self.qk_depth,
@@ -1839,9 +1846,9 @@ __extension SM100MLA:
                 # 2Q is non-shared-KV, never shared), so q1_rope is dead here;
                 # define it from the same base for type consistency.
                 q0_rope = Self.descriptor_q_rope(
-                    (q_smem.bitcast[UInt8]() + q_rope_off).bitcast[
-                        Scalar[Self.rope_mma_dtype]
-                    ]()
+                    (
+                        q_smem.unsafe_bitcast[UInt8]().unsafe_offset(q_rope_off)
+                    ).unsafe_bitcast[Scalar[Self.rope_mma_dtype]]()
                 )
                 q1_rope = q0_rope
 
@@ -2345,9 +2352,9 @@ __extension SM100MLA:
 
                 var q0_nope = Self.descriptor_q(q_smem)
                 q0_rope = Self.descriptor_q_rope(
-                    (q_smem + q_nope_bytes // Self.qkv_dt_size).bitcast[
-                        Scalar[Self.rope_mma_dtype]
-                    ]()
+                    q_smem.unsafe_offset(
+                        q_nope_bytes // Self.qkv_dt_size
+                    ).unsafe_bitcast[Scalar[Self.rope_mma_dtype]]()
                 )
                 var q1_nope = q0_nope + q_half_bytes
                 q1_rope = q0_rope + q_half_bytes
@@ -2377,8 +2384,10 @@ __extension SM100MLA:
                     is_k_major=True,
                 ](
                     (
-                        k_smem_base + nope_stage_bytes // Self.qkv_dt_size
-                    ).bitcast[Scalar[Self.rope_mma_dtype]]()
+                        k_smem_base.unsafe_offset(
+                            nope_stage_bytes // Self.qkv_dt_size
+                        )
+                    ).unsafe_bitcast[Scalar[Self.rope_mma_dtype]]()
                 )
 
                 # ---- single-O serial path (1Q wide-V), non-shared-KV, mixed ----
@@ -2811,9 +2820,7 @@ def _mla_prefill_sm100_valid_length_dispatch[
     comptime SinkType = NullPointer[output_dtype]
     comptime KVRowOffsetsType = NullPointer[.uint32]
     comptime PartitionType = NoPartition[.float32]
-    var valid_len: ValidLengthType = {
-        rebind[UnsafePointer[UInt32, ImmutAnyOrigin]](valid_length.ptr)
-    }
+    var valid_len: ValidLengthType = {valid_length}
 
     # Launch the kernel built from `cfg` (the 2Q `fa4_config` or its 1Q
     # variant). All TMA ops were created by the caller from `fa4_config`;

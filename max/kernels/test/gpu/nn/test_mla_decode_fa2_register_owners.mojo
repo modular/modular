@@ -37,11 +37,11 @@ comptime num_threads = (BM // WM) * (BN // WN) * 32
 def _mla_decode_kernel[
     dtype: DType, k_t: MHAOperand, num_keys: Int
 ](
-    q: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    q: MutPointer[Scalar[dtype], MutAnyOrigin],
     k: k_t,
-    output: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    exp_sum: UnsafePointer[Scalar[get_accum_type[dtype]()], MutAnyOrigin],
-    qk_max: UnsafePointer[Scalar[get_accum_type[dtype]()], MutAnyOrigin],
+    output: MutPointer[Scalar[dtype], MutAnyOrigin],
+    exp_sum: MutPointer[Scalar[get_accum_type[dtype]()], MutAnyOrigin],
+    qk_max: MutPointer[Scalar[get_accum_type[dtype]()], MutAnyOrigin],
 ):
     # Keep platform-width Int values inside the GPU launch boundary.
     mla_decoding_single_batch[
@@ -107,7 +107,7 @@ def _check_mla_decode[dtype: DType, keys: Int](ctx: DeviceContext) raises:
     ctx.enqueue_function[kernel](
         q_buffer.unsafe_ptr().as_unsafe_any_origin(),
         k,
-        (out_buffer.unsafe_ptr() + guard).as_unsafe_any_origin(),
+        out_buffer.unsafe_ptr().unsafe_offset(guard).as_unsafe_any_origin(),
         exp_sum_buffer.unsafe_ptr().as_unsafe_any_origin(),
         qk_max_buffer.unsafe_ptr().as_unsafe_any_origin(),
         grid_dim=(1, 1, 1),

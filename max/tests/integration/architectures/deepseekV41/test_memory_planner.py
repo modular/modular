@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Tests that the shared memory estimator fits the TP2 plan on two B200s.
+"""Tests the planner's TP2 plan on two B200s and its DP4 sizing.
 
 The planner's weight and activation estimates feed the estimator's KV cache
 budget. Measured constants come from device memory traces on B200 GPUs.
@@ -28,13 +28,16 @@ from max.pipelines.architectures.deepseekV41.memory_planner import (
     DeviceWeightLayout,
     device_weight_bytes,
 )
+from max.pipelines.architectures.deepseekV41.model_config import (
+    DeepseekV41Config,
+    data_parallel_ep_config,
+)
 from max.pipelines.kv_cache.memory_planner import ModelConfigWithKVCache
 from max.pipelines.lib import PipelineConfig
 from max.pipelines.lib.memory_estimation import MemoryEstimator
 from transformers import AutoConfig
 
 TESTDATA = Path(__file__).parent / "testdata"
-MIB = 1 << 20
 GIB = 1 << 30
 
 
@@ -46,6 +49,8 @@ def _pipeline_config(
 ) -> NonCallableMock:
     config = NonCallableMock(spec=PipelineConfig)
     config.model = MagicMock()
+    # These plans serve text only.
+    config.model.vision_config_overrides = {"max_images_per_request": 0}
     config.runtime = MagicMock()
     config.model.max_length = max_length
     config.model.kv_cache.kv_cache_page_size = 128
@@ -206,50 +211,36 @@ def test_tp2_4096_row_chunk_at_40k_leaves_the_kv_pool_room(
     _, weights, activation = _tp2_plan_inputs(
         chunk=4096, max_length=40000, layout=_DEFAULT_LAYOUT
     )
-    assert activation / 2 >= 12.55 * GIB
     assert (weights + activation + _TP2_SIGNAL_BYTES) / 2 + kv <= (
         _TP2_MM97_FREE
     )
-    # Measured full-depth peak: 167.28 GiB live with a 2322 MiB KV pool.
-    planned_peak = (weights + activation + _TP2_SIGNAL_BYTES) / 2 + 2322 * MIB
-    assert planned_peak >= 167.28 * GIB
 
 
-def test_tp2_4096_row_chunk_at_64k_needs_the_full_budget() -> None:
-    """At 64000 columns the KV pool fits at utilization 1.0, not 0.97."""
-    tight = _kv_budget_per_device(
-        chunk=4096, max_length=64000, utilization=0.97, layout=_DEFAULT_LAYOUT
-    )
-    full = _kv_budget_per_device(
-        chunk=4096, max_length=64000, utilization=1.0, layout=_DEFAULT_LAYOUT
-    )
-    assert 0 < tight < 64000 / 40000 * _TP2_KV_40K_PER_DEVICE
-    assert full > 64000 / 40000 * _TP2_KV_40K_PER_DEVICE
-
-
-@pytest.mark.parametrize("max_length", [40000, 64000])
-@pytest.mark.parametrize("utilization", [0.97, 1.0])
-def test_tp2_8192_row_chunk_is_refused_at_plan_time(
-    max_length: int, utilization: float
+@pytest.mark.parametrize("max_length", [40000, 131072, 1048576])
+def test_reserve_grows_only_by_the_candidate_keep_step(
+    max_length: int,
 ) -> None:
-    """An 8192-row chunk's ~26 GiB reserve makes TP2 planning raise."""
-    config, weights, activation = _tp2_plan_inputs(
-        chunk=8192, max_length=max_length, layout=_DEFAULT_LAYOUT
+    """Past the arena, the reserve is the indexer's score window plus the
+    ``[T, blocks]`` keep step, never a ``[T, max_length]`` score."""
+    rows = 8192
+    _, _, activation = _tp2_plan_inputs(
+        chunk=rows, max_length=max_length, layout=_DEFAULT_LAYOUT
     )
-    config.model.kv_cache.device_memory_utilization = utilization
-    with pytest.raises(
-        RuntimeError,
-        match=r"exceeds available memory|room for KV cache",
-    ):
-        MemoryEstimator.plan_from_sizes(
-            config,
-            config.model,
-            MagicMock(),
-            _tp2_devices(),
-            weights,
-            activation,
-            _TP2_SIGNAL_BYTES,
-        )
+    keep = rows * -(-max_length // 8) * 28
+    assert activation / 2 - keep <= (1.25 + 16 + 0.5 + 0.25) * GIB
+
+
+def test_tp2_8192_row_chunk_at_40k_fits_the_full_budget() -> None:
+    """Without ``[T, S]`` scores an 8192-row chunk at 40000 fits TP2 at
+    utilization 1.0."""
+    config, weights, activation = _tp2_plan_inputs(
+        chunk=8192, max_length=40000, layout=_DEFAULT_LAYOUT
+    )
+    config.model.kv_cache.device_memory_utilization = 1.0
+    kv = MemoryEstimator._available_kv_cache_memory(
+        weights, activation, config.model, _tp2_devices(), _TP2_SIGNAL_BYTES
+    )
+    assert kv / 2 >= _TP2_KV_40K_PER_DEVICE
 
 
 def test_tp2_in_graph_interleave_layout_is_refused_at_plan_time() -> None:
@@ -275,3 +266,47 @@ def test_tp2_in_graph_interleave_layout_is_refused_at_plan_time() -> None:
             activation,
             _TP2_SIGNAL_BYTES,
         )
+
+
+def test_dp4_splits_only_the_routed_experts() -> None:
+    """Under DP4 each device holds attention and Engram whole and a quarter
+    of the routed experts."""
+    experts = [
+        t
+        for t in _REAL_CHECKPOINT
+        if t.name.startswith("layers.") and ".ffn.experts." in t.name
+    ]
+    whole, _ = device_weight_bytes(_REAL_CHECKPOINT, 1, layout=_DEFAULT_LAYOUT)
+    expert_bytes, _ = device_weight_bytes(experts, 1, layout=_DEFAULT_LAYOUT)
+    dp4, _ = device_weight_bytes(
+        _REAL_CHECKPOINT, 4, layout=_DEFAULT_LAYOUT, data_parallel=True
+    )
+    assert abs(dp4 - (whole - expert_bytes * 3 / 4)) <= 1
+
+
+def _dp4_config(data_parallel_degree: int) -> NonCallableMock:
+    config = _pipeline_config(
+        max_length=40000, max_num_input_tokens=8192, num_devices=4
+    )
+    config.model.data_parallel_degree = data_parallel_degree
+    for i, spec in enumerate(config.model.device_specs):
+        spec.id = i
+    config.speculative = None
+    return config
+
+
+def test_dp4_reserves_the_expert_parallel_buffers() -> None:
+    """Each DP4 device also reserves the expert-parallel buffers and 12 KiB
+    for each row its experts can receive: every replica's 8192 rows, six
+    routed copies each."""
+    hf_config = _real_huggingface_config()
+    extra = (
+        _planner().estimate_activation_memory(_dp4_config(4), hf_config)
+        - _planner().estimate_activation_memory(_dp4_config(1), hf_config)
+    ) // 4
+    ep = data_parallel_ep_config(
+        _dp4_config(4), DeepseekV41Config.get_text_config(hf_config)
+    )
+    assert ep is not None
+    assert ep.get_max_recv_tokens() == 4 * 8192 * 6
+    assert extra == ep.estimate_memory_usage() + 4 * 8192 * 6 * (12 << 10)

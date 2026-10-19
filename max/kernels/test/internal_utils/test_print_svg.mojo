@@ -231,7 +231,9 @@ def test_svg_wgmma_shape() raises:
         Coord(Idx[8], coord[2, 2]), Coord(Idx[64], coord[4, 512])
     )
     var tensor_dist = tensor.reshape(fragment_layout)
-    var tensor_dist2 = TileTensor(tensor.unsafe_ptr() + 24, fragment_layout)
+    var tensor_dist2 = TileTensor(
+        tensor.unsafe_ptr().unsafe_offset(24), fragment_layout
+    )
     var expected = List[Int]()
     var expected2 = List[Int]()
     for row in range(8):

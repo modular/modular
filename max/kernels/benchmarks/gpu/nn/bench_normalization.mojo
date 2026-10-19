@@ -92,17 +92,13 @@ def bench_layer_norm_gpu[
     def input_fn[
         width: Int, alignment: Int
     ](coords: Coord) {var data_buf} -> SIMD[dtype, width]:
-        var idx = data_buf.layout(coords)
-
-        return data_buf.raw_load[width=width, alignment=alignment](idx)
+        return data_buf.load[width=width, alignment=alignment](coords)
 
     @inline(.always)
     def output_fn[
         width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[dtype, width]) {var out_buf} -> None:
-        var idx = out_buf.layout(coords)
-
-        out_buf.raw_store[width=width, alignment=alignment](idx, val)
+        out_buf.store[alignment=alignment](coords, val)
 
     @inline(.always)
     def kernel_launch(
@@ -189,14 +185,12 @@ def bench_rms_norm_gpu[
     @inline(.always)
     @__parameter
     def input_fn[width: Int](coords: Coord) -> SIMD[dtype, width]:
-        var idx = data_buf.layout(coords)
-
         # Match the MOGG lambda contract (reductions.mojo passes
         # `element_alignment=width` to `_lambda_load`): vector loads are
         # aligned to the full SIMD width.
-        return data_buf.raw_load[
+        return data_buf.load[
             width=width, alignment=align_of[SIMD[dtype, width]]()
-        ](idx)
+        ](coords)
 
     @inline(.always)
     @__copy_capture(data_buf)
@@ -204,8 +198,7 @@ def bench_rms_norm_gpu[
     def identity_output_fn[
         width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[dtype, width]) -> None:
-        var idx = data_buf.layout(coords)
-        data_buf.raw_store[width=width, alignment=alignment](idx, val)
+        data_buf.store[alignment=alignment](coords, val)
 
     @inline(.always)
     def kernel_launch(ctx: DeviceContext) raises {mut data_d, imm}:

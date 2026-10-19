@@ -648,17 +648,17 @@ def fa_prefill_apple_core[
             comptime k_align = align_of[Scalar[k_t.dtype]]()
             comptime if DEPTH_MMAS % 2 == 0:
                 comptime for sp in range(DEPTH_MMAS // 2):
-                    var qlo = q_tile.raw_load[width=8, alignment=q_align](
-                        rb * q_row_stride + 32 * sp + 2 * cb
+                    var qlo = q_tile.load[width=8, alignment=q_align](
+                        (rb, 32 * sp + 2 * cb)
                     )
-                    var qhi = q_tile.raw_load[width=8, alignment=q_align](
-                        (rb + 8) * q_row_stride + 32 * sp + 2 * cb
+                    var qhi = q_tile.load[width=8, alignment=q_align](
+                        (rb + 8, 32 * sp + 2 * cb)
                     )
-                    var klo = k_tile.raw_load[width=8, alignment=k_align](
-                        rb * kv_row_stride + 32 * sp + 2 * cb
+                    var klo = k_tile.load[width=8, alignment=k_align](
+                        (rb, 32 * sp + 2 * cb)
                     )
-                    var khi = k_tile.raw_load[width=8, alignment=k_align](
-                        (rb + 8) * kv_row_stride + 32 * sp + 2 * cb
+                    var khi = k_tile.load[width=8, alignment=k_align](
+                        (rb + 8, 32 * sp + 2 * cb)
                     )
                     _mma_apple_transposable(
                         score_col[0],
@@ -853,19 +853,18 @@ def fa_prefill_apple_core[
     var row_lo = rb
     var lo_ok = row_lo < valid_q
     var hi_ok = row_lo + 8 < valid_q
-    var off_lo = rb * q_row_stride + cb
-    var off_hi = (rb + 8) * q_row_stride + cb
+    comptime o_align = align_of[Scalar[output_type]]()
     comptime for ni in range(DEPTH_MMAS):
         var o_sub = out_tile.tile[MMA_DIM, MMA_DIM](0, ni)
         comptime assert o_sub.flat_rank == 2, "output sub-tile must be 2D"
         var frag = output_accum[ni]
         if lo_ok:
-            o_sub.raw_store(
-                off_lo, frag.slice[4, offset=0]().cast[output_type]()
+            o_sub.store[alignment=o_align](
+                (rb, cb), frag.slice[4, offset=0]().cast[output_type]()
             )
         if hi_ok:
-            o_sub.raw_store(
-                off_hi, frag.slice[4, offset=4]().cast[output_type]()
+            o_sub.store[alignment=o_align](
+                (rb + 8, cb), frag.slice[4, offset=4]().cast[output_type]()
             )
 
 

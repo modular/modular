@@ -86,9 +86,9 @@ def _load_a_reg_tile[
             comptime for i in range(4):
                 var r = m_mma * WGMMA_M + row + (i % 2) * 8
                 var c = k_mma * WGMMA_K + col + (i // 2) * 8
-                ret.store[width=2](
-                    Coord(Idx[r_id], Idx[2 * i]),
-                    smem_tile.load[width=2](Coord(r, c)),
+                ret.store(
+                    (Idx[r_id], Idx[2 * i]),
+                    smem_tile.load[width=2]((r, c)),
                 )
     return ret
 

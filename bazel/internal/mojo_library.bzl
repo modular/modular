@@ -48,8 +48,10 @@ def mojo_library(
         additional_compiler_inputs = [],
         use_production_compiler_for_asan = False,
         copts = [],
+        bitcode_libs = [],
         ignore_deprecated = [],
         import_path = ".",
+        target_compatible_with = [],
         tags = []):
     """
     Precompiles sources into a mojoc file.
@@ -72,6 +74,11 @@ def mojo_library(
             Use a production build of Mojo to build this target when in asan mode.
             This is a speed optimization if the coverage is not worth the slowdown.
         copts: Forwarded to `mojo_library`
+        bitcode_libs:
+            LLVM bitcode (`.bc`) files embedded in the precompiled package and
+            linked into any program that imports it. Use this instead of
+            `--bitcode-libs` in `copts`, which cannot name a generated file
+            under path mapping.
         ignore_deprecated:
             Qualified names (e.g. `Variant.take`) of `@deprecated` declarations
             whose deprecation warning should be suppressed for this target,
@@ -81,6 +88,9 @@ def mojo_library(
             `IGNORED_POINTER_DEPRECATIONS` (see
             `//max/kernels/src:deprecations.bzl`) here explicitly.
         import_path: Forwarded to `mojo_library`
+        target_compatible_with:
+            Forwarded to all subtargets. See
+            https://bazel.build/extending/platforms#skipping-incompatible-targets
         tags: Forwarded to all subtargets
     """
     library_rule = _transitioned_mojo_library if use_production_compiler_for_asan else _upstream_mojo_library
@@ -96,7 +106,9 @@ def mojo_library(
         tags = ["mojo-fixits"] + tags,
         additional_compiler_inputs = additional_compiler_inputs,
         copts = copts + ignore_deprecated_copts,
+        bitcode_libs = bitcode_libs,
         import_path = import_path,
+        target_compatible_with = target_compatible_with,
         **library_kwargs
     )
 
@@ -115,6 +127,7 @@ def mojo_library(
             visibility = visibility,
             tags = [ALLOW_UNUSED_TAG] + tags,
             testonly = testonly,
+            target_compatible_with = target_compatible_with,
         )
 
         build_test(
@@ -122,4 +135,5 @@ def mojo_library(
             targets = [name + ".docs"],
             tags = ["mojo-docs", "lint-test"] + tags,
             visibility = ["//visibility:private"],
+            target_compatible_with = target_compatible_with,
         )

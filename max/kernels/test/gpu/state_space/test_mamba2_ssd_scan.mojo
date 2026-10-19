@@ -20,20 +20,8 @@ optional D/dt_bias, seeded initial states, strided x/B/C, bf16 state storage,
 and that a packed ragged batch equals independent per-sequence runs.
 """
 
-from std.math import ceildiv, exp, log1p
-
-from max.gpu.host import DeviceContext
-from layout import MixedLayout, TileTensor, row_major
-from std.random import rand
-from state_space.mamba2_ssd_chunked import (
-    mamba2_ssd_chunked_fwd_inplace_gpu,
-    use_chunked_ssd,
-)
-from state_space.mamba2_ssd_scan import (
-    mamba2_ssd_chunk_scan_varlen_fwd_inplace_cpu,
-    mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_apple,
-    mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split,
-)
+from std.math import exp, log1p
+from std.random import rand, seed
 from std.sys import size_of
 from std.testing import (
     TestSuite,
@@ -42,6 +30,23 @@ from std.testing import (
     assert_true,
 )
 from std.utils.index import Index, IndexList
+
+from layout import MixedLayout, TileTensor, row_major
+from max.gpu.host import DeviceContext
+from ssd_scan_test_utils.ssd_scan import (
+    check_chunked_parity,
+    check_preserved_slots,
+    run_ssd_gpu,
+)
+from state_space.mamba2_ssd_chunked import (
+    GROUPED_CB_AUTO,
+    GROUPED_CB_ON,
+    use_chunked_ssd,
+    use_grouped_cb_ssd,
+)
+from state_space.mamba2_ssd_scan import (
+    mamba2_ssd_chunk_scan_varlen_fwd_inplace_cpu,
+)
 
 
 def _scan_cpu[
@@ -269,239 +274,6 @@ def _check_tile_parity[
             )
 
 
-def _run_gpu[
-    dtype: DType,
-    state_dtype: DType,
-    //,
-    DSTATE: Int,
-    DSTATE_SPLIT: Int,
-    CH_PER_THREAD: Int,
-    prefill: Bool,
-](
-    ctx: DeviceContext,
-    nheads: Int,
-    head_dim: Int,
-    ngroups: Int,
-    max_slots: Int,
-    batch: Int,
-    total_len: Int,
-    x_row: Int,
-    bc_row: Int,
-    D_size: Int,
-    dt_bias_size: Int,
-    his_size: Int,
-    us_size: Int,
-    x_h: MutPointer[Scalar[dtype], MutUntrackedOrigin],
-    dt_h: MutPointer[Scalar[dtype], MutUntrackedOrigin],
-    A_h: MutPointer[Scalar[dtype], MutUntrackedOrigin],
-    B_h: MutPointer[Scalar[dtype], MutUntrackedOrigin],
-    C_h: MutPointer[Scalar[dtype], MutUntrackedOrigin],
-    D_h: MutPointer[Scalar[dtype], MutUntrackedOrigin],
-    dt_bias_h: MutPointer[Scalar[dtype], MutUntrackedOrigin],
-    qsl_h: MutPointer[Int32, MutUntrackedOrigin],
-    his_h: MutPointer[Scalar[.bool], MutUntrackedOrigin],
-    us_h: MutPointer[Scalar[.bool], MutUntrackedOrigin],
-    slot_h: MutPointer[UInt32, MutUntrackedOrigin],
-    y_out: MutPointer[Scalar[dtype], MutUntrackedOrigin],
-    pool: MutPointer[Scalar[state_dtype], MutUntrackedOrigin],
-) raises:
-    """Runs one GPU kernel: the cooperative split when `DSTATE_SPLIT > 0`,
-    else the Apple kernel. `pool` holds the initial pool on entry and the
-    final pool on return."""
-    comptime dstate = DSTATE
-    var y_size = total_len * nheads * head_dim
-    var pool_size = max_slots * nheads * head_dim * dstate
-    var x_layout = MixedLayout(
-        (total_len, nheads, head_dim), (x_row, head_dim, 1)
-    )
-    var bc_layout = MixedLayout(
-        (total_len, ngroups, dstate), (bc_row, dstate, 1)
-    )
-
-    var x_d = ctx.enqueue_create_buffer[dtype](total_len * x_row)
-    var dt_d = ctx.enqueue_create_buffer[dtype](total_len * nheads)
-    var A_d = ctx.enqueue_create_buffer[dtype](nheads)
-    var B_d = ctx.enqueue_create_buffer[dtype](total_len * bc_row)
-    var C_d = ctx.enqueue_create_buffer[dtype](total_len * bc_row)
-    var D_d = ctx.enqueue_create_buffer[dtype](nheads)
-    var dt_bias_d = ctx.enqueue_create_buffer[dtype](nheads)
-    var qsl_d = ctx.enqueue_create_buffer[.int32](batch + 1)
-    var his_d = ctx.enqueue_create_buffer[.bool](batch)
-    var us_d = ctx.enqueue_create_buffer[.bool](batch)
-    var slot_d = ctx.enqueue_create_buffer[.uint32](batch)
-    var y_d = ctx.enqueue_create_buffer[dtype](y_size)
-    var pool_d = ctx.enqueue_create_buffer[state_dtype](pool_size)
-    ctx.enqueue_copy(x_d, x_h)
-    ctx.enqueue_copy(dt_d, dt_h)
-    ctx.enqueue_copy(A_d, A_h)
-    ctx.enqueue_copy(B_d, B_h)
-    ctx.enqueue_copy(C_d, C_h)
-    ctx.enqueue_copy(D_d, D_h)
-    ctx.enqueue_copy(dt_bias_d, dt_bias_h)
-    ctx.enqueue_copy(qsl_d, qsl_h)
-    ctx.enqueue_copy(his_d, his_h)
-    ctx.enqueue_copy(us_d, us_h)
-    ctx.enqueue_copy(slot_d, slot_h)
-    ctx.enqueue_copy(pool_d, pool)
-
-    var x_g = TileTensor(x_d, x_layout)
-    var dt_g = TileTensor(dt_d, row_major(total_len, nheads))
-    var A_g = TileTensor(A_d, row_major(nheads))
-    var B_g = TileTensor(B_d, bc_layout)
-    var C_g = TileTensor(C_d, bc_layout)
-    var D_g = TileTensor(D_d, row_major(D_size))
-    var dt_bias_g = TileTensor(dt_bias_d, row_major(dt_bias_size))
-    var qsl_g = TileTensor(qsl_d, row_major(batch + 1))
-    var his_g = TileTensor(his_d, row_major(his_size))
-    var us_g = TileTensor(us_d, row_major(us_size))
-    var slot_g = TileTensor(slot_d, row_major(batch))
-    var y_g = TileTensor(y_d, row_major(total_len, nheads, head_dim))
-    var pool_g = TileTensor(
-        pool_d, row_major(max_slots, nheads, head_dim, dstate)
-    )
-
-    comptime elt = size_of[dtype]()
-
-    def x_fn[
-        width: Int, alignment: Int
-    ](t: Int, h: Int, p: Int) {var x_g} -> SIMD[dtype, width]:
-        return x_g.load[width=width, alignment=alignment * elt]((t, h, p))
-
-    def dt_fn[
-        width: Int, alignment: Int
-    ](t: Int, h: Int) {var dt_g} -> SIMD[dtype, width]:
-        return dt_g.load[width=width, alignment=alignment * elt]((t, h))
-
-    def b_fn[
-        width: Int, alignment: Int
-    ](t: Int, g: Int, n: Int) {var B_g} -> SIMD[dtype, width]:
-        return B_g.load[width=width, alignment=alignment * elt]((t, g, n))
-
-    def c_fn[
-        width: Int, alignment: Int
-    ](t: Int, g: Int, n: Int) {var C_g} -> SIMD[dtype, width]:
-        return C_g.load[width=width, alignment=alignment * elt]((t, g, n))
-
-    def slot_fn[
-        width: Int, alignment: Int
-    ](b: Int) {var slot_g} -> SIMD[.uint32, width]:
-        return slot_g.load[width=width]((b,))
-
-    comptime if DSTATE_SPLIT < 0:
-        # The chunked kernel is NVIDIA-only (it needs `m16n8k16` bf16 MMAs).
-        comptime if ctx.target._is_sm_8x_or_newer():
-            mamba2_ssd_chunked_fwd_inplace_gpu[DSTATE, dt_softplus=True](
-                ctx,
-                total_len,
-                batch,
-                ngroups,
-                A_g,
-                D_g,
-                dt_bias_g,
-                y_g,
-                pool_g,
-                qsl_g,
-                his_g,
-                us_g,
-                x_fn,
-                dt_fn,
-                b_fn,
-                c_fn,
-                slot_fn,
-            )
-    elif DSTATE_SPLIT > 0:
-        # Mirrors the production launch in kernels.mojo.
-        comptime ROWS = 128 // DSTATE_SPLIT
-        comptime CH_PER_BLOCK = ROWS * CH_PER_THREAD
-        comptime kernel = mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split[
-            dtype,
-            state_dtype,
-            DSTATE,
-            DSTATE_SPLIT,
-            A_g.LayoutType,
-            D_g.LayoutType,
-            dt_bias_g.LayoutType,
-            y_g.LayoutType,
-            pool_g.LayoutType,
-            qsl_g.LayoutType,
-            his_g.LayoutType,
-            us_g.LayoutType,
-            y_g.Engine,
-            type_of(x_fn),
-            type_of(dt_fn),
-            type_of(b_fn),
-            type_of(c_fn),
-            type_of(slot_fn),
-            prefill=prefill,
-            CH_PER_THREAD=CH_PER_THREAD,
-        ]
-        ctx.enqueue_function[kernel](
-            Int32(ngroups),
-            A_g,
-            D_g,
-            dt_bias_g,
-            y_g,
-            pool_g,
-            qsl_g,
-            his_g,
-            us_g,
-            host_arg=x_fn,
-            host_arg2=dt_fn,
-            host_arg3=b_fn,
-            host_arg4=c_fn,
-            host_arg5=slot_fn,
-            grid_dim=(
-                ceildiv(head_dim, CH_PER_BLOCK),
-                nheads,
-                batch,
-            ),
-            block_dim=(DSTATE_SPLIT, ROWS, 1),
-        )
-    else:
-        comptime BLOCK_SIZE = 64
-        comptime kernel = mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_apple[
-            dtype,
-            state_dtype,
-            DSTATE,
-            A_g.LayoutType,
-            D_g.LayoutType,
-            dt_bias_g.LayoutType,
-            y_g.LayoutType,
-            pool_g.LayoutType,
-            qsl_g.LayoutType,
-            his_g.LayoutType,
-            us_g.LayoutType,
-            y_g.Engine,
-            type_of(x_fn),
-            type_of(dt_fn),
-            type_of(b_fn),
-            type_of(c_fn),
-            type_of(slot_fn),
-        ]
-        ctx.enqueue_function[kernel](
-            Int32(ngroups),
-            A_g,
-            D_g,
-            dt_bias_g,
-            y_g,
-            pool_g,
-            qsl_g,
-            his_g,
-            us_g,
-            host_arg=x_fn,
-            host_arg2=dt_fn,
-            host_arg3=b_fn,
-            host_arg4=c_fn,
-            host_arg5=slot_fn,
-            grid_dim=(ceildiv(head_dim, BLOCK_SIZE), nheads, batch),
-            block_dim=(BLOCK_SIZE, 1, 1),
-        )
-
-    ctx.enqueue_copy(y_out, y_d)
-    ctx.enqueue_copy(pool, pool_d)
-    ctx.synchronize()
-
-
 def run_mamba2_ssd[
     dtype: DType,
     DSTATE: Int,
@@ -532,6 +304,12 @@ def run_mamba2_ssd[
     # Offset added to the random dt before softplus: -9 gives dt ~ 1e-4, which
     # leaves most of the state alive across chunk boundaries.
     dt_offset: Float32 = -0.5,
+    guard_output: Bool = False,
+    grouped_pair: Bool = False,
+    grouped_mode: Int = GROUPED_CB_ON,
+    # Small forced-ON cases gate scalar math; large AUTO cases use exact GPU A/B.
+    check_reference: Bool = True,
+    use_grouped_default: Bool = False,
 ](
     nheads: Int,
     head_dim: Int,
@@ -542,6 +320,7 @@ def run_mamba2_ssd[
     rtol: Float64 = 0.02,
     row_pad: Int = 0,
     atol_frac: Float64 = 0.0,
+    slot_stride: Int = 1,
 ) raises:
     """Run the CPU and one GPU kernel and compare both against the reference.
 
@@ -549,6 +328,10 @@ def run_mamba2_ssd[
     the conv output the model passes.
     """
     comptime dstate = DSTATE
+    comptime if not check_reference:
+        comptime assert (
+            grouped_pair
+        ), "GPU-only checks require strict grouped A/B"
     var batch = len(seq_lengths)
     var total_len = 0
     for i in range(batch):
@@ -561,6 +344,11 @@ def run_mamba2_ssd[
     var y_size = total_len * nheads * head_dim
     var state_size = nheads * head_dim * dstate
     var pool_size = max_slots * state_size
+    assert_true(slot_stride > 0, "slot stride must be positive")
+    assert_true(
+        max_slots > 1 + (batch - 1) * slot_stride,
+        "pool must contain every scattered slot",
+    )
 
     var x_h = alloc[Scalar[dtype]](total_len * x_row)
     var dt_h = alloc[Scalar[dtype]](total_len * nheads)
@@ -574,9 +362,9 @@ def run_mamba2_ssd[
     var qsl_h = alloc[Int32](batch + 1)
     var slot_h = alloc[UInt32](batch)
     var is_h = alloc[Float32](batch * state_size)
-    var y_ref_h = alloc[Float32](y_size)
-    var fs_ref_h = alloc[Float32](batch * state_size)
 
+    comptime if not check_reference:
+        seed(1234)
     rand(x_h, total_len * x_row)
     rand(dt_h, total_len * nheads)
     rand(A_h, nheads)
@@ -608,37 +396,14 @@ def run_mamba2_ssd[
         us_h.store(i, Scalar[.bool](not update_flags or i % 2 == 0))
     # An empty update_state writes every sequence.
     var us_size = batch if update_flags else 0
-    # Sequence b uses slot b + 1, so slot 0 must stay untouched.
+    # Slot 0 and gaps between scattered slots must stay untouched.
     for i in range(batch):
-        slot_h.store(i, UInt32(i + 1))
+        slot_h.store(i, UInt32(1 + i * slot_stride))
     var cum = 0
     qsl_h.store(0, Int32(0))
     for i in range(batch):
         cum += seq_lengths[i]
         qsl_h.store(i + 1, Int32(cum))
-
-    _reference_scan(
-        nheads,
-        head_dim,
-        ngroups,
-        dstate,
-        seq_lengths,
-        x_h,
-        x_row,
-        dt_h,
-        A_h,
-        B_h,
-        C_h,
-        bc_row,
-        D_h,
-        has_D,
-        dt_bias_h,
-        has_dt_bias,
-        is_h,
-        init_state,
-        y_ref_h,
-        fs_ref_h,
-    )
 
     var pool_init_h = alloc[Scalar[state_dtype]](pool_size)
     for i in range(pool_size):
@@ -651,279 +416,392 @@ def run_mamba2_ssd[
                 is_h.load(b * state_size + i).cast[state_dtype](),
             )
 
-    comptime if update_flags:
-        # A sequence that does not update leaves its slot as it was seeded.
-        for b in range(batch):
-            if b % 2 == 1:
-                var slot = Int(slot_h.load(b))
-                for i in range(state_size):
-                    fs_ref_h.store(
-                        b * state_size + i,
-                        pool_init_h.load(slot * state_size + i).cast[
-                            .float32
-                        ](),
+    comptime if not check_reference:
+        var y_check_h = alloc[Scalar[dtype]](
+            y_size + (64 if guard_output else 0)
+        )
+        run_ssd_gpu[
+            DSTATE,
+            DSTATE_SPLIT,
+            CH_PER_THREAD,
+            prefill,
+            guard_output=guard_output,
+            grouped_pair=grouped_pair,
+            grouped_mode=grouped_mode,
+            use_grouped_default=use_grouped_default,
+        ](
+            ctx,
+            nheads,
+            head_dim,
+            ngroups,
+            max_slots,
+            batch,
+            total_len,
+            x_row,
+            bc_row,
+            D_size,
+            dt_bias_size,
+            batch if init_state else 0,
+            us_size,
+            x_h,
+            dt_h,
+            A_h,
+            B_h,
+            C_h,
+            D_h,
+            dt_bias_h,
+            qsl_h,
+            his_h,
+            us_h,
+            slot_h,
+            y_check_h,
+            pool_init_h,
+        )
+        y_check_h.free()
+        x_h.free()
+        dt_h.free()
+        A_h.free()
+        B_h.free()
+        C_h.free()
+        D_h.free()
+        dt_bias_h.free()
+        his_h.free()
+        us_h.free()
+        qsl_h.free()
+        slot_h.free()
+        is_h.free()
+        pool_init_h.free()
+        return
+
+    else:
+        var y_ref_h = alloc[Float32](y_size)
+        var fs_ref_h = alloc[Float32](batch * state_size)
+
+        _reference_scan(
+            nheads,
+            head_dim,
+            ngroups,
+            dstate,
+            seq_lengths,
+            x_h,
+            x_row,
+            dt_h,
+            A_h,
+            B_h,
+            C_h,
+            bc_row,
+            D_h,
+            has_D,
+            dt_bias_h,
+            has_dt_bias,
+            is_h,
+            init_state,
+            y_ref_h,
+            fs_ref_h,
+        )
+
+        comptime if update_flags:
+            # A sequence that does not update leaves its slot as it was seeded.
+            for b in range(batch):
+                if b % 2 == 1:
+                    var slot = Int(slot_h.load(b))
+                    for i in range(state_size):
+                        fs_ref_h.store(
+                            b * state_size + i,
+                            pool_init_h.load(slot * state_size + i).cast[
+                                .float32
+                            ](),
+                        )
+
+        var x_layout = MixedLayout(
+            (total_len, nheads, head_dim), (x_row, head_dim, 1)
+        )
+        var bc_layout = MixedLayout(
+            (total_len, ngroups, dstate), (bc_row, dstate, 1)
+        )
+        var his_size = batch if init_state else 0
+
+        # ---- CPU kernel (fp32 pool) ----
+        var y_cpu_h = alloc[Scalar[dtype]](y_size + (64 if guard_output else 0))
+        var pool_cpu_h = alloc[Float32](pool_size)
+        for i in range(pool_size):
+            pool_cpu_h.store(i, pool_init_h.load(i).cast[.float32]())
+        _scan_cpu[DSTATE](
+            TileTensor(x_h, x_layout),
+            TileTensor(dt_h, row_major(total_len, nheads)),
+            TileTensor(A_h, row_major(nheads)),
+            TileTensor(B_h, bc_layout),
+            TileTensor(C_h, bc_layout),
+            TileTensor(D_h, row_major(D_size)),
+            TileTensor(dt_bias_h, row_major(dt_bias_size)),
+            TileTensor(y_cpu_h, row_major(total_len, nheads, head_dim)),
+            TileTensor(
+                pool_cpu_h, row_major(max_slots, nheads, head_dim, dstate)
+            ),
+            TileTensor(qsl_h, row_major(batch + 1)),
+            TileTensor(his_h, row_major(his_size)),
+            TileTensor(us_h, row_major(us_size)),
+            TileTensor(slot_h, row_major(batch)),
+        )
+        _check_outputs(
+            y_ref_h,
+            fs_ref_h,
+            slot_h,
+            batch,
+            y_size,
+            state_size,
+            y_cpu_h,
+            pool_cpu_h,
+            rtol,
+            "CPU",
+            atol_frac,
+        )
+
+        # ---- GPU kernel ----
+        var y_gpu_h = alloc[Scalar[dtype]](y_size + (64 if guard_output else 0))
+        var pool_gpu_h = alloc[Scalar[state_dtype]](pool_size)
+        for i in range(pool_size):
+            pool_gpu_h.store(i, pool_init_h.load(i))
+        run_ssd_gpu[
+            DSTATE,
+            DSTATE_SPLIT,
+            CH_PER_THREAD,
+            prefill,
+            guard_output=guard_output,
+            grouped_pair=grouped_pair,
+            grouped_mode=grouped_mode,
+            use_grouped_default=use_grouped_default,
+        ](
+            ctx,
+            nheads,
+            head_dim,
+            ngroups,
+            max_slots,
+            batch,
+            total_len,
+            x_row,
+            bc_row,
+            D_size,
+            dt_bias_size,
+            his_size,
+            us_size,
+            x_h,
+            dt_h,
+            A_h,
+            B_h,
+            C_h,
+            D_h,
+            dt_bias_h,
+            qsl_h,
+            his_h,
+            us_h,
+            slot_h,
+            y_gpu_h,
+            pool_gpu_h,
+        )
+        # A bf16 pool adds one rounding at the final write-back (<= 2^-9
+        # relative), well inside rtol.
+        _check_outputs(
+            y_ref_h,
+            fs_ref_h,
+            slot_h,
+            batch,
+            y_size,
+            state_size,
+            y_gpu_h,
+            pool_gpu_h,
+            rtol,
+            "GPU",
+            atol_frac,
+        )
+
+        if guard_output or slot_stride != 1 or update_flags:
+            check_preserved_slots(
+                pool_gpu_h,
+                pool_init_h,
+                slot_h,
+                us_h,
+                us_size,
+                batch,
+                state_size,
+                max_slots,
+            )
+
+        comptime if DSTATE_SPLIT < 0:
+            # The chunked scan rounds its matmul operands (decayed scores, chunk
+            # states) to bf16, so it is compared with the serial split kernel
+            # (split 16, 4 channels per thread, the production decode tile) at a
+            # bf16-sized tolerance relative to the largest output and state.
+            var y_ser_h = alloc[Scalar[dtype]](
+                y_size + (64 if guard_output else 0)
+            )
+            var pool_ser_h = alloc[Scalar[state_dtype]](pool_size)
+            for i in range(pool_size):
+                pool_ser_h.store(i, pool_init_h.load(i))
+            run_ssd_gpu[DSTATE, 16, 4, prefill, guard_output=guard_output](
+                ctx,
+                nheads,
+                head_dim,
+                ngroups,
+                max_slots,
+                batch,
+                total_len,
+                x_row,
+                bc_row,
+                D_size,
+                dt_bias_size,
+                his_size,
+                us_size,
+                x_h,
+                dt_h,
+                A_h,
+                B_h,
+                C_h,
+                D_h,
+                dt_bias_h,
+                qsl_h,
+                his_h,
+                us_h,
+                slot_h,
+                y_ser_h,
+                pool_ser_h,
+            )
+            if guard_output or slot_stride != 1 or update_flags:
+                check_preserved_slots(
+                    pool_ser_h,
+                    pool_init_h,
+                    slot_h,
+                    us_h,
+                    us_size,
+                    batch,
+                    state_size,
+                    max_slots,
+                )
+            check_chunked_parity(
+                y_ser_h, y_gpu_h, pool_ser_h, pool_gpu_h, y_size, pool_size
+            )
+            # Determinism: no atomics, so a second launch on the same inputs and
+            # initial pool must match the first bit for bit.
+            var y_rep_h = alloc[Scalar[dtype]](
+                y_size + (64 if guard_output else 0)
+            )
+            var pool_rep_h = alloc[Scalar[state_dtype]](pool_size)
+            for i in range(pool_size):
+                pool_rep_h.store(i, pool_init_h.load(i))
+            run_ssd_gpu[
+                DSTATE,
+                DSTATE_SPLIT,
+                CH_PER_THREAD,
+                prefill,
+                guard_output=guard_output,
+                grouped_pair=grouped_pair,
+                grouped_mode=grouped_mode,
+                use_grouped_default=use_grouped_default,
+            ](
+                ctx,
+                nheads,
+                head_dim,
+                ngroups,
+                max_slots,
+                batch,
+                total_len,
+                x_row,
+                bc_row,
+                D_size,
+                dt_bias_size,
+                his_size,
+                us_size,
+                x_h,
+                dt_h,
+                A_h,
+                B_h,
+                C_h,
+                D_h,
+                dt_bias_h,
+                qsl_h,
+                his_h,
+                us_h,
+                slot_h,
+                y_rep_h,
+                pool_rep_h,
+            )
+            for i in range(y_size):
+                if y_rep_h.load(i) != y_gpu_h.load(i):
+                    raise Error(
+                        "chunked y is not deterministic at index " + String(i)
                     )
+            for i in range(pool_size):
+                if pool_rep_h.load(i) != pool_gpu_h.load(i):
+                    raise Error(
+                        "chunked state is not deterministic at pool index "
+                        + String(i)
+                    )
+            y_rep_h.free()
+            pool_rep_h.free()
+            y_ser_h.free()
+            pool_ser_h.free()
 
-    var x_layout = MixedLayout(
-        (total_len, nheads, head_dim), (x_row, head_dim, 1)
-    )
-    var bc_layout = MixedLayout(
-        (total_len, ngroups, dstate), (bc_row, dstate, 1)
-    )
-    var his_size = batch if init_state else 0
-
-    # ---- CPU kernel (fp32 pool) ----
-    var y_cpu_h = alloc[Scalar[dtype]](y_size)
-    var pool_cpu_h = alloc[Float32](pool_size)
-    for i in range(pool_size):
-        pool_cpu_h.store(i, pool_init_h.load(i).cast[.float32]())
-    _scan_cpu[DSTATE](
-        TileTensor(x_h, x_layout),
-        TileTensor(dt_h, row_major(total_len, nheads)),
-        TileTensor(A_h, row_major(nheads)),
-        TileTensor(B_h, bc_layout),
-        TileTensor(C_h, bc_layout),
-        TileTensor(D_h, row_major(D_size)),
-        TileTensor(dt_bias_h, row_major(dt_bias_size)),
-        TileTensor(y_cpu_h, row_major(total_len, nheads, head_dim)),
-        TileTensor(pool_cpu_h, row_major(max_slots, nheads, head_dim, dstate)),
-        TileTensor(qsl_h, row_major(batch + 1)),
-        TileTensor(his_h, row_major(his_size)),
-        TileTensor(us_h, row_major(us_size)),
-        TileTensor(slot_h, row_major(batch)),
-    )
-    _check_outputs(
-        y_ref_h,
-        fs_ref_h,
-        slot_h,
-        batch,
-        y_size,
-        state_size,
-        y_cpu_h,
-        pool_cpu_h,
-        rtol,
-        "CPU",
-        atol_frac,
-    )
-
-    # ---- GPU kernel ----
-    var y_gpu_h = alloc[Scalar[dtype]](y_size)
-    var pool_gpu_h = alloc[Scalar[state_dtype]](pool_size)
-    for i in range(pool_size):
-        pool_gpu_h.store(i, pool_init_h.load(i))
-    _run_gpu[DSTATE, DSTATE_SPLIT, CH_PER_THREAD, prefill](
-        ctx,
-        nheads,
-        head_dim,
-        ngroups,
-        max_slots,
-        batch,
-        total_len,
-        x_row,
-        bc_row,
-        D_size,
-        dt_bias_size,
-        his_size,
-        us_size,
-        x_h,
-        dt_h,
-        A_h,
-        B_h,
-        C_h,
-        D_h,
-        dt_bias_h,
-        qsl_h,
-        his_h,
-        us_h,
-        slot_h,
-        y_gpu_h,
-        pool_gpu_h,
-    )
-    # A bf16 pool adds one rounding at the final write-back (<= 2^-9
-    # relative), well inside rtol.
-    _check_outputs(
-        y_ref_h,
-        fs_ref_h,
-        slot_h,
-        batch,
-        y_size,
-        state_size,
-        y_gpu_h,
-        pool_gpu_h,
-        rtol,
-        "GPU",
-        atol_frac,
-    )
-
-    comptime if DSTATE_SPLIT < 0:
-        # The chunked scan rounds its matmul operands (decayed scores, chunk
-        # states) to bf16, so it is compared with the serial split kernel
-        # (split 16, 4 channels per thread, the production decode tile) at a
-        # bf16-sized tolerance relative to the largest output and state.
-        var y_ser_h = alloc[Scalar[dtype]](y_size)
-        var pool_ser_h = alloc[Scalar[state_dtype]](pool_size)
-        for i in range(pool_size):
-            pool_ser_h.store(i, pool_init_h.load(i))
-        _run_gpu[DSTATE, 16, 4, True](
-            ctx,
-            nheads,
-            head_dim,
-            ngroups,
-            max_slots,
-            batch,
-            total_len,
-            x_row,
-            bc_row,
-            D_size,
-            dt_bias_size,
-            his_size,
-            us_size,
-            x_h,
-            dt_h,
-            A_h,
-            B_h,
-            C_h,
-            D_h,
-            dt_bias_h,
-            qsl_h,
-            his_h,
-            us_h,
-            slot_h,
-            y_ser_h,
-            pool_ser_h,
-        )
-        var y_max = Float32(0)
-        for i in range(y_size):
-            y_max = max(y_max, abs(Float32(y_ser_h.load(i))))
-        for i in range(y_size):
-            assert_almost_equal(
-                Float32(y_ser_h.load(i)),
-                Float32(y_gpu_h.load(i)),
-                rtol=0.03,
-                atol=Float64(0.01 * y_max),
-                msg="chunked vs serial y mismatch at index " + String(i),
+        comptime if check_parity:
+            comptime assert DSTATE_SPLIT > 0, "parity compares split tiles"
+            var y_base_h = alloc[Scalar[dtype]](
+                y_size + (64 if guard_output else 0)
             )
-        var s_max = Float32(0)
-        for i in range(pool_size):
-            s_max = max(s_max, abs(Float32(pool_ser_h.load(i))))
-        for i in range(pool_size):
-            assert_almost_equal(
-                Float32(pool_ser_h.load(i)),
-                Float32(pool_gpu_h.load(i)),
-                rtol=0.03,
-                atol=Float64(0.01 * s_max),
-                msg="chunked vs serial state mismatch at pool index "
-                + String(i),
+            var pool_base_h = alloc[Scalar[state_dtype]](pool_size)
+            for i in range(pool_size):
+                pool_base_h.store(i, pool_init_h.load(i))
+            run_ssd_gpu[DSTATE, 8, 1, prefill, guard_output=guard_output](
+                ctx,
+                nheads,
+                head_dim,
+                ngroups,
+                max_slots,
+                batch,
+                total_len,
+                x_row,
+                bc_row,
+                D_size,
+                dt_bias_size,
+                his_size,
+                us_size,
+                x_h,
+                dt_h,
+                A_h,
+                B_h,
+                C_h,
+                D_h,
+                dt_bias_h,
+                qsl_h,
+                his_h,
+                us_h,
+                slot_h,
+                y_base_h,
+                pool_base_h,
             )
-        # Determinism: no atomics, so a second launch on the same inputs and
-        # initial pool must match the first bit for bit.
-        var y_rep_h = alloc[Scalar[dtype]](y_size)
-        var pool_rep_h = alloc[Scalar[state_dtype]](pool_size)
-        for i in range(pool_size):
-            pool_rep_h.store(i, pool_init_h.load(i))
-        _run_gpu[DSTATE, DSTATE_SPLIT, CH_PER_THREAD, prefill](
-            ctx,
-            nheads,
-            head_dim,
-            ngroups,
-            max_slots,
-            batch,
-            total_len,
-            x_row,
-            bc_row,
-            D_size,
-            dt_bias_size,
-            his_size,
-            us_size,
-            x_h,
-            dt_h,
-            A_h,
-            B_h,
-            C_h,
-            D_h,
-            dt_bias_h,
-            qsl_h,
-            his_h,
-            us_h,
-            slot_h,
-            y_rep_h,
-            pool_rep_h,
-        )
-        for i in range(y_size):
-            if y_rep_h.load(i) != y_gpu_h.load(i):
-                raise Error(
-                    "chunked y is not deterministic at index " + String(i)
-                )
-        for i in range(pool_size):
-            if pool_rep_h.load(i) != pool_gpu_h.load(i):
-                raise Error(
-                    "chunked state is not deterministic at pool index "
-                    + String(i)
-                )
-        y_rep_h.free()
-        pool_rep_h.free()
-        y_ser_h.free()
-        pool_ser_h.free()
+            _check_tile_parity(
+                y_base_h, y_gpu_h, pool_base_h, pool_gpu_h, y_size, pool_size
+            )
+            y_base_h.free()
+            pool_base_h.free()
 
-    comptime if check_parity:
-        comptime assert DSTATE_SPLIT > 0, "parity compares split tiles"
-        var y_base_h = alloc[Scalar[dtype]](y_size)
-        var pool_base_h = alloc[Scalar[state_dtype]](pool_size)
-        for i in range(pool_size):
-            pool_base_h.store(i, pool_init_h.load(i))
-        _run_gpu[DSTATE, 8, 1, prefill](
-            ctx,
-            nheads,
-            head_dim,
-            ngroups,
-            max_slots,
-            batch,
-            total_len,
-            x_row,
-            bc_row,
-            D_size,
-            dt_bias_size,
-            his_size,
-            us_size,
-            x_h,
-            dt_h,
-            A_h,
-            B_h,
-            C_h,
-            D_h,
-            dt_bias_h,
-            qsl_h,
-            his_h,
-            us_h,
-            slot_h,
-            y_base_h,
-            pool_base_h,
-        )
-        _check_tile_parity(
-            y_base_h, y_gpu_h, pool_base_h, pool_gpu_h, y_size, pool_size
-        )
-        y_base_h.free()
-        pool_base_h.free()
-
-    x_h.free()
-    dt_h.free()
-    A_h.free()
-    B_h.free()
-    C_h.free()
-    D_h.free()
-    dt_bias_h.free()
-    his_h.free()
-    us_h.free()
-    qsl_h.free()
-    slot_h.free()
-    is_h.free()
-    y_ref_h.free()
-    fs_ref_h.free()
-    pool_init_h.free()
-    y_cpu_h.free()
-    pool_cpu_h.free()
-    y_gpu_h.free()
-    pool_gpu_h.free()
+        x_h.free()
+        dt_h.free()
+        A_h.free()
+        B_h.free()
+        C_h.free()
+        D_h.free()
+        dt_bias_h.free()
+        his_h.free()
+        us_h.free()
+        qsl_h.free()
+        slot_h.free()
+        is_h.free()
+        y_ref_h.free()
+        fs_ref_h.free()
+        pool_init_h.free()
+        y_cpu_h.free()
+        pool_cpu_h.free()
+        y_gpu_h.free()
+        pool_gpu_h.free()
 
 
 def test_mamba2_ssd_varlen_no_cross_sequence_bleed() raises:
@@ -1004,25 +882,29 @@ def test_mamba2_ssd_varlen_no_cross_sequence_bleed() raises:
         qsl_s_h.store(1, Int32(slen))
         _scan_cpu[dstate](
             TileTensor(
-                x_h + off * nheads * head_dim,
+                x_h.unsafe_offset(off * nheads * head_dim),
                 row_major(slen, nheads, head_dim),
             ),
-            TileTensor(dt_h + off * nheads, row_major(slen, nheads)),
+            TileTensor(
+                dt_h.unsafe_offset(off * nheads), row_major(slen, nheads)
+            ),
             A_tt,
             TileTensor(
-                B_h + off * ngroups * dstate, row_major(slen, ngroups, dstate)
+                B_h.unsafe_offset(off * ngroups * dstate),
+                row_major(slen, ngroups, dstate),
             ),
             TileTensor(
-                C_h + off * ngroups * dstate, row_major(slen, ngroups, dstate)
+                C_h.unsafe_offset(off * ngroups * dstate),
+                row_major(slen, ngroups, dstate),
             ),
             D_tt,
             dt_bias_tt,
             TileTensor(
-                y_indep + off * nheads * head_dim,
+                y_indep.unsafe_offset(off * nheads * head_dim),
                 row_major(slen, nheads, head_dim),
             ),
             TileTensor(
-                pool_indep + s * state_size,
+                pool_indep.unsafe_offset(s * state_size),
                 row_major(1, nheads, head_dim, dstate),
             ),
             TileTensor(qsl_s_h, row_major(2)),
@@ -1632,6 +1514,165 @@ def test_mamba2_ssd_chunked_dispatch() raises:
     assert_true(use_chunked_ssd(4096, 1, 128, MIN))
     # A huge threshold pins the serial kernel.
     assert_false(use_chunked_ssd(70000, 1, 64, 1000000000))
+
+
+def _check_ssd_grouped() raises:
+    with DeviceContext() as ctx:
+        comptime if not ctx.target._is_sm_8x_or_newer():
+            raise Error("grouped SSD checks require NVIDIA SM80 or newer")
+        seed(1234)
+        run_mamba2_ssd[
+            .bfloat16,
+            128,
+            -1,
+            signed=True,
+            dt_offset=-9.0,
+            update_flags=True,
+            guard_output=True,
+            grouped_pair=True,
+            grouped_mode=GROUPED_CB_ON,
+        ](
+            8,
+            64,
+            2,
+            8,
+            Index(257, 1, 513),
+            ctx,
+            row_pad=32,
+            slot_stride=2,
+            atol_frac=0.02,
+        )
+        run_mamba2_ssd[
+            .bfloat16,
+            128,
+            -1,
+            init_state=True,
+            signed=True,
+            dt_offset=-9.0,
+            update_flags=True,
+            guard_output=True,
+            grouped_pair=True,
+            grouped_mode=GROUPED_CB_ON,
+        ](
+            8,
+            128,
+            2,
+            8,
+            Index(255, 257, 1),
+            ctx,
+            row_pad=32,
+            slot_stride=2,
+            atol_frac=0.02,
+        )
+        run_mamba2_ssd[
+            .bfloat16,
+            128,
+            -1,
+            state_dtype=.bfloat16,
+            init_state=True,
+            signed=True,
+            dt_offset=-9.0,
+            update_flags=True,
+            guard_output=True,
+            grouped_pair=True,
+            grouped_mode=GROUPED_CB_ON,
+        ](
+            8,
+            64,
+            2,
+            8,
+            Index(255, 257, 1),
+            ctx,
+            row_pad=32,
+            slot_stride=2,
+            atol_frac=0.02,
+        )
+        run_mamba2_ssd[
+            .bfloat16,
+            128,
+            -1,
+            init_state=True,
+            signed=True,
+            dt_offset=-9.0,
+            update_flags=True,
+            guard_output=True,
+            grouped_pair=True,
+            grouped_mode=GROUPED_CB_ON,
+        ](
+            8,
+            64,
+            8,
+            8,
+            Index(255, 257, 1),
+            ctx,
+            row_pad=32,
+            slot_stride=2,
+            atol_frac=0.02,
+        )
+        print("SSD_GROUPED_ORACLE_PASS,4")
+
+
+def test_mamba2_ssd_grouped_policy() raises:
+    assert_true(use_grouped_cb_ssd(8192, 1, 32, 128, 4))
+    assert_true(use_grouped_cb_ssd(16384, 1, 16, 128, 2))
+    assert_false(use_grouped_cb_ssd(16383, 1, 16, 128, 2))
+    assert_true(use_grouped_cb_ssd(8192, 1, 64, 128, 8))
+    assert_false(use_grouped_cb_ssd(8191, 1, 64, 128, 8))
+    assert_true(use_grouped_cb_ssd(32768, 4, 32, 128, 4))
+    assert_false(use_grouped_cb_ssd(32767, 4, 32, 128, 4))
+    assert_true(use_grouped_cb_ssd(10923, 1, 24, 128, 3))
+    assert_false(use_grouped_cb_ssd(10922, 1, 24, 128, 3))
+    assert_false(use_grouped_cb_ssd(8192, 1, 32, 128, 8))
+    assert_false(use_grouped_cb_ssd(8192, 1, 33, 128, 4))
+    assert_false(use_grouped_cb_ssd(8192, 1, 32, 64, 4))
+    assert_false(use_grouped_cb_ssd(8192, 1, 32, 80, 4))
+    assert_false(use_grouped_cb_ssd(8192, 1, 32, 256, 4))
+    assert_false(use_grouped_cb_ssd(8192, 0, 32, 128, 4))
+    assert_false(use_grouped_cb_ssd(8192, -1, 32, 128, 4))
+    assert_false(use_grouped_cb_ssd(8192, 1, 0, 128, 4))
+    assert_false(use_grouped_cb_ssd(8192, 1, 32, 128, 0))
+    assert_false(use_grouped_cb_ssd(0, 1, 32, 128, 4))
+    assert_false(use_grouped_cb_ssd(-1, 1, 32, 128, 4))
+
+
+def test_mamba2_ssd_grouped_oracle() raises:
+    with DeviceContext() as ctx:
+        comptime if ctx.target._is_sm_8x_or_newer():
+            _check_ssd_grouped()
+
+
+def test_mamba2_ssd_grouped_auto() raises:
+    with DeviceContext() as ctx:
+        comptime if (
+            ctx.target.is_nvidia_gpu["sm_100"]()
+            or ctx.target.is_nvidia_gpu["sm_100a"]()
+        ):
+            assert_true(use_grouped_cb_ssd(8192, 1, 32, 128, 4))
+            print("SSD_AUTO_DEVICE_NAME,", ctx.name(), sep="")
+            if ctx.name() == "NVIDIA B200":
+                run_mamba2_ssd[
+                    .bfloat16,
+                    128,
+                    -1,
+                    init_state=True,
+                    guard_output=True,
+                    grouped_pair=True,
+                    grouped_mode=GROUPED_CB_AUTO,
+                    check_reference=False,
+                ](32, 128, 4, 3, Index(8192), ctx)
+                print("SSD_AUTO_ENABLED_CHECK_PASS")
+                run_mamba2_ssd[
+                    .bfloat16,
+                    128,
+                    -1,
+                    init_state=True,
+                    guard_output=True,
+                    grouped_pair=True,
+                    grouped_mode=GROUPED_CB_AUTO,
+                    check_reference=False,
+                    use_grouped_default=True,
+                ](32, 128, 4, 3, Index(8192), ctx)
+                print("SSD_DEFAULT_ENABLED_CHECK_PASS")
 
 
 def main() raises:

@@ -190,7 +190,7 @@ def _rowmajor_fold_spike_kernel[
         name="rowmajor_fold_spike_smem",
     ]()
     var smem_ref = smem_base
-    var smem_test = smem_base + smem_elems
+    var smem_test = smem_base.unsafe_offset(smem_elems)
 
     var mbar = unsafe_stack_allocation[
         1,
@@ -213,8 +213,12 @@ def _rowmajor_fold_spike_kernel[
         # Both paths land on this single barrier.
         mbar[].expect_bytes(Int32(expect_total))
 
-        var ref_desc_ptr = Pointer(to=ref_tma.descriptor).bitcast[NoneType]()
-        var test_desc_ptr = Pointer(to=test_tma.descriptor).bitcast[NoneType]()
+        var ref_desc_ptr = Pointer(to=ref_tma.descriptor).unsafe_bitcast[
+            NoneType
+        ]()
+        var test_desc_ptr = Pointer(to=test_tma.descriptor).unsafe_bitcast[
+            NoneType
+        ]()
 
         # ---- REFERENCE: one TMA per atom, landing at chunk-inner offset ------
         # gmem coord (CUDA fastest-first) for the rank-2 (head_size, BN)-like
@@ -231,7 +235,7 @@ def _rowmajor_fold_spike_kernel[
                     var row = p * page_size + ar * CM
                     var depth = c * gran
                     cp_async_bulk_tensor_shared_cluster_global(
-                        (smem_ref + smem_off),
+                        (smem_ref.unsafe_offset(smem_off)),
                         ref_desc_ptr,
                         mbar,
                         IndexList[2](depth, row),
@@ -246,7 +250,7 @@ def _rowmajor_fold_spike_kernel[
             comptime for p in range(pages_per_iter):
                 var smem_off = p * (atom_rows_per_page * num_chunks * CM * gran)
                 cp_async_bulk_tensor_shared_cluster_global(
-                    (smem_test + smem_off),
+                    (smem_test.unsafe_offset(smem_off)),
                     test_desc_ptr,
                     mbar,
                     IndexList[5](0, 0, 0, p * atom_rows_per_page, head_idx),
@@ -376,11 +380,13 @@ def run_spike[
     # gmem[row, head_idx, depth].  globalDim/strides describe the 2D
     # [row, depth] sub-view with row stride = num_heads*head_size.
     comptime ref_box = Index(CM, gran)
-    var head_base = gmem_ptr + head_idx * head_size
+    var head_base = gmem_ptr.unsafe_offset(head_idx * head_size)
     var ref_desc = create_tma_descriptor[dtype, 2, swizzle](
         DeviceBuffer(
             ctx,
-            head_base.unsafe_mut_cast[True]().address_space_cast[.GENERIC](),
+            head_base.unsafe_mut_cast[True]().unsafe_address_space_cast[
+                .GENERIC
+            ](),
             1,
             owning=False,
         ),
@@ -419,7 +425,9 @@ def run_spike[
         var test_desc = create_tma_descriptor[dtype, 5, swizzle](
             DeviceBuffer(
                 ctx,
-                gmem_ptr.unsafe_mut_cast[True]().address_space_cast[.GENERIC](),
+                gmem_ptr.unsafe_mut_cast[True]().unsafe_address_space_cast[
+                    .GENERIC
+                ](),
                 1,
                 owning=False,
             ),

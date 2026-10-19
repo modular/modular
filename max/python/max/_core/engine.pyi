@@ -556,7 +556,7 @@ class DebugConfig:
     @property
     def assert_level(self) -> str:
         r"""
-        A string that sets the Mojo assertion level for compiled kernels. One of ``\'\'``, ``'none'``, ``'warn'``, ``'safe'``, ``'all'``. Higher levels enable more runtime checks (such as LayoutTensor bounds) at a performance cost. Takes effect at model build time.
+        A string that sets the Mojo assertion level for compiled kernels. One of ``\'\'``, ``'none'``, ``'warn'``, ``'safe'``, ``'all'``. Higher levels enable more runtime checks at a performance cost. Takes effect at model build time.
         """
 
     @assert_level.setter

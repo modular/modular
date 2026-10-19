@@ -59,7 +59,7 @@ from layout.layout import (
     tile_to_shape,
     upcast,
 )
-from layout.tile_layout import Layout as TileLayout
+from layout.tile_layout import Layout as TileLayout, row_major as tile_row_major
 
 from std.utils import IndexList, StaticTuple
 
@@ -249,8 +249,10 @@ def warpgroup_fence[
             reg
         )
 
-    comptime for i in range(type_of(accum).LayoutType.static_product):
-        _warpgroup_fence_operand(accum.raw_load[invariant=False](i))
+    comptime num_regs = type_of(accum).LayoutType.static_product
+    var accum_flat = accum.reshape(tile_row_major[num_regs]())
+    comptime for i in range(num_regs):
+        _warpgroup_fence_operand(accum_flat.load[invariant=False]((Idx[i],)))
 
 
 # constructs core matrix or "minimal dense" layout in bytes as described in file

@@ -13,7 +13,7 @@
 
 from std.atomic import Atomic
 from std.memory import unsafe_stack_allocation
-from std.sys.intrinsics import strided_load, strided_store
+from std.sys.intrinsics import prefetch, strided_load, strided_store
 from std.testing import assert_equal
 
 from max.gpu import thread_idx
@@ -50,6 +50,7 @@ def _kernel(output: MutPointer[Float32, MutAnyOrigin]):
 
 
 def _atomic_kernel(counters: MutPointer[Int32, MutAnyOrigin]):
+    prefetch(counters)
     # Default orderings; Metal rejects sequentially consistent ones.
     _ = Atomic[Int32].fetch_add(counters, Int32(1))
     Atomic[Int32].max(counters.unsafe_offset(1), Int32(thread_idx.x))

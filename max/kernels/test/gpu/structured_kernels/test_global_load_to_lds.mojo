@@ -51,8 +51,10 @@ def _gather_rows_through_lds(
         var col = chunk % CHUNKS_PER_ROW
         var row = Int(indices[slot])
         _global_load_to_lds[width=LANE_BYTES](
-            src_global + row * ROW_BYTES + col * LANE_BYTES,
-            smem + r * WARP_SIZE * LANE_BYTES,
+            src_global.unsafe_offset(row * ROW_BYTES).unsafe_offset(
+                col * LANE_BYTES
+            ),
+            smem.unsafe_offset(r * WARP_SIZE * LANE_BYTES),
         )
     s_waitcnt[vmcnt=0]()
     comptime for r in range(NUM_CHUNKS // WARP_SIZE):

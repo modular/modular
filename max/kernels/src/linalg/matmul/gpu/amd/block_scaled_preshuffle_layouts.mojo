@@ -475,8 +475,8 @@ struct Shuffler[E: Int]:
         K_BYTES: Int,
         lane_bytes: Int,
     ](
-        raw: UnsafePointer[UInt8, ImmutAnyOrigin],
-        dst: UnsafePointer[UInt8, MutAnyOrigin],
+        raw: ImmPointer[UInt8, ImmutAnyOrigin],
+        dst: MutPointer[UInt8, MutAnyOrigin],
         num_frags: Int32,
     ):
         """Scatters each lane fragment into its planes.
@@ -500,7 +500,7 @@ struct Shuffler[E: Int]:
             var e, n = divmod(e_n, N)
             var k_byte = frag * lane_bytes
 
-            var src = raw + (e * N * K_BYTES + n * K_BYTES + k_byte)
+            var src = raw.unsafe_offset(e * N * K_BYTES + n * K_BYTES + k_byte)
 
             comptime for pl in range(num_planes):
                 comptime pb = Self.plane_bytes[lane_bytes, pl]()
@@ -652,9 +652,7 @@ struct Shuffler[E: Int]:
                     # ElementType is `SIMD[.uint8, SrcEngine.element_size]`,
                     # but only scalar engines are accepted (asserted above),
                     # so a width-1 load yields a `UInt8` scalar.
-                    dst[byte_off] = UInt8(
-                        src.load[width=1](Coord(e, mn, k_scale))
-                    )
+                    dst[byte_off] = UInt8(src.load[width=1]((e, mn, k_scale)))
 
             for mn in range(MN, MN_padded):
                 for k_scale in range(K_SCALES):
@@ -740,10 +738,9 @@ struct Shuffler[E: Int]:
         var current_tile = 0
 
         for expert_slot in range(_num_active_experts):
-            var token_start = Int(a_offsets.load[width=1](Coord(expert_slot)))
+            var token_start = Int(a_offsets.load[width=1]((expert_slot,)))
             var num_tokens = (
-                Int(a_offsets.load[width=1](Coord(expert_slot + 1)))
-                - token_start
+                Int(a_offsets.load[width=1]((expert_slot + 1,))) - token_start
             )
 
             # Empty slot — contributes zero tiles to the global counter,
@@ -791,13 +788,15 @@ struct Shuffler[E: Int]:
                             cell_bytes[
                                 k_pack * Self.S_MN_PACK + mn_pack
                             ] = sfa_raw.load[width=1](
-                                Coord((token_start + src_mn), src_k)
+                                ((token_start + src_mn), src_k)
                             )
 
                 var cell_byte_off = Self.scale_4d_slot_byte_off[
                     K_SCALES=K_SCALES, packed_mode=True
                 ](expert_slot, cell_mn_base, cell_k_base, _max_padded_M)
-                var dst_ptr = (sfa_pre.ptr + cell_byte_off).bitcast[Int32]()
+                var dst_ptr = sfa_pre.ptr.unsafe_offset(
+                    cell_byte_off
+                ).unsafe_bitcast[Int32]()
                 dst_ptr[0] = bitcast[.int32, 1](cell_bytes)[0]
 
                 target_tile += _total_wg

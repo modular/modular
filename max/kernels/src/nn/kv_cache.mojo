@@ -63,7 +63,7 @@ from nn.normalization import _rms_norm_impl, _rms_norm_warp_tiling_subkernel
 from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 from std.utils.numerics import get_accum_type
 
-from std.utils import Index, IndexList
+from std.utils import IndexList
 from extensibility import InputTensor
 from extensibility import (
     _MutableInputTensor as MutableInputTensor,
@@ -276,11 +276,11 @@ def _fused_qkv_matmul_kv_cache_impl[
         var output,
     }:
         comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
-        var col = Int(idx[1].value())
-        var b_idx, t_idx = udivmod(Int(idx[0].value()), SEQ_LEN)
+        var col = Int(idx[1])
+        var b_idx, t_idx = udivmod(Int(idx[0]), SEQ_LEN)
         if col < q_dim:
-            output.store[width=width, alignment=align_of[dtype]()](
-                Coord(b_idx, t_idx, col),
+            output.store[alignment=align_of[dtype]()](
+                (b_idx, t_idx, col),
                 rebind[SIMD[dtype, width]](val),
             )
             return
@@ -345,7 +345,7 @@ def _matmul_common[
         var c_alloc = alloc(
             AllocLayout[Scalar[dtype]](count=BS * SEQ_LEN * N)
         ).into_managed()
-        var c_ptr: UnsafePointer[
+        var c_ptr: MutPointer[
             Scalar[dtype], origin_of(c_alloc)
         ] = c_alloc.unsafe_ptr()
         var c_nd = TileTensor(c_ptr, row_major(BS * SEQ_LEN, Idx[N]))
@@ -582,12 +582,12 @@ def _fused_qk_rms_norm_ragged_paged_gpu[
                 head_idx=head_idx,
                 head_dim_idx=idx,
             ).cast[accum_type]()
-            gamma_val = k_gamma.load[width=simd_width](Coord(idx))
+            gamma_val = k_gamma.load[width=simd_width]((idx,))
         else:
             vec_data = q_proj.load[width=simd_width](
-                Coord(Index(global_token_idx, head_idx, idx))
+                (global_token_idx, head_idx, idx)
             ).cast[accum_type]()
-            gamma_val = q_gamma.load[width=simd_width](Coord(idx))
+            gamma_val = q_gamma.load[width=simd_width]((idx,))
 
     var norm_val = _rms_norm_warp_tiling_subkernel[
         warps_per_block, multiply_before_cast
@@ -615,9 +615,7 @@ def _fused_qk_rms_norm_ragged_paged_gpu[
                 val=norm_val.cast[cache_t.dtype](),
             )
         else:
-            q_output.store[width=simd_width](
-                Coord(Index(global_token_idx, head_idx, idx)), norm_val
-            )
+            q_output.store((global_token_idx, head_idx, idx), norm_val)
 
 
 def fused_qk_rms_norm_ragged_paged[
@@ -863,12 +861,12 @@ def _fused_qk_rms_norm_rope_process_row[
                     head_idx=head_idx,
                     head_dim_idx=idx,
                 ).cast[accum_type]()
-                gamma_val = k_gamma.load[width=simd_width](Coord(idx))
+                gamma_val = k_gamma.load[width=simd_width]((idx,))
         else:
             vec_data = q_input_fn[
                 simd_width, align_of[SIMD[dtype, simd_width]]()
             ](global_token_idx, head_idx, idx).cast[accum_type]()
-            gamma_val = q_gamma.load[width=simd_width](Coord(idx))
+            gamma_val = q_gamma.load[width=simd_width]((idx,))
 
     var norm_val = _rms_norm_warp_tiling_subkernel[
         warps_per_block, multiply_before_cast
@@ -894,7 +892,7 @@ def _fused_qk_rms_norm_rope_process_row[
         alignment=smem_align,
     ](row_major[head_dim]())
     if idx < num_cols:
-        s_norm.store[width=simd_width](Coord(idx), norm_val.cast[accum_type]())
+        s_norm.store((idx,), norm_val.cast[accum_type]())
     barrier()
 
     if idx >= num_cols:
@@ -908,10 +906,8 @@ def _fused_qk_rms_norm_rope_process_row[
     comptime width_2 = simd_width // 2
 
     comptime if interleaved:
-        var freq_val = freqs_cis.load[width=simd_width](
-            Coord((post_seq_idx, idx))
-        )
-        var val = s_norm.load[width=simd_width](Coord(idx))
+        var freq_val = freqs_cis.load[width=simd_width]((post_seq_idx, idx))
+        var val = s_norm.load[width=simd_width]((idx,))
         var res = rope_value(val, freq_val.cast[accum_type]()).cast[dtype]()
         if is_k:
             comptime if not q_only:
@@ -923,9 +919,8 @@ def _fused_qk_rms_norm_rope_process_row[
                     val=cast_saturating[cache_t.dtype](res),
                 )
         else:
-            q_output.store[width=simd_width](
-                Coord(Index(global_token_idx, head_idx, idx)),
-                res.cast[q_out_dtype](),
+            q_output.store(
+                (global_token_idx, head_idx, idx), res.cast[q_out_dtype]()
             )
     else:
         # Non-interleaved (safetensors). With has_nope_prefix the roped region
@@ -933,9 +928,9 @@ def _fused_qk_rms_norm_rope_process_row[
         # un-roped (only normed). Without it, the whole head is roped.
         comptime if has_nope_prefix:
             if idx >= rope_dim:
-                var passthrough = s_norm.load[width=simd_width](
-                    Coord(idx)
-                ).cast[dtype]()
+                var passthrough = s_norm.load[width=simd_width]((idx,)).cast[
+                    dtype
+                ]()
                 if is_k:
                     comptime if not q_only:
                         k_cache.store(
@@ -946,22 +941,20 @@ def _fused_qk_rms_norm_rope_process_row[
                             val=cast_saturating[cache_t.dtype](passthrough),
                         )
                 else:
-                    q_output.store[width=simd_width](
-                        Coord(Index(global_token_idx, head_idx, idx)),
+                    q_output.store(
+                        (global_token_idx, head_idx, idx),
                         passthrough.cast[q_out_dtype](),
                     )
                 return
 
         comptime split_size = rope_dim if has_nope_prefix else head_dim
-        var freq_val = freqs_cis.load[width=simd_width](
-            Coord((post_seq_idx, idx))
-        )
+        var freq_val = freqs_cis.load[width=simd_width]((post_seq_idx, idx))
 
         var h_re, h_im = get_safetensors_idx(idx, split_size)
 
         var val = rebind[SIMD[accum_type, simd_width]](
-            s_norm.load[width=width_2](Coord(h_re)).interleave(
-                s_norm.load[width=width_2](Coord(h_im))
+            s_norm.load[width=width_2]((h_re,)).interleave(
+                s_norm.load[width=width_2]((h_im,))
             )
         )
         var res = rope_value(val, freq_val.cast[accum_type]()).cast[dtype]()
@@ -989,11 +982,11 @@ def _fused_qk_rms_norm_rope_process_row[
                 )
         else:
             q_output.store(
-                Coord(Index(global_token_idx, head_idx, h_re)),
+                (global_token_idx, head_idx, h_re),
                 output_re.cast[q_out_dtype](),
             )
             q_output.store(
-                Coord(Index(global_token_idx, head_idx, h_im)),
+                (global_token_idx, head_idx, h_im),
                 output_im.cast[q_out_dtype](),
             )
 
@@ -1840,7 +1833,7 @@ def nvfp4_kv_write_row[
     if norm_rope:
         var gamma_val = SIMD[dtype, simd_width](0)
         if active:
-            gamma_val = gamma.load[width=simd_width](Coord(idx))
+            gamma_val = gamma.load[width=simd_width]((idx,))
         var norm_val = _rms_norm_warp_tiling_subkernel[
             warps_per_block, multiply_before_cast
         ](
@@ -1858,9 +1851,7 @@ def nvfp4_kv_write_row[
             alignment=align_of[SIMD[accum_type, simd_width]](),
         ](row_major[head_dim]())
         if active:
-            s_norm.store[width=simd_width](
-                Coord(idx), norm_val.cast[accum_type]()
-            )
+            s_norm.store((idx,), norm_val.cast[accum_type]())
         barrier()
 
         # Non-interleaved RoPE writes each output pair to its partner columns,
@@ -1872,11 +1863,11 @@ def nvfp4_kv_write_row[
         if active:
             comptime if interleaved:
                 var freq_val = freqs_cis.load[width=simd_width](
-                    Coord((post_seq_idx, idx))
+                    (post_seq_idx, idx)
                 )
-                var val = s_norm.load[width=simd_width](Coord(idx))
-                s_row.store[width=simd_width](
-                    Coord(idx),
+                var val = s_norm.load[width=simd_width]((idx,))
+                s_row.store(
+                    (idx,),
                     rope_value(val, freq_val.cast[accum_type]()).cast[dtype](),
                 )
             else:
@@ -1889,28 +1880,28 @@ def nvfp4_kv_write_row[
                     )
                     comptime width_2 = simd_width // 2
                     var freq_val = freqs_cis.load[width=simd_width](
-                        Coord((post_seq_idx, idx))
+                        (post_seq_idx, idx)
                     )
                     var h_re, h_im = get_safetensors_idx(idx, split_size)
                     var val = rebind[SIMD[accum_type, simd_width]](
-                        s_norm.load[width=width_2](Coord(h_re)).interleave(
-                            s_norm.load[width=width_2](Coord(h_im))
+                        s_norm.load[width=width_2]((h_re,)).interleave(
+                            s_norm.load[width=width_2]((h_im,))
                         )
                     )
                     var res = rope_value(val, freq_val.cast[accum_type]()).cast[
                         dtype
                     ]()
                     var output_re, output_im = res.deinterleave()
-                    s_row.store(Coord(h_re), output_re)
-                    s_row.store(Coord(h_im), output_im)
+                    s_row.store((h_re,), output_re)
+                    s_row.store((h_im,), output_im)
                 else:
-                    s_row.store[width=simd_width](
-                        Coord(idx),
-                        s_norm.load[width=simd_width](Coord(idx)).cast[dtype](),
+                    s_row.store(
+                        (idx,),
+                        s_norm.load[width=simd_width]((idx,)).cast[dtype](),
                     )
         barrier()
         if active:
-            row = s_row.load[width=simd_width](Coord(idx))
+            row = s_row.load[width=simd_width]((idx,))
 
     comptime if cache_t.dtype == DType.uint8:
         comptime group = NVFP4_SF_VECTOR_SIZE
@@ -2623,7 +2614,7 @@ def rms_norm_kv_cache_ragged_paged[
             rank
         )
 
-        var global_token_idx = Int(idx[0].value())
+        var global_token_idx = Int(idx[0])
         var batch_idx, token_idx = get_batch_and_token_idx_from_row_offsets(
             input_row_offsets, global_token_idx
         )
@@ -2635,12 +2626,10 @@ def rms_norm_kv_cache_ragged_paged[
         var head_dim_idx: Int
 
         comptime if per_head_norm:
-            head_idx = Int(idx[1].value())
-            head_dim_idx = Int(idx[2].value())
+            head_idx = Int(idx[1])
+            head_dim_idx = Int(idx[2])
         else:
-            head_idx, head_dim_idx = divmod(
-                Int(idx[1].value()), params.head_size
-            )
+            head_idx, head_dim_idx = divmod(Int(idx[1]), params.head_size)
 
         return k_cache.load[width=width](
             bs=batch_idx,
@@ -2661,7 +2650,7 @@ def rms_norm_kv_cache_ragged_paged[
             rank
         )
 
-        var global_token_idx = Int(idx[0].value())
+        var global_token_idx = Int(idx[0])
         var batch_idx, token_idx = get_batch_and_token_idx_from_row_offsets(
             input_row_offsets, global_token_idx
         )
@@ -2673,12 +2662,10 @@ def rms_norm_kv_cache_ragged_paged[
         var head_dim_idx: Int
 
         comptime if per_head_norm:
-            head_idx = Int(idx[1].value())
-            head_dim_idx = Int(idx[2].value())
+            head_idx = Int(idx[1])
+            head_dim_idx = Int(idx[2])
         else:
-            head_idx, head_dim_idx = divmod(
-                Int(idx[1].value()), params.head_size
-            )
+            head_idx, head_dim_idx = divmod(Int(idx[1]), params.head_size)
         k_cache.store(
             bs=batch_idx,
             tok_idx=cache_token_idx,
@@ -2774,7 +2761,7 @@ def rms_norm_value_cache_ragged_paged[
             + String(rank)
         )
 
-        var global_token_idx = Int(idx[0].value())
+        var global_token_idx = Int(idx[0])
         var batch_idx, token_idx = get_batch_and_token_idx_from_row_offsets(
             input_row_offsets, global_token_idx
         )
@@ -2786,12 +2773,10 @@ def rms_norm_value_cache_ragged_paged[
         var head_dim_idx: Int
 
         comptime if per_head_norm:
-            head_idx = Int(idx[1].value())
-            head_dim_idx = Int(idx[2].value())
+            head_idx = Int(idx[1])
+            head_dim_idx = Int(idx[2])
         else:
-            head_idx, head_dim_idx = divmod(
-                Int(idx[1].value()), params.head_size
-            )
+            head_idx, head_dim_idx = divmod(Int(idx[1]), params.head_size)
 
         return v_cache.load[width=width](
             bs=batch_idx,
@@ -2811,7 +2796,7 @@ def rms_norm_value_cache_ragged_paged[
             + String(rank)
         )
 
-        var global_token_idx = Int(idx[0].value())
+        var global_token_idx = Int(idx[0])
         var batch_idx, token_idx = get_batch_and_token_idx_from_row_offsets(
             input_row_offsets, global_token_idx
         )
@@ -2823,12 +2808,10 @@ def rms_norm_value_cache_ragged_paged[
         var head_dim_idx: Int
 
         comptime if per_head_norm:
-            head_idx = Int(idx[1].value())
-            head_dim_idx = Int(idx[2].value())
+            head_idx = Int(idx[1])
+            head_dim_idx = Int(idx[2])
         else:
-            head_idx, head_dim_idx = divmod(
-                Int(idx[1].value()), params.head_size
-            )
+            head_idx, head_dim_idx = divmod(Int(idx[1]), params.head_size)
         v_cache.store(
             bs=batch_idx,
             tok_idx=cache_token_idx,
@@ -2957,9 +2940,7 @@ def _device_view[
 ](ctx: DeviceContext, tensor: TileTensor[dtype, ...]) -> DeviceBuffer[dtype]:
     # The pointer-pair `enqueue_copy` is device to device, which some drivers
     # reject for a pageable host destination.
-    return DeviceBuffer[dtype](
-        ctx, tensor.ptr, tensor.num_elements(), owning=False
-    )
+    return tensor.to_device_buffer(ctx)
 
 
 def print_kv_cache_paged_generic_gpu[
@@ -2985,7 +2966,7 @@ def print_kv_cache_paged_generic_gpu[
     var blocks_alloc = alloc(
         AllocLayout[Scalar[dtype]](count=n_blocks)
     ).into_managed()
-    var blocks_ptr: UnsafePointer[
+    var blocks_ptr: MutPointer[
         Scalar[dtype], origin_of(blocks_alloc)
     ] = blocks_alloc.unsafe_ptr()
     dev_ctx.enqueue_copy(
@@ -3000,7 +2981,7 @@ def print_kv_cache_paged_generic_gpu[
     var cache_lengths_alloc = alloc(
         AllocLayout[UInt32](count=n_cache_lengths)
     ).into_managed()
-    var cache_lengths_ptr: UnsafePointer[
+    var cache_lengths_ptr: MutPointer[
         UInt32, origin_of(cache_lengths_alloc)
     ] = cache_lengths_alloc.unsafe_ptr()
     dev_ctx.enqueue_copy(
@@ -3018,7 +2999,7 @@ def print_kv_cache_paged_generic_gpu[
     var lookup_table_alloc = alloc(
         AllocLayout[UInt32](count=n_lookup_table)
     ).into_managed()
-    var lookup_table_ptr: UnsafePointer[
+    var lookup_table_ptr: MutPointer[
         UInt32, origin_of(lookup_table_alloc)
     ] = lookup_table_alloc.unsafe_ptr()
     dev_ctx.enqueue_copy(
@@ -3056,7 +3037,7 @@ def print_kv_cache_paged_generic_gpu[
     var valid_lengths_host_alloc = alloc(
         AllocLayout[UInt32](count=valid_lengths.num_elements())
     ).into_managed()
-    var valid_lengths_host_ptr: UnsafePointer[
+    var valid_lengths_host_ptr: MutPointer[
         UInt32, origin_of(valid_lengths_host_alloc)
     ] = valid_lengths_host_alloc.unsafe_ptr()
     var valid_lengths_host = TileTensor(

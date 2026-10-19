@@ -34,9 +34,9 @@ def grid_exclusive_scan(bits: MutPointer[UInt32, _], N: Int):
 
 
 def radix_sort_iter(
-    input: UnsafePointer[UInt32, ImmutAnyOrigin],
-    output: UnsafePointer[UInt32, MutAnyOrigin],
-    bits: UnsafePointer[UInt32, MutAnyOrigin],
+    input: ImmPointer[UInt32, ImmutAnyOrigin],
+    output: MutPointer[UInt32, MutAnyOrigin],
+    bits: MutPointer[UInt32, MutAnyOrigin],
     N_dev: Int32,
     iter_dev: Int32,
     block_dim_x_dev: Int32,
@@ -64,10 +64,10 @@ def radix_sort_iter(
 
 
 def radix_scatter(
-    input: UnsafePointer[UInt32, ImmutAnyOrigin],
-    output: UnsafePointer[UInt32, MutAnyOrigin],
-    bits: UnsafePointer[UInt32, MutAnyOrigin],
-    scanResult: UnsafePointer[UInt32, ImmutAnyOrigin],
+    input: ImmPointer[UInt32, ImmutAnyOrigin],
+    output: MutPointer[UInt32, MutAnyOrigin],
+    bits: MutPointer[UInt32, MutAnyOrigin],
+    scanResult: ImmPointer[UInt32, ImmutAnyOrigin],
     N_dev: Int32,
     iter_dev: Int32,
     block_dim_x_dev: Int32,
@@ -136,7 +136,7 @@ def cpu_radix_sort(data: MutPointer[UInt32, _], N: Int, num_bits: Int):
     count1.free()
 
 
-def find_max(data: UnsafePointer[UInt32, _], N: Int) -> UInt32:
+def find_max(data: Pointer[UInt32, _], N: Int) -> UInt32:
     """Find maximum value in array.
 
     Args:

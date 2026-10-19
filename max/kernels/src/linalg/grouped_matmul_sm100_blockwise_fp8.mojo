@@ -270,7 +270,7 @@ def matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
     ]
 
     var a_smem = rebind[
-        UnsafePointer[Scalar[a_type], MutAnyOrigin, address_space=.SHARED]
+        MutPointer[Scalar[a_type], MutAnyOrigin, address_space=.SHARED]
     ](
         external_memory[
             Scalar[a_type],
@@ -294,19 +294,21 @@ def matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
         (a_scales_size * size_of[a_scales_type]()) % 16
     ) == 0, "preserve alignment"
 
-    var b_smem = (a_smem + a_size).bitcast[Scalar[b_type]]()
+    var b_smem = a_smem.unsafe_offset(a_size).unsafe_bitcast[Scalar[b_type]]()
 
     var a_smem_tile = TileTensor(a_smem, a_smem_layout)
     var b_smem_tile = TileTensor(b_smem, b_smem_layout)
 
-    var ptr_tmem_addr = (b_smem + b_size).bitcast[UInt32]()
+    var ptr_tmem_addr = b_smem.unsafe_offset(b_size).unsafe_bitcast[UInt32]()
 
     comptime a_expected_bytes = a_size * size_of[a_type]()
     comptime b_expected_bytes = b_size * size_of[b_type]()
     comptime expected_bytes = a_expected_bytes + b_expected_bytes
 
-    var tma_mbar = (ptr_tmem_addr + 2).bitcast[SharedMemBarrier]()
-    var mma_mbar = tma_mbar + 1
+    var tma_mbar = ptr_tmem_addr.unsafe_offset(2).unsafe_bitcast[
+        SharedMemBarrier
+    ]()
+    var mma_mbar = tma_mbar.unsafe_offset(1)
 
     if thread_idx.x == 0:
         tma_mbar[0].init()
@@ -417,18 +419,18 @@ def matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
                 var next_n = begin_n if begin_n < end_n else BN
 
                 if ld_iter < (next_n // 8):
-                    b_scale = rebind[Scalar[b_scales_type]](
-                        b_scales_2d[b_scale_m_offset + idx0, k_iter]
-                    ).cast[accum_type]()
+                    b_scale = b_scales_2d[b_scale_m_offset + idx0, k_iter].cast[
+                        accum_type
+                    ]()
                 else:
-                    b_scale = rebind[Scalar[b_scales_type]](
-                        b_scales_2d[b_scale_m_offset + idx0 + 1, k_iter]
-                    ).cast[accum_type]()
+                    b_scale = b_scales_2d[
+                        b_scale_m_offset + idx0 + 1, k_iter
+                    ].cast[accum_type]()
 
             else:
-                b_scale = rebind[Scalar[b_scales_type]](
-                    b_scales_2d[b_scale_m_offset + block_idx.x, k_iter]
-                ).cast[accum_type]()
+                b_scale = b_scales_2d[
+                    b_scale_m_offset + block_idx.x, k_iter
+                ].cast[accum_type]()
 
             comptime for i in range(2):
                 var local_m = _accum_row[mma_shape, 1](
@@ -441,7 +443,7 @@ def matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
                         accum_type
                     ]()
 
-                var scale = rebind[Scalar[accum_type]](a_scale * b_scale)
+                var scale = a_scale * b_scale
                 var scale_pair = SIMD[accum_type, 2](scale)
 
                 comptime idx = ld_iter * type_of(
@@ -449,8 +451,8 @@ def matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
                 ).static_product + 2 * i
                 var c_pair = SIMD[accum_type, 2](c_frag[idx], c_frag[idx + 1])
                 var t_pair = SIMD[accum_type, 2](
-                    c_frag_temp[Coord(coord[0, i], Idx[0])],
-                    c_frag_temp[Coord(coord[1, i], Idx[0])],
+                    c_frag_temp[coord[0, i], Idx[0]],
+                    c_frag_temp[coord[1, i], Idx[0]],
                 )
                 var result = c_pair + t_pair * scale_pair
                 c_frag[idx] = result[0]
@@ -968,6 +970,7 @@ def _copy_partial_a_tile_blockwise_from_gmem[
     var lane = lane_id()
     var zero_vec = SIMD[a_type, VEC](0)
 
+    var a_smem_flat = a_smem_tile.reshape(row_major[BM * BK]())
     comptime for i in range(CHUNKS_PER_LANE):
         var chunk = i * WARP_SIZE + lane
         var row = chunk // CHUNKS_PER_ROW
@@ -976,9 +979,11 @@ def _copy_partial_a_tile_blockwise_from_gmem[
         var av = zero_vec
         if g_row < expert_end_row:
             av = a_gmem.load[width=VEC, alignment=align_of[a_type]()](
-                Coord(g_row, iter_idx * BK + k0)
+                (g_row, iter_idx * BK + k0)
             )
-        a_smem_tile.raw_store(Int(a_sw(Int32(row * BK + k0))), av)
+        a_smem_flat.store[alignment=align_of[a_type]()](
+            (Int(a_sw(Int32(row * BK + k0))),), av
+        )
 
     # a_scales: BM scalars total; each lane writes one row per outer iteration.
     comptime for i in range(BM // WARP_SIZE):
@@ -986,7 +991,7 @@ def _copy_partial_a_tile_blockwise_from_gmem[
         var g_row = m_tile_global_start + row
         var sv = Scalar[a_scales_type](0)
         if g_row < expert_end_row:
-            sv = rebind[Scalar[a_scales_type]](a_scales_gmem[iter_idx, g_row])
+            sv = a_scales_gmem[iter_idx, g_row]
         a_scales_smem_tile[0, row] = sv
 
 
@@ -1019,14 +1024,10 @@ def load_AB[
         a_scales_tile_shape,
         a_scales_desc_shape,
     ],
-    a_smem_base: UnsafePointer[
-        mut=True, Scalar[a_type], _, address_space=.SHARED
-    ],
-    b_smem_base: UnsafePointer[
-        mut=True, Scalar[b_type], _, address_space=.SHARED
-    ],
-    a_scales_smem_base: UnsafePointer[
-        mut=True, Scalar[a_scales_type], _, address_space=.SHARED
+    a_smem_base: MutPointer[Scalar[a_type], _, address_space=.SHARED],
+    b_smem_base: MutPointer[Scalar[b_type], _, address_space=.SHARED],
+    a_scales_smem_base: MutPointer[
+        Scalar[a_scales_type], _, address_space=.SHARED
     ],
     load_mma_pipeline: ProducerConsumerPipeline[num_pipeline_stages],
     peer_cta_coord: Tuple[Int, Int, Int],
@@ -1135,24 +1136,28 @@ def load_AB[
     comptime a_scales_smem_tile_size = a_scales_smem_layout.size()
 
     var a_smem_tile = TileTensor(
-        a_smem_base + Int(stage) * a_smem_tile_size,
+        a_smem_base.unsafe_offset(Int(stage) * a_smem_tile_size),
         LTToTTLayout[a_smem_layout](),
     )
     var b_smem_tile = TileTensor(
-        b_smem_base + Int(stage) * b_smem_tile_size,
+        b_smem_base.unsafe_offset(Int(stage) * b_smem_tile_size),
         LTToTTLayout[b_smem_layout](),
     )
     var a_scales_smem_tile = TileTensor(
-        a_scales_smem_base + Int(stage) * a_scales_smem_tile_size,
+        a_scales_smem_base.unsafe_offset(Int(stage) * a_scales_smem_tile_size),
         LTToTTLayout[a_scales_smem_layout](),
     )
 
     var a_smem_slice = type_of(a_smem_tile)(
-        a_smem_tile.unsafe_ptr() + peer_cta_coord[2] * a_tma_load_size,
+        a_smem_tile.unsafe_ptr().unsafe_offset(
+            peer_cta_coord[2] * a_tma_load_size
+        ),
         a_smem_tile.layout,
     )
     var b_smem_slice = type_of(b_smem_tile)(
-        b_smem_tile.unsafe_ptr() + peer_cta_coord[1] * b_tma_load_size,
+        b_smem_tile.unsafe_ptr().unsafe_offset(
+            peer_cta_coord[1] * b_tma_load_size
+        ),
         b_smem_tile.layout,
     )
     var tma_mbar = load_mma_pipeline.producer_mbar(stage)
@@ -1207,14 +1212,10 @@ def load_AB_partial[
         a_scales_type, a_scales_gmem_layout, ImmutAnyOrigin
     ],
     b_tma_op: TMATensorTile[b_type, b_tile_shape, b_desc_shape],
-    a_smem_base: UnsafePointer[
-        mut=True, Scalar[a_type], _, address_space=.SHARED
-    ],
-    b_smem_base: UnsafePointer[
-        mut=True, Scalar[b_type], _, address_space=.SHARED
-    ],
-    a_scales_smem_base: UnsafePointer[
-        mut=True, Scalar[a_scales_type], _, address_space=.SHARED
+    a_smem_base: MutPointer[Scalar[a_type], _, address_space=.SHARED],
+    b_smem_base: MutPointer[Scalar[b_type], _, address_space=.SHARED],
+    a_scales_smem_base: MutPointer[
+        Scalar[a_scales_type], _, address_space=.SHARED
     ],
     load_mma_pipeline: ProducerConsumerPipeline[num_pipeline_stages],
     peer_cta_coord: Tuple[Int, Int, Int],
@@ -1317,17 +1318,17 @@ def load_AB_partial[
     comptime a_scales_smem_tile_size = a_scales_smem_layout.size()
 
     var a_smem_tile = TileTensor(
-        a_smem_base + Int(stage) * a_smem_tile_size,
+        a_smem_base.unsafe_offset(Int(stage) * a_smem_tile_size),
         LTToTTLayout[a_smem_layout](),
     )
     var a_scales_smem_tile = TileTensor(
-        a_scales_smem_base + Int(stage) * a_scales_smem_tile_size,
+        a_scales_smem_base.unsafe_offset(Int(stage) * a_scales_smem_tile_size),
         LTToTTLayout[a_scales_smem_layout](),
     )
     var b_smem_slice = TileTensor(
-        b_smem_base
-        + Int(stage) * b_smem_tile_size
-        + peer_cta_coord[1] * b_tma_load_size,
+        b_smem_base.unsafe_offset(Int(stage) * b_smem_tile_size).unsafe_offset(
+            peer_cta_coord[1] * b_tma_load_size
+        ),
         LTToTTLayout[b_smem_layout](),
     )
     var tma_mbar = load_mma_pipeline.producer_mbar(stage)
@@ -1377,11 +1378,11 @@ def multi_stage_reg_epilogue[
 ](
     c_upper_main_tile: TileTensor[accum_type, _, _, address_space=.LOCAL, ...],
     c_lower_main_tile: TileTensor[accum_type, _, _, address_space=.LOCAL, ...],
-    c_smem_base: UnsafePointer[
+    c_smem_base: MutPointer[
         Scalar[c_type], MutAnyOrigin, address_space=.SHARED
     ],
     c_tma_op: TMATensorTile[c_type, c_tile_shape, c_desc_shape],
-    c_ptr: MutPointer[Scalar[c_type], _],
+    c: TileTensor[mut=True, c_type, ...],
     c_coord: Tuple[Int, Int],
     elect_one_warp: Bool,
     group_end_idx: UInt32,
@@ -1417,7 +1418,7 @@ def multi_stage_reg_epilogue[
             staged MMA results to be stored.
         c_smem_base: Base pointer to the C SMEM staging buffer.
         c_tma_op: TMA descriptor for storing C output tiles.
-        c_ptr: Pointer to the output `C` buffer in global memory.
+        c: Output `C` tensor in global memory.
         c_coord: Output tile coordinates as (m, n) in the `C` matrix.
         elect_one_warp: Whether this warp is the elected leader for TMA
             stores.
@@ -1463,7 +1464,7 @@ def multi_stage_reg_epilogue[
         comptime c_smem_tile_size = c_smem_layout.static_product
         # 128B alignment comes from external_memory and aligned buffer offsets.
         var c_smem_tile = TileTensor(
-            c_smem_base + (stage % 2) * c_smem_tile_size,
+            c_smem_base.unsafe_offset((stage % 2) * c_smem_tile_size),
             TileLayout[
                 c_smem_layout._shape_types, c_smem_layout._stride_types
             ](),
@@ -1565,6 +1566,9 @@ def multi_stage_reg_epilogue[
 
             comptime for i in range(c_smem_M // TMA_BM):
                 var c_smem_split = c_smem_tile.tile[TMA_BM, stageN](i, 0)
+                var c_smem_split_flat = c_smem_split.reshape(
+                    row_major[TMA_BM * stageN]()
+                )
                 # Dim-0 tiles retain the row-major parent's (stageN, 1) strides.
                 comptime split_layout = TileLayout(
                     Coord(Idx[TMA_BM], Idx[stageN]),
@@ -1587,19 +1591,20 @@ def multi_stage_reg_epilogue[
                     var cmem_crd = split_layout.idx2crd[out_dtype=.uint32](
                         Int(linear_idx)
                     )
-                    var local_i = Int(cmem_crd[0].value())
-                    var local_j = Int(cmem_crd[1].value())
+                    var local_i = Int(cmem_crd[0])
+                    var local_j = Int(cmem_crd[1])
                     var global_i: Int = coord_m + local_i
                     var global_j: Int = coord_n + local_j
                     if global_i < Int(group_end_idx):
-                        var src = c_smem_split.raw_load[
+                        var src = c_smem_split_flat.load[
                             width=simd_size, alignment=alignment
                         ](
-                            linear_idx if size_of[c_type]()
-                            != 2 else swizzle(linear_idx)
+                            (
+                                linear_idx if size_of[c_type]()
+                                != 2 else swizzle(linear_idx),
+                            )
                         )
-                        var dst_ptr = c_ptr + global_i * c_static_N + global_j
-                        dst_ptr.store[width=simd_size, alignment=alignment](src)
+                        c.store[alignment=alignment]((global_i, global_j), src)
         else:
             var c_smem_split = c_smem_tile.tile[TMA_BM, stageN](
                 c_smem_coord_m, 0
@@ -1647,8 +1652,8 @@ def promote_accumulators[
 ](
     b_scales: TileTensor[b_scales_type, b_scales_layout, ImmutAnyOrigin],
     b_scales_n: Int,
-    a_scales_smem_base: UnsafePointer[
-        mut=True, Scalar[a_scales_type], _, address_space=.SHARED
+    a_scales_smem_base: MutPointer[
+        Scalar[a_scales_type], _, address_space=.SHARED
     ],
     c_upper_main_tile: TileTensor[
         mut=True, accum_type, _, _, address_space=.LOCAL, ...
@@ -1821,34 +1826,25 @@ def promote_accumulators[
         #                                                           next_n(128)
 
         # prefetch b scales
-        b_scale_0 = rebind[Scalar[accum_type]](
-            b_scales[
-                b_scale_m_offset + type_of(b_scale_m_offset)(b_scale_idx0),
-                k_iter,
-            ].cast[accum_type]()
-        )
+        b_scale_0 = b_scales[
+            b_scale_m_offset + type_of(b_scale_m_offset)(b_scale_idx0),
+            k_iter,
+        ].cast[accum_type]()
         # this mean in this block we have two scale_b
         if b_scale_next_n < MMA_N:
-            b_scale_1 = rebind[Scalar[accum_type]](
-                b_scales[
-                    b_scale_m_offset
-                    + type_of(b_scale_m_offset)(b_scale_idx0)
-                    + 1,
-                    k_iter,
-                ].cast[accum_type]()
-            )
+            b_scale_1 = b_scales[
+                b_scale_m_offset + type_of(b_scale_m_offset)(b_scale_idx0) + 1,
+                k_iter,
+            ].cast[accum_type]()
         else:
             b_scale_1 = 0.0
 
     else:
         # when MMA_N == BK == 128 we only have one scale_b per block
-        b_scale_0 = rebind[Scalar[accum_type]](
-            b_scales[
-                b_scale_m_offset
-                + type_of(b_scale_m_offset)(ufloordiv(bn, MMA_N)),
-                k_iter,
-            ].cast[accum_type]()
-        )
+        b_scale_0 = b_scales[
+            b_scale_m_offset + type_of(b_scale_m_offset)(ufloordiv(bn, MMA_N)),
+            k_iter,
+        ].cast[accum_type]()
         b_scale_1 = 0.0
 
     var warp_id = get_warp_id()
@@ -2015,6 +2011,7 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
     a_scales_gmem_layout: TensorLayout,
     b_scales_type: DType,
     b_scales_layout: TensorLayout,
+    c_layout: TensorLayout,
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     num_pipeline_stages: Int,
@@ -2027,7 +2024,7 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
     a_tma_op: TMATensorTile[a_type, a_tile_shape, a_desc_shape],
     b_tma_op: TMATensorTile[b_type, b_tile_shape, b_desc_shape],
     c_tma_op: TMATensorTile[c_type, c_tile_shape, c_desc_shape],
-    c_ptr: UnsafePointer[Scalar[c_type], MutAnyOrigin],
+    c: TileTensor[c_type, c_layout, MutAnyOrigin],
     a_scales_tma_op: TMATensorTile[
         a_scales_type,
         a_scales_tile_shape,
@@ -2135,11 +2132,15 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
     comptime a_scales_smem_size = a_scales_smem_layout.size() * num_pipeline_stages
 
     var a_smem_base = base_ptr_smem
-    var b_smem_base = (a_smem_base + a_smem_size).bitcast[Scalar[b_type]]()
-    var c_smem_base = (b_smem_base + b_smem_size).bitcast[Scalar[c_type]]()
-    var a_scales_smem_base = (c_smem_base + c_smem_size).bitcast[
-        Scalar[a_scales_type]
+    var b_smem_base = a_smem_base.unsafe_offset(a_smem_size).unsafe_bitcast[
+        Scalar[b_type]
     ]()
+    var c_smem_base = b_smem_base.unsafe_offset(b_smem_size).unsafe_bitcast[
+        Scalar[c_type]
+    ]()
+    var a_scales_smem_base = c_smem_base.unsafe_offset(
+        c_smem_size
+    ).unsafe_bitcast[Scalar[a_scales_type]]()
 
     # TileTensor views of the same SMEM for consumer_main_loop (MMA path).
     var a_smem_tt = SMemTileArray2D[
@@ -2156,24 +2157,28 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
         num_pipeline_stages,
         swizzle_mode_to_bytes[config.b_swizzle],
     ](b_smem_base)
-    var load_mma_mbar_ptr = (a_scales_smem_base + a_scales_smem_size).bitcast[
-        SharedMemBarrier
-    ]()
+    var load_mma_mbar_ptr = (
+        a_scales_smem_base.unsafe_offset(a_scales_smem_size)
+    ).unsafe_bitcast[SharedMemBarrier]()
 
     # Load warp as producer and mma warp as consumer
     var load_mma_pipeline = ProducerConsumerPipeline[num_pipeline_stages](
         load_mma_mbar_ptr.unsafe_origin_cast[MutUntrackedOrigin]()
     )
 
-    var mma_output_mbar_ptr = load_mma_mbar_ptr + 2 * num_pipeline_stages
+    var mma_output_mbar_ptr = load_mma_mbar_ptr.unsafe_offset(
+        2 * num_pipeline_stages
+    )
     var mma_output_pipeline = ProducerConsumerPipeline[
         config.num_accum_pipeline_stages
     ](mma_output_mbar_ptr.unsafe_origin_cast[MutUntrackedOrigin]())
 
-    var clc_full_mbar_ptr = (
-        mma_output_mbar_ptr + 2 * config.num_accum_pipeline_stages
+    var clc_full_mbar_ptr = mma_output_mbar_ptr.unsafe_offset(
+        2 * config.num_accum_pipeline_stages
     )
-    var clc_empty_mbar_ptr = clc_full_mbar_ptr + config.num_clc_pipeline_stages
+    var clc_empty_mbar_ptr = clc_full_mbar_ptr.unsafe_offset(
+        config.num_clc_pipeline_stages
+    )
 
     # Load warp as producer and scheduler warp as consumer.
     # No data dependence. Introduce dependence to prevent CLC goes too ahead.
@@ -2183,24 +2188,28 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
         config.num_clc_pipeline_stages
     ](
         (
-            clc_empty_mbar_ptr + config.num_clc_pipeline_stages
+            clc_empty_mbar_ptr.unsafe_offset(config.num_clc_pipeline_stages)
         ).unsafe_origin_cast[MutUntrackedOrigin]()
     )
 
     var clc_response_ptr = (
-        clc_empty_mbar_ptr + 3 * config.num_clc_pipeline_stages
-    ).bitcast[Int128]()
+        clc_empty_mbar_ptr.unsafe_offset(3 * config.num_clc_pipeline_stages)
+    ).unsafe_bitcast[Int128]()
 
     var tmem_dealloc_mbar_ptr = (
-        clc_response_ptr + config.num_clc_pipeline_stages
-    ).bitcast[Int64]()
+        clc_response_ptr.unsafe_offset(config.num_clc_pipeline_stages)
+    ).unsafe_bitcast[Int64]()
 
-    var ptr_tmem_addr = (tmem_dealloc_mbar_ptr + 1).bitcast[UInt32]()
+    var ptr_tmem_addr = tmem_dealloc_mbar_ptr.unsafe_offset(1).unsafe_bitcast[
+        UInt32
+    ]()
 
-    var clc_response = clc_response_ptr.bitcast[UInt128]()
-    var clc_full_mbar = clc_full_mbar_ptr.bitcast[SharedMemBarrier]()
-    var clc_empty_mbar = clc_empty_mbar_ptr.bitcast[SharedMemBarrier]()
-    var tmem_dealloc_mbar = tmem_dealloc_mbar_ptr.bitcast[SharedMemBarrier]()
+    var clc_response = clc_response_ptr.unsafe_bitcast[UInt128]()
+    var clc_full_mbar = clc_full_mbar_ptr.unsafe_bitcast[SharedMemBarrier]()
+    var clc_empty_mbar = clc_empty_mbar_ptr.unsafe_bitcast[SharedMemBarrier]()
+    var tmem_dealloc_mbar = tmem_dealloc_mbar_ptr.unsafe_bitcast[
+        SharedMemBarrier
+    ]()
 
     var elect_one_warp = ufloordiv(thread_idx.x, WARP_SIZE) == 0
     var elect_one_thread = elect_one_sync_with_mask()
@@ -2571,7 +2580,7 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
                 c_lower_main_tile,
                 c_smem_base.as_unsafe_any_origin(),
                 c_tma_op,
-                c_ptr,
+                c,
                 c_coord=(Int(work_info.m), Int(work_info.n)),
                 elect_one_warp=elect_one_warp,
                 group_end_idx=rebind[UInt32](
@@ -2866,6 +2875,7 @@ def grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
         type_of(a_scales.layout),
         b_scales_type,
         type_of(b_scales_2d.layout),
+        type_of(c.layout),
         transpose_b=transpose_b,
         config=config,
         num_pipeline_stages=max_pipeline_stages,
@@ -2898,7 +2908,7 @@ def grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
         a_tma_op,
         b_tma_op,
         c_tma_op,
-        c.ptr.as_unsafe_any_origin(),
+        c.as_unsafe_any_origin(),
         a_scales_tma_op,
         a_offsets.as_unsafe_any_origin(),
         Int32(ceildiv(K, BK)),

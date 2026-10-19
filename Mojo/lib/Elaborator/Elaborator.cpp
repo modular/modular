@@ -1673,22 +1673,38 @@ ElaborationState Elaborator::processOp(ImplNode *node, Operation *op) {
 
 ParamNode *Elaborator::getOrCreateNode(ParameterExprArrayAttr values,
                                        GeneratorOpInterface gen, size_t depth) {
-  // TODO: Split this into `get` and `create` methods, so that some can be
-  // read-only accesses.
-  ParamNode *paramNode = g.nodes.modify([&](auto &map) {
-    std::unique_ptr<ParamNode> &n = map[{values, gen}];
-    if (!n)
-      n = std::make_unique<ParamNode>(cpuDevice, gen, values, depth, &g);
-    return n.get();
+  // Most calls name a node that already exists, so look it up under the reader
+  // lock and take the writer lock only to create one. `SmartRWMutex` cannot be
+  // upgraded, so the writer lock repeats the lookup: another thread can insert
+  // this key while no lock is held, and `specializeGenerator` elects the thread
+  // that elaborates a node by test-and-set on the node itself, which requires
+  // exactly one node per key.
+  std::pair<ParameterExprArrayAttr, GeneratorOpInterface> key(values, gen);
+  ParamNode *paramNode = g.nodes.read([&key](const auto &map) -> ParamNode * {
+    if (auto it = map.find(key); it != map.end())
+      return it->second.get();
+    return nullptr;
   });
+  if (!paramNode) {
+    paramNode = g.nodes.modify([&](auto &map) {
+      std::unique_ptr<ParamNode> &n = map[key];
+      if (!n)
+        n = std::make_unique<ParamNode>(cpuDevice, gen, values, depth, &g);
+      return n.get();
+    });
+  }
   // Add the node to the concrete nodes map regardless of whether it was
   // created or not. This guarantees that both nodes (ParamNode and ImplNode)
   // are in the corresponding maps (g.nodes and concreteNodes) when this
   // function returns.
   StringAttr name = paramNode->getMangledName();
   ImplNode *implNode = &paramNode->impl;
-  concreteNodes.modify(
-      [name, implNode](auto &map) { map.try_emplace(name, implNode); });
+  bool isConcrete = concreteNodes.read(
+      [name](const auto &map) { return map.contains(name); });
+  if (!isConcrete) {
+    concreteNodes.modify(
+        [name, implNode](auto &map) { map.try_emplace(name, implNode); });
+  }
   return paramNode;
 }
 
@@ -1825,22 +1841,31 @@ ElaborationState Elaborator::specializeGenerator(ImplNode *inode,
     // ParametricNode (or similar) that doesn't store the input parameters, in
     // which we could store the ParameterUseDefGraph.
 
-    ParameterUseDefGraph *genNodeGraph = knownGraphs.modify(
-        [gen, &paramCache = this->paramCache](auto &map) mutable {
+    // Most generators already have a graph, so look it up under the reader lock
+    // and take the writer lock only to compute a missing one.
+    ParameterUseDefGraph *genNodeGraph =
+        knownGraphs.read([gen](const auto &map) -> ParameterUseDefGraph * {
           if (auto it = map.find(gen); it != map.end())
             return it->second.get();
-          // Compute a new graph. The computed graph could end up getting
-          // discarded if two threads end up here at the same time for the same
-          // generator.
-          auto newGraph =
-              std::make_unique<ParameterUseDefGraph>(gen.getBodyRegion());
-
-          // calculate() modifies gen.getBodyRegion(), so this needs to be done
-          // in a thread safe manner to avoid tsan failures.
-          newGraph->calculate(paramCache.getThreadLocalCache());
-
-          return map.try_emplace(gen, std::move(newGraph)).first->second.get();
+          return nullptr;
         });
+    if (!genNodeGraph) {
+      genNodeGraph = knownGraphs.modify([&gen, this](auto &map) mutable {
+        // Repeat the lookup: another thread can insert this generator while no
+        // lock is held.
+        if (auto it = map.find(gen); it != map.end())
+          return it->second.get();
+
+        auto newGraph =
+            std::make_unique<ParameterUseDefGraph>(gen.getBodyRegion());
+
+        // calculate() modifies gen.getBodyRegion(), so this needs to be done
+        // in a thread safe manner to avoid tsan failures.
+        newGraph->calculate(paramCache.getThreadLocalCache());
+
+        return map.try_emplace(gen, std::move(newGraph)).first->second.get();
+      });
+    }
 
     // Clone the body of the generator into the function.
     // TODO: is there a nice way for us to avoid cloning this?

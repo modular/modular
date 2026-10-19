@@ -133,12 +133,14 @@ def matmul_qint4_pack_b[
 
 def _quantize_a_block[
     group_size: Int, aq_type: DType, dtype: DType
-](a_ptr: ImmPointer[Scalar[dtype], _]) -> Tuple[
+](a: TileTensor[mut=False, dtype, ...], row: Int, col: Int) -> Tuple[
     SIMD[aq_type, group_size], Float32
 ]:
     comptime a_zero_point = 128 if aq_type.is_unsigned() else 0
 
-    var fp_data = a_ptr.unsafe_load[width=group_size]()
+    var fp_data = a.load[width=group_size, alignment=align_of[dtype]()](
+        Coord(row, col)
+    )
     var max_value = abs(fp_data).reduce_max()
     var scale = (max_value / 127.0).cast[.float32]()
     var multiplier = 127.0 / max_value if max_value != 0.0 else 0.0
@@ -183,12 +185,10 @@ def _quantize_a_buffer[
     for ko in range(0, K, K_BATCH_SIZE):
         var ko_count = min(K_BATCH_SIZE, K - ko)
 
-        var am_ptr = a.ptr.unsafe_offset(ko)
-
         @inline(.always)
         def process_rows[
             tile_m: Int
-        ](m: Int) {mut am_ptr, mut a_quant_ptr, mut a_scale_ptr, imm}:
+        ](m: Int) {mut a_quant_ptr, mut a_scale_ptr, imm}:
             for row in range(tile_m):
                 var ak_quant_ptr = a_quant_ptr.unsafe_offset(
                     row * aq_interleave
@@ -200,7 +200,7 @@ def _quantize_a_buffer[
                     var scale: Float32
                     (quant_data, scale) = _quantize_a_block[
                         group_size, aq_type
-                    ](am_ptr.unsafe_offset(ki))
+                    ](a, m + row, ko + ki)
 
                     # Interleave this local block to the output buffer.
                     #
@@ -224,8 +224,6 @@ def _quantize_a_buffer[
 
                     ak_scale_ptr.unsafe_store(scale)
                     ak_scale_ptr = ak_scale_ptr.unsafe_offset(tile_m)
-
-                am_ptr = am_ptr.unsafe_offset(K)
 
             a_quant_ptr = a_quant_ptr.unsafe_offset(tile_m * ko_count)
             a_scale_ptr = a_scale_ptr.unsafe_offset(

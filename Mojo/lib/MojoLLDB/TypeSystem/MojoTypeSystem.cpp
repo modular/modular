@@ -85,16 +85,15 @@ getMLIRTypeForDType(MLIRContext *ctx, KGENDType dtype, size_t indexBitwidth) {
   return {};
 }
 
-/// Method used to get the correct MojoASTTypeRef of a given opaque type. It
+/// Method used to get the correct AST type of a given opaque type. It
 /// also dereferences REPLResultRefType if present.
-static MojoASTTypeRef
-dereferenceIfREPLResult(lldb::opaque_compiler_type_t type) {
+static LIT::ASTType dereferenceIfREPLResult(lldb::opaque_compiler_type_t type) {
   if (!type)
-    return MojoASTTypeRef();
+    return LIT::ASTType();
   auto mlirType = mlir::Type::getFromOpaquePointer(type);
   if (auto refType = dyn_cast<LIT::REPLResultRefType>(mlirType))
-    return MojoASTTypeRef(refType.getElementType());
-  return MojoASTTypeRef(mlirType);
+    return LIT::ASTType(refType.getElementType());
+  return LIT::ASTType(mlirType);
 }
 
 //===----------------------------------------------------------------------===//
@@ -156,12 +155,10 @@ struct MojoTypeSystem::Impl {
 
   /// Utility that returns a StructDeclOp if the given astType corresponds to a
   /// struct, otherwise an invalid object is returned.
-  LIT::StructDeclOp getIfStructDecl(MojoASTTypeRef astType) {
-    if (auto declRef = parserContext->getDecl(astType)) {
-      if (LIT::StructDeclOp structDeclOp =
-              dyn_cast_if_present<LIT::StructDeclOp>(
-                  declRef.getIfOperation())) {
-        return structDeclOp;
+  LIT::StructDeclOp getIfStructDecl(LIT::ASTType astType) {
+    if (auto *decl = astType.getDecl(parserContext->getSharedState())) {
+      if (auto *structDecl = dyn_cast<LIT::StructASTDecl>(decl)) {
+        return structDecl->getOp();
       }
     }
     return {};
@@ -350,11 +347,11 @@ bool MojoTypeSystem::IsAggregateType(lldb::opaque_compiler_type_t type) {
 
 bool MojoTypeSystem::IsPointerType(lldb::opaque_compiler_type_t type,
                                    lldb_private::CompilerType *pointeeType) {
-  MojoASTTypeRef astType(type);
+  LIT::ASTType astType(Type::getFromOpaquePointer(type));
   if (!astType)
     return false;
 
-  if (auto pointerType = dyn_cast<KGEN::PointerType>(astType)) {
+  if (auto pointerType = dyn_cast<KGEN::PointerType>(astType.mlirType)) {
     if (pointeeType)
       *pointeeType = createCompilerType(pointerType.getElementType());
     return true;
@@ -367,7 +364,8 @@ bool MojoTypeSystem::IsReferenceType(lldb::opaque_compiler_type_t type,
                                      bool *isRValue) {
   if (!type)
     return false;
-  if (auto refType = dyn_cast<LIT::REPLResultRefType>(MojoASTTypeRef(type))) {
+  if (auto refType =
+          dyn_cast<LIT::REPLResultRefType>(Type::getFromOpaquePointer(type))) {
     if (pointeeType)
       *pointeeType = createCompilerType(refType.getElementType());
     return true;
@@ -377,38 +375,38 @@ bool MojoTypeSystem::IsReferenceType(lldb::opaque_compiler_type_t type,
 
 lldb_private::CompilerType
 MojoTypeSystem::GetPointeeType(lldb::opaque_compiler_type_t type) {
-  MojoASTTypeRef astType = dereferenceIfREPLResult(type);
+  LIT::ASTType astType = dereferenceIfREPLResult(type);
   if (!astType)
     return {};
-  if (auto ptrType = dyn_cast<PointerType>(astType))
+  if (auto ptrType = dyn_cast<PointerType>(astType.mlirType))
     return createCompilerType(ptrType.getElementType());
   return {};
 }
 
 lldb_private::CompilerType
 MojoTypeSystem::GetPointerType(lldb::opaque_compiler_type_t type) {
-  MojoASTTypeRef astType(type);
+  LIT::ASTType astType(Type::getFromOpaquePointer(type));
   if (!astType)
     return {};
-  return createCompilerType(KGEN::PointerType::get(astType.getMLIRType()));
+  return createCompilerType(KGEN::PointerType::get(astType.mlirType));
 }
 
 lldb::TypeClass
 MojoTypeSystem::GetTypeClass(lldb::opaque_compiler_type_t type) {
-  MojoASTTypeRef astType = dereferenceIfREPLResult(type);
+  LIT::ASTType astType = dereferenceIfREPLResult(type);
   if (!astType)
     return {};
 
-  if (auto ptrType = dyn_cast<PointerType>(astType))
+  if (auto ptrType = dyn_cast<PointerType>(astType.mlirType))
     return lldb::eTypeClassPointer;
 
-  if (isa<SIMDType>(astType))
+  if (isa<SIMDType>(astType.mlirType))
     return lldb::eTypeClassVector;
 
-  if (isa<POP::ArrayType>(astType))
+  if (isa<POP::ArrayType>(astType.mlirType))
     return lldb::eTypeClassArray;
 
-  if (impl->getIfStructDecl(astType) || isa<StructType>(astType))
+  if (impl->getIfStructDecl(astType) || isa<StructType>(astType.mlirType))
     return lldb::eTypeClassStruct;
 
   return lldb::eTypeClassOther;
@@ -417,14 +415,14 @@ MojoTypeSystem::GetTypeClass(lldb::opaque_compiler_type_t type) {
 uint32_t MojoTypeSystem::GetTypeInfo(
     lldb::opaque_compiler_type_t type,
     lldb_private::CompilerType *pointeeOrElementCompilerType) {
-  MojoASTTypeRef astType(type);
+  LIT::ASTType astType(Type::getFromOpaquePointer(type));
   if (!astType)
     return 0;
 
   if (pointeeOrElementCompilerType)
     pointeeOrElementCompilerType->Clear();
 
-  if (auto ptrType = dyn_cast<PointerType>(astType)) {
+  if (auto ptrType = dyn_cast<PointerType>(astType.mlirType)) {
     if (pointeeOrElementCompilerType) {
       *pointeeOrElementCompilerType =
           createCompilerType(ptrType.getElementType());
@@ -432,11 +430,11 @@ uint32_t MojoTypeSystem::GetTypeInfo(
     return lldb::eTypeIsPointer | lldb::eTypeHasChildren | lldb::eTypeHasValue;
   }
 
-  if (isa<IndexType>(astType))
+  if (isa<IndexType>(astType.mlirType))
     return lldb::eTypeIsInteger | lldb::eTypeHasValue | lldb::eTypeIsScalar |
            lldb::eTypeIsSigned;
 
-  if (auto intType = dyn_cast<IntegerType>(astType)) {
+  if (auto intType = dyn_cast<IntegerType>(astType.mlirType)) {
     auto result =
         lldb::eTypeIsInteger | lldb::eTypeHasValue | lldb::eTypeIsScalar;
     if (intType.isSignedInteger())
@@ -444,10 +442,10 @@ uint32_t MojoTypeSystem::GetTypeInfo(
     return result;
   }
 
-  if (isa<FloatType>(astType))
+  if (isa<FloatType>(astType.mlirType))
     return lldb::eTypeIsFloat | lldb::eTypeHasValue | lldb::eTypeIsScalar;
 
-  if (auto simdTy = dyn_cast<SIMDType>(astType)) {
+  if (auto simdTy = dyn_cast<SIMDType>(astType.mlirType)) {
     uint32_t flags = lldb::eTypeHasChildren | lldb::eTypeIsVector;
     // Scalar SIMD (size == 1) holds a single numeric value. Without
     // eTypeHasValue, ValueObjectChild::UpdateValue() skips loading m_data but
@@ -457,7 +455,7 @@ uint32_t MojoTypeSystem::GetTypeInfo(
     return flags;
   }
 
-  if (isa<KGEN::StringType>(astType))
+  if (isa<KGEN::StringType>(astType.mlirType))
     return lldb::eTypeIsPointer | lldb::eTypeHasChildren | lldb::eTypeHasValue;
 
   if (impl->getIfStructDecl(astType))
@@ -476,7 +474,7 @@ lldb::Format MojoTypeSystem::GetFormat(lldb::opaque_compiler_type_t type) {
   if (flags & lldb::eTypeIsFloat)
     return lldb::eFormatFloat;
   if (flags & lldb::eTypeIsPointer) {
-    if (isa<KGEN::StringType>(MojoASTTypeRef(type)))
+    if (isa<KGEN::StringType>(Type::getFromOpaquePointer(type)))
       return lldb::eFormatCString;
     return lldb::eFormatHex;
   }
@@ -494,12 +492,12 @@ MojoTypeSystem::GetNonReferenceType(lldb::opaque_compiler_type_t type) {
 
 lldb_private::CompilerType
 MojoTypeSystem::GetFullyUnqualifiedType(lldb::opaque_compiler_type_t type) {
-  return createCompilerType(type);
+  return createCompilerType(Type::getFromOpaquePointer(type));
 }
 
 lldb_private::CompilerType
 MojoTypeSystem::GetCanonicalType(lldb::opaque_compiler_type_t type) {
-  return createCompilerType(type);
+  return createCompilerType(Type::getFromOpaquePointer(type));
 }
 
 uint32_t MojoTypeSystem::GetPointerByteSize() {
@@ -509,7 +507,7 @@ uint32_t MojoTypeSystem::GetPointerByteSize() {
 llvm::Expected<uint64_t>
 MojoTypeSystem::GetBitSize(lldb::opaque_compiler_type_t type,
                            lldb_private::ExecutionContextScope *exeScope) {
-  MojoASTTypeRef astType(type);
+  LIT::ASTType astType(Type::getFromOpaquePointer(type));
   if (!astType)
     return llvm::createStringError("Invalid type: Cannot determine size");
 
@@ -522,7 +520,7 @@ MojoTypeSystem::GetBitSize(lldb::opaque_compiler_type_t type,
 std::optional<size_t>
 MojoTypeSystem::GetTypeBitAlign(lldb::opaque_compiler_type_t type,
                                 lldb_private::ExecutionContextScope *exeScope) {
-  MojoASTTypeRef astType(type);
+  LIT::ASTType astType(Type::getFromOpaquePointer(type));
   if (!astType)
     return {};
 
@@ -533,7 +531,7 @@ MojoTypeSystem::GetTypeBitAlign(lldb::opaque_compiler_type_t type,
 }
 
 lldb::Encoding MojoTypeSystem::GetEncoding(lldb::opaque_compiler_type_t type) {
-  MojoASTTypeRef astType(type);
+  LIT::ASTType astType(Type::getFromOpaquePointer(type));
   if (!astType)
     return lldb::eEncodingInvalid;
 
@@ -555,10 +553,10 @@ lldb::Encoding MojoTypeSystem::GetEncoding(lldb::opaque_compiler_type_t type) {
 
 ConstString MojoTypeSystem::GetTypeName(lldb::opaque_compiler_type_t type,
                                         bool baseOnly) {
-  MojoASTTypeRef astType = dereferenceIfREPLResult(type);
+  LIT::ASTType astType = dereferenceIfREPLResult(type);
   if (!astType)
     return {};
-  mlir::Type mlirType = astType.getMLIRType();
+  mlir::Type mlirType = astType.mlirType;
   lldb::opaque_compiler_type_t opaqueType =
       const_cast<lldb::opaque_compiler_type_t>(mlirType.getAsOpaquePointer());
 
@@ -583,11 +581,12 @@ ConstString MojoTypeSystem::GetTypeName(lldb::opaque_compiler_type_t type,
 
 ConstString
 MojoTypeSystem::GetDisplayTypeName(lldb::opaque_compiler_type_t type) {
-  MojoASTTypeRef astType = dereferenceIfREPLResult(type);
+  LIT::ASTType astType = dereferenceIfREPLResult(type);
   if (!astType)
     return {};
 
-  std::string name = astType.getAsString(impl->parserContext->getSharedState());
+  std::string name = astType.getAsString(
+      LIT::ASTTypePrinterContext(&impl->parserContext->getSharedState()));
 
   auto mangledOr =
       LIT::MangledSymbol::demangle(StringAttr::get(&impl->mlirContext, name));
@@ -635,36 +634,36 @@ llvm::Expected<uint32_t>
 MojoTypeSystem::GetNumChildren(lldb::opaque_compiler_type_t type,
                                bool omitEmptyBaseClasses,
                                const lldb_private::ExecutionContext *exeCtx) {
-  MojoASTTypeRef astType = dereferenceIfREPLResult(type);
+  LIT::ASTType astType = dereferenceIfREPLResult(type);
   if (!astType)
     return 0;
 
-  if (auto ptrType = dyn_cast<KGEN::PointerType>(astType)) {
+  if (auto ptrType = dyn_cast<KGEN::PointerType>(astType.mlirType)) {
     CompilerType eltType = createCompilerType(ptrType.getElementType());
     if (eltType.IsAggregateType())
       return eltType.GetNumChildren(omitEmptyBaseClasses, exeCtx);
     return 1;
   }
 
-  if (auto simdTy = dyn_cast<SIMDType>(astType)) {
+  if (auto simdTy = dyn_cast<SIMDType>(astType.mlirType)) {
     if (simdTy.isScalar())
       return 1;
     return simdTy.getResolvedSize().value_or(0);
   }
 
-  if (auto arrayType = dyn_cast<POP::ArrayType>(astType))
+  if (auto arrayType = dyn_cast<POP::ArrayType>(astType.mlirType))
     return arrayType.getResolvedSize().value_or(0);
 
   if (LIT::StructDeclOp structDecl = impl->getIfStructDecl(astType))
     return llvm::range_size(structDecl.getFieldDecls());
 
-  if (auto structType = dyn_cast<StructType>(astType)) {
+  if (auto structType = dyn_cast<StructType>(astType.mlirType)) {
     std::optional<size_t> numElements = structType.getNumElements();
     return numElements.value_or(0);
   }
 
   // One for the discriminator, one for each variant.
-  if (auto variantType = dyn_cast<VariantType>(astType))
+  if (auto variantType = dyn_cast<VariantType>(astType.mlirType))
     return 1 + variantType.getNumTypes();
 
   // A union exposes one child per variant type, matching the DWARF
@@ -677,7 +676,7 @@ MojoTypeSystem::GetNumChildren(lldb::opaque_compiler_type_t type,
   // Callers inspecting a `!pop.union` directly must pick the correct child
   // based on the discriminant — displaying all of them is a deliberate
   // trade-off that keeps the type system simple.
-  if (auto unionType = dyn_cast<POP::UnionType>(astType))
+  if (auto unionType = dyn_cast<POP::UnionType>(astType.mlirType))
     return unionType.getNumTypes();
 
   return 0;
@@ -692,7 +691,7 @@ MojoTypeSystem::GetChildCompilerTypeAtIndex(
     uint32_t &childBitfieldBitOffset, bool &childIsBaseClass,
     bool &childIsDerefOfParent, lldb_private::ValueObject *valobj,
     uint64_t &languageFlags) {
-  MojoASTTypeRef astType = dereferenceIfREPLResult(type);
+  LIT::ASTType astType = dereferenceIfREPLResult(type);
   if (!astType)
     return lldb_private::CompilerType();
 
@@ -702,8 +701,8 @@ MojoTypeSystem::GetChildCompilerTypeAtIndex(
     return lldb_private::CompilerType();
 
   // Pointer only has one child, so just return the unwrapped pointer type
-  if (auto ptrType = dyn_cast<PointerType>(astType.getMLIRType())) {
-    MojoASTTypeRef eltType(ptrType.getElementType());
+  if (auto ptrType = dyn_cast<PointerType>(astType.mlirType)) {
+    LIT::ASTType eltType(ptrType.getElementType());
     CompilerType eltCompilerType = createCompilerType(eltType);
 
     // If transparentPointers is true, LLDB expects that a pointer is equivalent
@@ -734,14 +733,14 @@ MojoTypeSystem::GetChildCompilerTypeAtIndex(
     return lldb_private::CompilerType();
   }
 
-  if (auto simdType = dyn_cast<SIMDType>(astType)) {
+  if (auto simdType = dyn_cast<SIMDType>(astType.mlirType)) {
     if (std::optional<KGENDType> kgenDTypeOpt = simdType.getResolvedDType()) {
       if (kgenDTypeOpt.has_value()) {
         std::optional<mlir::Type> eltMlirType = getMLIRTypeForDType(
             getMLIRContext(), *kgenDTypeOpt, 8 * GetPointerByteSize());
         if (!eltMlirType)
           return lldb_private::CompilerType();
-        MojoASTTypeRef eltType(*eltMlirType);
+        LIT::ASTType eltType(*eltMlirType);
 
         if (const std::optional<MojoTypeDataLayout> &layout =
                 impl->dataLayoutContext->getOrCalculate(eltType)) {
@@ -756,8 +755,8 @@ MojoTypeSystem::GetChildCompilerTypeAtIndex(
     }
   }
 
-  if (auto arrayType = dyn_cast<POP::ArrayType>(astType)) {
-    MojoASTTypeRef eltType(arrayType.getElementType());
+  if (auto arrayType = dyn_cast<POP::ArrayType>(astType.mlirType)) {
+    LIT::ASTType eltType(arrayType.getElementType());
     if (const std::optional<MojoTypeDataLayout> &layout =
             impl->dataLayoutContext->getOrCalculate(eltType)) {
       childName = std::string(llvm::formatv("[{0}]", idx));
@@ -781,7 +780,7 @@ MojoTypeSystem::GetChildCompilerTypeAtIndex(
     return lldb_private::CompilerType();
   }
 
-  if (isa<StructType>(astType)) {
+  if (isa<StructType>(astType.mlirType)) {
     if (const std::optional<MojoTypeDataLayout> &layout =
             impl->dataLayoutContext->getOrCalculate(astType)) {
       childName = std::string(llvm::formatv("[{0}]", idx));
@@ -793,7 +792,7 @@ MojoTypeSystem::GetChildCompilerTypeAtIndex(
     return lldb_private::CompilerType();
   }
 
-  if (auto variantType = dyn_cast<VariantType>(astType)) {
+  if (auto variantType = dyn_cast<VariantType>(astType.mlirType)) {
     if (const std::optional<MojoTypeDataLayout> &layout =
             impl->dataLayoutContext->getOrCalculate(astType)) {
       // Name is hardcoded for now until we get proper DI variant type emission.
@@ -808,7 +807,7 @@ MojoTypeSystem::GetChildCompilerTypeAtIndex(
     return lldb_private::CompilerType();
   }
 
-  if (auto unionType = dyn_cast<POP::UnionType>(astType)) {
+  if (auto unionType = dyn_cast<POP::UnionType>(astType.mlirType)) {
     if (const std::optional<MojoTypeDataLayout> &layout =
             impl->dataLayoutContext->getOrCalculate(astType)) {
       // Child names match DWARF emission: `v0`, `v1`, ...
@@ -852,13 +851,13 @@ size_t MojoTypeSystem::GetIndexOfChildMemberWithName(
   // This method should return the total number of indices in `childIndices`
   // in the case of success. As a remark, the `childIndices` vector passed in
   // might not be empty.
-  MojoASTTypeRef astType = dereferenceIfREPLResult(type);
+  LIT::ASTType astType = dereferenceIfREPLResult(type);
   if (!astType || name.empty())
     return 0;
 
   // LLDB expects that a pointer is equivalent to its child aggregate type wrt
   // traversing children.
-  if (auto ptrType = dyn_cast<KGEN::PointerType>(astType)) {
+  if (auto ptrType = dyn_cast<KGEN::PointerType>(astType.mlirType)) {
     CompilerType eltType = createCompilerType(ptrType.getElementType());
     if (eltType.IsAggregateType()) {
       return eltType.GetIndexOfChildMemberWithName(name, omitEmptyBaseClasses,
@@ -867,7 +866,7 @@ size_t MojoTypeSystem::GetIndexOfChildMemberWithName(
   }
 
   // Check if the name is an index of a SIMD which is 0-indexed.
-  if (isa<StructType, SIMDType, POP::ArrayType>(astType)) {
+  if (isa<StructType, SIMDType, POP::ArrayType>(astType.mlirType)) {
     unsigned long index;
     if (name.consume_front("[") && !name.consumeInteger(10, index) &&
         name.consume_front("]") && name.empty()) {
@@ -897,7 +896,7 @@ size_t MojoTypeSystem::GetIndexOfChildMemberWithName(
 
 llvm::ArrayRef<TypedAttr>
 MojoTypeSystem::getStructDecorators(lldb::opaque_compiler_type_t type) {
-  MojoASTTypeRef astType = dereferenceIfREPLResult(type);
+  LIT::ASTType astType = dereferenceIfREPLResult(type);
   if (!astType)
     return {};
   if (LIT::StructDeclOp structDeclOp = impl->getIfStructDecl(astType))
@@ -991,7 +990,8 @@ MojoTypeSystem::createPOPArrayType(lldb::opaque_compiler_type_t elementType,
 
 /// This looks up the specified name in the indicated decl and returns a match
 /// if one exists, or null if not.
-static LIT::ASTDecl *lookupSingleMember(LIT::ASTDecl &decl, StringAttr name) {
+static LIT::OpASTDecl *lookupSingleMember(LIT::OpASTDecl &decl,
+                                          StringAttr name) {
   // Mark the decl as fully resolved so we can look up into it.  This is pretty
   // unfortunate, should we resolve the decl instead?
   auto oldResolvedness = decl.resolvedness;
@@ -1004,33 +1004,34 @@ static LIT::ASTDecl *lookupSingleMember(LIT::ASTDecl &decl, StringAttr name) {
     return nullptr;
   assert(existingDecls.size() == 1 &&
          "We expect one single decl with a given name");
-  return existingDecls[0];
+  return cast<LIT::OpASTDecl>(existingDecls[0]);
 }
 
-MojoASTDeclRef
+LIT::OpASTDecl *
 MojoTypeSystem::getOrCreatePackageDecl(StringRef name,
-                                       MojoASTDeclRef parentDeclRef) {
+                                       LIT::OpASTDecl *parentDecl) {
   LIT::SharedState &sharedState = impl->parserContext->getSharedState();
 
-  LIT::ASTDecl &parentDecl =
-      parentDeclRef ? *parentDeclRef
-                    : impl->parserContext->getSharedState().getTopLevelDecl();
+  LIT::OpASTDecl &parent =
+      parentDecl ? *parentDecl
+                 : impl->parserContext->getSharedState().getTopLevelDecl();
 
   // We first check if the package already exists, in which case we just return
   // its decl.
-  if (auto decl = lookupSingleMember(parentDecl,
-                                     StringAttr::get(getMLIRContext(), name)))
+  if (auto decl =
+          lookupSingleMember(parent, StringAttr::get(getMLIRContext(), name)))
     return decl;
 
-  auto moduleBuilder = parentDecl.getDeclEndBuilder();
+  auto moduleBuilder = parent.getDeclEndBuilder();
   auto packageName = StringAttr::get(sharedState.getContext(), name);
   auto packageOp = LIT::PackageOp::create(
-      moduleBuilder, sharedState.translateLocation(parentDecl.getLoc()),
+      moduleBuilder, sharedState.translateLocation(parent.getLoc()),
       packageName);
 
-  return &sharedState.declResolver->addDecl(
-      packageOp, SMLoc(), packageName, &parentDecl, parentDecl.getCursor(),
-      parentDecl.getCursor(), /*indentation=*/-1);
+  auto &decl = sharedState.declResolver->addDecl(
+      packageOp, SMLoc(), packageName, &parent, parent.getCursor(),
+      parent.getCursor(), /*indentation=*/-1);
+  return cast<LIT::OpASTDecl>(&decl);
 }
 
 /// Generate a human readable version of an identifier along with its parameters
@@ -1063,30 +1064,30 @@ static std::string generateParametrizedName(DebugInfo::SourceNameAttr attr) {
   return displayName;
 }
 
-MojoASTDeclRef MojoTypeSystem::createDeclsFromSourceNameRecursive(
+LIT::OpASTDecl *MojoTypeSystem::createDeclsFromSourceNameRecursive(
     DebugInfo::SourceNameAttr sourceName) {
-  MojoASTDeclRef parentDeclRef;
+  LIT::OpASTDecl *parentDecl = nullptr;
   if (DebugInfo::SourceNameAttr parent = sourceName.getParent())
-    parentDeclRef = createDeclsFromSourceNameRecursive(parent);
+    parentDecl = createDeclsFromSourceNameRecursive(parent);
 
   switch (sourceName.getKind()) {
   case DebugInfo::SourceNameKind::Package:
-    return getOrCreatePackageDecl(sourceName.getName(), parentDeclRef);
+    return getOrCreatePackageDecl(sourceName.getName(), parentDecl);
   case DebugInfo::SourceNameKind::Module:
-    return getOrCreateModuleDecl(sourceName.getName(), parentDeclRef);
+    return getOrCreateModuleDecl(sourceName.getName(), parentDecl);
   case DebugInfo::SourceNameKind::Struct:
     return getOrCreateStructDecl(generateParametrizedName(sourceName),
-                                 parentDeclRef);
+                                 parentDecl);
   case DebugInfo::SourceNameKind::Fn:
     return getOrCreateFunctionDecl(generateParametrizedName(sourceName),
-                                   parentDeclRef);
+                                   parentDecl);
   default:
     return {};
   }
 }
 
-MojoASTDeclRef MojoTypeSystem::getOrCreateDeclChainForDie(const DWARFDIE &die,
-                                                          StringRef name) {
+LIT::ASTDecl *MojoTypeSystem::getOrCreateDeclChainForDie(const DWARFDIE &die,
+                                                         StringRef name) {
   std::string effectiveName = name.str();
   if (name.empty() && die.Tag() != DW_TAG_subroutine_type &&
       die.Tag() != DW_TAG_inlined_subroutine) {
@@ -1106,31 +1107,31 @@ MojoASTDeclRef MojoTypeSystem::getOrCreateDeclChainForDie(const DWARFDIE &die,
 
   switch (die.Tag()) {
   case DW_TAG_compile_unit:
-    return getOrCreateModuleDecl(effectiveName, MojoASTDeclRef{});
+    return getOrCreateModuleDecl(effectiveName);
   case DW_TAG_structure_type: {
-    return getOrCreateStructDecl(effectiveName, MojoASTDeclRef{});
+    return getOrCreateStructDecl(effectiveName, nullptr);
   case DW_TAG_subprogram:
   case DW_TAG_subroutine_type:
   case DW_TAG_inlined_subroutine:
-    return getOrCreateFunctionDecl(effectiveName, MojoASTDeclRef{});
+    return getOrCreateFunctionDecl(effectiveName);
   }
   default:
     return {};
   }
 }
 
-MojoASTDeclRef
+LIT::OpASTDecl *
 MojoTypeSystem::getOrCreateModuleDecl(StringRef moduleName,
-                                      MojoASTDeclRef parentDeclRef) {
+                                      LIT::OpASTDecl *parentDecl) {
   LIT::SharedState &sharedState = impl->parserContext->getSharedState();
-  LIT::ASTDecl &parentDecl =
-      parentDeclRef ? *parentDeclRef
-                    : impl->parserContext->getSharedState().getTopLevelDecl();
+  LIT::OpASTDecl &parent =
+      parentDecl ? *parentDecl
+                 : impl->parserContext->getSharedState().getTopLevelDecl();
 
   // We first check if the module already exists, in which case we just return
   // its decl.
   if (auto decl = lookupSingleMember(
-          parentDecl, StringAttr::get(getMLIRContext(), moduleName)))
+          parent, StringAttr::get(getMLIRContext(), moduleName)))
     return decl;
 
   // We create a fake empty file so that parser diagnostics can be emitted if
@@ -1147,16 +1148,17 @@ MojoTypeSystem::getOrCreateModuleDecl(StringRef moduleName,
 
   auto name = StringAttr::get(sharedState.getContext(), moduleName);
 
-  OpBuilder builder = parentDecl.getDeclEndBuilder();
+  OpBuilder builder = parent.getDeclEndBuilder();
   Operation *fileOp = LIT::FileModuleOp::create(
-      builder, sharedState.translateLocation(parentDecl.getLoc()), name);
-  return &sharedState.declResolver->addFullyResolvedDecl(
-      fileOp, name, lexer.getToken().getLoc(), &parentDecl);
+      builder, sharedState.translateLocation(parent.getLoc()), name);
+  auto &decl = sharedState.declResolver->addFullyResolvedDecl(
+      fileOp, name, lexer.getToken().getLoc(), &parent);
+  return cast<LIT::OpASTDecl>(&decl);
 }
 
-MojoASTDeclRef
+LIT::OpASTDecl *
 MojoTypeSystem::getOrCreateFunctionDecl(StringRef functionName,
-                                        MojoASTDeclRef parentDecl) {
+                                        LIT::OpASTDecl *parentDecl) {
   if (!parentDecl)
     parentDecl = getOrCreateModuleDecl("__lldb_anonymous__");
 
@@ -1183,13 +1185,14 @@ MojoTypeSystem::getOrCreateFunctionDecl(StringRef functionName,
   auto newFunction = LIT::FnOp::create(
       builder, sharedState.translateLocation(parentDecl->getLoc()), nameAttr,
       name, signature);
-  return MojoASTDeclRef(&sharedState.declResolver->addDecl(
-      newFunction, parentDecl->getLoc(), name, &*parentDecl, {}, {}, -1));
+  auto &decl = sharedState.declResolver->addDecl(
+      newFunction, parentDecl->getLoc(), name, parentDecl, {}, {}, -1);
+  return cast<LIT::OpASTDecl>(&decl);
 }
 
-MojoASTDeclRef
+LIT::OpASTDecl *
 MojoTypeSystem::getOrCreateStructDecl(StringRef structName,
-                                      MojoASTDeclRef parentDecl) {
+                                      LIT::OpASTDecl *parentDecl) {
   if (!parentDecl)
     parentDecl = getOrCreateModuleDecl("__lldb_anonymous__");
 
@@ -1203,12 +1206,14 @@ MojoTypeSystem::getOrCreateStructDecl(StringRef structName,
   OpBuilder builder = parentDecl->getDeclEndBuilder();
   auto newStruct = LIT::StructDeclOp::create(
       builder, getSharedState().translateLocation(parentDecl->getLoc()), name);
-  return MojoASTDeclRef(&getSharedState().declResolver->addDecl(
-      newStruct, parentDecl->getLoc(), name, &*parentDecl, {}, {}, -1));
+  auto &decl = getSharedState().declResolver->addDecl(
+      newStruct, parentDecl->getLoc(), name, parentDecl, {}, {}, -1);
+  return cast<LIT::OpASTDecl>(&decl);
 }
 
-MojoASTDeclRef
-MojoTypeSystem::addFieldToStruct(MojoASTDeclRef structDecl, StringRef fieldName,
+LIT::ASTDecl *
+MojoTypeSystem::addFieldToStruct(LIT::StructASTDecl *structDecl,
+                                 StringRef fieldName,
                                  lldb::opaque_compiler_type_t type) {
   StringAttr name = StringAttr::get(getMLIRContext(), fieldName);
   OpBuilder builder = structDecl->getDeclEndBuilder();
@@ -1217,9 +1222,9 @@ MojoTypeSystem::addFieldToStruct(MojoASTDeclRef structDecl, StringRef fieldName,
       mlir::Type::getFromOpaquePointer(type), LIT::DocStringAttr(),
       /*isDocHidden=*/false, /*allowLegacyAnyOrigin=*/false,
       /*annotations=*/ArrayAttr());
-  auto fieldDecl = MojoASTDeclRef(&getSharedState().declResolver->addDecl(
-      newField, structDecl->getLoc(), name, &*structDecl, {}, {}, -1));
-  impl->dataLayoutContext->invalidateCache(structDecl.getType());
+  auto *fieldDecl = &getSharedState().declResolver->addDecl(
+      newField, structDecl->getLoc(), name, structDecl, {}, {}, -1);
+  impl->dataLayoutContext->invalidateCache(structDecl->getToolingType());
   return fieldDecl;
 }
 
@@ -1228,15 +1233,14 @@ MojoTypeSystem::DeclContextGetScopeQualifiedName(void *opaqueDeclCtx) {
   if (!opaqueDeclCtx)
     return {};
   auto *decl = static_cast<LIT::ASTDecl *>(opaqueDeclCtx);
-  return ConstString(MojoASTDeclRef(decl).getType().getAsString(
-      impl->parserContext->getSharedState()));
+  return ConstString(decl->getToolingType().getAsString(
+      LIT::ASTTypePrinterContext(&impl->parserContext->getSharedState())));
 }
 
 ConstString MojoTypeSystem::DeclContextGetName(void *opaqueDeclCtx) {
-  if (!opaqueDeclCtx) {
+  if (opaqueDeclCtx) {
     if (std::optional<StringRef> name =
-            MojoASTDeclRef(static_cast<LIT::ASTDecl *>(opaqueDeclCtx))
-                .getName()) {
+            static_cast<LIT::ASTDecl *>(opaqueDeclCtx)->getName()) {
       return ConstString(*name);
     }
   }
@@ -1292,6 +1296,6 @@ lldb_private::CompilerType MojoTypeSystem::createCompilerType(mlir::Type type) {
 }
 
 lldb_private::CompilerType
-MojoTypeSystem::createCompilerType(MojoASTTypeRef astType) {
-  return createCompilerType(astType.getMLIRType());
+MojoTypeSystem::createCompilerType(LIT::ASTType astType) {
+  return createCompilerType(astType.mlirType);
 }

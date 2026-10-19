@@ -28,9 +28,9 @@ comptime IN_TILE_DIM = OUT_TILE_DIM + ((STENCIL_WIDTH - 1) // STENCIL_ORDER)
 
 # ========================== KERNEL CODE ==========================
 def stencil_kernel(
-    d_in: UnsafePointer[Float32, ImmutAnyOrigin],
-    d_out: UnsafePointer[Float32, MutAnyOrigin],
-    d_c: UnsafePointer[Float32, ImmutAnyOrigin],  # Stencil coefficients
+    d_in: ImmPointer[Float32, ImmutAnyOrigin],
+    d_out: MutPointer[Float32, MutAnyOrigin],
+    d_c: ImmPointer[Float32, ImmutAnyOrigin],  # Stencil coefficients
     n_dev: Int32,
 ):
     """3D stencil kernel with shared memory tiling and halo cells.

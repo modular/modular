@@ -169,9 +169,7 @@ def _round_trip(
     var back = stack_allocation[dtype=.float32](row_major[1, num_cols]())
     back.copy_from(row)
     comptime for c in range(num_cols):
-        output[unsafe_offset=out_row * num_cols + c] = back[
-            Coord(Idx[0], Idx[c])
-        ]
+        output[unsafe_offset=out_row * num_cols + c] = back[Idx[0], Idx[c]]
 
 
 def _tmem_round_trip_kernel[
@@ -242,7 +240,7 @@ def tmem_async_round_trip_kernel(output: MutPointer[Float32, MutAnyOrigin]):
         )
     TMemEngine.wait_load()
     comptime for c in range(NUM_COLS):
-        output[unsafe_offset=lane * NUM_COLS + c] = back[Coord(Idx[0], Idx[c])]
+        output[unsafe_offset=lane * NUM_COLS + c] = back[Idx[0], Idx[c]]
 
     barrier()
     if warp_id() == 0:

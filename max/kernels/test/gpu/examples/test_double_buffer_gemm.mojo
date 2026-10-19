@@ -206,11 +206,10 @@ def sgemm_double_buffer[
     # buffer: lane row `q` takes vectors `q`, `q + warp_dim_y`, ...
     @inline(.always)
     def load_a_frag(smem_id: Int, k: Int, reg_id: Int) {imm}:
-        var a_smem_warp_row = TileTensor(
-            a_smem_tiles[smem_id].ptr.unsafe_offset(
-                k * BM_padded + warp_y * WM
-            ),
-            row_major[WM](),
+        var a_smem_warp_row = (
+            a_smem_tiles[smem_id]
+            .tile[1, WM]((k, warp_y))
+            .reshape(row_major[WM]())
         )
         a_reg[reg_id].vectorize[simd_size]().copy_from(
             a_smem_warp_row.vectorize[simd_size]().distribute[
@@ -222,9 +221,10 @@ def sgemm_double_buffer[
     # `p`.
     @inline(.always)
     def load_b_frag(smem_id: Int, k: Int, reg_id: Int) {imm}:
-        var b_smem_warp_row = TileTensor(
-            b_smem_tiles[smem_id].ptr.unsafe_offset(k * BN + warp_x * WN),
-            row_major[WN](),
+        var b_smem_warp_row = (
+            b_smem_tiles[smem_id]
+            .tile[1, WN]((k, warp_x))
+            .reshape(row_major[WN]())
         )
         b_reg[reg_id].vectorize[simd_size]().copy_from(
             b_smem_warp_row.vectorize[simd_size]().distribute[

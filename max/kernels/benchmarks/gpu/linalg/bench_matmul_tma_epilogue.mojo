@@ -316,10 +316,7 @@ def bench_matmul_tma_epilogue[
 
     var flops = ThroughputMeasure(
         BenchMetric.flops,
-        2
-        * Int(shape_c[0].value())
-        * Int(shape_c[1].value())
-        * Int(shape_a[1].value()),
+        2 * Int(shape_c[0]) * Int(shape_c[1]) * Int(shape_a[1]),
     )
 
     var bench_name = String(
@@ -327,11 +324,11 @@ def bench_matmul_tma_epilogue[
         " (dtype=",
         String(dtype),
         ") : ",
-        Int(shape_c[0].value()),
+        Int(shape_c[0]),
         "_dynamic x ",
-        Int(shape_c[1].value()),
+        Int(shape_c[1]),
         " x ",
-        Int(shape_a[1].value()),
+        Int(shape_a[1]),
     )
 
     if run_benchmark:
@@ -344,9 +341,9 @@ def bench_matmul_tma_epilogue[
         kernel_launch(ctx, 0)
 
     if verify:
-        var M = Int(shape_c[0].value())
-        var N = Int(shape_c[1].value())
-        var K = Int(shape_a[1].value())
+        var M = Int(shape_c[0])
+        var N = Int(shape_c[1])
+        var K = Int(shape_a[1])
         var c_size = M * N
         var a_size = M * K
         var b_size = N * K  # transpose_b=True → B is N×K

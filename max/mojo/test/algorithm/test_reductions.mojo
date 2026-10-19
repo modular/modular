@@ -78,7 +78,7 @@ def test_fused_reductions_inner() raises:
         dtype: DType, width: Int
     ](indices: Coord) {var vector} -> SIMD[dtype, width]:
         var loaded_val = vector.unsafe_ptr().unsafe_load[width=width](
-            Int(indices[0].value())
+            Int(indices[0])
         )
         return loaded_val._refine[dtype]()
 
@@ -152,7 +152,7 @@ def test_fused_reductions_outer() raises:
         dtype: DType, width: Int
     ](indices: Coord) {var vector} -> SIMD[dtype, width]:
         var loaded_val = vector.unsafe_ptr().unsafe_load[width=width](
-            Int(indices[0].value()) * 2 + Int(indices[1].value())
+            Int(indices[0]) * 2 + Int(indices[1])
         )
         return loaded_val._refine[dtype]()
 

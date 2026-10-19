@@ -54,6 +54,7 @@ modular_py_test(
         "//max/python/max/pipelines/architectures/dflash_mimo_v2",
         "//max/tests/integration/test_common:simple_kv_cache",
         requirement("numpy"),
+        requirement("ml-dtypes"),
     ],
 )
 

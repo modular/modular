@@ -51,8 +51,8 @@ struct CoordBox(DevicePassable, ImplicitlyCopyable, TrivialRegisterPassable):
 # Launched single-threaded (grid=1/block=1), so the kernel writes
 # unconditionally and needs no `global_idx`.
 def _read_back_kernel(box: CoordBox, dst: Pointer[Int64, MutAnyOrigin]):
-    dst[] = Int64(Int(box.dims[0].value()))
-    dst[unsafe_offset=1] = Int64(Int(box.dims[1].value()))
+    dst[] = Int64(Int(box.dims[0]))
+    dst[unsafe_offset=1] = Int64(Int(box.dims[1]))
     dst[unsafe_offset=2] = Int64(box.tag)
 
 

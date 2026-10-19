@@ -67,7 +67,7 @@ def _produced_value(i: Int) -> Int32:
 def pingpong_kernel[
     num_stages: Int,
     Backend: PipelineBackend,
-](result: UnsafePointer[Scalar[DType.int32], MutAnyOrigin], n_items: Int32):
+](result: MutPointer[Scalar[DType.int32], MutAnyOrigin], n_items: Int32):
     """Hand `n_items` values from one producer warp to one consumer warp."""
     comptime n_bar = 2 * num_stages  # full[0..num_stages) then empty[0..)
 

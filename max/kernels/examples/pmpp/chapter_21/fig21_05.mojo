@@ -30,8 +30,8 @@ from dcs_utils import GridDim, init_atoms, verify_grid
 
 
 def cenergy_scatter_kernel(
-    energygrid: UnsafePointer[Float32, MutAnyOrigin],
-    atoms: UnsafePointer[Float32, ImmutAnyOrigin],
+    energygrid: MutPointer[Float32, MutAnyOrigin],
+    atoms: ImmPointer[Float32, ImmutAnyOrigin],
     grid_x_dev: Int32,
     grid_y_dev: Int32,
     gridspacing: Float32,
@@ -84,7 +84,8 @@ def cenergy_scatter_kernel(
                 # Scatter add with atomic operation
                 var energy_contrib = charge / sqrt(dx * dx + dy2 + dz2)
                 _ = Atomic.fetch_add(
-                    energygrid + grid_row_offset + i, energy_contrib
+                    energygrid.unsafe_offset(grid_row_offset).unsafe_offset(i),
+                    energy_contrib,
                 )
 
 

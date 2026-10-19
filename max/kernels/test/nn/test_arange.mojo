@@ -61,7 +61,7 @@ def test_arange[
 
     @inline(.always)
     def arange_lambda[simd_width: Int, alignment: Int = 1](idx: Coord) {var}:
-        var index = IndexList[1](Int(idx[0].value()))
+        var index = IndexList[1](Int(idx[0]))
         var range_val = arange[dtype, simd_width](start, stop, step, index)
         # Extract first element only: idx may have rank > 1 from elementwise,
         # but out_tensor is 1D so we need a single-element coordinate.

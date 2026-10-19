@@ -24,7 +24,7 @@ This module contains generic SM100 (Blackwell) GPU primitives including:
 from std.builtin.dtype import _unsigned_integral_type_of
 from std.math import ceildiv, exp2, align_up, iota
 from std.math.constants import log2e
-from std.sys import size_of, _RegisterPackType
+from std.sys import align_of, size_of, _RegisterPackType
 from std.sys._assembly import inlined_assembly
 from std.sys.intrinsics import llvm_intrinsic
 from std.bit import prev_power_of_two, pop_count
@@ -40,6 +40,7 @@ from max.gpu.compute.arch.mma_nvidia_sm100 import (
 )
 from max.gpu.compute.arch.tcgen05 import tcgen05_ld, tcgen05_st
 from layout import (
+    Idx,
     IntTuple,
     Layout,
     TensorEngine,
@@ -389,7 +390,9 @@ def blasst_vote_unanimous(
     # (`kernel.mojo` zero-inits the region; `blasst_observe` writes 0/1), so
     # "all four nonzero" == "the word is 0x01010101".
     var base = (wg * UInt32(2) + phase) * UInt32(4)
-    return (blasst_vote + base).bitcast[UInt32]()[0] == UInt32(0x01010101)
+    return blasst_vote.unsafe_offset(base).unsafe_bitcast[UInt32]()[
+        0
+    ] == UInt32(0x01010101)
 
 
 @inline(.always)
@@ -500,7 +503,7 @@ def st_shared_v4_b32[
         packed: Four `u32` words forming one 16 B SWIZZLE_NONE block to
             store.
     """
-    var dst_ptr = dst + elem_off
+    var dst_ptr = dst.unsafe_offset(elem_off)
     _ = inlined_assembly[
         "st.shared.v4.b32 [$0], {$1, $2, $3, $4};",
         NoneType,
@@ -521,9 +524,7 @@ def store_p_quadrant[
     # A-descriptor is built over (`BM` for the shared-key datapath).
     p_tile_rows: Int,
 ](
-    p_smem: UnsafePointer[
-        mut=True, Scalar[p_type], _, address_space=AddressSpace.SHARED
-    ],
+    p_smem: MutPointer[Scalar[p_type], _, address_space=AddressSpace.SHARED],
     p: Array[Scalar[DType.float32], cols],
     row: UInt32,
     warp_in_wg: UInt32,
@@ -685,7 +686,9 @@ struct TMemTile[
 
                 comptime if src_type == Self.dtype:
                     comptime for _i in range(frag_width):
-                        frag[_i] = src.bitcast[.uint32]().raw_load(offset + _i)
+                        frag[_i] = src.bitcast[.uint32]().load[width=1](
+                            (Idx[offset + _i],)
+                        )
                 elif pow_two > 1:
                     comptime size_ratio = size_of[src_type]() // Self.dtype_size
                     comptime cast_width = min(
@@ -698,9 +701,10 @@ struct TMemTile[
 
                     comptime if u32_per_cast >= 1:
                         comptime for _i in range(num_casts):
-                            var src_vec = src.raw_load[width=cast_width](
-                                offset + _i * cast_width
-                            )
+                            var src_vec = src.load[
+                                width=cast_width,
+                                alignment=align_of[src_type](),
+                            ]((Idx[offset + _i * cast_width],))
                             var dst_vec = src_vec.cast[Self.dtype]()
                             var packed_chunk = bitcast[
                                 DType.uint32, u32_per_cast
@@ -709,15 +713,15 @@ struct TMemTile[
                                 frag[_i * u32_per_cast + _j] = packed_chunk[_j]
                     else:
                         var packed = bitcast[.uint32, frag_width](
-                            src.raw_load[width=pow_two](offset).cast[
-                                Self.dtype
-                            ]()
+                            src.load[
+                                width=pow_two, alignment=align_of[src_type]()
+                            ]((Idx[offset],)).cast[Self.dtype]()
                         )
                         comptime for _i in range(frag_width):
                             frag[_i] = packed[_i]
                 else:
                     frag[0] = bitcast[.uint32](
-                        src.raw_load[width=1](0).cast[Self.dtype]()
+                        src.load[width=1]((Idx[0],)).cast[Self.dtype]()
                     )
 
                 tcgen05_st[
@@ -2554,7 +2558,7 @@ def elect_mma_arrive[
 
 @inline(.always)
 def expect_bytes_pred(
-    mbar_ptr: UnsafePointer[address_space=.SHARED, ...],
+    mbar_ptr: Pointer[address_space=.SHARED, ...],
     bytes: Int32,
     pred: Int32,
 ):
@@ -2834,12 +2838,16 @@ struct StagedPipeline[num_kv_stages: Int, num_qk_stages: Int = 1](
     @inline(.always)
     def producer_mbar[qk_stage: Int = 0](self) -> MBarType:
         var idx: UInt32 = self.state.index()
-        return self.mbar + UInt32(Self.num_qk_stages) * idx + qk_stage
+        return self.mbar.unsafe_offset(
+            UInt32(Self.num_qk_stages) * idx
+        ).unsafe_offset(qk_stage)
 
     @inline(.always)
     def consumer_mbar[qk_stage: Int = 0](self, idx: UInt32) -> MBarType:
         comptime const_offset = qk_stage + Self.num_stages
-        return self.mbar + UInt32(Self.num_qk_stages) * idx + const_offset
+        return self.mbar.unsafe_offset(
+            UInt32(Self.num_qk_stages) * idx
+        ).unsafe_offset(const_offset)
 
     @inline(.always)
     def consumer_mbar[qk_stage: Int = 0](self) -> MBarType:
@@ -2898,7 +2906,9 @@ struct StagedPipeline[num_kv_stages: Int, num_qk_stages: Int = 1](
         """
         comptime qk_stage = Self.num_qk_stages - 1
         comptime const_offset = qk_stage + Self.num_stages
-        var mbar = self.mbar + UInt32(Self.num_qk_stages) * idx + const_offset
+        var mbar = self.mbar.unsafe_offset(
+            UInt32(Self.num_qk_stages) * idx
+        ).unsafe_offset(const_offset)
         elect_mma_arrive(mbar, e)
 
     @staticmethod
@@ -3037,12 +3047,14 @@ struct TMAProducerPipeline[dtype: DType, config: FA4Config, is_k: Bool = True](
             var dyn_offset: UInt32 = (
                 UInt32(Self.elements_full) * self.pipeline.state.index()
             )
-            return self.smem + stage_offset + dyn_offset
+            return self.smem.unsafe_offset(stage_offset).unsafe_offset(
+                dyn_offset
+            )
         else:
             var dyn_offset: UInt32 = (
                 UInt32(Self.elements) * self.pipeline.state.index()
             )
-            return self.smem + dyn_offset
+            return self.smem.unsafe_offset(dyn_offset)
 
     @inline(.always)
     def get_tile[*, qk_stage: Int = 0](self) -> Self.PairType:
@@ -3384,11 +3396,9 @@ struct RolePipeline[
         comptime assert (
             sub_stage_idx < Self.producer_sub_stages
         ), "sub_stage_idx out of range"
-        return (
-            self.producer_mbar_base
-            + self.state.index() * UInt32(Self.producer_sub_stages)
-            + sub_stage_idx
-        )
+        return self.producer_mbar_base.unsafe_offset(
+            self.state.index() * UInt32(Self.producer_sub_stages)
+        ).unsafe_offset(sub_stage_idx)
 
     @inline(.always)
     def consumer_mbar[sub_stage_idx: Int = 0](self) -> MBarType:
@@ -3400,11 +3410,9 @@ struct RolePipeline[
         comptime assert (
             sub_stage_idx < Self.consumer_sub_stages
         ), "sub_stage_idx out of range"
-        return (
-            self.consumer_mbar_base
-            + self.state.index() * UInt32(Self.consumer_sub_stages)
-            + sub_stage_idx
-        )
+        return self.consumer_mbar_base.unsafe_offset(
+            self.state.index() * UInt32(Self.consumer_sub_stages)
+        ).unsafe_offset(sub_stage_idx)
 
     # Producer methods
     @inline(.nodebug)
@@ -4187,16 +4195,16 @@ struct FA4MiscMBars[
     def producer_s0(self) -> Self.SPipelineProducer:
         """Get S producer for warp group 0."""
         return {
-            self.mbar_base + Self.S0_producer_offset,
-            self.mbar_base + Self.S0_consumer_offset,
+            self.mbar_base.unsafe_offset(Self.S0_producer_offset),
+            self.mbar_base.unsafe_offset(Self.S0_consumer_offset),
         }
 
     @inline(.always)
     def producer_s1(self) -> Self.SPipelineProducer:
         """Get S producer for warp group 1."""
         return {
-            self.mbar_base + Self.S1_producer_offset,
-            self.mbar_base + Self.S1_consumer_offset,
+            self.mbar_base.unsafe_offset(Self.S1_producer_offset),
+            self.mbar_base.unsafe_offset(Self.S1_consumer_offset),
         }
 
     @inline(.always)
@@ -4208,36 +4216,45 @@ struct FA4MiscMBars[
                 pipeline.
         """
         return {
-            self.mbar_base + Self.S0_producer_offset + wg_idx,
-            self.mbar_base + UInt32(Self.num_pv_stages) * wg_idx,
+            self.mbar_base.unsafe_offset(Self.S0_producer_offset).unsafe_offset(
+                wg_idx
+            ),
+            self.mbar_base.unsafe_offset(UInt32(Self.num_pv_stages) * wg_idx),
         }
 
     @inline(.always)
     def consumer_c0(self) -> ConsumerPipeline[1]:
         return {
-            self.mbar_base + Self.C0_offset,
-            self.mbar_base + Self.C0_offset + 1,
+            self.mbar_base.unsafe_offset(Self.C0_offset),
+            self.mbar_base.unsafe_offset(Self.C0_offset).unsafe_offset(1),
         }
 
     @inline(.always)
     def consumer_c1(self) -> ConsumerPipeline[1]:
         return {
-            self.mbar_base + Self.C1_offset,
-            self.mbar_base + Self.C1_offset + 1,
+            self.mbar_base.unsafe_offset(Self.C1_offset),
+            self.mbar_base.unsafe_offset(Self.C1_offset).unsafe_offset(1),
         }
 
     @inline(.always)
     def producer_c(self, wg_idx: UInt32) -> ProducerPipeline[1]:
         var base = UInt32(Self.C0_offset) + 2 * wg_idx
-        return {self.mbar_base + base, self.mbar_base + base + 1}
+        return {
+            self.mbar_base.unsafe_offset(base),
+            self.mbar_base.unsafe_offset(base).unsafe_offset(1),
+        }
 
     @inline(.always)
     def pipeline_order_wait(self, wg_idx: UInt32) -> MBarType:
-        return self.mbar_base + Self.order_offset + wg_idx
+        return self.mbar_base.unsafe_offset(Self.order_offset).unsafe_offset(
+            wg_idx
+        )
 
     @inline(.always)
     def pipeline_order_arrive(self, wg_idx: UInt32) -> MBarType:
-        return self.mbar_base + (Self.order_offset + 1) - wg_idx
+        return self.mbar_base.unsafe_offset(
+            Self.order_offset + 1
+        ).unsafe_offset(-wg_idx)
 
     @inline(.always)
     def q1_wait_mbar(self) -> MBarType:
@@ -4245,13 +4262,13 @@ struct FA4MiscMBars[
             "q1_wait_mbar() requires num_q == 2; the Q1Sync slot is"
             " collapsed when num_q == 1."
         )
-        return self.mbar_base + Self.Q1SyncIdx
+        return self.mbar_base.unsafe_offset(Self.Q1SyncIdx)
 
     # K/V/O barrier accessors
     @inline(.nodebug)
     def get_k_mbars(self) -> MBarType:
         """Returns base pointer for K pipeline barriers."""
-        return self.mbar_base + Self.K_offset
+        return self.mbar_base.unsafe_offset(Self.K_offset)
 
     @inline(.nodebug)
     def get_v_mbars(self) -> MBarType:
@@ -4259,9 +4276,9 @@ struct FA4MiscMBars[
         In shared mode, returns the same as get_k_mbars (shared pipeline).
         """
         comptime if Self.use_shared_kv:
-            return self.mbar_base + Self.K_offset
+            return self.mbar_base.unsafe_offset(Self.K_offset)
         else:
-            return self.mbar_base + Self.V_offset
+            return self.mbar_base.unsafe_offset(Self.V_offset)
 
     @inline(.nodebug)
     def combined_p_o_consumer(self, wg_idx: UInt32) -> MBarType:
@@ -4274,7 +4291,7 @@ struct FA4MiscMBars[
             wg_idx: Warp group index (0 or 1) selecting the consumer
                 barrier slot.
         """
-        return self.mbar_base + UInt32(Self.num_pv_stages) * wg_idx
+        return self.mbar_base.unsafe_offset(UInt32(Self.num_pv_stages) * wg_idx)
 
     # ---- Cross-stage P handshake accessors (CrossP_enabled, 2Q, non-WS) ----
     comptime CrossPProducer = RolePipeline[1, True, 1, 1]
@@ -4291,12 +4308,16 @@ struct FA4MiscMBars[
     # acquires it (consumer .wait/.step) before overwriting S{wg}.
     @inline(.always)
     def sfree_producer(self, wg: UInt32) -> Self.CrossPProducer:
-        var m = self.mbar_base + UInt32(Self.CrossP_offset) + wg
+        var m = self.mbar_base.unsafe_offset(
+            UInt32(Self.CrossP_offset)
+        ).unsafe_offset(wg)
         return {m, m}
 
     @inline(.always)
     def sfree_consumer(self, wg: UInt32) -> Self.CrossPConsumer:
-        var m = self.mbar_base + UInt32(Self.CrossP_offset) + wg
+        var m = self.mbar_base.unsafe_offset(
+            UInt32(Self.CrossP_offset)
+        ).unsafe_offset(wg)
         return {m, m}
 
     # inplace{k}: k=0 -> s0_p1 (softmax0 produces "S0 window free", softmax1
@@ -4305,20 +4326,16 @@ struct FA4MiscMBars[
     # cycle them via state.index() (producer_mbar_base == consumer_mbar_base).
     @inline(.always)
     def inplace_producer(self, k: UInt32) -> Self.InplaceProducer:
-        var base = (
-            self.mbar_base
-            + UInt32(Self.CrossP_offset + 2)
-            + k * UInt32(Self.InplaceDepth)
-        )
+        var base = self.mbar_base.unsafe_offset(
+            UInt32(Self.CrossP_offset + 2)
+        ).unsafe_offset(k * UInt32(Self.InplaceDepth))
         return {base, base}
 
     @inline(.always)
     def inplace_consumer(self, k: UInt32) -> Self.InplaceConsumer:
-        var base = (
-            self.mbar_base
-            + UInt32(Self.CrossP_offset + 2)
-            + k * UInt32(Self.InplaceDepth)
-        )
+        var base = self.mbar_base.unsafe_offset(
+            UInt32(Self.CrossP_offset + 2)
+        ).unsafe_offset(k * UInt32(Self.InplaceDepth))
         return {base, base}
 
     # O pipeline convenience methods
@@ -4331,7 +4348,7 @@ struct FA4MiscMBars[
         stride num_pv_stages).
         """
         return {
-            self.mbar_base + Self.O_producer_offset,
+            self.mbar_base.unsafe_offset(Self.O_producer_offset),
             self.mbar_base,
         }
 
@@ -4350,7 +4367,7 @@ struct FA4MiscMBars[
         in `producer_o0`.
         """
         return {
-            self.mbar_base + Self.O_producer_offset,
+            self.mbar_base.unsafe_offset(Self.O_producer_offset),
             self.combined_p_o_consumer(0),
         }
 
@@ -4358,7 +4375,7 @@ struct FA4MiscMBars[
     def producer_o0(self) -> ProducerPipeline[1]:
         """Get O producer for warp group 0."""
         return {
-            self.mbar_base + Self.O_producer_offset,
+            self.mbar_base.unsafe_offset(Self.O_producer_offset),
             self.combined_p_o_consumer(0),
         }
 
@@ -4366,7 +4383,9 @@ struct FA4MiscMBars[
     def producer_o1(self) -> ProducerPipeline[1]:
         """Get O producer for warp group 1."""
         return {
-            self.mbar_base + Self.O_producer_offset + 1,
+            self.mbar_base.unsafe_offset(Self.O_producer_offset).unsafe_offset(
+                1
+            ),
             self.combined_p_o_consumer(1),
         }
 
@@ -4380,7 +4399,7 @@ struct FA4MiscMBars[
         the publish sites need no CTA-local `named_barrier` to collect rows. Only
         present for 1Q split-K (`Publish_count > 0`).
         """
-        return self.mbar_base + Self.Publish_offset
+        return self.mbar_base.unsafe_offset(Self.Publish_offset)
 
     @staticmethod
     @inline(.always)

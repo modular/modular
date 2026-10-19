@@ -14,7 +14,7 @@
 """Implements the SM100 MLA decode kernel variant that loads KV cache in FP8 and converts to BF16 in shared memory before MMA."""
 
 from std.math import ceildiv
-from std.sys import size_of
+from std.sys import align_of, size_of
 from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     thread_idx,
@@ -40,6 +40,8 @@ from layout.tma_async import (
 from std.memory import bitcast
 from layout import (
     ComptimeInt,
+    Coord,
+    Idx,
     RowMajorLayout,
     TensorEngine,
     TileTensor,
@@ -303,7 +305,7 @@ struct MLA_SM100_Decode_KV_FP8[
             MaskType=Self.MaskType,
             SplitAccumType=Self.SplitAccumType,
         ],
-        scales_ptr: UnsafePointer[Float32, origin=MutAnyOrigin],
+        scales_ptr: MutPointer[Float32, origin=MutAnyOrigin],
         scalar_args: TileTensor[
             .int64,
             RowMajorLayout[ComptimeInt[3]],
@@ -327,8 +329,8 @@ struct MLA_SM100_Decode_KV_FP8[
         comptime num_reg_correction = 72
         comptime num_reg_keep_mma_load_store = 72
         comptime num_reg_keep_fp8tofp16 = 184
-        var batch_size = Int(scalar_args.raw_load(0))
-        var q_max_seq_len = Int(scalar_args.raw_load(1))
+        var batch_size = Int(scalar_args[0])
+        var q_max_seq_len = Int(scalar_args[1])
         var num_partitions = Int(mla_decode_pack.num_partitions)
         var mask = mla_decode_pack.mask
         var valid_length = mla_decode_pack.valid_length
@@ -343,7 +345,7 @@ struct MLA_SM100_Decode_KV_FP8[
         ](
             kv_lut,
             rebind[
-                UnsafePointer[
+                ImmPointer[
                     Scalar[Self.ValidLengthType.dtype],
                     ImmutAnyOrigin,
                     address_space=.GENERIC,
@@ -396,11 +398,12 @@ struct MLA_SM100_Decode_KV_FP8[
             alignment=128,
             name="mha_dynamic_shared_memory",
         ]()
-        var kv_smem_bf16 = q_smem + Self.BlockElems * Self.NumQKBlocks
-        var kv_smem_fp8_upper0 = (
-            kv_smem_bf16.bitcast[Scalar[Self.KVLUTType.dtype]]()
-            + Self.BlockElems * Self.NumQKBlocks
+        var kv_smem_bf16 = q_smem.unsafe_offset(
+            Self.BlockElems * Self.NumQKBlocks
         )
+        var kv_smem_fp8_upper0 = kv_smem_bf16.unsafe_bitcast[
+            Scalar[Self.KVLUTType.dtype]
+        ]().unsafe_offset(Self.BlockElems * Self.NumQKBlocks)
 
         comptime kv_total_stages = Self.config.num_kv_stages
         # to reuse the K for V as well, we break KV as 9 stages of 64x64 to cover 64x576
@@ -410,7 +413,9 @@ struct MLA_SM100_Decode_KV_FP8[
         # We move P to the last slot of KV pipeline SO now we have tile of 64x
         # 32 of float or 64x64 of FP16 to save output into
         # tiles in SMEM and smooth the pipeline for the next batch if we use splitk
-        var out_smem_start = kv_smem_bf16.bitcast[Scalar[Self.output_type]]()
+        var out_smem_start = kv_smem_bf16.unsafe_bitcast[
+            Scalar[Self.output_type]
+        ]()
         # there is potential to have two Tmem for S, because we have two K so we can
         # unblock the MMA while loading S to reg for softmax
         # if it was splitk we need to use the extra P slot. If not we need
@@ -418,16 +423,16 @@ struct MLA_SM100_Decode_KV_FP8[
         # MMA/load when max is valid.
         var out_smem_total = kv_smem_total
 
-        var out_smem = out_smem_start.bitcast[Scalar[Self.output_type]]()
+        var out_smem = out_smem_start.unsafe_bitcast[Scalar[Self.output_type]]()
 
         # max_smem is double-buffered (2 x 128 elements) to avoid a race
         # condition in softmax; li_smem is a single 128-element buffer.
-        var max_smem = (out_smem + out_smem_total).bitcast[
+        var max_smem = out_smem.unsafe_offset(out_smem_total).unsafe_bitcast[
             Scalar[Self.AccumType]
         ]()
 
-        var li_smem = (
-            max_smem + 2 * WARPGROUP_SIZE
+        var li_smem = max_smem.unsafe_offset(
+            2 * WARPGROUP_SIZE
         )  # 128 x1 for SMEM correction for Softmax
 
         # Scale SMEM for blockwise FP8 scaling (e8m0, 1 byte per scale).
@@ -435,20 +440,25 @@ struct MLA_SM100_Decode_KV_FP8[
         # stage 1 at scale_smem_base + scale_smem_per_stage.
         # When scale_block_size == 0 (tensorwise), scale_smem_per_stage is 0
         # and this region is empty.
-        var scale_smem_base = (li_smem + WARPGROUP_SIZE).bitcast[UInt8]()
+        var scale_smem_base = li_smem.unsafe_offset(
+            WARPGROUP_SIZE
+        ).unsafe_bitcast[UInt8]()
 
         #  Now we have to define MBARS for the kernel
         var mbar_base: MBarType = (
             (
-                scale_smem_base
-                + Self.config.scale_smem_per_stage * Self.config.num_kv_stages
+                scale_smem_base.unsafe_offset(
+                    Self.config.scale_smem_per_stage * Self.config.num_kv_stages
+                )
             )
-            .bitcast[SharedMemBarrier]()
+            .unsafe_bitcast[SharedMemBarrier]()
             .as_unsafe_any_origin()
         )
 
         var mbar_q: MBarType = mbar_base  # q uses 0
-        var mbar_kv_base: MBarType = mbar_base + 1  # barrier total[1]
+        var mbar_kv_base: MBarType = mbar_base.unsafe_offset(
+            1
+        )  # barrier total[1]
 
         var kv_cvt2mma_pipe = KVPipelineGeneric[
             num_kv_stages=Self.config.num_kv_stages,  # 2
@@ -458,7 +468,9 @@ struct MLA_SM100_Decode_KV_FP8[
         ](mbar_kv_base)
 
         # Move mbar_base to the first free barrier *after* KV:
-        mbar_base = mbar_kv_base + kv_cvt2mma_pipe.num_mbars()  # kv uses 1..4
+        mbar_base = mbar_kv_base.unsafe_offset(
+            kv_cvt2mma_pipe.num_mbars()
+        )  # kv uses 1..4
         # Move mbar_base to the first free barrier *after* k done:
         var s_bars = DecodeSM100MiscMBars[
             num_stages=2, num_producer=1, num_consumer=WARPGROUP_SIZE
@@ -508,7 +520,9 @@ struct MLA_SM100_Decode_KV_FP8[
         ](
             mbar_base
         )  # kv_load2cvt_pipe uses 23..26
-        mbar_base += kv_load2cvt_pipe.num_mbars()  # barrier total [27]
+        mbar_base = mbar_base.unsafe_offset(
+            kv_load2cvt_pipe.num_mbars()
+        )  # barrier total [27]
         # We need (num_out_stages * 2) more barriers for the out pipeline.
         # num_out_stages = (Depth/BN_QK) / blocks_per_stage = 8/2 = 4, so 4*2 = 8.
         comptime OutPipeType = DecodeOutProducer[Self.output_type, Self.config]
@@ -519,10 +533,10 @@ struct MLA_SM100_Decode_KV_FP8[
         ](
             mbar_base
         )  # Write uses 27 + (num_out_stages)*2
-        mbar_base += out_pipeline.num_mbars()
+        mbar_base = mbar_base.unsafe_offset(out_pipeline.num_mbars())
 
         # barrier total [27 + (num_out_stages)*2]
-        var ptr_tmem_addr = (mbar_base).bitcast[UInt32]()
+        var ptr_tmem_addr = (mbar_base).unsafe_bitcast[UInt32]()
 
         var warp_idx = UInt32(warp_id[broadcast=True]())
         var is_leader = elect() != 0
@@ -680,7 +694,7 @@ struct MLA_SM100_Decode_KV_FP8[
             Self.config.decoding_warp_split_k,
         ],
         scale_smem_base: SharedMemPointer[UInt8],
-        scales_ptr: UnsafePointer[Float32, origin=MutAnyOrigin],
+        scales_ptr: MutPointer[Float32, origin=MutAnyOrigin],
     ):
         var num_k_tiles = ceildiv(
             offset_position.num_keys_this_split, Self.config.BN_QK
@@ -822,7 +836,7 @@ struct MLA_SM100_Decode_KV_FP8[
     @inline(.always)
     def _load_scales_for_tile(
         scale_smem_base: SharedMemPointer[UInt8],
-        scales_ptr: UnsafePointer[Float32, origin=MutAnyOrigin],
+        scales_ptr: MutPointer[Float32, origin=MutAnyOrigin],
         kv_lut: Self.KVLUTType,
         stage_idx: UInt32,
         tile_kv_row_start: UInt32,
@@ -837,8 +851,8 @@ struct MLA_SM100_Decode_KV_FP8[
         and convert to e8m0 (1 byte each) in SMEM.
         """
         comptime scales_per_token = Self.config.scales_per_token
-        var scale_smem_stage = scale_smem_base + stage_idx * UInt32(
-            Self.config.scale_smem_per_stage
+        var scale_smem_stage = scale_smem_base.unsafe_offset(
+            stage_idx * UInt32(Self.config.scale_smem_per_stage)
         )
         var lane = thread_idx.x & 31
         var max_key = max(num_keys, UInt32(1)) - 1
@@ -850,7 +864,9 @@ struct MLA_SM100_Decode_KV_FP8[
             var clamped_tok = min(tok_idx, max_key)
             # ONE page table lookup per row.
             var gmem_row = kv_lut.row_idx(batch_idx, clamped_tok)
-            var row_base = scales_ptr + Int(gmem_row) * scales_per_token
+            var row_base = scales_ptr.unsafe_offset(
+                Int(gmem_row) * scales_per_token
+            )
             var smem_off = row_in_tile * scales_per_token
 
             # Cast each FP32 scale to e8m0 individually.
@@ -929,7 +945,9 @@ struct MLA_SM100_Decode_KV_FP8[
             kv_load_cons_cvt.wait()
             kv_cvt_prod.acquire()
 
-            var src_u8 = kv_load_cons_cvt.stage_base_ptr().bitcast[UInt8]()
+            var src_u8 = kv_load_cons_cvt.stage_base_ptr().unsafe_bitcast[
+                UInt8
+            ]()
             var dst = kv_cvt_prod.stage_base_ptr()
 
             # Compute the scale SMEM stage pointer for blockwise scaling.
@@ -939,8 +957,8 @@ struct MLA_SM100_Decode_KV_FP8[
             # warp 8's per-thread mbar.arrive() (release) after scale stores
             # ensures this mbar.wait() (acquire) sees all scale data.
             var cvt_stage_idx = kv_load_cons_cvt.pipe.state.index()
-            var scale_smem_stage = scale_smem_base + cvt_stage_idx * UInt32(
-                Self.config.scale_smem_per_stage
+            var scale_smem_stage = scale_smem_base.unsafe_offset(
+                cvt_stage_idx * UInt32(Self.config.scale_smem_per_stage)
             )
 
             # First: Load all FP8 data and convert to BF16 in registers
@@ -949,19 +967,19 @@ struct MLA_SM100_Decode_KV_FP8[
             # and improve the performance (18 barriers vs 1 barrier here).
             var p0a_all = tt_stack_allocation[
                 dtype=.uint32, address_space=.LOCAL
-            ](row_major[4, NumBlocks]())
+            ](row_major[NumBlocks, 4]())
             var p0b_all = tt_stack_allocation[
                 dtype=.uint32, address_space=.LOCAL
-            ](row_major[4, NumBlocks]())
+            ](row_major[NumBlocks, 4]())
             var p1a_all = tt_stack_allocation[
                 dtype=.uint32, address_space=.LOCAL
-            ](row_major[4, NumBlocks]())
+            ](row_major[NumBlocks, 4]())
             var p1b_all = tt_stack_allocation[
                 dtype=.uint32, address_space=.LOCAL
-            ](row_major[4, NumBlocks]())
+            ](row_major[NumBlocks, 4]())
 
             comptime for b in range(NumBlocks):
-                var src_block_u8 = src_u8 + b * BlockElems
+                var src_block_u8 = src_u8.unsafe_offset(b * BlockElems)
 
                 var q0 = ld_shared_v4_u32(src_block_u8, phys_fp8_0)
                 var q1 = ld_shared_v4_u32(src_block_u8, phys_fp8_1)
@@ -1004,37 +1022,53 @@ struct MLA_SM100_Decode_KV_FP8[
                     p1a = hmul2_bf16x8_by_scalar[Self.q_type](p1a, scale_bf16)
                     p1b = hmul2_bf16x8_by_scalar[Self.q_type](p1b, scale_bf16)
 
-                p0a_all.raw_store(b * 4, p0a)
-                p0b_all.raw_store(b * 4, p0b)
-                p1a_all.raw_store(b * 4, p1a)
-                p1b_all.raw_store(b * 4, p1b)
+                p0a_all.store[alignment=align_of[DType.uint32]()](
+                    Coord(Idx[b], Idx[0]), p0a
+                )
+                p0b_all.store[alignment=align_of[DType.uint32]()](
+                    Coord(Idx[b], Idx[0]), p0b
+                )
+                p1a_all.store[alignment=align_of[DType.uint32]()](
+                    Coord(Idx[b], Idx[0]), p1a
+                )
+                p1b_all.store[alignment=align_of[DType.uint32]()](
+                    Coord(Idx[b], Idx[0]), p1b
+                )
 
             # Single barrier. All 128 threads finish ALL reads before ANY writes
             named_barrier[Int32(WARPGROUP_SIZE)](3)
 
             # Second: Store all BF16 data from registers
             comptime for b in range(NumBlocks):
-                var dst_block = dst + b * BlockElems
+                var dst_block = dst.unsafe_offset(b * BlockElems)
 
                 st_shared_v4_b32_at_bf16_elem_off[out_dtype=Self.q_type](
                     dst_block,
                     phys_bf16_0a,
-                    p0a_all.raw_load[width=4](b * 4),
+                    p0a_all.load[width=4, alignment=align_of[DType.uint32]()](
+                        Coord(Idx[b], Idx[0])
+                    ),
                 )
                 st_shared_v4_b32_at_bf16_elem_off[out_dtype=Self.q_type](
                     dst_block,
                     phys_bf16_0b,
-                    p0b_all.raw_load[width=4](b * 4),
+                    p0b_all.load[width=4, alignment=align_of[DType.uint32]()](
+                        Coord(Idx[b], Idx[0])
+                    ),
                 )
                 st_shared_v4_b32_at_bf16_elem_off[out_dtype=Self.q_type](
                     dst_block,
                     phys_bf16_1a,
-                    p1a_all.raw_load[width=4](b * 4),
+                    p1a_all.load[width=4, alignment=align_of[DType.uint32]()](
+                        Coord(Idx[b], Idx[0])
+                    ),
                 )
                 st_shared_v4_b32_at_bf16_elem_off[out_dtype=Self.q_type](
                     dst_block,
                     phys_bf16_1b,
-                    p1b_all.raw_load[width=4](b * 4),
+                    p1b_all.load[width=4, alignment=align_of[DType.uint32]()](
+                        Coord(Idx[b], Idx[0])
+                    ),
                 )
 
             fence_async_view_proxy()
@@ -1220,7 +1254,9 @@ struct MLA_SM100_Decode_KV_FP8[
         )
         var p_cons = DecodePConsumer(p_bars.consumer())
         var o_prod = DecodeOProducer(o_bars.producer())
-        var p_smem_base = kv_smem + Self.NumVOBlocks * Self.BlockElems
+        var p_smem_base = kv_smem.unsafe_offset(
+            Self.NumVOBlocks * Self.BlockElems
+        )
         var p_descriptor = Self.UMMAPVSS.descriptor_p_block(p_smem_base)
         var v_descriptor = Self.UMMAPVSS.descriptor_v_block(kv_smem)
         comptime block_step = Self.config.MMA_PV_N // Self.config.BN_QK

@@ -2447,6 +2447,12 @@ def test_finalize_vision_inputs_sets_real_embeddings() -> None:
         inputs.vision_scatter_indices[0].to_numpy(), scatter
     )
 
+    # Real index buffers belong to their step: the count varies between
+    # batches, so buffers kept per count would never be freed.
+    first = inputs.vision_scatter_indices[0]
+    cache.finalize_vision_inputs(model, inputs, devices, (embeds, scatter))
+    assert inputs.vision_scatter_indices[0] is not first
+
 
 def test_finalize_vision_inputs_empty_scatter_uses_empties() -> None:
     """A vision result with zero merge indices falls back to the cached

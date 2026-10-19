@@ -55,7 +55,7 @@ from std.sys import simd_width_of
 from std.sys.info import _accelerator_arch
 from std.utils import IndexList
 
-from layout import Coord, TileTensor, row_major
+from layout import Coord, TensorEngine, TensorLayout, TileTensor, row_major
 
 from linalg.utils import ElementwiseEpilogueFn, no_epilogue_fn
 
@@ -70,9 +70,12 @@ from nn.conv.gpu.amd.amd_4wave_conv import amd_4wave_conv
 @__name(t"amd_4wave_3d_transpose_qrscf_to_fk_kpad_{dtype}")
 def _transpose_qrscf_to_fk_kpad[
     dtype: DType,
+    SrcLayoutType: TensorLayout,
+    src_origin: ImmOrigin,
+    SrcEngine: TensorEngine,
 ](
-    src_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    src: TileTensor[dtype, SrcLayoutType, src_origin, Engine=SrcEngine],
+    dst_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
     Q: Int32,
     R: Int32,
     S: Int32,
@@ -106,17 +109,18 @@ def _transpose_qrscf_to_fk_kpad[
     var sc = rsc - r * (_S * _C)
     var s = sc // _C
     var c = sc - s * _C
-    # QRSCF source index: (((q*_R + r)*_S + s)*_C + c)*_F + f.
-    var qrscf_idx = (((q * _R + r) * _S + s) * _C + c) * _F + f
-    dst_ptr.store(tid, src_ptr.load(qrscf_idx))
+    dst_ptr.store(tid, src.load((q, r, s, c, f))[0])
 
 
 @__name(t"amd_4wave_3d_transpose_fcqrs_to_fk_kpad_{dtype}")
 def _transpose_fcqrs_to_fk_kpad[
     dtype: DType,
+    SrcLayoutType: TensorLayout,
+    src_origin: ImmOrigin,
+    SrcEngine: TensorEngine,
 ](
-    src_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    src: TileTensor[dtype, SrcLayoutType, src_origin, Engine=SrcEngine],
+    dst_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
     F: Int32,
     C: Int32,
     Q: Int32,
@@ -150,11 +154,7 @@ def _transpose_fcqrs_to_fk_kpad[
     var sc = rsc - r * (_S * _C)
     var s = sc // _C
     var c = sc - s * _C
-    # FCQRS source index: f*_C*_Q*_R*_S + c*_Q*_R*_S + q*_R*_S + r*_S + s.
-    var fcqrs_idx = (
-        f * _C * _Q * _R * _S + c * _Q * _R * _S + q * _R * _S + r * _S + s
-    )
-    dst_ptr.store(tid, src_ptr.load(fcqrs_idx))
+    dst_ptr.store(tid, src.load((f, c, q, r, s))[0])
 
 
 # ---------------------------------------------------------------------------
@@ -358,8 +358,14 @@ def dispatch_amd_4wave_conv3d[
         var transpose_total = _C_out * _K_padded
         var transpose_grid = ceildiv(transpose_total, _transpose_block)
         comptime if filter_is_fcqrs:
-            ctx.enqueue_function[_transpose_fcqrs_to_fk_kpad[filter_type]](
-                filter.ptr,
+            comptime transpose_kernel = _transpose_fcqrs_to_fk_kpad[
+                filter_type,
+                filter.LayoutType,
+                ImmOrigin(filter.origin),
+                filter.Engine,
+            ]
+            ctx.enqueue_function[transpose_kernel](
+                filter.as_imm(),
                 filter_fk_ptr,
                 Int32(_C_out),
                 Int32(_C_in),
@@ -371,8 +377,14 @@ def dispatch_amd_4wave_conv3d[
                 block_dim=_transpose_block,
             )
         else:
-            ctx.enqueue_function[_transpose_qrscf_to_fk_kpad[filter_type]](
-                filter.ptr,
+            comptime transpose_kernel = _transpose_qrscf_to_fk_kpad[
+                filter_type,
+                filter.LayoutType,
+                ImmOrigin(filter.origin),
+                filter.Engine,
+            ]
+            ctx.enqueue_function[transpose_kernel](
+                filter.as_imm(),
                 filter_fk_ptr,
                 Int32(_Q),
                 Int32(_R),

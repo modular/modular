@@ -59,30 +59,16 @@ def cpu_matmul_naive[
     var M = Int(C.dim[0]())
     var N = Int(C.dim[1]())
     var K = Int(A.dim[0]()) if transpose_a else Int(A.dim[1]())
-    var a_ptr = A.unsafe_ptr()
-    var b_ptr = B.unsafe_ptr()
-    var c_ptr = C.unsafe_ptr()
     for n in range(N):
         for m in range(M):
             var acc: Float32 = 0.0
             for k in range(K):
-                var a_idx: Int
-
-                comptime if transpose_a:
-                    a_idx = k * M + m
-                else:
-                    a_idx = m * K + k
-                var b_idx: Int
-
-                comptime if transpose_b:
-                    b_idx = n * K + k
-                else:
-                    b_idx = k * N + n
-                acc += (
-                    a_ptr[a_idx].cast[.float32]()
-                    * b_ptr[b_idx].cast[.float32]()
-                )
-            c_ptr[m * N + n] = acc.cast[C.dtype]()
+                var a_coord = Coord(k, m) if transpose_a else Coord(m, k)
+                var b_coord = Coord(n, k) if transpose_b else Coord(k, n)
+                acc += rebind[Float32](
+                    A.load(a_coord).cast[.float32]()
+                ) * rebind[Float32](B.load(b_coord).cast[.float32]())
+            C.store((m, n), acc.cast[C.dtype]())
 
 
 @__llvm_metadata(`nvvm.cluster_dim`=cluster_shape)
@@ -168,13 +154,13 @@ def tma_umma_kernel_ss[
     comptime assert (
         (b_size * size_of[b_type]()) % 16
     ) == 0, "preserve alignment"
-    var b_smem = (a_smem + a_size).bitcast[Scalar[b_type]]()
+    var b_smem = a_smem.unsafe_offset(a_size).unsafe_bitcast[Scalar[b_type]]()
 
     var a_smem_tile = TileTensor(a_smem, a_smem_layout)
     var b_smem_tile = TileTensor(b_smem, b_smem_layout)
 
     # Shared memory pointer to hold tensor memory address
-    var ptr_tmem_addr = (b_smem + b_size).bitcast[UInt32]()
+    var ptr_tmem_addr = b_smem.unsafe_offset(b_size).unsafe_bitcast[UInt32]()
 
     comptime accum_type = get_accum_type[a_type]()
 
@@ -185,8 +171,10 @@ def tma_umma_kernel_ss[
     comptime b_expected_bytes = b_size * size_of[b_type]()
     comptime expected_bytes = a_expected_bytes + b_expected_bytes
 
-    var tma_mbar = (ptr_tmem_addr + 2).bitcast[SharedMemBarrier]()
-    var mma_mbar = tma_mbar + 1
+    var tma_mbar = ptr_tmem_addr.unsafe_offset(2).unsafe_bitcast[
+        SharedMemBarrier
+    ]()
+    var mma_mbar = tma_mbar.unsafe_offset(1)
 
     if thread_idx.x == 0:
         tma_mbar[0].init()
@@ -424,7 +412,7 @@ def tma_umma_kernel_ts_fp8[
         (b_size * size_of[b_type]()) % 16
     ) == 0, "preserve alignment"
     # Shared memory pointer to hold tensor memory address
-    var ptr_tmem_addr = (b_smem + b_size).bitcast[UInt32]()
+    var ptr_tmem_addr = b_smem.unsafe_offset(b_size).unsafe_bitcast[UInt32]()
 
     comptime c_frag_size = MMA_M * MMA_N // num_threads
     var c_frag: Array[Scalar[accum_type], c_frag_size]
@@ -432,8 +420,10 @@ def tma_umma_kernel_ts_fp8[
     comptime b_expected_bytes = b_size * size_of[b_type]()
     comptime expected_bytes = b_expected_bytes
 
-    var tma_mbar = (ptr_tmem_addr + 2).bitcast[SharedMemBarrier]()
-    var mma_mbar = tma_mbar + 1
+    var tma_mbar = ptr_tmem_addr.unsafe_offset(2).unsafe_bitcast[
+        SharedMemBarrier
+    ]()
+    var mma_mbar = tma_mbar.unsafe_offset(1)
 
     if thread_idx.x == 0:
         tma_mbar[0].init()

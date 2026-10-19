@@ -79,7 +79,7 @@ def _row_sums(rows: Int, cols: Int) raises -> List[Scalar[dtype]]:
         def load[
             width: Int, alignment: Int
         ](idx: RowCoord[rank]) {var x_ptr, var cols} -> SIMD[dtype, width]:
-            var i = Int(idx.coord[0].value()) * cols + Int(idx.coord[1].value())
+            var i = Int(idx.coord[0]) * cols + Int(idx.coord[1])
             return x_ptr.unsafe_offset(i).unsafe_load[width=width]()
 
         var row = rowwise.Row[params, dtype, dtype, 1, rank, is_cached=False](
@@ -96,7 +96,7 @@ def _row_sums(rows: Int, cols: Int) raises -> List[Scalar[dtype]]:
 
         @inline(.always)
         def write(oc: RowCoord[rank]) {var acc, var out_ptr}:
-            out_ptr.unsafe_offset(Int(oc.coord[0].value())).unsafe_store(acc[0])
+            out_ptr.unsafe_offset(Int(oc.coord[0])).unsafe_store(acc[0])
 
         row.emit(write)
 

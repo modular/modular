@@ -43,7 +43,11 @@ from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithStoredKVParams,
     ArchConfigWithVisionCache,
 )
-from max.pipelines.lib.pipeline_parallel import PartitionSpec, stage_layers
+from max.pipelines.lib.pipeline_parallel import (
+    ArchConfigWithPartitionSpec,
+    PartitionSpec,
+    stage_layers,
+)
 from max.pipelines.modeling.config_enums import (
     SupportedEncoding,
     supported_encoding_dtype,
@@ -486,7 +490,9 @@ class Gemma4VisionConfig:
 
 @dataclass(kw_only=True)
 class Gemma4ForConditionalGenerationConfig(
-    ArchConfigWithKVCache, ArchConfigWithVisionCache
+    ArchConfigWithKVCache,
+    ArchConfigWithVisionCache,
+    ArchConfigWithPartitionSpec,
 ):
     """Base configuration for Gemma 4 multimodal models.
 

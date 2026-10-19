@@ -389,7 +389,7 @@ struct TileScheduler[
     comptime ThrottleBarrierArray = Self.UnderlyingScheduler.ThrottleBarrierArray
 
     @__allow_legacy_any_origin_fields
-    var locks_ptr: UnsafePointer[Int32, MutAnyOrigin]
+    var locks_ptr: MutPointer[Int32, MutAnyOrigin]
     var scheduler: Self.UnderlyingScheduler
     var total_k_tiles: UInt32
     var k_tiles_per_split: UInt32
@@ -424,7 +424,7 @@ struct TileScheduler[
         clc_full: Self.ClcBarrierArray,
         clc_empty: Self.ClcBarrierArray,
         clc_throttle: Self.ThrottleBarrierArray,
-        locks_ptr: UnsafePointer[UInt8, MutAnyOrigin],
+        locks_ptr: MutPointer[UInt8, MutAnyOrigin],
         k_group_size: Int = 1,
     ):
         """Initialize from typed barrier arrays.
@@ -460,7 +460,7 @@ struct TileScheduler[
                 Int(self.total_k_tiles), Self.num_split_k, k_group_size
             )
         )
-        self.locks_ptr = locks_ptr.bitcast[Int32]()
+        self.locks_ptr = locks_ptr.unsafe_bitcast[Int32]()
         self.throttle_pipeline = Self.ThrottlePipeline(clc_throttle.ptr)
 
     @inline(.always)
@@ -819,7 +819,7 @@ struct TileScheduler[
     ](
         self,
         tmem: TmemAddress,
-        workspace: UnsafePointer[Scalar[accum_type], MutAnyOrigin],
+        workspace: MutPointer[Scalar[accum_type], MutAnyOrigin],
         epilogue_thread_idx: Int,
         work_info: WorkInfo,
     ):
@@ -859,9 +859,9 @@ struct TileScheduler[
             ](tmem.addr + UInt32(c0))
             tcgen05_load_wait()
             comptime for q in range(CH // 4):
-                (workspace + row0 + 4 * (c0 // 4 + q) * Self.BM).store[
-                    alignment=16
-                ](
+                workspace.unsafe_offset(row0).unsafe_offset(
+                    4 * (c0 // 4 + q) * Self.BM
+                ).store[alignment=16](
                     SIMD[accum_type, 4](
                         v[4 * q], v[4 * q + 1], v[4 * q + 2], v[4 * q + 3]
                     )
@@ -876,9 +876,9 @@ struct TileScheduler[
         pieces_per_batch: Int,
     ](
         self,
-        workspace: UnsafePointer[Scalar[accum_type], MutAnyOrigin],
+        workspace: MutPointer[Scalar[accum_type], MutAnyOrigin],
         counters: SplitKTileCounters,
-        c: UnsafePointer[Scalar[c_type], MutAnyOrigin],
+        c: MutPointer[Scalar[c_type], MutAnyOrigin],
         c_row_stride: Int,
         epilogue_thread_idx: Int,
         work_info: WorkInfo,
@@ -920,7 +920,7 @@ struct TileScheduler[
         comptime NB = ceildiv(PT, RB)
         var tile = Int(self.output_tile_index(work_info))
         var split = Int(work_info.k_start // self.k_tiles_per_split)
-        var count = counters + tile * SPLITK_COUNTER_STRIDE
+        var count = counters.unsafe_offset(tile * SPLITK_COUNTER_STRIDE)
 
         # Every thread's slot stores precede thread 0's release add.
         named_barrier[Int32(WARPGROUP_SIZE)](Int32(Self.PARALLEL_BARRIER_ID))
@@ -957,7 +957,9 @@ struct TileScheduler[
                             lo + epilogue_thread_idx + WARPGROUP_SIZE * u, last
                         )
                         vals[k * RB + uu] = (
-                            workspace + base + k * Self.BM * Self.MMA_N + 4 * p
+                            workspace.unsafe_offset(base)
+                            .unsafe_offset(k * Self.BM * Self.MMA_N)
+                            .unsafe_offset(4 * p)
                         ).load[width=4, alignment=16]()
             comptime for uu in range(RB):
                 comptime u = jb * RB + uu
@@ -1070,21 +1072,21 @@ struct TileScheduler[
     @inline(.always)
     @staticmethod
     def wait_eq(
-        lock_ptr: UnsafePointer[Int32, MutAnyOrigin],
+        lock_ptr: MutPointer[Int32, MutAnyOrigin],
         barrier_id: Int32,
         barrier_group_thread_idx: Int,
         lock_idx: UInt32,
         val: UInt32,
     ):
         var sema = NamedBarrierSemaphore[Int32(WARPGROUP_SIZE), 4, 1](
-            lock_ptr + lock_idx, barrier_group_thread_idx
+            lock_ptr.unsafe_offset(lock_idx), barrier_group_thread_idx
         )
         sema.wait_eq(barrier_id, Int32(val))
 
     @staticmethod
     @inline(.always)
     def wait_lt(
-        lock_ptr: UnsafePointer[Int32, MutAnyOrigin],
+        lock_ptr: MutPointer[Int32, MutAnyOrigin],
         barrier_id: Int32,
         barrier_group_thread_idx: Int,
         lock_idx: UInt32,
@@ -1095,14 +1097,14 @@ struct TileScheduler[
     @staticmethod
     @inline(.always)
     def arrive_set(
-        lock_ptr: UnsafePointer[Int32, MutAnyOrigin],
+        lock_ptr: MutPointer[Int32, MutAnyOrigin],
         barrier_id: Int32,
         barrier_group_thread_idx: Int,
         lock_idx: UInt32,
         val: UInt32,
     ):
         var sema = NamedBarrierSemaphore[Int32(WARPGROUP_SIZE), 4, 1](
-            lock_ptr + lock_idx, barrier_group_thread_idx
+            lock_ptr.unsafe_offset(lock_idx), barrier_group_thread_idx
         )
         sema.arrive_set(barrier_id, Int32(val))
 
@@ -1123,7 +1125,7 @@ atomics do not share a line."""
 comptime SPLITK_SLOT_WORDS = SPLITK_TILE_COUNTERS * SPLITK_COUNTER_STRIDE
 """Words in one counter slot."""
 
-comptime SplitKTileCounters = UnsafePointer[
+comptime SplitKTileCounters = MutPointer[
     UInt32, MutUntrackedOrigin, address_space=AddressSpace.GLOBAL
 ]
 """Pointer to a kernel's tile counters (see `splitk_tile_counters`)."""

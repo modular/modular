@@ -49,11 +49,11 @@ from max.gpu.host import DeviceContext
 from max.gpu.memory import build_edge_mask, gmem_edge_masked_load
 from std.collections import Optional
 from std.math import ceildiv, round
+from std.sys import align_of
 from std.memory import unsafe_stack_allocation
 from std.utils import IndexList
 
-from layout import TensorEngine, TileTensor
-from layout.coord import Coord
+from layout import TensorEngine, TileTensor, row_major
 from layout.tile_layout import TensorLayout
 
 from linalg.arch.apple.mma import MmaOpApple
@@ -183,15 +183,19 @@ struct Int8DequantWriter[
         comptime for half in range(2):
             var r = tile_r0 + rb + half * 8
             if r < self.M:
-                var asc = self.a_scale.load[width=1](Coord(r))
+                var asc = self.a_scale.load[width=1]((r,))
                 var col0 = tile_c0 + cb
                 var fv = frag.slice[4, offset=half * 4]().cast[.float32]()
                 if col0 + 3 < self.N:
-                    var bs = self.b_scale.raw_load[width=4](col0)
+                    var bs = self.b_scale.load[
+                        width=4, alignment=align_of[DType.float32]()
+                    ]((col0,))
                     var y4 = (fv * asc * bs).cast[Self.c_type]()
                     comptime if Self.has_bias:
-                        y4 = y4 + self.bias.raw_load[width=4](col0)
-                    self.c.store[width=4](Coord(r, col0), y4)
+                        y4 = y4 + self.bias.load[
+                            width=4, alignment=align_of[Self.c_type]()
+                        ]((col0,))
+                    self.c.store((r, col0), y4)
                 else:
                     comptime for cc in range(4):
                         var col = col0 + cc
@@ -199,14 +203,12 @@ struct Int8DequantWriter[
                             var v = (
                                 Float32(fv[cc])
                                 * asc
-                                * self.b_scale.load[width=1](Coord(col))
+                                * self.b_scale.load[width=1]((col,))
                             )
                             var y = v.cast[Self.c_type]()
                             comptime if Self.has_bias:
-                                y = y + self.bias.load[width=1](Coord(col))
-                            self.c.store[width=1](
-                                Coord(r, col), SIMD[Self.c_type, 1](y)
-                            )
+                                y = y + self.bias.load[width=1]((col,))
+                            self.c.store((r, col), y)
 
     @inline(.always)
     def write_frag_full(
@@ -225,14 +227,18 @@ struct Int8DequantWriter[
         """
         comptime for half in range(2):
             var r = tile_r0 + rb + half * 8
-            var asc = self.a_scale.load[width=1](Coord(r))
+            var asc = self.a_scale.load[width=1]((r,))
             var col0 = tile_c0 + cb
             var fv = frag.slice[4, offset=half * 4]().cast[.float32]()
-            var bs = self.b_scale.raw_load[width=4](col0)
+            var bs = self.b_scale.load[
+                width=4, alignment=align_of[DType.float32]()
+            ]((col0,))
             var y4 = (fv * asc * bs).cast[Self.c_type]()
             comptime if Self.has_bias:
-                y4 = y4 + self.bias.raw_load[width=4](col0)
-            self.c.store[width=4](Coord(r, col0), y4)
+                y4 = y4 + self.bias.load[
+                    width=4, alignment=align_of[Self.c_type]()
+                ]((col0,))
+            self.c.store((r, col0), y4)
 
 
 struct AppleM5Int8MatMul[
@@ -343,8 +349,11 @@ struct AppleM5Int8MatMul[
         # (a misaligned address under align=16 is rounded down) -- see KB
         # kernels/apple-m5-int8-matmul.
         comptime align = 16
-        var lo16 = strip.raw_load[width=16, alignment=align](Int(lo_off))
-        var hi16 = strip.raw_load[width=16, alignment=align](Int(hi_off))
+        # The offsets index the parent's rows past the strip's own extent, so
+        # read through a flat view that spans them.
+        var flat = strip.reshape(row_major(Int(hi_off) + 16))
+        var lo16 = flat.load[width=16, alignment=align]((Int(lo_off),))
+        var hi16 = flat.load[width=16, alignment=align]((Int(hi_off),))
         return {
             fill_with_unrolled = lambda [j: Int]() -> SIMD[
                 .int8, 8
@@ -501,10 +510,10 @@ struct AppleM5Int8MatMul[
         var lo_mask = kmask if rb < valid_along_row else Int16(0)
         var hi_mask = kmask if (rb + 8) < valid_along_row else Int16(0)
         var lo = gmem_edge_masked_load[4](
-            sub.ptr + (rb * row_stride + cb), lo_mask
+            sub.ptr.unsafe_offset(rb * row_stride + cb), lo_mask
         )
         var hi = gmem_edge_masked_load[4](
-            sub.ptr + ((rb + 8) * row_stride + cb), hi_mask
+            sub.ptr.unsafe_offset((rb + 8) * row_stride + cb), hi_mask
         )
         return lo.join(hi)
 
@@ -1055,7 +1064,7 @@ struct AppleInt8ActQuant[in_type: DType = .bfloat16, *, THREADS: Int = 64]:
         var local_max = Float32(0)
         var j = tid
         while j < K:
-            var v = abs(a.load[width=1](Coord(row, j)).cast[DType.float32]())
+            var v = abs(a.load[width=1]((row, j)).cast[DType.float32]())
             if v > local_max:
                 local_max = v
             j += Self.THREADS
@@ -1065,15 +1074,15 @@ struct AppleInt8ActQuant[in_type: DType = .bfloat16, *, THREADS: Int = 64]:
         var scale = row_max / 127.0 if row_max != 0.0 else Float32(0)
         var mult = 127.0 / row_max if row_max != 0.0 else Float32(0)
         if tid == 0:
-            a_scale.store[width=1](Coord(row), Float32(scale))
+            a_scale.store((row,), Float32(scale))
 
         # Pass 2: quantize.
         j = tid
         while j < K:
             var qi = Int(
-                round(a.load[width=1](Coord(row, j)).cast[.float32]() * mult)
+                round(a.load[width=1]((row, j)).cast[.float32]() * mult)
             )
-            q.store[width=1](Coord(row, j), Int8(qi))
+            q.store((row, j), Int8(qi))
             j += Self.THREADS
 
 

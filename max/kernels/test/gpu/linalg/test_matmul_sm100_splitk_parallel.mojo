@@ -84,7 +84,7 @@ def _vendor[
 
 def _untracked(
     buf: DeviceBuffer[dtype],
-) -> UnsafePointer[Scalar[dtype], MutUntrackedOrigin]:
+) -> MutPointer[Scalar[dtype], MutUntrackedOrigin]:
     # vendor BLAS takes a mutable output tensor; the caller keeps every
     # buffer alive past the call.
     return (

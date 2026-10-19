@@ -42,11 +42,10 @@ def _check[
     def input_fn[
         width: Int, alignment: Int
     ](coords: Coord) {var data_buf} -> SIMD[dtype, width]:
-        var idx = data_buf.layout(coords)
-        # `alignment` counts elements; `raw_load` takes bytes.
-        return data_buf.raw_load[
+        # `alignment` counts elements; `load` takes bytes.
+        return data_buf.load[
             width=width, alignment=alignment * align_of[dtype]()
-        ](idx)
+        ](coords)
 
     softmax[dtype, 2, target="gpu", logsoftmax=logsoftmax](
         input_fn, Coord(rows, cols), cols, out_t, 1, ctx

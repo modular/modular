@@ -188,7 +188,8 @@ def _bench(batch_size: Int, valid_len: Int, ctx: DeviceContext) raises:
     var out_fused_tt = TileTensor(out_fused.unsafe_ptr(), out_layout)
 
     var lengths_tt = TileTensor(
-        lengths_device.unsafe_ptr().bitcast[UInt32](), row_major(batch_size)
+        lengths_device.unsafe_ptr().unsafe_bitcast[UInt32](),
+        row_major(batch_size),
     )
     var scalar_args_tt = TileTensor(scalar_args.unsafe_ptr(), row_major[3]())
     var k_scratch = TileTensor(
@@ -199,7 +200,7 @@ def _bench(batch_size: Int, valid_len: Int, ctx: DeviceContext) raises:
         k_cache.blocks_raw_ptr(),
         zero_row.unsafe_ptr(),
         idx_device.unsafe_ptr(),
-        lengths_device.unsafe_ptr().bitcast[UInt32](),
+        lengths_device.unsafe_ptr().unsafe_bitcast[UInt32](),
         TOPK,
     )
     var blocks_base = k_cache.blocks_raw_ptr()

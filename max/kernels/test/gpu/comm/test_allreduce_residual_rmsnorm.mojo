@@ -267,7 +267,7 @@ def test_fused_allreduce_rmsnorm_fp8[
     ctx.enqueue_copy(gamma_dev, gamma_host)
 
     comptime shape = IndexList[2](rows, cols)
-    var gamma_tensor = TileTensor(gamma_dev, row_major(Coord(Index(cols))))
+    var gamma_tensor = TileTensor(gamma_dev, row_major(cols))
     var epsilon = Float32(1e-5)
     var weight_offset = Scalar[in_dtype](0.0)
     var scale_ub = max_finite[out_dtype]().cast[.float32]()
@@ -471,7 +471,7 @@ def test_fused_allreduce_rmsnorm_noquant[
     var gamma_dev = ctx.enqueue_create_buffer[dtype](cols)
     ctx.enqueue_copy(gamma_dev, gamma_host)
 
-    var gamma_tensor = TileTensor(gamma_dev, row_major(Coord(Index(cols))))
+    var gamma_tensor = TileTensor(gamma_dev, row_major(cols))
     var epsilon = Float32(1e-5)
     var weight_offset = Scalar[dtype](0.0)
 
@@ -628,7 +628,7 @@ def test_fused_allreduce_residual_rmsnorm_fp8[
         gamma_host[i] = (Float64(i + cols) / Float64(cols)).cast[in_dtype]()
     ctx.enqueue_copy(gamma_dev, gamma_host)
 
-    var gamma_tensor = TileTensor(gamma_dev, row_major(Coord(Index(cols))))
+    var gamma_tensor = TileTensor(gamma_dev, row_major(cols))
     var epsilon = Float32(1e-5)
     var weight_offset = Scalar[in_dtype](0.0)
     var scale_ub = max_finite[out_dtype]().cast[.float32]()
@@ -896,7 +896,7 @@ def test_fused_allreduce_residual_rmsnorm_noquant[
         gamma_host[i] = (Float64(i + cols) / Float64(cols)).cast[dtype]()
     ctx.enqueue_copy(gamma_dev, gamma_host)
 
-    var gamma_tensor = TileTensor(gamma_dev, row_major(Coord(Index(cols))))
+    var gamma_tensor = TileTensor(gamma_dev, row_major(cols))
     var epsilon = Float32(1e-5)
     var weight_offset = Scalar[dtype](0.0)
 
@@ -1069,7 +1069,7 @@ def test_fused_allreduce_rmsnorm_zero_rows[
 
     var ctx = list_of_ctx[0]
     var gamma_dev = ctx.enqueue_create_buffer[dtype](cols)
-    var gamma_tensor = TileTensor(gamma_dev, row_major(Coord(Index(cols))))
+    var gamma_tensor = TileTensor(gamma_dev, row_major(cols))
     var sentinel = Scalar[dtype](7.0)
     var out_dev = ctx.enqueue_create_buffer[dtype](cols)
     var res_out_dev = ctx.enqueue_create_buffer[dtype](cols)

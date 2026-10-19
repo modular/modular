@@ -356,23 +356,17 @@ def resize_nearest_neighbor[
                     var in_coords = IndexList[input.rank](0)
 
                     comptime for i in range(last):
-                        in_coords[i] = (
-                            Int(out_coords[i].value()) >> shift_scales[i]
-                        )
+                        in_coords[i] = Int(out_coords[i]) >> shift_scales[i]
 
-                    var out_last = Int(out_coords[last].value())
+                    var out_last = Int(out_coords[last])
                     var values = SIMD[dtype, simd_width]()
                     comptime for lane in range(simd_width):
                         in_coords[last] = (out_last + lane) >> shift_scales[
                             last
                         ]
-                        values[lane] = input.raw_load(
-                            input.layout(Coord(in_coords))
-                        )
+                        values[lane] = input.load[width=1](Coord(in_coords))
 
-                    output.raw_store[width=simd_width, alignment=alignment](
-                        output.layout(out_coords), values
-                    )
+                    output.store[alignment=alignment](out_coords, values)
 
                 elementwise[width, target=target](
                     nn_shift, output.layout.shape_coord(), ctx
@@ -385,21 +379,15 @@ def resize_nearest_neighbor[
                     var in_coords = IndexList[input.rank](0)
 
                     comptime for i in range(last):
-                        in_coords[i] = (
-                            Int(out_coords[i].value()) // int_scales[i]
-                        )
+                        in_coords[i] = Int(out_coords[i]) // int_scales[i]
 
-                    var out_last = Int(out_coords[last].value())
+                    var out_last = Int(out_coords[last])
                     var values = SIMD[dtype, simd_width]()
                     comptime for lane in range(simd_width):
                         in_coords[last] = (out_last + lane) // int_scales[last]
-                        values[lane] = input.raw_load(
-                            input.layout(Coord(in_coords))
-                        )
+                        values[lane] = input.load[width=1](Coord(in_coords))
 
-                    output.raw_store[width=simd_width, alignment=alignment](
-                        output.layout(out_coords), values
-                    )
+                    output.store[alignment=alignment](out_coords, values)
 
                 elementwise[width, target=target](
                     nn_div, output.layout.shape_coord(), ctx
@@ -453,13 +441,13 @@ def resize_nearest_neighbor[
             in_coords[i] = _nearest_source_index[
                 coordinate_transformation_mode, round_mode
             ](
-                Int(out_coords[i].value()),
+                Int(out_coords[i]),
                 Int(input.dim(i)),
                 Int(output.dim(i)),
                 scales[i],
             )
 
-        var out_last = Int(out_coords[last].value())
+        var out_last = Int(out_coords[last])
         var values = SIMD[dtype, simd_width]()
         comptime for lane in range(simd_width):
             in_coords[last] = _nearest_source_index[
@@ -470,11 +458,9 @@ def resize_nearest_neighbor[
                 Int(output.dim(last)),
                 scales[last],
             )
-            values[lane] = input.raw_load(input.layout(Coord(in_coords)))
+            values[lane] = input.load[width=1](Coord(in_coords))
 
-        output.raw_store[width=simd_width, alignment=alignment](
-            output.layout(out_coords), values
-        )
+        output.store[alignment=alignment](out_coords, values)
 
     comptime width = (
         16 // size_of[dtype]() if is_gpu[target]() else simd_width_of[dtype]()
@@ -580,14 +566,15 @@ def interpolate_point_1d[
             (Float32(k + xmin) + Float32(0.5)) - center
         ) * ss
         var filter_coeff = linear_filter(dist_from_center).cast[acc_dtype]()
-        var in_idx = input.layout(Coord(in_coords))
-        acc += input.raw_load(in_idx).cast[acc_dtype]() * filter_coeff
+        acc += (
+            input.load[width=1](Coord(in_coords)).cast[acc_dtype]()
+            * filter_coeff
+        )
         sum += filter_coeff
 
     # normalize to handle cases near image boundary where only 1 point is used
     # for interpolation
-    var out_idx = output.layout(Coord(out_coords))
-    output.raw_store(out_idx, (acc / sum).cast[dtype]())
+    output.store(Coord(out_coords), (acc / sum).cast[dtype]())
 
 
 def resize_linear[
@@ -632,7 +619,7 @@ def resize_linear[
 
     var in_ptr = input.ptr.unsafe_origin_cast[MutUntrackedOrigin]()
     # SAFETY: Placeholder; always overwritten below.
-    var out_ptr = UnsafePointer[Scalar[dtype], MutAnyOrigin].unsafe_dangling()
+    var out_ptr = MutPointer[Scalar[dtype], MutAnyOrigin].unsafe_dangling()
 
     var using_tmp1 = False
     var tmp_buffer1 = List[Scalar[dtype]]()
@@ -741,9 +728,7 @@ def resize_linear_gpu[
     if len(resize_dims) == 0:
 
         def copy[simd_width: Int, alignment: Int = 1](coords: Coord) {var}:
-            output.raw_store(
-                output.layout(coords), input.raw_load(input.layout(coords))
-            )
+            output.store(coords, input.load[width=1](coords))
 
         elementwise[1, target="gpu"](copy, output.layout.shape_coord(), ctx)
         return
@@ -1171,9 +1156,9 @@ def _move_columns[
         while j < end:
             comptime for s in range(_WIDTH):
                 comptime if to_tile:
-                    dst.store((j % ring, s), src.load[width=1]((s, j)))
+                    dst.store((j % ring, s), src[s, j])
                 else:
-                    dst.store((s, j), src.load[width=1]((j % ring, s)))
+                    dst.store((s, j), src[j % ring, s])
             j += 1
     return j
 

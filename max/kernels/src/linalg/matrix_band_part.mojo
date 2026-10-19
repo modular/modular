@@ -141,8 +141,8 @@ def _matrix_band_part_impl[
 
     @inline(.always)
     def func[simd_width: Int, alignment: Int = 1](index: Coord) {var}:
-        var row = Int(index[rank - 2].value())
-        var col = Int(index[rank - 1].value())
+        var row = Int(index[rank - 2])
+        var col = Int(index[rank - 1])
 
         var in_band = (
             lower_diagonal_index < 0 or (row - col) <= lower_diagonal_index
@@ -159,4 +159,5 @@ def _matrix_band_part_impl[
     elementwise[
         simd_width=1,
         target=target,
+        _trace_description="matrix_band_part",
     ](func, output.layout.shape_coord(), ctx)

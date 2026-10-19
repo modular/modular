@@ -163,8 +163,12 @@ def _shard_and_stack_multi_device[
                 )
 
                 # H2D copy: source is host pointer, dest is device buffer
-                var src_ptr = input_tensor.unsafe_ptr() + src_offset
-                var dst_ptr = output_tensor.unsafe_ptr() + dst_offset
+                var src_ptr = input_tensor.unsafe_ptr().unsafe_offset(
+                    src_offset
+                )
+                var dst_ptr = output_tensor.unsafe_ptr().unsafe_offset(
+                    dst_offset
+                )
 
                 gpu_ctx.enqueue_copy(
                     DeviceBuffer(
@@ -241,8 +245,12 @@ def _shard_and_stack_single_device[
                 )
 
                 # Copy contiguous segment
-                var src_ptr = input_tensor.unsafe_ptr() + src_offset
-                var dst_ptr = output_tensor.unsafe_ptr() + dst_offset
+                var src_ptr = input_tensor.unsafe_ptr().unsafe_offset(
+                    src_offset
+                )
+                var dst_ptr = output_tensor.unsafe_ptr().unsafe_offset(
+                    dst_offset
+                )
 
                 unsafe_memcpy(dest=dst_ptr, src=src_ptr, count=segment_elements)
 

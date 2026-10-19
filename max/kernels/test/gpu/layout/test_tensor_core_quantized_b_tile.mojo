@@ -16,8 +16,7 @@ from std.memory.unsafe import bitcast
 from max.gpu import WARP_SIZE, thread_idx
 from max.gpu.host import DeviceContext
 from max.gpu.sync import barrier
-from layout import TileTensor, TensorLayout, coord, row_major, stack_allocation
-from layout.tile_layout import Layout
+from layout import TileTensor, TensorLayout, row_major, stack_allocation
 from layout._host_device_tile_tensor import HostDeviceTileTensor
 from layout.tensor_core import TensorCore
 
@@ -60,19 +59,15 @@ def quantized_b_kernel[
 
     # A 16-byte source prefix and scalar-aligned padded registers retain the
     # real packed-word load contract without relying on contiguous destinations.
-    var warp_tile = TileTensor(source.unsafe_ptr() + 4, row_major[1, 384]())
+    var warp_tile = source.slice[0:1, 4:388]()
     var storage = stack_allocation[.bfloat16, address_space=.LOCAL](
         row_major[NF, 5]()
     )
-    var registers = TileTensor(
-        storage.unsafe_ptr(), Layout(coord[NF, 4], coord[5, 1])
-    )
+    var registers = storage.slice[0:NF, 0:4]()
     var scale_storage = stack_allocation[.bfloat16, address_space=.LOCAL](
         row_major[NF, 3]()
     )
-    var scales = TileTensor(
-        scale_storage.unsafe_ptr() + 1, Layout(coord[NF, 1], coord[3, 1])
-    )
+    var scales = scale_storage.slice[0:NF, 1:2]()
     var tc = TensorCore[.float32, .bfloat16, (16, 8, 16)]()
     comptime for row in range(NF):
         scale_storage[row, 0] = -29

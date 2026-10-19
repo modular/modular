@@ -184,11 +184,15 @@ def load_AB[
     var b_smem_tile = b_smem[stage]
 
     var a_smem_slice = TileTensor(
-        a_smem_tile.unsafe_ptr() + peer_cta_coord[2] * a_tma_load_size,
+        a_smem_tile.unsafe_ptr().unsafe_offset(
+            peer_cta_coord[2] * a_tma_load_size
+        ),
         a_smem_tile.layout,
     )
     var b_smem_slice = TileTensor(
-        b_smem_tile.unsafe_ptr() + peer_cta_coord[1] * b_tma_load_size,
+        b_smem_tile.unsafe_ptr().unsafe_offset(
+            peer_cta_coord[1] * b_tma_load_size
+        ),
         b_smem_tile.layout,
     )
 
@@ -262,7 +266,7 @@ def consumer_main_loop[
             init_c=(iter_idx == 0),  # Initialize C on first iteration
         )
 
-        mma_op.commit(mma_mbar + stage)
+        mma_op.commit(mma_mbar.unsafe_offset(stage))
 
 
 @inline(.always)
@@ -506,10 +510,12 @@ def store_C[
                 var d_reg_lower_packed = bitcast[.float32, 4](d_reg_lower)
 
                 st_matrix[simd_width=4](
-                    upper.unsafe_ptr() + st_matrix_offset, d_reg_upper_packed
+                    upper.unsafe_ptr().unsafe_offset(st_matrix_offset),
+                    d_reg_upper_packed,
                 )
                 st_matrix[simd_width=4](
-                    lower.unsafe_ptr() + st_matrix_offset, d_reg_lower_packed
+                    lower.unsafe_ptr().unsafe_offset(st_matrix_offset),
+                    d_reg_lower_packed,
                 )
 
     named_barrier[Int32(num_output_warps * WARP_SIZE)]()
@@ -523,16 +529,13 @@ def store_C[
         var col_start = block_idx.y * MMA_N + thread_idx.x * TMA_BN
 
         fence_async_view_proxy()
-        var c_smem_offset = (
-            c_smem_tile.unsafe_ptr() + BM * TMA_BN * thread_idx.x
-        )
-
-        var c_tma_tile = TileTensor(
-            c_smem_offset,
+        var c_tma_tile = c_smem_tile_reshaped.tile[BM, TMA_BN](
+            Int(thread_idx.x), 0
+        ).reshape(
             row_major[
                 c_tile_shape.element_types[0].static_value,
                 c_tile_shape.element_types[1].static_value,
-            ](),
+            ]()
         )
 
         c_tma_op.async_store(c_tma_tile, (col_start, row_start))
@@ -628,31 +631,37 @@ def kernel_6[
     comptime c_smem_size = BM * MMA_N
 
     var a_smem_base = base_ptr_smem  # need space for 4096 (64 x 64) elements by 2 bytes or 8192 total, which is 0x2000
-    var b_smem_base = (a_smem_base + a_smem_size * num_pipeline_stages).bitcast[
-        Scalar[b_type]
-    ]()
-    var c_smem_base = (b_smem_base + b_smem_size * num_pipeline_stages).bitcast[
-        Scalar[c_type]
-    ]()
+    var b_smem_base = (
+        a_smem_base.unsafe_offset(a_smem_size * num_pipeline_stages)
+    ).unsafe_bitcast[Scalar[b_type]]()
+    var c_smem_base = (
+        b_smem_base.unsafe_offset(b_smem_size * num_pipeline_stages)
+    ).unsafe_bitcast[Scalar[c_type]]()
 
     var a_smem = ATileArray(a_smem_base)
     var b_smem = BTileArray(b_smem_base)
     var c_smem_tile = TileTensor(c_smem_base, row_major[BM, MMA_N]())
 
-    var smem_pool = (c_smem_base + c_smem_size).bitcast[Int64]()
+    var smem_pool = c_smem_base.unsafe_offset(c_smem_size).unsafe_bitcast[
+        Int64
+    ]()
 
     comptime accum_type = get_accum_type[a_type]()
 
     # adding 8 bytes for ptr_tmem_addr (smem poll is 8 byte casted)
     var tma_mbar_ptr = smem_pool
     # + num_pipeline_stages is 1 * num_pipeline_stage so 8 bytes for each barrier at each stage
-    var mma_mbar_ptr = tma_mbar_ptr + num_pipeline_stages
-    var compute_barrier_base = mma_mbar_ptr + num_pipeline_stages
-    var ptr_tmem_addr = (compute_barrier_base + 1).bitcast[UInt32]()
+    var mma_mbar_ptr = tma_mbar_ptr.unsafe_offset(num_pipeline_stages)
+    var compute_barrier_base = mma_mbar_ptr.unsafe_offset(num_pipeline_stages)
+    var ptr_tmem_addr = compute_barrier_base.unsafe_offset(1).unsafe_bitcast[
+        UInt32
+    ]()
 
-    var tma_mbar = tma_mbar_ptr.bitcast[SharedMemBarrier]()
-    var mma_mbar = mma_mbar_ptr.bitcast[SharedMemBarrier]()
-    var compute_barrier = compute_barrier_base.bitcast[SharedMemBarrier]()
+    var tma_mbar = tma_mbar_ptr.unsafe_bitcast[SharedMemBarrier]()
+    var mma_mbar = mma_mbar_ptr.unsafe_bitcast[SharedMemBarrier]()
+    var compute_barrier = compute_barrier_base.unsafe_bitcast[
+        SharedMemBarrier
+    ]()
 
     var warp_id = get_warp_id()
     var elect_one_warp = warp_id == 0
@@ -1048,9 +1057,8 @@ def test_blackwell_kernel_6[
 
         comptime rtol = 1e-2
         assert_almost_equal(
-            c_host.unsafe_ptr(),
-            c_host_ref.unsafe_ptr(),
-            M * N,
+            c_host.as_span(),
+            c_host_ref.as_span(),
             atol=0.0001,
             rtol=rtol,
         )

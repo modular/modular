@@ -79,16 +79,14 @@ def launch_rms_norm[
     def input_fn[
         width: Int, alignment: Int
     ](coords: Coord) {var x_tt} -> SIMD[in_dtype, width]:
-        var idx = x_tt.layout(coords)
-        return x_tt.raw_load[width=width, alignment=alignment](idx)
+        return x_tt.load[width=width, alignment=alignment](coords)
 
     @inline(.always)
     def output_fn[
         width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[in_dtype, width]) {var normed_tt}:
-        var idx = normed_tt.layout(coords)
-        normed_tt.raw_store[width=width, alignment=alignment](
-            idx, rebind[SIMD[in_dtype, width]](val)
+        normed_tt.store[alignment=alignment](
+            coords, rebind[SIMD[in_dtype, width]](val)
         )
 
     rms_norm[
@@ -121,8 +119,7 @@ def launch_quantize[
     def input_fn[
         width: Int, alignment: Int
     ](row: Int, col: Int) {var normed_tt} -> SIMD[in_dtype, width]:
-        var idx = normed_tt.layout(Coord(row, col))
-        return normed_tt.raw_load[width=width, alignment=alignment](idx)
+        return normed_tt.load[width=width, alignment=alignment]((row, col))
 
     quantize_dynamic_scaled_fp8[
         in_dtype=in_dtype, group_size_or_per_token=GROUP, num_cols=cols
@@ -149,8 +146,7 @@ def launch_fused[
     def input_fn[
         width: Int, alignment: Int
     ](row: Int, col: Int) {var x_tt} -> SIMD[in_dtype, width]:
-        var idx = x_tt.layout(Coord(row, col))
-        return x_tt.raw_load[width=width, alignment=alignment](idx)
+        return x_tt.load[width=width, alignment=alignment]((row, col))
 
     rms_norm_quantize_dynamic_scaled_fp8[
         group_size=GROUP,

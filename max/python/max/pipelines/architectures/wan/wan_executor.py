@@ -21,7 +21,13 @@ from typing import Any, ClassVar
 
 import numpy as np
 import numpy.typing as npt
-from max.driver import CPU, Buffer, Device, load_devices
+from max.driver import (
+    CPU,
+    Buffer,
+    Device,
+    float32_to_bfloat16_as_uint16,
+    load_devices,
+)
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import Graph, TensorType, ops
@@ -30,7 +36,6 @@ from max.pipelines.diffusion.cache import (
     TaylorSeerCache,
 )
 from max.pipelines.diffusion.config import DenoisingCacheConfig
-from max.pipelines.lib.bfloat16_utils import float32_to_bfloat16_as_uint16
 from max.pipelines.lib.config.model_config import (
     _resolve_component_encoding_and_weights,
 )

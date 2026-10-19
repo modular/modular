@@ -131,12 +131,14 @@ def sgemm_warp_tiling_kernel[
     )
 
     # Move blocktile to beginning of A's row and B's column.
-    var aa_ptr = mat_a._storage + c_row * BM * K
-    var bb_ptr = mat_b._storage + c_col * BN
+    var aa_ptr = mat_a._storage.unsafe_offset(c_row * BM * K)
+    var bb_ptr = mat_b._storage.unsafe_offset(c_col * BN)
     # Move C_ptr to warp's output tile
     var M_offset_warp = c_row * BM + warp_row * WM
     var N_offset_warp = c_col * BN + warp_col * WN
-    var cc_ptr = mat_c._storage + M_offset_warp * N + N_offset_warp
+    var cc_ptr = mat_c._storage.unsafe_offset(M_offset_warp * N).unsafe_offset(
+        N_offset_warp
+    )
 
     # Calculate the indices that this thread will load into SMEM.
     # We load 128bit / 32bit = 4 elements per thread at each step.
@@ -226,8 +228,8 @@ def sgemm_warp_tiling_kernel[
                                 reg_m[w_sub_row_idx, res_idx_m].cast[c_type]()
                                 * reg_n[w_sub_col_idx, res_idx_n].cast[c_type]()
                             )
-        aa_ptr = aa_ptr + BK  # move BK columns to right
-        bb_ptr = bb_ptr + BK * N  # move BK rows down
+        aa_ptr = aa_ptr.unsafe_offset(BK)  # move BK columns to right
+        bb_ptr = bb_ptr.unsafe_offset(BK * N)  # move BK rows down
         barrier()
 
     # Write out the results.
@@ -236,7 +238,9 @@ def sgemm_warp_tiling_kernel[
             # Move C pointer to current warp sub-tile.
             var M_offset_subtile = w_sub_row_idx * w_sub_m
             var N_offset_subtile = w_sub_col_idx * w_sub_n
-            var C_interim = cc_ptr + M_offset_subtile * N + N_offset_subtile
+            var C_interim = cc_ptr.unsafe_offset(
+                M_offset_subtile * N
+            ).unsafe_offset(N_offset_subtile)
 
             comptime for res_idx_m in range(TM):
                 comptime for res_idx_n in range(0, TN, 4):

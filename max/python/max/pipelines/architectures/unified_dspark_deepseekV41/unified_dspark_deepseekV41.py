@@ -50,8 +50,9 @@ class UnifiedDSparkDeepseekV41(BlockDriver[TrunkTaps, TensorValue]):
     Target and draft are one :class:`DeepseekV41WithDSpark`; ``draft`` names
     its drafter so the driver's module tree has both roles, but the weights
     are loaded and registered through ``target`` alone. On more than one
-    device both roles run tensor-parallel on the target's per-device copies
-    (:meth:`shard`).
+    device both roles run on the target's per-device copies (:meth:`shard`):
+    tensor-parallel, or data-parallel with expert-parallel MoE when the
+    config's data-parallel degree is the device count.
 
     The model takes graph values at construction (its Engram tables are graph
     inputs), so the graph's signature has to exist before it does: built with
@@ -87,10 +88,14 @@ class UnifiedDSparkDeepseekV41(BlockDriver[TrunkTaps, TensorValue]):
             draft_model=model.dspark if model is not None else _SignatureOnly(),
             input_spec=SpecDecodeInputTypeSpec(
                 devices=config.devices,
-                # Tensor-parallel only: the replicas' collectives need signal
-                # buffers but nothing else from a distributed signature.
-                distributed=False,
+                # Tensor parallelism needs only signal buffers; data
+                # parallelism also needs the host offsets and replica splits
+                # of a distributed signature.
+                distributed=config.data_parallel_degree > 1,
+                data_parallel_degree=config.data_parallel_degree,
                 include_signal_buffers=len(config.devices) > 1,
+                enable_vision=True,
+                vision_hidden_size=config.hidden_size,
             ),
             speculative_config=speculative_config,
             enable_structured_output=enable_structured_output,
@@ -125,8 +130,12 @@ class UnifiedDSparkDeepseekV41(BlockDriver[TrunkTaps, TensorValue]):
         per-device copies, one per device.
         """
         assert isinstance(self.target, DeepseekV41WithDSpark)
-        replicas = self.target.tensor_parallel_replicas(
-            devices, engram_host_tables
+        replicas = (
+            self.target.data_parallel_replicas(devices, engram_host_tables)
+            if self.config.data_parallel_degree > 1
+            else self.target.tensor_parallel_replicas(
+                devices, engram_host_tables
+            )
         )
         self._verifier.replicas = replicas
         self._drafter.replicas = replicas

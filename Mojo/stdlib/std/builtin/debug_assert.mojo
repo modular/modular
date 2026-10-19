@@ -20,23 +20,13 @@ from std.format._utils import _FixedWriteBuffer
 from std.io.io import _printf
 from std.os import abort
 from std.sys import (
-    is_amd_gpu,
     is_apple_gpu,
     is_gpu,
-    is_nvidia_gpu,
-)
-from std.sys._amdgpu import (
-    printf_append_args,
-    printf_append_string_n,
-    printf_begin,
 )
 from std.sys._build import is_debug_build
 from std.sys.intrinsics import assume
 from std.sys.defines import get_defined_string
-from std.collections.string.string_span import (
-    _get_kgen_string,
-    get_static_string,
-)
+from std.collections.string.string_span import _get_kgen_string
 from std.reflection import call_location, SourceLocation
 
 comptime ASSERT_MODE = get_defined_string["ASSERT", "safe"]()
@@ -576,86 +566,12 @@ def _debug_assert_msg(
                 abort()
             return
 
-        comptime fmt = (
-            "At: %s:%llu:%llu: block: [%llu,%llu,%llu] thread: [%llu,%llu,%llu]"
-            " Assert Error: %s\n"
+        _printf["At: %s:%llu:%llu: Assert Error: %s\n"](
+            loc.file_name().as_c_string_span(),
+            loc.line(),
+            loc.column(),
+            message,
         )
-
-        comptime if is_nvidia_gpu():
-            from std._gpu.primitives.id import block_idx, thread_idx
-
-            _printf[fmt](
-                loc.file_name().as_c_string_span(),
-                loc.line(),
-                loc.column(),
-                UInt(block_idx.x),
-                UInt(block_idx.y),
-                UInt(block_idx.z),
-                UInt(thread_idx.x),
-                UInt(thread_idx.y),
-                UInt(thread_idx.z),
-                message,
-            )
-        # TODO(MSTDL-1783): fix `_printf` not working on AMDGPU with %s args
-        elif is_amd_gpu():
-            from std._gpu.primitives.id import block_idx, thread_idx
-
-            var fd = printf_begin()
-            # Each appended string must carry its own nul terminator so the AMD
-            # fprintf service can delimit it; `as_bytes()` omits the nul, which
-            # corrupts output when a string's length is a multiple of 8.
-            # `get_static_string` guarantees a trailing nul in static memory
-            # just past the returned range.
-            var fmt_str = get_static_string[fmt]()
-            _ = printf_append_string_n(
-                fd,
-                Span(
-                    unsafe_ptr=fmt_str.as_bytes().unsafe_ptr(),
-                    length=fmt_str.byte_length() + 1,
-                ),
-                False,
-            )
-            # Runtime %s types must be passed as separate append_string calls.
-            # `file_name()` is a string literal, so its trailing nul lives in
-            # static memory just past the range (same guarantee the NVIDIA `%s`
-            # path relies on).
-            var file_name = loc.file_name()
-            _ = printf_append_string_n(
-                fd,
-                Span(
-                    unsafe_ptr=file_name.as_bytes().unsafe_ptr(),
-                    length=file_name.byte_length() + 1,
-                ),
-                False,
-            )
-            # Can only pass 7 args at a time
-            _ = printf_append_args(
-                fd,
-                7,
-                UInt64(loc.line()),
-                UInt64(loc.column()),
-                UInt64(block_idx.x),
-                UInt64(block_idx.y),
-                UInt64(block_idx.z),
-                UInt64(thread_idx.x),
-                UInt64(thread_idx.y),
-                0,
-            )
-            # Pass last arg
-            _ = printf_append_args(
-                fd, 1, UInt64(thread_idx.z), 0, 0, 0, 0, 0, 0, 0
-            )
-            # Append message and finalize
-            _ = printf_append_string_n(
-                fd, Span(unsafe_ptr=message, length=length), True
-            )
-        else:
-            _printf["At: %s:%llu:%llu: Assert Error: %s\n"](
-                loc.file_name().as_c_string_span(),
-                loc.line(),
-                loc.column(),
-                message,
-            )
 
         comptime if ASSERT_MODE != "warn":
             abort()

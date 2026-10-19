@@ -65,8 +65,8 @@ def test_dispatch_epilogue_fn[
         dtype: DType, width: SIMDLength, *, alignment: Int
     ](idx: Coord, val: SIMD[dtype, width]) {var d}:
         comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
-        var row_scale = -2 if Int(idx[0].value()) % 2 == 1 else 2
-        d.store[width=width](
+        var row_scale = -2 if Int(idx[0]) % 2 == 1 else 2
+        d.store(
             idx,
             (val * SIMD[dtype, width](row_scale)).cast[c_type](),
         )

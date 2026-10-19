@@ -33,9 +33,7 @@ import max.gpu.primitives.warp as warp
 @inline(.always)
 def _raw[
     dtype: DType
-](t: TileTensor[dtype, ...]) -> UnsafePointer[
-    Scalar[dtype], MutUntrackedOrigin
-]:
+](t: TileTensor[dtype, ...]) -> MutPointer[Scalar[dtype], MutUntrackedOrigin]:
     # The kernels below index the pointer as dense row-major, so a strided
     # layout would read and write the wrong addresses.
     comptime assert (
@@ -44,7 +42,7 @@ def _raw[
     return (
         t.ptr.unsafe_mut_cast[True]()
         .unsafe_origin_cast[MutUntrackedOrigin]()
-        .address_space_cast[.GENERIC]()
+        .unsafe_address_space_cast[.GENERIC]()
     )
 
 

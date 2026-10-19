@@ -210,7 +210,7 @@ def copy_to_numpy_tensor[
 
     var dims = List[PythonObject](capacity=shape.rank)
     comptime for i in range(shape.rank):
-        dims.append(PythonObject(Int(shape[i].value())))
+        dims.append(PythonObject(Int(shape[i])))
 
     var n = Int(shape.product())
     if n != len(data):
@@ -283,7 +283,7 @@ struct NumPyView[
         var offset = 0
 
         comptime for i in range(Self.rank):
-            var extent = Int(self.shape[i].value())
+            var extent = Int(self.shape[i])
             var index = Int(idx[i])
             check_bounds(index, extent)
             offset = offset * extent + index

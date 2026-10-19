@@ -20,8 +20,8 @@ from std.math import ceildiv
 
 def spmv_coo_kernel(
     cooMatrix: COOMatrix,
-    x: UnsafePointer[Float32, ImmutAnyOrigin],
-    y: UnsafePointer[Float32, MutAnyOrigin],
+    x: ImmPointer[Float32, ImmutAnyOrigin],
+    y: MutPointer[Float32, MutAnyOrigin],
 ):
     var i = block_idx.x * block_dim.x + thread_idx.x
     if i < cooMatrix.numNonzeros:
@@ -30,7 +30,7 @@ def spmv_coo_kernel(
         var val = cooMatrix.value[i]
 
         # Atomic add to y[row]
-        _ = Atomic.fetch_add(y + row, x[col] * val)
+        _ = Atomic.fetch_add(y.unsafe_offset(row), x[col] * val)
 
 
 def main() raises:

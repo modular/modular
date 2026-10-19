@@ -264,8 +264,12 @@ def execute_fused_qk_rope_ragged(
                 )
 
                 unsafe_memcpy(
-                    dest=mixed_ce_q_ragged_tensor.ptr + mixed_ce_dest_offset,
-                    src=true_ce_q_ragged_tensor.ptr + true_ce_src_offset,
+                    dest=mixed_ce_q_ragged_tensor.ptr.unsafe_offset(
+                        mixed_ce_dest_offset
+                    ),
+                    src=true_ce_q_ragged_tensor.ptr.unsafe_offset(
+                        true_ce_src_offset
+                    ),
                     count=mixed_ce_prompt_len
                     * num_q_heads
                     * kv_params.head_size,
@@ -740,8 +744,10 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext) raises:
                     seq_idx * num_q_heads * rope_dim + head_idx * rope_dim
                 )
                 unsafe_memcpy(
-                    dest=q_ragged_64_tensor.ptr + dest_offset,
-                    src=q_ragged_host_ptr.unsafe_ptr() + src_offset,
+                    dest=q_ragged_64_tensor.ptr.unsafe_offset(dest_offset),
+                    src=q_ragged_host_ptr.unsafe_ptr().unsafe_offset(
+                        src_offset
+                    ),
                     count=rope_dim,
                 )
 
@@ -808,8 +814,12 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext) raises:
                                 + head_idx * rope_dim
                             )
                             unsafe_memcpy(
-                                dest=kv_block_64_tensor.ptr + dest_offset,
-                                src=kv_block_host_ptr.unsafe_ptr() + src_offset,
+                                dest=kv_block_64_tensor.ptr.unsafe_offset(
+                                    dest_offset
+                                ),
+                                src=kv_block_host_ptr.unsafe_ptr().unsafe_offset(
+                                    src_offset
+                                ),
                                 count=rope_dim,
                             )
 

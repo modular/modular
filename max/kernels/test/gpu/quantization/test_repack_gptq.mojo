@@ -32,10 +32,12 @@ def test_repack_gptq[
     )
     var perm_host = ctx.enqueue_create_host_buffer[.int32](K)
     var input_weights = TileTensor(
-        input_host.unsafe_ptr().bitcast[UInt32](), row_major[K // 8, N]()
+        input_host.unsafe_ptr().unsafe_bitcast[UInt32](), row_major[K // 8, N]()
     )
     var input_scales = TileTensor(
-        (input_host.unsafe_ptr() + N * K // 2).bitcast[Float16](),
+        input_host.unsafe_ptr()
+        .unsafe_offset(N * K // 2)
+        .unsafe_bitcast[Float16](),
         row_major[groups, N](),
     )
     var output_tensor = TileTensor(
@@ -87,10 +89,13 @@ def test_repack_gptq[
     ctx.synchronize()
 
     var packed_weights = TileTensor(
-        output_host.unsafe_ptr().bitcast[UInt32](), row_major[N // 64, K * 8]()
+        output_host.unsafe_ptr().unsafe_bitcast[UInt32](),
+        row_major[N // 64, K * 8](),
     )
     var packed_scales = TileTensor(
-        (output_host.unsafe_ptr() + N * K // 2).bitcast[UInt16](),
+        output_host.unsafe_ptr()
+        .unsafe_offset(N * K // 2)
+        .unsafe_bitcast[UInt16](),
         row_major[groups, N](),
     )
     for row_tile in range(N // 64):

@@ -35,7 +35,7 @@ def _project[
         value_type: DType, width: SIMDLength, *, alignment: Int
     ](idx: Coord, value: SIMD[value_type, width]) {var output}:
         comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
-        output.store[width=width](idx, value.cast[dtype]())
+        output.store(idx, value.cast[dtype]())
 
     _matmul_common[target=target](hidden, weight, context, write_output)
 

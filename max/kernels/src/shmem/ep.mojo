@@ -111,7 +111,7 @@ def pack_ptrs_array[
     _ptrs: TileTensor[.uint64, ptrs_layout, ...],
     my_rank: Int32,
     out result: Array[
-        UnsafePointer[Scalar[ptr_type], MutUntrackedOrigin], n_gpus_per_node
+        MutPointer[Scalar[ptr_type], MutUntrackedOrigin], n_gpus_per_node
     ],
 ):
     """Pack the pointers into an inline array.
@@ -139,13 +139,13 @@ def pack_ptrs_array[
     @inline(.always)
     def ptr_arr_init(
         i: Int,
-    ) {imm} -> UnsafePointer[Scalar[ptr_type], MutUntrackedOrigin]:
+    ) {imm} -> MutPointer[Scalar[ptr_type], MutUntrackedOrigin]:
         comptime if local_rank_only:
-            return UnsafePointer[Scalar[ptr_type], MutUntrackedOrigin](
+            return MutPointer[Scalar[ptr_type], MutUntrackedOrigin](
                 unsafe_from_address=Int(_ptrs[my_rank])
             )
         else:
-            return UnsafePointer[Scalar[ptr_type], MutUntrackedOrigin](
+            return MutPointer[Scalar[ptr_type], MutUntrackedOrigin](
                 unsafe_from_address=Int(_ptrs[i])
             )
 
@@ -279,12 +279,12 @@ def ep_dispatch_async_kernel_api[
                 shmem_module_init(func)
                 global_cache_insert(
                     cached_module_key,
-                    UnsafePointer[NoneType, MutUntrackedOrigin](
+                    MutPointer[NoneType, MutUntrackedOrigin](
                         unsafe_from_address=1
                     ),
                 )
 
-        var send_ptr = UnsafePointer[UInt8, MutUntrackedOrigin](
+        var send_ptr = MutPointer[UInt8, MutUntrackedOrigin](
             unsafe_from_address=Int(send_ptrs[gpu_id])
         )
         var recv_ptrs_arr = pack_ptrs_array[.uint8](recv_ptrs, my_rank)
@@ -292,7 +292,7 @@ def ep_dispatch_async_kernel_api[
             recv_count_ptrs, my_rank
         )
         var ep_counters = EPLocalSyncCounters[n_experts](
-            UnsafePointer[Int32, MutUntrackedOrigin](
+            MutPointer[Int32, MutUntrackedOrigin](
                 unsafe_from_address=Int(atomic_counters._storage)
             )
         )
@@ -418,14 +418,14 @@ def ep_dispatch_wait_kernel_api[
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=get_safe_task_id(context),
     ):
-        var recv_buf_ptr = UnsafePointer[UInt8, MutUntrackedOrigin](
+        var recv_buf_ptr = MutPointer[UInt8, MutUntrackedOrigin](
             unsafe_from_address=Int(recv_ptrs[gpu_id])
         )
-        var recv_count_ptr = UnsafePointer[UInt64, MutUntrackedOrigin](
+        var recv_count_ptr = MutPointer[UInt64, MutUntrackedOrigin](
             unsafe_from_address=Int(recv_count_ptrs[gpu_id])
         )
         var ep_counters = EPLocalSyncCounters[n_experts](
-            UnsafePointer[Int32, MutUntrackedOrigin](
+            MutPointer[Int32, MutUntrackedOrigin](
                 unsafe_from_address=Int(atomic_counters._storage)
             )
         )
@@ -623,12 +623,12 @@ def ep_fused_dispatch_kernel_api[
                 shmem_module_init(func)
                 global_cache_insert(
                     cached_module_key,
-                    UnsafePointer[NoneType, MutUntrackedOrigin](
+                    MutPointer[NoneType, MutUntrackedOrigin](
                         unsafe_from_address=1
                     ),
                 )
 
-        var send_ptr = UnsafePointer[UInt8, MutUntrackedOrigin](
+        var send_ptr = MutPointer[UInt8, MutUntrackedOrigin](
             unsafe_from_address=Int(send_ptrs[gpu_id])
         )
         # Create inline arrays to store all the p2p accessible pointers
@@ -639,7 +639,7 @@ def ep_fused_dispatch_kernel_api[
             DType.uint64, local_rank_only=skip_a2a
         ](recv_count_ptrs, my_rank)
         var ep_counters = EPLocalSyncCounters[n_experts](
-            UnsafePointer[Int32, MutUntrackedOrigin](
+            MutPointer[Int32, MutUntrackedOrigin](
                 unsafe_from_address=Int(atomic_counters._storage)
             )
         )
@@ -800,12 +800,12 @@ def ep_combine_async_kernel_api[
                 shmem_module_init(func)
                 global_cache_insert(
                     cached_module_key,
-                    UnsafePointer[NoneType, MutUntrackedOrigin](
+                    MutPointer[NoneType, MutUntrackedOrigin](
                         unsafe_from_address=1
                     ),
                 )
 
-        var send_ptr = UnsafePointer[UInt8, MutUntrackedOrigin](
+        var send_ptr = MutPointer[UInt8, MutUntrackedOrigin](
             unsafe_from_address=Int(send_ptrs[gpu_id])
         )
         # Create inline arrays to store all the p2p accessible pointers
@@ -814,7 +814,7 @@ def ep_combine_async_kernel_api[
             recv_count_ptrs, my_rank
         )
         var ep_counters = EPLocalSyncCounters[n_experts](
-            UnsafePointer[Int32, MutUntrackedOrigin](
+            MutPointer[Int32, MutUntrackedOrigin](
                 unsafe_from_address=Int(atomic_counters._storage)
             )
         )
@@ -940,14 +940,14 @@ def ep_combine_wait_kernel_api[
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=get_safe_task_id(context),
     ):
-        var recv_buf_ptr = UnsafePointer[UInt8, MutUntrackedOrigin](
+        var recv_buf_ptr = MutPointer[UInt8, MutUntrackedOrigin](
             unsafe_from_address=Int(recv_ptrs[gpu_id])
         )
-        var recv_count_ptr = UnsafePointer[UInt64, MutUntrackedOrigin](
+        var recv_count_ptr = MutPointer[UInt64, MutUntrackedOrigin](
             unsafe_from_address=Int(recv_count_ptrs[gpu_id])
         )
         var ep_counters = EPLocalSyncCounters[n_experts](
-            UnsafePointer[Int32, MutUntrackedOrigin](
+            MutPointer[Int32, MutUntrackedOrigin](
                 unsafe_from_address=Int(atomic_counters._storage)
             )
         )
@@ -1011,7 +1011,7 @@ def ep_fused_combine_kernel_api[
     recv_ptrs: TileTensor[.uint64, Engine=DefaultEngine[], ...],
     recv_count_ptrs: TileTensor[.uint64, Engine=DefaultEngine[], ...],
     context: DeviceContext,
-    topk_ids_p: Optional[UnsafePointer[Int32, ImmUntrackedOrigin]] = None,
+    topk_ids_p: Optional[ImmPointer[Int32, ImmUntrackedOrigin]] = None,
 ) raises:
     """Execute the fused Expert Parallelism combine kernel.
 
@@ -1135,12 +1135,12 @@ def ep_fused_combine_kernel_api[
                 shmem_module_init(func)
                 global_cache_insert(
                     cached_module_key,
-                    UnsafePointer[NoneType, MutUntrackedOrigin](
+                    MutPointer[NoneType, MutUntrackedOrigin](
                         unsafe_from_address=1
                     ),
                 )
 
-        var send_ptr = UnsafePointer[UInt8, MutUntrackedOrigin](
+        var send_ptr = MutPointer[UInt8, MutUntrackedOrigin](
             unsafe_from_address=Int(send_ptrs[gpu_id])
         )
         # Create inline arrays to store all the p2p accessible pointers
@@ -1151,7 +1151,7 @@ def ep_fused_combine_kernel_api[
             DType.uint64, local_rank_only=skip_a2a
         ](recv_count_ptrs, my_rank)
         var ep_counters = EPLocalSyncCounters[n_experts](
-            UnsafePointer[Int32, MutUntrackedOrigin](
+            MutPointer[Int32, MutUntrackedOrigin](
                 unsafe_from_address=Int(atomic_counters._storage)
             )
         )

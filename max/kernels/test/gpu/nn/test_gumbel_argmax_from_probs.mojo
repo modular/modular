@@ -245,13 +245,13 @@ def test_amd_split_matches_single(ctx: DeviceContext, rows: Int, d: Int) raises:
     )
     var single_out = TileTensor(single_out_dev, row_major(rows))
     var split_out = TileTensor(split_out_dev, row_major(rows))
-    var no_temperature: Optional[UnsafePointer[Float32, ImmutAnyOrigin]] = None
-    var no_partials: Optional[UnsafePointer[UInt8, MutAnyOrigin]] = None
-    var no_counters: Optional[UnsafePointer[Int32, MutAnyOrigin]] = None
-    var partials = Optional[UnsafePointer[UInt8, MutAnyOrigin]](
+    var no_temperature: Optional[ImmPointer[Float32, ImmutAnyOrigin]] = None
+    var no_partials: Optional[MutPointer[UInt8, MutAnyOrigin]] = None
+    var no_counters: Optional[MutPointer[Int32, MutAnyOrigin]] = None
+    var partials = Optional[MutPointer[UInt8, MutAnyOrigin]](
         partials_dev.unsafe_ptr().unsafe_origin_cast[MutAnyOrigin]()
     )
-    var counters = Optional[UnsafePointer[Int32, MutAnyOrigin]](
+    var counters = Optional[MutPointer[Int32, MutAnyOrigin]](
         counters_dev.unsafe_ptr().unsafe_origin_cast[MutAnyOrigin]()
     )
 

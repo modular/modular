@@ -14,7 +14,9 @@
 
 Builds the servable graph on one device or tensor-parallel across several,
 and loads the weights: routed experts stream straight to their devices, and
-Engram tables are pinned in host memory while the graph compiles.
+Engram tables are pinned in host memory while the graph compiles. Images are
+encoded by a separately compiled vision model on device 0, whose span rows
+the language graph merges into its token embeddings.
 """
 
 from __future__ import annotations
@@ -26,7 +28,7 @@ import math
 import os
 import time
 from collections.abc import Callable, Mapping, Sequence
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Any, ClassVar, Protocol, runtime_checkable
 
@@ -42,7 +44,11 @@ from max.driver import (
 )
 from max.dtype import DType
 from max.engine import InferenceSession, Model
+from max.experimental import functional as F
+from max.experimental.compilation import CompiledCallable
+from max.experimental.tensor import default_dtype
 from max.graph import (
+    BufferType,
     DeviceRef,
     Graph,
     TensorType,
@@ -52,6 +58,7 @@ from max.graph import (
     ops,
 )
 from max.graph.weights import WeightData, Weights, WeightsAdapter
+from max.nn.comm.ep import EPBatchManager, EPCommInitializer
 from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheParamInterface,
@@ -60,18 +67,26 @@ from max.nn.kv_cache import (
 )
 from max.nn.layer import Module
 from max.nn.transformer import ReturnLogits
-from max.pipelines.context import TextContext
+from max.pipelines.context import (
+    ImageMetadata,
+    TextAndVisionContext,
+    TextContext,
+)
 from max.pipelines.lib import (
-    GraphPipelineModelWithKVCache,
+    GraphRole,
+    GraphSpec,
     KVCacheConfig,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
+    PipelineModelWithKVCache,
+    compile_and_init_graphs,
 )
 from max.pipelines.lib.interfaces.batch_processor import (
     BatchProcessor,
     SingleReplicaRaggedBatchProcessor,
     build_single_replica_ragged_token_arrays,
+    ragged_batch_inputs,
     ragged_kv_symbolic_inputs,
     single_replica_context_batch,
 )
@@ -79,22 +94,35 @@ from max.pipelines.lib.log_probabilities import LogProbabilitiesMixin
 from max.pipelines.lib.memory_estimation import MemoryPlan
 from max.pipelines.lib.utils import (
     CompilationTimer,
+    compute_data_parallel_splits,
     parse_state_dict_from_weights,
 )
+from max.pipelines.lib.vision_batching import create_empty_image_embeddings
+from max.pipelines.lib.vision_encoder_cache import VisionEncodeResult
 from max.profiler import traced
 from max.support.host_memory import available_host_memory, host_memory_limit
 from max.support.human_readable_formatter import to_human_readable_bytes
 from transformers import AutoTokenizer
 
 from . import engram_shared_host, kv_leaves, weight_adapters
-from .deepseekV41 import DeepseekV41, DeepseekV41Block
+from .batch_vision_inputs import pack_uncached_images
+from .deepseekV41 import DeepseekV41, DeepseekV41Block, VisionMerge
 from .layers.attention import CSA2Cache
 from .layers.engram_hash import EngramLayout, engram_lookback_token_ids
 from .layers.engram_lookup import EngramLookup
 from .layers.engram_token_map import compressed_token_map_array
 from .layers.moe import DeepseekV41MoE
 from .memory_planner import check_planned_max_length
-from .model_config import DeepseekV41Config, forward_row_bound
+from .model_config import (
+    DeepseekV41Config,
+    forward_row_bound,
+    max_images_per_request,
+)
+from .vision import (
+    DeepseekV41VisionConfig,
+    DeepseekV41VisionModel,
+    vision_input_types,
+)
 
 logger = logging.getLogger("max.pipelines")
 
@@ -502,14 +530,17 @@ def _engram_row_ranges(
 ) -> list[list[tuple[int, int]]]:
     """Per rank, per Engram layer, the ``(first row, rows)`` it reads.
 
-    One device reads the whole table. With several, each rank reads only the
-    rows of its own hash columns, so table traffic splits across ranks.
+    One device, or each data-parallel device, reads the whole table. Under
+    tensor parallelism each rank reads only the rows of its own hash columns,
+    so table traffic splits across ranks.
     """
     layout = EngramLayout.from_config(model_config)
     if layout is None:
         return [[] for _ in range(n_dev)]
-    if n_dev == 1:
-        return [[(0, rows) for rows in layout.num_embeddings]]
+    if n_dev == 1 or model_config.data_parallel_degree > 1:
+        return [
+            [(0, rows) for rows in layout.num_embeddings] for _ in range(n_dev)
+        ]
     assert token_map is not None
     lookup = EngramLookup(layout, token_map)
     return [
@@ -741,6 +772,19 @@ class DeepseekV41Inputs(ModelInputs):
     On device 0; ``None`` when the config has no Engram layers.
     """
 
+    host_input_row_offsets: Buffer | None = None
+    """CPU copy of :attr:`input_row_offsets`; only under data parallelism."""
+
+    data_parallel_splits: Buffer | None = None
+    """Int64 ``[replicas + 1]`` request boundaries of each replica, on CPU.
+
+    Only under data parallelism, where the batch is replica-major.
+    """
+
+    ep_buffers: Sequence[Buffer] = ()
+    """The routed experts' expert-parallel communication buffers; only
+    under data parallelism."""
+
     engram_host_buffers: Sequence[Buffer] = ()
     """Pinned Engram tables, one (weight, scale) pair per device and layer.
 
@@ -750,10 +794,17 @@ class DeepseekV41Inputs(ModelInputs):
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
+        """The graph inputs; the vision ones are empty for a text-only model."""
         assert self.kv_cache_inputs is not None
         lookback = (
             (self.engram_lookback_ids,)
             if self.engram_lookback_ids is not None
+            else ()
+        )
+        data_parallel = (
+            (self.host_input_row_offsets, self.data_parallel_splits)
+            if self.host_input_row_offsets is not None
+            and self.data_parallel_splits is not None
             else ()
         )
         return (
@@ -761,8 +812,12 @@ class DeepseekV41Inputs(ModelInputs):
             self.input_row_offsets,
             self.return_n_logits,
             *lookback,
+            *data_parallel,
+            *self.ep_buffers,
             *self.signal_buffers,
             *tree.leaves(self.kv_cache_inputs),
+            *self.vision_embeddings,
+            *self.vision_scatter_indices,
             *self.engram_host_buffers,
         )
 
@@ -772,11 +827,21 @@ class DeepseekV41BatchProcessor(
         TextContext, DeepseekV41Inputs, DeepseekV41Config
     ]
 ):
-    """Batches requests into ragged inputs for a single model replica.
+    """Batches requests into ragged inputs for the model's replicas.
 
     Inputs follow the standard ragged KV order. With Engram layers,
     ``engram_lookback_ids`` is inserted right after ``return_n_logits``.
+    Under data parallelism the replicas' requests are staged replica-major
+    into one batch, and ``host_input_row_offsets`` and
+    ``data_parallel_splits`` follow (on CPU), then the expert-parallel
+    communication buffers.
     """
+
+    _ep_buffers: tuple[Buffer, ...] = ()
+
+    def bind_ep_buffers(self, buffers: Sequence[Buffer]) -> None:
+        """Binds the expert-parallel buffers created at model load."""
+        self._ep_buffers = tuple(buffers)
 
     @property
     def _engram_lookback_depth(self) -> int:
@@ -798,17 +863,29 @@ class DeepseekV41BatchProcessor(
             include_signal_buffers=len(device_refs) > 1,
         )
         depth = self._engram_lookback_depth
+        # Right after `return_n_logits`; must match the order of
+        # `DeepseekV41Inputs.buffers`.
+        extra: list[TensorType | BufferType] = []
         if depth:
-            # Right after `return_n_logits`; must match the order of
-            # `DeepseekV41Inputs.buffers`.
-            inputs.insert(
-                3,
+            extra.append(
                 TensorType(
                     DType.int64,
                     shape=["engram_lookback_batch", depth],
                     device=device_refs[0],
-                ),
+                )
             )
+        dp = self.config.data_parallel_degree
+        if dp > 1:
+            extra.extend(
+                ragged_batch_inputs(
+                    device_refs[0],
+                    ("host_row_offsets", "data_parallel_splits"),
+                    data_parallel_degree=dp,
+                ).values()
+            )
+        if self.config.ep_config is not None:
+            extra.extend(EPBatchManager(self.config.ep_config).input_types())
+        inputs[3:3] = extra
         return inputs
 
     def prepare_initial_token_inputs(
@@ -817,9 +894,19 @@ class DeepseekV41BatchProcessor(
         kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> DeepseekV41Inputs:
-        context_batch = single_replica_context_batch(
-            replica_batches, processor_name=type(self).__qualname__
-        )
+        dp = self.config.data_parallel_degree
+        if dp > 1:
+            if len(replica_batches) != dp:
+                raise ValueError(
+                    f"expected {dp} replica batches, got {len(replica_batches)}"
+                )
+            context_batch = [ctx for batch in replica_batches for ctx in batch]
+        else:
+            context_batch = list(
+                single_replica_context_batch(
+                    replica_batches, processor_name=type(self).__qualname__
+                )
+            )
         tokens_np, offsets_np = build_single_replica_ragged_token_arrays(
             context_batch
         )
@@ -839,16 +926,41 @@ class DeepseekV41BatchProcessor(
             kv_cache_inputs=kv_cache_inputs,
             signal_buffers=list(self.runtime.signal_buffers),
             engram_lookback_ids=engram_lookback_ids,
+            host_input_row_offsets=(
+                Buffer.from_numpy(offsets_np) if dp > 1 else None
+            ),
+            data_parallel_splits=(
+                Buffer.from_numpy(compute_data_parallel_splits(replica_batches))
+                if dp > 1
+                else None
+            ),
+            ep_buffers=self._ep_buffers,
         )
 
 
+class _GraphBody(Module):
+    """Traces ``build``, which emits a graph's body from its inputs."""
+
+    def __init__(self, build: Callable[..., tuple[TensorValue, ...]]) -> None:
+        super().__init__()
+        self._build = build
+
+    def __call__(self, *inputs: Value[Any]) -> tuple[TensorValue, ...]:
+        return self._build(*inputs)
+
+
 class DeepseekV41Model(
-    LogProbabilitiesMixin, GraphPipelineModelWithKVCache[TextContext]
+    LogProbabilitiesMixin,
+    PipelineModelWithKVCache[TextContext, DeepseekV41Config, Model],
 ):
-    """A DeepSeek-V4.1-Flash pipeline model for text generation.
+    """A DeepSeek-V4.1-Flash pipeline model for text and image generation.
 
     :class:`LogProbabilitiesMixin` computes logprobs from the graph's
-    float32 logits.
+    float32 logits. As a
+    :class:`~max.pipelines.lib.vision_encoder_cache.SupportsVisionEncoding`
+    model, the pipeline's vision encoder cache drives :meth:`vision_execute`
+    and hands the language graph each step's span rows and their token
+    rows.
     """
 
     model_config_cls: ClassVar[type[Any]] = DeepseekV41Config
@@ -858,6 +970,9 @@ class DeepseekV41Model(
 
     model: Model
     """The compiled and initialized MAX Engine model."""
+
+    vision_model: CompiledCallable[..., Any] | None
+    """The compiled vision model; ``None`` for a checkpoint without one."""
 
     _engram_host_buffers: list[Buffer]
     """Pinned Engram tables, bound as the last graph inputs.
@@ -871,12 +986,18 @@ class DeepseekV41Model(
     _pending_weight_loads: list[tuple[Callable[[], None], bool]]
     """Weight loads queued by :meth:`_defer_weight_load`."""
 
+    _running_weight_loads: list[tuple[Future[None], bool]]
+    """Weight loads :meth:`_start_weight_loads` started."""
+
+    _weights_dict: dict[str, Any]
+    """The checkpoint weights :meth:`graph_specs` builds the decoder from."""
+
     _stream_routed_experts: ClassVar[bool] = True
     """Whether routed experts are uploaded straight to their devices.
 
-    When on, :meth:`_load_state_dict` leaves them deferred and
-    :meth:`_build_graph_for_compile` makes them device-resident. A subclass
-    whose graph build does not make them device-resident must turn this off.
+    When on, :meth:`_load_state_dict` leaves them deferred and the graph
+    build makes them device-resident. A subclass whose graph build does not
+    make them device-resident must turn this off.
     """
 
     def __init__(
@@ -917,6 +1038,102 @@ class DeepseekV41Model(
             memory_plan=memory_plan,
         )
         self.model = self.load_model(session)
+        self.vision_model = self._load_vision_model(session)
+
+    @functools.cached_property
+    def _vision_config(self) -> DeepseekV41VisionConfig | None:
+        """``None`` without a tower, or with images capped at 0."""
+        vision_config = getattr(self.huggingface_config, "vision_config", None)
+        if (
+            vision_config is None
+            or max_images_per_request(self.pipeline_config) == 0
+        ):
+            return None
+        return DeepseekV41VisionConfig.from_hf(
+            vision_config.to_dict(),
+            DeepseekV41Config.get_text_config(
+                self.huggingface_config
+            ).hidden_size,
+        )
+
+    def _load_vision_model(
+        self, session: InferenceSession
+    ) -> CompiledCallable[..., Any] | None:
+        """Compiles the vision model on device 0 and loads its weights.
+
+        Raises:
+            ValueError: If the checkpoint's vision tensors do not load
+                strictly into the model.
+        """
+        config = self._vision_config
+        if config is None:
+            return None
+        device = self.devices[0]
+        with F.lazy(), default_dtype(DType.bfloat16):
+            vision = DeepseekV41VisionModel(config)
+            vision.to(device)
+        weights = weight_adapters.convert_safetensor_vision_state_dict(
+            dict(self.weights.items())
+        )
+        problems = weight_adapters.vision_load_mismatches(
+            weights, {n: (t.shape, t.dtype) for n, t in vision.parameters}
+        )
+        if problems:
+            raise ValueError(
+                "the checkpoint's vision tensors do not load into the vision "
+                "model:\n" + "\n".join(problems)
+            )
+        logger.info(
+            "Loading %d vision tensors: 0 missing, 0 unexpected", len(weights)
+        )
+        return vision.compile(
+            *vision_input_types(
+                config, DeviceRef.from_device(device), DType.bfloat16
+            ),
+            weights=weights,
+            session=session,
+        )
+
+    def pack_vision_inputs(
+        self,
+        selection: Sequence[
+            tuple[TextAndVisionContext, Sequence[ImageMetadata]]
+        ],
+        devices: list[Device],
+    ) -> list[Buffer] | None:
+        """Packs the pipeline-selected uncached images to device 0."""
+        if self._vision_config is None:
+            return None
+        return pack_uncached_images(selection, devices[0], self._vision_config)
+
+    def vision_execute(
+        self,
+        selection: Sequence[
+            tuple[TextAndVisionContext, Sequence[ImageMetadata]]
+        ],
+        devices: list[Device],
+        packed: list[Buffer] | None,
+    ) -> VisionEncodeResult:
+        """Encodes the packed images into their span rows on every device."""
+        if packed is None:
+            return VisionEncodeResult(
+                embeddings=self.empty_vision_embeddings(devices)
+            )
+        if self.vision_model is None:
+            raise ValueError("this checkpoint has no vision model")
+        (rows,) = self.vision_model.execute_raw(*packed)
+        return VisionEncodeResult(embeddings=[rows.to(d) for d in devices])
+
+    def empty_vision_embeddings(self, devices: list[Device]) -> list[Buffer]:
+        """Per-device zero-row span embeddings, cached across steps."""
+        if not hasattr(self, "_empty_vision_embeddings"):
+            self._empty_vision_embeddings = create_empty_image_embeddings(
+                devices,
+                DeepseekV41Config.get_text_config(
+                    self.huggingface_config
+                ).hidden_size,
+            )
+        return self._empty_vision_embeddings
 
     def _create_model_config(
         self, state_dict: dict[str, Any]
@@ -1023,14 +1240,89 @@ class DeepseekV41Model(
         """
         self._pending_weight_loads.append((load, overlaps_compile))
 
+    ep_comm_initializer: EPCommInitializer | None = None
+
+    def _init_distributed_runtime(
+        self, session: InferenceSession, model_config: Any
+    ) -> None:
+        """Sets up the routed experts' expert-parallel communication.
+
+        Only under data parallelism (``model_config.ep_config``), and not on
+        virtual devices, which compile the graph without running it.
+        """
+        assert isinstance(model_config, DeepseekV41Config)
+        ep_config = model_config.ep_config
+        if ep_config is None or is_virtual_device_mode():
+            return
+        initializer = EPCommInitializer(ep_config)
+        init = initializer.init_module()
+        specs: dict[str, GraphSpec] = {
+            GraphRole.EP_INIT: GraphSpec(init, "ep_init", init.input_types())
+        }
+        modules = compile_and_init_graphs(session, specs)
+        initializer.run_init(modules[GraphRole.EP_INIT].engine_model)
+        self.ep_comm_initializer = initializer
+        # Every V4.1 batch processor takes the buffers as graph inputs.
+        bind = getattr(self.batch_processor, "bind_ep_buffers", None)
+        if bind is None:
+            raise TypeError(
+                f"{type(self.batch_processor).__name__} cannot take the "
+                "expert-parallel buffers"
+            )
+        bind(initializer.model_inputs())
+
+    def _start_weight_loads(self) -> None:
+        """Starts the deferred weight loads, each on its own thread.
+
+        Returns once the loads that must not overlap the compile are done;
+        :meth:`_finish_weight_loads` waits for the rest.
+        """
+        pending, self._pending_weight_loads = self._pending_weight_loads, []
+        pool = ThreadPoolExecutor(max(1, len(pending)))
+        self._running_weight_loads = [
+            (pool.submit(load), overlaps_compile)
+            for load, overlaps_compile in pending
+        ]
+        pool.shutdown(wait=False)
+        for load, overlaps_compile in self._running_weight_loads:
+            if not overlaps_compile:
+                load.result()
+
+    def _finish_weight_loads(self) -> None:
+        """Waits for the weight loads :meth:`_start_weight_loads` started."""
+        running, self._running_weight_loads = self._running_weight_loads, []
+        for load, _ in running:
+            load.result()
+
+    def _build_graph_for_compile(
+        self,
+        session: InferenceSession,
+        state_dict: dict[str, Any],
+        model_config: DeepseekV41Config,
+    ) -> tuple[Graph, dict[str, Any]]:
+        """Builds the decoder graph the legacy way, for :meth:`load_model`.
+
+        Only the DSpark subclass implements it.
+        """
+        raise NotImplementedError
+
     @traced
     def load_model(self, session: InferenceSession) -> Model:
-        """Builds the graph, then compiles it while the weights load.
+        """Loads the decoder :meth:`graph_specs` returns.
 
-        Deferred weight loads run on worker threads: the compile waits for the
+        A subclass that still overrides ``_build_graph_for_compile`` builds
+        the graph through that hook, then compiles it while the deferred
+        weight loads run on worker threads: the compile waits for the
         routed-expert upload (which holds the GIL) and overlaps the Engram
         pinning.
         """
+        # TODO(kathywu): Drop once the spec-v3 stack moves the DSpark
+        # subclass onto graph specs.
+        if (
+            type(self)._build_graph_for_compile
+            is DeepseekV41Model._build_graph_for_compile
+        ):
+            return self.load_graphs(session)[GraphRole.DECODER]
         self._pending_weight_loads = []
         state_dict = self._load_state_dict()
         model_config = self._create_model_config(state_dict)
@@ -1043,24 +1335,47 @@ class DeepseekV41Model(
             timer.mark_build_complete()
             del state_dict
             self.state_dict = weights_registry
-            pending, self._pending_weight_loads = self._pending_weight_loads, []
-            with ThreadPoolExecutor(max(1, len(pending))) as pool:
-                loads = [
-                    (pool.submit(load), overlaps_compile)
-                    for load, overlaps_compile in pending
-                ]
-                for load, overlaps_compile in loads:
-                    if not overlaps_compile:
-                        load.result()
-                compiled = session.compile_reusing_mefs(graph)
-                for load, _ in loads:
-                    load.result()
+            self._start_weight_loads()
+            compiled = session.compile_reusing_mefs(graph)
+            self._finish_weight_loads()
             model = session.init(compiled, weights_registry=weights_registry)
 
         self._maybe_release_host_weights(model)
         _drop_checkpoint_page_cache(self.weights)
         self._wire_batch_processor(model, model_config)
         return model
+
+    @traced
+    def load_graphs(self, session: InferenceSession) -> dict[str, Model]:
+        """Compiles and initializes the graphs :meth:`graph_specs` returns.
+
+        The decoder's trace starts the deferred weight loads, so the compile
+        waits for the routed-expert upload and overlaps the Engram pinning,
+        which finishes before the host weights can be released.
+
+        Args:
+            session: The session that compiles and initializes the graphs.
+
+        Returns:
+            The initialized models, keyed by role.
+        """
+        self._pending_weight_loads = []
+        self._weights_dict = self._load_state_dict()
+        model_config = self._create_model_config(self._weights_dict)
+        self._init_distributed_runtime(session, model_config)
+        with CompilationTimer("model") as timer:
+            specs = self.graph_specs(model_config)
+            timer.mark_build_complete()
+            self.compiled_modules = compile_and_init_graphs(session, specs)
+            self._finish_weight_loads()
+        models = {
+            role: compiled.engine_model
+            for role, compiled in self.compiled_modules.items()
+        }
+        self._maybe_release_host_weights(*models.values())
+        _drop_checkpoint_page_cache(self.weights)
+        self._wire_batch_processor(models[GraphRole.DECODER], model_config)
+        return models
 
     def _per_device_engram_tables(
         self,
@@ -1084,13 +1399,16 @@ class DeepseekV41Model(
             per_device_tables.append(table)
         return per_device_tables
 
-    def _build_graph_for_compile(
-        self,
-        session: InferenceSession,
-        state_dict: dict[str, Any],
-        model_config: DeepseekV41Config,
-    ) -> tuple[Graph, dict[str, Any]]:
-        del session
+    def graph_specs(
+        self, model_config: DeepseekV41Config
+    ) -> dict[str, GraphSpec]:
+        """Returns the decoder graph, tensor or data parallel across devices.
+
+        The model is built as the graph traces, since its Engram tables are
+        graph inputs, and the trace ends by starting the deferred weight
+        loads (:meth:`_start_weight_loads`).
+        """
+        state_dict, self._weights_dict = self._weights_dict, {}
         engram_layer_ids = model_config.engram_layer_ids
         engram_input_types, engram_token_map = self._prepare_engram(
             state_dict, model_config
@@ -1100,23 +1418,56 @@ class DeepseekV41Model(
         input_types = self.batch_processor.get_symbolic_inputs(
             kv_params=self.kv_params, device_refs=self.device_refs
         )
-        input_types = [*input_types, *engram_input_types]
+        hidden_size = model_config.hidden_size
+        vision_types = [
+            *(
+                TensorType(
+                    DType.bfloat16, ["vision_rows", hidden_size], device=ref
+                )
+                for ref in self.device_refs
+            ),
+            *(
+                TensorType(DType.int32, ["vision_scatter_rows"], device=ref)
+                for ref in self.device_refs
+            ),
+        ]
+        input_types = [*input_types, *vision_types, *engram_input_types]
 
-        n_engram_inputs = len(engram_input_types)
-        with Graph("deepseekV41", input_types=input_types) as graph:
-            all_inputs = list(graph.inputs)
+        n_dev = len(self.device_refs)
+        n_trailing = len(vision_types) + len(engram_input_types)
+        weights_registry: dict[str, Any] = {}
+
+        def build(*graph_inputs: Value[Any]) -> tuple[TensorValue, ...]:
+            all_inputs = list(graph_inputs)
             tokens, input_row_offsets, return_n_logits = all_inputs[:3]
-            # The Engram lookback window follows `return_n_logits`.
+            # The Engram lookback window follows `return_n_logits`, then the
+            # data-parallel host offsets and splits.
             n_leading = 4 if engram_layer_ids else 3
             engram_lookback_ids = (
                 all_inputs[3].tensor if engram_layer_ids else None
             )
-            if n_engram_inputs:
-                variadic_args = all_inputs[n_leading:-n_engram_inputs]
-                engram_graph_inputs = all_inputs[-n_engram_inputs:]
-            else:
-                variadic_args = all_inputs[n_leading:]
-                engram_graph_inputs = []
+            data_parallel = model_config.data_parallel_degree > 1
+            if data_parallel:
+                host_row_offsets, data_parallel_splits = (
+                    v.tensor for v in all_inputs[n_leading : n_leading + 2]
+                )
+                n_leading += 2
+            n_ep = (
+                len(EPBatchManager(model_config.ep_config).input_types())
+                if model_config.ep_config is not None
+                else 0
+            )
+            ep_inputs = all_inputs[n_leading : n_leading + n_ep]
+            n_leading += n_ep
+            variadic_args = all_inputs[n_leading:-n_trailing]
+            vision_inputs = all_inputs[-n_trailing:][: 2 * n_dev]
+            engram_graph_inputs = all_inputs[-n_trailing:][2 * n_dev :]
+            visions = [
+                VisionMerge(embeddings.tensor, indices.tensor)
+                for embeddings, indices in zip(
+                    vision_inputs[:n_dev], vision_inputs[n_dev:], strict=True
+                )
+            ]
 
             per_device_tables = self._per_device_engram_tables(
                 engram_graph_inputs, engram_layer_ids
@@ -1132,15 +1483,19 @@ class DeepseekV41Model(
                 weight_alignment=1,
                 strict=self._strict_state_dict_loading,
             )
-            weights_registry = nn_model.state_dict(auto_initialize=False)
-            n_dev = len(self.device_refs)
-            serving = (
-                [nn_model]
-                if n_dev == 1
-                else nn_model.tensor_parallel_replicas(
+            weights_registry.update(nn_model.state_dict(auto_initialize=False))
+            if n_dev == 1:
+                serving = [nn_model]
+            elif data_parallel:
+                serving = nn_model.data_parallel_replicas(
                     self.device_refs, per_device_tables
                 )
-            )
+                if serving[0].ep_batch_manager is not None:
+                    serving[0].ep_batch_manager.fetch_buffers(ep_inputs)
+            else:
+                serving = nn_model.tensor_parallel_replicas(
+                    self.device_refs, per_device_tables
+                )
             expert_uploads = _make_routed_experts_device_resident(
                 nn_model,
                 serving,
@@ -1165,6 +1520,7 @@ class DeepseekV41Model(
                     return_n_logits.tensor,
                     csa2_cache(specs, groups, 0),
                     engram_lookback_ids=engram_lookback_ids,
+                    vision=visions[0],
                 )
             else:
                 signal_buffers = [v.buffer for v in variadic_args[:n_dev]]
@@ -1185,24 +1541,49 @@ class DeepseekV41Model(
                     if engram_lookback_ids is not None
                     else None
                 )
-                outputs = DeepseekV41.serve_tensor_parallel(
-                    serving,
-                    tokens_per_dev,
-                    offsets_per_dev,
-                    return_n_logits.tensor,
-                    caches,
-                    signal_buffers,
-                    engram_lookback_ids=lookback_per_dev,
+                if data_parallel:
+                    outputs = DeepseekV41.serve_data_parallel(
+                        serving,
+                        tokens_per_dev,
+                        offsets_per_dev,
+                        host_row_offsets,
+                        data_parallel_splits,
+                        return_n_logits.tensor,
+                        caches,
+                        signal_buffers,
+                        engram_lookback_ids=lookback_per_dev,
+                        visions=visions,
+                    )
+                else:
+                    outputs = DeepseekV41.serve_tensor_parallel(
+                        serving,
+                        tokens_per_dev,
+                        offsets_per_dev,
+                        return_n_logits.tensor,
+                        caches,
+                        signal_buffers,
+                        engram_lookback_ids=lookback_per_dev,
+                        visions=visions,
+                    )
+            if expert_uploads:
+                self._defer_weight_load(
+                    lambda: weights_registry.update(
+                        _stream_routed_experts(expert_uploads)
+                    ),
+                    overlaps_compile=False,
                 )
-            graph.output(*outputs)
-        if expert_uploads:
-            self._defer_weight_load(
-                lambda: weights_registry.update(
-                    _stream_routed_experts(expert_uploads)
-                ),
-                overlaps_compile=False,
+            # The end of the trace is the last step before the compile.
+            self._start_weight_loads()
+            return outputs
+
+        return {
+            GraphRole.DECODER: GraphSpec(
+                _GraphBody(build),
+                "deepseekV41",
+                input_types,
+                weights=weights_registry,
             )
-        return graph, weights_registry
+        }
 
     def prepare_initial_token_inputs(
         self,

@@ -81,16 +81,6 @@ def run_causal_conv1d[
             bias_h.store((c,), Scalar[dtype](0))
     var result_unfused_buf = result_unfused_h
 
-    # Strides for channel-first layout (B, C, L)
-    var x_batch_stride: UInt32 = UInt32(dim * seqlen)
-    var x_c_stride: UInt32 = UInt32(seqlen)
-    var x_l_stride: UInt32 = 1
-    var weight_c_stride: UInt32 = UInt32(width)
-    var weight_width_stride: UInt32 = 1
-    var out_batch_stride: UInt32 = UInt32(dim * seqlen)
-    var out_c_stride: UInt32 = UInt32(seqlen)
-    var out_l_stride: UInt32 = 1
-
     var silu_activation = activation == "silu"
 
     # Test kernel
@@ -122,46 +112,31 @@ def run_causal_conv1d[
     var width_minus_1: Int = width - 1
     for b in range(batch):
         for c in range(dim):
-            var cur_bias = bias_buf.unsafe_ptr().load(c)
+            var cur_bias = bias_buf[c]
             for l in range(seqlen):
                 var conv_sum: Scalar[dtype] = cur_bias
                 for w in range(width):
                     var input_l: Int = l - (width_minus_1 - w)
                     if input_l >= 0:
-                        var x_offset = (
-                            UInt32(b) * x_batch_stride
-                            + UInt32(c) * x_c_stride
-                            + UInt32(input_l) * x_l_stride
-                        )
-                        var input_val = input_buf.unsafe_ptr().load(x_offset)
-                        var weight_offset = (
-                            UInt32(c) * weight_c_stride
-                            + UInt32(w) * weight_width_stride
-                        )
-                        var weight_val = weight_buf.unsafe_ptr().load(
-                            weight_offset
-                        )
+                        var input_val = input_buf[b, c, input_l]
+                        var weight_val = weight_buf[c, w]
                         conv_sum = conv_sum + input_val * weight_val
 
                 var out_val = conv_sum
                 if silu_activation:
                     out_val = silu_ref[dtype](out_val)
 
-                var out_offset = (
-                    UInt32(b) * out_batch_stride
-                    + UInt32(c) * out_c_stride
-                    + UInt32(l) * out_l_stride
-                )
-                result_unfused_buf.unsafe_ptr().store(out_offset, out_val)
+                result_unfused_buf[b, c, l] = out_val
 
     # Compare results
-    var flattened_size = batch * dim * seqlen
-    for i in range(flattened_size):
-        assert_almost_equal(
-            result_fused_h.raw_load(i),
-            result_unfused_h.raw_load(i),
-            rtol=rtol,
-        )
+    for b in range(batch):
+        for c in range(dim):
+            for l in range(seqlen):
+                assert_almost_equal(
+                    result_fused_h[b, c, l],
+                    result_unfused_h[b, c, l],
+                    rtol=rtol,
+                )
 
 
 def test_basic_causal_conv1d() raises:

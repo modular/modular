@@ -72,7 +72,6 @@ from .int_tuple import (
     flatten,
     idx2crd,
     inner_product,
-    is_flat,
     is_int,
     is_tuple,
     mul,
@@ -271,9 +270,6 @@ struct Layout(
     Layouts can be hierarchical, with nested shapes and strides, allowing
     for complex memory access patterns like blocked or tiled layouts.
     """
-
-    comptime has_shape = True
-    """Indicates whether the layout has a valid shape."""
 
     var shape: IntTuple
     """The dimensions of the layout.
@@ -775,18 +771,6 @@ struct Layout(
         return self.shape.all_known() and self.stride.all_known()
 
     @inline(.nodebug)
-    def known_shape(self) -> Bool:
-        """Checks if all shape dimensions in the layout have known values.
-
-        A dimension is considered unknown if its shape is set to the special
-        `UNKNOWN_VALUE` constant. This method only checks shapes, not strides.
-
-        Returns:
-            True if all shape dimensions have known values, False otherwise.
-        """
-        return self.shape.all_known()
-
-    @inline(.nodebug)
     def transpose(self) -> Layout:
         """Transposes the layout by reversing the order of dimensions.
 
@@ -894,9 +878,9 @@ def MakeTileLayoutList[*tile_sizes: Int]() -> LayoutList:
     Returns:
         A LayoutList containing layouts for each tile size.
     """
-    var layout_list = LayoutList(capacity=tile_sizes.size)
+    var layout_list = LayoutList(capacity=tile_sizes.length)
 
-    comptime for i in range(tile_sizes.size):
+    comptime for i in range(tile_sizes.length):
         comptime arg = tile_sizes[i]
         layout_list.append(Layout(arg, 1))
 
@@ -1975,29 +1959,6 @@ def is_row_major[rank: Int](layout: Layout) -> Bool:
         correct_stride *= flat_shape[i].value()
 
     return True
-
-
-def is_contiguous_dim(layout: Layout, dim: Int) -> Bool:
-    """Checks if a flat layout is contiguous in a specific dimension.
-
-    This function checks if a flat layout is contiguous in a specified
-    dimension, considering both positive strides and zero strides with a single
-    element. The latter case is necessary for coalesced layouts.
-
-    Args:
-        layout: The layout to check.
-        dim: The dimension to check.
-
-    Returns:
-        True if the layout is contiguous in the specified dimension,
-        False otherwise.
-    """
-    if not is_flat(layout.shape):
-        abort("layout must be flat")
-
-    return layout.stride[dim] == 1 or (
-        layout.stride[dim] == 0 and layout.shape[dim] == 1
-    )
 
 
 def _compute_distribute_layout[

@@ -19,11 +19,9 @@ from max.gpu.memory import async_copy_commit_group, async_copy_wait_group
 from layout import (
     TileTensor,
     TensorLayout,
-    coord,
     row_major,
     stack_allocation,
 )
-from layout.tile_layout import Layout
 from layout._host_device_tile_tensor import HostDeviceTileTensor
 from quantization.qmatmul_gpu import (
     _quantized_scale_stage,
@@ -56,24 +54,20 @@ def scale_stream_kernel[
     var lane = thread_idx.x % WARP_SIZE
     var partition = thread_idx.x // WARP_SIZE
     # The BF16 suffix is reached through a byte pointer, as in packed weights.
-    var suffix = source.unsafe_ptr().bitcast[UInt8]() + 16
+    var suffix = source.unsafe_ptr().unsafe_bitcast[UInt8]().unsafe_offset(16)
     var global_scales = TileTensor(
-        suffix.bitcast[BFloat16](), row_major[2 * GROUPS, N]()
+        suffix.unsafe_bitcast[BFloat16](), row_major[2 * GROUPS, N]()
     )
     var storage = stack_allocation[.bfloat16, address_space=.SHARED](
         row_major[2, RING, BN]()
     )
-    var shared = TileTensor(
-        storage.unsafe_ptr() + partition * RING * BN,
-        row_major[RING, BN](),
+    var shared = storage.tile[1, RING, BN]((partition, 0, 0)).reshape(
+        row_major[RING, BN]()
     )
     var registers_storage = stack_allocation[.bfloat16, address_space=.LOCAL](
         row_major[8, 3]()
     )
-    var registers = TileTensor(
-        registers_storage.unsafe_ptr() + 1,
-        Layout(coord[8, 1], coord[3, 1]),
-    )
+    var registers = registers_storage.tile[8, 1]((0, 1))
     comptime for i in range(8):
         registers_storage[i, 0] = -29
         registers_storage[i, 2] = -30

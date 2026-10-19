@@ -232,13 +232,24 @@ def multistage_gemm_run[
     ctx.enqueue_copy(c_host_ref_ptr, c_device_ref)
     ctx.synchronize()
 
-    assert_almost_equal(
-        c_host._storage,
-        c_host_ref._storage,
-        c_host.num_elements(),
-        atol=1e-4 if out_type == .float32 else 1e-2,
-        rtol=1e-2,
-    )
+    comptime if out_type.is_float8():
+        # The host has no fp8 arithmetic, so compare in fp32. e4m3 keeps 3
+        # mantissa bits: a one-ulp rounding difference from the naive
+        # kernel's summation order is a 12.5% relative error.
+        var c_f32 = List[Float32](capacity=M * N)
+        var c_ref_f32 = List[Float32](capacity=M * N)
+        for i in range(M * N):
+            c_f32.append(c_host_ptr[i].cast[.float32]())
+            c_ref_f32.append(c_host_ref_ptr[i].cast[.float32]())
+        assert_almost_equal(Span(c_f32), Span(c_ref_f32), atol=1e-2, rtol=0.125)
+    else:
+        assert_almost_equal(
+            c_host._storage,
+            c_host_ref._storage,
+            c_host.num_elements(),
+            atol=1e-4 if out_type == .float32 else 1e-2,
+            rtol=1e-2,
+        )
 
     _ = a_device^
     _ = b_device^
@@ -338,3 +349,16 @@ def main() raises:
                 num_k_partitions=2,
             ](ctx)
             multistage_gemm_run[M=130, N=512, K=512, num_k_partitions=2](ctx)
+            # A C dtype other than the fp32 accumulator and not half precision
+            # takes the fp32 store branch, which must cast rather than copy.
+            multistage_gemm_run[
+                M=130, N=512, K=512, in_type=.bfloat16, out_type=.float8_e4m3fn
+            ](ctx)
+            multistage_gemm_run[
+                M=130,
+                N=512,
+                K=512,
+                in_type=.bfloat16,
+                out_type=.float8_e4m3fn,
+                num_k_partitions=2,
+            ](ctx)

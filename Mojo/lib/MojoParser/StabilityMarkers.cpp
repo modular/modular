@@ -74,16 +74,10 @@ static bool hasStableDecorator(ASTDecl &decl) {
 /// Walks the full ancestor chain so that e.g. code in `std::builtin::int`
 /// finds the `std` package.  Returns nullptr if no opted-in package is found.
 static PackageOp findOptedInPackage(ASTDecl &decl) {
-  ASTDecl *cur = decl.getNearestDeclOfType<PackageOp>();
-  while (cur) {
-    if (auto *op = cur->getIfOperation())
-      if (auto pkgOp = dyn_cast<PackageOp>(op))
-        if (isPackageOptedIntoStabilityMarkers(pkgOp.getSymName()))
-          return pkgOp;
-    cur = cur->getParentDecl();
-    if (cur)
-      cur = cur->getNearestDeclOfType<PackageOp>();
-  }
+  for (ASTDecl *cur = &decl; cur; cur = cur->getParentDecl())
+    if (auto *packageDecl = dyn_cast<PackageASTDecl>(cur))
+      if (isPackageOptedIntoStabilityMarkers(packageDecl->getOp().getSymName()))
+        return packageDecl->getOp();
   return {};
 }
 
@@ -282,7 +276,7 @@ void M::KGEN::LIT::checkStableTraitMemberImplementation(
     return; // All good - stable implementation.
 
   if (auto *fnDecl = dyn_cast<DefASTDecl>(&structMemberDecl)) {
-    if (fnDecl->getOp() && fnDecl->getOp().isSynthetic())
+    if (fnDecl->getOp().isSynthetic())
       return;
   }
   // Determine member kind from the trait member's operation type.

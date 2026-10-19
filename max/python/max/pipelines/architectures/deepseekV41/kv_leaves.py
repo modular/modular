@@ -35,6 +35,26 @@ from transformers import AutoConfig
 
 from . import layer_resolver, model_config
 
+MXFP4_INDEX_KEY_BYTES = 68
+"""Bytes of one MXFP4 index key: 128 E2M1 values in 64 bytes, then a 32-bit
+word of four UE8M0 scales."""
+
+
+def _storage_dtype_and_width(
+    spec: V41KVLeafSpec, cache_dtype: DType
+) -> tuple[DType, int]:
+    """Returns a leaf's stored element type and row width in elements.
+
+    An index-key leaf is opaque ``uint8`` records, one
+    ``MXFP4_INDEX_KEY_BYTES`` record per key slot; the indexer kernels lay
+    each page out as every key's value bytes, then every key's scale word.
+    The other leaves store ``head_dim`` elements of ``float32`` or the cache
+    dtype.
+    """
+    if spec.kind == "idx_comp":
+        return DType.uint8, MXFP4_INDEX_KEY_BYTES
+    return (DType.float32 if spec.float32 else cache_dtype), spec.head_dim
+
 
 def _full_layers_by_ratio(
     huggingface_config: AutoConfig,
@@ -85,13 +105,12 @@ class V41KVLeafSpec:
     def device_slots_per_page(self, page_size: int) -> int:
         """Slots per page the device buffer allocates.
 
-        Unlike :meth:`slots_per_page`, ``comp`` and ``idx_comp`` allocate one
-        slot per token: attention stores one row per raw token and the shared
-        block table assumes ``page_size``-token pages.
+        Unlike :meth:`slots_per_page`, ``comp`` allocates one slot per token:
+        attention stores one row per raw token. ``idx_comp`` stores one slot
+        per key.
         """
-        # TODO: honor ``ratio`` for ``comp``/``idx_comp`` once they are
-        # block-pooled.
-        if self.kind in ("comp", "idx_comp"):
+        # TODO: honor ``ratio`` for ``comp`` once it is block-pooled.
+        if self.kind == "comp":
             return page_size
         return self.slots_per_page(page_size)
 
@@ -198,10 +217,11 @@ def build_kv_params(
     page_size = kv_cache_config.kv_cache_page_size
     children: dict[str, KVCacheParams] = {}
     for spec in specs:
+        dtype, width = _storage_dtype_and_width(spec, cache_dtype)
         children[spec.key] = kv_cache_config.to_params(
-            dtype=DType.float32 if spec.float32 else cache_dtype,
+            dtype=dtype,
             n_kv_heads=1,
-            head_dim=spec.head_dim,
+            head_dim=width,
             num_layers=spec.num_layers,
             devices=devices,
             data_parallel_degree=data_parallel_degree,

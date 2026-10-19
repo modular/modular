@@ -27,7 +27,6 @@ Member-naming convention: members a body reads have plain names
 discriminators and split-K plumbing — are `_`-prefixed.
 """
 
-from std.memory import UnsafePointer
 from max.gpu.host.info import is_cpu
 from std.utils.coord import Coord, DynamicCoord
 
@@ -162,6 +161,12 @@ struct ContextParams(TrivialRegisterPassable):
     few-rows-by-very-long-inner shapes. Scaffolder-internal; set only by
     the tier picker, never read by a body."""
 
+    var name: StaticString
+    """Operation name propagated from the graph op (`_trace_name`) so the
+    tier kernels' `@__name` identifies the op in profiler traces. Defaults
+    to `"rowwise"` when the caller doesn't provide one. Scaffolder-internal
+    — a body never reads it."""
+
     @inline(.always)
     def __init__(
         out self,
@@ -172,6 +177,7 @@ struct ContextParams(TrivialRegisterPassable):
         target: StaticString,
         tier: ReduceTier = ReduceTier.Block,
         num_phases: Int = 0,
+        name: StaticString = "rowwise",
     ):
         """Initializes a `ContextParams` from per-tier comptime values.
 
@@ -185,6 +191,8 @@ struct ContextParams(TrivialRegisterPassable):
                 every CPU tier and the GPU tiled/cooperative tiers).
             num_phases: Per-element-output split-K total phase count
                 (`<= 1` disables the tier).
+            name: Operation name for the tier kernels' `@__name`
+                (defaults to `"rowwise"`).
         """
         debug_assert(
             not is_cpu(target) or BLOCK_SIZE == 1,
@@ -197,6 +205,7 @@ struct ContextParams(TrivialRegisterPassable):
         self.simd_width = simd_width
         self.target = target
         self._num_phases = num_phases
+        self.name = name
 
 
 # ===-----------------------------------------------------------------------===#
@@ -281,17 +290,17 @@ struct Context[params: ContextParams](TrivialRegisterPassable):
             `align_of[dtype]()` to get the byte alignment passed to the
             backend. Named to match that convention explicitly, since a
             caller that instead hands this straight to a raw byte-level
-            primitive (e.g. `TileTensor.raw_load`/`raw_store`, which
-            wants bytes) without that multiplication under-claims
+            primitive (e.g. the `alignment` of `TileTensor.load`/`store`,
+            which wants bytes) without that multiplication under-claims
             alignment -- silently harmless for 4-byte-and-wider dtypes,
             a real miscompilation risk for narrower ones.
         """
         return tile_alignment[dtype, ws, Self.target]()
 
-    var _partials_base: UnsafePointer[UInt8, MutUntrackedOrigin]
+    var _partials_base: MutPointer[UInt8, MutUntrackedOrigin]
     """Split-K partials scratch (GPU only; sentinel on CPU)."""
 
-    var _counters_base: UnsafePointer[Int32, MutUntrackedOrigin]
+    var _counters_base: MutPointer[Int32, MutUntrackedOrigin]
     """Split-K per-row counters (GPU only; sentinel on CPU)."""
 
     var _blocks_per_row: Int32
@@ -318,8 +327,8 @@ struct Context[params: ContextParams](TrivialRegisterPassable):
     @inline(.always)
     def __init__(
         out self,
-        partials_base: UnsafePointer[UInt8, MutUntrackedOrigin],
-        counters_base: UnsafePointer[Int32, MutUntrackedOrigin],
+        partials_base: MutPointer[UInt8, MutUntrackedOrigin],
+        counters_base: MutPointer[Int32, MutUntrackedOrigin],
         blocks_per_row: Int32,
         block_in_row: Int32,
         row_idx: Int32,
@@ -356,10 +365,10 @@ struct Context[params: ContextParams](TrivialRegisterPassable):
             A `Context[params]` with sentinel pointers and zero counters.
         """
         return Self(
-            partials_base=UnsafePointer[UInt8, MutUntrackedOrigin](
+            partials_base=MutPointer[UInt8, MutUntrackedOrigin](
                 unsafe_from_address=1
             ),
-            counters_base=UnsafePointer[Int32, MutUntrackedOrigin](
+            counters_base=MutPointer[Int32, MutUntrackedOrigin](
                 unsafe_from_address=1
             ),
             blocks_per_row=Int32(0),
@@ -371,7 +380,7 @@ struct Context[params: ContextParams](TrivialRegisterPassable):
     @inline(.always)
     def partial_slot[
         S: AnyType
-    ](self, slot: Int) -> UnsafePointer[S, MutUntrackedOrigin]:
+    ](self, slot: Int) -> MutPointer[S, MutUntrackedOrigin]:
         """Returns split-K partials slot `slot`, typed as `S`.
 
         The scratch is an array of fixed `_SPLITK_STATE_BYTES` slots, so it is
@@ -387,12 +396,14 @@ struct Context[params: ContextParams](TrivialRegisterPassable):
         Returns:
             A pointer to the slot's state.
         """
-        return (self._partials_base + slot * _SPLITK_STATE_BYTES).bitcast[S]()
+        return (
+            self._partials_base.unsafe_offset(slot * _SPLITK_STATE_BYTES)
+        ).unsafe_bitcast[S]()
 
     @inline(.always)
     def row_partial[
         S: AnyType
-    ](self, split: Int) -> UnsafePointer[S, MutUntrackedOrigin]:
+    ](self, split: Int) -> MutPointer[S, MutUntrackedOrigin]:
         """Returns split `split`'s partial for this row in the reduce-shaped
         split-K scratch, laid out `[num_rows x blocks_per_row]`.
 
@@ -412,9 +423,7 @@ struct Context[params: ContextParams](TrivialRegisterPassable):
     @inline(.always)
     def phase_partial[
         S: AnyType
-    ](self, reduce_index: Int, split: Int) -> UnsafePointer[
-        S, MutUntrackedOrigin
-    ]:
+    ](self, reduce_index: Int, split: Int) -> MutPointer[S, MutUntrackedOrigin]:
         """Returns split `split`'s partial for reduce `reduce_index` of this
         row in the per-element split-K scratch, laid out
         `[num_rows x num_reduces x blocks_per_row]` with
@@ -540,5 +549,5 @@ def _num_outputs_excluding_axis[axis: Int](shape: Coord) -> Int:
     var num_outputs = 1
     comptime for i in range(shape.rank):
         if i != axis:
-            num_outputs *= Int(shape[i].value())
+            num_outputs *= Int(shape[i])
     return num_outputs

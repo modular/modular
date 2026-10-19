@@ -262,12 +262,12 @@ def pv_mma_kernel[
     comptime v_size = BN * BK
     comptime assert ((p_size * size_of[ab_type]()) % 128) == 0
     comptime assert ((v_size * size_of[ab_type]()) % 16) == 0
-    var v_smem = (p_smem + p_size).bitcast[Scalar[ab_type]]()
+    var v_smem = p_smem.unsafe_offset(p_size).unsafe_bitcast[Scalar[ab_type]]()
 
     var p_smem_tile = TileTensor(p_smem, p_smem_layout)
     var v_smem_tile = TileTensor(v_smem, v_smem_layout)
 
-    var ptr_tmem_addr = (v_smem + v_size).bitcast[UInt32]()
+    var ptr_tmem_addr = v_smem.unsafe_offset(v_size).unsafe_bitcast[UInt32]()
 
     comptime accum_type = get_accum_type[ab_type]()
     comptime c_frag_size = MMA_M * MMA_N // num_threads
@@ -277,8 +277,10 @@ def pv_mma_kernel[
     comptime v_expected_bytes = v_size * size_of[ab_type]()
     comptime expected_bytes = p_expected_bytes + v_expected_bytes
 
-    var tma_mbar = (ptr_tmem_addr + 2).bitcast[SharedMemBarrier]()
-    var mma_mbar = tma_mbar + 1
+    var tma_mbar = ptr_tmem_addr.unsafe_offset(2).unsafe_bitcast[
+        SharedMemBarrier
+    ]()
+    var mma_mbar = tma_mbar.unsafe_offset(1)
 
     if thread_idx.x == 0:
         tma_mbar[0].init()
@@ -487,7 +489,9 @@ def run_pv_spike[
         var v_desc = create_tma_descriptor[ab_type, 2, swizzle_mode](
             DeviceBuffer(
                 ctx,
-                v_ptr.unsafe_mut_cast[True]().address_space_cast[.GENERIC](),
+                v_ptr.unsafe_mut_cast[True]().unsafe_address_space_cast[
+                    .GENERIC
+                ](),
                 1,
                 owning=False,
             ),

@@ -1491,7 +1491,7 @@ struct ManagedTensorSlice[
         var result = IndexList[Self.rank]()
 
         comptime for i in range(Self.rank):
-            result[i] = Int(self._runtime_layout.shape[i]().value())
+            result[i] = Int(self._runtime_layout.shape[i]())
 
         return result
 
@@ -1571,7 +1571,7 @@ struct ManagedTensorSlice[
             t" {Self.rank}]"
         )
 
-        return Int(self._runtime_layout.shape[index]().value())
+        return Int(self._runtime_layout.shape[index]())
 
     @inline(.always)
     def strides(self) -> IndexList[Self.rank]:
@@ -1583,7 +1583,7 @@ struct ManagedTensorSlice[
         var result = IndexList[Self.rank]()
 
         comptime for i in range(Self.rank):
-            result[i] = Int(self._runtime_layout.stride[i]().value())
+            result[i] = Int(self._runtime_layout.stride[i]())
 
         return result
 
@@ -1617,7 +1617,7 @@ struct ManagedTensorSlice[
             t" [0, {Self.rank}]"
         )
 
-        return Int(self._runtime_layout.stride[index]().value())
+        return Int(self._runtime_layout.stride[index]())
 
     @inline(.always)
     def size(self) -> Int:

@@ -139,8 +139,22 @@ modular_py_test(
     ],
 )
 
+# Guards the graph-spec load (pipelines/lib graph_specs and PipelineModel
+# load_graphs) around the deferred weight loads.
+modular_py_test(
+    name = "test_load_graphs",
+    srcs = ["test_load_graphs.py"],
+    deps = [
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        "//max/python/max/pipelines/architectures/unified_dspark_deepseekV41",
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
 # Guards graph capture and replay input binding in
-# pipelines/lib/graph_capture.py (ServeGraphCaptureRunner).
+# pipelines/lib/graph_capture.py (ServeGraphCaptureRunner), and the
+# data-parallel splits from pipelines/lib/utils.py
+# (compute_data_parallel_splits) under UnifiedSpecDecodeBatchProcessor.
 modular_py_test(
     name = "test_serve_capture_inputs",
     srcs = ["test_serve_capture_inputs.py"],
@@ -185,8 +199,9 @@ modular_py_test(
 )
 
 # Guards the shared spec-decode graph (pipelines/speculative block_driver.py
-# and spec_input_types.py), SpeculativeConfig, and the KV cache input types
-# from nn/kv_cache MultiKVCacheParams. Traces only, but needs a GPU because
+# and spec_input_types.py), SpeculativeConfig, the KV cache input types from
+# nn/kv_cache MultiKVCacheParams, and the expert-parallel graph inputs from
+# nn/comm/ep EPBatchManager. Traces only, but needs a GPU because
 # the MXFP8 scale layout follows the host's accelerator.
 modular_py_test(
     name = "test_unified_dspark_construction",

@@ -30,7 +30,7 @@ from std.math.uutils import udivmod
 from std.sys.info import size_of
 from max.gpu import block_dim, block_idx, global_idx, thread_idx
 from max.gpu.host import DeviceContext
-from layout import Coord, TileTensor, row_major
+from layout import Coord, TensorEngine, TensorLayout, TileTensor, row_major
 from linalg.matmul.gpu import _matmul_gpu
 from linalg.matmul.gpu.apple import ConvIm2colParams, enqueue_apple_conv2d
 from std.utils.index import IndexList
@@ -45,9 +45,12 @@ from nn.conv.conv_utils import elementwise_simd_epilogue_type
 @__name(t"conv2d_im2col_nhwc_{dtype}")
 def _im2col_nhwc_kernel[
     dtype: DType,
+    InputLayoutType: TensorLayout,
+    input_origin: ImmOrigin,
+    InputEngine: TensorEngine,
 ](
-    output_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    input_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
+    output_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
+    input: TileTensor[dtype, InputLayoutType, input_origin, Engine=InputEngine],
     batch_size: Int32,
     H: Int32,
     W: Int32,
@@ -101,9 +104,6 @@ def _im2col_nhwc_kernel[
 
     var h_in_base = h_out * _stride_h - _pad_h
     var w_in_base = w_out * _stride_w - _pad_w
-    var batch_base = batch * _H * _W * _C
-    var hw_stride = _W * _C
-    var w_stride = _C
 
     var SC = _S * _C
 
@@ -118,8 +118,7 @@ def _im2col_nhwc_kernel[
 
         var val = Scalar[dtype](0)
         if 0 <= h_in < _H and 0 <= w_in < _W:
-            var in_idx = batch_base + h_in * hw_stride + w_in * w_stride + c
-            val = input_ptr[in_idx]
+            val = input.load((batch, h_in, w_in, c))[0]
 
         output_ptr.store(row_base + k, val)
         k += block_dim.x
@@ -129,9 +128,12 @@ def _im2col_nhwc_kernel[
 def _transpose_filter_to_nk[
     dtype: DType,
     filter_is_fcrs: Bool,
+    SrcLayoutType: TensorLayout,
+    src_origin: ImmOrigin,
+    SrcEngine: TensorEngine,
 ](
-    src_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    src: TileTensor[dtype, SrcLayoutType, src_origin, Engine=SrcEngine],
+    dst_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
     R: Int32,
     S: Int32,
     C: Int32,
@@ -155,12 +157,12 @@ def _transpose_filter_to_nk[
     var r, sc = udivmod(k, SC)
     var s, c = udivmod(sc, _C)
 
-    var src_idx: Int
+    var val: Scalar[dtype]
     comptime if filter_is_fcrs:
-        src_idx = f * _C * _R * _S + c * _R * _S + r * _S + s
+        val = src.load((f, c, r, s))[0]
     else:
-        src_idx = (r * _S + s) * _C * _F + c * _F + f
-    dst_ptr.store(tid, src_ptr.load(src_idx))
+        val = src.load((r, s, c, f))[0]
+    dst_ptr.store(tid, val)
 
 
 # =========================================================================
@@ -303,8 +305,15 @@ def dispatch_im2col_matmul_conv2d[
         C_dim = Int(filter.dim[2]())
         F_dim = Int(filter.dim[3]())
 
-    ctx.enqueue_function[_transpose_filter_to_nk[filter_type, filter_is_fcrs]](
-        filter.ptr,
+    comptime transpose_kernel = _transpose_filter_to_nk[
+        filter_type,
+        filter_is_fcrs,
+        filter.LayoutType,
+        ImmOrigin(filter.origin),
+        filter.Engine,
+    ]
+    ctx.enqueue_function[transpose_kernel](
+        filter.as_imm(),
         filter_nk_ptr,
         Int32(R_dim),
         Int32(S_dim),
@@ -338,9 +347,15 @@ def dispatch_im2col_matmul_conv2d[
 
         # Block-per-row: one block per output pixel, threads cooperate on K.
         comptime im2col_block = 256
-        ctx.enqueue_function[_im2col_nhwc_kernel[input_type]](
+        comptime im2col_kernel = _im2col_nhwc_kernel[
+            input_type,
+            input.LayoutType,
+            ImmOrigin(input.origin),
+            input.Engine,
+        ]
+        ctx.enqueue_function[im2col_kernel](
             im2col_ptr,
-            input.ptr,
+            input.as_imm(),
             Int32(batch),
             Int32(_H),
             Int32(_W),
@@ -379,8 +394,8 @@ def dispatch_im2col_matmul_conv2d[
                 comptime assert (
                     coords_2d.rank == 2
                 ), "the matmul epilogue contract is rank 2"
-                var full_m = m_offset + Int(coords_2d[0].value())
-                var n_idx = Int(coords_2d[1].value())
+                var full_m = m_offset + Int(coords_2d[0])
+                var n_idx = Int(coords_2d[1])
                 var batch_idx, sp = divmod(full_m, HW_out)
                 var h_idx, w_idx = divmod(sp, _W_out)
                 epilogue_4d(
@@ -545,8 +560,15 @@ def dispatch_fused_im2col_conv2d_apple[
         C_dim = Int(filter.dim[2]())
         F_dim = Int(filter.dim[3]())
 
-    ctx.enqueue_function[_transpose_filter_to_nk[filter_type, filter_is_fcrs]](
-        filter.ptr,
+    comptime transpose_kernel = _transpose_filter_to_nk[
+        filter_type,
+        filter_is_fcrs,
+        filter.LayoutType,
+        ImmOrigin(filter.origin),
+        filter.Engine,
+    ]
+    ctx.enqueue_function[transpose_kernel](
+        filter.as_imm(),
         filter_nk_ptr,
         Int32(R_dim),
         Int32(S_dim),
@@ -562,9 +584,9 @@ def dispatch_fused_im2col_conv2d_apple[
     comptime assert (
         filter_type == input_type
     ), "Apple fused conv expects filter dtype == input dtype (bf16)"
-    var filter_nk_in_ptr = rebind[
-        UnsafePointer[Scalar[input_type], MutAnyOrigin]
-    ](filter_nk_ptr)
+    var filter_nk_in_ptr = rebind[MutPointer[Scalar[input_type], MutAnyOrigin]](
+        filter_nk_ptr
+    )
     var filter_nk = TileTensor(filter_nk_in_ptr, row_major(N, K))
     # Flat (M, N) view of the NHWC output buffer (NHWC rows are contiguous).
     var c_tt = output.reshape(row_major(full_M, N))
@@ -596,8 +618,8 @@ def dispatch_fused_im2col_conv2d_apple[
             comptime assert (
                 coords_2d.rank == 2
             ), "the matmul epilogue contract is rank 2"
-            var full_m = Int(coords_2d[0].value())
-            var n_idx = Int(coords_2d[1].value())
+            var full_m = Int(coords_2d[0])
+            var n_idx = Int(coords_2d[1])
             var batch_idx, sp = divmod(full_m, HW_out)
             var h_idx, w_idx = divmod(sp, _W_out)
             epilogue_4d(

@@ -43,10 +43,10 @@ def _transpose_inplace_4x4[
     comptime assert bufloat0.flat_rank == 2
 
     # Contiguous row-major 4x4: row i starts at offset i * 4.
-    var row0 = bufloat0.raw_load[width=4](0)
-    var row1 = bufloat0.raw_load[width=4](4)
-    var row2 = bufloat0.raw_load[width=4](8)
-    var row3 = bufloat0.raw_load[width=4](12)
+    var row0 = bufloat0.load[width=4]((0, 0))
+    var row1 = bufloat0.load[width=4]((1, 0))
+    var row2 = bufloat0.load[width=4]((2, 0))
+    var row3 = bufloat0.load[width=4]((3, 0))
 
     var tmp0 = row0.shuffle[0, 1, 4, 5](row1)
     var tmp1 = row2.shuffle[0, 1, 4, 5](row3)
@@ -58,10 +58,10 @@ def _transpose_inplace_4x4[
     var r2 = tmp2.shuffle[0, 2, 4, 6](tmp3)
     var r3 = tmp2.shuffle[1, 3, 5, 7](tmp3)
 
-    bufloat0.raw_store[width=4](0, r0)
-    bufloat0.raw_store[width=4](4, r1)
-    bufloat0.raw_store[width=4](8, r2)
-    bufloat0.raw_store[width=4](12, r3)
+    bufloat0.store((0, 0), r0)
+    bufloat0.store((1, 0), r1)
+    bufloat0.store((2, 0), r2)
+    bufloat0.store((3, 0), r3)
 
 
 def _transpose_inplace_8x8[
@@ -74,14 +74,14 @@ def _transpose_inplace_8x8[
     comptime assert bufloat0.flat_rank == 2
 
     # Contiguous row-major 8x8: row i starts at offset i * 8.
-    var row0 = bufloat0.raw_load[width=8](0)
-    var row1 = bufloat0.raw_load[width=8](8)
-    var row2 = bufloat0.raw_load[width=8](16)
-    var row3 = bufloat0.raw_load[width=8](24)
-    var row4 = bufloat0.raw_load[width=8](32)
-    var row5 = bufloat0.raw_load[width=8](40)
-    var row6 = bufloat0.raw_load[width=8](48)
-    var row7 = bufloat0.raw_load[width=8](56)
+    var row0 = bufloat0.load[width=8]((0, 0))
+    var row1 = bufloat0.load[width=8]((1, 0))
+    var row2 = bufloat0.load[width=8]((2, 0))
+    var row3 = bufloat0.load[width=8]((3, 0))
+    var row4 = bufloat0.load[width=8]((4, 0))
+    var row5 = bufloat0.load[width=8]((5, 0))
+    var row6 = bufloat0.load[width=8]((6, 0))
+    var row7 = bufloat0.load[width=8]((7, 0))
 
     def _apply_permute_0(
         vec: SIMD[dtype, 8], other: SIMD[dtype, 8]
@@ -140,14 +140,14 @@ def _transpose_inplace_8x8[
     var r6 = _apply_permute_5(k130, k570)
     var r7 = _apply_permute_5(k131, k571)
 
-    bufloat0.raw_store[width=8](0, r0)
-    bufloat0.raw_store[width=8](8, r1)
-    bufloat0.raw_store[width=8](16, r2)
-    bufloat0.raw_store[width=8](24, r3)
-    bufloat0.raw_store[width=8](32, r4)
-    bufloat0.raw_store[width=8](40, r5)
-    bufloat0.raw_store[width=8](48, r6)
-    bufloat0.raw_store[width=8](56, r7)
+    bufloat0.store((0, 0), r0)
+    bufloat0.store((1, 0), r1)
+    bufloat0.store((2, 0), r2)
+    bufloat0.store((3, 0), r3)
+    bufloat0.store((4, 0), r4)
+    bufloat0.store((5, 0), r5)
+    bufloat0.store((6, 0), r6)
+    bufloat0.store((7, 0), r7)
 
 
 def _transpose_inplace_16x16[
@@ -216,22 +216,22 @@ def _transpose_inplace_16x16[
         ](other)
 
     # Contiguous row-major 16x16: row i starts at offset i * 16.
-    var row00 = bufloat0.raw_load[width=16](0)
-    var row01 = bufloat0.raw_load[width=16](16)
-    var row02 = bufloat0.raw_load[width=16](32)
-    var row03 = bufloat0.raw_load[width=16](48)
-    var row04 = bufloat0.raw_load[width=16](64)
-    var row05 = bufloat0.raw_load[width=16](80)
-    var row06 = bufloat0.raw_load[width=16](96)
-    var row07 = bufloat0.raw_load[width=16](112)
-    var row08 = bufloat0.raw_load[width=16](128)
-    var row09 = bufloat0.raw_load[width=16](144)
-    var row10 = bufloat0.raw_load[width=16](160)
-    var row11 = bufloat0.raw_load[width=16](176)
-    var row12 = bufloat0.raw_load[width=16](192)
-    var row13 = bufloat0.raw_load[width=16](208)
-    var row14 = bufloat0.raw_load[width=16](224)
-    var row15 = bufloat0.raw_load[width=16](240)
+    var row00 = bufloat0.load[width=16]((0, 0))
+    var row01 = bufloat0.load[width=16]((1, 0))
+    var row02 = bufloat0.load[width=16]((2, 0))
+    var row03 = bufloat0.load[width=16]((3, 0))
+    var row04 = bufloat0.load[width=16]((4, 0))
+    var row05 = bufloat0.load[width=16]((5, 0))
+    var row06 = bufloat0.load[width=16]((6, 0))
+    var row07 = bufloat0.load[width=16]((7, 0))
+    var row08 = bufloat0.load[width=16]((8, 0))
+    var row09 = bufloat0.load[width=16]((9, 0))
+    var row10 = bufloat0.load[width=16]((10, 0))
+    var row11 = bufloat0.load[width=16]((11, 0))
+    var row12 = bufloat0.load[width=16]((12, 0))
+    var row13 = bufloat0.load[width=16]((13, 0))
+    var row14 = bufloat0.load[width=16]((14, 0))
+    var row15 = bufloat0.load[width=16]((15, 0))
 
     var k00 = _apply_permute_0(row00, row01)
     var k01 = _apply_permute_1(row00, row01)
@@ -301,22 +301,22 @@ def _transpose_inplace_16x16[
     var r14 = _apply_permute_7(t06, t14)
     var r15 = _apply_permute_7(t07, t15)
 
-    bufloat0.raw_store[width=16](0, r00)
-    bufloat0.raw_store[width=16](16, r01)
-    bufloat0.raw_store[width=16](32, r02)
-    bufloat0.raw_store[width=16](48, r03)
-    bufloat0.raw_store[width=16](64, r04)
-    bufloat0.raw_store[width=16](80, r05)
-    bufloat0.raw_store[width=16](96, r06)
-    bufloat0.raw_store[width=16](112, r07)
-    bufloat0.raw_store[width=16](128, r08)
-    bufloat0.raw_store[width=16](144, r09)
-    bufloat0.raw_store[width=16](160, r10)
-    bufloat0.raw_store[width=16](176, r11)
-    bufloat0.raw_store[width=16](192, r12)
-    bufloat0.raw_store[width=16](208, r13)
-    bufloat0.raw_store[width=16](224, r14)
-    bufloat0.raw_store[width=16](240, r15)
+    bufloat0.store((0, 0), r00)
+    bufloat0.store((1, 0), r01)
+    bufloat0.store((2, 0), r02)
+    bufloat0.store((3, 0), r03)
+    bufloat0.store((4, 0), r04)
+    bufloat0.store((5, 0), r05)
+    bufloat0.store((6, 0), r06)
+    bufloat0.store((7, 0), r07)
+    bufloat0.store((8, 0), r08)
+    bufloat0.store((9, 0), r09)
+    bufloat0.store((10, 0), r10)
+    bufloat0.store((11, 0), r11)
+    bufloat0.store((12, 0), r12)
+    bufloat0.store((13, 0), r13)
+    bufloat0.store((14, 0), r14)
+    bufloat0.store((15, 0), r15)
 
 
 def _transpose_inplace_naive[
@@ -545,7 +545,7 @@ def _process_tile[
     M: Int,
     N: Int,
     out_ptr: MutPointer[Scalar[dtype], _],
-    in_ptr: UnsafePointer[Scalar[dtype], _],
+    in_ptr: Pointer[Scalar[dtype], _],
 ):
     var input_tile_offset = M * n + m
     var output_tile_offset = N * m + n
@@ -571,7 +571,7 @@ def _transpose_2d_serial_tiled[
 ](
     output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
     input: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
-    perms: UnsafePointer[Int, _],
+    perms: Pointer[Int, _],
     simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
     offset: Int,
@@ -595,7 +595,12 @@ def _transpose_2d_serial_tiled[
         tile_size_m: Int, tile_size_n: Int
     ](m: Int, n: Int) {var N, var M, imm}:
         _process_tile[tile_size_m, tile_size_n, dtype](
-            m, n, M, N, output.ptr + offset, input.ptr + offset
+            m,
+            n,
+            M,
+            N,
+            output.ptr.unsafe_offset(offset),
+            input.ptr.unsafe_offset(offset),
         )
 
     comptime tile_size = simd_width if simd_width <= 16 else 1
@@ -630,7 +635,7 @@ def _transpose_2d_parallel_tiled[
 ](
     output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
     input: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
-    perms: UnsafePointer[Int, _],
+    perms: Pointer[Int, _],
     simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
     offset: Int,
@@ -682,8 +687,8 @@ def _transpose_2d_parallel_tiled[
                     n,
                     M,
                     N,
-                    output.ptr + offset,
-                    input.ptr + offset,
+                    output.ptr.unsafe_offset(offset),
+                    input.ptr.unsafe_offset(offset),
                 )
 
     sync_parallelize(_parallel_tile, num_tasks, ctx)
@@ -694,7 +699,7 @@ def transpose_2d[
 ](
     output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
     input: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
-    perms: UnsafePointer[Int, _],
+    perms: Pointer[Int, _],
     simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
     offset: Int,
@@ -754,7 +759,7 @@ def _transpose_4d_swap_middle_helper[
     dtype: DType, //
 ](
     dst_ptr: MutPointer[Scalar[dtype], _],
-    src_ptr: UnsafePointer[Scalar[dtype], _],
+    src_ptr: Pointer[Scalar[dtype], _],
     L: Int,
     M: Int,
     N: Int,
@@ -783,8 +788,8 @@ def _transpose_4d_swap_middle_helper[
                     var in_off = l * M * N * K + m * N * K + n * K
                     var out_off = l * M * N * K + n * M * K + m * K
                     unsafe_memcpy(
-                        dest=dst_ptr + out_off,
-                        src=src_ptr + in_off,
+                        dest=dst_ptr.unsafe_offset(out_off),
+                        src=src_ptr.unsafe_offset(in_off),
                         count=K,
                     )
         return
@@ -806,8 +811,8 @@ def _transpose_4d_swap_middle_helper[
                 var in_off = l * M * N * K + m * N * K + n * K
                 var out_off = l * M * N * K + n * M * K + m * K
                 unsafe_memcpy(
-                    dest=dst_ptr + out_off,
-                    src=src_ptr + in_off,
+                    dest=dst_ptr.unsafe_offset(out_off),
+                    src=src_ptr.unsafe_offset(in_off),
                     count=K,
                 )
 
@@ -819,7 +824,7 @@ def transpose_4d_swap_middle[
 ](
     output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
     input: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
-    perms: UnsafePointer[Int, _],
+    perms: Pointer[Int, _],
     simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
     ctx: Optional[DeviceContext.CPU] = None,
@@ -861,7 +866,7 @@ def transpose_3d_swap_outer[
 ](
     output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
     input: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
-    perms: UnsafePointer[Int, _],
+    perms: Pointer[Int, _],
     simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
 ):
@@ -902,7 +907,7 @@ def transpose_3d_swap_inner[
 ](
     output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
     input: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
-    perms: UnsafePointer[Int, _],
+    perms: Pointer[Int, _],
     simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
 ):
@@ -972,7 +977,7 @@ def transpose_trivial_memcpy[
     comptime min_work_per_task = 1 * KB
     comptime min_work_for_parallel = 4 * min_work_per_task
 
-    var total_size = Int(output.num_elements())
+    var total_size = output.num_elements()
 
     if total_size <= min_work_for_parallel:
         unsafe_memcpy(dest=dst_ptr, src=src_ptr, count=total_size)
@@ -1032,8 +1037,8 @@ def _copy_with_strides[
     var output_axis_stride: Int = Int(output_strides.load(axis)[0])
 
     if axis + 1 == rank:
-        var src_ptr = input_ptr + input_offset
-        var dst_ptr = output_ptr + output_offset
+        var src_ptr = input_ptr.unsafe_offset(input_offset)
+        var dst_ptr = output_ptr.unsafe_offset(output_offset)
         if input_axis_stride == 1 and output_axis_stride == 1:
             unsafe_memcpy(dest=dst_ptr, src=src_ptr, count=axis_dim)
         else:
@@ -1052,8 +1057,8 @@ def _copy_with_strides[
                     dst_ptr,
                     output_axis_stride,
                 )
-                src_ptr = src_ptr + simd_width * input_axis_stride
-                dst_ptr = dst_ptr + simd_width * output_axis_stride
+                src_ptr = src_ptr.unsafe_offset(simd_width * input_axis_stride)
+                dst_ptr = dst_ptr.unsafe_offset(simd_width * output_axis_stride)
 
             vectorize[simd_width_of[dtype]()](axis_dim, _copy)
 
@@ -1143,7 +1148,7 @@ def transpose_strided[
 ](
     output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
     input: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
-    perms: UnsafePointer[Int, _],
+    perms: Pointer[Int, _],
     ctx: Optional[DeviceContext.CPU] = None,
 ) raises:
     """Transposes a tensor with arbitrary strides via a generic strided copy.
@@ -1192,7 +1197,7 @@ def transpose_strided[
     comptime for i in range(rank):
         output_shape[i] = Int(output.dim[i]())
 
-    var output_bytecount = Int(output.num_elements()) * size_of[dtype]()
+    var output_bytecount = output.num_elements() * size_of[dtype]()
 
     # Kickoff; for intuition on permuted input strides, note that
     #   transpose(output, input, [2, 0, 1])
@@ -1222,7 +1227,7 @@ def transpose[
 ](
     output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
     input: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
-    perms: UnsafePointer[Int, _],
+    perms: Pointer[Int, _],
     ctx: Optional[DeviceContext.CPU] = None,
 ) raises:
     """

@@ -98,7 +98,7 @@ def bench_matmul[
     # update: using 512 to be 2x the infinity cache on MI300x
     @inline(.always)
     def get_size(shape: Coord) -> Int:
-        return Int(shape[0].value()) * Int(shape[1].value())
+        return Int(shape[0]) * Int(shape[1])
 
     comptime simd_size = 4
 
@@ -217,10 +217,7 @@ def bench_matmul[
     var flops = ThroughputMeasure(
         BenchMetric.flops,
         # Flop: 2*M*N*K. Use A and C shapes since they're not transposed.
-        2
-        * Int(shape_c[0].value())
-        * Int(shape_c[1].value())
-        * Int(shape_a[1].value()),
+        2 * Int(shape_c[0]) * Int(shape_c[1]) * Int(shape_a[1]),
     )
     b.bench_function(
         bench_func,

@@ -32,7 +32,6 @@
 #include "Mojo/MojoParser/ASTDecl.h"
 #include "Mojo/MojoParser/Constraints.h"
 #include "Mojo/MojoParser/DeclResolver.h"
-#include "Mojo/MojoParser/DeclSignaturePrinter.h"
 #include "Mojo/POPDialect/POPOps.h"
 
 #include "Support/Compiler/OperationUtils.h"

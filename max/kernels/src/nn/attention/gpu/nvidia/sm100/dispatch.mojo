@@ -378,12 +378,12 @@ def mha_sm100_dispatch[
     _is_cache_length_accurate: Bool,
 ](
     output: DeviceBuffer[output_type],
-    q_arg: UnsafePointer[Scalar[q_type], _],
+    q_arg: Pointer[Scalar[q_type], _],
     k: KVType,
     v: KVType,
     num_rows_q: Int,
     mask: MaskType,
-    valid_length: UnsafePointer[UInt32, _],
+    valid_length: Pointer[UInt32, _],
     max_prompt_len_arg: MaxPromptLenType,
     max_cache_valid_length_arg: Int,
     scale: Float32,
@@ -496,7 +496,7 @@ def mha_sm100_dispatch[
     # ragged one `ws_p_ceiling`'s over-subscription was tuned for.
     comptime splitk_oversubscribe = MaskType.sliding_window_size() == 0
 
-    var q = q_arg.bitcast[Scalar[KVType.dtype]]().unsafe_origin_cast[
+    var q = q_arg.unsafe_bitcast[Scalar[KVType.dtype]]().unsafe_origin_cast[
         q_arg.origin
     ]()
 
@@ -587,7 +587,7 @@ def mha_sm100_dispatch[
                 # reconciles `OWorkspaceType.dtype` with `output_type`, which the
                 # assert above pins to the same dtype (the tie is not expressible
                 # through the trait).
-                rebind[UnsafePointer[Scalar[output_type], MutAnyOrigin]](
+                rebind[MutPointer[Scalar[output_type], MutAnyOrigin]](
                     o_workspace_ptr.value().unsafe_mut_cast[True]()
                 ),
                 rows=Int(partition.max_num_partitions()) * num_rows_q,
@@ -883,7 +883,7 @@ def mha_sm100_dispatch[
                 with_sink[NonNullPointer[KVType.dtype]](
                     {
                         rebind[
-                            UnsafePointer[Scalar[KVType.dtype], ImmutAnyOrigin]
+                            ImmPointer[Scalar[KVType.dtype], ImmutAnyOrigin]
                         ](sink_weights.value().ptr)
                     }
                 )
@@ -1061,7 +1061,7 @@ def mha_sm100_dispatch[
                 with_sink_q[NonNullPointer[KVType.dtype]](
                     {
                         rebind[
-                            UnsafePointer[Scalar[KVType.dtype], ImmutAnyOrigin]
+                            ImmPointer[Scalar[KVType.dtype], ImmutAnyOrigin]
                         ](sink_weights.value().ptr)
                     }
                 )

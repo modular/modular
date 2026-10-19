@@ -41,8 +41,14 @@ def assert_allclose[
     h_output_ref: TileTensor[dtype, ...],
     h_output_gpu: TileTensor[dtype, ...],
 ) raises:
-    for i in range(h_output_ref.num_elements()):
-        assert_almost_equal(h_output_ref.raw_load(i), h_output_gpu.raw_load(i))
+    var n = h_output_ref.num_elements()
+    var ref_flat = h_output_ref.reshape(row_major(n))
+    var gpu_flat = h_output_gpu.reshape(row_major(n))
+    for i in range(n):
+        assert_almost_equal(
+            ref_flat.load[width=1]((i,)),
+            gpu_flat.load[width=1]((i,)),
+        )
 
 
 def bench_stencil_avg_pool[
@@ -94,8 +100,9 @@ def bench_stencil_avg_pool[
     )
 
     # Initialize input data
-    for i in range(h_input.num_elements()):
-        h_input.raw_store(i, Scalar[dtype](i + 1))
+    var h_input_flat = h_input.coalesce()
+    for i in range(input_size):
+        h_input_flat[i] = Scalar[dtype](i + 1)
 
     # Create device buffers
     var d_input_buf = ctx.enqueue_create_buffer[dtype](input_size)
@@ -355,8 +362,9 @@ def bench_stencil_max_pool[
     )
 
     # Initialize input data
-    for i in range(h_input.num_elements()):
-        h_input.raw_store(i, Scalar[dtype](i + 1))
+    var h_input_flat = h_input.coalesce()
+    for i in range(input_size):
+        h_input_flat[i] = Scalar[dtype](i + 1)
 
     # Create device buffers
     var d_input_buf = ctx.enqueue_create_buffer[dtype](input_size)
@@ -604,8 +612,9 @@ def bench_stencil_avg_pool_padded[
     )
 
     # Initialize input data
-    for i in range(h_input.num_elements()):
-        h_input.raw_store(i, Scalar[dtype](i + 1))
+    var h_input_flat = h_input.coalesce()
+    for i in range(input_size):
+        h_input_flat[i] = Scalar[dtype](i + 1)
 
     # Create device buffers
     var d_input_buf = ctx.enqueue_create_buffer[dtype](input_size)

@@ -78,8 +78,8 @@ def tma_tile_tensor_load_kernel[
     ],
     tma_tile: TMATensorTile[dtype, tile_shape],
 ):
-    comptime tileM = Int(tile_shape.element_types[0].static_value.value())
-    comptime tileN = Int(tile_shape.element_types[1].static_value.value())
+    comptime tileM = Int(tile_shape.element_types[0].static_value)
+    comptime tileN = Int(tile_shape.element_types[1].static_value)
     comptime expected_bytes = _idx_product[tile_shape]() * size_of[dtype]()
 
     var tile = TileTensor(
@@ -231,8 +231,7 @@ def test_tma_store_rank[
         row_major(Coord[*global_shape.element_types]()), ctx
     )
     var initial_host = dst.host_tensor()
-    for i in range(_idx_product[global_shape]()):
-        initial_host.ptr[i] = -1
+    _ = initial_host.fill(-1)
     dst.to_device()
     var tma = create_tensor_tile[
         tile_shape,
@@ -243,7 +242,9 @@ def test_tma_store_rank[
         tma_store_rank_kernel[tile_shape, desc_shape, k_major, generic]
     ](tma, grid_dim=1, block_dim=32)
     dst.to_host()
-    var host = dst.host_tensor()
+    var host = dst.host_tensor().reshape(
+        row_major[_idx_product[global_shape]()]()
+    )
 
     # Decode destination coordinates independently of the device offset helper.
     # Values outside the translated tile must retain the sentinel.
@@ -253,27 +254,23 @@ def test_tma_store_rank[
         var inside = True
         comptime for reverse in range(rank):
             comptime dim = rank - reverse - 1
-            var value = remaining % Int(global_shape[dim].value())
-            remaining //= Int(global_shape[dim].value())
+            var value = remaining % Int(global_shape[dim])
+            remaining //= Int(global_shape[dim])
             local[dim] = value - (4 if dim == rank - 1 else 1)
-            inside = inside and (0 <= local[dim] < Int(tile_shape[dim].value()))
+            inside = inside and (0 <= local[dim] < Int(tile_shape[dim]))
         if not inside:
-            assert_equal(host.ptr[linear], Float32(-1))
+            assert_equal(host[linear], Float32(-1))
             continue
 
         var box = 0
         var inner = 0
         comptime for i in range(rank):
             comptime dim = rank - i - 1 if k_major else i
-            comptime copies = Int(tile_shape[dim].value()) // Int(
-                desc_shape[dim].value()
-            )
-            box = box * copies + local[dim] // Int(desc_shape[dim].value())
-            inner = inner * Int(desc_shape[i].value()) + local[i] % Int(
-                desc_shape[i].value()
-            )
+            comptime copies = Int(tile_shape[dim]) // Int(desc_shape[dim])
+            box = box * copies + local[dim] // Int(desc_shape[dim])
+            inner = inner * Int(desc_shape[i]) + local[i] % Int(desc_shape[i])
         assert_equal(
-            host.ptr[linear],
+            host[linear],
             Float32(box * _idx_product[desc_shape]() + inner + 1),
         )
 

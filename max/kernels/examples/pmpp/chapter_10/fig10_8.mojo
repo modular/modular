@@ -24,8 +24,8 @@ comptime BLOCK_DIM = 256
 
 # ========================== KERNEL CODE ==========================
 def convergent_sum_reduction_kernel(
-    input: UnsafePointer[Float32, MutAnyOrigin],
-    output: UnsafePointer[Float32, MutAnyOrigin],
+    input: MutPointer[Float32, MutAnyOrigin],
+    output: MutPointer[Float32, MutAnyOrigin],
 ):
     """Convergent sum reduction with less control divergence (loop unrolled).
 

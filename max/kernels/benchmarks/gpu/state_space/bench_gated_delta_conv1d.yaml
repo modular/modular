@@ -1,0 +1,58 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+
+name: bench_gated_delta_conv1d
+file: $KERNEL_BENCHMARKS_ROOT/gpu/state_space/bench_gated_delta_conv1d.mojo
+
+base: &base
+  metadata:
+    KERNEL_SIZE: 4
+  $legacy: False
+
+# Length vectors are quoted twice so kbench passes each as one runtime string.
+params:
+- <<: *base
+  $cohort: smoke
+  $channels: 129
+  $sequence_lengths: "'[8]'"
+- <<: *base
+  $cohort: decode
+  $channels: 5120
+  $sequence_lengths:
+  - "'[1]'"
+  - "'[4]'"
+  - "'[1,1,1,1]'"
+  - "'[4,4,4,4]'"
+  - "'[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]'"
+  - "'[4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4]'"
+- <<: *base
+  $cohort: prefill
+  $channels: 5120
+  $sequence_lengths: ["'[2048]'", "'[8192]'"]
+- <<: *base
+  $cohort: boundaries
+  $channels: 5121
+  $sequence_lengths:
+  - "'[7]'"
+  - "'[8]'"
+  - "'[9]'"
+  - "'[0,1,2,3,7,8,9,13,0]'"
+- <<: *base
+  $cohort: legacy
+  $legacy: True
+  $channels: 5120
+  $sequence_lengths:
+  - "'[2048]'"
+  - "'[8192]'"
+  - "'[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]'"
+  - "'[4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4]'"

@@ -264,7 +264,7 @@ def gather_reduce[
                 ) {imm} -> StaticTuple[SIMD[dtype, simd_width], unroll_factor]:
                     var out = accums
                     var idxs = _unsafe_normalize_neg_index(
-                        indices.load[width=unroll_factor](Coord(i, j)),
+                        indices.load[width=unroll_factor]((i, j)),
                         gather_axis_size,
                     )
 
@@ -298,7 +298,7 @@ def gather_reduce[
                     )[0]
 
                 var out_idx = Coord(i, k)
-                output.store[width=simd_width, alignment=1](out_idx, accum)
+                output.store[alignment=1](out_idx, accum)
 
             tile[k_tile_sizes,](0, row_size, gather_k_tile)
             # TODO(MOCO-2074): Suppress false positive unused var warning.
@@ -394,16 +394,16 @@ def gather_sum[
             var emb_dim,
             var table_size,
         }:
-            var i = Int(coords[0].value())
-            var k = Int(coords[1].value())
+            var i = Int(coords[0])
+            var k = Int(coords[1])
 
             var accum = SIMD[dtype, width](0)
             for j in range(multi_hot):
-                var idx = Int(indices.raw_load(i * multi_hot + j))
+                var idx = Int(indices[i, j])
                 if idx < 0:
                     idx += table_size
                 # Trap in safe builds if normalization still leaves the
-                # index out of bounds: raw_load would silently read
+                # index out of bounds: the load would silently read
                 # garbage on GPU (the gather path above validates the
                 # same).
                 debug_assert[assert_mode="safe"](
@@ -413,13 +413,13 @@ def gather_sum[
                         " more detailed error checking."
                     ),
                 )
-                accum += input_flat.raw_load[
+                accum += input_flat.load[
                     width=width, alignment=alignment * align_of[dtype]()
-                ](idx * emb_dim + k)
+                ](Coord(idx, k))
 
-            output_flat.raw_store[
-                width=width, alignment=alignment * align_of[dtype]()
-            ](i * emb_dim + k, accum)
+            output_flat.store[alignment=alignment * align_of[dtype]()](
+                Coord(i, k), accum
+            )
 
         elementwise[
             simd_width=target_simd_width,
@@ -468,12 +468,10 @@ def gather[
 
     comptime prefetch_offset = 12  # TODO: search
 
-    var end_indices_ptr = indices.ptr.unsafe_offset(indices.num_elements())
-
     @inline(.always)
     def prefetch_fn(
         _input_coords: Coord, indices_coords: Coord
-    ) {var end_indices_ptr, var indices, var input}:
+    ) {var indices, var input}:
         # `input_coords` is written below; arguments are immutable.
         var input_coords = _input_coords
         comptime assert indices_coords.rank == indices.rank
@@ -489,18 +487,20 @@ def gather[
             and indices.Engine == DefaultEngine[element_width=1]
             and input.Engine == DefaultEngine[element_width=1]
         ):
-            var indices_ptr = indices.ptr_at_offset(indices_coords)
-            var indices_remaining = (
-                Int(end_indices_ptr) - Int(indices_ptr)
-            ) // size_of[indices_type]()
-            # assumes that indices are laid out in row major order
-            var next_idx_ptr = indices_ptr.unsafe_offset(
-                min(indices_remaining - 1, prefetch_offset)
+            var indices_offset = Int(
+                indices.layout[linear_idx_type=indices.linear_idx_type](
+                    indices_coords
+                )
             )
+            var indices_remaining = indices.num_elements() - indices_offset
+            # assumes that indices are laid out in row major order
+            var next_idx = indices.reshape(row_major(indices.num_elements()))[
+                indices_offset + min(indices_remaining - 1, prefetch_offset)
+            ]
             input_coords.replace_dynamic[axis](
                 Int64(
                     _unsafe_normalize_neg_index(
-                        next_idx_ptr.unsafe_load(),
+                        next_idx,
                         Int(input.dim[axis]()),
                     )
                 )
@@ -530,9 +530,9 @@ def gather[
         width: SIMDLength, element_alignment: Int
     ](coords: Coord, val: SIMD[dtype, width]) {var output}:
         comptime assert output.flat_rank >= coords.flat_rank
-        output.store[
-            width=width, alignment=element_alignment * align_of[dtype]()
-        ](coords, rebind[SIMD[dtype, width]](val))
+        output.store[alignment=element_alignment * align_of[dtype]()](
+            coords, rebind[SIMD[dtype, width]](val)
+        )
 
     _gather_impl[
         dtype,
@@ -982,7 +982,7 @@ struct ScatterOobIndexStrategy(
     ].values
 
     comptime _enum_case_types = TypeList.splat[
-        ParameterList[Self._enum_case_names].size, NoneType
+        ParameterList[Self._enum_case_names].length, NoneType
     ].values
 
     @inline(.always)
@@ -1156,19 +1156,8 @@ def scatter_nd_generator[
         comptime if is_gpu[target]():
             # TODO: Does it matter if output.data or output_flat.data (and data)?
             var ctx = context
-            # TODO: Owning = True or False?
-            var outp = DeviceBuffer(
-                ctx,
-                output.ptr,
-                data.num_elements(),
-                owning=False,
-            )
-            var inp = DeviceBuffer(
-                ctx, data.ptr, data.num_elements(), owning=False
-            )
             ctx.enqueue_copy(
-                outp,
-                inp,
+                output.to_device_buffer(ctx), data.to_device_buffer(ctx)
             )
 
         comptime if is_cpu[target]():
@@ -1283,7 +1272,7 @@ def scatter_nd_generator[
                 for i in range(count_copy):
                     atomic_update(
                         output_flat.ptr.unsafe_offset(output_offset + i),
-                        updates_flat.load(Coord(updates_offset + i)),
+                        updates_flat.load((updates_offset + i,)),
                     )
 
             else:
@@ -1297,10 +1286,8 @@ def scatter_nd_generator[
                     updates_offset,
                 }:
                     output_flat.store(
-                        Coord(output_offset + i),
-                        updates_flat.load[width=width](
-                            Coord(updates_offset + i)
-                        ),
+                        (output_offset + i,),
+                        updates_flat.load[width=width]((updates_offset + i,)),
                     )
 
                 vectorize[simd_width_of[output_type]()](count_copy, copy_chunk)
@@ -1371,7 +1358,7 @@ def scatter_nd_generator[
             ]()
             var update_vec = updates_flat.load[
                 width=simd_width, alignment=access_alignment
-            ](Coord(updates_base + elem))
+            ]((updates_base + elem,))
 
             comptime if case .Some(atomic_update) = atomic_update_fn:
                 comptime for lane in range(simd_width):
@@ -1383,7 +1370,7 @@ def scatter_nd_generator[
                     )
             else:
                 output_flat.store[alignment=access_alignment](
-                    Coord(output_base + elem), update_vec
+                    (output_base + elem,), update_vec
                 )
 
         comptime trace_description_str = get_static_string[
@@ -1996,13 +1983,13 @@ def gather_nd[
             ), "data index out of bounds"
 
         comptime for i in range(output.rank):
-            assert Int(output_idx[i].value()) >= 0 and Int(
-                output_idx[i].value()
-            ) < Int(output.dim[i]()), "output index out of bounds"
+            assert Int(output_idx[i]) >= 0 and Int(output_idx[i]) < Int(
+                output.dim[i]()
+            ), "output index out of bounds"
 
         var data_coord = Coord(data_idx)
         var output_coord = Coord(output_idx)
-        output.store[width=simd_width, alignment=1](
+        output.store[alignment=1](
             output_coord, data.load[width=simd_width, alignment=1](data_coord)
         )
 
@@ -2176,8 +2163,8 @@ def apply_packed_bitmask[
         comptime assert (
             width <= 32
         ), "apply_packed_bitmask: simd_width must be <= 32"
-        var b = Int(idx[0].value())
-        var v = Int(idx[1].value())
+        var b = Int(idx[0])
+        var v = Int(idx[1])
         var tok = Int32(v) + iota[.int32, width]()
         var base = v >> 5
         var w0 = SIMD[.int32, width](packed[b, base][0])

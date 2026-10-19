@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
 
+import ml_dtypes
 import numpy as np
 import pytest
 from max import _core, _eager_policy, engine
@@ -44,6 +45,8 @@ from max._interpreter_ops import (
 from max._interpreter_ops.handlers import (
     _handle_buffer_create,
     _handle_buffer_transfer,
+    _handle_debug_tensor_print,
+    _handle_distributed_allreduce_sum,
     _handle_gather_sum,
     _handle_index_to_tensor,
     _handle_shape_from_tensor,
@@ -4657,6 +4660,28 @@ class TestGatherNdFusedModel:
         np.testing.assert_array_equal(out.to_numpy(), expected)
 
 
+class TestDebugTensorPrintOp:
+    """Tests for the debug.tensor.print interpreter handler."""
+
+    def test_debug_tensor_print_bfloat16(self, capsys: Any) -> None:
+        """NumPy can't hold bfloat16, so the handler must not crash on it."""
+        values_f32 = np.array([1.5, -2.0, 0.25], dtype=np.float32)
+        buf = Buffer.from_numpy(
+            values_f32.astype(ml_dtypes.bfloat16).view(np.uint16)
+        ).view(DType.bfloat16)
+
+        mock_op = MagicMock()
+        mock_op.label = "x"
+
+        result = _handle_debug_tensor_print(mock_op, [None, buf])
+
+        assert result == [None]
+        printed = capsys.readouterr().out
+        assert "1.5" in printed
+        assert "-2" in printed
+        assert "0.25" in printed
+
+
 class TestGatherSumOp:
     """Tests for the gather_sum interpreter handler.
 
@@ -4735,6 +4760,68 @@ class TestGatherSumOp:
         expected = gathered.sum(axis=1, keepdims=True)
         assert isinstance(result[0], Buffer)
         np.testing.assert_array_equal(result[0].to_numpy(), expected)
+
+    def test_gather_sum_bfloat16(self) -> None:
+        """NumPy can't hold bfloat16, so the handler must not crash on it.
+
+        No user-facing graph API produces ``mo.gather_sum`` (see the class
+        docstring), so this exercises the handler directly rather than
+        covering a path real callers can reach today.
+        """
+        input_f32 = np.arange(12, dtype=np.float32).reshape(4, 3)
+        input_bf16 = Buffer.from_numpy(
+            input_f32.astype(ml_dtypes.bfloat16).view(np.uint16)
+        ).view(DType.bfloat16)
+        indices_np = np.array([[0, 2], [1, 3]], dtype=np.int32)
+
+        mock_op = MagicMock()
+        mock_result = MagicMock()
+        mock_result.type = MagicMock()
+        mock_result.type.device_ref = DeviceRef.CPU().to_mlir()
+        mock_op.results = [mock_result]
+
+        result = _handle_gather_sum(
+            mock_op, [input_bf16, Buffer.from_numpy(indices_np)]
+        )
+
+        assert isinstance(result[0], Buffer)
+        assert result[0].dtype == DType.bfloat16
+        gathered = np.take(input_f32, indices_np, axis=0)
+        expected = gathered.sum(axis=1, keepdims=True)
+        out_f32 = (
+            result[0]
+            .view(DType.uint16)
+            .to_numpy()
+            .view(ml_dtypes.bfloat16)
+            .astype(np.float32)
+        )
+        np.testing.assert_array_almost_equal(out_f32, expected)
+
+
+class TestDistributedAllreduceSumOp:
+    """Tests for the distributed.allreduce.sum interpreter handler on host."""
+
+    def test_allreduce_sum_leaves_host_inputs_unmodified(self) -> None:
+        """The sum must not accumulate into an input that's already on CPU."""
+        a = np.arange(4, dtype=np.float32)
+        b = 10 * np.arange(4, dtype=np.float32)
+        bufs = [Buffer.from_numpy(a.copy()), Buffer.from_numpy(b.copy())]
+
+        mock_op = MagicMock()
+        mock_op.inputs = [MagicMock(), MagicMock()]
+        mock_op.group_size = 0
+        mock_result = MagicMock()
+        mock_result.type.device_ref = DeviceRef.CPU().to_mlir()
+        mock_op.results = [mock_result, mock_result, MagicMock()]
+
+        result = _handle_distributed_allreduce_sum(mock_op, bufs)
+
+        np.testing.assert_array_equal(bufs[0].to_numpy(), a)
+        np.testing.assert_array_equal(bufs[1].to_numpy(), b)
+        for out in result[:2]:
+            assert isinstance(out, Buffer)
+            np.testing.assert_array_equal(out.to_numpy(), a + b)
+        assert result[2] is None
 
 
 def _mock_op_on(device: DeviceRef) -> MagicMock:

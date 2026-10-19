@@ -109,7 +109,7 @@ def depth512_correction[
     var o_tmem = TmemAddress(tmem_addr + UInt32(config.TMEM_O))
     var o_hi_tmem = TmemAddress(tmem_addr + UInt32(config.TMEM_O_hi))
 
-    var correction_smem = smem.correction_smem() + m_row
+    var correction_smem = smem.correction_smem().unsafe_offset(m_row)
 
     var pipeline_c = mbars.consumer_c()
     var pipeline_o_lo = mbars.consumer_o_lo()

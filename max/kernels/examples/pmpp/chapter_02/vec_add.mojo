@@ -22,9 +22,9 @@ from max.gpu.host import DeviceContext
 
 
 def vec_add_kernel(
-    a_d: UnsafePointer[Float32, MutUntrackedOrigin],
-    b_d: UnsafePointer[Float32, MutUntrackedOrigin],
-    c_d: UnsafePointer[Float32, MutUntrackedOrigin],
+    a_d: MutPointer[Float32, MutUntrackedOrigin],
+    b_d: MutPointer[Float32, MutUntrackedOrigin],
+    c_d: MutPointer[Float32, MutUntrackedOrigin],
     n_dev: Int32,
 ):
     """GPU kernel for vector addition.
@@ -43,9 +43,9 @@ def vec_add_kernel(
 
 
 def vec_add(
-    a: UnsafePointer[Float32, MutUntrackedOrigin],
-    b: UnsafePointer[Float32, MutUntrackedOrigin],
-    c: UnsafePointer[Float32, MutUntrackedOrigin],
+    a: MutPointer[Float32, MutUntrackedOrigin],
+    b: MutPointer[Float32, MutUntrackedOrigin],
+    c: MutPointer[Float32, MutUntrackedOrigin],
     n: Int,
     ctx: DeviceContext,
 ) raises:

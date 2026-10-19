@@ -447,7 +447,7 @@ struct Fp4WeightLoader[
             var k_abs0 = k0 + cb  # even (k0 mult 16, cb mult 4)
             # One 2-byte packed load -> 4 nibbles (k = cb .. cb+3).
             var two = self.packed.load[width=2, alignment=1](
-                Coord(n_abs, k_abs0 // 2)
+                (n_abs, k_abs0 // 2)
             )
             var pw = UInt16(two[0]) | (UInt16(two[1]) << UInt16(8))
             var nib = SIMD[.uint16, 4](0)
@@ -522,7 +522,7 @@ struct Fp4WeightLoader[
         """
         var byte0 = col0 // 2  # first packed byte in this row's strip
         var bytes = self.packed.load[width=bytes_per_thread, alignment=1](
-            Coord(n_abs, (k0 // 2) + byte0)
+            (n_abs, (k0 // 2) + byte0)
         )
         var nib = SIMD[.uint16, cols_per_thread](0)
         comptime for j in range(bytes_per_thread):
@@ -533,7 +533,7 @@ struct Fp4WeightLoader[
             self.scales[n_abs, (k0 + col0) // Self.SF][0].cast[.float32]()
         )
         var dec = (decode_e2m1_to_f32(nib) * scale_abs).cast[Self.in_type]()
-        b_view.store(Coord(n_local, col0), dec)
+        b_view.store((n_local, col0), dec)
 
 
 struct Matmul2dFp4[
@@ -734,7 +734,7 @@ struct Matmul2dFp4[
                     var gn = tcol0 + c_rc[i][1]
                     if gm < M and gn < N:
                         c.store(
-                            Coord(gm, gn),
+                            (gm, gn),
                             SIMD[Self.c_type, 1](cv[i].cast[Self.c_type]()),
                         )
 
@@ -941,7 +941,7 @@ struct Matmul2dFp4[
                     var gn = tcol0 + c_rc[i][1]
                     if gm < M and gn < N:
                         c.store(
-                            Coord(gm, gn),
+                            (gm, gn),
                             SIMD[Self.c_type, 1](cv[i].cast[Self.c_type]()),
                         )
 

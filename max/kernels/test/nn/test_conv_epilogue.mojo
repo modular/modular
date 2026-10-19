@@ -13,7 +13,7 @@
 
 from std.math import isclose
 from std.random import rand
-from std.sys.info import simd_width_of
+from std.sys.info import align_of, simd_width_of
 
 from std.algorithm.functional import vectorize
 from layout import Coord, TileTensor, row_major
@@ -178,17 +178,18 @@ def test[
     var output_image_size = output_dims.flattened_length()
     for n in range(N):
         for i in range(output_image_size):
-            var output_ref_ptr = output_ref.ptr + F * (
-                i + output_image_size * n
-            )
+            var row_offset = F * (i + output_image_size * n)
 
             @inline(.always)
             def body0[width: Int](offset: Int) {var}:
-                output_ref_ptr.store(
-                    offset,
+                var coord = output_ref.layout.idx2crd(row_offset + offset)
+                output_ref.store[alignment=align_of[dtype]()](
+                    coord,
                     10.0
                     * (
-                        output_ref_ptr.load[width=width](offset)
+                        output_ref.load[
+                            width=width, alignment=align_of[dtype]()
+                        ](coord)
                         + bias_ptr.load[width=width](offset)
                     ),
                 )
@@ -200,7 +201,7 @@ def test[
     def epilogue(coords: Coord, f_size: Int) {imm}:
         @inline(.always)
         def body1[width: Int](idx: Int) {imm}:
-            var f = Int(coords[rank + 1].value()) + idx
+            var f = Int(coords[rank + 1]) + idx
             var curr_coords = coords
             curr_coords.replace_dynamic[rank + 1](f)
 
@@ -246,10 +247,12 @@ def test[
         ].run(output, input.as_imm(), filter.as_imm(), conv_shape, epilogue)
 
     # Check results, return on the first failed comparison.
+    var output_flat = output.reshape(row_major(output_size))
+    var output_ref_flat = output_ref.reshape(row_major(output_size))
     for i in range(output_size):
         if not isclose(
-            output_ref.raw_load(i),
-            output.raw_load(i),
+            output_ref_flat[i],
+            output_flat[i],
             atol=1e-4,  # absolute error tolerance
             rtol=1e-4,  # relative error tolerance
         ):
@@ -258,8 +261,8 @@ def test[
             print("filter packed", filter_packed)
             print("num groups", num_groups)
             print("flat output index:", i)
-            print("Golden value: ", output_ref.raw_load(i))
-            print("Actual value: ", output.raw_load(i))
+            print("Golden value: ", output_ref_flat[i])
+            print("Actual value: ", output_flat[i])
             bias_ptr.free()
             return
 

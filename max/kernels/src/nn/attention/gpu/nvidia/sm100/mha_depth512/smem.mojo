@@ -156,7 +156,7 @@ struct Depth512AttentionSMem[
     @inline(.always)
     def q_smem(self) -> SharedMemPointer[Scalar[Self.qkv_dtype]]:
         """Base of the Q region (offset 0)."""
-        return (self.base + Self.q_byte_offset).bitcast[
+        return self.base.unsafe_offset(Self.q_byte_offset).unsafe_bitcast[
             Scalar[Self.qkv_dtype]
         ]()
 
@@ -170,12 +170,14 @@ struct Depth512AttentionSMem[
             output_type: Element type to reinterpret the Q region memory
                 as when returning the output pointer.
         """
-        return (self.base + Self.q_byte_offset).bitcast[Scalar[output_type]]()
+        return self.base.unsafe_offset(Self.q_byte_offset).unsafe_bitcast[
+            Scalar[output_type]
+        ]()
 
     @inline(.always)
     def p_smem(self) -> SharedMemPointer[Scalar[Self.qkv_dtype]]:
         """Base of the P buffer region for SS MMA P@V."""
-        return (self.base + Self.p_byte_offset).bitcast[
+        return self.base.unsafe_offset(Self.p_byte_offset).unsafe_bitcast[
             Scalar[Self.qkv_dtype]
         ]()
 
@@ -187,14 +189,16 @@ struct Depth512AttentionSMem[
         Interpreted as K (BN//2 × BK0) during Q@K' or V (BK1 × ov_depth//2)
         during P@V. The pair-CTA MMA reads from both SMs.
         """
-        return (self.base + Self.kv_byte_offset).bitcast[
+        return self.base.unsafe_offset(Self.kv_byte_offset).unsafe_bitcast[
             Scalar[Self.qkv_dtype]
         ]()
 
     @inline(.always)
     def correction_smem(self) -> SharedMemPointer[Float32]:
         """Base of the correction region (BM Float32 elements)."""
-        return (self.base + Self.correction_byte_offset).bitcast[Float32]()
+        return self.base.unsafe_offset(
+            Self.correction_byte_offset
+        ).unsafe_bitcast[Float32]()
 
     @inline(.always)
     def mbar_base(self) -> MBarType:
@@ -204,12 +208,16 @@ struct Depth512AttentionSMem[
         followed by 2*num_kv_stages KV pipeline barriers. The Depth512MBars
         struct wraps this pointer with named accessors for each barrier role.
         """
-        return (self.base + Self.mbar_byte_offset).bitcast[SharedMemBarrier]()
+        return self.base.unsafe_offset(Self.mbar_byte_offset).unsafe_bitcast[
+            SharedMemBarrier
+        ]()
 
     @inline(.always)
     def tmem_addr_ptr(self) -> SharedMemPointer[UInt32]:
         """Pointer to the single UInt32 storing the TMEM address."""
-        return (self.base + Self.tmem_addr_byte_offset).bitcast[UInt32]()
+        return self.base.unsafe_offset(
+            Self.tmem_addr_byte_offset
+        ).unsafe_bitcast[UInt32]()
 
     @staticmethod
     @inline(.always)

@@ -16,7 +16,6 @@ from std.sys.intrinsics import readfirstlane
 
 from max.gpu.intrinsics import AMDBufferResource
 from layout import *
-from layout.tile_layout import Layout as TileLayout
 
 from std.utils import IndexList
 
@@ -46,36 +45,6 @@ def load_to_simd(
 
 
 @inline(.always)
-def _get_bounds_impl[
-    legacy_index_type: DType, legacy_bounds: Bool
-](tensor: TileTensor) -> Int:
-    var dim0 = Int(tensor.dim[0]())
-    var dim1 = Int(tensor.dim[1]())
-    comptime if legacy_bounds:
-        if dim0 == 0 or dim1 == 0:
-            return 0
-        var index0 = Scalar[legacy_index_type](dim0 - 1)
-        var index1 = Scalar[legacy_index_type](dim1 - 1)
-        var stride0 = Scalar[legacy_index_type](
-            tensor.layout.stride[0]().value()
-        )
-        var stride1 = Scalar[legacy_index_type](
-            tensor.layout.stride[1]().value()
-        )
-        # Legacy offsets wrap before widening; the final +1 occurs in Int.
-        var offset = Scalar[legacy_index_type](0)
-        offset += index0 * stride0
-        offset += index1 * stride1
-        return Int(offset) + 1
-    else:
-        if dim0 <= 0 or dim1 <= 0:
-            return 0
-        var stride0 = Int(tensor.layout.stride[0]().value())
-        var stride1 = Int(tensor.layout.stride[1]().value())
-        return (dim0 - 1) * stride0 + (dim1 - 1) * stride1 + 1
-
-
-@inline(.always)
 def _get_bounds(tensor: TileTensor) -> Int:
     """Computes buffer bounds from a rank-2 TileTensor.
 
@@ -83,7 +52,13 @@ def _get_bounds(tensor: TileTensor) -> Int:
     Only dim[0] may be runtime; strides and dim[1] are typically comptime,
     so the compiler constant-folds everything except the valid_rows multiply.
     """
-    return _get_bounds_impl[.int64, False](tensor)
+    var dim0 = Int(tensor.dim[0]())
+    var dim1 = Int(tensor.dim[1]())
+    if dim0 <= 0 or dim1 <= 0:
+        return 0
+    var stride0 = Int(tensor.dynamic_stride(0))
+    var stride1 = Int(tensor.dynamic_stride(1))
+    return (dim0 - 1) * stride0 + (dim1 - 1) * stride1 + 1
 
 
 @inline(.always)

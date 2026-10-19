@@ -241,7 +241,7 @@ def test_q4_k_dequantize() raises:
     comptime block_nbytes = size_of[block_Q4_K]()
     var encoded = List[UInt8](length=num_blocks * block_nbytes, fill=0)
     _fill_pattern(encoded)
-    var blocks = encoded.unsafe_ptr().bitcast[block_Q4_K]()
+    var blocks = encoded.unsafe_ptr().unsafe_bitcast[block_Q4_K]()
     for b in range(num_blocks):
         blocks[b].base_scale = Float16(0.37 + 0.11 * Float32(b))
         blocks[b].base_min = Float16(0.21 - 0.05 * Float32(b))
@@ -276,7 +276,7 @@ def test_q6_k_dequantize() raises:
     comptime block_nbytes = size_of[block_Q6_K]()
     var encoded = List[UInt8](length=num_blocks * block_nbytes, fill=0)
     _fill_pattern(encoded)
-    var blocks = encoded.unsafe_ptr().bitcast[block_Q6_K]()
+    var blocks = encoded.unsafe_ptr().unsafe_bitcast[block_Q6_K]()
     for b in range(num_blocks):
         blocks[b].base_scale = Float16(0.043 + 0.01 * Float32(b))
 

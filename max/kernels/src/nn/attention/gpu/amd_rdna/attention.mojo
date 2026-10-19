@@ -347,10 +347,10 @@ struct AttentionRDNA[
 
     var softmax: Self.SoftmaxType
 
-    var k_smem_ptr: UnsafePointer[
+    var k_smem_ptr: MutPointer[
         Scalar[Self.k_t.dtype], MutUntrackedOrigin, address_space=.SHARED
     ]
-    var v_smem_ptr: UnsafePointer[
+    var v_smem_ptr: MutPointer[
         Scalar[Self.v_t.dtype], MutUntrackedOrigin, address_space=.SHARED
     ]
 
@@ -558,13 +558,13 @@ struct AttentionRDNA[
     @inline(.always)
     def __init__(
         out self,
-        output_ptr: UnsafePointer[Scalar[Self.output_type], MutAnyOrigin],
-        q: UnsafePointer[Scalar[Self.q_type], ImmutAnyOrigin],
+        output_ptr: MutPointer[Scalar[Self.output_type], MutAnyOrigin],
+        q: ImmPointer[Scalar[Self.q_type], ImmutAnyOrigin],
         k: Self.k_t,
         v: Self.v_t,
         mask: Self.mask_t,
         sink_weights: OptionalReg[
-            UnsafePointer[Scalar[Self.q_type], ImmutAnyOrigin]
+            ImmPointer[Scalar[Self.q_type], ImmutAnyOrigin]
         ],
         batch_idx: Int,
         scale: Float32,
@@ -624,7 +624,7 @@ struct AttentionRDNA[
         ]()
 
         var q_tile = TileTensor[Self.q_type, Self.QTileLayout, ImmutAnyOrigin](
-            ptr=q + Int(q_offset),
+            ptr=q.unsafe_offset(Int(q_offset)),
             layout=Self.QTileLayout(
                 Coord(
                     Int64(valid_rows),
@@ -638,7 +638,7 @@ struct AttentionRDNA[
         self.output_tile = TileTensor[
             Self.output_type, Self.OutputTileLayout, MutAnyOrigin
         ](
-            ptr=output_ptr + Int(output_offset),
+            ptr=output_ptr.unsafe_offset(Int(output_offset)),
             layout=Self.OutputTileLayout(
                 Coord(
                     Int64(valid_rows),
@@ -697,7 +697,7 @@ struct AttentionRDNA[
             type_of(Self._warp_scratch_layout),
             address_space=.SHARED,
         ](
-            self.k_smem_ptr.bitcast[Scalar[Self.accum_type]](),
+            self.k_smem_ptr.unsafe_bitcast[Scalar[Self.accum_type]](),
             Self._warp_scratch_layout,
         ).tile[
             2 * Self.num_warps_n, Self.WM
@@ -782,10 +782,10 @@ struct AttentionRDNA[
     def store_partition_info(
         self,
         num_partitions: Int,
-        exp_sum_ptr: UnsafePointer[
+        exp_sum_ptr: MutPointer[
             Scalar[get_accum_type[Self.q_type]()], MutAnyOrigin
         ],
-        qk_max_ptr: UnsafePointer[
+        qk_max_ptr: MutPointer[
             Scalar[get_accum_type[Self.q_type]()], MutAnyOrigin
         ],
     ):

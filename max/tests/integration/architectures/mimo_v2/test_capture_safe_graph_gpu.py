@@ -92,15 +92,23 @@ def _config() -> PretrainedConfig:
     )
 
 
-def _build(num_devices: int) -> Graph:
+def _build(
+    num_devices: int,
+    *,
+    query_heads: int = 8,
+    fused_sliding_qkv: bool = False,
+    kv_dtype: DType = DType.bfloat16,
+) -> Graph:
     """Builds the graph over ``num_devices`` GPUs."""
     hf = _config()
+    hf.num_attention_heads = query_heads
+    hf.swa_num_attention_heads = query_heads
     devices = [DeviceRef.GPU(i) for i in range(num_devices)]
     groups = layer_types(hf)
     kv_params = MultiKVCacheParams.from_params(
         {
             SLIDING: MHAKVCacheParams(
-                dtype=DType.bfloat16,
+                dtype=kv_dtype,
                 n_kv_heads=hf.swa_num_key_value_heads,
                 head_dim=attention_head_dim(hf),
                 num_layers=groups.count(SLIDING),
@@ -119,6 +127,7 @@ def _build(num_devices: int) -> Graph:
     config = MiMoV2Config.from_huggingface_config(
         hf, devices=devices, kv_params=kv_params, max_seq_len=4096
     )
+    config.fused_sliding_qkv = fused_sliding_qkv
     model = MiMoV2(config)
     # Names every weight by its path, as loading a checkpoint does.
     model.state_dict()
@@ -160,3 +169,30 @@ def test_no_activation_crosses_devices_outside_a_collective() -> None:
     )
     assert not gpu_to_gpu, gpu_to_gpu
     assert re.search(r"mo\.distributed\.broadcast", ir), ir[:2000]
+
+
+@pytest.mark.skipif(accelerator_count() < 2, reason="needs 2 GPUs")
+@pytest.mark.parametrize("query_heads", [16, 64])
+def test_sliding_qkv_fusion_is_opt_in(query_heads: int) -> None:
+    default = _build(2, query_heads=query_heads)
+    # MoE attention lives in shared callees outside the root graph.
+    default_ir = default.module.mlir_module.asm()
+    assert "mo.chunked_qkv_rope_store.ragged.paged" not in default_ir
+    assert default_ir.count("mo.fused_qk_rope.ragged.paged") == 6
+
+    fused = _build(2, query_heads=query_heads, fused_sliding_qkv=True)
+    fused_ir = fused.module.mlir_module.asm()
+    assert fused_ir.count("mo.chunked_qkv_rope_store.ragged.paged") == 2
+    assert fused_ir.count("mo.fused_qk_rope.ragged.paged") == 4
+    assert [str(value.type) for value in default.inputs] == [
+        str(value.type) for value in fused.inputs
+    ]
+    assert [str(value) for value in default.output_types] == [
+        str(value) for value in fused.output_types
+    ]
+
+
+@pytest.mark.skipif(accelerator_count() < 2, reason="needs 2 GPUs")
+def test_enabled_sliding_qkv_rejects_ineligible_cache() -> None:
+    with pytest.raises(ValueError, match=r"rank-6 BF16 cache.*float32"):
+        _build(2, fused_sliding_qkv=True, kv_dtype=DType.float32)

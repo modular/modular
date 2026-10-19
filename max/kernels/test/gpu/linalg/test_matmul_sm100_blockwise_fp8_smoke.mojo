@@ -67,9 +67,9 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
     comptime BLOCK_SCALE_K = 128
     comptime accum_type = get_accum_type[c_type]()
 
-    var M = Int(m.value())
-    var N = Int(n.value())
-    var K = Int(k.value())
+    var M = Int(m)
+    var N = Int(n)
+    var K = Int(k)
 
     if M * size_of[DType.float32]() % 16 != 0:
         raise Error("TMA expects M to be divisible by 16 bytes")

@@ -33,9 +33,7 @@ from layout.tma_async import SharedMemBarrier
 from std.memory import unsafe_stack_allocation
 
 
-comptime SMemBarrier = UnsafePointer[
-    mut=True, SharedMemBarrier, _, address_space=.SHARED
-]
+comptime SMemBarrier = MutPointer[SharedMemBarrier, _, address_space=.SHARED]
 """Type alias for shared memory barrier pointer."""
 
 comptime PipelineBarrier[num_pipeline_stages: Int] = SMemArray[
@@ -54,7 +52,7 @@ struct SMemArray[type: TrivialRegisterPassable, size: Int](
         size: Number of elements.
     """
 
-    comptime ptr_type = UnsafePointer[
+    comptime ptr_type = MutPointer[
         Self.type, MutUntrackedOrigin, address_space=.SHARED
     ]
     comptime storage_size = Self.size * size_of[Self.type]()
@@ -88,7 +86,7 @@ struct SMemArray[type: TrivialRegisterPassable, size: Int](
         Returns:
             Pointer to element.
         """
-        return self.ptr + Int(index)
+        return self.ptr.unsafe_offset(Int(index))
 
     @inline(.always)
     @staticmethod
@@ -115,6 +113,6 @@ struct SMemArray[type: TrivialRegisterPassable, size: Int](
 comptime eval[T: AnyType, //, val: T] = val
 """Helper alias to force evaluation of expressions at compile time."""
 
-comptime SMemPtr[type: AnyType] = UnsafePointer[
+comptime SMemPtr[type: AnyType] = MutPointer[
     type, MutUntrackedOrigin, address_space=.SHARED
 ]

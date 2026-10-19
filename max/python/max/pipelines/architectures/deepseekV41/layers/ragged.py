@@ -19,12 +19,12 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 from max.dtype import DType
-from max.graph import Dim, DimLike, TensorValue, ops
+from max.graph import DeviceRef, Dim, DimLike, TensorValue, ops
 
 from ...deepseekV4.layers.cache import scalar
 from ...deepseekV4.layers.ragged import RaggedRows, arange_to, segment_ids
 
-__all__ = ["V41RaggedRows"]
+__all__ = ["ReplicaTokens", "V41RaggedRows"]
 
 
 @dataclass
@@ -89,4 +89,49 @@ class V41RaggedRows(RaggedRows):
             total=index.shape[0],
             device=device,
             lengths=lengths,
+        )
+
+
+@dataclass(frozen=True)
+class ReplicaTokens:
+    """Where each data-parallel device's tokens sit in the whole batch.
+
+    The batch is replica-major: device ``i`` holds its replica's requests,
+    whose tokens are rows ``ranges[i]`` of the batch's ``total`` tokens.
+    """
+
+    total: Dim
+    """The whole batch's token count."""
+
+    ranges: list[tuple[TensorValue, TensorValue]]
+    """Per device, its first and past-the-end token row, int64 on CPU."""
+
+    @classmethod
+    def from_splits(
+        cls,
+        host_offsets: TensorValue,
+        splits: TensorValue,
+        total: DimLike,
+        num_devices: int,
+    ) -> ReplicaTokens:
+        """Builds from the batch's host row offsets and replica splits.
+
+        Args:
+            host_offsets: ``[B + 1]`` row offsets of the whole batch, on CPU.
+            splits: ``[num_devices + 1]`` int64 request boundaries of the
+                replicas, on CPU.
+            total: The whole batch's token count.
+            num_devices: Devices, one replica each.
+        """
+        offsets = ops.cast(host_offsets, DType.int64)
+        cpu = DeviceRef.CPU()
+        return cls(
+            total=Dim(total),
+            ranges=[
+                (
+                    offsets[splits[i]].to(cpu),
+                    offsets[splits[i + 1]].to(cpu),
+                )
+                for i in range(num_devices)
+            ],
         )

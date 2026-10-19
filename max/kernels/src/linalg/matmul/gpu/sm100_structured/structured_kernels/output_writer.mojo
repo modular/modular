@@ -22,7 +22,7 @@ Usage:
 
 from std.collections import Array
 from std.utils.static_tuple import StaticTuple
-from std.memory import Pointer, UnsafePointer
+from std.memory import Pointer
 from std.sys import (
     simd_width_of,
     size_of,
@@ -104,7 +104,7 @@ comptime P3_MAX_RANKS = 8
 comptime P5_SEND_MBX_INTS = 32
 comptime P5_SEND_MBX_STRIDE = 4
 
-comptime P5SendMailboxPtr = UnsafePointer[
+comptime P5SendMailboxPtr = MutPointer[
     Int32, MutUntrackedOrigin, address_space=AddressSpace.SHARED
 ]
 
@@ -135,8 +135,8 @@ struct P3PeerSendConfig(ImplicitlyCopyable, Movable):
     dereferenced -- gated behind `p3_control >= 0`) and 0-valued scalars.
     """
 
-    var atomic_counter: UnsafePointer[Int32, MutUntrackedOrigin]
-    var src_info_ptr: UnsafePointer[Int32, ImmUntrackedOrigin]
+    var atomic_counter: MutPointer[Int32, MutUntrackedOrigin]
+    var src_info_ptr: ImmPointer[Int32, ImmUntrackedOrigin]
     # Per-ROW resolved destination cache, one UInt64 per absolute row, zeroed
     # once per launch by the caller.
     #
@@ -153,9 +153,9 @@ struct P3PeerSendConfig(ImplicitlyCopyable, Movable):
     # base pointer. A real base pointer is never 0 or 1. Two tiles racing on
     # the same row both compute the SAME value, so the store is idempotent and
     # needs no ordering.
-    var row_base_ptr: UnsafePointer[UInt64, MutUntrackedOrigin]
+    var row_base_ptr: MutPointer[UInt64, MutUntrackedOrigin]
     var recv_buf_ptrs: StaticTuple[
-        UnsafePointer[UInt8, MutUntrackedOrigin], P3_MAX_RANKS
+        MutPointer[UInt8, MutUntrackedOrigin], P3_MAX_RANKS
     ]
     var n_ranks: Int
     var p2p_world_size: Int
@@ -173,7 +173,7 @@ struct P3PeerSendConfig(ImplicitlyCopyable, Movable):
     # UInt64 per physical CTA -- [2*cta] = first peer store issued, [2*cta+1] =
     # last. Zeroed once per launch by the caller; `first` is written only while
     # still 0, `last` on every tile.
-    var send_stamp_ptr: UnsafePointer[UInt64, MutUntrackedOrigin]
+    var send_stamp_ptr: MutPointer[UInt64, MutUntrackedOrigin]
     # `send_stamp_ptr` is `unsafe_dangling()` in every arm that does not supply
     # a buffer, and a dangling pointer is NOT a valid "uninitialized" sentinel,
     # so the writes need their own runtime enable -- the same shape as
@@ -183,7 +183,7 @@ struct P3PeerSendConfig(ImplicitlyCopyable, Movable):
     var send_stamp_on: Int
     # `-D P5_TRACE_EPI=true` (default OFF): per-CTA accumulator for the send
     # warps' own busy time, which nothing outside this file can see.
-    var trace_ptr: UnsafePointer[UInt64, MutUntrackedOrigin]
+    var trace_ptr: MutPointer[UInt64, MutUntrackedOrigin]
     # Own runtime enable, for the same reason `send_stamp_on` has one: a
     # dangling pointer is not a valid "uninitialized" sentinel, and the arms
     # that share this instantiation pass no buffer.
@@ -196,11 +196,11 @@ struct P3PeerSendConfig(ImplicitlyCopyable, Movable):
     @staticmethod
     def disabled() -> Self:
         return Self(
-            UnsafePointer[Int32, MutUntrackedOrigin].unsafe_dangling(),
-            UnsafePointer[Int32, ImmUntrackedOrigin].unsafe_dangling(),
-            UnsafePointer[UInt64, MutUntrackedOrigin].unsafe_dangling(),
-            StaticTuple[UnsafePointer[UInt8, MutUntrackedOrigin], P3_MAX_RANKS](
-                UnsafePointer[UInt8, MutUntrackedOrigin].unsafe_dangling()
+            MutPointer[Int32, MutUntrackedOrigin].unsafe_dangling(),
+            ImmPointer[Int32, ImmUntrackedOrigin].unsafe_dangling(),
+            MutPointer[UInt64, MutUntrackedOrigin].unsafe_dangling(),
+            StaticTuple[MutPointer[UInt8, MutUntrackedOrigin], P3_MAX_RANKS](
+                MutPointer[UInt8, MutUntrackedOrigin].unsafe_dangling()
             ),
             0,
             1,
@@ -209,9 +209,9 @@ struct P3PeerSendConfig(ImplicitlyCopyable, Movable):
             0,
             0,
             P5SendMailboxPtr.unsafe_dangling(),
-            UnsafePointer[UInt64, MutUntrackedOrigin].unsafe_dangling(),
+            MutPointer[UInt64, MutUntrackedOrigin].unsafe_dangling(),
             0,
-            UnsafePointer[UInt64, MutUntrackedOrigin].unsafe_dangling(),
+            MutPointer[UInt64, MutUntrackedOrigin].unsafe_dangling(),
             0,
             -1,
         )
@@ -857,9 +857,9 @@ struct TileWriter[
         self,
         stage: Self.Stage,
         scheduler: TileScheduler,
-        workspace: UnsafePointer[Scalar[Self.accum_type], MutAnyOrigin],
+        workspace: MutPointer[Scalar[Self.accum_type], MutAnyOrigin],
         counters: SplitKTileCounters,
-        c: UnsafePointer[Scalar[Self.c_type], MutAnyOrigin],
+        c: MutPointer[Scalar[Self.c_type], MutAnyOrigin],
         c_row_stride: Int,
         work_info: WorkInfo,
         shape: Tuple[UInt32, UInt32],
@@ -1826,6 +1826,11 @@ struct TileWriter[
                         - Int32(loop_stage * Self.stageN)
                     )
 
+                    var p3_smem_flat = c_smem_tile.reshape(
+                        row_major[
+                            type_of(c_smem_tile).LayoutType.static_product
+                        ]()
+                    )
                     comptime for v in range(p3_value_shape):
                         comptime p3_thread_offset = v * p3_output_threads
                         var p3_tidx = UInt32(thread_idx.x) + UInt32(
@@ -1841,19 +1846,19 @@ struct TileWriter[
                             continue
                         var p3_src_idx = UInt32(p3_simd_size) * p3_tidx
                         var p3_smem_idx = p3_swizzle(p3_src_idx)
-                        var p3_val_vec = c_smem_tile.raw_load[
+                        var p3_val_vec = p3_smem_flat.load[
                             width=p3_simd_size,
                             alignment=p3_smem_alignment,
-                        ](p3_smem_idx)
+                        ]((Int(p3_smem_idx),))
                         var p3_chunk_idx = p3_rest // UInt32(Self.stageN)
                         var p3_local_col = (
                             p3_chunk_idx * UInt32(p3_vec_chunkM)
                             + p3_vec_chunkM_idx
                         ) * UInt32(p3_simd_size)
                         (
-                            p3_unswiz.ptr
-                            + p3_n_idx * UInt32(Self.stage_contiguous_size)
-                            + p3_local_col
+                            p3_unswiz.ptr.unsafe_offset(
+                                p3_n_idx * UInt32(Self.stage_contiguous_size)
+                            ).unsafe_offset(p3_local_col)
                         ).store[alignment=p3_smem_alignment](p3_val_vec)
 
                     WarpGroupBarrier[Self.num_output_warps * WARP_SIZE].sync()
@@ -1968,10 +1973,9 @@ struct TileWriter[
                                         Int(p3_src_idx) * p3_cfg.top_k
                                         + Int(p3_src_topk)
                                     ) * p3_cfg.msg_bytes + p3_byte_off
-                                    var p3_dst_ptr = (
-                                        p3_cfg.recv_buf_ptrs[p3_dst_p2p_rank]
-                                        + p3_recv_off
-                                    )
+                                    var p3_dst_ptr = p3_cfg.recv_buf_ptrs[
+                                        p3_dst_p2p_rank
+                                    ].unsafe_offset(p3_recv_off)
                                     comptime p3_row_bytes = (
                                         Self.stage_contiguous_size
                                         * size_of[Self.c_type]()
@@ -2015,10 +2019,13 @@ struct TileWriter[
                                     cp_async_bulk_global_shared_cta(
                                         p3_dst_ptr,
                                         (
-                                            p3_unswiz.ptr
-                                            + UInt32(p3_tid)
-                                            * UInt32(Self.stage_contiguous_size)
-                                        ).bitcast[UInt8](),
+                                            p3_unswiz.ptr.unsafe_offset(
+                                                UInt32(p3_tid)
+                                                * UInt32(
+                                                    Self.stage_contiguous_size
+                                                )
+                                            )
+                                        ).unsafe_bitcast[UInt8](),
                                         Int32(p3_row_bytes),
                                     )
                                     cp_async_bulk_commit_group()
@@ -2362,23 +2369,25 @@ struct TileWriter[
                     )
                 if in_bounds:
                     comptime if size_of[Self.c_type]() == 2:
-                        var src_ptr = c_smem_split._storage + swizzle(
+                        var src_ptr = c_smem_split._storage.unsafe_offset(
+                            swizzle(linear_idx)
+                        )
+                        var src = src_ptr.load[
+                            width=simd_size, alignment=alignment
+                        ]()
+                        c_tensor.store[alignment=alignment](
+                            (Int(global_i), Int(global_j)),
+                            src,
+                        )
+                    else:
+                        var src_ptr = c_smem_split._storage.unsafe_offset(
                             linear_idx
                         )
                         var src = src_ptr.load[
                             width=simd_size, alignment=alignment
                         ]()
-                        c_tensor.store[width=simd_size, alignment=alignment](
-                            Coord(Int(global_i), Int(global_j)),
-                            src,
-                        )
-                    else:
-                        var src_ptr = c_smem_split._storage + linear_idx
-                        var src = src_ptr.load[
-                            width=simd_size, alignment=alignment
-                        ]()
-                        c_tensor.store[width=simd_size, alignment=alignment](
-                            Coord(Int(global_i), Int(global_j)),
+                        c_tensor.store[alignment=alignment](
+                            (Int(global_i), Int(global_j)),
                             src,
                         )
 
@@ -2388,9 +2397,7 @@ struct TileWriter[
         c_tensor_layout: TensorLayout,
         c_tensor_engine: TensorEngine,
     ](
-        c_smem_ptr: UnsafePointer[
-            Scalar[Self.c_type], _, address_space=.SHARED
-        ],
+        c_smem_ptr: Pointer[Scalar[Self.c_type], _, address_space=.SHARED],
         c_tensor: TileTensor[
             mut=True,
             Self.c_type,
@@ -2447,7 +2454,7 @@ struct TileWriter[
                 continue
             var src_idx = UInt32(simd_size) * tidx
             var c_smem_idx = swizzle(src_idx)
-            var val_vec = (c_smem_ptr + c_smem_idx).load[
+            var val_vec = c_smem_ptr.unsafe_offset(c_smem_idx).load[
                 width=simd_size,
                 alignment=smem_alignment,
             ]()
@@ -2458,8 +2465,8 @@ struct TileWriter[
                 chunk_idx * UInt32(vec_chunkM) + vec_chunkM_idx
             ) * UInt32(simd_size)
             if global_token < m_end and global_weight < UInt32(cN):
-                c_tensor.store[width=simd_size, alignment=smem_alignment](
-                    Coord(Int(global_token), Int(global_weight)),
+                c_tensor.store[alignment=smem_alignment](
+                    (Int(global_token), Int(global_weight)),
                     val_vec,
                 )
 
@@ -2934,7 +2941,7 @@ struct TileWriter[
                         ldm_m_row * UInt32(sub_tile_n) + ldm_nloc
                     )
                     var epi_vals = ld_matrix[simd_width=4, transpose=True](
-                        epilogue_tile._storage + Int(ldm_off)
+                        epilogue_tile._storage.unsafe_offset(Int(ldm_off))
                     )
 
                     upper_frag_casted[frag_offset] += epi_vals[0].cast[
@@ -2963,7 +2970,7 @@ struct TileWriter[
                         ldm_row * UInt32(sub_tile_n) + ldm_nloc
                     )
                     var epi_vals = ld_matrix[simd_width=4](
-                        epilogue_tile._storage + Int(ldm_off)
+                        epilogue_tile._storage.unsafe_offset(Int(ldm_off))
                     )
 
                     upper_frag_casted[frag_offset] += epi_vals[0].cast[
@@ -3004,7 +3011,7 @@ struct TileWriter[
                         )
                         var epi_vals_l = ld_matrix[
                             simd_width=4, transpose=True
-                        ](epilogue_tile._storage + Int(ldm_off_l))
+                        ](epilogue_tile._storage.unsafe_offset(Int(ldm_off_l)))
 
                         lower_frag_casted[frag_offset] += epi_vals_l[0].cast[
                             Self.epilogue_dtype
@@ -3033,7 +3040,7 @@ struct TileWriter[
                             ldm_row_l * UInt32(sub_tile_n) + ldm_nloc_l
                         )
                         var epi_vals_l = ld_matrix[simd_width=4](
-                            epilogue_tile._storage + Int(ldm_off_l)
+                            epilogue_tile._storage.unsafe_offset(Int(ldm_off_l))
                         )
 
                         lower_frag_casted[frag_offset] += epi_vals_l[0].cast[
@@ -3211,7 +3218,7 @@ struct TileWriter[
                 else:
                     var n_col = local_col + top_u[1] + UInt32(inc)
                     var bias = (
-                        (epilogue_tile._storage + Int(n_col))
+                        (epilogue_tile._storage.unsafe_offset(Int(n_col)))
                         .load[width=2]()
                         .cast[Self.epilogue_dtype]()
                     )
@@ -3244,7 +3251,7 @@ struct TileWriter[
                     else:
                         var n_col_l = local_col + top_l[1] + UInt32(inc)
                         var bias = (
-                            (epilogue_tile._storage + Int(n_col_l))
+                            (epilogue_tile._storage.unsafe_offset(Int(n_col_l)))
                             .load[width=2]()
                             .cast[Self.epilogue_dtype]()
                         )
@@ -3279,7 +3286,7 @@ struct TileWriter[
         c_tiles: Self.CTileArray,
         output_stage: Self.Stage,
         mut epilogue_pipeline: ProducerConsumerPipeline[num_epi_stages],
-        epilogue_tiles_base: UnsafePointer[
+        epilogue_tiles_base: MutPointer[
             Scalar[Self.c_type], MutAnyOrigin, address_space=.SHARED
         ],
         epilogue_tile_elems: Int,
@@ -3384,8 +3391,8 @@ struct TileWriter[
             comptime for col_wg in range(num_col_warp_groups):
                 epilogue_pipeline.wait_producer()
                 var epi_stage_idx = Int(epilogue_pipeline.consumer_stage())
-                var tile_ptr = (
-                    epilogue_tiles_base + epi_stage_idx * epilogue_tile_elems
+                var tile_ptr = epilogue_tiles_base.unsafe_offset(
+                    epi_stage_idx * epilogue_tile_elems
                 )
 
                 comptime expected_col = (
@@ -3401,7 +3408,7 @@ struct TileWriter[
                         ldm_row * UInt32(sub_tile_n) + UInt32(col_in_tile)
                     )
                     var epi_vals = ld_matrix[simd_width=4](
-                        tile_ptr + Int(ldm_off)
+                        tile_ptr.unsafe_offset(Int(ldm_off))
                     )
 
                     if is_my_col_group:
@@ -3424,7 +3431,7 @@ struct TileWriter[
                             ldm_row_l * UInt32(sub_tile_n) + UInt32(col_in_tile)
                         )
                         var epi_vals_l = ld_matrix[simd_width=4](
-                            tile_ptr + Int(ldm_off_l)
+                            tile_ptr.unsafe_offset(Int(ldm_off_l))
                         )
 
                         if is_my_col_group:

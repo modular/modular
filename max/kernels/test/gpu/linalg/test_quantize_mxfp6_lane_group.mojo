@@ -40,7 +40,7 @@ from std.random import random_ui64, seed
 from std.testing import assert_equal
 
 from max.gpu.host import DeviceContext
-from layout import Coord, TileTensor, row_major
+from layout import TileTensor, row_major
 from layout import TensorEngine
 from layout.tile_layout import TensorLayout
 from linalg.fp6_quantization import (
@@ -82,7 +82,7 @@ def _lane_group_kernel[
     if col >= Int(num_cols):
         return
 
-    var val = input.load[width](Coord(row, col))
+    var val = input.load[width]((row, col))
     var codes, e8m0 = quantize_mxfp6_lane_group[
         .float8_e8m0fnu, fmt, SF_VECTOR_SIZE=SF
     ](val)
@@ -91,12 +91,12 @@ def _lane_group_kernel[
     comptime for g in range(width // 4):
         var word = pack_fp6_x4(codes.slice[4, offset=g * 4]())
         comptime for b in range(3):
-            output[Coord(row, byte_col + g * 3 + b)] = UInt8(
+            output[row, byte_col + g * 3 + b] = UInt8(
                 (word >> UInt32(8 * b)) & UInt32(0xFF)
             )
 
     if col % SF == 0:
-        scales[Coord(row, col // SF)] = e8m0
+        scales[row, col // SF] = e8m0
 
 
 def _run_case[

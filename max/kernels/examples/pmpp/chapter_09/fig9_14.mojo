@@ -26,8 +26,8 @@ comptime COARSE_FACTOR = 4
 
 # ========================== KERNEL CODE ==========================
 def histogram_kernel(
-    image: UnsafePointer[UInt8, ImmutAnyOrigin],
-    bins: UnsafePointer[UInt32, MutAnyOrigin],
+    image: ImmPointer[UInt8, ImmutAnyOrigin],
+    bins: MutPointer[UInt32, MutAnyOrigin],
     width: UInt32,
     height: UInt32,
 ):
@@ -60,7 +60,7 @@ def histogram_kernel(
         var i = segment + UInt32(c) * UInt32(256) + UInt32(thread_idx.x)
         if i < width * height:
             var bin = image[Int(i)]
-            _ = Atomic.fetch_add(bins_s + Int(bin), UInt32(1))
+            _ = Atomic.fetch_add(bins_s.unsafe_offset(Int(bin)), UInt32(1))
 
     barrier()
 
@@ -68,7 +68,7 @@ def histogram_kernel(
     b = UInt32(thread_idx.x)
     while b < NUM_BINS:
         if bins_s[Int(b)] > 0:
-            _ = Atomic.fetch_add(bins + Int(b), bins_s[Int(b)])
+            _ = Atomic.fetch_add(bins.unsafe_offset(Int(b)), bins_s[Int(b)])
         b += UInt32(256)
 
 

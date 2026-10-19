@@ -31,9 +31,9 @@ order changes the low bits, so the kernel would no longer match
 `ops.rms_norm`.
 
 Every tensor must be contiguous and row-major with a last dimension of exactly
-`hidden_size`. The kernel addresses elements by linear offset through
-`raw_load` and `raw_store`, which bypass the layout, so a transposed or strided
-view would read the wrong elements.
+`hidden_size`. The kernel addresses elements by linear offset through flat
+views of the storage, which bypass the layout, so a transposed or strided view
+would read the wrong elements.
 
 Callers own position handling. MAX shifts a draft's token stream left per
 request and appends a bonus token (`eagle_prefill_shift_tokens`), so every row
@@ -43,7 +43,7 @@ here as well would blank a correct row.
 
 from std.math import rsqrt
 from max.gpu import WARP_SIZE, block_dim, block_idx, thread_idx
-from layout import TensorEngine, TensorLayout, TileTensor
+from layout import TensorEngine, TensorLayout, TileTensor, row_major
 
 from nn.normalization import block_reduce_dual_sum
 
@@ -135,14 +135,16 @@ def mtp_eh_norm_kernel[
     var tid = thread_idx.x
     var stride = block_dim.x
     var row = token * hidden_size
+    var embed_flat = embed.reshape(row_major(embed.num_elements()))
+    var prev_flat = prev.reshape(row_major(prev.num_elements()))
 
     # Reduce in float32 regardless of the input dtype, matching `ops.rms_norm`.
     var acc_e = Float32(0)
     var acc_h = Float32(0)
     var col = tid
     while col < hidden_size:
-        var e = embed.raw_load(row + col).cast[.float32]()
-        var p = prev.raw_load(row + col).cast[.float32]()
+        var e = embed_flat.load[width=1]((row + col,)).cast[.float32]()
+        var p = prev_flat.load[width=1]((row + col,)).cast[.float32]()
         acc_e += e * e
         acc_h += p * p
         col += stride
@@ -154,17 +156,20 @@ def mtp_eh_norm_kernel[
     var rrms_h = rsqrt(sums[1] / Float32(hidden_size) + epsilon)
 
     var out_row = token * 2 * hidden_size
+    var out_flat = out_buf.reshape(row_major(out_buf.num_elements()))
+    var enorm_flat = enorm_weight.reshape(row_major[hidden_size]())
+    var hnorm_flat = hnorm_weight.reshape(row_major[hidden_size]())
     col = tid
     while col < hidden_size:
         # Cast before the multiply: `multiply_before_cast=False`.
-        var e = embed.raw_load(row + col).cast[.float32]() * rrms_e
-        var p = prev.raw_load(row + col).cast[.float32]() * rrms_h
-        out_buf.raw_store(
-            out_row + col,
-            e.cast[dtype]() * enorm_weight.raw_load(col),
+        var e = embed_flat.load[width=1]((row + col,)).cast[.float32]() * rrms_e
+        var p = prev_flat.load[width=1]((row + col,)).cast[.float32]() * rrms_h
+        out_flat.store(
+            (out_row + col,),
+            e.cast[dtype]() * enorm_flat.load[width=1]((col,)),
         )
-        out_buf.raw_store(
-            out_row + hidden_size + col,
-            p.cast[dtype]() * hnorm_weight.raw_load(col),
+        out_flat.store(
+            (out_row + hidden_size + col,),
+            p.cast[dtype]() * hnorm_flat.load[width=1]((col,)),
         )
         col += stride

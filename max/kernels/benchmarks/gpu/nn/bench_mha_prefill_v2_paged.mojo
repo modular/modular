@@ -239,7 +239,7 @@ def run_mha_prefill_v2_paged[
         ) raises {var cb_q, var cb_o, var k_operand, var v_operand, imm}:
             @inline(.always)
             def _kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
-                var q_ptr = cb_q.offset_ptr(iteration).bitcast[
+                var q_ptr = cb_q.offset_ptr(iteration).unsafe_bitcast[
                     Scalar[qkv_type]
                 ]()
                 var q_tt = TileTensor[mut=False](
@@ -252,7 +252,7 @@ def run_mha_prefill_v2_paged[
                     ),
                 )
                 var o_tt = TileTensor(
-                    cb_o.offset_ptr(iteration).bitcast[Float32](),
+                    cb_o.offset_ptr(iteration).unsafe_bitcast[Float32](),
                     row_major(
                         Int32(batch_size),
                         Int32(seq_len),

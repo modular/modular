@@ -25,7 +25,7 @@ from std.sys import size_of
 from max.gpu import global_idx
 from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
-from layout import TileTensor, row_major
+from layout import TensorEngine, TensorLayout, TileTensor, row_major
 from std.utils.index import IndexList
 from linalg.utils import ElementwiseEpilogueFn, no_epilogue_fn
 
@@ -38,9 +38,12 @@ from linalg.utils import ElementwiseEpilogueFn, no_epilogue_fn
 @__name(t"transpose_rscf_to_krsc_{dtype}")
 def _transpose_rscf_to_krsc[
     dtype: DType,
+    SrcLayoutType: TensorLayout,
+    src_origin: ImmOrigin,
+    SrcEngine: TensorEngine,
 ](
-    src_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    src: TileTensor[dtype, SrcLayoutType, src_origin, Engine=SrcEngine],
+    dst_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
     R: Int32,
     S: Int32,
     C: Int32,
@@ -58,16 +61,18 @@ def _transpose_rscf_to_krsc[
     var r: Int
     r, rem = divmod(rem, _S * _C)
     var s, c = divmod(rem, _C)
-    var src_idx = r * _S * _C * _F + s * _C * _F + c * _F + k
-    dst_ptr.store(tid, src_ptr.load(src_idx))
+    dst_ptr.store(tid, src.load((r, s, c, k))[0])
 
 
 @__name(t"transpose_fcrs_to_krsc_{dtype}")
 def _transpose_fcrs_to_krsc[
     dtype: DType,
+    SrcLayoutType: TensorLayout,
+    src_origin: ImmOrigin,
+    SrcEngine: TensorEngine,
 ](
-    src_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    src: TileTensor[dtype, SrcLayoutType, src_origin, Engine=SrcEngine],
+    dst_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
     F: Int32,
     C: Int32,
     R: Int32,
@@ -85,8 +90,7 @@ def _transpose_fcrs_to_krsc[
     var r: Int
     r, rem = divmod(rem, _S * _C)
     var s, c = divmod(rem, _C)
-    var src_idx = k * _C * _R * _S + c * _R * _S + r * _S + s
-    dst_ptr.store(tid, src_ptr.load(src_idx))
+    dst_ptr.store(tid, src.load((k, c, r, s))[0])
 
 
 # =========================================================================
@@ -137,7 +141,7 @@ def dispatch_sm100_conv2d[
     symmetric_padding: IndexList[2],
     ctx: DeviceContext,
     source_ptr: OptionalReg[
-        UnsafePointer[Scalar[output_type], MutAnyOrigin]
+        MutPointer[Scalar[output_type], MutAnyOrigin]
     ] = None,
     beta: Float32 = 0.0,
     epilogue_fn: EpilogueFnType = no_epilogue_fn,
@@ -212,8 +216,14 @@ def dispatch_sm100_conv2d[
             var C = Int(filter.dim[1]())
             var R = Int(filter.dim[2]())
             var S = Int(filter.dim[3]())
-            ctx.enqueue_function[_transpose_fcrs_to_krsc[filter_type]](
-                filter.ptr,
+            comptime transpose_kernel = _transpose_fcrs_to_krsc[
+                filter_type,
+                filter.LayoutType,
+                ImmOrigin(filter.origin),
+                filter.Engine,
+            ]
+            ctx.enqueue_function[transpose_kernel](
+                filter.as_imm(),
                 filter_krsc_ptr,
                 Int32(F),
                 Int32(C),
@@ -227,8 +237,14 @@ def dispatch_sm100_conv2d[
             var S = Int(filter.dim[1]())
             var C = Int(filter.dim[2]())
             var F = Int(filter.dim[3]())
-            ctx.enqueue_function[_transpose_rscf_to_krsc[filter_type]](
-                filter.ptr,
+            comptime transpose_kernel = _transpose_rscf_to_krsc[
+                filter_type,
+                filter.LayoutType,
+                ImmOrigin(filter.origin),
+                filter.Engine,
+            ]
+            ctx.enqueue_function[transpose_kernel](
+                filter.as_imm(),
                 filter_krsc_ptr,
                 Int32(R),
                 Int32(S),

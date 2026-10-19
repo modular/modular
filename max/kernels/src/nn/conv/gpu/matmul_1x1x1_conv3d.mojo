@@ -164,8 +164,8 @@ def dispatch_1x1x1_matmul_conv3d[
             comptime assert (
                 coords_2d.rank == 2
             ), "the matmul epilogue contract is rank 2"
-            var m_idx = Int(coords_2d[0].value())
-            var n_idx = Int(coords_2d[1].value())
+            var m_idx = Int(coords_2d[0])
+            var n_idx = Int(coords_2d[1])
             var batch_idx, sp = divmod(m_idx, DHW_out)
             var d_idx, rem = divmod(sp, HW_out)
             var h_idx, w_idx = divmod(rem, W_out)

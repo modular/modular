@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Layers specific to the DeepSeek-V4.1-Flash architecture."""
 
-from .hyper_connection import final_collapse
+from .hyper_connection import final_collapse, fused_hc_step
 from .sparse_attention import sparse_attention
 
-__all__ = ["final_collapse", "sparse_attention"]
+__all__ = ["final_collapse", "fused_hc_step", "sparse_attention"]

@@ -14,10 +14,10 @@
 
 Rules key on each tensor's on-disk dtype rather than its name, so a
 dequantized checkpoint passes through the quantized-tensor rules unchanged.
-Besides renaming, the adapter drops vision tensors, stacks per-expert
-tensors, converts block scales to the layouts the kernels read, dequantizes
-projections the model runs in higher precision, and widens weights the model
-keeps in float32.
+Besides renaming, the trunk adapters drop vision tensors, stack per-expert
+tensors, convert block scales to the layouts the kernels read, dequantize
+projections the model runs in higher precision, and widen weights the model
+keeps in float32. The vision adapter keeps only the vision tensors.
 """
 
 from __future__ import annotations
@@ -32,12 +32,14 @@ import sys
 import warnings
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
+from typing import Protocol, SupportsInt
 
 import numpy as np
 from max.driver import Buffer, DLPackArray
 from max.dtype import DType
 from max.graph.type import Shape
 from max.graph.weights import WeightData, Weights
+from max.pipelines.lib import PipelineConfig
 from max.pipelines.weights import (
     read_modelopt_quantized_layers,
     resolve_hf_quant_config,
@@ -47,6 +49,8 @@ from transformers.configuration_utils import PretrainedConfig
 from .model_config import (
     NVFP4_SF_ATOM_COLS,
     NVFP4_SF_ATOM_ROWS,
+    ep_dispatch_active,
+    gate_up_rows_interleaved,
     head_bf16_enabled,
     num_dspark_stages,
     nvfp4_sf_preinterleaved,
@@ -109,8 +113,6 @@ def is_host_dequantized(base: str, *, woa_mxfp8: bool | None = None) -> bool:
 FLOAT32_WEIGHT_SUFFIXES = (
     ".compressor.wkv.weight",
     ".compressor.wgate.weight",
-    ".engram.q_weight",
-    ".engram.k_weight",
     "norm.weight",
 )
 # Widened to float32 too unless ``head_bf16_enabled()``.
@@ -119,7 +121,7 @@ HEAD_WEIGHT = "head.weight"
 # Scales kept as raw e8m0 (widening Engram's would quadruple their size).
 _RAW_SCALE_PREFIXES = (".engram.embed",)
 
-# VL checkpoint tensors the text-only pipeline does not load.
+# VL checkpoint tensors, which the vision tower loads apart from the trunk.
 _SKIPPED_PREFIXES = ("vision.", "aligner.")
 _SKIPPED_EXACT = ("image_start", "image_end", "image_newline")
 
@@ -131,7 +133,7 @@ _LIBC = ctypes.CDLL(None)
 
 
 def is_skipped_checkpoint_tensor(name: str) -> bool:
-    """Whether ``name`` is a vision tensor this text-only adapter drops.
+    """Whether ``name`` is a vision tensor, which the trunk adapters drop.
 
     Args:
         name: A checkpoint tensor's full dotted path.
@@ -749,6 +751,13 @@ class DeferredExpertStack(WeightData):
     for ``down_proj``.
     """
 
+    interleave_rows: bool
+    """Whether the parts' rows alternate rather than follow one another.
+
+    Row ``2i`` is the first part's row ``i`` and row ``2i + 1`` the second
+    part's, the (gate, up) pairing the fused SwiGLU kernels read.
+    """
+
     def __init__(
         self,
         parts: Sequence[Sequence[np.ndarray]],
@@ -756,6 +765,7 @@ class DeferredExpertStack(WeightData):
         name: str,
         *,
         sf_interleave: bool = False,
+        interleave_rows: bool = False,
     ) -> None:
         first = parts[0]
         shape = (
@@ -773,6 +783,11 @@ class DeferredExpertStack(WeightData):
         self.parts = [tuple(expert) for expert in parts]
         self.sf_interleave = sf_interleave
         """Whether :meth:`materialize` reorders rows into the tiled layout."""
+        if interleave_rows and (
+            len(first) != 2 or first[0].shape != first[1].shape
+        ):
+            raise ValueError(f"{name}: only two equal parts interleave rows")
+        self.interleave_rows = interleave_rows
 
     def materialize(
         self, start: int = 0, stop: int | None = None
@@ -783,7 +798,12 @@ class DeferredExpertStack(WeightData):
             (stop - start, *self.shape.static_dims[1:]), dtype=np.uint8
         )
         for row, expert in zip(out, self.parts[start:stop], strict=True):
-            np.concatenate(expert, axis=0, out=row)
+            if self.interleave_rows:
+                pairs = row.reshape(-1, 2, *row.shape[1:])
+                pairs[:, 0] = expert[0]
+                pairs[:, 1] = expert[1]
+            else:
+                np.concatenate(expert, axis=0, out=row)
             if self.sf_interleave:
                 row[...] = interleave_nvfp4_scales(row)
         return out
@@ -806,6 +826,8 @@ def stack_nvfp4_experts(
     prefix: str,
     *,
     defer: bool = False,
+    interleave_gate_up: bool = False,
+    global_gate_up_input_scale: bool = False,
 ) -> dict[str, WeightData]:
     """Per-expert NVFP4 tensors -> the two stacked trunk routed-expert weights.
 
@@ -813,7 +835,12 @@ def stack_nvfp4_experts(
     ``w{1,2,3}.weight_scale`` (``float8_e4m3fn`` bytes ``[N, K/16]``) and
     float32 scalars ``w{1,2,3}.weight_scale_2`` and ``w{1,2,3}.input_scale``.
     With ``defer``, each ``weight`` and ``weight_scale`` is returned as a
-    :class:`DeferredExpertStack`.
+    :class:`DeferredExpertStack`. With ``interleave_gate_up``, the
+    ``gate_up_proj`` rows (and their scale rows) alternate ``w1``, ``w3``
+    instead of all ``w1`` rows then all ``w3`` rows. With
+    ``global_gate_up_input_scale``, every expert's ``gate_up_proj``
+    ``input_scale`` is the largest over all experts, the one scale
+    expert-parallel dispatch quantizes every row against.
 
     Raises:
         ValueError: If expert ids are not dense ``0..E-1``.
@@ -834,6 +861,7 @@ def stack_nvfp4_experts(
             sf_interleave=dtype == DType.float8_e4m3fn
             and parts[0][0].ndim == 2
             and nvfp4_sf_preinterleaved(rows, int(parts[0][0].shape[1])),
+            interleave_rows=interleave_gate_up and len(keys) == 2,
         )
         if defer:
             return deferred
@@ -841,6 +869,10 @@ def stack_nvfp4_experts(
 
     gate_up_scale_2 = _shared_scalar(experts, ids, "weight_scale_2", prefix)
     gate_up_input_scale = _shared_scalar(experts, ids, "input_scale", prefix)
+    if global_gate_up_input_scale:
+        gate_up_input_scale = np.full_like(
+            gate_up_input_scale, gate_up_input_scale.max()
+        )
     down_scale_2 = np.array(
         [_scalar(experts[e]["w2.weight_scale_2"]) for e in ids],
         dtype=np.float32,
@@ -932,6 +964,7 @@ def convert_weight_data(
     defer_routed_experts: bool = False,
     woa_mxfp8: bool | None = None,
     head_bf16: bool | None = None,
+    data_parallel_degree: int = 1,
 ) -> dict[str, WeightData]:
     """Converts checkpoint ``WeightData`` to MAX storage, keeping names.
 
@@ -948,6 +981,11 @@ def convert_weight_data(
             (whether the trunk's ``wo_a`` stays MXFP8).
         head_bf16: Overrides :func:`~.model_config.head_bf16_enabled`
             (whether ``head.weight`` stays bf16 instead of float32).
+        data_parallel_degree: The serving data-parallel degree. Under
+            expert-parallel dispatch (:func:`~.model_config.ep_dispatch_active`)
+            the trunk's routed ``gate_up_proj`` takes one global input scale,
+            and its rows interleave when
+            :func:`~.model_config.gate_up_rows_interleaved` holds.
 
     Returns:
         The converted state dict, still keyed by checkpoint names.
@@ -957,9 +995,23 @@ def convert_weight_data(
     if head_bf16 is None:
         head_bf16 = head_bf16_enabled()
     new_state_dict: dict[str, WeightData] = {}
-    stack_nvfp4 = functools.partial(
-        stack_nvfp4_experts, defer=defer_routed_experts
+    interleave_trunk = gate_up_rows_interleaved(
+        num_routed_experts, data_parallel_degree
     )
+    dispatched_trunk = ep_dispatch_active(data_parallel_degree)
+
+    def stack_nvfp4(
+        experts: Mapping[int, Mapping[str, np.ndarray]], prefix: str
+    ) -> dict[str, WeightData]:
+        is_trunk = not prefix.startswith(DSPARK_CHECKPOINT_PREFIX)
+        return stack_nvfp4_experts(
+            experts,
+            prefix,
+            defer=defer_routed_experts,
+            interleave_gate_up=interleave_trunk and is_trunk,
+            global_gate_up_input_scale=dispatched_trunk and is_trunk,
+        )
+
     host_dequantized = functools.partial(
         is_host_dequantized, woa_mxfp8=woa_mxfp8
     )
@@ -1312,6 +1364,15 @@ def resolve_quantization_info(
     )
 
 
+def _data_parallel_degree(adapter_kwargs: Mapping[str, object]) -> int:
+    """The data-parallel degree of the adapter's ``pipeline_config``, else 1."""
+    pipeline_config = adapter_kwargs.get("pipeline_config")
+    if pipeline_config is None:
+        return 1
+    assert isinstance(pipeline_config, PipelineConfig)
+    return int(pipeline_config.model.data_parallel_degree)
+
+
 def convert_safetensor_state_dict(
     state_dict: dict[str, Weights],
     huggingface_config: PretrainedConfig,
@@ -1341,6 +1402,7 @@ def convert_safetensor_state_dict(
             num_routed_experts=text_config.n_routed_experts,
             num_dspark_experts=text_config.dspark_n_routed_experts,
             defer_routed_experts=defer_routed_experts,
+            data_parallel_degree=_data_parallel_degree(unused_kwargs),
         )
     )
 
@@ -1374,6 +1436,7 @@ def convert_dspark_safetensor_state_dict(
         num_routed_experts=text_config.n_routed_experts,
         num_dspark_experts=text_config.dspark_n_routed_experts,
         defer_routed_experts=defer_routed_experts,
+        data_parallel_degree=_data_parallel_degree(unused_kwargs),
     )
     num_stages = num_dspark_stages(text_config)
     trunk = {
@@ -1390,3 +1453,65 @@ def convert_dspark_safetensor_state_dict(
         **rewire_trunk_state_dict(trunk),
         **rewire_dspark_state_dict(stages, last_stage=num_stages - 1),
     }
+
+
+# The checkpoint stores the vision RMSNorm weights in bfloat16; the reference
+# ``inference/vision.py`` applies them in float32.
+VISION_NORM_WEIGHT = re.compile(
+    r"vision\.(?:blocks\.\d+\.norm[12]|norm)\.weight"
+)
+
+
+class _TensorSource(Protocol):
+    def data(self) -> WeightData: ...
+
+
+def convert_safetensor_vision_state_dict(
+    state_dict: Mapping[str, _TensorSource], **unused_kwargs: object
+) -> dict[str, WeightData]:
+    """The vision tower's, aligner's and span delimiters' weights.
+
+    Keeps the tensors :func:`is_skipped_checkpoint_tensor` names, whose
+    checkpoint names are already the attribute paths of
+    :class:`~.vision.DeepseekV41VisionModel`, and widens the RMSNorm
+    weights to float32.
+    """
+    out: dict[str, WeightData] = {}
+    for name, value in state_dict.items():
+        if not is_skipped_checkpoint_tensor(name):
+            continue
+        data = value.data()
+        out[name] = (
+            bfloat16_to_float32(data, name)
+            if data.dtype == DType.bfloat16
+            and VISION_NORM_WEIGHT.fullmatch(name)
+            else data
+        )
+    return out
+
+
+def vision_load_mismatches(
+    converted: Mapping[str, WeightData],
+    expected: Mapping[str, tuple[Iterable[SupportsInt], DType]],
+) -> list[str]:
+    """Every way ``converted`` fails a strict load into the vision model.
+
+    Args:
+        converted: :func:`convert_safetensor_vision_state_dict`'s output.
+        expected: Each vision model parameter's shape and dtype, by name.
+
+    Returns:
+        One line per missing, unexpected or mismatched tensor; empty when
+        the load is exact.
+    """
+    problems = [f"missing {n}" for n in sorted(expected.keys() - converted)]
+    problems += [f"unexpected {n}" for n in sorted(converted.keys() - expected)]
+    for name in sorted(expected.keys() & converted.keys()):
+        shape, dtype = [int(d) for d in expected[name][0]], expected[name][1]
+        got = converted[name]
+        got_shape = [int(d) for d in got.shape]
+        if got_shape != shape or got.dtype != dtype:
+            problems.append(
+                f"{name}: {got.dtype} {got_shape}, expected {dtype} {shape}"
+            )
+    return problems

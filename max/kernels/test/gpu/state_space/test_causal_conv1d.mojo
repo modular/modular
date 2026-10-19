@@ -312,10 +312,12 @@ def run_causal_conv1d_gpu[
 
     # Compare results
     var flattened_size = batch * dim * seqlen
+    var result_gpu_flat = result_gpu_h.reshape(row_major(flattened_size))
+    var result_cpu_flat = result_cpu_h.reshape(row_major(flattened_size))
     for i in range(flattened_size):
         assert_almost_equal(
-            result_gpu_h.raw_load(i),
-            result_cpu_h.raw_load(i),
+            result_gpu_flat[i],
+            result_cpu_flat[i],
             rtol=rtol,
         )
 

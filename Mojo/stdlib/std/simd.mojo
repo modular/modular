@@ -413,7 +413,7 @@ struct FastMathFlag(EnumLike, Equatable, ImplicitlyCopyable, RegisterPassable):
     ].values
 
     comptime _enum_case_types = TypeList.splat[
-        ParameterList[Self._enum_case_names].size, NoneType
+        ParameterList[Self._enum_case_names].length, NoneType
     ].values
 
     @inline(.always)
@@ -2734,7 +2734,7 @@ struct SIMD[dtype: DType, length: SIMDLength](
         """
 
         comptime assert (
-            output_size == mask.size
+            output_size == mask.length
         ), "size of the mask must match the output SIMD size"
 
         # FIXME: Support parameters on initializers better, removing __init__.
@@ -3758,7 +3758,7 @@ def _pow[
         if __is_run_in_comptime_interpreter:
             return _powf(base, exp)
 
-        comptime hook = CurrentPlugin.binary_math_fn["pow", base.dtype, width]
+        comptime hook = CurrentPlugin.binary_math_fn[.pow, base.dtype, width]
         comptime if hook:
             return comptime (hook.value())(base, rebind[type_of(base)](exp))
         return _powf(base, exp)

@@ -270,11 +270,11 @@ def flare_mla_decoding[
     # Per-token Q scale pointer: float32 array with one scale per Q token.
     # sigma_Q[q_token_idx] is folded into scale_log2e inside the Softmax function.
     # Default is null (sigma_Q = 1.0, no effect).
-    q_scale_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]] = None,
+    q_scale_ptr: OptionalReg[MutPointer[Float32, MutAnyOrigin]] = None,
     # Sparse indices: when non-null, the kernel uses gather4 TMA with
     # pre-computed physical row indices instead of page-table lookups.
     # d_indices[batch * indices_stride + token] = physical KV row index.
-    d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+    d_indices: OptionalReg[MutPointer[Int32, MutAnyOrigin]] = None,
     indices_stride: Int = 0,
     # Per-batch topk lengths: when non-null, topk_lengths[batch_idx] gives
     # the actual number of valid sparse indices for that batch. indices_stride
@@ -284,19 +284,19 @@ def flare_mla_decoding[
     # Extra KV: separate always-attend cache. Tokens from extra_k are
     # appended after the topk tokens in a unified attention loop.
     extra_k: OptionalReg[cache_t] = None,
-    extra_d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+    extra_d_indices: OptionalReg[MutPointer[Int32, MutAnyOrigin]] = None,
     extra_indices_stride: Int = 0,
     extra_topk_lengths: TopkLengthsPtrType = unread_pointer[
         TopkLengthsPtrType
     ](),
-    extra_scales_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]] = None,
+    extra_scales_ptr: OptionalReg[MutPointer[Float32, MutAnyOrigin]] = None,
     # Capturable-graph scalar from the Python resolver. When set, the
     # SM100 dispatcher uses this instead of recomputing num_partitions
     # at grid time.
     num_partitions_in: Optional[Int] = None,
     # Logical sparse indices for position-based causal masking; `None` keeps
     # the prior slot-count behavior. See mla_decode_utils.mojo.
-    logical_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+    logical_indices: OptionalReg[MutPointer[Int32, MutAnyOrigin]] = None,
     # Positions between the token each sparse row was computed for and the
     # token that reads it, for a selection reused at a later position.
     selection_lag: Int = 0,
@@ -602,7 +602,7 @@ def flare_mla_decoding[
     )
 
     var valid_length = TileTensor(
-        UnsafePointer[UInt32, MutUntrackedOrigin].unsafe_dangling(),
+        MutPointer[UInt32, MutUntrackedOrigin].unsafe_dangling(),
         row_major(Idx[0]),
     )
 
@@ -680,7 +680,7 @@ def flare_mla_decoding_rows[
     ), "row-indexed K operands are only supported on AMD"
 
     var valid_length = TileTensor(
-        UnsafePointer[UInt32, MutUntrackedOrigin].unsafe_dangling(),
+        MutPointer[UInt32, MutUntrackedOrigin].unsafe_dangling(),
         row_major(Idx[0]),
     )
 
@@ -755,25 +755,25 @@ def flare_mla_decoding_dispatch[
     ],
     kv_input_row_offsets: OptionalReg[ImmutTileTensor1D[.uint32]] = None,
     num_partitions: Optional[Int] = None,
-    q_scale_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]] = None,
-    d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+    q_scale_ptr: OptionalReg[MutPointer[Float32, MutAnyOrigin]] = None,
+    d_indices: OptionalReg[MutPointer[Int32, MutAnyOrigin]] = None,
     indices_stride: Int = 0,
     topk_lengths: TopkLengthsPtrType = null_pointer[TopkLengthsPtrType](),
     attn_sink_ptr: AttnSinkPtrType = null_pointer[AttnSinkPtrType](),
     # Extra KV: separate always-attend cache operand.
     extra_k: OptionalReg[k_t] = None,
-    extra_d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+    extra_d_indices: OptionalReg[MutPointer[Int32, MutAnyOrigin]] = None,
     extra_indices_stride: Int = 0,
     extra_topk_lengths: TopkLengthsPtrType = unread_pointer[
         TopkLengthsPtrType
     ](),
-    extra_scales_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]] = None,
+    extra_scales_ptr: OptionalReg[MutPointer[Float32, MutAnyOrigin]] = None,
     # Capturable-graph scalar: forwarded by the Python resolver so grid-time
     # dispatch matches the kernel's device-side divmod.
     num_partitions_in: Optional[Int] = None,
     # Logical sparse indices for position-based causal masking; `None` keeps
     # the prior slot-count behavior. See mla_decode_utils.mojo.
-    logical_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+    logical_indices: OptionalReg[MutPointer[Int32, MutAnyOrigin]] = None,
     # Positions between the token each sparse row was computed for and the
     # token that reads it, for a selection reused at a later position.
     selection_lag: Int = 0,
@@ -1091,7 +1091,7 @@ def flare_mla_decoding_dispatch[
                 valid_length,
                 mask_functor,
                 TileTensor(
-                    rebind[UnsafePointer[Int64, origin=MutAnyOrigin]](
+                    rebind[MutPointer[Int64, origin=MutAnyOrigin]](
                         local_args.gpu_buf.unsafe_ptr()
                     ),
                     row_major[3](),
@@ -1279,12 +1279,8 @@ def flare_mla_decoding_dispatch[
             # one CTA per row. At S=1 == num_heads, byte-identical.
             comptime _split_k_rows = num_heads * q_seq_len
 
-            var q_device = DeviceBuffer[q.dtype](
-                ctx, q.ptr, q.num_elements(), owning=False
-            )
-            var output_device = DeviceBuffer[output.dtype](
-                ctx, output.ptr, output.num_elements(), owning=False
-            )
+            var q_device = q.to_device_buffer(ctx)
+            var output_device = output.to_device_buffer(ctx)
 
             if num_partitions_value == 1:
                 # Single-partition fast path — no intermediate buffers, no reduce.
@@ -1331,7 +1327,7 @@ def flare_mla_decoding_dispatch[
                 )
                 var qk_max_device = DeviceBuffer[accum_type](
                     ctx,
-                    exp_sum_qk_max_data.unsafe_ptr() + data_len,
+                    exp_sum_qk_max_data.unsafe_ptr().unsafe_offset(data_len),
                     data_len,
                     owning=False,
                 )
@@ -1626,14 +1622,12 @@ def mla_splitk_reduce[
     # byte-identically.
     ragged: Bool = False,
 ](
-    intermediate_ptr: UnsafePointer[Scalar[intermediate_type], ImmutAnyOrigin],
-    output_ptr: UnsafePointer[Scalar[output_type], MutAnyOrigin],
-    exp_sum_ptr: UnsafePointer[
+    intermediate_ptr: ImmPointer[Scalar[intermediate_type], ImmutAnyOrigin],
+    output_ptr: MutPointer[Scalar[output_type], MutAnyOrigin],
+    exp_sum_ptr: MutPointer[
         Scalar[get_accum_type[output_type]()], MutAnyOrigin
     ],
-    qk_max_ptr: UnsafePointer[
-        Scalar[get_accum_type[output_type]()], MutAnyOrigin
-    ],
+    qk_max_ptr: MutPointer[Scalar[get_accum_type[output_type]()], MutAnyOrigin],
     batch_size: Int32,
     num_partitions: Int32,
     # input_row_offsets `[batch_size + 1]`. Read only on the `ragged and
@@ -1831,12 +1825,7 @@ def mla_splitk_reduce[
             var p_safe = min(p, np_last_s2)
             scales_local[k] = scales_tt[p]
             xs[k] = intermediate_tt.load[width=elems_per_lane](
-                Coord(
-                    p_safe,
-                    batch_idx,
-                    row_idx,
-                    depth_global,
-                )
+                (p_safe, batch_idx, row_idx, depth_global)
             ).cast[accum_type]()
         comptime for k in range(parts_per_warp):
             var scale_k = scales_local[k]
@@ -1848,21 +1837,21 @@ def mla_splitk_reduce[
     # Step 3: cross-warp reduction and output store (`out_row` set above).
     comptime if W_PARTS == 1:
         output_tt.store(
-            Coord(out_row, depth_global),
+            (out_row, depth_global),
             acc.cast[output_type](),
         )
     else:
-        warp_partial_tt.store(Coord(warp_idx, depth_in_tile), acc)
+        warp_partial_tt.store((warp_idx, depth_in_tile), acc)
         barrier()
 
         if warp_idx == 0:
             var final_acc = SIMD[accum_type, elems_per_lane](0)
             comptime for w in range(W_PARTS):
                 final_acc += warp_partial_tt.load[width=elems_per_lane](
-                    Coord(Idx[w], depth_in_tile)
+                    (Idx[w], depth_in_tile)
                 )
             output_tt.store(
-                Coord(out_row, depth_global),
+                (out_row, depth_global),
                 final_acc.cast[output_type](),
             )
 
@@ -1899,11 +1888,11 @@ def mla_decoding[
     # it (its fold path is selected separately).
     q_seq_len: Int = 1,
 ](
-    q_ptr: UnsafePointer[Scalar[q_type], MutAnyOrigin],
+    q_ptr: MutPointer[Scalar[q_type], MutAnyOrigin],
     k: k_t,
-    output_ptr: UnsafePointer[Scalar[output_type], MutAnyOrigin],
-    exp_sum_ptr: UnsafePointer[Scalar[get_accum_type[q_type]()], MutAnyOrigin],
-    qk_max_ptr: UnsafePointer[Scalar[get_accum_type[q_type]()], MutAnyOrigin],
+    output_ptr: MutPointer[Scalar[output_type], MutAnyOrigin],
+    exp_sum_ptr: MutPointer[Scalar[get_accum_type[q_type]()], MutAnyOrigin],
+    qk_max_ptr: MutPointer[Scalar[get_accum_type[q_type]()], MutAnyOrigin],
     scale: Float32,
     batch_size_dev: Int32,
     num_partitions_dev: Int32,
@@ -2005,11 +1994,11 @@ def mla_decoding[
     # split-k intermediate buffers — only used when num_partitions > 1
     var qk_max_batch_ptr = qk_max_ptr
     if num_partitions > 1:
-        qk_max_batch_ptr = qk_max_ptr + qk_max_offset
+        qk_max_batch_ptr = qk_max_ptr.unsafe_offset(qk_max_offset)
 
     var exp_sum_batch_ptr = exp_sum_ptr
     if num_partitions > 1:
-        exp_sum_batch_ptr = exp_sum_ptr + exp_sum_offset
+        exp_sum_batch_ptr = exp_sum_ptr.unsafe_offset(exp_sum_offset)
 
     var seq_len: Int
     var q_batch_offset: Int
@@ -2061,9 +2050,9 @@ def mla_decoding[
             num_pipeline_stages=num_pipeline_stages,
             decoding_warp_split_k=decoding_warp_split_k,
         ](
-            q_ptr + q_batch_offset,
+            q_ptr.unsafe_offset(q_batch_offset),
             k,
-            output_ptr + output_batch_offset,
+            output_ptr.unsafe_offset(output_batch_offset),
             exp_sum_batch_ptr,
             qk_max_batch_ptr,
             scale,
@@ -2098,8 +2087,8 @@ def mla_decoding[
             # MTP token fold: M = num_heads * q_seq_len query rows.
             q_seq_len=q_seq_len,
         ](
-            output_ptr + output_batch_offset,
-            q_ptr + q_batch_offset,
+            output_ptr.unsafe_offset(output_batch_offset),
+            q_ptr.unsafe_offset(q_batch_offset),
             k,
             k,
             mask,
@@ -2139,11 +2128,11 @@ def mla_decoding_single_batch[
     num_pipeline_stages: Int,
     decoding_warp_split_k: Bool = False,
 ](
-    q_ptr: UnsafePointer[Scalar[q_type], MutAnyOrigin],
+    q_ptr: MutPointer[Scalar[q_type], MutAnyOrigin],
     k: k_t,
-    output_ptr: UnsafePointer[Scalar[output_type], MutAnyOrigin],
-    exp_sum_ptr: UnsafePointer[Scalar[get_accum_type[q_type]()], MutAnyOrigin],
-    qk_max_ptr: UnsafePointer[Scalar[get_accum_type[q_type]()], MutAnyOrigin],
+    output_ptr: MutPointer[Scalar[output_type], MutAnyOrigin],
+    exp_sum_ptr: MutPointer[Scalar[get_accum_type[q_type]()], MutAnyOrigin],
+    qk_max_ptr: MutPointer[Scalar[get_accum_type[q_type]()], MutAnyOrigin],
     scale: Float32,
     num_keys: Int,
     num_partitions: Int,
@@ -2243,7 +2232,9 @@ def mla_decoding_single_batch[
     ](q_smem, q_smem_layout, bound=q_smem_size)
 
     comptime kv_smem_size = BN * depth
-    var k_smem = (q_smem + q_smem_size).bitcast[Scalar[k_type]]()
+    var k_smem = q_smem.unsafe_offset(q_smem_size).unsafe_bitcast[
+        Scalar[k_type]
+    ]()
 
     # For MLA, We define V = K[:, :nope_dim], thus we split the K tensor
     # in two parts when storing it in the smem: K[:, :nope_dim] and
@@ -2282,7 +2273,11 @@ def mla_decoding_single_batch[
         _,
         address_space=.SHARED,
         circular=True,
-    ](k_smem + BN * nope_dim, k_rope_smem_layout, bound=BN * rope_dim)
+    ](
+        k_smem.unsafe_offset(BN * nope_dim),
+        k_rope_smem_layout,
+        bound=BN * rope_dim,
+    )
 
     comptime mma_shape = get_mma_shape[q_type, get_accum_type[q_type]()]()
     comptime MMA_M = mma_shape[0]
@@ -2322,7 +2317,9 @@ def mla_decoding_single_batch[
         rowsum[i] = 0.0
 
     # Shared memory for P = Q * K^t
-    var p_smem = (k_smem + kv_smem_size).bitcast[Scalar[k_type]]()
+    var p_smem = k_smem.unsafe_offset(kv_smem_size).unsafe_bitcast[
+        Scalar[k_type]
+    ]()
     comptime p_smem_size = BM * BN
     comptime p_smem_layout = row_major[BM, BK]()
     var p_smem_iter = TileTensorIter[
@@ -2331,7 +2328,7 @@ def mla_decoding_single_batch[
 
     # Each warp group needs separate maximum and sum slots.
     var warp_scratch = TileTensor(
-        (p_smem + BM * BN).bitcast[Scalar[accum_type]](),
+        p_smem.unsafe_offset(BM * BN).unsafe_bitcast[Scalar[accum_type]](),
         row_major[2 * num_warps_n, BM](),
     )
 
@@ -2345,7 +2342,10 @@ def mla_decoding_single_batch[
         Coord(Idx[BM], Idx[BK]), Coord(Idx[depth], Idx[1])
     )
     var q_gmem_iter = TileTensorIter[q_type, type_of(q_gmem_tile_layout), _](
-        q_ptr + q_offset, q_gmem_tile_layout, bound=BM * depth, stride=BK
+        q_ptr.unsafe_offset(q_offset),
+        q_gmem_tile_layout,
+        bound=BM * depth,
+        stride=BK,
     )
 
     var start, end = get_start_and_end_for_partitions[BN](
@@ -2651,7 +2651,9 @@ def mla_decoding_single_batch[
     var o_offset = nope_dim * BM * q_head_group
 
     comptime output_gmem_layout = row_major[BM, nope_dim]()
-    var output_gmem_tile = TileTensor(output_ptr + o_offset, output_gmem_layout)
+    var output_gmem_tile = TileTensor(
+        output_ptr.unsafe_offset(o_offset), output_gmem_layout
+    )
     var output_gmem_warp_tile = output_gmem_tile.tile[WM, WN_O](
         Coord(warp_y, warp_x)
     )
@@ -2664,7 +2666,7 @@ def mla_decoding_single_batch[
         # Reuse a_smem for c tile in smem
         comptime accum_smem_layout = row_major[BM, nope_dim]()
         var accum_smem_tile = TileTensor(
-            q_smem.bitcast[Scalar[output_type]](), accum_smem_layout
+            q_smem.unsafe_bitcast[Scalar[output_type]](), accum_smem_layout
         )
 
         var accum_smem_warp_tile = accum_smem_tile.tile[WM, WN_O](
@@ -2719,7 +2721,7 @@ def _ragged_kv_view(
     `RaggedMHAOperand` buffer field expects.
     """
     return TileTensor(
-        rebind[UnsafePointer[Scalar[src.dtype], ImmutAnyOrigin]](src.ptr),
+        rebind[ImmPointer[Scalar[src.dtype], ImmutAnyOrigin]](src.ptr),
         row_major(Int(src.dim[0]()), Int(src.dim[1]()), Int(src.dim[2]())),
     )
 
@@ -2735,7 +2737,7 @@ def _ragged_offsets_view(
     Mirrors `_ragged_kv_view` for the rank-1 `cache_row_offsets` operand.
     """
     return TileTensor(
-        rebind[UnsafePointer[UInt32, ImmutAnyOrigin]](src.ptr),
+        rebind[ImmPointer[UInt32, ImmutAnyOrigin]](src.ptr),
         row_major(Int(src.dim[0]())),
     )
 
@@ -2752,7 +2754,7 @@ def _ragged_scales_view(
     operand, normalizing to the GENERIC + `ImmutAnyOrigin` scale-buffer form.
     """
     return TileTensor(
-        rebind[UnsafePointer[Scalar[src.dtype], ImmutAnyOrigin]](src.ptr),
+        rebind[ImmPointer[Scalar[src.dtype], ImmutAnyOrigin]](src.ptr),
         row_major(Int(src.dim[0]()), Int(src.dim[1]())),
     )
 
@@ -3595,12 +3597,8 @@ def flare_mla_prefill_dispatch[
             " bfloat16 and float8_e4m3fn"
         )
 
-        var q_device = DeviceBuffer[q.dtype](
-            ctx, q.ptr, q.num_elements(), owning=False
-        )
-        var output_device = DeviceBuffer[output.dtype](
-            ctx, output.ptr, output.num_elements(), owning=False
-        )
+        var q_device = q.to_device_buffer(ctx)
+        var output_device = output.to_device_buffer(ctx)
 
         comptime kernel = mla_prefill[
             config.dtype,
@@ -3671,11 +3669,11 @@ def mla_prefill[
     _ndbuffer_mha_operand: Bool = False,
     v_depth: Int = config.depth,
 ](
-    q_ptr: UnsafePointer[Scalar[q_type], MutAnyOrigin],
+    q_ptr: MutPointer[Scalar[q_type], MutAnyOrigin],
     k: k_t,
     v: v_t,
     k_rope: k_rope_t,
-    output_ptr: UnsafePointer[Scalar[output_type], MutAnyOrigin],
+    output_ptr: MutPointer[Scalar[output_type], MutAnyOrigin],
     scale: Float32,
     batch_size: Int32,
     seq_len_arg: Int32,
@@ -3733,11 +3731,11 @@ def mla_prefill[
             q_depth=q_depth,
             cache_depth=cache_depth,
         ](
-            q_ptr + q_batch_offset,
+            q_ptr.unsafe_offset(q_batch_offset),
             k,
             v,
             k_rope,
-            output_ptr + o_batch_offset,
+            output_ptr.unsafe_offset(o_batch_offset),
             scale,
             seq_len,
             max_seq_len,
@@ -3751,8 +3749,8 @@ def mla_prefill[
         var attention = Attention[
             config, 1, False, q_depth=q_depth, output_depth=v_depth
         ](
-            output_ptr + o_batch_offset,
-            q_ptr + q_batch_offset,
+            output_ptr.unsafe_offset(o_batch_offset),
+            q_ptr.unsafe_offset(q_batch_offset),
             k,
             v,
             mask,
@@ -3898,7 +3896,9 @@ def mla_prefill_single_batch[
     # There is one pre-allocated dynamic shared buffer.
     # Need to explicitly offset key after at query's end.
     comptime k_smem_size = BN * q_depth
-    var k_smem = (q_smem + q_smem_size).bitcast[Scalar[k_type]]()
+    var k_smem = q_smem.unsafe_offset(q_smem_size).unsafe_bitcast[
+        Scalar[k_type]
+    ]()
     comptime k_smem_layout = row_major[BN, BK]()
     var k_smem_iter = TileTensorIter[
         k_type,
@@ -3909,7 +3909,9 @@ def mla_prefill_single_batch[
     ](k_smem, k_smem_layout, bound=k_smem_size)
 
     comptime v_smem_size = BN * depth
-    var v_smem = (k_smem + k_smem_size).bitcast[Scalar[v_type]]()
+    var v_smem = k_smem.unsafe_offset(k_smem_size).unsafe_bitcast[
+        Scalar[v_type]
+    ]()
     comptime v_smem_layout = row_major[BK, depth]()
     var v_smem_iter = TileTensorIter[
         v_type,
@@ -3936,7 +3938,7 @@ def mla_prefill_single_batch[
     var q_gmem_iter = TileTensorIter[
         q_type, type_of(q_gmem_tile_layout), _, masked=True
     ](
-        q_ptr + Int(q_offset),
+        q_ptr.unsafe_offset(Int(q_offset)),
         q_gmem_tile_layout,
         bound=BM * num_heads * q_depth,
         stride=BK,
@@ -3986,7 +3988,9 @@ def mla_prefill_single_batch[
 
     # Shared memory for P = Q * K^t
     # This overlaps key tile but are used at the same time i.e. no race condition.
-    var p_smem = (v_smem + v_smem_size).bitcast[Scalar[v_type]]()
+    var p_smem = v_smem.unsafe_offset(v_smem_size).unsafe_bitcast[
+        Scalar[v_type]
+    ]()
     comptime p_smem_layout = row_major[BM, BK]()
     var p_smem_iter = TileTensorIter[
         v_type,
@@ -3998,7 +4002,7 @@ def mla_prefill_single_batch[
 
     # Each warp group needs separate maximum and sum slots.
     var warp_scratch = TileTensor(
-        (p_smem + (BM * BN if num_warps_n > 1 else 0)).bitcast[
+        p_smem.unsafe_offset(BM * BN if num_warps_n > 1 else 0).unsafe_bitcast[
             Scalar[accum_type]
         ](),
         row_major[2 * num_warps_n, BM](),
@@ -4402,7 +4406,7 @@ def mla_prefill_single_batch[
                 _,
                 address_space=.LOCAL,
             ](
-                p_reg_tile.ptr,
+                p_reg_tile,
                 p_reg_tile_layout,
                 bound=num_m_mmas * num_n_mmas * p_frag_size,
             )
@@ -4444,7 +4448,7 @@ def mla_prefill_single_batch[
         Coord(Idx[BM], Idx[depth]), Coord(Idx[num_heads * depth], Idx[1])
     )
     var output_gmem_tile = TileTensor[linear_idx_type=.int32](
-        output_ptr + Int(output_offset), output_gmem_layout
+        output_ptr.unsafe_offset(Int(output_offset)), output_gmem_layout
     )
     var output_gmem_warp_tile = output_gmem_tile.tile[WM, WN_O](
         Coord(Int(warp_y), Int(warp_x))
@@ -4470,7 +4474,7 @@ def mla_prefill_single_batch[
         # Reuse a_smem for c tile in smem
         comptime accum_smem_layout = row_major[BM, depth]()
         var accum_smem_tile = TileTensor(
-            q_smem.bitcast[Scalar[output_type]](), accum_smem_layout
+            q_smem.unsafe_bitcast[Scalar[output_type]](), accum_smem_layout
         )
 
         var accum_smem_warp_tile = accum_smem_tile.tile[WM, depth](

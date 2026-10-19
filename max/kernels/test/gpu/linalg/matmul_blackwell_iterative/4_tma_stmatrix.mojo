@@ -139,8 +139,8 @@ def kernel_4[
         (c_size * size_of[c_type]()) % 128
     ) == 0, "preserve alignment"
 
-    var b_smem = (a_smem + a_size).bitcast[Scalar[b_type]]()
-    var c_smem = (b_smem + b_size).bitcast[Scalar[c_type]]()
+    var b_smem = a_smem.unsafe_offset(a_size).unsafe_bitcast[Scalar[b_type]]()
+    var c_smem = b_smem.unsafe_offset(b_size).unsafe_bitcast[Scalar[c_type]]()
 
     var a_smem_tile = TileTensor(a_smem, a_smem_layout)
     var b_smem_tile = TileTensor(b_smem, b_smem_layout)
@@ -155,11 +155,13 @@ def kernel_4[
     comptime b_expected_bytes = b_size * size_of[b_type]()
     comptime expected_bytes = a_expected_bytes + b_expected_bytes
 
-    var tma_mbar = (c_smem + c_size).bitcast[SharedMemBarrier]()
-    var mma_mbar = tma_mbar + 1
+    var tma_mbar = c_smem.unsafe_offset(c_size).unsafe_bitcast[
+        SharedMemBarrier
+    ]()
+    var mma_mbar = tma_mbar.unsafe_offset(1)
 
     # Shared memory pointer to hold tensor memory address
-    var ptr_tmem_addr = (mma_mbar + 1).bitcast[UInt32]()
+    var ptr_tmem_addr = mma_mbar.unsafe_offset(1).unsafe_bitcast[UInt32]()
 
     if thread_idx.x == 0:
         tma_mbar[0].init()
@@ -217,7 +219,7 @@ def kernel_4[
                 comptime assert ((a_offset * size_of[a_type]()) % 128) == 0
                 comptime assert ((b_offset * size_of[b_type]()) % 128) == 0
                 var sub_a_smem_tile = TileTensor(
-                    a_smem + a_offset, sub_a_smem_layout
+                    a_smem.unsafe_offset(a_offset), sub_a_smem_layout
                 )
                 a_tma_op.async_copy(
                     sub_a_smem_tile,
@@ -225,7 +227,7 @@ def kernel_4[
                     (i * BK + k, block_idx.y * BM),
                 )
                 var sub_b_smem_tile = TileTensor(
-                    b_smem + b_offset, sub_b_smem_layout
+                    b_smem.unsafe_offset(b_offset), sub_b_smem_layout
                 )
                 b_tma_op.async_copy(
                     sub_b_smem_tile,
@@ -307,12 +309,14 @@ def kernel_4[
                 )
                 var offset = (
                     c_smem_tile.unsafe_ptr()
-                    + st_matrix_swizzle(
-                        st_matrix_layout.__call__[linear_idx_type=.int32](
-                            st_matrix_args
+                    .unsafe_offset(
+                        st_matrix_swizzle(
+                            st_matrix_layout.__call__[linear_idx_type=.int32](
+                                st_matrix_args
+                            )
                         )
                     )
-                    + BM * TMA_BN * tma_n
+                    .unsafe_offset(BM * TMA_BN * tma_n)
                 )
 
                 var d_reg_f32_packed = bitcast[.float32, 4](d_reg)
@@ -327,14 +331,15 @@ def kernel_4[
     if elect_one_warp and thread_idx.x < BN // TMA_BN:
         fence_async_view_proxy()
 
-        var smem_offset = c_smem_tile.unsafe_ptr() + BM * TMA_BN * thread_idx.x
-
-        var c_tma_tile = TileTensor(
-            smem_offset,
-            row_major[
-                c_tile_shape.element_types[0].static_value,
-                c_tile_shape.element_types[1].static_value,
-            ](),
+        var c_tma_tile = (
+            c_smem_tile.reshape(row_major[BM * (BN // TMA_BN), TMA_BN]())
+            .tile[BM, TMA_BN](Int(thread_idx.x), 0)
+            .reshape(
+                row_major[
+                    c_tile_shape.element_types[0].static_value,
+                    c_tile_shape.element_types[1].static_value,
+                ]()
+            )
         )
 
         c_tma_op.async_store(
@@ -612,9 +617,8 @@ def test_blackwell_kernel_4[
         comptime rtol = 1e-2
 
         assert_almost_equal(
-            c_host.unsafe_ptr(),
-            c_host_ref.unsafe_ptr(),
-            M * N,
+            c_host.as_span(),
+            c_host_ref.as_span(),
             atol=0.0001,
             rtol=rtol,
         )

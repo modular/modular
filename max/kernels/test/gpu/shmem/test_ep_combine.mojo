@@ -68,7 +68,7 @@ def legalize_topk_ids[
     n_experts: Int, top_k: Int
 ](topk_ids: Pointer[mut=True, Int32, _], n_tokens: Int):
     for tok_id in range(n_tokens):
-        var topk_ids_for_token = topk_ids + tok_id * top_k
+        var topk_ids_for_token = topk_ids.unsafe_offset(tok_id * top_k)
 
         # The top-k ids for a token should be unique. If not, we will assign a
         # random id to the duplicate id.
@@ -81,7 +81,12 @@ def legalize_topk_ids[
 
         var duplicate_idx = is_duplicate()
         while duplicate_idx != -1:
-            randint(topk_ids_for_token + duplicate_idx, 1, 0, n_experts - 1)
+            randint(
+                topk_ids_for_token.unsafe_offset(duplicate_idx),
+                1,
+                0,
+                n_experts - 1,
+            )
             duplicate_idx = is_duplicate()
 
 
@@ -403,13 +408,13 @@ def test_combine[
 
             # Check the results
             for token_idx in range(n_tokens_per_rank):
-                var ref_token = host_input_tokens + token_idx * hidden_size
+                var ref_token = host_input_tokens.unsafe_offset(
+                    token_idx * hidden_size
+                )
                 for topk_idx in range(top_k):
-                    var received_token = (
-                        host_output_2
-                        + token_idx * top_k * hidden_size
-                        + topk_idx * hidden_size
-                    )
+                    var received_token = host_output_2.unsafe_offset(
+                        token_idx * top_k * hidden_size
+                    ).unsafe_offset(topk_idx * hidden_size)
                     for i in range(hidden_size):
                         assert_equal(
                             received_token[i],

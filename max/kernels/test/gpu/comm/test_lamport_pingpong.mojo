@@ -111,7 +111,7 @@ def writer_kernel[
     if slot >= num_slots:
         return
 
-    var slot_ptr = peer_buf + slot * PACK_WIDTH
+    var slot_ptr = peer_buf.unsafe_offset(slot * PACK_WIDTH)
     var sentinel = set_neg_zero[DTYPE, PACK_WIDTH]()
 
     for g in range(1, ITERS + 1):
@@ -159,7 +159,7 @@ def reader_kernel[
     if slot >= num_slots:
         return
 
-    var slot_ptr = own_buf + slot * PACK_WIDTH
+    var slot_ptr = own_buf.unsafe_offset(slot * PACK_WIDTH)
     var torn = Int64(0)
     var last_g = Int64(0)
 

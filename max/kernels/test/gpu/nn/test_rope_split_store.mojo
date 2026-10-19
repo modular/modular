@@ -273,8 +273,8 @@ def execute_test[
     var qkv_dev_ptr = qkv_device.unsafe_ptr()
 
     # Store raw K and V to unfused cache
-    var k_ptr = qkv_dev_ptr + q_dim_val
-    var v_ptr = qkv_dev_ptr + q_dim_val + k_dim_val
+    var k_ptr = qkv_dev_ptr.unsafe_offset(q_dim_val)
+    var v_ptr = qkv_dev_ptr.unsafe_offset(q_dim_val).unsafe_offset(k_dim_val)
     var k_stride0 = combined_dim
     var v_stride0 = combined_dim
     var unfused_k_cache = unfused_kv_collection.get_key_cache(layer_idx)
@@ -288,21 +288,17 @@ def execute_test[
         width: Int, alignment: Int
     ](idx: Coord) {var k_ptr, var k_stride0} -> SIMD[dtype, width]:
         var flat = (
-            Int(idx[0].value()) * k_stride0
-            + Int(idx[1].value()) * head_dim
-            + Int(idx[2].value())
+            Int(idx[0]) * k_stride0 + Int(idx[1]) * head_dim + Int(idx[2])
         )
-        return (k_ptr + flat).load[width=width]()
+        return k_ptr.unsafe_offset(flat).load[width=width]()
 
     def v_load_fn[
         width: Int, alignment: Int
     ](idx: Coord) {var v_ptr, var v_stride0} -> SIMD[dtype, width]:
         var flat = (
-            Int(idx[0].value()) * v_stride0
-            + Int(idx[1].value()) * head_dim
-            + Int(idx[2].value())
+            Int(idx[0]) * v_stride0 + Int(idx[1]) * head_dim + Int(idx[2])
         )
-        return (v_ptr + flat).load[width=width]()
+        return v_ptr.unsafe_offset(flat).load[width=width]()
 
     kv_cache_store_ragged[target="gpu"](
         unfused_k_cache,
@@ -327,8 +323,8 @@ def execute_test[
     var q_contig_host_ptr = alloc[Scalar[dtype]](q_contig_size)
     for t in range(total_length):
         unsafe_memcpy(
-            dest=q_contig_host_ptr + t * q_dim_val,
-            src=qkv_host_ptr + t * combined_dim,
+            dest=q_contig_host_ptr.unsafe_offset(t * q_dim_val),
+            src=qkv_host_ptr.unsafe_offset(t * combined_dim),
             count=q_dim_val,
         )
     var q_contig_device = ctx.enqueue_create_buffer[dtype](q_contig_size)
@@ -690,8 +686,8 @@ def execute_test_with_position_ids[
     # =====================================================================
     var qkv_dev_ptr = qkv_device.unsafe_ptr()
 
-    var k_ptr = qkv_dev_ptr + q_dim_val
-    var v_ptr = qkv_dev_ptr + q_dim_val + k_dim_val
+    var k_ptr = qkv_dev_ptr.unsafe_offset(q_dim_val)
+    var v_ptr = qkv_dev_ptr.unsafe_offset(q_dim_val).unsafe_offset(k_dim_val)
     var k_stride0 = combined_dim
     var v_stride0 = combined_dim
     var unfused_k_cache = unfused_kv_collection.get_key_cache(layer_idx)
@@ -705,21 +701,17 @@ def execute_test_with_position_ids[
         width: Int, alignment: Int
     ](idx: Coord) {var k_ptr, var k_stride0} -> SIMD[dtype, width]:
         var flat = (
-            Int(idx[0].value()) * k_stride0
-            + Int(idx[1].value()) * head_dim
-            + Int(idx[2].value())
+            Int(idx[0]) * k_stride0 + Int(idx[1]) * head_dim + Int(idx[2])
         )
-        return (k_ptr + flat).load[width=width]()
+        return k_ptr.unsafe_offset(flat).load[width=width]()
 
     def v_load_fn[
         width: Int, alignment: Int
     ](idx: Coord) {var v_ptr, var v_stride0} -> SIMD[dtype, width]:
         var flat = (
-            Int(idx[0].value()) * v_stride0
-            + Int(idx[1].value()) * head_dim
-            + Int(idx[2].value())
+            Int(idx[0]) * v_stride0 + Int(idx[1]) * head_dim + Int(idx[2])
         )
-        return (v_ptr + flat).load[width=width]()
+        return v_ptr.unsafe_offset(flat).load[width=width]()
 
     kv_cache_store_ragged[target="gpu"](
         unfused_k_cache,
@@ -741,8 +733,8 @@ def execute_test_with_position_ids[
     var q_contig_host_ptr = alloc[Scalar[dtype]](q_contig_size)
     for t in range(total_length):
         unsafe_memcpy(
-            dest=q_contig_host_ptr + t * q_dim_val,
-            src=qkv_host_ptr + t * combined_dim,
+            dest=q_contig_host_ptr.unsafe_offset(t * q_dim_val),
+            src=qkv_host_ptr.unsafe_offset(t * combined_dim),
             count=q_dim_val,
         )
     var q_contig_device = ctx.enqueue_create_buffer[dtype](q_contig_size)

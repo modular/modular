@@ -268,7 +268,7 @@ def _run_8x8_bias_case[
             coords.rank == 2
         ), "the matmul epilogue contract is rank 2"
         # Kernel invokes with `dt == c_type`; rebind to add the c_type bias.
-        var bias = (bias_ptr + Int(coords[1].value())).load[width=w]()
+        var bias = bias_ptr.unsafe_offset(Int(coords[1])).load[width=w]()
         return rebind[SIMD[dt, w]](rebind[SIMD[c_type, w]](val) + bias)
 
     comptime kernel = gemm_kernel_apple_8x8[
@@ -861,7 +861,7 @@ def _run_split_k_case[
             comptime assert (
                 coords.rank == 2
             ), "the matmul epilogue contract is rank 2"
-            var b = (bias_ptr + Int(coords[1].value())).load[width=w]()
+            var b = bias_ptr.unsafe_offset(Int(coords[1])).load[width=w]()
             return rebind[SIMD[dt, w]](rebind[SIMD[c_type, w]](val) + b)
 
         if splits > 0:
@@ -1754,7 +1754,7 @@ def _run_bias_epilogue_test[
             coords.rank == 2
         ), "the matmul epilogue contract is rank 2"
         # Kernel invokes with `dt == c_type`; rebind to add the c_type bias.
-        var b = (bias_ptr + Int(coords[1].value())).load[width=w]()
+        var b = bias_ptr.unsafe_offset(Int(coords[1])).load[width=w]()
         return rebind[SIMD[dt, w]](rebind[SIMD[c_type, w]](val) + b)
 
     # Mojo `comptime if` does not lift `var` bindings out of branches, so
@@ -2047,7 +2047,7 @@ def test_kernel_128_nt_fp16_fp16_bias_relu_compose_epilogue(
             coords.rank == 2
         ), "the matmul epilogue contract is rank 2"
         var v_fp16 = rebind[SIMD[.float16, w]](val)
-        var b = (bias_ptr + Int(coords[1].value())).load[width=w]()
+        var b = bias_ptr.unsafe_offset(Int(coords[1])).load[width=w]()
         var biased = v_fp16 + b
         return rebind[SIMD[dt, w]](max(biased, SIMD[.float16, w](0)))
 
@@ -2130,7 +2130,7 @@ def test_kernel_ragged_100x100x97_nt_fp16_fp16_bias_epilogue(
             coords.rank == 2
         ), "the matmul epilogue contract is rank 2"
         var v_fp16 = rebind[SIMD[.float16, w]](val)
-        var b = (bias_ptr + Int(coords[1].value())).load[width=w]()
+        var b = bias_ptr.unsafe_offset(Int(coords[1])).load[width=w]()
         return rebind[SIMD[dt, w]](v_fp16 + b)
 
     enqueue_apple_matmul[
@@ -2268,7 +2268,7 @@ def test_kernel_64x130x64_nn_fp16_fp16_oddn_bias_epilogue(
         comptime assert (
             coords.rank == 2
         ), "the matmul epilogue contract is rank 2"
-        var b = (bias_ptr + Int(coords[1].value())).load[width=w]()
+        var b = bias_ptr.unsafe_offset(Int(coords[1])).load[width=w]()
         var v_c = rebind[SIMD[.float16, w]](val)
         return rebind[SIMD[dt, w]](v_c + b)
 
@@ -2434,7 +2434,7 @@ def _run_gemv_case[
         comptime assert (
             coords.rank == 2
         ), "the matmul epilogue contract is rank 2"
-        var col = Int(coords[1].value())
+        var col = Int(coords[1])
         var out = val.cast[.float32]() + bias_ptr.load[width=width](col)
         return out.cast[dtype]()
 

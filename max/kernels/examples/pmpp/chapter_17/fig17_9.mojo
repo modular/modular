@@ -19,8 +19,8 @@ from std.math import ceildiv
 
 def spmv_csr_kernel(
     csrMatrix: CSRMatrix,
-    x: UnsafePointer[Float32, ImmutAnyOrigin],
-    y: UnsafePointer[Float32, MutAnyOrigin],
+    x: ImmPointer[Float32, ImmutAnyOrigin],
+    y: MutPointer[Float32, MutAnyOrigin],
 ):
     var row = block_idx.x * block_dim.x + thread_idx.x
     if row < csrMatrix.numRows:

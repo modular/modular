@@ -945,10 +945,7 @@ def mla_prefill_branch_fp8[
             q_fp8_buf,
             row_major(seq_len, Idx[num_heads], Idx[q_head_dim]),
         )
-        var q_view = TileTensor(
-            q.as_imm().ptr.bitcast[BFloat16](),
-            row_major(seq_len, Idx[num_heads], Idx[q_head_dim]),
-        )
+        var q_view = q.as_imm().bitcast[.bfloat16]()
         convert_bf16_to_fp8_e4m3fn(q_view, q_fp8, ctx)
 
         var k_fp8_buf = ctx.enqueue_create_buffer[.float8_e4m3fn](
@@ -958,10 +955,7 @@ def mla_prefill_branch_fp8[
             k_fp8_buf,
             row_major((buffer_length, Idx[num_heads], Idx[qk_nope_head_dim])),
         )
-        var k_view = TileTensor(
-            k.as_imm().ptr.bitcast[BFloat16](),
-            row_major((buffer_length, Idx[num_heads], Idx[qk_nope_head_dim])),
-        )
+        var k_view = k.as_imm().bitcast[.bfloat16]()
         convert_bf16_to_fp8_e4m3fn(k_view, k_fp8, ctx)
 
         var v_fp8_buf = ctx.enqueue_create_buffer[.float8_e4m3fn](
@@ -971,10 +965,7 @@ def mla_prefill_branch_fp8[
             v_fp8_buf,
             row_major(buffer_length, Idx[num_heads], Idx[v_head_dim]),
         )
-        var v_view = TileTensor(
-            v.as_imm().ptr.bitcast[BFloat16](),
-            row_major(buffer_length, Idx[num_heads], Idx[v_head_dim]),
-        )
+        var v_view = v.as_imm().bitcast[.bfloat16]()
         convert_bf16_to_fp8_e4m3fn(v_view, v_fp8, ctx)
 
         generic_flare_mla_prefill_kv_cache_ragged[
@@ -1146,10 +1137,10 @@ def _amd_sparse_mla_gather_kv_rows[
     rows_per_block: Int,
 ](
     k_cache: CacheT,
-    blocks_base: UnsafePointer[Scalar[CacheT.dtype], MutAnyOrigin],
-    d_indices: UnsafePointer[Int32, MutAnyOrigin],
-    topk_lengths: UnsafePointer[Int32, MutAnyOrigin],
-    scratch: UnsafePointer[Scalar[CacheT.dtype], MutAnyOrigin],
+    blocks_base: MutPointer[Scalar[CacheT.dtype], MutAnyOrigin],
+    d_indices: MutPointer[Int32, MutAnyOrigin],
+    topk_lengths: MutPointer[Int32, MutAnyOrigin],
+    scratch: MutPointer[Scalar[CacheT.dtype], MutAnyOrigin],
     indices_stride: Int32,
 ):
     """Gathers selected MLA latent rows from a paged KV cache into scratch.
@@ -1178,12 +1169,16 @@ def _amd_sparse_mla_gather_kv_rows[
     if col < indices_stride_i:
         var vec_off = thread_idx.x * _AMD_SPARSE_MLA_GATHER_VEC
         var slot = batch_idx * indices_stride_i + col
-        var dst = scratch + slot * k_cache_dim + vec_off
+        var dst = scratch.unsafe_offset(slot * k_cache_dim).unsafe_offset(
+            vec_off
+        )
 
         var encoded = d_indices[slot]
         if col < Int(topk_lengths[batch_idx]) and encoded >= 0:
             var virtual_row = Int(k_cache.get_tma_row(encoded))
-            var src = blocks_base + virtual_row * k_cache_dim + vec_off
+            var src = blocks_base.unsafe_offset(
+                virtual_row * k_cache_dim
+            ).unsafe_offset(vec_off)
             dst.store(src.load[width=_AMD_SPARSE_MLA_GATHER_VEC]())
         else:
             dst.store(SIMD[CacheT.dtype, _AMD_SPARSE_MLA_GATHER_VEC](0))
@@ -1196,11 +1191,11 @@ comptime _AMD_SPARSE_MLA_ROW_VALID_LENGTHS_THREADS = 256
 def _amd_sparse_mla_row_valid_lengths[
     BLOCK_SIZE: Int = _AMD_SPARSE_MLA_ROW_VALID_LENGTHS_THREADS,
 ](
-    d_indices: UnsafePointer[Int32, MutAnyOrigin],
-    topk_lengths: UnsafePointer[Int32, MutAnyOrigin],
-    valid_lengths: UnsafePointer[UInt32, MutAnyOrigin],
+    d_indices: MutPointer[Int32, MutAnyOrigin],
+    topk_lengths: MutPointer[Int32, MutAnyOrigin],
+    valid_lengths: MutPointer[UInt32, MutAnyOrigin],
     indices_stride: Int32,
-    zero_row: UnsafePointer[UInt8, MutAnyOrigin],
+    zero_row: MutPointer[UInt8, MutAnyOrigin],
     zero_row_bytes: Int32,
 ):
     """Writes each token's valid prefix length for `PaddingMask`.
@@ -1258,10 +1253,10 @@ def _amd_sparse_mla_row_valid_lengths[
 def _amd_sparse_mla_compact_indices[
     BLOCK_SIZE: Int = _AMD_SPARSE_MLA_ROW_VALID_LENGTHS_THREADS,
 ](
-    d_indices: UnsafePointer[Int32, MutAnyOrigin],
-    topk_lengths: UnsafePointer[Int32, MutAnyOrigin],
-    compact_indices: UnsafePointer[Int32, MutAnyOrigin],
-    valid_lengths: UnsafePointer[UInt32, MutAnyOrigin],
+    d_indices: MutPointer[Int32, MutAnyOrigin],
+    topk_lengths: MutPointer[Int32, MutAnyOrigin],
+    compact_indices: MutPointer[Int32, MutAnyOrigin],
+    valid_lengths: MutPointer[UInt32, MutAnyOrigin],
     indices_stride: Int32,
 ):
     """Moves each row's valid indices to the front and records their count.
@@ -1355,22 +1350,22 @@ def mla_decode_branch_fp8[
     scalar_args_buf: TileTensor[.int64, address_space=.GENERIC, ...],
     kv_input_fn: KVInputFnType,
     ctx: DeviceContext,
-    d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+    d_indices: OptionalReg[MutPointer[Int32, MutAnyOrigin]] = None,
     indices_stride: Int = 0,
     topk_lengths: TopkLengthsPtrType = null_pointer[TopkLengthsPtrType](),
     attn_sink_ptr: AttnSinkPtrType = null_pointer[AttnSinkPtrType](),
     extra_k: OptionalReg[collection_t.CacheType] = None,
-    extra_d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+    extra_d_indices: OptionalReg[MutPointer[Int32, MutAnyOrigin]] = None,
     extra_indices_stride: Int = 0,
     extra_topk_lengths: TopkLengthsPtrType = unread_pointer[
         TopkLengthsPtrType
     ](),
-    extra_scales_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]] = None,
+    extra_scales_ptr: OptionalReg[MutPointer[Float32, MutAnyOrigin]] = None,
     # Capturable-graph scalar forwarded from the MoGG op input list.
     num_partitions_in: Optional[Int] = None,
     # Logical sparse indices for position-based causal masking; `None` keeps
     # the prior slot-count behavior. See mla_decode_utils.mojo.
-    logical_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+    logical_indices: OptionalReg[MutPointer[Int32, MutAnyOrigin]] = None,
     # See flare_mla_decoding.
     selection_lag: Int = 0,
 ) raises:
@@ -1593,7 +1588,7 @@ def mla_decode_branch_fp8[
         TileLayout(
             (seq_len, Idx[num_heads], Idx[qk_nope_head_dim]),
             (Idx[num_heads * q_head_dim], Idx[q_head_dim], Idx[1]),
-        ),
+        )
     )
 
     # Then create a view of the mla_decode_input tensor that only contains the
@@ -1602,7 +1597,7 @@ def mla_decode_branch_fp8[
         TileLayout(
             (Idx[num_heads], seq_len, Idx[kv_latent_dim]),
             (Idx[k_cache_dim], Idx[num_heads * k_cache_dim], Idx[1]),
-        ),
+        )
     )
 
     # Proceed with the fp8 batched matmul
@@ -1672,7 +1667,7 @@ def mla_decode_branch_fp8[
         # The graph omits `topk_lengths` when every token keeps the full top-k
         # stride; the gather reads a per-token length, so hand it that form.
         var full_topk: Optional[DeviceBuffer[DType.int32]] = None
-        var decode_topk_lengths: UnsafePointer[Int32, MutAnyOrigin]
+        var decode_topk_lengths: MutPointer[Int32, MutAnyOrigin]
         comptime if TopkLengthsPtrType.is_null:
             full_topk = ctx.enqueue_create_buffer[DType.int32](batch_size)
             full_topk.value().enqueue_fill(Int32(indices_stride))
@@ -1682,7 +1677,7 @@ def mla_decode_branch_fp8[
                 .unsafe_origin_cast[MutAnyOrigin]()
             )
         else:
-            decode_topk_lengths = rebind[UnsafePointer[Int32, MutAnyOrigin]](
+            decode_topk_lengths = rebind[MutPointer[Int32, MutAnyOrigin]](
                 as_optional_reg(topk_lengths).value()
             )
 
@@ -1734,7 +1729,7 @@ def mla_decode_branch_fp8[
                     Idx[k_cache_dim],
                     Idx[1],
                 ),
-            ),
+            )
         )
         var raw_output_padded = raw_output.reshape(
             TileLayout(
@@ -1745,7 +1740,7 @@ def mla_decode_branch_fp8[
                     Idx[kv_latent_dim],
                     Idx[1],
                 ),
-            ),
+            )
         )
 
         # `topk_lengths` is the constant `index_topk`, so masking with it marks
@@ -1762,7 +1757,7 @@ def mla_decode_branch_fp8[
             decode_topk_lengths,
             valid_lengths_buf.unsafe_ptr(),
             Int32(indices_stride),
-            UnsafePointer[UInt8, MutAnyOrigin].unsafe_dangling(),
+            MutPointer[UInt8, MutAnyOrigin].unsafe_dangling(),
             Int32(0),
             grid_dim=(batch_size, 1, 1),
             block_dim=(_AMD_SPARSE_MLA_ROW_VALID_LENGTHS_THREADS, 1, 1),
@@ -1824,7 +1819,7 @@ def mla_decode_branch_fp8[
         TileLayout(
             (Idx[num_heads], seq_len, Idx[v_head_dim]),
             (Idx[v_head_dim], Idx[num_heads * v_head_dim], Idx[1]),
-        ),
+        )
     )
 
     # Another batched matmul to project the raw output to the original space
@@ -1874,9 +1869,9 @@ def mla_prefill_branch_sparse_fp8[
     scalar_args_buf: TileTensor[.int64, address_space=.GENERIC, ...],
     kv_input_fn: KVInputFnType,
     ctx: DeviceContext,
-    d_indices: UnsafePointer[Int32, MutAnyOrigin],
-    topk_lengths: UnsafePointer[Int32, MutAnyOrigin],
-    attn_sink_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]],
+    d_indices: MutPointer[Int32, MutAnyOrigin],
+    topk_lengths: MutPointer[Int32, MutAnyOrigin],
+    attn_sink_ptr: OptionalReg[MutPointer[Float32, MutAnyOrigin]],
 ) raises:
     """Sparse MLA prefill branch (DSv3.2/GLM absorbed shape, FP8 weights).
 
@@ -1953,13 +1948,13 @@ def mla_prefill_branch_sparse_fp8[
         TileLayout(
             (seq_len, Idx[num_heads], Idx[qk_nope_head_dim]),
             (Idx[num_heads * q_head_dim], Idx[q_head_dim], Idx[1]),
-        ),
+        )
     )
     var mla_decode_input_nope = mla_decode_input.reshape(
         TileLayout(
             (Idx[num_heads], seq_len, Idx[kv_latent_dim]),
             (Idx[k_cache_dim], Idx[num_heads * k_cache_dim], Idx[1]),
-        ),
+        )
     )
     quantize_and_bmm_fp8_helper[
         m_scale_granularity=m_scale_granularity,
@@ -2005,16 +2000,16 @@ def mla_prefill_branch_sparse_fp8[
     # invalid `-1` slots become 0xFFFFFFFF and are rejected by the kernel's
     # `idx >= 0` gather producer.
     var indices_tt = TileTensor(
-        d_indices.bitcast[UInt32](),
+        d_indices.unsafe_bitcast[UInt32](),
         row_major(seq_len * indices_stride),
     )
     var topk_lengths_tt = TileTensor(
-        topk_lengths.bitcast[UInt32](),
+        topk_lengths.unsafe_bitcast[UInt32](),
         row_major(seq_len),
     )
-    var attn_sink_opt = Optional[UnsafePointer[Float32, ImmutAnyOrigin]](None)
+    var attn_sink_opt = Optional[ImmPointer[Float32, ImmutAnyOrigin]](None)
     if case .Some(attn_sink_ptr) = attn_sink_ptr:
-        attn_sink_opt = UnsafePointer[Float32, ImmutAnyOrigin](attn_sink_ptr)
+        attn_sink_opt = ImmPointer[Float32, ImmutAnyOrigin](attn_sink_ptr)
 
     var k_cache = kv_collection.get_key_cache(Int(layer_idx))
 
@@ -2033,7 +2028,7 @@ def mla_prefill_branch_sparse_fp8[
                     Idx[k_cache_dim],
                     Idx[1],
                 ),
-            ),
+            )
         )
         var raw_output_padded = raw_output.reshape(
             TileLayout(
@@ -2044,7 +2039,7 @@ def mla_prefill_branch_sparse_fp8[
                     Idx[kv_latent_dim],
                     Idx[1],
                 ),
-            ),
+            )
         )
         # `topk_lengths` is the constant `index_topk`, so derive each gathered
         # row's real length from its `-1` suffix; confined to this AMD arm.
@@ -2065,7 +2060,7 @@ def mla_prefill_branch_sparse_fp8[
             topk_lengths,
             valid_lengths_buf.unsafe_ptr(),
             Int32(indices_stride),
-            zero_row_buf.unsafe_ptr().bitcast[UInt8](),
+            zero_row_buf.unsafe_ptr().unsafe_bitcast[UInt8](),
             Int32(k_cache_dim * size_of[type_of(k_cache).dtype]()),
             grid_dim=(batch_size, 1, 1),
             block_dim=(_AMD_SPARSE_MLA_ROW_VALID_LENGTHS_THREADS, 1, 1),
@@ -2162,7 +2157,7 @@ def mla_prefill_branch_sparse_fp8[
                 # scale_block_size=0 and scales_ptr is a non-null dummy).
                 var dummy_scales = (
                     raw_output_buf.unsafe_ptr()
-                    .bitcast[Float32]()
+                    .unsafe_bitcast[Float32]()
                     .as_unsafe_any_origin()
                 )
                 mla_sm100_prefill_sparse_fp8[
@@ -2203,7 +2198,7 @@ def mla_prefill_branch_sparse_fp8[
         TileLayout(
             (Idx[num_heads], seq_len, Idx[v_head_dim]),
             (Idx[v_head_dim], Idx[num_heads * v_head_dim], Idx[1]),
-        ),
+        )
     )
     quantize_and_bmm_fp8_helper[
         dtype=dtype,
@@ -2225,9 +2220,9 @@ def mla_prefill_branch_sparse_fp8[
 def _sparse_prefill_rows[
     physical_indices: Bool
 ](
-    d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
-    prefill_d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
-) raises -> UnsafePointer[Int32, MutAnyOrigin]:
+    d_indices: OptionalReg[MutPointer[Int32, MutAnyOrigin]],
+    prefill_d_indices: OptionalReg[MutPointer[Int32, MutAnyOrigin]],
+) raises -> MutPointer[Int32, MutAnyOrigin]:
     """Returns the paged physical rows the sparse prefill branch gathers."""
     if case .Some(prefill_d_indices) = prefill_d_indices:
         return prefill_d_indices
@@ -2318,20 +2313,20 @@ def mla_prefill_decode_graph_fp8[
     scalar_args_buf: TileTensor[.int64, address_space=.GENERIC, ...],
     kv_input_fn: KVInputFnType,
     ctx: DeviceContext,
-    d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+    d_indices: OptionalReg[MutPointer[Int32, MutAnyOrigin]] = None,
     indices_stride: Int = 0,
     topk_lengths: TopkLengthsPtrType = null_pointer[TopkLengthsPtrType](),
     attn_sink_ptr: AttnSinkPtrType = null_pointer[AttnSinkPtrType](),
     extra_k: OptionalReg[collection_t.CacheType] = None,
-    extra_d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+    extra_d_indices: OptionalReg[MutPointer[Int32, MutAnyOrigin]] = None,
     extra_indices_stride: Int = 0,
     extra_topk_lengths: TopkLengthsPtrType = unread_pointer[
         TopkLengthsPtrType
     ](),
-    extra_scales_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]] = None,
+    extra_scales_ptr: OptionalReg[MutPointer[Float32, MutAnyOrigin]] = None,
     # Capturable-graph scalar forwarded from the MoGG op input list.
     num_partitions_in: Optional[Int] = None,
-    prefill_d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+    prefill_d_indices: OptionalReg[MutPointer[Int32, MutAnyOrigin]] = None,
     selection_lag: Int = 0,
 ) raises:
     """
@@ -2514,7 +2509,7 @@ def mla_prefill_decode_graph_fp8[
             # branch on the sink at runtime, so hand them that form. Absent
             # lengths mean every token keeps the full top-k stride.
             var full_topk: Optional[DeviceBuffer[DType.int32]] = None
-            var prefill_topk_lengths: UnsafePointer[Int32, MutAnyOrigin]
+            var prefill_topk_lengths: MutPointer[Int32, MutAnyOrigin]
             comptime if TopkLengthsPtrType.is_null:
                 full_topk = ctx.enqueue_create_buffer[DType.int32](Int(seq_len))
                 full_topk.value().enqueue_fill(Int32(sparse_indices_stride))
@@ -2524,11 +2519,11 @@ def mla_prefill_decode_graph_fp8[
                     .unsafe_origin_cast[MutAnyOrigin]()
                 )
             else:
-                prefill_topk_lengths = rebind[
-                    UnsafePointer[Int32, MutAnyOrigin]
-                ](as_optional_reg(topk_lengths).value())
+                prefill_topk_lengths = rebind[MutPointer[Int32, MutAnyOrigin]](
+                    as_optional_reg(topk_lengths).value()
+                )
             var prefill_attn_sink = rebind[
-                OptionalReg[UnsafePointer[Float32, MutAnyOrigin]]
+                OptionalReg[MutPointer[Float32, MutAnyOrigin]]
             ](as_optional_reg(attn_sink_ptr))
             # Sparse MLA prefill for BOTH bf16 and fp8 latent caches: the
             # branch comptime-dispatches the attention kernel on the cache
@@ -3007,7 +3002,7 @@ def mla_decode_branch_bf16[
     scalar_args_buf: TileTensor[.int64, address_space=.GENERIC, ...],
     kv_input_fn: KVInputFnType,
     ctx: DeviceContext,
-    d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+    d_indices: OptionalReg[MutPointer[Int32, MutAnyOrigin]] = None,
     indices_stride: Int = 0,
     topk_lengths: TopkLengthsPtrType = null_pointer[TopkLengthsPtrType](),
     attn_sink_ptr: AttnSinkPtrType = null_pointer[AttnSinkPtrType](),
@@ -3176,7 +3171,7 @@ def mla_decode_branch_bf16[
         TileLayout(
             (Idx[num_heads], seq_len, Idx[qk_nope_head_dim]),
             (Idx[q_head_dim], Idx[num_heads * q_head_dim], Idx[1]),
-        ),
+        )
     )
 
     # Then create a view of the mla_decode_input tensor that only contains the
@@ -3185,7 +3180,7 @@ def mla_decode_branch_bf16[
         TileLayout(
             (Idx[num_heads], seq_len, Idx[kv_latent_dim]),
             (Idx[k_cache_dim], Idx[num_heads * k_cache_dim], Idx[1]),
-        ),
+        )
     )
 
     _batched_matmul_gpu[transpose_b=True](
@@ -3224,7 +3219,7 @@ def mla_decode_branch_bf16[
 
         var k_cache = kv_collection.get_key_cache(Int(layer_idx))
         var k_cache_blocks_base = k_cache.blocks_raw_ptr()
-        var topk_lengths_ptr = rebind[UnsafePointer[Int32, MutAnyOrigin]](
+        var topk_lengths_ptr = rebind[MutPointer[Int32, MutAnyOrigin]](
             as_optional_reg(topk_lengths).value()
         )
 
@@ -3267,8 +3262,8 @@ def mla_decode_branch_bf16[
             ](
                 k_cache,
                 k_cache_blocks_base,
-                compact_buf.unsafe_ptr() + token0 * indices_stride,
-                topk_lengths_ptr + token0,
+                compact_buf.unsafe_ptr().unsafe_offset(token0 * indices_stride),
+                topk_lengths_ptr.unsafe_offset(token0),
                 scratch_buf.unsafe_ptr(),
                 Int32(indices_stride),
                 grid_dim=(
@@ -3287,7 +3282,9 @@ def mla_decode_branch_bf16[
                 row_major(tokens, indices_stride, Idx[1], Idx[k_cache_dim]),
             )
             var q_tokens = TileTensor(
-                mla_decode_input.ptr + token0 * num_heads * k_cache_dim,
+                mla_decode_input.ptr.unsafe_offset(
+                    token0 * num_heads * k_cache_dim
+                ),
                 TileLayout(
                     (tokens, Idx[1], Idx[num_heads], Idx[k_cache_dim]),
                     (
@@ -3299,7 +3296,9 @@ def mla_decode_branch_bf16[
                 ),
             )
             var out_tokens = TileTensor(
-                raw_output.ptr + token0 * num_heads * kv_latent_dim,
+                raw_output.ptr.unsafe_offset(
+                    token0 * num_heads * kv_latent_dim
+                ),
                 TileLayout(
                     (tokens, Idx[1], Idx[num_heads], Idx[kv_latent_dim]),
                     (
@@ -3311,7 +3310,8 @@ def mla_decode_branch_bf16[
                 ),
             )
             var lengths_tt = TileTensor(
-                valid_lengths_buf.unsafe_ptr() + token0, row_major(tokens)
+                valid_lengths_buf.unsafe_ptr().unsafe_offset(token0),
+                row_major(tokens),
             )
             # The partition count from the graph is sized for the request
             # batch, not this token chunk, so let the AMD heuristic pick.
@@ -3375,7 +3375,7 @@ def mla_decode_branch_bf16[
         TileLayout(
             (Idx[num_heads], seq_len, Idx[v_head_dim]),
             (Idx[v_head_dim], Idx[num_heads * v_head_dim], Idx[1]),
-        ),
+        )
     )
 
     _batched_matmul_gpu[transpose_b=True](output_t, raw_output_t, w_uv, ctx)
@@ -3409,9 +3409,9 @@ def mla_prefill_branch_sparse_bf16[
     w_uv: TileTensor[.bfloat16, address_space=.GENERIC, ...],
     kv_input_fn: KVInputFnType,
     ctx: DeviceContext,
-    d_indices: UnsafePointer[Int32, MutAnyOrigin],
-    topk_lengths: UnsafePointer[Int32, MutAnyOrigin],
-    attn_sink_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]],
+    d_indices: MutPointer[Int32, MutAnyOrigin],
+    topk_lengths: MutPointer[Int32, MutAnyOrigin],
+    attn_sink_ptr: OptionalReg[MutPointer[Float32, MutAnyOrigin]],
 ) raises:
     """Sparse MLA prefill branch (DSv3.2/GLM absorbed shape, BF16 weights).
 
@@ -3477,13 +3477,13 @@ def mla_prefill_branch_sparse_bf16[
         TileLayout(
             (Idx[num_heads], seq_len, Idx[qk_nope_head_dim]),
             (Idx[q_head_dim], Idx[num_heads * q_head_dim], Idx[1]),
-        ),
+        )
     )
     var mla_decode_input_nope = mla_decode_input.reshape(
         TileLayout(
             (Idx[num_heads], seq_len, Idx[kv_latent_dim]),
             (Idx[k_cache_dim], Idx[num_heads * k_cache_dim], Idx[1]),
-        ),
+        )
     )
     _batched_matmul_gpu[transpose_b=True](
         mla_decode_input_nope, q_nope_t, w_uk, ctx
@@ -3526,16 +3526,16 @@ def mla_prefill_branch_sparse_bf16[
     # invalid `-1` slots become 0xFFFFFFFF and are rejected by the kernel's
     # `idx >= 0` gather producer.
     var indices_tt = TileTensor(
-        d_indices.bitcast[UInt32](),
+        d_indices.unsafe_bitcast[UInt32](),
         row_major(seq_len * indices_stride),
     )
     var topk_lengths_tt = TileTensor(
-        topk_lengths.bitcast[UInt32](),
+        topk_lengths.unsafe_bitcast[UInt32](),
         row_major(seq_len),
     )
-    var attn_sink_opt = Optional[UnsafePointer[Float32, ImmutAnyOrigin]](None)
+    var attn_sink_opt = Optional[ImmPointer[Float32, ImmutAnyOrigin]](None)
     if case .Some(attn_sink_ptr) = attn_sink_ptr:
-        attn_sink_opt = UnsafePointer[Float32, ImmutAnyOrigin](attn_sink_ptr)
+        attn_sink_opt = ImmPointer[Float32, ImmutAnyOrigin](attn_sink_ptr)
 
     var k_cache = kv_collection.get_key_cache(Int(layer_idx))
     comptime if collection_t.CacheType.dtype.is_float8():
@@ -3586,7 +3586,7 @@ def mla_prefill_branch_sparse_bf16[
             # scale_block_size=0 and scales_ptr is a non-null dummy).
             var dummy_scales = (
                 raw_output_buf.unsafe_ptr()
-                .bitcast[Float32]()
+                .unsafe_bitcast[Float32]()
                 .as_unsafe_any_origin()
             )
             mla_sm100_prefill_sparse_fp8[
@@ -3634,7 +3634,7 @@ def mla_prefill_branch_sparse_bf16[
         TileLayout(
             (Idx[num_heads], seq_len, Idx[v_head_dim]),
             (Idx[v_head_dim], Idx[num_heads * v_head_dim], Idx[1]),
-        ),
+        )
     )
     _batched_matmul_gpu[transpose_b=True](output_t, raw_output_t, w_uv, ctx)
 
@@ -3686,13 +3686,13 @@ def mla_prefill_decode_graph_bf16[
     scalar_args_buf: TileTensor[.int64, address_space=.GENERIC, ...],
     kv_input_fn: KVInputFnType,
     ctx: DeviceContext,
-    d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+    d_indices: OptionalReg[MutPointer[Int32, MutAnyOrigin]] = None,
     indices_stride: Int = 0,
     topk_lengths: TopkLengthsPtrType = null_pointer[TopkLengthsPtrType](),
     attn_sink_ptr: AttnSinkPtrType = null_pointer[AttnSinkPtrType](),
     # Capturable-graph scalar forwarded from the MoGG op input list.
     num_partitions_in: Optional[Int] = None,
-    prefill_d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+    prefill_d_indices: OptionalReg[MutPointer[Int32, MutAnyOrigin]] = None,
     selection_lag: Int = 0,
 ) raises:
     """BF16 MLA prefill/decode graph.
@@ -3832,7 +3832,7 @@ def mla_prefill_decode_graph_bf16[
             # branch on the sink at runtime, so hand them that form. Absent
             # lengths mean every token keeps the full top-k stride.
             var full_topk: Optional[DeviceBuffer[DType.int32]] = None
-            var prefill_topk_lengths: UnsafePointer[Int32, MutAnyOrigin]
+            var prefill_topk_lengths: MutPointer[Int32, MutAnyOrigin]
             comptime if TopkLengthsPtrType.is_null:
                 full_topk = ctx.enqueue_create_buffer[DType.int32](Int(seq_len))
                 full_topk.value().enqueue_fill(Int32(sparse_indices_stride))
@@ -3842,11 +3842,11 @@ def mla_prefill_decode_graph_bf16[
                     .unsafe_origin_cast[MutAnyOrigin]()
                 )
             else:
-                prefill_topk_lengths = rebind[
-                    UnsafePointer[Int32, MutAnyOrigin]
-                ](as_optional_reg(topk_lengths).value())
+                prefill_topk_lengths = rebind[MutPointer[Int32, MutAnyOrigin]](
+                    as_optional_reg(topk_lengths).value()
+                )
             var prefill_attn_sink = rebind[
-                OptionalReg[UnsafePointer[Float32, MutAnyOrigin]]
+                OptionalReg[MutPointer[Float32, MutAnyOrigin]]
             ](as_optional_reg(attn_sink_ptr))
             # Sparse MLA prefill for BOTH bf16 and fp8 latent caches: the
             # branch comptime-dispatches the attention kernel on the cache

@@ -32,10 +32,16 @@ from max.nn.norm.rms_norm import RMSNorm
 from typing_extensions import Self
 
 from ..deepseekV4.layers import expand_copies
-from .deepseekV41 import DeepseekV41, DeepseekV41Block, DeepseekV41Trunk
+from .deepseekV41 import (
+    DeepseekV41,
+    DeepseekV41Block,
+    DeepseekV41Trunk,
+    HCStreams,
+    ReplicaBatch,
+    VisionMerge,
+)
 from .layer_resolver import LayerInfo
 from .layer_resolver import resolve as resolve_layers
-from .layers import final_collapse
 from .layers.attention import CSA2Cache
 from .layers.dspark import (
     DeepseekV41DSparkAttention,
@@ -44,6 +50,7 @@ from .layers.dspark import (
     dspark_main_proj_quant_config,
 )
 from .layers.dspark_moe import DeepseekV41DSparkMoE
+from .layers.ragged import ReplicaTokens
 from .layers.ragged import V41RaggedRows as RaggedRows
 from .model_config import DeepseekV41Config
 from .weight_adapters import DSPARK_MODULE_PREFIX
@@ -197,27 +204,31 @@ class DeepseekV41DSparkDrafter(Module):
             for attn in self._attentions()
         ]
 
-    def shard(self, num_devices: int) -> None:
-        """Declares the stages' tensor-parallel split.
+    def shard(self, num_devices: int, *, split_heads: bool = True) -> None:
+        """Declares the stages' split across devices.
 
-        Attention heads and routed experts split; everything else
-        (``main_proj``, norms, hyper-connections, shared experts, Markov
-        head) is replicated.
+        Routed experts split, and with ``split_heads`` (tensor parallelism)
+        attention heads too; everything else (``main_proj``, norms,
+        hyper-connections, shared experts, Markov head) is replicated.
         """
         for stage in self.stages:
             assert isinstance(stage, DeepseekV41Block)
             assert isinstance(stage.attn, DeepseekV41DSparkAttention)
             assert isinstance(stage.ffn, DeepseekV41DSparkMoE)
-            stage.attn.shard_heads(num_devices)
+            if split_heads:
+                stage.attn.shard_heads(num_devices)
             stage.ffn.shard_experts(num_devices)
 
-    def keep_local(self, num_devices: int, rank: int) -> None:
+    def keep_local(
+        self, num_devices: int, rank: int, *, split_heads: bool = True
+    ) -> None:
         """Keeps only this replica's share of the split from :meth:`shard`."""
         for stage in self.stages:
             assert isinstance(stage, DeepseekV41Block)
             assert isinstance(stage.attn, DeepseekV41DSparkAttention)
             assert isinstance(stage.ffn, DeepseekV41DSparkMoE)
-            stage.attn.keep_local_heads(num_devices)
+            if split_heads:
+                stage.attn.keep_local_heads(num_devices)
             stage.ffn.keep_local_experts(num_devices, rank)
 
     def forward_block(
@@ -249,12 +260,12 @@ class DeepseekV41DSparkDrafter(Module):
             raise ValueError(
                 f"expected {len(self.stages)} stage windows, got {len(windows)}"
             )
-        x = expand_copies(embed(block_ids), self.config.hc_mult)
-        pre_mix: TensorValue | None = None
+        streams = HCStreams(
+            expand_copies(embed(block_ids), self.config.hc_mult)
+        )
         for stage, window in zip(self.stages, windows, strict=True):
-            x, pre_mix = stage(x, pre_mix, rows, block_ids, window)
-        assert pre_mix is not None
-        return final_collapse(x, pre_mix)
+            streams, _ = stage(streams, rows, block_ids, window)
+        return streams.collapse()
 
     def __call__(
         self,
@@ -288,28 +299,79 @@ class DeepseekV41DSparkDrafter(Module):
             (identical on every device).
         """
         lead = drafters[0]
-        xs = [
-            expand_copies(embed(ids), lead.config.hc_mult)
+        streams = [
+            HCStreams(expand_copies(embed(ids), lead.config.hc_mult))
             for embed, ids in zip(embeds, block_ids, strict=True)
         ]
-        pre_mixes: Sequence[TensorValue | None] = [None] * len(drafters)
         for i in range(len(lead.stages)):
             stages = []
             for drafter in drafters:
                 stage = drafter.stages[i]
                 assert isinstance(stage, DeepseekV41Block)
                 stages.append(stage)
-            xs, pre_mixes = DeepseekV41Block.tensor_parallel(
+            streams, _ = DeepseekV41Block.tensor_parallel(
                 stages,
-                xs,
-                pre_mixes,
+                streams,
                 rows,
                 block_ids,
                 [per_dev[i] for per_dev in windows],
                 signal_buffers,
             )
-        assert pre_mixes[0] is not None
-        return final_collapse(xs[0], pre_mixes[0])
+        return streams[0].collapse()
+
+    @staticmethod
+    def forward_block_data_parallel(
+        drafters: Sequence[DeepseekV41DSparkDrafter],
+        block_ids: Sequence[TensorValue],
+        rows: Sequence[RaggedRows],
+        windows: Sequence[Sequence[DSparkWindow]],
+        embeds: Sequence[Callable[[TensorValue], TensorValue]],
+        signal_buffers: Sequence[BufferValue],
+        replica_tokens: ReplicaTokens,
+    ) -> list[TensorValue]:
+        """Runs :meth:`forward_block` with each device on its own blocks.
+
+        Each replica holds its share from :meth:`shard` and
+        :meth:`keep_local` without ``split_heads``. Every argument but
+        ``signal_buffers`` and ``replica_tokens`` (where each device's block
+        rows sit among all the blocks) is per device and covers only that
+        device's blocks. The stages' MoE is expert-parallel over every
+        device's blocks (:meth:`DeepseekV41Block.data_parallel`).
+
+        Returns:
+            Per device, its merged ``[1, b_i * block_size, hidden]`` hidden
+            state.
+        """
+        lead = drafters[0]
+        all_ids = ops.allgather(
+            [ops.reshape(ids, [-1]) for ids in block_ids],
+            signal_buffers,
+            axis=0,
+        )
+        batch_ids = [
+            ops.reshape(ops.rebind(ids, [replica_tokens.total]), [1, -1])
+            for ids in all_ids
+        ]
+        streams = [
+            HCStreams(expand_copies(embed(ids), lead.config.hc_mult))
+            for embed, ids in zip(embeds, block_ids, strict=True)
+        ]
+        for i in range(len(lead.stages)):
+            stages = []
+            for drafter in drafters:
+                stage = drafter.stages[i]
+                assert isinstance(stage, DeepseekV41Block)
+                stages.append(stage)
+            streams, _ = DeepseekV41Block.data_parallel(
+                stages,
+                streams,
+                rows,
+                batch_ids,
+                [per_dev[i] for per_dev in windows],
+                signal_buffers,
+                replica_tokens,
+            )
+        return [stream.collapse() for stream in streams]
 
     def logits(
         self, hidden: TensorValue, head_weight: TensorValue
@@ -446,6 +508,64 @@ class DeepseekV41WithDSpark(DeepseekV41):
         for rank, replica in enumerate(replicas):
             replica.dspark.keep_local(n, rank)
         return replicas
+
+    def data_parallel_replicas(
+        self,
+        devices: Sequence[DeviceRef],
+        engram_host_tables: Sequence[
+            Mapping[int, tuple[TensorValue, TensorValue]]
+        ],
+    ) -> list[Self]:
+        """Builds one data-parallel replica per device, drafter included.
+
+        The drafter splits only its routed experts. Call it once, after
+        :meth:`load_state_dict`.
+        """
+        n = len(devices)
+        self.dspark.shard(n, split_heads=False)
+        replicas = super().data_parallel_replicas(devices, engram_host_tables)
+        for rank, replica in enumerate(replicas):
+            replica.dspark.keep_local(n, rank, split_heads=False)
+        return replicas
+
+    @staticmethod
+    def trunk_with_taps_data_parallel(
+        replicas: Sequence[DeepseekV41WithDSpark],
+        split: ReplicaBatch,
+        caches: Sequence[CSA2Cache],
+        signal_buffers: Sequence[BufferValue],
+        visions: Sequence[VisionMerge] | None = None,
+    ) -> tuple[list[TensorValue], list[TensorValue]]:
+        """Runs :meth:`trunk_with_taps` with each device on its own requests.
+
+        ``split`` is the batch cut per device
+        (:meth:`DeepseekV41.split_replicas`), and ``visions`` each device's
+        own image rows (:meth:`VisionMerge.for_rows`). Returns each device's
+        pre-norm ``[1, t_i, d]`` stream and its taps.
+        """
+        xs, taps = DeepseekV41Trunk.data_parallel_with_taps(
+            [replica.trunk for replica in replicas],
+            split.tokens,
+            split.batch_tokens,
+            split.rows,
+            caches,
+            signal_buffers,
+            split.replica_tokens,
+            tap_layer_ids=replicas[0].config.dspark_target_layer_ids,
+            engram_operands=[
+                replica._engram_operands(tok, row, lookback)
+                for replica, tok, row, lookback in zip(
+                    replicas,
+                    split.tokens,
+                    split.rows,
+                    split.lookbacks,
+                    strict=True,
+                )
+            ],
+            visions=visions,
+        )
+        assert taps is not None
+        return xs, taps
 
     @staticmethod
     def trunk_with_taps_tensor_parallel(

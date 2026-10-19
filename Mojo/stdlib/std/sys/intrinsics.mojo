@@ -26,8 +26,7 @@ from std.sys.info import is_gpu
 from std._plugin import CurrentPlugin
 
 
-from ._assembly import inlined_assembly
-from .info import is_amd_gpu, is_apple_gpu, is_nvidia_gpu, size_of
+from .info import is_amd_gpu, size_of
 
 
 # ===-----------------------------------------------------------------------===#
@@ -264,6 +263,12 @@ def scatter[
 # ===-----------------------------------------------------------------------===#
 
 
+comptime _PrefetchPluginHookFnType[address_space: AddressSpace] = def(
+    Pointer[NoneType, ImmUntrackedOrigin, address_space=address_space]
+) thin -> None
+"""Plugin-hook signature for `PluginHooks.prefetch_fn`; keep in sync with `prefetch`."""
+
+
 struct PrefetchLocality(TrivialRegisterPassable):
     """The prefetch locality.
 
@@ -497,16 +502,14 @@ def prefetch[
         params.rw == PrefetchRW.READ or type_of(addr).mut == True
     ), "prefetch pointer mutability must match the prefetch read-write option"
 
-    comptime if is_nvidia_gpu():
-        inlined_assembly[
-            "prefetch.global.L2 [$0];",
-            NoneType,
-            constraints="l,~{memory}",
-            has_side_effect=True,
-        ](addr.unsafe_bitcast[NoneType]())
-    elif is_apple_gpu():
-        # Apple GPU officially does not support prefetch intrinsic
-        pass
+    comptime if case .Some(_prefetch) = CurrentPlugin.prefetch_fn[
+        type_of(addr).address_space, params
+    ]:
+        _prefetch(
+            addr.unsafe_bitcast[NoneType]()
+            .unsafe_mut_cast[False]()
+            .unsafe_origin_cast[ImmUntrackedOrigin]()
+        )
     else:
         llvm_intrinsic["llvm.prefetch", NoneType](
             addr.unsafe_bitcast[NoneType](),

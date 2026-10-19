@@ -95,7 +95,7 @@ def _dequant_mxfp4_to_fp8_kernel[
                 # Load packed uint8 bytes
                 var packed_byte_col = global_col_idx // 2
                 var packed_bytes = input.load[BYTES_PER_THREAD](
-                    Coord(global_row_idx, packed_byte_col)
+                    (global_row_idx, packed_byte_col)
                 )
 
                 # Unpack to float32 via E2M1 lookup table.
@@ -109,7 +109,7 @@ def _dequant_mxfp4_to_fp8_kernel[
                 # Load the E8M0 scale from 2D layout
                 var scale_col = global_col_idx // SF_VECTOR_SIZE
                 var scale_e8m0 = rebind[Scalar[scales_dtype]](
-                    scales.load(Coord(global_row_idx, scale_col))
+                    scales.load((global_row_idx, scale_col))
                 )
 
                 # Convert E8M0 to float32 using stdlib SIMD cast.
@@ -124,7 +124,7 @@ def _dequant_mxfp4_to_fp8_kernel[
 
                 # Store output
                 output.store(
-                    Coord(global_row_idx, global_col_idx),
+                    (global_row_idx, global_col_idx),
                     out_values,
                 )
 

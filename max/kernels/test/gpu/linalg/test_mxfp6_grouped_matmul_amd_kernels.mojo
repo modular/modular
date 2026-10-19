@@ -209,12 +209,12 @@ def _per_expert_reference[
             continue
 
         ctx.enqueue_function[_mxfp6_matmul_ref[fmt]](
-            a_dev.unsafe_ptr() + token_start * K_BYTES,
-            b_dev.unsafe_ptr() + expert_id * N * K_BYTES,
-            a_scales_dev.unsafe_ptr() + token_start * scale_K,
-            b_scales_dev.unsafe_ptr() + expert_id * N * scale_K,
-            c_ref_dev.unsafe_ptr() + token_start * N,
-            mag_dev.unsafe_ptr() + token_start * N,
+            a_dev.unsafe_ptr().unsafe_offset(token_start * K_BYTES),
+            b_dev.unsafe_ptr().unsafe_offset(expert_id * N * K_BYTES),
+            a_scales_dev.unsafe_ptr().unsafe_offset(token_start * scale_K),
+            b_scales_dev.unsafe_ptr().unsafe_offset(expert_id * N * scale_K),
+            c_ref_dev.unsafe_ptr().unsafe_offset(token_start * N),
+            mag_dev.unsafe_ptr().unsafe_offset(token_start * N),
             Int32(num_tokens),
             Int32(N),
             Int32(K),
@@ -370,7 +370,7 @@ def _run_preb[
     # path is format-independent: one E8M0 byte per 32 elements per lane, for
     # every f8f6f4 format.
     var a_sc_raw_u8_tt = TileTensor(
-        a_sc_d.unsafe_ptr().bitcast[Scalar[.uint8]](),
+        a_sc_d.unsafe_ptr().unsafe_bitcast[Scalar[.uint8]](),
         row_major(total_tokens, Idx[scale_K]),
     ).as_imm()
     # A fresh test buffer reads as zeros, which is a *valid* E8M0 exponent --
@@ -406,7 +406,7 @@ def _run_preb[
     )
     ctx.synchronize()
     var b_sc_raw_u8_tt = TileTensor(
-        b_sc_h.unsafe_ptr().bitcast[UInt8](),
+        b_sc_h.unsafe_ptr().unsafe_bitcast[UInt8](),
         row_major(Idx[num_experts], Idx[N], Idx[scale_K]),
     )
     Shuffler[num_experts].preshuffle_scale_4d[MN=N, K_SCALES=scale_K](
@@ -436,11 +436,11 @@ def _run_preb[
         b_pre_d, row_major[num_experts, N * K_BYTES]()
     ).as_imm()
     var a_sc_tt = TileTensor(
-        a_sc_pre_d.unsafe_ptr().bitcast[Float8_e8m0fnu](),
+        a_sc_pre_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
         row_major(num_experts * max_padded_M, Idx[scale_K]),
     ).as_imm()
     var b_sc_tt = TileTensor(
-        b_sc_pre_d.unsafe_ptr().bitcast[Float8_e8m0fnu](),
+        b_sc_pre_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
         row_major[num_experts, N, scale_K](),
     ).as_imm()
     var a_off_tt = TileTensor(a_off_d, row_major(num_active + 1))

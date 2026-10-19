@@ -47,7 +47,7 @@ from std.sys import simd_width_of
 from std.sys.info import _accelerator_arch
 from std.utils import IndexList
 
-from layout import Coord, TileTensor, row_major
+from layout import Coord, TensorEngine, TensorLayout, TileTensor, row_major
 
 from linalg.utils import ElementwiseEpilogueFn, no_epilogue_fn
 
@@ -62,9 +62,12 @@ from nn.conv.gpu.amd.amd_4wave_conv import amd_4wave_conv
 @__name(t"amd_4wave_transpose_rscf_to_frsc_kpad_{dtype}")
 def _transpose_rscf_to_frsc_kpad[
     dtype: DType,
+    SrcLayoutType: TensorLayout,
+    src_origin: ImmOrigin,
+    SrcEngine: TensorEngine,
 ](
-    src_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    src: TileTensor[dtype, SrcLayoutType, src_origin, Engine=SrcEngine],
+    dst_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
     R: Int32,
     S: Int32,
     C: Int32,
@@ -94,17 +97,18 @@ def _transpose_rscf_to_frsc_kpad[
     var sc = k - r * (_S * _C)
     var s = sc // _C
     var c = sc - s * _C
-    # RSCF source index: ((r * _S + s) * _C + c) * _F + f.
-    var rscf_idx = ((r * _S + s) * _C + c) * _F + f
-    dst_ptr.store(tid, src_ptr.load(rscf_idx))
+    dst_ptr.store(tid, src.load((r, s, c, f))[0])
 
 
 @__name(t"amd_4wave_transpose_fcrs_to_frsc_kpad_{dtype}")
 def _transpose_fcrs_to_frsc_kpad[
     dtype: DType,
+    SrcLayoutType: TensorLayout,
+    src_origin: ImmOrigin,
+    SrcEngine: TensorEngine,
 ](
-    src_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    src: TileTensor[dtype, SrcLayoutType, src_origin, Engine=SrcEngine],
+    dst_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
     F: Int32,
     C: Int32,
     R: Int32,
@@ -134,9 +138,7 @@ def _transpose_fcrs_to_frsc_kpad[
     var sc = k - r * (_S * _C)
     var s = sc // _C
     var c = sc - s * _C
-    # FCRS source index: f*_C*_R*_S + c*_R*_S + r*_S + s.
-    var fcrs_idx = f * _C * _R * _S + c * _R * _S + r * _S + s
-    dst_ptr.store(tid, src_ptr.load(fcrs_idx))
+    dst_ptr.store(tid, src.load((f, c, r, s))[0])
 
 
 # ---------------------------------------------------------------------------
@@ -166,9 +168,9 @@ def _launch_amd_4wave_conv2d_runtime[
     stride: Int,
     pad: Int,
     ctx: DeviceContext,
-    source_ptr: UnsafePointer[
+    source_ptr: ImmPointer[Scalar[output_type], ImmutAnyOrigin] = ImmPointer[
         Scalar[output_type], ImmutAnyOrigin
-    ] = UnsafePointer[Scalar[output_type], ImmutAnyOrigin].unsafe_dangling(),
+    ].unsafe_dangling(),
     beta: Float32 = 0.0,
     epilogue_fn: EpilogueFnType = no_epilogue_fn,
 ) raises -> Bool:
@@ -261,9 +263,7 @@ def dispatch_amd_4wave_conv2d[
     symmetric_padding: IndexList[2],
     num_groups: Int,
     ctx: DeviceContext,
-    source_ptr: Optional[
-        UnsafePointer[Scalar[output_type], MutAnyOrigin]
-    ] = None,
+    source_ptr: Optional[MutPointer[Scalar[output_type], MutAnyOrigin]] = None,
     beta: Float32 = 0.0,
     epilogue_fn: EpilogueFnType = no_epilogue_fn,
 ) raises -> Bool:
@@ -412,8 +412,14 @@ def dispatch_amd_4wave_conv2d[
         var transpose_total = _C_out * _K_padded
         var transpose_grid = ceildiv(transpose_total, _transpose_block)
         comptime if filter_is_fcrs:
-            ctx.enqueue_function[_transpose_fcrs_to_frsc_kpad[filter_type]](
-                filter.ptr,
+            comptime transpose_kernel = _transpose_fcrs_to_frsc_kpad[
+                filter_type,
+                filter.LayoutType,
+                ImmOrigin(filter.origin),
+                filter.Engine,
+            ]
+            ctx.enqueue_function[transpose_kernel](
+                filter.as_imm(),
                 filter_frsc_ptr,
                 Int32(_C_out),
                 Int32(_C_in),
@@ -424,8 +430,14 @@ def dispatch_amd_4wave_conv2d[
                 block_dim=_transpose_block,
             )
         else:
-            ctx.enqueue_function[_transpose_rscf_to_frsc_kpad[filter_type]](
-                filter.ptr,
+            comptime transpose_kernel = _transpose_rscf_to_frsc_kpad[
+                filter_type,
+                filter.LayoutType,
+                ImmOrigin(filter.origin),
+                filter.Engine,
+            ]
+            ctx.enqueue_function[transpose_kernel](
+                filter.as_imm(),
                 filter_frsc_ptr,
                 Int32(_R),
                 Int32(_S),
@@ -445,20 +457,20 @@ def dispatch_amd_4wave_conv2d[
         # the kernel arg (which only reads it when has_residual=True at
         # comptime, so the value is never dereferenced in the
         # has_residual=False path).
-        var _src_ptr_immut = UnsafePointer[
+        var _src_ptr_immut = ImmPointer[
             Scalar[output_type], ImmutAnyOrigin
         ].unsafe_dangling()
 
         @inline(.always)
         def _src_immut() {
             imm
-        } -> UnsafePointer[Scalar[output_type], ImmutAnyOrigin]:
+        } -> ImmPointer[Scalar[output_type], ImmutAnyOrigin]:
             comptime if has_residual:
                 # When called with has_residual=True, the caller must
                 # supply source_ptr. Materialize an immutable view of it
                 # (the kernel only reads).
                 if case .Some(source_ptr) = source_ptr:
-                    return UnsafePointer[Scalar[output_type], ImmutAnyOrigin](
+                    return ImmPointer[Scalar[output_type], ImmutAnyOrigin](
                         unsafe_from_address=Int(source_ptr)
                     )
             return _src_ptr_immut

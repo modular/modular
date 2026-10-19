@@ -13,15 +13,18 @@
 """Tests that graph capture, replay and execute bind the same model inputs.
 
 The graph takes the pinned Engram tables as trailing CPU inputs, so every
-path that binds the model's inputs must include them.
+path that binds the model's inputs must include them. Under data parallelism
+the batch processor also stages each replica's bounds in the distributed
+graph's input order.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
+from types import SimpleNamespace
 from typing import Any, cast
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 from max.driver import Buffer
@@ -37,9 +40,13 @@ from max.pipelines.architectures.unified_dspark_deepseekV41 import (
     UnifiedDSparkDeepseekV41Model,
 )
 from max.pipelines.architectures.unified_dspark_deepseekV41.batch_processor import (
+    UnifiedDSparkDeepseekV41BatchProcessor,
     UnifiedDSparkDeepseekV41Inputs,
 )
 from max.pipelines.lib.graph_capture import ServeGraphCaptureRunner
+from max.pipelines.lib.interfaces.batch_processor import (
+    UnifiedSpecDecodeBatchProcessor,
+)
 
 NUM_DEVICES = 4
 ENGRAM_LAYERS = (1, 14)
@@ -324,3 +331,54 @@ def test_dspark_capture_replay_and_execute_bind_the_same_inputs() -> None:
     runner.replay(model_inputs=inputs, batch_characteristics=characteristics)
     (replayed,) = engine.calls["replay"]
     check(replayed, batch)
+
+
+def _context(active: int, position: int) -> Any:
+    return SimpleNamespace(
+        tokens=SimpleNamespace(active_length=active, current_position=position)
+    )
+
+
+def test_dspark_dp4_inputs_follow_the_distributed_input_order() -> None:
+    """At DP4 the processor stages each replica's bounds and context length.
+
+    The host row offsets follow the row offsets, the replica splits follow
+    the logit count, and one context length per replica follows the KV
+    cache, including for an idle replica.
+    """
+    processor = object.__new__(UnifiedDSparkDeepseekV41BatchProcessor)
+    processor.config = MagicMock(engram_layer_ids=())
+    replicas = [
+        [_context(3, 10), _context(1, 4)],
+        [],
+        [_context(2, 7)],
+        [_context(5, 5)],
+    ]
+    base = _bind_spec_tail(
+        _StubSpecProcessor().prepare_initial_token_inputs(replicas), 4
+    )
+    with patch.object(
+        UnifiedSpecDecodeBatchProcessor,
+        "prepare_initial_token_inputs",
+        return_value=base,
+    ):
+        inputs = processor.prepare_initial_token_inputs(cast(Any, replicas))
+
+    offsets = inputs.host_input_row_offsets
+    splits = inputs.data_parallel_splits
+    assert offsets is not None and splits is not None
+    assert offsets.dtype == DType.uint32
+    assert offsets.to_numpy().tolist() == [0, 3, 4, 6, 11]
+    assert splits.dtype == DType.int64
+    assert splits.to_numpy().tolist() == [0, 2, 2, 3, 4]
+    lengths = inputs.batch_context_lengths
+    assert [b.dtype for b in lengths] == [DType.int32] * NUM_DEVICES
+    assert [b.to_numpy().tolist() for b in lengths] == [[14], [0], [7], [5]]
+
+    buffers = list(inputs.buffers)
+    assert buffers[2] is offsets
+    assert buffers[4] is splits
+    kv = 5 + NUM_DEVICES
+    after_kv = kv + len(base.kv_cache_inputs)
+    assert buffers[kv:after_kv] == base.kv_cache_inputs
+    assert buffers[after_kv : after_kv + NUM_DEVICES] == lengths

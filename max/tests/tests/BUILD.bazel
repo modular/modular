@@ -257,6 +257,7 @@ modular_eager_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
+        requirement("ml-dtypes"),
         requirement("numpy"),
     ],
 )

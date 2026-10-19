@@ -120,10 +120,10 @@ def _load_quantized_scale_registers[
     # Repacking interleaves scale pairs: four lanes share eight contiguous
     # packed scales, rather than eight naturally strided matrix columns.
     comptime for i in range(dst.static_shape[0]):
-        var value = src.load[width=1, alignment=align_of[dtype]()](
-            Coord(0, 8 * (lane // 4) + i)
+        var value = src.load[alignment=align_of[dtype]()](
+            (0, 8 * (lane // 4) + i)
         )
-        dst.store[width=1, alignment=align_of[dtype]()](Coord(i, 0), value)
+        dst.store[alignment=align_of[dtype]()]((i, 0), value)
 
 
 @inline(.always)
@@ -660,10 +660,12 @@ def multistage_qgemm_kernel[
         row_major[N // 64, K * 64 // pack_factor]()
     )
 
-    var b_scales_ptr = b_packed.ptr + N * K // 2
-    var scales = TileTensor(
-        b_scales_ptr.bitcast[Scalar[scales_type]](),
-        row_major[K // group_size, N](),
+    comptime packed_bytes = b_layout.static_product
+    var scales = (
+        b_packed.reshape(row_major[packed_bytes]())
+        .slice[N * K // 2 : packed_bytes]()
+        .bitcast[scales_type]()
+        .reshape(row_major[K // group_size, N]())
     )
 
     comptime num_warp_k_partitions = config.num_warp_k_partitions
@@ -710,15 +712,15 @@ def multistage_qgemm_kernel[
         circular=True,
         linear_idx_type=a_tt.linear_idx_type,
     ](
-        a_smem + warp_k_part_id * a_smem_size,
+        a_smem.unsafe_offset(warp_k_part_id * a_smem_size),
         a_smem_layout,
         bound=a_smem_size,
     )
 
     # There is one pre-allocated shared buffer. Explicitly offset B after at A's end.
-    var b_smem = (a_smem + num_warp_k_partitions * a_smem_size).bitcast[
-        Scalar[b_type]
-    ]()
+    var b_smem = a_smem.unsafe_offset(
+        num_warp_k_partitions * a_smem_size
+    ).unsafe_bitcast[Scalar[b_type]]()
     comptime b_smem_size = num_pipeline_stages * BK * BN // pack_factor
     comptime BD_0 = BN // repack_tile[0]
     comptime BD_1 = (BK * repack_tile[0]) // pack_factor
@@ -732,7 +734,7 @@ def multistage_qgemm_kernel[
         circular=True,
         linear_idx_type=b.linear_idx_type,
     ](
-        b_smem + warp_k_part_id * b_smem_size,
+        b_smem.unsafe_offset(warp_k_part_id * b_smem_size),
         b_smem_layout,
         bound=b_smem_size,
     )
@@ -741,9 +743,9 @@ def multistage_qgemm_kernel[
     comptime num_scales_stages = ceildiv(
         (num_pipeline_stages - 1) * BK, group_size
     ) + 1
-    var scales_smem = (b_smem + num_warp_k_partitions * b_smem_size).bitcast[
-        Scalar[scales_type]
-    ]()
+    var scales_smem = (
+        b_smem.unsafe_offset(num_warp_k_partitions * b_smem_size)
+    ).unsafe_bitcast[Scalar[scales_type]]()
     comptime scales_smem_size = num_scales_stages * BN * ceildiv(BK, group_size)
     comptime scales_smem_layout = row_major[ceildiv(BK, group_size), BN]()
 
@@ -755,7 +757,7 @@ def multistage_qgemm_kernel[
         circular=True,
         linear_idx_type=scales.linear_idx_type,
     ](
-        scales_smem + warp_k_part_id * scales_smem_size,
+        scales_smem.unsafe_offset(warp_k_part_id * scales_smem_size),
         scales_smem_layout,
         bound=scales_smem_size,
     )
@@ -763,7 +765,7 @@ def multistage_qgemm_kernel[
     var scales_native_ring = TileTensor[
         linear_idx_type=scales.linear_idx_type, address_space=.SHARED
     ](
-        scales_smem + warp_k_part_id * scales_smem_size,
+        scales_smem.unsafe_offset(warp_k_part_id * scales_smem_size),
         row_major[num_scales_stages * ceildiv(BK, group_size), BN](),
     )
 
@@ -776,7 +778,7 @@ def multistage_qgemm_kernel[
         type_of(a_gmem_tile).LayoutType,
         _,
         linear_idx_type=a_tt.linear_idx_type,
-    ](a_gmem_tile.unsafe_ptr(), a_gmem_tile.layout, bound=K, stride=BK)
+    ](a_gmem_tile, a_gmem_tile.layout, bound=K, stride=BK)
 
     var b_tile_coords = args_to_tuple[transpose_b](bk_start, block_idx[0])
     comptime b_tile_axis = 1 if transpose_b else 0
@@ -789,7 +791,7 @@ def multistage_qgemm_kernel[
         _,
         linear_idx_type=b.linear_idx_type,
     ](
-        b_gmem_tile.unsafe_ptr(),
+        b_gmem_tile,
         b_gmem_tile.layout,
         bound=type_of(b).static_shape[b_tile_axis] * b_axis_stride,
         stride=b_tile_extent * b_axis_stride,
@@ -808,7 +810,7 @@ def multistage_qgemm_kernel[
         _,
         linear_idx_type=scales.linear_idx_type,
     ](
-        scales_gmem_tile.unsafe_ptr(),
+        scales_gmem_tile,
         scales_gmem_tile.layout,
         bound=(K // group_size) * N,
         stride=groups_per_iter * N,
@@ -910,13 +912,12 @@ def multistage_qgemm_kernel[
         var thread_offset = c_tile_offset + c_warp_offset + c_frag_offset
 
         comptime for i in range(type_of(c_gmem_frag).LayoutType.static_product):
-            var src_idx = Int(c_reg_frag.layout(Idx[i]))
             var dst_idx = Int(c_gmem_frag.layout(Idx[i]))
             comptime alignment = align_of[SIMD[c_type, 2]]()
             var m, n = divmod(thread_offset + dst_idx, N)
             if m < M and n < N:
-                var vec = c_reg_frag.raw_load[width=2, alignment=alignment](
-                    src_idx
+                var vec = c_reg_frag.load[width=2, alignment=alignment](
+                    (Idx[i],)
                 )
                 epilogue_fn[alignment=alignment]((m, n), vec)
 
@@ -931,7 +932,9 @@ def multistage_qgemm_kernel[
         ]()
 
         var accum_smem_warp_tile = TileTensor(
-            a_smem.bitcast[Scalar[c_type]]() + warp_id * WM * WN,
+            a_smem.unsafe_bitcast[Scalar[c_type]]().unsafe_offset(
+                warp_id * WM * WN
+            ),
             row_major[WM, WN](),
         )
 
@@ -962,6 +965,9 @@ def multistage_qgemm_kernel[
             comptime num_stores_per_thread = type_of(
                 c_gmem_frag
             ).LayoutType.static_product
+            var accum_smem_flat = accum_smem_warp_tile.reshape(
+                row_major[WM * WN]()
+            )
 
             comptime for i in range(num_stores_per_thread):
                 var src_idx = Int(c_smem_frag.layout(Idx[i]))
@@ -977,9 +983,9 @@ def multistage_qgemm_kernel[
                 if m < M and n < N:
                     epilogue_fn[alignment=alignment](
                         (m, n),
-                        accum_smem_warp_tile.raw_load[
+                        accum_smem_flat.load[
                             width=simd_size, alignment=alignment
-                        ](swizzled_idx).cast[c_type](),
+                        ](Coord(swizzled_idx)).cast[c_type](),
                     )
         else:
             copy_sram_to_dram[warp_layout, swizzle=swizzle, masked=True](
@@ -1147,10 +1153,12 @@ def repack_Q4_0_for_sm8x[
         row_major[N // 64, K * 64 // pack_factor]()
     )
 
-    var b_scales_ptr = q_packed_weight.ptr + N * K // 2
-    var repack_scales = TileTensor(
-        b_scales_ptr.bitcast[Scalar[scales_type]](),
-        row_major[K_groups, N](),
+    comptime packed_bytes = repack_layout.static_product
+    var repack_scales = (
+        q_packed_weight.reshape(row_major[packed_bytes]())
+        .slice[N * K // 2 : packed_bytes]()
+        .bitcast[scales_type]()
+        .reshape(row_major[K_groups, N]())
     )
 
     # We keep 128x2 Q4_0 GGUF blocks in smem
@@ -1198,7 +1206,7 @@ def repack_Q4_0_for_sm8x[
             )
 
             comptime for i_e in range(16):
-                var val = thread_tile.load[2](Coord(i_e // 2, i_e % 2))
+                var val = thread_tile.load[2]((i_e // 2, i_e % 2))
                 frag_0[i_e] = (val[0] & 0x0F) | ((val[1] & 0x0F) << 4)
                 frag_1[i_e] = ((val[0] & 0xF0) >> 4) | (val[1] & 0xF0)
 
@@ -1206,12 +1214,8 @@ def repack_Q4_0_for_sm8x[
                 block_idx[0] * (BN // 64) + warp_x,
                 block_idx[1] * BK_groups + 2 * i + warp_y,
             )
-            repack_warp_tile.store[4](
-                Coord(0, 4 * lane_id), pack_Q_tile(frag_0)
-            )
-            repack_warp_tile.store[4](
-                Coord(0, 128 + 4 * lane_id), pack_Q_tile(frag_1)
-            )
+            repack_warp_tile.store((0, 4 * lane_id), pack_Q_tile(frag_0))
+            repack_warp_tile.store((0, 128 + 4 * lane_id), pack_Q_tile(frag_1))
 
             # Reorder scales to match the lanes consuming packed weights.
             var lane_group, lane_offset = divmod(lane_id, 4)
@@ -1302,19 +1306,24 @@ def repack_GPTQ_for_sm8x[
     var raw_weights = (
         in_tensor.bitcast[.uint32]().reshape(row_major[uint_K, N]()).transpose()
     )
-    var raw_scales_ptr = in_tensor.ptr + N * K // 2
-    var raw_scales = TileTensor(
-        raw_scales_ptr.bitcast[Scalar[raw_scales_type]](),
-        row_major[K_groups, N](),
-    ).transpose()
+    comptime in_bytes = in_layout.static_product
+    var raw_scales = (
+        in_tensor.reshape(row_major[in_bytes]())
+        .slice[N * K // 2 : in_bytes]()
+        .bitcast[raw_scales_type]()
+        .reshape(row_major[K_groups, N]())
+        .transpose()
+    )
 
     var repack_weights = out_tensor.bitcast[.uint32]().reshape(
         row_major[N // 64, K * 64 // pack_factor]()
     )
-    var repacked_scales_ptr = out_tensor.ptr + N * K // 2
-    var repack_scales = TileTensor(
-        repacked_scales_ptr.bitcast[Scalar[scales_type]](),
-        row_major[K_groups, N](),
+    comptime out_bytes = out_layout.static_product
+    var repack_scales = (
+        out_tensor.reshape(row_major[out_bytes]())
+        .slice[N * K // 2 : out_bytes]()
+        .bitcast[scales_type]()
+        .reshape(row_major[K_groups, N]())
     )
 
     # We keep 128x2 GPTQ blocks in smem
@@ -1327,7 +1336,8 @@ def repack_GPTQ_for_sm8x[
         smem, row_major[BN, 2 * weights_bytes_per_group]()
     )
     var weights_smem_uint4 = TileTensor(
-        smem.bitcast[UInt32](), row_major[BN, 2 * group_size // pack_factor]()
+        smem.unsafe_bitcast[UInt32](),
+        row_major[BN, 2 * group_size // pack_factor](),
     )
 
     # We load 128x2 GPTQ blocks to smem.
@@ -1401,14 +1411,12 @@ def repack_GPTQ_for_sm8x[
                     var thread_tile = raw_Q_tile.distribute[thd_layout](lane_id)
 
                     comptime for i_e in range(16):
-                        tmp[i_e] = thread_tile.load[1](Coord(i_e // 2, i_e % 2))
+                        tmp[i_e] = thread_tile[i_e // 2, i_e % 2]
 
                 var repacked_Q_tile = repacked_warp_tile.tile[1, 128](
                     0, i_Q_tile
                 )
-                repacked_Q_tile.store[4](
-                    Coord(0, 4 * lane_id), pack_Q_tile(tmp)
-                )
+                repacked_Q_tile.store((0, 4 * lane_id), pack_Q_tile(tmp))
 
             var group = block_idx[1] * BK_groups + i * 2 + warp_y
             var row_tile = block_idx[0] * (BN // 64) + warp_x
@@ -2364,9 +2372,7 @@ def gpu_qint4_repack_GPTQ[
             False,
         ]
 
-        var empty_permutation = TileTensor(
-            b.ptr.bitcast[Int32](), row_major(Int(0))
-        )
+        var empty_permutation = b.bitcast[.int32]().reshape(row_major(Int(0)))
 
         cuda_ctx.enqueue_function[repack](
             b,

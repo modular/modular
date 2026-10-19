@@ -20,8 +20,8 @@ from std.random import random_ui64
 
 
 def sort_kernel(
-    data: UnsafePointer[UInt32, MutAnyOrigin],
-    hasChanged: UnsafePointer[UInt32, MutAnyOrigin],
+    data: MutPointer[UInt32, MutAnyOrigin],
+    hasChanged: MutPointer[UInt32, MutAnyOrigin],
     N_dev: Int32,
     isOddStep_dev: Int32,
     block_dim_x_dev: Int32,
@@ -79,7 +79,7 @@ def cpu_odd_even_sort(data: MutPointer[UInt32, _], N: Int):
                 sorted = False
 
 
-def verify_sorted(data: UnsafePointer[UInt32, _], N: Int) -> Bool:
+def verify_sorted(data: Pointer[UInt32, _], N: Int) -> Bool:
     """Verify if array is sorted.
 
     Args:

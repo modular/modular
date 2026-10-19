@@ -21,10 +21,10 @@ Wave32 WMMA fragment geometry:
 from std.collections import OptionalReg
 from std.math import ceildiv
 from std.math.uutils import umod
-from std.sys import simd_width_of
+from std.sys import align_of, simd_width_of
 
 from max.gpu import lane_id, warp_id as get_warp_id
-from layout import TensorEngine, TensorLayout, TileTensor
+from layout import Coord, TensorEngine, TensorLayout, TileTensor
 from layout.tensor_core import TiledTensorCore
 from layout.tile_layout import row_major
 from layout.tile_tensor import stack_allocation as tt_stack_allocation
@@ -151,7 +151,7 @@ struct KBufferRDNA[
             ImmutAnyOrigin,
             Engine=Self.Engine,
         ],
-        shared_ptr: UnsafePointer[
+        shared_ptr: MutPointer[
             Scalar[Self.cache_dtype], MutAnyOrigin, address_space=.SHARED
         ],
     ):
@@ -374,7 +374,7 @@ struct VBufferRDNA[
             ImmutAnyOrigin,
             Engine=Self.Engine,
         ],
-        shared_ptr: UnsafePointer[
+        shared_ptr: MutPointer[
             Scalar[Self.cache_dtype], MutAnyOrigin, address_space=.SHARED
         ],
         total_rows: OptionalReg[Int] = None,
@@ -413,8 +413,10 @@ struct VBufferRDNA[
         """Load the next BK strip of V from DRAM into the staging
         register slot. Per-thread chunks are bounds-clamped via
         `remaining_rows` for the unaligned tail tile."""
-        var strip = self.gmem_tile.tile[Self.BK, Self.depth](self.strip_idx, 0)
         var stride = Self.gmem_layout.static_stride[0]
+        var strip = self.gmem_tile.tile[Self.BK, Self.depth](
+            self.strip_idx, 0
+        ).reshape(row_major(Self.BK * stride))
         var warp = get_warp_id()
 
         var load_tile = self.load_tile.tile[
@@ -445,7 +447,10 @@ struct VBufferRDNA[
                     )
                     src_col += depth_idx * Self.depth_tile_size
                     var offset = Int(src_row) * stride + Int(src_col)
-                    var data = strip.raw_load[width=Self.load_width](offset)
+                    var data = strip.load[
+                        width=Self.load_width,
+                        alignment=align_of[Self.cache_dtype](),
+                    ](Coord(offset))
                     comptime for j in range(Self.load_width):
                         load_tile[dst_idx, j] = data[j]
                 else:
@@ -665,6 +670,7 @@ struct QRegisterBufferRDNA[
 
         comptime stride = q_layout.static_stride[0]
         var warp_offset = warp_base_row * stride
+        var q_flat = tensor.reshape(row_major(tensor.num_elements()))
 
         comptime for tile_idx in range(Self.num_tiles):
             var depth_offset = tile_idx * Self.BK
@@ -684,13 +690,15 @@ struct QRegisterBufferRDNA[
 
                     if row < (valid_rows - Int(warp_base_row)):
                         var offset0 = warp_offset + row_offset + k_offset
-                        var data0 = tensor.raw_load[width=Self.simd_width](
-                            offset0
-                        )
+                        var data0 = q_flat.load[
+                            width=Self.simd_width,
+                            alignment=align_of[Self.dtype](),
+                        ](Coord(offset0))
                         var offset1 = offset0 + Self.simd_width
-                        var data1 = tensor.raw_load[width=Self.simd_width](
-                            offset1
-                        )
+                        var data1 = q_flat.load[
+                            width=Self.simd_width,
+                            alignment=align_of[Self.dtype](),
+                        ](Coord(offset1))
                         comptime for j in range(Self.simd_width):
                             self.reg_tile[frag_idx, j] = data0[j]
                             self.reg_tile[
@@ -847,14 +855,14 @@ struct PRegisterBufferRDNA[
     var reg_tile: Self.RegisterTileType
 
     @__allow_legacy_any_origin_fields
-    var shared_memory_ptr: UnsafePointer[
+    var shared_memory_ptr: MutPointer[
         Scalar[Self.dtype], MutAnyOrigin, address_space=.SHARED
     ]
 
     @inline(.always)
     def __init__(
         out self,
-        shared_ptr: UnsafePointer[
+        shared_ptr: MutPointer[
             Scalar[Self.dtype], MutAnyOrigin, address_space=.SHARED
         ],
     ):

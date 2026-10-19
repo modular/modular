@@ -350,11 +350,11 @@ def _run_case[
             k_cache.blocks_raw_ptr(),
             zero_row_buf.unsafe_ptr(),
             d_indices_device.unsafe_ptr(),
-            topk_lengths_device.unsafe_ptr().bitcast[UInt32](),
+            topk_lengths_device.unsafe_ptr().unsafe_bitcast[UInt32](),
             indices_stride,
         )
         var topk_lengths_tt = TileTensor(
-            topk_lengths_device.unsafe_ptr().bitcast[UInt32](),
+            topk_lengths_device.unsafe_ptr().unsafe_bitcast[UInt32](),
             row_major(batch_size),
         )
         flare_mla_decoding_rows[
@@ -407,7 +407,7 @@ def _run_case[
         )
 
         var topk_lengths_tt = TileTensor(
-            topk_lengths_device.unsafe_ptr().bitcast[UInt32](),
+            topk_lengths_device.unsafe_ptr().unsafe_bitcast[UInt32](),
             row_major(batch_size),
         )
         var padding_mask = PaddingMask(topk_lengths_tt)
@@ -1197,7 +1197,7 @@ def _run_sentinel_case[
         )
     else:
         var topk_lengths_tt = TileTensor(
-            topk_lengths_device.unsafe_ptr().bitcast[UInt32](),
+            topk_lengths_device.unsafe_ptr().unsafe_bitcast[UInt32](),
             row_major(batch_size),
         )
         var padding_mask = PaddingMask(topk_lengths_tt)

@@ -17,7 +17,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 
 import numpy as np
-from max.driver import Buffer
+from max.driver import Buffer, bfloat16_as_uint16_to_float32
 from max.dtype import DType
 from max.graph.type import Shape
 from max.graph.weights import WeightData, Weights
@@ -41,7 +41,7 @@ def _bf16_to_float32(weight: WeightData) -> WeightData:
             f"{weight.name}: expected bfloat16, got {weight.dtype}"
         )
     bits = np.from_dlpack(weight.to_buffer().view(DType.uint16))
-    values = (bits.astype(np.uint32) << 16).view(np.float32)
+    values = bfloat16_as_uint16_to_float32(bits.view(np.uint16))
     buffer = Buffer.from_numpy(np.ascontiguousarray(values))
     return WeightData(buffer, weight.name, DType.float32, Shape(buffer.shape))
 

@@ -356,7 +356,7 @@ struct AppleM5Fp4MatMul[
             # This thread's contiguous packed byte-run: one TileTensor width-load
             # (coalesced K; adjacent threads read adjacent bytes) -- no raw ptr.
             var bytes = packed.load[width=BYTES_PER_THREAD, alignment=1](
-                Coord(n_abs, (k0 // 2) + byte0)
+                (n_abs, (k0 // 2) + byte0)
             )
             var nib = SIMD[.uint16, COLS_PER_THREAD](0)
 
@@ -393,7 +393,7 @@ struct AppleM5Fp4MatMul[
                 # zero-fill (the MMA must read a clean zero, not stale SMEM).
                 if n_abs >= n or col0 >= kv:
                     b_smem_view.store(
-                        Coord(buf, nrow, col0),
+                        (buf, nrow, col0),
                         SIMD[Self.in_type, COLS_PER_THREAD](0),
                     )
                     return
@@ -405,7 +405,7 @@ struct AppleM5Fp4MatMul[
                 if col0 + COLS_PER_THREAD <= kv:
                     # Whole run in-bounds: the interior fast path (below).
                     b_smem_view.store(
-                        Coord(buf, nrow, col0),
+                        (buf, nrow, col0),
                         _decode_run(
                             n_abs, Int(k0), col0, col_in_row, scale_abs
                         ),
@@ -429,7 +429,7 @@ struct AppleM5Fp4MatMul[
                             vals[i] = (dec.cast[.float32]() * scale_abs).cast[
                                 Self.in_type
                             ]()
-                    b_smem_view.store(Coord(buf, nrow, col0), vals)
+                    b_smem_view.store((buf, nrow, col0), vals)
             else:
                 # Interior: no bounds branch. One wide contiguous packed load ->
                 # nibble expand -> decode -> one hoisted scale. The scale comes
@@ -438,7 +438,7 @@ struct AppleM5Fp4MatMul[
                 comptime if Self.coalesce_scales:
                     var scale_abs = s_smem_view[buf, nrow, col0 // SF][0]
                     b_smem_view.store(
-                        Coord(buf, nrow, col0),
+                        (buf, nrow, col0),
                         _decode_run(
                             n_abs, Int(k0), col0, col_in_row, scale_abs
                         ),
@@ -450,7 +450,7 @@ struct AppleM5Fp4MatMul[
                         ]()
                     )
                     b_smem_view.store(
-                        Coord(buf, nrow, col0),
+                        (buf, nrow, col0),
                         _decode_run(
                             n_abs, Int(k0), col0, col_in_row, scale_abs
                         ),
@@ -468,7 +468,7 @@ struct AppleM5Fp4MatMul[
             if t < NSCALE:
                 var srow, sblk = divmod(t, NBLK)
                 s_smem_view.store(
-                    Coord(buf, srow, sblk),
+                    (buf, srow, sblk),
                     Float32(
                         abs(
                             scales[Int(tg_col) + srow, Int(k0) // SF + sblk][
@@ -578,12 +578,11 @@ struct AppleM5Fp4MatMul[
             ) {imm}:
                 var y = v_fp32.cast[Self.c_type]()
                 if acol + 3 < n:
-                    c_vec.store[alignment=elem_align](Coord(lrow, lcol // 4), y)
+                    c_vec.store[alignment=elem_align]((lrow, lcol // 4), y)
                 else:
                     for e in range(min(4, n - acol)):
-                        c_sub.store[width=1, alignment=elem_align](
-                            Coord(lrow, lcol + e),
-                            SIMD[Self.c_type, 1](y[e]),
+                        c_sub.store[alignment=elem_align](
+                            (lrow, lcol + e), y[e]
                         )
 
             comptime for mi in range(Mma.num_m_mmas):
@@ -598,7 +597,7 @@ struct AppleM5Fp4MatMul[
                     if arow + 8 < m and acol < n:
                         _write4(lrow + 8, lcol, acol, frag.slice[4, offset=4]())
         else:
-            var c_ptr_fp32 = rebind[UnsafePointer[Float32, MutAnyOrigin]](c_ptr)
+            var c_ptr_fp32 = rebind[MutPointer[Float32, MutAnyOrigin]](c_ptr)
             var c_mat_fp32 = TileTensor(c_ptr_fp32, row_major(m, n))
             var c_sub_fp32 = c_mat_fp32.tile[SG_M, SG_N](
                 Int(sg_row_idx), Int(sg_col_idx)

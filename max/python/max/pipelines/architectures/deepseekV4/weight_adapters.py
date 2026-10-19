@@ -57,7 +57,7 @@ import re
 from collections.abc import Mapping
 
 import numpy as np
-from max.driver import Buffer, DLPackArray
+from max.driver import Buffer, DLPackArray, bfloat16_as_uint16_to_float32
 from max.dtype import DType
 from max.graph.type import Shape
 from max.graph.weights import WeightData, Weights
@@ -128,8 +128,10 @@ def bfloat16_to_float32(weight: WeightData, name: str) -> WeightData:
         if isinstance(weight.data, Buffer)
         else Buffer.from_dlpack(weight.data)
     )
-    bits = np.from_dlpack(buffer.view(DType.uint16)).astype(np.uint32) << 16
-    return with_dtype(bits, DType.float32, name)
+    widened = bfloat16_as_uint16_to_float32(
+        np.from_dlpack(buffer.view(DType.uint16)).view(np.uint16)
+    )
+    return with_dtype(widened, DType.float32, name)
 
 
 def _row_bytes(weight: WeightData) -> np.ndarray:

@@ -202,7 +202,7 @@ def _test_atan[
     def func[
         simd_width: Int, alignment: Int = 1
     ](idx0: Coord) {var out_span, var in_span}:
-        var idx = Int(idx0[0].value())
+        var idx = Int(idx0[0])
         var v = in_span.unsafe_ptr().unsafe_load[width=simd_width](idx)
         out_span.unsafe_ptr().unsafe_store[width=simd_width](idx, atan(v))
 
@@ -286,7 +286,7 @@ def _test_atan2[
     def func[
         simd_width: Int, alignment: Int = 1
     ](idx0: Coord) {var out_span, var y_span, var x_span}:
-        var idx = Int(idx0[0].value())
+        var idx = Int(idx0[0])
         var y = y_span.unsafe_ptr().unsafe_load[width=simd_width](idx)
         var x = x_span.unsafe_ptr().unsafe_load[width=simd_width](idx)
         out_span.unsafe_ptr().unsafe_store[width=simd_width](idx, atan2(y, x))
@@ -350,7 +350,7 @@ def _test_atan2_reference[
     def func[
         simd_width: Int, alignment: Int = 1
     ](idx0: Coord) {var out_span, var y_span, var x_span}:
-        var idx = Int(idx0[0].value())
+        var idx = Int(idx0[0])
         var y = y_span.unsafe_ptr().unsafe_load[width=simd_width](idx)
         var x = x_span.unsafe_ptr().unsafe_load[width=simd_width](idx)
         out_span.unsafe_ptr().unsafe_store[width=simd_width](idx, atan2(y, x))
@@ -660,7 +660,7 @@ def test_tiny_result_bits() raises:
         def func[
             width: Int, alignment: Int = 1
         ](idx0: Coord) {var ys, var xs, var a, var b}:
-            var i = Int(idx0[0].value())
+            var i = Int(idx0[0])
             var y = ys.unsafe_ptr().unsafe_load[width=width](i)
             var x = xs.unsafe_ptr().unsafe_load[width=width](i)
             a.unsafe_ptr().unsafe_store[width=width](i, atan(y))

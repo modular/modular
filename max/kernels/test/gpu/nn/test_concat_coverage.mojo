@@ -527,9 +527,7 @@ def test_fused_concat_gpu(ctx: DeviceContext) raises:
         c_type: DType, width: SIMDLength, *, alignment: Int
     ](coords: Coord, val: SIMD[c_type, width]) {var output_dyn}:
         comptime assert output_dyn.flat_rank >= coords.flat_rank
-        output_dyn.store[width=width](
-            coords, rebind[SIMD[dtype, width]](val + 10)
-        )
+        output_dyn.store(coords, rebind[SIMD[dtype, width]](val + 10))
 
     fused_concat[dtype, rank, axis=axis, target="gpu"](
         StaticTuple[IndexList[rank], 2](input_shape_0, input_shape_1),
@@ -629,9 +627,7 @@ def test_concat_with_epilogue(ctx: DeviceContext) raises:
         c_type: DType, width: SIMDLength, *, alignment: Int
     ](coords: Coord, val: SIMD[c_type, width]) {var output_dyn}:
         comptime assert output_dyn.flat_rank >= coords.flat_rank
-        output_dyn.store[width=width](
-            coords, rebind[SIMD[dtype, width]](val * 2)
-        )
+        output_dyn.store(coords, rebind[SIMD[dtype, width]](val * 2))
 
     _concat_gpu[has_epilogue=True](
         output_dyn.as_unsafe_any_origin(),

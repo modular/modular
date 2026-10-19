@@ -494,7 +494,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
         comptime for r in range(Self.Q_BLOCK_SIZE):
             var q_row_smem = readfirstlane(
                 rebind[
-                    UnsafePointer[
+                    MutPointer[
                         Scalar[Self.config.dtype],
                         MutAnyOrigin,
                         address_space=.SHARED,
@@ -1785,10 +1785,10 @@ struct MlaPrefillV2[config: MlaConfigV2]:
         scale: Float32,
         num_keys_dev: Int32,
         start_pos_dev: Int32,
-        work_indptr_ptr: UnsafePointer[Int32, ImmutAnyOrigin] = UnsafePointer[
+        work_indptr_ptr: ImmPointer[Int32, ImmutAnyOrigin] = ImmPointer[
             Int32, ImmutAnyOrigin
         ].unsafe_dangling(),
-        work_info_ptr: UnsafePointer[Int32, ImmutAnyOrigin] = UnsafePointer[
+        work_info_ptr: ImmPointer[Int32, ImmutAnyOrigin] = ImmPointer[
             Int32, ImmutAnyOrigin
         ].unsafe_dangling(),
         num_works_dev: Int32 = 0,
@@ -2127,14 +2127,14 @@ struct MlaPrefillV2[config: MlaConfigV2]:
         qkv_dtype: DType,
         output_dtype: DType,
     ](
-        q_ptr: UnsafePointer[Scalar[qkv_dtype], ImmutAnyOrigin],
+        q_ptr: ImmPointer[Scalar[qkv_dtype], ImmutAnyOrigin],
         k_nope_op: k_nope_t,
         k_rope_op: k_rope_t,
         v_op: v_t,
-        output_ptr: UnsafePointer[Scalar[output_dtype], MutAnyOrigin],
+        output_ptr: MutPointer[Scalar[output_dtype], MutAnyOrigin],
         mask_functor: mask_t,
         scale: Float32,
-        input_row_offsets_ptr: UnsafePointer[UInt32, ImmutAnyOrigin],
+        input_row_offsets_ptr: ImmPointer[UInt32, ImmutAnyOrigin],
     ):
         """Ragged-batch GPU kernel entry. Per-sequence setup mirrors
         `MlaPrefillV2Core.ragged_kernel` (self-attention; `num_keys =
@@ -2192,8 +2192,12 @@ struct MlaPrefillV2[config: MlaConfigV2]:
         var o_ragged_layout = row_major(
             1, seq_len, Self.config.num_heads, Self.config.depth
         )
-        var q_tt = TileTensor(q_ptr + q_batch_offset, q_ragged_layout)
-        var o_tt = TileTensor(output_ptr + o_batch_offset, o_ragged_layout)
+        var q_tt = TileTensor(
+            q_ptr.unsafe_offset(q_batch_offset), q_ragged_layout
+        )
+        var o_tt = TileTensor(
+            output_ptr.unsafe_offset(o_batch_offset), o_ragged_layout
+        )
 
         Self.run[
             k_nope_t,
@@ -2234,14 +2238,14 @@ def mla_prefill_v2_ragged[
         DeviceContext.target.default_compile_options()
     ),
 ](
-    q_ptr: UnsafePointer[Scalar[qkv_dtype], ImmutAnyOrigin],
+    q_ptr: ImmPointer[Scalar[qkv_dtype], ImmutAnyOrigin],
     k_nope: k_nope_t,
     k_rope: k_rope_t,
     v: v_t,
-    output_ptr: UnsafePointer[Scalar[output_dtype], MutAnyOrigin],
+    output_ptr: MutPointer[Scalar[output_dtype], MutAnyOrigin],
     mask_functor: mask_t,
     scale: Float32,
-    input_row_offsets_ptr: UnsafePointer[UInt32, ImmutAnyOrigin],
+    input_row_offsets_ptr: ImmPointer[UInt32, ImmutAnyOrigin],
     max_prompt_len: Int,
     batch_size: Int,
     ctx: DeviceContext,

@@ -116,8 +116,8 @@ def matmul_kernel[
     s_type: DType = get_accum_type[c_type](),
 ](
     c_ptr: MutPointer[Scalar[c_type], MutAnyOrigin],
-    a_ptr: UnsafePointer[Scalar[a_type], ImmutAnyOrigin],
-    b_ptr: UnsafePointer[Scalar[b_type], ImmutAnyOrigin],
+    a_ptr: ImmPointer[Scalar[a_type], ImmutAnyOrigin],
+    b_ptr: ImmPointer[Scalar[b_type], ImmutAnyOrigin],
     m_dev: Int32,
     n_dev: Int32,
     k_dev: Int32,
@@ -216,28 +216,22 @@ def matmul_kernel[
         var a_val: Scalar[a_type]
 
         comptime if not full_tile:
-            a_val = rebind[Scalar[a_type]](a[row, offset + localCol]) if (
+            a_val = a[row, offset + localCol] if (
                 row < m and offset + localCol < k
             ) else 0.0
         else:
-            a_val = (
-                rebind[Scalar[a_type]](a[row, offset + localCol]) if row
-                < m else 0.0
-            )
+            a_val = a[row, offset + localCol] if row < m else 0.0
         a_shared[localRow * tile_size + localCol] = a_val
 
         # Load B tile into shared memory.
         var b_val: Scalar[b_type]
 
         comptime if not full_tile:
-            b_val = rebind[Scalar[b_type]](b[offset + localRow, col]) if (
+            b_val = b[offset + localRow, col] if (
                 col < n and offset + localRow < k
             ) else 0.0
         else:
-            b_val = (
-                rebind[Scalar[b_type]](b[offset + localRow, col]) if col
-                < n else 0.0
-            )
+            b_val = b[offset + localRow, col] if col < n else 0.0
         b_shared[localRow * tile_size + localCol] = b_val
 
         barrier()
@@ -409,15 +403,15 @@ def _matmul_kernel_naive_impl[
     comptime if transpose_b:
         for i in range(_k):
             accum += (
-                rebind[Scalar[a_type]](a[x, i]).cast[s_type]()
-                * rebind[Scalar[b_type]](b[y, i]).cast[s_type]()
+                a.load[width=1]((x, i)).cast[s_type]()
+                * b.load[width=1]((y, i)).cast[s_type]()
             )
 
     else:
         for i in range(_k):
             accum += (
-                rebind[Scalar[a_type]](a[x, i]).cast[s_type]()
-                * rebind[Scalar[b_type]](b[i, y]).cast[s_type]()
+                a.load[width=1]((x, i)).cast[s_type]()
+                * b.load[width=1]((i, y)).cast[s_type]()
             )
     comptime if has_epilogue_fn:
         epilogue_fn[c_type, 1, alignment=1]((x, y), accum.cast[c_type]())
@@ -2107,7 +2101,11 @@ def _split_k_reduce_impl[
                 )
             c.store((c_coord[0], c_coord[1]), out)
 
-    elementwise[simd_width, target="gpu"](_reduce, (M, N), ctx)
+    elementwise[
+        simd_width,
+        target="gpu",
+        _trace_description="matmul_split_k_reduce",
+    ](_reduce, (M, N), ctx)
 
 
 @inline(.always)

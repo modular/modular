@@ -189,7 +189,7 @@ def matmul_ukern[
         # to remain in the l1 cache, but freely evict `B`.
         # Repeatedly re-touching the cachelines of `A` helps us achieve this.
         var Atmp = Ao
-        Ao = Ao + 1
+        Ao = Ao.unsafe_offset(1)
         for _ in range(kf):
             comptime for _ in range(kr):
                 comptime for n in range(nr):
@@ -206,8 +206,8 @@ def matmul_ukern[
                         acc[n + m * nr] = fma(
                             Abroadcast, Bloads[n], acc[n + m * nr]
                         )
-                Atmp = Atmp + mr * Astride
-                Bo = Bo + nr * width
+                Atmp = Atmp.unsafe_offset(mr * Astride)
+                Bo = Bo.unsafe_offset(nr * width)
     if inc:
         # Note, `C` would have spilled from the L1 cache by the time
         # we load it again had we loaded before the reduction loop.
@@ -374,9 +374,9 @@ def matmul[
                         matmul_ukern[elt, W, Mr, Nr, Kr, Kc // (Stride * Kr)](
                             pck, pak, pbk, kc != 0
                         )
-                        pbk = pbk + WNr * Kc
-                        pck = pck + Mr * WNr
-                    pak = pak + Mr * Kc
+                        pbk = pbk.unsafe_offset(WNr * Kc)
+                        pck = pck.unsafe_offset(Mr * WNr)
+                    pak = pak.unsafe_offset(Mr * Kc)
                 pb = pbk
             pc = pck
         pa = pak
@@ -435,7 +435,7 @@ def strided_load[
     comptime if X == 1:
         return p.load[width=W](i)
     else:
-        return (p + i * X).unsafe_strided_load[width=W](X)
+        return p.unsafe_offset(i * X).unsafe_strided_load[width=W](X)
 
 
 @inline(.always)
@@ -445,7 +445,7 @@ def strided_store[
     comptime if X == 1:
         p.store(i, x)
     else:
-        (p + i * X).unsafe_strided_store(x, X)
+        p.unsafe_offset(i * X).unsafe_strided_store(x, X)
 
 
 @inline(.always)
@@ -504,7 +504,7 @@ def vectorize_flat[
                 subset_shape,
                 subset_stride_a,
                 subset_stride_b,
-            ](a + i * a_stride, b + i * b_stride, f)
+            ](a.unsafe_offset(i * a_stride), b.unsafe_offset(i * b_stride), f)
 
 
 def tolist(x: IntTuple) -> List[Int]:
@@ -877,9 +877,9 @@ def matmulb2b[
                         matmul_ukern[elt, W, Mr, Nr, Kr, Kc // (Stride * Kr)](
                             pabk, pak, pbk, kc != 0
                         )
-                        pbk = pbk + WNr * Kc
-                        pabk = pabk + Mr * WNr
-                    pak = pak + Mr * Kc
+                        pbk = pbk.unsafe_offset(WNr * Kc)
+                        pabk = pabk.unsafe_offset(Mr * WNr)
+                    pak = pak.unsafe_offset(Mr * Kc)
                 pb = pbk
             pdk = pd
             for _ in range(
@@ -934,9 +934,9 @@ def matmulb2b[
                         matmul_ukern[elt, W, Mr, Nr, Kr, Kc // (Stride * Kr)](
                             pdk, pabk, pck, lc != 0
                         )
-                        pck = pck + WNr * Kc
-                        pdk = pdk + Mr * WNr
-                    pabk = pabk + Mr * Kc
+                        pck = pck.unsafe_offset(WNr * Kc)
+                        pdk = pdk.unsafe_offset(Mr * WNr)
+                    pabk = pabk.unsafe_offset(Mr * Kc)
                 pc = pck
         pa = pak
         pd = pdk

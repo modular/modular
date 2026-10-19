@@ -4176,6 +4176,50 @@ class TestDistributedAllreduceSumHandler:
             )
 
     @_NEED_2_GPUS
+    def test_allreduce_sum_low_level_bfloat16(self) -> None:
+        """Same as `test_allreduce_sum_low_level`, but bfloat16."""
+        # Uses torch, not NumPy, to build/check the data: torch's dlpack
+        # supports bfloat16, NumPy's doesn't (the bug this regresses).
+        shape = [4, 4]
+        gpu0, gpu1 = DeviceRef.GPU(0), DeviceRef.GPU(1)
+
+        input_types: list[GType[Any]] = [
+            TensorType(DType.bfloat16, shape, gpu0),
+            TensorType(DType.bfloat16, shape, gpu1),
+            GBufferType(DType.uint8, [1024], gpu0),
+            GBufferType(DType.uint8, [1024], gpu1),
+        ]
+
+        with Graph("allreduce_bf16_test", input_types=input_types) as graph:
+            t0, t1, b0, b1 = graph.inputs
+            results = graph_ops.allreduce.sum(
+                [t0.tensor, t1.tensor], [b0.buffer, b1.buffer]
+            )
+            graph.output(*results)
+
+        a_torch = torch.arange(16, dtype=torch.bfloat16).reshape(shape)
+        b_torch = 10 * torch.arange(16, dtype=torch.bfloat16).reshape(shape)
+        expected = a_torch + b_torch
+
+        dev0, dev1 = Accelerator(0), Accelerator(1)
+        input_bufs = [
+            Buffer.from_dlpack(a_torch).to(dev0),
+            Buffer.from_dlpack(b_torch).to(dev1),
+            Buffer(shape=[1024], dtype=DType.uint8, device=dev0),
+            Buffer(shape=[1024], dtype=DType.uint8, device=dev1),
+        ]
+
+        assert _interpreter.can_execute(graph)
+        outputs = _interpreter.execute(graph, input_bufs)
+
+        assert len(outputs) == 2
+        for out in outputs:
+            assert isinstance(out, Buffer)
+            torch.testing.assert_close(
+                torch.from_dlpack(out.to(CPU())), expected
+            )
+
+    @_NEED_2_GPUS
     def test_allreduce_sum_distributed_tensor_e2e(self) -> None:
         """End-to-end: all_reduce_sum on a Partial distributed Tensor via interpreter."""
         num_gpus = min(accelerator_count(), 2)

@@ -37,11 +37,11 @@ def copy_via_shared(
     ]().as_unsafe_any_origin()
     var src_global: ImmPointer[
         Float32, ImmutAnyOrigin, address_space=.GLOBAL
-    ] = src.address_space_cast[.GLOBAL]()
+    ] = src.unsafe_address_space_cast[.GLOBAL]()
 
     async_copy[4](
-        src_global + thread_id,
-        mem_buff + thread_id,
+        src_global.unsafe_offset(thread_id),
+        mem_buff.unsafe_offset(thread_id),
     )
 
     async_copy_commit_group()
@@ -100,14 +100,16 @@ def copy_with_src_size(
 
     # src[0: 4] are valid addresses, this copies `src_size` elements.
     async_copy[16, fill=Float32(0)](
-        src.address_space_cast[.GLOBAL](), smem, Int32(src_size)
+        src.unsafe_address_space_cast[.GLOBAL](), smem, Int32(src_size)
     )
     # src[4: 8] are OOB, this should ignore src and set dst to zero.
     # See https://github.com/NVIDIA/cutlass/blob/5b283c872cae5f858ab682847181ca9d54d97377/include/cute/arch/copy_sm80.hpp#L101-L127.
     # Use `mojo build <this test>; compute-sanitizer <this test>` to verify there
     # is no OOB access.
     async_copy[16, fill=Float32(0)](
-        src.address_space_cast[.GLOBAL]() + 4, smem + 4, 0
+        src.unsafe_address_space_cast[.GLOBAL]().unsafe_offset(4),
+        smem.unsafe_offset(4),
+        0,
     )
     async_copy_wait_all()
 
@@ -131,12 +133,12 @@ def copy_with_non_zero_fill[
     var offset = smem_size // 2
 
     async_copy[16, fill=BFloat16(32)](
-        src.address_space_cast[.GLOBAL](), smem, predicate=True
+        src.unsafe_address_space_cast[.GLOBAL](), smem, predicate=True
     )
 
     async_copy[16, fill=BFloat16(32)](
-        (src + offset).address_space_cast[.GLOBAL](),
-        smem + offset,
+        src.unsafe_offset(offset).unsafe_address_space_cast[.GLOBAL](),
+        smem.unsafe_offset(offset),
         predicate=False,
     )
     async_copy_wait_all()

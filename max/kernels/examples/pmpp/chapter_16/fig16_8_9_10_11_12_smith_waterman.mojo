@@ -58,9 +58,9 @@ def max4(a: Int, b: Int, c: Int, d: Int) -> Int:
 
 
 def sw_kernel_square(
-    sw: UnsafePointer[Int32, MutAnyOrigin],
-    rea: UnsafePointer[UInt8, ImmutAnyOrigin],
-    ref_seq: UnsafePointer[UInt8, ImmutAnyOrigin],
+    sw: MutPointer[Int32, MutAnyOrigin],
+    rea: ImmPointer[UInt8, ImmutAnyOrigin],
+    ref_seq: ImmPointer[UInt8, ImmutAnyOrigin],
     L_dev: Int32,
     d_dev: Int32,
     tile_width_dev: Int32,
@@ -180,8 +180,8 @@ def max4_host(a: Int, b: Int, c: Int, d: Int) -> Int:
 
 def cpu_smith_waterman(
     sw: MutPointer[Int32, _],
-    rea: UnsafePointer[UInt8, _],
-    ref_seq: UnsafePointer[UInt8, _],
+    rea: Pointer[UInt8, _],
+    ref_seq: Pointer[UInt8, _],
     L: Int,
 ):
     """CPU version of Smith-Waterman algorithm for verification.
@@ -253,7 +253,7 @@ def generate_random_sequence(
 
 
 def print_matrix(
-    matrix: UnsafePointer[Int32, _], rows: Int, cols: Int, title: String
+    matrix: Pointer[Int32, _], rows: Int, cols: Int, title: String
 ):
     """Print scoring matrix (partial for large matrices).
 
@@ -282,7 +282,7 @@ def print_matrix(
 
 
 def print_sequence(
-    seq: UnsafePointer[UInt8, _], length: Int, max_chars: Int
+    seq: Pointer[UInt8, _], length: Int, max_chars: Int
 ) -> String:
     """Convert sequence to string for display.
 

@@ -39,10 +39,6 @@ from .engram_lookup import EngramOperand
 # One E8M0 scale per 32 elements of the gathered rows and of `wkv`.
 _MXFP8_BLOCK_SIZE = 32
 
-# Floor inside the gate's signed square root; distinct from `rms_norm_eps`,
-# which floors the two RMS denominators.
-_GATE_CLAMP_VALUE = 1e-6
-
 
 def _wkv_quant_config() -> QuantConfig:
     """The MXFP8 ``QuantConfig`` for ``engram.wkv``.
@@ -127,16 +123,15 @@ class Engram(Module):
             device=device,
             quant_config=_wkv_quant_config(),
         )
-        # Stored bf16 in the checkpoint; upcast to float32 before loading.
         self.q_weight = Weight(
             name="q_weight",
-            dtype=DType.float32,
+            dtype=DType.bfloat16,
             shape=(hc_mult, hidden_size),
             device=device,
         )
         self.k_weight = Weight(
             name="k_weight",
-            dtype=DType.float32,
+            dtype=DType.bfloat16,
             shape=(hc_mult, hidden_size),
             device=device,
         )
@@ -186,6 +181,16 @@ class Engram(Module):
     ) -> TensorValue:
         """Gates ``kv`` into ``hidden_states``, per hyper-connection copy.
 
+        For copy ``c`` with ``h = hidden_states[t, c]``, ``key`` its key and
+        ``rms(v) = rsqrt(mean(v * v) + rms_norm_eps)``::
+
+            x = sum(h * q[c] * k[c] * key) * rms(h) * rms(key) / sqrt(hidden)
+            gate = sigmoid(sign(x) * sqrt(max(|x|, 1e-6)))
+            out = h + gate * value
+
+        One fused kernel computes it in float32 from the bf16 inputs; it
+        supports ``hidden_size`` 5120 and ``hc_mult`` 4.
+
         Args:
             hidden_states: ``[T, hc_mult, hidden_size]``.
             kv: ``[T, hidden_size * (hc_mult + 1)]``, ``wkv``'s output: one
@@ -197,51 +202,26 @@ class Engram(Module):
         Returns:
             ``[T, hc_mult, hidden_size]`` in ``hidden_states``'s dtype.
         """
-        total_tokens = hidden_states.shape[0]
-        key, value = ops.split(
-            kv, [self.hc_mult * self.hidden_size, self.hidden_size], axis=-1
-        )
-        key = ops.cast(
-            ops.reshape(key, (total_tokens, self.hc_mult, self.hidden_size)),
-            DType.float32,
-        )
-        value = ops.cast(value, DType.float32)
-
-        hidden = ops.cast(hidden_states, DType.float32)
-        q_weight = ops.cast(
-            TensorValue(self.q_weight).to(hidden.device), DType.float32
-        )
-        k_weight = ops.cast(
-            TensorValue(self.k_weight).to(hidden.device), DType.float32
-        )
-        # Elementwise product: a per-dimension weighting inside the dot.
-        weight = ops.unsqueeze(q_weight * k_weight, 0)
-
-        # `ops.sum`/`ops.mean` keep the reduced axis; squeeze to
-        # `[T, hc_mult]`.
-        dot = ops.squeeze(ops.sum(hidden * weight * key, axis=-1), -1)
-        hidden_rms = ops.rsqrt(
-            ops.squeeze(ops.mean(hidden * hidden, axis=-1), -1)
-            + self.rms_norm_eps
-        )
-        key_rms = ops.rsqrt(
-            ops.squeeze(ops.mean(key * key, axis=-1), -1) + self.rms_norm_eps
-        )
-        dot = dot * hidden_rms * key_rms * (float(self.hidden_size) ** -0.5)
-
-        # Signed square root via `dot < 0`, not `sign(dot)`, so `dot == 0`
-        # maps to `+mag`, not `0`.
-        mag = ops.sqrt(ops.max(ops.abs(dot), _GATE_CLAMP_VALUE))
-        gate = ops.sigmoid(ops.where(dot < 0, -mag, mag))
+        device = hidden_states.device
+        values = [
+            hidden_states,
+            kv,
+            TensorValue(self.q_weight).to(device),
+            TensorValue(self.k_weight).to(device),
+        ]
+        name = "mo.engram.gate"
         if token_mask is not None:
-            token_mask = token_mask.rebind((total_tokens,))
-            zero = ops.constant(0.0, gate.dtype, device=gate.device)
-            gate = ops.where(
-                ops.unsqueeze(token_mask.to(gate.device), -1), gate, zero
+            values.append(
+                token_mask.rebind((hidden_states.shape[0],)).to(device)
             )
-
-        out = hidden + ops.unsqueeze(gate, -1) * ops.unsqueeze(value, 1)
-        return ops.cast(out, hidden_states.dtype)
+            name = "mo.engram.gate_masked"
+        return ops.custom(
+            name,
+            device=device,
+            values=values,
+            out_types=[hidden_states.type],
+            parameters={"epsilon": self.rms_norm_eps},
+        )[0].tensor
 
     def gate(
         self,

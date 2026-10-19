@@ -299,7 +299,9 @@ def run_one_case(
     )
     for e in range(num_experts):
         var b_slice = TileTensor(
-            b_scales_host_ptr.unsafe_ptr() + e * b_expert_scale_count,
+            b_scales_host_ptr.unsafe_ptr().unsafe_offset(
+                e * b_expert_scale_count
+            ),
             row_major(
                 Idx[n_groups],
                 Idx[k_groups],
@@ -671,7 +673,9 @@ def _run_batch_composition(
     )
     for e in range(num_experts):
         var b_slice = TileTensor(
-            b_scales_host_ptr.unsafe_ptr() + e * b_expert_scale_count,
+            b_scales_host_ptr.unsafe_ptr().unsafe_offset(
+                e * b_expert_scale_count
+            ),
             row_major(
                 Idx[n_groups],
                 Idx[k_groups],
@@ -702,7 +706,10 @@ def _run_batch_composition(
     rand(a_host._storage, m_probe * K)
     if total_num_tokens > m_probe:
         seed(filler_seed)
-        rand(a_host._storage + m_probe * K, (total_num_tokens - m_probe) * K)
+        rand(
+            a_host._storage.unsafe_offset(m_probe * K),
+            (total_num_tokens - m_probe) * K,
+        )
 
     # A scales: zero, then fill fillers (filler_seed) and the probe (probe_seed).
     for i in range(a_scales_host.num_elements()):

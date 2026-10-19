@@ -68,9 +68,9 @@ ParserEvaluationContext::resolveStructOp(TypedAttr typeValue,
 FuncInterface
 ParserEvaluationContext::resolveFunctionDecl(SymbolRefAttr symbol) {
   ASTDecl *decl = shared.declResolver->getDeclForFuncSymbol(symbol);
-  if (!decl)
-    return nullptr;
-  return dyn_cast_or_null<FuncInterface>(decl->getIfOperation());
+  if (auto *defDecl = dyn_cast_or_null<DefASTDecl>(decl))
+    return defDecl->getOp();
+  return nullptr;
 }
 
 Operation *ParserEvaluationContext::resolveConformanceForStruct(
@@ -86,12 +86,12 @@ Operation *ParserEvaluationContext::resolveConformanceForStruct(
     // TODO: we might need to allow multiple conformance ops for parametric
     // traits, and we need to filter it here.
     assert(conformanceDecls.size() == 1 && "expected exactly one conformance");
-    ASTDecl &conformDecl = *conformanceDecls.front();
+    auto &conformDecl = cast<ConformanceASTDecl>(*conformanceDecls.front());
     if (failed(shared.declResolver->resolveBody(conformDecl,
                                                 conformDecl.getLoc())))
       return nullptr;
 
-    return conformDecl.getIfOperation();
+    return conformDecl.getOp();
   }
 
   return nullptr;

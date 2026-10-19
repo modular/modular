@@ -35,7 +35,6 @@ from .coord import (
 from .int_tuple import (
     UNKNOWN_VALUE,
     IntTuple,
-    create_unknown_int_tuple,
     to_index_list,
 )
 from .layout import Layout, LayoutList, composition, print_layout

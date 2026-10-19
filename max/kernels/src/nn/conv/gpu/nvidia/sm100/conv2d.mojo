@@ -843,20 +843,9 @@ def im2col[
                                 and iw >= 0
                                 and iw < problem.in_width
                             ):
-                                var in_idx = (
-                                    b
-                                    * problem.in_height
-                                    * problem.in_width
-                                    * problem.in_channels
-                                    + ih
-                                    * problem.in_width
-                                    * problem.in_channels
-                                    + iw * problem.in_channels
-                                    + c
-                                )
                                 output.store_linear(
                                     IndexList[2](m_idx, k_idx),
-                                    activation.raw_load(in_idx),
+                                    activation[b, ih, iw, c],
                                 )
                             else:
                                 # Zero padding

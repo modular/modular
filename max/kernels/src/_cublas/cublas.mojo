@@ -147,7 +147,7 @@ def cublasScopy(
     n: Int64,
     x: ImmPointer[Float32, _],
     incx: Int64,
-    y: UnsafePointer[Float32, _],
+    y: Pointer[Float32, _],
     incy: Int64,
 ) raises -> Result:
     return _get_dylib_function[
@@ -174,7 +174,7 @@ def cublasDgemv(
     x: ImmPointer[Float64, _],
     incx: Int16,
     beta: ImmPointer[Float64, _],
-    y: UnsafePointer[Float64, _],
+    y: Pointer[Float64, _],
     incy: Int16,
 ) raises -> Result:
     return _get_dylib_function[
@@ -203,7 +203,7 @@ def cublasStpsv(
     diag: cublasDiagType_t,
     n: Int16,
     _ap: ImmPointer[Float32, _],
-    x: UnsafePointer[Float32, _],
+    x: Pointer[Float32, _],
     incx: Int16,
 ) raises -> Result:
     return _get_dylib_function[
@@ -234,7 +234,7 @@ def cublasDgbmv(
     x: ImmPointer[Float64, _],
     incx: Int16,
     beta: ImmPointer[Float64, _],
-    y: UnsafePointer[Float64, _],
+    y: Pointer[Float64, _],
     incy: Int16,
 ) raises -> Result:
     return _get_dylib_function[
@@ -273,7 +273,7 @@ def cublasDgemmStridedBatched(
     ldb: Int64,
     stride_b: Int64,
     beta: ImmPointer[Float64, _],
-    _c: UnsafePointer[Float64, _],
+    _c: Pointer[Float64, _],
     ldc: Int64,
     stride_c: Int64,
     batch_count: Int64,
@@ -334,7 +334,7 @@ def cublasDsyrkx(
     _b: ImmPointer[Float64, _],
     ldb: Int64,
     beta: ImmPointer[Float64, _],
-    _c: UnsafePointer[Float64, _],
+    _c: Pointer[Float64, _],
     ldc: Int64,
 ) raises -> Result:
     return _get_dylib_function[
@@ -371,7 +371,7 @@ def cublasUint8gemmBias(
     _b: ImmPointer[Int8, _],
     _b_bias: Int16,
     ldb: Int16,
-    _c: UnsafePointer[Int8, _],
+    _c: Pointer[Int8, _],
     _c_bias: Int16,
     ldc: Int16,
     _c_mult: Int16,
@@ -422,7 +422,7 @@ def cublasUint8gemmBias(
 
 
 def cublasGetProperty(
-    type: Property, value: UnsafePointer[Int16, _]
+    type: Property, value: Pointer[Int16, _]
 ) raises -> Result:
     return _get_dylib_function[
         "cublasGetProperty",
@@ -437,7 +437,7 @@ def cublasSsyr(
     alpha: ImmPointer[Float32, _],
     x: ImmPointer[Float32, _],
     incx: Int16,
-    _a: UnsafePointer[Float32, _],
+    _a: Pointer[Float32, _],
     lda: Int16,
 ) raises -> Result:
     return _get_dylib_function[
@@ -460,7 +460,7 @@ def cublasIdamax(
     n: Int16,
     x: ImmPointer[Float64, _],
     incx: Int16,
-    result: UnsafePointer[Int16, _],
+    result: Pointer[Int16, _],
 ) raises -> Result:
     return _get_dylib_function[
         "cublasIdamax_v2",
@@ -510,7 +510,7 @@ def cublasSgemvStridedBatched(
     incx: Int16,
     stridex: Int64,
     beta: ImmPointer[Float32, _],
-    y: UnsafePointer[Float32, _],
+    y: Pointer[Float32, _],
     incy: Int16,
     stridey: Int64,
     batch_count: Int16,
@@ -566,7 +566,7 @@ def cublasStrsm(
     alpha: ImmPointer[Float32, _],
     _a: ImmPointer[Float32, _],
     lda: Int16,
-    _b: UnsafePointer[Float32, _],
+    _b: Pointer[Float32, _],
     ldb: Int16,
 ) raises -> Result:
     return _get_dylib_function[
@@ -644,7 +644,7 @@ def cublasSgemm(
     _b: ImmPointer[Float32, _],
     ldb: Int64,
     beta: ImmPointer[Float32, _],
-    _c: UnsafePointer[Float32, _],
+    _c: Pointer[Float32, _],
     ldc: Int64,
 ) raises -> Result:
     return _get_dylib_function[
@@ -680,7 +680,7 @@ def cublasSgeam(
     beta: ImmPointer[Float32, _],
     _b: ImmPointer[Float32, _],
     ldb: Int64,
-    _c: UnsafePointer[Float32, _],
+    _c: Pointer[Float32, _],
     ldc: Int64,
 ) raises -> Result:
     return _get_dylib_function[
@@ -709,7 +709,7 @@ def cublasStrttp(
     n: Int16,
     _a: ImmPointer[Float32, _],
     lda: Int16,
-    _ap: UnsafePointer[Float32, _],
+    _ap: Pointer[Float32, _],
 ) raises -> Result:
     return _get_dylib_function[
         "cublasStrttp",
@@ -778,7 +778,7 @@ def cublasStrmv(
     n: Int16,
     _a: ImmPointer[Float32, _],
     lda: Int16,
-    x: UnsafePointer[Float32, _],
+    x: Pointer[Float32, _],
     incx: Int16,
 ) raises -> Result:
     return _get_dylib_function[
@@ -829,7 +829,7 @@ def cublasDnrm2(
     n: Int16,
     x: ImmPointer[Float64, _],
     incx: Int16,
-    result: UnsafePointer[Float64, _],
+    result: Pointer[Float64, _],
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDnrm2_v2",
@@ -849,7 +849,7 @@ def cublasIaminEx(
     x: OpaquePointer[ImmutAnyOrigin],
     x_type: DataType,
     incx: Int16,
-    result: UnsafePointer[Int16, _],
+    result: Pointer[Int16, _],
 ) raises -> Result:
     return _get_dylib_function[
         "cublasIaminEx",
@@ -873,7 +873,7 @@ def cublasDger(
     incx: Int64,
     y: ImmPointer[Float64, _],
     incy: Int64,
-    _a: UnsafePointer[Float64, _],
+    _a: Pointer[Float64, _],
     lda: Int64,
 ) raises -> Result:
     return _get_dylib_function[
@@ -908,7 +908,7 @@ def cublasDgemmStridedBatched(
     ldb: Int16,
     stride_b: Int64,
     beta: ImmPointer[Float64, _],
-    _c: UnsafePointer[Float64, _],
+    _c: Pointer[Float64, _],
     ldc: Int16,
     stride_c: Int64,
     batch_count: Int16,
@@ -1002,7 +1002,7 @@ def cublasSdot(
     incx: Int64,
     y: ImmPointer[Float32, _],
     incy: Int64,
-    result: UnsafePointer[Float32, _],
+    result: Pointer[Float32, _],
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSdot_v2_64",
@@ -1072,7 +1072,7 @@ def cublasStrsv(
     n: Int16,
     _a: ImmPointer[Float32, _],
     lda: Int16,
-    x: UnsafePointer[Float32, _],
+    x: Pointer[Float32, _],
     incx: Int16,
 ) raises -> Result:
     return _get_dylib_function[
@@ -1102,7 +1102,7 @@ def cublasSgemv(
     x: ImmPointer[Float32, _],
     incx: Int64,
     beta: ImmPointer[Float32, _],
-    y: UnsafePointer[Float32, _],
+    y: Pointer[Float32, _],
     incy: Int64,
 ) raises -> Result:
     return _get_dylib_function[
@@ -1124,7 +1124,7 @@ def cublasSgemv(
     ]()(handle, trans, m, n, alpha, _a, lda, x, incx, beta, y, incy)
 
 
-def cublasXerbla(sr_name: UnsafePointer[Int8, _], info: Int16) raises:
+def cublasXerbla(sr_name: Pointer[Int8, _], info: Int16) raises:
     return _get_dylib_function[
         "cublasXerbla", def(type_of(sr_name), Int16) thin -> None
     ]()(sr_name, info)
@@ -1164,7 +1164,7 @@ def cublasStbsv(
     k: Int16,
     _a: ImmPointer[Float32, _],
     lda: Int16,
-    x: UnsafePointer[Float32, _],
+    x: Pointer[Float32, _],
     incx: Int16,
 ) raises -> Result:
     return _get_dylib_function[
@@ -1186,7 +1186,7 @@ def cublasStbsv(
 
 def cublasGetSmCountTarget(
     handle: cublasHandle_t,
-    sm_count_target: UnsafePointer[Int16, _],
+    sm_count_target: Pointer[Int16, _],
 ) raises -> Result:
     return _get_dylib_function[
         "cublasGetSmCountTarget",
@@ -1214,7 +1214,7 @@ def cublasDsbmv(
     x: ImmPointer[Float64, _],
     incx: Int64,
     beta: ImmPointer[Float64, _],
-    y: UnsafePointer[Float64, _],
+    y: Pointer[Float64, _],
     incy: Int64,
 ) raises -> Result:
     return _get_dylib_function[
@@ -1243,7 +1243,7 @@ def cublasSdot(
     incx: Int16,
     y: ImmPointer[Float32, _],
     incy: Int16,
-    result: UnsafePointer[Float32, _],
+    result: Pointer[Float32, _],
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSdot_v2",
@@ -1270,7 +1270,7 @@ def cublasSsbmv(
     x: ImmPointer[Float32, _],
     incx: Int64,
     beta: ImmPointer[Float32, _],
-    y: UnsafePointer[Float32, _],
+    y: Pointer[Float32, _],
     incy: Int64,
 ) raises -> Result:
     return _get_dylib_function[
@@ -1297,7 +1297,7 @@ def cublasIsamax(
     n: Int64,
     x: ImmPointer[Float32, _],
     incx: Int64,
-    result: UnsafePointer[Int64, _],
+    result: Pointer[Int64, _],
 ) raises -> Result:
     return _get_dylib_function[
         "cublasIsamax_v2_64",
@@ -1320,7 +1320,7 @@ def cublasSdgmm(
     lda: Int64,
     x: ImmPointer[Float32, _],
     incx: Int64,
-    _c: UnsafePointer[Float32, _],
+    _c: Pointer[Float32, _],
     ldc: Int64,
 ) raises -> Result:
     return _get_dylib_function[
@@ -1464,7 +1464,7 @@ def cublasSsymv(
     x: ImmPointer[Float32, _],
     incx: Int64,
     beta: ImmPointer[Float32, _],
-    y: UnsafePointer[Float32, _],
+    y: Pointer[Float32, _],
     incy: Int64,
 ) raises -> Result:
     return _get_dylib_function[
@@ -1494,7 +1494,7 @@ def cublasSsyr2(
     incx: Int16,
     y: ImmPointer[Float32, _],
     incy: Int16,
-    _a: UnsafePointer[Float32, _],
+    _a: Pointer[Float32, _],
     lda: Int16,
 ) raises -> Result:
     return _get_dylib_function[
@@ -1516,7 +1516,7 @@ def cublasSsyr2(
 
 def cublasGetStream(
     handle: cublasHandle_t,
-    stream_id: UnsafePointer[CUstream, _],
+    stream_id: Pointer[CUstream, _],
 ) raises -> Result:
     return _get_dylib_function[
         "cublasGetStream_v2",
@@ -1529,7 +1529,7 @@ def cublasIsamin(
     n: Int16,
     x: ImmPointer[Float32, _],
     incx: Int16,
-    result: UnsafePointer[Int16, _],
+    result: Pointer[Int16, _],
 ) raises -> Result:
     return _get_dylib_function[
         "cublasIsamin_v2",
@@ -1552,7 +1552,7 @@ def cublasStbsv(
     k: Int64,
     _a: ImmPointer[Float32, _],
     lda: Int64,
-    x: UnsafePointer[Float32, _],
+    x: Pointer[Float32, _],
     incx: Int64,
 ) raises -> Result:
     return _get_dylib_function[
@@ -1603,7 +1603,7 @@ def cublasSaxpy(
     alpha: ImmPointer[Float32, _],
     x: ImmPointer[Float32, _],
     incx: Int64,
-    y: UnsafePointer[Float32, _],
+    y: Pointer[Float32, _],
     incy: Int64,
 ) raises -> Result:
     return _get_dylib_function[
@@ -1632,7 +1632,7 @@ def cublasDgeam(
     beta: ImmPointer[Float64, _],
     _b: ImmPointer[Float64, _],
     ldb: Int16,
-    _c: UnsafePointer[Float64, _],
+    _c: Pointer[Float64, _],
     ldc: Int16,
 ) raises -> Result:
     return _get_dylib_function[
@@ -1689,7 +1689,7 @@ def cublasIdamax(
     n: Int64,
     x: ImmPointer[Float64, _],
     incx: Int64,
-    result: UnsafePointer[Int64, _],
+    result: Pointer[Int64, _],
 ) raises -> Result:
     return _get_dylib_function[
         "cublasIdamax_v2_64",
@@ -1712,7 +1712,7 @@ def cublasSsyr2(
     incx: Int64,
     y: ImmPointer[Float32, _],
     incy: Int64,
-    _a: UnsafePointer[Float32, _],
+    _a: Pointer[Float32, _],
     lda: Int64,
 ) raises -> Result:
     return _get_dylib_function[
@@ -1738,7 +1738,7 @@ def cublasDaxpy(
     alpha: ImmPointer[Float64, _],
     x: ImmPointer[Float64, _],
     incx: Int64,
-    y: UnsafePointer[Float64, _],
+    y: Pointer[Float64, _],
     incy: Int64,
 ) raises -> Result:
     return _get_dylib_function[
@@ -1767,7 +1767,7 @@ def cublasDsyr2k(
     _b: ImmPointer[Float64, _],
     ldb: Int64,
     beta: ImmPointer[Float64, _],
-    _c: UnsafePointer[Float64, _],
+    _c: Pointer[Float64, _],
     ldc: Int64,
 ) raises -> Result:
     return _get_dylib_function[
@@ -1791,7 +1791,7 @@ def cublasDsyr2k(
 
 
 def cublasSetLoggerCallback(
-    user_callback: def(UnsafePointer[Int8, ImmutAnyOrigin]) thin -> None,
+    user_callback: def(ImmPointer[Int8, ImmutAnyOrigin]) thin -> None,
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSetLoggerCallback",
@@ -1811,7 +1811,7 @@ def cublasSgeam(
     beta: ImmPointer[Float32, _],
     _b: ImmPointer[Float32, _],
     ldb: Int16,
-    _c: UnsafePointer[Float32, _],
+    _c: Pointer[Float32, _],
     ldc: Int16,
 ) raises -> Result:
     return _get_dylib_function[
@@ -1839,7 +1839,7 @@ def cublasDtpttr(
     uplo: FillMode,
     n: Int16,
     _ap: ImmPointer[Float64, _],
-    _a: UnsafePointer[Float64, _],
+    _a: Pointer[Float64, _],
     lda: Int16,
 ) raises -> Result:
     return _get_dylib_function[
@@ -1861,7 +1861,7 @@ def cublasIamaxEx(
     x: OpaquePointer[ImmutAnyOrigin],
     x_type: DataType,
     incx: Int16,
-    result: UnsafePointer[Int16, _],
+    result: Pointer[Int16, _],
 ) raises -> Result:
     return _get_dylib_function[
         "cublasIamaxEx",
@@ -1885,7 +1885,7 @@ def cublasSspmv(
     x: ImmPointer[Float32, _],
     incx: Int64,
     beta: ImmPointer[Float32, _],
-    y: UnsafePointer[Float32, _],
+    y: Pointer[Float32, _],
     incy: Int64,
 ) raises -> Result:
     return _get_dylib_function[
@@ -1915,7 +1915,7 @@ def cublasSsymv(
     x: ImmPointer[Float32, _],
     incx: Int16,
     beta: ImmPointer[Float32, _],
-    y: UnsafePointer[Float32, _],
+    y: Pointer[Float32, _],
     incy: Int16,
 ) raises -> Result:
     return _get_dylib_function[
@@ -2042,7 +2042,7 @@ def cublasNrm2Ex(
 
 def cublasGetPointerMode(
     handle: cublasHandle_t,
-    mode: UnsafePointer[cublasPointerMode_t, _],
+    mode: Pointer[cublasPointerMode_t, _],
 ) raises -> Result:
     return _get_dylib_function[
         "cublasGetPointerMode_v2",
@@ -2056,9 +2056,9 @@ def cublasGetPointerMode(
 def cublasSrotm(
     handle: cublasHandle_t,
     n: Int64,
-    x: UnsafePointer[Float32, _],
+    x: Pointer[Float32, _],
     incx: Int64,
-    y: UnsafePointer[Float32, _],
+    y: Pointer[Float32, _],
     incy: Int64,
     param: ImmPointer[Float32, _],
 ) raises -> Result:
@@ -2238,7 +2238,7 @@ def cublasSsyrk(
     _a: ImmPointer[Float32, _],
     lda: Int16,
     beta: ImmPointer[Float32, _],
-    _c: UnsafePointer[Float32, _],
+    _c: Pointer[Float32, _],
     ldc: Int16,
 ) raises -> Result:
     return _get_dylib_function[
@@ -2266,7 +2266,7 @@ def cublasDsyr(
     alpha: ImmPointer[Float64, _],
     x: ImmPointer[Float64, _],
     incx: Int16,
-    _a: UnsafePointer[Float64, _],
+    _a: Pointer[Float64, _],
     lda: Int16,
 ) raises -> Result:
     return _get_dylib_function[
@@ -2292,7 +2292,7 @@ def cublasStrmv(
     n: Int64,
     _a: ImmPointer[Float32, _],
     lda: Int64,
-    x: UnsafePointer[Float32, _],
+    x: Pointer[Float32, _],
     incx: Int64,
 ) raises -> Result:
     return _get_dylib_function[
@@ -2316,7 +2316,7 @@ def cublasDcopy(
     n: Int64,
     x: ImmPointer[Float64, _],
     incx: Int64,
-    y: UnsafePointer[Float64, _],
+    y: Pointer[Float64, _],
     incy: Int64,
 ) raises -> Result:
     return _get_dylib_function[
@@ -2345,7 +2345,7 @@ def cublasDtrmm(
     lda: Int64,
     _b: ImmPointer[Float64, _],
     ldb: Int64,
-    _c: UnsafePointer[Float64, _],
+    _c: Pointer[Float64, _],
     ldc: Int64,
 ) raises -> Result:
     return _get_dylib_function[
@@ -2376,7 +2376,7 @@ def cublasDdot(
     incx: Int16,
     y: ImmPointer[Float64, _],
     incy: Int16,
-    result: UnsafePointer[Float64, _],
+    result: Pointer[Float64, _],
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDdot_v2",
@@ -2396,7 +2396,7 @@ def cublasSscal(
     handle: cublasHandle_t,
     n: Int16,
     alpha: ImmPointer[Float32, _],
-    x: UnsafePointer[Float32, _],
+    x: Pointer[Float32, _],
     incx: Int16,
 ) raises -> Result:
     return _get_dylib_function[
@@ -2426,7 +2426,7 @@ def cublasSgemmStridedBatched(
     ldb: Int64,
     stride_b: Int64,
     beta: ImmPointer[Float32, _],
-    _c: UnsafePointer[Float32, _],
+    _c: Pointer[Float32, _],
     ldc: Int64,
     stride_c: Int64,
     batch_count: Int64,
@@ -2484,7 +2484,7 @@ def cublasDdgmm(
     lda: Int64,
     x: ImmPointer[Float64, _],
     incx: Int64,
-    _c: UnsafePointer[Float64, _],
+    _c: Pointer[Float64, _],
     ldc: Int64,
 ) raises -> Result:
     return _get_dylib_function[
@@ -2509,7 +2509,7 @@ def cublasStpttr(
     uplo: FillMode,
     n: Int16,
     _ap: ImmPointer[Float32, _],
-    _a: UnsafePointer[Float32, _],
+    _a: Pointer[Float32, _],
     lda: Int16,
 ) raises -> Result:
     return _get_dylib_function[
@@ -2532,7 +2532,7 @@ def cublasDsyr(
     alpha: ImmPointer[Float64, _],
     x: ImmPointer[Float64, _],
     incx: Int64,
-    _a: UnsafePointer[Float64, _],
+    _a: Pointer[Float64, _],
     lda: Int64,
 ) raises -> Result:
     return _get_dylib_function[
@@ -2607,7 +2607,7 @@ def cublasSasum(
     n: Int16,
     x: ImmPointer[Float32, _],
     incx: Int16,
-    result: UnsafePointer[Float32, _],
+    result: Pointer[Float32, _],
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSasum_v2",
@@ -2739,7 +2739,7 @@ def cublasDsymm(
     _b: ImmPointer[Float64, _],
     ldb: Int64,
     beta: ImmPointer[Float64, _],
-    _c: UnsafePointer[Float64, _],
+    _c: Pointer[Float64, _],
     ldc: Int64,
 ) raises -> Result:
     return _get_dylib_function[
@@ -2769,7 +2769,7 @@ def cublasSspr(
     alpha: ImmPointer[Float32, _],
     x: ImmPointer[Float32, _],
     incx: Int64,
-    _ap: UnsafePointer[Float32, _],
+    _ap: Pointer[Float32, _],
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSspr_v2_64",
@@ -2790,7 +2790,7 @@ def cublasIdamin(
     n: Int64,
     x: ImmPointer[Float64, _],
     incx: Int64,
-    result: UnsafePointer[Int64, _],
+    result: Pointer[Int64, _],
 ) raises -> Result:
     return _get_dylib_function[
         "cublasIdamin_v2_64",
@@ -2856,7 +2856,7 @@ def cublasDaxpy(
     alpha: ImmPointer[Float64, _],
     x: ImmPointer[Float64, _],
     incx: Int16,
-    y: UnsafePointer[Float64, _],
+    y: Pointer[Float64, _],
     incy: Int16,
 ) raises -> Result:
     return _get_dylib_function[
@@ -2885,7 +2885,7 @@ def cublasDsyr2k(
     _b: ImmPointer[Float64, _],
     ldb: Int16,
     beta: ImmPointer[Float64, _],
-    _c: UnsafePointer[Float64, _],
+    _c: Pointer[Float64, _],
     ldc: Int16,
 ) raises -> Result:
     return _get_dylib_function[
@@ -2917,7 +2917,7 @@ def cublasSger(
     incx: Int64,
     y: ImmPointer[Float32, _],
     incy: Int64,
-    _a: UnsafePointer[Float32, _],
+    _a: Pointer[Float32, _],
     lda: Int64,
 ) raises -> Result:
     return _get_dylib_function[
@@ -2946,7 +2946,7 @@ def cublasSdgmm(
     lda: Int16,
     x: ImmPointer[Float32, _],
     incx: Int16,
-    _c: UnsafePointer[Float32, _],
+    _c: Pointer[Float32, _],
     ldc: Int16,
 ) raises -> Result:
     return _get_dylib_function[
@@ -2975,7 +2975,7 @@ def cublasDtbsv(
     k: Int16,
     _a: ImmPointer[Float64, _],
     lda: Int16,
-    x: UnsafePointer[Float64, _],
+    x: Pointer[Float64, _],
     incx: Int16,
 ) raises -> Result:
     return _get_dylib_function[
@@ -3006,7 +3006,7 @@ def cublasDtrsm(
     alpha: ImmPointer[Float64, _],
     _a: ImmPointer[Float64, _],
     lda: Int16,
-    _b: UnsafePointer[Float64, _],
+    _b: Pointer[Float64, _],
     ldb: Int16,
 ) raises -> Result:
     return _get_dylib_function[
@@ -3037,7 +3037,7 @@ def cublasStbmv(
     k: Int16,
     _a: ImmPointer[Float32, _],
     lda: Int16,
-    x: UnsafePointer[Float32, _],
+    x: Pointer[Float32, _],
     incx: Int16,
 ) raises -> Result:
     return _get_dylib_function[
@@ -3066,7 +3066,7 @@ def cublasDspmv(
     x: ImmPointer[Float64, _],
     incx: Int16,
     beta: ImmPointer[Float64, _],
-    y: UnsafePointer[Float64, _],
+    y: Pointer[Float64, _],
     incy: Int16,
 ) raises -> Result:
     return _get_dylib_function[
@@ -3089,9 +3089,9 @@ def cublasDspmv(
 def cublasSswap(
     handle: cublasHandle_t,
     n: Int64,
-    x: UnsafePointer[Float32, _],
+    x: Pointer[Float32, _],
     incx: Int64,
-    y: UnsafePointer[Float32, _],
+    y: Pointer[Float32, _],
     incy: Int64,
 ) raises -> Result:
     return _get_dylib_function[
@@ -3116,7 +3116,7 @@ def cublasDspmv(
     x: ImmPointer[Float64, _],
     incx: Int64,
     beta: ImmPointer[Float64, _],
-    y: UnsafePointer[Float64, _],
+    y: Pointer[Float64, _],
     incy: Int64,
 ) raises -> Result:
     return _get_dylib_function[
@@ -3138,11 +3138,11 @@ def cublasDspmv(
 
 def cublasSrotmg(
     handle: cublasHandle_t,
-    d1: UnsafePointer[Float32, _],
-    d2: UnsafePointer[Float32, _],
-    x1: UnsafePointer[Float32, _],
-    y1: UnsafePointer[Float32, _],
-    param: UnsafePointer[Float32, _],
+    d1: Pointer[Float32, _],
+    d2: Pointer[Float32, _],
+    x1: Pointer[Float32, _],
+    y1: Pointer[Float32, _],
+    param: Pointer[Float32, _],
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSrotmg_v2",
@@ -3164,7 +3164,7 @@ def cublasDtpmv(
     diag: cublasDiagType_t,
     n: Int16,
     _ap: ImmPointer[Float64, _],
-    x: UnsafePointer[Float64, _],
+    x: Pointer[Float64, _],
     incx: Int16,
 ) raises -> Result:
     return _get_dylib_function[
@@ -3187,7 +3187,7 @@ def cublasDasum(
     n: Int16,
     x: ImmPointer[Float64, _],
     incx: Int16,
-    result: UnsafePointer[Float64, _],
+    result: Pointer[Float64, _],
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDasum_v2",
@@ -3250,9 +3250,9 @@ def cublasRotEx(
 def cublasDrotm(
     handle: cublasHandle_t,
     n: Int16,
-    x: UnsafePointer[Float64, _],
+    x: Pointer[Float64, _],
     incx: Int16,
-    y: UnsafePointer[Float64, _],
+    y: Pointer[Float64, _],
     incy: Int16,
     param: ImmPointer[Float64, _],
 ) raises -> Result:
@@ -3326,7 +3326,7 @@ def cublasSgemm(
     _b: ImmPointer[Float32, _],
     ldb: Int16,
     beta: ImmPointer[Float32, _],
-    _c: UnsafePointer[Float32, _],
+    _c: Pointer[Float32, _],
     ldc: Int16,
 ) raises -> Result:
     return _get_dylib_function[
@@ -3362,7 +3362,7 @@ def cublasSsymm(
     _b: ImmPointer[Float32, _],
     ldb: Int64,
     beta: ImmPointer[Float32, _],
-    _c: UnsafePointer[Float32, _],
+    _c: Pointer[Float32, _],
     ldc: Int64,
 ) raises -> Result:
     return _get_dylib_function[
@@ -3438,9 +3438,9 @@ def cublasSwapEx(
 def cublasSrot(
     handle: cublasHandle_t,
     n: Int64,
-    x: UnsafePointer[Float32, _],
+    x: Pointer[Float32, _],
     incx: Int64,
-    y: UnsafePointer[Float32, _],
+    y: Pointer[Float32, _],
     incy: Int64,
     c: ImmPointer[Float32, _],
     s: ImmPointer[Float32, _],
@@ -3489,7 +3489,7 @@ def cublasDtrsv(
     n: Int16,
     _a: ImmPointer[Float64, _],
     lda: Int16,
-    x: UnsafePointer[Float64, _],
+    x: Pointer[Float64, _],
     incx: Int16,
 ) raises -> Result:
     return _get_dylib_function[
@@ -3520,7 +3520,7 @@ def cublasSsymm(
     _b: ImmPointer[Float32, _],
     ldb: Int16,
     beta: ImmPointer[Float32, _],
-    _c: UnsafePointer[Float32, _],
+    _c: Pointer[Float32, _],
     ldc: Int16,
 ) raises -> Result:
     return _get_dylib_function[
@@ -3556,7 +3556,7 @@ def cublasDtrmm(
     lda: Int16,
     _b: ImmPointer[Float64, _],
     ldb: Int16,
-    _c: UnsafePointer[Float64, _],
+    _c: Pointer[Float64, _],
     ldc: Int16,
 ) raises -> Result:
     return _get_dylib_function[
@@ -3617,9 +3617,7 @@ def cublasCherk3mEx(
     )
 
 
-comptime cublasLogCallback = def(
-    UnsafePointer[Int8, ImmutAnyOrigin]
-) thin -> None
+comptime cublasLogCallback = def(ImmPointer[Int8, ImmutAnyOrigin]) thin -> None
 
 
 def cublasDtrmv(
@@ -3630,7 +3628,7 @@ def cublasDtrmv(
     n: Int16,
     _a: ImmPointer[Float64, _],
     lda: Int16,
-    x: UnsafePointer[Float64, _],
+    x: Pointer[Float64, _],
     incx: Int16,
 ) raises -> Result:
     return _get_dylib_function[
@@ -3658,7 +3656,7 @@ def cublasDdgmm(
     lda: Int16,
     x: ImmPointer[Float64, _],
     incx: Int16,
-    _c: UnsafePointer[Float64, _],
+    _c: Pointer[Float64, _],
     ldc: Int16,
 ) raises -> Result:
     return _get_dylib_function[
@@ -3687,7 +3685,7 @@ def cublasDtbsv(
     k: Int64,
     _a: ImmPointer[Float64, _],
     lda: Int64,
-    x: UnsafePointer[Float64, _],
+    x: Pointer[Float64, _],
     incx: Int64,
 ) raises -> Result:
     return _get_dylib_function[
@@ -3719,7 +3717,7 @@ def cublasSsyr2k(
     _b: ImmPointer[Float32, _],
     ldb: Int16,
     beta: ImmPointer[Float32, _],
-    _c: UnsafePointer[Float32, _],
+    _c: Pointer[Float32, _],
     ldc: Int16,
 ) raises -> Result:
     return _get_dylib_function[
@@ -3755,7 +3753,7 @@ def cublasDgemm(
     _b: ImmPointer[Float64, _],
     ldb: Int16,
     beta: ImmPointer[Float64, _],
-    _c: UnsafePointer[Float64, _],
+    _c: Pointer[Float64, _],
     ldc: Int16,
 ) raises -> Result:
     return _get_dylib_function[
@@ -3781,7 +3779,7 @@ def cublasDgemm(
 
 def cublasGetMathMode(
     handle: cublasHandle_t,
-    mode: UnsafePointer[cublasMath_t, _],
+    mode: Pointer[cublasMath_t, _],
 ) raises -> Result:
     return _get_dylib_function[
         "cublasGetMathMode",
@@ -3795,9 +3793,9 @@ def cublasGetMathMode(
 def cublasDrot(
     handle: cublasHandle_t,
     n: Int64,
-    x: UnsafePointer[Float64, _],
+    x: Pointer[Float64, _],
     incx: Int64,
-    y: UnsafePointer[Float64, _],
+    y: Pointer[Float64, _],
     incy: Int64,
     c: ImmPointer[Float64, _],
     s: ImmPointer[Float64, _],
@@ -3824,7 +3822,7 @@ def cublasSspr(
     alpha: ImmPointer[Float32, _],
     x: ImmPointer[Float32, _],
     incx: Int16,
-    _ap: UnsafePointer[Float32, _],
+    _ap: Pointer[Float32, _],
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSspr_v2",
@@ -3953,9 +3951,9 @@ def cublasDotEx(
 def cublasSswap(
     handle: cublasHandle_t,
     n: Int16,
-    x: UnsafePointer[Float32, _],
+    x: Pointer[Float32, _],
     incx: Int16,
-    y: UnsafePointer[Float32, _],
+    y: Pointer[Float32, _],
     incy: Int16,
 ) raises -> Result:
     return _get_dylib_function[
@@ -3974,9 +3972,9 @@ def cublasSswap(
 def cublasDrotm(
     handle: cublasHandle_t,
     n: Int64,
-    x: UnsafePointer[Float64, _],
+    x: Pointer[Float64, _],
     incx: Int64,
-    y: UnsafePointer[Float64, _],
+    y: Pointer[Float64, _],
     incy: Int64,
     param: ImmPointer[Float64, _],
 ) raises -> Result:
@@ -4068,7 +4066,7 @@ def cublasDgemm(
     _b: ImmPointer[Float64, _],
     ldb: Int64,
     beta: ImmPointer[Float64, _],
-    _c: UnsafePointer[Float64, _],
+    _c: Pointer[Float64, _],
     ldc: Int64,
 ) raises -> Result:
     return _get_dylib_function[
@@ -4102,7 +4100,7 @@ def cublasSsyrk(
     _a: ImmPointer[Float32, _],
     lda: Int64,
     beta: ImmPointer[Float32, _],
-    _c: UnsafePointer[Float32, _],
+    _c: Pointer[Float32, _],
     ldc: Int64,
 ) raises -> Result:
     return _get_dylib_function[
@@ -4128,7 +4126,7 @@ def cublasDnrm2(
     n: Int64,
     x: ImmPointer[Float64, _],
     incx: Int64,
-    result: UnsafePointer[Float64, _],
+    result: Pointer[Float64, _],
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDnrm2_v2_64",
@@ -4147,7 +4145,7 @@ def cublasDasum(
     n: Int64,
     x: ImmPointer[Float64, _],
     incx: Int64,
-    result: UnsafePointer[Float64, _],
+    result: Pointer[Float64, _],
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDasum_v2_64",
@@ -4173,7 +4171,7 @@ def cublasDsyrkx(
     _b: ImmPointer[Float64, _],
     ldb: Int16,
     beta: ImmPointer[Float64, _],
-    _c: UnsafePointer[Float64, _],
+    _c: Pointer[Float64, _],
     ldc: Int16,
 ) raises -> Result:
     return _get_dylib_function[
@@ -4246,7 +4244,7 @@ def cublasDtpsv(
     diag: cublasDiagType_t,
     n: Int16,
     _ap: ImmPointer[Float64, _],
-    x: UnsafePointer[Float64, _],
+    x: Pointer[Float64, _],
     incx: Int16,
 ) raises -> Result:
     return _get_dylib_function[
@@ -4273,7 +4271,7 @@ def cublasSspr2(
     incx: Int16,
     y: ImmPointer[Float32, _],
     incy: Int16,
-    _ap: UnsafePointer[Float32, _],
+    _ap: Pointer[Float32, _],
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSspr2_v2",
@@ -4316,10 +4314,10 @@ def cublasSetMatrix(
 
 def cublasDrotg(
     handle: cublasHandle_t,
-    a: UnsafePointer[Float64, _],
-    b: UnsafePointer[Float64, _],
-    c: UnsafePointer[Float64, _],
-    s: UnsafePointer[Float64, _],
+    a: Pointer[Float64, _],
+    b: Pointer[Float64, _],
+    c: Pointer[Float64, _],
+    s: Pointer[Float64, _],
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDrotg_v2",
@@ -4335,7 +4333,7 @@ def cublasDrotg(
 
 def cublasGetAtomicsMode(
     handle: cublasHandle_t,
-    mode: UnsafePointer[cublasAtomicsMode_t, _],
+    mode: Pointer[cublasAtomicsMode_t, _],
 ) raises -> Result:
     return _get_dylib_function[
         "cublasGetAtomicsMode",
@@ -4355,7 +4353,7 @@ def cublasStbmv(
     k: Int64,
     _a: ImmPointer[Float32, _],
     lda: Int64,
-    x: UnsafePointer[Float32, _],
+    x: Pointer[Float32, _],
     incx: Int64,
 ) raises -> Result:
     return _get_dylib_function[
@@ -4424,7 +4422,7 @@ def cublasIaminEx(
     x: OpaquePointer[ImmutAnyOrigin],
     x_type: DataType,
     incx: Int64,
-    result: UnsafePointer[Int64, _],
+    result: Pointer[Int64, _],
 ) raises -> Result:
     return _get_dylib_function[
         "cublasIaminEx_64",
@@ -4448,7 +4446,7 @@ def cublasDspr2(
     incx: Int16,
     y: ImmPointer[Float64, _],
     incy: Int16,
-    _ap: UnsafePointer[Float64, _],
+    _ap: Pointer[Float64, _],
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDspr2_v2",
@@ -4514,7 +4512,7 @@ def cublasScopy(
     n: Int16,
     x: ImmPointer[Float32, _],
     incx: Int16,
-    y: UnsafePointer[Float32, _],
+    y: Pointer[Float32, _],
     incy: Int16,
 ) raises -> Result:
     return _get_dylib_function[
@@ -4540,7 +4538,7 @@ def cublasDsyrk(
     _a: ImmPointer[Float64, _],
     lda: Int16,
     beta: ImmPointer[Float64, _],
-    _c: UnsafePointer[Float64, _],
+    _c: Pointer[Float64, _],
     ldc: Int16,
 ) raises -> Result:
     return _get_dylib_function[
@@ -4597,7 +4595,7 @@ def cublasIamaxEx(
     x: OpaquePointer[ImmutAnyOrigin],
     x_type: DataType,
     incx: Int64,
-    result: UnsafePointer[Int64, _],
+    result: Pointer[Int64, _],
 ) raises -> Result:
     return _get_dylib_function[
         "cublasIamaxEx_64",
@@ -4624,7 +4622,7 @@ def cublasSsyrkx(
     _b: ImmPointer[Float32, _],
     ldb: Int64,
     beta: ImmPointer[Float32, _],
-    _c: UnsafePointer[Float32, _],
+    _c: Pointer[Float32, _],
     ldc: Int64,
 ) raises -> Result:
     return _get_dylib_function[
@@ -4650,9 +4648,9 @@ def cublasSsyrkx(
 def cublasDswap(
     handle: cublasHandle_t,
     n: Int64,
-    x: UnsafePointer[Float64, _],
+    x: Pointer[Float64, _],
     incx: Int64,
-    y: UnsafePointer[Float64, _],
+    y: Pointer[Float64, _],
     incy: Int64,
 ) raises -> Result:
     return _get_dylib_function[
@@ -4731,7 +4729,7 @@ def cublasSspr2(
     incx: Int64,
     y: ImmPointer[Float32, _],
     incy: Int64,
-    _ap: UnsafePointer[Float32, _],
+    _ap: Pointer[Float32, _],
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSspr2_v2_64",
@@ -4762,7 +4760,7 @@ def cublasSgbmv(
     x: ImmPointer[Float32, _],
     incx: Int64,
     beta: ImmPointer[Float32, _],
-    y: UnsafePointer[Float32, _],
+    y: Pointer[Float32, _],
     incy: Int64,
 ) raises -> Result:
     return _get_dylib_function[
@@ -4813,7 +4811,7 @@ def cublasAsumEx(
 
 def cublasGetVersion(
     handle: cublasHandle_t,
-    version: UnsafePointer[Int16, _],
+    version: Pointer[Int16, _],
 ) raises -> Result:
     return _get_dylib_function[
         "cublasGetVersion_v2",
@@ -4867,7 +4865,7 @@ def cublasDgemv(
     x: ImmPointer[Float64, _],
     incx: Int64,
     beta: ImmPointer[Float64, _],
-    y: UnsafePointer[Float64, _],
+    y: Pointer[Float64, _],
     incy: Int64,
 ) raises -> Result:
     return _get_dylib_function[
@@ -4891,10 +4889,10 @@ def cublasDgemv(
 
 def cublasGetStatusString(
     status: Result,
-) raises -> UnsafePointer[Int8, ImmutAnyOrigin]:
+) raises -> ImmPointer[Int8, ImmutAnyOrigin]:
     return _get_dylib_function[
         "cublasGetStatusString",
-        def(Result) thin -> UnsafePointer[Int8, ImmutAnyOrigin],
+        def(Result) thin -> ImmPointer[Int8, ImmutAnyOrigin],
     ]()(status)
 
 
@@ -4903,7 +4901,7 @@ def cublasSnrm2(
     n: Int64,
     x: ImmPointer[Float32, _],
     incx: Int64,
-    result: UnsafePointer[Float32, _],
+    result: Pointer[Float32, _],
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSnrm2_v2_64",
@@ -4930,7 +4928,7 @@ def cublasDgbmv(
     x: ImmPointer[Float64, _],
     incx: Int64,
     beta: ImmPointer[Float64, _],
-    y: UnsafePointer[Float64, _],
+    y: Pointer[Float64, _],
     incy: Int64,
 ) raises -> Result:
     return _get_dylib_function[
@@ -4963,7 +4961,7 @@ def cublasDsyr2(
     incx: Int16,
     y: ImmPointer[Float64, _],
     incy: Int16,
-    _a: UnsafePointer[Float64, _],
+    _a: Pointer[Float64, _],
     lda: Int16,
 ) raises -> Result:
     return _get_dylib_function[
@@ -4990,7 +4988,7 @@ def cublasDtpsv(
     diag: cublasDiagType_t,
     n: Int64,
     _ap: ImmPointer[Float64, _],
-    x: UnsafePointer[Float64, _],
+    x: Pointer[Float64, _],
     incx: Int64,
 ) raises -> Result:
     return _get_dylib_function[
@@ -5042,7 +5040,7 @@ def cublasDgemvStridedBatched(
     incx: Int64,
     stridex: Int64,
     beta: ImmPointer[Float64, _],
-    y: UnsafePointer[Float64, _],
+    y: Pointer[Float64, _],
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
@@ -5099,7 +5097,7 @@ def cublasSsyrkx(
     _b: ImmPointer[Float32, _],
     ldb: Int16,
     beta: ImmPointer[Float32, _],
-    _c: UnsafePointer[Float32, _],
+    _c: Pointer[Float32, _],
     ldc: Int16,
 ) raises -> Result:
     return _get_dylib_function[
@@ -5124,10 +5122,10 @@ def cublasSsyrkx(
 
 def cublasGetStatusName(
     status: Result,
-) raises -> UnsafePointer[Int8, ImmutAnyOrigin]:
+) raises -> ImmPointer[Int8, ImmutAnyOrigin]:
     return _get_dylib_function[
         "cublasGetStatusName",
-        def(Result) thin -> UnsafePointer[Int8, ImmutAnyOrigin],
+        def(Result) thin -> ImmPointer[Int8, ImmutAnyOrigin],
     ]()(status)
 
 
@@ -5140,7 +5138,7 @@ def cublasDtbmv(
     k: Int64,
     _a: ImmPointer[Float64, _],
     lda: Int64,
-    x: UnsafePointer[Float64, _],
+    x: Pointer[Float64, _],
     incx: Int64,
 ) raises -> Result:
     return _get_dylib_function[
@@ -5162,10 +5160,10 @@ def cublasDtbmv(
 
 def cublasSrotg(
     handle: cublasHandle_t,
-    a: UnsafePointer[Float32, _],
-    b: UnsafePointer[Float32, _],
-    c: UnsafePointer[Float32, _],
-    s: UnsafePointer[Float32, _],
+    a: Pointer[Float32, _],
+    b: Pointer[Float32, _],
+    c: Pointer[Float32, _],
+    s: Pointer[Float32, _],
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSrotg_v2",
@@ -5218,11 +5216,11 @@ def cublasCherkEx(
 
 def cublasDrotmg(
     handle: cublasHandle_t,
-    d1: UnsafePointer[Float64, _],
-    d2: UnsafePointer[Float64, _],
-    x1: UnsafePointer[Float64, _],
-    y1: UnsafePointer[Float64, _],
-    param: UnsafePointer[Float64, _],
+    d1: Pointer[Float64, _],
+    d2: Pointer[Float64, _],
+    x1: Pointer[Float64, _],
+    y1: Pointer[Float64, _],
+    param: Pointer[Float64, _],
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDrotmg_v2",
@@ -5246,7 +5244,7 @@ def cublasDger(
     incx: Int16,
     y: ImmPointer[Float64, _],
     incy: Int16,
-    _a: UnsafePointer[Float64, _],
+    _a: Pointer[Float64, _],
     lda: Int16,
 ) raises -> Result:
     return _get_dylib_function[
@@ -5270,7 +5268,7 @@ def cublasSscal(
     handle: cublasHandle_t,
     n: Int64,
     alpha: ImmPointer[Float32, _],
-    x: UnsafePointer[Float32, _],
+    x: Pointer[Float32, _],
     incx: Int64,
 ) raises -> Result:
     return _get_dylib_function[
@@ -5303,7 +5301,7 @@ def cublasStpsv(
     diag: cublasDiagType_t,
     n: Int64,
     _ap: ImmPointer[Float32, _],
-    x: UnsafePointer[Float32, _],
+    x: Pointer[Float32, _],
     incx: Int64,
 ) raises -> Result:
     return _get_dylib_function[
@@ -5328,7 +5326,7 @@ def cublasDspr(
     alpha: ImmPointer[Float64, _],
     x: ImmPointer[Float64, _],
     incx: Int64,
-    _ap: UnsafePointer[Float64, _],
+    _ap: Pointer[Float64, _],
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDspr_v2_64",
@@ -5422,7 +5420,7 @@ def cublasSsbmv(
     x: ImmPointer[Float32, _],
     incx: Int16,
     beta: ImmPointer[Float32, _],
-    y: UnsafePointer[Float32, _],
+    y: Pointer[Float32, _],
     incy: Int16,
 ) raises -> Result:
     return _get_dylib_function[
@@ -5457,7 +5455,7 @@ def cublasDgemvStridedBatched(
     incx: Int16,
     stridex: Int64,
     beta: ImmPointer[Float64, _],
-    y: UnsafePointer[Float64, _],
+    y: Pointer[Float64, _],
     incy: Int16,
     stridey: Int64,
     batch_count: Int16,
@@ -5512,7 +5510,7 @@ def cublasDsymv(
     x: ImmPointer[Float64, _],
     incx: Int16,
     beta: ImmPointer[Float64, _],
-    y: UnsafePointer[Float64, _],
+    y: Pointer[Float64, _],
     incy: Int16,
 ) raises -> Result:
     return _get_dylib_function[
@@ -5552,7 +5550,7 @@ def cublasStpmv(
     diag: cublasDiagType_t,
     n: Int64,
     _ap: ImmPointer[Float32, _],
-    x: UnsafePointer[Float32, _],
+    x: Pointer[Float32, _],
     incx: Int64,
 ) raises -> Result:
     return _get_dylib_function[
@@ -5583,7 +5581,7 @@ def cublasSgemvStridedBatched(
     incx: Int64,
     stridex: Int64,
     beta: ImmPointer[Float32, _],
-    y: UnsafePointer[Float32, _],
+    y: Pointer[Float32, _],
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
@@ -5633,7 +5631,7 @@ def cublasIsamin(
     n: Int64,
     x: ImmPointer[Float32, _],
     incx: Int64,
-    result: UnsafePointer[Int64, _],
+    result: Pointer[Int64, _],
 ) raises -> Result:
     return _get_dylib_function[
         "cublasIsamin_v2_64",
@@ -5650,9 +5648,9 @@ def cublasIsamin(
 def cublasDrot(
     handle: cublasHandle_t,
     n: Int16,
-    x: UnsafePointer[Float64, _],
+    x: Pointer[Float64, _],
     incx: Int16,
-    y: UnsafePointer[Float64, _],
+    y: Pointer[Float64, _],
     incy: Int16,
     c: ImmPointer[Float64, _],
     s: ImmPointer[Float64, _],
@@ -5684,7 +5682,7 @@ def cublasDgeam(
     beta: ImmPointer[Float64, _],
     _b: ImmPointer[Float64, _],
     ldb: Int64,
-    _c: UnsafePointer[Float64, _],
+    _c: Pointer[Float64, _],
     ldc: Int64,
 ) raises -> Result:
     return _get_dylib_function[
@@ -5741,7 +5739,7 @@ def cublasStrsm(
     alpha: ImmPointer[Float32, _],
     _a: ImmPointer[Float32, _],
     lda: Int64,
-    _b: UnsafePointer[Float32, _],
+    _b: Pointer[Float32, _],
     ldb: Int64,
 ) raises -> Result:
     return _get_dylib_function[
@@ -5831,7 +5829,7 @@ def cublasStpmv(
     diag: cublasDiagType_t,
     n: Int16,
     _ap: ImmPointer[Float32, _],
-    x: UnsafePointer[Float32, _],
+    x: Pointer[Float32, _],
     incx: Int16,
 ) raises -> Result:
     return _get_dylib_function[
@@ -5857,7 +5855,7 @@ def cublasDtrmv(
     n: Int64,
     _a: ImmPointer[Float64, _],
     lda: Int64,
-    x: UnsafePointer[Float64, _],
+    x: Pointer[Float64, _],
     incx: Int64,
 ) raises -> Result:
     return _get_dylib_function[
@@ -5884,7 +5882,7 @@ def cublasDtrsv(
     n: Int64,
     _a: ImmPointer[Float64, _],
     lda: Int64,
-    x: UnsafePointer[Float64, _],
+    x: Pointer[Float64, _],
     incx: Int64,
 ) raises -> Result:
     return _get_dylib_function[
@@ -5912,7 +5910,7 @@ def cublasDsyr2(
     incx: Int64,
     y: ImmPointer[Float64, _],
     incy: Int64,
-    _a: UnsafePointer[Float64, _],
+    _a: Pointer[Float64, _],
     lda: Int64,
 ) raises -> Result:
     return _get_dylib_function[
@@ -5935,9 +5933,9 @@ def cublasDsyr2(
 def cublasSrot(
     handle: cublasHandle_t,
     n: Int16,
-    x: UnsafePointer[Float32, _],
+    x: Pointer[Float32, _],
     incx: Int16,
-    y: UnsafePointer[Float32, _],
+    y: Pointer[Float32, _],
     incy: Int16,
     c: ImmPointer[Float32, _],
     s: ImmPointer[Float32, _],
@@ -5961,7 +5959,7 @@ def cublasDscal(
     handle: cublasHandle_t,
     n: Int16,
     alpha: ImmPointer[Float64, _],
-    x: UnsafePointer[Float64, _],
+    x: Pointer[Float64, _],
     incx: Int16,
 ) raises -> Result:
     return _get_dylib_function[
@@ -5977,7 +5975,7 @@ def cublasDscal(
 
 
 def cublasCreate(
-    handle: UnsafePointer[cublasHandle_t[MutAnyOrigin], _],
+    handle: Pointer[cublasHandle_t[MutAnyOrigin], _],
 ) raises -> Result:
     return _get_dylib_function[
         "cublasCreate_v2",
@@ -5997,9 +5995,9 @@ def cublasSetSmCountTarget(
 def cublasDswap(
     handle: cublasHandle_t,
     n: Int16,
-    x: UnsafePointer[Float64, _],
+    x: Pointer[Float64, _],
     incx: Int16,
-    y: UnsafePointer[Float64, _],
+    y: Pointer[Float64, _],
     incy: Int16,
 ) raises -> Result:
     return _get_dylib_function[
@@ -6023,7 +6021,7 @@ def cublasStrsv(
     n: Int64,
     _a: ImmPointer[Float32, _],
     lda: Int64,
-    x: UnsafePointer[Float32, _],
+    x: Pointer[Float32, _],
     incx: Int64,
 ) raises -> Result:
     return _get_dylib_function[
@@ -6051,7 +6049,7 @@ def cublasDspr2(
     incx: Int64,
     y: ImmPointer[Float64, _],
     incy: Int64,
-    _ap: UnsafePointer[Float64, _],
+    _ap: Pointer[Float64, _],
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDspr2_v2_64",
@@ -6076,7 +6074,7 @@ def cublasSsyr(
     alpha: ImmPointer[Float32, _],
     x: ImmPointer[Float32, _],
     incx: Int64,
-    _a: UnsafePointer[Float32, _],
+    _a: Pointer[Float32, _],
     lda: Int64,
 ) raises -> Result:
     return _get_dylib_function[
@@ -6128,7 +6126,7 @@ def cublasDtbmv(
     k: Int16,
     _a: ImmPointer[Float64, _],
     lda: Int16,
-    x: UnsafePointer[Float64, _],
+    x: Pointer[Float64, _],
     incx: Int16,
 ) raises -> Result:
     return _get_dylib_function[
@@ -6187,7 +6185,7 @@ def cublasSsyr2k(
     _b: ImmPointer[Float32, _],
     ldb: Int64,
     beta: ImmPointer[Float32, _],
-    _c: UnsafePointer[Float32, _],
+    _c: Pointer[Float32, _],
     ldc: Int64,
 ) raises -> Result:
     return _get_dylib_function[
@@ -6327,7 +6325,7 @@ def cublasDsymm(
     _b: ImmPointer[Float64, _],
     ldb: Int16,
     beta: ImmPointer[Float64, _],
-    _c: UnsafePointer[Float64, _],
+    _c: Pointer[Float64, _],
     ldc: Int16,
 ) raises -> Result:
     return _get_dylib_function[
@@ -6355,7 +6353,7 @@ def cublasIsamax(
     n: Int16,
     x: ImmPointer[Float32, _],
     incx: Int16,
-    result: UnsafePointer[Int16, _],
+    result: Pointer[Int16, _],
 ) raises -> Result:
     return _get_dylib_function[
         "cublasIsamax_v2",
@@ -6375,7 +6373,7 @@ def cublasSaxpy(
     alpha: ImmPointer[Float32, _],
     x: ImmPointer[Float32, _],
     incx: Int16,
-    y: UnsafePointer[Float32, _],
+    y: Pointer[Float32, _],
     incy: Int16,
 ) raises -> Result:
     return _get_dylib_function[
@@ -6397,7 +6395,7 @@ def cublasSnrm2(
     n: Int16,
     x: ImmPointer[Float32, _],
     incx: Int16,
-    result: UnsafePointer[Float32, _],
+    result: Pointer[Float32, _],
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSnrm2_v2",
@@ -6509,7 +6507,7 @@ def cublasDtrsm(
     alpha: ImmPointer[Float64, _],
     _a: ImmPointer[Float64, _],
     lda: Int64,
-    _b: UnsafePointer[Float64, _],
+    _b: Pointer[Float64, _],
     ldb: Int64,
 ) raises -> Result:
     return _get_dylib_function[
@@ -6536,7 +6534,7 @@ def cublasDcopy(
     n: Int16,
     x: ImmPointer[Float64, _],
     incx: Int16,
-    y: UnsafePointer[Float64, _],
+    y: Pointer[Float64, _],
     incy: Int16,
 ) raises -> Result:
     return _get_dylib_function[
@@ -6582,7 +6580,7 @@ def cublasDspr(
     alpha: ImmPointer[Float64, _],
     x: ImmPointer[Float64, _],
     incx: Int16,
-    _ap: UnsafePointer[Float64, _],
+    _ap: Pointer[Float64, _],
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDspr_v2",
@@ -6609,7 +6607,7 @@ def cublasSgemv(
     x: ImmPointer[Float32, _],
     incx: Int16,
     beta: ImmPointer[Float32, _],
-    y: UnsafePointer[Float32, _],
+    y: Pointer[Float32, _],
     incy: Int16,
 ) raises -> Result:
     return _get_dylib_function[
@@ -6637,7 +6635,7 @@ def cublasDtrttp(
     n: Int16,
     _a: ImmPointer[Float64, _],
     lda: Int16,
-    _ap: UnsafePointer[Float64, _],
+    _ap: Pointer[Float64, _],
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDtrttp",
@@ -6659,7 +6657,7 @@ def cublasDdot(
     incx: Int64,
     y: ImmPointer[Float64, _],
     incy: Int64,
-    result: UnsafePointer[Float64, _],
+    result: Pointer[Float64, _],
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDdot_v2_64",
@@ -6767,7 +6765,7 @@ def cublasStrmm(
     lda: Int64,
     _b: ImmPointer[Float32, _],
     ldb: Int64,
-    _c: UnsafePointer[Float32, _],
+    _c: Pointer[Float32, _],
     ldc: Int64,
 ) raises -> Result:
     return _get_dylib_function[
@@ -6801,7 +6799,7 @@ def cublasDsyrk(
     _a: ImmPointer[Float64, _],
     lda: Int64,
     beta: ImmPointer[Float64, _],
-    _c: UnsafePointer[Float64, _],
+    _c: Pointer[Float64, _],
     ldc: Int64,
 ) raises -> Result:
     return _get_dylib_function[
@@ -6826,7 +6824,7 @@ def cublasDscal(
     handle: cublasHandle_t,
     n: Int64,
     alpha: ImmPointer[Float64, _],
-    x: UnsafePointer[Float64, _],
+    x: Pointer[Float64, _],
     incx: Int64,
 ) raises -> Result:
     return _get_dylib_function[
@@ -6848,7 +6846,7 @@ def cublasDtpmv(
     diag: cublasDiagType_t,
     n: Int64,
     _ap: ImmPointer[Float64, _],
-    x: UnsafePointer[Float64, _],
+    x: Pointer[Float64, _],
     incx: Int64,
 ) raises -> Result:
     return _get_dylib_function[
@@ -6879,7 +6877,7 @@ def cublasSgbmv(
     x: ImmPointer[Float32, _],
     incx: Int16,
     beta: ImmPointer[Float32, _],
-    y: UnsafePointer[Float32, _],
+    y: Pointer[Float32, _],
     incy: Int16,
 ) raises -> Result:
     return _get_dylib_function[
@@ -6906,9 +6904,9 @@ def cublasSgbmv(
 def cublasSrotm(
     handle: cublasHandle_t,
     n: Int16,
-    x: UnsafePointer[Float32, _],
+    x: Pointer[Float32, _],
     incx: Int16,
-    y: UnsafePointer[Float32, _],
+    y: Pointer[Float32, _],
     incy: Int16,
     param: ImmPointer[Float32, _],
 ) raises -> Result:
@@ -6947,7 +6945,7 @@ def cublasDsbmv(
     x: ImmPointer[Float64, _],
     incx: Int16,
     beta: ImmPointer[Float64, _],
-    y: UnsafePointer[Float64, _],
+    y: Pointer[Float64, _],
     incy: Int16,
 ) raises -> Result:
     return _get_dylib_function[
@@ -6978,7 +6976,7 @@ def cublasSger(
     incx: Int16,
     y: ImmPointer[Float32, _],
     incy: Int16,
-    _a: UnsafePointer[Float32, _],
+    _a: Pointer[Float32, _],
     lda: Int16,
 ) raises -> Result:
     return _get_dylib_function[
@@ -7008,7 +7006,7 @@ def cublasDsymv(
     x: ImmPointer[Float64, _],
     incx: Int64,
     beta: ImmPointer[Float64, _],
-    y: UnsafePointer[Float64, _],
+    y: Pointer[Float64, _],
     incy: Int64,
 ) raises -> Result:
     return _get_dylib_function[
@@ -7051,7 +7049,7 @@ def cublasStrmm(
     lda: Int16,
     _b: ImmPointer[Float32, _],
     ldb: Int16,
-    _c: UnsafePointer[Float32, _],
+    _c: Pointer[Float32, _],
     ldc: Int16,
 ) raises -> Result:
     return _get_dylib_function[
@@ -7116,7 +7114,7 @@ def cublasIdamin(
     n: Int16,
     x: ImmPointer[Float64, _],
     incx: Int16,
-    result: UnsafePointer[Int16, _],
+    result: Pointer[Int16, _],
 ) raises -> Result:
     return _get_dylib_function[
         "cublasIdamin_v2",
@@ -7139,7 +7137,7 @@ def cublasSspmv(
     x: ImmPointer[Float32, _],
     incx: Int16,
     beta: ImmPointer[Float32, _],
-    y: UnsafePointer[Float32, _],
+    y: Pointer[Float32, _],
     incy: Int16,
 ) raises -> Result:
     return _get_dylib_function[
@@ -7174,7 +7172,7 @@ def cublasSgemmStridedBatched(
     ldb: Int16,
     stride_b: Int64,
     beta: ImmPointer[Float32, _],
-    _c: UnsafePointer[Float32, _],
+    _c: Pointer[Float32, _],
     ldc: Int16,
     stride_c: Int64,
     batch_count: Int16,
@@ -7228,7 +7226,7 @@ def cublasSasum(
     n: Int64,
     x: ImmPointer[Float32, _],
     incx: Int64,
-    result: UnsafePointer[Float32, _],
+    result: Pointer[Float32, _],
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSasum_v2_64",

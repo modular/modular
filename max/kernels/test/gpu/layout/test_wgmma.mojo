@@ -73,9 +73,9 @@ def wgmma_kernel_rs[
     comptime num_output_regs = WMMA_M * WMMA_N // 128
     var c_reg = SIMD[.float32, num_output_regs](0)
 
-    comptime M = Int(a_layout.shape[0]().value())
-    comptime K = Int(a_layout.shape[1]().value())
-    comptime N = Int(c_layout.shape[1]().value())
+    comptime M = Int(a_layout.shape[0]())
+    comptime K = Int(a_layout.shape[1]())
+    comptime N = Int(c_layout.shape[1]())
 
     comptime b_tile_dim0 = N if transpose_b else WMMA_K
     comptime b_tile_dim1 = WMMA_K if transpose_b else N
@@ -101,20 +101,14 @@ def wgmma_kernel_rs[
         var lane_q, lane_r = udivmod(lane_id(), 4)
         var row = warp_id() * 16 + lane_q
         var col = lane_r * 2
-        a_reg[0] = a_gmem_tile.raw_load(row * K + col).cast[.bfloat16]()
-        a_reg[1] = a_gmem_tile.raw_load(row * K + col + 1).cast[.bfloat16]()
-        a_reg[2] = a_gmem_tile.raw_load((row + 8) * K + col).cast[.bfloat16]()
-        a_reg[3] = a_gmem_tile.raw_load((row + 8) * K + col + 1).cast[
-            DType.bfloat16
-        ]()
-        a_reg[4] = a_gmem_tile.raw_load(row * K + col + 8).cast[.bfloat16]()
-        a_reg[5] = a_gmem_tile.raw_load(row * K + col + 9).cast[.bfloat16]()
-        a_reg[6] = a_gmem_tile.raw_load((row + 8) * K + col + 8).cast[
-            DType.bfloat16
-        ]()
-        a_reg[7] = a_gmem_tile.raw_load((row + 8) * K + col + 9).cast[
-            DType.bfloat16
-        ]()
+        a_reg[0] = a_gmem_tile[row, col].cast[.bfloat16]()
+        a_reg[1] = a_gmem_tile[row, col + 1].cast[.bfloat16]()
+        a_reg[2] = a_gmem_tile[row + 8, col].cast[.bfloat16]()
+        a_reg[3] = a_gmem_tile[row + 8, col + 1].cast[.bfloat16]()
+        a_reg[4] = a_gmem_tile[row, col + 8].cast[.bfloat16]()
+        a_reg[5] = a_gmem_tile[row, col + 9].cast[.bfloat16]()
+        a_reg[6] = a_gmem_tile[row + 8, col + 8].cast[.bfloat16]()
+        a_reg[7] = a_gmem_tile[row + 8, col + 9].cast[.bfloat16]()
 
         wgmma_fence_aligned()
 
@@ -179,9 +173,9 @@ def wgmma_kernel_ss[
     comptime num_output_regs = WMMA_M * WMMA_N // 128
     var c_reg = SIMD[.float32, num_output_regs](0)
 
-    comptime M = Int(a_layout.shape[0]().value())
-    comptime K = Int(a_layout.shape[1]().value())
-    comptime N = Int(c_layout.shape[1]().value())
+    comptime M = Int(a_layout.shape[0]())
+    comptime K = Int(a_layout.shape[1]())
+    comptime N = Int(c_layout.shape[1]())
 
     comptime b_tile_dim0 = N if transpose_b else WMMA_K
     comptime b_tile_dim1 = WMMA_K if transpose_b else N

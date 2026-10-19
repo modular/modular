@@ -190,14 +190,16 @@ def run_varlen_selective_scan_fwd[
         random(delta_bias_h)
 
     # Scale A to be negative for stability
+    var A_flat = A_h.reshape(row_major(dim * dstate))
     for i in range(dim * dstate):
-        var val = A_h.raw_load(i)
-        A_h.raw_store(i, Scalar[dtype](Float32(val) * -0.5))
+        var val = A_flat[i]
+        A_flat[i] = Scalar[dtype](Float32(val) * -0.5)
 
     # Scale delta to be positive
+    var delta_flat = delta_h.reshape(row_major(dim * total_length))
     for i in range(dim * total_length):
-        var val = delta_h.raw_load(i)
-        delta_h.raw_store(i, Scalar[dtype](abs(Float32(val)) * 0.5))
+        var val = delta_flat[i]
+        delta_flat[i] = Scalar[dtype](abs(Float32(val)) * 0.5)
 
     var ssm_states_tt = TileTensor(
         ssm_states_heap,
@@ -240,15 +242,15 @@ def run_varlen_selective_scan_fwd[
 
     # Basic sanity check: output should not be all zeros
     var has_nonzero = False
-    var output_size = dim * total_length
-    for i in range(output_size):
-        var value = (
-            z_buf.unsafe_ptr()
-            .load(i) if has_z else output_buf.unsafe_ptr()
-            .load(i)
-        )
-        if abs(Float32(value)) > 1e-6:
-            has_nonzero = True
+    for d in range(dim):
+        for t in range(total_length):
+            var value = Float32(z_buf[d, t]) if has_z else Float32(
+                output_buf[d, t]
+            )
+            if abs(value) > 1e-6:
+                has_nonzero = True
+                break
+        if has_nonzero:
             break
 
     if not has_nonzero:
@@ -371,14 +373,16 @@ def run_varlen_selective_state_update[
         random(dt_bias_h)
 
     # Scale A to be negative for stability
+    var A_flat = A_h.reshape(row_major(nheads * dim * dstate))
     for i in range(nheads * dim * dstate):
-        var val = A_h.raw_load(i)
-        A_h.raw_store(i, Scalar[dtype](Float32(val) * -0.5))
+        var val = A_flat[i]
+        A_flat[i] = Scalar[dtype](Float32(val) * -0.5)
 
     # Scale dt to be positive
+    var dt_flat = dt_h.reshape(row_major(batch * nheads * dim))
     for i in range(batch * nheads * dim):
-        var val = dt_h.raw_load(i)
-        dt_h.raw_store(i, Scalar[dtype](abs(Float32(val)) * 0.5))
+        var val = dt_flat[i]
+        dt_flat[i] = Scalar[dtype](abs(Float32(val)) * 0.5)
 
     var state_tt = TileTensor(
         state_heap,
@@ -412,8 +416,9 @@ def run_varlen_selective_state_update[
 
     # Basic sanity check: output should not be all zeros
     var has_nonzero = False
+    var output_flat = output_h.reshape(row_major(batch * nheads * dim))
     for i in range(batch * nheads * dim):
-        if abs(Float32(output_h.raw_load(i))) > 1e-6:
+        if abs(Float32(output_flat[i])) > 1e-6:
             has_nonzero = True
             break
 

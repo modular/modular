@@ -32,7 +32,7 @@ from typing import Any
 
 import numpy as np
 import numpy.typing as npt
-from max.driver import CPU, Accelerator, Device
+from max.driver import CPU, Accelerator, Device, float32_array_to_buffer
 from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.compilation import CompiledCallable
@@ -40,7 +40,6 @@ from max.experimental.nn import Module
 from max.experimental.tensor import Tensor, default_dtype
 from max.graph import TensorType
 from max.graph.weights import SafetensorWeights, Weights
-from max.pipelines.lib.bfloat16_utils import float32_array_to_buffer
 
 from .components.condition_encoder import ConditionEncoder
 from .components.transformer import Transformer

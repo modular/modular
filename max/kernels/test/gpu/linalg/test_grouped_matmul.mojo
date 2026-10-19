@@ -206,8 +206,8 @@ def test[
             comptime assert (
                 idx.rank == 2
             ), "the matmul epilogue contract is rank 2"
-            var i = Int(idx[0].value())
-            var j = Int(idx[1].value())
+            var i = Int(idx[0])
+            var j = Int(idx[1])
             var new_j, new_k = divmod(j, N)
             comptime assert N % width == 0, "N must be divisible by width"
             # The current index is [i, new_j, new_k] in the M x 3 x N row major
@@ -215,10 +215,10 @@ def test[
             # The permdim tensor has the shape 3 x M x N, so the index is then
             # [new_j, i, new_k].
             var ptr = (
-                c_out_ptr.bitcast[Scalar[out_type]]()
-                + new_j * total_num_tokens * N
-                + i * N
-                + new_k
+                c_out_ptr.unsafe_bitcast[Scalar[out_type]]()
+                .unsafe_offset(new_j * total_num_tokens * N)
+                .unsafe_offset(i * N)
+                .unsafe_offset(new_k)
             )
             ptr.store[width=width, alignment=alignment](val.cast[out_type]())
 
@@ -243,13 +243,17 @@ def test[
                 idx.rank == 2
             ), "the matmul epilogue contract is rank 2"
             var new_val = val
-            var row = Int(idx[0].value())
-            var col = Int(idx[1].value())
+            var row = Int(idx[0])
+            var col = Int(idx[1])
 
             comptime for i in range(width):
                 new_val[i] = test_epilogue(row, col + i, val[i])
 
-            var ptr = c_out_ptr.bitcast[Scalar[out_type]]() + row * N + col
+            var ptr = (
+                c_out_ptr.unsafe_bitcast[Scalar[out_type]]()
+                .unsafe_offset(row * N)
+                .unsafe_offset(col)
+            )
             ptr.store[width=width, alignment=alignment](
                 new_val.cast[out_type]()
             )
@@ -275,8 +279,8 @@ def test[
                 idx.rank == 2
             ), "the matmul epilogue contract is rank 2"
             var new_val = val
-            var row = Int(idx[0].value())
-            var col = Int(idx[1].value())
+            var row = Int(idx[0])
+            var col = Int(idx[1])
 
             comptime for i in range(width):
                 new_val[i] = test_epilogue(row, col + i, val[i])

@@ -31,7 +31,7 @@ from collections.abc import Callable
 from typing import Any, cast
 
 import numpy as np
-from max.driver import Buffer, Device
+from max.driver import Buffer, Device, float32_to_bfloat16_as_uint16
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, Weight, ops
@@ -39,7 +39,6 @@ from max.graph.weights import WeightData, Weights
 from max.nn.conv import Conv2d
 from max.nn.layer import LayerList, Module
 from max.pipelines.lib import SupportedEncoding
-from max.pipelines.lib.bfloat16_utils import float32_to_bfloat16_as_uint16
 from max.pipelines.modeling.base.component_model import ComponentModel
 
 from .model_config import (

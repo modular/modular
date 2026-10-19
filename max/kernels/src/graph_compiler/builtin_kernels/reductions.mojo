@@ -140,6 +140,7 @@ struct ArgMax:
             input.dtype,
             target=target,
             reduce_dim=reduce_dim,
+            name=_trace_name,
         ](input_fn, output_fn, input.shape_coord(), ctx)
 
 
@@ -199,6 +200,7 @@ struct ArgMin:
             input.dtype,
             target=target,
             reduce_dim=reduce_dim,
+            name=_trace_name,
         ](input_fn, output_fn, input.shape_coord(), ctx)
 
 
@@ -252,6 +254,7 @@ struct Mean:
     def execute[
         target: StaticString,
         axis: Int,
+        _trace_name: StaticString,
     ](
         output: FusedOutputTensor,
         input: FusedInputTensor[dtype=output.dtype, rank=output.rank, ...],
@@ -262,6 +265,7 @@ struct Mean:
         Parameters:
             target: Compilation target string.
             axis: Dimension along which to reduce.
+            _trace_name: Name used for tracing and debugging.
 
         Args:
             output: Output tensor receiving the result.
@@ -293,6 +297,7 @@ struct Mean:
             output.dtype,
             target=target,
             reduce_dim=axis,
+            name=_trace_name,
         ](input_fn, output_fn, input.shape_coord(), ctx)
 
 
@@ -361,7 +366,7 @@ struct RowMeanOfSquares:
         ](coords: Coord, val: SIMD[output.dtype, width]) {var output}:
             # `output` is `[M, 1]`, so `width` adjacent rows (tiled tier) at
             # column 0 sit contiguously -- one vector store, no lane splitting.
-            output.store(Index(Int(coords[0].value()), 0), val)
+            output.store(Index(Int(coords[0]), 0), val)
 
         row_mean_of_squares[input.dtype, output.dtype, 2, target=target](
             input_fn, output_fn, input.shape_coord(), ctx
@@ -605,6 +610,7 @@ struct ReduceAdd:
             output.dtype,
             target=target,
             reduce_dim=axis,
+            name=_trace_name,
         ](input_fn, output_fn, input.shape_coord(), ctx)
 
 
@@ -677,6 +683,7 @@ struct ReduceMul:
             output.dtype,
             target=target,
             reduce_dim=axis,
+            name=_trace_name,
         ](input_fn, output_fn, input.shape_coord(), ctx)
 
 
@@ -750,6 +757,7 @@ struct ReduceMax:
             output.dtype,
             target=target,
             reduce_dim=axis,
+            name=_trace_name,
         ](input_fn, output_fn, input.shape_coord(), ctx)
 
 
@@ -822,6 +830,7 @@ struct ReduceMin:
             output.dtype,
             target=target,
             reduce_dim=axis,
+            name=_trace_name,
         ](input_fn, output_fn, input.shape_coord(), ctx)
 
 
@@ -926,7 +935,7 @@ struct LayerNorm:
                 input_fn,
                 output_fn,
                 input.shape_coord(),
-                Int(Int(input.shape()[rank - 1])),
+                Int(input.shape()[rank - 1]),
                 gamma.to_tile_tensor[.int64](),
                 beta.to_tile_tensor[.int64](),
                 epsilon.cast[dtype](),
@@ -1058,7 +1067,7 @@ struct ReduceRMSNorm:
                 input_fn,
                 output_fn,
                 input.shape_coord(),
-                Int(Int(input.shape()[rank - 1])),
+                Int(input.shape()[rank - 1]),
                 gamma.to_tile_tensor[.int64](),
                 ctx,
             )
@@ -1189,7 +1198,7 @@ struct ReduceRMSNormRoPE:
                 sin_fn,
                 output_fn,
                 input.shape_coord(),
-                Int(Int(input.shape()[rank - 1])),
+                Int(input.shape()[rank - 1]),
                 weight.to_tile_tensor[.int64](),
                 epsilon.cast[dtype](),
                 weight_offset.cast[dtype](),
@@ -1323,7 +1332,7 @@ struct LayerNormRopeRagged:
                 input_fn,
                 output_fn,
                 input.shape_coord(),
-                Int(Int(input.shape()[rank - 1])),
+                Int(input.shape()[rank - 1]),
                 gamma.to_tile_tensor[.int64](),
                 beta.to_tile_tensor[.int64](),
                 epsilon.cast[input_dtype](),
@@ -1545,6 +1554,7 @@ struct ReduceMinAndMax:
             dtype,
             target=target,
             reduce_dim=norm_axis,
+            name=_trace_name,
         ](input_fn, output_min_fn, output_max_fn, input.shape_coord(), ctx)
 
 
@@ -1700,7 +1710,7 @@ struct ReduceRMSNormFusedResidualAdd:
                 output_fn,
                 residual_output_fn,
                 input.shape_coord(),
-                Int(Int(input.shape()[rank - 1])),
+                Int(input.shape()[rank - 1]),
                 gamma1.to_tile_tensor[.int64](),
                 gamma2.to_tile_tensor[.int64](),
                 ctx,
@@ -2216,7 +2226,7 @@ struct Softmax:
             softmax[output.dtype, output.rank, target=target, reduce_dim=axis](
                 input_fn,
                 Coord(output.shape()),
-                Int(Int(input.shape()[axis])),
+                Int(input.shape()[axis]),
                 output.to_tile_tensor[.int64](),
                 axis,
                 context=ctx,
@@ -2292,7 +2302,7 @@ struct LogSoftmax:
             ](
                 input_fn,
                 Coord(output.shape()),
-                Int(Int(input.shape()[axis])),
+                Int(input.shape()[axis]),
                 output.to_tile_tensor[.int64](),
                 axis,
                 context=ctx,

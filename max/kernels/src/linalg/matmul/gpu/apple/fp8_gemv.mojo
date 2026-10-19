@@ -161,7 +161,7 @@ struct Fp8WeightLoader[
         # evidence (only `t[r, c]` subscripting does), matching `fp4_gemv`. The
         # `[N, K]` contract lives in the docstring; a `self.weight.flat_rank`
         # comptime assert is illegal anyway (dynamic-value read through `self`).
-        return self.weight.load[width=width, alignment=1](Coord(n, k0)).cast[
+        return self.weight.load[width=width, alignment=1]((n, k0)).cast[
             .float32
         ]()
 
@@ -219,7 +219,7 @@ def fp8_gemv_kernel[
     while chunk < nchunk:
         var k0 = chunk * TILE_K
         var wv = loader.load_col_chunk[TILE_K](n_idx, k0)
-        var xv = a.load[width=TILE_K](Coord(0, k0)).cast[.float32]()
+        var xv = a.load[width=TILE_K]((0, k0)).cast[.float32]()
         acc[0] += (xv * wv).reduce_add()
         chunk += WARP_SIZE
 
@@ -230,7 +230,7 @@ def fp8_gemv_kernel[
     var kt = ktail0 + lid
     while kt < k:
         var wv = loader.load_col_chunk[1](n_idx, kt)
-        var xv = a.load(Coord(0, kt)).cast[.float32]()
+        var xv = a.load((0, kt)).cast[.float32]()
         acc[0] += (xv * wv).reduce_add()
         kt += WARP_SIZE
 
@@ -241,7 +241,7 @@ def fp8_gemv_kernel[
         comptime if has_epilogue_fn:
             epilogue_fn[c_type, 1, alignment=1]((0, n_idx), y)
         else:
-            c.store(Coord(0, n_idx), y)
+            c.store((0, n_idx), y)
 
 
 @inline(.always)

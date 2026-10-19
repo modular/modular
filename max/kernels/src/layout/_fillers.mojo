@@ -19,15 +19,12 @@ of values, including sequences and random distributions.
 The module includes:
 - Sequential value generation (`arange`)
 - Uniform random value generation (`random`)
-- Heavier-tailed (Student-t) random value generation (`randt`)
 """
 
 from std.itertools import product
-from std.math import sqrt
 from std.random import random_float64
-from std.random.philox import NormalRandom
 from std.sys import is_nvidia_gpu
-from layout.coord import Coord
+from layout.coord import Coord, Idx
 
 from .tile_layout import TensorLayout, row_major
 from .tile_tensor import TileTensor
@@ -36,37 +33,6 @@ from std.utils.numerics import max_finite
 
 # A batch size for filler functions loop bounds.
 comptime BATCH_SIZE = 2048
-
-
-@inline(.always)
-def _randt_sample[
-    nu: Int
-](mut rng: NormalRandom, amp: Float64, cap: Float64) -> Float64:
-    """One Student-t sample, scaled to `amp` and clamped to `+/-cap`."""
-    comptime assert not is_nvidia_gpu(), "Cannot run randt on the gpu"
-    comptime assert nu >= 1 and nu <= 7, (
-        "randt supports nu in [1, 7]: a sample draws nu + 1 normals and must"
-        " fit ONE step_normal() vector of 8"
-    )
-    var z = rng.step_normal()
-    var sq = z * z
-    # Lane 0 is the numerator; lanes 1..nu are the chi-square terms.
-    var ss = Float64(0)
-    for j in range(1, nu + 1):
-        ss += Float64(sq[j])
-    var t = Float64(z[0]) / sqrt(ss / Float64(nu))
-    return max(-cap, min(cap, t * amp))
-
-
-@inline(.always)
-def _randt_amp[nu: Int](sigma: Float64) -> Float64:
-    """Divides out the theoretical sd so a fill is one pass."""
-    # Var(t_nu) = nu / (nu - 2) for nu > 2 and is undefined at or below it, so
-    # `sigma` degenerates to a spread parameter there rather than an sd.
-    comptime pop_sd = sqrt(
-        Float64(nu) / Float64(nu - 2)
-    ) if nu > 2 else Float64(1)
-    return sigma / pop_sd
 
 
 def _filler_impl[
@@ -112,14 +78,16 @@ def _filler_impl[
             tensor.layout.shape_coord()
         ).static_product * tensor.element_size
 
+        var flat = tensor.reshape(row_major[num_elements]())
         comptime for i in range(num_elements):
             var val = filler(i)
-            tensor.raw_store(i, val.cast[tensor.dtype]())
+            flat.store((Idx[i],), val.cast[tensor.dtype]())
     else:
         var num_elements = tensor.layout.product() * tensor.element_size
+        var flat = tensor.reshape(row_major(num_elements))
         for i in range(num_elements):
             var val = filler(i)
-            tensor.raw_store(i, val.cast[tensor.dtype]())
+            flat.store((i,), val.cast[tensor.dtype]())
 
 
 def arange[
@@ -183,8 +151,8 @@ def arange[
     else:
         # Provide evidence that flat_rank == 2 for the constraint system
         comptime assert tensor.flat_rank == 2
-        var rows = Int(tensor.layout.shape[0]().value())
-        var cols = Int(tensor.layout.shape[1]().value())
+        var rows = Int(tensor.dim[0]())
+        var cols = Int(tensor.dim[1]())
         for m, n in product(range(rows), range(cols)):
             tensor[m, n] = (Scalar[dtype](m * cols + n) * step + start) % end
 

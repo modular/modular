@@ -105,7 +105,7 @@ def test_dual_concat_inner_most_single_dim(ctx: DeviceContext) raises:
     def output_0_fn[
         c_type: DType, width: SIMDLength, *, alignment: Int
     ](coords: Coord, val: SIMD[c_type, width]) {var out0}:
-        out0.store[width=width](coords, rebind[SIMD[dtype, width]](val))
+        out0.store(coords, rebind[SIMD[dtype, width]](val))
 
     @inline(.always)
     def input_fn_1[
@@ -120,7 +120,7 @@ def test_dual_concat_inner_most_single_dim(ctx: DeviceContext) raises:
     def output_1_fn[
         c_type: DType, width: SIMDLength, *, alignment: Int
     ](coords: Coord, val: SIMD[c_type, width]) {var out1}:
-        out1.store[width=width](coords, rebind[SIMD[dtype, width]](val))
+        out1.store(coords, rebind[SIMD[dtype, width]](val))
 
     _fused_dual_concat_gpu[rank, dtype](
         rank - 1,
@@ -259,7 +259,7 @@ def test_dual_concat_general_axis(ctx: DeviceContext) raises:
     def output_0_fn[
         c_type: DType, width: SIMDLength, *, alignment: Int
     ](coords: Coord, val: SIMD[c_type, width]) {var out0}:
-        out0.store[width=width](coords, rebind[SIMD[dtype, width]](val))
+        out0.store(coords, rebind[SIMD[dtype, width]](val))
 
     @inline(.always)
     def input_fn_1[
@@ -274,7 +274,7 @@ def test_dual_concat_general_axis(ctx: DeviceContext) raises:
     def output_1_fn[
         c_type: DType, width: SIMDLength, *, alignment: Int
     ](coords: Coord, val: SIMD[c_type, width]) {var out1}:
-        out1.store[width=width](coords, rebind[SIMD[dtype, width]](val))
+        out1.store(coords, rebind[SIMD[dtype, width]](val))
 
     _fused_dual_concat_gpu[rank, dtype](
         1,
@@ -444,13 +444,13 @@ def test_dual_concat_inner_most_static_vs_dynamic(ctx: DeviceContext) raises:
     def output_0_static_fn[
         c_type: DType, width: SIMDLength, *, alignment: Int
     ](coords: Coord, val: SIMD[c_type, width]) {var out0_static}:
-        out0_static.store[width=width](coords, rebind[SIMD[dtype, width]](val))
+        out0_static.store(coords, rebind[SIMD[dtype, width]](val))
 
     @inline(.always)
     def output_1_static_fn[
         c_type: DType, width: SIMDLength, *, alignment: Int
     ](coords: Coord, val: SIMD[c_type, width]) {var out1_static}:
-        out1_static.store[width=width](coords, rebind[SIMD[dtype, width]](val))
+        out1_static.store(coords, rebind[SIMD[dtype, width]](val))
 
     _fused_dual_concat_gpu[rank, dtype](
         input_shapes_0,
@@ -476,13 +476,13 @@ def test_dual_concat_inner_most_static_vs_dynamic(ctx: DeviceContext) raises:
     def output_0_dyn_fn[
         c_type: DType, width: SIMDLength, *, alignment: Int
     ](coords: Coord, val: SIMD[c_type, width]) {var out0_dyn}:
-        out0_dyn.store[width=width](coords, rebind[SIMD[dtype, width]](val))
+        out0_dyn.store(coords, rebind[SIMD[dtype, width]](val))
 
     @inline(.always)
     def output_1_dyn_fn[
         c_type: DType, width: SIMDLength, *, alignment: Int
     ](coords: Coord, val: SIMD[c_type, width]) {var out1_dyn}:
-        out1_dyn.store[width=width](coords, rebind[SIMD[dtype, width]](val))
+        out1_dyn.store(coords, rebind[SIMD[dtype, width]](val))
 
     _fused_dual_concat_gpu[rank, dtype](
         input_shapes_0,

@@ -380,7 +380,7 @@ def _blackwell_matmul_tma_umma_warp_specialized_impl[
     comptime epi_load_tma_tile_shape = coord[
         epi_load_tma_tile_rows, epi_load_tma_tile_cols
     ]
-    comptime MutPtr = UnsafePointer[Scalar[c_type], MutAnyOrigin]
+    comptime MutPtr = MutPointer[Scalar[c_type], MutAnyOrigin]
     var epi_load_tma_ptr: MutPtr
     var epi_load_tma_rows: Int
     var epi_load_tma_cols: Int
@@ -407,7 +407,7 @@ def _blackwell_matmul_tma_umma_warp_specialized_impl[
 
     # 1D bias: pass raw TileTensor to kernel (cp.async.bulk, no TMA descriptor).
     # For non-1D, a placeholder dangling pointer is used (never accessed).
-    comptime ImmutPtr = UnsafePointer[Scalar[c_type], ImmutAnyOrigin]
+    comptime ImmutPtr = ImmPointer[Scalar[c_type], ImmutAnyOrigin]
     var bias_1d_ptr: ImmutPtr
     comptime if epilogue_is_1d:
         bias_1d_ptr = rebind[ImmutPtr](epilogue_tensor.value().ptr)
@@ -445,7 +445,7 @@ def _blackwell_matmul_tma_umma_warp_specialized_impl[
     var c_tma_ops: Array[type_of(c_tma_op), 1] = [c_tma_op]
     var rank_sigs: Optional[
         Array[
-            UnsafePointer[Signal, MutAnyOrigin],
+            MutPointer[Signal, MutAnyOrigin],
             KernelType.num_c_tma_descriptors,
         ]
     ] = None
@@ -976,7 +976,7 @@ def blackwell_matmul_tma_umma_warp_specialized[
     # TMA descriptor; it is encoded over a null address. A pointer derived
     # from `a_device` or `b_device` would alias them in the launch call.
     var c_ptr: Optional[
-        UnsafePointer[Scalar[config.c_type], MutUntrackedOrigin]
+        MutPointer[Scalar[config.c_type], MutUntrackedOrigin]
     ] = None
     var c_shape_only = TileTensor(
         c_ptr._unsafe_nullable(),
@@ -1116,7 +1116,9 @@ def _splitk_context(ctx: DeviceContext) raises -> _SplitKContext:
     if device < _SPLITK_MAX_DEVICES:
         var counts = _SPLITK_SLOT_COUNTS.get_or_create_ptr()
         var taken = Int(
-            Atomic[Int64].fetch_add(counts[].unsafe_ptr() + device, 1)
+            Atomic[Int64].fetch_add(
+                counts[].unsafe_ptr().unsafe_offset(device), 1
+            )
         )
         if taken < SPLITK_COUNTER_SLOTS:
             slot = taken
@@ -1129,7 +1131,7 @@ def _splitk_context(ctx: DeviceContext) raises -> _SplitKContext:
     var state = alloc[_SplitKContext]({count = 1}).unsafe_leak()
     state.unsafe_write(_SplitKContext(workspace, slot))
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
-        StringSlice(key), state.bitcast[NoneType]()
+        StringSlice(key), state.unsafe_bitcast[NoneType]()
     )
     return state[]
 
@@ -1378,7 +1380,7 @@ def _blackwell_matmul_tma_umma_warp_specialized_split_k[
     var counter_slot = -1
     # The parallel reduction stores C itself; a 32-bit row stride keeps its
     # store addressing in one register.
-    var c_row_stride = Int(c_device.layout.stride[0]().value())
+    var c_row_stride = Int(c_device.dynamic_stride(0))
     comptime if parallel:
         if c_row_stride > Int(UInt32.MAX):
             raise Error(
@@ -1462,7 +1464,7 @@ def _blackwell_matmul_tma_umma_warp_specialized_split_k[
         a_tma_op,
         b_tma_op,
         c_tma_op,
-        rebind[UnsafePointer[Scalar[c_type], MutAnyOrigin]](c_device.ptr),
+        rebind[MutPointer[Scalar[c_type], MutAnyOrigin]](c_device.ptr),
         UInt32(c_row_stride),
         Int32(counter_slot),
         reduction_tensor,

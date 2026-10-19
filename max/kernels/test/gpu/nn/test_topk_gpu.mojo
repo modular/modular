@@ -513,9 +513,10 @@ def fill_random[
     comptime min_val = -1e9
     comptime max_val = 1e9
     var total_elements = buffer.num_elements()
+    var flat = buffer.reshape(row_major(total_elements))
     for i in range(total_elements):
         var random_value = random_float64(min_val, max_val)
-        buffer.raw_store(i, random_value.cast[dtype]())
+        flat[i] = random_value.cast[dtype]()
 
 
 def fill_constant[
@@ -526,11 +527,12 @@ def fill_constant[
     ]
 ):
     var total_elements = buffer.num_elements()
+    var flat = buffer.reshape(row_major(total_elements))
     for i in range(total_elements):
         if i % 3 == 1:
-            buffer.raw_store(i, 1.0)
+            flat[i] = 1.0
         else:
-            buffer.raw_store(i, 0.0)
+            flat[i] = 0.0
 
 
 def fill_nan[
@@ -544,8 +546,9 @@ def fill_nan[
     emits invalid token) and Bug 3 (p==-1 sentinel causes OOB read/write)."""
     var nan_val = nan[dtype]()
     var total_elements = buffer.num_elements()
+    var flat = buffer.reshape(row_major(total_elements))
     for i in range(total_elements):
-        buffer.raw_store(i, nan_val)
+        flat[i] = nan_val
 
 
 def fill_iota[

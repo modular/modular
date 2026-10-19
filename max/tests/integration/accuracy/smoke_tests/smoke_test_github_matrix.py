@@ -103,6 +103,7 @@ MODELS: Mapping[str, set[str]] = {
     "nvidia/DeepSeek-V3.1-NVFP4__tpep": VARIANT | _8xB200,
     "nvidia/DeepSeek-V3.1-NVFP4__tpep_ar": VARIANT | _8xB200,
     "nvidia/DeepSeek-V3.1-NVFP4__tptp": VARIANT | _8xB200,
+    "nvidia/DeepSeek-V4.1-Flash-NVFP4": _4xB200,
     "nvidia/diffusiongemma-26B-A4B-it-NVFP4": DISABLE,
     "nvidia/Gemma-4-26B-A4B-NVFP4": NIGHTLY | _1xB200,
     "nvidia/Gemma-4-26B-A4B-NVFP4__tuned": NIGHTLY | VARIANT | _1xB200,

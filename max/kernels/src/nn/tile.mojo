@@ -138,8 +138,8 @@ def _tile_cpu[
             dst_index += coord * out_stride[axis]
 
         unsafe_memcpy(
-            dest=output.ptr + dst_index,
-            src=input.ptr + src_index,
+            dest=output.ptr.unsafe_offset(dst_index),
+            src=input.ptr.unsafe_offset(src_index),
             count=dims[0],
         )
         for rep in range(1, reps[0]):
@@ -149,8 +149,10 @@ def _tile_cpu[
             # of exclusivity with an unsafe any-origin: unsafe_memcpy's
             # non-overlap is a caller contract the checker can't prove.
             unsafe_memcpy(
-                dest=output.ptr + dst_index + rep * dims[0],
-                src=(output.ptr + dst_index).as_unsafe_any_origin(),
+                dest=output.ptr.unsafe_offset(dst_index).unsafe_offset(
+                    rep * dims[0]
+                ),
+                src=output.ptr.unsafe_offset(dst_index).as_unsafe_any_origin(),
                 count=dims[0],
             )
 
@@ -187,7 +189,9 @@ def _tile_cpu[
                 base_index += coord * out_stride[outer]
 
             for rep in range(1, reps[axis]):
-                var dst_ptr = output.ptr + base_index + rep * chunk
+                var dst_ptr = output.ptr.unsafe_offset(
+                    base_index
+                ).unsafe_offset(rep * chunk)
                 # dst_ptr and src_ptr are non-overlapping slices of the
                 # same `output` buffer (shared origin). Opt out of
                 # exclusivity with an unsafe any-origin:
@@ -195,7 +199,9 @@ def _tile_cpu[
                 # checker can't prove.
                 unsafe_memcpy(
                     dest=dst_ptr,
-                    src=(output.ptr + base_index).as_unsafe_any_origin(),
+                    src=output.ptr.unsafe_offset(
+                        base_index
+                    ).as_unsafe_any_origin(),
                     count=chunk,
                 )
 

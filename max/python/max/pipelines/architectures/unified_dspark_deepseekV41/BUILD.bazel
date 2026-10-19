@@ -6,6 +6,7 @@ modular_py_library(
     name = "unified_dspark_deepseekV41",
     srcs = glob(["**/*.py"]),
     deps = [
+        requirement("numpy"),
         requirement("typing-extensions"),
         "//max/python/max:tree",
         "//max/python/max/driver",

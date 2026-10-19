@@ -83,7 +83,11 @@ from nn.attention.gpu.mla_graph import (
     mla_prefill_decode_graph_fp8,
     mla_prefill_decode_graph_bf16,
 )
-from nn.attention.gpu.mla_index_fp8 import mla_indexer_ragged_float8_paged
+from nn.attention.gpu.mla_index_fp8 import (
+    BlockSplitTopk,
+    IndexerTopk,
+    mla_indexer_ragged_float8_paged,
+)
 from nn.attention.compress_windows import compress_windows_ragged_paged
 from nn.attention.indexer_score import indexer_score_ragged_paged
 from nn.attention.latent_sparse_attention import (
@@ -106,7 +110,6 @@ from extensibility import (
 from extensibility import (
     _MutableInputTensor as MutableInputTensor,
 )
-from std.memory import UnsafePointer
 from std.logger import Logger
 
 comptime logger = Logger()
@@ -519,6 +522,7 @@ struct MLAKPoolRingClose:
 @inline(.always)
 def _mla_indexer_ragged_float8_paged_execute[
     R: SparseIndexRemap,
+    Topk: IndexerTopk = BlockSplitTopk,
     //,
     *,
     num_heads: Int,
@@ -546,7 +550,11 @@ def _mla_indexer_ragged_float8_paged_execute[
     remap: R,
     ctx: DeviceContext,
 ) raises:
-    """Shared body of the indexer ops; `remap` is the optional second output."""
+    """Shared body of the indexer ops.
+
+    `remap` is the optional second output; `Topk` is the top-k dispatch,
+    which the op's registration picks.
+    """
     # Extract cache parameters from block shapes
     comptime page_size = Int(k_blocks.static_spec.shape_tuple[3])
     comptime head_dim = Int(k_blocks.static_spec.shape_tuple[5])
@@ -586,6 +594,7 @@ def _mla_indexer_ragged_float8_paged_execute[
         mask_str,
         kpool=kpool,
         write_logical=write_logical,
+        Topk=Topk,
     ](
         output_indices.to_tile_tensor[.int64](),
         q.to_tile_tensor[.int64](),
@@ -2499,7 +2508,7 @@ struct Struct_fused_qk_rope_ragged_paged[interleaved: Bool]:
     ) raises:
         # Dummy position_ids - won't be used since has_position_ids=False
         var dummy_position_ids = DynamicTensor[dtype=DType.uint32, rank=2, ...](
-            UnsafePointer[UInt32, MutAnyOrigin].unsafe_dangling(),
+            MutPointer[UInt32, MutAnyOrigin].unsafe_dangling(),
             IndexList[2](0),
         )
         var kv_collection = generic_get_paged_cache(
@@ -3341,7 +3350,7 @@ def _sparse_indices_ptr[
 ](
     sparse_indices: InputTensor[dtype=.int32, rank=2, ...],
     num_tokens: Int,
-) raises -> UnsafePointer[Int32, MutAnyOrigin]:
+) raises -> MutPointer[Int32, MutAnyOrigin]:
     """Returns the sparse indices after checking their shape.
 
     The kernels index the buffer flat, `row * indices_stride + slot`, one row
@@ -3368,7 +3377,7 @@ def _sparse_gather_indices[
     kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
     kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
     ctx: DeviceContext,
-) raises -> UnsafePointer[Int32, MutAnyOrigin]:
+) raises -> MutPointer[Int32, MutAnyOrigin]:
     """Remaps the logical `sparse_indices` to physical rows in `scratch`.
 
     The caller keeps `scratch` alive until its kernels are enqueued.
@@ -3402,7 +3411,7 @@ def _sparse_decode_indices[
     kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
     num_tokens: Int,
     ctx: DeviceContext,
-) raises -> UnsafePointer[Int32, MutAnyOrigin]:
+) raises -> MutPointer[Int32, MutAnyOrigin]:
     """Returns the sparse indices the decode branch reads.
 
     The AMD sparse MLA arm gathers paged physical rows, so logical indices are
@@ -3449,7 +3458,7 @@ def _sparse_prefill_indices[
     kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
     max_seq_len: Int,
     ctx: DeviceContext,
-) raises -> OptionalReg[UnsafePointer[Int32, MutAnyOrigin]]:
+) raises -> OptionalReg[MutPointer[Int32, MutAnyOrigin]]:
     """Returns the remapped rows for the prefill branch of a prefill+decode op.
 
     Without the indexer's physical rows only the prefill branch needs a remap;
@@ -3580,9 +3589,7 @@ struct Struct_mla_decode_graph_paged_fp8_sparse:
         # needs each slot's logical key position for causality. With one query
         # position per sequence, the shared list is just a reused row, which
         # `selection_lag` bounds, and the fold does not launch.
-        var logical_indices_ptr = OptionalReg[
-            UnsafePointer[Int32, MutAnyOrigin]
-        ]()
+        var logical_indices_ptr = OptionalReg[MutPointer[Int32, MutAnyOrigin]]()
         comptime if index_share:
             if max_prompt_length.unsafe_ptr()[0] > 1:
                 logical_indices_ptr = (
@@ -4283,7 +4290,7 @@ struct Struct_mla_prefill_sparse_paged:
 
         var num_indices_sparse = sparse_indices.size()
 
-        var attn_sink_ptr = UnsafePointer[Float32, origin=ImmutAnyOrigin](
+        var attn_sink_ptr = ImmPointer[Float32, origin=ImmutAnyOrigin](
             attn_sink.unsafe_ptr()
         )
 
@@ -4315,13 +4322,13 @@ struct Struct_mla_prefill_sparse_paged:
             # which has the same bit pattern as `UInt32(0xFFFFFFFF)`; the
             # producer in the kernel reads them as int32 and rejects the
             # negative ones (cf. the `idx >= 0` check in the gather4 path),
-            # so reinterpreting the bits via `bitcast` is sound.
+            # so reinterpreting the bits via `unsafe_bitcast` is sound.
             var indices_tt = TileTensor(
-                gather_indices.bitcast[UInt32](),
+                gather_indices.unsafe_bitcast[UInt32](),
                 row_major(num_indices_sparse),
             )
             var topk_lengths_tt = TileTensor(
-                topk_lengths.unsafe_ptr().bitcast[UInt32](),
+                topk_lengths.unsafe_ptr().unsafe_bitcast[UInt32](),
                 row_major(Int(topk_lengths.dim_size(0))),
             )
 
@@ -4393,11 +4400,11 @@ struct Struct_mla_prefill_sparse_paged_fp8:
 
         var num_indices_sparse = sparse_indices.size()
 
-        var attn_sink_ptr = UnsafePointer[Float32, origin=ImmutAnyOrigin](
+        var attn_sink_ptr = ImmPointer[Float32, origin=ImmutAnyOrigin](
             attn_sink.unsafe_ptr()
         )
 
-        var scales_ptr = UnsafePointer[Float32, ImmutAnyOrigin](
+        var scales_ptr = ImmPointer[Float32, ImmutAnyOrigin](
             kv_scales.unsafe_ptr()
         )
 
@@ -4423,11 +4430,11 @@ struct Struct_mla_prefill_sparse_paged_fp8:
             )
 
             var indices_tt = TileTensor(
-                gather_indices.bitcast[UInt32](),
+                gather_indices.unsafe_bitcast[UInt32](),
                 row_major(num_indices_sparse),
             )
             var topk_lengths_tt = TileTensor(
-                topk_lengths.unsafe_ptr().bitcast[UInt32](),
+                topk_lengths.unsafe_ptr().unsafe_bitcast[UInt32](),
                 row_major(Int(topk_lengths.dim_size(0))),
             )
 

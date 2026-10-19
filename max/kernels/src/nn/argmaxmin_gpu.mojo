@@ -25,7 +25,14 @@ from std.sys import align_of, simd_width_of, size_of
 
 from max.gpu.host import DeviceContext
 from max.runtime.tracing import Trace, TraceLevel, trace_arg
-from layout import TensorLayout, TensorEngine, TileTensor, coord_to_index_list
+from layout import (
+    Coord,
+    TensorLayout,
+    TensorEngine,
+    TileTensor,
+    coord_to_index_list,
+    row_major,
+)
 from nn.topk import TopK_2, _block_reduce_topk, _topk_dead_val
 from std.utils.index import IndexList
 
@@ -315,9 +322,9 @@ def _argmaxmin_combine_kernel[
         var total = _block_reduce_topk[ascending=largest](partial)
 
         if tid == 0:
-            out_idxs.ptr.unsafe_offset(row_id)[] = Int(total.p).cast[
-                out_idx_type
-            ]()
+            out_idxs.reshape(row_major(out_idxs.num_elements())).store(
+                Coord(row_id), Int(total.p).cast[out_idx_type]()
+            )
 
 
 def argmaxmin_gpu[
@@ -524,16 +531,30 @@ def _argmax_biased_scan[
     unroll: Int,
     alignment: Int,
     bias_alignment: Int,
+    logits_layout: TensorLayout,
+    logits_engine: TensorEngine,
+    bias_layout: TensorLayout,
+    bias_engine: TensorEngine,
 ](
-    row: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
-    bias_row: ImmPointer[Scalar[bias_dtype], ImmutAnyOrigin],
+    logits: TileTensor[
+        dtype, logits_layout, ImmutAnyOrigin, Engine=logits_engine
+    ],
+    bias: TileTensor[
+        bias_dtype, bias_layout, ImmutAnyOrigin, Engine=bias_engine
+    ],
+    row_id: Int,
+    position: Int,
+    col_begin: Int,
     num_elements: Int,
     tid: Int,
     block_size: Int,
     mut best_vals: SIMD[.float32, simd_width],
     mut best_idxs: SIMD[.int32, simd_width],
 ):
-    """Like `_argmaxmin_scan`, over `row + bias_row` added in float32."""
+    """Like `_argmaxmin_scan`, over `logits + bias` added in float32.
+
+    Reads `logits[row_id, position, col_begin:]` and `bias[row_id, col_begin:]`.
+    """
     var lane_stride = block_size * simd_width
     var trip = lane_stride * unroll
     var num_trips = num_elements // trip
@@ -548,12 +569,12 @@ def _argmax_biased_scan[
             fill=SIMD[bias_dtype, simd_width](0)
         )
         comptime for u in range(unroll):
-            staged[u] = row.unsafe_load[width=simd_width, alignment=alignment](
-                offset + u * lane_stride
-            )
-            staged_bias[u] = bias_row.unsafe_load[
-                width=simd_width, alignment=bias_alignment
-            ](offset + u * lane_stride)
+            staged[u] = logits.load[
+                width=simd_width, alignment=alignment, invariant=False
+            ]((row_id, position, col_begin + offset + u * lane_stride))
+            staged_bias[u] = bias.load[
+                width=simd_width, alignment=bias_alignment, invariant=False
+            ]((row_id, col_begin + offset + u * lane_stride))
         comptime for u in range(unroll):
             _argmaxmin_vec_update[.float32, True](
                 best_vals,
@@ -567,12 +588,12 @@ def _argmax_biased_scan[
         _argmaxmin_vec_update[.float32, True](
             best_vals,
             best_idxs,
-            row.unsafe_load[width=simd_width, alignment=alignment](i).cast[
-                .float32
-            ]()
-            + bias_row.unsafe_load[width=simd_width, alignment=bias_alignment](
-                i
-            ).cast[.float32](),
+            logits.load[width=simd_width, alignment=alignment, invariant=False](
+                (row_id, position, col_begin + i)
+            ).cast[.float32]()
+            + bias.load[
+                width=simd_width, alignment=bias_alignment, invariant=False
+            ]((row_id, col_begin + i)).cast[.float32](),
             i,
         )
         i += lane_stride
@@ -584,37 +605,48 @@ def _argmax_biased_scan_kernel[
     bias_dtype: DType,
     simd_width: Int,
     unroll: Int,
+    logits_layout: TensorLayout,
+    logits_engine: TensorEngine,
+    bias_layout: TensorLayout,
+    bias_engine: TensorEngine,
 ](
-    logits: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
-    bias: ImmPointer[Scalar[bias_dtype], ImmutAnyOrigin],
+    logits: TileTensor[
+        dtype, logits_layout, ImmutAnyOrigin, Engine=logits_engine
+    ],
+    bias: TileTensor[
+        bias_dtype, bias_layout, ImmutAnyOrigin, Engine=bias_engine
+    ],
     part_vals: MutPointer[Float32, MutAnyOrigin],
     part_idxs: MutPointer[Int32, MutAnyOrigin],
     num_elements_arg: Int32,
-    logits_row_pitch_arg: Int64,
+    position_arg: Int32,
     split_len_arg: Int32,
     num_splits_arg: Int32,
     aligned_arg: Int32,
 ):
     """Streams one slice of one row of `logits + bias` and emits its winner.
 
-    Same grid and partials as `_argmaxmin_scan_kernel`. Row `r` of `logits`
-    starts `r * logits_row_pitch_arg` elements after `logits`, so the caller
-    can pick one position out of a `[rows, positions, n]` tensor without a
-    copy. Row `r` of `bias` is contiguous at `r * num_elements_arg`.
+    Same grid and partials as `_argmaxmin_scan_kernel`. Row `r` reads
+    `logits[r, position_arg, :]`, so the caller can pick one position out of a
+    `[rows, positions, n]` tensor without a copy.
 
     Parameters:
         dtype: Element type of the logits.
         bias_dtype: Element type of the bias.
         simd_width: Elements per vector load.
         unroll: Vector loads issued back to back per loop trip.
+        logits_layout: Layout of the logits.
+        logits_engine: Engine of the logits.
+        bias_layout: Layout of the bias.
+        bias_engine: Engine of the bias.
 
     Args:
-        logits: First element of row 0 of the logits.
-        bias: Bias rows, contiguous with `num_elements_arg` per row.
+        logits: `[rows, positions, n]` logits.
+        bias: `[rows, n]` bias.
         part_vals: Per-slice winning float32 values, `rows * num_splits`.
         part_idxs: Per-slice winning indices, row-relative.
         num_elements_arg: Length of each row.
-        logits_row_pitch_arg: Elements between consecutive logits rows.
+        position_arg: Position of `logits` to read.
         split_len_arg: Elements per slice, a multiple of `simd_width`.
         num_splits_arg: Slices per row.
         aligned_arg: Non-zero when vector loads may assume vector alignment
@@ -629,10 +661,6 @@ def _argmax_biased_scan_kernel[
     var count = min(Int(split_len_arg), num_elements - begin)
 
     with PDL():
-        var row = logits.unsafe_offset(
-            row_id * Int(logits_row_pitch_arg) + begin
-        )
-        var bias_row = bias.unsafe_offset(row_id * num_elements + begin)
         var best_vals = SIMD[.float32, simd_width](
             _topk_dead_val[.float32, True]()
         )
@@ -645,7 +673,22 @@ def _argmax_biased_scan_kernel[
                 unroll,
                 align_of[SIMD[dtype, simd_width]](),
                 align_of[SIMD[bias_dtype, simd_width]](),
-            ](row, bias_row, count, tid, block_dim.x, best_vals, best_idxs)
+                logits_layout,
+                logits_engine,
+                bias_layout,
+                bias_engine,
+            ](
+                logits,
+                bias,
+                row_id,
+                Int(position_arg),
+                begin,
+                count,
+                tid,
+                block_dim.x,
+                best_vals,
+                best_idxs,
+            )
         else:
             _argmax_biased_scan[
                 dtype,
@@ -654,7 +697,22 @@ def _argmax_biased_scan_kernel[
                 unroll,
                 align_of[Scalar[dtype]](),
                 align_of[Scalar[bias_dtype]](),
-            ](row, bias_row, count, tid, block_dim.x, best_vals, best_idxs)
+                logits_layout,
+                logits_engine,
+                bias_layout,
+                bias_engine,
+            ](
+                logits,
+                bias,
+                row_id,
+                Int(position_arg),
+                begin,
+                count,
+                tid,
+                block_dim.x,
+                best_vals,
+                best_idxs,
+            )
 
         var partial = _argmaxmin_collapse_lanes[.float32, True](
             best_vals, best_idxs
@@ -663,8 +721,14 @@ def _argmax_biased_scan_kernel[
         var vec_end = align_down(count, simd_width)
         if tid < count - vec_end:
             partial.insert(
-                row.unsafe_offset(vec_end + tid)[].cast[.float32]()
-                + bias_row.unsafe_offset(vec_end + tid)[].cast[.float32](),
+                rebind[Scalar[dtype]](
+                    logits.load[invariant=False](
+                        (row_id, Int(position_arg), begin + vec_end + tid)
+                    )
+                ).cast[.float32]()
+                + rebind[Scalar[bias_dtype]](
+                    bias.load[invariant=False]((row_id, begin + vec_end + tid))
+                ).cast[.float32](),
                 vec_end + tid,
             )
         partial.p += begin
@@ -769,8 +833,7 @@ def argmax_with_bias_gpu[
             ceildiv(ceildiv(num_elements, num_splits), simd_width) * simd_width
         )
 
-        var logits_ptr = logits.ptr + position * num_elements
-        var row_pitch = positions * num_elements
+        var logits_ptr = logits.ptr.unsafe_offset(position * num_elements)
         var aligned = (
             num_elements % simd_width == 0
             and Int(logits_ptr) % align_of[SIMD[dtype, simd_width]]() == 0
@@ -792,15 +855,22 @@ def argmax_with_bias_gpu[
         var part_idxs = ctx.enqueue_create_buffer[.int32](num_rows * num_splits)
 
         comptime scan_kernel = _argmax_biased_scan_kernel[
-            dtype, bias_dtype, simd_width, _ARGMAXMIN_UNROLL
+            dtype,
+            bias_dtype,
+            simd_width,
+            _ARGMAXMIN_UNROLL,
+            type_of(logits).LayoutType,
+            type_of(logits).Engine,
+            type_of(bias).LayoutType,
+            type_of(bias).Engine,
         ]
         ctx.enqueue_function[scan_kernel](
-            logits_ptr.as_unsafe_any_origin(),
-            bias.ptr.as_unsafe_any_origin(),
+            logits.as_unsafe_any_origin(),
+            bias.as_unsafe_any_origin(),
             part_vals,
             part_idxs,
             Int32(num_elements),
-            Int64(row_pitch),
+            Int32(position),
             Int32(split_len),
             Int32(num_splits),
             Int32(1) if aligned else Int32(0),

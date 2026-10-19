@@ -351,7 +351,7 @@ def run_one_case(
     out_dev.enqueue_fill(Int32(-2))
 
     var data_buf = DeviceBuffer[score_type](
-        ctx, scores_dev.unsafe_ptr() + 1, n_scores, owning=False
+        ctx, scores_dev.unsafe_ptr().unsafe_offset(1), n_scores, owning=False
     )
     var scores_t = TileTensor(data_buf, row_major((num_rows, num_blocks)))
     var out_t = TileTensor(out_dev, row_major((num_rows, k)))

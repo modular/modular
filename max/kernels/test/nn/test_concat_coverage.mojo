@@ -97,14 +97,15 @@ def test_concat_inner_all_outer_dims_singleton() raises:
     )
 
     # Verify contiguous concatenation
+    var out_flat = output.reshape(row_major(out_layout.product()))
+    var x1_flat = x1.reshape(row_major(l1.product()))
+    var x2_flat = x2.reshape(row_major(l2.product()))
     for i in range(l1.product()):
-        assert_equal(
-            output.raw_load(i), x1.raw_load(i), msg="Mismatch in first input"
-        )
+        assert_equal(out_flat[i], x1_flat[i], msg="Mismatch in first input")
     for i in range(l2.product()):
         assert_equal(
-            output.raw_load(l1.product() + i),
-            x2.raw_load(i),
+            out_flat[l1.product() + i],
+            x2_flat[i],
             msg="Mismatch in second input",
         )
 
@@ -245,11 +246,7 @@ def test_fused_concat_cpu() raises:
     def input_fn[
         input_index: Int, width: Int, alignment: Int = 1
     ](coords: Coord) -> SIMD[dtype, width]:
-        var flat = (
-            Int(coords[0].value()) * 100
-            + Int(coords[1].value()) * 10
-            + Int(coords[2].value())
-        )
+        var flat = Int(coords[0]) * 100 + Int(coords[1]) * 10 + Int(coords[2])
         comptime if input_index == 0:
             return SIMD[dtype, width](Float32(flat))
         else:

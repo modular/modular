@@ -205,9 +205,7 @@ def bench_rms_norm_gemm_pdl[
     def output_fn[
         width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[dtype, width]) -> None:
-        a_normed.raw_store[width=width, alignment=alignment](
-            a_normed.layout(coords), val
-        )
+        a_normed.store[alignment=alignment](coords, val)
 
     @inline(.always)
     def run_pair[
@@ -230,7 +228,7 @@ def bench_rms_norm_gemm_pdl[
         @__copy_capture(a_raw)
         @__parameter
         def input_fn[width: Int](coords: Coord) -> SIMD[dtype, width]:
-            return a_raw.raw_load[width=width](a_raw.layout(coords))
+            return a_raw.load[width=width](coords)
 
         comptime if not gemm_only:
             rms_norm_gpu[

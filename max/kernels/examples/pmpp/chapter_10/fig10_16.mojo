@@ -47,8 +47,8 @@ def warp_reduce(val: Float32) -> Float32:
 
 
 def two_stage_warp_level_sum_reduction_kernel(
-    input: UnsafePointer[Float32, ImmutAnyOrigin],
-    output: UnsafePointer[Float32, MutAnyOrigin],
+    input: ImmPointer[Float32, ImmutAnyOrigin],
+    output: MutPointer[Float32, MutAnyOrigin],
 ):
     """Two-stage warp-level sum reduction kernel.
 

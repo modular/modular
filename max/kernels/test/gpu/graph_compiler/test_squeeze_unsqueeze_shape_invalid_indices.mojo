@@ -89,7 +89,7 @@ def run_case[
     # The output starts `PAD` slots into the buffer so a write at a negative
     # position lands on a canary.
     var output = ManagedTensorSlice[io_spec=IOSpec.Output, static_spec=in_spec](
-        out_dev.unsafe_ptr() + PAD, (out_rank,)
+        out_dev.unsafe_ptr().unsafe_offset(PAD), (out_rank,)
     )
 
     comptime if squeeze:
@@ -117,7 +117,7 @@ def run_case[
     ](idx_host.unsafe_ptr(), (num_indices,))
     var ref_output = ManagedTensorSlice[
         io_spec=IOSpec.Output, static_spec=in_spec
-    ](ref_host.unsafe_ptr() + PAD, (out_rank,))
+    ](ref_host.unsafe_ptr().unsafe_offset(PAD), (out_rank,))
     comptime if squeeze:
         SqueezeShape.execute[
             target="cpu", dtype=shape_dtype, indices_type=indices_type

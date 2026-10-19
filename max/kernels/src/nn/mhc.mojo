@@ -41,7 +41,7 @@ from max.gpu import (
 from std.math import ceildiv, exp
 from std.utils.index import StaticTuple
 
-from layout import Coord, TensorLayout, TileTensor
+from layout import TensorLayout, TileTensor
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_gpu
 from max.gpu.primitives.grid_controls import (
@@ -158,12 +158,12 @@ def hyper_connection_gates_kernel[
     # the grid this one waits on. Loading them first puts the fetch in flight
     # across the wait instead of behind it. Every index here is within the
     # bias, whatever `elem` is, so none of it needs a bound.
-    var s_pre = pre_post_comb_scale.load(Coord(0))
-    var s_post = pre_post_comb_scale.load(Coord(1))
-    var s_comb = pre_post_comb_scale.load(Coord(2))
-    var pre_b = pre_post_comb_b.load(Coord(elem))
-    var post_b = pre_post_comb_b.load(Coord(H + elem))
-    var comb_b = pre_post_comb_b.load(Coord(2 * H + elem))
+    var s_pre = pre_post_comb_scale.load((0,))
+    var s_post = pre_post_comb_scale.load((1,))
+    var s_comb = pre_post_comb_scale.load((2,))
+    var pre_b = pre_post_comb_b.load((elem,))
+    var post_b = pre_post_comb_b.load((H + elem,))
+    var comb_b = pre_post_comb_b.load((2 * H + elem,))
 
     wait_on_dependent_grids()
     launch_dependent_grids()

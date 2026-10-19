@@ -275,7 +275,7 @@ def _test_dispatch[
             * Int(b_scales_host.dim(5))
         )
         var b_scales_tensor_expert_slice = TileTensor(
-            b_scales_host_ptr.unsafe_ptr() + e * expert_slice_size,
+            b_scales_host_ptr.unsafe_ptr().unsafe_offset(e * expert_slice_size),
             row_major(
                 Idx[n_groups],
                 Idx[k_groups],

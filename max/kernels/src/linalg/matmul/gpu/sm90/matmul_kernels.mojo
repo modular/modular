@@ -591,7 +591,7 @@ struct HopperMatmulSM90Kernel[
     @staticmethod
     @inline(.always)
     def get_block_swizzle(
-        lut_ptr: OptionalReg[UnsafePointer[UInt32, MutAnyOrigin]] = None,
+        lut_ptr: OptionalReg[MutPointer[UInt32, MutAnyOrigin]] = None,
     ) -> IndexList[2, element_type=.uint32]:
         """Calculate block swizzle for better L2 cache locality.
 
@@ -917,7 +917,7 @@ struct HopperMatmulSM90Kernel[
         c: TileTensor[
             Self.c_type, c_tensor_layout, MutAnyOrigin, Engine=Self.c_engine
         ],
-        lut_ptr: UnsafePointer[UInt32, MutAnyOrigin],
+        lut_ptr: MutPointer[UInt32, MutAnyOrigin],
         epilogue_fn: EpilogueFnType,
         compute_fn: ComputeFnType,
     ):
@@ -972,7 +972,7 @@ struct HopperMatmulSM90Kernel[
             UInt8,
             address_space=.SHARED,
             alignment=128,
-        ]().bitcast[Self.SMem]()[]
+        ]().unsafe_bitcast[Self.SMem]()[]
 
         # Common initialization
         var (
@@ -1103,8 +1103,8 @@ struct HopperMatmulSM90Kernel[
         c: TileTensor[
             Self.c_type, c_tensor_layout, MutAnyOrigin, Engine=Self.c_engine
         ],
-        workspace_ptr: UnsafePointer[Scalar[Self.accum_type], MutAnyOrigin],
-        locks_ptr: UnsafePointer[UInt8, MutAnyOrigin],
+        workspace_ptr: MutPointer[Scalar[Self.accum_type], MutAnyOrigin],
+        locks_ptr: MutPointer[UInt8, MutAnyOrigin],
         problem_shape: IndexList[3],
         epilogue_fn: EpilogueFnType,
         compute_fn: ComputeFnType,
@@ -1161,7 +1161,7 @@ struct HopperMatmulSM90Kernel[
             UInt8,
             address_space=.SHARED,
             alignment=128,
-        ]().bitcast[Self.SMem]()[]
+        ]().unsafe_bitcast[Self.SMem]()[]
 
         # Common initialization
         var (
@@ -1412,7 +1412,7 @@ struct HopperMatmulSM90Kernel[
             UInt8,
             address_space=.SHARED,
             alignment=128,
-        ]().bitcast[Self.SMem]()[]
+        ]().unsafe_bitcast[Self.SMem]()[]
 
         # Common initialization
         var (
@@ -1532,11 +1532,13 @@ struct HopperMatmulSM90Kernel[
                     comptime assert (
                         idx.rank == 2
                     ), "the matmul epilogue contract is rank 2"
-                    var row = Int(a_start_row) + Int(idx[0].value())
-                    var col = Int(idx[1].value())
+                    var row = Int(a_start_row) + Int(idx[0])
+                    var col = Int(idx[1])
                     var row_idx = Coord(row, col)
                     comptime if has_compute_fn:
-                        (c_ptr + row * N + col).store[alignment=alignment](
+                        c_ptr.unsafe_offset(row * N).unsafe_offset(col).store[
+                            alignment=alignment
+                        ](
                             rebind[SIMD[Self.c_type, width]](
                                 compute_fn[dtype, width, alignment=alignment](
                                     row_idx, val
@@ -1717,9 +1719,7 @@ struct HopperMatmulSM90Kernel[
         # Add tensor core results to higher-precision accumulator
         comptime for mma_id in range(num_mma):
             comptime for i in range(c_frag_size):
-                final_c_reg_tile[mma_id, i] = rebind[Scalar[Self.accum_type]](
-                    final_c_reg_tile[mma_id, i]
-                ) + rebind[Scalar[Self.accum_type]](c_reg_tile[mma_id, i])
+                final_c_reg_tile[mma_id, i] += c_reg_tile[mma_id, i]
 
     @inline(.always)
     @staticmethod

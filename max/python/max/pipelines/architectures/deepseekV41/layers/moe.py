@@ -34,10 +34,12 @@ from max.graph import (
     ops,
 )
 from max.nn.activation import GatedActivation
+from max.nn.comm.ep import EPBatchManager
 from max.nn.comm.ep.ep_kernels import fused_silu_quantized
 from max.nn.kernels import (
     block_scales_interleave,
     grouped_matmul_block_scaled,
+    grouped_matmul_blocked_swiglu,
     grouped_quantize_dynamic_block_scaled,
 )
 from max.nn.layer import Module
@@ -59,14 +61,15 @@ from ...deepseekV4.layers.moe import (
 )
 from ..layer_resolver import LayerInfo
 from ..model_config import (
+    NVFP4_ACTIVATION_QUANT_CONFIG,
+    NVFP4_BLOCK,
     NVFP4_SF_ATOM_COLS,
     NVFP4_SF_ATOM_ROWS,
     DeepseekV41Config,
+    gate_up_rows_interleaved,
     nvfp4_sf_preinterleaved,
 )
-
-# One E4M3 scale per 16 K-elements (``quantization_config.group_size``).
-NVFP4_BLOCK = 16
+from .ragged import ReplicaTokens
 
 # Routed experts' down-proj input: the fused SwiGLU + NVFP4 quantize kernel
 # (default) or the unfused graph-op SwiGLU then the grouped quantize ("0").
@@ -85,29 +88,14 @@ def _use_fused_silu_quant(n_local_experts: int) -> bool:
     return _FUSED_SILU_QUANT and n_local_experts <= _NUM_SMS
 
 
-# What `fused_silu_quantized` reads off its config: NVFP4 activations with a
-# static per-expert input scale and dynamic per-16 E4M3 block scales.
-_NVFP4_ACTIVATION_QUANT_CONFIG = QuantConfig(
-    input_scale=InputScaleSpec(
-        granularity=ScaleGranularity.BLOCK,
-        origin=ScaleOrigin.STATIC,
-        dtype=DType.float32,
-        block_size=(1, NVFP4_BLOCK),
-    ),
-    weight_scale=WeightScaleSpec(
-        granularity=ScaleGranularity.BLOCK,
-        dtype=DType.float8_e4m3fn,
-        block_size=(1, NVFP4_BLOCK),
-    ),
-    mlp_quantized_layers=set(),
-    attn_quantized_layers=set(),
-    format=QuantFormat.NVFP4,
-)
-
 # The token id that marks image-span positions. Every image delimiter role
 # shares this id (the role travels in a separate `types` tensor), so routing
 # tests `==` rather than a range.
 IMAGE_SENTINEL_BASE_ID = 129264
+
+# The side stream the shared expert overlaps the expert dispatch on; stream
+# 0 is the default one.
+_SHARED_EXPERT_STREAM_ID = 1
 
 
 class _PackedExpertWeightNvFp4(_PackedExpertWeight):
@@ -236,6 +224,13 @@ class DeepseekV41NvFp4RoutedExperts(DeepseekV4RoutedExperts):
         )
         self.expert_offset = 0
         self.n_global_experts = n_experts
+        self.gate_up_interleaved = False
+        """Whether ``gate_up_proj`` rows alternate gate, up.
+
+        Set when the experts run behind expert-parallel dispatch with few
+        enough local experts that their two GEMMs fuse
+        (:func:`~..model_config.gate_up_rows_interleaved`).
+        """
 
     def shard_experts(self, num_devices: int) -> None:
         """Splits the experts and their per-expert scales across devices."""
@@ -255,9 +250,9 @@ class DeepseekV41NvFp4RoutedExperts(DeepseekV4RoutedExperts):
     ) -> tuple[TensorValue, TensorValue]:
         """A projection's per-expert static activation scales.
 
-        Each expert's rows are quantized against that expert's own
-        ``input_scale``, not one max over all experts: a single shared scale
-        would change which blocks saturate and clip.
+        Under expert-parallel dispatch the checkpoint loader gives every
+        expert the gate/up projection's largest ``input_scale``, as the
+        dispatch quantizes all rows against one scale.
 
         Returns:
             ``(sf_tensor, input_scale)``, both ``[n_experts]`` float32 for this
@@ -303,6 +298,74 @@ class DeepseekV41NvFp4RoutedExperts(DeepseekV4RoutedExperts):
             scale_offsets,
             expert_ids,
         )
+
+    def dispatched(
+        self,
+        received: Sequence[TensorValue],
+        estimated_total_m: TensorValue,
+    ) -> TensorValue:
+        """Runs this device's experts over rows delivered by expert dispatch.
+
+        The rows arrive NVFP4-quantized against the gate/up projection's one
+        global input scale. The gate/up GEMM with its clamped SwiGLU and
+        quantize, then the down GEMM, share one set of routing tensors, so
+        the graph compiler fuses them into one kernel when the row count is
+        static; it reads the :attr:`gate_up_interleaved` layout.
+
+        Args:
+            received: The dispatch's ``(rows, block scales, expert_start,
+                scale offsets, expert_ids, usage)``: packed NVFP4 rows sorted
+                by expert group, their E4M3 block scales, the ``[groups + 1]``
+                uint32 row offsets, each group's scale-tile offset, the
+                ``[groups]`` int32 local expert of each group (``-1`` when
+                unused), and host ``[max rows per expert, groups]`` uint32.
+            estimated_total_m: Estimated rows actually received.
+
+        Returns:
+            ``[rows, hidden]`` bf16 down projections, without routing weights.
+        """
+        tokens, a_scales, expert_start, scale_offsets, expert_ids, usage = (
+            TensorValue(v) for v in received
+        )
+        gate_up, down = self.gate_up_proj, self.down_proj
+        assert isinstance(gate_up, _PackedExpertWeightNvFp4)
+        assert isinstance(down, _PackedExpertWeightNvFp4)
+        assert self.gate_up_interleaved
+        device = tokens.device
+        gate_up_input_scale = gate_up.input_scale.to(device)
+        down_input_scale = down.input_scale.to(device)
+        activated, activated_scales = grouped_matmul_blocked_swiglu(
+            tokens,
+            gate_up.weight.to(device),
+            a_scales,
+            gate_up(device),
+            expert_start,
+            scale_offsets,
+            expert_ids,
+            usage,
+            expert_scales=gate_up.weight_scale_2.to(device)
+            * gate_up_input_scale,
+            c_input_scales=1.0 / down_input_scale,
+            estimated_total_m=estimated_total_m,
+            activation=self._activation(),
+        )
+        return grouped_matmul_block_scaled(
+            activated,
+            down.weight.to(device),
+            activated_scales,
+            down(device),
+            expert_start,
+            scale_offsets,
+            expert_ids,
+            down.weight_scale_2.to(device) * down_input_scale,
+            usage,
+            out_type=DType.bfloat16,
+            estimated_total_m=estimated_total_m,
+        )
+
+    def _activation(self) -> GatedActivation:
+        """The clamped SwiGLU the fused kernels apply."""
+        return GatedActivation("silu", limit=max(float(self.swiglu_limit), 0.0))
 
     def _nvfp4_matmul(
         self,
@@ -375,19 +438,29 @@ class DeepseekV41NvFp4RoutedExperts(DeepseekV4RoutedExperts):
                 expert_ids,
             )
         assert self._weight_after_down_proj
+        return self._quantized_down(
+            gate_up, a_offsets, scale_offsets, expert_ids
+        )
+
+    def _quantized_down(
+        self,
+        gate_up: TensorValue,
+        a_offsets: TensorValue,
+        scale_offsets: TensorValue,
+        expert_ids: TensorValue,
+    ) -> TensorValue:
+        """The fused clamped SwiGLU and NVFP4 quantize, then the down GEMM."""
         proj = self.down_proj
         assert isinstance(proj, _PackedExpertWeightNvFp4)
         input_scale = proj.input_scale.to(gate_up.device)
         quantized, a_scales = fused_silu_quantized(
             ops.cast(gate_up, DType.bfloat16),
             a_offsets,
-            _NVFP4_ACTIVATION_QUANT_CONFIG,
+            NVFP4_ACTIVATION_QUANT_CONFIG,
             DType.uint8,
             input_scales=input_scale,
             scales_offsets=scale_offsets,
-            activation=GatedActivation(
-                "silu", limit=max(float(self.swiglu_limit), 0.0)
-            ),
+            activation=self._activation(),
         )
         return self._nvfp4_matmul(
             proj,
@@ -611,6 +684,16 @@ class DeepseekV41MoE(Module):
             swiglu_limit=config.swiglu_limit,
             device=device,
         )
+        # Only expert-parallel dispatch runs the interleaved layout's kernel.
+        self.experts.gate_up_interleaved = (
+            config.ep_config is not None
+            and gate_up_rows_interleaved(
+                config.n_routed_experts, config.data_parallel_degree
+            )
+        )
+        self.ep_batch_manager: EPBatchManager | None = None
+        """Set on data-parallel replicas whose routed experts run behind
+        expert-parallel dispatch (:meth:`data_parallel`)."""
         if config.n_shared_experts != 1:
             raise ValueError(
                 "DeepSeek-V4.1 assumes exactly one shared expert, got "
@@ -686,6 +769,158 @@ class DeepseekV41MoE(Module):
                 y + ops.cast(moe.shared_experts(x), DType.float32), x.dtype
             )
             for moe, x, y in zip(moes, xs, reduced, strict=True)
+        ]
+
+    @staticmethod
+    def data_parallel(
+        moes: Sequence[ExpertParallelFFN],
+        xs: Sequence[TensorValue],
+        token_ids: Sequence[TensorValue],
+        replica_tokens: ReplicaTokens,
+        signal_buffers: Sequence[BufferValue],
+    ) -> list[TensorValue]:
+        """Runs the MoE expert-parallel over data-parallel devices.
+
+        Each device holds only its own rows. The trunk's experts have an
+        expert-parallel batch manager (:meth:`expert_parallel`), so each
+        device sends its rows to the devices that own their experts. Experts
+        without one, such as the DSpark drafter's, all-gather the rows into
+        the whole batch, which then runs as in :meth:`tensor_parallel`, and
+        each device keeps its own rows.
+
+        Args:
+            moes: One replica per device.
+            xs: Per device, its own ``[1, t_i, hidden]`` rows.
+            token_ids: Per device, the whole batch's ``[1, T]`` token ids.
+            replica_tokens: Where each device's rows sit in the batch.
+            signal_buffers: The collectives' signal buffers.
+
+        Returns:
+            One ``[1, t_i, hidden]`` output per device, in ``x``'s dtype.
+        """
+        own_token_ids = [
+            ops.slice_tensor(
+                tok, [slice(None), (slice(start, stop), x.shape[1])]
+            )
+            for tok, x, (start, stop) in zip(
+                token_ids, xs, replica_tokens.ranges, strict=True
+            )
+        ]
+        dispatched: list[DeepseekV41MoE] = [
+            moe
+            for moe in moes
+            if isinstance(moe, DeepseekV41MoE)
+            and moe.ep_batch_manager is not None
+        ]
+        if len(dispatched) == len(moes):
+            return DeepseekV41MoE.expert_parallel(dispatched, xs, own_token_ids)
+        hidden = int(xs[0].shape[-1])
+        total = replica_tokens.total
+        gathered = ops.allgather(
+            [ops.reshape(x, [-1, hidden]) for x in xs], signal_buffers, axis=0
+        )
+        partials = [
+            moe.routed(
+                ops.reshape(ops.rebind(g, [total, hidden]), [1, total, hidden]),
+                tok,
+            )
+            for moe, g, tok in zip(moes, gathered, token_ids, strict=True)
+        ]
+        reduced = ops.allreduce.sum(partials, signal_buffers)
+        outs = []
+        for moe, x, y, (start, stop) in zip(
+            moes, xs, reduced, replica_tokens.ranges, strict=True
+        ):
+            rows = ops.slice_tensor(
+                ops.reshape(y, [total, hidden]),
+                [(slice(start, stop), x.shape[1]), slice(None)],
+            )
+            local = ops.reshape(rows, x.shape)
+            outs.append(
+                ops.cast(
+                    local + ops.cast(moe.shared_experts(x), DType.float32),
+                    x.dtype,
+                )
+            )
+        return outs
+
+    @staticmethod
+    def expert_parallel(
+        moes: Sequence[DeepseekV41MoE],
+        xs: Sequence[TensorValue],
+        token_ids: Sequence[TensorValue],
+    ) -> list[TensorValue]:
+        """Runs the routed experts through expert-parallel dispatch and combine.
+
+        Each device routes its own rows, sends each routed copy to the device
+        that owns its expert, runs its experts over the rows it receives, and
+        sends the down projections back, where the combine weights and sums
+        each row's copies. Rows travel NVFP4-quantized against one global
+        gate/up input scale. Each device then adds its replicated shared
+        expert.
+
+        Args:
+            moes: One replica per device, each with the same
+                :attr:`ep_batch_manager`.
+            xs: Per device, its own ``[1, t_i, hidden]`` rows.
+            token_ids: Per device, its own ``[1, t_i]`` token ids.
+
+        Returns:
+            One ``[1, t_i, hidden]`` output per device, in ``x``'s dtype.
+        """
+        manager = moes[0].ep_batch_manager
+        assert manager is not None
+        hidden = int(xs[0].shape[-1])
+        topk = moes[0].experts.topk
+        rows = [ops.reshape(x, [-1, hidden]) for x in xs]
+        weights: list[TensorValue] = []
+        indices: list[TensorValue] = []
+        for moe, x, tok in zip(moes, xs, token_ids, strict=True):
+            w, i = moe.gate(x, tok)
+            weights.append(ops.reshape(w, [-1, topk]))
+            indices.append(ops.reshape(i, [-1, topk]))
+        # The replicated shared expert reads only each device's own rows, so
+        # it runs on a side stream, overlapping the dispatch and combine.
+        shared = ops.side_stream(
+            list(xs),
+            lambda *ins: [
+                moe.shared_experts(x) for moe, x in zip(moes, ins, strict=True)
+            ],
+            result_types=[x.type for x in xs],
+            stream_id=_SHARED_EXPERT_STREAM_ID,
+        )
+        device_ids = [x.device.id for x in xs]
+        # One global gate/up input scale, the same on every device; the
+        # dispatch kernel reads the first element.
+        input_scales = []
+        for moe, x in zip(moes, xs, strict=True):
+            proj = moe.experts.gate_up_proj
+            assert isinstance(proj, _PackedExpertWeightNvFp4)
+            input_scales.append(proj.input_scale.to(x.device)[0:1])
+        received = manager.ep_dispatch_all(
+            rows, indices, device_ids, input_scales=input_scales
+        )
+        # The routed copies one device can expect, for the GEMMs' tile plan.
+        total = ops.shape_to_tensor(rows[0].shape)[0]
+        for r in rows[1:]:
+            total = total + ops.shape_to_tensor(r.shape)[0]
+        estimated_total_m = (
+            total * topk // manager.config.n_gpus_per_node
+        ).cast(DType.uint32)
+        downs = [
+            moe.experts.dispatched(
+                [TensorValue(v) for v in r], estimated_total_m
+            )
+            for moe, r in zip(moes, received, strict=True)
+        ]
+        combined = manager.ep_combine_all(downs, weights, device_ids)
+        return [
+            ops.cast(
+                ops.cast(ops.reshape(TensorValue(y), x.shape), DType.float32)
+                + ops.cast(s, DType.float32),
+                x.dtype,
+            )
+            for x, y, s in zip(xs, combined, shared, strict=True)
         ]
 
     def __call__(self, x: TensorValue, token_ids: TensorValue) -> TensorValue:

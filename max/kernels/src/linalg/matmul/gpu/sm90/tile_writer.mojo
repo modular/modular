@@ -568,7 +568,7 @@ struct FragmentToSMemWriter[
 
         # Execute st.matrix hardware instruction
         st_matrix[simd_width=packed_width, transpose=Self.swapAB](
-            smem_tile._storage + swizzled_offset, packed_data
+            smem_tile._storage.unsafe_offset(swizzled_offset), packed_data
         )
 
     @inline(.always)
@@ -601,7 +601,9 @@ struct FragmentToSMemWriter[
             origin=MutAnyOrigin,
             address_space=.SHARED,
         ](
-            self.c_tile._storage + tile_linear_idx * elements_per_tile,
+            self.c_tile._storage.unsafe_offset(
+                tile_linear_idx * elements_per_tile
+            ),
             flat_tile_layout,
         )
 
@@ -945,7 +947,7 @@ struct RegisterToGMemWriter[
             var reg_val = value_compute_fn[
                 Self.c_type, type_of(frag_val).length, alignment=value_alignment
             ]((m, n), frag_val)
-            gmem_frag.store(Coord(Idx[frag_idx], Idx[0]), reg_val)
+            gmem_frag.store((Idx[frag_idx], Idx[0]), reg_val)
 
     @inline(.always)
     def _write_with_runtime_bounds[

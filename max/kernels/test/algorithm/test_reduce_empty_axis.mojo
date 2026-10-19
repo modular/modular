@@ -68,14 +68,14 @@ def _run_reduce_sum_inner[
         width: Int, alignment: Int
     ](coords: Coord) {var input_ptr, var axis_size} -> SIMD[dtype, width]:
         return input_ptr.unsafe_load[width=width](
-            Int(coords[0].value()) * axis_size + Int(coords[1].value())
+            Int(coords[0]) * axis_size + Int(coords[1])
         )
 
     @inline(.always)
     def output_fn[
         width: SIMDLength
     ](coords: Coord, val: SIMD[dtype, width]) {var output_ptr}:
-        output_ptr.unsafe_store[width=width](Int(coords[0].value()), val)
+        output_ptr.unsafe_store[width=width](Int(coords[0]), val)
 
     reduce_sum[dtype, target="cpu", reduce_dim=1](
         input_fn, output_fn, Coord(num_rows, axis_size)
@@ -98,14 +98,14 @@ def _run_reduce_max_non_inner[
         width: Int, alignment: Int
     ](coords: Coord) {var input_ptr, var num_rows} -> SIMD[dtype, width]:
         return input_ptr.unsafe_load[width=width](
-            Int(coords[0].value()) * num_rows + Int(coords[1].value())
+            Int(coords[0]) * num_rows + Int(coords[1])
         )
 
     @inline(.always)
     def output_fn[
         width: SIMDLength
     ](coords: Coord, val: SIMD[dtype, width]) {var output_ptr}:
-        output_ptr.unsafe_store[width=width](Int(coords[1].value()), val)
+        output_ptr.unsafe_store[width=width](Int(coords[1]), val)
 
     reduce_max[dtype, target="cpu", reduce_dim=0](
         input_fn, output_fn, Coord(axis_size, num_rows)
@@ -127,14 +127,14 @@ def _run_reduce_argmax_inner[
         width: Int, alignment: Int
     ](coords: Coord) {var input_ptr, var axis_size} -> SIMD[dtype, width]:
         return input_ptr.unsafe_load[width=width](
-            Int(coords[0].value()) * axis_size + Int(coords[1].value())
+            Int(coords[0]) * axis_size + Int(coords[1])
         )
 
     @inline(.always)
     def output_fn[
         width: SIMDLength
     ](coords: Coord, val: SIMD[.int64, width]) {var output_ptr}:
-        output_ptr.unsafe_store[width=width](Int(coords[0].value()), val)
+        output_ptr.unsafe_store[width=width](Int(coords[0]), val)
 
     reduce_argmax[dtype, target="cpu", reduce_dim=1](
         input_fn, output_fn, Coord(num_rows, axis_size)
@@ -156,14 +156,14 @@ def _run_reduce_mean_inner_f32[
         width: Int, alignment: Int
     ](coords: Coord) {var input_ptr, var axis_size} -> SIMD[dtype, width]:
         return input_ptr.unsafe_load[width=width](
-            Int(coords[0].value()) * axis_size + Int(coords[1].value())
+            Int(coords[0]) * axis_size + Int(coords[1])
         )
 
     @inline(.always)
     def output_fn[
         width: SIMDLength
     ](coords: Coord, val: SIMD[dtype, width]) {var output_ptr}:
-        output_ptr.unsafe_store[width=width](Int(coords[0].value()), val)
+        output_ptr.unsafe_store[width=width](Int(coords[0]), val)
 
     reduce_mean[dtype, target="cpu", reduce_dim=1](
         input_fn, output_fn, Coord(num_rows, axis_size)
@@ -186,14 +186,14 @@ def _run_reduce_mean_inner_i32[
         width: Int, alignment: Int
     ](coords: Coord) {var input_ptr, var axis_size} -> SIMD[dtype, width]:
         return input_ptr.unsafe_load[width=width](
-            Int(coords[0].value()) * axis_size + Int(coords[1].value())
+            Int(coords[0]) * axis_size + Int(coords[1])
         )
 
     @inline(.always)
     def output_fn[
         width: SIMDLength
     ](coords: Coord, val: SIMD[dtype, width]) {var output_ptr}:
-        output_ptr.unsafe_store[width=width](Int(coords[0].value()), val)
+        output_ptr.unsafe_store[width=width](Int(coords[0]), val)
 
     reduce_mean[dtype, target="cpu", reduce_dim=1](
         input_fn, output_fn, Coord(num_rows, axis_size)
@@ -216,7 +216,7 @@ def _run_reduce_sum_rank1[
     def input_fn[
         width: Int, alignment: Int
     ](coords: Coord) {var input_ptr} -> SIMD[dtype, width]:
-        return input_ptr.unsafe_load[width=width](Int(coords[0].value()))
+        return input_ptr.unsafe_load[width=width](Int(coords[0]))
 
     @inline(.always)
     def output_fn[

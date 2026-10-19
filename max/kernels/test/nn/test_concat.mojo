@@ -106,7 +106,7 @@ def test_concat() raises:
         row_major(output.num_elements()),
     )
     for i in range(output.layout.product()):
-        print(output_flat.load[1]((i,)))
+        print(output_flat[i])
 
 
 def test_concat_parallel() raises:
@@ -176,7 +176,7 @@ def test_concat_parallel() raises:
         row_major(output.num_elements()),
     )
     for i in range(output.layout.product()):
-        print(output_flat.load[1]((i,)))
+        print(output_flat[i])
 
 
 # CHECK-LABEL: test_concat_inner
@@ -241,7 +241,7 @@ def test_concat_inner() raises:
         row_major(output.num_elements()),
     )
     for i in range(output.layout.product()):
-        print(output_flat.load[1]((i,)))
+        print(output_flat[i])
 
 
 def main() raises:

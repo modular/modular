@@ -26,9 +26,9 @@ from std.itertools import product
 
 
 def convolution_2D_const_mem_kernel(
-    N: UnsafePointer[Float32, ImmutAnyOrigin],
-    F: UnsafePointer[Float32, ImmutAnyOrigin],
-    P: UnsafePointer[Float32, MutAnyOrigin],
+    N: ImmPointer[Float32, ImmutAnyOrigin],
+    F: ImmPointer[Float32, ImmutAnyOrigin],
+    P: MutPointer[Float32, MutAnyOrigin],
     r_dev: Int32,
     width_dev: Int32,
     height_dev: Int32,

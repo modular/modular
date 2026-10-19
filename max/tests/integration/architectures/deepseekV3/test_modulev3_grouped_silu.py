@@ -69,7 +69,7 @@ def test_grouped_silu_fp8_is_one_bounded_kernel(live_rows: int) -> None:
         for e in entries
         if e.kind == LaunchTraceEntry.OperationKind.KERNEL_LAUNCH
     ]
-    assert sum("fp8_quantization" in name for name in kernels) == 1, kernels
+    assert sum("fp8_quantize_" in name for name in kernels) == 1, kernels
     assert not any("silu" in name.lower() for name in kernels), kernels
 
     codes = torch.from_dlpack(result.data.cast(DType.float32)).cpu()

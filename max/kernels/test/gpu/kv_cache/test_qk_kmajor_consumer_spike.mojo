@@ -174,18 +174,20 @@ def qk_consumer_kernel[
     )
     comptime q_size = BM * BK
     comptime k_size = BN * BK
-    var k_smem = (q_smem + q_size).bitcast[Scalar[ab_type]]()
+    var k_smem = q_smem.unsafe_offset(q_size).unsafe_bitcast[Scalar[ab_type]]()
 
     var q_smem_tile = TileTensor(q_smem, q_smem_layout)
     var k_smem_tile = TileTensor(k_smem, k_smem_layout)
 
-    var ptr_tmem_addr = (k_smem + k_size).bitcast[UInt32]()
+    var ptr_tmem_addr = k_smem.unsafe_offset(k_size).unsafe_bitcast[UInt32]()
 
     comptime q_expected_bytes = q_size * size_of[ab_type]()
     comptime k_expected_bytes = k_size * size_of[ab_type]()
 
-    var tma_mbar = (ptr_tmem_addr + 2).bitcast[SharedMemBarrier]()
-    var mma_mbar = tma_mbar + 1
+    var tma_mbar = ptr_tmem_addr.unsafe_offset(2).unsafe_bitcast[
+        SharedMemBarrier
+    ]()
+    var mma_mbar = tma_mbar.unsafe_offset(1)
 
     var tid = thread_idx.x
     var wid = get_warp_id()
@@ -339,7 +341,9 @@ def run_qk_consumer[
         var k_desc = create_tma_descriptor[ab_type, 2, swizzle_mode](
             DeviceBuffer(
                 ctx,
-                k_ptr.unsafe_mut_cast[True]().address_space_cast[.GENERIC](),
+                k_ptr.unsafe_mut_cast[True]().unsafe_address_space_cast[
+                    .GENERIC
+                ](),
                 1,
                 owning=False,
             ),

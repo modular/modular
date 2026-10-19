@@ -105,9 +105,9 @@ def create_ref_b[
         row_major[N // 64, K * 64 // pack_factor]()
     )
 
-    var b_scales_ptr = b_packed.ptr + N * K // 2
+    var b_scales_ptr = b_packed.ptr.unsafe_offset(N * K // 2)
     var scales = TileTensor(
-        b_scales_ptr.bitcast[Scalar[scales_type]](),
+        b_scales_ptr.unsafe_bitcast[Scalar[scales_type]](),
         row_major[K // group_size, N](),
     )
 
@@ -161,27 +161,27 @@ def create_ref_b[
         var q_int = vec[i // 2]
 
         var v1 = int4tobf16(q_int, bitcast[.bfloat16, 1](scales_reg_tiles[i]))
-        warp_out_tile.store[2](
-            Coord((i) * 8 + lane_row, 0 * 8 + lane_col * 2),
+        warp_out_tile.store(
+            ((i) * 8 + lane_row, 0 * 8 + lane_col * 2),
             v1.cast[type_b](),
         )
         q_int >>= 4
         var v2 = int4tobf16(q_int, bitcast[.bfloat16, 1](scales_reg_tiles[i]))
-        warp_out_tile.store[2](
-            Coord((i) * 8 + lane_row, 1 * 8 + lane_col * 2),
+        warp_out_tile.store(
+            ((i) * 8 + lane_row, 1 * 8 + lane_col * 2),
             v2.cast[type_b](),
         )
         q_int >>= 4
 
         v1 = int4tobf16(q_int, bitcast[.bfloat16, 1](scales_reg_tiles[i + 1]))
-        warp_out_tile.store[2](
-            Coord((i + 1) * 8 + lane_row, 0 * 8 + lane_col * 2),
+        warp_out_tile.store(
+            ((i + 1) * 8 + lane_row, 0 * 8 + lane_col * 2),
             v1.cast[type_b](),
         )
         q_int >>= 4
         v2 = int4tobf16(q_int, bitcast[.bfloat16, 1](scales_reg_tiles[i + 1]))
-        warp_out_tile.store[2](
-            Coord((i + 1) * 8 + lane_row, 1 * 8 + lane_col * 2),
+        warp_out_tile.store(
+            ((i + 1) * 8 + lane_row, 1 * 8 + lane_col * 2),
             v2.cast[type_b](),
         )
 
@@ -209,18 +209,18 @@ def test_repack_Q4_0_for_sm8x[
 
     def build_b_buffer(N: Int, K: Int, b_ptr: MutPointer[UInt8, _]):
         var k_groups = ceildiv(K, 32)
-        var block_ptr = b_ptr.bitcast[_block_Q4_0]()
+        var block_ptr = b_ptr.unsafe_bitcast[_block_Q4_0]()
 
         for _ in range(N):
             for _ in range(k_groups):
                 block_ptr[].base_scale = random_float16()
                 fill_random(block_ptr[].q_bits)
-                block_ptr += 1
+                block_ptr = block_ptr.unsafe_offset(1)
 
     comptime group_size = 32
     comptime pack_factor = 8
-    var N = Int(n.value())
-    var K = Int(k.value())
+    var N = Int(n)
+    var K = Int(k)
     comptime BN = 128
     comptime BK = 1024
     comptime group_bytes = 2 + (group_size // 2)
@@ -353,9 +353,9 @@ def test_quantized[
     comptime static_K = KType.static_value
     comptime a_type = DType.bfloat16
 
-    var M = Int(m.value())
-    var N = Int(n.value())
-    var K = Int(k.value())
+    var M = Int(m)
+    var N = Int(n)
+    var K = Int(k)
 
     comptime _b_dim0 = NType.static_value
     comptime _b_dim1 = (KType.static_value // group_size) * group_bytes
@@ -372,14 +372,16 @@ def test_quantized[
 
     rand(a_host_ptr.unsafe_ptr(), a_size)
 
-    var b_scales_ptr = (b_host_ptr.unsafe_ptr() + N * K // 2).bitcast[
-        Scalar[a_type]
-    ]()
+    var b_scales_ptr = (
+        b_host_ptr.unsafe_ptr()
+        .unsafe_offset(N * K // 2)
+        .unsafe_bitcast[Scalar[a_type]]()
+    )
     var b_scales_size = (K // group_size) * N
     # elements of b matrix is between [-1, 1]
     rand(b_scales_ptr, b_scales_size, min=0, max=0.125)
     randint(
-        b_host_ptr.unsafe_ptr().bitcast[UInt32](),
+        b_host_ptr.unsafe_ptr().unsafe_bitcast[UInt32](),
         N * (K // pack_factor),
         Int(UInt32.MIN),
         Int(UInt32.MAX),

@@ -97,8 +97,8 @@ def block_scan(val: Float32) -> Float32:
 def inter_block_scan(
     val: Float32,
     bid: UInt32,
-    partial_sums: UnsafePointer[Float32, MutAnyOrigin],
-    flags: UnsafePointer[UInt32, MutAnyOrigin],
+    partial_sums: MutPointer[Float32, MutAnyOrigin],
+    flags: MutPointer[UInt32, MutAnyOrigin],
 ) -> Float32:
     """Inter-block scan using atomic operations for synchronization.
 
@@ -123,7 +123,7 @@ def inter_block_scan(
             prev_block_partial_sum_s[0] = 0.0
         else:
             # Wait for previous block to pass partial sum
-            while Atomic.load(flags + Int(bid - 1)) == 0:
+            while Atomic.load(flags.unsafe_offset(Int(bid - 1))) == 0:
                 pass
 
             # Read previous block's partial sum
@@ -133,7 +133,7 @@ def inter_block_scan(
         partial_sums[Int(bid)] = prev_block_partial_sum_s[0] + val
 
         # Set this block's flag
-        _ = Atomic.fetch_add(flags + Int(bid), UInt32(1))
+        _ = Atomic.fetch_add(flags.unsafe_offset(Int(bid)), UInt32(1))
 
     barrier()
     return prev_block_partial_sum_s[0]
@@ -141,11 +141,11 @@ def inter_block_scan(
 
 # ========================== KERNEL CODE ==========================
 def scan_kernel(
-    input: UnsafePointer[Float32, MutAnyOrigin],
-    output: UnsafePointer[Float32, MutAnyOrigin],
-    block_counter: UnsafePointer[UInt32, MutAnyOrigin],
-    partial_sums: UnsafePointer[Float32, MutAnyOrigin],
-    flags: UnsafePointer[UInt32, MutAnyOrigin],
+    input: MutPointer[Float32, MutAnyOrigin],
+    output: MutPointer[Float32, MutAnyOrigin],
+    block_counter: MutPointer[UInt32, MutAnyOrigin],
+    partial_sums: MutPointer[Float32, MutAnyOrigin],
+    flags: MutPointer[UInt32, MutAnyOrigin],
     N: UInt32,
 ):
     """Full scan kernel with coarsening, register tiling, and dynamic block assignment.

@@ -13,7 +13,7 @@
 """Architecture registration for GLM-5.3-Flash (``glm5_next``).
 
 Text-only. The decoder is assembled in
-:meth:`~.model.Glm5NextModel._build_graph_for_compile`, which calls
+:meth:`~.model.Glm5NextModel.graph_specs`, which calls
 ``attach_layers(build_layers())``, so this resolves to GLM-5.3-Flash's own
 graph rather than to DeepSeek-V3.2's. The vision tower has landed its modules
 but is not wired into the graph, so an image request is not served here.

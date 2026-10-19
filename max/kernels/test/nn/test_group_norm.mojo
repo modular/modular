@@ -79,22 +79,19 @@ def run_group_norm_cpu[
     def input_fn[
         width: Int
     ](coords: Coord) {var data_buf} -> SIMD[dtype, width]:
-        var idx = data_buf.layout(coords)
-        return data_buf.raw_load[width=width](idx)
+        return data_buf.load[width=width](coords)
 
     @inline(.always)
     def gamma_scalar_fn[
         width: Int
     ](coords: Coord) {var gamma} -> SIMD[dtype, width]:
-        var idx = gamma.layout(coords)
-        return gamma.raw_load[width=width](idx)
+        return gamma.load[width=width](coords)
 
     @inline(.always)
     def beta_scalar_fn[
         width: Int
     ](coords: Coord) {var beta} -> SIMD[dtype, width]:
-        var idx = beta.layout(coords)
-        return beta.raw_load[width=width](idx)
+        return beta.load[width=width](coords)
 
     group_norm_cpu[dtype=dtype, rank=rank](
         input_fn,
@@ -109,7 +106,7 @@ def run_group_norm_cpu[
     var data_ptr_ptr = data_ptr.unsafe_ptr()
     for r in range(rows):
         var vec = TileTensor(
-            data_ptr_ptr + r * cols,
+            data_ptr_ptr.unsafe_offset(r * cols),
             row_major(cols),
         )
         var stats = compute_group_stats(vec, cols, epsilon)

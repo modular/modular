@@ -111,7 +111,7 @@ def run_reduce[
     ](coords: Coord, val: StaticTuple[SIMD[_dtype, width], num_reductions]) {
         var res_device
     }:
-        res_device.store[width=width, alignment=align_of[dtype]()](
+        res_device.store[alignment=align_of[dtype]()](
             coords,
             rebind[SIMD[dtype, width]](val[0]),
         )

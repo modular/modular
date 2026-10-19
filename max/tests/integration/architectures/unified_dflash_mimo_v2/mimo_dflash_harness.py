@@ -29,6 +29,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
+import ml_dtypes
 import numpy as np
 import numpy.typing as npt
 from max import tree
@@ -102,16 +103,18 @@ TestMutation = Literal["accept_one_extra"]
 
 def bf16_bits(x: npt.ArrayLike) -> npt.NDArray[np.uint16]:
     """Rounds to the nearest BFloat16 and returns its bits."""
-    bits = np.ascontiguousarray(x, np.float32).view(np.uint32)
-    return ((bits + 0x7FFF + ((bits >> 16) & 1)) >> 16).astype(np.uint16)
+    return np.asarray(x, np.float32).astype(ml_dtypes.bfloat16).view(np.uint16)
 
 
 def to_f32(buffer: Buffer) -> F32:
     """A host copy of ``buffer`` as float32, whatever its float dtype."""
     host = buffer.to(CPU())
     if host.dtype == DType.bfloat16:
-        bits = np.from_dlpack(host.view(DType.uint16)).astype(np.uint32)
-        return (bits << 16).view(np.float32)
+        return (
+            np.from_dlpack(host.view(DType.uint16))
+            .view(ml_dtypes.bfloat16)
+            .astype(np.float32)
+        )
     return np.from_dlpack(host).astype(np.float32)
 
 

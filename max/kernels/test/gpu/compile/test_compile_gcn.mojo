@@ -494,7 +494,7 @@ def test_nt_load_compile() raises:
     print("== test_nt_load_compile")
 
     def kernel(x: ImmPointer[Float32, ImmutAnyOrigin]):
-        var ptr = x + thread_idx.x * 4
+        var ptr = x.unsafe_offset(thread_idx.x * 4)
         var val = ptr.load[width=4, non_temporal=True]()
         keep(val)
 
@@ -510,8 +510,8 @@ def test_nt_store_compile() raises:
         x: ImmPointer[Float32, ImmutAnyOrigin],
         y: MutPointer[Float32, MutAnyOrigin],
     ):
-        var ptr_in = x + thread_idx.x * 4
-        var ptr_out = y + thread_idx.x * 4
+        var ptr_in = x.unsafe_offset(thread_idx.x * 4)
+        var ptr_out = y.unsafe_offset(thread_idx.x * 4)
         var val = ptr_in.load[width=4]()
         ptr_out.store[non_temporal=True](val)
 

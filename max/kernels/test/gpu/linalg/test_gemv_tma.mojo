@@ -292,9 +292,9 @@ def test_gemv_tma[
     k: KType,
     benchmark: Bool = False,
 ) raises:
-    var M = Int(m.value())
-    var N = Int(n.value())
-    var K = Int(k.value())
+    var M = Int(m)
+    var N = Int(n)
+    var K = Int(k)
 
     var a_shape = Coord(m, k)
     var b_shape = Coord(k)

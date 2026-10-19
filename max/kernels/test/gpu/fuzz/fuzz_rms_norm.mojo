@@ -95,7 +95,7 @@ def run_one_case(
     ctx.enqueue_copy(gamma_d, gamma_h)
 
     var data_buf = TileTensor(data_d, row_major(Coord(shape)))
-    var gamma = TileTensor(gamma_d, row_major(Coord(Index(cols))))
+    var gamma = TileTensor(gamma_d, row_major(cols))
     comptime epsilon = Float32(0.001)
     comptime weight_offset = Float32(0.0)
 
@@ -103,8 +103,7 @@ def run_one_case(
     @__copy_capture(data_buf)
     @__parameter
     def input_fn[width: Int](coords: Coord) -> SIMD[rn_type, width]:
-        var idx = data_buf.layout(coords)
-        return data_buf.raw_load[width=width](idx)
+        return data_buf.load[width=width](coords)
 
     @inline(.always)
     @__copy_capture(data_buf)
@@ -112,8 +111,7 @@ def run_one_case(
     def identity_output_fn[
         width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[rn_type, width]) -> None:
-        var idx = data_buf.layout(coords)
-        data_buf.raw_store[width=width, alignment=alignment](idx, val)
+        data_buf.store[alignment=alignment](coords, val)
 
     rms_norm_gpu[
         rn_rank,

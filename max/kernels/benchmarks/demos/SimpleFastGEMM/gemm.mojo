@@ -25,7 +25,7 @@ from linalg.utils import (
 )
 
 
-from layout import TileTensor, Coord, row_major
+from layout import TileTensor, row_major
 from layout.tensor_engine import DefaultEngine
 
 comptime dtype = DType.float32
@@ -86,8 +86,8 @@ def kernel(
 
     comptime for idx0 in range(MR):
         for idx1 in range(NR2):
-            var cv = c.load[width=simd_size](Coord(n * idx0 + simd_size * idx1))
-            c_local.store(Coord(NR * idx0 + simd_size * idx1), cv)
+            var cv = c.load[width=simd_size]((n * idx0 + simd_size * idx1,))
+            c_local.store((NR * idx0 + simd_size * idx1,), cv)
 
     for pr in range(kc):
         comptime for i in range(NR2):
@@ -98,21 +98,19 @@ def kernel(
         comptime for idx0 in range(MR):
             for idx1 in range(NR2):
                 var av = a[idx0 * k + pr].cast[dtype]()
-                var bv = b.load[width=simd_size](
-                    Coord(NR * pr + simd_size * idx1)
-                )
+                var bv = b.load[width=simd_size]((NR * pr + simd_size * idx1,))
                 var cv = c_local.load[width=simd_size](
-                    Coord(NR * idx0 + simd_size * idx1)
+                    (NR * idx0 + simd_size * idx1,)
                 )
                 cv += av * bv
-                c_local.store(Coord(NR * idx0 + simd_size * idx1), cv)
+                c_local.store((NR * idx0 + simd_size * idx1,), cv)
 
     comptime for idx0 in range(MR):
         for idx1 in range(NR2):
             var cv = c_local.load[width=simd_size](
-                Coord(NR * idx0 + simd_size * idx1)
+                (NR * idx0 + simd_size * idx1,)
             )
-            c.store(Coord(n * idx0 + simd_size * idx1), cv)
+            c.store((n * idx0 + simd_size * idx1,), cv)
 
 
 def pack_B(

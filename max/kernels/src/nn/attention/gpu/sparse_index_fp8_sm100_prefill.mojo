@@ -123,6 +123,7 @@ from max.gpu.compute.arch.tcgen05 import (
     tcgen05_release_allocation_lock,
 )
 from std.bit import next_power_of_two
+from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.math import align_down, align_up, ceildiv, clamp, lcm
 from std.sys import get_defined_dtype, get_defined_int, size_of
 from std.utils.index import Index, IndexList
@@ -229,13 +230,146 @@ def _is_mxfp4[dtype: DType]() -> Bool:
     return dtype == DType.uint8
 
 
+trait IndexerScoreHook(DevicePassable, TrivialRegisterPassable):
+    """Reads or rewrites indexer scores in the scorer's epilogue.
+
+    The scorer hands every score it produces to `score`, as the value it is
+    about to store, so a hook sees exactly what the top-k later reads and adds
+    no pass over the score matrix. The lanes of a warp call `score` together
+    for one score row, lane `l` holding key `lane_keys * j + l` for some `j`,
+    so a hook may combine aligned blocks of up to `lane_keys` keys with warp
+    shuffles.
+    """
+
+    comptime enabled: Bool
+    """Whether the hook runs; `False` compiles every call away."""
+
+    def window(
+        self, ctx: DeviceContext, first_row: Int, rows: Int
+    ) raises -> Self:
+        """Prepares a window of score rows and returns the hook to run on it.
+
+        Args:
+            ctx: Device context; work enqueued here precedes the scorer.
+            first_row: Query token of the window's row 0.
+            rows: Rows in the window.
+
+        Returns:
+            The hook whose row 0 is query token `first_row`.
+        """
+        ...
+
+    def score[
+        dtype: DType, lane_keys: Int
+    ](
+        self,
+        value: Scalar[dtype],
+        row: Int32,
+        key: Int32,
+        key_live: Bool,
+        row_live: Bool,
+    ) -> Scalar[dtype]:
+        """Returns the score to store for `(row, key)`.
+
+        Parameters:
+            dtype: Score element type.
+            lane_keys: Consecutive keys a warp holds, one per lane, starting
+                at a multiple of `lane_keys`.
+
+        Args:
+            value: The score, rounded to `dtype`.
+            row: Window row of the query token.
+            key: Key column.
+            key_live: Whether the key is below the row's bound; only such
+                scores are stored.
+            row_live: Whether the row is in the window; the same on every
+                lane. A dead row must not be read or written.
+
+        Returns:
+            The score to store.
+        """
+        ...
+
+
+struct NoScoreHook(IndexerScoreHook):
+    """Leaves the scores alone."""
+
+    comptime device_type: AnyType = Self
+    """Device-side type; the struct is trivially device-passable."""
+
+    comptime enabled = False
+    """Never runs."""
+
+    def __init__(out self):
+        """Creates the hook."""
+        pass
+
+    def window(
+        self, ctx: DeviceContext, first_row: Int, rows: Int
+    ) raises -> Self:
+        """Returns the hook unchanged.
+
+        Args:
+            ctx: Device context.
+            first_row: Query token of the window's row 0.
+            rows: Rows in the window.
+
+        Returns:
+            This hook.
+        """
+        return self
+
+    @inline(.always)
+    def score[
+        dtype: DType, lane_keys: Int
+    ](
+        self,
+        value: Scalar[dtype],
+        row: Int32,
+        key: Int32,
+        key_live: Bool,
+        row_live: Bool,
+    ) -> Scalar[dtype]:
+        """Returns `value`.
+
+        Parameters:
+            dtype: Score element type.
+            lane_keys: Consecutive keys a warp holds.
+
+        Args:
+            value: The score.
+            row: Window row of the query token.
+            key: Key column.
+            key_live: Whether the key is below the row's bound.
+            row_live: Whether the row is in the window.
+
+        Returns:
+            `value`.
+        """
+        return value
+
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode_fields[Self](self, target)
+
+    @staticmethod
+    def get_type_name() -> String:
+        """Returns the type name for runtime diagnostics.
+
+        Returns:
+            Always `"NoScoreHook"`.
+        """
+        return "NoScoreHook"
+
+
 # Bytes of one row one `KIND_MXF4` MMA contracts: 64 E2M1 values.
 comptime _MXF4_K_BYTES = 32
 
 
 @inline(.always)
 def _sf_atom_desc(
-    atom: UnsafePointer[UInt32, address_space=.SHARED, ...]
+    atom: Pointer[UInt32, address_space=.SHARED, ...]
 ) -> MMASmemDescriptor:
     """The `tcgen05.cp.32x128b` source of an atom: 32 rows of 16 bytes."""
     return MMASmemDescriptor.create[8 * 16, 0, TensorMapSwizzle.SWIZZLE_NONE](
@@ -245,7 +379,7 @@ def _sf_atom_desc(
 
 @inline(.always)
 def _store_sf_atom(
-    atom: UnsafePointer[mut=True, UInt32, address_space=.SHARED, ...],
+    atom: MutPointer[UInt32, address_space=.SHARED, ...],
     words: SIMD[DType.uint32, _SF_ATOM_COLS],
 ):
     """Writes a scale atom from a warp's per-row words, in place.
@@ -261,7 +395,9 @@ def _store_sf_atom(
         words: This lane's rows, `l + 32 i` in lane `i`.
     """
     syncwarp()
-    (atom + Int(lane_id()) * _SF_ATOM_COLS).unsafe_store[alignment=16](words)
+    (atom.unsafe_offset(Int(lane_id()) * _SF_ATOM_COLS)).unsafe_store[
+        alignment=16
+    ](words)
     fence_async_view_proxy()
     syncwarp()
 
@@ -1064,6 +1200,7 @@ def _fp8_index_score_prefill_kernel_sm100[
     VLEngine: TensorEngine = DefaultEngine[element_width=1],
     QSEngine: TensorEngine = DefaultEngine[element_width=1],
     OutEngine: TensorEngine = DefaultEngine[element_width=1],
+    H: IndexerScoreHook = NoScoreHook,
 ](
     q_tma: QTMATileT[dtype, N_TOKENS * num_heads, depth],
     k_tma: KTMATileT[dtype, k_box_rows, depth],
@@ -1080,6 +1217,7 @@ def _fp8_index_score_prefill_kernel_sm100[
     num_key_parts_dev: Int32,
     out_row_begin_dev: Int32,
     out_row_end_dev: Int32,
+    score_hook: H,
 ):
     comptime assert valid_length.flat_rank == 1
     comptime MMA_N = N_TOKENS * num_heads
@@ -1268,6 +1406,13 @@ def _fp8_index_score_prefill_kernel_sm100[
         "the epilogue drains one TMEM lane per thread, so BM_key must equal the"
         " consumer warpgroup size"
     )
+    # Thread `row` holds key `tile * BM_key + row`, so each warp holds
+    # `WARP_SIZE` consecutive keys from a multiple of `WARP_SIZE`: the span the
+    # score hook may combine across lanes.
+    comptime assert BM_key % WARP_SIZE == 0, (
+        "a score hook combines keys across a warp, so a key tile must be whole"
+        " warps"
+    )
     comptime EPI_CHUNK = _EPILOGUE_CHUNK
     comptime assert MMA_N % EPI_CHUNK == 0
     comptime assert EPI_CHUNK <= 64
@@ -1332,18 +1477,30 @@ def _fp8_index_score_prefill_kernel_sm100[
     comptime Q_SLOTS = _Q_SLOTS
     comptime QSF_WORDS = (_SF_ATOM_BYTES // 4) if FP4 else 0
     var q_smem = smem
-    var k_smem = smem + Q_SLOTS * q_elems
-    var ks_smem = (k_smem + NSTAGE * k_elems).bitcast[Scalar[KS_DTYPE]]()
-    var qsf_smem = (ks_smem + NSTAGE * KS_SLOT).bitcast[UInt32]()
-    var qs_smem = (qsf_smem + Q_SLOTS * QSF_WORDS).bitcast[Float32]()
-    var md_smem = (qs_smem + Q_SLOTS * MMA_N).bitcast[Int32]()
+    var k_smem = smem.unsafe_offset(Q_SLOTS * q_elems)
+    var ks_smem = k_smem.unsafe_offset(NSTAGE * k_elems).unsafe_bitcast[
+        Scalar[KS_DTYPE]
+    ]()
+    var qsf_smem = ks_smem.unsafe_offset(NSTAGE * KS_SLOT).unsafe_bitcast[
+        UInt32
+    ]()
+    var qs_smem = qsf_smem.unsafe_offset(Q_SLOTS * QSF_WORDS).unsafe_bitcast[
+        Float32
+    ]()
+    var md_smem = qs_smem.unsafe_offset(Q_SLOTS * MMA_N).unsafe_bitcast[Int32]()
     # The CLC response, 16-byte aligned because the records before it are
     # 32 bytes each, then the entry steal's outcome.
-    var clc_resp = (md_smem + Q_SLOTS * _MD_WORDS).bitcast[UInt128]()
-    var clc_found = md_smem + Q_SLOTS * _MD_WORDS + _CLC_RESP_WORDS
-    var mbar = (md_smem + Q_SLOTS * _MD_WORDS + _CLC_SCRATCH_WORDS).bitcast[
-        SharedMemBarrier
+    var clc_resp = md_smem.unsafe_offset(Q_SLOTS * _MD_WORDS).unsafe_bitcast[
+        UInt128
     ]()
+    var clc_found = md_smem.unsafe_offset(Q_SLOTS * _MD_WORDS).unsafe_offset(
+        _CLC_RESP_WORDS
+    )
+    var mbar = (
+        md_smem.unsafe_offset(Q_SLOTS * _MD_WORDS).unsafe_offset(
+            _CLC_SCRATCH_WORDS
+        )
+    ).unsafe_bitcast[SharedMemBarrier]()
     # Offsets are named because the lane-parallel init below maps a thread index
     # to an arrival count, which makes them part of the layout contract rather
     # than a one-off pointer bump.
@@ -1370,16 +1527,16 @@ def _fp8_index_score_prefill_kernel_sm100[
         + " vs "
         + String(CFG.n_mbars)
     )
-    var k_full = mbar + K_FULL_OFF
-    var k_empty = mbar + K_EMPTY_OFF
-    var s_full = mbar + S_FULL_OFF
-    var s_empty = mbar + S_EMPTY_OFF
-    var q_full = mbar + Q_FULL_OFF
-    var qs_full = mbar + QS_FULL_OFF
-    var q_empty = mbar + Q_EMPTY_OFF
-    var qs_ready = mbar + QS_READY_OFF
-    var clc_full = mbar + CLC_FULL_OFF
-    var ptr_tmem = (mbar + N_MBAR).bitcast[UInt32]()
+    var k_full = mbar.unsafe_offset(K_FULL_OFF)
+    var k_empty = mbar.unsafe_offset(K_EMPTY_OFF)
+    var s_full = mbar.unsafe_offset(S_FULL_OFF)
+    var s_empty = mbar.unsafe_offset(S_EMPTY_OFF)
+    var q_full = mbar.unsafe_offset(Q_FULL_OFF)
+    var qs_full = mbar.unsafe_offset(QS_FULL_OFF)
+    var q_empty = mbar.unsafe_offset(Q_EMPTY_OFF)
+    var qs_ready = mbar.unsafe_offset(QS_READY_OFF)
+    var clc_full = mbar.unsafe_offset(CLC_FULL_OFF)
+    var ptr_tmem = mbar.unsafe_offset(N_MBAR).unsafe_bitcast[UInt32]()
 
     comptime q_flat_layout = tt_row_major[q_elems]()
     comptime k_flat_layout = tt_row_major[k_elems]()
@@ -1500,7 +1657,9 @@ def _fp8_index_score_prefill_kernel_sm100[
         var e = elect()
         expect_bytes_pred(clc_full, Int32(size_of[UInt128]()), e)
         if e != 0:
-            clusterlaunchcontrol_try_cancel(clc_resp, clc_full.bitcast[Int64]())
+            clusterlaunchcontrol_try_cancel(
+                clc_resp, clc_full.unsafe_bitcast[Int64]()
+            )
 
     # Waits the cancel in flight and returns the first non-empty item it and
     # any re-issued cancels win, or an empty item once one fails. It returns
@@ -1828,16 +1987,24 @@ def _fp8_index_score_prefill_kernel_sm100[
                             # (32x32->64) rather than a 64-bit multiply. Do NOT
                             # narrow it.
                             var out_row = out_row0 + tok_local
+                            var key_live = key_local < key_bound
+                            var row_live = tok_local < tok_hi
+                            var value = (k_scale * tok_sum).cast[out_dtype]()
+                            comptime if H.enabled:
+                                value = score_hook.score[lane_keys=WARP_SIZE](
+                                    value,
+                                    out_row,
+                                    key_local,
+                                    key_live,
+                                    row_live,
+                                )
                             store_global_pred(
-                                out_base
-                                + (
+                                out_base.unsafe_offset(
                                     Int(out_row) * Int(max_num_keys)
                                     + Int(key_local)
                                 ),
-                                (k_scale * tok_sum).cast[out_dtype](),
-                                Int32(
-                                    key_local < key_bound and tok_local < tok_hi
-                                ),
+                                value,
+                                Int32(key_live and row_live),
                             )
                         comptime if not Q_INTERLEAVE:
                             acc[0] = SIMD[FT, ACCW](0)
@@ -1877,9 +2044,9 @@ def _fp8_index_score_prefill_kernel_sm100[
                 qs_ready[qslot].wait(q_state.phase())
             else:
                 qs_full[qslot].wait(q_state.phase())
-            var md = (md_smem + qslot * UInt32(_MD_WORDS)).unsafe_load[
-                width=_MD_WORDS, alignment=32
-            ]()
+            var md = md_smem.unsafe_offset(
+                qslot * UInt32(_MD_WORDS)
+            ).unsafe_load[width=_MD_WORDS, alignment=32]()
             n_tiles_local = md[_MD_N_TILES]
             if n_tiles_local == 0:
                 break
@@ -1892,7 +2059,7 @@ def _fp8_index_score_prefill_kernel_sm100[
             ks_off = md[_MD_KS_OFF]
             # Interleaved, the hoist reads the slot already in column order; see
             # the transposer role for why it is permuted in SMEM.
-            var qs_slot = qs_smem + qslot * UInt32(MMA_N)
+            var qs_slot = qs_smem.unsafe_offset(qslot * UInt32(MMA_N))
             if own_xpose:
                 var src = Int(row)
                 var v = Float32(0)
@@ -1976,7 +2143,7 @@ def _fp8_index_score_prefill_kernel_sm100[
                     BK=compute_BK,
                     swizzle_mode=SW,
                     is_k_major=True,
-                ](q_smem + qslot * UInt32(q_elems))
+                ](q_smem.unsafe_offset(qslot * UInt32(q_elems)))
                 comptime if FP4:
                     # B column `n` is Q row `n`: token `n % T`, head `n // T`
                     # in interleaved order, token `n // nh`, head `n % nh`
@@ -1984,7 +2151,7 @@ def _fp8_index_score_prefill_kernel_sm100[
                     # stores them. The slot's previous B atom was read by the
                     # MMAs of the item two back, which completed before the
                     # load warp could refill this slot.
-                    var qsf = qsf_smem + qslot * UInt32(QSF_WORDS)
+                    var qsf = qsf_smem.unsafe_offset(qslot * UInt32(QSF_WORDS))
                     var words = SIMD[DType.uint32, _SF_ATOM_COLS](0)
                     comptime for i in range(_SF_ATOM_COLS):
                         comptime if 32 * (i + 1) <= MMA_N:
@@ -2024,9 +2191,9 @@ def _fp8_index_score_prefill_kernel_sm100[
                         # Key `m`'s word sits in copy `m // KS_KEYS` of the slot,
                         # past that copy's alignment residual. Staged ahead of
                         # the WAR wait, so it overlaps the consumers.
-                        var ks_atom = ks_smem.bitcast[UInt32]() + s * UInt32(
-                            KS_SLOT
-                        )
+                        var ks_atom = ks_smem.unsafe_bitcast[
+                            UInt32
+                        ]().unsafe_offset(s * UInt32(KS_SLOT))
                         var row_off = md_smem[
                             qslot * UInt32(_MD_WORDS) + UInt32(_MD_KS_OFF)
                         ] + Int32(lane_id())
@@ -2062,8 +2229,9 @@ def _fp8_index_score_prefill_kernel_sm100[
                             ](
                                 sfa,
                                 _sf_atom_desc(
-                                    ks_smem.bitcast[UInt32]()
-                                    + s * UInt32(KS_SLOT)
+                                    ks_smem.unsafe_bitcast[
+                                        UInt32
+                                    ]().unsafe_offset(s * UInt32(KS_SLOT))
                                 ),
                             )
                             # Two `KIND_MXF4` MMAs of 64 values (32 bytes)
@@ -2081,10 +2249,10 @@ def _fp8_index_score_prefill_kernel_sm100[
                                 transpose_b=True,
                             ]()
                             var a_desc = _create_mma_desc_k_major[dtype, SW](
-                                k_smem + s * UInt32(k_elems)
+                                k_smem.unsafe_offset(s * UInt32(k_elems))
                             )
                             var b_desc = _create_mma_desc_k_major[dtype, SW](
-                                q_smem + qslot * UInt32(q_elems)
+                                q_smem.unsafe_offset(qslot * UInt32(q_elems))
                             )
                             comptime for kk in range(depth // _MXF4_K_BYTES):
                                 mma[1](
@@ -2110,16 +2278,16 @@ def _fp8_index_score_prefill_kernel_sm100[
                             c_scale=0,
                             elect=e,
                         )
-                    elect_mma_arrive(s_full + Int(st), e)
+                    elect_mma_arrive(s_full.unsafe_offset(Int(st)), e)
                     sp_state.step()
                     # Release K stage s only after the MMA has drained it
                     # (tcgen05.commit tracks the async MMA); a plain mbar arrive
                     # would let the load warp overwrite K mid-read.
-                    elect_mma_arrive(k_empty + s, e)
+                    elect_mma_arrive(k_empty.unsafe_offset(s), e)
                     kc_state.step()
                 # `tcgen05.commit` tracks every MMA issued before it, so the
                 # slot's Q is drained once this arrives.
-                elect_mma_arrive(q_empty + qslot, e)
+                elect_mma_arrive(q_empty.unsafe_offset(qslot), e)
                 q_state.step()
         elif wid == TMA_WARP:
             warpgroup_reg_dealloc[CFG.reg_producer]()
@@ -2143,7 +2311,9 @@ def _fp8_index_score_prefill_kernel_sm100[
             def issue_k(it: Int32, state: PipelineState[NSTAGE]) {imm}:
                 var s = state.index()
                 var num_rows = num_keys // Int32(kpool)
-                expect_bytes_pred(k_full + s, Int32(k_bytes + ks_bytes), e)
+                expect_bytes_pred(
+                    k_full.unsafe_offset(s), Int32(k_bytes + ks_bytes), e
+                )
                 # One copy per page the tile spans. A copy past this batch's
                 # last key re-reads the last key's page instead of looking up a
                 # page the batch does not own; the store guard drops its scores.
@@ -2164,9 +2334,9 @@ def _fp8_index_score_prefill_kernel_sm100[
                     var k_dst = TileTensor[
                         dtype, type_of(k_box_layout), address_space=.SHARED
                     ](
-                        k_smem
-                        + s * UInt32(k_elems)
-                        + UInt32(c * K_BOX * depth),
+                        k_smem.unsafe_offset(s * UInt32(k_elems)).unsafe_offset(
+                            UInt32(c * K_BOX * depth)
+                        ),
                         k_box_layout,
                     )
                     k_tma.async_copy_4d_elect(
@@ -2206,7 +2376,9 @@ def _fp8_index_score_prefill_kernel_sm100[
                         type_of(ks_flat_layout),
                         address_space=.SHARED,
                     ](
-                        ks_smem + s * UInt32(KS_SLOT) + UInt32(c * KS_STRIDE),
+                        ks_smem.unsafe_offset(
+                            s * UInt32(KS_SLOT)
+                        ).unsafe_offset(UInt32(c * KS_STRIDE)),
                         ks_flat_layout,
                     )
                     ks_tma.async_copy_elect(
@@ -2240,9 +2412,9 @@ def _fp8_index_score_prefill_kernel_sm100[
                 # is a release, so it publishes the record to whoever waits that
                 # barrier.
                 if e != 0:
-                    (md_smem + qslot * UInt32(_MD_WORDS)).unsafe_store[
-                        alignment=32
-                    ](
+                    md_smem.unsafe_offset(
+                        qslot * UInt32(_MD_WORDS)
+                    ).unsafe_store[alignment=32](
                         SIMD[DType.int32, _MD_WORDS](
                             tok0,
                             tok_hi,
@@ -2259,12 +2431,17 @@ def _fp8_index_score_prefill_kernel_sm100[
                 # the consumers only the q-scales. MXFP4's block scales feed the
                 # MMA, so they ride Q's barrier.
                 expect_bytes_pred(
-                    q_full + qslot, Int32(q_bytes + (qs_bytes if FP4 else 0)), e
+                    q_full.unsafe_offset(qslot),
+                    Int32(q_bytes + (qs_bytes if FP4 else 0)),
+                    e,
                 )
                 q_tma.async_copy_3d_elect(
                     TileTensor[
                         dtype, type_of(q_flat_layout), address_space=.SHARED
-                    ](q_smem + qslot * UInt32(q_elems), q_flat_layout),
+                    ](
+                        q_smem.unsafe_offset(qslot * UInt32(q_elems)),
+                        q_flat_layout,
+                    ),
                     q_full[qslot],
                     _q_tma_coords[Q_INTERLEAVE, num_heads](tok_row),
                     e,
@@ -2276,22 +2453,29 @@ def _fp8_index_score_prefill_kernel_sm100[
                             type_of(qs_flat_layout),
                             address_space=.SHARED,
                         ](
-                            (qsf_smem + qslot * UInt32(QSF_WORDS)).bitcast[
-                                Float32
-                            ](),
+                            (
+                                qsf_smem.unsafe_offset(
+                                    qslot * UInt32(QSF_WORDS)
+                                )
+                            ).unsafe_bitcast[Float32](),
                             qs_flat_layout,
                         ),
                         q_full[qslot],
                         (0, tok_row),
                         e,
                     )
-                expect_bytes_pred(qs_full + qslot, Int32(qs_bytes), e)
+                expect_bytes_pred(
+                    qs_full.unsafe_offset(qslot), Int32(qs_bytes), e
+                )
                 qs_tma.async_copy_elect(
                     TileTensor[
                         DType.float32,
                         type_of(qs_flat_layout),
                         address_space=.SHARED,
-                    ](qs_smem + qslot * UInt32(MMA_N), qs_flat_layout),
+                    ](
+                        qs_smem.unsafe_offset(qslot * UInt32(MMA_N)),
+                        qs_flat_layout,
+                    ),
                     qs_full[qslot],
                     (0, tok_row),
                     e,
@@ -2368,7 +2552,7 @@ def _fp8_index_score_prefill_kernel_sm100[
                     ):
                         _ = qs_ready[qslot].arrive()
                         break
-                    var qs_slot = qs_smem + qslot * UInt32(MMA_N)
+                    var qs_slot = qs_smem.unsafe_offset(qslot * UInt32(MMA_N))
                     var v = SIMD[DType.float32, next_power_of_two(PER_LANE)](0)
                     comptime for i in range(PER_LANE):
                         var src = lane + i * WARP_SIZE
@@ -2470,7 +2654,7 @@ def _create_prefill_q_tma[
             depth * size_of[dtype]() == SW.bytes()
         ), "interleaved Q needs depth rows of exactly one swizzle atom"
         var q_buf = DeviceBuffer(
-            ctx, q_ptr.address_space_cast[.GENERIC](), 1, owning=False
+            ctx, q_ptr.unsafe_address_space_cast[.GENERIC](), 1, owning=False
         )
         var desc = create_tma_descriptor[dtype, 3, SW](
             q_buf,
@@ -2545,6 +2729,83 @@ def fp8_index_score_sm100_prefill[
     four UE8M0 block scales, `q_s` as the per-head weights, and K scales of
     the same four-scale word per key. The score is then
     `sum_head relu(q . k) * q_s[token, head]`, with no per-key factor.
+    """
+    fp8_index_score_sm100_prefill[
+        dtype,
+        KOperand,
+        KSOperand,
+        num_heads,
+        depth,
+        BM_key,
+        N_TOKENS,
+        _is_cache_length_accurate,
+        kpool,
+        pool_row_tokens,
+        k_box_rows,
+        VLEngine=VLEngine,
+        QSEngine=QSEngine,
+        OutEngine=OutEngine,
+    ](
+        q_ptr,
+        num_q_tokens,
+        k_tma,
+        k_operand,
+        ks_operand,
+        valid_length,
+        q_s,
+        output,
+        batch_size,
+        max_seq_len,
+        max_num_keys,
+        causal,
+        ctx,
+        out_row_begin,
+        q_sf,
+        NoScoreHook(),
+    )
+
+
+def fp8_index_score_sm100_prefill[
+    out_dtype: DType,
+    H: IndexerScoreHook,
+    //,
+    dtype: DType,
+    KOperand: MHAOperand,
+    KSOperand: MHAOperand,
+    num_heads: Int,
+    depth: Int,
+    BM_key: Int,
+    N_TOKENS: Int,
+    _is_cache_length_accurate: Bool,
+    kpool: Int = 1,
+    pool_row_tokens: Int = 1,
+    k_box_rows: Int = BM_key,
+    *,
+    VLEngine: TensorEngine = DefaultEngine[element_width=1],
+    QSEngine: TensorEngine = DefaultEngine[element_width=1],
+    OutEngine: TensorEngine = DefaultEngine[element_width=1],
+](
+    q_ptr: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
+    num_q_tokens: Int,
+    k_tma: KTMATileT[dtype, k_box_rows, depth],
+    k_operand: KOperand,
+    ks_operand: KSOperand,
+    valid_length: TileTensor[mut=False, .uint32, ..., Engine=VLEngine],
+    q_s: TileTensor[mut=False, .float32, ..., Engine=QSEngine],
+    output: TileTensor[out_dtype, ..., Engine=OutEngine],
+    batch_size: Int,
+    max_seq_len: Int,
+    max_num_keys: Int,
+    causal: Int,
+    ctx: DeviceContext,
+    out_row_begin: Int,
+    q_sf: OptionalPointer[UInt32, ImmutAnyOrigin],
+    score_hook: H,
+) raises:
+    """Enqueue the K-streaming prefill scorer into `output` with a score hook.
+
+    `score_hook` runs on every score the epilogue stores. Its rows count from
+    the window's first row, so its row 0 is `output`'s row 0.
     """
     # The window bounds the token blocks any entry can contribute, so a chunked
     # launch does not pay for a grid sized to the whole batch.
@@ -2632,6 +2893,7 @@ def fp8_index_score_sm100_prefill[
         VLEngine=type_of(valid_length.as_imm()).Engine,
         QSEngine=q_s.Engine,
         OutEngine=output.Engine,
+        H=H,
     ]
     # Validate where the config is BUILT, ahead of the derived asserts below --
     # the SMEM check fires on an over-forced ring depth first and reports only a
@@ -2708,7 +2970,7 @@ def fp8_index_score_sm100_prefill[
         qsf_tma = create_tma_tile[N_TOKENS, num_heads](
             ctx,
             TileTensor(
-                q_sf.value().bitcast[Float32](),
+                q_sf.value().unsafe_bitcast[Float32](),
                 tt_row_major(num_q_tokens, num_heads),
             ),
         )
@@ -2728,6 +2990,7 @@ def fp8_index_score_sm100_prefill[
         Int32(num_key_parts),
         Int32(out_row_begin),
         Int32(out_row_begin + out_rows),
+        score_hook,
         grid_dim=(
             batch_size,
             token_blocks,

@@ -47,9 +47,7 @@ def run_elementwise[
             out_buffer[idx0[0].value()] = rng[0].cast[dtype]()
         else:
             comptime for i in range(simd_width):
-                out_buffer[Int(idx0[0].value()) + i] = rng[i % len(rng)].cast[
-                    dtype
-                ]()
+                out_buffer[Int(idx0[0]) + i] = rng[i % len(rng)].cast[dtype]()
 
     @inline(.always)
     def func_normal[simd_width: Int, alignment: Int = 1](idx0: Coord) {var}:
@@ -61,9 +59,7 @@ def run_elementwise[
             out_buffer[idx0[0].value()] = rng[0].cast[dtype]()
         else:
             comptime for i in range(simd_width):
-                out_buffer[Int(idx0[0].value()) + i] = rng[i % len(rng)].cast[
-                    dtype
-                ]()
+                out_buffer[Int(idx0[0]) + i] = rng[i % len(rng)].cast[dtype]()
 
     comptime if distribution == "uniform":
         elementwise[4, target="gpu"](func_uniform, Coord(length), ctx)

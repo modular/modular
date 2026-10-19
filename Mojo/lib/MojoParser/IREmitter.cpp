@@ -110,7 +110,8 @@ static void maybeApplyTypeRefinement(VarDeclOp varOp, ASTDecl &declScope,
     Value loaded = RefLoadOp::create(builder, mlirLoc, varOp.getResult());
     Value reboundValue =
         RebindOp::create(builder, mlirLoc, refinedInner, loaded);
-    varASTDecl->setIRValue(MBValue(reboundValue));
+    varASTDecl->getShared().getDeclResolver().replaceDecl(
+        *varASTDecl, MBValue(reboundValue));
   } else {
     // Single-ref case (var patterns, function args):
     // !lit.ref<T> -> !lit.ref<T(Trait)>
@@ -124,7 +125,8 @@ static void maybeApplyTypeRefinement(VarDeclOp varOp, ASTDecl &declScope,
     CValue refinedCValue = CValue::getMValueForRef(reboundValue);
     if (varOp.getKind() == VarDeclKind::Bound)
       refinedCValue = MBValue(reboundValue);
-    varASTDecl->setIRValue(refinedCValue);
+    varASTDecl->getShared().getDeclResolver().replaceDecl(*varASTDecl,
+                                                          refinedCValue);
   }
 }
 
@@ -2046,7 +2048,7 @@ void IREmitter::emitNormalReturn(Location loc, Value value, bool emitEndFunc) {
     if (auto func = getBlockParentOfType<FnOp>(builder->getInsertionBlock());
         func && func.getNamedResultAttr() &&
         !func.getFuncTypeGenerator().hasMemoryOnlyResult()) {
-      auto *funcDecl = declScope.getNearestDeclOfType<FnOp>();
+      auto *funcDecl = declScope.getNearestDeclOfType<DefASTDecl>();
       assert(funcDecl && "must be in a function");
       ArrayRef<ASTDecl *> declList =
           funcDecl->lookupInCurrentScope(func.getNamedResultAttr());
@@ -2166,7 +2168,8 @@ ASTDecl *IREmitter::createParametricClosureTrait(SharedState &shared) {
                           StringAttr::get(ctx, name));
   auto &traitDecl =
       cast<TraitASTDecl>(shared.declResolver->addFullyResolvedDecl(
-          &*closureTrait, name, SMLoc(), &shared.getTopLevelDecl()));
+          &*closureTrait, StringAttr::get(ctx, name), SMLoc(),
+          &shared.getTopLevelDecl()));
 
   // Populate the trait with parent and self methods.
   SmallVector<TraitSymbolAttr> parents;
@@ -2241,8 +2244,8 @@ ASTDecl *IREmitter::createParametricClosureTrait(SharedState &shared) {
                                       ctx, params, args, retTy, metadata,
                                       paramListPog, argListPog)));
 
-  (void)shared.declResolver->addFullyResolvedDecl(aliasOp, "__call__", SMLoc(),
-                                                  &traitDecl);
+  (void)shared.declResolver->addFullyResolvedDecl(
+      aliasOp, StringAttr::get(ctx, "__call__"), SMLoc(), &traitDecl);
   return &traitDecl;
 }
 

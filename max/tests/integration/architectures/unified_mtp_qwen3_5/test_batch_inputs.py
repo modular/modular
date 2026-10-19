@@ -60,7 +60,7 @@ HIDDEN = 32
 HEAD_DIM = 16
 
 
-def _config() -> Qwen3_5Config:
+def _config(*, vision: bool = False) -> Qwen3_5Config:
     devices = [DeviceRef.CPU()]
     return Qwen3_5Config(
         hidden_size=HIDDEN,
@@ -97,9 +97,11 @@ def _config() -> Qwen3_5Config:
         linear_num_key_heads=1,
         linear_num_value_heads=2,
         linear_conv_kernel_dim=4,
-        partial_rotary_factor=0.25,
+        # Full rotary under M-RoPE, so its sections split half of head_dim.
+        partial_rotary_factor=1.0 if vision else 0.25,
         use_subgraphs=False,
-        mrope_section=None,
+        mrope_section=[4, 2, 2] if vision else None,
+        mrope_without_encoder=vision,
     )
 
 
@@ -115,7 +117,7 @@ def _dummy() -> Buffer:
 
 
 def _inputs_matching(
-    config: Qwen3_5Config, num_kv_leaves: int
+    num_kv_leaves: int, *, vision: bool
 ) -> UnifiedMTPQwen3_5Inputs:
     """Returns inputs with one buffer per slot the graph declares."""
     return UnifiedMTPQwen3_5Inputs(
@@ -149,12 +151,17 @@ def _inputs_matching(
         wait_payload=_dummy(),
         device_bitmask_scratch=_dummy(),
         structured_output=True,
+        vision_inputs_in_graph=vision,
+        vision_embeddings=[_dummy()] if vision else [],
+        vision_scatter_indices=[_dummy()] if vision else [],
+        position_ids=_dummy() if vision else None,
     )
 
 
-def test_the_batch_fills_every_slot_the_graph_declares() -> None:
+@pytest.mark.parametrize("vision", [False, True])
+def test_the_batch_fills_every_slot_the_graph_declares(vision: bool) -> None:
     """Checks the batch packs one buffer per declared input."""
-    config = _config()
+    config = _config(vision=vision)
     spec_kv = _spec_kv(config)
     driver = UnifiedMTPQwen3_5(
         config,
@@ -167,9 +174,16 @@ def test_the_batch_fills_every_slot_the_graph_declares() -> None:
     declared = driver.input_types(spec_kv)
     num_kv_leaves = len(spec_kv.flattened_kv_inputs())
 
-    packed = _inputs_matching(config, num_kv_leaves).buffers
+    inputs = _inputs_matching(num_kv_leaves, vision=vision)
+    packed = inputs.buffers
 
     assert len(packed) == len(declared)
+    if vision:
+        # Where the canonical signature declares them, right after the tokens.
+        assert packed[1:3] == (
+            *inputs.vision_embeddings,
+            *inputs.vision_scatter_indices,
+        )
 
 
 def _processor() -> UnifiedMTPQwen3_5BatchProcessor:

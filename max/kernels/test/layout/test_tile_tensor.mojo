@@ -324,8 +324,8 @@ def test_tensor_span_constructor() raises:
 def test_fill() raises:
     var stack = Array[UInt32, 16](fill=0)
     var tensor = TileTensor(stack, row_major[4, 4]()).fill(1)
-    for i in range(Int(tensor.layout.shape[0]().value())):
-        for j in range(Int(tensor.layout.shape[1]().value())):
+    for i in range(Int(tensor.dim[0]())):
+        for j in range(Int(tensor.dim[1]())):
             assert_equal(tensor[i, j], 1)
 
 
@@ -333,8 +333,8 @@ def test_fill_large() raises:
     # layout._fillers.BATCH_SIZE is 2048, so we do 4096
     var stack = Array[UInt32, 4096](fill=0)
     var tensor = TileTensor(stack, row_major[2048, 2]()).fill(1)
-    for i in range(Int(tensor.layout.shape[0]().value())):
-        for j in range(Int(tensor.layout.shape[1]().value())):
+    for i in range(Int(tensor.dim[0]())):
+        for j in range(Int(tensor.dim[1]())):
             assert_equal(tensor[i, j], 1)
 
 
@@ -494,7 +494,7 @@ def test_slice_3d() raises:
 
     # Test that it's a view
     sliced_3d[Coord(Idx[0], Idx[0], Idx[0])] = 999
-    assert_equal(tensor_3d[Coord(Idx[1], Idx[1], Idx[1])], 999)
+    assert_equal(tensor_3d[Idx[1], Idx[1], Idx[1]], 999)
 
 
 # def test_slice_runtime_shapes() raises:
@@ -570,7 +570,7 @@ def test_slice_dynamic() raises:
 
     # Verify it's a view
     sliced[Coord(Idx[0], Idx[0])] = 99
-    assert_equal(tensor_2d[Coord(Idx[1], Idx[1])], 99)
+    assert_equal(tensor_2d[Idx[1], Idx[1]], 99)
 
 
 def test_vectorize() raises:
@@ -596,19 +596,19 @@ def test_vectorize() raises:
 
     # Verify that vectorized[i, j] returns a SIMD vector starting at the (i,j) block
     # Block (0, 0) starts at element 0 - check first element of the SIMD vector
-    assert_equal(vectorized[Coord(Idx[0], Idx[0])][0], 0)
+    assert_equal(vectorized[Idx[0], Idx[0]][0], 0)
 
     # Block (0, 1) starts at element 4 (column offset by vector width)
-    assert_equal(vectorized[Coord(Idx[0], Idx[1])][0], 4)
+    assert_equal(vectorized[Idx[0], Idx[1]][0], 4)
 
     # Block (1, 0) starts at element 64 (row offset by vector height * row stride)
-    assert_equal(vectorized[Coord(Idx[1], Idx[0])][0], 64)
+    assert_equal(vectorized[Idx[1], Idx[0]][0], 64)
 
     # Block (1, 1) starts at element 68
-    assert_equal(vectorized[Coord(Idx[1], Idx[1])][0], 68)
+    assert_equal(vectorized[Idx[1], Idx[1]][0], 68)
 
     # Block (3, 3) is the last block, starts at element 3*64 + 3*4 = 204
-    assert_equal(vectorized[Coord(Idx[3], Idx[3])][0], 204)
+    assert_equal(vectorized[Idx[3], Idx[3]][0], 204)
 
 
 def test_vectorize_non_square() raises:
@@ -704,10 +704,10 @@ def test_vectorize_fully_runtime_dims() raises:
     assert_equal(vectorized.layout.stride[0]().value(), 64)
     assert_equal(vectorized.layout.stride[1]().value(), 4)
 
-    assert_equal(vectorized[Coord(Idx[0], Idx[0])][0], 0)
-    assert_equal(vectorized[Coord(Idx[0], Idx[1])][0], 4)
-    assert_equal(vectorized[Coord(Idx[1], Idx[0])][0], 64)
-    assert_equal(vectorized[Coord(Idx[3], Idx[3])][0], 204)
+    assert_equal(vectorized[Idx[0], Idx[0]][0], 0)
+    assert_equal(vectorized[Idx[0], Idx[1]][0], 4)
+    assert_equal(vectorized[Idx[1], Idx[0]][0], 64)
+    assert_equal(vectorized[Idx[3], Idx[3]][0], 204)
 
 
 def test_distribute_runtime_dims() raises:
@@ -1043,11 +1043,11 @@ def test_transpose_is_view() raises:
 
     # Modify through transposed view: trans[1, 0] -> tensor[0, 1]
     trans[Coord(Idx[1], Idx[0])] = 42
-    assert_equal(tensor[Coord(Idx[0], Idx[1])], 42)
+    assert_equal(tensor[Idx[0], Idx[1]], 42)
 
     # Modify through original: tensor[1, 2] -> trans[2, 1]
     tensor[Coord(Idx[1], Idx[2])] = 99
-    assert_equal(trans[Coord(Idx[2], Idx[1])], 99)
+    assert_equal(trans[Idx[2], Idx[1]], 99)
 
 
 def test_transpose_square() raises:

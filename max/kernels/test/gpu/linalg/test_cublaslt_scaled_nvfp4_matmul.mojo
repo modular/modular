@@ -62,9 +62,9 @@ def test_block_scaled_nvfp4_cublaslt[
         " are supported for NVFP4."
     )
 
-    var M = Int(m.value())
-    var N = Int(n.value())
-    var K = Int(k.value())
+    var M = Int(m)
+    var N = Int(n)
+    var K = Int(k)
 
     var cublaslt_version = cublasLtGetVersion()
 

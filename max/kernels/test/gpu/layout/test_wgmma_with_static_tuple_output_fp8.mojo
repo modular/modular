@@ -73,9 +73,9 @@ def wgmma_kernel_ss[
     comptime num_output_regs = WMMA_M * WMMA_N // 128
     var c_reg = StaticTuple[Float32, num_output_regs](0)
 
-    comptime M = Int(a_layout.shape[0]().value())
-    comptime K = Int(a_layout.shape[1]().value())
-    comptime N = Int(c_layout.shape[1]().value())
+    comptime M = Int(a_layout.shape[0]())
+    comptime K = Int(a_layout.shape[1]())
+    comptime N = Int(c_layout.shape[1]())
 
     comptime b_tile_dim0 = N if transpose_b else WMMA_K
     comptime b_tile_dim1 = WMMA_K if transpose_b else N

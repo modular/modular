@@ -407,15 +407,15 @@ def bench_manual[
         # epilogue so we keep TMA stores on H100).
         for h in range(total_heads):
             var q_2d = TileTensor(
-                q_base + h * seq_len * depth,
+                q_base.unsafe_offset(h * seq_len * depth),
                 row_major((seq_len, Idx[depth])),
             )
             var k_2d = TileTensor(
-                k_base + h * num_keys * depth,
+                k_base.unsafe_offset(h * num_keys * depth),
                 row_major((num_keys, Idx[depth])),
             )
             var s_2d = TileTensor(
-                s_base + h * seq_len * num_keys,
+                s_base.unsafe_offset(h * seq_len * num_keys),
                 row_major((seq_len, num_keys)),
             )
             matmul[transpose_b=True, target="gpu"](
@@ -444,15 +444,15 @@ def bench_manual[
         # Step 3: Score @ V  (per-head 2D matmul, no epilogue).
         for h in range(total_heads):
             var s_2d = TileTensor(
-                s_base + h * seq_len * num_keys,
+                s_base.unsafe_offset(h * seq_len * num_keys),
                 row_major((seq_len, num_keys)),
             )
             var v_2d = TileTensor(
-                v_base + h * num_keys * depth,
+                v_base.unsafe_offset(h * num_keys * depth),
                 row_major((num_keys, Idx[depth])),
             )
             var o_2d = TileTensor(
-                o_base + h * seq_len * depth,
+                o_base.unsafe_offset(h * seq_len * depth),
                 row_major((seq_len, Idx[depth])),
             )
             matmul[target="gpu"](o_2d, s_2d, v_2d, ctx)

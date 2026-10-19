@@ -47,7 +47,7 @@ def _register_value(n_mma: Int, m_mma: Int, lane: Int, frag: Int) -> Float32:
 
 def _scatter[
     dtype: DType, WIDTH: Int
-](output: UnsafePointer[Scalar[dtype], MutAnyOrigin]):
+](output: MutPointer[Scalar[dtype], MutAnyOrigin]):
     comptime assert WIDTH == 1 or WIDTH == 2
     comptime mma = get_mma_shape[dtype, DType.float32]()
     comptime assert mma[0] == MMA_M and mma[1] == MMA_N
@@ -65,7 +65,7 @@ def _scatter[
     registers_storage[0] = -29
     registers_storage[REG_ROWS * FRAGMENT + 1] = -30
     var registers = TileTensor[address_space=.LOCAL, linear_idx_type=.int32](
-        registers_storage.unsafe_ptr() + 1,
+        registers_storage.unsafe_ptr().unsafe_offset(1),
         row_major[REG_ROWS, FRAGMENT](),
     )
     comptime for n_mma in range(WN // MMA_N):
@@ -82,7 +82,7 @@ def _scatter[
         address_space=.SHARED,
         circular=True,
     ](
-        storage.unsafe_ptr() + GUARD,
+        storage.unsafe_ptr().unsafe_offset(GUARD),
         tile_layout,
         bound=RING_SIZE,
         stride=BM * BK,

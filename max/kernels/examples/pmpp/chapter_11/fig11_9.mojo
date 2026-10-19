@@ -93,8 +93,8 @@ def block_scan(val: Float32) -> Float32:
 
 # ========================== TEST CODE ==========================
 def test_block_scan(
-    input: UnsafePointer[Float32, ImmutAnyOrigin],
-    output: UnsafePointer[Float32, MutAnyOrigin],
+    input: ImmPointer[Float32, ImmutAnyOrigin],
+    output: MutPointer[Float32, MutAnyOrigin],
     N: UInt32,
 ):
     """Test kernel for block-level scan.

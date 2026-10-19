@@ -119,9 +119,9 @@ def verify_matmul[
     b_shape: Coord,
     init_type: InitializationType,
 ) raises:
-    var c_size = Int(c_shape[0].value()) * Int(c_shape[1].value())
-    var a_size = Int(a_shape[0].value()) * Int(a_shape[1].value())
-    var b_size = Int(b_shape[0].value()) * Int(b_shape[1].value())
+    var c_size = Int(c_shape[0]) * Int(c_shape[1])
+    var a_size = Int(a_shape[0]) * Int(a_shape[1])
+    var b_size = Int(b_shape[0]) * Int(b_shape[1])
 
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
     var a_device_nd = TileTensor(a_device, row_major(a_shape))
@@ -159,10 +159,12 @@ def verify_matmul[
                 rand(a_host.as_span())
                 rand(b_host.as_span())
             elif init_type == InitializationType.arange:
-                for i in range(a_host.num_elements()):
-                    a_host.raw_store(i, Scalar[a_type](i))
-                for i in range(b_host.num_elements()):
-                    b_host.raw_store(i, Scalar[a_type](i))
+                var a_flat = a_host.reshape(row_major(a_host.num_elements()))
+                var b_flat = b_host.reshape(row_major(b_host.num_elements()))
+                for i in range(a_flat.num_elements()):
+                    a_flat[i] = Scalar[a_type](i)
+                for i in range(b_flat.num_elements()):
+                    b_flat[i] = Scalar[a_type](i)
         # Move operands to the Device
         ctx.enqueue_copy(a_device, a_host_ptr)
         ctx.enqueue_copy(b_device, b_host_ptr)
@@ -345,7 +347,7 @@ def bench_matmul[
     # update: using 512 to be 2x the infinity cache on MI300x
     @inline(.always)
     def get_size(shape: Coord) -> Int:
-        return Int(shape[0].value()) * Int(shape[1].value())
+        return Int(shape[0]) * Int(shape[1])
 
     comptime simd_size = 4
     var cb_a = CacheBustingBuffer[a_type](get_size(shape_a), simd_size, ctx)
@@ -381,9 +383,9 @@ def bench_matmul[
                 rand(b_host.as_span())
             elif init_type == InitializationType.arange:
                 for i in range(a_host.num_elements()):
-                    a_host.raw_store(i, Scalar[a_type](i))
+                    a_host[i] = Scalar[a_type](i)
                 for i in range(b_host.num_elements()):
-                    b_host.raw_store(i, Scalar[a_type](i))
+                    b_host[i] = Scalar[a_type](i)
 
         ctx.enqueue_copy(cb_a.device_buffer(), a_host_ptr)
         ctx.enqueue_copy(cb_b.device_buffer(), b_host_ptr)
@@ -442,10 +444,7 @@ def bench_matmul[
     var flops = ThroughputMeasure(
         BenchMetric.flops,
         # Flop: 2*M*N*K. Use A and C shapes since they're not transposed.
-        2
-        * Int(shape_c[0].value())
-        * Int(shape_c[1].value())
-        * Int(shape_a[1].value()),
+        2 * Int(shape_c[0]) * Int(shape_c[1]) * Int(shape_a[1]),
     )
     if run_benchmark:
         b.bench_function(

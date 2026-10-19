@@ -50,12 +50,12 @@ comptime cblas_gemm_type = def(
     Int32,
     Int32,
     Float32,
-    UnsafePointer[Float32, ImmutAnyOrigin],
+    ImmPointer[Float32, ImmutAnyOrigin],
     Int32,
-    UnsafePointer[Float32, ImmutAnyOrigin],
+    ImmPointer[Float32, ImmutAnyOrigin],
     Int32,
     Float32,
-    UnsafePointer[Float32, MutAnyOrigin],
+    MutPointer[Float32, MutAnyOrigin],
     Int32,
 ) thin -> None
 """Function type matching the Accelerate `cblas_sgemm` C signature."""
@@ -206,12 +206,12 @@ def _cblas_f32[
         n,
         k,
         alpha,
-        rebind[UnsafePointer[Float32, ImmutAnyOrigin]](a_ptr),
+        rebind[ImmPointer[Float32, ImmutAnyOrigin]](a_ptr),
         lda,
-        rebind[UnsafePointer[Float32, ImmutAnyOrigin]](b_ptr),
+        rebind[ImmPointer[Float32, ImmutAnyOrigin]](b_ptr),
         ldb,
         beta,
-        rebind[UnsafePointer[Float32, MutAnyOrigin]](c_ptr),
+        rebind[MutPointer[Float32, MutAnyOrigin]](c_ptr),
         ldc,
     )
 
@@ -316,7 +316,7 @@ def apple_gemv[
 
     var transposed_b_alloc = Optional[ManagedAllocation[Scalar[b.dtype]]]()
     var transposed_b = TileTensor(
-        UnsafePointer[Scalar[b.dtype], MutUntrackedOrigin].unsafe_dangling(),
+        MutPointer[Scalar[b.dtype], MutUntrackedOrigin].unsafe_dangling(),
         row_major(Int(0), Int(0)),
     )
 
@@ -360,14 +360,12 @@ def apple_gemv[
 
             @inline(.always)
             def accumulate[width: Int](k: Int) {a, b, c, transposed_b, mut}:
-                var a_val = a.load[width=width](Coord(Idx[0], k)).cast[
-                    c.dtype
-                ]()
+                var a_val = a.load[width=width]((Idx[0], k)).cast[c.dtype]()
                 var b_val = (
-                    b.load[width=width](Coord(n, k)).cast[c.dtype]() if b_packed
+                    b.load[width=width]((n, k)).cast[c.dtype]() if b_packed
                     or (not b_packed and transpose_b) else transposed_b.load[
                         width=width
-                    ](Coord(n, k)).cast[c.dtype]()
+                    ]((n, k)).cast[c.dtype]()
                 )
 
                 comptime if width == 1:
@@ -391,11 +389,11 @@ def apple_gemv[
                 epilogue_fn[c.dtype, 1, alignment=1]((0, n), val)
             elif has_compute_fn:
                 c.store(
-                    Coord(Idx[0], n),
+                    (Idx[0], n),
                     compute_fn[c.dtype, 1, alignment=1]((0, n), val),
                 )
             else:
-                c.store(Coord(Idx[0], n), val)
+                c.store((Idx[0], n), val)
 
     # TODO: Experiment with this.
     comptime parallelism_grain_size = 16
@@ -479,9 +477,9 @@ def apple_matmul[
         ldc,
         alpha,
         beta,
-        rebind[UnsafePointer[Float32, MutAnyOrigin]](c.ptr),
-        rebind[UnsafePointer[Float32, ImmutAnyOrigin]](a.ptr),
-        rebind[UnsafePointer[Float32, ImmutAnyOrigin]](b.ptr),
+        rebind[MutPointer[Float32, MutAnyOrigin]](c.ptr),
+        rebind[ImmPointer[Float32, ImmutAnyOrigin]](a.ptr),
+        rebind[ImmPointer[Float32, ImmutAnyOrigin]](b.ptr),
     )
 
     comptime if has_epilogue_fn or has_compute_fn:
@@ -504,7 +502,7 @@ def apple_matmul[
 
         # TODO: thread a DeviceContext through the matmul stack so we can
         # drop this local construction.
-        elementwise[simd_size](
+        elementwise[simd_size, _trace_description="apple_matmul_epilogue"](
             epilogue_on_col_chunk, (m, n), DeviceContext(api="cpu")
         )
 
@@ -762,8 +760,8 @@ def _apple_batched_matmul_impl[
                 out_coords.rank == 2
             ), "the matmul epilogue contract is rank 2"
             var local_batch_coords = batch_coords
-            local_batch_coords[rank - 1] = Int(out_coords[1].value())
-            local_batch_coords[rank - 2] = Int(out_coords[0].value())
+            local_batch_coords[rank - 1] = Int(out_coords[1])
+            local_batch_coords[rank - 2] = Int(out_coords[0])
 
             epilogue_fn[c_type, width, alignment=alignment](
                 Coord(local_batch_coords), out_val
@@ -780,8 +778,8 @@ def _apple_batched_matmul_impl[
                 out_coords.rank == 2
             ), "the matmul epilogue contract is rank 2"
             var local_batch_coords = batch_coords
-            local_batch_coords[rank - 1] = Int(out_coords[1].value())
-            local_batch_coords[rank - 2] = Int(out_coords[0].value())
+            local_batch_coords[rank - 1] = Int(out_coords[1])
+            local_batch_coords[rank - 2] = Int(out_coords[0])
 
             return compute_fn[c_type, width, alignment=alignment](
                 Coord(local_batch_coords), out_val

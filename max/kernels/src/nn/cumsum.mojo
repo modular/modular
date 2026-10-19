@@ -122,14 +122,8 @@ def cumsum[
         else:
             depth = shape[i]
 
-    var output_data = TileTensor(
-        output.ptr,
-        row_major(output.num_elements()),
-    )
-    var input_data = TileTensor(
-        input.ptr,
-        row_major(input.num_elements()),
-    )
+    var output_data = output.reshape(row_major(output.num_elements()))
+    var input_data = input.reshape(row_major(input.num_elements()))
 
     comptime simd_width = simd_width_of[accum_type]()
     for inner_index in range(inner):

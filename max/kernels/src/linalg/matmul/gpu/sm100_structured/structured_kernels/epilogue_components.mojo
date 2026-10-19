@@ -345,7 +345,7 @@ def store_fragment_to_smem[
                 v[k * cast_width + _j] = casted[_j]
 
         st_matrix[simd_width=stmtx_simd_width, transpose=transpose_c](
-            dst._storage.unsafe_mut_cast[True]() + offset,
+            dst._storage.unsafe_mut_cast[True]().unsafe_offset(offset),
             bitcast[.float32, stmtx_simd_width](v),
         )
 
@@ -752,7 +752,7 @@ struct TMAReduceExecutor[
                     reduction_kind=ReduceOp.ADD
                 ](
                     c_smem_split._storage,
-                    UnsafePointer(to=c_tma_op.descriptor).bitcast[NoneType](),
+                    Pointer(to=c_tma_op.descriptor).unsafe_bitcast[NoneType](),
                     Index(
                         store_coords.coord_n,
                         store_coords.coord_m,
@@ -764,7 +764,7 @@ struct TMAReduceExecutor[
                     reduction_kind=ReduceOp.ADD
                 ](
                     c_smem_split._storage,
-                    UnsafePointer(to=c_tma_op.descriptor).bitcast[NoneType](),
+                    Pointer(to=c_tma_op.descriptor).unsafe_bitcast[NoneType](),
                     Index(store_coords.coord_n, store_coords.coord_m),
                 )
 
@@ -1225,7 +1225,7 @@ struct EpilogueApplier[
         local_row: UInt32,
         local_col: UInt32,
         is_upper: Bool,
-        src_ptr: UnsafePointer[Scalar[c_type], _, address_space=.SHARED],
+        src_ptr: Pointer[Scalar[c_type], _, address_space=.SHARED],
         beta: Scalar[epilogue_dtype],
     ):
         """Add beta * C to fragment elements by loading C from swizzled SMEM.
@@ -1290,7 +1290,7 @@ struct EpilogueApplier[
         mut upper_frag: Array[Scalar[epilogue_dtype], frag_size],
         mut lower_frag: Array[Scalar[epilogue_dtype], frag_size],
         stage: UInt32,
-        src_ptr: UnsafePointer[Scalar[c_type], _, address_space=.SHARED],
+        src_ptr: Pointer[Scalar[c_type], _, address_space=.SHARED],
         beta: Scalar[epilogue_dtype],
     ) -> Tuple[
         Array[Scalar[epilogue_dtype], frag_size],
@@ -1902,7 +1902,7 @@ struct SMemEpilogueWriter[
         # Construct fresh TileTensors from raw pointers to break origin
         # aliasing (upper and lower share the same c_smem_tile origin).
         comptime warp_tile_layout = row_major[Self.data_paths, Self.stageN]()
-        comptime SMemPtr = UnsafePointer[
+        comptime SMemPtr = MutPointer[
             Scalar[Self.c_type], MutUntrackedOrigin, address_space=.SHARED
         ]
         var upper_tile = TileTensor(
@@ -2034,8 +2034,8 @@ def shared_memory_epilogue_transpose[
                 # undo swizzle to get logical `c_smem[logical_crd]` value.
                 var ptr = (
                     c_smem._storage.unsafe_mut_cast[True]()
-                    + swizzle(cj * swizzle_dim + ck)
-                    + UInt32(ci * swizzle_dim) * UInt32(stageN)
+                    .unsafe_offset(swizzle(cj * swizzle_dim + ck))
+                    .unsafe_offset(UInt32(ci * swizzle_dim) * UInt32(stageN))
                 )
                 var row = local_i + gmem_col
                 var col = local_j + gmem_row
@@ -2081,9 +2081,9 @@ def shared_memory_epilogue_transpose[
                     var local_j = logical_crd[1].value()
 
                     # Undo swizzle to get logical value
-                    var ptr = c_smem._storage.unsafe_mut_cast[True]() + swizzle(
-                        offset
-                    )
+                    var ptr = c_smem._storage.unsafe_mut_cast[
+                        True
+                    ]().unsafe_offset(swizzle(offset))
                     var row = UInt32(local_i) + gmem_col
                     var col = UInt32(local_j) + gmem_row
                     if row < UInt32(Int(M)) and col < UInt32(Int(N)):

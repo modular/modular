@@ -48,8 +48,8 @@ from .conv2d_kernel import conv2d_kernel_rdna
 def _im2col_nhwc_kernel[
     dtype: DType,
 ](
-    output_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    input_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
+    output_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
+    input_ptr: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
     batch_size: Int32,
     H: Int32,
     W: Int32,
@@ -104,8 +104,8 @@ def _im2col_nhwc_kernel[
 def _transpose_rscf_to_nk[
     dtype: DType,
 ](
-    src_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    src_ptr: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
+    dst_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
     R: Int32,
     S: Int32,
     C: Int32,
@@ -130,8 +130,8 @@ def _transpose_rscf_to_nk[
 def _transpose_fcrs_to_nk[
     dtype: DType,
 ](
-    src_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    src_ptr: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
+    dst_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
     F: Int32,
     C: Int32,
     R: Int32,
@@ -176,9 +176,9 @@ def dispatch_rdna_conv2d[
     symmetric_padding: IndexList[2],
     num_groups: Int,
     ctx: DeviceContext,
-    source_ptr: UnsafePointer[
+    source_ptr: MutPointer[Scalar[output_type], MutAnyOrigin] = MutPointer[
         Scalar[output_type], MutAnyOrigin
-    ] = UnsafePointer[Scalar[output_type], MutAnyOrigin].unsafe_dangling(),
+    ].unsafe_dangling(),
     beta: Float32 = 0.0,
 ) raises -> Bool:
     """Try to dispatch Conv2D on RDNA via implicit GEMM (im2col fused into WMMA).
@@ -312,7 +312,7 @@ def dispatch_rdna_conv2d[
             comptime BLOCK_N = 128
 
             var filter_nk_tt = TileTensor(filter_nk_ptr, row_major(N, K))
-            var out_tt = TileTensor(output.ptr, row_major(M, N))
+            var out_tt = output.reshape(row_major(M, N))
 
             comptime conv_kernel = conv2d_kernel_rdna[
                 output_type,
@@ -441,14 +441,14 @@ def dispatch_rdna_conv2d[
                 comptime assert (
                     coords_2d.rank == 2
                 ), "the matmul epilogue contract is rank 2"
-                var m_idx = Int(coords_2d[0].value())
-                var n_idx = Int(coords_2d[1].value())
+                var m_idx = Int(coords_2d[0])
+                var n_idx = Int(coords_2d[1])
                 var out_val = val
 
                 # Fold the fused skip connection: out = conv + beta*source.
                 comptime if has_residual:
                     var s = (
-                        (resid_src + (m_idx * N + n_idx))
+                        (resid_src.unsafe_offset(m_idx * N + n_idx))
                         .load[width=_width]()
                         .cast[_dtype]()
                     )
@@ -486,10 +486,10 @@ def dispatch_rdna_conv2d[
                 comptime assert (
                     coords_2d.rank == 2
                 ), "the matmul epilogue contract is rank 2"
-                var m_idx = Int(coords_2d[0].value())
-                var n_idx = Int(coords_2d[1].value())
+                var m_idx = Int(coords_2d[0])
+                var n_idx = Int(coords_2d[1])
                 var s = (
-                    (resid_src + (m_idx * N + n_idx))
+                    (resid_src.unsafe_offset(m_idx * N + n_idx))
                     .load[width=_width]()
                     .cast[_dtype]()
                 )

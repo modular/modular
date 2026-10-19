@@ -475,11 +475,15 @@ def load_AB_SFA[
             var sfa_smem_tile = sfa_smem_tiles[offset]
 
             var a_smem_slice = type_of(a_smem_tile)(
-                a_smem_tile.ptr + peer_cta_coord[2] * a_tma_load_size,
+                a_smem_tile.ptr.unsafe_offset(
+                    peer_cta_coord[2] * a_tma_load_size
+                ),
                 a_smem_tile.layout,
             )
             var b_smem_slice = type_of(b_smem_tile)(
-                b_smem_tile.ptr + peer_cta_coord[1] * b_tma_load_size,
+                b_smem_tile.ptr.unsafe_offset(
+                    peer_cta_coord[1] * b_tma_load_size
+                ),
                 b_smem_tile.layout,
             )
 
@@ -615,7 +619,9 @@ def _prefetch_weight_tiles_sbn[
             comptime if not AB_swapped:
                 var b_smem_tile = b_smem_tiles[offset]
                 var b_smem_slice = type_of(b_smem_tile)(
-                    b_smem_tile.ptr + peer_cta_coord[1] * b_tma_load_size,
+                    b_smem_tile.ptr.unsafe_offset(
+                        peer_cta_coord[1] * b_tma_load_size
+                    ),
                     b_smem_tile.layout,
                 )
                 b_tma_op.async_multicast_load_3d[cta_group](
@@ -631,7 +637,9 @@ def _prefetch_weight_tiles_sbn[
             else:
                 var a_smem_tile = a_smem_tiles[offset]
                 var a_smem_slice = type_of(a_smem_tile)(
-                    a_smem_tile.ptr + peer_cta_coord[2] * a_tma_load_size,
+                    a_smem_tile.ptr.unsafe_offset(
+                        peer_cta_coord[2] * a_tma_load_size
+                    ),
                     a_smem_tile.layout,
                 )
                 a_tma_op.async_multicast_load_3d[cta_group](
@@ -737,7 +745,9 @@ def _complete_activation_tiles_sbn[
             comptime if not AB_swapped:
                 var a_smem_tile = a_smem_tiles[offset]
                 var a_smem_slice = type_of(a_smem_tile)(
-                    a_smem_tile.ptr + peer_cta_coord[2] * a_tma_load_size,
+                    a_smem_tile.ptr.unsafe_offset(
+                        peer_cta_coord[2] * a_tma_load_size
+                    ),
                     a_smem_tile.layout,
                 )
                 a_tma_op.async_multicast_load_3d[cta_group](
@@ -765,7 +775,9 @@ def _complete_activation_tiles_sbn[
             else:
                 var b_smem_tile = b_smem_tiles[offset]
                 var b_smem_slice = type_of(b_smem_tile)(
-                    b_smem_tile.ptr + peer_cta_coord[1] * b_tma_load_size,
+                    b_smem_tile.ptr.unsafe_offset(
+                        peer_cta_coord[1] * b_tma_load_size
+                    ),
                     b_smem_tile.layout,
                 )
                 b_tma_op.async_multicast_load_3d[cta_group](
@@ -825,7 +837,7 @@ def consumer_main_loop[
     sfb_smem_tiles: SMemTileArrayWithLayout[sfb_dtype, ...],
     load_mma_pipeline: ProducerConsumerPipeline[pipeline_stages],
     sfb_pipeline: ProducerConsumerPipeline[num_group_pipeline_stages],
-    sfb_ready_mbars: UnsafePointer[SharedMemBarrier, _, address_space=.SHARED],
+    sfb_ready_mbars: Pointer[SharedMemBarrier, _, address_space=.SHARED],
     mut sfb_ready_state: PipelineState[num_group_pipeline_stages],
     mma_op: MmaOpSM100_BlockScaled_SS[
         c_type,
@@ -980,9 +992,7 @@ def _sfb_cpasync_produce_tile[
     work_info: WorkInfo,
     num_iters: UInt32,
     mut sfb_pipeline: ProducerConsumerPipeline[num_sfb_pipeline_stages],
-    sfb_smem_base_ptr: UnsafePointer[
-        mut=True, Scalar[sfb_dtype], _, address_space=.SHARED
-    ],
+    sfb_smem_base_ptr: MutPointer[Scalar[sfb_dtype], _, address_space=.SHARED],
     sfb_global_ptr: ImmPointer[Scalar[sfb_dtype], _],
     sfb_batch_stride: Int,
     sfb_n_stride: Int,
@@ -1048,8 +1058,8 @@ def _sfb_cpasync_produce_tile[
         for jj in range(k_group_size):
             var j = UInt32(jj)
             var offset = stage * UInt32(k_group_size) + j
-            var sfb_smem_tile_ptr = sfb_smem_base_ptr + Int(
-                sfb_smem_stage_layout(Coord(Int64(offset)))
+            var sfb_smem_tile_ptr = sfb_smem_base_ptr.unsafe_offset(
+                Int(sfb_smem_stage_layout(Coord(Int64(offset))))
             )
             var k_tile_base = Int(i * UInt32(k_group_size) + j) * num_sf_k_tiles
 
@@ -1092,14 +1102,14 @@ def _sfb_cpasync_produce_tile[
                             )
                             async_copy[size=SF_ATOM_K * size_of[sfb_dtype](),](
                                 (
-                                    sfb_global_ptr + global_offset
-                                ).address_space_cast[.GLOBAL](),
+                                    sfb_global_ptr.unsafe_offset(global_offset)
+                                ).unsafe_address_space_cast[.GLOBAL](),
                                 (
-                                    sfb_smem_tile_ptr + smem_offset
-                                ).address_space_cast[.SHARED](),
+                                    sfb_smem_tile_ptr.unsafe_offset(smem_offset)
+                                ).unsafe_address_space_cast[.SHARED](),
                             )
                         else:
-                            (sfb_smem_tile_ptr + smem_offset).store(
+                            sfb_smem_tile_ptr.unsafe_offset(smem_offset).store(
                                 SIMD[sfb_dtype, SF_ATOM_K]()
                             )
 
@@ -1126,9 +1136,7 @@ def _sfb_cpasync_produce_tile_warpwide[
     work_info: WorkInfo,
     num_iters: UInt32,
     mut sfb_pipeline: ProducerConsumerPipeline[num_sfb_pipeline_stages],
-    sfb_smem_base_ptr: UnsafePointer[
-        mut=True, Scalar[sfb_dtype], _, address_space=.SHARED
-    ],
+    sfb_smem_base_ptr: MutPointer[Scalar[sfb_dtype], _, address_space=.SHARED],
     sfb_global_ptr: ImmPointer[Scalar[sfb_dtype], _],
     sfb_batch_stride: Int,
     sfb_n_stride: Int,
@@ -1208,8 +1216,8 @@ def _sfb_cpasync_produce_tile_warpwide[
         for jj in range(k_group_size):
             var j = UInt32(jj)
             var offset = stage * UInt32(k_group_size) + j
-            var sfb_smem_tile_ptr = sfb_smem_base_ptr + Int(
-                sfb_smem_stage_layout(Coord(Int64(offset)))
+            var sfb_smem_tile_ptr = sfb_smem_base_ptr.unsafe_offset(
+                Int(sfb_smem_stage_layout(Coord(Int64(offset))))
             )
             var k_tile_base = Int(i * UInt32(k_group_size) + j) * num_sf_k_tiles
 
@@ -1240,15 +1248,15 @@ def _sfb_cpasync_produce_tile_warpwide[
                         )
                     )
                     async_copy[size=SF_ATOM_K * size_of[sfb_dtype](),](
-                        (sfb_global_ptr + global_offset).address_space_cast[
-                            .GLOBAL
-                        ](),
-                        (sfb_smem_tile_ptr + smem_offset).address_space_cast[
-                            .SHARED
-                        ](),
+                        sfb_global_ptr.unsafe_offset(
+                            global_offset
+                        ).unsafe_address_space_cast[.GLOBAL](),
+                        sfb_smem_tile_ptr.unsafe_offset(
+                            smem_offset
+                        ).unsafe_address_space_cast[.SHARED](),
                     )
                 else:
-                    (sfb_smem_tile_ptr + smem_offset).store(
+                    sfb_smem_tile_ptr.unsafe_offset(smem_offset).store(
                         SIMD[sfb_dtype, SF_ATOM_K]()
                     )
 
@@ -1320,7 +1328,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     mnk: StaticTuple[UInt32, 3],
     workspace: Span[UInt64, MutAnyOrigin],
     alpha: Float32,
-    sfb_global_ptr: UnsafePointer[Scalar[sfb_dtype], ImmutAnyOrigin],
+    sfb_global_ptr: ImmPointer[Scalar[sfb_dtype], ImmutAnyOrigin],
     sfb_batch_stride: Int32,
     sfb_n_stride: Int32,
     sfb_k_tiles: Int32,
@@ -1440,7 +1448,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
         UInt8,
         address_space=.SHARED,
         alignment=128,
-    ]().bitcast[SmemType]()[]
+    ]().unsafe_bitcast[SmemType]()[]
 
     ref a_smem_storage = smem_storage.a_smem
     ref b_smem_storage = smem_storage.b_smem
@@ -1578,24 +1586,24 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
         sfb_mbars_storage.unsafe_ptr(),
     )
 
-    var ptr_tmem_addr: UnsafePointer[
+    var ptr_tmem_addr: MutPointer[
         UInt32, origin_of(tmem_addr_storage), address_space=.SHARED
     ] = tmem_addr_storage.unsafe_ptr()
 
     var clc_response = clc_response_storage.unsafe_ptr()
-    var clc_full_mbar: UnsafePointer[
+    var clc_full_mbar: MutPointer[
         SharedMemBarrier,
         origin_of(clc_mbars_full_storage),
         address_space=.SHARED,
     ] = clc_mbars_full_storage.unsafe_ptr()
-    var clc_empty_mbar: UnsafePointer[
+    var clc_empty_mbar: MutPointer[
         SharedMemBarrier,
         origin_of(clc_mbars_empty_storage),
         address_space=.SHARED,
     ] = clc_mbars_empty_storage.unsafe_ptr()
 
     var tmem_dealloc_mbar = tmem_dealloc_mbar_storage.unsafe_ptr()
-    var sfb_ready_mbars: UnsafePointer[
+    var sfb_ready_mbars: MutPointer[
         SharedMemBarrier,
         origin_of(sfb_ready_mbars_storage),
         address_space=.SHARED,
@@ -1991,7 +1999,9 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                     # Signal leader's sfb_ready_mbar.
                     if elect_one_sync():
                         umma_arrive_leader_cta(
-                            sfb_ready_mbars + sfb_ready_state.index()
+                            sfb_ready_mbars.unsafe_offset(
+                                sfb_ready_state.index()
+                            )
                         )
 
                     sfb_ready_state.step()

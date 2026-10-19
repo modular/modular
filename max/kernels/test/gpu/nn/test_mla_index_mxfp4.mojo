@@ -29,13 +29,17 @@ from std.math import align_up, ceil, ceildiv, cos, exp2, log2, sin
 from std.memory import bitcast
 from std.random import random_float64, random_ui64, seed
 from std.testing import assert_true
+from std.utils.numerics import isinf, neg_inf
 from layout import TensorLayout, TileTensor, row_major
 from layout.tile_tensor import ImmTileTensor, MutTileTensor
 from max.gpu.host import DeviceContext, HostBuffer
+from kv_cache.paged_sparse_kv_index_remap import NoRemap
 from nn.attention.gpu.mla_index_fp8 import (
     _SCORES_BUDGET_BYTES,
     MXFP4IndexKCache,
     mla_indexer_ragged_mxfp4_paged,
+    BlockMaskScoreHook,
+    BlockMaxScoreHook,
     mxfp4_index_k_cache,
 )
 from nn.attention.gpu.sparse_index_fp8_sm100 import (
@@ -53,7 +57,10 @@ from nn.attention.mha_operand import (
     KVCacheMHAOperand,
     KVCacheScalesMHAOperand,
 )
-from nn.indexer_k_store import indexer_k_norm_rope_store
+from nn.indexer_k_store import (
+    MXFP4_INDEX_RECORD_BYTES,
+    indexer_k_norm_rope_store_layer,
+)
 
 from _index_select_grade import SelectionStats, grade_selection_row
 
@@ -81,6 +88,12 @@ comptime P_WEIGHTS = 6
 # Entry 0 one key row deeper than the reference: an off-by-one bound.
 comptime P_BOUND = 7
 comptime _NUM_POISONS = 8
+# The score hooks, and their own poison: the hook's device buffer (keep mask
+# or block maxima) is shifted by one after the reference is built.
+comptime HOOK_NONE = 0
+comptime HOOK_BLOCK_MAX = 1
+comptime HOOK_BLOCK_MASK = 2
+comptime HOOK_BLOCK = 8
 
 
 def _fp4_code(value: Float32) -> UInt8:
@@ -166,7 +179,7 @@ def _score_mxfp4[
     output: MutTileTensor[.float32, output_layout, _],
     q: ImmTileTensor[.uint8, q_layout, _],
     weights: ImmTileTensor[.float32, w_layout, _],
-    q_sf: UnsafePointer[UInt32, ImmutAnyOrigin],
+    q_sf: ImmPointer[UInt32, ImmutAnyOrigin],
     input_row_offsets: ImmTileTensor[.uint32, iro_layout, _],
     k_cache: MXFP4IndexKCache[page_size],
     batch_size: Int,
@@ -215,6 +228,7 @@ def _run_case[
     page_size: Int,
     top_k: Int,
     causal: Bool,
+    hook: Int = HOOK_NONE,
 ](
     ctx: DeviceContext,
     seq_lens: List[Int],
@@ -223,6 +237,7 @@ def _run_case[
     pitch_pad: Int = 16,
     scores_budget_bytes: Int = _SCORES_BUDGET_BYTES,
     use_store: Bool = False,
+    poison_hook: Bool = False,
 ) raises -> Int:
     """Runs one case and returns how many checks failed.
 
@@ -232,6 +247,7 @@ def _run_case[
         top_k: Keys selected per token.
         causal: Whether token `i` of an entry sees only keys up to its own
             position.
+        hook: `HOOK_NONE`, or the score hook the op runs.
 
     Args:
         ctx: Device context.
@@ -241,7 +257,9 @@ def _run_case[
         pitch_pad: Bytes past the rows and words in each page.
         scores_budget_bytes: The op's score budget; small values score the
             batch in several row windows.
-        use_store: Whether `indexer_k_store` writes the keys.
+        use_store: Whether `indexer_k_store` writes the keys, into the second
+            layer of a two-layer leaf.
+        poison_hook: Whether to shift the hook's device buffer by one.
 
     Returns:
         The number of failed checks.
@@ -260,7 +278,12 @@ def _run_case[
     # One extra row's page room so the bound poison has a row to read.
     var pages_per_seq = max(1, ceildiv(max_rows + 1, page_size))
     var num_pages = batch_size * pages_per_seq + 3
-    var page_stride = page_size * (ROW_BYTES + 4) + pitch_pad
+    # The store path writes and reads layer 1 of a two-layer leaf; otherwise
+    # each block holds one page.
+    var layers = 2 if use_store else 1
+    var layer = layers - 1
+    var layer_off = layer * page_size * MXFP4_INDEX_RECORD_BYTES
+    var page_stride = layers * page_size * MXFP4_INDEX_RECORD_BYTES + pitch_pad
 
     var lut = ctx.enqueue_create_host_buffer[.uint32](
         batch_size * pages_per_seq
@@ -288,6 +311,7 @@ def _run_case[
     def code_off(b: Int, r: Int) {imm} -> Int:
         return (
             lut0[b * pages_per_seq + r // page_size] * page_stride
+            + layer_off
             + (r % page_size) * ROW_BYTES
         )
 
@@ -295,6 +319,7 @@ def _run_case[
     def scale_off(b: Int, r: Int) {imm} -> Int:
         return (
             lut0[b * pages_per_seq + r // page_size] * page_stride
+            + layer_off
             + page_size * ROW_BYTES
             + (r % page_size) * 4
         )
@@ -348,14 +373,20 @@ def _run_case[
         ctx.enqueue_copy(dst_buf=d_norm_w, src_buf=norm_w)
         ctx.enqueue_copy(dst_buf=d_freqs, src_buf=freqs)
         ctx.enqueue_copy(dst_buf=d_cache, src_buf=cache)
-        indexer_k_norm_rope_store[True, kpool](
+        indexer_k_norm_rope_store_layer[True, kpool](
             TileTensor(d_keys, row_major(count, key_stride)),
             TileTensor(d_positions, row_major(max(count, 1))),
             TileTensor(d_freqs, row_major(max_pos, 64)),
             TileTensor(d_norm_w, row_major(DEPTH)),
             TileTensor(d_slots, row_major(max(count, 1))),
-            TileTensor(d_cache, row_major(num_pages, page_stride)),
-            page_size,
+            TileTensor(
+                d_cache,
+                row_major(
+                    num_pages, 1, layers, page_size, 1, MXFP4_INDEX_RECORD_BYTES
+                ),
+            ),
+            page_stride,
+            layer,
             Float32(1e-6),
             ctx,
         )
@@ -526,6 +557,21 @@ def _run_case[
         max_seq_len,
         max_cache_len + kpool,
     )
+    if use_store:
+        k_cache = mxfp4_index_k_cache[page_size](
+            TileTensor(
+                d_cache,
+                row_major(
+                    num_pages, 1, layers, page_size, 1, MXFP4_INDEX_RECORD_BYTES
+                ),
+            ),
+            page_stride,
+            layer,
+            TileTensor(d_lut, row_major(batch_size, pages_per_seq)),
+            TileTensor(d_lens, row_major(batch_size)),
+            max_seq_len,
+            max_cache_len + kpool,
+        )
     var q_tt = TileTensor(d_q, row_major(total_seq_len, NH, ROW_BYTES))
     var q_sf_tt = TileTensor(d_q_sf, row_major(total_seq_len, NH))
     var w_tt = TileTensor(d_w, row_major(total_seq_len, NH))
@@ -543,6 +589,10 @@ def _run_case[
         causal,
         " poison=",
         poison,
+        " hook=",
+        hook,
+        " hook_poison=",
+        poison_hook,
         " seq=",
         seq_lens[0],
         "... cache=",
@@ -598,28 +648,144 @@ def _run_case[
     if score_bad > 0:
         failures += 1
 
+    # Hook inputs. A masked row keeps every block when it has few keys, else
+    # a random ~60% of them and at least `top_k` keys, so no dropped key need
+    # be selected; its reference gives dropped keys a score under every kept
+    # one.
+    var num_blocks = ceildiv(stride, HOOK_BLOCK)
+    var rows_alloc = max(total_seq_len, 1)
+    var keep = ctx.enqueue_create_host_buffer[.uint8](rows_alloc * num_blocks)
+    var sel_ref = List[List[Float32]](capacity=total_seq_len)
+    for t in range(total_seq_len):
+        var kept_keys = 0
+        for j in range(num_blocks):
+            var k = UInt8(1)
+            if hook == HOOK_BLOCK_MASK and bounds[t] > 2 * top_k:
+                k = UInt8(1) if random_float64(0.0, 1.0) < 0.6 else UInt8(0)
+            keep[t * num_blocks + j] = k
+            if k != 0:
+                kept_keys += max(0, min(HOOK_BLOCK, bounds[t] - j * HOOK_BLOCK))
+        if kept_keys < min(top_k, bounds[t]):
+            for j in range(num_blocks):
+                keep[t * num_blocks + j] = 1
+        var masked = ref_scores[t].copy()
+        if hook == HOOK_BLOCK_MASK and bounds[t] > 0:
+            var low = Float32(0)
+            for s in range(bounds[t]):
+                low = min(low, ref_scores[t][s])
+            for s in range(bounds[t]):
+                if keep[t * num_blocks + s // HOOK_BLOCK] == 0:
+                    masked[s] = low - 1.0
+        sel_ref.append(masked^)
+    # The block max poison writes each maximum one slot late, into a buffer
+    # one slot longer.
+    var max_shift = 0
+    if poison_hook and total_seq_len > 0:
+        if hook == HOOK_BLOCK_MASK:
+            var first = keep[0]
+            for i in range(total_seq_len * num_blocks - 1):
+                keep[i] = keep[i + 1]
+            keep[total_seq_len * num_blocks - 1] = first
+        else:
+            max_shift = 1
+    var d_keep = ctx.enqueue_create_buffer[.uint8](len(keep))
+    var d_block_max = ctx.enqueue_create_buffer[.float32](
+        rows_alloc * num_blocks + 1
+    )
+    ctx.enqueue_copy(dst_buf=d_keep, src_buf=keep)
+    d_block_max.enqueue_fill(_SENTINEL)
+
     # The op's selection: valid, complete, and graded against the exact top-k.
     var d_out = ctx.enqueue_create_buffer[.int32](max(total_seq_len, 1) * top_k)
     d_out.enqueue_fill(Int32(-7))
-    mla_indexer_ragged_mxfp4_paged[
-        NH,
-        top_k,
-        MaskName.CAUSAL.name if causal else MaskName.NULL.name,
-        page_size,
-        kpool=kpool,
-    ](
-        TileTensor(d_out, row_major(total_seq_len, top_k)),
-        q_tt,
-        q_sf_tt,
-        w_tt,
-        iro_tt,
-        k_cache,
-        ctx,
-        scores_budget_bytes,
-    )
+    comptime mask_name = MaskName.CAUSAL.name if causal else MaskName.NULL.name
+    var out_tt = TileTensor(d_out, row_major(total_seq_len, top_k))
+    comptime if hook == HOOK_BLOCK_MAX:
+        mla_indexer_ragged_mxfp4_paged[
+            NH, top_k, mask_name, page_size, kpool=kpool, write_logical=True
+        ](
+            out_tt,
+            q_tt,
+            q_sf_tt,
+            w_tt,
+            iro_tt,
+            k_cache,
+            ctx,
+            NoRemap(),
+            BlockMaxScoreHook[HOOK_BLOCK](
+                d_block_max.unsafe_ptr()
+                .unsafe_offset(max_shift)
+                .as_unsafe_any_origin(),
+                num_blocks,
+            ),
+            scores_budget_bytes,
+        )
+    elif hook == HOOK_BLOCK_MASK:
+        mla_indexer_ragged_mxfp4_paged[
+            NH, top_k, mask_name, page_size, kpool=kpool, write_logical=True
+        ](
+            out_tt,
+            q_tt,
+            q_sf_tt,
+            w_tt,
+            iro_tt,
+            k_cache,
+            ctx,
+            NoRemap(),
+            BlockMaskScoreHook[HOOK_BLOCK](
+                d_keep.unsafe_ptr().as_imm().as_unsafe_any_origin(),
+                num_blocks,
+            ),
+            scores_budget_bytes,
+        )
+    else:
+        mla_indexer_ragged_mxfp4_paged[
+            NH, top_k, mask_name, page_size, kpool=kpool
+        ](
+            out_tt,
+            q_tt,
+            q_sf_tt,
+            w_tt,
+            iro_tt,
+            k_cache,
+            ctx,
+            scores_budget_bytes,
+        )
     var out = ctx.enqueue_create_host_buffer[.int32](len(d_out))
+    var block_max = ctx.enqueue_create_host_buffer[.float32](len(d_block_max))
     ctx.enqueue_copy(dst_buf=out, src_buf=d_out)
+    ctx.enqueue_copy(dst_buf=block_max, src_buf=d_block_max)
     ctx.synchronize()
+
+    # Block maxima: the max of each block's live reference scores, within the
+    # scorer's tolerance plus the bf16 score buffer's rounding; `-inf` for a
+    # block with no live key.
+    var hook_bad = 0
+    comptime if hook == HOOK_BLOCK_MAX:
+        for t in range(total_seq_len):
+            for j in range(num_blocks):
+                var got = block_max[t * num_blocks + j]
+                var want = neg_inf[DType.float32]()
+                var tol = Float32(0)
+                for s in range(
+                    j * HOOK_BLOCK, min((j + 1) * HOOK_BLOCK, bounds[t])
+                ):
+                    want = max(want, ref_scores[t][s])
+                    tol = max(
+                        tol,
+                        3e-5 * ref_mag[t][s]
+                        + fold_rtol * ref_fold[t][s]
+                        + abs(ref_scores[t][s]) * Float32(0.0078125),
+                    )
+                var ok = (got == want) if isinf(want) else (
+                    abs(got - want) <= tol + 1e-30
+                )
+                if not ok:
+                    if hook_bad < 4:
+                        print("  block max", t, j, "got", got, "want", want)
+                    hook_bad += 1
+    if hook_bad > 0:
+        failures += 1
     var sel_bad = 0
     var stats = SelectionStats()
     for t in range(total_seq_len):
@@ -630,7 +796,12 @@ def _run_case[
             var v = Int(out[t * top_k + k])
             if v == -1:
                 continue
-            if v < 0 or v >= bounds[t] or v in seen:
+            var dropped = (
+                hook == HOOK_BLOCK_MASK
+                and v >= 0
+                and keep[t * num_blocks + v // HOOK_BLOCK] == 0
+            )
+            if v < 0 or v >= bounds[t] or v in seen or dropped:
                 if sel_bad < 4:
                     print("  bad pick", t, k, v, "bound", bounds[t])
                 sel_bad += 1
@@ -640,7 +811,7 @@ def _run_case[
             if sel_bad < 4:
                 print("  row", t, "picked", valid, "of", eff)
             sel_bad += 1
-        grade_selection_row(ref_scores[t], out, t, top_k, stats)
+        grade_selection_row(sel_ref[t], out, t, top_k, stats)
     if sel_bad > 0 or not stats.passed():
         failures += 1
 
@@ -657,6 +828,8 @@ def _run_case[
         max_err,
         "sel_bad=",
         sel_bad,
+        "hook_bad=",
+        hook_bad,
         "->",
         "FAIL" if failures > 0 else "ok",
     )
@@ -665,7 +838,11 @@ def _run_case[
 
 
 def _check[
-    kpool: Int, page_size: Int, top_k: Int, causal: Bool
+    kpool: Int,
+    page_size: Int,
+    top_k: Int,
+    causal: Bool,
+    hook: Int = HOOK_NONE,
 ](
     ctx: DeviceContext,
     seq_lens: List[Int],
@@ -674,7 +851,7 @@ def _check[
     scores_budget_bytes: Int = _SCORES_BUDGET_BYTES,
     use_store: Bool = False,
 ) raises:
-    var failures = _run_case[kpool, page_size, top_k, causal](
+    var failures = _run_case[kpool, page_size, top_k, causal, hook](
         ctx,
         seq_lens,
         cache_lens,
@@ -728,4 +905,18 @@ def main() raises:
         )
         failures += _run_case[2, 64, 512, True](ctx, [1, 2], [8191, 509], p)
         assert_true(failures > 0, String("poison ", p, " went undetected"))
+    # Score hooks: block maxima and a block keep mask, both ratios, decode,
+    # prefill and several score row windows.
+    comptime for h in [HOOK_BLOCK_MAX, HOOK_BLOCK_MASK]:
+        _check[1, 128, 512, True, h](ctx, [1, 1, 1], [16380, 4092, 300])
+        _check[2, 64, 512, True, h](ctx, [1, 2], [32765, 2047])
+        _check[1, 128, 512, True, h](ctx, [301, 1], [3000, 12000])
+        _check[1, 128, 512, True, h](
+            ctx, [97, 61], [5000, 1021], scores_budget_bytes=96 * 1024
+        )
+        # A shifted hook buffer must fail some check.
+        var failures = _run_case[1, 128, 512, True, h](
+            ctx, [2, 1], [8191, 4093], poison_hook=True
+        )
+        assert_true(failures > 0, String("hook ", h, " poison went undetected"))
     print("PASS mxfp4 indexer")

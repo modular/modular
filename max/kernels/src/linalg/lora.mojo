@@ -95,7 +95,7 @@ def shrink_qkv_permute_3mn_sm100(
     # write into C directly; any changes to the final C output must happen
     # exclusively via the epilogue function.
     var c = TileTensor(
-        UnsafePointer[Scalar[c_type], MutUntrackedOrigin].unsafe_dangling(),
+        MutPointer[Scalar[c_type], MutUntrackedOrigin].unsafe_dangling(),
         row_major(M, N_Total),
     )
 
@@ -127,8 +127,8 @@ def shrink_qkv_permute_3mn_sm100(
         comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
         comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
         comptime N = c_lora.static_shape[2]
-        var i = Int(idx[0].value())
-        var j = Int(idx[1].value())
+        var i = Int(idx[0])
+        var j = Int(idx[1])
         var new_j, new_k = divmod(j, N)
         comptime assert N % width == 0, "N must be divisible by width"
         # The current index is [i, new_j, new_k] in the M x 3 x N row major
@@ -295,7 +295,7 @@ def expand_qkv_sm100(
     # keeps `c.static_shape[1]` static so the dispatcher reaches the SM100
     # tensor-core kernel instead of falling back to naive.
     var c = TileTensor(
-        UnsafePointer[Scalar[c_type], MutUntrackedOrigin].unsafe_dangling(),
+        MutPointer[Scalar[c_type], MutUntrackedOrigin].unsafe_dangling(),
         row_major(M, Idx[D_total]),
     )
 
@@ -356,8 +356,8 @@ def expand_qkv_sm100(
         comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
         comptime assert q_dim % width == 0, "q_dim must be divisible by width"
         comptime assert kv_dim % width == 0, "kv_dim must be divisible by width"
-        var token = Int(idx[0].value())
-        var j = Int(idx[1].value())
+        var token = Int(idx[0])
+        var j = Int(idx[1])
         if j < q_dim:
             q_out.store_linear[width=width, alignment=alignment](
                 IndexList[2](token, j), val.cast[q_type]()

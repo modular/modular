@@ -51,104 +51,16 @@ from layout import TileTensor
 @inline(.always)
 def _batch_of_row(
     row: Int,
-    row_offsets: Pointer[UInt32, ImmutAnyOrigin],
+    row_offsets: TileTensor[mut=False, .uint32, address_space=.GENERIC, ...],
     num_batches: Int,
 ) -> Int:
     var r = UInt32(row)
     for b in range(num_batches):
-        if (
-            r >= row_offsets[unsafe_offset=b]
-            and r < row_offsets[unsafe_offset=b + 1]
-        ):
+        var lo = rebind[UInt32](row_offsets.load((b,)))
+        var hi = rebind[UInt32](row_offsets.load((b + 1,)))
+        if r >= lo and r < hi:
             return b
     return 0
-
-
-def _indexer_score_gpu_kernel[
-    cache_t: KVCacheT,
-    q_type: DType,
-    //,
-    num_heads: Int,
-    head_dim: Int,
-    block_size: Int,
-    chunk: Int,
-](
-    out_ptr: Pointer[Float32, MutAnyOrigin],
-    q_ptr: Pointer[Scalar[q_type], ImmutAnyOrigin],
-    w_ptr: Pointer[Float32, ImmutAnyOrigin],
-    row_offsets: Pointer[UInt32, ImmutAnyOrigin],
-    base_ptr: Pointer[Int32, ImmutAnyOrigin],
-    cutoff_ptr: Pointer[Int32, ImmutAnyOrigin],
-    cache: cache_t,
-    num_batches: Int32,
-    num_cand: Int32,
-    q_stride0: Int32,
-    q_stride1: Int32,
-    w_stride0: Int32,
-    out_stride0: Int32,
-):
-    var t = block_idx.x
-    var tid = thread_idx.x
-    var c0 = block_idx.y * block_size
-    var n = Int(num_cand)
-    var cap = n // 2
-
-    var b = _batch_of_row(t, row_offsets, Int(num_batches))
-    var base = Int(base_ptr[unsafe_offset=b])
-    var cutoff = Int(cutoff_ptr[unsafe_offset=t])
-    var c = c0 + tid
-    var out_row = t * Int(out_stride0)
-
-    # Live columns are [0, base) and [cap, cap + cutoff - base); a block that
-    # misses both skips the query load. The branch is block-uniform, so the
-    # early return cannot strand a barrier.
-    var c1 = c0 + block_size
-    if not (c0 < base or (c1 > cap and c0 < cap + cutoff - base)):
-        if c < n:
-            out_ptr.unsafe_store(out_row + c, Float32(0))
-        return
-
-    var sq = unsafe_stack_allocation[
-        num_heads * head_dim, Float32, address_space=.SHARED
-    ]()
-    var sw = unsafe_stack_allocation[
-        num_heads, Float32, address_space=.SHARED
-    ]()
-    for i in range(tid, num_heads * head_dim, block_size):
-        var h = i // head_dim
-        var d = i - h * head_dim
-        sq.unsafe_store(
-            i,
-            q_ptr[
-                unsafe_offset=t * Int(q_stride0) + h * Int(q_stride1) + d
-            ].cast[.float32](),
-        )
-    for h in range(tid, num_heads, block_size):
-        sw.unsafe_store(h, w_ptr[unsafe_offset=t * Int(w_stride0) + h])
-    barrier()
-
-    if c >= n:
-        return
-    var e: Int
-    var live: Bool
-    if c < cap:
-        e = c
-        live = c < base
-    else:
-        e = base + c - cap
-        live = e < cutoff
-
-    var score = Float32(0)
-    if live:
-        var acc = Array[Float32, num_heads](fill=Float32(0))
-        for d0 in range(0, head_dim, chunk):
-            var k = cache.load[width=chunk, output_dtype=.float32](b, 0, e, d0)
-            comptime for h in range(num_heads):
-                var qv = sq.unsafe_load[width=chunk](h * head_dim + d0)
-                acc[h] += (qv * k).reduce_add()
-        comptime for h in range(num_heads):
-            score += max(acc[h], Float32(0)) * sw.unsafe_load(h)
-    out_ptr.unsafe_store(out_row + c, score)
 
 
 def _indexer_score_cpu[
@@ -158,27 +70,23 @@ def _indexer_score_cpu[
     head_dim: Int,
     chunk: Int,
 ](
-    out_ptr: Pointer[Float32, MutAnyOrigin],
-    q_ptr: Pointer[Scalar[q_type], ImmutAnyOrigin],
-    w_ptr: Pointer[Float32, ImmutAnyOrigin],
-    row_offsets: Pointer[UInt32, ImmutAnyOrigin],
-    base_ptr: Pointer[Int32, ImmutAnyOrigin],
-    cutoff_ptr: Pointer[Int32, ImmutAnyOrigin],
+    output: TileTensor[mut=True, .float32, address_space=.GENERIC, ...],
+    q: TileTensor[mut=False, q_type, address_space=.GENERIC, ...],
+    weights: TileTensor[mut=False, .float32, address_space=.GENERIC, ...],
+    row_offsets: TileTensor[mut=False, .uint32, address_space=.GENERIC, ...],
+    base_t: TileTensor[mut=False, .int32, address_space=.GENERIC, ...],
+    cutoff_t: TileTensor[mut=False, .int32, address_space=.GENERIC, ...],
     cache: cache_t,
     num_rows: Int,
     num_heads: Int,
     num_batches: Int,
     num_cand: Int,
-    q_stride0: Int,
-    q_stride1: Int,
-    w_stride0: Int,
-    out_stride0: Int,
 ):
     var cap = num_cand // 2
     for t in range(num_rows):
         var b = _batch_of_row(t, row_offsets, num_batches)
-        var base = Int(base_ptr[unsafe_offset=b])
-        var cutoff = Int(cutoff_ptr[unsafe_offset=t])
+        var base = Int(rebind[Int32](base_t.load((b,))))
+        var cutoff = Int(rebind[Int32](cutoff_t.load((t,))))
         for c in range(num_cand):
             var e: Int
             var live: Bool
@@ -198,18 +106,14 @@ def _indexer_score_cpu[
                         )
                         var qv = SIMD[.float32, chunk](0)
                         comptime for i in range(chunk):
-                            qv[i] = q_ptr[
-                                unsafe_offset=t * q_stride0
-                                + h * q_stride1
-                                + d0
-                                + i
-                            ].cast[.float32]()
+                            qv[i] = rebind[Float32](
+                                q.load((t, h, d0 + i)).cast[.float32]()
+                            )
                         acc += (qv * k).reduce_add()
-                    score += (
-                        max(acc, Float32(0))
-                        * w_ptr[unsafe_offset=t * w_stride0 + h]
+                    score += max(acc, Float32(0)) * rebind[Float32](
+                        weights.load((t, h))
                     )
-            out_ptr[unsafe_offset=t * out_stride0 + c] = score
+            output.store((t, c), score)
 
 
 def indexer_score_ragged_paged[
@@ -264,73 +168,113 @@ def indexer_score_ragged_paged[
     var num_rows = Int(q.dim[0]())
     var num_batches = Int(input_row_offsets.dim[0]()) - 1
     var num_cand = Int(output.dim[1]())
-    var q_stride0 = Int(q.layout.stride[0]().value())
-    var q_stride1 = Int(q.layout.stride[1]().value())
-    var w_stride0 = Int(weights.layout.stride[0]().value())
-    var out_stride0 = Int(output.layout.stride[0]().value())
     debug_assert(
         Int(q.dim[1]()) == num_heads and Int(q.dim[2]()) == head_dim,
         "q must be [num_rows, num_heads, head_dim]",
     )
     debug_assert(num_cand % 2 == 0, "num_cand must be even")
     debug_assert(
-        Int(q.layout.stride[2]().value()) == 1
-        and Int(weights.layout.stride[1]().value()) == 1
-        and Int(output.layout.stride[1]().value()) == 1,
+        Int(q.dynamic_stride(2)) == 1
+        and Int(weights.dynamic_stride(1)) == 1
+        and Int(output.dynamic_stride(1)) == 1,
         "q, weights and output must be contiguous along the last axis",
     )
     if num_rows == 0 or num_cand == 0:
         return
 
-    var out_ptr = output.unsafe_ptr().as_unsafe_any_origin()
-    var q_ptr = q.unsafe_ptr().as_unsafe_any_origin()
-    var w_ptr = weights.unsafe_ptr().as_unsafe_any_origin()
-    var offs_ptr = input_row_offsets.unsafe_ptr().as_unsafe_any_origin()
-    var base_ptr = base.unsafe_ptr().as_unsafe_any_origin()
-    var cutoff_ptr = cutoff.unsafe_ptr().as_unsafe_any_origin()
-
     comptime if is_cpu[target]():
         _indexer_score_cpu[head_dim=head_dim, chunk=chunk](
-            out_ptr,
-            q_ptr,
-            w_ptr,
-            offs_ptr,
-            base_ptr,
-            cutoff_ptr,
+            output,
+            q,
+            weights,
+            input_row_offsets,
+            base,
+            cutoff,
             cache,
             num_rows,
             num_heads,
             num_batches,
             num_cand,
-            q_stride0,
-            q_stride1,
-            w_stride0,
-            out_stride0,
         )
     else:
         comptime block_size = 128
-        comptime kernel = _indexer_score_gpu_kernel[
-            cache_t=cache_t,
-            q_type=q_type,
-            num_heads=num_heads,
-            head_dim=head_dim,
-            block_size=block_size,
-            chunk=chunk,
-        ]
-        ctx.enqueue_function[kernel](
-            out_ptr,
-            q_ptr,
-            w_ptr,
-            offs_ptr,
-            base_ptr,
-            cutoff_ptr,
-            cache,
-            Int32(num_batches),
-            Int32(num_cand),
-            Int32(q_stride0),
-            Int32(q_stride1),
-            Int32(w_stride0),
-            Int32(out_stride0),
+        var num_batches_i32 = Int32(num_batches)
+        var num_cand_i32 = Int32(num_cand)
+
+        def kernel() {
+            var output,
+            var q,
+            var weights,
+            var input_row_offsets,
+            var base,
+            var cutoff,
+            var cache,
+            var num_batches_i32,
+            var num_cand_i32,
+        }:
+            var t = block_idx.x
+            var tid = thread_idx.x
+            var c0 = block_idx.y * block_size
+            var n = Int(num_cand_i32)
+            var cap = n // 2
+
+            var b = _batch_of_row(t, input_row_offsets, Int(num_batches_i32))
+            var base_b = Int(rebind[Int32](base.load((b,))))
+            var cutoff_t = Int(rebind[Int32](cutoff.load((t,))))
+            var c = c0 + tid
+
+            # Live columns are [0, base) and [cap, cap + cutoff - base); a
+            # block that misses both skips the query load. The branch is
+            # block-uniform, so the early return cannot strand a barrier.
+            var c1 = c0 + block_size
+            if not (c0 < base_b or (c1 > cap and c0 < cap + cutoff_t - base_b)):
+                if c < n:
+                    output.store((t, c), Float32(0))
+                return
+
+            var sq = unsafe_stack_allocation[
+                num_heads * head_dim, Float32, address_space=.SHARED
+            ]()
+            var sw = unsafe_stack_allocation[
+                num_heads, Float32, address_space=.SHARED
+            ]()
+            for i in range(tid, num_heads * head_dim, block_size):
+                var h = i // head_dim
+                var d = i - h * head_dim
+                sq.unsafe_store(
+                    i, rebind[Float32](q.load((t, h, d)).cast[.float32]())
+                )
+            for h in range(tid, num_heads, block_size):
+                sw.unsafe_store(h, rebind[Float32](weights.load((t, h))))
+            barrier()
+
+            if c >= n:
+                return
+            var e: Int
+            var live: Bool
+            if c < cap:
+                e = c
+                live = c < base_b
+            else:
+                e = base_b + c - cap
+                live = e < cutoff_t
+
+            var score = Float32(0)
+            if live:
+                var acc = Array[Float32, num_heads](fill=Float32(0))
+                for d0 in range(0, head_dim, chunk):
+                    var k = cache.load[width=chunk, output_dtype=.float32](
+                        b, 0, e, d0
+                    )
+                    comptime for h in range(num_heads):
+                        var qv = sq.unsafe_load[width=chunk](h * head_dim + d0)
+                        acc[h] += (qv * k).reduce_add()
+                comptime for h in range(num_heads):
+                    score += max(acc[h], Float32(0)) * sw.unsafe_load(h)
+            output.store((t, c), score)
+
+        ctx.enqueue_function(
+            kernel,
             grid_dim=(num_rows, ceildiv(num_cand, block_size)),
             block_dim=block_size,
         )

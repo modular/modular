@@ -822,19 +822,19 @@ def test_gated_delta_recurrence_gpu_deep_slot_no_alias() raises:
 
     var qkv_heap = List(length=conv_dim, fill=Float32(0))
     var qkv_h = TileTensor(qkv_heap, row_major(total_seq_len, conv_dim))
-    qkv_h.raw_store(0, Float32(1))
+    qkv_h[0, 0] = Float32(1)
     var decay_heap = List(length=num_value_heads, fill=Float32(0))
     var decay_h = TileTensor(
         decay_heap, row_major(total_seq_len, num_value_heads)
     )
-    decay_h.raw_store(0, decay_value)
+    decay_h[0, 0] = decay_value
     var beta_heap = List(length=num_value_heads, fill=Float32(0))
     var beta_h = TileTensor(
         beta_heap, row_major(total_seq_len, num_value_heads)
     )
     var offsets_heap = List(length=batch_size + 1, fill=UInt32(0))
     var offsets_h = TileTensor(offsets_heap, row_major(batch_size + 1))
-    offsets_h.raw_store(1, UInt32(total_seq_len))
+    offsets_h[1] = UInt32(total_seq_len)
     var slot_idx_heap = List(length=batch_size, fill=UInt32(slot_deep))
     var slot_idx_h = TileTensor(slot_idx_heap, row_major(batch_size))
 
@@ -938,13 +938,13 @@ def test_gated_delta_recurrence_gpu_deep_slot_no_alias() raises:
     ctx.synchronize()
 
     # The deep sentinel, not the front row it would alias onto.
-    assert_almost_equal(output_h.raw_load(0), Float32(50), rtol=0.01)
+    assert_almost_equal(output_h[0, 0], Float32(50), rtol=0.01)
 
     # The front of the pool must be untouched.
-    assert_equal(front_readback_h.raw_load(0), front_sentinel)
+    assert_equal(front_readback_h[0], front_sentinel)
 
     # The deep slot itself must carry the write.
-    assert_equal(deep_readback_h.raw_load(0), Scalar[state_dtype](50))
+    assert_equal(deep_readback_h[0], Scalar[state_dtype](50))
 
 
 def main() raises:

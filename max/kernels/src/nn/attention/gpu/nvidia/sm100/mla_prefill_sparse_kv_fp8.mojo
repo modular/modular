@@ -300,11 +300,9 @@ struct MLAPrefillSparseFP8[
         ],
         indices: TileTensor[.uint32, address_space=.GENERIC, ...],
         kv_lut: Self.KVLUTType,
-        k_smem_fp8_ptr: UnsafePointer[
-            mut=True, Float8_e4m3fn, address_space=.SHARED, ...
-        ],
-        k_fp8_tma_done: UnsafePointer[
-            mut=True, SharedMemBarrier, address_space=.SHARED, ...
+        k_smem_fp8_ptr: MutPointer[Float8_e4m3fn, address_space=.SHARED, ...],
+        k_fp8_tma_done: MutPointer[
+            SharedMemBarrier, address_space=.SHARED, ...
         ],
         k: UInt32,
         cta_id: UInt32,
@@ -316,7 +314,7 @@ struct MLAPrefillSparseFP8[
         comptime num_warps = 4
         comptime num_rows_per_warp = 4
 
-        var k_smem_i64 = k_smem_fp8_ptr.bitcast[Int64]()
+        var k_smem_i64 = k_smem_fp8_ptr.unsafe_bitcast[Int64]()
         var k_smem_tensor_i64 = TileTensor(
             k_smem_i64,
             row_major[Self.B_TOPK_PER_CTA, Self.k_tma_tile_width_fp8](),
@@ -359,12 +357,10 @@ struct MLAPrefillSparseFP8[
     def load_k_scales_to_smem[
         scale_block_size: Int
     ](
-        scales_ptr: UnsafePointer[Float32, ImmutAnyOrigin],
+        scales_ptr: ImmPointer[Float32, ImmutAnyOrigin],
         indices: TileTensor[.uint32, address_space=.GENERIC, ...],
         kv_lut: Self.KVLUTType,
-        k_scales_smem_ptr: UnsafePointer[
-            mut=True, Float32, address_space=.SHARED, ...
-        ],
+        k_scales_smem_ptr: MutPointer[Float32, address_space=.SHARED, ...],
         k: UInt32,
         cta_id: UInt32,
         indices_base: UInt32,
@@ -384,9 +380,9 @@ struct MLAPrefillSparseFP8[
         var i = tid
         while i < UInt32(K_SCALES_SIZE):
             var row, block = divmod(i, UInt32(scales_per_token))
-            var raw = indices.load[width=1](Coord(topk_base + row)).cast[
-                DType.int32
-            ]()
+            var raw = rebind[Scalar[DType.uint32]](
+                indices[topk_base + row]
+            ).cast[DType.int32]()
             var ok = raw >= Int32(0) and raw < num_kv_rows
             var scale_val: Float32 = 0.0
             if ok:
@@ -400,15 +396,11 @@ struct MLAPrefillSparseFP8[
     def convert_k_fp8_to_bf16[
         scale_block_size: Int
     ](
-        k_smem_fp8_ptr: UnsafePointer[
-            mut=True, Float8_e4m3fn, address_space=.SHARED, ...
+        k_smem_fp8_ptr: MutPointer[Float8_e4m3fn, address_space=.SHARED, ...],
+        k_smem_bf16_ptr: MutPointer[
+            Scalar[Self.qkv_dtype], address_space=.SHARED, ...
         ],
-        k_smem_bf16_ptr: UnsafePointer[
-            mut=True, Scalar[Self.qkv_dtype], address_space=.SHARED, ...
-        ],
-        k_scales_smem_ptr: UnsafePointer[
-            mut=True, Float32, address_space=.SHARED, ...
-        ],
+        k_scales_smem_ptr: MutPointer[Float32, address_space=.SHARED, ...],
     ):
         # k_smem_fp8_ptr points to the upper half of K SMEM (FP8 staging).
         # SWIZZLE_128B scatters row-0 BF16 writes into col-groups 4..8 which
@@ -455,7 +447,7 @@ struct MLAPrefillSparseFP8[
         var sw1_a = Int(sw_bf16(row_1 * UInt32(BN_QK) + col_bf16))
         var sw1_b = Int(sw_bf16(row_1 * UInt32(BN_QK) + col_bf16 + UInt32(8)))
 
-        var src_u8 = k_smem_fp8_ptr.bitcast[UInt8]()
+        var src_u8 = k_smem_fp8_ptr.unsafe_bitcast[UInt8]()
 
         var p0a_all = tt_stack_allocation[
             dtype=DType.uint32, address_space=.LOCAL
@@ -523,7 +515,7 @@ struct MLAPrefillSparseFP8[
             var pb0 = p0b_all.ptr.load[width=4](c * 4)
             var pa1 = p1a_all.ptr.load[width=4](c * 4)
             var pb1 = p1b_all.ptr.load[width=4](c * 4)
-            var dst_block = k_smem_bf16_ptr + c * BLOCK_ELEMS
+            var dst_block = k_smem_bf16_ptr.unsafe_offset(c * BLOCK_ELEMS)
             st_shared_v4_b32_at_bf16_elem_off[out_dtype=bf16_type](
                 dst_block, sw0_a, pa0
             )
@@ -549,11 +541,9 @@ struct MLAPrefillSparseFP8[
         ],
         indices: TileTensor[.uint32, address_space=.GENERIC, ...],
         kv_lut: Self.KVLUTType,
-        v_smem_fp8_ptr: UnsafePointer[
-            mut=True, Float8_e4m3fn, address_space=.SHARED, ...
-        ],
-        v_fp8_tma_done: UnsafePointer[
-            mut=True, SharedMemBarrier, address_space=.SHARED, ...
+        v_smem_fp8_ptr: MutPointer[Float8_e4m3fn, address_space=.SHARED, ...],
+        v_fp8_tma_done: MutPointer[
+            SharedMemBarrier, address_space=.SHARED, ...
         ],
         k: UInt32,
         cta_id: UInt32,
@@ -566,7 +556,7 @@ struct MLAPrefillSparseFP8[
             Self.config.B_TOPK
         ) // ROWS_PER_GATHER // num_warps
 
-        var v_smem_i64 = v_smem_fp8_ptr.bitcast[Int64]()
+        var v_smem_i64 = v_smem_fp8_ptr.unsafe_bitcast[Int64]()
         # gather4 writes its 4 gathered rows PACKED at the descriptor box
         # width (v_tma_tile_width_fp8 int64s per row) starting at dst.ptr;
         # the dst tile's row stride is NOT consulted. Stage atom-major --
@@ -627,12 +617,10 @@ struct MLAPrefillSparseFP8[
     def load_v_scales_to_smem[
         scale_block_size: Int
     ](
-        scales_ptr: UnsafePointer[Float32, ImmutAnyOrigin],
+        scales_ptr: ImmPointer[Float32, ImmutAnyOrigin],
         indices: TileTensor[.uint32, address_space=.GENERIC, ...],
         kv_lut: Self.KVLUTType,
-        v_scales_smem_ptr: UnsafePointer[
-            mut=True, Float32, address_space=.SHARED, ...
-        ],
+        v_scales_smem_ptr: MutPointer[Float32, address_space=.SHARED, ...],
         k: UInt32,
         indices_base: UInt32,
         num_kv_rows: Int32,
@@ -661,9 +649,9 @@ struct MLAPrefillSparseFP8[
         var i = tid
         while i < UInt32(V_SCALES_SIZE):
             var row, block = divmod(i, UInt32(scales_per_token))
-            var raw = indices.load[width=1](Coord(topk_base + row)).cast[
-                DType.int32
-            ]()
+            var raw = rebind[Scalar[DType.uint32]](
+                indices[topk_base + row]
+            ).cast[DType.int32]()
             var ok = raw >= Int32(0) and raw < num_kv_rows
             var scale_val: Float32 = 0.0
             if ok:
@@ -679,15 +667,11 @@ struct MLAPrefillSparseFP8[
     def convert_v_fp8_to_bf16[
         scale_block_size: Int
     ](
-        v_smem_fp8_ptr: UnsafePointer[
-            mut=True, Float8_e4m3fn, address_space=.SHARED, ...
+        v_smem_fp8_ptr: MutPointer[Float8_e4m3fn, address_space=.SHARED, ...],
+        v_smem_bf16_ptr: MutPointer[
+            Scalar[Self.qkv_dtype], address_space=.SHARED, ...
         ],
-        v_smem_bf16_ptr: UnsafePointer[
-            mut=True, Scalar[Self.qkv_dtype], address_space=.SHARED, ...
-        ],
-        v_scales_smem_ptr: UnsafePointer[
-            mut=True, Float32, address_space=.SHARED, ...
-        ],
+        v_scales_smem_ptr: MutPointer[Float32, address_space=.SHARED, ...],
         cta_id: UInt32,
     ):
         comptime fp8_type = DType.float8_e4m3fn
@@ -723,7 +707,7 @@ struct MLAPrefillSparseFP8[
         var group_idx, idx_in_group = divmod(lane, UInt32(GROUP_SIZE))
         var col_bf16 = idx_in_group * UInt32(16)
 
-        var src_u8 = v_smem_fp8_ptr.bitcast[UInt8]()
+        var src_u8 = v_smem_fp8_ptr.unsafe_bitcast[UInt8]()
 
         # The SWIZZLE_128B BF16 writes clobber the aliased FP8 staging region,
         # so within a key-half every FP8 read must complete (barrier) before
@@ -821,7 +805,9 @@ struct MLAPrefillSparseFP8[
                     comptime slot = (r * COLS_PER_GROUP + c) * 4
                     var pa = pa_all.ptr.load[width=4](slot)
                     var pb = pb_all.ptr.load[width=4](slot)
-                    var dst = v_smem_bf16_ptr + kh * KH_ELEMS + c * CG_ELEMS
+                    var dst = v_smem_bf16_ptr.unsafe_offset(
+                        kh * KH_ELEMS
+                    ).unsafe_offset(c * CG_ELEMS)
                     st_shared_v4_b32_at_bf16_elem_off[out_dtype=bf16_type](
                         dst, sw_a, pa
                     )
@@ -894,16 +880,16 @@ struct MLAPrefillSparseFP8[
         ],
         kv_lut: Self.KVLUTType,
         scale: Float32,
-        attn_sink_ptr: Optional[UnsafePointer[Float32, ImmutAnyOrigin]],
+        attn_sink_ptr: Optional[ImmPointer[Float32, ImmutAnyOrigin]],
         indices_stride: Int32,
-        scales_ptr: UnsafePointer[Float32, ImmutAnyOrigin],
+        scales_ptr: ImmPointer[Float32, ImmutAnyOrigin],
     ) where (topk_lengths.flat_rank == 1 and indices.flat_rank == 1):
         var cta_id = UInt32(block_idx.x % Self.config.cta_group)
         var seq_idx = UInt32(block_idx.x // Self.config.cta_group)
         var warp_idx = warp_id()
         var lane_idx = lane_id()
         var warpgroup_idx = warp.broadcast(thread_idx.x // WARPGROUP_SIZE)
-        var top_k_length = topk_lengths.load[width=1](Coord(seq_idx))
+        var top_k_length = rebind[UInt32](topk_lengths[seq_idx])
         var num_k_blocks = max(
             ceildiv(top_k_length, UInt32(Self.config.B_TOPK)), 1
         )
@@ -917,98 +903,102 @@ struct MLAPrefillSparseFP8[
 
         ref smem_fp8 = external_memory[
             UInt8, address_space=.SHARED, alignment=128
-        ]().bitcast[MLASparseSharedMemoryFP8[Self.config, scale_block_size]]()[]
+        ]().unsafe_bitcast[
+            MLASparseSharedMemoryFP8[Self.config, scale_block_size]
+        ]()[]
         ref smem = smem_fp8.base
         ref qkvo_union = smem.qkvo_union
 
         var full_q_ptr = qkvo_union.unsafe_get[Self.FULL_Q_TYPE]().unsafe_ptr()
         ref shared_qkv = qkvo_union.unsafe_get[Self.SHARED_QKV_TYPE]()
-        var shared_qkv_ptr: UnsafePointer[
+        var shared_qkv_ptr: MutPointer[
             Scalar[Self.qkv_dtype], origin_of(shared_qkv), address_space=.SHARED
         ] = shared_qkv.unsafe_ptr()
         var q_smem_ptr = shared_qkv_ptr
-        var v_smem_ptr = shared_qkv_ptr + Self.SMemType.SHARED_Q_SIZE
-        var k_smem_ptr = v_smem_ptr + Self.SMemType.V_SIZE
+        var v_smem_ptr = shared_qkv_ptr.unsafe_offset(
+            Self.SMemType.SHARED_Q_SIZE
+        )
+        var k_smem_ptr = v_smem_ptr.unsafe_offset(Self.SMemType.V_SIZE)
         ref o_union = qkvo_union.unsafe_get[Self.O_TYPE]()
-        var o_ptr: UnsafePointer[
+        var o_ptr: MutPointer[
             Scalar[Self.qkv_dtype], origin_of(o_union), address_space=.SHARED
         ] = o_union.unsafe_ptr()
         var scores_ptr = smem.scores.unsafe_ptr()
         var p_ptr = smem.p.unsafe_ptr()
         var prologue_q_ptr = smem.prologue_q.unsafe_ptr()
         var prologue_q_cp_ptr = smem.prologue_q_cp.unsafe_ptr()
-        var qk_ss_done_ptr: UnsafePointer[
+        var qk_ss_done_ptr: MutPointer[
             SharedMemBarrier, origin_of(smem.qk_ss_done), address_space=.SHARED
         ] = smem.qk_ss_done.unsafe_ptr()
-        var qk_ts_done_ptr: UnsafePointer[
+        var qk_ts_done_ptr: MutPointer[
             SharedMemBarrier, origin_of(smem.qk_ts_done), address_space=.SHARED
         ] = smem.qk_ts_done.unsafe_ptr()
-        var sv_p0_done_ptr: UnsafePointer[
+        var sv_p0_done_ptr: MutPointer[
             SharedMemBarrier, origin_of(smem.sv_p0_done), address_space=.SHARED
         ] = smem.sv_p0_done.unsafe_ptr()
-        var sv_p1_done_ptr: UnsafePointer[
+        var sv_p1_done_ptr: MutPointer[
             SharedMemBarrier, origin_of(smem.sv_p1_done), address_space=.SHARED
         ] = smem.sv_p1_done.unsafe_ptr()
-        var k_p0_ready_ptr: UnsafePointer[
+        var k_p0_ready_ptr: MutPointer[
             SharedMemBarrier, origin_of(smem.k_p0_ready), address_space=.SHARED
         ] = smem.k_p0_ready.unsafe_ptr()
-        var k_p1_ready_ptr: UnsafePointer[
+        var k_p1_ready_ptr: MutPointer[
             SharedMemBarrier, origin_of(smem.k_p1_ready), address_space=.SHARED
         ] = smem.k_p1_ready.unsafe_ptr()
-        var v_p0_ready_ptr: UnsafePointer[
+        var v_p0_ready_ptr: MutPointer[
             SharedMemBarrier, origin_of(smem.v_p0_ready), address_space=.SHARED
         ] = smem.v_p0_ready.unsafe_ptr()
-        var v_p1_ready_ptr: UnsafePointer[
+        var v_p1_ready_ptr: MutPointer[
             SharedMemBarrier, origin_of(smem.v_p1_ready), address_space=.SHARED
         ] = smem.v_p1_ready.unsafe_ptr()
-        var p_free_ptr: UnsafePointer[
+        var p_free_ptr: MutPointer[
             SharedMemBarrier, origin_of(smem.p_free), address_space=.SHARED
         ] = smem.p_free.unsafe_ptr()
-        var so_ready_ptr: UnsafePointer[
+        var so_ready_ptr: MutPointer[
             SharedMemBarrier, origin_of(smem.so_ready), address_space=.SHARED
         ] = smem.so_ready.unsafe_ptr()
-        var k_valid_ready_ptr: UnsafePointer[
+        var k_valid_ready_ptr: MutPointer[
             SharedMemBarrier,
             origin_of(smem.k_valid_ready),
             address_space=.SHARED,
         ] = smem.k_valid_ready.unsafe_ptr()
-        var k_valid_free_ptr: UnsafePointer[
+        var k_valid_free_ptr: MutPointer[
             SharedMemBarrier,
             origin_of(smem.k_valid_free),
             address_space=.SHARED,
         ] = smem.k_valid_free.unsafe_ptr()
-        var is_k_valid_ptr: UnsafePointer[
+        var is_k_valid_ptr: MutPointer[
             UInt8, origin_of(smem.is_k_valid), address_space=.SHARED
         ] = smem.is_k_valid.unsafe_ptr()
         var tmem_addr_ptr = smem.tmem_addr.unsafe_ptr()
-        var rowwise_max_ptr: UnsafePointer[
+        var rowwise_max_ptr: MutPointer[
             Float32, origin_of(smem.rowwise_max), address_space=.SHARED
         ] = smem.rowwise_max.unsafe_ptr()
-        var rowwise_sum_ptr: UnsafePointer[
+        var rowwise_sum_ptr: MutPointer[
             Float32, origin_of(smem.rowwise_sum), address_space=.SHARED
         ] = smem.rowwise_sum.unsafe_ptr()
 
         # FP8-specific SMEM pointers.
         var k_scales_ptr = smem_fp8.k_scales.unsafe_ptr()
         var v_scales_ptr = smem_fp8.v_scales.unsafe_ptr()
-        var k_fp8_tma_done_ptr: UnsafePointer[
+        var k_fp8_tma_done_ptr: MutPointer[
             SharedMemBarrier,
             origin_of(smem_fp8.k_fp8_tma_done),
             address_space=.SHARED,
         ] = smem_fp8.k_fp8_tma_done.unsafe_ptr()
-        var v_fp8_tma_done_ptr: UnsafePointer[
+        var v_fp8_tma_done_ptr: MutPointer[
             SharedMemBarrier,
             origin_of(smem_fp8.v_fp8_tma_done),
             address_space=.SHARED,
         ] = smem_fp8.v_fp8_tma_done.unsafe_ptr()
         # FP8 K staging: upper half of K SMEM (k_smem_ptr + K_SIZE FP8 bytes).
         # FP8 V staging: upper half of V SMEM (v_smem_ptr + V_SIZE FP8 bytes).
-        var k_smem_fp8_ptr = (
-            k_smem_ptr.bitcast[Float8_e4m3fn]() + Self.SMemType.K_SIZE
-        )
-        var v_smem_fp8_ptr = (
-            v_smem_ptr.bitcast[Float8_e4m3fn]() + Self.SMemType.V_SIZE
-        )
+        var k_smem_fp8_ptr = k_smem_ptr.unsafe_bitcast[
+            Float8_e4m3fn
+        ]().unsafe_offset(Self.SMemType.K_SIZE)
+        var v_smem_fp8_ptr = v_smem_ptr.unsafe_bitcast[
+            Float8_e4m3fn
+        ]().unsafe_offset(Self.SMemType.V_SIZE)
 
         if warp_idx == 0:
             if elect_one_sync():
@@ -1391,14 +1381,14 @@ struct MLAPrefillSparseFP8[
                             smem_offset * (1 - pad_row)
                             + (Self.SMemType.O_SIZE - 2) * pad_row
                         )
-                        (o_ptr + store_off).store[width=2](v)
+                        (o_ptr.unsafe_offset(store_off)).store[width=2](v)
 
             named_barrier[Int32(WARPGROUP_SIZE)](Int32(0))
             if warp_idx == 0:
                 if elect_one_sync():
                     fence_async_view_proxy()
                     var o_smem_tile = TileTensor(
-                        o_ptr.bitcast[Scalar[Self.output_dtype]](),
+                        o_ptr.unsafe_bitcast[Scalar[Self.output_dtype]](),
                         row_major[
                             Self.NUM_Q_HEADS_PER_CTA, Self.config.v_depth
                         ](),
@@ -1477,7 +1467,7 @@ struct MLAPrefillSparseFP8[
                         indices,
                         kv_lut,
                         k_smem_fp8_ptr,
-                        k_fp8_tma_done_ptr + cur_buf,
+                        k_fp8_tma_done_ptr.unsafe_offset(cur_buf),
                         k,
                         cta_id,
                         local_warp_idx,
@@ -1544,7 +1534,7 @@ struct MLAPrefillSparseFP8[
                         indices,
                         kv_lut,
                         v_smem_fp8_ptr,
-                        v_fp8_tma_done_ptr + cur_buf,
+                        v_fp8_tma_done_ptr.unsafe_offset(cur_buf),
                         k,
                         cta_id,
                         local_warp_idx,
@@ -1597,7 +1587,7 @@ struct MLAPrefillSparseFP8[
 
             if cta_id == 0 and warp_idx == 12 and elect_one_sync():
                 var q_tmem_desc = Self.QKMMAOpType.tmem_descriptor_q(
-                    q_smem_ptr + Self.SMemType.SHARED_Q_SIZE
+                    q_smem_ptr.unsafe_offset(Self.SMemType.SHARED_Q_SIZE)
                 )
                 # Expect exactly the REAL in-bounds Q bytes (num_q_heads):
                 # both the 64/128 built-in copy and the sub-64 manual depth-
@@ -1674,8 +1664,8 @@ def mla_prefill_sparse_fp8[
     kv_cache: cache_t,
     indices: TileTensor[.uint32, address_space=.GENERIC, ...],
     topk_lengths: TileTensor[.uint32, address_space=.GENERIC, ...],
-    attn_sink_ptr: Optional[UnsafePointer[Float32, ImmutAnyOrigin]],
-    scales_ptr: UnsafePointer[Float32, ImmutAnyOrigin],
+    attn_sink_ptr: Optional[ImmPointer[Float32, ImmutAnyOrigin]],
+    scales_ptr: ImmPointer[Float32, ImmutAnyOrigin],
     scale: Float32,
     indices_stride: Int32,
     ctx: DeviceContext,

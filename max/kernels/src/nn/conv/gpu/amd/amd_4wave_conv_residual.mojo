@@ -36,7 +36,7 @@ from max.gpu import global_idx
 from max.gpu.host import DeviceContext
 from std.math import align_up, ceildiv
 
-from layout import Idx, TileTensor, row_major
+from layout import Idx, TensorEngine, TensorLayout, TileTensor, row_major
 
 from linalg.utils import (
     ElementwiseComputeFn,
@@ -56,10 +56,13 @@ from nn.conv.gpu.nvidia.sm100.conv_config import Conv2dProblemShape
 
 @__name(t"amd_4wave_conv_residual_kpad_{dtype}")
 def _kpad_filter_frsc[
-    dtype: DType
+    dtype: DType,
+    SrcLayoutType: TensorLayout,
+    src_origin: ImmOrigin,
+    SrcEngine: TensorEngine,
 ](
-    src_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    src: TileTensor[dtype, SrcLayoutType, src_origin, Engine=SrcEngine],
+    dst_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
     K_real: Int32,
     K_padded: Int32,
     F: Int32,
@@ -81,7 +84,10 @@ def _kpad_filter_frsc[
     if k >= _K_real:
         dst_ptr.store(tid, Scalar[dtype](0))
         return
-    dst_ptr.store(tid, src_ptr.load(f * _K_real + k))
+    dst_ptr.store(
+        tid,
+        rebind[Scalar[dtype]](src.reshape(row_major(_F, _K_real)).load((f, k))),
+    )
 
 
 @inline(.always)
@@ -235,8 +241,14 @@ def amd_4wave_conv_fprop_with_residual[
         comptime _kpad_block = 256
         var _kpad_total = _C_out * K_padded
         var _kpad_grid = ceildiv(_kpad_total, _kpad_block)
-        ctx.enqueue_function[_kpad_filter_frsc[filter_type]](
-            filter.ptr,
+        comptime kpad_kernel = _kpad_filter_frsc[
+            filter_type,
+            filter.LayoutType,
+            ImmOrigin(filter.origin),
+            filter.Engine,
+        ]
+        ctx.enqueue_function[kpad_kernel](
+            filter.as_imm(),
             filter_padded_buf,
             Int32(K_real),
             Int32(K_padded),
@@ -266,7 +278,7 @@ def amd_4wave_conv_fprop_with_residual[
                 filter_2d,
                 output_2d,
                 ctx,
-                source_ptr=UnsafePointer[Scalar[out_type], ImmutAnyOrigin](
+                source_ptr=ImmPointer[Scalar[out_type], ImmutAnyOrigin](
                     unsafe_from_address=Int(source.ptr)
                 ),
                 source_row_stride=_source_row_stride,
@@ -317,7 +329,7 @@ def amd_4wave_conv_fprop_with_residual[
                 filter_2d_no_pad,
                 output_2d,
                 ctx,
-                source_ptr=UnsafePointer[Scalar[out_type], ImmutAnyOrigin](
+                source_ptr=ImmPointer[Scalar[out_type], ImmutAnyOrigin](
                     unsafe_from_address=Int(source.ptr)
                 ),
                 source_row_stride=_source_row_stride,
@@ -400,8 +412,14 @@ def _launch_plain_conv[
         comptime _kpad_block = 256
         var _kpad_total = _C_out * K_padded
         var _kpad_grid = ceildiv(_kpad_total, _kpad_block)
-        ctx.enqueue_function[_kpad_filter_frsc[filter_type]](
-            filter.ptr,
+        comptime kpad_kernel = _kpad_filter_frsc[
+            filter_type,
+            filter.LayoutType,
+            ImmOrigin(filter.origin),
+            filter.Engine,
+        ]
+        ctx.enqueue_function[kpad_kernel](
+            filter.as_imm(),
             filter_padded_buf,
             Int32(K_real),
             Int32(K_padded),

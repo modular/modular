@@ -709,13 +709,16 @@ struct TensorCore[
                 (0, 0)
             )
         else:
-            var frag = b.vectorize[width, 1]().distribute[
+            var frag_offset = b.vectorize[width, 1]().distribute_with_offset[
                 row_major[WARP_SIZE // N, N](), swizzle=swizzle
-            ](Int(lane_id()))
+            ](Int(lane_id()))[2]
             comptime row_stride = b.static_stride[0]
+            var b_flat = b.reshape(row_major[b.LayoutType.static_cosize]())
             var result = SIMD[Self.in_type, width]()
             comptime for r in range(width):
-                result[r] = frag.raw_load[invariant=False](r * row_stride)
+                result[r] = b_flat.load[width=1, invariant=False](
+                    (frag_offset + r * row_stride,)
+                )
             return result
 
     @inline(.always)
@@ -776,9 +779,7 @@ struct TensorCore[
             var swizzle_offset = ufloordiv(mma_tile_coord_k * K, simd_size)
             comptime for i in range(num_frags):
                 var mma_tile = warp_tile.tile[M, WK](i, 0)
-                fragments.store[
-                    width=frag_width, alignment=align_of[Self.in_type]()
-                ](
+                fragments.store[alignment=align_of[Self.in_type]()](
                     (i, 0),
                     rebind[SIMD[Self.in_type, frag_width]](
                         _load_matrix_frag[swizzle=swizzle](
@@ -792,9 +793,7 @@ struct TensorCore[
                 var mma_tile = warp_tile.tile[M, K * k_group_size](
                     i, mma_tile_coord_k
                 )
-                fragments.store[
-                    width=frag_width, alignment=align_of[Self.in_type]()
-                ](
+                fragments.store[alignment=align_of[Self.in_type]()](
                     (i, 0),
                     Self._load_a_amd_vector[swizzle, frag_width](mma_tile),
                 )
@@ -876,10 +875,10 @@ struct TensorCore[
                         var vec = _load_matrix_frag[swizzle=ldm_swizzle](
                             mma_tile, swizzle_offset
                         )
-                        fragments.store[width=2, alignment=alignment](
+                        fragments.store[alignment=alignment](
                             (i, 0), SIMD[Self.in_type, 2](vec[0], vec[2])
                         )
-                        fragments.store[width=2, alignment=alignment](
+                        fragments.store[alignment=alignment](
                             (i + 1, 0), SIMD[Self.in_type, 2](vec[1], vec[3])
                         )
                 else:
@@ -894,11 +893,11 @@ struct TensorCore[
                             swizzle=ldm_swizzle, x4_row_major=True
                         ](mma_tile, swizzle_offset)
                         var high_low = vec.split()
-                        fragments.store[width=frag_width, alignment=alignment](
+                        fragments.store[alignment=alignment](
                             (i, 0),
                             rebind[SIMD[Self.in_type, frag_width]](high_low[0]),
                         )
-                        fragments.store[width=frag_width, alignment=alignment](
+                        fragments.store[alignment=alignment](
                             (i + 1, 0),
                             rebind[SIMD[Self.in_type, frag_width]](high_low[1]),
                         )
@@ -913,7 +912,7 @@ struct TensorCore[
                             var mma_tile = warp_tile.tile[K, N](
                                 mma_tile_coord_k, i
                             )
-                            fragments.store[width=2, alignment=alignment](
+                            fragments.store[alignment=alignment](
                                 (i, 0),
                                 SIMD[Self.in_type, 2](
                                     mma_tile.load[width=1](
@@ -942,9 +941,7 @@ struct TensorCore[
                                 frag[4 + r] = mma_tile.load[width=1](
                                     (16 + (lane % 4) * 4 + r, lane // 4)
                                 )
-                            fragments.store[width=8, alignment=alignment](
-                                (i, 0), frag
-                            )
+                            fragments.store[alignment=alignment]((i, 0), frag)
                     case _:
                         comptime assert self.supported_half
                         comptime assert frag_width == 4
@@ -969,11 +966,11 @@ struct TensorCore[
                                     base_shift=warp_tile_coord_n * WN,
                                 )
                                 var high_low = vec.split()
-                                fragments.store[width=4, alignment=alignment](
+                                fragments.store[alignment=alignment](
                                     (i, 0),
                                     rebind[SIMD[Self.in_type, 4]](high_low[0]),
                                 )
-                                fragments.store[width=4, alignment=alignment](
+                                fragments.store[alignment=alignment](
                                     (i + 1, 0),
                                     rebind[SIMD[Self.in_type, 4]](high_low[1]),
                                 )
@@ -986,11 +983,11 @@ struct TensorCore[
                                     swizzle=ldm_swizzle, transposed=True
                                 ](mma_tile, i)
                                 var high_low = vec.split()
-                                fragments.store[width=4, alignment=alignment](
+                                fragments.store[alignment=alignment](
                                     (i, 0),
                                     rebind[SIMD[Self.in_type, 4]](high_low[0]),
                                 )
-                                fragments.store[width=4, alignment=alignment](
+                                fragments.store[alignment=alignment](
                                     (i + 1, 0),
                                     rebind[SIMD[Self.in_type, 4]](high_low[1]),
                                 )
@@ -1000,7 +997,7 @@ struct TensorCore[
                                     transposed=True,
                                     num_matrices=2,
                                 ](mma_tile, num_frags_round_even)
-                                fragments.store[width=4, alignment=alignment](
+                                fragments.store[alignment=alignment](
                                     (num_frags_round_even, 0),
                                     rebind[SIMD[Self.in_type, 4]](vec),
                                 )
@@ -1011,7 +1008,7 @@ struct TensorCore[
                     var mma_tile = warp_tile.tile[N, K * k_group_size](
                         i, mma_tile_coord_k
                     )
-                    fragments.store[width=frag_width, alignment=alignment](
+                    fragments.store[alignment=alignment](
                         (i, 0),
                         Self._load_b_amd_vector[swizzle, frag_width](mma_tile),
                     )
@@ -1020,7 +1017,7 @@ struct TensorCore[
                     var mma_tile = warp_tile.tile[K * k_group_size, N](
                         mma_tile_coord_k, i
                     )
-                    fragments.store[width=frag_width, alignment=alignment](
+                    fragments.store[alignment=alignment](
                         (i, 0),
                         Self._load_b_amd_vector[swizzle, frag_width](mma_tile),
                     )
@@ -1087,15 +1084,13 @@ struct TensorCore[
             var v1 = _int4_to_bf16(q_int, scale)
             q_int >>= 4
             var v2 = _int4_to_bf16(q_int, scale)
-            fragments.store[width=4, alignment=align_of[BFloat16]()](
-                (i, 0), v1.join(v2)
-            )
+            fragments.store[alignment=align_of[BFloat16]()]((i, 0), v1.join(v2))
             q_int >>= 4
             scale = scales.load[width=1]((i + 1, 0))
             v1 = _int4_to_bf16(q_int, scale)
             q_int >>= 4
             v2 = _int4_to_bf16(q_int, scale)
-            fragments.store[width=4, alignment=align_of[BFloat16]()](
+            fragments.store[alignment=align_of[BFloat16]()](
                 (i + 1, 0), v1.join(v2)
             )
 
@@ -1249,7 +1244,7 @@ def _load_matrix_frag[
     # `base_shift` moves the base back by that many elements so the swizzle
     # is evaluated with the index inside the enclosing shared tile.
     return ld_matrix[res.length, transpose=transposed](
-        mma_tile.ptr + (lane_offset - base_shift)
+        mma_tile.ptr.unsafe_offset(lane_offset - base_shift)
     )
 
 

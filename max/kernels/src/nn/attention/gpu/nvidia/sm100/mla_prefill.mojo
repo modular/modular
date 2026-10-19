@@ -17,7 +17,6 @@ for NVIDIA SM100 GPUs, including the generic (non-blockscale), blockwise-scale,
 and sparse (with optional FP8 KV cache) variants.
 """
 
-from std.memory import UnsafePointer
 
 from kv_cache.types import KVCacheT
 from nn.attention.mha_operand import MHAOperand
@@ -176,7 +175,7 @@ def mla_sm100_prefill_sparse[
     kv_cache: cache_t,
     indices: TileTensor[.uint32, address_space=.GENERIC, ...],
     topk_lengths: TileTensor[.uint32, address_space=.GENERIC, ...],
-    attn_sink_ptr: Optional[UnsafePointer[Float32, ImmutAnyOrigin]],
+    attn_sink_ptr: Optional[ImmPointer[Float32, ImmutAnyOrigin]],
     scale: Float32,
     ctx: DeviceContext,
 ) raises:
@@ -278,8 +277,8 @@ def mla_sm100_prefill_sparse_fp8[
     kv_cache: cache_t,
     indices: TileTensor[.uint32, address_space=.GENERIC, ...],
     topk_lengths: TileTensor[.uint32, address_space=.GENERIC, ...],
-    attn_sink_ptr: Optional[UnsafePointer[Float32, ImmutAnyOrigin]],
-    scales_ptr: UnsafePointer[Float32, ImmutAnyOrigin],
+    attn_sink_ptr: Optional[ImmPointer[Float32, ImmutAnyOrigin]],
+    scales_ptr: ImmPointer[Float32, ImmutAnyOrigin],
     scale: Float32,
     ctx: DeviceContext,
 ) raises:

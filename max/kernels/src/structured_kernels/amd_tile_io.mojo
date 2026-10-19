@@ -134,7 +134,7 @@ def _load_to_lds[
 ](
     bc: AMDBufferResource,
     vector_offset: Int32,
-    shared_ptr: UnsafePointer[Scalar[dtype], _, address_space=.SHARED],
+    shared_ptr: Pointer[Scalar[dtype], _, address_space=.SHARED],
     scalar_offset: Int32 = 0,
 ):
     """Loads one raw-buffer vector into LDS with TileIO's async-copy scope.
@@ -173,13 +173,13 @@ def _load_to_lds[
         CacheOperation.ALWAYS,
         CacheOperation.STREAMING,
     ), "_load_to_lds supports ALWAYS or STREAMING cache policy"
-    var desc_ptr = UnsafePointer[
+    var desc_ptr = MutPointer[
         BFloat16, MutAnyOrigin, address_space=.BUFFER_RESOURCE
     ].unsafe_dangling()
-    var ptr_to_ptr = UnsafePointer(to=desc_ptr)
-    var ptr_to_simd = UnsafePointer(to=bc.desc)
-    ptr_to_ptr[0] = ptr_to_simd.bitcast[
-        UnsafePointer[BFloat16, MutAnyOrigin, address_space=.BUFFER_RESOURCE]
+    var ptr_to_ptr = Pointer(to=desc_ptr)
+    var ptr_to_simd = Pointer(to=bc.desc)
+    ptr_to_ptr[0] = ptr_to_simd.unsafe_bitcast[
+        MutPointer[BFloat16, MutAnyOrigin, address_space=.BUFFER_RESOURCE]
     ]()[0]
     var desc_ptr_llvm = __mlir_op.`builtin.unrealized_conversion_cast`[
         _type=__mlir_type.`!llvm.ptr<8>`
@@ -227,8 +227,8 @@ def _global_load_to_lds[
     //,
     width: Int,
 ](
-    global_ptr: UnsafePointer[Scalar[dtype], _, address_space=.GLOBAL],
-    shared_ptr: UnsafePointer[Scalar[dtype], _, address_space=.SHARED],
+    global_ptr: Pointer[Scalar[dtype], _, address_space=.GLOBAL],
+    shared_ptr: Pointer[Scalar[dtype], _, address_space=.SHARED],
 ):
     """Loads one global-memory vector into LDS with TileIO's async-copy scope.
 
@@ -326,7 +326,7 @@ struct _IndexedSubTileLayout[
     def load_strip(
         dst: TileTensor[Self.dtype, _, _, address_space=.SHARED, ...],
         strip: Int,
-        src: UnsafePointer[Scalar[Self.dtype], _],
+        src: Pointer[Scalar[Self.dtype], _],
     ):
         """Copies this lane's chunk of `strip` from `src` into `dst`.
 
@@ -337,7 +337,7 @@ struct _IndexedSubTileLayout[
         """
         comptime assert type_of(dst).static_stride[1] == 1
         comptime assert type_of(dst).static_stride[0] == Self.cols
-        var dst_ptr = dst.ptr + strip * Self.sub_rows * Self.cols
+        var dst_ptr = dst.ptr.unsafe_offset(strip * Self.sub_rows * Self.cols)
         _global_load_to_lds[width=Self.chunk_width](
             src.unsafe_address_space_cast[.GLOBAL](),
             dst_ptr.unsafe_address_space_cast[.SHARED](),
@@ -374,7 +374,7 @@ def ds_read_tr16_b64_row(
         thread_layout
     ](lane_in_row)
     var offset = dist_result[2]
-    var ptr = tile.ptr + offset
+    var ptr = tile.ptr.unsafe_offset(offset)
 
     var shared_ptr3 = __mlir_op.`builtin.unrealized_conversion_cast`[
         _type=__mlir_type.`!llvm.ptr<3>`
@@ -584,7 +584,7 @@ struct TiledMmaLoader[
         bk_tile: Int,
         dt: Int,
     ](
-        v_base: UnsafePointer[
+        v_base: MutPointer[
             Scalar[Self.in_type], MutAnyOrigin, address_space=.SHARED
         ],
         rel_key: Int,
@@ -626,7 +626,7 @@ struct TiledMmaLoader[
         comptime depth_offset = dt * MMA_M
         comptime blk = depth_offset // BK
         comptime d_in_blk = depth_offset % BK
-        var block_base = v_base + blk * BN * BK
+        var block_base = v_base.unsafe_offset(blk * BN * BK)
 
         # Match K's swizzle on V reads.  In `mla_kv_alias` mode K and V
         # share one SMEM image: K writes via `SubTileLoaderLDS.load`,
@@ -655,10 +655,12 @@ struct TiledMmaLoader[
                 var vec_idx = byte_offset // simd_w
                 var sub_vec = byte_offset & (simd_w - 1)
                 var swizzled_vec = swizzle_fn(vec_idx)
-                var addr = block_base + swizzled_vec * simd_w + sub_vec
+                var addr = block_base.unsafe_offset(
+                    swizzled_vec * simd_w
+                ).unsafe_offset(sub_vec)
                 return ds_read_tr8_b64(addr)
             else:
-                return ds_read_tr8_b64(block_base + byte_offset)
+                return ds_read_tr8_b64(block_base.unsafe_offset(byte_offset))
 
         var r0 = _load_keys[0]()
         var r1 = _load_keys[16]()
@@ -674,7 +676,7 @@ struct TiledMmaLoader[
         bk_tile: Int,
         dt: Int,
     ](
-        v_base: UnsafePointer[
+        v_base: MutPointer[
             Scalar[Self.in_type], MutAnyOrigin, address_space=.SHARED
         ],
         key_group: Int,
@@ -756,7 +758,7 @@ struct TiledMmaLoader[
         comptime depth_offset = dt * MMA_M
         comptime blk = depth_offset // block_width
         comptime d_in_blk = depth_offset % block_width
-        var block_base = v_base + blk * BN * block_width
+        var block_base = v_base.unsafe_offset(blk * BN * block_width)
 
         comptime simd_w = simd_width_of[Self.in_type]()
         # Even lanes (is_odd=0) read the low-half-depth-byte octet
@@ -772,10 +774,12 @@ struct TiledMmaLoader[
             comptime if case .Some(swizzle_fn) = Self.swizzle:
                 var vec_idx, sub_vec = udivmod(byte_offset, simd_w)
                 var swizzled_vec = swizzle_fn(vec_idx)
-                var addr = block_base + swizzled_vec * simd_w + sub_vec
+                var addr = block_base.unsafe_offset(
+                    swizzled_vec * simd_w
+                ).unsafe_offset(sub_vec)
                 return ds_read_tr8_b64(addr)
             else:
-                return ds_read_tr8_b64(block_base + byte_offset)
+                return ds_read_tr8_b64(block_base.unsafe_offset(byte_offset))
 
         var r0 = _load_keys[0]()
         var r1 = _load_keys[8]()
@@ -845,7 +849,7 @@ struct TiledMmaLoader[
 
         return _load_from_lds[
             width=simd_width, imm_offset_bytes=imm_offset_bytes
-        ](src.ptr + offset)
+        ](src.ptr.unsafe_offset(offset))
 
 
 # ===----------------------------------------------------------------------=== #
@@ -861,7 +865,7 @@ def _load_from_lds[
     imm_offset_bytes: Int = 0,
     typed_imm_offset_bytes: Int = 0,
 ](
-    shared_ptr: UnsafePointer[Scalar[dtype], _, address_space=.SHARED],
+    shared_ptr: Pointer[Scalar[dtype], _, address_space=.SHARED],
 ) -> SIMD[
     dtype, width
 ]:
@@ -898,7 +902,7 @@ def _load_from_lds[
     """
     comptime if imm_offset_bytes != 0:
         comptime if dtype == .bfloat16 and width == 8:
-            var bf16_ptr = shared_ptr.bitcast[BFloat16]()
+            var bf16_ptr = shared_ptr.unsafe_bitcast[BFloat16]()
             var raw = ds_read_b128_imm_u32x4[offset_bytes=imm_offset_bytes](
                 bf16_ptr
             )
@@ -917,7 +921,7 @@ def _load_from_lds[
         typed_imm_offset_bytes % size_of[dtype]() == 0
     ), "_load_from_lds: typed_imm_offset_bytes must be a multiple of dtype size"
     comptime _offset_elts = typed_imm_offset_bytes // size_of[dtype]()
-    var shifted_ptr = shared_ptr + _offset_elts
+    var shifted_ptr = shared_ptr.unsafe_offset(_offset_elts)
 
     var shared_ptr3 = __mlir_op.`builtin.unrealized_conversion_cast`[
         _type=__mlir_type.`!llvm.ptr<3>`
@@ -1003,7 +1007,7 @@ def _load_from_lds[
             noalias_scopes=alias_scope_attr,
             alias_scopes=no_alias_scope_attr,
         ](shared_ptr3)
-        var shared_ptr_offset = shifted_ptr + 16
+        var shared_ptr_offset = shifted_ptr.unsafe_offset(16)
         var shared_ptr3_hi = __mlir_op.`builtin.unrealized_conversion_cast`[
             _type=__mlir_type.`!llvm.ptr<3>`
         ](shared_ptr_offset)
@@ -1047,11 +1051,7 @@ def _load_from_lds[
 @inline(.always)
 def ds_read_b128_imm_u32x4[
     offset_bytes: Int,
-](
-    base_ptr: UnsafePointer[BFloat16, _, address_space=.SHARED],
-) -> SIMD[
-    .uint32, 4
-]:
+](base_ptr: Pointer[BFloat16, _, address_space=.SHARED],) -> SIMD[.uint32, 4]:
     """Issues `ds_read_b128` with a comptime immediate offset and returns the
     loaded 128 bits as `SIMD[.uint32, 4]`.
 
@@ -1210,7 +1210,7 @@ def load_lds_fragment[
                     frag_idx * _reg_stride,
                     rebind[FragElement](
                         _load_from_lds[width=lds_frag_width](
-                            smem_ptr + full_offset
+                            smem_ptr.unsafe_offset(full_offset)
                         )
                     ),
                 )
@@ -1225,7 +1225,9 @@ def load_lds_fragment[
             reg_ptr.store(
                 i * _reg_stride,
                 rebind[FragElement](
-                    _load_from_lds[width=lds_frag_width](smem_ptr + full_offset)
+                    _load_from_lds[width=lds_frag_width](
+                        smem_ptr.unsafe_offset(full_offset)
+                    )
                 ),
             )
 
@@ -1961,15 +1963,17 @@ struct SubTileLoaderLDS[
             var src_dist = src_partitions.vectorize[1, load_width]().distribute[
                 thread_layout
             ](umod(swizzled_worker_idx, WARP_SIZE))
-            var dst_ptr = dst_partitions.ptr.address_space_cast[.SHARED]()
+            var dst_ptr = dst_partitions.ptr.unsafe_address_space_cast[
+                .SHARED
+            ]()
 
-            var desc_ptr_ = UnsafePointer[
+            var desc_ptr_ = MutPointer[
                 BFloat16, MutAnyOrigin, address_space=.BUFFER_RESOURCE
             ].unsafe_dangling()
-            var ptr_to_ptr = UnsafePointer(to=desc_ptr_)
-            var ptr_to_simd = UnsafePointer(to=self.bc.desc)
-            ptr_to_ptr[0] = ptr_to_simd.bitcast[
-                UnsafePointer[
+            var ptr_to_ptr = Pointer(to=desc_ptr_)
+            var ptr_to_simd = Pointer(to=self.bc.desc)
+            ptr_to_ptr[0] = ptr_to_simd.unsafe_bitcast[
+                MutPointer[
                     BFloat16, MutAnyOrigin, address_space=.BUFFER_RESOURCE
                 ]
             ]()[0]
@@ -2364,21 +2368,21 @@ struct SubTileLoaderLDS_st_8x32[
                     # lane*_bytes_per_thread). _bytes_per_thread == 16, matching
                     # the within-chunk lane stride the closed form assumes.
                     lds_warp_byte = Int32(_ci * 0x410)
-            var v_smem_warp_ptr = v_smem_base + lds_warp_byte // Int32(
-                size_of[Self.dtype]()
+            var v_smem_warp_ptr = v_smem_base.unsafe_offset(
+                lds_warp_byte // Int32(size_of[Self.dtype]())
             )
 
             var shared_ptr3 = __mlir_op.`builtin.unrealized_conversion_cast`[
                 _type=__mlir_type.`!llvm.ptr<3>`
             ](v_smem_warp_ptr)
 
-            var desc_ptr_ = UnsafePointer[
+            var desc_ptr_ = MutPointer[
                 BFloat16, MutAnyOrigin, address_space=.BUFFER_RESOURCE
             ].unsafe_dangling()
-            var ptr_to_ptr = UnsafePointer(to=desc_ptr_)
-            var ptr_to_simd = UnsafePointer(to=self.bc.desc)
-            ptr_to_ptr[0] = ptr_to_simd.bitcast[
-                UnsafePointer[
+            var ptr_to_ptr = Pointer(to=desc_ptr_)
+            var ptr_to_simd = Pointer(to=self.bc.desc)
+            ptr_to_ptr[0] = ptr_to_simd.unsafe_bitcast[
+                MutPointer[
                     BFloat16, MutAnyOrigin, address_space=.BUFFER_RESOURCE
                 ]
             ]()[0]
@@ -2641,6 +2645,11 @@ struct RegTileWriter[
         comptime dst_shape1 = type_of(dst_dist).static_shape[1]
         comptime dst_stride0 = type_of(dst_dist).static_stride[0]
         comptime dst_stride1 = type_of(dst_dist).static_stride[1]
+        # Source offsets index the register tile's flat storage.
+        var src_flat = src_tile.reshape(
+            row_major[type_of(src_tile).LayoutType.static_cosize]()
+        )
+        comptime src_align = align_of[src_tile.dtype]()
 
         comptime if mfma32:
             # 32×32 MFMA hardware register permutation.
@@ -2654,7 +2663,9 @@ struct RegTileWriter[
                     comptime dst_elem_offset = (
                         dr * dst_stride0 + dc * dst_stride1
                     )
-                    var data = src_tile.raw_load[width=elem_size](src_offset)
+                    var data = src_flat.load[
+                        width=elem_size, alignment=src_align
+                    ]((src_offset,))
                     self.bc.store(
                         base_offset + Int32(dst_elem_offset),
                         data.cast[Self.dtype](),
@@ -2669,7 +2680,9 @@ struct RegTileWriter[
                 comptime src_offset = sr * src_stride0 + sc * elem_size
                 comptime dr, dc = divmod(i, dst_shape1)
                 comptime dst_elem_offset = (dr * dst_stride0 + dc * dst_stride1)
-                var data = src_tile.raw_load[width=elem_size](src_offset)
+                var data = src_flat.load[width=elem_size, alignment=src_align](
+                    (src_offset,)
+                )
                 self.bc.store(
                     base_offset + Int32(dst_elem_offset),
                     data.cast[Self.dtype](),
@@ -2758,12 +2771,12 @@ struct RegTileEpilogue[
             dst: Destination DRAM tile (must be mutable).
         """
         self.c_ptr_as_int = Int(dst.ptr)
-        self.row_stride = Int(dst.layout.stride[0]().value())
+        self.row_stride = Int(dst.dynamic_stride(0))
         self.n_total = Int(dst.dim[1]())
 
     @inline(.always)
-    def _ptr(self) -> UnsafePointer[Scalar[Self.c_type], MutAnyOrigin]:
-        return UnsafePointer[Scalar[Self.c_type], MutAnyOrigin](
+    def _ptr(self) -> MutPointer[Scalar[Self.c_type], MutAnyOrigin]:
+        return MutPointer[Scalar[Self.c_type], MutAnyOrigin](
             unsafe_from_address=self.c_ptr_as_int
         )
 
@@ -2837,7 +2850,7 @@ struct RegTileEpilogue[
                         Self.c_type,
                         1,
                         alignment=align_of[Scalar[Self.c_type]](),
-                    ](Coord(m, col), SIMD[Self.c_type, 1](v[e]))
+                    ](Coord(m, col), v[e])
 
     @inline(.always)
     def store_with_compute_fn[
@@ -2948,15 +2961,19 @@ def _buffer_load_impl[
     comptime N = type_of(dist).static_shape[1]
     # `src` may carry a runtime row stride (batched per-batch view), where
     # `static_stride` is only a sentinel; read layout values (static ones fold).
-    var src_s0 = Int(dist.layout.stride[0]().value())
-    var src_s1 = Int(dist.layout.stride[1]().value())
+    var src_s0 = Int(dist.dynamic_stride(0))
+    var src_s1 = Int(dist.dynamic_stride(1))
     comptime dst_s0 = dst_layout.static_stride[0]
     comptime dst_s1 = dst_layout.static_stride[1]
+    # `dst_layout` places elem_size-wide vectors in dst's flat storage.
+    var dst_flat = dst.reshape(
+        row_major[dst_layout.static_cosize * elem_size]()
+    )
 
     comptime for i in range(M):
         comptime for j in range(N):
-            dst.raw_store[width=elem_size](
-                (i * dst_s0 + j * dst_s1) * elem_size,
+            dst_flat.store[alignment=align_of[dst.dtype]()](
+                ((i * dst_s0 + j * dst_s1) * elem_size,),
                 bc.load[dst.dtype, elem_size](
                     base_offset,
                     scalar_offset=Int32(i * src_s0 + j * src_s1),
@@ -3029,6 +3046,14 @@ struct RegTileWriterLDS[
         comptime dist_type = type_of(dst_dist)
         comptime DstVec = SIMD[dist_type.dtype, elem_size]
         comptime rank = dist_type.LayoutType.flat_rank
+        comptime dst_align = align_of[dist_type.dtype]()
+        var dst_flat = dst_dist.reshape(
+            row_major[dist_type.LayoutType.static_cosize]()
+        )
+        var src_flat = src.reshape(
+            row_major[type_of(src).LayoutType.static_cosize]()
+        )
+        comptime src_align = align_of[src.dtype]()
 
         # Row-major iteration order matches RegTileLoader's storage.
         # Handles both flat (rank 2) and hierarchical Coord layouts (rank 3).
@@ -3041,10 +3066,12 @@ struct RegTileWriterLDS[
                 comptime for j in range(R1):
                     comptime src_idx = i * R1 + j
                     comptime dst_off = i * s0 + j * s1
-                    dst_dist.raw_store[width=elem_size](
-                        dst_off,
+                    dst_flat.store[alignment=dst_align](
+                        (dst_off,),
                         rebind[DstVec](
-                            src.raw_load[width=elem_size](src_idx * elem_size)
+                            src_flat.load[width=elem_size, alignment=src_align](
+                                (src_idx * elem_size,)
+                            )
                         ),
                     )
         elif rank == 3:
@@ -3059,12 +3086,12 @@ struct RegTileWriterLDS[
                     comptime for k in range(R2):
                         comptime src_idx = i * R1 * R2 + j * R2 + k
                         comptime dst_off = i * s0 + j * s1 + k * s2
-                        dst_dist.raw_store[width=elem_size](
-                            dst_off,
+                        dst_flat.store[alignment=dst_align](
+                            (dst_off,),
                             rebind[DstVec](
-                                src.raw_load[width=elem_size](
-                                    src_idx * elem_size
-                                )
+                                src_flat.load[
+                                    width=elem_size, alignment=src_align
+                                ]((src_idx * elem_size,))
                             ),
                         )
         else:
@@ -3144,11 +3171,20 @@ struct RegTileWriterLDS[
 
         # Compile-time vector stride (above swizzle range for typical configs).
         comptime row_delta = tgr * cols_per_blk * simd_width
+        var dst_flat = dst.reshape(
+            row_major[type_of(dst).LayoutType.static_cosize]()
+        )
+        var src_flat = src.reshape(
+            row_major[type_of(src).LayoutType.static_cosize]()
+        )
+        comptime align = align_of[dst.dtype]()
 
         comptime for v in range(vectors_per_thread):
-            dst.raw_store[width=simd_width](
-                Int(base_offset + UInt32(v * row_delta)),
-                src.raw_load[width=simd_width](v * simd_width),
+            dst_flat.store[alignment=align](
+                (Int(base_offset + UInt32(v * row_delta)),),
+                src_flat.load[width=simd_width, alignment=align](
+                    (v * simd_width,)
+                ),
             )
 
 

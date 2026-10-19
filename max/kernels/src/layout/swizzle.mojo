@@ -301,9 +301,6 @@ struct Swizzle(Copyable, Deinitable, TrivialRegisterPassable, Writable):
         zzz_mask (Int): Mask for the target bits (ZZZ).
     """
 
-    comptime has_shape = False
-    """Indicates if layout has shape. Swizzle always False."""
-
     var bits: Int
     """Number of bits in the mask."""
     var base: Int
@@ -536,9 +533,6 @@ struct ComposedLayout[offset: Optional[Int] = 0](Copyable):
     Parameters:
         offset: Optional offset between layouts (default: 0).
     """
-
-    comptime has_shape = True
-    """True because the base layout always has a shape."""
 
     var layout_a: Layout
     """The base layout to apply."""

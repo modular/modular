@@ -131,9 +131,10 @@ def test_pad_constant_nd[rank: Int, n: Int, verify: Bool = False]() raises:
     if verify:
         # Simple verification: check that the padding values are correct
         # and the center contains the input values
+        var output_flat = output.reshape(row_major[out_size]())
         for i in range(out_size):
             # Just verify no crash occurs and values are set
-            _ = output.raw_load(i)
+            _ = output_flat[i]
     _ = output_ptr^
     _ = input_ptr^
 
@@ -197,8 +198,9 @@ def test_pad_reflect_nd[rank: Int, n: Int, verify: Bool = False]() raises:
 
     if verify:
         # Simple verification: check that values are set
+        var output_flat = output.reshape(row_major[out_size]())
         for i in range(out_size):
-            _ = output.raw_load(i)
+            _ = output_flat[i]
     _ = output_ptr^
     _ = input_ptr^
 

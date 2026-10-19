@@ -2158,6 +2158,53 @@ def main() raises:
             ctx=ctx,
         )
 
+        # The V4.1 indexer's top_k=512 at decode, 32 rows and up -- the shapes
+        # the cooperative pick (registered privately, on SM100 builds)
+        # targets. This build runs them through the default bitonic select.
+        # Some rows hold fewer keys than top_k.
+        comptime if ctx.target._has_blackwell_tcgen05():
+            var short_lens = List[Int]()
+            var deep_lens = List[Int]()
+            var ones = List[Int]()
+            for i in range(32):
+                short_lens.append(300 if i % 7 == 3 else 4095 - 13 * i)
+                deep_lens.append(20000 - 11 * i)
+                ones.append(1)
+            test_mla_index_fp8_paged_variable_lengths[
+                num_heads=32,
+                depth=128,
+                page_size=128,
+                top_k=512,
+                mask_name=MaskName.NULL.name,
+                check_selection=True,
+            ](
+                seq_lens=ones,
+                cache_lens=short_lens,
+                ctx=ctx,
+            )
+            test_mla_index_fp8_paged_variable_lengths[
+                num_heads=32,
+                depth=128,
+                page_size=128,
+                top_k=512,
+                mask_name=MaskName.NULL.name,
+            ](
+                seq_lens=ones,
+                cache_lens=deep_lens,
+                ctx=ctx,
+            )
+            test_mla_index_fp8_paged_variable_lengths[
+                num_heads=32,
+                depth=128,
+                page_size=128,
+                top_k=512,
+                mask_name=MaskName.CAUSAL.name,
+            ](
+                seq_lens=[4, 4, 4, 4, 4, 4, 4, 4],
+                cache_lens=[12000, 9000, 400, 12000, 7000, 12000, 3000, 11000],
+                ctx=ctx,
+            )
+
         # Causal over a split key range. `check_scores` cannot cover this: it
         # scores through `_score_paged_sm100`, which passes causal=False.
         test_mla_index_fp8_paged_variable_lengths[

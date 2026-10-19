@@ -210,7 +210,7 @@ def conv2d_kernel_rdna[
     WARP_TILE_N: Int = 4,
 ](
     output: TileTensor[out_type, out_layout, MutAnyOrigin, Engine=out_engine],
-    input_ptr: UnsafePointer[Scalar[in_type], ImmutAnyOrigin],
+    input_ptr: ImmPointer[Scalar[in_type], ImmutAnyOrigin],
     filter_nk: TileTensor[
         filter_type, filter_nk_layout, MutAnyOrigin, Engine=filter_nk_engine
     ],

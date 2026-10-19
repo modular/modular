@@ -43,7 +43,7 @@ owns each output, so the monoid state is already final after `reduce`.
 
 from std.atomic import Atomic
 from std.math import align_down, ceildiv
-from std.memory import UnsafePointer, unsafe_memset_zero
+from std.memory import unsafe_memset_zero
 from std.memory import alloc as ptr_alloc
 from std.sys import size_of
 
@@ -444,7 +444,9 @@ def pjoin[
             var num_splits = Int(ctx._blocks_per_row)
             var split = Int(ctx._block_in_row)
             ctx.row_partial[State.Single](split)[0] = sc
-            var counter_ptr = ctx._counters_base + Int(ctx._row_idx)
+            var counter_ptr = ctx._counters_base.unsafe_offset(
+                Int(ctx._row_idx)
+            )
             # `fetch_add` returns the prior value; `prev + 1 == num_splits`
             # means this worker arrived last.
             var prev = Atomic[Int32].fetch_add(counter_ptr, Int32(1))
@@ -689,9 +691,7 @@ def launch[
                 var total_workers = num_outputs * num_splits
                 # No memset: slot [row, reduce, split] is written in its
                 # reduce's partial phase before any combine reads it.
-                var phased_buf = rebind[
-                    UnsafePointer[UInt8, MutUntrackedOrigin]
-                ](
+                var phased_buf = rebind[MutPointer[UInt8, MutUntrackedOrigin]](
                     ptr_alloc[UInt8](
                         num_outputs
                         * (num_phases - 1)
@@ -714,9 +714,9 @@ def launch[
                         )
                         var ctx = Context[params_phased](
                             partials_base=phased_buf,
-                            counters_base=UnsafePointer[
-                                Int32, MutUntrackedOrigin
-                            ](unsafe_from_address=1),
+                            counters_base=MutPointer[Int32, MutUntrackedOrigin](
+                                unsafe_from_address=1
+                            ),
                             blocks_per_row=Int32(num_splits),
                             block_in_row=Int32(split_idx),
                             row_idx=Int32(row_idx),
@@ -756,11 +756,11 @@ def launch[
             # Heap scratch: per-row counter + per-(row,split) partial
             # slot. Both freed at the end of the function.
             var partials_size = num_outputs * num_splits * _SPLITK_STATE_BYTES
-            var partials_buf = rebind[UnsafePointer[UInt8, MutUntrackedOrigin]](
+            var partials_buf = rebind[MutPointer[UInt8, MutUntrackedOrigin]](
                 ptr_alloc[UInt8](partials_size)
             )
             unsafe_memset_zero(partials_buf, partials_size)
-            var counters_buf = rebind[UnsafePointer[Int32, MutUntrackedOrigin]](
+            var counters_buf = rebind[MutPointer[Int32, MutUntrackedOrigin]](
                 ptr_alloc[Int32](num_outputs)
             )
             unsafe_memset_zero(counters_buf, num_outputs)

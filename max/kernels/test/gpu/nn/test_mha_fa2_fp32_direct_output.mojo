@@ -35,10 +35,10 @@ def _fa2_kernel[
     keys: Int,
     query_rows: Int,
 ](
-    q: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
+    q: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
     k: k_t,
     v: v_t,
-    output: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    output: MutPointer[Scalar[dtype], MutAnyOrigin],
 ):
     comptime assert dtype == .float32
     # Keep platform-width Int values inside the GPU, not in its launch ABI.
@@ -154,7 +154,7 @@ def _check_fp32[
     var k_buffer = ctx.enqueue_create_buffer[dtype](key_size)
     var v_buffer = ctx.enqueue_create_buffer[dtype](key_size)
     var out_buffer = ctx.enqueue_create_buffer[dtype](output_size)
-    assert_equal(Int(out_buffer.unsafe_ptr() + prefix) % 8, 0)
+    assert_equal(Int(out_buffer.unsafe_ptr().unsafe_offset(prefix)) % 8, 0)
     ctx.enqueue_copy(q_buffer, q_host)
     ctx.enqueue_copy(k_buffer, k_host)
     ctx.enqueue_copy(v_buffer, v_host)
@@ -183,7 +183,7 @@ def _check_fp32[
         q.unsafe_ptr().as_unsafe_any_origin(),
         k,
         v,
-        (out_buffer.unsafe_ptr() + prefix).as_unsafe_any_origin(),
+        out_buffer.unsafe_ptr().unsafe_offset(prefix).as_unsafe_any_origin(),
         grid_dim=(ceildiv(queries, config.block_m()), heads, 1),
         block_dim=config.num_threads(),
         shared_mem_bytes=smem,

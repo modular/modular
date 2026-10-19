@@ -309,8 +309,8 @@ def _run_case[
                 # the quantizer cannot emit is what makes the route visible to
                 # a compare that is otherwise blind to it.
                 if col < num_cols:
-                    quant_view.store[width=width](
-                        Coord(row, col),
+                    quant_view.store(
+                        (row, col),
                         bitcast[.float8_e4m3fn](SIMD[.uint8, width](0x7F)),
                     )
             else:
@@ -324,10 +324,10 @@ def _run_case[
                     SF_VECTOR_SIZE=MXFP8_SF_VECTOR_SIZE,
                 ](val)
                 if col < num_cols:
-                    quant_view.store[width=width](Coord(row, col), quantized)
+                    quant_view.store((row, col), quantized)
                     if col % MXFP8_SF_VECTOR_SIZE == 0:
                         scale_view.store(
-                            Coord(row, col // MXFP8_SF_VECTOR_SIZE), e8m0
+                            (row, col // MXFP8_SF_VECTOR_SIZE), e8m0
                         )
 
         # This branch owes the SAME outputs as the fused one; dropping the

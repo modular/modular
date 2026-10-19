@@ -102,7 +102,7 @@ def hash_positive_control() raises -> None:
     var h0 = hash_output(buf, n)
     # Flip the lowest bit of one element through an integer view (a true
     # single-bit change of the stored float bits), re-hash, then restore.
-    var ibuf = buf.bitcast[UInt32]()
+    var ibuf = buf.unsafe_bitcast[UInt32]()
     var saved_bits = ibuf[n // 2]
     ibuf[n // 2] = saved_bits ^ 1
     var h1 = hash_output(buf, n)

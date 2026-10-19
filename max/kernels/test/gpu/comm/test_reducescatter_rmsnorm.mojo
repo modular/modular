@@ -515,7 +515,7 @@ def _rms_norm_shard[
     @__copy_capture(src_view)
     @__parameter
     def input_fn[width: Int](coords: Coord) -> SIMD[in_dtype, width]:
-        return src_view.raw_load[width=width](src_view.layout(coords))
+        return src_view.load[width=width](coords)
 
     @inline(.always)
     @__copy_capture(dst_view)
@@ -523,9 +523,7 @@ def _rms_norm_shard[
     def output_fn[
         width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[in_dtype, width]) -> None:
-        dst_view.raw_store[width=width, alignment=alignment](
-            dst_view.layout(coords), val
-        )
+        dst_view.store[alignment=alignment](coords, val)
 
     rms_norm_gpu[
         2,

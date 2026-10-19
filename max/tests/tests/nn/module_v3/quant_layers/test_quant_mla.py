@@ -46,6 +46,7 @@ from max.graph import (
     BufferType,
     BufferValue,
     DeviceRef,
+    Graph,
     Shape,
     SymbolicDim,
     TensorValue,
@@ -498,10 +499,14 @@ _SPARSE_QK_NOPE_HEAD_DIM = 192
 _SPARSE_V_HEAD_DIM = 256
 _SPARSE_CACHE_HEAD_DIM = _SPARSE_KV_LORA_RANK + _QK_ROPE_HEAD_DIM
 _SPARSE_SCALE_WEIGHTS = ("w_uk", "w_uv", "w_k")
+_DENSE_PLANNER = "mo.mla.prefill.ragged.plan"
 
 
 def _make_sparse_layer(
-    devices: Sequence[Device], quant_config: QuantConfig
+    devices: Sequence[Device],
+    quant_config: QuantConfig,
+    *,
+    graph_mode: str = "decode",
 ) -> QuantizedSparseLatentAttentionWithRope:
     kv_params = MLAKVCacheParams(
         dtype=DType.float32,
@@ -522,7 +527,7 @@ def _make_sparse_layer(
         qk_nope_head_dim=_SPARSE_QK_NOPE_HEAD_DIM,
         qk_rope_head_dim=_QK_ROPE_HEAD_DIM,
         v_head_dim=_SPARSE_V_HEAD_DIM,
-        graph_mode="decode",
+        graph_mode=graph_mode,
         quant_config=quant_config,
         index_n_heads=4,
         index_head_dim=128,
@@ -872,3 +877,44 @@ def test_sparse_mla_rejects_selection_lag_without_reuse(
                 Tensor.zeros([2], dtype=DType.uint32),
                 selection_lag=1,
             )
+
+
+def test_sparse_mla_prefill_metadata_has_no_dense_plan(
+    mock_accelerator: MagicMock, fp8_quant_config: QuantConfig
+) -> None:
+    """Sparse attention never reads the dense plan, so none is built."""
+    device = mock_accelerator()
+    mesh = DeviceMesh((device,), (1,), ("axis",))
+    with F.lazy():
+        layer = _make_sparse_layer(
+            [device], fp8_quant_config, graph_mode="auto"
+        ).to(device)
+        metadata = layer.create_mla_prefill_metadata(
+            Tensor.zeros([9], dtype=DType.uint32, device=device),
+            _build_kv_collection(layer.kv_params, 8, 4, mesh),
+        )
+        ir = str(Graph.current._mlir_op)
+
+    assert _DENSE_PLANNER not in ir
+    assert list(metadata.buffer_row_offsets.shape) == [1, 9]
+    assert list(metadata.cache_offsets.shape) == [1, 9]
+    assert list(metadata.buffer_lengths.shape) == [1]
+
+
+def test_dense_mla_prefill_metadata_retains_planner(
+    mock_accelerator: MagicMock,
+) -> None:
+    device = mock_accelerator()
+    mesh = DeviceMesh((device,), (1,), ("axis",))
+    kv_params = _make_kv_params([device])
+    with F.lazy():
+        layer = _make_layer(kv_params, q_lora_rank=None, quant_config=None).to(
+            device
+        )
+        layer.create_mla_prefill_metadata(
+            Tensor.zeros([2], dtype=DType.uint32, device=device),
+            _build_kv_collection(kv_params, 1, 4, mesh),
+        )
+        ir = str(Graph.current._mlir_op)
+
+    assert _DENSE_PLANNER in ir

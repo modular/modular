@@ -108,7 +108,7 @@ def _check[
     def func[
         simd_width: Int, alignment: Int = 1
     ](idx0: Coord) {var out_ptr, var in_ptr}:
-        var idx = Int(idx0[0].value())
+        var idx = Int(idx0[0])
         var val = in_ptr.unsafe_load[width=simd_width](idx)
         out_ptr.unsafe_store[width=simd_width](idx, atanh(val))
 
@@ -240,7 +240,7 @@ def _check_frexp_bits[
     def func[
         simd_width: Int, alignment: Int = 1
     ](idx0: Coord) {var frac_ptr, var exp_ptr, var in_ptr}:
-        var idx = Int(idx0[0].value())
+        var idx = Int(idx0[0])
         var val = in_ptr.unsafe_load[width=simd_width](idx)
         var fe = _frexp_bits(val)
         frac_ptr.unsafe_store[width=simd_width](idx, fe[0])
@@ -330,7 +330,7 @@ def _check_subnormals[
     def func[
         simd_width: Int, alignment: Int = 1
     ](idx0: Coord) {var out_ptr, var in_ptr}:
-        var idx = Int(idx0[0].value())
+        var idx = Int(idx0[0])
         var val = in_ptr.unsafe_load[width=simd_width](idx)
         out_ptr.unsafe_store[width=simd_width](idx, atanh(val))
 

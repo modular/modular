@@ -47,9 +47,9 @@ def gemm_naive[
     for i in range(m):
         for p in range(k):
             for j in range(n):
-                var cur = rebind[Scalar[c_type]](c[i, j])
-                var av = rebind[Scalar[c_type]](a[i, p].cast[c_type]())
-                var bv = rebind[Scalar[c_type]](b[p, j].cast[c_type]())
+                var cur = c.load[width=1]((i, j))
+                var av = a.load[width=1]((i, p)).cast[c_type]()
+                var bv = b.load[width=1]((p, j)).cast[c_type]()
                 c[i, j] = cur + av * bv
 
 

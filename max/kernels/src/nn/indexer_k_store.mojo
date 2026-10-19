@@ -16,6 +16,8 @@ from std.math import ceildiv, rsqrt
 from std.memory import bitcast
 from std.utils.index import StaticTuple
 from layout import TileTensor
+from layout.coord import Coord, Idx
+from layout.tile_layout import Layout as InternalLayout
 from max.gpu import MAX_THREADS_PER_BLOCK_METADATA, block_idx, thread_idx
 from max.gpu.host import DeviceContext
 import max.gpu.primitives.warp as warp
@@ -29,6 +31,26 @@ from nn.paged_store_utils import (
     raw_pointer,
     row_stride,
 )
+
+comptime INDEX_KEY_CHANNELS = 128
+"""Channels of one index key."""
+
+comptime INDEX_KEY_SCALE_BYTES = 4
+"""Bytes of one stored key's scale word: four UE8M0 scales, or one FP32."""
+
+comptime MXFP4_INDEX_VALUE_BYTES = INDEX_KEY_CHANNELS // 2
+"""Bytes of one MXFP4 key's E2M1 values."""
+
+comptime MXFP4_INDEX_RECORD_BYTES = (
+    MXFP4_INDEX_VALUE_BYTES + INDEX_KEY_SCALE_BYTES
+)
+"""Bytes of one stored MXFP4 key: its values and its scale word."""
+
+comptime FP8_INDEX_VALUE_BYTES = INDEX_KEY_CHANNELS
+"""Bytes of one FP8 key's E4M3 values."""
+
+comptime FP8_INDEX_RECORD_BYTES = FP8_INDEX_VALUE_BYTES + INDEX_KEY_SCALE_BYTES
+"""Bytes of one stored FP8 key: its values and its scale word."""
 
 
 @__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](128))
@@ -67,7 +89,7 @@ def _indexer_k_store[
     ).cast[.float32]()
     var norm = rsqrt(
         warp.lane_group_sum[num_lanes=16]((values * values).reduce_add())
-        / 128.0
+        / Float32(INDEX_KEY_CHANNELS)
         + epsilon
     )
     values = (
@@ -90,8 +112,10 @@ def _indexer_k_store[
         values = gptj_rotate[4](values, frequency[0], frequency[1])
     # Both rounding points are part of the caller's BF16 contract.
     values = values.cast[.bfloat16]().cast[.float32]()
-    comptime value_bytes = 64 if fp4 else 128
-    var data, scales = paged_record[value_bytes, 4](
+    comptime value_bytes = (
+        MXFP4_INDEX_VALUE_BYTES if fp4 else FP8_INDEX_VALUE_BYTES
+    )
+    var data, scales = paged_record[value_bytes, INDEX_KEY_SCALE_BYTES](
         cache, slot, page_size, page_stride
     )
     comptime if fp4:
@@ -153,8 +177,9 @@ def indexer_k_norm_rope_store[
 
     Constraints:
         The FP4 path requires SM100 or newer. Each page contains at least
-        `page_size * (64 + 4)` bytes for FP4, or `page_size * (128 + 4)`
-        for FP8. Only group-boundary rows with nonnegative slots write.
+        `page_size` records of `MXFP4_INDEX_RECORD_BYTES` for FP4, or of
+        `FP8_INDEX_RECORD_BYTES` for FP8. Only group-boundary rows with
+        nonnegative slots write.
     """
     comptime assert ratio == 1 or ratio == 2
     comptime assert keys.rank == 2, "keys must be [count, key_stride]"
@@ -163,18 +188,25 @@ def indexer_k_norm_rope_store[
     ), "frequencies must be [rows, frequency_stride]"
     comptime assert cache.rank == 2, "cache must be [pages, page_stride]"
     var count = Int(keys.dim[0]())
+    # An empty batch may carry any pointer, so return before checking it.
+    if count == 0:
+        return
     var key_stride = row_stride[alignment=16](keys, "keys")
     var frequency_stride = row_stride[alignment=16](frequencies, "frequencies")
     var page_stride = row_stride[alignment=4](cache, "cache")
-    debug_assert(count >= 0 and Int(keys.dim[1]()) >= 128)
+    comptime record_bytes = (
+        MXFP4_INDEX_RECORD_BYTES if fp4 else FP8_INDEX_RECORD_BYTES
+    )
+    debug_assert(count >= 0 and Int(keys.dim[1]()) >= INDEX_KEY_CHANNELS)
     debug_assert(Int(frequencies.dim[1]()) >= 64)
     debug_assert(positions.num_elements() >= count)
     debug_assert(slots.num_elements() >= count)
-    debug_assert(weight.num_elements() >= 128 and Int(weight.ptr) % 16 == 0)
+    debug_assert(
+        weight.num_elements() >= INDEX_KEY_CHANNELS
+        and Int(weight.ptr) % 16 == 0
+    )
     debug_assert(page_size > 0)
-    debug_assert(Int(cache.dim[1]()) >= page_size * (68 if fp4 else 132))
-    if count == 0:
-        return
+    debug_assert(Int(cache.dim[1]()) >= page_size * record_bytes)
     ctx.enqueue_function[_indexer_k_store[fp4, ratio]](
         raw_pointer(keys).as_imm().as_unsafe_any_origin(),
         dense_pointer(positions).as_imm().as_unsafe_any_origin(),
@@ -190,4 +222,124 @@ def indexer_k_norm_rope_store[
         epsilon,
         grid_dim=ceildiv(count, 8),
         block_dim=128,
+    )
+
+
+def index_key_layer_pages[
+    record_bytes: Int
+](
+    blocks: TileTensor[.uint8, ...], page_stride: Int, layer: Int
+) raises -> Tuple[MutPointer[UInt8, MutUntrackedOrigin], Int]:
+    """Locates one layer's pages in a multi-layer paged index-key leaf.
+
+    The leaf is `[blocks, 1, layers, page_size, 1, record_bytes]`: each block
+    holds one page per layer, in layer order. The layer's page in block `b`
+    starts `b * pitch` bytes past the returned base and spans
+    `page_size * record_bytes` bytes, so its last page ends inside the leaf.
+
+    Parameters:
+        record_bytes: Bytes of one stored key.
+
+    Args:
+        blocks: The leaf's blocks.
+        page_stride: Bytes from one block to the next, or `-1` when packed.
+        layer: The layer's index within the leaf.
+
+    Returns:
+        The layer's page in block 0, and the block pitch in bytes.
+
+    Raises:
+        If the leaf does not hold `record_bytes` records, the pitch is not a
+        multiple of 16 holding a block, or the layer is out of range.
+    """
+    comptime assert blocks.rank == 6, "blocks must be a rank-6 cache leaf"
+    if (
+        Int(blocks.dim[1]()) != 1
+        or Int(blocks.dim[4]()) != 1
+        or Int(blocks.dim[5]()) != record_bytes
+    ):
+        raise Error("index-key leaf has the wrong record shape")
+    var packed = 1
+    comptime for d in range(1, 6):
+        packed *= Int(blocks.dim[d]())
+    var pitch = packed if page_stride < 0 else page_stride
+    if pitch < packed or pitch % 16:
+        raise Error("index-key blocks need a 16-byte pitch holding each block")
+    if layer < 0 or layer >= Int(blocks.dim[2]()):
+        raise Error("index-key layer out of range")
+    var base = (
+        blocks.ptr.unsafe_mut_cast[True]()
+        .unsafe_origin_cast[MutUntrackedOrigin]()
+        .unsafe_address_space_cast[.GENERIC]()
+    )
+    return (
+        base.unsafe_offset(layer * Int(blocks.dim[3]()) * record_bytes),
+        pitch,
+    )
+
+
+def indexer_k_norm_rope_store_layer[
+    fp4: Bool, ratio: Int
+](
+    keys: TileTensor[mut=False, .bfloat16, ...],
+    positions: TileTensor[mut=False, .int64, ...],
+    frequencies: TileTensor[mut=False, .float32, ...],
+    weight: TileTensor[mut=False, .bfloat16, ...],
+    slots: TileTensor[mut=False, .int64, ...],
+    blocks: TileTensor[mut=True, .uint8, ...],
+    page_stride: Int,
+    layer: Int,
+    epsilon: Float32,
+    ctx: DeviceContext,
+) raises:
+    """Runs `indexer_k_norm_rope_store` on one layer of a multi-layer leaf.
+
+    Parameters:
+        fp4: Select MXFP4 E2M1/UE8M0; otherwise use E4M3/FP32.
+        ratio: Compression group size, either 1 or 2.
+
+    Args:
+        keys: BF16 projected keys. Shape: `[count, >= 128]`.
+        positions: Nonnegative token positions. Shape: `[count]`.
+        frequencies: FP32 cosine then sine values per position.
+            Shape: `[rows, >= 64]`.
+        weight: 128 BF16 RMSNorm weights.
+        slots: Destination slots, `block * page_size + offset`; negative
+            entries skip the row. Shape: `[count]`.
+        blocks: The leaf's blocks, `[blocks, 1, layers, page_size, 1, record]`
+            with `MXFP4_INDEX_RECORD_BYTES` or `FP8_INDEX_RECORD_BYTES`
+            records.
+        page_stride: Bytes from one block to the next, or `-1` when packed.
+        layer: The layer's index within the leaf.
+        epsilon: RMSNorm epsilon.
+        ctx: The device context.
+
+    Raises:
+        If the leaf, its pitch or the layer is invalid, or a row of keys or
+        frequencies is not contiguous and aligned.
+    """
+    comptime record_bytes = (
+        MXFP4_INDEX_RECORD_BYTES if fp4 else FP8_INDEX_RECORD_BYTES
+    )
+    var base, pitch = index_key_layer_pages[record_bytes](
+        blocks, page_stride, layer
+    )
+    var page_size = Int(blocks.dim[3]())
+    var pages = TileTensor(
+        base,
+        InternalLayout(
+            Coord(Int64(blocks.dim[0]()), Int64(page_size * record_bytes)),
+            Coord(Int64(pitch), Idx[1]),
+        ),
+    )
+    indexer_k_norm_rope_store[fp4=fp4, ratio=ratio](
+        keys,
+        positions,
+        frequencies,
+        weight,
+        slots,
+        pages,
+        page_size,
+        epsilon,
+        ctx,
     )

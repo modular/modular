@@ -283,7 +283,7 @@ def _test_kernel_impl_base[
             expert_shape[1], SF_VECTOR_SIZE * SF_ATOM_K
         )
         var b_scales_tensor_expert_slice = TileTensor(
-            b_scales_host_ptr.unsafe_ptr() + e * expert_slice_size,
+            b_scales_host_ptr.unsafe_ptr().unsafe_offset(e * expert_slice_size),
             row_major(
                 Idx[n_groups],
                 Idx[k_groups_local],

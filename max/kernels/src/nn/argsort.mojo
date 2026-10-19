@@ -14,7 +14,7 @@
 
 
 from std.math import ceildiv, iota
-from std.sys.info import simd_width_of
+from std.sys.info import align_of, simd_width_of
 
 from max.algorithm import elementwise
 from std.bit import next_power_of_two
@@ -148,9 +148,6 @@ def _bitonic_local_sort_kernel[
     comptime BLOCK_SIZE = 256
     var tid = thread_idx.x
     var gid: Int = block_idx.x * BLOCK_SIZE + tid
-    var vals = input_arg.ptr
-    var idxs = indices_arg.ptr
-
     var shared_vals = unsafe_stack_allocation[
         BLOCK_SIZE,
         Scalar[input_dtype],
@@ -163,8 +160,8 @@ def _bitonic_local_sort_kernel[
     ]()
 
     if gid < _n_arg:
-        shared_vals.unsafe_store(tid, vals.unsafe_load(gid))
-        shared_idxs.unsafe_store(tid, idxs.unsafe_load(gid))
+        shared_vals.unsafe_store(tid, input_arg.load[width=1]((gid,)))
+        shared_idxs.unsafe_store(tid, indices_arg.load[width=1]((gid,)))
     else:
         shared_vals.unsafe_store(tid, _sentinel_val[input_dtype, ascending]())
         shared_idxs.unsafe_store(tid, Scalar[indices_dtype](-1))
@@ -200,8 +197,8 @@ def _bitonic_local_sort_kernel[
 
     barrier()
     if gid < _n_arg:
-        vals.unsafe_store(gid, shared_vals.unsafe_load(tid))
-        idxs.unsafe_store(gid, shared_idxs.unsafe_load(tid))
+        input_arg.store((gid,), shared_vals.unsafe_load(tid))
+        indices_arg.store((gid,), shared_idxs.unsafe_load(tid))
 
 
 @__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](256))
@@ -244,9 +241,6 @@ def _bitonic_merge_local_kernel[
     comptime BLOCK_SIZE = 256
     var tid = thread_idx.x
     var gid: Int = block_idx.x * BLOCK_SIZE + tid
-    var vals = input_arg.ptr
-    var idxs = indices_arg.ptr
-
     var shared_vals = unsafe_stack_allocation[
         BLOCK_SIZE,
         Scalar[input_dtype],
@@ -258,8 +252,8 @@ def _bitonic_merge_local_kernel[
         address_space=.SHARED,
     ]()
 
-    shared_vals.unsafe_store(tid, vals.unsafe_load(gid))
-    shared_idxs.unsafe_store(tid, idxs.unsafe_load(gid))
+    shared_vals.unsafe_store(tid, input_arg.load[width=1]((gid,)))
+    shared_idxs.unsafe_store(tid, indices_arg.load[width=1]((gid,)))
 
     var j = BLOCK_SIZE >> 1
     while j > 0:
@@ -285,8 +279,8 @@ def _bitonic_merge_local_kernel[
         j >>= 1
 
     barrier()
-    vals.unsafe_store(gid, shared_vals.unsafe_load(tid))
-    idxs.unsafe_store(gid, shared_idxs.unsafe_load(tid))
+    input_arg.store((gid,), shared_vals.unsafe_load(tid))
+    indices_arg.store((gid,), shared_idxs.unsafe_load(tid))
 
 
 def _argsort_gpu_impl[
@@ -458,6 +452,8 @@ def _argsort_gpu[
     comptime assert input.flat_rank == 1
     # Create a device buffer to store a copy of the input data
     var n = indices.num_elements()
+    var input_flat = input.reshape(row_major(input.num_elements()))
+    var indices_flat = indices.reshape(row_major(n))
 
     if n.is_power_of_two():
         var input_copy_buffer = ctx.enqueue_create_buffer[input.dtype](n)
@@ -469,12 +465,15 @@ def _argsort_gpu[
         ](offset: Coord) {var}:
             var i = offset[0].value()
 
-            indices.raw_store(
-                i,
+            indices_flat.store[alignment=align_of[indices.dtype]()](
+                (i,),
                 iota[indices.dtype, width](Scalar[indices.dtype](i)),
             )
-            input_copy.raw_store[alignment=simd_width_of[input_copy.dtype]()](
-                i, input.raw_load[width=width](i)
+            input_copy.store[alignment=simd_width_of[input_copy.dtype]()](
+                (i,),
+                input_flat.load[width=width, alignment=align_of[input.dtype]()](
+                    (i,)
+                ),
             )
 
         elementwise[
@@ -509,23 +508,27 @@ def _argsort_gpu[
 
     # Initialize indices with sequential values and copy input data to device
     def fill_indices_iota[width: Int, alignment: Int = 1](offset: Coord) {var}:
-        var i = Int(offset[0].value())
+        var i = Int(offset[0])
         if i < n:
-            padded_indices.raw_store(
-                i, iota[padded_indices.dtype, width](Scalar[indices.dtype](i))
+            padded_indices.store[alignment=align_of[padded_indices.dtype]()](
+                (i,),
+                iota[padded_indices.dtype, width](Scalar[indices.dtype](i)),
             )
-            padded_input.raw_store[
-                alignment=simd_width_of[padded_input.dtype]()
-            ](i, input.raw_load[width=width](i))
+            padded_input.store[alignment=simd_width_of[padded_input.dtype]()](
+                (i,),
+                input_flat.load[width=width, alignment=align_of[input.dtype]()](
+                    (i,)
+                ),
+            )
             return
 
         # otherwise we pad with a sentinel value and the max/min value for the type.
         comptime UNKNOWN_VALUE = -1
-        padded_indices.raw_store(
-            i, SIMD[padded_indices.dtype, width](UNKNOWN_VALUE)
+        padded_indices.store[alignment=align_of[padded_indices.dtype]()](
+            (i,), SIMD[padded_indices.dtype, width](UNKNOWN_VALUE)
         )
-        padded_input.raw_store(
-            i,
+        padded_input.store[alignment=align_of[padded_input.dtype]()](
+            (i,),
             SIMD[padded_input.dtype, width](
                 _sentinel_val[padded_input.dtype, ascending]()
             ),

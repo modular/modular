@@ -640,9 +640,9 @@ struct _DualGridStrideKernel[
                         )
                         comptime if Self.handle_uneven_simd:
                             if Int(
-                                start_indices_0[Self.rank - 1].value()
+                                start_indices_0[Self.rank - 1]
                             ) + Self.simd_width > Int(
-                                self.shape_0[Self.rank - 1].value()
+                                self.shape_0[Self.rank - 1]
                             ):
                                 self.func_0[1](Coord(start_indices_0))
                                 var si = start_indices_0
@@ -668,9 +668,9 @@ struct _DualGridStrideKernel[
                         )
                         comptime if Self.handle_uneven_simd:
                             if Int(
-                                start_indices_1[Self.rank - 1].value()
+                                start_indices_1[Self.rank - 1]
                             ) + Self.simd_width > Int(
-                                self.shape_1[Self.rank - 1].value()
+                                self.shape_1[Self.rank - 1]
                             ):
                                 self.func_1[1](Coord(start_indices_1))
                                 var si = start_indices_1
@@ -785,8 +785,8 @@ def _dual_elementwise_impl_gpu_grid_stride[
     )
 
     var any_unaligned = (
-        Int(shape_0[rank - 1].value()) % simd_width != 0
-        or Int(shape_1[rank - 1].value()) % simd_width != 0
+        Int(shape_0[rank - 1]) % simd_width != 0
+        or Int(shape_1[rank - 1]) % simd_width != 0
     )
 
     @inline(.always)
@@ -886,9 +886,7 @@ def _elementwise_impl_gpu[
     comptime clc_min_packed_per_row = get_defined_int[
         "MOJO_ELEMENTWISE_CLC_MIN_PACKED_PER_ROW", 9
     ]()
-    var packed_elems_per_row = ufloordiv(
-        Int(shape[rank - 1].value()), simd_width
-    )
+    var packed_elems_per_row = ufloordiv(Int(shape[rank - 1]), simd_width)
     var shape_idx = coord_to_index_list(shape)
 
     var length = Int(shape.product())

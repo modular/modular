@@ -155,8 +155,9 @@ def _copy_values_to_tile_tensor[
     if num_elements != len(values):
         raise Error("Tensor size and values size mismatch")
 
+    var flat = tensor.reshape(row_major(num_elements))
     for i in range(num_elements):
-        tensor.raw_store(i, values[i])
+        flat.store((i,), values[i])
 
 
 def main() raises:

@@ -163,7 +163,7 @@ def routing_cdf[n_experts: Int, n_ranks: Int](out result: List[Float64]) raises:
 def fill_topk_ids[
     origin: MutOrigin, //, n_experts: Int, top_k: Int
 ](
-    topk_ids: UnsafePointer[Int32, origin],
+    topk_ids: MutPointer[Int32, origin],
     n_tokens: Int,
     cdf: List[Float64],
 ) -> None:
@@ -190,7 +190,7 @@ def fill_topk_ids[
         return Int32(lo)
 
     for tok in range(n_tokens):
-        var row = topk_ids + tok * top_k
+        var row = topk_ids.unsafe_offset(tok * top_k)
         for k in range(top_k):
             var pick = draw()
             var clash = True
@@ -257,7 +257,7 @@ def bench_combine[
     # Shared atomic counter buffer for dispatch and combine
     var atomic_counters_list = List[DeviceBuffer[.int32]](capacity=n_ranks)
 
-    var host_topk_ids_list = Array[UnsafePointer[Int32, MutAnyOrigin], n_ranks](uninitialized=True)
+    var host_topk_ids_list = Array[MutPointer[Int32, MutAnyOrigin], n_ranks](uninitialized=True)
 
     var device_topk_bufs_list = List[DeviceBuffer[.int32]](capacity=n_ranks)
     var device_input_bufs_list = List[DeviceBuffer[input_type]](capacity=n_ranks)
@@ -374,41 +374,41 @@ def bench_combine[
 
     # fmt: off
     # Dispatch buffers
-    var dispatch_recv_bufs_inputs = Array[Array[UnsafePointer[UInt8, MutAnyOrigin], n_ranks], n_slots](uninitialized=True)
-    var dispatch_recv_count_bufs_inputs = Array[Array[UnsafePointer[UInt64, MutAnyOrigin], n_ranks], n_slots](uninitialized=True)
+    var dispatch_recv_bufs_inputs = Array[Array[MutPointer[UInt8, MutAnyOrigin], n_ranks], n_slots](uninitialized=True)
+    var dispatch_recv_count_bufs_inputs = Array[Array[MutPointer[UInt64, MutAnyOrigin], n_ranks], n_slots](uninitialized=True)
 
     # Combine buffers
-    var combine_recv_bufs_inputs = Array[Array[UnsafePointer[UInt8, MutAnyOrigin], n_ranks], n_slots](uninitialized=True)
-    var combine_recv_count_bufs_inputs = Array[Array[UnsafePointer[UInt64, MutAnyOrigin], n_ranks], n_slots](uninitialized=True)
+    var combine_recv_bufs_inputs = Array[Array[MutPointer[UInt8, MutAnyOrigin], n_ranks], n_slots](uninitialized=True)
+    var combine_recv_count_bufs_inputs = Array[Array[MutPointer[UInt64, MutAnyOrigin], n_ranks], n_slots](uninitialized=True)
 
     for slot_idx in range(n_slots):
         for dev_idx in range(n_ranks):
-            dispatch_recv_bufs_inputs[slot_idx][dev_idx] = (dispatch_recv_bufs_list[dev_idx].unsafe_ptr() + slot_idx * max_recv_num_tokens * msg_bytes).as_unsafe_any_origin()
-            dispatch_recv_count_bufs_inputs[slot_idx][dev_idx] = (dispatch_recv_count_bufs_list[dev_idx].unsafe_ptr() + slot_idx * n_experts).as_unsafe_any_origin()
-            combine_recv_bufs_inputs[slot_idx][dev_idx] = (combine_recv_bufs_list[dev_idx].unsafe_ptr() + slot_idx * n_tokens_per_rank * top_k * combine_msg_bytes).as_unsafe_any_origin()
-            combine_recv_count_bufs_inputs[slot_idx][dev_idx] = (combine_recv_count_bufs_list[dev_idx].unsafe_ptr() + slot_idx * n_experts).as_unsafe_any_origin()
+            dispatch_recv_bufs_inputs[slot_idx][dev_idx] = dispatch_recv_bufs_list[dev_idx].unsafe_ptr().unsafe_offset(slot_idx * max_recv_num_tokens * msg_bytes).as_unsafe_any_origin()
+            dispatch_recv_count_bufs_inputs[slot_idx][dev_idx] = dispatch_recv_count_bufs_list[dev_idx].unsafe_ptr().unsafe_offset(slot_idx * n_experts).as_unsafe_any_origin()
+            combine_recv_bufs_inputs[slot_idx][dev_idx] = combine_recv_bufs_list[dev_idx].unsafe_ptr().unsafe_offset(slot_idx * n_tokens_per_rank * top_k * combine_msg_bytes).as_unsafe_any_origin()
+            combine_recv_count_bufs_inputs[slot_idx][dev_idx] = combine_recv_count_bufs_list[dev_idx].unsafe_ptr().unsafe_offset(slot_idx * n_experts).as_unsafe_any_origin()
 
     # Dispatch helpers
     @inline(.always)
-    def get_dispatch_send_buf_ptr(dev_idx: Int, slot_idx: Int, out result: UnsafePointer[UInt8, MutAnyOrigin]) raises {mut dispatch_send_bufs_list, imm}:
-        result = (dispatch_send_bufs_list[dev_idx].unsafe_ptr() + slot_idx * n_tokens_per_rank * msg_bytes).as_unsafe_any_origin()
+    def get_dispatch_send_buf_ptr(dev_idx: Int, slot_idx: Int, out result: MutPointer[UInt8, MutAnyOrigin]) raises {mut dispatch_send_bufs_list, imm}:
+        result = dispatch_send_bufs_list[dev_idx].unsafe_ptr().unsafe_offset(slot_idx * n_tokens_per_rank * msg_bytes).as_unsafe_any_origin()
 
     # Combine helpers
     @inline(.always)
-    def get_combine_send_buf_ptr(dev_idx: Int, slot_idx: Int, out result: UnsafePointer[UInt8, MutAnyOrigin]) raises {mut combine_send_bufs_list, imm}:
-        result = (combine_send_bufs_list[dev_idx].unsafe_ptr() + slot_idx * max_recv_num_tokens * combine_msg_bytes).as_unsafe_any_origin()
+    def get_combine_send_buf_ptr(dev_idx: Int, slot_idx: Int, out result: MutPointer[UInt8, MutAnyOrigin]) raises {mut combine_send_bufs_list, imm}:
+        result = combine_send_bufs_list[dev_idx].unsafe_ptr().unsafe_offset(slot_idx * max_recv_num_tokens * combine_msg_bytes).as_unsafe_any_origin()
 
     @inline(.always)
-    def get_combine_recv_buf_ptr(dev_idx: Int, slot_idx: Int, out result: UnsafePointer[UInt8, MutAnyOrigin]) raises {mut combine_recv_bufs_list, imm}:
-        result = (combine_recv_bufs_list[dev_idx].unsafe_ptr() + slot_idx * n_tokens_per_rank * top_k * combine_msg_bytes).as_unsafe_any_origin()
+    def get_combine_recv_buf_ptr(dev_idx: Int, slot_idx: Int, out result: MutPointer[UInt8, MutAnyOrigin]) raises {mut combine_recv_bufs_list, imm}:
+        result = combine_recv_bufs_list[dev_idx].unsafe_ptr().unsafe_offset(slot_idx * n_tokens_per_rank * top_k * combine_msg_bytes).as_unsafe_any_origin()
 
     @inline(.always)
-    def get_combine_recv_count_ptr(dev_idx: Int, slot_idx: Int, out result: UnsafePointer[UInt64, MutAnyOrigin]) raises {mut combine_recv_count_bufs_list, imm}:
-        result = (combine_recv_count_bufs_list[dev_idx].unsafe_ptr() + slot_idx * n_experts).as_unsafe_any_origin()
+    def get_combine_recv_count_ptr(dev_idx: Int, slot_idx: Int, out result: MutPointer[UInt64, MutAnyOrigin]) raises {mut combine_recv_count_bufs_list, imm}:
+        result = combine_recv_count_bufs_list[dev_idx].unsafe_ptr().unsafe_offset(slot_idx * n_experts).as_unsafe_any_origin()
 
     @inline(.always)
     def get_atomic_counters(dev_idx: Int, slot_idx: Int, out result: EPLocalSyncCounters[n_experts]) raises {mut atomic_counters_list, imm}:
-        return EPLocalSyncCounters[n_experts](atomic_counters_list[dev_idx].unsafe_ptr() + slot_idx * EPLocalSyncCounters[n_experts].total_size())
+        return EPLocalSyncCounters[n_experts](atomic_counters_list[dev_idx].unsafe_ptr().unsafe_offset(slot_idx * EPLocalSyncCounters[n_experts].total_size()))
 
     # fmt: off
     comptime counters_size = EPLocalSyncCounters[n_experts].total_size()
@@ -418,7 +418,7 @@ def bench_combine[
     @inline(.always)
     def get_atomic_counters_tt(dev_idx: Int, slot_idx: Int, out result: get_atomic_counters_tt_result_type) raises {mut atomic_counters_list, imm}:
         return type_of(result)(
-            ptr=(atomic_counters_list[dev_idx].unsafe_ptr() + slot_idx * counters_size).as_unsafe_any_origin(), layout=counters_layout
+            ptr=atomic_counters_list[dev_idx].unsafe_ptr().unsafe_offset(slot_idx * counters_size).as_unsafe_any_origin(), layout=counters_layout
         )
     # fmt: on
 
@@ -434,8 +434,9 @@ def bench_combine[
     ) raises {imm}:
         return type_of(result)(
             ptr=(
-                device_topk_bufs_list[dev_idx].unsafe_ptr()
-                + slot_idx * n_tokens_per_rank * top_k
+                device_topk_bufs_list[dev_idx]
+                .unsafe_ptr()
+                .unsafe_offset(slot_idx * n_tokens_per_rank * top_k)
             ).as_unsafe_any_origin(),
             layout=topk_ids_layout,
         )
@@ -452,8 +453,9 @@ def bench_combine[
     ) raises {imm}:
         return type_of(result)(
             ptr=(
-                device_input_bufs_list[dev_idx].unsafe_ptr()
-                + slot_idx * n_tokens_per_rank * hidden_size
+                device_input_bufs_list[dev_idx]
+                .unsafe_ptr()
+                .unsafe_offset(slot_idx * n_tokens_per_rank * hidden_size)
             ).as_unsafe_any_origin(),
             layout=input_tokens_layout,
         )
@@ -470,8 +472,9 @@ def bench_combine[
     ) raises {mut device_output_bufs_list, imm}:
         return type_of(result)(
             ptr=(
-                device_output_bufs_list[dev_idx].unsafe_ptr()
-                + slot_idx * max_recv_num_tokens * hidden_size
+                device_output_bufs_list[dev_idx]
+                .unsafe_ptr()
+                .unsafe_offset(slot_idx * max_recv_num_tokens * hidden_size)
             ).as_unsafe_any_origin(),
             layout=output_tt_layout,
         )
@@ -488,8 +491,9 @@ def bench_combine[
     ) raises {mut device_row_offsets_bufs_list, imm}:
         return type_of(result)(
             ptr=(
-                device_row_offsets_bufs_list[dev_idx].unsafe_ptr()
-                + slot_idx * (n_local_experts + 1)
+                device_row_offsets_bufs_list[dev_idx]
+                .unsafe_ptr()
+                .unsafe_offset(slot_idx * (n_local_experts + 1))
             ).as_unsafe_any_origin(),
             layout=row_offsets_layout,
         )
@@ -506,8 +510,9 @@ def bench_combine[
     ) raises {mut device_expert_ids_bufs_list, imm}:
         return type_of(result)(
             ptr=(
-                device_expert_ids_bufs_list[dev_idx].unsafe_ptr()
-                + slot_idx * n_local_experts
+                device_expert_ids_bufs_list[dev_idx]
+                .unsafe_ptr()
+                .unsafe_offset(slot_idx * n_local_experts)
             ).as_unsafe_any_origin(),
             layout=expert_ids_layout,
         )
@@ -524,8 +529,9 @@ def bench_combine[
     ) raises {mut device_src_token_info_bufs_list, imm}:
         return type_of(result)(
             ptr=(
-                device_src_token_info_bufs_list[dev_idx].unsafe_ptr()
-                + slot_idx * max_recv_num_tokens * 2
+                device_src_token_info_bufs_list[dev_idx]
+                .unsafe_ptr()
+                .unsafe_offset(slot_idx * max_recv_num_tokens * 2)
             ).as_unsafe_any_origin(),
             layout=src_token_info_layout,
         )
@@ -542,8 +548,11 @@ def bench_combine[
     ) raises {mut device_output_2_bufs_list, imm}:
         return type_of(result)(
             ptr=(
-                device_output_2_bufs_list[dev_idx].unsafe_ptr()
-                + slot_idx * n_tokens_per_rank * top_k * hidden_size
+                device_output_2_bufs_list[dev_idx]
+                .unsafe_ptr()
+                .unsafe_offset(
+                    slot_idx * n_tokens_per_rank * top_k * hidden_size
+                )
             ).as_unsafe_any_origin(),
             layout=output_2_layout,
         )
@@ -642,26 +651,26 @@ def bench_combine[
     for slot_idx in range(n_slots):
         for dev_idx in range(n_ranks):
             var ptr_idx = slot_idx * n_ranks + dev_idx
-            c_send_ptrs[ptr_idx] = UInt64(Int(combine_send_bufs_list[dev_idx].unsafe_ptr() + slot_idx * max_recv_num_tokens * combine_msg_bytes))
-            c_recv_ptrs[ptr_idx] = UInt64(Int(combine_recv_bufs_list[dev_idx].unsafe_ptr() + slot_idx * n_tokens_per_rank * top_k * combine_msg_bytes))
-            c_recv_count_ptrs[ptr_idx] = UInt64(Int(combine_recv_count_bufs_list[dev_idx].unsafe_ptr() + slot_idx * n_experts))
+            c_send_ptrs[ptr_idx] = UInt64(Int(combine_send_bufs_list[dev_idx].unsafe_ptr().unsafe_offset(slot_idx * max_recv_num_tokens * combine_msg_bytes)))
+            c_recv_ptrs[ptr_idx] = UInt64(Int(combine_recv_bufs_list[dev_idx].unsafe_ptr().unsafe_offset(slot_idx * n_tokens_per_rank * top_k * combine_msg_bytes)))
+            c_recv_count_ptrs[ptr_idx] = UInt64(Int(combine_recv_count_bufs_list[dev_idx].unsafe_ptr().unsafe_offset(slot_idx * n_experts)))
 
     var c_ptrs_layout = row_major[n_ranks]()
 
     comptime get_c_send_ptrs_result_type = TileTensor[.uint64, type_of(c_ptrs_layout), ImmutAnyOrigin]
     @inline(.always)
     def get_c_send_ptrs(slot_idx: Int, out result: get_c_send_ptrs_result_type) raises {imm}:
-        return type_of(result)(ptr=(c_send_ptrs + slot_idx * n_ranks).as_unsafe_any_origin(), layout=c_ptrs_layout)
+        return type_of(result)(ptr=c_send_ptrs.unsafe_offset(slot_idx * n_ranks).as_unsafe_any_origin(), layout=c_ptrs_layout)
 
     comptime get_c_recv_ptrs_result_type = TileTensor[.uint64, type_of(c_ptrs_layout), ImmutAnyOrigin]
     @inline(.always)
     def get_c_recv_ptrs(slot_idx: Int, out result: get_c_recv_ptrs_result_type) raises {imm}:
-        return type_of(result)(ptr=(c_recv_ptrs + slot_idx * n_ranks).as_unsafe_any_origin(), layout=c_ptrs_layout)
+        return type_of(result)(ptr=c_recv_ptrs.unsafe_offset(slot_idx * n_ranks).as_unsafe_any_origin(), layout=c_ptrs_layout)
 
     comptime get_c_recv_count_ptrs_result_type = TileTensor[.uint64, type_of(c_ptrs_layout), ImmutAnyOrigin]
     @inline(.always)
     def get_c_recv_count_ptrs(slot_idx: Int, out result: get_c_recv_count_ptrs_result_type) raises {imm}:
-        return type_of(result)(ptr=(c_recv_count_ptrs + slot_idx * n_ranks).as_unsafe_any_origin(), layout=c_ptrs_layout)
+        return type_of(result)(ptr=c_recv_count_ptrs.unsafe_offset(slot_idx * n_ranks).as_unsafe_any_origin(), layout=c_ptrs_layout)
     # fmt: on
 
     # combine_wait reduces over top_k only when it is given router weights;

@@ -77,7 +77,7 @@ def _strides[rank: Int](t: TileTensor[...]) -> IndexList[rank]:
     """Returns the strides of `t`, read from its layout."""
     var result = IndexList[rank]()
     comptime for i in range(rank):
-        result[i] = Int(t.layout.stride[i]().value())
+        result[i] = Int(t.dynamic_stride(i))
     return result
 
 
@@ -140,9 +140,7 @@ def _group_id(y: TileTensor[...], ngroups: Int32, h: Int) -> Int:
 def _use_initial_state(
     has_initial_state: TileTensor[DType.bool, ...], b: Int
 ) -> Bool:
-    return Int(has_initial_state.dim[0]()) > 0 and Bool(
-        has_initial_state.load[width=1]((b,))
-    )
+    return Int(has_initial_state.dim[0]()) > 0 and Bool(has_initial_state[b])
 
 
 @inline(.always)
@@ -154,9 +152,7 @@ def _write_final_state(
     An empty `update_state` means every sequence does. Unlike an empty
     `has_initial_state`, which means none loads a state.
     """
-    return Int(update_state.dim[0]()) == 0 or Bool(
-        update_state.load[width=1]((b,))
-    )
+    return Int(update_state.dim[0]()) == 0 or Bool(update_state[b])
 
 
 def _scatter_width(n: Int, lanes: Int) -> Int:
@@ -386,7 +382,6 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split[
     # (per-token) channel sums after the reduce-scatter.
     comptime W_STAGED = _scatter_width(T * P, DSTATE_SPLIT)
     comptime W_TOKEN = _scatter_width(P, DSTATE_SPLIT)
-    var y_strides = _strides[3](y)
     var head_dim = Int(y.dim[2]())
 
     var tx = thread_idx.x
@@ -402,8 +397,8 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split[
     var n_base = tx * L
     var group_id = _group_id(y, ngroups, h)
 
-    var seq_start = Int(query_start_loc.load[width=1]((b,)))
-    var seq_end = Int(query_start_loc.load[width=1]((b + 1,)))
+    var seq_start = Int(query_start_loc[b])
+    var seq_end = Int(query_start_loc[b + 1])
     if seq_end <= seq_start:
         return
 
@@ -443,10 +438,10 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split[
             alignment=16,
         ]()
         var B_s = smem
-        var C_s = smem + BC_SIZE
-        var x_s = smem + 2 * BC_SIZE
-        var dA_s = x_s + 2 * T * CH
-        var delta_s = dA_s + 2 * T
+        var C_s = smem.unsafe_offset(BC_SIZE)
+        var x_s = smem.unsafe_offset(2 * BC_SIZE)
+        var dA_s = x_s.unsafe_offset(2 * T * CH)
+        var delta_s = dA_s.unsafe_offset(2 * T)
         var tid = ty * DSTATE_SPLIT + tx
         var t_w = tid // (DSTATE // 8)
         var n_w = (tid % (DSTATE // 8)) * 8
@@ -514,12 +509,8 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split[
                     var t = k % T
                     var p = p0 + i * NY
                     if t < n_tok and p < head_dim and tx * W_STAGED < T * P:
-                        y.raw_store(
-                            UInt32(
-                                (cur + t) * y_strides[0]
-                                + h * y_strides[1]
-                                + p * y_strides[2]
-                            ),
+                        y.store(
+                            (cur + t, h, p),
                             (
                                 y_vals[j]
                                 + head.D * x_s[(buf + t) * CH + i * NY + ty]
@@ -576,19 +567,15 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split[
                     i = tx % P
                 var p = p0 + i * NY
                 if tx * W_TOKEN < P and p < head_dim:
-                    y.raw_store(
-                        UInt32(
-                            gt * y_strides[0]
-                            + h * y_strides[1]
-                            + p * y_strides[2]
-                        ),
+                    y.store(
+                        (gt, h, p),
                         (y_vals[j] + head.D * x_vals[i]).cast[kernel_dtype](),
                     )
 
     if write_state:
         comptime for i in range(P):
             if p0 + i * NY < head_dim:
-                ssm_pool.store[width=L, alignment=pool_align](
+                ssm_pool.store[alignment=pool_align](
                     (slot, h, p0 + i * NY, n_base), state[i].cast[state_dtype]()
                 )
 
@@ -732,8 +719,8 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_apple[
         return
     var group_id = _group_id(y, ngroups, h)
 
-    var seq_start = Int(query_start_loc.load[width=1]((b,)))
-    var seq_end = Int(query_start_loc.load[width=1]((b + 1,)))
+    var seq_start = Int(query_start_loc[b])
+    var seq_end = Int(query_start_loc[b + 1])
     if seq_end <= seq_start:
         return
 
@@ -759,14 +746,14 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_apple[
             state[c] = state[c] * dA + B_c * dt_x
             y_acc += state[c] * C_c
 
-        y.store[width=1](
+        y.store(
             (gt, h, p),
             (y_acc.reduce_add() + head.D * x_val).cast[kernel_dtype](),
         )
 
     if _write_final_state(update_state, b):
         comptime for c in range(NCHUNK):
-            ssm_pool.store[width=VEC, alignment=pool_align](
+            ssm_pool.store[alignment=pool_align](
                 (slot, h, p, c * VEC), state[c].cast[state_dtype]()
             )
 
@@ -868,8 +855,8 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_cpu[
         var h, p = divmod(remaining, head_dim)
         var group_id = h // nheads_per_group
 
-        var seq_start = Int(query_start_loc.load[width=1]((b,)))
-        var seq_end = Int(query_start_loc.load[width=1]((b + 1,)))
+        var seq_start = Int(query_start_loc[b])
+        var seq_end = Int(query_start_loc[b + 1])
         if seq_end <= seq_start:
             return
 
@@ -890,11 +877,9 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_cpu[
             var C_vals = c_fn[DSTATE, 1](gt, group_id, 0).cast[.float32]()
             state = state * head.decay(delta) + B_vals * (delta * x_val)
             var y_val = (state * C_vals).reduce_add() + head.D * x_val
-            y.store[width=1]((gt, h, p), y_val.cast[kernel_dtype]())
+            y.store((gt, h, p), y_val.cast[kernel_dtype]())
 
         if _write_final_state(update_state, b):
-            ssm_pool.store[width=DSTATE](
-                (slot, h, p, 0), state.cast[state_dtype]()
-            )
+            ssm_pool.store((slot, h, p, 0), state.cast[state_dtype]())
 
     sync_parallelize(worker, batch * nheads * head_dim, ctx)

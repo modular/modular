@@ -118,9 +118,9 @@ def verify_matmul[
     b_shape: Coord,
     init_type: InitializationType,
 ) raises:
-    var c_size = Int(c_shape[0].value()) * Int(c_shape[1].value())
-    var a_size = Int(a_shape[0].value()) * Int(a_shape[1].value())
-    var b_size = Int(b_shape[0].value()) * Int(b_shape[1].value())
+    var c_size = Int(c_shape[0]) * Int(c_shape[1])
+    var a_size = Int(a_shape[0]) * Int(a_shape[1])
+    var b_size = Int(b_shape[0]) * Int(b_shape[1])
 
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
     var a_device_nd = TileTensor(a_device, row_major(a_shape))
@@ -469,10 +469,7 @@ def bench_matmul[
     var flops = ThroughputMeasure(
         BenchMetric.flops,
         # Flop: 2*M*N*K. Use A and C shapes since they're not transposed.
-        2
-        * Int(shape_c[0].value())
-        * Int(shape_c[1].value())
-        * Int(shape_a[1].value()),
+        2 * Int(shape_c[0]) * Int(shape_c[1]) * Int(shape_a[1]),
     )
     if run_benchmark:
         b.bench_function(

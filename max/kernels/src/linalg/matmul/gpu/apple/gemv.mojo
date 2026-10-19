@@ -70,11 +70,9 @@ def _accumulate_chunk[
         fill=SIMD[.float32, tile_k](0)
     )
     comptime for mi in range(tile_m):
-        xv[mi] = a.load[width=tile_k](Coord(m_idx[mi], k0)).cast[.float32]()
+        xv[mi] = a.load[width=tile_k]((m_idx[mi], k0)).cast[.float32]()
     comptime for r in range(rows_per_warp):
-        var wv = weight.load[width=tile_k](Coord(w_rows[r], k0)).cast[
-            .float32
-        ]()
+        var wv = weight.load[width=tile_k]((w_rows[r], k0)).cast[.float32]()
         comptime for mi in range(tile_m):
             acc[mi * rows_per_warp + r] += xv[mi] * wv
 
@@ -170,13 +168,13 @@ def apple_gemv_kernel[
                 var y = dot.cast[c_type]()
                 comptime if has_compute_fn:
                     c.store(
-                        Coord(mi, col),
+                        (mi, col),
                         compute_fn[c_type, 1, alignment=1](Coord(mi, col), y),
                     )
                 elif has_epilogue_fn:
                     epilogue_fn[c_type, 1, alignment=1](Coord(mi, col), y)
                 else:
-                    c.store(Coord(mi, col), y)
+                    c.store((mi, col), y)
 
 
 @inline(.always)

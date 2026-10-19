@@ -55,9 +55,9 @@ def test_matmul_sm100_fallback[
     )
     var c_shape = row_major(m, Idx[NType.static_value])
 
-    var a_size = Int(m.value()) * Int(k.value())
-    var b_size = Int(n.value()) * Int(k.value())
-    var c_size = Int(m.value()) * Int(n.value())
+    var a_size = Int(m) * Int(k)
+    var b_size = Int(n) * Int(k)
+    var c_size = Int(m) * Int(n)
 
     var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](a_size)
     var b_host_ptr = ctx.enqueue_create_host_buffer[b_type](b_size)
@@ -92,11 +92,11 @@ def test_matmul_sm100_fallback[
         "use_epilogue:",
         use_epilogue,
         " : PROBLEM SHAPE (M,N,K): (",
-        Int(m.value()),
+        Int(m),
         "x",
-        Int(n.value()),
+        Int(n),
         "x",
-        Int(k.value()),
+        Int(k),
         ") - ",
         "BLOCKS SHAPE (BM,BN,BK): (",
         umma_shape[0],

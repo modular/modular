@@ -198,7 +198,7 @@ def get_min_max_value[
     block_size: Int,
     dtype: DType,
 ](
-    in_data: UnsafePointer[Scalar[dtype], _],
+    in_data: TileTensor[dtype, ...],
     row_idx: Int,
     d: Int,
 ) -> Tuple[
@@ -212,7 +212,7 @@ def get_min_max_value[
         dtype: The dtype of the input data.
 
     Args:
-        in_data: Pointer to input data buffer.
+        in_data: Input data tensor of shape `[batch, d]`.
         row_idx: Row index for the current block (for 2D data access).
         d: Total number of elements in the row.
 
@@ -230,8 +230,10 @@ def get_min_max_value[
         var in_data_vec = SIMD[.float32, vec_size](0)
 
         if (i * block_size + tx) * vec_size < d:
-            var offset = row_idx * d + i * block_size * vec_size + tx * vec_size
-            in_data_vec = in_data.load[width=vec_size](offset).cast[.float32]()
+            var col = i * block_size * vec_size + tx * vec_size
+            in_data_vec = in_data.load[
+                width=vec_size, alignment=align_of[dtype](), invariant=False
+            ]((row_idx, col)).cast[.float32]()
 
         thread_max = max(thread_max, in_data_vec.reduce_max())
         thread_min = min(thread_min, in_data_vec.reduce_min())
@@ -266,9 +268,7 @@ def TopKMaskLogitsKernel[
         masked_logits_origin,
         Engine=MaskedLogitsEngine,
     ],
-    top_k_arr: Optional[
-        UnsafePointer[Scalar[out_idx_type], MutUntrackedOrigin]
-    ],
+    top_k_arr: Optional[MutPointer[Scalar[out_idx_type], MutUntrackedOrigin]],
     top_k_val: Int32,
     d: Int32,
 ):
@@ -293,7 +293,7 @@ def TopKMaskLogitsKernel[
 
         if k < _d:
             var min_max = get_min_max_value[vec_size, block_size](
-                logits.ptr, row_idx, _d
+                logits, row_idx, _d
             )
             var min_val, max_val = min_max[0], min_max[1]
 
@@ -391,7 +391,7 @@ def TopKMaskLogitsKernel[
             logits_vec = (logits_vec.gt(pivot)).select(logits_vec, Float32.MIN)
 
             if (i * block_size + tx) * vec_size < _d:
-                masked_logits_row.store[width=vec_size](
+                masked_logits_row.store(
                     (
                         Idx[0],
                         i * block_size * vec_size + tx * vec_size,
@@ -475,7 +475,7 @@ def topk_mask_logits[
         var vec_size = gcd(8, d)
 
         var top_k_ptr: Optional[
-            UnsafePointer[Scalar[out_idx_type], MutUntrackedOrigin]
+            MutPointer[Scalar[out_idx_type], MutUntrackedOrigin]
         ] = None
         if case .Some(top_k_arr) = top_k_arr:
             top_k_ptr = top_k_arr.ptr
@@ -604,7 +604,7 @@ def device_sampling_from_prob[
             var idx = (i * block_size + tx) * vec_size + j
             if (global_inclusive_cdf[j] + aggregate > u) and valid[j]:
                 # Atomic min to ensure we get the smallest index across all threads.
-                Atomic.min(sampled_id_sram.bitcast[Int32](), Int32(idx))
+                Atomic.min(sampled_id_sram.unsafe_bitcast[Int32](), Int32(idx))
                 break
 
         barrier()
@@ -796,10 +796,8 @@ def TopKSamplingFromProbKernel[
     output: TileTensor[
         out_idx_type, OutputLayoutType, output_origin, Engine=OutputEngine
     ],
-    indices: Optional[UnsafePointer[Scalar[out_idx_type], MutUntrackedOrigin]],
-    top_k_arr: Optional[
-        UnsafePointer[Scalar[out_idx_type], MutUntrackedOrigin]
-    ],
+    indices: Optional[MutPointer[Scalar[out_idx_type], MutUntrackedOrigin]],
+    top_k_arr: Optional[MutPointer[Scalar[out_idx_type], MutUntrackedOrigin]],
     top_k_val: Int32,
     d: Int32,
     rng_seed: UInt64,
@@ -1234,13 +1232,13 @@ def topk_sampling_from_prob[
         var vec_size = gcd(8, d)
 
         var indices_ptr: Optional[
-            UnsafePointer[Scalar[out_idx_type], MutUntrackedOrigin]
+            MutPointer[Scalar[out_idx_type], MutUntrackedOrigin]
         ] = None
         if case .Some(indices) = indices:
             indices_ptr = indices.ptr
 
         var top_k_ptr: Optional[
-            UnsafePointer[Scalar[out_idx_type], MutUntrackedOrigin]
+            MutPointer[Scalar[out_idx_type], MutUntrackedOrigin]
         ] = None
         if case .Some(top_k_arr) = top_k_arr:
             top_k_ptr = top_k_arr.ptr
@@ -1291,8 +1289,8 @@ def apply_min_p_mask_kernel[
     dtype: DType,
     block_size: Int,
 ](
-    probs: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
-    min_p_arr: UnsafePointer[Float32, ImmUntrackedOrigin],
+    probs: MutPointer[Scalar[dtype], MutUntrackedOrigin],
+    min_p_arr: ImmPointer[Float32, ImmUntrackedOrigin],
     d: Int32,
 ):
     """Zero out probabilities below the per-row min_p threshold.
@@ -1487,7 +1485,7 @@ def _sampling_rejection_loop_coop[
     z: Float32,
     mut generator: Random,
     mut coop: CoopRow[coop_size],
-    coop_ws: UnsafePointer[Int32, MutAnyOrigin],
+    coop_ws: MutPointer[Int32, MutAnyOrigin],
     coop_table: MutPointer[Float32, _, address_space=.SHARED],
     vec_begin: Int,
     vec_end: Int,
@@ -1672,7 +1670,7 @@ def _topk_topp_cutoff_search[
     high_init: Float32,
     mass_above_low_init: Float32,
     mut coop: CoopRow[coop_size],
-    coop_ws: Optional[UnsafePointer[Int32, MutAnyOrigin]],
+    coop_ws: Optional[MutPointer[Int32, MutAnyOrigin]],
     coop_table: MutPointer[Float32, _, address_space=.SHARED],
     vec_begin: Int,
     vec_end: Int,
@@ -1868,18 +1866,18 @@ def TopKTopPSamplingFromProbKernel[
     output: TileTensor[
         out_idx_type, OutputLayoutType, output_origin, Engine=OutputEngine
     ],
-    out_dist: Optional[UnsafePointer[Scalar[dist_dtype], MutAnyOrigin]],
-    indices: Optional[UnsafePointer[Scalar[out_idx_type], ImmutAnyOrigin]],
-    top_k_arr: Optional[UnsafePointer[Scalar[out_idx_type], ImmutAnyOrigin]],
+    out_dist: Optional[MutPointer[Scalar[dist_dtype], MutAnyOrigin]],
+    indices: Optional[ImmPointer[Scalar[out_idx_type], ImmutAnyOrigin]],
+    top_k_arr: Optional[ImmPointer[Scalar[out_idx_type], ImmutAnyOrigin]],
     top_k_val: Int32,
-    top_p_arr: Optional[UnsafePointer[Float32, ImmutAnyOrigin]],
+    top_p_arr: Optional[ImmPointer[Float32, ImmutAnyOrigin]],
     top_p_val: Float32,
     d: Int32,
-    rng_seed: Optional[UnsafePointer[UInt64, ImmutAnyOrigin]],
+    rng_seed: Optional[ImmPointer[UInt64, ImmutAnyOrigin]],
     rng_offset: UInt64,
-    temperature: Optional[UnsafePointer[Float32, ImmutAnyOrigin]],
-    min_p: Optional[UnsafePointer[Float32, ImmutAnyOrigin]],
-    coop_ws: Optional[UnsafePointer[Int32, MutAnyOrigin]],
+    temperature: Optional[ImmPointer[Float32, ImmutAnyOrigin]],
+    min_p: Optional[ImmPointer[Float32, ImmutAnyOrigin]],
+    coop_ws: Optional[MutPointer[Int32, MutAnyOrigin]],
 ):
     """Kernel for joint top-k + top-p sampling from probability distribution.
 
@@ -2013,7 +2011,7 @@ def TopKTopPSamplingFromProbKernel[
         if case .Some(top_p_arr) = top_p_arr:
             p = top_p_arr[row_idx]
 
-        var probs_ptr = probs.ptr + row_idx * _d
+        var probs_ptr = probs.ptr.unsafe_offset(row_idx * _d)
         var probs_row = TileTensor(probs_ptr, row_major(Idx[1], _d))
 
         comptime if is_apple_gpu() and coop_size == 1:
@@ -2126,12 +2124,10 @@ def TopKTopPSamplingFromProbKernel[
                     # Each thread rereads its own slice. Block reductions
                     # order the only cross-thread scalar read.
                     var dist_row = TileTensor(
-                        out_dist.unsafe_value() + bx * _d,
+                        out_dist.unsafe_value().unsafe_offset(bx * _d),
                         row_major(Idx[1], _d),
                     )
-                    dist_row.store[width=vec_size](
-                        (Idx[0], i * vec_size), e.cast[dist_dtype]()
-                    )
+                    dist_row.store((Idx[0], i * vec_size), e.cast[dist_dtype]())
                 thread_sum += e.reduce_add()
                 comptime if emit_dist:
                     if min_p_thresh > 0:
@@ -2175,7 +2171,7 @@ def TopKTopPSamplingFromProbKernel[
                 var e: SIMD[.float32, width]
                 comptime if cache_dist:
                     var dist_row = TileTensor(
-                        out_dist.unsafe_value() + bx * _d,
+                        out_dist.unsafe_value().unsafe_offset(bx * _d),
                         row_major(Idx[1], _d),
                     )
                     e = dist_row.load[width=width]((Idx[0], offset)).cast[
@@ -2548,7 +2544,7 @@ def TopKTopPSamplingFromProbKernel[
                         kept_mass = refined[1]
 
                 var dist_row = TileTensor(
-                    out_dist.unsafe_value() + bx * _d,
+                    out_dist.unsafe_value().unsafe_offset(bx * _d),
                     row_major(Idx[1], _d),
                 )
                 for i in range(vec_begin + Int(tx), vec_end, block_size):
@@ -2556,7 +2552,7 @@ def TopKTopPSamplingFromProbKernel[
                     var masked = (e.gt(cutoff)).select(
                         e / kept_mass, SIMD[.float32, vec_size](0)
                     )
-                    dist_row.store[width=vec_size](
+                    dist_row.store(
                         (Idx[0], i * vec_size), masked.cast[dist_dtype]()
                     )
 
@@ -2567,10 +2563,10 @@ def TopKTopPSamplingFromProbKernel[
         if k == 1:
             comptime if is_apple_gpu():
                 if tx == 0:
-                    var best = probs_row.load[width=1]((Idx[0], 0))
+                    var best = probs_row[Idx[0], 0]
                     sampled_id = 0
                     for j in range(1, _d):
-                        var v = probs_row.load[width=1]((Idx[0], j))
+                        var v = probs_row[Idx[0], j]
                         if v > best:
                             best = v
                             sampled_id = j
@@ -2800,37 +2796,37 @@ def topk_topp_sampling_from_prob[
         var vec_size = gcd(8, d)
 
         var indices_ptr: Optional[
-            UnsafePointer[Scalar[out_idx_type], ImmutAnyOrigin]
+            ImmPointer[Scalar[out_idx_type], ImmutAnyOrigin]
         ] = None
         if case .Some(indices) = indices:
             indices_ptr = indices.ptr
 
         var top_k_ptr: Optional[
-            UnsafePointer[Scalar[out_idx_type], ImmutAnyOrigin]
+            ImmPointer[Scalar[out_idx_type], ImmutAnyOrigin]
         ] = None
         if case .Some(top_k_arr) = top_k_arr:
             top_k_ptr = top_k_arr.ptr
 
-        var top_p_ptr: Optional[UnsafePointer[Float32, ImmutAnyOrigin]] = None
+        var top_p_ptr: Optional[ImmPointer[Float32, ImmutAnyOrigin]] = None
         if case .Some(top_p_arr) = top_p_arr:
             top_p_ptr = top_p_arr.ptr
 
-        var seed_ptr: Optional[UnsafePointer[UInt64, ImmutAnyOrigin]] = None
+        var seed_ptr: Optional[ImmPointer[UInt64, ImmutAnyOrigin]] = None
         if case .Some(rng_seed) = rng_seed:
             seed_ptr = rng_seed.ptr
 
         var temperature_ptr: Optional[
-            UnsafePointer[Float32, ImmutAnyOrigin]
+            ImmPointer[Float32, ImmutAnyOrigin]
         ] = None
         if case .Some(temperature) = temperature:
             temperature_ptr = temperature.ptr
 
-        var min_p_ptr: Optional[UnsafePointer[Float32, ImmutAnyOrigin]] = None
+        var min_p_ptr: Optional[ImmPointer[Float32, ImmutAnyOrigin]] = None
         if case .Some(min_p) = min_p:
             min_p_ptr = min_p.ptr
 
         var dist_ptr: Optional[
-            UnsafePointer[Scalar[dist_dtype], MutAnyOrigin]
+            MutPointer[Scalar[dist_dtype], MutAnyOrigin]
         ] = None
 
         comptime if emit_dist:
@@ -2855,7 +2851,7 @@ def topk_topp_sampling_from_prob[
         var coop_buf = ctx.enqueue_create_buffer[.int32](
             coop_row_words(batch_size, coop) if coop > 1 else 1
         )
-        var coop_ptr: Optional[UnsafePointer[Int32, MutAnyOrigin]] = None
+        var coop_ptr: Optional[MutPointer[Int32, MutAnyOrigin]] = None
         if coop > 1:
             # Barrier counters must start at zero.
             ctx.enqueue_memset(coop_buf, 0)
@@ -2942,14 +2938,12 @@ def topk_softmax_sample_kernel[
     sampled_indices: TileTensor[
         out_idx_type, SampledLayoutType, sampled_origin, Engine=SampledEngine
     ],
-    top_k_arr: Optional[
-        UnsafePointer[Scalar[out_idx_type], MutUntrackedOrigin]
-    ],
+    top_k_arr: Optional[MutPointer[Scalar[out_idx_type], MutUntrackedOrigin]],
     top_k_val: Int32,
     temperature_val: Float32,
-    temperature: Optional[UnsafePointer[Float32, MutUntrackedOrigin]],
+    temperature: Optional[MutPointer[Float32, MutUntrackedOrigin]],
     seed_val: UInt64,
-    seed: Optional[UnsafePointer[UInt64, MutUntrackedOrigin]],
+    seed: Optional[MutPointer[UInt64, MutUntrackedOrigin]],
     d: Int32,
 ):
     var _top_k_val = Int(top_k_val)
@@ -3013,7 +3007,7 @@ def topk_softmax_sample_kernel[
         alignment=align_of[Float32](),
     ]()
 
-    var s_idxs = (s_vals + k_rounded).bitcast[Int]()
+    var s_idxs = s_vals.unsafe_offset(k_rounded).unsafe_bitcast[Int]()
     var s_count = unsafe_stack_allocation[1, Int, address_space=.SHARED]()
 
     with PDL():
@@ -3027,7 +3021,7 @@ def topk_softmax_sample_kernel[
 
         if k < _d:
             var min_max = get_min_max_value[vec_size, block_size](
-                logits.ptr, row_idx, _d
+                logits, row_idx, _d
             )
             var min_val, max_val = min_max[0], min_max[1]
 
@@ -3107,7 +3101,7 @@ def topk_softmax_sample_kernel[
         else:
             # If k >= _d, include all elements.
             var min_max = get_min_max_value[vec_size, block_size](
-                logits.ptr, row_idx, _d
+                logits, row_idx, _d
             )
             max_logit = min_max[1]
 
@@ -3301,18 +3295,16 @@ def topk_softmax_sample[
             )
 
         var top_k_ptr: Optional[
-            UnsafePointer[Scalar[out_idx_type], MutUntrackedOrigin]
+            MutPointer[Scalar[out_idx_type], MutUntrackedOrigin]
         ] = None
         if case .Some(top_k_arr) = top_k_arr:
             top_k_ptr = top_k_arr.ptr
 
-        var temp_ptr: Optional[
-            UnsafePointer[Float32, MutUntrackedOrigin]
-        ] = None
+        var temp_ptr: Optional[MutPointer[Float32, MutUntrackedOrigin]] = None
         if case .Some(temperature) = temperature:
             temp_ptr = temperature.ptr
 
-        var seed_ptr: Optional[UnsafePointer[UInt64, MutUntrackedOrigin]] = None
+        var seed_ptr: Optional[MutPointer[UInt64, MutUntrackedOrigin]] = None
         if case .Some(seed) = seed:
             seed_ptr = seed.ptr
 
@@ -3361,21 +3353,25 @@ def TopKTopPMaskedProbsKernel[
     dtype: DType,
     LogitsLayoutType: TensorLayout,
     logits_origin: ImmOrigin,
+    ProbsLayoutType: TensorLayout,
     coop_size: Int = 1,
     *,
     LogitsEngine: TensorEngine,
+    ProbsEngine: TensorEngine,
 ](
     logits: TileTensor[
         dtype, LogitsLayoutType, logits_origin, Engine=LogitsEngine
     ],
-    probs_ptr: UnsafePointer[Float32, MutAnyOrigin],
-    top_k_arr: Optional[UnsafePointer[Int64, ImmutAnyOrigin]],
+    probs: TileTensor[
+        .float32, ProbsLayoutType, MutAnyOrigin, Engine=ProbsEngine
+    ],
+    top_k_arr: Optional[ImmPointer[Int64, ImmutAnyOrigin]],
     top_k_val: Int32,
-    top_p_arr: Optional[UnsafePointer[Float32, ImmutAnyOrigin]],
+    top_p_arr: Optional[ImmPointer[Float32, ImmutAnyOrigin]],
     top_p_val: Float32,
-    temperature: Optional[UnsafePointer[Float32, ImmutAnyOrigin]],
+    temperature: Optional[ImmPointer[Float32, ImmutAnyOrigin]],
     d: Int32,
-    coop_ws: Optional[UnsafePointer[Int32, MutAnyOrigin]],
+    coop_ws: Optional[MutPointer[Int32, MutAnyOrigin]],
 ):
     """Writes each row's top-k/top-p masked softmax.
 
@@ -3389,13 +3385,15 @@ def TopKTopPMaskedProbsKernel[
         dtype: Element type of `logits`.
         LogitsLayoutType: Memory layout of the `logits` tile.
         logits_origin: Origin tag for the immutable `logits` tile.
+        ProbsLayoutType: Memory layout of the `probs` tile.
         coop_size: Blocks sharing each row; 1 keeps the whole row in one
             block and compiles the cross-block traffic away.
         LogitsEngine: Storage engine backing the `logits` tile.
+        ProbsEngine: Storage engine backing the `probs` tile.
 
     Args:
         logits: Input logits [batch_size, d].
-        probs_ptr: Output masked renormalized distribution [batch_size, d].
+        probs: Output masked renormalized distribution [batch_size, d].
         top_k_arr: Optional per-row top-k [batch_size].
         top_k_val: Default top-k if `top_k_arr` is null.
         top_p_arr: Optional per-row top-p [batch_size].
@@ -3470,7 +3468,7 @@ def TopKTopPMaskedProbsKernel[
         ]()
         return exp((v - m) * inv_temp)
 
-    var probs_row = TileTensor(probs_ptr + bx * _d, row_major(Idx[1], _d))
+    var probs_row = probs[bx : bx + 1, :]
 
     # Total mass, plus how many tokens carry any. At most k positive tokens
     # need no top-k search: cutoff zero already keeps the full positive set.
@@ -3481,7 +3479,7 @@ def TopKTopPMaskedProbsKernel[
         # Repeated exponentiation costs more than the wider cache traffic on
         # AMD; each thread reuses its own output slice until the final write.
         comptime if is_amd_gpu():
-            probs_row.store[width=vec_size]((Idx[0], i * vec_size), e)
+            probs_row.store((Idx[0], i * vec_size), e)
         thread_sum += e.reduce_add()
         if k < _d:
             comptime for j in range(vec_size):
@@ -3563,7 +3561,7 @@ def TopKTopPMaskedProbsKernel[
     for i in range(vec_begin + Int(tx), vec_end, block_size):
         var e = load_e(i * vec_size)
         var masked = (e.gt(cut)).select(e / mass_s, SIMD[.float32, vec_size](0))
-        probs_row.store[width=vec_size]((Idx[0], i * vec_size), masked)
+        probs_row.store((Idx[0], i * vec_size), masked)
 
 
 def topk_topp_masked_probs[
@@ -3678,16 +3676,16 @@ def topk_topp_masked_probs[
 
         var vec_size = gcd(8, d)
 
-        var top_k_ptr: Optional[UnsafePointer[Int64, ImmutAnyOrigin]] = None
+        var top_k_ptr: Optional[ImmPointer[Int64, ImmutAnyOrigin]] = None
         if case .Some(top_k_arr) = top_k_arr:
             top_k_ptr = top_k_arr.ptr
 
-        var top_p_ptr: Optional[UnsafePointer[Float32, ImmutAnyOrigin]] = None
+        var top_p_ptr: Optional[ImmPointer[Float32, ImmutAnyOrigin]] = None
         if case .Some(top_p_arr) = top_p_arr:
             top_p_ptr = top_p_arr.ptr
 
         var temperature_ptr: Optional[
-            UnsafePointer[Float32, ImmutAnyOrigin]
+            ImmPointer[Float32, ImmutAnyOrigin]
         ] = None
         if case .Some(temperature) = temperature:
             temperature_ptr = temperature.ptr
@@ -3699,7 +3697,7 @@ def topk_topp_masked_probs[
         var coop_buf = ctx.enqueue_create_buffer[.int32](
             coop_row_words(batch_size, coop) if coop > 1 else 1
         )
-        var coop_ptr: Optional[UnsafePointer[Int32, MutAnyOrigin]] = None
+        var coop_ptr: Optional[MutPointer[Int32, MutAnyOrigin]] = None
         if coop > 1:
             # Barrier counters must start at zero.
             ctx.enqueue_memset(coop_buf, 0)
@@ -3712,12 +3710,14 @@ def topk_topp_masked_probs[
                 dtype,
                 logits.LayoutType,
                 ImmOrigin(logits.origin),
+                probs.LayoutType,
                 coop_size,
                 LogitsEngine=logits.Engine,
+                ProbsEngine=probs.Engine,
             ]
             ctx.enqueue_function[kernel](
                 logits.as_imm(),
-                probs.ptr,
+                probs,
                 top_k_ptr,
                 Int32(top_k_val),
                 top_p_ptr,

@@ -24,8 +24,8 @@ from std.itertools import product
 
 
 def stencil_kernel(
-    in_ptr: UnsafePointer[Float32, ImmutAnyOrigin],
-    out_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    in_ptr: ImmPointer[Float32, ImmutAnyOrigin],
+    out_ptr: MutPointer[Float32, MutAnyOrigin],
     n_dim: Int32,
     c0: Float32,
     c1: Float32,

@@ -86,12 +86,12 @@ struct LoadStore_i8mm[
     @inline(.always)
     def _load_c_tile(
         mut self,
-        c_ptr: UnsafePointer[Scalar[Self.dtype], ...],
+        c_ptr: Pointer[Scalar[Self.dtype], ...],
         c_stride: Int,
         tile_n_idx: Int,
         c_bound: IndexList[2],
     ):
-        var c_ptr_loc = c_ptr + tile_n_idx
+        var c_ptr_loc = c_ptr.unsafe_offset(tile_n_idx)
 
         comptime for idx0 in range(Self.tile_rows):
             comptime for idx1 in range(Self.tile_columns // Self.simd_size):
@@ -110,13 +110,17 @@ struct LoadStore_i8mm[
                     )
                 elif idx1 * 2 <= c_bound[1]:
                     var t0 = partial_simd_load[2](
-                        c_ptr_loc + (c_stride * (2 * idx0 + 0) + 2 * idx1),
+                        c_ptr_loc.unsafe_offset(
+                            c_stride * (2 * idx0 + 0) + 2 * idx1
+                        ),
                         0,
                         c_bound[1] - tile_n_idx - idx1 * 2,
                         0,
                     )
                     var t1 = partial_simd_load[2](
-                        c_ptr_loc + (c_stride * (2 * idx0 + 1) + 2 * idx1),
+                        c_ptr_loc.unsafe_offset(
+                            c_stride * (2 * idx0 + 1) + 2 * idx1
+                        ),
                         0,
                         c_bound[1] - tile_n_idx - idx1 * 2,
                         0,
@@ -135,7 +139,7 @@ struct LoadStore_i8mm[
         tile_n_idx: Int,
         c_bound: IndexList[2],
     ):
-        var c_ptr_loc = c_ptr + tile_n_idx
+        var c_ptr_loc = c_ptr.unsafe_offset(tile_n_idx)
 
         comptime for idx0 in range(Self.tile_rows):
             comptime for idx1 in range(Self.tile_columns // Self.simd_size):
@@ -143,19 +147,25 @@ struct LoadStore_i8mm[
                 if self.skip_boundary_check or (
                     idx1 * 2 + 2 <= c_bound[1] - tile_n_idx
                 ):
-                    (c_ptr_loc + (c_stride * (2 * idx0 + 0) + 2 * idx1)).store(
+                    c_ptr_loc.unsafe_offset(
+                        c_stride * (2 * idx0 + 0) + 2 * idx1
+                    ).store(
                         c_data.slice[2](),
                     )
 
                     comptime if not Self.single_row:
                         (
-                            c_ptr_loc + (c_stride * (2 * idx0 + 1) + 2 * idx1)
+                            c_ptr_loc.unsafe_offset(
+                                c_stride * (2 * idx0 + 1) + 2 * idx1
+                            )
                         ).store(
                             c_data.slice[2, offset=2](),
                         )
                 elif idx1 * 2 <= c_bound[1]:
                     partial_simd_store(
-                        c_ptr_loc + (c_stride * (2 * idx0 + 0) + 2 * idx1),
+                        c_ptr_loc.unsafe_offset(
+                            c_stride * (2 * idx0 + 0) + 2 * idx1
+                        ),
                         0,
                         c_bound[1] - tile_n_idx - idx1 * 2,
                         c_data.slice[2](),
@@ -163,7 +173,9 @@ struct LoadStore_i8mm[
 
                     comptime if not Self.single_row:
                         partial_simd_store(
-                            c_ptr_loc + (c_stride * (2 * idx0 + 1) + 2 * idx1),
+                            c_ptr_loc.unsafe_offset(
+                                c_stride * (2 * idx0 + 1) + 2 * idx1
+                            ),
                             0,
                             c_bound[1] - tile_n_idx - idx1 * 2,
                             c_data.slice[2, offset=2](),
@@ -234,7 +246,7 @@ struct Inner_matmul_i8mm(InnerMatmulKernel, Movable):
             comptime for idx in range(kernel_cols // simd_size):
                 prefetch[
                     PrefetchOptions().for_read().high_locality().to_data_cache()
-                ](b_ptr + (prefetch_offset + idx * simd_size))
+                ](b_ptr.unsafe_offset(prefetch_offset + idx * simd_size))
 
         # Loop over local accumulator tiles.
         comptime for idx0 in range(kernel_rows):
@@ -243,7 +255,7 @@ struct Inner_matmul_i8mm(InnerMatmulKernel, Movable):
                 var a_val = a_ptr.load[width=SIMDLength(simd_size) * 4](
                     2 * idx0 * K
                 )
-                var b_val = (b_ptr + 16 * idx1).load[
+                var b_val = b_ptr.unsafe_offset(16 * idx1).load[
                     width=SIMDLength(simd_size) * 4, alignment=alignment
                 ]()
                 var c_val = c_local[idx0, idx1]

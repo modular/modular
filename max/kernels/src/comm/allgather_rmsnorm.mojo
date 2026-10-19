@@ -129,7 +129,7 @@ def _allgather_rmsnorm_kernel[
     var gamma_vec = SIMD[accum_type, simd_width](0)
     if is_valid:
         gamma_vec = (
-            gamma.load[width=simd_width, alignment=align](Coord(col_idx)).cast[
+            gamma.load[width=simd_width, alignment=align]((col_idx,)).cast[
                 accum_type
             ]()
             + weight_offset.cast[accum_type]()
@@ -162,12 +162,12 @@ def _allgather_rmsnorm_kernel[
         if is_valid:
             gathered = (
                 src_ptrs[g]
-                .address_space_cast[_target_address_space]()
+                .unsafe_address_space_cast[_target_address_space]()
                 .load[width=simd_width, alignment=align, invariant=True](
                     src_elem
                 )
             )
-            sum_out.store(Coord(grow, col_idx), gathered)
+            sum_out.store((grow, col_idx), gathered)
 
         var reduced_f = gathered.cast[accum_type]()
         # Divide by `cols` FIRST, add epsilon after (eps outside the division).
@@ -184,7 +184,7 @@ def _allgather_rmsnorm_kernel[
         var normalized = (reduced_f * norm_factor) * gamma_vec
         var normed = normalized.cast[in_dtype]()
         if is_valid:
-            normed_out.store(Coord(grow, col_idx), normed)
+            normed_out.store((grow, col_idx), normed)
         # Same bf16 a standalone quantize would read back from `normed_out`, so
         # folding one in is byte-identical.
         comptime if case .Some(epilogue) = quant_epilogue:

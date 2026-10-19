@@ -587,8 +587,10 @@ result registers.
 
 ```mojo
 # Layout: [kv_smem] [produced_mbar × stages] [consumed_mbar × stages] [q_mbar × 2]
-produced_mbar_kv = (kv_smem + kv_smem_size).bitcast[SharedMemBarrier]()
-consumed_mbar_kv = produced_mbar_kv + pipeline_stages
+produced_mbar_kv = kv_smem.unsafe_offset(kv_smem_size).unsafe_bitcast[
+    SharedMemBarrier
+]()
+consumed_mbar_kv = produced_mbar_kv.unsafe_offset(pipeline_stages)
 
 # Initialize: 1 producer thread, num_consumer_threads consumers
 comptime for i in range(pipeline_stages):

@@ -207,7 +207,9 @@ def _run_fusion_check[
 
     var fused_host = ctx.enqueue_create_host_buffer[.uint8](slot_bytes)
     var raw_h = ctx.enqueue_create_host_buffer[.uint8](total_tokens * scale_K)
-    ctx.enqueue_copy(fused_host, fused_scales_d.unsafe_ptr().bitcast[UInt8]())
+    ctx.enqueue_copy(
+        fused_host, fused_scales_d.unsafe_ptr().unsafe_bitcast[UInt8]()
+    )
     ctx.synchronize()
 
     # ---- Recover row-major [tokens, scale_K] scales (R) from S. ----

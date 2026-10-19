@@ -78,10 +78,14 @@ class UnifiedMTPQwen3_5BatchProcessor(Qwen3_5BatchProcessor):
     """Builds a batch for either fused Qwen3.5 speculative graph.
 
     The MTP and DFlash2 graphs take the same inputs, and only MTP can declare
-    M-RoPE positions. The cache's attention children go in the KV slice and
-    its state child, the verify ring included, goes in the trailing tail.
-    Image prompts are rejected because neither graph has a vision encoder.
+    M-RoPE positions and the vision-merge inputs. The cache's attention
+    children go in the KV slice and its state child, the verify ring included,
+    goes in the trailing tail. Image prompts are rejected because neither model
+    compiles a vision encoder to fill those inputs.
     """
+
+    vision_enabled: bool = False
+    """Whether the compiled graph takes vision-merge inputs. Set by the model."""
 
     def __init__(
         self, config: ArchConfig, runtime: BatchProcessorRuntime
@@ -183,6 +187,7 @@ class UnifiedMTPQwen3_5BatchProcessor(Qwen3_5BatchProcessor):
             live_recurrent_row_ids=[leaf.live_row_ids for leaf in recurrent],
             ring_pools=[leaf.pool for leaf in rings],
             ring_row_ids=[leaf.live_row_ids for leaf in rings],
+            vision_inputs_in_graph=self.vision_enabled,
             position_ids=(
                 Buffer.from_numpy(merged_position_rows(contexts)).to(
                     self.runtime.devices[0]

@@ -43,7 +43,6 @@ from std.math import ceildiv
 from max.gpu import block_dim, block_idx, thread_idx
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_cpu
-from std.memory import UnsafePointer
 
 from extensibility import InputTensor
 from extensibility import (
@@ -180,9 +179,9 @@ struct PagedKVRemap[page_size: Int](SparseIndexRemap):
     comptime enabled = True
     """Physical rows are written."""
 
-    var physical_out: UnsafePointer[Int32, MutUntrackedOrigin]
+    var physical_out: MutPointer[Int32, MutUntrackedOrigin]
     """Flat output buffer, laid out like the logical indices."""
-    var lut: UnsafePointer[UInt32, ImmUntrackedOrigin]
+    var lut: ImmPointer[UInt32, ImmUntrackedOrigin]
     """Row-major `[lut_rows, lut_cols]` page lookup table."""
     var lut_cols: Int32
     """Logical pages per batch entry."""
@@ -195,7 +194,7 @@ struct PagedKVRemap[page_size: Int](SparseIndexRemap):
     def __init__(
         out self,
         physical_out: MutPointer[Int32, _],
-        lut: UnsafePointer[UInt32, _],
+        lut: Pointer[UInt32, _],
         lut_cols: Int,
         lut_rows: Int,
         invalid_block_id: UInt32,
@@ -284,10 +283,10 @@ def _find_batch_for_row(
 
 @__name(t"paged_sparse_kv_index_remap_row_offs_kernel")
 def _paged_sparse_kv_index_remap_row_offs_kernel(
-    logical: UnsafePointer[Int32, ImmutAnyOrigin],
-    row_offsets: UnsafePointer[UInt32, ImmutAnyOrigin],
-    lut: UnsafePointer[UInt32, ImmutAnyOrigin],
-    physical_out: UnsafePointer[Int32, MutAnyOrigin],
+    logical: ImmPointer[Int32, ImmutAnyOrigin],
+    row_offsets: ImmPointer[UInt32, ImmutAnyOrigin],
+    lut: ImmPointer[UInt32, ImmutAnyOrigin],
+    physical_out: MutPointer[Int32, MutAnyOrigin],
     num_indices: Int32,
     lut_cols: Int32,
     lut_rows: Int32,
@@ -451,17 +450,17 @@ def paged_sparse_kv_index_remap[
     var si_tt = sparse_indices.to_tile_tensor()
     var num_batches = input_row_offsets.dim_size(0) - 1
     var invalid_block_id = UInt32(kv_blocks.dim_size(0))
-    var log_stride0 = Int(si_tt.layout.stride[0]().value())
-    var log_stride1 = Int(si_tt.layout.stride[1]().value())
+    var log_stride0 = Int(si_tt.dynamic_stride(0))
+    var log_stride1 = Int(si_tt.dynamic_stride(1))
     paged_sparse_kv_logical_to_physical_indices_from_row_offsets_dispatch[
         target, page_size
     ](
         physical_out,
-        rebind[UnsafePointer[Int32, MutAnyOrigin]](si_tt.ptr),
-        rebind[UnsafePointer[UInt32, MutAnyOrigin]](
+        rebind[MutPointer[Int32, MutAnyOrigin]](si_tt.ptr),
+        rebind[MutPointer[UInt32, MutAnyOrigin]](
             input_row_offsets.to_tile_tensor().ptr,
         ),
-        rebind[UnsafePointer[UInt32, MutAnyOrigin]](
+        rebind[MutPointer[UInt32, MutAnyOrigin]](
             kv_lookup_table.to_tile_tensor().ptr,
         ),
         sparse_indices.size(),

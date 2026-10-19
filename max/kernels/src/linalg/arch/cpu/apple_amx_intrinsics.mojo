@@ -325,7 +325,7 @@ def genlut(gpr: Int):
 @inline(.always)
 def _encode_load_store[
     row_count: Int, dtype: DType
-](src: UnsafePointer[Scalar[dtype], _], start_index: Int) -> Int:
+](src: Pointer[Scalar[dtype], _], start_index: Int) -> Int:
     """
     Utility to do the bit encoding for load and store ops.
     """
@@ -339,7 +339,7 @@ def _encode_load_store[
 @inline(.always)
 def store_x[
     row_count: Int, dtype: DType
-](src: UnsafePointer[Scalar[dtype], _], start_index: Int):
+](src: Pointer[Scalar[dtype], _], start_index: Int):
     """Loads row_count rows from memory at src into AMX X registers starting at start_index.
 
     Parameters:
@@ -356,7 +356,7 @@ def store_x[
 @inline(.always)
 def store_y[
     row_count: Int, dtype: DType
-](src: UnsafePointer[Scalar[dtype], _], start_index: Int):
+](src: Pointer[Scalar[dtype], _], start_index: Int):
     """Loads row_count rows from memory at src into AMX Y registers starting at start_index.
 
     Parameters:
@@ -373,7 +373,7 @@ def store_y[
 @inline(.always)
 def store_z[
     row_count: Int, dtype: DType
-](src: UnsafePointer[Scalar[dtype], _], start_index: Int):
+](src: Pointer[Scalar[dtype], _], start_index: Int):
     """Loads row_count rows from memory at src into AMX Z accumulator registers starting at start_index.
 
     Parameters:
@@ -622,28 +622,40 @@ def dot_at_b(
             ), "f32 AMX matmul requires 16x16 tiles"
             comptime for j in range(2):
                 comptime for i in range(8):
-                    ldx((i << 56) | Int(b_buffer + (j * 8 + i) * dim0))
-                    ldy((i << 56) | Int(a_buffer + (j * 8 + i) * dim0))
+                    ldx(
+                        (i << 56)
+                        | Int(b_buffer.unsafe_offset((j * 8 + i) * dim0))
+                    )
+                    ldy(
+                        (i << 56)
+                        | Int(a_buffer.unsafe_offset((j * 8 + i) * dim0))
+                    )
 
                 comptime for i in range(8):
                     fma32((i << 6 << 10) | (i << 6))
 
             comptime for i in range(0, 64, 4):
-                stz((i << 56) | Int(c_buffer + (i >> 2) * dim0))
+                stz((i << 56) | Int(c_buffer.unsafe_offset((i >> 2) * dim0)))
         case _:
             comptime assert (
                 c.static_shape[0] == 32 and c.static_shape[1] == 32
             ), "f16 AMX matmul requires 32x32 tiles"
             comptime for j in range(4):
                 comptime for i in range(8):
-                    ldx((i << 56) | Int(b_buffer + (j * 8 + i) * dim0))
-                    ldy((i << 56) | Int(a_buffer + (j * 8 + i) * dim0))
+                    ldx(
+                        (i << 56)
+                        | Int(b_buffer.unsafe_offset((j * 8 + i) * dim0))
+                    )
+                    ldy(
+                        (i << 56)
+                        | Int(a_buffer.unsafe_offset((j * 8 + i) * dim0))
+                    )
 
                 comptime for i in range(8):
                     fma16((i << 6 << 10) | (i << 6))
 
             comptime for i in range(0, 64, 2):
-                stz((i << 56) | Int(c_buffer + (i >> 1) * dim0))
+                stz((i << 56) | Int(c_buffer.unsafe_offset((i >> 1) * dim0)))
 
     _clr()
 

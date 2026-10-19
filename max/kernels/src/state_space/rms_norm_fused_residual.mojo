@@ -31,7 +31,7 @@ from max.gpu.primitives.grid_controls import (
     PDLLevel,
     pdl_launch_attributes,
 )
-from layout import Coord, TensorEngine, TensorLayout, TileTensor
+from layout import Coord, TensorEngine, TensorLayout, TileTensor, row_major
 from std.memory import AddressSpace
 from std.random import Random
 
@@ -92,6 +92,7 @@ def _rms_norm_fused_residual_cpu_2d[
     comptime simd_width = simd_width_of[dtype]()
     var simd_loop_end = align_down(num_cols, simd_width)
     comptime intermediate_type = get_accum_type[dtype]()
+    var gamma_flat = gamma.reshape(row_major(gamma.num_elements()))
 
     # Calculate dropout scale if needed
     var dropout_scale = Scalar[dtype](1.0)
@@ -163,13 +164,17 @@ def _rms_norm_fused_residual_cpu_2d[
         # Second pass: apply normalization
         def _normalize[
             sw: Int
-        ](col: Int) {gamma, weight_offset, residual_read_fn, output_fn, mut}:
+        ](col: Int) {
+            gamma_flat, weight_offset, residual_read_fn, output_fn, mut
+        }:
             # Read the pre-computed sum values (input + residual) from first pass
             var sum_vals = residual_read_fn[sw](row, col).cast[
                 intermediate_type
             ]()
 
-            var gamma_val = gamma.raw_load[width=sw](col)
+            var gamma_val = gamma_flat.load[
+                width=sw, alignment=align_of[dtype]()
+            ](Coord(col))
             var norm_val: SIMD[dtype, sw]
 
             if multiply_before_cast:
@@ -254,7 +259,7 @@ def rms_norm_fused_residual_cpu[
     comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
     comptime rank = shape.rank
 
-    var last_dim = Int(shape[rank - 1].value())
+    var last_dim = Int(shape[rank - 1])
     var prod_all_but_last_dim = Int(shape.product()) // last_dim
 
     # 2D wrappers that translate each `(row, col)` back to the rank-N coord.
@@ -365,7 +370,7 @@ def _rms_norm_fused_residual_cpu_entry[
     comptime rank = shape.rank
 
     # Note: we only support reduction along the last dimension
-    if Int(gamma.dim[0]()) != Int(shape[rank - 1].value()):
+    if Int(gamma.dim[0]()) != Int(shape[rank - 1]):
         raise Error(
             "Gamma size "
             + String(gamma.dim[0]())
@@ -396,11 +401,11 @@ def _rms_norm_fused_residual_cpu_entry[
         if dropout_p > zero_scalar:
             var one_scalar = Scalar[dtype](1.0)
             var dropout_scale = one_scalar / (one_scalar - dropout_p)
-            var last_dim = Int(shape[rank - 1].value())
+            var last_dim = Int(shape[rank - 1])
             var row = Int(coords.product()) // last_dim
 
             comptime for i in range(width):
-                var col_idx = Int(coords[coords.rank - 1].value()) + i
+                var col_idx = Int(coords[coords.rank - 1]) + i
                 var element_offset = row * last_dim + col_idx
                 var generator = Random(seed=seed, offset=UInt64(element_offset))
                 var rng = generator.step_uniform()
@@ -717,7 +722,7 @@ def rms_norm_fused_residual_gpu[
     comptime rank = shape.rank
     comptime assert rank > 0, "shape must have rank >= 1 to normalize over"
 
-    var last_dim = Int(shape[rank - 1].value())
+    var last_dim = Int(shape[rank - 1])
 
     if last_dim == 0:
         return
@@ -839,7 +844,7 @@ def _rms_norm_fused_residual_impl[
     comptime rank = shape.rank
 
     # Note: we only support reduction along the last dimension
-    if Int(gamma.dim[0]()) != Int(shape[rank - 1].value()):
+    if Int(gamma.dim[0]()) != Int(shape[rank - 1]):
         raise Error(
             "Gamma size "
             + String(gamma.dim[0]())

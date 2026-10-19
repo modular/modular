@@ -55,9 +55,9 @@ def test_blockwise_fp8_matmul_amd[
     comptime BLOCK_SCALE_N = 128
     comptime BLOCK_SCALE_K = 128
 
-    var M = Int(m.value())
-    var N = Int(n.value())
-    var K = Int(k.value())
+    var M = Int(m)
+    var N = Int(n)
+    var K = Int(k)
 
     print(
         "== test_blockwise_fp8_matmul_amd c_type=",

@@ -209,7 +209,6 @@ class _Harness:
                 merged_offsets=offsets,
                 num_accepted=accepted,
                 num_draft_tokens=ops.constant(0, DType.int64, device=gpu),
-                total_rows=x.shape[0],
                 signal_buffers=[signals],
                 device=gpu,
             )

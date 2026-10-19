@@ -27,7 +27,7 @@ comptime INF_DIST = Float32.MAX
 
 
 def floyd_warshall_kernel(
-    A: UnsafePointer[Float32, MutAnyOrigin],
+    A: MutPointer[Float32, MutAnyOrigin],
     num_vertices_dev: Int32,
     curr_k_dev: Int32,
 ):
@@ -121,7 +121,7 @@ def initialize_dist(dist: MutPointer[Float32, _], V: Int):
             dist[i * V + j] = INF_DIST
 
 
-def print_dist(dist: UnsafePointer[Float32, _], V: Int, title: String):
+def print_dist(dist: Pointer[Float32, _], V: Int, title: String):
     """Print distance matrix (partial for large matrices).
 
     Args:

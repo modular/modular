@@ -369,15 +369,19 @@ struct PreShuffledBGroupedGEMM[
                 " a mismatch means fuse_swiglu_mxfp8 did not reach this"
                 " kernel and it would overrun c"
             )
-            var c_ptr = c_tensor.ptr + Int(a_start_row) * Int(C_N)
+            var c_ptr = c_tensor.ptr.unsafe_offset(Int(a_start_row) * Int(C_N))
             comptime A_K_BYTES = a_tensor.static_shape[1]
-            var a_ptr = a_tensor.ptr + Int(a_start_row) * Int(A_K_BYTES)
-            var b_pre_ptr = b_pre_tensor.ptr + Int(expert_id) * Int(N) * Int(
-                K_BYTES
+            var a_ptr = a_tensor.ptr.unsafe_offset(
+                Int(a_start_row) * Int(A_K_BYTES)
             )
-            var sfa_ptr = sfa_tensor.ptr + sfa_start_row * Int(K_SCALES)
-            var sfb_ptr = sfb_tensor.ptr + Int(expert_id) * Int(N) * Int(
-                K_SCALES
+            var b_pre_ptr = b_pre_tensor.ptr.unsafe_offset(
+                Int(expert_id) * Int(N) * Int(K_BYTES)
+            )
+            var sfa_ptr = sfa_tensor.ptr.unsafe_offset(
+                sfa_start_row * Int(K_SCALES)
+            )
+            var sfb_ptr = sfb_tensor.ptr.unsafe_offset(
+                Int(expert_id) * Int(N) * Int(K_SCALES)
             )
 
             # C's V# bound is the real `M` (not `align_up(M, 32)`): the matmul
@@ -576,14 +580,20 @@ struct PreShuffledBGroupedGEMM[
         var sfa_padded_M = align_up(Int(M), 32)
 
         comptime C_N = N // 2 if fuse_swiglu_mxfp8 else N
-        var c_ptr = c_tensor.ptr + Int(a_start_row) * Int(C_N)
+        var c_ptr = c_tensor.ptr.unsafe_offset(Int(a_start_row) * Int(C_N))
         comptime A_K_BYTES = a_tensor.static_shape[1]
-        var a_ptr = a_tensor.ptr + Int(a_start_row) * Int(A_K_BYTES)
-        var b_pre_ptr = b_pre_tensor.ptr + Int(expert_id) * Int(N) * Int(
-            K_BYTES
+        var a_ptr = a_tensor.ptr.unsafe_offset(
+            Int(a_start_row) * Int(A_K_BYTES)
         )
-        var sfa_ptr = sfa_tensor.ptr + sfa_start_row * Int(K_SCALES)
-        var sfb_ptr = sfb_tensor.ptr + Int(expert_id) * Int(N) * Int(K_SCALES)
+        var b_pre_ptr = b_pre_tensor.ptr.unsafe_offset(
+            Int(expert_id) * Int(N) * Int(K_BYTES)
+        )
+        var sfa_ptr = sfa_tensor.ptr.unsafe_offset(
+            sfa_start_row * Int(K_SCALES)
+        )
+        var sfb_ptr = sfb_tensor.ptr.unsafe_offset(
+            Int(expert_id) * Int(N) * Int(K_SCALES)
+        )
 
         var c_tile = TileTensor(c_ptr, row_major(M, Idx[C_N]))
         var a_tile = TileTensor(a_ptr, row_major(M, Idx[A_K_BYTES]))
@@ -972,12 +982,16 @@ def block_scaled_grouped_matmul_amd_kernel[
     # 64-bit offsets, as in `grouped_matmul.mojo`. B counts packed bytes, so it
     # passes Int32 once the expert stack exceeds 2 GiB (Kimi K3 gate/up at 4
     # devices); A and C scale with token rows.
-    var c_ptr = c_tensor.ptr + Int(a_start_row) * Int(N)
+    var c_ptr = c_tensor.ptr.unsafe_offset(Int(a_start_row) * Int(N))
     comptime A_K_BYTES = a_tensor.static_shape[1]
-    var a_ptr = a_tensor.ptr + Int(a_start_row) * Int(A_K_BYTES)
-    var b_ptr = b_tensor.ptr + Int(expert_id) * Int(N) * Int(K_BYTES)
-    var sfa_ptr = sfa_tensor.ptr + Int(a_start_row) * Int(K_SCALES)
-    var sfb_ptr = sfb_tensor.ptr + Int(expert_id) * Int(N) * Int(K_SCALES)
+    var a_ptr = a_tensor.ptr.unsafe_offset(Int(a_start_row) * Int(A_K_BYTES))
+    var b_ptr = b_tensor.ptr.unsafe_offset(
+        Int(expert_id) * Int(N) * Int(K_BYTES)
+    )
+    var sfa_ptr = sfa_tensor.ptr.unsafe_offset(Int(a_start_row) * Int(K_SCALES))
+    var sfb_ptr = sfb_tensor.ptr.unsafe_offset(
+        Int(expert_id) * Int(N) * Int(K_SCALES)
+    )
 
     var c_tile = TileTensor(c_ptr, row_major(M, Idx[N]))
     var a_tile = TileTensor(a_ptr, row_major(M, Idx[A_K_BYTES]))

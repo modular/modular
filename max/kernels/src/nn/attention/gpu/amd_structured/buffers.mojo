@@ -17,12 +17,12 @@ TileTensor-only imports, aliases, and return types.
 
 from std.math import ceildiv, recip
 from std.math.uutils import umod, ufloordiv
-from std.sys import simd_width_of, size_of
+from std.sys import align_of, simd_width_of, size_of
 
 from max.gpu import lane_id, WARP_SIZE
 from max.gpu.intrinsics import cvt_pk_fp8_f32_raw
 from layout import TensorEngine, TensorLayout, TileTensor
-from layout.coord import Coord, ComptimeInt
+from layout.coord import Coord, ComptimeInt, Idx
 from layout.swizzle import Swizzle
 from layout.tile_layout import (
     Layout as TileLayout,
@@ -602,13 +602,14 @@ struct PRegisterBuffer[
             comptime for m_mma in range(Self.num_m_mmas):
                 var m_off = m_mma * m_mma_stride
                 var lo = (
-                    block_base + m_off + Int(lid) * Self.output_frag_size
+                    block_base.unsafe_offset(m_off).unsafe_offset(
+                        Int(lid) * Self.output_frag_size
+                    )
                 ).load[width=Self.output_frag_size]()
                 var hi = (
-                    block_base
-                    + m_off
-                    + warp_stride
-                    + Int(lid) * Self.output_frag_size
+                    block_base.unsafe_offset(m_off)
+                    .unsafe_offset(warp_stride)
+                    .unsafe_offset(Int(lid) * Self.output_frag_size)
                 ).load[width=Self.output_frag_size]()
                 var joined = lo.join(hi)
                 result_vec[m_mma, 0] = rebind[type_of(result_vec[m_mma, 0])](
@@ -652,9 +653,9 @@ struct PRegisterBuffer[
                     var c = ufloordiv(lane_id(), warp_m)
                     var group_idx = r * (Self.BK // simd_w) + c
                     var swizzled_group = swizzle(group_idx)
-                    var data = (smem_base + swizzled_group * simd_w).load[
-                        width=simd_w
-                    ]()
+                    var data = smem_base.unsafe_offset(
+                        swizzled_group * simd_w
+                    ).load[width=simd_w]()
                     result_vec[m, 0] = rebind[type_of(result_vec[m, 0])](data)
                 else:
                     var joined = lo_dist[0, 0].join(hi_dist[0, 0])
@@ -852,7 +853,7 @@ struct PRegisterBuffer[
         reg_idx: Int
     ](
         self,
-        smem_base: UnsafePointer[
+        smem_base: MutPointer[
             Scalar[Self.dtype], MutAnyOrigin, address_space=.SHARED
         ],
         byte_offset: Int,
@@ -877,7 +878,7 @@ struct PRegisterBuffer[
             type_of(row_major[Self.WM, Self.BK]()),
             MutAnyOrigin,
             address_space=.SHARED,
-        ](smem_base + byte_offset, row_major[Self.WM, Self.BK]())
+        ](smem_base.unsafe_offset(byte_offset), row_major[Self.WM, Self.BK]())
 
         var mma_tile_res = smem_warp_tile.tile_with_offset[
             Self.mma_shape[0], Self.mma_shape[1]
@@ -915,21 +916,24 @@ struct PRegisterBuffer[
             1, Self.output_frag_size
         ]()
         var p_reg_tile = p_reg_vec.tile[1, 1](reg_idx, 0)
-        comptime frag_size = p_reg_tile.element_size
         var reg_val = Self._scale_p(
-            p_reg_tile.raw_load[width=frag_size](0)
+            p_reg_tile.load[alignment=align_of[p_reg_tile.dtype]()](
+                Coord(Idx[0], Idx[0])
+            )
         ).cast[Self.dtype]()
 
         # Apply swizzle to spread rows across different LDS banks.
         # Use block base (smem_base + byte_offset) so the swizzle
         # offset matches the read path in get_mma_tile_shared.
         comptime if case .Some(swizzle) = Self.p_swizzle:
-            var block_base = smem_base + byte_offset
+            var block_base = smem_base.unsafe_offset(byte_offset)
             var elem_off = mma_tile_off + lane_off_in_mma
             var swizzled = swizzle(elem_off // frag_w) * frag_w
-            (block_base + swizzled).store(reg_val)
+            (block_base.unsafe_offset(swizzled)).store(reg_val)
         else:
-            dst_frag.raw_store[width=frag_w](0, reg_val)
+            dst_frag.store[alignment=align_of[Self.dtype]()](
+                Coord(Idx[0], Idx[0], Idx[0]), reg_val
+            )
 
     @inline(.always)
     def copy_to_shared(self):
@@ -1020,7 +1024,9 @@ struct PRegisterBuffer[
                         n_mma_in_block * Int(Self.num_n_mmas) + n_mma
                     ) * Int(warp_stride)
                     (
-                        block_base + warp_off + Int(lid) * Self.output_frag_size
+                        block_base.unsafe_offset(warp_off).unsafe_offset(
+                            Int(lid) * Self.output_frag_size
+                        )
                     ).store(reg16)
             return
 
@@ -1059,9 +1065,9 @@ struct PRegisterBuffer[
                         comptime reg_idx = n_mma * Self.num_m_mmas + m_mma
                         var p_reg_tile = p_reg_vec.tile[1, 1](reg_idx, 0)
                         var reg_val = Self._scale_p(
-                            p_reg_tile.raw_load[width=p_reg_tile.element_size](
-                                0
-                            )
+                            p_reg_tile.load[
+                                alignment=align_of[p_reg_tile.dtype]()
+                            ](Coord(Idx[0], Idx[0]))
                         ).cast[Self.dtype]()
 
                         var elem_off = (
@@ -1069,7 +1075,7 @@ struct PRegisterBuffer[
                             + c * frag_w
                             + n_mma * (simd_w // Self.num_n_mmas)
                         )
-                        (block_base + elem_off).store(reg_val)
+                        (block_base.unsafe_offset(elem_off)).store(reg_val)
             else:
                 comptime for m_mma in range(Self.num_m_mmas):
                     comptime for n_mma in range(Self.num_n_mmas):
@@ -1107,22 +1113,24 @@ struct PRegisterBuffer[
                             1 + i * num_n_mmas_per_bk
                         ) * Self.num_m_mmas + m_mma
                         var lo = Self._scale_p(
-                            p_reg_vec.tile[1, 1](lo_idx, 0).raw_load[
-                                width=frag_w
-                            ](0)
+                            p_reg_vec.tile[1, 1](lo_idx, 0).load[
+                                width=frag_w,
+                                alignment=align_of[p_reg_vec.dtype](),
+                            ](Coord(Idx[0], Idx[0]))
                         ).cast[Self.dtype]()
                         var hi = Self._scale_p(
-                            p_reg_vec.tile[1, 1](hi_idx, 0).raw_load[
-                                width=frag_w
-                            ](0)
+                            p_reg_vec.tile[1, 1](hi_idx, 0).load[
+                                width=frag_w,
+                                alignment=align_of[p_reg_vec.dtype](),
+                            ](Coord(Idx[0], Idx[0]))
                         ).cast[Self.dtype]()
                         var joined = lo.join(hi)
 
                         var group_idx = r * (Self.BK // group_w) + c
                         var swizzled_group = Self.p_swizzle.value()(group_idx)
-                        (block_base + swizzled_group * group_w).store[
-                            width=group_w
-                        ](joined)
+                        (
+                            block_base.unsafe_offset(swizzled_group * group_w)
+                        ).store[width=group_w](joined)
             else:
                 comptime for i in range(Self.WN // Self.BK):
                     var block_idx_ = Int(i) + warp_col * (Self.WN // Self.BK)

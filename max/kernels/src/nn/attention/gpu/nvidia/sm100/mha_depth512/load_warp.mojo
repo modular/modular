@@ -440,7 +440,7 @@ def depth512_load[
             fold_chunks=v_fold_chunks,
         ](
             v_tma_op,
-            kv_smem + kv_pipeline.state.index() * UInt32(kv_elems),
+            kv_smem.unsafe_offset(kv_pipeline.state.index() * UInt32(kv_elems)),
             mbar[],
             kv_head_idx=kv_head_idx,
             elect=e,
@@ -508,7 +508,7 @@ def depth512_load[
             fold_chunks=k_fold_chunks,
         ](
             k_tma_op,
-            kv_smem + kv_pipeline.state.index() * UInt32(kv_elems),
+            kv_smem.unsafe_offset(kv_pipeline.state.index() * UInt32(kv_elems)),
             mbar[],
             kv_head_idx=kv_head_idx,
             elect=e,
@@ -548,7 +548,7 @@ def depth512_load[
         comptime if fuse_gqa:
             q_tma_op.async_copy_4d_elect[cta_group=cta_group](
                 QType(
-                    q_smem + q_stage_elements * qk_stage,
+                    q_smem.unsafe_offset(q_stage_elements * qk_stage),
                     tt_row_major[q_elems](),
                 ),
                 mbar[],
@@ -558,7 +558,7 @@ def depth512_load[
         else:
             q_tma_op.async_copy_3d_elect[cta_group=cta_group](
                 QType(
-                    q_smem + q_stage_elements * qk_stage,
+                    q_smem.unsafe_offset(q_stage_elements * qk_stage),
                     tt_row_major[q_elems](),
                 ),
                 mbar[],

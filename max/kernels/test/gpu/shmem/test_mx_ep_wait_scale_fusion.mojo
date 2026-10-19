@@ -151,7 +151,7 @@ def _ep_wait_copy_kernel[
     var expert_slot = 0
     while (
         expert_slot < num_active - 1
-        and Int(a_offsets[Coord(expert_slot + 1)]) <= token
+        and Int(a_offsets[expert_slot + 1]) <= token
     ):
         expert_slot += 1
     var expert_start = Int(a_offsets[Coord(expert_slot)])

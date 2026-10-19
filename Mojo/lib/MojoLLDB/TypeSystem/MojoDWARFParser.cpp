@@ -14,6 +14,7 @@
 #include "MojoDWARFParser.h"
 #include "Mojo/KGENDialect/DebugInfoEncoding.h"
 #include "Mojo/KGENDialect/KGENDType.h"
+#include "Mojo/MojoParser/ASTDecl.h"
 #include "Mojo/MojoTooling/PublicASTDecl.h"
 #include "MojoTypeSystem.h"
 #include "Support/ErrorOr.h"
@@ -26,6 +27,7 @@
 #include <filesystem>
 
 using namespace M;
+using namespace M::KGEN;
 using namespace M::KGEN::Mojo;
 using namespace lldb;
 using namespace lldb_private;
@@ -207,14 +209,14 @@ MojoDWARFParser::MojoDWARFParser(MojoTypeSystem &typeSystem)
 
 MojoDWARFParser::~MojoDWARFParser() = default;
 
-MojoASTDeclRef MojoDWARFParser::getDeclForDIE(const DWARFDIE &die) {
+LIT::ASTDecl *MojoDWARFParser::getDeclForDIE(const DWARFDIE &die) {
   if (!die)
-    return {};
-  if (MojoASTDeclRef decl = getCachedDeclForDIE(die))
+    return nullptr;
+  if (LIT::ASTDecl *decl = getCachedDeclForDIE(die))
     return decl;
 
   SymbolFileDWARF *dwarf = die.GetDWARF();
-  MojoASTDeclRef decl;
+  LIT::ASTDecl *decl = nullptr;
 
   switch (die.Tag()) {
   case DW_TAG_compile_unit: {
@@ -259,15 +261,15 @@ MojoASTDeclRef MojoDWARFParser::getDeclForDIE(const DWARFDIE &die) {
   return decl;
 }
 
-MojoASTDeclRef MojoDWARFParser::getCachedDeclForDIE(const DWARFDIE &die) {
+LIT::ASTDecl *MojoDWARFParser::getCachedDeclForDIE(const DWARFDIE &die) {
   if (die) {
     if (auto pos = dieToDecl.find(die.GetDIE()); pos != dieToDecl.end())
       return pos->second;
   }
-  return {};
+  return nullptr;
 }
 
-MojoASTDeclRef
+LIT::ASTDecl *
 MojoDWARFParser::getDeclContextContainingDIE(const DWARFDIE &die,
                                              DWARFDIE *declDieCopy) {
   SymbolFileDWARF *dwarf = die.GetDWARF();
@@ -278,10 +280,10 @@ MojoDWARFParser::getDeclContextContainingDIE(const DWARFDIE &die,
     *declDieCopy = declDie;
 
   if (declDie) {
-    if (MojoASTDeclRef decl = getDeclForDIE(declDie))
+    if (LIT::ASTDecl *decl = getDeclForDIE(declDie))
       return decl;
   }
-  return {};
+  return nullptr;
 }
 
 void MojoDWARFParser::updateSymbolContextScopeForType(const SymbolContext &sc,
@@ -312,8 +314,8 @@ void MojoDWARFParser::updateSymbolContextScopeForType(const SymbolContext &sc,
 CompilerDeclContext
 MojoDWARFParser::GetDeclContextForUIDFromDWARF(const DWARFDIE &die) {
   if (die.Tag() == DW_TAG_compile_unit) {
-    if (MojoASTDeclRef decl = getDeclForDIE(die))
-      return CompilerDeclContext(&typeSystem, &decl);
+    if (LIT::ASTDecl *decl = getDeclForDIE(die))
+      return CompilerDeclContext(&typeSystem, decl);
   }
   return {};
 }
@@ -420,8 +422,9 @@ MojoDWARFParser::ParseTypeFromDWARF(const lldb_private::SymbolContext &sc,
   case DW_TAG_inlined_subroutine:
   case DW_TAG_subroutine_type:
   case DW_TAG_subprogram: {
-    if (MojoASTDeclRef decl = getDeclForDIE(die)) {
-      CompilerType mojoType = typeSystem.createCompilerType(decl.getType());
+    if (LIT::ASTDecl *decl = getDeclForDIE(die)) {
+      CompilerType mojoType =
+          typeSystem.createCompilerType(decl->getToolingType().mlirType);
 
       type = dwarf->MakeType(die.GetID(), attrs.name, attrs.byteSize, nullptr,
                              attrs.type.Reference().GetID(),
@@ -510,8 +513,9 @@ MojoDWARFParser::ParseTypeFromDWARF(const lldb_private::SymbolContext &sc,
       }
     }
     if (!mojoType.IsValid()) {
-      if (MojoASTDeclRef decl = getDeclForDIE(die)) {
-        CompilerType mojoType = typeSystem.createCompilerType(decl.getType());
+      if (LIT::ASTDecl *decl = getDeclForDIE(die)) {
+        CompilerType mojoType =
+            typeSystem.createCompilerType(decl->getToolingType().mlirType);
         type = dwarf->MakeType(
             die.GetID(), attrs.name, attrs.byteSize, nullptr, LLDB_INVALID_UID,
             lldb_private::Type::eEncodingIsUID, &attrs.decl, mojoType,
@@ -548,10 +552,9 @@ MojoDWARFParser::ParseTypeFromDWARF(const lldb_private::SymbolContext &sc,
 bool MojoDWARFParser::CompleteStructureTypeFromDWARF(
     const DWARFDIE &die, lldb_private::Type *type,
     const CompilerType &compilerType) {
-  MojoASTDeclRef structDecl = getDeclForDIE(die);
-  assert(structDecl && "All structs should have a decl.");
+  auto *structDecl = cast<LIT::StructASTDecl>(getDeclForDIE(die));
 
-  if (completedDecls.contains(&*structDecl))
+  if (completedDecls.contains(structDecl))
     return true;
 
   SymbolFileDWARF *dwarf = die.GetDWARF();

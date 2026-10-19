@@ -200,3 +200,18 @@ def test_a_modulev3_graph_takes_no_group(session: InferenceSession) -> None:
                 "b": _spec("b", 1.0, group="g"),
             },
         )
+
+
+def test_a_modulev3_graph_casts_its_weights_only_when_asked() -> None:
+    def spec(auto_cast: bool) -> GraphSpec:
+        return GraphSpec(
+            ScaleV3(Tensor.zeros([2], dtype=DType.bfloat16, device=CPU())),
+            "scale_bf16",
+            [TensorType(DType.bfloat16, [2], device=DeviceRef.CPU())],
+            weights={"weight": np.full(2, 2.0, dtype=np.float32)},
+            auto_cast=auto_cast,
+        )
+
+    assert set(spec(auto_cast=True).weights_registry()) == {"weight"}
+    with pytest.raises(ValueError):
+        spec(auto_cast=False).weights_registry()

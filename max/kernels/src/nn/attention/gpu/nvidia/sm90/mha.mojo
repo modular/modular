@@ -206,7 +206,7 @@ def mha_sm90_dispatch[
     comptime swizzle_mode = TensorMapSwizzle.SWIZZLE_128B
     var q = (
         q_arg.unsafe_ptr()
-        .bitcast[Scalar[KVType.dtype]]()
+        .unsafe_bitcast[Scalar[KVType.dtype]]()
         .unsafe_origin_cast[MutAnyOrigin]()
     )
 
@@ -1108,7 +1108,7 @@ def _mha_sm90[
         BN=_kv_sub_tile_rows(config.block_n(), KVLUTType.page_size),
         BK=config.padded_depth,
     ],
-    o_ptr_arg: UnsafePointer[Scalar[output_type], MutAnyOrigin],
+    o_ptr_arg: MutPointer[Scalar[output_type], MutAnyOrigin],
     kv_lut: KVLUTType,
     scale: Float32,
     batch_size: UInt32,
@@ -1208,7 +1208,7 @@ def _mha_sm90[
     ]()
     # We have `num_pipeline_stages` instances of each
     comptime kv_smem_size = config.kv_smem_size(True)
-    var kv_smem = q_smem + q_smem_size
+    var kv_smem = q_smem.unsafe_offset(q_smem_size)
 
     # var head_idx: UInt32 = block_idx.y
     # var q_tile_idx: UInt32 = block_idx.x
@@ -1293,7 +1293,6 @@ def _mha_sm90[
     #     ),
     # )
     # Vectorizing the layout:
-    comptime element_layout = Layout.row_major(1, frag_simdwidth)
     comptime vec_output_row_shape = IntTuple(num_row_blocks_per_mma, num_m_mmas)
     comptime p_vec_output_layout = Layout(
         IntTuple(
@@ -1339,19 +1338,23 @@ def _mha_sm90[
 
     # Handle sink_weights
     var sink_weights_ptr = Optional[
-        UnsafePointer[Scalar[kv_type], ImmutAnyOrigin]
+        ImmPointer[Scalar[kv_type], ImmutAnyOrigin]
     ]()
 
     comptime if not SinkType.is_null:
-        sink_weights_ptr = rebind[
-            UnsafePointer[Scalar[kv_type], ImmutAnyOrigin]
-        ](sink_weights.value())
+        sink_weights_ptr = rebind[ImmPointer[Scalar[kv_type], ImmutAnyOrigin]](
+            sink_weights.value()
+        )
 
-    var produced_mbar_kv = (kv_smem + kv_smem_size).bitcast[SharedMemBarrier]()
-    var consumed_mbar_kv = produced_mbar_kv + pipeline_stages
-    var produced_mbar_q = consumed_mbar_kv + pipeline_stages
-    var consumed_mbar_q = produced_mbar_q + 2
-    var block_idx_ptr = (consumed_mbar_q + 2).bitcast[UInt32]()
+    var produced_mbar_kv = kv_smem.unsafe_offset(kv_smem_size).unsafe_bitcast[
+        SharedMemBarrier
+    ]()
+    var consumed_mbar_kv = produced_mbar_kv.unsafe_offset(pipeline_stages)
+    var produced_mbar_q = consumed_mbar_kv.unsafe_offset(pipeline_stages)
+    var consumed_mbar_q = produced_mbar_q.unsafe_offset(2)
+    var block_idx_ptr = consumed_mbar_q.unsafe_offset(2).unsafe_bitcast[
+        UInt32
+    ]()
 
     # comptime USE_TMA = True
     comptime USE_TMA = False
@@ -1436,7 +1439,8 @@ def _mha_sm90[
     ) {imm}:
         comptime sz = BN * config.padded_depth
         k_smem = TileTensor[address_space=.SHARED, linear_idx_type=.int32](
-            (kv_smem + UInt32(sz) * idx).as_unsafe_any_origin(), k_smem_layout
+            kv_smem.unsafe_offset(UInt32(sz) * idx).as_unsafe_any_origin(),
+            k_smem_layout,
         )
 
     @inline(.always)
@@ -1452,7 +1456,8 @@ def _mha_sm90[
     ) {imm}:
         comptime sz = BN * config.padded_depth
         v_smem = TileTensor[address_space=.SHARED, linear_idx_type=.int32](
-            (kv_smem + UInt32(sz) * idx).as_unsafe_any_origin(), v_smem_layout
+            kv_smem.unsafe_offset(UInt32(sz) * idx).as_unsafe_any_origin(),
+            v_smem_layout,
         )
 
     @inline(.always)
@@ -1539,7 +1544,9 @@ def _mha_sm90[
         ]:
             # Preserve the full parent Q layout and its pitch across warp groups.
             return TileTensor[address_space=.SHARED, linear_idx_type=.int32](
-                (q_smem + UInt32(q_size) * q_idx).as_unsafe_any_origin(),
+                q_smem.unsafe_offset(
+                    UInt32(q_size) * q_idx
+                ).as_unsafe_any_origin(),
                 q_smem_layout_consumer,
             )
 
@@ -1767,13 +1774,11 @@ def _mha_sm90[
             # if we specialize and unswitch on `first_iter`
             # otherwise, the branch requires synchronization
             comptime for row in range(num_rows_per_warp):
-                var c = SIMD[accum_type, frag_simdwidth](
-                    rebind[Scalar[accum_type]](correction[Coord(Idx[row])])
-                )
+                var c = SIMD[accum_type, frag_simdwidth](correction[Idx[row]])
 
                 comptime for col in range(num_cols_output):
                     vout[Coord(Idx[row], Idx[col])] = (
-                        vout[Coord(Idx[row], Idx[col])] * c
+                        vout[Idx[row], Idx[col]] * c
                     )
 
         @inline(.always)
@@ -1782,8 +1787,8 @@ def _mha_sm90[
         ):
             # new_rowsum, old_rowsum = 1/old_rowsum, new_rowsum
             comptime for row in range(num_rows_per_warp):
-                var old = old_rowsum[Coord(Idx[row])]
-                var new = new_rowsum[Coord(Idx[row])]
+                var old = old_rowsum[Idx[row]]
+                var new = new_rowsum[Idx[row]]
                 new_rowsum[Coord(Idx[row])] = recip(old)[0]
                 old_rowsum[Coord(Idx[row])] = new
 
@@ -1798,20 +1803,20 @@ def _mha_sm90[
             # Apply softmax denumerator.
             comptime for row in range(num_rows_per_warp):
                 var rs_inv = SIMD[accum_type, frag_simdwidth](
-                    rowsum_inv[Coord(Idx[row])][0]
+                    rowsum_inv[Idx[row]]
                 )
 
                 comptime for col in range(num_cols_output):
                     vout[Coord(Idx[row], Idx[col])] = (
-                        vout[Coord(Idx[row], Idx[col])] * rs_inv
+                        vout[Idx[row], Idx[col]] * rs_inv
                     )
 
-            var output_ptr: UnsafePointer[
+            var output_ptr: MutPointer[
                 Scalar[output_type], MutAnyOrigin
             ] = o_ptr_arg
 
             comptime if decoding and PartitionType.do_partition:
-                output_ptr = output_ptr + (
+                output_ptr = output_ptr.unsafe_offset(
                     UInt32(depth * num_heads)
                     * batch_size
                     * position.prompt_offset
@@ -1836,7 +1841,9 @@ def _mha_sm90[
                 tid,
                 local_warp_group_idx,
                 warp_y,
-                (q_smem + q_idx * q_tile_size).as_unsafe_any_origin(),
+                q_smem.unsafe_offset(
+                    q_idx * q_tile_size
+                ).as_unsafe_any_origin(),
                 output_reg_tile,
             )
             # Guard writing to shared memory.
@@ -1958,21 +1965,17 @@ def _mha_sm90[
 
             comptime if decoding:
                 comptime for i in range(q_head_indices.size):
-                    var sink_contribution = exp2(
-                        sink_weight - rowmax[Coord(Idx[i])]
-                    )
+                    var sink_contribution = exp2(sink_weight - rowmax[Idx[i]])
                     attention_rowsum[Coord(Idx[i])] = (
-                        attention_rowsum[Coord(Idx[i])] + sink_contribution[0]
+                        attention_rowsum[Idx[i]] + sink_contribution[0]
                     )
 
             else:
                 comptime for i in range(num_rows_per_warp):
                     # Compute exp2((sink_weight - rowmax[j]) * log2e)
-                    var sink_contribution = exp2(
-                        sink_weight - rowmax[Coord(Idx[i])]
-                    )
+                    var sink_contribution = exp2(sink_weight - rowmax[Idx[i]])
                     attention_rowsum[Coord(Idx[i])] = (
-                        attention_rowsum[Coord(Idx[i])] + sink_contribution[0]
+                        attention_rowsum[Idx[i]] + sink_contribution[0]
                     )
 
         rowsum.copy_from(attention_rowsum)
@@ -2053,10 +2056,10 @@ def _mha_sm90[
                                 var q_head_idx = q_heads[i]
                                 exp_sum_ptr[q_head_idx] = rebind[
                                     Scalar[PartitionType.accum_dtype]
-                                ](rowsum[Coord(Idx[i])])
+                                ](rowsum[Idx[i]])
                                 qk_max_ptr[q_head_idx] = rebind[
                                     Scalar[PartitionType.accum_dtype]
-                                ](rowmax[Coord(Idx[i])])
+                                ](rowmax[Idx[i]])
                     var score_frag_rowsum = _rowsum[
                         type_of(rowsum_buffer.layout),
                         frag_simdwidth,
@@ -2118,9 +2121,8 @@ def _mha_sm90[
 
                     comptime for i in range(num_rows_per_warp):
                         rowsum[Coord(Idx[i])] = (
-                            rowsum[Coord(Idx[i])]
-                            * score_frag_rowmax[Coord(Idx[i])]
-                            + score_frag_rowsum[Coord(Idx[i])]
+                            rowsum[Idx[i]] * score_frag_rowmax[Idx[i]]
+                            + score_frag_rowsum[Idx[i]]
                         )
 
                     wait_for_p_mul_v(read_idx_v)  # can rw output and pfrag
@@ -2169,13 +2171,13 @@ def _mha_sm90[
                     var q_head_idx = q_heads[i]
                     exp_sum_ptr[q_head_idx] = rebind[
                         Scalar[PartitionType.accum_dtype]
-                    ](rowsum[Coord(Idx[i])])
+                    ](rowsum[Idx[i]])
                     qk_max_ptr[q_head_idx] = rebind[
                         Scalar[PartitionType.accum_dtype]
-                    ](rowmax[Coord(Idx[i])])
+                    ](rowmax[Idx[i]])
 
         comptime for row in range(num_rows_per_warp):
-            rowsum[Coord(Idx[row])] = recip(rowsum[Coord(Idx[row])])[0]
+            rowsum[Coord(Idx[row])] = recip(rowsum[Idx[row]])[0]
         wgmma_1.wait_group()
         write_output(position, q_pipeline_state.index(), rowsum)
         # don't arrive

@@ -285,6 +285,144 @@ def fused_qkv_ragged_matmul(
     )[0].tensor
 
 
+def fused_chunked_qkv_rope_store_ragged(
+    qkv: TensorValue,
+    input_row_offsets: TensorValue,
+    freqs_cis: TensorValue,
+    kv_collection: PagedCacheValues,
+    layer_idx: TensorValue,
+    value_scale: float,
+    *,
+    num_q_heads: int,
+    qk_head_dim: int,
+    v_head_dim: int,
+) -> TensorValue:
+    """Prepares chunked QKV projections and appends to a paged KV cache.
+
+    Applies partial NeoX RoPE to Q/K, scales V in FP32 before BF16 rounding,
+    and zero-pads each head to the cache width. Each contiguous input chunk
+    contains its query, key, and value head regions in that order.
+    Query rows at or past ``input_row_offsets[-1]`` are left unwritten.
+
+    Args:
+        qkv: BF16 projection with shape ``[tokens, chunks, chunk_width]``.
+        input_row_offsets: Ragged uint32 offsets, ``[batch_size + 1]``.
+        freqs_cis: BF16 interleaved RoPE coefficients, ``[positions, rotary_width]``.
+        kv_collection: Unquantized, non-MLA BF16 paged cache on the same GPU.
+        layer_idx: CPU uint32 scalar selecting the cache layer.
+        value_scale: Finite FP32 scale applied to unpadded values.
+        num_q_heads: Total query heads across all input chunks.
+        qk_head_dim: Unpadded query/key head width.
+        v_head_dim: Unpadded value head width.
+
+    Returns:
+        Padded rotated queries, ``[tokens, num_q_heads, cache_head_width]``.
+
+    Raises:
+        ValueError: If shapes, dtypes, devices, or cache layout are unsupported.
+    """
+    _check_rank(3, qkv=qkv)
+    _check_rank(2, freqs_cis=freqs_cis)
+    _check_rank(1, input_row_offsets=input_row_offsets)
+    _check_rank(0, layer_idx=layer_idx)
+    _check_dtype(DType.bfloat16, qkv=qkv, freqs_cis=freqs_cis)
+    _check_dtype(
+        DType.uint32, input_row_offsets=input_row_offsets, layer_idx=layer_idx
+    )
+    blocks = kv_collection.kv_blocks
+    if blocks.rank != 6 or blocks.dtype != DType.bfloat16:
+        raise ValueError(
+            f"kv_blocks must be a rank-6 BF16 cache, got rank {blocks.rank}, dtype {blocks.dtype}"
+        )
+    if kv_collection.kv_scales is not None:
+        raise ValueError("quantized KV caches are unsupported")
+    if kv_collection.kv_blocks_per_layer is not None:
+        raise ValueError("per-layer KV buffers are unsupported")
+    if not all(
+        isinstance(dim, StaticDim)
+        for dim in (*qkv.shape[1:], freqs_cis.shape[1], *blocks.shape[1:])
+    ):
+        raise ValueError("chunk, frequency, and cache extents must be static")
+    chunks, chunk_width = (int(dim) for dim in qkv.shape[1:])
+    kv_heads, padded_dim = (int(dim) for dim in blocks.shape[-2:])
+    rotary_dim = int(freqs_cis.shape[1])
+    if int(blocks.shape[1]) != 2:
+        raise ValueError(
+            "cache must have separate K/V planes; MLA is unsupported"
+        )
+    if chunks <= 0 or num_q_heads <= 0 or kv_heads <= 0:
+        raise ValueError("chunk and head counts must be positive")
+    if num_q_heads % chunks or kv_heads % chunks:
+        raise ValueError(
+            f"query and KV heads must be divisible by chunks, got {num_q_heads} Q, {kv_heads} KV, {chunks} chunks"
+        )
+    if not (0 < qk_head_dim <= padded_dim and 0 < v_head_dim <= padded_dim):
+        raise ValueError(
+            f"Q/K and V widths must fit the padded cache head, got {qk_head_dim}, {v_head_dim}, cache {padded_dim}"
+        )
+    if not 0 < rotary_dim <= qk_head_dim:
+        raise ValueError(
+            f"rotary width must be positive and fit the Q/K head, got {rotary_dim}, Q/K {qk_head_dim}"
+        )
+    if any(
+        dim % 8 for dim in (qk_head_dim, v_head_dim, padded_dim, rotary_dim)
+    ):
+        raise ValueError("head and rotary widths must be aligned to 8 elements")
+    expected_width = (
+        num_q_heads * qk_head_dim + kv_heads * (qk_head_dim + v_head_dim)
+    ) // chunks
+    if chunk_width != expected_width:
+        raise ValueError(
+            f"chunk width must be {expected_width}, got {chunk_width}"
+        )
+    if not qkv.device.is_gpu():
+        raise ValueError("chunked QKV preparation requires a GPU")
+    for name, value in (
+        ("freqs_cis", freqs_cis),
+        ("input_row_offsets", input_row_offsets),
+        ("kv_blocks", blocks),
+        ("cache_lengths", kv_collection.cache_lengths),
+        ("lookup_table", kv_collection.lookup_table),
+    ):
+        if value.device != qkv.device:
+            raise ValueError(f"{name} must be on the qkv device")
+    if layer_idx.device != DeviceRef.CPU():
+        raise ValueError("layer_idx must be a CPU scalar")
+    if (
+        not math.isfinite(value_scale)
+        or abs(value_scale) > np.finfo(np.float32).max
+    ):
+        raise ValueError(
+            "value_scale must be finite and representable as float32"
+        )
+    return ops.inplace_custom(
+        "mo.chunked_qkv_rope_store.ragged.paged",
+        device=qkv.device,
+        values=[
+            qkv,
+            input_row_offsets,
+            freqs_cis,
+            *kv_collection.flatten_without_attention_dispatch_metadata(),
+            layer_idx,
+            ops.constant(
+                value_scale, dtype=DType.float32, device=DeviceRef.CPU()
+            ),
+        ],
+        out_types=[
+            TensorType(
+                dtype=DType.bfloat16,
+                shape=[
+                    qkv.shape[0],
+                    num_q_heads,
+                    kv_collection.kv_blocks.shape[-1],
+                ],
+                device=qkv.device,
+            )
+        ],
+        parameters={"qk_head_dim": qk_head_dim, "v_head_dim": v_head_dim},
+    )[0].tensor
+
+
 def rope_split_store_ragged(
     kv_params: KVCacheParams,
     qkv: TensorValue,
@@ -4343,10 +4481,15 @@ def flash_attention_gpu(
 
     .. invisible-code-block: python
 
+        from max.driver import (
+            bfloat16_as_uint16_to_float32,
+            float32_to_bfloat16_as_uint16,
+        )
+
         def round_to_bf16(x):
-            bits = x.view(np.uint32)
-            bits = bits + np.uint32(0x7FFF) + ((bits >> 16) & np.uint32(1))
-            return (bits & np.uint32(0xFFFF0000)).view(np.float32)
+            return bfloat16_as_uint16_to_float32(
+                float32_to_bfloat16_as_uint16(x.astype(np.float32))
+            )
 
         assert output.dtype == DType.bfloat16
         assert result.shape == (batch, seq_len, num_heads, head_dim)
@@ -4812,10 +4955,15 @@ def flash_attention_ragged_gpu(
 
     .. invisible-code-block: python
 
+        from max.driver import (
+            bfloat16_as_uint16_to_float32,
+            float32_to_bfloat16_as_uint16,
+        )
+
         def round_to_bf16(x):
-            bits = x.view(np.uint32)
-            bits = bits + np.uint32(0x7FFF) + ((bits >> 16) & np.uint32(1))
-            return (bits & np.uint32(0xFFFF0000)).view(np.float32)
+            return bfloat16_as_uint16_to_float32(
+                float32_to_bfloat16_as_uint16(x.astype(np.float32))
+            )
 
         assert output.dtype == DType.bfloat16
         assert result.shape == (total_seq_len, num_heads, head_dim)
@@ -6521,6 +6669,96 @@ def moe_finalize(
     return result[0].tensor
 
 
+def moe_create_indices_with_slots(
+    topk_ids: TensorValue,
+    slot_weights: TensorValue,
+    num_groups: int,
+    *,
+    slot_stride: int,
+    scale_rows: DimLike,
+    expert_offset: int = 0,
+    local_experts: int | None = None,
+) -> tuple[TensorValue, ...]:
+    """:func:`moe_create_indices` plus a slot-packed grouped GEMM's row maps.
+
+    For a grouped GEMM over the routed slots sorted by group and packed, that
+    reads its A-side scales from 128-row tiles per group (the layout of
+    ``needs_scales_offset``). The maps it would otherwise derive from the
+    CSR in the graph come out of the same kernel, with the same values.
+
+    Expert ids are mapped to groups first: ``id - expert_offset`` when that
+    is in ``[0, local_experts)``, else ``local_experts``. With
+    ``num_groups == local_experts + 1`` that last group collects the slots
+    of experts held on other devices (expert parallel), so every slot still
+    gets order and restore entries.
+
+    Args:
+        topk_ids: ``[slots]`` int32 expert id of each routed slot.
+        slot_weights: ``[slots]`` float32 routing weight of each slot.
+        num_groups: Groups to bucket into, ``local_experts`` or one more.
+        slot_stride: Slots per token (``n_experts_per_tok``).
+        scale_rows: Length of ``scale_slot``, at least the aligned total of
+            the group tiles; ``slots + 128 * num_groups`` always is, and so is
+            ``128 * (ceil(slots / 128) + min(num_groups, slots))``.
+        expert_offset: Global id of the first local expert.
+        local_experts: Experts held locally; ``num_groups`` if ``None``.
+
+    Returns:
+        ``token_expert_order``, ``expert_start_indices``,
+        ``restore_token_order`` (int32), ``expert_ids`` and
+        ``expert_usage_stats`` as :func:`moe_create_indices`, then:
+
+        - scales_offset: ``[num_groups]`` uint32, as ``needs_scales_offset``.
+        - slot_token: ``[slots]`` int32, ``token_expert_order // slot_stride``.
+        - slot_weight: ``[slots]`` float32,
+          ``slot_weights[token_expert_order]``.
+        - scale_slot: ``[scale_rows]`` int32, the sorted slot
+          whose scales each scale row holds: row ``r`` of group ``g``'s tiles
+          holds slot ``expert_start_indices[g] + r`` while ``r`` is below the
+          group's count, and every other row holds slot 0.
+    """
+    if local_experts is None:
+        local_experts = num_groups
+    if num_groups not in (local_experts, local_experts + 1):
+        raise ValueError(
+            f"num_groups={num_groups} must be local_experts={local_experts}"
+            " or one more"
+        )
+    if topk_ids.dtype != DType.int32 or slot_weights.dtype != DType.float32:
+        raise ValueError(
+            "expected int32 topk_ids and float32 slot_weights, got"
+            f" {topk_ids.dtype} and {slot_weights.dtype}"
+        )
+    device = topk_ids.device
+    slots = topk_ids.shape[0]
+
+    def out(dtype: DType, length: Any) -> TensorType:
+        return TensorType(dtype=dtype, shape=[length], device=device)
+
+    results = ops.custom(
+        "mo.moe.create.indices.with.slots",
+        device=device,
+        values=[topk_ids, slot_weights],
+        out_types=[
+            out(DType.uint32, slots),  # token_expert_order
+            out(DType.uint32, num_groups + 1),  # expert_start_indices
+            out(DType.int32, slots),  # restore_token_order
+            out(DType.int32, num_groups),  # expert_ids
+            out(DType.uint32, 2),  # expert_usage_stats
+            out(DType.uint32, num_groups),  # scales_offset
+            out(DType.int32, slots),  # slot_token
+            out(DType.float32, slots),  # slot_weight
+            out(DType.int32, scale_rows),  # scale_slot
+        ],
+        parameters={
+            "slot_stride": slot_stride,
+            "expert_offset": expert_offset,
+            "local_experts": local_experts,
+        },
+    )
+    return tuple(r.tensor for r in results)
+
+
 def moe_router_group_limited(
     expert_scores: TensorValue,
     expert_bias: TensorValue,
@@ -7471,10 +7709,15 @@ def grouped_matmul_ragged(
 
     .. invisible-code-block: python
 
+        from max.driver import (
+            bfloat16_as_uint16_to_float32,
+            float32_to_bfloat16_as_uint16,
+        )
+
         def round_to_bf16(x):
-            bits = x.view(np.uint32)
-            bits = bits + np.uint32(0x7FFF) + ((bits >> 16) & np.uint32(1))
-            return (bits & np.uint32(0xFFFF0000)).view(np.float32)
+            return bfloat16_as_uint16_to_float32(
+                float32_to_bfloat16_as_uint16(x.astype(np.float32))
+            )
 
         assert output.dtype == DType.bfloat16
         assert result.shape == (total_tokens, out_features)

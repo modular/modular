@@ -13,10 +13,10 @@
 """Provides per-channel grouped 4-bit quantization and K-quant dequantization kernels."""
 
 from std.math import ceil, ceildiv
-from std.sys.info import size_of
+from std.sys.info import align_of, size_of
 
-from layout import TileTensor, row_major
-from std.memory import UnsafePointer, bitcast, unsafe_memcpy
+from layout import Coord, TileTensor, row_major
+from std.memory import bitcast, unsafe_memcpy
 from std.utils import IndexList, StaticTuple
 
 
@@ -312,7 +312,7 @@ struct Q4sym[
         ), "Only support fully divisible dimensions right now."
 
         var blob_output_ptr = output_tt.ptr
-        var base_block_ptr = blob_output_ptr.bitcast[
+        var base_block_ptr = blob_output_ptr.unsafe_bitcast[
             Q4sym[Self.group_size, Self.float_dtype]
         ]()
 
@@ -323,26 +323,28 @@ struct Q4sym[
             Int(input_tt.dim[input_rank - 1]()), Self.group_size
         )
 
+        var input_2d = input_tt.reshape(
+            row_major(outer_stride, input_inner_stride)
+        )
+
         # TODO: vectorize parallelize, blah blah blah
         for i in range(outer_stride):
             for j in range(output_inner_stride):
-                var flat_index_input = (
-                    input_inner_stride * i + j * Self.group_size
-                )
-                var loaded_group = input_tt.raw_load[width=Self.group_size](
-                    flat_index_input
-                )
+                var loaded_group = input_2d.load[
+                    width=Self.group_size,
+                    alignment=align_of[Self.float_dtype](),
+                ](Coord(i, j * Self.group_size))
 
                 var flat_index_output = output_inner_stride * i + j
-                var output_ptr = base_block_ptr + flat_index_output
+                var output_ptr = base_block_ptr.unsafe_offset(flat_index_output)
 
                 # TODO: use the memory more directly instead of unsafe_memcpy
                 var encoded_data = Q4sym[Self.group_size, Self.float_dtype](
                     loaded_group
                 )
-                var src_ptr = UnsafePointer(to=encoded_data).address_space_cast[
-                    output_ptr.address_space
-                ]()
+                var src_ptr = Pointer(
+                    to=encoded_data
+                ).unsafe_address_space_cast[output_ptr.address_space]()
                 unsafe_memcpy(
                     dest=output_ptr,
                     src=src_ptr,
@@ -387,7 +389,7 @@ struct Q4sym[
         # TODO: check contiguous inputs and outputs
 
         var uint8_input_ptr = input_tt.ptr
-        var base_block_ptr = uint8_input_ptr.bitcast[
+        var base_block_ptr = uint8_input_ptr.unsafe_bitcast[
             Q4sym[Self.group_size, Self.float_dtype]
         ]()
 
@@ -398,23 +400,23 @@ struct Q4sym[
         # Note: this is calculated assuming a pointer of Q4Sym's
         var input_inner_dim = ceildiv(output_inner_dim, Self.group_size)
 
+        var output_2d = output_tt.reshape(
+            row_major(outer_dim, output_inner_dim)
+        )
+
         # TODO: vectorize parallelize, blah blah blah
         for i in range(outer_dim):
             for j in range(input_inner_dim):
                 var flat_index_input = input_inner_dim * i + j
                 var encoded = Q4sym[Self.group_size, Self.float_dtype]()
                 unsafe_memcpy(
-                    dest=UnsafePointer(to=encoded),
-                    src=base_block_ptr + flat_index_input,
+                    dest=Pointer(to=encoded),
+                    src=base_block_ptr.unsafe_offset(flat_index_input),
                     count=1,
                 )
 
-                var flat_index_output = (
-                    output_inner_dim * i + j * Self.group_size
-                )
-                output_tt.raw_store(
-                    flat_index_output,
-                    encoded.decode_fully(),
+                output_2d.store[alignment=align_of[Self.float_dtype]()](
+                    Coord(i, j * Self.group_size), encoded.decode_fully()
                 )
 
 
@@ -450,7 +452,7 @@ struct block_Q4_K:
 
 
 def scale_min_k4(
-    src_ptr: UnsafePointer[block_Q4_K, address_space=.GENERIC, ...],
+    src_ptr: Pointer[block_Q4_K, address_space=.GENERIC, ...],
     g: Int,
 ) -> Tuple[Float32, Float32]:
     """Extracts the 6-bit quantized scale and min for group `g` from a Q4_K block.
@@ -497,11 +499,11 @@ def q4_k_dequantize_impl(
     var num_blocks = input_tt.num_elements() // block_nbytes
     # The q_bits array is the last field of the block.
     comptime q_bits_offset = block_nbytes - block_QK_K.quantized_k // 2
-    var input_q4_k_ptr = input_tt.ptr.bitcast[block_Q4_K]()
+    var input_q4_k_ptr = input_tt.ptr.unsafe_bitcast[block_Q4_K]()
     var input_flat = input_tt.reshape(row_major(input_tt.num_elements()))
     var output_flat = output_tt.reshape(row_major(output_tt.num_elements()))
     for block_idx in range(num_blocks):
-        var src_ptr = input_q4_k_ptr + block_idx
+        var src_ptr = input_q4_k_ptr.unsafe_offset(block_idx)
         var src_base = block_idx * block_nbytes + q_bits_offset
         var dst_base = block_idx * block_nelems
 
@@ -593,11 +595,11 @@ def q6_k_dequantize_impl[
     var num_blocks = (output_shape[0] * output_shape[1]) // block_nelems
     # Block layout: low 4 bits, then high 2 bits, then scales and the base.
     comptime qh_offset = block_QK_K.quantized_k // 2
-    var input_q6_k_ptr = input_tt.ptr.bitcast[block_Q6_K]()
+    var input_q6_k_ptr = input_tt.ptr.unsafe_bitcast[block_Q6_K]()
     var input_flat = input_tt.reshape(row_major(input_tt.num_elements()))
     var output_flat = output_tt.reshape(row_major(output_tt.num_elements()))
     for block_idx in range(num_blocks):
-        var src_ptr = input_q6_k_ptr + block_idx
+        var src_ptr = input_q6_k_ptr.unsafe_offset(block_idx)
         var src_base = block_idx * block_nbytes
         var dst_base = block_idx * block_nelems
 

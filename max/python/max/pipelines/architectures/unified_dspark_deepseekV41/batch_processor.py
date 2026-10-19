@@ -15,8 +15,9 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
+import numpy as np
 from max import tree
 from max.driver import CPU, Buffer
 from max.dtype import DType
@@ -26,6 +27,7 @@ from max.pipelines.lib import UnifiedSpecDecodeInputs
 from max.pipelines.lib.interfaces.batch_processor import (
     UnifiedSpecDecodeBatchProcessor,
 )
+from max.pipelines.lib.utils import compute_data_parallel_splits
 from typing_extensions import override
 
 from ..deepseekV41.model import engram_lookback_ids_for_contexts
@@ -49,10 +51,15 @@ prompt-and-draft token tensors inside the graph.
 class UnifiedDSparkDeepseekV41Inputs(UnifiedSpecDecodeInputs):
     """Graph inputs for one step of target-plus-drafter decoding.
 
-    :attr:`buffers` lists them in graph-input order: the ragged tokens, row
-    offsets and logit count; the signal buffers (only with more than one
-    device); the KV cache buffers; the speculative-decoding inputs; the
-    Engram lookback window and pinned Engram tables (only when the model has
+    :attr:`buffers` lists them in graph-input order: the ragged tokens; the
+    per-device image span rows and their token rows (set by the pipeline's
+    vision encoder cache, zero rows on a step without images); the row
+    offsets (and, under data parallelism, their host copy) and logit count;
+    under data parallelism the replica splits; the signal buffers (only with
+    more than one device); the KV cache buffers; under data parallelism each
+    device's context length and the expert-parallel buffers; the
+    speculative-decoding inputs; the Engram
+    lookback window and pinned Engram tables (only when the model has
     Engram); and last, a placeholder buffer whose length sets
     :data:`MERGED_ROWS_DIM`.
     """
@@ -61,6 +68,21 @@ class UnifiedDSparkDeepseekV41Inputs(UnifiedSpecDecodeInputs):
     input_row_offsets: Buffer
     return_n_logits: Buffer
     signal_buffers: list[Buffer]
+    host_input_row_offsets: Buffer | None = None
+    """CPU copy of :attr:`input_row_offsets`; only under data parallelism."""
+    data_parallel_splits: Buffer | None = None
+    """Int64 ``[replicas + 1]`` request boundaries of each replica, on CPU.
+
+    Only under data parallelism, where the batch is replica-major.
+    """
+    batch_context_lengths: list[Buffer] = field(default_factory=list)
+    """Per device, its replica's summed context length, int32 ``[1]`` on CPU.
+
+    Only under data parallelism.
+    """
+    ep_buffers: Sequence[Buffer] = ()
+    """The routed experts' expert-parallel communication buffers; only
+    under data parallelism."""
     engram_lookback_ids: Buffer | None = None
     """``[batch, max_ngram_size - 1]`` int64 token ids before each chunk.
 
@@ -81,12 +103,24 @@ class UnifiedDSparkDeepseekV41Inputs(UnifiedSpecDecodeInputs):
             if self.engram_lookback_ids is not None
             else ()
         )
+        host_offsets: tuple[Buffer, ...] = ()
+        splits: tuple[Buffer, ...] = ()
+        if self.data_parallel_splits is not None:
+            assert self.host_input_row_offsets is not None
+            host_offsets = (self.host_input_row_offsets,)
+            splits = (self.data_parallel_splits,)
         return (
             self.tokens,
+            *self.vision_embeddings,
+            *self.vision_scatter_indices,
             self.input_row_offsets,
+            *host_offsets,
             self.return_n_logits,
+            *splits,
             *self.signal_buffers,
             *tree.leaves(self.kv_cache_inputs),
+            *self.batch_context_lengths,
+            *self.ep_buffers,
             *self._spec_decode_tail_buffers(include_in_thinking_phase=False),
             *lookback,
             *self.engram_host_buffers,
@@ -113,6 +147,12 @@ class UnifiedDSparkDeepseekV41BatchProcessor(
 ):
     """Ragged batching with the sampling seed and the Engram lookback window."""
 
+    _ep_buffers: tuple[Buffer, ...] = ()
+
+    def bind_ep_buffers(self, buffers: Sequence[Buffer]) -> None:
+        """Binds the expert-parallel buffers created at model load."""
+        self._ep_buffers = tuple(buffers)
+
     @override
     def prepare_initial_token_inputs(
         self,
@@ -123,6 +163,27 @@ class UnifiedDSparkDeepseekV41BatchProcessor(
         inputs = super().prepare_initial_token_inputs(
             replica_batches, kv_cache_inputs, return_n_logits
         )
+        # One batch per data-parallel replica.
+        if len(replica_batches) > 1:
+            contexts = [ctx for batch in replica_batches for ctx in batch]
+            inputs.host_input_row_offsets = Buffer.from_numpy(
+                np.cumsum(
+                    [0] + [ctx.tokens.active_length for ctx in contexts],
+                    dtype=np.uint32,
+                )
+            )
+            inputs.data_parallel_splits = Buffer.from_numpy(
+                compute_data_parallel_splits(replica_batches)
+            )
+            inputs.batch_context_lengths = [
+                Buffer.from_numpy(
+                    np.array(
+                        [sum(ctx.tokens.current_position for ctx in batch)],
+                        dtype=np.int32,
+                    )
+                )
+                for batch in replica_batches
+            ]
         if self.config.engram_layer_ids:
             # The verification pass's chunk starts at each request's
             # processed length, the same cache length the graph gets: the
@@ -155,4 +216,5 @@ class UnifiedDSparkDeepseekV41BatchProcessor(
             kv_cache_inputs=kv_cache_inputs,
             seed=seed,
             structured_output=structured_output,
+            ep_buffers=self._ep_buffers,
         )

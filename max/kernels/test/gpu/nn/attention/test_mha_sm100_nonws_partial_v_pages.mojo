@@ -205,7 +205,7 @@ def main() raises:
             )
             flash_attention[ragged=True](
                 TileTensor(
-                    test_dev.unsafe_ptr() + r * qo_size,
+                    test_dev.unsafe_ptr().unsafe_offset(r * qo_size),
                     row_major(
                         Int64(valid_length), Idx[num_q_heads], Idx[head_size]
                     ),

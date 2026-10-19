@@ -235,15 +235,7 @@ def run_gemm_kernel_1[
     time_kernel(m, run_func, ctx, M * N * K, "naive")
 
     # Do one iteration for verification
-    ctx.enqueue_memset(
-        DeviceBuffer[dtype](
-            ctx,
-            rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](c.ptr),
-            M * N,
-            owning=False,
-        ),
-        0,
-    )
+    ctx.enqueue_memset(c.to_device_buffer(ctx), 0)
     ctx.enqueue_function[func](
         a.as_imm().as_unsafe_any_origin(),
         b.as_imm().as_unsafe_any_origin(),
@@ -355,15 +347,7 @@ def run_gemm_kernel_2[
     time_kernel(m, run_func, ctx, M * N * K, "mem_coalesce")
 
     # Do one iteration for verification
-    ctx.enqueue_memset(
-        DeviceBuffer[dtype](
-            ctx,
-            rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](c.ptr),
-            M * N,
-            owning=False,
-        ),
-        0,
-    )
+    ctx.enqueue_memset(c.to_device_buffer(ctx), 0)
     ctx.enqueue_function[kernel](
         a.as_imm().as_unsafe_any_origin(),
         b.as_imm().as_unsafe_any_origin(),
@@ -510,15 +494,7 @@ def run_gemm_kernel_3[
     time_kernel(m, run_func, ctx, M * N * K, "shared_mem")
 
     # Do one iteration for verification
-    ctx.enqueue_memset(
-        DeviceBuffer[dtype](
-            ctx,
-            rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](c.ptr),
-            M * N,
-            owning=False,
-        ),
-        0,
-    )
+    ctx.enqueue_memset(c.to_device_buffer(ctx), 0)
     ctx.enqueue_function[kernel](
         a.as_imm().as_unsafe_any_origin(),
         b.as_imm().as_unsafe_any_origin(),
@@ -683,15 +659,7 @@ def run_gemm_kernel_4[
     time_kernel(m, run_func, ctx, M * N * K, "1d_blocktiling")
 
     # Do one iteration for verification
-    ctx.enqueue_memset(
-        DeviceBuffer[dtype](
-            ctx,
-            rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](c.ptr),
-            M * N,
-            owning=False,
-        ),
-        0,
-    )
+    ctx.enqueue_memset(c.to_device_buffer(ctx), 0)
     ctx.enqueue_function[kernel](
         a.as_imm().as_unsafe_any_origin(),
         b.as_imm().as_unsafe_any_origin(),
@@ -862,15 +830,7 @@ def run_gemm_kernel_5[
 
     time_kernel(m, run_func, ctx, M * N * K, "2d_blocktiling")
     # Do one iteration for verification
-    ctx.enqueue_memset(
-        DeviceBuffer[dtype](
-            ctx,
-            rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](c.ptr),
-            M * N,
-            owning=False,
-        ),
-        0,
-    )
+    ctx.enqueue_memset(c.to_device_buffer(ctx), 0)
     ctx.enqueue_function[kernel](
         a.as_imm().as_unsafe_any_origin(),
         b.as_imm().as_unsafe_any_origin(),
@@ -1054,15 +1014,7 @@ def run_gemm_kernel_6[
 
     time_kernel(m, run_func, ctx, M * N * K, "vectorized_mem_access")
     # Do one iteration for verification
-    ctx.enqueue_memset(
-        DeviceBuffer[dtype](
-            ctx,
-            rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](c.ptr),
-            M * N,
-            owning=False,
-        ),
-        0,
-    )
+    ctx.enqueue_memset(c.to_device_buffer(ctx), 0)
     ctx.enqueue_function[kernel](
         a.as_imm().as_unsafe_any_origin(),
         b.as_imm().as_unsafe_any_origin(),
@@ -1277,15 +1229,7 @@ def run_gemm_kernel_tc[
 
     time_kernel(m, run_func, ctx, M * N * K, "tensor_core")
     # Do one iteration for verification
-    ctx.enqueue_memset(
-        DeviceBuffer[dtype](
-            ctx,
-            rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](c.ptr),
-            M * N,
-            owning=False,
-        ),
-        0,
-    )
+    ctx.enqueue_memset(c.to_device_buffer(ctx), 0)
     ctx.enqueue_function[kernel](
         a.as_imm().as_unsafe_any_origin(),
         b.as_imm().as_unsafe_any_origin(),

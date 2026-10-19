@@ -146,8 +146,9 @@ def warp_split_k_reduction[
         barrier()
         var red_tb_smem = TileTensor(
             (
-                smem.bitcast[Scalar[c_type]]()
-                + ((warp_k_part_id % i_red) * BM * BN)
+                smem.unsafe_bitcast[Scalar[c_type]]().unsafe_offset(
+                    (warp_k_part_id % i_red) * BM * BN
+                )
             ).as_unsafe_any_origin(),
             row_major[1, BM * BN](),
         )
@@ -1069,15 +1070,15 @@ def _multistage_gemm_kernel_impl[
         address_space=.SHARED,
         circular=True,
     ](
-        a_smem + Int(warp_k_part_id) * a_smem_size,
+        a_smem.unsafe_offset(Int(warp_k_part_id) * a_smem_size),
         a_smem_layout,
         bound=a_smem_size,
     )
 
     # There is one pre-allocated shared buffer. Explicitly offset B after at A's end.
-    var b_smem = (a_smem + num_warp_k_partitions * a_smem_size).bitcast[
-        Scalar[b_type]
-    ]()
+    var b_smem = a_smem.unsafe_offset(
+        num_warp_k_partitions * a_smem_size
+    ).unsafe_bitcast[Scalar[b_type]]()
     comptime b_smem_size: Int = num_pipeline_stages * BK * BN
     comptime BD_0 = BN if transpose_b else BK
     comptime BD_1 = BK if transpose_b else BN
@@ -1089,7 +1090,7 @@ def _multistage_gemm_kernel_impl[
         address_space=.SHARED,
         circular=True,
     ](
-        b_smem + Int(warp_k_part_id) * b_smem_size,
+        b_smem.unsafe_offset(Int(warp_k_part_id) * b_smem_size),
         b_smem_layout,
         bound=b_smem_size,
     )
@@ -1111,16 +1112,15 @@ def _multistage_gemm_kernel_impl[
         _,
         masked=_tile_is_masked[ALT, BM, BK](),
     ](
-        a_tt.ptr + Int(a_tt.layout(Coord(a_row0, bk_start * BK))),
+        a_tt.tile[BM, BK](Coord(block_m, bk_start)),
         a_tile_layout,
-        bound=M * Int(a_tt.layout.stride[0]().value()),
-        stride=BK * Int(a_tt.layout.stride[1]().value()),
+        bound=M * Int(a_tt.dynamic_stride(0)),
+        stride=BK * Int(a_tt.dynamic_stride(1)),
         num_valid_rows=M - a_row0,
     )
 
     comptime b_tile_axis = 1 if transpose_b else 0
     var b_row0 = block_n * BN if transpose_b else bk_start * BK
-    var b_col0 = bk_start * BK if transpose_b else block_n * BN
     var b_tile_layout = TileLayout(
         Coord(Idx[BD_0], Idx[BD_1]), b_tt.layout.stride_coord()
     )
@@ -1130,10 +1130,15 @@ def _multistage_gemm_kernel_impl[
         _,
         masked=_tile_is_masked[BLT, BD_0, BD_1](),
     ](
-        b_tt.ptr + Int(b_tt.layout(Coord(b_row0, b_col0))),
+        b_tt.tile[BD_0, BD_1](
+            Coord(
+                block_n if transpose_b else bk_start,
+                bk_start if transpose_b else block_n,
+            )
+        ),
         b_tile_layout,
-        bound=Int(b_tt.dim[0]()) * Int(b_tt.layout.stride[0]().value()),
-        stride=BK * Int(b_tt.layout.stride[b_tile_axis]().value()),
+        bound=Int(b_tt.dim[0]()) * Int(b_tt.dynamic_stride(0)),
+        stride=BK * Int(b_tt.dynamic_stride(b_tile_axis)),
     )
     var b_valid_rows = Int(b_tt.dim[0]()) - b_row0
 
@@ -1291,7 +1296,9 @@ def _multistage_gemm_kernel_impl[
         ]()
 
         var accum_smem_warp_tile = TileTensor(
-            a_smem.bitcast[Scalar[c_type]]() + Int(warp_id) * WM * WN,
+            a_smem.unsafe_bitcast[Scalar[c_type]]().unsafe_offset(
+                Int(warp_id) * WM * WN
+            ),
             row_major[WM, WN](),
         )
 
@@ -1334,12 +1341,13 @@ def _multistage_gemm_kernel_impl[
                 var m = thread_row + i * thread_rows
                 var n = thread_col
                 if m < M and n < N:
+                    var row, col = divmod(swizzled_idx, WN)
                     store_output[alignment](
                         m,
                         n,
-                        accum_smem_warp_tile.raw_load[
+                        accum_smem_warp_tile.load[
                             width=simd_size, alignment=alignment
-                        ](swizzled_idx),
+                        ]((row, col)),
                     )
         else:
             if c_tile_in_range:
@@ -1369,10 +1377,12 @@ def _multistage_gemm_kernel_impl[
             store_c_frags[in_range=True]()
         else:
             store_c_frags[in_range=False]()
-    # Store FP32 results to FP32 buffer in global memory.
+    # Store FP32 results to FP32 buffer in global memory. The TileTensor
+    # `copy_local_to_dram` does not convert, so a C whose dtype differs from
+    # the accumulator's goes through `store_c_frags`, which casts each element.
     else:
         if c_rows_aligned and c_tile_in_range:
-            comptime if has_output_fn:
+            comptime if has_output_fn or c_type != accum_type:
                 store_c_frags[in_range=True]()
             else:
                 copy_local_to_dram[thread_layout=row_major[8, 4]()](

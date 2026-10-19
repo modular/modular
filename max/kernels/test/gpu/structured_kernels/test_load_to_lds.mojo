@@ -46,7 +46,7 @@ def _copy_through_lds[
         smem,
     )
     s_waitcnt[vmcnt=0]()
-    var values = _load_from_lds[width=width](smem + offset)
+    var values = _load_from_lds[width=width](smem.unsafe_offset(offset))
     comptime for i in range(width):
         dst[offset + i] = values[i]
 

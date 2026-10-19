@@ -28,8 +28,6 @@ from std.sys.info import (
     _TargetType,
 )
 
-from std._plugin._overlay import TARGETS
-
 # ===----------------------------------------------------------------------=== #
 # _LookupTargetAccelerator
 # ===----------------------------------------------------------------------=== #
@@ -212,32 +210,6 @@ trait TargetAcceleratorCollection:
             One indented paragraph naming the collection's architectures.
         """
         return String("  ", _supported_archs_line[Self](), "\n\n")
-
-
-comptime _encodes_with_host_layout[C: TargetAcceleratorCollection]: Bool = (
-    C.encode_device_types_with_host_layout
-)
-
-# TODO(DRIV-154): Decide this per target rather than for the whole build.
-comptime _encode_device_types_with_host_layout: Bool = TARGETS.any[
-    _encodes_with_host_layout
-]()
-
-
-def _target_accelerator_values[
-    C: TargetAcceleratorCollection
-]() -> List[String]:
-    """Values recognizable by `--target-accelerator` from this target collection.
-    """
-
-    var list = List[String]()
-
-    comptime for idx in range(C.TARGETS.length):
-        comptime entry = C.TARGETS[idx]
-
-        list.extend(materialize[entry.target_accelerator_values]())
-
-    return list^
 
 
 def _supported_archs_line[C: TargetAcceleratorCollection]() -> String:
@@ -506,23 +478,6 @@ def _build_unsupported_arch_error[
     comptime for idx in range(Collections.length):
         message.write(Collections[idx].supported_archs_message())
     return message^
-
-
-# All supported target architectures in canonical form.
-#
-# Normalization: "nvidia:80"     -> "sm_80"
-#                "amdgpu:gfx942" -> "gfx942"
-#                "metal:4"       -> "apple-m4"
-#
-# SYNC: This list must stay in sync with the TargetTraits accelerator tables
-#       in Mojo/lib/Target/. Run the following test to verify:
-#       bazel test //Mojo/test/mojo-tool:build/internal/verify_supported_accelerators_sync.mojo.test
-def _all_target_accelerators() -> List[String]:
-    var list = List[String]()
-    comptime for idx in range(TARGETS.length):
-        list.extend(_target_accelerator_values[TARGETS[idx]]())
-    list.append("cuda")
-    return list^
 
 
 # ===-----------------------------------------------------------------------===#

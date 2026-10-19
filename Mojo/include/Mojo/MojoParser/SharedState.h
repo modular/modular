@@ -55,6 +55,8 @@ class ClosureEmitter;
 class DeclResolver;
 class ModuleLoader;
 class ModuleASTDecl;
+class FileModuleASTDecl;
+class PackageASTDecl;
 class ExprNode;
 struct ModuleOrigin;
 struct ModuleState;
@@ -340,8 +342,8 @@ public:
   /// found.
   ///
   /// Non-null \p importer records dep edges to the module and its ancestors.
-  ASTDecl &importModule(const ImportPath &path, PackageOp currentPackage,
-                        llvm::SMLoc loc, ASTDecl *importer = nullptr);
+  ModuleASTDecl &importModule(const ImportPath &path, PackageOp currentPackage,
+                              llvm::SMLoc loc, ASTDecl *importer = nullptr);
 
   /// Return true if the package has a nested module with the given name in the
   /// module-state cache. The package body must be resolved before calling this
@@ -350,29 +352,29 @@ public:
 
   /// Try to import a direct submodule with the given name, returning the
   /// submodule's decl, or null if no such submodule exists.
-  ASTDecl *tryImportSubModule(ModuleASTDecl &parent, StringRef name,
-                              llvm::SMLoc loc);
+  ModuleASTDecl *tryImportSubModule(ModuleASTDecl &parent, StringRef name,
+                                    llvm::SMLoc loc);
 
   /// Return the decls of every nested module/package currently materialized in
   /// the package's module-state cache. These are navigable but unlisted (not
   /// in the package's importable scope).
-  SmallVector<ASTDecl *> getNestedModuleDecls(PackageOp packageOp) const;
+  SmallVector<ModuleASTDecl *> getNestedModuleDecls(PackageOp packageOp) const;
 
   /// Open and lex the source file of a deferred module, wiring up its parse
   /// cursor so its body can be resolved. The loc is the location that triggered
   /// materialization (e.g. the import that first referenced the module).
-  LogicalResult materializeDeferredModule(ASTDecl &decl, llvm::SMLoc loc);
+  LogicalResult materializeDeferredModule(ModuleASTDecl &decl, llvm::SMLoc loc);
 
   /// Create a new module with the given name, location, and body.
-  ASTDecl &createModule(StringRef moduleName,
-                        const llvm::MemoryBuffer *moduleBuffer,
-                        FileLineColLoc loc);
+  FileModuleASTDecl &createModule(StringRef moduleName,
+                                  const llvm::MemoryBuffer *moduleBuffer,
+                                  FileLineColLoc loc);
 
   /// Create a new package with the given path and desired name.
-  ASTDecl &createPackage(StringRef path, StringRef name);
+  PackageASTDecl &createPackage(StringRef path, StringRef name);
 
   /// Create a new package from the path to the given binary package.
-  ASTDecl &createBinaryPackage(StringRef path, StringRef name);
+  PackageASTDecl &createBinaryPackage(StringRef path, StringRef name);
 
   /// Return the source path for the given module decl, or nullopt if the decl
   /// doesn't have a source path.
@@ -504,6 +506,10 @@ public:
   /// Notify the parser listener, if present, that a new `let` or `var`
   /// declaration has been resolved by the parser.
   void notifyListenerOnVariableDecl(ASTDecl &decl, SMLoc identifierLoc);
+
+  /// Notify the parser listener, if present, that a declaration has been
+  /// replaced while preserving the source binding it represents.
+  void notifyListenerOnDeclReplaced(ASTDecl &oldDecl, ASTDecl &newDecl);
 
   /// Notify the parser listener, if present, that a new reference has been
   /// resolved by the parser, i.e. its declarations are known.
@@ -683,7 +689,7 @@ private:
   const llvm::MemoryBuffer *openModuleFile(StringRef path, llvm::SMLoc loc);
 
   /// Implicitly import the builtin modules into the given module decl.
-  void importBuiltinModules(ASTDecl &moduleDecl);
+  void importBuiltinModules(ModuleASTDecl &moduleDecl);
 
   /// The config bytecode is parsed with.
   mlir::ParserConfig &getBytecodeParserConfig();

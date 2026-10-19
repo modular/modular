@@ -324,7 +324,7 @@ FnOp StructEmitter::synthesizeDefaultTraitMethodWrapper(
       funcOp.getContext(), funcOp.getFunctionType().getInputs(), {resultType}));
 
   // Attach the new operation to the provided declaration.
-  existingDecl.setIRValue(funcOp.getOperation());
+  existingDecl.setOp(funcOp);
   existingDecl.resolvedness = DeclResolvedness::signature;
 
   [[maybe_unused]] Operation *existing =
@@ -1000,8 +1000,7 @@ std::optional<ValueInfo> ValueInfo::lookupExisting(ASTDecl &structDecl) {
       return success();
     for (ASTDecl *decl : lookupResult.getIfSuccess()) {
       if (auto *fnDecl = dyn_cast<DefASTDecl>(decl))
-        if (fnDecl->getOp() &&
-            SpecialFunctionKind(fnDecl->getOp().getSpecialFnKind()) == kind)
+        if (SpecialFunctionKind(fnDecl->getOp().getSpecialFnKind()) == kind)
           member = fnDecl->getOp();
     }
 
@@ -1096,7 +1095,7 @@ TypedAttr StructEmitter::populateSpecialFnIsTrivial(SpecialFunctionKind kind) {
     return nullptr;
   for (ASTDecl *decl : spDecls.getIfSuccess()) {
     auto *fnDecl = dyn_cast<DefASTDecl>(decl);
-    if (!fnDecl || !fnDecl->getOp())
+    if (!fnDecl)
       continue;
     auto fnOp = fnDecl->getOp();
     if (fnOp.getSpecialFunctionKind() == kind) {
@@ -1417,8 +1416,9 @@ void StructEmitter::synthesizeEnumCaseListsAndStorage(
         AliasDeclOp::create(builder, ParamDeclAttr::get(name, value.getType()));
     aliasOp.setValueAttr(value);
     aliasOp.setHasDocHiddenDecorator(true);
-    getDeclResolver().addFullyResolvedDecl(aliasOp.getOperation(), name, loc,
-                                           &structDecl);
+    getDeclResolver().addFullyResolvedDecl(
+        aliasOp.getOperation(), StringAttr::get(structDecl.getContext(), name),
+        loc, &structDecl);
   };
   addAlias(kEnumCaseNamesName, caseNames);
   addAlias(kEnumCaseTypesName, caseTypes);
@@ -1429,7 +1429,9 @@ void StructEmitter::synthesizeEnumCaseListsAndStorage(
       StructFieldOp::create(builder, kEnumStorageFieldName, storageType);
   storageField.setIsDocHidden(true);
   getDeclResolver().addFullyResolvedDecl(
-      storageField.getOperation(), kEnumStorageFieldName, loc, &structDecl);
+      storageField.getOperation(),
+      StringAttr::get(structDecl.getContext(), kEnumStorageFieldName), loc,
+      &structDecl);
 }
 
 LogicalResult StructEmitter::synthesizeEnumMembers() {

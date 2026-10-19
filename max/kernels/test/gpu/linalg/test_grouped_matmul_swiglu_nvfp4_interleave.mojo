@@ -314,7 +314,7 @@ def _test_swiglu_interleave[
     )
     for e in range(num_experts):
         var expert_view = TileTensor(
-            b_scales_host_ptr + e * b_expert_sf_size,
+            b_scales_host_ptr.unsafe_offset(e * b_expert_sf_size),
             row_major(
                 Idx[n_groups_b],
                 Idx[k_groups],
@@ -353,7 +353,7 @@ def _test_swiglu_interleave[
     # [N, align_up(N, SF_MN_GROUP_SIZE)) stay zero (already zero-initialized).
     for e in range(num_experts):
         var src_view = TileTensor(
-            b_scales_host_ptr + e * b_expert_sf_size,
+            b_scales_host_ptr.unsafe_offset(e * b_expert_sf_size),
             row_major(
                 Idx[n_groups_b],
                 Idx[k_groups],
@@ -363,7 +363,7 @@ def _test_swiglu_interleave[
             ),
         )
         var dst_view = TileTensor(
-            b_scales_perm_host_ptr + e * b_expert_sf_size,
+            b_scales_perm_host_ptr.unsafe_offset(e * b_expert_sf_size),
             row_major(
                 Idx[n_groups_b],
                 Idx[k_groups],

@@ -47,80 +47,6 @@ from .device_context import (
 )
 
 
-__extension DeviceBuffer:
-    def _tensor_map_encode_tiled(
-        self,
-        tensor_map: MutOpaquePointer[_],
-        data_type: Int32,
-        rank: Int32,
-        global_dim: Pointer[mut=False, Int64, _],
-        global_strides: Pointer[mut=False, Int64, _],
-        box_dim: Pointer[mut=False, Int32, _],
-        element_strides: Pointer[mut=False, Int32, _],
-        interleave: Int32,
-        swizzle: Int32,
-        l2_promotion: Int32,
-        oob_fill: Int32,
-    ) raises:
-        """Encodes a tiled TMA descriptor for this buffer via AsyncRT. Used by
-        `max.gpu.host._tensormap.create_tensormap`."""
-        _checked(
-            external_call["AsyncRT_cuda_tensorMapEncodeTiled", _CString[]](
-                tensor_map,
-                data_type,
-                rank,
-                self._handle,
-                global_dim,
-                global_strides,
-                box_dim,
-                element_strides,
-                interleave,
-                swizzle,
-                l2_promotion,
-                oob_fill,
-            )
-        )
-
-    def _tensor_map_encode_im2col(
-        self,
-        tensor_map: MutOpaquePointer[_],
-        data_type: Int32,
-        rank: Int32,
-        global_dim: Pointer[mut=False, Int64, _],
-        global_strides: Pointer[mut=False, Int64, _],
-        pixel_box_lower_corner: Pointer[mut=False, Int32, _],
-        pixel_box_upper_corner: Pointer[mut=False, Int32, _],
-        channels_per_pixel: Int32,
-        pixels_per_column: Int32,
-        element_strides: Pointer[mut=False, Int32, _],
-        interleave: Int32,
-        swizzle: Int32,
-        l2_promotion: Int32,
-        oob_fill: Int32,
-    ) raises:
-        """Encodes an im2col TMA descriptor for this buffer via AsyncRT. Used by
-        `max.gpu.host._tensormap.create_tensormap_im2col`."""
-        _checked(
-            external_call["AsyncRT_cuda_tensorMapEncodeIm2col", _CString[]](
-                tensor_map,
-                data_type,
-                rank,
-                self._handle,
-                global_dim,
-                global_strides,
-                pixel_box_lower_corner,
-                pixel_box_upper_corner,
-                channels_per_pixel,
-                pixels_per_column,
-                element_strides,
-                interleave,
-                swizzle,
-                l2_promotion,
-                oob_fill,
-            )
-        )
-
-
 # const char *AsyncRT_DeviceContext_loadFunction(
 #     const DeviceFunction **result, const DeviceContext *ctx,
 #     const char *moduleName, const char *functionName, const char *data,
@@ -483,7 +409,7 @@ __extension DeviceContextBase:
         declared_arg_types: TypeList[Trait=AnyType, ...],
         //,
         func: def(* args: * declared_arg_types) capturing -> None,
-        Host: RegisterPassable,
+        Host: Deinitable & ImplicitlyCopyable & RegisterPassable,
         *encoded_types: DevicePassable,
         link_options: StaticString = "",
         dump_asm: _DumpPath = False,
@@ -566,7 +492,7 @@ __extension DeviceContextBase:
         gpu_kernel._call_with_pack_checked(
             self,
             *encoded_args,
-            host_arg=host_arg,
+            host_args=(host_arg,),
             grid_dim=grid_dim,
             block_dim=block_dim,
             cluster_dim=cluster_dim,
@@ -581,8 +507,8 @@ __extension DeviceContextBase:
         declared_arg_types: TypeList[Trait=AnyType, ...],
         //,
         func: def(* args: * declared_arg_types) capturing -> None,
-        Host0: RegisterPassable,
-        Host1: RegisterPassable,
+        Host0: Deinitable & ImplicitlyCopyable & RegisterPassable,
+        Host1: Deinitable & ImplicitlyCopyable & RegisterPassable,
         *encoded_types: DevicePassable,
         link_options: StaticString = "",
         dump_asm: _DumpPath = False,
@@ -668,8 +594,7 @@ __extension DeviceContextBase:
         gpu_kernel._call_with_pack_checked(
             self,
             *encoded_args,
-            host_arg=host_arg,
-            host_arg2=host_arg2,
+            host_args=(host_arg, host_arg2),
             grid_dim=grid_dim,
             block_dim=block_dim,
             cluster_dim=cluster_dim,
@@ -684,9 +609,9 @@ __extension DeviceContextBase:
         declared_arg_types: TypeList[Trait=AnyType, ...],
         //,
         func: def(* args: * declared_arg_types) capturing -> None,
-        Host0: RegisterPassable,
-        Host1: RegisterPassable,
-        Host2: RegisterPassable,
+        Host0: Deinitable & ImplicitlyCopyable & RegisterPassable,
+        Host1: Deinitable & ImplicitlyCopyable & RegisterPassable,
+        Host2: Deinitable & ImplicitlyCopyable & RegisterPassable,
         *encoded_types: DevicePassable,
         link_options: StaticString = "",
         dump_asm: _DumpPath = False,
@@ -775,9 +700,7 @@ __extension DeviceContextBase:
         gpu_kernel._call_with_pack_checked(
             self,
             *encoded_args,
-            host_arg=host_arg,
-            host_arg2=host_arg2,
-            host_arg3=host_arg3,
+            host_args=(host_arg, host_arg2, host_arg3),
             grid_dim=grid_dim,
             block_dim=block_dim,
             cluster_dim=cluster_dim,
@@ -792,10 +715,10 @@ __extension DeviceContextBase:
         declared_arg_types: TypeList[Trait=AnyType, ...],
         //,
         func: def(* args: * declared_arg_types) capturing -> None,
-        Host0: RegisterPassable,
-        Host1: RegisterPassable,
-        Host2: RegisterPassable,
-        Host3: RegisterPassable,
+        Host0: Deinitable & ImplicitlyCopyable & RegisterPassable,
+        Host1: Deinitable & ImplicitlyCopyable & RegisterPassable,
+        Host2: Deinitable & ImplicitlyCopyable & RegisterPassable,
+        Host3: Deinitable & ImplicitlyCopyable & RegisterPassable,
         *encoded_types: DevicePassable,
         link_options: StaticString = "",
         dump_asm: _DumpPath = False,
@@ -887,10 +810,7 @@ __extension DeviceContextBase:
         gpu_kernel._call_with_pack_checked(
             self,
             *encoded_args,
-            host_arg=host_arg,
-            host_arg2=host_arg2,
-            host_arg3=host_arg3,
-            host_arg4=host_arg4,
+            host_args=(host_arg, host_arg2, host_arg3, host_arg4),
             grid_dim=grid_dim,
             block_dim=block_dim,
             cluster_dim=cluster_dim,
@@ -905,11 +825,11 @@ __extension DeviceContextBase:
         declared_arg_types: TypeList[Trait=AnyType, ...],
         //,
         func: def(* args: * declared_arg_types) capturing -> None,
-        Host0: RegisterPassable,
-        Host1: RegisterPassable,
-        Host2: RegisterPassable,
-        Host3: RegisterPassable,
-        Host4: RegisterPassable,
+        Host0: Deinitable & ImplicitlyCopyable & RegisterPassable,
+        Host1: Deinitable & ImplicitlyCopyable & RegisterPassable,
+        Host2: Deinitable & ImplicitlyCopyable & RegisterPassable,
+        Host3: Deinitable & ImplicitlyCopyable & RegisterPassable,
+        Host4: Deinitable & ImplicitlyCopyable & RegisterPassable,
         *encoded_types: DevicePassable,
         link_options: StaticString = "",
         dump_asm: _DumpPath = False,
@@ -1004,11 +924,7 @@ __extension DeviceContextBase:
         gpu_kernel._call_with_pack_checked(
             self,
             *encoded_args,
-            host_arg=host_arg,
-            host_arg2=host_arg2,
-            host_arg3=host_arg3,
-            host_arg4=host_arg4,
-            host_arg5=host_arg5,
+            host_args=(host_arg, host_arg2, host_arg3, host_arg4, host_arg5),
             grid_dim=grid_dim,
             block_dim=block_dim,
             cluster_dim=cluster_dim,

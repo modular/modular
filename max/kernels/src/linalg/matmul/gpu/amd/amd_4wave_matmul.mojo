@@ -1324,11 +1324,10 @@ struct AMD4WaveMatmul[
                             + n_within * MMA_N
                             + lane_group * c_frag_size
                         )
-                        var v = (
-                            c_reg.tile[1, c_frag_size](m_mma, n_mma)
-                            .raw_load[width=c_frag_size](0)
-                            .cast[Self.c_type]()
-                        )
+                        var v = c_reg.load[
+                            width=c_frag_size,
+                            alignment=align_of[Self.accum_dtype](),
+                        ](Coord(m_mma, n_mma * c_frag_size)).cast[Self.c_type]()
                         comptime if has_epilogue_fn:
                             c_writer.store_with_epilogue_fn(
                                 epilogue_fn, v, m=m_dram, n=n_global
@@ -1367,7 +1366,7 @@ struct AMD4WaveMatmul[
         a: TileTensor[Self.a_type, a_layout, ImmutAnyOrigin, Engine=a_engine],
         b: TileTensor[Self.b_type, b_layout, ImmutAnyOrigin, Engine=b_engine],
         c: TileTensor[Self.c_type, c_layout, MutAnyOrigin, Engine=c_engine],
-        source_ptr: UnsafePointer[Scalar[Self.c_type], ImmutAnyOrigin],
+        source_ptr: ImmPointer[Scalar[Self.c_type], ImmutAnyOrigin],
         source_row_stride: Int32,
         beta: Float32,
         epilogue_fn: EpilogueFnType,
@@ -1982,11 +1981,10 @@ struct AMD4WaveMatmul[
                             + n_within * MMA_N
                             + lane_group * c_frag_size
                         )
-                        var v = (
-                            c_reg.tile[1, c_frag_size](m_mma, n_mma)
-                            .raw_load[width=c_frag_size](0)
-                            .cast[Self.c_type]()
-                        )
+                        var v = c_reg.load[
+                            width=c_frag_size,
+                            alignment=align_of[Self.accum_dtype](),
+                        ](Coord(m_mma, n_mma * c_frag_size)).cast[Self.c_type]()
                         # Pre-residual fused compute closure — matches
                         # SM100 `D = lambda(Conv(A,B)) + beta * C`
                         # semantics. Fires on the post-cast `c_type`

@@ -260,8 +260,8 @@ def _bench_one_kernel[
     # creation costs ~50us — far too slow to do per bench iter.
     var split_k_workspace: SplitKWorkspace[num_splits]
     comptime if kernel_id == KERNEL_4WAVE_SPLIT_K:
-        var M_ = Int(shape_c[0].value())
-        var N_ = Int(shape_c[1].value())
+        var M_ = Int(shape_c[0])
+        var N_ = Int(shape_c[1])
         split_k_workspace = SplitKWorkspace[num_splits](ctx, M_ * N_)
     else:
         # Dummy 1-element workspace for non-split-K kernels — never read.
@@ -334,10 +334,7 @@ def _bench_one_kernel[
 
     var flops = ThroughputMeasure(
         BenchMetric.flops,
-        2
-        * Int(shape_c[0].value())
-        * Int(shape_c[1].value())
-        * Int(shape_a[1].value()),
+        2 * Int(shape_c[0]) * Int(shape_c[1]) * Int(shape_a[1]),
     )
     b.bench_function(
         bench_func,
@@ -401,7 +398,7 @@ def bench_shape[
 
     @inline(.always)
     def get_size(shape: Coord) -> Int:
-        return Int(shape[0].value()) * Int(shape[1].value())
+        return Int(shape[0]) * Int(shape[1])
 
     var cb_a = CacheBustingBuffer[dtype](get_size(shape_a), simd_size, ctx)
     var cb_b = CacheBustingBuffer[dtype](get_size(shape_b), simd_size, ctx)

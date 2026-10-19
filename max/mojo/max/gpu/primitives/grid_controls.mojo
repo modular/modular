@@ -34,7 +34,7 @@ from max.gpu.host.launch_attribute import (
 )
 from std._gpu.host.info import TargetAccelerator
 
-from std._plugin._overlay import TARGETS
+from max._plugin._overlay import TARGETS
 
 from ..host.info import H100
 

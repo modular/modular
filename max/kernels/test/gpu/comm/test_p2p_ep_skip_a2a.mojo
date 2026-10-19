@@ -37,7 +37,7 @@ def legalize_topk_ids[
     n_experts: Int, top_k: Int
 ](topk_ids: MutPointer[Int32, _], n_tokens: Int):
     for tok_id in range(n_tokens):
-        var topk_ids_for_token = topk_ids + tok_id * top_k
+        var topk_ids_for_token = topk_ids.unsafe_offset(tok_id * top_k)
 
         def is_duplicate() {imm} -> Int:
             for i in range(top_k):
@@ -48,7 +48,12 @@ def legalize_topk_ids[
 
         var duplicate_idx = is_duplicate()
         while duplicate_idx != -1:
-            randint(topk_ids_for_token + duplicate_idx, 1, 0, n_experts - 1)
+            randint(
+                topk_ids_for_token.unsafe_offset(duplicate_idx),
+                1,
+                0,
+                n_experts - 1,
+            )
             duplicate_idx = is_duplicate()
 
 
@@ -201,7 +206,7 @@ def test_skip_a2a[
     def router_weights_fn[
         width: Int
     ](token_idx: Int, topk_id: Int) -> SIMD[.float32, width]:
-        var w = router_weights_tt.load[width=1]((token_idx, topk_id))
+        var w = router_weights_tt[token_idx, topk_id]
         return SIMD[.float32, width](w)
 
     @inline(.always)
@@ -210,9 +215,9 @@ def test_skip_a2a[
     def store_combine_output[
         dtype: DType, rank: Int, width: SIMDLength, *, alignment: Int = 1
     ](coords: IndexList[rank], val: SIMD[dtype, width]):
-        combine_output_tt.store[
-            width=width, alignment=alignment * size_of[dtype]()
-        ](Coord(coords), rebind[SIMD[input_type, width]](val))
+        combine_output_tt.store[alignment=alignment * size_of[dtype]()](
+            Coord(coords), rebind[SIMD[input_type, width]](val)
+        )
 
     # --- Run fused dispatch ---
     ep_fused_dispatch_kernel_api[

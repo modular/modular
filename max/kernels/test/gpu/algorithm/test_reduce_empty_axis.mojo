@@ -99,10 +99,9 @@ def _test_reduce_sum_stale_buffer_gpu[dtype: DType = DType.float32]() raises:
         def input_fn[
             width: Int, alignment: Int
         ](coords: Coord) {var in_buf} -> SIMD[dtype, width]:
-            var idx = in_buf.layout(coords)
-            return in_buf.raw_load[
+            return in_buf.load[
                 width=width, alignment=alignment * align_of[dtype]()
-            ](idx)
+            ](coords)
 
         @inline(.always)
         def output_fn[
@@ -119,7 +118,7 @@ def _test_reduce_sum_stale_buffer_gpu[dtype: DType = DType.float32]() raises:
             # slot. NVIDIA tolerates that; AMD faults on it ("Memory access
             # fault ... on address 0x7ff...", a host address), and every
             # closure in this file needs the copy.
-            out_ptr.unsafe_store[width=width](Int(coords[0].value()), val)
+            out_ptr.unsafe_store[width=width](Int(coords[0]), val)
 
         # Run 1: real data (all 2s) over a real axis. Sum = 2 * 4 = 8/row.
         reduce_sum[dtype, target="gpu", reduce_dim=1](
@@ -174,10 +173,9 @@ def _test_reduce_max_stale_buffer_gpu[dtype: DType = DType.float32]() raises:
         def input_fn[
             width: Int, alignment: Int
         ](coords: Coord) {var in_buf} -> SIMD[dtype, width]:
-            var idx = in_buf.layout(coords)
-            return in_buf.raw_load[
+            return in_buf.load[
                 width=width, alignment=alignment * align_of[dtype]()
-            ](idx)
+            ](coords)
 
         @inline(.always)
         def output_fn[
@@ -186,7 +184,7 @@ def _test_reduce_max_stale_buffer_gpu[dtype: DType = DType.float32]() raises:
             # See `test_reduce_sum_stale_buffer_gpu`'s `output_fn` for why
             # this indexes `out_ptr` directly rather than through a
             # rank-mismatched `TileTensor`.
-            out_ptr.unsafe_store[width=width](Int(coords[0].value()), val)
+            out_ptr.unsafe_store[width=width](Int(coords[0]), val)
 
         # Run 1: real max = real_axis_size (4).
         reduce_max[dtype, target="gpu", reduce_dim=1](
@@ -246,10 +244,9 @@ def _test_reduce_argmax_stale_buffer_gpu[dtype: DType = DType.float32]() raises:
         def input_fn[
             width: Int, alignment: Int
         ](coords: Coord) {var in_buf} -> SIMD[dtype, width]:
-            var idx = in_buf.layout(coords)
-            return in_buf.raw_load[
+            return in_buf.load[
                 width=width, alignment=alignment * align_of[dtype]()
-            ](idx)
+            ](coords)
 
         @inline(.always)
         def output_fn[
@@ -258,7 +255,7 @@ def _test_reduce_argmax_stale_buffer_gpu[dtype: DType = DType.float32]() raises:
             # See `test_reduce_sum_stale_buffer_gpu`'s `output_fn` for why
             # this indexes `out_ptr` directly rather than through a
             # rank-mismatched `TileTensor`.
-            out_ptr.unsafe_store[width=width](Int(coords[0].value()), val)
+            out_ptr.unsafe_store[width=width](Int(coords[0]), val)
 
         # Run 1: real winner at `winner_idx`.
         reduce_argmax[dtype, target="gpu", reduce_dim=1](
@@ -316,7 +313,7 @@ def _max_non_inner_real_then_empty[
             width: SIMDLength
         ](coords: Coord, val: SIMD[dtype, width]) {var out_ptr}:
             # Non-inner axis, so the output column is the *inner* coord.
-            out_ptr.unsafe_store[width=width](Int(coords[1].value()), val)
+            out_ptr.unsafe_store[width=width](Int(coords[1]), val)
 
         reduce_max[dtype, target="gpu", reduce_dim=0](
             input_fn, output_fn, Coord(real_axis_size, num_cols), ctx
@@ -423,7 +420,7 @@ def _test_reduce_mean_int_empty_axis_gpu[dtype: DType = DType.int32]() raises:
         def output_fn[
             width: SIMDLength
         ](coords: Coord, val: SIMD[dtype, width]) {var out_ptr}:
-            out_ptr.unsafe_store[width=width](Int(coords[0].value()), val)
+            out_ptr.unsafe_store[width=width](Int(coords[0]), val)
 
         # Run 1: mean of four 2s is 2, so the stale value is not the
         # identity the empty run must produce.
@@ -474,7 +471,7 @@ def _test_reduce_mean_float_empty_axis_gpu[
         def output_fn[
             width: SIMDLength
         ](coords: Coord, val: SIMD[dtype, width]) {var out_ptr}:
-            out_ptr.unsafe_store[width=width](Int(coords[0].value()), val)
+            out_ptr.unsafe_store[width=width](Int(coords[0]), val)
 
         reduce_mean[dtype, target="gpu", reduce_dim=1](
             input_fn, output_fn, Coord(num_rows, real_axis_size), ctx

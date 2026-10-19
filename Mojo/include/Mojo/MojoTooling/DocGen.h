@@ -11,7 +11,7 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 //
-// Shared doc-generation pipeline used by both `mojo doc` and `kgen-doc`.
+// Shared doc-generation pipeline used by `mojo doc` and `kgen-translate`.
 // Callers are responsible for creating the Init context, resolving the input
 // path, setting up the MLIRContext (with registerAllKGENDialects), and managing
 // the output file lifetime. This helper constructs a SourceMgr and
@@ -37,7 +37,7 @@ class MLIRContext;
 namespace M {
 
 /// Configuration for Mojo documentation generation. Mirrors the flags exposed
-/// by both `mojo doc` and `kgen-doc`; callers populate this from their
+/// by `mojo doc` and `kgen-translate`; callers populate this from their
 /// respective CLI parsers.
 struct DocGenConfig {
   bool diagnoseMissingDocStrings = false;

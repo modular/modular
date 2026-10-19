@@ -83,7 +83,7 @@ def fused_reduce_inner_test[
         var stride = 1
 
         comptime for i in reversed(range(rank)):
-            linear_idx += Int(coords[i].value()) * stride
+            linear_idx += Int(coords[i]) * stride
             stride *= shape[i]
         return rebind[SIMD[dtype, width]](
             input_buf_device.unsafe_ptr().unsafe_load[width=width](linear_idx)
@@ -98,7 +98,7 @@ def fused_reduce_inner_test[
         var stride = 1
 
         comptime for i in reversed(range(rank)):
-            linear_idx += Int(coords[i].value()) * stride
+            linear_idx += Int(coords[i]) * stride
             stride *= out_shape[i]
         output_buf_device0.unsafe_ptr().unsafe_store[width=width](
             linear_idx, rebind[SIMD[dtype, width]](val[0])
@@ -193,7 +193,7 @@ def reduce_inner_test[
         var stride = 1
 
         comptime for i in reversed(range(rank)):
-            linear_idx += Int(coords[i].value()) * stride
+            linear_idx += Int(coords[i]) * stride
             stride *= shape[i]
         return rebind[SIMD[dtype, width]](
             input_buf_device.unsafe_ptr().unsafe_load[width=width](linear_idx)
@@ -208,7 +208,7 @@ def reduce_inner_test[
         var stride = 1
 
         comptime for i in reversed(range(rank)):
-            linear_idx += Int(coords[i].value()) * stride
+            linear_idx += Int(coords[i]) * stride
             stride *= out_shape[i]
         output_buf_device.unsafe_ptr().unsafe_store[width=width](
             linear_idx, rebind[SIMD[dtype, width]](val[0])

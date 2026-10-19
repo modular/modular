@@ -93,6 +93,8 @@ class GraphSpec:
             the role on its own. A ModuleV3 graph takes no group.
         custom_extensions: Paths to custom kernel libraries the graph uses.
         is_device_graph: Whether to build a device graph.
+        auto_cast: Whether a ModuleV3 graph casts a ``float32`` or
+            ``bfloat16`` weight to the dtype its parameter declares.
     """
 
     module: Module | ModuleV3[..., Any]
@@ -102,6 +104,7 @@ class GraphSpec:
     group: str | None = None
     custom_extensions: Sequence[Path] = ()
     is_device_graph: bool = False
+    auto_cast: bool = False
 
     def trace(self, module: GraphModule | None = None) -> Graph:
         """Traces the graph, into ``module`` if given.
@@ -142,6 +145,7 @@ class GraphSpec:
             weights=self.weights,
             name=self.name,
             custom_extensions=self.custom_extensions,
+            auto_cast=self.auto_cast,
             is_device_graph=self.is_device_graph,
         )
 

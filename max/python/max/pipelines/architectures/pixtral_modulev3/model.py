@@ -34,6 +34,7 @@ from max.graph.weights import (
 from max.nn.transformer import ReturnLogits
 from max.pipelines.context import TextAndVisionContext
 from max.pipelines.lib import (
+    GraphSpec,
     KVCacheConfig,
     ModelInputs,
     ModelOutputs,
@@ -125,7 +126,7 @@ class PixtralModel(
                 "Pixtral does not support distributed inference"
             )
 
-        self.vision_model, self.language_model = self.load_model()
+        self.vision_model, self.language_model = self._load_towers(session)
 
     def execute(
         self,
@@ -242,14 +243,14 @@ class PixtralModel(
         model_config.return_logits = self.return_logits
         return model_config
 
-    def _compile_vision_model(
+    def _vision_spec(
         self,
         model_config: PixtralConfig,
         state_dict: dict[str, Any],
-    ) -> Callable[..., Any]:
+    ) -> GraphSpec:
         patch_dim = self._patch_dim
 
-        # ---- Build and compile vision model ----
+        # ---- Build vision model ----
         with F.lazy(), default_dtype(model_config.dtype):
             vision_nn = PixtralVision(model_config)
             vision_nn.to(self.devices[0])
@@ -270,21 +271,21 @@ class PixtralModel(
             device=DeviceRef.GPU(),
         )
 
-        return vision_nn.compile(
-            pixel_patches_type,
-            attention_mask_type,
-            position_ids_type,
+        return GraphSpec(
+            vision_nn,
+            type(vision_nn).__qualname__,
+            [pixel_patches_type, attention_mask_type, position_ids_type],
             weights=state_dict,
         )
 
-    def _compile_language_model(
+    def _language_spec(
         self,
         model_config: PixtralConfig,
         state_dict: dict[str, Any],
-    ) -> Callable[..., Any]:
+    ) -> GraphSpec:
         device_ref = DeviceRef.from_device(self.devices[0])
 
-        # ---- Build and compile language model ----
+        # ---- Build language model ----
         with F.lazy(), default_dtype(model_config.dtype):
             language_nn = PixtralLanguage(model_config)
             language_nn.kv_params = self.kv_params
@@ -312,12 +313,16 @@ class PixtralModel(
 
         kv_inputs = self.kv_params.flattened_kv_inputs()
 
-        return language_nn.compile(
-            input_ids_type,
-            input_row_offsets_type,
-            return_n_logits_type,
-            image_embeddings_type,
-            image_token_indices_type,
-            *kv_inputs,
+        return GraphSpec(
+            language_nn,
+            type(language_nn).__qualname__,
+            [
+                input_ids_type,
+                input_row_offsets_type,
+                return_n_logits_type,
+                image_embeddings_type,
+                image_token_indices_type,
+                *kv_inputs,
+            ],
             weights=state_dict,
         )

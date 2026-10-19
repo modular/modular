@@ -46,13 +46,13 @@ comptime d_size = D_MODEL // WARP_SIZE  # 4
 
 
 def flashattention_forward_kernel(
-    Q: UnsafePointer[Float32, MutAnyOrigin],
-    K: UnsafePointer[Float32, MutAnyOrigin],
-    V: UnsafePointer[Float32, MutAnyOrigin],
+    Q: MutPointer[Float32, MutAnyOrigin],
+    K: MutPointer[Float32, MutAnyOrigin],
+    V: MutPointer[Float32, MutAnyOrigin],
     N_dev: Int32,
     scaling: Float32,
-    out_D: UnsafePointer[Float32, MutAnyOrigin],
-    out_O: UnsafePointer[Float32, MutAnyOrigin],
+    out_D: MutPointer[Float32, MutAnyOrigin],
+    out_O: MutPointer[Float32, MutAnyOrigin],
 ):
     # Int is not device-passable; widen the fixed-width arg.
     var N = Int(N_dev)

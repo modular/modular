@@ -53,10 +53,7 @@ from max.nn.quant_config import (
 )
 from max.nn.quant_ops import _matmul_float8_mxfp8
 
-from ...deepseekV4.layers.quantization import (
-    fp4_qat_quantize,
-    fp8_qat_quantize,
-)
+from ...deepseekV4.layers.quantization import fp8_qat_quantize
 from ...deepseekV4.layers.ragged import arange_to
 from ...deepseekV4.layers.rope import apply_rope_tail
 from ..layer_resolver import LayerInfo
@@ -64,15 +61,20 @@ from ..model_config import DeepseekV41Config, woa_mxfp8_enabled
 from .compressor import (
     DeepseekV41Compressor,
     compressed_rope_positions,
-    compressed_visibility,
 )
 from .indexer import (
-    INDEXER_SCORE_TILE_BYTES,
     DeepseekV41Indexer,
-    bounded_position_order,
-    candidate_block_keep,
     candidate_blocks_active,
-    expand_candidate_blocks,
+    candidate_keep_from_block_max,
+    candidate_num_blocks,
+    index_key_slots,
+    key_positions,
+    quantize_queries,
+    rope_cos_sin_table,
+    select_index_keys,
+    select_index_keys_block_max,
+    select_index_keys_masked,
+    store_index_keys,
 )
 from .quantization import nvfp4_qat_quantize
 from .query import DeepseekV41Query
@@ -266,9 +268,8 @@ class CompressedKV:
 class PendingCSA2Attention:
     """State passed from :meth:`CSA2Attention.begin` to ``end``.
 
-    ``index_score`` and ``valid`` are set only on "Full" and "Reindex"
-    layers. Under tensor parallelism the scores are per-device partial sums
-    that the caller reduces before ``end``.
+    ``index_q`` and ``index_leaf`` are set only on "Full" and "Reindex"
+    layers.
     """
 
     q: TensorValue
@@ -278,8 +279,10 @@ class PendingCSA2Attention:
     layer_swa: TensorValue
     comp_collection: PagedCacheValues | None
     layer_comp: TensorValue | None
-    index_score: TensorValue | None
-    valid: TensorValue | None
+    index_q: tuple[TensorValue, TensorValue, TensorValue] | None = None
+    """MXFP4 index queries, scale words and weights ("Full"/"Reindex")."""
+    index_leaf: PagedCacheValues | None = None
+    """The index-key leaf the selection reads ("Full"/"Reindex")."""
 
 
 @dataclass(frozen=True)
@@ -366,6 +369,22 @@ class CSA2Attention(Module):
         self.max_seq_len = max_seq_len
         self.candidate_topk_blocks = config.candidate_topk_blocks
         self.candidate_block_size = config.candidate_block_size
+        # A consumer row keeps its newest block, which may hold one key, and
+        # ``candidate_topk_blocks - 1`` full blocks; the masked selection
+        # needs at least ``index_topk`` of them.
+        if (
+            config.candidate_topk_blocks > 0
+            and config.candidate_block_size > 0
+            and config.index_topk is not None
+            and (config.candidate_topk_blocks - 1) * config.candidate_block_size
+            + 1
+            < config.index_topk
+        ):
+            raise ValueError(
+                f"candidate_topk_blocks={config.candidate_topk_blocks} blocks "
+                f"of candidate_block_size={config.candidate_block_size} keys "
+                f"can keep fewer than index_topk={config.index_topk} keys"
+            )
         self.rope = rope_for_layer(
             config, layer_info.layer_id, max_seq_len, device
         )
@@ -396,15 +415,6 @@ class CSA2Attention(Module):
                 DType.bfloat16,
                 device,
                 owns_k=layer_info.attention_mode == "Full",
-                # Scoring tiles query rows in a loop, so the graph does not
-                # depend on this bound; one tile builds no loop.
-                score_max_rows=min(
-                    max_seq_len, config.forward_max_rows or max_seq_len
-                ),
-                # `single_request` is left off: `score_by_request` routes
-                # single-request batches at runtime, so one graph serves
-                # every `max_batch_size`.
-                score_tile_bytes=INDEXER_SCORE_TILE_BYTES,
             )
             if layer_info.has_indexer
             else None
@@ -487,8 +497,6 @@ class CSA2Attention(Module):
         self.num_heads //= num_devices
         self.o_groups //= num_devices
         self.query_proj.local_num_heads //= num_devices
-        if self.indexer is not None:
-            self.indexer.keep_local_heads(num_devices)
 
     def _output_projection(
         self, out: TensorValue, freqs_cis: TensorValue
@@ -565,8 +573,6 @@ class CSA2Attention(Module):
             ),
             comp_collection=None,
             layer_comp=None,
-            index_score=None,
-            valid=None,
         )
         # The SWA record: full-width RMSNorm of the KV latent, then RoPE on
         # its trailing `qk_rope_head_dim` dims.
@@ -600,10 +606,20 @@ class CSA2Attention(Module):
         state.layer_comp = layer_comp
 
         if layer.attention_mode in ("Full", "Reindex"):
-            assert self.indexer is not None
-            q_idx = fp4_qat_quantize(self.indexer.produce_q(qr, freqs_cis))
-            weights_idx = self.indexer.produce_weights(h_flat)
-            if self.indexer.owns_k:
+            indexer = self.indexer
+            assert indexer is not None
+            rope_table = rope_cos_sin_table(self.rope.freqs_cis_base())
+            index_queries, index_weights = indexer(qr, h_flat)
+            state.index_q = quantize_queries(
+                index_queries,
+                index_weights,
+                rows.positions,
+                rope_table,
+                n_heads=indexer.n_heads,
+                weight_scale=indexer.softmax_scale,
+            )
+            state.index_leaf = binding.index_k_leaf
+            if indexer.owns_k:
                 # A "Full" layer is its own KV source: the pre-RoPE pooled
                 # latent feeds the index key; the RoPE'd copy is stored in
                 # the compressed cache.
@@ -634,66 +650,25 @@ class CSA2Attention(Module):
                     rows.offsets,
                     layer_comp,
                 )
-                # Stored before scoring so this forward's keys are in the
+                # Stored before selection so this forward's keys are in the
                 # history read below and by dependent Reindex layers.
-                k_idx = fp4_qat_quantize(
-                    self.indexer.produce_k(
-                        compressed.latent, compressed.freqs_cis
-                    )
-                )
-                store_k_cache_ragged(
+                store_index_keys(
                     binding.index_k_leaf,
-                    ops.unsqueeze(k_idx, 1),
-                    rows.offsets,
-                    layer_comp,
-                )
-            # Row `b` of `slots` reads request `b`'s history with column `s`
-            # at position `s`. Slots past its last stored position are
-            # clamped (its pages end there) and masked by `valid`.
-            assert rows.lengths is not None
-            last = ops.max(
-                rows.starts + rows.lengths - 1,
-                ops.constant(0, DType.int32, self.device),
-            )
-            slots = ops.min(
-                ops.broadcast_to(
-                    ops.unsqueeze(
-                        ops.range(
-                            0,
-                            self.max_seq_len,
-                            dtype=DType.int32,
-                            device=self.device,
-                        ),
-                        0,
+                    ops.reshape(
+                        indexer.wk(compressed.latent), [-1, indexer.head_dim]
                     ),
-                    [rows.batch, self.max_seq_len],
-                ),
-                ops.unsqueeze(last, -1),
-            )
-            per_request = ops.cast(
-                arange_to(rows.batch + 1, rows.batch + 1, self.device),
-                DType.uint32,
-            )
-            key_tables = kv_cache_gather_rows_ragged(
-                binding.index_k_leaf,
-                slots,
-                per_request,
-                layer_comp,
-                key_or_value=KEY_CACHE_INDEX,
-            )
-            state.index_score = self.indexer.score_by_request(
-                q_idx, weights_idx, key_tables, rows.bid
-            )
-            pos_q = ops.unsqueeze(rows.positions, -1)
-            pos_k = ops.unsqueeze(
-                ops.range(
-                    0, self.max_seq_len, dtype=DType.int32, device=self.device
-                ),
-                0,
-            )
-            state.valid = compressed_visibility(
-                pos_q, pos_k, layer.compress_ratio
-            )
+                    rows.positions,
+                    rope_table,
+                    indexer.k_norm.weight,
+                    index_key_slots(
+                        binding.index_k_leaf,
+                        rows,
+                        ratio=layer.compress_ratio,
+                    ),
+                    layer_comp,
+                    ratio=layer.compress_ratio,
+                    epsilon=indexer.rms_norm_eps,
+                )
         return state
 
     def compress(
@@ -825,54 +800,96 @@ class CSA2Attention(Module):
         )
         return ops.concat([prior_kv, prior_score], axis=-1), prior_valid
 
-    def _candidate_blocks(
-        self, score: TensorValue, valid: TensorValue, positions: TensorValue
-    ) -> CandidateBlocks:
-        """Selects the KV-position blocks later consumer layers may read.
+    def _select(
+        self, state: PendingCSA2Attention, rows: RaggedRows
+    ) -> tuple[TensorValue, CandidateBlocks | None]:
+        """Selects this layer's ``[T, num_comp]`` compressed positions.
 
-        Uses the complete scores (not one device's partial) masked to this
-        layer's visibility; this layer's own token top-k is not restricted.
+        A candidate source also keeps its best blocks for later consumers;
+        a consumer selects only among the blocks its source kept. Its own
+        selection is never restricted. Positions are unordered and
+        ``-1``-padded.
         """
-        ratio = self.layer_info.compress_ratio
-        if not candidate_blocks_active(
+        assert state.index_q is not None and state.index_leaf is not None
+        assert state.layer_comp is not None
+        layer = self.layer_info
+        ratio = layer.compress_ratio
+        block_size = self.candidate_block_size
+        top_k = self.num_comp
+        active = candidate_blocks_active(
             self.max_seq_len,
             ratio,
-            block_size=self.candidate_block_size,
-            topk_blocks=self.candidate_topk_blocks,
-        ):
-            return CandidateBlocks(keep=None, compress_ratio=ratio)
-        keep = candidate_block_keep(
-            ops.where(valid, score, float("-inf")),
-            positions,
-            compress_ratio=ratio,
-            block_size=self.candidate_block_size,
+            block_size=block_size,
             topk_blocks=self.candidate_topk_blocks,
         )
-        return CandidateBlocks(keep=keep, compress_ratio=ratio)
+        leaf, q, offsets = state.index_leaf, state.index_q, rows.offsets
+        pool: CandidateBlocks | None = None
+        if layer.candidate_role == "source" and active:
+            ids, block_max = select_index_keys_block_max(
+                leaf,
+                q,
+                offsets,
+                state.layer_comp,
+                top_k=top_k,
+                ratio=ratio,
+                block_size=block_size,
+                num_blocks=candidate_num_blocks(
+                    self.max_seq_len, ratio, block_size
+                ),
+            )
+            pool = CandidateBlocks(
+                keep=candidate_keep_from_block_max(
+                    block_max,
+                    rows.positions,
+                    ratio=ratio,
+                    block_size=block_size,
+                    topk_blocks=self.candidate_topk_blocks,
+                ),
+                compress_ratio=ratio,
+            )
+            return key_positions(ids, ratio), pool
+        if layer.candidate_role == "source":
+            pool = CandidateBlocks(keep=None, compress_ratio=ratio)
+        keep = (
+            self._candidate_keep()
+            if layer.candidate_role == "consumer"
+            else None
+        )
+        if keep is None:
+            ids = select_index_keys(
+                leaf, q, offsets, state.layer_comp, top_k=top_k, ratio=ratio
+            )
+        else:
+            ids = select_index_keys_masked(
+                leaf,
+                q,
+                offsets,
+                keep,
+                state.layer_comp,
+                top_k=top_k,
+                ratio=ratio,
+                block_size=block_size,
+            )
+        return key_positions(ids, ratio), pool
 
-    def _mask_to_candidates(self, valid: TensorValue) -> TensorValue:
-        """Narrows a consumer's visibility mask to the candidate blocks."""
+    def _candidate_keep(self) -> TensorValue | None:
+        """Returns the candidate source's keep mask, if it can drop a block."""
         current = self.selection_box.current
         pool = None if current is None else current.candidate_pool
         # No pool only when the traced layers start past the source layer;
-        # scoring then stays dense.
+        # selection then stays unrestricted.
         if pool is None:
-            return valid
+            return None
         assert isinstance(pool, CandidateBlocks)
         if pool.keep is None:
-            return valid
+            return None
         if pool.compress_ratio != self.layer_info.compress_ratio:
             raise ValueError(
                 f"candidate consumer layer {self.layer_info.layer_id} "
                 f"(ratio {self.layer_info.compress_ratio}) cannot read blocks "
                 f"of a ratio-{pool.compress_ratio} source"
             )
-        return valid & expand_candidate_blocks(
-            pool.keep,
-            self.max_seq_len,
-            compress_ratio=pool.compress_ratio,
-            block_size=self.candidate_block_size,
-        )
+        return pool.keep
 
     def end(self, state: PendingCSA2Attention, rows: RaggedRows) -> TensorValue:
         """Runs :meth:`__call__` from the indexer's top-k on.
@@ -904,21 +921,7 @@ class CSA2Attention(Module):
             )
 
         if layer.attention_mode in ("Full", "Reindex"):
-            assert state.index_score is not None
-            assert state.valid is not None
-            # Top-k width is `self.num_comp`, the `comp_indices` width; it
-            # must equal `config.index_topk`.
-            valid = state.valid
-            pool = None
-            if layer.candidate_role == "consumer":
-                valid = self._mask_to_candidates(valid)
-            produced, _ = bounded_position_order(
-                state.index_score, valid, self.num_comp
-            )
-            if layer.candidate_role == "source":
-                pool = self._candidate_blocks(
-                    state.index_score, valid, rows.positions
-                )
+            produced, pool = self._select(state, rows)
             selection = selection_for_layer(
                 layer,
                 self.selection_box.current,

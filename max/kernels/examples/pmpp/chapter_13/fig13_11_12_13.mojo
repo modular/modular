@@ -22,9 +22,9 @@ from std.math import ceildiv, min, max
 
 def co_rank(
     k: Int,
-    A: UnsafePointer[Int32, _],
+    A: Pointer[Int32, _],
     m: Int,
-    B: UnsafePointer[Int32, _],
+    B: Pointer[Int32, _],
     n: Int,
 ) -> Int:
     """Find the co-rank of k in the merged sequence of A and B.
@@ -62,9 +62,9 @@ def co_rank(
 
 def co_rank_shared(
     k: Int,
-    A: UnsafePointer[Int32, _, address_space=.SHARED],
+    A: Pointer[Int32, _, address_space=.SHARED],
     m: Int,
-    B: UnsafePointer[Int32, _, address_space=.SHARED],
+    B: Pointer[Int32, _, address_space=.SHARED],
     n: Int,
 ) -> Int:
     """Find the co-rank for shared memory arrays.
@@ -101,11 +101,11 @@ def co_rank_shared(
 
 
 def merge_sequential(
-    A: UnsafePointer[Int32, _],
+    A: Pointer[Int32, _],
     m: Int,
-    B: UnsafePointer[Int32, _],
+    B: Pointer[Int32, _],
     n: Int,
-    C: UnsafePointer[Int32, MutAnyOrigin],
+    C: MutPointer[Int32, MutAnyOrigin],
 ):
     """Sequential merge of two sorted arrays.
 
@@ -142,11 +142,11 @@ def merge_sequential(
 
 
 def merge_sequential_shared(
-    A: UnsafePointer[Int32, _, address_space=.SHARED],
+    A: Pointer[Int32, _, address_space=.SHARED],
     m: Int,
-    B: UnsafePointer[Int32, _, address_space=.SHARED],
+    B: Pointer[Int32, _, address_space=.SHARED],
     n: Int,
-    C: UnsafePointer[Int32, MutAnyOrigin],
+    C: MutPointer[Int32, MutAnyOrigin],
 ):
     """Sequential merge of two sorted arrays from shared memory.
 
@@ -183,11 +183,11 @@ def merge_sequential_shared(
 
 
 def merge_tiled_kernel(
-    A: UnsafePointer[Int32, ImmutAnyOrigin],
+    A: ImmPointer[Int32, ImmutAnyOrigin],
     m_dev: Int32,
-    B: UnsafePointer[Int32, ImmutAnyOrigin],
+    B: ImmPointer[Int32, ImmutAnyOrigin],
     n_dev: Int32,
-    C: UnsafePointer[Int32, MutAnyOrigin],
+    C: MutPointer[Int32, MutAnyOrigin],
     tile_size_dev: Int32,
 ):
     """Tiled merge kernel using shared memory.
@@ -292,11 +292,13 @@ def merge_tiled_kernel(
 
         # All threads call the sequential merge function
         merge_sequential_shared(
-            A_S + a_curr,
+            A_S.unsafe_offset(a_curr),
             a_next - a_curr,
-            B_S + b_curr,
+            B_S.unsafe_offset(b_curr),
             b_next - b_curr,
-            C + C_curr + C_completed + c_curr,
+            C.unsafe_offset(C_curr)
+            .unsafe_offset(C_completed)
+            .unsafe_offset(c_curr),
         )
 
         # Update the number of A and B elements that have been consumed thus far
@@ -317,9 +319,9 @@ def merge_tiled_kernel(
 
 
 def cpu_merge(
-    A: UnsafePointer[Int32, _],
+    A: Pointer[Int32, _],
     m: Int,
-    B: UnsafePointer[Int32, _],
+    B: Pointer[Int32, _],
     n: Int,
     C: MutPointer[Int32, _],
 ):

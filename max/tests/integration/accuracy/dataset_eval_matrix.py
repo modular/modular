@@ -140,6 +140,13 @@ PIPELINES: list[PipelineEntry] = [
         timeout=120,  # 2 hours
     ),
     PipelineEntry(
+        pipeline="nvidia/DeepSeek-V4.1-Flash-NVFP4",
+        runner="modrunner-b200-4x",
+        gpu_flag="--devices gpu:0,1,2,3",
+        instance_type="bm.gpu.b200.4",
+        timeout=120,  # 2 hours
+    ),
+    PipelineEntry(
         pipeline="deepseek-ai/DeepSeek-R1-longbench-v2",
         runner="modrunner-b200-8x",
         gpu_flag="--devices gpu:0,1,2,3,4,5,6,7",

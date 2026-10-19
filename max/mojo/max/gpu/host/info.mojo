@@ -104,10 +104,7 @@ from std._plugin.metal.metal_targets import (
     MetalM5Metal4,
 )
 
-from std._gpu.host.info import (
-    _all_target_accelerators,
-    _encode_device_types_with_host_layout,
-)
+from std._gpu.host.info import TargetAcceleratorCollection
 
 from std._gpu.host._builtin_targets import (
     _a100_target,
@@ -122,7 +119,7 @@ from std._plugin.metal.metal_targets import (
     _metal_m2_target,
 )
 
-from std._plugin._overlay import TARGETS
+from max._plugin._overlay import TARGETS
 
 # ===----------------------------------------------------------------------=== #
 # Accelerator target lookup
@@ -239,8 +236,56 @@ def get_gpu_info[target_arch: StaticString = _accelerator_arch()]() -> GPUInfo:
 
 
 # ===----------------------------------------------------------------------=== #
+# Target Accelerator Collections
+# ===----------------------------------------------------------------------=== #
+
+
+# All supported target architectures in canonical form.
+#
+# Normalization: "nvidia:80"     -> "sm_80"
+#                "amdgpu:gfx942" -> "gfx942"
+#                "metal:4"       -> "apple-m4"
+#
+# SYNC: This list must stay in sync with the TargetTraits accelerator tables
+#       in Mojo/lib/Target/. Run the following test to verify:
+#       bazel test //Mojo/test/mojo-tool:build/internal/verify_supported_accelerators_sync.mojo.test
+def _all_target_accelerators() -> List[String]:
+    var list = List[String]()
+    comptime for idx in range(TARGETS.length):
+        list.extend(_target_accelerator_values[TARGETS[idx]]())
+    list.append("cuda")
+    return list^
+
+
+def _target_accelerator_values[
+    C: TargetAcceleratorCollection
+]() -> List[String]:
+    """Values recognizable by `--target-accelerator` from this target collection.
+    """
+
+    var list = List[String]()
+
+    comptime for idx in range(C.TARGETS.length):
+        comptime entry = C.TARGETS[idx]
+
+        list.extend(materialize[entry.target_accelerator_values]())
+
+    return list^
+
+
+# ===----------------------------------------------------------------------=== #
 # Other
 # ===----------------------------------------------------------------------=== #
+
+
+comptime _encodes_with_host_layout[C: TargetAcceleratorCollection]: Bool = (
+    C.encode_device_types_with_host_layout
+)
+
+# TODO(DRIV-154): Decide this per target rather than for the whole build.
+comptime _encode_device_types_with_host_layout: Bool = TARGETS.any[
+    _encodes_with_host_layout
+]()
 
 
 @inline(.always)

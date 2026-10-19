@@ -16,13 +16,13 @@
 from std.collections import Optional
 from std.math import align_down, align_up, ceildiv, iota
 from std.sys._build import is_debug_build
-from std.sys.info import CompilationTarget, simd_width_of, size_of
+from std.sys.info import CompilationTarget, align_of, simd_width_of, size_of
 from std.sys.intrinsics import masked_load, masked_store
 from std.utils.index import Index, IndexList
 from std.algorithm import vectorize
 from layout.layout import *
 from layout import TileTensor, Coord, TensorLayout
-from layout.tile_layout import Layout as _NewLayout
+from layout.tile_layout import Layout as _NewLayout, row_major
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.reflection import reflect
 
@@ -1244,9 +1244,12 @@ def packA_i8mm[
         var kl = align_down(k, 8)
         var kh = align_up(k, 8)
         var j = t0 + offset
+        var a_rows = a.reshape(row_major(Int(a.dim[0]()), k))
         for l in range(0, k, 8):
             comptime for idx in range(nrow):
-                var t0 = a.raw_load[width=8, invariant=False]((j + idx) * k + l)
+                var t0 = a_rows.load[
+                    width=8, alignment=align_of[a_type](), invariant=False
+                ](Coord(j + idx, l))
                 a_packed_ptr.store(kh * j + 2 * l + 8 * idx, t0)
 
         comptime for idx in range(nrow):
@@ -1254,7 +1257,7 @@ def packA_i8mm[
                 a.ptr_at_offset(Coord(j + idx, kl)), 0, k - kl, 0
             )
             partial_simd_store(
-                a_packed_ptr + (kh * j + 2 * kl + 8 * idx),
+                a_packed_ptr.unsafe_offset(kh * j + 2 * kl + 8 * idx),
                 0,
                 k - kl,
                 t0,
@@ -1286,7 +1289,7 @@ struct InnerKernelID(EnumLike, TrivialRegisterPassable):
     ].values
 
     comptime _enum_case_types = TypeList.splat[
-        ParameterList[Self._enum_case_names].size, NoneType
+        ParameterList[Self._enum_case_names].length, NoneType
     ].values
 
     @inline(.always)

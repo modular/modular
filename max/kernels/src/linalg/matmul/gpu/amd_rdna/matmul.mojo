@@ -380,14 +380,16 @@ def _naive_matmul_kernel[
 
             comptime if transpose_b:
                 for i in range(k):
-                    accum += rebind[Scalar[s_type]](
-                        a[global_row, i].cast[s_type]()
-                    ) * rebind[Scalar[s_type]](b[global_col, i].cast[s_type]())
+                    accum += (
+                        a.load[width=1]((global_row, i)).cast[s_type]()
+                        * b.load[width=1]((global_col, i)).cast[s_type]()
+                    )
             else:
                 for i in range(k):
-                    accum += rebind[Scalar[s_type]](
-                        a[global_row, i].cast[s_type]()
-                    ) * rebind[Scalar[s_type]](b[i, global_col].cast[s_type]())
+                    accum += (
+                        a.load[width=1]((global_row, i)).cast[s_type]()
+                        * b.load[width=1]((i, global_col)).cast[s_type]()
+                    )
 
             comptime if has_epilogue_fn:
                 epilogue_fn[c_type, 1, alignment=1](
@@ -485,7 +487,7 @@ def _load_tile_to_smem[
 
             # B is (K, N): load transposed into shared memory as (N, K)
             if global_col < max_k and global_row < max_rows:
-                val = rebind[Scalar[dtype]](tile[global_col, global_row])
+                val = tile.load[width=1]((global_col, global_row))
 
             smem[row * SMEM_STRIDE + col] = val
 

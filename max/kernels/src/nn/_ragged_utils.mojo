@@ -98,7 +98,7 @@ def merge_ragged_tensors[
         comptime assert idx.rank == rank, "Invalid rank passed to the kernel"
 
         var a_tensor_size = Int(a.dim[0]())
-        var is_tensor_a = Int(idx[0].value()) < a_tensor_size
+        var is_tensor_a = Int(idx[0]) < a_tensor_size
 
         var batch_id: Int
         var src_idx: IndexList[rank] = rebind[IndexList[rank]](
@@ -107,7 +107,7 @@ def merge_ragged_tensors[
         if is_tensor_a:
             batch_id = get_batch_from_row_offsets(a_row_offsets, src_idx[0])
         else:
-            src_idx[0] = Int(idx[0].value()) - a_tensor_size
+            src_idx[0] = Int(idx[0]) - a_tensor_size
             batch_id = get_batch_from_row_offsets(b_row_offsets, src_idx[0])
 
         var dst_idx: IndexList[rank] = rebind[IndexList[rank]](
@@ -185,7 +185,7 @@ def eagle_prefill_shift_tokens[
     def shift_fn[width: Int, alignment: Int = 1](idx: Coord) {var}:
         comptime assert idx.rank == 1
 
-        var i = Int(idx[0].value())
+        var i = Int(idx[0])
 
         # Shift left by 1 per batch, append bonus token
         var batch_id = get_batch_from_row_offsets(offsets, i)
@@ -193,12 +193,12 @@ def eagle_prefill_shift_tokens[
 
         if i < end - 1:
             # Not the last position: copy from next position
-            output.store(Coord(i), tokens.load(Coord(i + 1)))
+            output.store((i,), tokens.load((i + 1,)))
         else:
             # Last position in batch: append shift_next_tokens
             output.store(
-                Coord(i),
-                shift_next_tokens.load(Coord(batch_id)),
+                (i,),
+                shift_next_tokens.load((batch_id,)),
             )
 
     var shape = Coord(Int(output.dim[0]()))

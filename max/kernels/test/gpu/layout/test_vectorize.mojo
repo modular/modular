@@ -24,8 +24,9 @@ def test_native_vectorize_static() raises:
         Coord(Idx[32], Idx[1], Idx[512]),
     )
     var tensor = stack_allocation[dtype=.float32, alignment=16](flat_layout)
+    var storage = tensor.reshape(row_major[2048]())
     for i in range(2048):
-        tensor.raw_store(i, Float32(i))
+        storage[i] = Float32(i)
 
     comptime nested_layout = TileLayout(
         Coord(Coord(Idx[16], Idx[32]), Idx[4]),
@@ -59,7 +60,7 @@ def test_native_vectorize_static() raises:
         row_major[8, 8]()
     )
     for i in range(64):
-        square.raw_store(i, Float32(i))
+        square[i // 8, i % 8] = Float32(i)
     var contiguous = square.vectorize[1, 2]()
     comptime assert contiguous.flat_rank == 2 and contiguous.element_size == 2
     assert_equal(contiguous.dim[0](), 8)
@@ -88,14 +89,14 @@ def test_native_vectorize_dynamic[width: Int]() raises:
     var tensor = TileTensor[linear_idx_type=.int32](heap, runtime_layout)
     comptime assert not tensor.all_dims_known
     for i in range(64):
-        tensor.raw_store(i, Int32(i))
+        tensor[i // 8, i % 8] = Int32(i)
     var fragments = tensor.vectorize[1, width]()
     comptime assert fragments.flat_rank == 2 and fragments.element_size == width
     comptime assert fragments.linear_idx_type == .int32
     assert_equal(fragments.dim[0](), 8)
     assert_equal(fragments.dim[1](), Int32(8 // width))
-    assert_equal(Int(fragments.layout.stride_coord()[0].value()), 8)
-    assert_equal(Int(fragments.layout.stride_coord()[1].value()), width)
+    assert_equal(Int(fragments.layout.stride_coord()[0]), 8)
+    assert_equal(Int(fragments.layout.stride_coord()[1]), width)
     for row in range(8):
         for column in range(8 // width):
             var coordinate = Coord(row, column)

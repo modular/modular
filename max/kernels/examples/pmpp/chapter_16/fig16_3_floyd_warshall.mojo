@@ -59,8 +59,8 @@ def initialize_dist(dist: MutPointer[Float32, _], V: Int):
 
 
 def verify_results(
-    result: UnsafePointer[Float32, _],
-    expected: UnsafePointer[Float32, _],
+    result: Pointer[Float32, _],
+    expected: Pointer[Float32, _],
     V: Int,
 ) -> Bool:
     """Verify Floyd-Warshall results.

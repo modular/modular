@@ -41,15 +41,15 @@ def set_and_shift_kernel(
 
     if use_nbi == 1:
         shmem_put_nbi[SHMEMScope.block](
-            recv_data + block_offset,
-            send_data + block_offset,
+            recv_data.unsafe_offset(block_offset),
+            send_data.unsafe_offset(block_offset),
             c_size_t(min(block_dim.x, num_elems - block_offset)),
             peer,
         )
     else:
         shmem_put[SHMEMScope.block](
-            recv_data + block_offset,
-            send_data + block_offset,
+            recv_data.unsafe_offset(block_offset),
+            send_data.unsafe_offset(block_offset),
             c_size_t(min(block_dim.x, num_elems - block_offset)),
             peer,
         )

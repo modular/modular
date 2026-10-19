@@ -187,7 +187,7 @@ def test[
                 idx.rank == 2
             ), "the matmul epilogue contract is rank 2"
             return func(
-                IndexList[2](Int(idx[0].value()), Int(idx[1].value())),
+                IndexList[2](Int(idx[0]), Int(idx[1])),
                 (m, n),
                 val,
             )

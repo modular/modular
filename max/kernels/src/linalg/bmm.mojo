@@ -177,7 +177,7 @@ def _reshape_tile_tensor_with_batch_to_3d(
         comptime idx = rank - 3 + i
 
         # copy the stride
-        var stride_ptr = UnsafePointer(to=strides[i])
+        var stride_ptr = Pointer(to=strides[i])
         comptime StrideType = out_stride_types[i]
 
         comptime if StrideType.is_static_value:
@@ -189,17 +189,17 @@ def _reshape_tile_tensor_with_batch_to_3d(
             )
 
         # copy the shape
-        var shape_ptr = UnsafePointer(to=shape[i])
+        var shape_ptr = Pointer(to=shape[i])
         comptime ShapeType = out_shape_types[i]
 
         comptime if ShapeType.is_static_value:
             shape_ptr.write(rebind[ShapeType](Idx[ShapeType.static_value]))
         else:
-            var shape_val = Int(tensor.layout.shape[idx]().value())
+            var shape_val = Int(tensor.dim[idx]())
 
             comptime if i == 0:
                 comptime for batch_idx in range(rank - 3):
-                    shape_val *= Int(tensor.layout.shape[batch_idx]().value())
+                    shape_val *= Int(tensor.dim[batch_idx]())
 
             comptime if ShapeType == Int:
                 shape_ptr.write(rebind[ShapeType](shape_val))
@@ -276,19 +276,14 @@ def _batched_matmul_cpu_impl[
         coord_to_index_list(b_tile.layout.shape_coord())
     )
 
-    var c = TileTensor(
-        c_tile.ptr,
-        row_major(collapsed_batches, mat_rows, mat_cols),
+    var c = c_tile.reshape(row_major(collapsed_batches, mat_rows, mat_cols))
+    var a = a_tile.reshape(
+        row_major(collapsed_batches, a_shape[rank - 2], a_shape[rank - 1])
     )
-    var a = TileTensor(
-        a_tile.ptr,
-        row_major(collapsed_batches, a_shape[rank - 2], a_shape[rank - 1]),
-    )
-    var b = TileTensor(
-        b_tile.ptr,
+    var b = b_tile.reshape(
         row_major(
             collapsed_batches, b_shape_idx[rank - 2], b_shape_idx[rank - 1]
-        ),
+        )
     )
     var batch_size: Int = Int(c.dim[0]())
 
@@ -397,8 +392,8 @@ def _batched_matmul_cpu_impl[
                 # buffer rank, not the collapsed buffer rank
                 # so un-collapse the batch dims here
                 var nd_coords = batch_coords
-                nd_coords[rank - 1] = Int(out_coords[1].value())
-                nd_coords[rank - 2] = Int(out_coords[0].value())
+                nd_coords[rank - 1] = Int(out_coords[1])
+                nd_coords[rank - 2] = Int(out_coords[0])
 
                 epilogue_fn[c_type, width, alignment=alignment](
                     Coord(nd_coords), out_val
@@ -415,8 +410,8 @@ def _batched_matmul_cpu_impl[
                     out_coords.rank == 2
                 ), "the matmul epilogue contract is rank 2"
                 var nd_coords = batch_coords
-                nd_coords[rank - 1] = Int(out_coords[1].value())
-                nd_coords[rank - 2] = Int(out_coords[0].value())
+                nd_coords[rank - 1] = Int(out_coords[1])
+                nd_coords[rank - 2] = Int(out_coords[0])
 
                 return compute_fn[c_type, width, alignment=alignment](
                     Coord(nd_coords), out_val
@@ -698,8 +693,8 @@ def batched_matmul_kernel_gpu[
         var nd_coords = _get_start_indices_of_nth_subvolume[2](
             block_idx.z, c_buff_nd_shape
         )
-        nd_coords[rank - 1] = Int(out_coords[1].value())
-        nd_coords[rank - 2] = Int(out_coords[0].value())
+        nd_coords[rank - 1] = Int(out_coords[1])
+        nd_coords[rank - 2] = Int(out_coords[0])
         epilogue_fn[dtype, width, alignment=1](Coord(nd_coords), val)
 
     @inline(.always)
@@ -715,8 +710,8 @@ def batched_matmul_kernel_gpu[
         var nd_coords = _get_start_indices_of_nth_subvolume[2](
             block_idx.z, c_buff_nd_shape
         )
-        nd_coords[rank - 1] = Int(out_coords[1].value())
-        nd_coords[rank - 2] = Int(out_coords[0].value())
+        nd_coords[rank - 1] = Int(out_coords[1])
+        nd_coords[rank - 2] = Int(out_coords[0])
         return compute_fn[dtype, width, alignment=1](Coord(nd_coords), val)
 
     comptime assert not (
@@ -883,20 +878,13 @@ def _batched_matmul_gpu_impl[
 
             # batch_size==1, so flatten (1, X, Y) → (X, Y)
             # by constructing rank-2 TileTensors directly.
-            var c_2d = TileTensor(
-                c_tensor_reshaped.ptr,
-                row_major(m, n),
-            )
-            var a_2d = TileTensor(
-                a_tensor_reshaped.ptr,
-                row_major(m, k),
-            )
+            var c_2d = c_tensor_reshaped.reshape(row_major(m, n))
+            var a_2d = a_tensor_reshaped.reshape(row_major(m, k))
             # Use b's actual dims since their order depends on transpose_b.
-            var b_2d = TileTensor(
-                b_tensor_reshaped.ptr,
+            var b_2d = b_tensor_reshaped.reshape(
                 row_major(
                     Int(b_tensor_reshaped.dim(1)), Int(b_tensor_reshaped.dim(2))
-                ),
+                )
             )
 
             comptime if has_epilogue_fn:
@@ -910,8 +898,8 @@ def _batched_matmul_gpu_impl[
                     ), "the matmul epilogue contract is rank 2"
                     var batch_coords = IndexList[rank](0)
 
-                    batch_coords[rank - 1] = Int(out_coords[1].value())
-                    batch_coords[rank - 2] = Int(out_coords[0].value())
+                    batch_coords[rank - 1] = Int(out_coords[1])
+                    batch_coords[rank - 2] = Int(out_coords[0])
 
                     epilogue_fn[dtype, width, alignment=1](
                         Coord(batch_coords), val
@@ -933,8 +921,8 @@ def _batched_matmul_gpu_impl[
                     ), "the matmul epilogue contract is rank 2"
                     var batch_coords = IndexList[rank](0)
 
-                    batch_coords[rank - 1] = Int(out_coords[1].value())
-                    batch_coords[rank - 2] = Int(out_coords[0].value())
+                    batch_coords[rank - 1] = Int(out_coords[1])
+                    batch_coords[rank - 2] = Int(out_coords[0])
 
                     return compute_fn[dtype, width, alignment=1](
                         Coord(batch_coords), val
@@ -1000,9 +988,11 @@ def _batched_matmul_gpu_impl[
                         Coord(nd_coords), c_val
                     )
 
-                elementwise[simd_size, target="gpu"](
-                    epilogue_wrapper, Coord(batch_size, m, n), ctx
-                )
+                elementwise[
+                    simd_size,
+                    target="gpu",
+                    _trace_description="elementwise_batched_matmul_sm100_epilogue",
+                ](epilogue_wrapper, Coord(batch_size, m, n), ctx)
             elif has_compute_fn:
                 comptime simd_size = 32 // size_of[c_type]()
 
@@ -1028,9 +1018,11 @@ def _batched_matmul_gpu_impl[
                         ),
                     )
 
-                elementwise[simd_size, target="gpu"](
-                    compute_wrapper, Coord(batch_size, m, n), ctx
-                )
+                elementwise[
+                    simd_size,
+                    target="gpu",
+                    _trace_description="elementwise_batched_matmul_sm100_compute",
+                ](compute_wrapper, Coord(batch_size, m, n), ctx)
 
             return
 
@@ -1963,14 +1955,14 @@ def blockwise_scaled_fp8_matmul_amd_batched_kernel[
         c.ptr_at_offset(Coord(batch, 0, 0)),
         TileLayout(
             Coord(Int64(M), Idx[N]),
-            Coord(Int64(Int(c.layout.stride[1]().value())), Idx[1]),
+            Coord(Int64(Int(c.dynamic_stride(1))), Idx[1]),
         ),
     )
     var a_tt = TileTensor(
         a.ptr_at_offset(Coord(batch, 0, 0)),
         TileLayout(
             Coord(Int64(M), Idx[K]),
-            Coord(Int64(Int(a.layout.stride[1]().value())), Idx[1]),
+            Coord(Int64(Int(a.dynamic_stride(1))), Idx[1]),
         ),
     )
     var b_tt = TileTensor(
@@ -2132,13 +2124,13 @@ def blockwise_scaled_fp8_matmul_amd_batched[
     # The kernel bakes innermost column stride 1 and the tile body assumes a
     # K-/N-contiguous tail; guard the runtime slices and extents satisfy that.
     assert (
-        Int(c.layout.stride[2]().value()) == 1
+        Int(c.dynamic_stride(2)) == 1
     ), "AMD tiled batched dispatch requires c innermost stride 1"
     assert (
-        Int(a.layout.stride[2]().value()) == 1
+        Int(a.dynamic_stride(2)) == 1
     ), "AMD tiled batched dispatch requires a innermost stride 1"
     assert (
-        Int(b.layout.stride[2]().value()) == 1
+        Int(b.dynamic_stride(2)) == 1
     ), "AMD tiled batched dispatch requires b innermost stride 1"
     assert N_rt == N, "AMD tiled batched dispatch: runtime N != comptime N"
     assert K_rt == K, "AMD tiled batched dispatch: runtime K != comptime K"
@@ -2297,19 +2289,19 @@ def _batched_matmul_dynamic_scaled_fp8_amd_tiled[
     # The per-batch views pin column stride to static 1 and the loader assumes
     # a contiguous tail; these asserts guard the runtime slices/extents match.
     assert (
-        Int(c.layout.stride[2]().value()) == 1
+        Int(c.dynamic_stride(2)) == 1
     ), "AMD tiled batched dispatch requires c innermost stride 1"
     assert (
-        Int(a.layout.stride[2]().value()) == 1
+        Int(a.dynamic_stride(2)) == 1
     ), "AMD tiled batched dispatch requires a innermost stride 1"
     assert (
-        Int(b.layout.stride[2]().value()) == 1
+        Int(b.dynamic_stride(2)) == 1
     ), "AMD tiled batched dispatch requires b innermost stride 1"
     assert N_rt == N, "AMD tiled batched dispatch: runtime N != comptime N"
     assert K_rt == K, "AMD tiled batched dispatch: runtime K != comptime K"
 
-    var c_row_stride = Int64(Int(c.layout.stride[1]().value()))
-    var a_row_stride = Int64(Int(a.layout.stride[1]().value()))
+    var c_row_stride = Int64(Int(c.dynamic_stride(1)))
+    var a_row_stride = Int64(Int(a.dynamic_stride(1)))
 
     # Each iteration enqueues one kernel, so the fallback issues exactly ``B``
     # dispatches; returned so the launch-count gate can tell it from the ``1``.
