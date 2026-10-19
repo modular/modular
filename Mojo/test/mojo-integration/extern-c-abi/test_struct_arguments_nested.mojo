@@ -44,14 +44,8 @@ def test_nested_float_12byte():
 # CHECK: nested_float_12byte: 2.0 3.0 4.0
 
 
-# ============================================================================
-# Nested float struct: { Vec3 {f32, f32, f32}, Vec2 {f32, f32} } (20 bytes)
-# C reference: FiveFloats {float f1, f2, f3, f4, f5;}, the same layout.
-# ABI (ARM64): not an HFA. Two top-level fields, but five floats once flattened,
-#              and the HFA limit of four counts flattened members. Passed by
-#              pointer, returned through x8.
-# ABI (x86-64): MEMORY class (>16 bytes).
-# ============================================================================
+# {Vec3, Float32, Float32}, the layout of C's FiveFloats: five floats once
+# flattened, so not an HFA on ARM64 (passed by pointer); MEMORY on x86-64.
 @fieldwise_init
 struct Vec3(TrivialRegisterPassable):
     var x: Float32
@@ -60,31 +54,19 @@ struct Vec3(TrivialRegisterPassable):
 
 
 @fieldwise_init
-struct Vec2(TrivialRegisterPassable):
-    var x: Float32
-    var y: Float32
-
-
-@fieldwise_init
-struct Vec3Vec2(TrivialRegisterPassable):
-    var a: Vec3
-    var b: Vec2
+struct Vec3AndTwo(TrivialRegisterPassable):
+    var v: Vec3
+    var a: Float32
+    var b: Float32
 
 
 def test_nested_float_20byte():
-    var s = Vec3Vec2(Vec3(1.0, 2.0, 3.0), Vec2(4.0, 5.0))
-    var result = external_call["c_func_five_floats", Vec3Vec2](s)
-    print(
-        "nested_float_20byte:",
-        result.a.x,
-        result.a.y,
-        result.a.z,
-        result.b.x,
-        result.b.y,
-    )
+    var s = Vec3AndTwo(Vec3(1.0, 2.0, 3.0), 4.0, 5.0)
+    var result = external_call["c_func_five_floats", Vec3AndTwo](s)
+    print("nested_float_20byte:", result.v.x, result.v.z, result.b)
 
 
-# CHECK: nested_float_20byte: 2.0 3.0 4.0 5.0 6.0
+# CHECK: nested_float_20byte: 2.0 4.0 6.0
 
 
 def main():

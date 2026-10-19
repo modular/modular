@@ -15,6 +15,7 @@
 # RUN: mojo build -Xlinker $(dirname %s)/libc_abi_reference.lo %s -o %t.dir/test_floats
 # RUN: %t.dir/test_floats | FileCheck %s
 
+from std.collections import Array
 from std.ffi import external_call
 
 
@@ -259,6 +260,27 @@ def test_five_floats():
 # CHECK: five_floats: 2.5 3.5 4.5 5.5 6.5
 
 
+# {Array[Float64, 3]}, the layout of C's MultiHfa3D: an HFA of three doubles on
+# ARM64 (the array's elements are its members); MEMORY on x86-64.
+@fieldwise_init
+struct ArrayDouble24(Copyable):
+    var v: Array[Float64, 3]
+
+
+# `external_call` cannot pass a struct that is not `RegisterPassable`.
+@extern("c_func_hfa3d_sum")
+def c_func_hfa3d_sum(s: ArrayDouble24) abi("C") -> Float64:
+    ...
+
+
+def test_array_double_24byte():
+    var result = c_func_hfa3d_sum(ArrayDouble24([1.0, 2.0, 3.0]))
+    print("array_double_24byte:", result)
+
+
+# CHECK: array_double_24byte: 3002001.0
+
+
 # ============================================================================
 # Main - run all tests
 # ============================================================================
@@ -279,3 +301,4 @@ def main():
     test_mixed_f32_f64()
     test_mixed_f64_f32()
     test_five_floats()
+    test_array_double_24byte()

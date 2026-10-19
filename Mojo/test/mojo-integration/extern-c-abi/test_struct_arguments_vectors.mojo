@@ -37,12 +37,8 @@ def test_vec_8byte():
 # CHECK: vec_8byte: 2.0 3.0
 
 
-# ============================================================================
-# Integer vector pair: { SIMD[DType.int32, 4], SIMD[DType.int32, 4] } (32 bytes)
-# Correct ABI (arm64):  HVA of two 128-bit vectors → q0-q1. An HVA is tested on
-#                       the vector size, not the element type.
-# Correct ABI (x86-64): MEMORY class (>16 bytes).
-# ============================================================================
+# Two SIMD[int32, 4]: an HVA on ARM64 (q0-q1), which is tested on the vector
+# size, not the element type; MEMORY on x86-64.
 @fieldwise_init
 struct IntVectorPair(TrivialRegisterPassable):
     var a: SIMD[.int32, 4]
