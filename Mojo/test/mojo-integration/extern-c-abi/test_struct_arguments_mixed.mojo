@@ -16,6 +16,7 @@
 # RUN: mojo build -Xlinker $(dirname %s)/libc_abi_reference.lo %s -o %t.dir/test_mixed
 # RUN: %t.dir/test_mixed | FileCheck %s
 
+from std.collections import Array
 from std.ffi import external_call
 
 
@@ -120,6 +121,51 @@ def test_mixed_complex_24byte():
 
 
 # ============================================================================
+# 12-byte mixed with an array (Int32 + Array[Float32, 2])
+# C struct: {int32_t i; float v[2];} = 12 bytes
+# On ARM64: non-HFA, IntegerPair (two GPRs)
+# On x86-64 SysV: eightbyte 0 (i, v[0]) INTEGER, eightbyte 1 (v[1]) SSE
+# ============================================================================
+@fieldwise_init
+struct MixedIntFloatArray12(Copyable):
+    var i: Int32
+    var v: Array[Float32, 2]
+
+
+# `external_call` cannot return a struct that is not `RegisterPassable`.
+@extern("c_func_mixed_if_array_12byte")
+def c_func_mixed_if_array_12byte(
+    s: MixedIntFloatArray12,
+) abi("C") -> MixedIntFloatArray12:
+    ...
+
+
+def test_mixed_if_array_12byte():
+    var result = c_func_mixed_if_array_12byte(
+        MixedIntFloatArray12(10, [10.5, 20.5])
+    )
+    print("mixed_if_array_12byte:", result.i, result.v[0], result.v[1])
+
+
+# CHECK: mixed_if_array_12byte: 11 11.5 21.5
+
+
+def weigh_mixed_if_array(s: MixedIntFloatArray12) abi("C") -> Float32:
+    return Float32(s.i) + 10 * s.v[0] + 100 * s.v[1]
+
+
+def test_mixed_if_array_12byte_callback():
+    # C builds the struct and passes it to an abi("C") Mojo function.
+    var result = external_call["c_call_mixed_if_array_12byte", Float32](
+        weigh_mixed_if_array
+    )
+    print("mixed_if_array_12byte_callback:", result)
+
+
+# CHECK: mixed_if_array_12byte_callback: 321.0
+
+
+# ============================================================================
 # Main - run all tests
 # ============================================================================
 def main():
@@ -128,3 +174,5 @@ def main():
     test_mixed_id_16byte()
     test_mixed_di_16byte()
     test_mixed_complex_24byte()
+    test_mixed_if_array_12byte()
+    test_mixed_if_array_12byte_callback()

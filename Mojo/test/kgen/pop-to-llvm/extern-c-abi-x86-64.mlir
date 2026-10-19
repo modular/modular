@@ -86,6 +86,11 @@
 //   N3  arg_nested_float_and_f64  {struct<(f32,f32)>,f64}  correct: SSEPair(f64,f64)
 //   N4  arg_nested_int_8          {struct<(i32,i32)>}      correct: i64  (regression guard)
 //   N5  arg_nested_int_and_i64    {struct<(i32,i32)>,i64}  correct: IntegerPair(i64,i64)
+//   N6  arg_nested_float_12       {struct<(f32,f32,f32)>}  correct: SSEPair(f64,f32)
+//
+// Group Y — Array fields (LLVMArrayType), 9–16 bytes: classified per element
+//   Y1  arg_float_array_12       {{[3 x f32]}}          → (f64, f32)  SSEPair
+//   Y2  arg_i32_float_array      {i32,[2 x f32]}        → (i64, f32)  Mixed
 //
 // MODULE HEADER NOTE: Each test uses the standard x86-64 Linux data layout
 // string to drive struct size and alignment computation in getStructSize(),
@@ -625,7 +630,7 @@ llvm.func @arg_vec2xf32_and_f64(%arg0: !llvm.struct<(vector<2 x f32>, f64)>) {
 //
 // isAllFloatStruct and classifyEightbyte now recurse into nested LLVMStructType
 // fields, so float nested structs receive correct SSE classification.
-// N1-N3: nested float structs → SSE. N4-N5: integer regression guards.
+// N1-N3, N6: nested float structs → SSE. N4-N5: integer regression guards.
 //===----------------------------------------------------------------------===//
 
 // -----
@@ -703,6 +708,23 @@ llvm.func @arg_nested_int_and_i64(%arg0: !llvm.struct<(!llvm.struct<(i32, i32)>,
   llvm.return
 }
 // CHECK: llvm.func @c_n5(i64, i64)
+}
+
+// -----
+
+// N6: {struct<(f32,f32,f32)>} (12 bytes) → SSEPair → (f64, f32).
+// The nested struct spans both eightbytes, which the straddle assertion
+// allows: each of its floats stays inside one.
+// Eightbyte 0 (bytes 0-7): two f32s → SSE → f64.
+// Eightbyte 1 (bytes 8-11): one f32 → SSE → f32.
+module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @arg_nested_float_12
+llvm.func @arg_nested_float_12(%arg0: !llvm.struct<(!llvm.struct<(f32, f32, f32)>)>) {
+  // CHECK: llvm.call @c_n6(%{{.*}}, %{{.*}}) : (f64, f32) -> ()
+  pop.external_call @c_n6(%arg0) : (!llvm.struct<(!llvm.struct<(f32, f32, f32)>)>) -> ()
+  llvm.return
+}
+// CHECK: llvm.func @c_n6(f64, f32)
 }
 
 //===----------------------------------------------------------------------===//
@@ -840,3 +862,44 @@ llvm.func @arg_single_field_structs(%a: !llvm.struct<(i8)>, %b: !llvm.struct<(i1
 }
 // CHECK: llvm.func @c_i2(i8, i16, i8) -> i8
 }
+
+//===----------------------------------------------------------------------===//
+// Group Y: Array fields (LLVMArrayType), 9–16 bytes
+//
+// clang's X86_64ABIInfo::classify treats an array like a struct with one field
+// per element ("Arrays are treated like structures"), so each eightbyte is
+// classified by the elements in it. A Mojo `Array` field is a struct around an
+// LLVM array.
+//===----------------------------------------------------------------------===//
+
+// -----
+
+// Y1: {{[3 x f32]}} (12 bytes) → SSEPair → (f64, f32).
+// A Mojo `Array[Float32, 3]` field. The array spans both eightbytes.
+// Eightbyte 0 (bytes 0-7): elements 0 and 1 → SSE → f64.
+// Eightbyte 1 (bytes 8-11): element 2 → SSE → f32.
+module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @arg_float_array_12
+llvm.func @arg_float_array_12(%arg0: !llvm.struct<(struct<(array<3 x f32>)>)>) {
+  // CHECK: llvm.call @c_y1(%{{.*}}, %{{.*}}) : (f64, f32) -> ()
+  pop.external_call @c_y1(%arg0) : (!llvm.struct<(struct<(array<3 x f32>)>)>) -> ()
+  llvm.return
+}
+// CHECK: llvm.func @c_y1(f64, f32)
+}
+
+// -----
+
+// Y2: {i32, [2 x f32]} (12 bytes) → Mixed → (i64, f32).
+// Eightbyte 0 (bytes 0-7): i32 and element 0 → INTEGER wins → i64.
+// Eightbyte 1 (bytes 8-11): element 1 → SSE → f32.
+module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @arg_i32_float_array
+llvm.func @arg_i32_float_array(%arg0: !llvm.struct<(i32, array<2 x f32>)>) {
+  // CHECK: llvm.call @c_y2(%{{.*}}, %{{.*}}) : (i64, f32) -> ()
+  pop.external_call @c_y2(%arg0) : (!llvm.struct<(i32, array<2 x f32>)>) -> ()
+  llvm.return
+}
+// CHECK: llvm.func @c_y2(i64, f32)
+}
+

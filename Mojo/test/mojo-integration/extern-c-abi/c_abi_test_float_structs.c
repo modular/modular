@@ -208,6 +208,26 @@ struct MixedComplex24 c_func_mixed_complex_24byte(struct MixedComplex24 s) {
   return s;
 }
 
+// 12-byte: int32 + float array (the array spans both eightbytes: i and v[0]
+// -> INTEGER, v[1] -> SSE)
+struct MixedIntFloatArray12 {
+  int32_t i;
+  float v[2];
+};
+
+struct MixedIntFloatArray12
+c_func_mixed_if_array_12byte(struct MixedIntFloatArray12 s) {
+  s.i += 1;
+  s.v[0] += 1.0f;
+  s.v[1] += 1.0f;
+  return s;
+}
+
+float c_call_mixed_if_array_12byte(float (*fn)(struct MixedIntFloatArray12)) {
+  struct MixedIntFloatArray12 s = {1, {2.0f, 3.0f}};
+  return fn(s);
+}
+
 // ============================================================================
 // Heterogeneous Float Structs - Non-HFA (violate homogeneity requirement)
 // ============================================================================

@@ -199,7 +199,12 @@ SystemVABIInfo::classifyEightbyte(mlir::LLVM::LLVMStructType structType,
     //
     // Assert: fail loudly on straddling fields rather than silently
     // misclassifying them. See TODO above for the full explanation.
-    assert((fieldOffset / 8) == ((fieldEnd - 1) / 8) &&
+    // Only scalars are checked here: a nested struct or an array may span both
+    // eightbytes (a Mojo `Array[Float32, 3]` field covers bytes 0-11), and its
+    // own fields are checked when it is classified below.
+    assert((isa<mlir::LLVM::LLVMStructType, mlir::LLVM::LLVMArrayType>(
+                fieldType) ||
+            (fieldOffset / 8) == ((fieldEnd - 1) / 8)) &&
            "packed struct field straddles eightbyte boundary; needs MEMORY "
            "classification");
 
@@ -227,6 +232,23 @@ SystemVABIInfo::classifyEightbyte(mlir::LLVM::LLVMStructType structType,
         int64_t nestedMaxSize = overlapEnd - overlapStart;
         fieldClass =
             classifyEightbyte(nestedStruct, nestedOffset, nestedMaxSize).first;
+      } else if (auto arrayType =
+                     dyn_cast<mlir::LLVM::LLVMArrayType>(fieldType);
+                 arrayType && fieldSize > 0) {
+        // An array is classified like a struct with one field per element, as
+        // clang's X86_64ABIInfo::classify does ("Arrays are treated like
+        // structures"): classify the overlap of that struct. A zero-sized
+        // array keeps the default class.
+        llvm::SmallVector<mlir::Type> elements(arrayType.getNumElements(),
+                                               arrayType.getElementType());
+        auto elementStruct =
+            mlir::LLVM::LLVMStructType::getLiteral(ctx, elements);
+        int64_t overlapStart = std::max(offset, fieldOffset);
+        int64_t overlapEnd = std::min(offset + maxSize, fieldEnd);
+        int64_t nestedOffset = overlapStart - fieldOffset;
+        int64_t nestedMaxSize = overlapEnd - overlapStart;
+        fieldClass =
+            classifyEightbyte(elementStruct, nestedOffset, nestedMaxSize).first;
       }
 
       // Merge: INTEGER wins over SSE (System V ABI rule)
