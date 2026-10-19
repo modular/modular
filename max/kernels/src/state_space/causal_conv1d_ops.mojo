@@ -29,7 +29,7 @@ from state_space.causal_conv1d import (
     causal_conv1d_channel_first_fwd_cpu,
     causal_conv1d_channel_first_fwd_gpu,
     causal_conv1d_update_cpu,
-    causal_conv1d_update_gpu,
+    enqueue_causal_conv1d_update_gpu,
 )
 
 from std.utils.coord import coord_to_index_list
@@ -411,44 +411,20 @@ struct CausalConv1DUpdate[activation: StaticString]:
             )
         elif is_gpu[target]():
             var gpu_ctx: DeviceContext = ctx
-            gpu_ctx.enqueue_copy(CS.ptr, CS_IN.ptr, total_state_elements)
-            comptime kNThreads = 128
-            var compiled_func = gpu_ctx.compile_function[
-                causal_conv1d_update_gpu[
-                    X.dtype,
-                    CS.dtype,
-                    W.dtype,
-                    O.dtype,
-                    B.dtype,
-                    kNThreads,
-                    X.LayoutType,
-                    CS.LayoutType,
-                    W.LayoutType,
-                    O.LayoutType,
-                    B.LayoutType,
-                    X.Engine,
-                    CS.Engine,
-                    W.Engine,
-                    O.Engine,
-                    B.Engine,
-                ]
-            ]()
-            var silu_activation_int8 = Int8(silu_activation)
-            gpu_ctx.enqueue_function(
-                compiled_func,
-                Int32(batch_size),
-                Int32(dim),
-                Int32(seqlen),
-                Int32(width),
-                Int32(state_len),
+            enqueue_causal_conv1d_update_gpu[separate_state=True](
+                gpu_ctx,
+                batch_size,
+                dim,
+                seqlen,
+                width,
+                state_len,
                 X,
+                CS_IN,
                 CS,
                 W,
                 O,
                 B,
-                silu_activation_int8,
-                grid_dim=(batch_size, ceildiv(dim, kNThreads)),
-                block_dim=(kNThreads),
+                silu_activation,
             )
         else:
             raise Error("Unsupported target device")

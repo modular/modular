@@ -50,6 +50,11 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace(
     Writes final states directly into ``ssm_pool[cache_indices[b], ...]``
     in place, so the graph never round-trips the whole pool.
 
+    The kernel picks its algorithm from the launch shape: long prefills run
+    the chunked (tensor-core) scan, decode, speculative verify and short
+    launches run the token-serial scan. Both read and write the same pool
+    layout.
+
     Args:
         x: The ``[total_len, nheads, head_dim]`` SSM input (model
             dtype).

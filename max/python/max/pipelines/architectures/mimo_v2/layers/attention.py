@@ -23,6 +23,7 @@ from max.graph import DeviceRef, ShardingStrategy, TensorValue, Weight, ops
 from max.nn.attention import MHAMaskVariant
 from max.nn.kernels import (
     flash_attention_ragged,
+    fused_chunked_qkv_rope_store_ragged,
     fused_qk_ragged_rope,
     store_k_cache_ragged,
     store_v_cache_ragged,
@@ -207,6 +208,77 @@ def _pad_heads(x: TensorValue, depth: int) -> TensorValue:
     return ops.reshape(x, [tokens, int(chunks) * int(heads), depth])
 
 
+def prepare_qkv_unfused(
+    qkv: TensorValue,
+    input_row_offsets: TensorValue,
+    freqs_cis: TensorValue,
+    kv_collection: PagedCacheValues,
+    layer_idx: TensorValue,
+    value_scale: float,
+    *,
+    kv_params: KVCacheParams,
+    layout: QkvChunkLayout,
+    head_dim: int,
+    v_head_dim: int,
+) -> TensorValue:
+    """Prepares chunked queries and stores rotated keys and scaled values.
+
+    This is the default path and the reference for the fused operator.
+    The projection includes FP8 block padding after each chunk's real rows.
+
+    Args:
+        qkv: Projection with shape ``[tokens, chunks, padded_chunk_rows]``.
+        input_row_offsets: Ragged sequence boundaries on the projection device.
+        freqs_cis: Partial NeoX RoPE table on the projection device.
+        kv_collection: Paged cache receiving K and V for the current layer.
+        layer_idx: CPU scalar selecting the layer within its cache group.
+        value_scale: FP32 multiplier applied before V is rounded to BF16.
+        kv_params: Parameters of the layer's cache group.
+        layout: Chunk counts and Q/K/V row extents on this device.
+        head_dim: Unpadded query and key width.
+        v_head_dim: Unpadded value width.
+
+    Returns:
+        Rotated queries padded to the cache head width.
+    """
+    assert qkv.shape[1] == layout.chunks
+    k_start = layout.q_rows
+    v_start = k_start + layout.k_rows
+    # Q and K are split into heads together, so a chunk that is not a
+    # whole number of heads (a sliding one) costs one copy, not two.
+    qk = _split_heads(qkv[:, :, :v_start], head_dim)
+    q = qk[:, :, : k_start // head_dim]
+    k = qk[:, :, k_start // head_dim :]
+    v = _split_heads(qkv[:, :, v_start : layout.rows], v_head_dim)
+    # Scaled in float32 and rounded once, as a reference multiplying a
+    # BF16 tensor by a Python float does. The cache holds scaled V.
+    v = ops.cast(ops.cast(v, DType.float32) * value_scale, v.dtype)
+
+    depth = kv_params.head_dim
+    q = _pad_heads(q, depth)
+    store_k_cache_ragged(
+        kv_collection,
+        _pad_heads(k, depth),
+        input_row_offsets,
+        layer_idx,
+    )
+    store_v_cache_ragged(
+        kv_collection,
+        _pad_heads(v, depth),
+        input_row_offsets,
+        layer_idx,
+    )
+    return fused_qk_ragged_rope(
+        kv_params,
+        q,
+        input_row_offsets,
+        kv_collection,
+        freqs_cis,
+        layer_idx,
+        interleaved=False,
+    )
+
+
 class MiMoV2Attention(Module, Shardable):
     """Attention for one MiMo-V2 decoder layer.
 
@@ -238,6 +310,7 @@ class MiMoV2Attention(Module, Shardable):
         has_sinks: bool,
         quant_config: QuantConfig,
         devices: list[DeviceRef],
+        fused_sliding_qkv: bool = False,
         is_sharding: bool = False,
     ) -> None:
         """Initializes the layer.
@@ -255,10 +328,14 @@ class MiMoV2Attention(Module, Shardable):
             has_sinks: Whether the layer has a learned per-head sink logit.
             quant_config: The dense FP8 config of ``qkv_proj``.
             devices: The devices; only the first is used by this instance.
+            fused_sliding_qkv: Whether sliding layers use the fused QKV
+                preparation op, which raises on an unsupported layout.
+                Defaults to ``False``.
             is_sharding: Whether :meth:`shard` is building this instance and
                 will assign its weights.
         """
         super().__init__()
+        self.fused_sliding_qkv = fused_sliding_qkv
         self.layout = layout
         self.head_dim = head_dim
         self.v_head_dim = v_head_dim
@@ -320,35 +397,31 @@ class MiMoV2Attention(Module, Shardable):
             self.qkv_proj(x),
             [tokens, layout.chunks, layout.padded_rows],
         )
-        k_start = layout.q_rows
-        v_start = k_start + layout.k_rows
-        # Q and K are split into heads together, so a chunk that is not a
-        # whole number of heads (a sliding one) costs one copy, not two.
-        qk = _split_heads(qkv[:, :, :v_start], self.head_dim)
-        q = qk[:, :, : k_start // self.head_dim]
-        k = qk[:, :, k_start // self.head_dim :]
-        v = _split_heads(qkv[:, :, v_start : layout.rows], self.v_head_dim)
-        # Scaled in float32 and rounded once, as a reference multiplying a
-        # BF16 tensor by a Python float does. The cache holds scaled V.
-        v = ops.cast(ops.cast(v, DType.float32) * self.value_scale, v.dtype)
-
-        depth = self.kv_params.head_dim
-        q = _pad_heads(q, depth)
-        store_k_cache_ragged(
-            kv_collection, _pad_heads(k, depth), input_row_offsets, layer_idx
-        )
-        store_v_cache_ragged(
-            kv_collection, _pad_heads(v, depth), input_row_offsets, layer_idx
-        )
-        q = fused_qk_ragged_rope(
-            self.kv_params,
-            q,
-            input_row_offsets,
-            kv_collection,
-            freqs_cis,
-            layer_idx,
-            interleaved=False,
-        )
+        if self.fused_sliding_qkv and self.sliding_window is not None:
+            q = fused_chunked_qkv_rope_store_ragged(
+                qkv,
+                input_row_offsets,
+                freqs_cis,
+                kv_collection,
+                layer_idx,
+                self.value_scale,
+                num_q_heads=self.n_heads,
+                qk_head_dim=self.head_dim,
+                v_head_dim=self.v_head_dim,
+            )
+        else:
+            q = prepare_qkv_unfused(
+                qkv,
+                input_row_offsets,
+                freqs_cis,
+                kv_collection,
+                layer_idx,
+                self.value_scale,
+                kv_params=self.kv_params,
+                layout=layout,
+                head_dim=self.head_dim,
+                v_head_dim=self.v_head_dim,
+            )
 
         attn = flash_attention_ragged(
             self.kv_params,
@@ -423,6 +496,7 @@ class MiMoV2Attention(Module, Shardable):
                 has_sinks=self.has_sinks,
                 quant_config=self.quant_config,
                 devices=[device],
+                fused_sliding_qkv=self.fused_sliding_qkv,
                 is_sharding=True,
             )
             shard.qkv_proj = qkv_shards[i]

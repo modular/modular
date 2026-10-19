@@ -72,6 +72,7 @@ modular_py_library(
         "//max/tests/integration/test_common:mef_precompile",
         requirement("numpy"),
         requirement("transformers"),
+        requirement("ml-dtypes"),
     ],
 )
 

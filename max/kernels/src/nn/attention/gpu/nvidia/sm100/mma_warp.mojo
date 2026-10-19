@@ -256,6 +256,8 @@ def fa4_mma[
     # Key-split and non-WS keep `PARTIAL_K`.
     comptime CUT_LAST_TILE = PARTIAL_K or config.ws_shared_key
 
+    # `tmem_addr` passed in by register (read once post-barrier in the kernel
+    # prologue); do NOT re-read `smem.tmem_addr_ptr()` here.
     var q_smem = smem.q_smem()
 
     var s0_tmem = tmem_addr + UInt32(config.TMEM_S0)
@@ -340,7 +342,7 @@ def fa4_mma[
 
     @inline(.always)
     def _commit(
-        mbar: UnsafePointer[address_space=.SHARED, ...],
+        mbar: Pointer[address_space=.SHARED, ...],
     ) {imm}:
         """Arrive at mbar: multicast for pair-CTA, local elect for single."""
         comptime if config.pair_cta:
@@ -1030,7 +1032,7 @@ def fa4_mma[
                         BK=BN,
                         swizzle_mode=P_SWIZZLE,
                         is_k_major=True,
-                    ](smem.p_smem() + wg * UInt32(BM * BN))
+                    ](smem.p_smem().unsafe_offset(wg * UInt32(BM * BN)))
 
                     for c in range(live_chunks):
                         # P columns advance by ONE key chunk per `c`;

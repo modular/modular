@@ -25,7 +25,7 @@ def test_convert_asm() raises:
     assert_true(
         "cvt.rn.f16.f32"
         in _compile_code[
-            my_cast[.float32, DType.float16],
+            my_cast[.float32, .float16],
             emission_kind="asm",
             target=get_gpu_target["sm_80"](),
         ]()
@@ -34,7 +34,7 @@ def test_convert_asm() raises:
     assert_true(
         "v_cvt_f16_f32_e32"
         in _compile_code[
-            my_cast[.float32, DType.float16],
+            my_cast[.float32, .float16],
             emission_kind="asm",
             target=get_gpu_target["mi355x"](),
         ]()
@@ -43,7 +43,7 @@ def test_convert_asm() raises:
     assert_true(
         "cvt.f32.f16"
         in _compile_code[
-            my_cast[.float16, DType.float32],
+            my_cast[.float16, .float32],
             emission_kind="asm",
             target=get_gpu_target["sm_80"](),
         ]()
@@ -52,7 +52,7 @@ def test_convert_asm() raises:
     assert_true(
         "v_cvt_f32_f16_e32"
         in _compile_code[
-            my_cast[.float16, DType.float32],
+            my_cast[.float16, .float32],
             emission_kind="asm",
             target=get_gpu_target["mi355x"](),
         ]()
@@ -92,4 +92,4 @@ def main() raises:
     with DeviceContext() as ctx:
         test_convert_asm()
         # Only support 2xFP32 -> 2xBF16 conversion via ptx.
-        test_convert[.float32, DType.bfloat16](ctx)
+        test_convert[.float32, .bfloat16](ctx)

@@ -121,7 +121,7 @@ def test_gates_match_torch(
         for t in compiled(Tensor(streams, device=device))
     )
 
-    ref_post, ref_comb, ref_collapsed = (
+    ref_post, ref_comb, ref_collapsed, _ = (
         t.cpu()
         for t in hyper_connection_reference(
             streams,

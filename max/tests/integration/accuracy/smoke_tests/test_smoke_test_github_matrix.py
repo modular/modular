@@ -116,6 +116,8 @@ def test_nightly_8xb200_pinned() -> None:
         "nvidia/GLM-5.2-NVFP4__mtp_tpep",
         "nvidia/Kimi-K2.7-Code-NVFP4",
         "RadixArk/GLM-5.3-NVFP4__mtp_tpep",
+        "tencent/Hy4-preview-FP8",
+        "tencent/Hy4-preview-FP8__mtp",
         "zai-org/GLM-5.3-Flash__tpep",
     }
 

@@ -346,9 +346,9 @@ def run_test_sparse[
             # Write rope (last 64 dims): BF16, stored as raw bytes.
             # Offset in FP8 slots: V_DEPTH (512). Each BF16 = 2 FP8 slots.
             var rope_base_fp8 = base + V_DEPTH
-            var rope_ptr_bf16 = (blocks_host_ptr + rope_base_fp8).bitcast[
-                Scalar[q_type]
-            ]()
+            var rope_ptr_bf16 = (
+                blocks_host_ptr.unsafe_offset(rope_base_fp8)
+            ).unsafe_bitcast[Scalar[q_type]]()
             for d in range(ROPE_DEPTH):
                 rope_ptr_bf16[d] = k_bf16_host[k_base + V_DEPTH + d]
 
@@ -369,9 +369,9 @@ def run_test_sparse[
                 k_ref_host[k_base + d] = blocks_host[base + d].cast[q_type]()
 
             # Read back rope as BF16 (exact, no conversion loss).
-            var rope_ptr_bf16 = (blocks_host_ptr + base + V_DEPTH).bitcast[
-                Scalar[q_type]
-            ]()
+            var rope_ptr_bf16 = (
+                blocks_host_ptr.unsafe_offset(base).unsafe_offset(V_DEPTH)
+            ).unsafe_bitcast[Scalar[q_type]]()
             for d in range(ROPE_DEPTH):
                 k_ref_host[k_base + V_DEPTH + d] = rope_ptr_bf16[d]
 
@@ -999,9 +999,9 @@ def run_test_sparse_blockscale[
 
             # Write rope (last 64 dims): BF16, stored as raw bytes.
             var rope_base_fp8 = base + V_DEPTH
-            var rope_ptr_bf16 = (blocks_host_ptr + rope_base_fp8).bitcast[
-                Scalar[q_type]
-            ]()
+            var rope_ptr_bf16 = (
+                blocks_host_ptr.unsafe_offset(rope_base_fp8)
+            ).unsafe_bitcast[Scalar[q_type]]()
             for d in range(ROPE_DEPTH):
                 rope_ptr_bf16[d] = k_bf16_host[k_base + V_DEPTH + d]
                 # Rope is BF16, no scaling needed for reference.
@@ -1519,9 +1519,9 @@ def run_test_sparse_variable_topk[
 
             # Write rope (last 64 dims): BF16.
             var rope_base_fp8 = base + V_DEPTH
-            var rope_ptr_bf16 = (blocks_host_ptr + rope_base_fp8).bitcast[
-                Scalar[q_type]
-            ]()
+            var rope_ptr_bf16 = (
+                blocks_host_ptr.unsafe_offset(rope_base_fp8)
+            ).unsafe_bitcast[Scalar[q_type]]()
             for d in range(ROPE_DEPTH):
                 rope_ptr_bf16[d] = k_bf16_host[k_base + V_DEPTH + d]
                 k_ref_host[k_base + V_DEPTH + d] = k_bf16_host[
@@ -2000,9 +2000,9 @@ def run_test_sparse_attn_sink[
 
             # Write rope (last 64 dims): BF16, stored as raw bytes.
             var rope_base_fp8 = base + V_DEPTH
-            var rope_ptr_bf16 = (blocks_host_ptr + rope_base_fp8).bitcast[
-                Scalar[q_type]
-            ]()
+            var rope_ptr_bf16 = (
+                blocks_host_ptr.unsafe_offset(rope_base_fp8)
+            ).unsafe_bitcast[Scalar[q_type]]()
             for d in range(ROPE_DEPTH):
                 rope_ptr_bf16[d] = k_bf16_host[k_base + V_DEPTH + d]
 
@@ -2022,9 +2022,9 @@ def run_test_sparse_attn_sink[
                 k_ref_host[k_base + d] = blocks_host[base + d].cast[q_type]()
 
             # Read back rope as BF16 (exact, no conversion loss).
-            var rope_ptr_bf16 = (blocks_host_ptr + base + V_DEPTH).bitcast[
-                Scalar[q_type]
-            ]()
+            var rope_ptr_bf16 = (
+                blocks_host_ptr.unsafe_offset(base).unsafe_offset(V_DEPTH)
+            ).unsafe_bitcast[Scalar[q_type]]()
             for d in range(ROPE_DEPTH):
                 k_ref_host[k_base + V_DEPTH + d] = rope_ptr_bf16[d]
 
@@ -2464,9 +2464,9 @@ def run_test_sparse_extra_kv[
 
             # Write rope (last 64 dims): BF16.
             var rope_base_fp8 = base + V_DEPTH
-            var rope_ptr_bf16 = (blocks_host_ptr + rope_base_fp8).bitcast[
-                Scalar[q_type]
-            ]()
+            var rope_ptr_bf16 = (
+                blocks_host_ptr.unsafe_offset(rope_base_fp8)
+            ).unsafe_bitcast[Scalar[q_type]]()
             for d in range(ROPE_DEPTH):
                 rope_ptr_bf16[d] = k_bf16_host[k_base + V_DEPTH + d]
                 k_ref_host[k_base + V_DEPTH + d] = k_bf16_host[
@@ -2573,9 +2573,9 @@ def run_test_sparse_extra_kv[
                 extra_k_ref_host[k_base + d] = fp8_val.cast[q_type]()
 
             var rope_base_fp8 = base + V_DEPTH
-            var rope_ptr_bf16 = (extra_blocks_host_ptr + rope_base_fp8).bitcast[
-                Scalar[q_type]
-            ]()
+            var rope_ptr_bf16 = (
+                extra_blocks_host_ptr.unsafe_offset(rope_base_fp8)
+            ).unsafe_bitcast[Scalar[q_type]]()
             for d in range(ROPE_DEPTH):
                 rope_ptr_bf16[d] = extra_k_bf16_host[k_base + V_DEPTH + d]
                 extra_k_ref_host[k_base + V_DEPTH + d] = extra_k_bf16_host[
@@ -3177,9 +3177,9 @@ def run_test_sparse_topk_clamping[
 
             # Write rope (last 64 dims): BF16.
             var rope_base_fp8 = base + V_DEPTH
-            var rope_ptr_bf16 = (blocks_host_ptr + rope_base_fp8).bitcast[
-                Scalar[q_type]
-            ]()
+            var rope_ptr_bf16 = (
+                blocks_host_ptr.unsafe_offset(rope_base_fp8)
+            ).unsafe_bitcast[Scalar[q_type]]()
             for d in range(ROPE_DEPTH):
                 rope_ptr_bf16[d] = k_bf16_host[k_base + V_DEPTH + d]
                 k_ref_host[k_base + V_DEPTH + d] = k_bf16_host[

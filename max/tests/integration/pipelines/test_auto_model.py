@@ -35,6 +35,9 @@ from max.pipelines import (
     PipelineArgs,
     PipelineConfig,
 )
+from max.pipelines.architectures.llama3_modulev3.model import (
+    Llama3Model as ModuleV3Llama3Model,
+)
 from max.pipelines.lib import (
     OverlapTextGenerationPipeline,
     TextGenerationPipeline,
@@ -73,6 +76,7 @@ def _load_cpu(
         model_path,
         max_batch_size=max_batch_size,
         device_graph_capture=False,
+        prefer_module_v3=False,
         devices="cpu",
         quantization_encoding="float32",
         max_length=512,
@@ -87,6 +91,7 @@ def _load_accelerator(
         model_path,
         max_batch_size=1,
         device_graph_capture=device_graph_capture,
+        prefer_module_v3=False,
         devices="gpu",
         **overrides,
     )
@@ -371,6 +376,33 @@ def test_signature_defaults(
     assert config.runtime.device_graph_capture is False
     assert config.runtime.enable_overlap_scheduler is False
     assert config.runtime.force is False
+    assert config.runtime.prefer_module_v3 is False
+
+
+def test_prefer_module_v3_reaches_the_config(
+    model_path: str, built_configs: list[PipelineConfig]
+) -> None:
+    with pytest.raises(_StopBeforeBuild):
+        AutoModel(model_path, devices="cpu", prefer_module_v3=True)
+    [config] = built_configs
+    assert config.runtime.prefer_module_v3 is True
+
+
+def test_prefer_module_v3_loads_and_generates(model_path: str) -> None:
+    with AutoModel(
+        model_path,
+        devices="cpu",
+        prefer_module_v3=True,
+        quantization_encoding="float32",
+        max_length=512,
+    ) as model:
+        pipeline = model.pipeline
+        assert isinstance(pipeline, TextGenerationPipeline)
+        assert isinstance(pipeline._pipeline_model, ModuleV3Llama3Model)
+        [sequence] = model.generate(
+            PROMPTS[:1], max_new_tokens=NUM_NEW_TOKENS, ignore_eos=True
+        ).sequences
+    assert len(sequence) == len(PROMPTS[0]) + NUM_NEW_TOKENS
 
 
 @pytest.mark.parametrize(

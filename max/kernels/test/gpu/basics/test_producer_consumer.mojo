@@ -197,8 +197,10 @@ def cpaysnc_producer_consumer_pipeline_kernel[
         for i in range(num_stages):
             var offset = i * size_per_stage + thread_idx.x * size_per_copy
             async_copy[16](
-                (src.unsafe_ptr() + offset).address_space_cast[.GLOBAL](),
-                smem + offset,
+                src.unsafe_ptr()
+                .unsafe_offset(offset)
+                .unsafe_address_space_cast[.GLOBAL](),
+                smem.unsafe_offset(offset),
             )
             async_copy_arrive(produced_mbar[i].unsafe_ptr())
             _ = produced_mbar[i].arrive()

@@ -1,0 +1,239 @@
+load("//bazel:api.bzl", "modular_py_test", "requirement")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+# Guards the architecture registry (pipelines/architectures/__init__.py),
+# speculator selection (pipelines/lib/arch_lookup.py) and reasoning-parser
+# lookup (pipelines/lib/reasoning.py).
+modular_py_test(
+    name = "test_arch_registration",
+    srcs = ["test_arch_registration.py"],
+    deps = [
+        "//max/python/max/graph",
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        "//max/python/max/pipelines/architectures/unified_dspark_deepseekV41",
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
+# Guards pipelines/architectures/hf_config_shims.py.
+modular_py_test(
+    name = "test_hf_config_shim",
+    srcs = ["test_hf_config_shim.py"],
+    data = ["//max/tests/integration/architectures/deepseekV41/testdata"],
+    deps = [
+        "//max/python/max/pipelines/architectures",
+        requirement("transformers"),
+    ],
+)
+
+# Guards EOS resolution (pipelines/lib/tokenizer.py) and the fallback
+# sampling defaults (pipelines/context SamplingParams).
+modular_py_test(
+    name = "test_generation_defaults",
+    srcs = ["test_generation_defaults.py"],
+    data = ["//max/tests/integration/architectures/deepseekV41/testdata"],
+    deps = [
+        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/lib",
+        requirement("transformers"),
+    ],
+)
+
+# Guards the shared KV cache parameters (nn/kv_cache KVCacheParams and
+# MultiKVCacheParams) and pipelines/lib KVCacheConfig.
+modular_py_test(
+    name = "test_kv_leaves",
+    srcs = ["test_kv_leaves.py"],
+    data = ["//max/tests/integration/architectures/deepseekV41/testdata"],
+    deps = [
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        "//max/python/max/pipelines/lib",
+        requirement("transformers"),
+    ],
+)
+
+# Guards the KV cache budget in pipelines/lib/memory_estimation.py
+# (MemoryEstimator) and the planner interface in
+# pipelines/kv_cache/memory_planner.py.
+modular_py_test(
+    name = "test_memory_planner",
+    srcs = ["test_memory_planner.py"],
+    data = ["//max/tests/integration/architectures/deepseekV41/testdata"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        "//max/python/max/pipelines/kv_cache",
+        "//max/python/max/pipelines/lib",
+        requirement("transformers"),
+    ],
+)
+
+# Guards the deepseekv4 reasoning parser
+# (pipelines/architectures/deepseekV4/reasoning.py), the thinking-region
+# wrapper in pipelines/lib/registry.py and GrammarEnforcementState in
+# pipelines/context.
+modular_py_test(
+    name = "test_reasoning_constrained_decoding",
+    size = "small",
+    srcs = ["test_reasoning_constrained_decoding.py"],
+    deps = [
+        "//max/python/max:_core",
+        "//max/python/max/pipelines/architectures/deepseekV4",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/lib",
+        requirement("numpy"),
+        requirement("pytest-asyncio"),
+    ],
+)
+
+# Guards multi-part message content in pipelines/modeling/types.py
+# (TextGenerationRequestMessage).
+modular_py_test(
+    name = "test_encoding",
+    srcs = ["test_encoding.py"],
+    deps = [
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        "//max/python/max/pipelines/modeling",
+    ],
+)
+
+# Guards chunking and processed-length tracking in pipelines/context
+# (TokenBuffer, TextContext).
+modular_py_test(
+    name = "test_engram_lookback",
+    srcs = ["test_engram_lookback.py"],
+    deps = [
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/modeling",
+        requirement("numpy"),
+    ],
+)
+
+# Guards pipelines/lib/log_probabilities.py (LogProbabilitiesMixin and its
+# graph).
+modular_py_test(
+    name = "test_log_probabilities",
+    srcs = ["test_log_probabilities.py"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        "//max/python/max/pipelines/architectures/unified_dspark_deepseekV41",
+        "//max/python/max/pipelines/lib",
+        requirement("numpy"),
+    ],
+)
+
+# Guards the graph-spec load (pipelines/lib graph_specs and PipelineModel
+# load_graphs) around the deferred weight loads.
+modular_py_test(
+    name = "test_load_graphs",
+    srcs = ["test_load_graphs.py"],
+    deps = [
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        "//max/python/max/pipelines/architectures/unified_dspark_deepseekV41",
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
+# Guards graph capture and replay input binding in
+# pipelines/lib/graph_capture.py (ServeGraphCaptureRunner), and the
+# data-parallel splits from pipelines/lib/utils.py
+# (compute_data_parallel_splits) under UnifiedSpecDecodeBatchProcessor.
+modular_py_test(
+    name = "test_serve_capture_inputs",
+    srcs = ["test_serve_capture_inputs.py"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        "//max/python/max/pipelines/architectures/unified_dspark_deepseekV41",
+        "//max/python/max/pipelines/lib",
+        requirement("numpy"),
+    ],
+)
+
+# Guards strict state-dict loading (nn/layer Module.load_state_dict) and
+# weight sharding (graph Weight.shard).
+modular_py_test(
+    name = "test_weight_adapters",
+    srcs = ["test_weight_adapters.py"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        requirement("numpy"),
+    ],
+)
+
+# Guards strict state-dict loading (nn/layer Module.load_state_dict).
+modular_py_test(
+    name = "test_dspark_weight_adapter",
+    srcs = ["test_dspark_weight_adapter.py"],
+    deps = [
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        requirement("numpy"),
+        requirement("transformers"),
+    ],
+)
+
+# Guards the shared spec-decode graph (pipelines/speculative block_driver.py
+# and spec_input_types.py), SpeculativeConfig, the KV cache input types from
+# nn/kv_cache MultiKVCacheParams, and the expert-parallel graph inputs from
+# nn/comm/ep EPBatchManager. Traces only, but needs a GPU because
+# the MXFP8 scale layout follows the host's accelerator.
+modular_py_test(
+    name = "test_unified_dspark_construction",
+    size = "large",
+    srcs = ["test_unified_dspark_construction.py"],
+    data = ["//max/tests/integration/architectures/deepseekV41/testdata"],
+    gpu_constraints = ["//:b200_gpu"],
+    tags = ["gpu"],
+    deps = [
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        "//max/python/max/pipelines/architectures/unified_dspark_deepseekV41",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/speculative",
+        requirement("numpy"),
+        requirement("transformers"),
+    ],
+)
+
+# Security check of model code: the host-shared Engram copy is never
+# attached through a registry directory, record or provider process that
+# another local user could control; the loader falls back to a private copy
+# instead. Also covers the copy's lifecycle (create, attach, stale/partial)
+# and the checkpoint page-cache drop. It guards no shared MAX code. CPU only.
+modular_py_test(
+    name = "test_engram_shared_host",
+    srcs = ["test_engram_shared_host.py"],
+    deps = [
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        requirement("numpy"),
+    ],
+)

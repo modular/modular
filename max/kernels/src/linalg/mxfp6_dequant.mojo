@@ -22,7 +22,7 @@ consecutive elements.
 from std.math import ceildiv
 from max.gpu import block_idx, thread_idx, grid_dim, block_dim
 from max.gpu.host import DeviceContext
-from max.gpu.host.info import GPUInfo
+from max.gpu.host.info import get_gpu_info
 from max.gpu.primitives.grid_controls import (
     PDL,
     PDLLevel,
@@ -31,7 +31,6 @@ from max.gpu.primitives.grid_controls import (
 from std.utils import StaticTuple
 from max.gpu import MAX_THREADS_PER_BLOCK_METADATA
 from layout import TensorEngine, TileTensor
-from layout.coord import Coord
 from layout.tile_layout import TensorLayout
 
 from .fp6_utils import (
@@ -105,9 +104,7 @@ def _dequant_mxfp6_kernel[
                     fragment = fragment.insert[offset=chunk * 8](
                         rebind[SIMD[.uint8, 8]](
                             input.load[8](
-                                Coord(
-                                    global_row_idx, packed_byte_col + chunk * 8
-                                )
+                                (global_row_idx, packed_byte_col + chunk * 8)
                             )
                         )
                     )
@@ -118,12 +115,12 @@ def _dequant_mxfp6_kernel[
 
                 var scale_col = global_col_idx // SF_VECTOR_SIZE
                 var scale_e8m0 = rebind[Scalar[scales_dtype]](
-                    scales.load(Coord(global_row_idx, scale_col))
+                    scales.load((global_row_idx, scale_col))
                 )
                 var scale_f32 = scale_e8m0.cast[.float32]()
 
-                output.store[width=ELEMENTS_PER_THREAD](
-                    Coord(global_row_idx, global_col_idx),
+                output.store(
+                    (global_row_idx, global_col_idx),
                     (f32_values * scale_f32).cast[out_dtype](),
                 )
 
@@ -182,7 +179,7 @@ def dequant_mxfp6[
         "num_cols must be a multiple of ELEMENTS_PER_THREAD (32)",
     )
     comptime num_max_threads = 512
-    comptime _gpu = GPUInfo.default_accelerator()
+    comptime _gpu = get_gpu_info()
     comptime num_SMs = _gpu.sm_count
 
     var num_col_threads = ceildiv(num_cols, ELEMENTS_PER_THREAD)

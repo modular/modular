@@ -49,8 +49,8 @@ def kernel_1[
         .bfloat16, RowMajorLayout[ComptimeInt[K], ComptimeInt[N]], MutAnyOrigin
     ],
 ):
-    var row = Int(block_dim.y * block_idx.y + thread_idx.y)
-    var col = Int(block_dim.x * block_idx.x + thread_idx.x)
+    var row = block_dim.y * block_idx.y + thread_idx.y
+    var col = block_dim.x * block_idx.x + thread_idx.x
 
     if row < M and col < N:
         # Still accumulate in float32 for precision
@@ -169,7 +169,7 @@ def test_kernel_1[
                     c_host_ref[m, n],
                     atol=1e-2,
                     rtol=5e-2,
-                    msg=String(m) + ", " + String(n),
+                    msg=String(t"{m}, {n}"),
                 )
         print("TEST PASSED")
 

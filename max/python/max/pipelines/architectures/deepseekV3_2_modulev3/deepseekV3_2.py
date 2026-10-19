@@ -260,16 +260,29 @@ class DeepseekV3_2TextModel(
         indexer_slots = indexer_cache_layer_map(
             self.config.indexer_types, len(self.layers)
         )
+        # Each block hands the next its input norm, fused into its post-MLP
+        # all-gather, as the graph-API model does. Only the embeddings are
+        # normalized here.
+        carry = self.layers[0].carry_next_input_norm
+        norm_h = self.layers[0].input_layernorm(h) if carry else None
+        last = len(self.layers) - 1
         for idx, layer in enumerate(self.layers):
             layer_idx_tensor = F.constant(idx, DType.uint32, device=CPU())
             indexer_slot_tensor = F.constant(
                 indexer_slots[idx], DType.uint32, device=CPU()
             )
-            call: Callable[..., tuple[Tensor, Tensor]] = layer
+            call: Callable[..., tuple[Tensor, ...]] = layer
             if isinstance(layer.mlp, QuantizedMoE):
                 group = "shared" if layer.self_attn.skip_topk else "full"
                 call = as_subgraph(layer, name=f"moe_block_{group}")
-            h, topk_indices = call(
+            # A block takes the next block's weight as an argument, since
+            # a shared subgraph resolves only its own weights.
+            next_input_gamma = (
+                self.layers[idx + 1].input_layernorm.weight.cast(h.dtype)
+                if carry and idx < last
+                else None
+            )
+            h, topk_indices, *rest = call(
                 layer_idx_tensor,
                 h,
                 kv_collection,
@@ -281,7 +294,10 @@ class DeepseekV3_2TextModel(
                 topk_indices,
                 False,
                 indexer_slot_tensor,
+                norm_x=norm_h,
+                next_input_gamma=next_input_gamma,
             )
+            norm_h = rest[0] if rest else None
 
         self._check_output_modes()
         outputs: list[Tensor] = []

@@ -239,6 +239,10 @@ class MiMoV2Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
     kv_params: KVCacheParamInterface
     max_seq_len: int
 
+    fused_sliding_qkv: bool = False
+    """Whether sliding-window layers prepare Q, K and V with the fused
+    chunked QKV op instead of separate cache stores and RoPE. Experimental
+    and off by default."""
     use_subgraphs: bool = True
     """Whether the MoE layers of each attention type share one compiled
     subgraph."""

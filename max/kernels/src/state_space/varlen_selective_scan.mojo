@@ -153,7 +153,7 @@ def varlen_selective_state_update_gpu[
             state_val = state_val * dA + dB * x_val
 
             # Store updated state
-            state.store[width=1](
+            state.store(
                 (Int(state_batch_idx), pid_h, m, n),
                 state_val.cast[kernel_dtype](),
             )
@@ -175,7 +175,7 @@ def varlen_selective_state_update_gpu[
             out_val *= silu(z_val)
 
         # Store output
-        output.store[width=1]((pid_b, pid_h, m), out_val.cast[kernel_dtype]())
+        output.store((pid_b, pid_h, m), out_val.cast[kernel_dtype]())
 
 
 def varlen_selective_scan_fwd_gpu[
@@ -355,17 +355,17 @@ def varlen_selective_scan_fwd_gpu[
             output_val *= silu(z_val)
 
             # Write to z if z is present (vLLM convention: output written to z)
-            z.store[width=1]((d, global_t), output_val.cast[kernel_dtype]())
+            z.store((d, global_t), output_val.cast[kernel_dtype]())
         else:
             # Write to output (or delta in vLLM convention)
-            output.store[width=1](
+            output.store(
                 (d, global_t),
                 output_val.cast[kernel_dtype](),
             )
 
     # Store final state to cache
     comptime for n in range(DSTATE):
-        ssm_states.store[width=1](
+        ssm_states.store(
             (cache_idx, d, n),
             state[n].cast[kernel_dtype](),
         )
@@ -456,7 +456,7 @@ def varlen_selective_state_update_cpu[
             state_val = state_val * dA + dB * x_val
 
             # Store updated state
-            state.store[width=1](
+            state.store(
                 (Int(state_batch_idx), h, m, n),
                 state_val.cast[kernel_dtype](),
             )
@@ -478,7 +478,7 @@ def varlen_selective_state_update_cpu[
             out_val *= silu(z_val)
 
         # Store output
-        output.store[width=1]((b, h, m), out_val.cast[kernel_dtype]())
+        output.store((b, h, m), out_val.cast[kernel_dtype]())
 
     sync_parallelize(worker, batch * nheads * dim, ctx)
 
@@ -607,19 +607,19 @@ def varlen_selective_scan_fwd_cpu[
                 if has_z:
                     var z_val = z.load[width=1]((d, global_t)).cast[.float32]()
                     output_val *= silu(z_val)
-                    z.store[width=1](
+                    z.store(
                         (d, global_t),
                         output_val.cast[kernel_dtype](),
                     )
                 else:
-                    output.store[width=1](
+                    output.store(
                         (d, global_t),
                         output_val.cast[kernel_dtype](),
                     )
 
             # Store final state
             comptime for n in range(DSTATE):
-                ssm_states.store[width=1](
+                ssm_states.store(
                     (cache_idx, d, n),
                     state[n].cast[kernel_dtype](),
                 )

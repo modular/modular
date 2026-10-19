@@ -22,9 +22,9 @@ different mechanisms:
   records to the live pool in one launch per device.
 - **Conv.** The window is the last ``kernel_size - 1`` raw inputs, so the
   verify leaves it unwritten and :func:`replay_conv_pools` re-runs the conv
-  kernel over the accepted rows of the verify's own input. Every op feeding it
-  is causal or pointwise, so those rows are bit-identical to what a forward
-  over the accepted prefix alone would have produced.
+  kernel over the accepted rows of the copy the verify keeps of its input.
+  Every op feeding it is causal or pointwise, so those rows are bit-identical
+  to what a forward over the accepted prefix alone would have produced.
 
 A window with no drafts has nothing to roll back, so at a verify width of zero
 the verify's forward lands both leaves on the live pools and every rollback op
@@ -112,7 +112,8 @@ def accepted_row_plan(
         merged_offsets: ``[batch + 1]`` offsets of the verified sequence.
         num_accepted: ``[batch]`` accepted draft tokens per request.
         num_draft_tokens: Scalar ``K`` on ``device``.
-        total_rows: Row count of the verify pass's per-token tensors.
+        total_rows: Row count of the captured tensors the replay gathers
+            from.
         device: Device the plan is built on.
         plan_rows: Length of the index vector, at least the accepted total.
             Defaults to ``total_rows``.
@@ -176,8 +177,9 @@ def replay_conv_pools(
 ) -> None:
     """Writes each conv window at the accepted length.
 
-    Re-runs the conv kernel over the accepted rows of the verify pass's own
-    input, carrying forward from the pre-verify window still in the pool.
+    Re-runs the conv kernel over the accepted rows of the verify pass's copy
+    of its input, carrying forward from the pre-verify window still in the
+    pool.
 
     Args:
         captures: Per-device, per-layer inputs captured by the verify pass.
@@ -206,9 +208,10 @@ def replay_conv_pools(
         conv_pool = live_conv_pools[device_idx]
         conv_row_id = conv_row_ids[device_idx].cast(DType.uint32)
         for layer_idx, capture in enumerate(device_captures):
+            assert capture.qkv_window is not None, "a replay needs a verify"
             # No resume row: the live rows still hold the pre-verify window.
             gated_delta_conv1d_verify_fwd(
-                qkv_input_ragged=ops.gather(capture.qkv, rows, axis=0),
+                qkv_input_ragged=ops.gather(capture.qkv_window, rows, axis=0),
                 conv_weight=capture.conv_weight,
                 conv_state=conv_pool,
                 slot_idx=conv_row_id[layer_idx],

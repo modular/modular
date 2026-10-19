@@ -17,6 +17,7 @@
 #include "Mojo/KGENDialect/ParameterEvaluator.h"
 #include "Mojo/LITDialect/LITTypes.h"
 #include "Mojo/LITDialect/LITUtils.h"
+#include "Mojo/MojoParser/ASTDecl.h"
 #include "Mojo/MojoParser/ASTType.h"
 #include "Mojo/MojoParser/DeclSignaturePrinter.h"
 #include "llvm/ADT/STLExtras.h"
@@ -30,13 +31,22 @@ using namespace M::KGEN::LIT;
 
 namespace M::KGEN {
 
+std::string ParameterInfo::getMarkdownDocString() const {
+  return description.empty() ? std::string() : description + "\n";
+}
+
+std::string ArgumentInfo::getMarkdownDocString() const {
+  return description.empty() ? std::string() : description + "\n";
+}
+
 //===----------------------------------------------------------------------===//
 // Population
 //===----------------------------------------------------------------------===//
 
 ParameterEvaluator populateParameterInfos(
-    SharedState &shared, ArrayRef<Type> paramTypes, PogListAttr paramListAttr,
+    ASTDecl &decl, ArrayRef<Type> paramTypes, PogListAttr paramListAttr,
     SmallVectorImpl<ParameterInfo> &params, std::optional<ASTType> selfType) {
+  auto &shared = decl.getShared();
   ParameterEvaluator evaluator;
   for (auto [idx, paramType] : llvm::enumerate(paramTypes)) {
     TypedAttr defaultValue;
@@ -56,20 +66,25 @@ ParameterEvaluator populateParameterInfos(
     if (shouldExcludeParameterFromDocs(passingKind, paramName))
       continue;
 
-    params.push_back(ParameterInfo{
-        paramName,
-        generateTypeString(shared, reboundType, variadicKind, selfType),
-        passingKind, variadicKind, defaultValue, /*constraints=*/{}});
+    ParameterInfo info;
+    info.setDecl(decl);
+    info.name = paramName;
+    info.type = generateTypeString(shared, reboundType, variadicKind, selfType);
+    info.passingKind = passingKind;
+    info.variadicKind = variadicKind;
+    info.defaultValue = defaultValue;
+    params.push_back(std::move(info));
   }
   return evaluator;
 }
 
-void populateArgumentInfos(SharedState &shared, FnTypeGeneratorType signature,
+void populateArgumentInfos(ASTDecl &decl, FnTypeGeneratorType signature,
                            ArrayRef<Type> userArgTypes,
                            std::optional<ASTType> selfType,
                            ParameterEvaluator &evaluator,
                            llvm::function_ref<bool()> hasSelfResultFn,
                            SmallVectorImpl<ArgumentInfo> &args) {
+  auto &shared = decl.getShared();
   ArrayRef<PogMetadataAttr> argPogs = signature.getArgListAttrs().getPogs();
   ArrayRef<Type> sigTypes = signature.getArguments();
   ArrayRef<ArgConvention> argConventions = signature.getArgConventions();
@@ -141,9 +156,17 @@ void populateArgumentInfos(SharedState &shared, FnTypeGeneratorType signature,
     // Hide implicit auto-params of the form `arg.member` from the rendered
     // type - they're fully determined by the argument and noisy for humans.
     typeString = stripImplicitArgParams(typeString, pogAttr.getName());
-    args.push_back(ArgumentInfo{
-        pogAttr.getName(), std::move(prefix), std::move(typeString),
-        passingKind, variadicKind, defaultValue, declConvention, isSelf});
+    ArgumentInfo info;
+    info.setDecl(decl);
+    info.name = pogAttr.getName();
+    info.prefix = std::move(prefix);
+    info.type = std::move(typeString);
+    info.passingKind = passingKind;
+    info.variadicKind = variadicKind;
+    info.defaultValue = defaultValue;
+    info.convention = declConvention;
+    info.isSelf = isSelf;
+    args.push_back(std::move(info));
   }
 }
 

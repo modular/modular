@@ -16,10 +16,9 @@ from std.math.math import _call_libm
 from std.memory import bitcast
 from std.builtin.dtype import _unsigned_integral_type_of
 from std.sys import bit_width_of, simd_width_of
-from std.sys.info import default_accelerator
 
 from max.algorithm.functional import elementwise
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, default_accelerator
 from std.testing import assert_equal, assert_true, TestSuite
 from std.utils.numerics import FPUtils
 
@@ -55,7 +54,7 @@ def run_on_gpu[
     def func[
         simd_width: Int, alignment: Int = 1
     ](idx0: Coord) {var out_buffer, var in_buffer}:
-        var idx = Int(idx0[0].value())
+        var idx = Int(idx0[0])
         var val = in_buffer.unsafe_ptr().unsafe_load[width=simd_width](idx)
         out_buffer.unsafe_ptr().unsafe_store[width=simd_width](
             idx, math_fn(val)

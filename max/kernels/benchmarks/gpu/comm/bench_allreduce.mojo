@@ -243,8 +243,9 @@ def bench_reduce[
                 # multi_ptr is set when use_multimem == True
                 in_tensors[0] = TileTensor(
                     rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
-                        multi_ptr.unsafe_value()
-                        + cb_template.offset(cache_iter)
+                        multi_ptr.unsafe_value().unsafe_offset(
+                            cb_template.offset(cache_iter)
+                        )
                     ),
                     row_major(length),
                 )

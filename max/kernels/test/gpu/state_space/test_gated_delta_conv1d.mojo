@@ -22,6 +22,7 @@ from layout import (
     TileTensor,
     row_major,
 )
+from layout.tile_layout import Layout
 from std.random import rand
 from state_space.gated_delta_conv1d import (
     CONV1D_TOKENS_PER_BLOCK,
@@ -81,23 +82,42 @@ def gated_delta_conv1d_sequential_reference[
     if batch_item_idx >= Int(batch_size) or conv_channel_idx >= Int(conv_dim):
         return
 
-    var slot = Int(slot_idx.raw_load(batch_item_idx))
+    var slot = Int(rebind[UInt32](slot_idx.load((batch_item_idx,))))
     var sequence_start_flat_idx = Int(
-        input_row_offsets.raw_load(batch_item_idx)
+        rebind[UInt32](input_row_offsets.load((batch_item_idx,)))
     )
     var sequence_end_flat_idx = Int(
-        input_row_offsets.raw_load(batch_item_idx + 1)
+        rebind[UInt32](input_row_offsets.load((batch_item_idx + 1,)))
     )
     var sequence_length = sequence_end_flat_idx - sequence_start_flat_idx
 
+    var qkv_input_view = qkv_input_ragged.reshape(
+        Layout(
+            Coord(Int(total_seq_len), Int(conv_dim)),
+            Coord(Int(qkv_input_seqlen_stride), Int(qkv_input_channel_stride)),
+        )
+    )
+    var conv_weight_view = conv_weight.reshape(
+        Layout(
+            Coord(Int(conv_dim), KERNEL_SIZE),
+            Coord(
+                Int(conv_weight_channel_stride), Int(conv_weight_offset_stride)
+            ),
+        )
+    )
+    var conv_output_view = conv_output_ragged.reshape(
+        Layout(
+            Coord(Int(total_seq_len), Int(conv_dim)),
+            Coord(
+                Int(conv_output_seqlen_stride), Int(conv_output_channel_stride)
+            ),
+        )
+    )
+
     var weight_register = SIMD[work_dtype, KERNEL_SIZE](0)
     comptime for kernel_offset_k in range(KERNEL_SIZE):
-        var weight_flat_offset = (
-            UInt32(conv_channel_idx) * conv_weight_channel_stride
-            + UInt32(kernel_offset_k) * conv_weight_offset_stride
-        )
-        weight_register[kernel_offset_k] = conv_weight.raw_load(
-            weight_flat_offset
+        weight_register[kernel_offset_k] = rebind[Scalar[work_dtype]](
+            conv_weight_view.load((conv_channel_idx, kernel_offset_k))
         )
 
     comptime KERNEL_SIZE_MINUS_ONE = KERNEL_SIZE - 1
@@ -116,31 +136,28 @@ def gated_delta_conv1d_sequential_reference[
             var input_value: Float32 = 0
 
             if lookback_position >= 0:
-                var ragged_flat_offset = (
-                    UInt32(sequence_start_flat_idx + lookback_position)
-                    * qkv_input_seqlen_stride
-                    + UInt32(conv_channel_idx) * qkv_input_channel_stride
-                )
                 input_value = Float32(
-                    qkv_input_ragged.raw_load(ragged_flat_offset)
+                    rebind[Scalar[work_dtype]](
+                        qkv_input_view.load(
+                            (
+                                sequence_start_flat_idx + lookback_position,
+                                conv_channel_idx,
+                            )
+                        )
+                    )
                 )
             else:
                 var window_idx = KERNEL_SIZE_MINUS_ONE + lookback_position
                 if window_idx >= 0:
                     input_value = Float32(
-                        conv_state.load(
-                            Coord(slot, conv_channel_idx, window_idx)
-                        )[0]
+                        conv_state.load((slot, conv_channel_idx, window_idx))[0]
                     )
 
             conv_sum += input_value * Float32(weight_register[kernel_offset_k])
 
-        var output_flat_offset = (
-            UInt32(flat_token_idx) * conv_output_seqlen_stride
-            + UInt32(conv_channel_idx) * conv_output_channel_stride
-        )
-        conv_output_ragged.raw_store(
-            output_flat_offset, Scalar[work_dtype](conv_sum)
+        conv_output_view.store(
+            (flat_token_idx, conv_channel_idx),
+            Scalar[work_dtype](conv_sum),
         )
 
     comptime for state_slot_j in range(KERNEL_SIZE_MINUS_ONE):
@@ -150,13 +167,16 @@ def gated_delta_conv1d_sequential_reference[
 
         var state_value: Scalar[state_dtype] = 0
         if source_position_in_sequence >= 0:
-            var source_flat_offset = (
-                UInt32(sequence_start_flat_idx + source_position_in_sequence)
-                * qkv_input_seqlen_stride
-                + UInt32(conv_channel_idx) * qkv_input_channel_stride
-            )
             state_value = Scalar[state_dtype](
-                qkv_input_ragged.raw_load(source_flat_offset)
+                rebind[Scalar[work_dtype]](
+                    qkv_input_view.load(
+                        (
+                            sequence_start_flat_idx
+                            + source_position_in_sequence,
+                            conv_channel_idx,
+                        )
+                    )
+                )
             )
         else:
             var old_window_idx = (
@@ -164,12 +184,10 @@ def gated_delta_conv1d_sequential_reference[
             )
             if old_window_idx >= 0:
                 state_value = conv_state.load(
-                    Coord(slot, conv_channel_idx, old_window_idx)
+                    (slot, conv_channel_idx, old_window_idx)
                 )[0]
 
-        conv_state.store(
-            Coord(slot, conv_channel_idx, state_slot_j), state_value
-        )
+        conv_state.store((slot, conv_channel_idx, state_slot_j), state_value)
 
 
 def run_slot_indexed_gpu[
@@ -372,6 +390,8 @@ def run_slot_indexed_gpu[
             slot_idx_tt,
             input_row_offsets_tt,
             conv_output_tt,
+            # Never written without CAPTURE_INPUT.
+            conv_output_ref_tt,
             grid_dim=(
                 ceildiv(total_seq_len, tokens_per_block),
                 ceildiv(conv_dim, CONV1D_BLOCK_DIM),
@@ -538,7 +558,7 @@ def run_slot_indexed_gpu[
 def test_slot_indexed_single_sequence_targets_chosen_slot() raises:
     """One-sequence smoke test: writes only to the slot named in slot_idx."""
     var ctx = DeviceContext()
-    run_slot_indexed_gpu[.float32, DType.float32, 4](
+    run_slot_indexed_gpu[.float32, .float32, 4](
         batch_size=1,
         total_seq_len=5,
         conv_dim=8,
@@ -552,7 +572,7 @@ def test_slot_indexed_single_sequence_targets_chosen_slot() raises:
 def test_slot_indexed_two_sequences_disjoint_slots() raises:
     """Two sequences hitting non-adjacent slots; bf16 pool, fp32 work."""
     var ctx = DeviceContext()
-    run_slot_indexed_gpu[.float32, DType.bfloat16, 4](
+    run_slot_indexed_gpu[.float32, .bfloat16, 4](
         batch_size=2,
         total_seq_len=7,
         conv_dim=8,
@@ -568,7 +588,7 @@ def test_slot_indexed_short_sequence_carries_state_forward() raises:
     """When seq_len < K-1: window must carry forward from existing pool entry.
     """
     var ctx = DeviceContext()
-    run_slot_indexed_gpu[.float32, DType.float32, 4](
+    run_slot_indexed_gpu[.float32, .float32, 4](
         batch_size=1,
         total_seq_len=2,
         conv_dim=8,
@@ -582,7 +602,7 @@ def test_slot_indexed_short_sequence_carries_state_forward() raises:
 def test_suppressing_the_window_write_leaves_the_pool_alone() raises:
     """Checks ``WRITE_STATE = False`` leaves the pool unchanged."""
     var ctx = DeviceContext()
-    run_slot_indexed_gpu[.float32, DType.bfloat16, 4, WRITE_STATE=False](
+    run_slot_indexed_gpu[.float32, .bfloat16, 4, WRITE_STATE=False](
         batch_size=2,
         total_seq_len=7,
         conv_dim=8,
@@ -597,7 +617,7 @@ def test_suppressing_the_window_write_leaves_the_pool_alone() raises:
 def test_suppressing_the_window_write_spares_a_carry_forward_row() raises:
     """Checks the same for a row shorter than the window."""
     var ctx = DeviceContext()
-    run_slot_indexed_gpu[.float32, DType.float32, 4, WRITE_STATE=False](
+    run_slot_indexed_gpu[.float32, .float32, 4, WRITE_STATE=False](
         batch_size=1,
         total_seq_len=2,
         conv_dim=8,
@@ -609,16 +629,17 @@ def test_suppressing_the_window_write_spares_a_carry_forward_row() raises:
 
 
 def _launch_conv[
-    WRITE_STATE: Bool
+    WRITE_STATE: Bool, CAPTURE_INPUT: Bool = False
 ](
     ctx: DeviceContext,
-    qkv: DeviceBuffer[DType.float32],
-    weight: DeviceBuffer[DType.float32],
-    pool: DeviceBuffer[DType.float32],
-    slot: DeviceBuffer[DType.uint32],
-    offsets: DeviceBuffer[DType.uint32],
-    conv_out: DeviceBuffer[DType.float32],
+    qkv: DeviceBuffer[.float32],
+    weight: DeviceBuffer[.float32],
+    pool: DeviceBuffer[.float32],
+    slot: DeviceBuffer[.uint32],
+    offsets: DeviceBuffer[.uint32],
+    conv_out: DeviceBuffer[.float32],
     seq_len: Int,
+    qkv_window: DeviceBuffer[.float32],
 ) raises:
     """Runs one kernel-size-4 conv launch over one row of `seq_len` tokens."""
     comptime KERNEL_SIZE = 4
@@ -633,6 +654,7 @@ def _launch_conv[
     var slot_tt = TileTensor(slot, row_major(1))
     var offsets_tt = TileTensor(offsets, row_major(2))
     var out_tt = TileTensor(conv_out, row_major(seq_len, CONV_DIM))
+    var window_tt = TileTensor(qkv_window, row_major(seq_len, CONV_DIM))
     var kernel = ctx.compile_function[
         gated_delta_conv1d_fwd_gpu[
             DType.float32,
@@ -647,6 +669,8 @@ def _launch_conv[
             offsets_tt.LayoutType,
             out_tt.LayoutType,
             qkv_tt.Engine,
+            CAPTURE_INPUT,
+            window_tt.LayoutType,
         ]
     ]()
     comptime tokens_per_block = 1
@@ -662,6 +686,7 @@ def _launch_conv[
         slot_tt,
         offsets_tt,
         out_tt,
+        window_tt,
         grid_dim=(
             ceildiv(seq_len, tokens_per_block),
             ceildiv(CONV_DIM, CONV1D_BLOCK_DIM),
@@ -674,10 +699,11 @@ def _launch_conv[
 def run_deferred_window_write(accepted: Int) raises:
     """Checks a deferred window, written at `accepted` tokens, is the forward's.
 
-    One launch covers a four-token window with the write suppressed, and a
-    second writes the window over the first `accepted` tokens. The pool must
-    match a single launch over those tokens from the same starting window,
-    which below `KERNEL_SIZE - 1` carries slots of that window forward.
+    One launch covers a four-token window with the write suppressed and
+    captures its input, and a second writes the window over the first
+    `accepted` captured tokens. The pool must match a single launch over
+    those tokens from the same starting window, which below
+    `KERNEL_SIZE - 1` carries slots of that window forward.
     """
     comptime KERNEL_SIZE = 4
     comptime CONV_DIM = 8
@@ -685,33 +711,33 @@ def run_deferred_window_write(accepted: Int) raises:
     comptime POOL_ELEMS = 2 * CONV_DIM * (KERNEL_SIZE - 1)
     var ctx = DeviceContext()
 
-    var qkv_h = ctx.enqueue_create_host_buffer[DType.float32](WINDOW * CONV_DIM)
-    rand[DType.float32](qkv_h.unsafe_ptr(), WINDOW * CONV_DIM)
-    var weight_h = ctx.enqueue_create_host_buffer[DType.float32](
+    var qkv_h = ctx.enqueue_create_host_buffer[.float32](WINDOW * CONV_DIM)
+    rand[.float32](qkv_h.unsafe_ptr(), WINDOW * CONV_DIM)
+    var weight_h = ctx.enqueue_create_host_buffer[.float32](
         CONV_DIM * KERNEL_SIZE
     )
-    rand[DType.float32](weight_h.unsafe_ptr(), CONV_DIM * KERNEL_SIZE)
-    var pool_h = ctx.enqueue_create_host_buffer[DType.float32](POOL_ELEMS)
-    rand[DType.float32](pool_h.unsafe_ptr(), POOL_ELEMS)
-    var slot_h = ctx.enqueue_create_host_buffer[DType.uint32](1)
+    rand[.float32](weight_h.unsafe_ptr(), CONV_DIM * KERNEL_SIZE)
+    var pool_h = ctx.enqueue_create_host_buffer[.float32](POOL_ELEMS)
+    rand[.float32](pool_h.unsafe_ptr(), POOL_ELEMS)
+    var slot_h = ctx.enqueue_create_host_buffer[.uint32](1)
     slot_h[0] = 1
-    var window_offsets_h = ctx.enqueue_create_host_buffer[DType.uint32](2)
+    var window_offsets_h = ctx.enqueue_create_host_buffer[.uint32](2)
     window_offsets_h[0] = 0
     window_offsets_h[1] = UInt32(WINDOW)
-    var accepted_offsets_h = ctx.enqueue_create_host_buffer[DType.uint32](2)
+    var accepted_offsets_h = ctx.enqueue_create_host_buffer[.uint32](2)
     accepted_offsets_h[0] = 0
     accepted_offsets_h[1] = UInt32(accepted)
 
-    var qkv = ctx.enqueue_create_buffer[DType.float32](WINDOW * CONV_DIM)
-    var weight = ctx.enqueue_create_buffer[DType.float32](
-        CONV_DIM * KERNEL_SIZE
-    )
-    var pool = ctx.enqueue_create_buffer[DType.float32](POOL_ELEMS)
-    var reference_pool = ctx.enqueue_create_buffer[DType.float32](POOL_ELEMS)
-    var slot = ctx.enqueue_create_buffer[DType.uint32](1)
-    var window_offsets = ctx.enqueue_create_buffer[DType.uint32](2)
-    var accepted_offsets = ctx.enqueue_create_buffer[DType.uint32](2)
-    var conv_out = ctx.enqueue_create_buffer[DType.float32](WINDOW * CONV_DIM)
+    var qkv = ctx.enqueue_create_buffer[.float32](WINDOW * CONV_DIM)
+    var weight = ctx.enqueue_create_buffer[.float32](CONV_DIM * KERNEL_SIZE)
+    var pool = ctx.enqueue_create_buffer[.float32](POOL_ELEMS)
+    var reference_pool = ctx.enqueue_create_buffer[.float32](POOL_ELEMS)
+    var slot = ctx.enqueue_create_buffer[.uint32](1)
+    var window_offsets = ctx.enqueue_create_buffer[.uint32](2)
+    var accepted_offsets = ctx.enqueue_create_buffer[.uint32](2)
+    var conv_out = ctx.enqueue_create_buffer[.float32](WINDOW * CONV_DIM)
+    var qkv_window = ctx.enqueue_create_buffer[.float32](WINDOW * CONV_DIM)
+    var unused_window = ctx.enqueue_create_buffer[.float32](WINDOW * CONV_DIM)
     ctx.enqueue_copy(qkv, qkv_h)
     ctx.enqueue_copy(weight, weight_h)
     ctx.enqueue_copy(pool, pool_h)
@@ -721,11 +747,27 @@ def run_deferred_window_write(accepted: Int) raises:
     ctx.enqueue_copy(accepted_offsets, accepted_offsets_h)
     ctx.synchronize()
 
-    _launch_conv[False](
-        ctx, qkv, weight, pool, slot, window_offsets, conv_out, WINDOW
+    _launch_conv[False, CAPTURE_INPUT=True](
+        ctx,
+        qkv,
+        weight,
+        pool,
+        slot,
+        window_offsets,
+        conv_out,
+        WINDOW,
+        qkv_window,
     )
     _launch_conv[True](
-        ctx, qkv, weight, pool, slot, accepted_offsets, conv_out, WINDOW
+        ctx,
+        qkv_window,
+        weight,
+        pool,
+        slot,
+        accepted_offsets,
+        conv_out,
+        WINDOW,
+        unused_window,
     )
     _launch_conv[True](
         ctx,
@@ -736,12 +778,11 @@ def run_deferred_window_write(accepted: Int) raises:
         accepted_offsets,
         conv_out,
         WINDOW,
+        unused_window,
     )
 
-    var pool_after = ctx.enqueue_create_host_buffer[DType.float32](POOL_ELEMS)
-    var reference_after = ctx.enqueue_create_host_buffer[DType.float32](
-        POOL_ELEMS
-    )
+    var pool_after = ctx.enqueue_create_host_buffer[.float32](POOL_ELEMS)
+    var reference_after = ctx.enqueue_create_host_buffer[.float32](POOL_ELEMS)
     ctx.enqueue_copy(pool_after, pool)
     ctx.enqueue_copy(reference_after, reference_pool)
     ctx.synchronize()
@@ -807,14 +848,14 @@ def test_gated_delta_conv1d_gpu_deep_slot_no_alias() raises:
         conv_weight_heap, row_major(conv_dim, KERNEL_SIZE)
     )
     for c in range(conv_dim):
-        conv_weight_h.raw_store(c * KERNEL_SIZE, Float32(1))
+        conv_weight_h[c, 0] = Float32(1)
     var slot_idx_heap = List(length=batch_size, fill=UInt32(slot_deep))
     var slot_idx_h = TileTensor(slot_idx_heap, row_major(batch_size))
     var input_row_offsets_heap = List(length=batch_size + 1, fill=UInt32(0))
     var input_row_offsets_h = TileTensor(
         input_row_offsets_heap, row_major(batch_size + 1)
     )
-    input_row_offsets_h.raw_store(1, UInt32(total_seq_len))
+    input_row_offsets_h[1] = UInt32(total_seq_len)
 
     var qkv_input_device = ctx.enqueue_create_buffer[work_dtype](
         total_seq_len * conv_dim
@@ -846,6 +887,12 @@ def test_gated_delta_conv1d_gpu_deep_slot_no_alias() raises:
     )
     var conv_output_tt = TileTensor(
         conv_output_device, row_major(total_seq_len, conv_dim)
+    )
+    var unused_window_device = ctx.enqueue_create_buffer[work_dtype](
+        total_seq_len * conv_dim
+    )
+    var unused_window_tt = TileTensor(
+        unused_window_device, row_major(total_seq_len, conv_dim)
     )
 
     var conv_state_device = ctx.enqueue_create_buffer[state_dtype](
@@ -895,6 +942,7 @@ def test_gated_delta_conv1d_gpu_deep_slot_no_alias() raises:
         slot_idx_tt,
         input_row_offsets_tt,
         conv_output_tt,
+        unused_window_tt,
         grid_dim=(
             ceildiv(total_seq_len, CONV1D_TOKENS_PER_BLOCK),
             ceildiv(conv_dim, CONV1D_BLOCK_DIM),
@@ -918,20 +966,20 @@ def test_gated_delta_conv1d_gpu_deep_slot_no_alias() raises:
     ctx.synchronize()
 
     # The deep sentinel, not the front row it would alias onto.
-    assert_equal(output_h.raw_load(0), Scalar[work_dtype](deep_sentinel))
+    assert_equal(output_h[0, 0], Scalar[work_dtype](deep_sentinel))
 
     # The front of the pool must be untouched.
-    assert_equal(front_readback_h.raw_load(0), front_sentinel)
+    assert_equal(front_readback_h[0], front_sentinel)
 
     # The deep slot itself must carry the write.
-    assert_equal(deep_readback_h.raw_load(0), Scalar[state_dtype](x_val))
+    assert_equal(deep_readback_h[0], Scalar[state_dtype](x_val))
 
 
 def test_slot_indexed_ragged_short_sequences() raises:
     """Ragged batch of 5 sequences with lengths 1..5 (the K-1 boundary cases);
     bf16 work and state; conv_dim not a multiple of the block size."""
     var ctx = DeviceContext()
-    run_slot_indexed_gpu[.bfloat16, DType.bfloat16, 4](
+    run_slot_indexed_gpu[.bfloat16, .bfloat16, 4](
         batch_size=5,
         total_seq_len=15,
         conv_dim=264,
@@ -946,7 +994,7 @@ def test_slot_indexed_seq4_seq5_boundary() raises:
     """Lengths equal to K and K+1: every head-thread output plus the first
     fast-path output at position K-1."""
     var ctx = DeviceContext()
-    run_slot_indexed_gpu[.bfloat16, DType.float32, 4](
+    run_slot_indexed_gpu[.bfloat16, .float32, 4](
         batch_size=3,
         total_seq_len=13,
         conv_dim=130,
@@ -962,7 +1010,7 @@ def test_slot_indexed_ragged_mixed_lengths() raises:
     """Ragged batch of 8 sequences mixing decode-length rows with a 2048-token
     prefill row, out-of-order slots."""
     var ctx = DeviceContext()
-    run_slot_indexed_gpu[.float32, DType.bfloat16, 4](
+    run_slot_indexed_gpu[.float32, .bfloat16, 4](
         batch_size=8,
         total_seq_len=2188,
         conv_dim=512,
@@ -990,7 +1038,7 @@ def test_slot_indexed_ragged_40_rows_binary_search() raises:
         slots[b] = (b * 7) % BATCH
         total += length
     var ctx = DeviceContext()
-    run_slot_indexed_gpu[.float32, DType.bfloat16, 4](
+    run_slot_indexed_gpu[.float32, .bfloat16, 4](
         batch_size=BATCH,
         total_seq_len=total,
         conv_dim=264,
@@ -1005,7 +1053,7 @@ def test_slot_indexed_production_prefill_2048() raises:
     """Single 2048-token prefill chunk at the production TP2 shard width
     (conv_dim = (key_dim*2 + value_dim)/2 = 5120 for Qwen3.8-27B)."""
     var ctx = DeviceContext()
-    run_slot_indexed_gpu[.float32, DType.bfloat16, 4](
+    run_slot_indexed_gpu[.float32, .bfloat16, 4](
         batch_size=1,
         total_seq_len=2048,
         conv_dim=5120,
@@ -1021,7 +1069,7 @@ def test_slot_indexed_production_prefill_16384() raises:
     """16384-token sequence with conv_dim 10200 (not a multiple of the block
     size); exercises the 32-bit flat-offset arithmetic at scale."""
     var ctx = DeviceContext()
-    run_slot_indexed_gpu[.float32, DType.float32, 4](
+    run_slot_indexed_gpu[.float32, .float32, 4](
         batch_size=1,
         total_seq_len=16384,
         conv_dim=10200,
@@ -1036,7 +1084,7 @@ def test_slot_indexed_production_prefill_16384() raises:
 def test_slot_indexed_decode_20_rows() raises:
     """Decode shape: 20 rows x 1 token, every thread is a head thread."""
     var ctx = DeviceContext()
-    run_slot_indexed_gpu[.bfloat16, DType.float32, 4](
+    run_slot_indexed_gpu[.bfloat16, .float32, 4](
         batch_size=20,
         total_seq_len=20,
         conv_dim=5120,
@@ -1075,7 +1123,7 @@ def test_slot_indexed_spec_decode_20_rows() raises:
     """Spec-decode shape: 20 rows x 4 tokens (== K) at the unsharded
     conv_dim 10240, a multiple of the block size."""
     var ctx = DeviceContext()
-    run_slot_indexed_gpu[.float32, DType.bfloat16, 4](
+    run_slot_indexed_gpu[.float32, .bfloat16, 4](
         batch_size=20,
         total_seq_len=80,
         conv_dim=10240,

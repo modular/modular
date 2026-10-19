@@ -45,8 +45,8 @@ def strsv[
             x_vec = x_ptr[i]
             x_solved.store(i * simd_width, x_vec)
 
-        x_ptr += simd_width
-        L_ptr += simd_width
+        x_ptr = x_ptr.unsafe_offset(simd_width)
+        L_ptr = L_ptr.unsafe_offset(simd_width)
 
         # Update the columns under the triangular tile
         # Move down tile by tile.
@@ -61,7 +61,7 @@ def strsv[
                 x_vec = x_solved_vec.fma(-L_col_vec, x_vec)
             x_ptr.store(i, x_vec)
 
-        L_ptr += size * simd_width
+        L_ptr = L_ptr.unsafe_offset(size * simd_width)
 
 
 # Fill the lower triangle matrix.

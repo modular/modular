@@ -58,9 +58,9 @@ def test_transposed_epilogue_row_straddle[
     transpose_b: Bool = True,
     swapAB: Bool = True,
 ](ctx: DeviceContext, m: MType, n: NType, k: KType) raises:
-    var M = Int(m.value())
-    var N = Int(n.value())
-    var K = Int(k.value())
+    var M = Int(m)
+    var N = Int(n)
+    var K = Int(k)
 
     print(
         t"in/out=({a_type},{b_type},{c_type}) shape=({M},{N},{K})"
@@ -109,7 +109,7 @@ def test_transposed_epilogue_row_straddle[
         _dtype: DType, width: SIMDLength, *, alignment: Int
     ](idx: Coord, val: SIMD[_dtype, width]) {var c_tensor}:
         comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
-        c_tensor.store[width=width](idx, val.cast[c_type]())
+        c_tensor.store(idx, val.cast[c_type]())
 
     seed(1234)
     rand(a_host.as_span())

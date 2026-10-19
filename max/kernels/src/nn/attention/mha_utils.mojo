@@ -17,7 +17,7 @@ Provides `MHAConfig` (tile/pipeline configuration), `FlashAttentionAlgorithm`
 types used by both prefill and decode attention kernels.
 """
 
-from std.math import align_up, ceildiv
+from std.math import align_up, ceildiv, iota
 from std.math.uutils import ufloordiv, ualign_up
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.collections import OptionalReg
@@ -26,7 +26,6 @@ from std.sys import (
     align_of,
     get_defined_bool,
     get_defined_int,
-    default_accelerator,
     is_amd_gpu,
     is_nvidia_gpu,
     simd_width_of,
@@ -36,7 +35,7 @@ from std.sys.info import _accelerator_arch
 
 from std.bit import prev_power_of_two
 from max.gpu import WARP_SIZE, lane_id
-from max.gpu.host import DeviceBuffer
+from max.gpu.host import DeviceBuffer, default_accelerator
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import (
     Coord,
@@ -115,7 +114,7 @@ struct FlashAttentionAlgorithm(
     ].values
 
     comptime _enum_case_types = TypeList.splat[
-        ParameterList[Self._enum_case_names].size, NoneType
+        ParameterList[Self._enum_case_names].length, NoneType
     ].values
 
     @inline(.always)
@@ -488,17 +487,11 @@ def _kernel_mask[
 ](
     coord: IndexList[2, ...], bound: IndexList[2, ...], vec: SIMD[dtype, width]
 ) -> SIMD[dtype, width]:
-    var masked_vec = SIMD[dtype, width]()
-
-    # TODO: use `select` to see if it generates the same code.
-    comptime for i in range(width):
-        masked_vec[i] = (
-            vec[i] if coord[0] < bound[0]
-            and UInt32(coord[1]) + UInt32(i)
-            < UInt32(bound[1]) else min_or_neg_inf[dtype]()
-        )
-
-    return masked_vec
+    var columns = iota[.uint32, width](UInt32(coord[1]))
+    var in_bounds = columns.lt(UInt32(bound[1])) & SIMD[.bool, width](
+        fill=coord[0] < bound[0]
+    )
+    return in_bounds.select(vec, SIMD[dtype, width](min_or_neg_inf[dtype]()))
 
 
 @inline(.always)
@@ -977,7 +970,7 @@ trait OptionalPointer(Copyable, DevicePassable, TrivialRegisterPassable):
     @inline(.always)
     def value(
         self,
-    ) -> UnsafePointer[
+    ) -> ImmPointer[
         Scalar[Self.dtype], ImmutAnyOrigin, address_space=Self.address_space
     ]:
         ...
@@ -997,7 +990,7 @@ struct NonNullPointer[dtype_: DType, address_space_: AddressSpace = .GENERIC](
     comptime dtype: DType = Self.dtype_
     comptime is_null: Bool = False
     comptime address_space: AddressSpace = Self.address_space_
-    comptime PtrType = UnsafePointer[
+    comptime PtrType = ImmPointer[
         Scalar[Self.dtype], ImmutAnyOrigin, address_space=Self.address_space
     ]
 
@@ -1029,6 +1022,13 @@ struct NonNullPointer[dtype_: DType, address_space_: AddressSpace = .GENERIC](
         self.ptr = rebind[Self.PtrType](ptr.unsafe_ptr())
 
     @inline(.always)
+    def __init__(
+        out self,
+        tensor: TileTensor[Self.dtype, address_space=Self.address_space, ...],
+    ):
+        self.ptr = tensor.ptr.as_imm().as_unsafe_any_origin()
+
+    @inline(.always)
     def value(self) -> Self.PtrType:
         assert Int(self.ptr) != 0, (
             "NonNullPointer is supposed to provide a compile-time guarantee"
@@ -1051,7 +1051,7 @@ struct NullPointer[dtype_: DType, address_space_: AddressSpace = .GENERIC](
     comptime dtype: DType = Self.dtype_
     comptime is_null: Bool = True
     comptime address_space: AddressSpace = Self.address_space_
-    comptime PtrType = UnsafePointer[
+    comptime PtrType = ImmPointer[
         Scalar[Self.dtype], ImmutAnyOrigin, address_space=Self.address_space
     ]
 
@@ -1090,7 +1090,7 @@ comptime MaybeNullPointer[dtype: DType, present: Bool] = NonNullPointer[
 @inline(.always)
 def maybe_null_pointer[
     dtype: DType, //, present: Bool
-](ptr: UnsafePointer[Scalar[dtype], _]) -> MaybeNullPointer[dtype, present]:
+](ptr: Pointer[Scalar[dtype], _]) -> MaybeNullPointer[dtype, present]:
     """Wraps `ptr` as a `NonNullPointer` when `present`, else drops it.
 
     Lets a caller that knows at compile time whether an optional operand is
@@ -1160,7 +1160,7 @@ def unread_pointer[T: OptionalPointer]() -> T:
 def as_optional_reg[
     T: OptionalPointer
 ](ptr: T) -> OptionalReg[
-    UnsafePointer[Scalar[T.dtype], MutAnyOrigin, address_space=T.address_space]
+    MutPointer[Scalar[T.dtype], MutAnyOrigin, address_space=T.address_space]
 ]:
     """Converts an `OptionalPointer` to the runtime-nullable `OptionalReg` form.
 
@@ -1180,7 +1180,7 @@ def as_optional_reg[
         return None
     else:
         return rebind[
-            UnsafePointer[
+            MutPointer[
                 Scalar[T.dtype], MutAnyOrigin, address_space=T.address_space
             ]
         ](ptr.value())
@@ -1279,14 +1279,14 @@ struct SplitKPartition[dtype: DType](
     comptime LSEPointerType = NonNullPointer[Self.accum_dtype]
 
     @__allow_legacy_any_origin_fields
-    var ptr: UnsafePointer[Scalar[Self.accum_dtype], MutAnyOrigin]
+    var ptr: MutPointer[Scalar[Self.accum_dtype], MutAnyOrigin]
     var num_partitions_value: UInt32
     var max_num_partitions_value: UInt32
 
     @inline(.always)
     def __init__(
         out self,
-        ptr: UnsafePointer[Scalar[Self.accum_dtype], MutAnyOrigin],
+        ptr: MutPointer[Scalar[Self.accum_dtype], MutAnyOrigin],
         num_partitions_value: UInt32,
         max_num_partitions_value: UInt32,
     ):

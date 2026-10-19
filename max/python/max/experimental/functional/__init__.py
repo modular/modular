@@ -51,9 +51,11 @@ from max.graph import DeviceRef, Graph, TensorType, Type, ops
 
 from .collective_ops import (
     allgather,
+    allgather_rms_norm,
     allreduce_sum,
     distributed_broadcast,
     reduce_scatter,
+    reduce_scatter_rms_norm,
     transfer_to,
 )
 from .creation_ops import (
@@ -204,6 +206,7 @@ __all__ = [
     "acos",
     "add",
     "allgather",
+    "allgather_rms_norm",
     "allreduce_sum",
     "arange",
     "argmax",
@@ -299,6 +302,7 @@ __all__ = [
     "range",
     "rebind",
     "reduce_scatter",
+    "reduce_scatter_rms_norm",
     "relu",
     "repeat_interleave",
     "reshape",

@@ -221,10 +221,12 @@ def test_split_k_epilogue[
         comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
         comptime if width > 1:
             wide_ptr[0] = Int32(1)
-        var base = Int(idx[0].value()) * N_static + Int(idx[1].value())
+        var base = Int(idx[0]) * N_static + Int(idx[1])
         comptime for w in range(width):
             epi_ptr[base + w] = val[w].cast[.float32]() * 2.0 + 1.0
-            _ = Atomic[Int32].fetch_add(fire_ptr + base + w, Int32(1))
+            _ = Atomic[Int32].fetch_add(
+                fire_ptr.unsafe_offset(base).unsafe_offset(w), Int32(1)
+            )
 
     @inline(.always)
     def affine_fn[

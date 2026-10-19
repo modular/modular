@@ -21,7 +21,7 @@
 from std.math.uutils import ualign_down
 from std.math import align_down, ceildiv
 from std.sys import get_defined_bool
-from std.sys.info import size_of
+from std.sys.info import align_of, size_of
 import extensibility
 
 # ===-----------------------------------------------------------------------===#
@@ -76,7 +76,6 @@ from extensibility import (
 from extensibility import (
     _MutableInputVariadicTensors as MutableInputVariadicTensors,
 )
-from std.memory import UnsafePointer
 from std.logger import Logger
 
 comptime logger = Logger()
@@ -232,7 +231,11 @@ struct DistributedAllReduceSum:
         var rank_sigs = Array[_, num_devices](
             fill_with_unrolled=lambda [i: Int]() -> Pointer[
                 Signal, MutAnyOrigin
-            ]: (signal_buffers[i]._ptr.bitcast[Signal]().as_unsafe_any_origin())
+            ]: (
+                signal_buffers[i]
+                ._ptr.unsafe_bitcast[Signal]()
+                .as_unsafe_any_origin()
+            )
         )
 
         # World-view input tensors, indexed by GLOBAL device rank. Built once
@@ -388,7 +391,11 @@ struct DistributedReduceScatterSum:
         var rank_sigs = Array[_, num_devices](
             fill_with_unrolled=lambda [i: Int]() -> Pointer[
                 Signal, MutAnyOrigin
-            ]: (signal_buffers[i]._ptr.bitcast[Signal]().as_unsafe_any_origin())
+            ]: (
+                signal_buffers[i]
+                ._ptr.unsafe_bitcast[Signal]()
+                .as_unsafe_any_origin()
+            )
         )
         comptime for i in range(num_devices):
             in_tensors[i] = rebind[InputTensorType](
@@ -517,7 +524,7 @@ struct DistributedAllGather:
         # group-local slicing internally.
         comptime InputTensorType = type_of(
             TileTensor(
-                rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+                rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
                     inputs[0]._ptr
                 ),
                 row_major(inputs[0].size()),
@@ -525,7 +532,7 @@ struct DistributedAllGather:
         )
         comptime OutputTensorType = type_of(
             TileTensor(
-                rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
+                rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](
                     outputs[0]._ptr
                 ),
                 row_major(outputs[0].size()),
@@ -538,18 +545,22 @@ struct DistributedAllGather:
         var rank_sigs = Array[_, num_devices](
             fill_with_unrolled=lambda [i: Int]() -> Pointer[
                 Signal, MutAnyOrigin
-            ]: (signal_buffers[i]._ptr.bitcast[Signal]().as_unsafe_any_origin())
+            ]: (
+                signal_buffers[i]
+                ._ptr.unsafe_bitcast[Signal]()
+                .as_unsafe_any_origin()
+            )
         )
         comptime for i in range(num_devices):
             in_tensors[i] = TileTensor(
-                rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+                rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
                     inputs[i]._ptr
                 ),
                 row_major(inputs[i].size()),
             )
         comptime for i in range(num_devices * group_size):
             out_tensors[i] = TileTensor(
-                rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
+                rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](
                     outputs[i]._ptr
                 ),
                 row_major(outputs[i].size()),
@@ -645,7 +656,11 @@ struct DistributedBroadcast:
         var rank_sigs = Array[_, num_devices](
             fill_with_unrolled=lambda [i: Int]() -> Pointer[
                 Signal, MutAnyOrigin
-            ]: (signal_buffers[i]._ptr.bitcast[Signal]().as_unsafe_any_origin())
+            ]: (
+                signal_buffers[i]
+                ._ptr.unsafe_bitcast[Signal]()
+                .as_unsafe_any_origin()
+            )
         )
 
         @inline(.always)
@@ -731,7 +746,11 @@ struct DistributedScatter:
         var rank_sigs = Array[_, ngpus](
             fill_with_unrolled=lambda [i: Int]() -> Pointer[
                 Signal, MutAnyOrigin
-            ]: (signal_buffers[i]._ptr.bitcast[Signal]().as_unsafe_any_origin())
+            ]: (
+                signal_buffers[i]
+                ._ptr.unsafe_bitcast[Signal]()
+                .as_unsafe_any_origin()
+            )
         )
 
         comptime for i in range(ngpus):
@@ -844,7 +863,11 @@ struct DistributedAllReduceAddRMSNormQuantFP8:
         var rank_sigs = Array[_, num_devices](
             fill_with_unrolled=lambda [i: Int]() -> Pointer[
                 Signal, MutAnyOrigin
-            ]: (signal_buffers[i]._ptr.bitcast[Signal]().as_unsafe_any_origin())
+            ]: (
+                signal_buffers[i]
+                ._ptr.unsafe_bitcast[Signal]()
+                .as_unsafe_any_origin()
+            )
         )
 
         comptime for i in range(inputs.size):
@@ -1005,7 +1028,11 @@ struct DistributedReduceScatterRMSNorm:
         var rank_sigs = Array[_, num_devices](
             fill_with_unrolled=lambda [i: Int]() -> Pointer[
                 Signal, MutAnyOrigin
-            ]: (signal_buffers[i]._ptr.bitcast[Signal]().as_unsafe_any_origin())
+            ]: (
+                signal_buffers[i]
+                ._ptr.unsafe_bitcast[Signal]()
+                .as_unsafe_any_origin()
+            )
         )
         comptime for i in range(num_devices):
             in_tensors[i] = rebind[InputTensorType](
@@ -1116,7 +1143,9 @@ struct DistributedReduceScatterRMSNorm:
                 def norm_input_fn[
                     width: Int
                 ](coords: Coord) -> SIMD[dtype, width]:
-                    return sum_buf.raw_load[width=width](sum_buf.layout(coords))
+                    return sum_buf.load[
+                        width=width, alignment=align_of[dtype]()
+                    ](coords)
 
                 @__copy_capture(normed_buf)
                 @__parameter
@@ -1124,9 +1153,7 @@ struct DistributedReduceScatterRMSNorm:
                 def norm_output_fn[
                     width: SIMDLength, alignment: Int
                 ](coords: Coord, val: SIMD[dtype, width]) -> None:
-                    normed_buf.raw_store[width=width, alignment=alignment](
-                        normed_buf.layout(coords), val
-                    )
+                    normed_buf.store[alignment=alignment](coords, val)
 
                 rms_norm_gpu[
                     rank,
@@ -1272,7 +1299,11 @@ struct DistributedAllGatherRMSNorm:
         var rank_sigs = Array[_, num_devices](
             fill_with_unrolled=lambda [i: Int]() -> Pointer[
                 Signal, MutAnyOrigin
-            ]: (signal_buffers[i]._ptr.bitcast[Signal]().as_unsafe_any_origin())
+            ]: (
+                signal_buffers[i]
+                ._ptr.unsafe_bitcast[Signal]()
+                .as_unsafe_any_origin()
+            )
         )
         comptime for i in range(num_devices):
             in_tensors[i] = rebind[InputTensorType](
@@ -1295,7 +1326,7 @@ struct DistributedAllGatherRMSNorm:
         )
         comptime OutViewType = type_of(
             TileTensor(
-                rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
+                rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](
                     outputs_residual[0].to_tile_tensor[.int64]()._storage
                 ),
                 row_major(world_cols, world_cols),
@@ -1306,7 +1337,7 @@ struct DistributedAllGatherRMSNorm:
         )
         comptime for d in range(num_devices):
             comptime d_group_start = ualign_down(d, group_size)
-            var d_base = rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
+            var d_base = rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](
                 outputs_residual[d].to_tile_tensor[.int64]()._storage
             )
             var row_off = 0
@@ -1316,7 +1347,7 @@ struct DistributedAllGatherRMSNorm:
                     // world_cols
                 )
                 world_out_views[d * group_size + i] = TileTensor(
-                    d_base + row_off * world_cols,
+                    d_base.unsafe_offset(row_off * world_cols),
                     row_major(len_i, world_cols),
                 )
                 row_off += len_i
@@ -1371,7 +1402,9 @@ struct DistributedAllGatherRMSNorm:
                 def norm_input_fn[
                     width: Int
                 ](coords: Coord) -> SIMD[dtype, width]:
-                    return sum_buf.raw_load[width=width](sum_buf.layout(coords))
+                    return sum_buf.load[
+                        width=width, alignment=align_of[dtype]()
+                    ](coords)
 
                 @__copy_capture(normed_buf)
                 @__parameter
@@ -1379,9 +1412,7 @@ struct DistributedAllGatherRMSNorm:
                 def norm_output_fn[
                     width: SIMDLength, alignment: Int
                 ](coords: Coord, val: SIMD[dtype, width]) -> None:
-                    normed_buf.raw_store[width=width, alignment=alignment](
-                        normed_buf.layout(coords), val
-                    )
+                    normed_buf.store[alignment=alignment](coords, val)
 
                 rms_norm_gpu[
                     rank,
@@ -1508,7 +1539,11 @@ struct DistributedAllGatherRMSNormQuantMXFP8:
         var rank_sigs = Array[_, num_devices](
             fill_with_unrolled=lambda [i: Int]() -> Pointer[
                 Signal, MutAnyOrigin
-            ]: (signal_buffers[i]._ptr.bitcast[Signal]().as_unsafe_any_origin())
+            ]: (
+                signal_buffers[i]
+                ._ptr.unsafe_bitcast[Signal]()
+                .as_unsafe_any_origin()
+            )
         )
         comptime for i in range(num_devices):
             in_tensors[i] = rebind[InputTensorType](
@@ -1531,7 +1566,7 @@ struct DistributedAllGatherRMSNormQuantMXFP8:
         )
         comptime OutViewType = type_of(
             TileTensor(
-                rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
+                rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](
                     outputs_residual[0].to_tile_tensor[.int64]()._storage
                 ),
                 row_major(world_cols, world_cols),
@@ -1542,7 +1577,7 @@ struct DistributedAllGatherRMSNormQuantMXFP8:
         )
         comptime for d in range(num_devices):
             comptime d_group_start = ualign_down(d, group_size)
-            var d_base = rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
+            var d_base = rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](
                 outputs_residual[d].to_tile_tensor[.int64]()._storage
             )
             var row_off = 0
@@ -1552,7 +1587,7 @@ struct DistributedAllGatherRMSNormQuantMXFP8:
                     // world_cols
                 )
                 world_out_views[d * group_size + i] = TileTensor(
-                    d_base + row_off * world_cols,
+                    d_base.unsafe_offset(row_off * world_cols),
                     row_major(len_i, world_cols),
                 )
                 row_off += len_i
@@ -1584,7 +1619,7 @@ struct DistributedAllGatherRMSNormQuantMXFP8:
 
             # Both write paths index the quant/scale destinations by computed
             # offset with no bound on the destination's own extents: the fused
-            # epilogue's `raw_store` documents the caller as responsible, and
+            # epilogue's `store` does no bounds check of its own, and
             # `quantize_mx_amd` derives its geometry from the INPUT. So an
             # undersized scale tensor writes into the next row -- self-consistent
             # garbage a byte-compare oracle cannot see -- and past the allocation
@@ -1592,16 +1627,16 @@ struct DistributedAllGatherRMSNormQuantMXFP8:
             # `comm/allgather_rmsnorm.mojo`, which exist because sizing an output
             # from the whole world instead of the TP group is the natural mistake
             # here; these two only reach the kernel through a closure.
-            var rows_rt = Int(normed_buf.num_elements()) // cols_rt
+            var rows_rt = normed_buf.num_elements() // cols_rt
             var quant_cols = Int(quant_buf.dim[rank - 1]())
             if (
                 quant_cols != cols_rt
-                or Int(quant_buf.num_elements()) != rows_rt * cols_rt
+                or quant_buf.num_elements() != rows_rt * cols_rt
             ):
                 raise Error(
                     String(
                         "allgather_rms_norm_quant_mxfp8: outputs_quant is ",
-                        Int(quant_buf.num_elements()) // quant_cols,
+                        quant_buf.num_elements() // quant_cols,
                         " x ",
                         quant_cols,
                         ", expected ",
@@ -1614,12 +1649,12 @@ struct DistributedAllGatherRMSNormQuantMXFP8:
             var scale_cols = Int(scale_buf.dim[rank - 1]())
             if (
                 scale_cols * MXFP8_SF_VECTOR_SIZE != cols_rt
-                or Int(scale_buf.num_elements()) != rows_rt * scale_cols
+                or scale_buf.num_elements() != rows_rt * scale_cols
             ):
                 raise Error(
                     String(
                         "allgather_rms_norm_quant_mxfp8: outputs_scale is ",
-                        Int(scale_buf.num_elements()) // scale_cols,
+                        scale_buf.num_elements() // scale_cols,
                         " x ",
                         scale_cols,
                         ", expected ",
@@ -1650,16 +1685,11 @@ struct DistributedAllGatherRMSNormQuantMXFP8:
                 # Quantize on every lane -- the block max is a cross-lane
                 # reduction. Only the in-range lanes store.
                 if col < cols_rt:
-                    quant_buf.raw_store[width=width](
-                        quant_buf.layout(Coord(row, col)), quantized
+                    quant_buf.store[alignment=align_of[quant_dtype]()](
+                        Coord(row, col), quantized
                     )
                     if col % MXFP8_SF_VECTOR_SIZE == 0:
-                        scale_buf.raw_store(
-                            scale_buf.layout(
-                                Coord(row, col // MXFP8_SF_VECTOR_SIZE)
-                            ),
-                            e8m0,
-                        )
+                        scale_buf[row, col // MXFP8_SF_VECTOR_SIZE] = e8m0
 
             # Above the fuse threshold. Owes the same outputs as the fused
             # path -- skipping the quantize leaves `outputs_quant` stale.
@@ -1681,7 +1711,9 @@ struct DistributedAllGatherRMSNormQuantMXFP8:
                 def norm_input_fn[
                     width: Int
                 ](coords: Coord) -> SIMD[dtype, width]:
-                    return sum_buf.raw_load[width=width](sum_buf.layout(coords))
+                    return sum_buf.load[
+                        width=width, alignment=align_of[dtype]()
+                    ](coords)
 
                 @__copy_capture(normed_buf)
                 @__parameter
@@ -1689,9 +1721,7 @@ struct DistributedAllGatherRMSNormQuantMXFP8:
                 def norm_output_fn[
                     width: SIMDLength, alignment: Int
                 ](coords: Coord, val: SIMD[dtype, width]) -> None:
-                    normed_buf.raw_store[width=width, alignment=alignment](
-                        normed_buf.layout(coords), val
-                    )
+                    normed_buf.store[alignment=alignment](coords, val)
 
                 rms_norm_gpu[
                     rank,
@@ -1836,7 +1866,11 @@ struct DistributedAllGatherRMSNormQuantMXFP6:
         var rank_sigs = Array[_, num_devices](
             fill_with_unrolled=lambda [i: Int]() -> Pointer[
                 Signal, MutAnyOrigin
-            ]: (signal_buffers[i]._ptr.bitcast[Signal]().as_unsafe_any_origin())
+            ]: (
+                signal_buffers[i]
+                ._ptr.unsafe_bitcast[Signal]()
+                .as_unsafe_any_origin()
+            )
         )
         comptime for i in range(num_devices):
             in_tensors[i] = rebind[InputTensorType](
@@ -1859,7 +1893,7 @@ struct DistributedAllGatherRMSNormQuantMXFP6:
         )
         comptime OutViewType = type_of(
             TileTensor(
-                rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
+                rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](
                     outputs_residual[0].to_tile_tensor[.int64]()._storage
                 ),
                 row_major(world_cols, world_cols),
@@ -1870,7 +1904,7 @@ struct DistributedAllGatherRMSNormQuantMXFP6:
         )
         comptime for d in range(num_devices):
             comptime d_group_start = ualign_down(d, group_size)
-            var d_base = rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
+            var d_base = rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](
                 outputs_residual[d].to_tile_tensor[.int64]()._storage
             )
             var row_off = 0
@@ -1880,7 +1914,7 @@ struct DistributedAllGatherRMSNormQuantMXFP6:
                     // world_cols
                 )
                 world_out_views[d * group_size + i] = TileTensor(
-                    d_base + row_off * world_cols,
+                    d_base.unsafe_offset(row_off * world_cols),
                     row_major(len_i, world_cols),
                 )
                 row_off += len_i
@@ -1910,18 +1944,18 @@ struct DistributedAllGatherRMSNormQuantMXFP6:
             var gamma_tensor = gammas[index].to_tile_tensor[.int64]()
             var cols_rt = Int(sum_buf.dim[rank - 1]())
 
-            var rows_rt = Int(normed_buf.num_elements()) // cols_rt
+            var rows_rt = normed_buf.num_elements() // cols_rt
             var quant_cols = Int(quant_buf.dim[rank - 1]())
             var packed_cols = (cols_rt * 3) // 4
             if (
                 cols_rt % 4 != 0
                 or quant_cols != packed_cols
-                or Int(quant_buf.num_elements()) != rows_rt * packed_cols
+                or quant_buf.num_elements() != rows_rt * packed_cols
             ):
                 raise Error(
                     String(
                         "allgather_rms_norm_quant_mxfp6: outputs_quant is ",
-                        Int(quant_buf.num_elements()) // quant_cols,
+                        quant_buf.num_elements() // quant_cols,
                         " x ",
                         quant_cols,
                         ", expected ",
@@ -1934,12 +1968,12 @@ struct DistributedAllGatherRMSNormQuantMXFP6:
             var scale_cols = Int(scale_buf.dim[rank - 1]())
             if (
                 scale_cols * MXFP6_SF_VECTOR_SIZE != cols_rt
-                or Int(scale_buf.num_elements()) != rows_rt * scale_cols
+                or scale_buf.num_elements() != rows_rt * scale_cols
             ):
                 raise Error(
                     String(
                         "allgather_rms_norm_quant_mxfp6: outputs_scale is ",
-                        Int(scale_buf.num_elements()) // scale_cols,
+                        scale_buf.num_elements() // scale_cols,
                         " x ",
                         scale_cols,
                         ", expected ",
@@ -1976,10 +2010,8 @@ struct DistributedAllGatherRMSNormQuantMXFP6:
                     comptime for g in range(width // 4):
                         var word = pack_fp6_x4(codes.slice[4, offset=g * 4]())
                         comptime for b in range(3):
-                            quant_buf.raw_store[width=1](
-                                quant_buf.layout(
-                                    Coord(row, byte_col + g * 3 + b)
-                                ),
+                            quant_buf.store(
+                                (row, byte_col + g * 3 + b),
                                 rebind[Scalar[quant_dtype]](
                                     UInt8(
                                         (word >> UInt32(8 * b)) & UInt32(0xFF)
@@ -1987,12 +2019,7 @@ struct DistributedAllGatherRMSNormQuantMXFP6:
                                 ),
                             )
                     if col % MXFP6_SF_VECTOR_SIZE == 0:
-                        scale_buf.raw_store(
-                            scale_buf.layout(
-                                Coord(row, col // MXFP6_SF_VECTOR_SIZE)
-                            ),
-                            e8m0,
-                        )
+                        scale_buf[row, col // MXFP6_SF_VECTOR_SIZE] = e8m0
 
             @inline(.always)
             def two_launch_with_quant() raises {imm}:
@@ -2012,7 +2039,9 @@ struct DistributedAllGatherRMSNormQuantMXFP6:
                 def norm_input_fn[
                     width: Int
                 ](coords: Coord) -> SIMD[dtype, width]:
-                    return sum_buf.raw_load[width=width](sum_buf.layout(coords))
+                    return sum_buf.load[
+                        width=width, alignment=align_of[dtype]()
+                    ](coords)
 
                 @__copy_capture(normed_buf)
                 @__parameter
@@ -2020,9 +2049,7 @@ struct DistributedAllGatherRMSNormQuantMXFP6:
                 def norm_output_fn[
                     width: SIMDLength, alignment: Int
                 ](coords: Coord, val: SIMD[dtype, width]) -> None:
-                    normed_buf.raw_store[width=width, alignment=alignment](
-                        normed_buf.layout(coords), val
-                    )
+                    normed_buf.store[alignment=alignment](coords, val)
 
                 rms_norm_gpu[
                     rank,
@@ -2112,7 +2139,11 @@ struct LamportAllreduceRMSNorm:
         var rank_sigs = Array[_, ngpus](
             fill_with_unrolled=lambda [i: Int]() -> Pointer[
                 Signal, MutAnyOrigin
-            ]: (signal_buffers[i]._ptr.bitcast[Signal]().as_unsafe_any_origin())
+            ]: (
+                signal_buffers[i]
+                ._ptr.unsafe_bitcast[Signal]()
+                .as_unsafe_any_origin()
+            )
         )
 
         var rows = act.dim_size[0]()
@@ -2141,13 +2172,9 @@ struct LamportAllreduceRMSNorm:
                 ") -- one pack per thread required",
             )
 
-        var src = rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](act._ptr)
-        var dst = rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
-            output._ptr
-        )
-        var gm = rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
-            gamma._ptr
-        )
+        var src = rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](act._ptr)
+        var dst = rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](output._ptr)
+        var gm = rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](gamma._ptr)
 
         lamport_allreduce_rmsnorm[
             dtype, ngpus, pdl=pdl, early_launch=early_launch

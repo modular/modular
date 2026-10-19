@@ -244,19 +244,19 @@ def run_mla_prefill_v2[
         # `compile_function`'s cache. ----
         comptime _kernel = MlaPrefillV2[_config]
         var _q0 = TileTensor(
-            cb_q.offset_ptr(0).bitcast[Scalar[qkv_type]](),
+            cb_q.offset_ptr(0).unsafe_bitcast[Scalar[qkv_type]](),
             row_major(
                 Int32(batch_size), Int32(seq_len), Idx[num_heads], Idx[_D_QK]
             ),
         )
         var _o0 = TileTensor(
-            cb_o.offset_ptr(0).bitcast[Scalar[out_type]](),
+            cb_o.offset_ptr(0).unsafe_bitcast[Scalar[out_type]](),
             row_major(
                 Int32(batch_size), Int32(seq_len), Idx[num_heads], Idx[_D_NOPE]
             ),
         )
         var _k0 = TileTensor(
-            cb_k.offset_ptr(0).bitcast[Scalar[qkv_type]](),
+            cb_k.offset_ptr(0).unsafe_bitcast[Scalar[qkv_type]](),
             row_major(
                 Int32(batch_size),
                 Int32(cache_seq_len),
@@ -267,7 +267,7 @@ def run_mla_prefill_v2[
         var _knope0 = TileTensorMHAOperand(_k0.as_imm().as_unsafe_any_origin())
         var _krope0 = TileTensorMHAOperand(_k0.as_imm().as_unsafe_any_origin())
         var _v0 = TileTensor(
-            cb_v.offset_ptr(0).bitcast[Scalar[qkv_type]](),
+            cb_v.offset_ptr(0).unsafe_bitcast[Scalar[qkv_type]](),
             row_major(
                 Int32(batch_size),
                 Int32(cache_seq_len),
@@ -349,16 +349,16 @@ def run_mla_prefill_v2[
         }:
             @inline(.always)
             def _kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
-                var q_ptr = cb_q.offset_ptr(iteration).bitcast[
+                var q_ptr = cb_q.offset_ptr(iteration).unsafe_bitcast[
                     Scalar[qkv_type]
                 ]()
-                var k_ptr = cb_k.offset_ptr(iteration).bitcast[
+                var k_ptr = cb_k.offset_ptr(iteration).unsafe_bitcast[
                     Scalar[qkv_type]
                 ]()
-                var v_ptr = cb_v.offset_ptr(iteration).bitcast[
+                var v_ptr = cb_v.offset_ptr(iteration).unsafe_bitcast[
                     Scalar[qkv_type]
                 ]()
-                var o_ptr = cb_o.offset_ptr(iteration).bitcast[
+                var o_ptr = cb_o.offset_ptr(iteration).unsafe_bitcast[
                     Scalar[out_type]
                 ]()
 

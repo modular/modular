@@ -47,7 +47,7 @@ struct AffineRead(InputFusion):
 def read_host_closure[
     CbType: ImplicitlyCopyable & RegisterPassable & def(Int) -> Float32
 ](dst: MutPointer[Float32, MutAnyOrigin], n: Int32, cb: CbType):
-    var i = Int(global_idx.x)
+    var i = global_idx.x
     if i >= Int(n):
         return
     dst[unsafe_offset=i] = cb(i)

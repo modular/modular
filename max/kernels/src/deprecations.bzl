@@ -1,6 +1,5 @@
 """Deprecated stdlib/kernel declarations that `max/kernels` and `Kernels`
-intentionally still call: the raw-Pointer APIs, and the `LayoutTensor` /
-`LayoutTensorIter` types that have not finished migrating to `TileTensor`.
+intentionally still call: the raw-Pointer APIs.
 
 Splat `IGNORED_POINTER_DEPRECATIONS` into a `mojo_library`'s
 `ignore_deprecated` param, or `IGNORED_POINTER_DEPRECATIONS_COPTS` into a
@@ -10,20 +9,11 @@ other deprecation warnings visible.
 """
 
 IGNORED_POINTER_DEPRECATIONS = [
-    "UnsafePointer",
     "alloc",
-    "Pointer.__add__",
-    "Pointer.__sub__",
-    "Pointer.__iadd__",
-    "Pointer.__isub__",
     "Pointer.__getitem__",
     "Pointer.load",
     "Pointer.store",
     "Pointer.free",
-    "Pointer.bitcast",
-    "Pointer.address_space_cast",
-    "LayoutTensor",
-    "LayoutTensorIter",
 ]
 
 IGNORED_POINTER_DEPRECATIONS_COPTS = [

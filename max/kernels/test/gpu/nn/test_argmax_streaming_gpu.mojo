@@ -64,7 +64,11 @@ def _check[
     ctx.synchronize()
 
     for b in range(batch):
-        fill_fn[dtype](in_host.unsafe_ptr() + b * num_elements, num_elements, b)
+        fill_fn[dtype](
+            in_host.unsafe_ptr().unsafe_offset(b * num_elements),
+            num_elements,
+            b,
+        )
 
     var in_dev = ctx.enqueue_create_buffer[dtype](batch * num_elements)
     var out_dev = ctx.enqueue_create_buffer[out_idx_type](batch)
@@ -85,7 +89,7 @@ def _check[
 
     for b in range(batch):
         var expected = _reference_index[dtype, largest](
-            in_host.unsafe_ptr() + b * num_elements, num_elements
+            in_host.unsafe_ptr().unsafe_offset(b * num_elements), num_elements
         )
         if Int(out_host[b]) != expected:
             raise Error(

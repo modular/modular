@@ -16,7 +16,6 @@ from std.sys import (
     get_defined_bool,
     get_defined_dtype,
     get_defined_int,
-    align_of,
 )
 
 import linalg.matmul.vendor.blas as vendor_blas
@@ -33,7 +32,6 @@ from internal_utils import arg_parse, CacheBustingBuffer
 from internal_utils._utils import InitializationType
 from layout import CoordLike, Coord, Idx, TileTensor, row_major
 from linalg.matmul.gpu import _matmul_gpu
-from linalg.utils import elementwise_compute_lambda_type
 from linalg.matmul.gpu.amd.amd_ping_pong_matmul import (
     amd_ping_pong_matmul as ping_pong_matmul,
 )
@@ -100,7 +98,7 @@ def bench_matmul[
     # update: using 512 to be 2x the infinity cache on MI300x
     @inline(.always)
     def get_size(shape: Coord) -> Int:
-        return Int(shape[0].value()) * Int(shape[1].value())
+        return Int(shape[0]) * Int(shape[1])
 
     comptime simd_size = 4
 
@@ -138,15 +136,13 @@ def bench_matmul[
                 cb_c.offset_ptr(iteration), row_major(shape_c)
             )
 
-            @__parameter
             @inline(.always)
-            @__copy_capture(tensor_c)
             def test_lambda_add_coords_prod[
                 _dtype: DType,
                 width: SIMDLength,
                 *,
-                alignment: Int = align_of[SIMD[_dtype, width]](),
-            ](idx: Coord, val: SIMD[_dtype, width]) capturing -> SIMD[
+                alignment: Int,
+            ](idx: Coord, val: SIMD[_dtype, width]) {var tensor_c} -> SIMD[
                 _dtype, width
             ]:
                 comptime assert (
@@ -169,10 +165,6 @@ def bench_matmul[
                 var x = tensor_c.load[width=width](idx).cast[_dtype]()
                 var y = val * x
                 return y
-
-            comptime optional_lambda_fn = Optional[
-                elementwise_compute_lambda_type
-            ](test_lambda_add_coords_prod) if epilogue else None
 
             comptime if use_vendor_blas:
                 vendor_blas.matmul[use_tf32=True](
@@ -198,11 +190,21 @@ def bench_matmul[
                         tensor_c,
                         ctx,
                     )
+                elif epilogue:
+                    _matmul_gpu[
+                        use_tensor_core=True,
+                        transpose_b=transpose_b,
+                    ](
+                        tensor_c,
+                        tensor_a,
+                        tensor_b,
+                        test_lambda_add_coords_prod,
+                        ctx,
+                    )
                 else:
                     _matmul_gpu[
                         use_tensor_core=True,
                         transpose_b=transpose_b,
-                        elementwise_compute_lambda_fn=optional_lambda_fn,
                     ](
                         tensor_c,
                         tensor_a,
@@ -215,10 +217,7 @@ def bench_matmul[
     var flops = ThroughputMeasure(
         BenchMetric.flops,
         # Flop: 2*M*N*K. Use A and C shapes since they're not transposed.
-        2
-        * Int(shape_c[0].value())
-        * Int(shape_c[1].value())
-        * Int(shape_a[1].value()),
+        2 * Int(shape_c[0]) * Int(shape_c[1]) * Int(shape_a[1]),
     )
     b.bench_function(
         bench_func,

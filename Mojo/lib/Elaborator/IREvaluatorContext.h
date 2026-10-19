@@ -294,6 +294,10 @@ private:
 
 SymbolConstantAttr extractSymbolConstantAttr(TypedAttr attr);
 
+/// Return true if `symbol` binds any of its input parameters directly to
+/// `#kgen.unbound` or `#kgen.unknown`.
+bool hasUnresolvedParamValue(SymbolConstantAttr symbol);
+
 /// Decomposed view of a `compile_offload` op's `func` attribute. Populated by
 /// `extractOffloadFunc` when the func resolves to a fully-bound
 /// `SymbolConstantAttr` referencing a valid generator in the supplied symbol

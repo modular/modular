@@ -25,26 +25,21 @@ This section discusses the `TileTensor` abstraction and its related types:
   run-time values. It's used for defining logical coordinates and layout shapes,
   among other things.
 
-The `layout` package also includes the older `LayoutTensor` type, and its
-associated `IntTuple`-based layout type, `layout.Layout`. `TileTensor` is
-essentially a new version of `LayoutTensor` that addresses several of the
-shortcomings of that type. Most of the concepts are the same for both the old
-and new types. However, `TileTensor` doesn't yet implement all the features
-supported by `LayoutTensor`. Here are some guidelines for when to use each type:
+The `layout` package also includes the older `IntTuple`-based layout type,
+`layout.Layout`, which the `Coord`-based layout system replaces for tensors.
+`TileTensor` supports layouts with run-time dimensions, nested layouts, and
+the `Coord`-based layout system, which minimizes the memory footprint of the
+layout struct and can help reduce register pressure on GPUs.
 
-- Use `TileTensor` when you need layouts with run-time dimensions,
-  nested layouts, or when working with the newer `Coord`-based layout system.
-  The `Coord`-based layout system minimizes the memory footprint of the
-  layout struct, which can help reduce register pressure on GPUs.
+- To step through a buffer of equally shaped tiles, such as the stages of a
+  pipelined shared-memory buffer, use
+  [`TileTensorIter`](/api/mojo/layout/tile_iterator/TileTensorIter/), as shown
+  in [Stepping through a buffer of
+  tiles](/tile-tensor/tensors/#stepping-through-a-buffer-of-tiles).
+- To walk the tiles of a 2D tensor, loop over the tile coordinates and call
+  `tile()` for each one, as shown in
+  [Iterating over tiles](/tile-tensor/tensors/#iterating-over-tiles).
 
-- Use `LayoutTensor` when you need established operations like
-  `tiled_iterator()` or `simd_tile()`, or compatibility with existing code using
-  `IntTuple`-based layouts.
-
-You can convert a `TileTensor` into a `LayoutTensor`, so you can
-use both types if necessary. Likewise, you can easily convert a
-`Coord`-based layout into an `IntTuple`-based layout.
-
-For more information on `LayoutTensor`, see the pages on
-[`IntTuple`-based layouts](/layout/layouts/) and
-[`LayoutTensor`](/layout/tensors/).
+You can also convert a `Coord`-based layout into an `IntTuple`-based layout.
+For more information on the older layout type, see
+[`IntTuple`-based layouts](/layout/layouts/).

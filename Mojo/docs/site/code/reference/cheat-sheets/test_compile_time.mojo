@@ -26,8 +26,8 @@
 #     as incomplete; the wider field API may still shift.
 #   - 2**200: overflows a 64-bit Int, so it can't be materialized to compare.
 #   - comptime if on hardware facts (is_nvidia_gpu, ...): machine-dependent.
-#   - CompilationTarget.default_accelerator(): fails to instantiate on a host
-#     with no accelerator configured.
+#   - default_accelerator(): fails to instantiate on a host with no accelerator
+#     configured.
 #   - where messages: they appear only in compile errors.
 #   - the compile-time boundary (no file I/O, no raising, runs on CPU): these
 #     are compile errors, which a runtime test can't assert.

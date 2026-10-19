@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Tests `TileTensorIter` stepping, wrap-around and tile contents."""
 
-from layout import row_major
+from layout import TileTensor, row_major
 from layout.tile_iterator import TileTensorIter
 from layout.tile_layout import Layout
 from layout.coord import ComptimeInt, Coord
@@ -154,6 +154,29 @@ def test_reshape_and_bitcast() raises:
     var as_uint = it.bitcast[.uint32]()
     assert_equal(Int(as_uint.offset), TILE_SIZE)
     assert_equal(Int(as_uint[][1, 2]), TILE_SIZE + TILE_COLS + 2)
+
+
+def test_from_tensor() raises:
+    var data = Array[Int32, TOTAL](uninitialized=True)
+    _fill(data)
+    var tensor = TileTensor(
+        data.unsafe_ptr(), row_major[NUM_TILES * TILE_ROWS, TILE_COLS]()
+    )
+
+    var it = TileTensorIter[.int32, _, _, circular=True](
+        tensor, row_major[TILE_ROWS, TILE_COLS](), bound=TOTAL
+    )
+    assert_equal(Int(it.stride), TILE_SIZE)
+    assert_equal(Int(it[][1, 2]), TILE_COLS + 2)
+
+    var shifted = TileTensorIter[.int32, _, _](
+        tensor.tile[TILE_ROWS, TILE_COLS](Coord(1, 0)),
+        row_major[TILE_ROWS, TILE_COLS](),
+        bound=TOTAL - TILE_SIZE,
+    )
+    assert_equal(Int(shifted[][0, 0]), TILE_SIZE)
+    shifted._incr()
+    assert_equal(Int(shifted[][1, 2]), 2 * TILE_SIZE + TILE_COLS + 2)
 
 
 def main() raises:

@@ -45,6 +45,7 @@ from max.gpu.host.info import is_gpu
 from layout import (
     Coord,
     Idx,
+    TensorEngine,
     TensorLayout,
     TileTensor,
     row_major,
@@ -86,12 +87,32 @@ def _cta_atomic_scope() -> StaticString:
         return ""
 
 
+@inline(.always)
+def _slot_group[
+    remap: Bool
+](expert: Int, expert_offset: Int, local_experts: Int) -> Int:
+    """The group `moe_create_indices_kernel` files a slot of `expert` under.
+
+    Without `remap`, the expert id itself. With it, the local id, and
+    `local_experts` for an expert held elsewhere, so those slots form one
+    trailing group and still get order/restore entries.
+    """
+    comptime if remap:
+        var local = expert - expert_offset
+        if local < 0 or local >= local_experts:
+            return local_experts
+        return local
+    else:
+        return expert
+
+
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(block_threads))
 )
-@__name(t"moe_create_indices_{input_type}")
+@__name(t"moe_create_indices_{input_type}{'_slots' if slot_layout else ''}")
 def moe_create_indices_kernel[
     input_type: DType,
+    restore_type: DType,
     TokenExpertOrderLayoutType: TensorLayout,
     ExpertStartIndicesLayoutType: TensorLayout,
     RestoreTokenOrderLayoutType: TensorLayout,
@@ -100,22 +121,62 @@ def moe_create_indices_kernel[
     TopkIdsLayoutType: TensorLayout,
     block_threads: Int = _BLOCK_THREADS,
     _scale_alignment: UInt32 = 128,
+    slot_layout: Bool = False,
+    slot_stride: Int = 1,
+    *,
+    TokenExpertOrderEngine: TensorEngine,
+    ExpertStartIndicesEngine: TensorEngine,
+    RestoreTokenOrderEngine: TensorEngine,
+    ExpertIdsEngine: TensorEngine,
+    ExpertUsageStatsEngine: TensorEngine,
+    TopkIdsEngine: TensorEngine,
 ](
     token_expert_order: TileTensor[
-        mut=True, .uint32, TokenExpertOrderLayoutType, MutAnyOrigin
+        mut=True,
+        .uint32,
+        TokenExpertOrderLayoutType,
+        MutAnyOrigin,
+        Engine=TokenExpertOrderEngine,
     ],
     expert_start_indices: TileTensor[
-        mut=True, .uint32, ExpertStartIndicesLayoutType, MutAnyOrigin
+        mut=True,
+        .uint32,
+        ExpertStartIndicesLayoutType,
+        MutAnyOrigin,
+        Engine=ExpertStartIndicesEngine,
     ],
     restore_token_order: TileTensor[
-        mut=True, .uint32, RestoreTokenOrderLayoutType, MutAnyOrigin
+        mut=True,
+        restore_type,
+        RestoreTokenOrderLayoutType,
+        MutAnyOrigin,
+        Engine=RestoreTokenOrderEngine,
     ],
-    expert_ids: TileTensor[mut=True, .int32, ExpertIdsLayoutType, MutAnyOrigin],
+    expert_ids: TileTensor[
+        mut=True,
+        .int32,
+        ExpertIdsLayoutType,
+        MutAnyOrigin,
+        Engine=ExpertIdsEngine,
+    ],
     expert_usage_stats: TileTensor[
-        mut=True, .uint32, ExpertUsageStatsLayoutType, MutAnyOrigin
+        mut=True,
+        .uint32,
+        ExpertUsageStatsLayoutType,
+        MutAnyOrigin,
+        Engine=ExpertUsageStatsEngine,
     ],
-    topk_ids: TileTensor[input_type, TopkIdsLayoutType, ImmutAnyOrigin],
-    scales_offset_p: Optional[UnsafePointer[UInt32, MutAnyOrigin]],
+    topk_ids: TileTensor[
+        input_type, TopkIdsLayoutType, ImmutAnyOrigin, Engine=TopkIdsEngine
+    ],
+    scales_offset_p: Optional[MutPointer[UInt32, MutAnyOrigin]],
+    expert_offset: Int32,
+    local_experts: Int32,
+    slot_weights_in_p: Optional[MutPointer[Float32, MutAnyOrigin]],
+    slot_token_p: Optional[MutPointer[Int32, MutAnyOrigin]],
+    slot_weight_p: Optional[MutPointer[Float32, MutAnyOrigin]],
+    scale_slot_p: Optional[MutPointer[Int32, MutAnyOrigin]],
+    scale_rows: Int32,
 ):
     """Builds MoE routing indices in one CTA using a block-wide scan.
 
@@ -129,6 +190,11 @@ def moe_create_indices_kernel[
     shared cursor. Neither is load-bearing: consumers pair
     `expert_start_indices[g]` and `[g + 1]` with `expert_ids[g]`, and invert
     through `restore_token_order`.
+
+    With `slot_layout`, the kernel also writes what a grouped GEMM over the
+    sorted slots reads besides the CSR (see `moe_create_indices_with_slots`):
+    ids are first mapped to local groups, and each sorted slot's source row
+    and weight, plus every scale row's source slot, are written alongside.
     """
     comptime assert token_expert_order.flat_rank == 1
     comptime assert expert_start_indices.flat_rank == 1
@@ -138,6 +204,9 @@ def moe_create_indices_kernel[
     comptime assert topk_ids.flat_rank == 1
 
     comptime atomic_scope = _cta_atomic_scope()
+    # Per-chunk group starts (and, past the chunk, the aligned grand total)
+    # for the scale-row pass; one entry when that pass is compiled out.
+    comptime slot_smem = block_threads + 1 if slot_layout else 1
 
     var total_tokens = Int(topk_ids.dim(0))
     var num_experts = Int(expert_ids.dim(0))
@@ -145,6 +214,12 @@ def moe_create_indices_kernel[
 
     var counts = tensor_alloc[.uint32, address_space=.SHARED](
         row_major[block_threads]()
+    )
+    var group_start = tensor_alloc[.uint32, address_space=.SHARED](
+        row_major[slot_smem]()
+    )
+    var group_aligned = tensor_alloc[.uint32, address_space=.SHARED](
+        row_major[slot_smem]()
     )
 
     # Tokens, and aligned scale slots, placed by the preceding expert chunks.
@@ -156,7 +231,7 @@ def moe_create_indices_kernel[
         var chunk_experts = min(block_threads, num_experts - base)
         var expert = base + tid
 
-        counts[Coord(tid)] = 0
+        counts[tid] = 0
         barrier()
 
         # Counts commute, so increment order does not matter.
@@ -167,15 +242,20 @@ def moe_create_indices_kernel[
         # fences shared memory; on AMD it rests on the backend emitting
         # s_waitcnt lgkmcnt(0) ahead of s_barrier.
         for i in range(tid, total_tokens, block_threads):
-            var e = Int(topk_ids[i]) - base
+            var e = (
+                _slot_group[slot_layout](
+                    Int(topk_ids[i]), Int(expert_offset), Int(local_experts)
+                )
+                - base
+            )
             if e < 0 or e >= chunk_experts:
                 continue
             _ = Atomic[UInt32, scope=atomic_scope].fetch_add[
                 ordering=Ordering.RELAXED
-            ](counts.ptr + e, UInt32(1))
+            ](counts.ptr.unsafe_offset(e), UInt32(1))
         barrier()
 
-        var count_val = counts[Coord(tid)]
+        var count_val = counts[tid]
         var aligned_val = align_up(count_val, _scale_alignment)
 
         # These collectives do not leave the block synchronized, so each needs
@@ -200,8 +280,8 @@ def moe_create_indices_kernel[
         )
 
         if expert < num_experts:
-            expert_ids[Coord(expert)] = Int32(expert)
-            expert_start_indices[Coord(expert)] = g_offset
+            expert_ids[expert] = Int32(expert)
+            expert_start_indices[expert] = g_offset
             if case .Some(scales_offset) = scales_offset_p:
                 scales_offset[expert] = (
                     aligned_g_offset // _scale_alignment
@@ -211,7 +291,9 @@ def moe_create_indices_kernel[
         if expert == num_experts - 1:
             # Last expert's exclusive prefix plus its own count is the grand
             # total: the final `expert_start_indices` entry.
-            expert_start_indices[Coord(num_experts)] = g_offset + count_val
+            expert_start_indices[num_experts] = g_offset + count_val
+            comptime if slot_layout:
+                group_aligned[block_threads] = aligned_g_offset + aligned_val
 
         # The last thread's exclusive prefix plus its own count is the chunk
         # total. Only another chunk needs it, so a single chunk pays nothing.
@@ -231,23 +313,65 @@ def moe_create_indices_kernel[
 
         # Reuse `counts` as the scatter cursor: seed each slot with its own
         # start offset, then atomically claim positions from it.
-        counts[Coord(tid)] = g_offset
+        counts[tid] = g_offset
+        comptime if slot_layout:
+            group_start[tid] = g_offset
+            group_aligned[tid] = aligned_g_offset
         barrier()
 
         for i in range(tid, total_tokens, block_threads):
-            var e = Int(topk_ids[i]) - base
+            var e = (
+                _slot_group[slot_layout](
+                    Int(topk_ids[i]), Int(expert_offset), Int(local_experts)
+                )
+                - base
+            )
             if e < 0 or e >= chunk_experts:
                 continue
             var pos = Atomic[UInt32, scope=atomic_scope].fetch_add[
                 ordering=Ordering.RELAXED
-            ](counts.ptr + e, UInt32(1))
-            token_expert_order[Coord(pos)] = UInt32(i)
-            restore_token_order[Coord(i)] = pos
+            ](counts.ptr.unsafe_offset(e), UInt32(1))
+            token_expert_order[pos] = UInt32(i)
+            restore_token_order[i] = pos.cast[restore_type]()
+            comptime if slot_layout:
+                slot_token_p.unsafe_value()[pos] = Int32(i // slot_stride)
+                slot_weight_p.unsafe_value()[
+                    pos
+                ] = slot_weights_in_p.unsafe_value()[i]
         barrier()
 
+        comptime if slot_layout:
+            # Scale rows of group g: [group_aligned[g], + align_up(count)).
+            # Row r of them holds sorted slot group_start[g] + r while r is
+            # below the count; the rest of the tile is never multiplied into
+            # a stored row and holds slot 0. A warp per group keeps the
+            # stores coalesced; `counts` now holds each group's end.
+            comptime warps = block_threads // WARP_SIZE
+            var lane = lane_id()
+            for g in range(warp_id(), chunk_experts, warps):
+                var start = group_start[g]
+                var count = counts[g] - start
+                var first = Int(group_aligned[g])
+                var rows = Int(align_up(count, _scale_alignment))
+                for r in range(lane, rows, WARP_SIZE):
+                    scale_slot_p.unsafe_value()[first + r] = (
+                        Int32(start) + Int32(r) if UInt32(r) < count else 0
+                    )
+            # The next chunk reseeds `counts` and the group arrays.
+            barrier()
+
+    comptime if slot_layout:
+        # Rows past the last group's tiles are in no group.
+        for r in range(
+            Int(group_aligned[block_threads]) + tid,
+            Int(scale_rows),
+            block_threads,
+        ):
+            scale_slot_p.unsafe_value()[r] = 0
+
     if tid == 0:
-        expert_usage_stats[Coord(0)] = max_count
-        expert_usage_stats[Coord(1)] = UInt32(num_experts)
+        expert_usage_stats[0] = max_count
+        expert_usage_stats[1] = UInt32(num_experts)
 
 
 @inline(.always)
@@ -263,7 +387,7 @@ def moe_create_indices[
     expert_usage_stats: TileTensor[mut=True, .uint32, ...],
     topk_ids: TileTensor[mut=False, input_type, ...],
     context: DeviceContext,
-    scales_offset_p: Optional[UnsafePointer[UInt32, MutAnyOrigin]] = None,
+    scales_offset_p: Optional[MutPointer[UInt32, MutAnyOrigin]] = None,
 ) raises:
     """Launches the MoE index creation kernel on GPU.
 
@@ -304,6 +428,7 @@ def moe_create_indices[
     ):
         comptime kernel = moe_create_indices_kernel[
             input_type,
+            DType.uint32,
             token_expert_order.LayoutType,
             expert_start_indices.LayoutType,
             restore_token_order.LayoutType,
@@ -311,6 +436,12 @@ def moe_create_indices[
             expert_usage_stats.LayoutType,
             topk_ids.LayoutType,
             block_threads,
+            TokenExpertOrderEngine=token_expert_order.Engine,
+            ExpertStartIndicesEngine=expert_start_indices.Engine,
+            RestoreTokenOrderEngine=restore_token_order.Engine,
+            ExpertIdsEngine=expert_ids.Engine,
+            ExpertUsageStatsEngine=expert_usage_stats.Engine,
+            TopkIdsEngine=topk_ids.Engine,
         ]
 
         context.enqueue_function[kernel](
@@ -321,6 +452,137 @@ def moe_create_indices[
             expert_usage_stats,
             topk_ids,
             scales_offset_p,
+            Int32(0),
+            Int32(0),
+            Optional[MutPointer[Float32, MutAnyOrigin]](),
+            Optional[MutPointer[Int32, MutAnyOrigin]](),
+            Optional[MutPointer[Float32, MutAnyOrigin]](),
+            Optional[MutPointer[Int32, MutAnyOrigin]](),
+            Int32(0),
+            grid_dim=1,
+            block_dim=block_threads,
+        )
+
+
+@inline(.always)
+def moe_create_indices_with_slots[
+    input_type: DType,
+    //,
+    slot_stride: Int,
+    target: StaticString,
+](
+    token_expert_order: TileTensor[mut=True, .uint32, ...],
+    expert_start_indices: TileTensor[mut=True, .uint32, ...],
+    restore_token_order: TileTensor[mut=True, .int32, ...],
+    expert_ids: TileTensor[mut=True, .int32, ...],
+    expert_usage_stats: TileTensor[mut=True, .uint32, ...],
+    scales_offset_p: MutPointer[UInt32, MutAnyOrigin],
+    slot_token_p: MutPointer[Int32, MutAnyOrigin],
+    slot_weight_p: MutPointer[Float32, MutAnyOrigin],
+    scale_slot_p: MutPointer[Int32, MutAnyOrigin],
+    scale_rows: Int,
+    topk_ids: TileTensor[mut=False, input_type, ...],
+    slot_weights_p: MutPointer[Float32, MutAnyOrigin],
+    expert_offset: Int,
+    local_experts: Int,
+    context: DeviceContext,
+) raises:
+    """`moe_create_indices` plus the row maps of a slot-packed grouped GEMM.
+
+    For a grouped GEMM that reads the routed slots sorted by group, packed,
+    and its A-side scales from 128-row tiles per group located through
+    `scales_offset` (the layout of the `with.scales.offset` variant). The
+    extra outputs replace the graph ops that would otherwise derive them from
+    the CSR, and match them exactly:
+
+    - `slot_token[p] = order[p] // slot_stride`: the token row of sorted slot
+      `p`, with `slot_stride` slots per token.
+    - `slot_weight[p] = slot_weights[order[p]]`.
+    - `scale_slot[r]` for each of `scale_rows` scale rows: with
+      `aligned_start` the exclusive prefix sum of the group counts rounded up
+      to 128, row `r` in `[aligned_start[g], aligned_start[g + 1])` holds
+      sorted slot `start[g] + r - aligned_start[g]` while that is below
+      `start[g + 1]`, else 0; rows past `aligned_start[num_experts]` hold 0.
+
+    Ids are mapped to groups first: `id - expert_offset` when that is in
+    `[0, local_experts)`, else `local_experts`. With `num_experts ==
+    local_experts + 1` that last group gathers the slots of experts held
+    elsewhere (expert parallel); with `num_experts == local_experts` and a
+    zero offset, ids map to themselves.
+
+    `restore_token_order` is int32 here, as a gather index; the values are the
+    same as the uint32 of `moe_create_indices`.
+
+    Parameters:
+        input_type: DType of the topk_ids tensor.
+        slot_stride: Slots per token (`n_experts_per_tok`).
+        target: The target device to run the kernel on.
+
+    Args:
+        token_expert_order: As `moe_create_indices`.
+        expert_start_indices: As `moe_create_indices`.
+        restore_token_order: As `moe_create_indices`, int32.
+        expert_ids: As `moe_create_indices`.
+        expert_usage_stats: As `moe_create_indices`.
+        scales_offset_p: `[num_experts]` aligned scale offsets.
+        slot_token_p: `[num_slots]` token row of each sorted slot.
+        slot_weight_p: `[num_slots]` weight of each sorted slot.
+        scale_slot_p: `[scale_rows]` sorted slot of each scale row.
+        scale_rows: Scale rows to fill, at least `aligned_start[num_experts]`
+            (`num_slots + 128 * num_experts` always is).
+        topk_ids: Input 1D tensor of expert IDs, one per slot.
+        slot_weights_p: `[num_slots]` routing weight of each slot, in
+            `topk_ids` order.
+        expert_offset: Global id of the first local expert.
+        local_experts: Experts held locally.
+        context: The device context.
+    """
+    comptime assert is_gpu[
+        target
+    ](), "Creating MoE indices is only supported on GPU"
+
+    comptime block_threads = (
+        _APPLE_BLOCK_THREADS if context.target.is_apple_gpu() else _BLOCK_THREADS
+    )
+
+    with Trace[TraceLevel.OP, target=target](
+        "mo.moe.create_indices.with_slots", task_id=Int(context.id())
+    ):
+        comptime kernel = moe_create_indices_kernel[
+            input_type,
+            DType.int32,
+            token_expert_order.LayoutType,
+            expert_start_indices.LayoutType,
+            restore_token_order.LayoutType,
+            expert_ids.LayoutType,
+            expert_usage_stats.LayoutType,
+            topk_ids.LayoutType,
+            block_threads,
+            slot_layout=True,
+            slot_stride=slot_stride,
+            TokenExpertOrderEngine=token_expert_order.Engine,
+            ExpertStartIndicesEngine=expert_start_indices.Engine,
+            RestoreTokenOrderEngine=restore_token_order.Engine,
+            ExpertIdsEngine=expert_ids.Engine,
+            ExpertUsageStatsEngine=expert_usage_stats.Engine,
+            TopkIdsEngine=topk_ids.Engine,
+        ]
+
+        context.enqueue_function[kernel](
+            token_expert_order,
+            expert_start_indices,
+            restore_token_order,
+            expert_ids,
+            expert_usage_stats,
+            topk_ids,
+            Optional(scales_offset_p),
+            Int32(expert_offset),
+            Int32(local_experts),
+            Optional(slot_weights_p),
+            Optional(slot_token_p),
+            Optional(slot_weight_p),
+            Optional(scale_slot_p),
+            Int32(scale_rows),
             grid_dim=1,
             block_dim=block_threads,
         )
@@ -369,21 +631,16 @@ def moe_finalize[
 
     @inline(.always)
     def finalize[width: Int, alignment: Int = 1](idx: Coord) {var}:
-        var token = Int(idx[0].value())
-        var col = Int(idx[1].value())
+        var token = Int(idx[0])
+        var col = Int(idx[1])
         var acc = SIMD[.float32, width](0)
         for k in range(num_experts_per_token):
-            var row = Int(
-                restore_order[Coord(token * num_experts_per_token + k)]
-            )
-            var weight = router_weight.load[width=1](Coord(token, k)).cast[
+            var row = Int(restore_order[token * num_experts_per_token + k])
+            var weight = router_weight.load[width=1]((token, k)).cast[
                 .float32
             ]()
-            acc += (
-                down.load[width=width](Coord(row, col)).cast[.float32]()
-                * weight
-            )
-        output.store[width=width](Coord(token, col), acc.cast[out_type]())
+            acc += down.load[width=width]((row, col)).cast[.float32]() * weight
+        output.store((token, col), acc.cast[out_type]())
 
     comptime simd_width = simd_width_of[down_type, target=context.target]()
     var shape = output.layout.shape_coord()
@@ -437,8 +694,11 @@ def _warp_bitonic_sort[
         )
 
         var cmp_val = (v.u < partner.u) ^ descending
+        # Equal values order by lower index first in either direction, as
+        # `topk` does: the fused routers must pick the same expert as the
+        # graph top-k when biased scores tie exactly.
         if v.u == partner.u:
-            cmp_val = v.p > partner.p
+            cmp_val = v.p < partner.p
 
         var merge_direction = pop_count(i & (stage | step)) == 1
 
@@ -480,18 +740,33 @@ def group_limited_router_kernel[
     topk_group: Int,
     norm_weights: Bool,
     num_threads: Int,
-    scores_input_fn: def[width: Int](Coord) capturing -> SIMD[
-        scores_type, width
-    ],
+    ScoresInputFnType: ImplicitlyCopyable
+    & RegisterPassable
+    & def[width: Int](Coord) -> SIMD[scores_type, width],
+    *,
+    ExpertIndicesEngine: TensorEngine,
+    ExpertWeightsEngine: TensorEngine,
+    ExpertBiasEngine: TensorEngine,
 ](
     expert_indices: TileTensor[
-        mut=True, .int32, ExpertIndicesLayoutType, MutAnyOrigin
+        mut=True,
+        .int32,
+        ExpertIndicesLayoutType,
+        MutAnyOrigin,
+        Engine=ExpertIndicesEngine,
     ],
     expert_weights: TileTensor[
-        mut=True, scores_type, ExpertWeightsLayoutType, MutAnyOrigin
+        mut=True,
+        scores_type,
+        ExpertWeightsLayoutType,
+        MutAnyOrigin,
+        Engine=ExpertWeightsEngine,
     ],
-    expert_bias: TileTensor[bias_type, ExpertBiasLayoutType, ImmutAnyOrigin],
+    expert_bias: TileTensor[
+        bias_type, ExpertBiasLayoutType, ImmutAnyOrigin, Engine=ExpertBiasEngine
+    ],
     routed_scaling_factor: Float32,
+    scores_input_fn: ScoresInputFnType,
 ):
     """A manually fused MoE router with the group-limited strategy. It divides all
     the experts into `n_groups` groups and then finds the top `topk_group`
@@ -524,8 +799,11 @@ def group_limited_router_kernel[
             one before applying the scaling factor.
         num_threads: Threads per block; must equal `n_routed_experts` so
             each thread scores one expert.
-        scores_input_fn: Lambda that loads scores given a
-            `(token, expert)` index.
+        ScoresInputFnType: Type of the closure that loads the routing
+            scores.
+        ExpertIndicesEngine: Storage engine backing the `expert_indices` tile.
+        ExpertWeightsEngine: Storage engine backing the `expert_weights` tile.
+        ExpertBiasEngine: Storage engine backing the `expert_bias` tile.
 
     Args:
         expert_indices: Output tensor holding the selected expert index per
@@ -538,6 +816,8 @@ def group_limited_router_kernel[
             `[n_routed_experts]`.
         routed_scaling_factor: Factor multiplied into the final, optionally
             normalized, expert weights.
+        scores_input_fn: Closure that loads scores given a
+            `(token, expert)` index.
     """
     comptime assert expert_indices.flat_rank == 2
     comptime assert expert_weights.flat_rank == 2
@@ -585,7 +865,7 @@ def group_limited_router_kernel[
     ]()
     var thread_group_id, tid_in_group = divmod(tid, group_size)
 
-    var thread_expert_bias = expert_bias.load[width=1](Coord(tid)).cast[
+    var thread_expert_bias = expert_bias.load[width=1]((tid,)).cast[
         scores_type
     ]()
 
@@ -727,7 +1007,7 @@ def router_group_limited[
 
     def load_scores[
         width: Int
-    ](coords: Coord) capturing -> SIMD[scores_type, width]:
+    ](coords: Coord) {var expert_scores} -> SIMD[scores_type, width]:
         comptime assert (
             coords.rank == 2
         ), "the expert-scores lambda contract is rank 2"
@@ -740,11 +1020,11 @@ def router_group_limited[
         topk_group=topk_group,
         norm_weights=norm_weights,
         target=target,
-        scores_input_fn=load_scores,
     ](
         expert_indices,
         expert_weights,
         expert_scores.layout,
+        load_scores,
         expert_bias,
         routed_scaling_factor,
         context,
@@ -754,6 +1034,9 @@ def router_group_limited[
 def router_group_limited[
     scores_type: DType,
     bias_type: DType,
+    ScoresInputFnType: ImplicitlyCopyable
+    & RegisterPassable
+    & def[width: Int](Coord) -> SIMD[scores_type, width],
     //,
     n_routed_experts: Int,
     n_experts_per_tok: Int,
@@ -761,13 +1044,11 @@ def router_group_limited[
     topk_group: Int,
     norm_weights: Bool,
     target: StaticString,
-    scores_input_fn: def[width: Int](Coord) capturing -> SIMD[
-        scores_type, width
-    ],
 ](
     expert_indices: TileTensor[mut=True, .int32, ...],
     expert_weights: TileTensor[mut=True, scores_type, ...],
     scores_layout: Some[TensorLayout],
+    scores_input_fn: ScoresInputFnType,
     expert_bias: TileTensor[mut=False, bias_type, ...],
     routed_scaling_factor: Float32,
     context: DeviceContext,
@@ -780,14 +1061,14 @@ def router_group_limited[
     Parameters:
         scores_type: The data type of the scores and the output weights.
         bias_type: The data type of the expert bias.
+        ScoresInputFnType: Type of the closure that loads the routing
+            scores (inferred).
         n_routed_experts: The number of experts to route to.
         n_experts_per_tok: The number of experts to be selected per token.
         n_groups: The number of expert groups.
         topk_group: The number of expert groups to be selected per token.
         norm_weights: Whether to normalize the selected weights.
         target: The target device to run the kernel on.
-        scores_input_fn: Lambda that loads the score at a
-            `[token, expert]` coordinate.
 
     Inputs:
         expert_indices: The indices of the routed experts for each token.
@@ -796,6 +1077,9 @@ def router_group_limited[
             Shape: [num_tokens, num_experts_per_tok].
         scores_layout: Layout of the routing scores. Shape:
             [num_tokens, n_routed_experts].
+        scores_input_fn: Closure that loads the score at a
+            `[token, expert]` coordinate. It runs on the device, so it
+            must copy what it captures.
         expert_bias: The bias for each expert. Shape: [n_routed_experts].
         routed_scaling_factor: The scaling factor for the routed expert weights.
         context: The device context.
@@ -804,7 +1088,7 @@ def router_group_limited[
         target
     ](), "Group limited MoE router is only supported on GPU"
 
-    var num_tokens = Int(scores_layout.shape[0]().value())
+    var num_tokens = Int(scores_layout.shape[0]())
     if num_tokens == 0:
         return
 
@@ -832,7 +1116,10 @@ def router_group_limited[
             topk_group,
             norm_weights,
             num_threads,
-            scores_input_fn=scores_input_fn,
+            ScoresInputFnType=ScoresInputFnType,
+            ExpertIndicesEngine=expert_indices.Engine,
+            ExpertWeightsEngine=expert_weights.Engine,
+            ExpertBiasEngine=expert_bias.Engine,
         ]
 
         gpu_ctx.enqueue_function[kernel](
@@ -840,6 +1127,7 @@ def router_group_limited[
             expert_weights,
             expert_bias,
             routed_scaling_factor,
+            host_arg=scores_input_fn,
             grid_dim=num_tokens,
             block_dim=num_threads,
             attributes=pdl_launch_attributes(PDLLevel.ON),
@@ -921,7 +1209,7 @@ def _block_top_k[
     ]()
 
     var shared_mem_phase1 = shared_mem
-    var shared_mem_phase2 = shared_mem + phase1_candidates
+    var shared_mem_phase2 = shared_mem.unsafe_offset(phase1_candidates)
 
     var val = TopK_2(u=biased_score, p=tid)
     var sorted_val = _warp_bitonic_sort[num_lanes=WARP_SIZE](val)
@@ -993,23 +1281,40 @@ def single_group_router_kernel[
     n_experts_per_tok: Int,
     norm_weights: Bool,
     num_threads: Int,
-    scores_input_fn: def[width: Int](Coord) capturing -> SIMD[
-        scores_type, width
-    ],
+    ScoresInputFnType: ImplicitlyCopyable
+    & RegisterPassable
+    & def[width: Int](Coord) -> SIMD[scores_type, width],
+    *,
+    ExpertIndicesEngine: TensorEngine,
+    ExpertWeightsEngine: TensorEngine,
+    ExpertBiasEngine: TensorEngine,
 ](
     expert_indices: TileTensor[
-        mut=True, .int32, ExpertIndicesLayoutType, MutAnyOrigin
+        mut=True,
+        .int32,
+        ExpertIndicesLayoutType,
+        MutAnyOrigin,
+        Engine=ExpertIndicesEngine,
     ],
     expert_weights: TileTensor[
-        mut=True, scores_type, ExpertWeightsLayoutType, MutAnyOrigin
+        mut=True,
+        scores_type,
+        ExpertWeightsLayoutType,
+        MutAnyOrigin,
+        Engine=ExpertWeightsEngine,
     ],
-    expert_bias: TileTensor[bias_type, ExpertBiasLayoutType, ImmutAnyOrigin],
+    expert_bias: TileTensor[
+        bias_type, ExpertBiasLayoutType, ImmutAnyOrigin, Engine=ExpertBiasEngine
+    ],
     routed_scaling_factor: Float32,
+    scores_input_fn: ScoresInputFnType,
 ):
     """Single-group MoE router kernel. One block per token, one thread per expert.
 
     Fuses: corrected = scores + bias → top-k selection (`_block_top_k`) →
-    weight = corrected - bias → optional normalize → scale.
+    weight = corrected - bias → optional normalize → scale. Scores are read
+    only through `scores_input_fn`, a closure of type `ScoresInputFnType`
+    that loads the score at a `(token, expert)` index.
     """
 
     comptime assert expert_indices.flat_rank == 2
@@ -1049,7 +1354,7 @@ def single_group_router_kernel[
         # Padding threads carry the dead value, so they never rank.
         var biased_score = TopK_2[scores_type]().u
         if tid < n_routed_experts:
-            var thread_expert_bias = expert_bias.load[width=1](Coord(tid)).cast[
+            var thread_expert_bias = expert_bias.load[width=1]((tid,)).cast[
                 scores_type
             ]()
 
@@ -1108,9 +1413,9 @@ def single_group_router_eplb_kernel[
     num_log: Int,
     max_replicas: Int,
     hash_decorrelate: Bool,
-    scores_input_fn: def[width: Int](Coord) capturing -> SIMD[
-        scores_type, width
-    ],
+    ScoresInputFnType: ImplicitlyCopyable
+    & RegisterPassable
+    & def[width: Int](Coord) -> SIMD[scores_type, width],
 ](
     expert_indices: TileTensor[
         mut=True, .int32, ExpertIndicesLayoutType, MutAnyOrigin
@@ -1126,12 +1431,14 @@ def single_group_router_eplb_kernel[
     log2phy: TileTensor[.int32, Log2phyLayoutType, ImmutAnyOrigin],
     layer_idx: TileTensor[.int32, LayerIdxLayoutType, ImmutAnyOrigin],
     routed_scaling_factor: Float32,
+    scores_input_fn: ScoresInputFnType,
 ):
     """Single-group MoE router fused with EPLB log->phy remap.
 
     Selects with the same `_block_top_k` as `single_group_router_kernel`, then
     at the K writers performs the EPLB lookup using a per-block SMEM cache of
-    the current layer's logcnt/log2phy slice.
+    the current layer's logcnt/log2phy slice. Scores are read only through
+    `scores_input_fn`, a closure of type `ScoresInputFnType`.
 
     Backend specialization:
       - NVIDIA: cp.async issues the table fetch up front; sort hides the latency.
@@ -1182,10 +1489,8 @@ def single_group_router_eplb_kernel[
     var l_id = lane_id()
 
     with PDL():
-        var Lidx = Int(layer_idx.load[width=1](Coord(Idx[0]))[0])
-        var thread_expert_bias = expert_bias.load[width=1](Coord(tid)).cast[
-            scores_type
-        ]()
+        var Lidx = Int(layer_idx[Idx[0]][0])
+        var thread_expert_bias = expert_bias[tid].cast[scores_type]()
 
         var thread_expert_score = scores_input_fn[width=1]((token_idx, tid))
         var biased_score = thread_expert_score + thread_expert_bias
@@ -1226,7 +1531,7 @@ def single_group_router_eplb_kernel[
 
                 # Burst load #3 — cnt (only when mr > 1).
                 comptime if max_replicas > 1:
-                    cnt = Int(logcnt.load[width=1]((Lidx, log))[0])
+                    cnt = Int(logcnt[Lidx, log][0])
 
             # ---------- Weight reduction (loads above are in flight) ----
             var weights_sum = warp.lane_group_sum[num_lanes=n_experts_per_tok](
@@ -1302,7 +1607,7 @@ def single_group_router[
 
     def load_scores[
         width: Int
-    ](coords: Coord) capturing -> SIMD[scores_type, width]:
+    ](coords: Coord) {var expert_scores} -> SIMD[scores_type, width]:
         comptime assert (
             coords.rank == 2
         ), "the expert-scores lambda contract is rank 2"
@@ -1313,11 +1618,11 @@ def single_group_router[
         n_experts_per_tok,
         norm_weights,
         target,
-        scores_input_fn=load_scores,
     ](
         expert_indices,
         expert_weight,
         expert_scores.layout,
+        load_scores,
         expert_bias,
         routed_scaling_factor,
         context,
@@ -1327,18 +1632,19 @@ def single_group_router[
 def single_group_router[
     scores_type: DType,
     bias_type: DType,
+    ScoresInputFnType: ImplicitlyCopyable
+    & RegisterPassable
+    & def[width: Int](Coord) -> SIMD[scores_type, width],
     //,
     n_routed_experts: Int,
     n_experts_per_tok: Int,
     norm_weights: Bool,
     target: StaticString,
-    scores_input_fn: def[width: Int](Coord) capturing -> SIMD[
-        scores_type, width
-    ],
 ](
     expert_indices: TileTensor[mut=True, .int32, ...],
     expert_weight: TileTensor[mut=True, scores_type, ...],
     scores_layout: Some[TensorLayout],
+    scores_input_fn: ScoresInputFnType,
     expert_bias: TileTensor[mut=False, bias_type, ...],
     routed_scaling_factor: Float32,
     context: DeviceContext,
@@ -1351,20 +1657,23 @@ def single_group_router[
     Parameters:
         scores_type: DType of routing scores and output weights.
         bias_type: DType of the expert correction bias.
+        ScoresInputFnType: Type of the closure that loads the routing
+            scores (inferred).
         n_routed_experts: Total number of experts (e.g. 384 for Kimi K2.5).
         n_experts_per_tok: Experts selected per token, must be a power of 2
             (e.g. 8 for Kimi K2.5).
         norm_weights: If True, normalize selected weights to sum to 1 before
             applying routed_scaling_factor.
         target: The target device to run the kernel on.
-        scores_input_fn: Lambda that loads the score at a
-            `[token, expert]` coordinate.
 
     Inputs:
         expert_indices: Output expert indices. Shape: [num_tokens, n_experts_per_tok].
         expert_weights: Output expert weights. Shape: [num_tokens, n_experts_per_tok].
         scores_layout: Layout of the routing scores. Shape:
             [num_tokens, n_routed_experts].
+        scores_input_fn: Closure that loads the score at a
+            `[token, expert]` coordinate. It runs on the device, so it
+            must copy what it captures.
         expert_bias: Per-expert correction bias used for selection only.
         routed_scaling_factor: Scalar multiplied into every output weight.
         context: The device context.
@@ -1373,7 +1682,7 @@ def single_group_router[
         target
     ](), "Single group router is only supported on GPU"
 
-    var num_tokens = Int(scores_layout.shape[0]().value())
+    var num_tokens = Int(scores_layout.shape[0]())
     if num_tokens == 0:
         return
 
@@ -1401,7 +1710,10 @@ def single_group_router[
             n_experts_per_tok,
             norm_weights,
             num_threads,
-            scores_input_fn=scores_input_fn,
+            ScoresInputFnType=ScoresInputFnType,
+            ExpertIndicesEngine=expert_indices.Engine,
+            ExpertWeightsEngine=expert_weight.Engine,
+            ExpertBiasEngine=expert_bias.Engine,
         ]
 
         # launch the kernle using gpu_ctx
@@ -1410,6 +1722,7 @@ def single_group_router[
             expert_weight,
             expert_bias,
             routed_scaling_factor,
+            host_arg=scores_input_fn,
             grid_dim=num_tokens,
             block_dim=num_threads,
             attributes=pdl_launch_attributes(PDLLevel.ON),
@@ -1536,7 +1849,7 @@ def _single_group_router_on_partials[
 
     def load_scores[
         width: Int
-    ](coords: Coord) capturing -> SIMD[scores_type, width]:
+    ](coords: Coord) {var partials} -> SIMD[scores_type, width]:
         comptime assert (
             coords.rank == 2
         ), "the expert-scores lambda contract is rank 2"
@@ -1547,8 +1860,8 @@ def _single_group_router_on_partials[
         comptime for split in range(1, num_splits):
             score += partials.load[width=width](
                 (
-                    split * Int(grid_dim.x) + Int(coords[0].value()),
-                    Int(coords[1].value()),
+                    split * Int(grid_dim.x) + Int(coords[0]),
+                    Int(coords[1]),
                 )
             )
         return sigmoid(score)
@@ -1558,11 +1871,11 @@ def _single_group_router_on_partials[
         n_experts_per_tok,
         norm_weights,
         target,
-        scores_input_fn=load_scores,
     ](
         expert_indices,
         expert_weights,
         row_major((num_tokens, Idx[n_routed_experts])),
+        load_scores,
         expert_bias,
         routed_scaling_factor,
         context,
@@ -2048,7 +2361,7 @@ def single_group_router_eplb[
 
     def load_scores[
         width: Int
-    ](coords: Coord) capturing -> SIMD[scores_type, width]:
+    ](coords: Coord) {var expert_scores} -> SIMD[scores_type, width]:
         comptime assert (
             coords.rank == 2
         ), "the expert-scores lambda contract is rank 2"
@@ -2062,12 +2375,12 @@ def single_group_router_eplb[
         max_replicas=max_replicas,
         hash_decorrelate=hash_decorrelate,
         target=target,
-        scores_input_fn=load_scores,
     ](
         expert_indices,
         expert_indices_log,
         expert_weights,
         expert_scores.layout,
+        load_scores,
         expert_bias,
         logcnt,
         log2phy,
@@ -2080,6 +2393,9 @@ def single_group_router_eplb[
 def single_group_router_eplb[
     scores_type: DType,
     bias_type: DType,
+    ScoresInputFnType: ImplicitlyCopyable
+    & RegisterPassable
+    & def[width: Int](Coord) -> SIMD[scores_type, width],
     //,
     n_routed_experts: Int,
     n_experts_per_tok: Int,
@@ -2088,14 +2404,12 @@ def single_group_router_eplb[
     max_replicas: Int,
     hash_decorrelate: Bool,
     target: StaticString,
-    scores_input_fn: def[width: Int](Coord) capturing -> SIMD[
-        scores_type, width
-    ],
 ](
     expert_indices: TileTensor[mut=True, .int32, ...],
     expert_indices_log: TileTensor[mut=True, .int32, ...],
     expert_weights: TileTensor[mut=True, scores_type, ...],
     scores_layout: Some[TensorLayout],
+    scores_input_fn: ScoresInputFnType,
     expert_bias: TileTensor[bias_type, ...],
     logcnt: TileTensor[.int32, ...],
     log2phy: TileTensor[.int32, ...],
@@ -2113,6 +2427,8 @@ def single_group_router_eplb[
     Parameters:
         scores_type: DType of the routing scores and output weights.
         bias_type: DType of the expert correction bias.
+        ScoresInputFnType: Type of the closure that loads the routing
+            scores (inferred).
         n_routed_experts: Total number of routed experts.
         n_experts_per_tok: Experts selected per token, must be a power of two.
         norm_weights: If True, normalize selected weights to sum to 1 before
@@ -2123,8 +2439,6 @@ def single_group_router_eplb[
             multiplicative hash before the modulo to break structured-position
             bias in replica selection.
         target: The target device to run the kernel on.
-        scores_input_fn: Lambda that loads the score at a
-            `[token, expert]` coordinate.
 
     Inputs:
         expert_indices: Output physical expert IDs.
@@ -2135,6 +2449,9 @@ def single_group_router_eplb[
             Shape: [num_tokens, n_experts_per_tok].
         scores_layout: Layout of the routing scores. Shape:
             [num_tokens, n_routed_experts].
+        scores_input_fn: Closure that loads the score at a
+            `[token, expert]` coordinate. It runs on the device, so it
+            must copy what it captures.
         expert_bias: Per-expert correction bias used for selection only.
         logcnt: Per-(layer, logical) replica count.
             Shape: [num_layers, num_log].
@@ -2148,7 +2465,7 @@ def single_group_router_eplb[
         target
     ](), "Single group router (EPLB) is only supported on GPU"
 
-    var num_tokens = Int(scores_layout.shape[0]().value())
+    var num_tokens = Int(scores_layout.shape[0]())
     if num_tokens == 0:
         return
 
@@ -2177,7 +2494,7 @@ def single_group_router_eplb[
             num_log,
             max_replicas,
             hash_decorrelate,
-            scores_input_fn=scores_input_fn,
+            ScoresInputFnType=ScoresInputFnType,
         ]
 
         gpu_ctx.enqueue_function[kernel](
@@ -2189,6 +2506,7 @@ def single_group_router_eplb[
             log2phy,
             layer_idx,
             routed_scaling_factor,
+            host_arg=scores_input_fn,
             grid_dim=num_tokens,
             block_dim=num_threads,
             attributes=pdl_launch_attributes(PDLLevel(1)),
@@ -2323,7 +2641,7 @@ def eplb_remap_kernel[
     with PDL():
         # Broadcast scalar layer index. Every thread reads the same address →
         # one HBM transaction, hot in L1 for the rest of the block.
-        var Lidx = Int(layer_idx.load[width=1](Coord(Idx[0]))[0])
+        var Lidx = Int(layer_idx[Idx[0]][0])
 
         # Cooperative SMEM load of (logcnt, log2phy) slice for layer Lidx.
         # BLOCK_THREADS threads cover num_log entries; unrolled at comptime.
@@ -2332,10 +2650,10 @@ def eplb_remap_kernel[
             if i < num_log:
                 # logcnt only matters for the round-robin path.
                 comptime if max_replicas > 1:
-                    smem_cnt[i] = Int32(logcnt.load[width=1]((Lidx, i))[0])
+                    smem_cnt[i] = Int32(logcnt[Lidx, i][0])
                 comptime for r in range(max_replicas):
                     smem_phy[i * max_replicas + r] = Int32(
-                        log2phy.load[width=1]((Lidx, i, r))[0]
+                        log2phy[Lidx, i, r][0]
                     )
         barrier()
 
@@ -2345,7 +2663,7 @@ def eplb_remap_kernel[
         var N = Int(phy_idx.dim(0))
 
         if n < N:
-            var log = Int(router_idx.load[width=1]((n, k))[0])
+            var log = Int(router_idx[n, k][0])
 
             comptime if max_replicas == 1:
                 # Pure permutation: cnt is always 1, r is always 0.

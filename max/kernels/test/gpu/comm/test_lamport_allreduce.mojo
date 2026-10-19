@@ -1093,7 +1093,7 @@ def lamport_unsynced_skew_test[
         var in_tensors = Array[_, ngpus](
             fill_with=lambda (i: Int) -> InType: InType(
                 rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
-                    in_dev[i].unsafe_ptr() + base
+                    in_dev[i].unsafe_ptr().unsafe_offset(base)
                 ),
                 row_major(length),
             )
@@ -1102,7 +1102,7 @@ def lamport_unsynced_skew_test[
         for i in range(ngpus):
             out_capture[i] = OutType(
                 rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](
-                    out_dev[i].unsafe_ptr() + base
+                    out_dev[i].unsafe_ptr().unsafe_offset(base)
                 ),
                 row_major(length),
             )

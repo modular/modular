@@ -381,6 +381,6 @@ def compute_log_probabilities_ragged_shape[
         lp_output_offsets_host.shape().tuple()
     )[0]
     return IndexList[2](
-        Int(lp_output_offsets_host.to_tile_tensor().raw_load(num_offsets - 1)),
+        Int(lp_output_offsets_host.to_tile_tensor()[num_offsets - 1]),
         2**levels,
     )

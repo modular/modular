@@ -266,8 +266,6 @@ def run_selective_scan_gpu[
     # Run GPU kernel
     var total_batch_dim = batch * dim
     comptime BLOCK_SIZE = 128
-    from std.math import ceildiv
-
     var num_blocks = ceildiv(total_batch_dim, BLOCK_SIZE)
 
     var compiled_kernel = ctx.compile_function[

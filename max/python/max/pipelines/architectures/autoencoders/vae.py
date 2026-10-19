@@ -479,8 +479,8 @@ class Upsample2d(Module):
         return ops.resize_nearest(
             x,
             [n, c, h * 2, w * 2],
-            coordinate_transform_mode=2,
-            round_mode=2,
+            coordinate_transform_mode=ops.CoordinateTransformMode.ASYMMETRIC,
+            round_mode=ops.RoundMode.FLOOR,
         )
 
 

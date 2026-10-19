@@ -25,6 +25,7 @@ _FP8_FP4_TESTS = [
     "test_scaled_nvfp4_quantization_async.mojo",
     "test_nvfp4_quantization_near_zero.mojo",
     "test_grouped_nvfp4_quantization.mojo",
+    "test_grouped_nvfp4_quantization_pdl.mojo",
     "test_grouped_nvfp4_row_amax_quantization.mojo",
 ]
 
@@ -64,6 +65,10 @@ _EXTRA_CONSTRAINTS = {
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     "test_grouped_nvfp4_quantization.mojo": select({
+        "//:b200_gpu": ["//:b200_gpu"],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_grouped_nvfp4_quantization_pdl.mojo": select({
         "//:b200_gpu": ["//:b200_gpu"],
         "//conditions:default": ["@platforms//:incompatible"],
     }),

@@ -24,9 +24,9 @@ comptime NUM_BINS = 256
 
 # ========================== KERNEL CODE ==========================
 def histogram_kernel(
-    image: UnsafePointer[UInt8, ImmutAnyOrigin],
-    bins: UnsafePointer[UInt32, MutAnyOrigin],
-    bins_pool: UnsafePointer[UInt32, MutAnyOrigin],
+    image: ImmPointer[UInt8, ImmutAnyOrigin],
+    bins: MutPointer[UInt32, MutAnyOrigin],
+    bins_pool: MutPointer[UInt32, MutAnyOrigin],
     width: UInt32,
     height: UInt32,
 ):
@@ -40,12 +40,12 @@ def histogram_kernel(
         height: Image height.
     """
     # Each block gets its own private copy of bins in global memory
-    var bins_priv = bins_pool + block_idx.x * NUM_BINS
+    var bins_priv = bins_pool.unsafe_offset(block_idx.x * NUM_BINS)
 
     var i = UInt32(block_idx.x) * UInt32(256) + UInt32(thread_idx.x)
     if i < width * height:
         var b = image[Int(i)]
-        _ = Atomic.fetch_add(bins_priv + Int(b), UInt32(1))
+        _ = Atomic.fetch_add(bins_priv.unsafe_offset(Int(b)), UInt32(1))
 
     barrier()
 
@@ -53,14 +53,14 @@ def histogram_kernel(
     var b = UInt32(thread_idx.x)
     while b < NUM_BINS:
         if bins_priv[Int(b)] > 0:
-            _ = Atomic.fetch_add(bins + Int(b), bins_priv[Int(b)])
+            _ = Atomic.fetch_add(bins.unsafe_offset(Int(b)), bins_priv[Int(b)])
         b += UInt32(256)
 
 
 # ========================== TEST CODE ==========================
 def cpu_histogram(
-    image: UnsafePointer[mut=False, UInt8, _],
-    bins: UnsafePointer[mut=True, UInt32, _],
+    image: ImmPointer[UInt8, _],
+    bins: MutPointer[UInt32, _],
     width: UInt32,
     height: UInt32,
 ):

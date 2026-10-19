@@ -28,6 +28,7 @@ from max.gpu.memory import external_memory
 from max.gpu.compute.arch.mma_nvidia_sm100 import *
 from max.gpu.compute.arch.tcgen05 import *
 from layout import Coord, TensorLayout, TileTensor, coord, row_major
+from layout.tensor_engine import TensorEngine
 from layout.tensor_core_async import (
     tile_layout_k_major_typed,
 )
@@ -72,6 +73,8 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
     c_layout: TensorLayout,
     a_scales_layout: TensorLayout,
     b_scales_layout: TensorLayout,
+    c_engine: TensorEngine,
+    b_scales_engine: TensorEngine,
     a_tile_shape: Coord,
     a_desc_shape: Coord,
     b_tile_shape: Coord,
@@ -95,11 +98,13 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
 ](
     a_tma_op: TMATensorTile[a_type, a_tile_shape, a_desc_shape],
     b_tma_op: TMATensorTile[b_type, b_tile_shape, b_desc_shape],
-    c: TileTensor[mut=True, c_type, c_layout, MutAnyOrigin],
+    c: TileTensor[mut=True, c_type, c_layout, MutAnyOrigin, Engine=c_engine],
     a_scales_tma_op: TMATensorTile[
         a_scales_type, a_scales_tile_shape, a_scales_desc_shape
     ],
-    b_scales: TileTensor[b_scales_type, b_scales_layout, ImmutAnyOrigin],
+    b_scales: TileTensor[
+        b_scales_type, b_scales_layout, ImmutAnyOrigin, Engine=b_scales_engine
+    ],
     num_iters: Int32,
     epilogue_fn: EpilogueFnType,
     compute_fn: ComputeFnType,
@@ -171,8 +176,10 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
         (a_scales_size * size_of[a_scales_type]()) % 16
     ) == 0, "preserve alignment"
 
-    var b_smem = (a_smem + a_size).bitcast[Scalar[b_type]]()
-    var a_scales_smem = (b_smem + b_size).bitcast[Scalar[a_scales_type]]()
+    var b_smem = a_smem.unsafe_offset(a_size).unsafe_bitcast[Scalar[b_type]]()
+    var a_scales_smem = b_smem.unsafe_offset(b_size).unsafe_bitcast[
+        Scalar[a_scales_type]
+    ]()
 
     # 3D view of the same shared memory tile are used for TMA loads
     # 2D view of the same shared memory tile are used for MMA operations
@@ -207,15 +214,19 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
     var a_scales_smem_tile_2D_view = a_scales_smem_tiles[0]
     var a_scales_smem_tile_3D_view = _to_batched_3d(a_scales_smem_tile_2D_view)
 
-    var ptr_tmem_addr = (a_scales_smem + a_scales_size).bitcast[UInt32]()
+    var ptr_tmem_addr = a_scales_smem.unsafe_offset(
+        a_scales_size
+    ).unsafe_bitcast[UInt32]()
 
     comptime a_expected_bytes = a_size * size_of[a_type]()
     comptime b_expected_bytes = b_size * size_of[b_type]()
     comptime a_scales_expected_bytes = a_scales_size * size_of[a_scales_type]()
     comptime expected_bytes = a_expected_bytes + b_expected_bytes + a_scales_expected_bytes
 
-    var tma_mbar = (ptr_tmem_addr + 2).bitcast[SharedMemBarrier]()
-    var mma_mbar = tma_mbar + 1
+    var tma_mbar = ptr_tmem_addr.unsafe_offset(2).unsafe_bitcast[
+        SharedMemBarrier
+    ]()
+    var mma_mbar = tma_mbar.unsafe_offset(1)
 
     var warp_id = get_warp_id()
     var elect_one_warp = warp_id == 0
@@ -491,6 +502,8 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_wrapper[
     c_layout: TensorLayout,
     a_scales_layout: TensorLayout,
     b_scales_layout: TensorLayout,
+    c_engine: TensorEngine,
+    b_scales_engine: TensorEngine,
     a_tile_shape: Coord,
     a_desc_shape: Coord,
     b_tile_shape: Coord,
@@ -513,11 +526,13 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_wrapper[
 ](
     a_tma_op: TMATensorTile[a_type, a_tile_shape, a_desc_shape],
     b_tma_op: TMATensorTile[b_type, b_tile_shape, b_desc_shape],
-    c: TileTensor[mut=True, c_type, c_layout, MutAnyOrigin],
+    c: TileTensor[mut=True, c_type, c_layout, MutAnyOrigin, Engine=c_engine],
     a_scales_tma_op: TMATensorTile[
         a_scales_type, a_scales_tile_shape, a_scales_desc_shape
     ],
-    b_scales: TileTensor[b_scales_type, b_scales_layout, ImmutAnyOrigin],
+    b_scales: TileTensor[
+        b_scales_type, b_scales_layout, ImmutAnyOrigin, Engine=b_scales_engine
+    ],
     num_iters: Int32,
     epilogue_fn: EpilogueFnType,
     compute_fn: ComputeFnType,
@@ -539,6 +554,8 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_wrapper[
         c_layout,
         a_scales_layout,
         b_scales_layout,
+        c_engine,
+        b_scales_engine,
         a_tile_shape,
         a_desc_shape,
         b_tile_shape,
@@ -878,6 +895,8 @@ def _matmul_sm100_blockwise_scaled_fp8_impl[
         type_of(c_kernel).LayoutType,
         type_of(a_scales_3D).LayoutType,
         type_of(b_scales_kernel).LayoutType,
+        type_of(c_kernel).Engine,
+        type_of(b_scales_kernel).Engine,
         type_of(a_tma_op).tile_shape,
         type_of(a_tma_op).desc_shape,
         type_of(b_tma_op).tile_shape,

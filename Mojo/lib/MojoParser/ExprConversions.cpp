@@ -333,7 +333,8 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
       reboundCalleeType.getParamListAttrs().getBodyConstraints();
 
   // Declare the function at the bottom of the decl.
-  b = ImplicitLocOpBuilder(mlirLoc, moduleDecl.getDeclEndBuilder());
+  b = ImplicitLocOpBuilder(mlirLoc,
+                           cast<OpASTDecl>(moduleDecl).getDeclEndBuilder());
   FunctionEmitter structEmitter(shared);
   auto paramListAttrs = PogListAttr::get(
       ctx, thunkSignature.getInputParamTypes().size() + 1, remappedConstraints);

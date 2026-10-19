@@ -1,0 +1,38 @@
+load("//bazel:api.bzl", "modular_py_library", "requirement")
+
+package(default_visibility = ["//max:consumers"])
+
+modular_py_library(
+    name = "deepseekV41",
+    srcs = glob(["**/*.py"]),
+    # tokenizers is a transitive dependency of transformers but doesn't have
+    # an unversioned bazel alias, so we need to ignore its unresolved imports
+    # (used for Engram token normalization).
+    ignore_unresolved_imports = [
+        "tokenizers.Regex",
+        "tokenizers.normalizers",
+    ],
+    deps = [
+        requirement("numpy"),
+        requirement("pillow"),
+        requirement("transformers"),
+        requirement("typing-extensions"),
+        "//max/python/max:tree",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/experimental",
+        "//max/python/max/experimental/nn",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/deepseekV4",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/kv_cache",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
+        "//max/python/max/pipelines/speculative",
+        "//max/python/max/pipelines/weights",
+        "//max/python/max/profiler",
+        "//max/python/max/support",
+    ],
+)

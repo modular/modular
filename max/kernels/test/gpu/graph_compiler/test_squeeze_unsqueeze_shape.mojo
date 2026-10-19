@@ -20,7 +20,6 @@ untouched.
 """
 
 from std.testing import TestSuite, assert_equal
-from std.utils import IndexList
 
 from builtin_kernels.gather_scatter import SqueezeShape, UnsqueezeShape
 from extensibility import IOSpec, ManagedTensorSlice, StaticTensorSpec
@@ -115,13 +114,13 @@ def run_case[
     comptime in_spec = StaticTensorSpec[shape_dtype, 1].get_unknown()
     comptime idx_spec = StaticTensorSpec[indices_type, 1].get_unknown()
     var input = ManagedTensorSlice[io_spec=IOSpec.Input, static_spec=in_spec](
-        in_dev.unsafe_ptr(), IndexList[1](rank)
+        in_dev.unsafe_ptr(), (rank,)
     )
     var shape_indices = ManagedTensorSlice[
         io_spec=IOSpec.Input, static_spec=idx_spec
-    ](idx_dev.unsafe_ptr(), IndexList[1](num_indices))
+    ](idx_dev.unsafe_ptr(), (num_indices,))
     var output = ManagedTensorSlice[io_spec=IOSpec.Output, static_spec=in_spec](
-        out_dev.unsafe_ptr(), IndexList[1](out_rank)
+        out_dev.unsafe_ptr(), (out_rank,)
     )
 
     comptime if squeeze:

@@ -107,6 +107,11 @@ def _lazy_arch_module(elt: ast.expr) -> str | None:
     return None
 
 
+# Registered architectures kept out of the public docs until they are ready
+# to announce, by module directory.
+UNLISTED_MODULES: frozenset[str] = frozenset({"hy_v4", "unified_mtp_hy_v4"})
+
+
 def discover_registered_dirs() -> list[str]:
     """Return sorted directory names of all registered architectures.
 
@@ -139,7 +144,10 @@ def discover_registered_dirs() -> list[str]:
                     if module is None:
                         continue
                     module = module.lstrip(".")
-                    if module.endswith("_modulev3"):
+                    if (
+                        module.endswith("_modulev3")
+                        or module in UNLISTED_MODULES
+                    ):
                         continue
                     modules.add(module)
             return sorted(modules)

@@ -129,6 +129,7 @@ MODEL_RECIPES = CaseInsensitiveDict({
     "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16__modulev3": "max/pipelines/architectures/nemotron_h_modulev3/recipes/lightning_bf16.yaml",
     "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4__modulev3": "max/pipelines/architectures/nemotron_h_modulev3/recipes/lightning_nvfp4.yaml",
     "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4__modulev3_dspark": "max/pipelines/architectures/nemotron_h_modulev3/recipes/lightning_nvfp4_dspark.yaml",
+    "tencent/Hy4-preview-FP8__mtp": "max/pipelines/architectures/hy_v4/recipes/hy4_preview_fp8_tp_ep_8x_b200.yaml",
     "thinkingmachines/Inkling-Small-NVFP4__mtp": "max/pipelines/architectures/inkling/recipes/inkling_small_nvfp4_mtp.yaml",
     "RadixArk/Qwen3.8-27B-NVFP4__mtp": "max/pipelines/architectures/unified_mtp_qwen3_5/recipes/qwen38_27b_nvfp4_mtp.yaml",
     "RadixArk/Qwen3.8-27B-NVFP4__dflash2": "max/pipelines/architectures/unified_dflash2_qwen3_5/recipes/qwen38_27b_nvfp4_dflash2.yaml",
@@ -466,6 +467,10 @@ def get_server_cmd(
     # vLLM's KV cache sizing misses Inkling's mamba conv cache and OOMs.
     if "inkling" in model.casefold():
         VLLM += ["--gpu-memory-utilization", "0.8"]
+    # vLLM 0.30's sparse-MLA index group waits on a side stream during
+    # CUDA graph capture and fails Hy4's engine start.
+    if "hy4" in model.casefold():
+        VLLM += ["--enforce-eager"]
     MAX = ["serve", "--pretty-print-config"]
     # A smoke test is where an eager or host-transfer footgun should surface,
     # so validate each request too and not just initialization. max-ci only:

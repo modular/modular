@@ -185,7 +185,7 @@ def multicast_tma_wgmma_kernel[
                         block_idx.y * BM + rank_n * a_tma_rows
                     )
                     var a_smem_slice = type_of(a_smem_tile)(
-                        a_smem_tile.ptr + rank_n * a_tma_load_size,
+                        a_smem_tile.ptr.unsafe_offset(rank_n * a_tma_load_size),
                         a_smem_tile.layout,
                     )
 
@@ -222,7 +222,7 @@ def multicast_tma_wgmma_kernel[
                         block_idx.x * BN + rank_m * b_tma_rows
                     )
                     var b_smem_slice = type_of(b_smem_tile)(
-                        b_smem_tile.ptr + rank_m * b_tma_load_size,
+                        b_smem_tile.ptr.unsafe_offset(rank_m * b_tma_load_size),
                         b_smem_tile.layout,
                     )
 

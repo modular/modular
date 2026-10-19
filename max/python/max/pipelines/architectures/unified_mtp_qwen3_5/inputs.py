@@ -51,12 +51,21 @@ class UnifiedMTPQwen3_5Inputs(UnifiedSpecDecodeInputs, Qwen3_5Inputs):
     #: ``[real, draft_1..draft_k]`` window. ``None`` on a text-only graph,
     #: whose rotary stays on the static cache-derived table.
     position_ids: Buffer | None = None
+    #: Whether the graph declares the vision-merge inputs, which only the
+    #: MTP graph of a checkpoint with a vision tower does.
+    vision_inputs_in_graph: bool = False
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
         assert self.kv_cache_inputs is not None
+        vision = (
+            (*self.vision_embeddings, *self.vision_scatter_indices)
+            if self.vision_inputs_in_graph
+            else ()
+        )
         prefix = (
             self.tokens,
+            *vision,
             self.input_row_offsets,
             self.host_input_row_offsets,
             self.return_n_logits,

@@ -35,23 +35,6 @@ from nn.conv.gpu.amd.amd_4wave_conv_residual import (
 from nn.conv.gpu.nvidia.sm100.conv_config import Conv2dProblemShape
 
 
-# Pure pre-residual compute lambda used by the "compute_lambda" test
-# variant — adds a comptime-fixed bias to the MMA output. Mirrors the
-# canonical UNet/ResNet "conv + bias + residual" fusion (bias is
-# trivially in-register, real bias-per-channel would index by
-# coords[1] = C_out). Used to validate the SM100-style ordering
-# `D = lambda(Conv(A,B)) + beta * C`.
-@inline(.always)
-def _bias_compute_lambda[
-    _dtype: DType,
-    _width: SIMDLength,
-    *,
-    alignment: Int = 1,
-](coords: Coord, val: SIMD[_dtype, _width]) capturing -> SIMD[_dtype, _width]:
-    comptime assert coords.rank == 2, "the matmul epilogue contract is rank 2"
-    return val + SIMD[_dtype, _width](0.5)
-
-
 def _permute_filter_frsc_to_kpadded_host[
     dtype: DType
 ](
@@ -214,7 +197,7 @@ def test_conv_residual[
     pad: Int,
     beta: Float32,
     has_residual: Bool,
-    # When True, wire `_bias_compute_lambda` (adds 0.5 to MMA output
+    # When True, wire a bias `compute_fn` (adds 0.5 to MMA output
     # BEFORE the residual FMA). The host reference adds 0.5 in the
     # same place. Validates the SM100-style
     # `D = lambda(Conv(A,B)) + beta * C` ordering.
@@ -333,12 +316,29 @@ def test_conv_residual[
     var residual_tt = TileTensor(residual_buf, output_layout)
 
     comptime if use_compute_lambda:
+        # Pure pre-residual bias on the MMA output. Mirrors the canonical
+        # UNet/ResNet "conv + bias + residual" fusion (a real per-channel
+        # bias would index by `coords[1]` = C_out) and validates the
+        # SM100-style ordering `D = lambda(Conv(A,B)) + beta * C`.
+        var bias = Float32(0.5)
+
+        @inline(.always)
+        def bias_compute_fn[
+            _dtype: DType, _width: SIMDLength, *, alignment: Int
+        ](coords: Coord, val: SIMD[_dtype, _width]) {var bias} -> SIMD[
+            _dtype, _width
+        ]:
+            comptime assert (
+                coords.rank == 2
+            ), "the matmul epilogue contract is rank 2"
+            return val + bias.cast[_dtype]()
+
         amd_4wave_conv_fprop_with_residual[
             in_dtype,
             in_dtype,
             out_dtype,
             has_residual=has_residual,
-            elementwise_compute_lambda_fn=_bias_compute_lambda,
+            has_compute_fn=True,
         ](
             output_tt,
             input_tt,
@@ -347,6 +347,7 @@ def test_conv_residual[
             beta=beta,
             problem=problem,
             ctx=ctx,
+            compute_fn=bias_compute_fn,
         )
     else:
         amd_4wave_conv_fprop_with_residual[

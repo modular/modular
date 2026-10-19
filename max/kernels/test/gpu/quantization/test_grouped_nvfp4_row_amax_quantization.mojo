@@ -47,7 +47,7 @@ def _next_random(mut state: UInt64) -> Float32:
 
 
 def _fill_row(
-    row: UnsafePointer[mut=True, Scalar[DType.bfloat16], _],
+    row: MutPointer[Scalar[DType.bfloat16], _],
     n: Int,
     kind: Int,
     mut state: UInt64,
@@ -56,30 +56,33 @@ def _fill_row(
     for c in range(n):
         var u = _next_random(state) * 2.0 - 1.0
         var v = u
-        if kind == 1:
-            v = 0.0
-        elif kind == 2:
-            # One huge outlier among small values.
-            v = u * 1e-3
-            if c == (n // 3):
-                v = 3.0e4
-        elif kind == 3:
-            # A tiny row whose amax / 2688 falls below the 1e-30 floor.
-            v = u * 1e-33
-        elif kind == 4:
-            # A single non-zero element.
-            v = 0.0
-            if c == n - 1:
-                v = u + 2.0
-        elif kind == 5:
-            # Every value at a quantization tie and the largest scale.
-            v = 1.25 if c % 2 == 0 else -1.5
-        elif kind == 6:
-            # Wide dynamic range across 16-element blocks.
-            v = u * Float32(10.0) ** Float32(((c // 16) % 9) - 4)
-        elif kind == 7:
-            # Mostly negative: relu2 zeros most of it.
-            v = u - 0.8
+        match kind:
+            case 1:
+                v = 0.0
+            case 2:
+                # One huge outlier among small values.
+                v = u * 1e-3
+                if c == (n // 3):
+                    v = 3.0e4
+            case 3:
+                # A tiny row whose amax / 2688 falls below the 1e-30 floor.
+                v = u * 1e-33
+            case 4:
+                # A single non-zero element.
+                v = 0.0
+                if c == n - 1:
+                    v = u + 2.0
+            case 5:
+                # Every value at a quantization tie and the largest scale.
+                v = 1.25 if c % 2 == 0 else -1.5
+            case 6:
+                # Wide dynamic range across 16-element blocks.
+                v = u * Float32(10.0) ** Float32(((c // 16) % 9) - 4)
+            case 7:
+                # Mostly negative: relu2 zeros most of it.
+                v = u - 0.8
+            case _:
+                pass
         row[c] = v.cast[DType.bfloat16]()
 
 
@@ -131,7 +134,7 @@ def test_row_amax_quantization[
     var src_host = alloc[Scalar[DType.bfloat16]](src_rows * N)
     var state = UInt64(12345 + N)
     for r in range(src_rows):
-        _fill_row(src_host + r * N, N, r % 8, state)
+        _fill_row(src_host.unsafe_offset(r * N), N, r % 8, state)
     var indices_host = alloc[UInt32](max(total, 1))
     var source_of = alloc[Int](max(total, 1))
     for i in range(total):
@@ -252,25 +255,31 @@ def test_row_amax_quantization[
     for t in range(total_m_tiles):
         for i in range(scales_per_m_tile):
             assert_equal(
-                Int(host_scales.bitcast[UInt8]()[t * tile_stride + i]),
+                Int(host_scales.unsafe_bitcast[UInt8]()[t * tile_stride + i]),
                 Int(
-                    host_scales_ref.bitcast[UInt8]()[t * scales_per_m_tile + i]
+                    host_scales_ref.unsafe_bitcast[UInt8]()[
+                        t * scales_per_m_tile + i
+                    ]
                 ),
             )
         for i in range(scales_per_m_tile, tile_stride):
             assert_equal(
-                Int(host_scales.bitcast[UInt8]()[t * tile_stride + i]),
+                Int(host_scales.unsafe_bitcast[UInt8]()[t * tile_stride + i]),
                 Int(bitcast[DType.uint8, 1](Scalar[scales_dtype](1.0))),
             )
     for i in range(total):
         assert_equal(
-            Int(host_row_scales.bitcast[UInt16]()[i * row_scales_stride]),
-            Int(ref_row_scales.bitcast[UInt16]()[i]),
+            Int(
+                host_row_scales.unsafe_bitcast[UInt16]()[i * row_scales_stride]
+            ),
+            Int(ref_row_scales.unsafe_bitcast[UInt16]()[i]),
         )
         for j in range(1, row_scales_stride):
             assert_equal(
                 Int(
-                    host_row_scales.bitcast[UInt16]()[i * row_scales_stride + j]
+                    host_row_scales.unsafe_bitcast[UInt16]()[
+                        i * row_scales_stride + j
+                    ]
                 ),
                 Int(bitcast[DType.uint16, 1](_ROW_SCALE_SENTINEL)),
             )

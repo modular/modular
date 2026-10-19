@@ -193,10 +193,15 @@ class UnifiedDSparkNemotronHModel(  # type: ignore[misc]
             target_embedding=embedding,
         )
 
+    # TODO(kathywu): Register this graph through `graph_specs` instead of
+    # compiling it here.
     @traced
     @override
-    def load_model(self) -> Any:
+    def _load_decoder(self, session: InferenceSession) -> Any:
+        del session
         target_state = self._load_state_dict()
+        # Hold the checkpoint only as long as this method does.
+        del self._checkpoint
         config = self._create_model_config(target_state)
         target_state = self._prepare_state_dict(target_state, config.target)
         draft_state = self._load_draft_state_dict(config, target_state)

@@ -119,7 +119,7 @@ def _rms_norm_full[
     @__copy_capture(src_view)
     @__parameter
     def input_fn[width: Int](coords: Coord) -> SIMD[in_dtype, width]:
-        return src_view.raw_load[width=width](src_view.layout(coords))
+        return src_view.load[width=width](coords)
 
     @inline(.always)
     @__copy_capture(dst_view)
@@ -127,9 +127,7 @@ def _rms_norm_full[
     def output_fn[
         width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[in_dtype, width]) -> None:
-        dst_view.raw_store[width=width, alignment=alignment](
-            dst_view.layout(coords), val
-        )
+        dst_view.store[alignment=alignment](coords, val)
 
     rms_norm_gpu[
         2,
@@ -544,7 +542,7 @@ def _allgather_full[
         comptime for src in range(group_size):
             var start = config.rank_unit_start(src)
             world_out_views[dev * group_size + src] = OutViewType(
-                dev_base + start * num_cols,
+                dev_base.unsafe_offset(start * num_cols),
                 row_major(Coord(Index(config.rank_units(src), num_cols))),
             )
     allgather[group_size=group_size](
@@ -1344,7 +1342,7 @@ def _run_asymmetric_fuse_gate_case[
                 ](sum_full[dev].unsafe_ptr())
                 comptime for src in range(group_size):
                     world_out_views[dev * group_size + src] = FullType(
-                        dev_base + src * dev_rows * num_cols,
+                        dev_base.unsafe_offset(src * dev_rows * num_cols),
                         row_major(Coord(Index(dev_rows, num_cols))),
                     )
             allgather[group_size=group_size](
@@ -1384,11 +1382,9 @@ def _run_asymmetric_fuse_gate_case[
                 SF_VECTOR_SIZE=MXFP8_SF_VECTOR_SIZE,
             ](val)
             if col < num_cols:
-                quant_view.store[width=width](Coord(row, col), quantized)
+                quant_view.store((row, col), quantized)
                 if col % MXFP8_SF_VECTOR_SIZE == 0:
-                    scale_view.store(
-                        Coord(row, col // MXFP8_SF_VECTOR_SIZE), e8m0
-                    )
+                    scale_view.store((row, col // MXFP8_SF_VECTOR_SIZE), e8m0)
 
         comptime if quant:
             _dispatch_ag_norm_quant[

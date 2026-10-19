@@ -11,6 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 """IO constants and functions."""
-comptime stdin = RawFileDescriptor(0)
-comptime stdout = RawFileDescriptor(1)
-comptime stderr = RawFileDescriptor(2)
+comptime stdin = RawFileDescriptor(unsafe_unchecked_value=0)
+comptime stdout = RawFileDescriptor(unsafe_unchecked_value=1)
+comptime stderr = RawFileDescriptor(unsafe_unchecked_value=2)

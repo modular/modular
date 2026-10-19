@@ -37,6 +37,7 @@
 namespace M::KGEN::LIT {
 
 class ASTDecl;
+class ModuleASTDecl;
 struct ModuleState;
 
 //===----------------------------------------------------------------------===//
@@ -100,8 +101,9 @@ struct ModuleOrigin {
 /// One binding of a module: what a single name in a single scope resolved to.
 /// Several of these can share one `ModuleOrigin`.
 struct ModuleState {
-  ModuleState(ASTDecl *decl = nullptr) : decl(decl) {}
-  ModuleState(ASTDecl *decl, const ModuleSpec &spec) : decl(decl), spec(spec) {}
+  ModuleState(ModuleASTDecl *decl = nullptr) : decl(decl) {}
+  ModuleState(ModuleASTDecl *decl, const ModuleSpec &spec)
+      : decl(decl), spec(spec) {}
 
   /// Insert a nested module state.
   ModuleState &insertNestedModule(mlir::StringAttr name,
@@ -115,7 +117,7 @@ struct ModuleState {
   }
 
   /// The decl associated with the module or package.
-  ASTDecl *decl = nullptr;
+  ModuleASTDecl *decl = nullptr;
   /// The module spec this state was created from. Absent for any state that
   /// resolution never produced a candidate for: the top-level state, error
   /// states, and the modules found inside an already-loaded artifact.

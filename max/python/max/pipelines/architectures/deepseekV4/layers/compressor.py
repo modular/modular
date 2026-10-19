@@ -97,11 +97,11 @@ class DeepseekV4Compressor(Module):
             shape=(compress_ratio, self.proj_dim),
             device=device,
         )
-        self.wkv = Linear(
-            config.hidden_size, self.proj_dim, DType.float32, device
-        )
-        self.wgate = Linear(
-            config.hidden_size, self.proj_dim, DType.float32, device
+        # ``wkv`` and ``wgate`` stacked by the adapter (``[wkv; wgate]`` along
+        # N): the graph compiler does not merge the two f32 GEMMs itself
+        # (GEX-1978), and each launches only a handful of CTAs.
+        self.wkv_wgate = Linear(
+            config.hidden_size, 2 * self.proj_dim, DType.float32, device
         )
         self.norm = RMSNorm(head_dim, DType.float32, config.rms_norm_eps)
         self.activation_dtype = config.dtype
@@ -113,7 +113,9 @@ class DeepseekV4Compressor(Module):
         here: it depends on the token's slot within its window, which
         :meth:`__call__` knows and the store does not.
         """
-        return self.wkv(x32), self.wgate(x32)
+        out = self.wkv_wgate(x32)
+        width = int(out.shape[-1])
+        return out[..., : self.proj_dim], out[..., self.proj_dim : width]
 
     def pool_paged(
         self,

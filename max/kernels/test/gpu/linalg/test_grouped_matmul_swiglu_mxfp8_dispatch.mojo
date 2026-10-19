@@ -161,7 +161,7 @@ def _build_shared_b[
 
     # Deterministic fill on the raw byte stream; the kernel interprets
     # bytes per the E4M3 / E8M0 encodings respectively.
-    rand(b_host_ptr.bitcast[UInt8](), b_size, min=0, max=255)
+    rand(b_host_ptr.unsafe_bitcast[UInt8](), b_size, min=0, max=255)
     # Small power-of-2 scale (2^-7) keeps matmul outputs inside the
     # +-448 E4M3 representable range so we don't saturate to NaN.
     var sf_small = e8m0(Float32(0.0078125))
@@ -192,7 +192,7 @@ def _build_shared_b[
     )
     for e in range(num_experts):
         var src_view = TileTensor(
-            b_scales_host_ptr + e * b_expert_sf_size,
+            b_scales_host_ptr.unsafe_offset(e * b_expert_sf_size),
             row_major(
                 Idx[n_groups_b],
                 Idx[k_groups],
@@ -202,7 +202,7 @@ def _build_shared_b[
             ),
         )
         var dst_view = TileTensor(
-            b_scales_perm_host_ptr + e * b_expert_sf_size,
+            b_scales_perm_host_ptr.unsafe_offset(e * b_expert_sf_size),
             row_major(
                 Idx[n_groups_b],
                 Idx[k_groups],
@@ -434,7 +434,7 @@ def _test_swiglu_mxfp8_dispatch[
     var S_test_tensor = TileTensor(S_test_device, swiglu_scales_shape)
 
     # ---- Init A + A-scales ----
-    rand(a_host_ptr.bitcast[UInt8](), a_size, min=0, max=255)
+    rand(a_host_ptr.unsafe_bitcast[UInt8](), a_size, min=0, max=255)
 
     var a_scales_host = TileTensor(a_scales_host_ptr, a_scales_shape)
     var sf_zero = e8m0(Float32(0.0))

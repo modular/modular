@@ -22,7 +22,7 @@ struct PStruct[*a: Int](Movable where False):
     @always_inline("builtin")
     @staticmethod
     def predicate() -> Bool:
-        comptime size = Self.a.size
+        comptime size = Self.a.length
         comptime result = size == 2
         return result
 

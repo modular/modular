@@ -114,8 +114,8 @@ def test_elementwise_max_strided() raises:
     var x_storage = Array[Float32, 14](fill=-99)
     var y_storage = Array[Float32, 14](fill=-77)
     comptime shape = Layout(coord[2, 3], coord[1, 5])
-    var x = TileTensor(x_storage.unsafe_ptr() + 1, shape)
-    var y = TileTensor(y_storage.unsafe_ptr() + 1, shape)
+    var x = TileTensor(x_storage.unsafe_ptr().unsafe_offset(1), shape)
+    var y = TileTensor(y_storage.unsafe_ptr().unsafe_offset(1), shape)
     for i in range(2):
         for j in range(3):
             var value = Float32(15 * i + 2 * j - 9)
@@ -145,8 +145,12 @@ def test_elementwise_max_vector_elements() raises:
     var x_storage = Array[Float32, 28](fill=-99)
     var y_storage = Array[Float32, 28](fill=-77)
     comptime shape = Layout(coord[2, 12], coord[13, 1])
-    var x = TileTensor(x_storage.unsafe_ptr() + 1, shape).vectorize[1, 4]()
-    var y = TileTensor(y_storage.unsafe_ptr() + 1, shape).vectorize[1, 4]()
+    var x = TileTensor(
+        x_storage.unsafe_ptr().unsafe_offset(1), shape
+    ).vectorize[1, 4]()
+    var y = TileTensor(
+        y_storage.unsafe_ptr().unsafe_offset(1), shape
+    ).vectorize[1, 4]()
     for i in range(2):
         for j in range(12):
             var value = Float32(20 * i + j - 30)

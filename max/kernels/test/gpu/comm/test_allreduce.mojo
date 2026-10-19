@@ -337,7 +337,7 @@ def allreduce_naive_test() raises -> None:
     ]
     var in_tensors = Array[_, ngpus](
         fill_with=lambda (i: Int) -> InTensorType: TileTensor(
-            rebind[ImmPointer[Float32, ImmutAnyOrigin]](in_dev[i].unsafe_ptr()),
+            in_dev[i].unsafe_ptr(),
             row_major(length),
         )
     )

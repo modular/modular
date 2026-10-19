@@ -40,7 +40,7 @@ def block_reduce[
     op: def(Float32, Float32) thin -> Float32
 ](
     val: Float32,
-    shared_mem: UnsafePointer[Float32, MutAnyOrigin, address_space=.SHARED],
+    shared_mem: MutPointer[Float32, MutAnyOrigin, address_space=.SHARED],
 ) -> Float32:
     var tid = thread_idx.x
     var smem = shared_mem
@@ -63,9 +63,9 @@ def block_reduce[
 
 
 def softmax_kernel(
-    S: UnsafePointer[Float32, MutAnyOrigin],
-    D: UnsafePointer[Float32, MutAnyOrigin],
-    P: UnsafePointer[Float32, MutAnyOrigin],
+    S: MutPointer[Float32, MutAnyOrigin],
+    D: MutPointer[Float32, MutAnyOrigin],
+    P: MutPointer[Float32, MutAnyOrigin],
     N_dev: Int32,
 ):
     # Int is not device-passable; widen the fixed-width arg.
@@ -87,10 +87,10 @@ def softmax_kernel(
     var row = block_idx.x
     var tid = thread_idx.x
 
-    var S_row = S + (row * N)
-    var P_row = P_ptr + (row * N)
+    var S_row = S.unsafe_offset(row * N)
+    var P_row = P_ptr.unsafe_offset(row * N)
 
-    var neg_inf = Float32(-3.40282e38)
+    comptime neg_inf = Float32(-3.40282e38)
     var max_val_thread = neg_inf
 
     var col = tid
@@ -143,12 +143,12 @@ def softmax_kernel(
 
 
 def cpu_softmax(
-    h_S: UnsafePointer[mut=False, Float32, _],
-    h_P: UnsafePointer[mut=True, Float32, _],
+    h_S: ImmPointer[Float32, _],
+    h_P: MutPointer[Float32, _],
     N: Int,
 ):
     var P_ptr = h_P
-    var neg_inf = Float32(-3.40282e38)
+    comptime neg_inf = Float32(-3.40282e38)
     for i in range(N):
         var max_val = neg_inf
         for j in range(N):

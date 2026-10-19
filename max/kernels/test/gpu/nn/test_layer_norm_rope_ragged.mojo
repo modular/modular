@@ -119,7 +119,7 @@ def run_layer_norm_rope_ragged_gpu[
     comptime rank = shape.rank
     print("== run_layer_norm_rope_ragged_gpu")
 
-    var cols = Int(shape[rank - 1].value())
+    var cols = Int(shape[rank - 1])
     var rows = Int(shape.product()) // cols
     var num_batches = len(start_pos_vals)
 
@@ -193,19 +193,17 @@ def run_layer_norm_rope_ragged_gpu[
     def input_fn[
         width: Int, alignment: Int
     ](coords: Coord) {var data_buf} -> SIMD[dtype, width]:
-        var idx = data_buf.layout(coords)
-        return data_buf.raw_load[
+        return data_buf.load[
             width=width, alignment=alignment * align_of[dtype]()
-        ](idx)
+        ](coords)
 
     @inline(.always)
     def output_fn[
         width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[output_dtype, width]) {var output_buf} -> None:
-        var idx = output_buf.layout(coords)
-        output_buf.raw_store[
-            width=width, alignment=alignment * align_of[output_dtype]()
-        ](idx, val)
+        output_buf.store[alignment=alignment * align_of[output_dtype]()](
+            coords, val
+        )
 
     layer_norm_rope_ragged[
         dtype,

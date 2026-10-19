@@ -120,8 +120,11 @@ class QuantizedMLP(Module[[Tensor], Tensor]):
         gate, up = gate_up.split(
             [self.feed_forward_length, self.feed_forward_length], axis=-1
         )
-        gate = gate + self.gate_proj.bias
-        up = up + self.up_proj.bias
+        # Without a bias, skip the adds of zero rather than stage them.
+        if isinstance(self.gate_proj.bias, Tensor):
+            gate = gate + self.gate_proj.bias
+        if isinstance(self.up_proj.bias, Tensor):
+            up = up + self.up_proj.bias
         return self.down_proj(self.activation_function(gate) * up)
 
 

@@ -118,7 +118,7 @@ struct RealRowScales(RowScales):
         Returns:
             The row's scale, widened to `float32`.
         """
-        return self.ptr[unsafe_offset=row].cast[DType.float32]()
+        return self.ptr[unsafe_offset=row].cast[.float32]()
 
     def _to_device_type(
         self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
@@ -151,7 +151,7 @@ struct TileRowScales[RowScalesT: RowScales, tile_rows: Int](
 
     comptime rows_per_lane = ceildiv(Self.tile_rows, WARP_SIZE)
 
-    var values: SIMD[DType.float32, Self.rows_per_lane]
+    var values: SIMD[.float32, Self.rows_per_lane]
     var scale: Float32
 
     @inline(.always)
@@ -173,7 +173,7 @@ struct TileRowScales[RowScalesT: RowScales, tile_rows: Int](
             scale: Per-expert scale folded into every factor.
         """
         self.scale = scale
-        self.values = SIMD[DType.float32, Self.rows_per_lane](0)
+        self.values = SIMD[.float32, Self.rows_per_lane](0)
         comptime if Self.RowScalesT.Enabled:
             comptime for i in range(Self.rows_per_lane):
                 var row = first_row + UInt32(i * WARP_SIZE) + lane
@@ -183,7 +183,7 @@ struct TileRowScales[RowScalesT: RowScales, tile_rows: Int](
     @inline(.always)
     def pairs[
         repeats: Int, stage_row: Int
-    ](self, lane: UInt32) -> SIMD[DType.float32, 2 * repeats]:
+    ](self, lane: UInt32) -> SIMD[.float32, 2 * repeats]:
         """Returns the factors of one thread's 16x256b accumulator fragments
         when the fragment column is the output row (`transpose_c`).
 
@@ -204,9 +204,9 @@ struct TileRowScales[RowScalesT: RowScales, tile_rows: Int](
             when `RowScalesT` is disabled.
         """
         comptime if not Self.RowScalesT.Enabled:
-            return SIMD[DType.float32, 2 * repeats](self.scale)
+            return SIMD[.float32, 2 * repeats](self.scale)
         else:
-            var result = SIMD[DType.float32, 2 * repeats]()
+            var result = SIMD[.float32, 2 * repeats]()
             var lane_col = (lane % 4) * 2
             comptime for r in range(repeats):
                 # An 8-row group never straddles two lanes' slots.
@@ -222,7 +222,7 @@ struct TileRowScales[RowScalesT: RowScales, tile_rows: Int](
     @inline(.always)
     def fragment[
         repeats: Int, stage_row: Int
-    ](self, lane: UInt32) -> SIMD[DType.float32, 4 * repeats]:
+    ](self, lane: UInt32) -> SIMD[.float32, 4 * repeats]:
         """Returns one factor per element of a thread's 16x256b accumulator
         fragment when the fragment column is the output row (`transpose_c`).
 
@@ -240,7 +240,7 @@ struct TileRowScales[RowScalesT: RowScales, tile_rows: Int](
             The factors, laid out like the fragment.
         """
         var pairs = self.pairs[repeats, stage_row](lane)
-        var result = SIMD[DType.float32, 4 * repeats]()
+        var result = SIMD[.float32, 4 * repeats]()
         comptime for r in range(repeats):
             comptime for i in range(2):
                 comptime for j in range(2):

@@ -125,7 +125,7 @@ def erf_elementwise(
 
     @inline(.always)
     def func[simd_width: Int, alignment: Int = 1](idx: Coord) {var}:
-        var offset = tid + Int(idx[0].value())
+        var offset = tid + Int(idx[0])
         if offset >= len:
             return
         buf[offset] = erf(buf[offset])

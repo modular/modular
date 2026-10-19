@@ -112,7 +112,7 @@ struct SchedulerSmem:
 
     @inline(.always)
     def empty_mbar(ref[AddressSpace.SHARED] self) -> MbarPtr:
-        return self.barriers.ptr() + 2
+        return self.barriers.ptr().unsafe_offset(2)
 
 
 struct Grouped1D1DSmem[

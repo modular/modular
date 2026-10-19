@@ -293,6 +293,16 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_scicode_eval",
+    size = "small",
+    srcs = ["test_scicode_eval.py"],
+    deps = [
+        ":eval_common",
+        ":scicode_eval",
+    ],
+)
+
+modular_py_test(
     name = "test_aime_eval",
     size = "small",
     srcs = ["test_aime_eval.py"],

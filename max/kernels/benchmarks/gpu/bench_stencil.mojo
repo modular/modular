@@ -41,8 +41,14 @@ def assert_allclose[
     h_output_ref: TileTensor[dtype, ...],
     h_output_gpu: TileTensor[dtype, ...],
 ) raises:
-    for i in range(h_output_ref.num_elements()):
-        assert_almost_equal(h_output_ref.raw_load(i), h_output_gpu.raw_load(i))
+    var n = h_output_ref.num_elements()
+    var ref_flat = h_output_ref.reshape(row_major(n))
+    var gpu_flat = h_output_gpu.reshape(row_major(n))
+    for i in range(n):
+        assert_almost_equal(
+            ref_flat.load[width=1]((i,)),
+            gpu_flat.load[width=1]((i,)),
+        )
 
 
 def bench_stencil_avg_pool[
@@ -94,8 +100,9 @@ def bench_stencil_avg_pool[
     )
 
     # Initialize input data
-    for i in range(h_input.num_elements()):
-        h_input.raw_store(i, Scalar[dtype](i + 1))
+    var h_input_flat = h_input.coalesce()
+    for i in range(input_size):
+        h_input_flat[i] = Scalar[dtype](i + 1)
 
     # Create device buffers
     var d_input_buf = ctx.enqueue_create_buffer[dtype](input_size)
@@ -355,8 +362,9 @@ def bench_stencil_max_pool[
     )
 
     # Initialize input data
-    for i in range(h_input.num_elements()):
-        h_input.raw_store(i, Scalar[dtype](i + 1))
+    var h_input_flat = h_input.coalesce()
+    for i in range(input_size):
+        h_input_flat[i] = Scalar[dtype](i + 1)
 
     # Create device buffers
     var d_input_buf = ctx.enqueue_create_buffer[dtype](input_size)
@@ -604,8 +612,9 @@ def bench_stencil_avg_pool_padded[
     )
 
     # Initialize input data
-    for i in range(h_input.num_elements()):
-        h_input.raw_store(i, Scalar[dtype](i + 1))
+    var h_input_flat = h_input.coalesce()
+    for i in range(input_size):
+        h_input_flat[i] = Scalar[dtype](i + 1)
 
     # Create device buffers
     var d_input_buf = ctx.enqueue_create_buffer[dtype](input_size)
@@ -834,36 +843,37 @@ def main() raises:
 
     var m = Bench()
     with DeviceContext() as ctx:
-        comptime if method == "avg_pool":
-            bench_stencil_avg_pool[
-                dtype,
-                batch_size,
-                input_height,
-                input_width,
-                pool_window_h,
-                pool_window_w,
-                num_channels,
-            ](ctx, m)
-        elif method == "max_pool":
-            bench_stencil_max_pool[
-                dtype,
-                batch_size,
-                input_height,
-                input_width,
-                pool_window_h,
-                pool_window_w,
-                num_channels,
-            ](ctx, m)
-        elif method == "avg_pool_padded":
-            bench_stencil_avg_pool_padded[
-                dtype,
-                batch_size,
-                input_height,
-                input_width,
-                pool_window_h,
-                pool_window_w,
-                pad_h,
-                pad_w,
-            ](ctx, m)
+        comptime match method:
+            case "avg_pool":
+                bench_stencil_avg_pool[
+                    dtype,
+                    batch_size,
+                    input_height,
+                    input_width,
+                    pool_window_h,
+                    pool_window_w,
+                    num_channels,
+                ](ctx, m)
+            case "max_pool":
+                bench_stencil_max_pool[
+                    dtype,
+                    batch_size,
+                    input_height,
+                    input_width,
+                    pool_window_h,
+                    pool_window_w,
+                    num_channels,
+                ](ctx, m)
+            case "avg_pool_padded":
+                bench_stencil_avg_pool_padded[
+                    dtype,
+                    batch_size,
+                    input_height,
+                    input_width,
+                    pool_window_h,
+                    pool_window_w,
+                    pad_h,
+                    pad_w,
+                ](ctx, m)
 
     m.dump_report()

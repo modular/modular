@@ -18,6 +18,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import pytest
+from max import tree
 from max.driver import CPU, Device
 from max.dtype import DType
 from max.experimental import functional as F
@@ -27,6 +28,7 @@ from max.experimental.nn.common_layers.quant_tensor import (
     FP8BlockTensor,
     NVFP4Activation,
     NVFP4Tensor,
+    NVFP4TensorQuantizer,
     QTensor,
     all_fp8_block,
     all_nvfp4,
@@ -518,6 +520,92 @@ def test_qtensor_base_rejects_sharding_helpers() -> None:
 # --------------------------------------------------------------------------- #
 
 
+def test_nvfp4_quantizer_stores_the_raw_tensor() -> None:
+    """The quantizer keeps the bf16 tensor and the block size it was given."""
+    with F.lazy():
+        raw = Tensor.zeros((8, 32), dtype=DType.bfloat16)
+        qt = NVFP4TensorQuantizer(raw, block_size=(1, 16))
+
+        assert qt._tensor is raw
+        assert qt.block_size == (1, 16)
+        assert list(qt.shape) == [8, 32]
+
+
+def test_nvfp4_quantizer_rejects_k_not_multiple_of_block() -> None:
+    """K must divide the NVFP4 block so the packed layout is exact."""
+    with F.lazy():
+        raw = Tensor.zeros((4, 15), dtype=DType.bfloat16)
+        with pytest.raises(ValueError, match="multiple of 16"):
+            NVFP4TensorQuantizer(raw)
+
+
+def test_nvfp4_quantizer_parameter_path_is_the_raw_weight() -> None:
+    """The checkpoint name stays ``weight``, not ``weight._tensor``."""
+
+    class _Wrapper(Module[[], None]):
+        def __init__(self) -> None:
+            super().__init__()
+            self.weight = NVFP4TensorQuantizer(
+                Tensor.zeros((8, 32), dtype=DType.bfloat16)
+            )
+
+        def forward(self) -> None:  # pragma: no cover - never called
+            raise NotImplementedError
+
+    with F.lazy():
+        wrapper = _Wrapper()
+        parameters = dict(wrapper.parameters)
+
+        assert set(parameters) == {"weight"}
+        assert parameters["weight"] is wrapper.weight._tensor
+
+
+def test_nvfp4_quantizer_tree_roundtrip_keeps_block_size() -> None:
+    """Rebuilding the module tree restores the block size, not only the tensor."""
+    with F.lazy():
+        raw = Tensor.zeros((8, 32), dtype=DType.bfloat16)
+        qt = NVFP4TensorQuantizer(raw, block_size=(1, 16))
+        leaves, treedef = tree.flatten(qt)
+        rebuilt = tree.unflatten(treedef, leaves)
+
+        assert isinstance(rebuilt, NVFP4TensorQuantizer)
+        assert rebuilt.block_size == (1, 16)
+        assert rebuilt._tensor is raw
+
+
+def test_nvfp4_quantizer_to_moves_the_raw_tensor() -> None:
+    """``to()`` places the wrapped tensor and leaves the block size alone."""
+    with F.lazy(), patch("max.graph.type.Accelerator") as mock:
+        mock.side_effect = _fake_gpu
+        device = mock(0)
+        raw = Tensor.zeros((8, 32), dtype=DType.bfloat16)
+        qt = NVFP4TensorQuantizer(raw)
+
+        moved = qt.to(device)
+
+        assert moved is qt
+        assert qt._tensor.device == device
+        assert qt.block_size == (1, 16)
+
+
+def test_nvfp4_quantizer_properties_pack_nvfp4(sm100_arch: None) -> None:
+    """First use quantizes the bf16 tensor into packed NVFP4 leaves."""
+    del sm100_arch
+    with F.lazy():
+        # 128 and 64 match the SM100 scale-atom grid, so the packed scales
+        # reshape onto ``[rows, K / 16]``.
+        qt = NVFP4TensorQuantizer(Tensor.zeros((128, 64), dtype=DType.bfloat16))
+
+        assert qt.data.dtype == DType.uint8
+        assert list(qt.data.shape) == [128, 32]
+        assert qt.weight_scale.dtype == DType.float8_e4m3fn
+        assert list(qt.weight_scale.shape) == [128, 4]
+        assert qt.weight_scale_2.dtype == DType.float32
+        assert list(qt.weight_scale_2.shape) == []
+        assert qt.input_scale.dtype == DType.float32
+        assert list(qt.input_scale.shape) == []
+
+
 def test_type_guards_narrow_homogeneous_bundles() -> None:
     """``all_nvfp4`` / ``all_fp8_block`` only accept a uniform bundle."""
     with F.lazy():
@@ -525,7 +613,12 @@ def test_type_guards_narrow_homogeneous_bundles() -> None:
         fp8 = FP8BlockTensor.zeros((256, 512))
         plain = Tensor.zeros((256, 512), dtype=DType.bfloat16)
 
+        quantizer = NVFP4TensorQuantizer(
+            Tensor.zeros((8, 32), dtype=DType.bfloat16)
+        )
+
         assert all_nvfp4([nvfp4, nvfp4])
+        assert all_nvfp4([nvfp4, quantizer])
         assert not all_nvfp4([nvfp4, fp8])
         assert not all_nvfp4([nvfp4, plain])
         assert all_fp8_block([fp8, fp8])

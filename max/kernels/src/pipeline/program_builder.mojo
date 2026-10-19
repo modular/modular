@@ -25,6 +25,7 @@ Contains:
 """
 
 from std.collections import Array, List
+from std.math import divmod
 
 from .config import PipelineConfig, ScheduleConfig, SchedulingStrategy
 from .dependency_graph import LoopBody, OpNode
@@ -110,8 +111,7 @@ def _construct_mma_blocks(
                     global_loads.append(op)
             op_idx += 1
 
-        var pos_in_partition = block_idx % bph
-        var partition_idx = block_idx // bph
+        var partition_idx, pos_in_partition = divmod(block_idx, bph)
         var pre_op_0 = pre_ops[0] if len(pre_ops) >= 1 else OpDesc.none()
         var pre_op_1 = pre_ops[1] if len(pre_ops) >= 2 else OpDesc.none()
         var gl0 = global_loads[0] if len(global_loads) >= 1 else OpDesc.none()

@@ -81,7 +81,7 @@ def test_offset_encodes_lane_and_column() raises:
 
 def test_unsafe_cast_keeps_address() raises:
     var tile = AccumTile(AccumStorage(BASE_ADDR), ACCUM_LAYOUT)
-    var cast = tile._unsafe_storage_cast[to_dtype=DType.int32]()
+    var cast = tile._unsafe_storage_cast[to_dtype=.int32]()
     assert_equal(cast.addr, BASE_ADDR)
 
 

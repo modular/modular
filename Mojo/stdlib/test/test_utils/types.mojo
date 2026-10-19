@@ -580,7 +580,7 @@ struct PinnedExplicitDelOnly(not Deinitable, not Movable):
 
 
 @fieldwise_init
-struct Pinned(not Movable):
+struct Pinned(Defaultable, not Movable):
     """Utility testing container which is non-movable."""
 
     var data: Int

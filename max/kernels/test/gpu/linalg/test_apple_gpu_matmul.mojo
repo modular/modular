@@ -77,7 +77,6 @@ def _launch[
 
 
 from linalg.utils import (
-    elementwise_epilogue_type,
     no_compute_fn,
     no_epilogue_fn,
 )
@@ -269,7 +268,7 @@ def _run_8x8_bias_case[
             coords.rank == 2
         ), "the matmul epilogue contract is rank 2"
         # Kernel invokes with `dt == c_type`; rebind to add the c_type bias.
-        var bias = (bias_ptr + Int(coords[1].value())).load[width=w]()
+        var bias = bias_ptr.unsafe_offset(Int(coords[1])).load[width=w]()
         return rebind[SIMD[dt, w]](rebind[SIMD[c_type, w]](val) + bias)
 
     comptime kernel = gemm_kernel_apple_8x8[
@@ -862,7 +861,7 @@ def _run_split_k_case[
             comptime assert (
                 coords.rank == 2
             ), "the matmul epilogue contract is rank 2"
-            var b = (bias_ptr + Int(coords[1].value())).load[width=w]()
+            var b = bias_ptr.unsafe_offset(Int(coords[1])).load[width=w]()
             return rebind[SIMD[dt, w]](rebind[SIMD[c_type, w]](val) + b)
 
         if splits > 0:
@@ -1755,7 +1754,7 @@ def _run_bias_epilogue_test[
             coords.rank == 2
         ), "the matmul epilogue contract is rank 2"
         # Kernel invokes with `dt == c_type`; rebind to add the c_type bias.
-        var b = (bias_ptr + Int(coords[1].value())).load[width=w]()
+        var b = bias_ptr.unsafe_offset(Int(coords[1])).load[width=w]()
         return rebind[SIMD[dt, w]](rebind[SIMD[c_type, w]](val) + b)
 
     # Mojo `comptime if` does not lift `var` bindings out of branches, so
@@ -2048,7 +2047,7 @@ def test_kernel_128_nt_fp16_fp16_bias_relu_compose_epilogue(
             coords.rank == 2
         ), "the matmul epilogue contract is rank 2"
         var v_fp16 = rebind[SIMD[.float16, w]](val)
-        var b = (bias_ptr + Int(coords[1].value())).load[width=w]()
+        var b = bias_ptr.unsafe_offset(Int(coords[1])).load[width=w]()
         var biased = v_fp16 + b
         return rebind[SIMD[dt, w]](max(biased, SIMD[.float16, w](0)))
 
@@ -2131,7 +2130,7 @@ def test_kernel_ragged_100x100x97_nt_fp16_fp16_bias_epilogue(
             coords.rank == 2
         ), "the matmul epilogue contract is rank 2"
         var v_fp16 = rebind[SIMD[.float16, w]](val)
-        var b = (bias_ptr + Int(coords[1].value())).load[width=w]()
+        var b = bias_ptr.unsafe_offset(Int(coords[1])).load[width=w]()
         return rebind[SIMD[dt, w]](v_fp16 + b)
 
     enqueue_apple_matmul[
@@ -2269,7 +2268,7 @@ def test_kernel_64x130x64_nn_fp16_fp16_oddn_bias_epilogue(
         comptime assert (
             coords.rank == 2
         ), "the matmul epilogue contract is rank 2"
-        var b = (bias_ptr + Int(coords[1].value())).load[width=w]()
+        var b = bias_ptr.unsafe_offset(Int(coords[1])).load[width=w]()
         var v_c = rebind[SIMD[.float16, w]](val)
         return rebind[SIMD[dt, w]](v_c + b)
 
@@ -2435,7 +2434,7 @@ def _run_gemv_case[
         comptime assert (
             coords.rank == 2
         ), "the matmul epilogue contract is rank 2"
-        var col = Int(coords[1].value())
+        var col = Int(coords[1])
         var out = val.cast[.float32]() + bias_ptr.load[width=width](col)
         return out.cast[dtype]()
 
@@ -2571,8 +2570,7 @@ def _run_gemv_dispatch_case[
 ](ctx: DeviceContext, m: Int, name: String) raises:
     """Runs `_matmul_gpu[transpose_b=True]` at `[m, N, K]` and checks it.
 
-    With `bias`, the output is written by an elementwise epilogue that adds a
-    per-column bias, which checks the `(row, col)` coordinates the kernel
+    With `bias`, a compute epilogue adds a per-column bias to the output, which checks the `(row, col)` coordinates the kernel
     hands the epilogue. With `sampled`, the weight gets the hash fill and the
     host reference checks every 1021st column plus the last 256.
     """
@@ -2606,26 +2604,17 @@ def _run_gemv_dispatch_case[
     var bias_tt = TileTensor(bias_d, row_major(Idx[N])).as_imm()
 
     @inline(.always)
-    @__copy_capture(c_tt, bias_tt)
-    def bias_epilogue[
-        dt: DType, w: SIMDLength, *, alignment: Int = 1
-    ](coords: Coord, val: SIMD[dt, w]) capturing -> None:
+    def bias_compute[
+        dt: DType, w: SIMDLength, *, alignment: Int
+    ](coords: Coord, val: SIMD[dt, w]) {var bias_tt} -> SIMD[dt, w]:
         comptime assert (
             coords.rank == 2
         ), "the matmul epilogue contract is rank 2"
         var b = bias_tt.load[width=w, alignment=alignment]((coords[1],))
-        c_tt.store[alignment=alignment](
-            coords,
-            (val.cast[.float32]() + b).cast[c_type](),
-        )
+        return (val.cast[.float32]() + b).cast[dt]()
 
     comptime if bias:
-        _matmul_gpu[
-            transpose_b=True,
-            elementwise_lambda_fn=Optional[elementwise_epilogue_type](
-                bias_epilogue
-            ),
-        ](c_tt, a_tt, w_tt, ctx)
+        _matmul_gpu[transpose_b=True](c_tt, a_tt, w_tt, bias_compute, ctx)
     else:
         _matmul_gpu[transpose_b=True](c_tt, a_tt, w_tt, ctx)
     ctx.enqueue_copy(c_h, c_d)

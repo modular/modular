@@ -216,6 +216,8 @@ class AutoModel:
             ``warmup_graph_capture()``, so decode steps replay captured
             graphs. Steps stay synchronous unless
             ``enable_overlap_scheduler=True`` is also passed.
+        prefer_module_v3: Loads the architecture's ModuleV3 version, built
+            with ``max.experimental.nn``, where it has one.
         **config_overrides: Flat :class:`~max.pipelines.lib.PipelineArgs`
             field names, such as ``device_specs`` or
             ``enable_prefix_caching``. They win over the debug defaults.
@@ -238,6 +240,7 @@ class AutoModel:
         max_batch_size: int = 1,
         devices: str | None = None,
         device_graph_capture: bool = False,
+        prefer_module_v3: bool = False,
         **config_overrides: object,
     ) -> None:
         if devices is not None:
@@ -245,6 +248,7 @@ class AutoModel:
                 raise TypeError("Pass devices or device_specs, not both.")
             # The config parses the same strings as the CLI's --devices.
             config_overrides["device_specs"] = devices
+        config_overrides["prefer_module_v3"] = prefer_module_v3
         model_override = config_overrides.get("model_override")
         if isinstance(model_override, Iterable) and not isinstance(
             model_override, str

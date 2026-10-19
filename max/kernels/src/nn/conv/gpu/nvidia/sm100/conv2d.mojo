@@ -39,7 +39,6 @@ Note: This implementation currently supports:
 - BF16/FP16 data types
 """
 
-from std.collections import Optional
 from std.math import align_up, ceildiv
 
 from std.sys import size_of
@@ -55,8 +54,9 @@ from layout import TileTensor, coord
 from layout.tile_layout import row_major
 from linalg.utils import (
     ElementwiseComputeFn,
-    elementwise_epilogue_type,
+    ElementwiseEpilogueFn,
     identity_compute_fn,
+    no_epilogue_fn,
 )
 from std.utils.index import IndexList
 from std.utils.static_tuple import StaticTuple
@@ -78,7 +78,6 @@ def conv2d_fprop[
     config: Conv2dConfig[act_type, filter_type, out_type] = Conv2dConfig[
         act_type, filter_type, out_type
     ].default_bf16(),
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     register_based_epilogue: Bool = True,
 ](
     output: TileTensor[mut=True, out_type, ...],  # NHWC
@@ -113,10 +112,9 @@ def conv2d_fprop[
         filter_type: Data type of the filter weights tensor.
         out_type: Data type of the output tensor.
         config: Kernel configuration (tile sizes, pipeline stages, etc.).
-        elementwise_lambda_fn: Optional void epilogue lambda applied after
-            output write. Signature: `def(Coord, SIMD) -> None`.
-        register_based_epilogue: If True, apply lambda in registers (faster).
-            If False, apply lambda after SMEM write (more flexible).
+        register_based_epilogue: If True, apply the epilogue in registers
+            (faster). If False, apply it after the SMEM write (more
+            flexible).
 
     Args:
         output: Output tensor [N, H_out, W_out, C_out] in NHWC layout.
@@ -130,10 +128,80 @@ def conv2d_fprop[
     """
     _conv2d_fprop_impl[
         config=config,
-        elementwise_lambda_fn=elementwise_lambda_fn,
         register_based_epilogue=register_based_epilogue,
         has_compute_fn=False,
-    ](output, activation, filter, problem, identity_compute_fn, ctx)
+    ](
+        output,
+        activation,
+        filter,
+        problem,
+        identity_compute_fn,
+        no_epilogue_fn,
+        ctx,
+    )
+
+
+def conv2d_fprop[
+    act_type: DType,
+    filter_type: DType,
+    out_type: DType,
+    EpilogueFnType: ElementwiseEpilogueFn,
+    //,
+    *,
+    config: Conv2dConfig[act_type, filter_type, out_type] = Conv2dConfig[
+        act_type, filter_type, out_type
+    ].default_bf16(),
+    register_based_epilogue: Bool = True,
+](
+    output: TileTensor[mut=True, out_type, ...],  # NHWC
+    activation: TileTensor[
+        mut=True, act_type, address_space=.GENERIC, ...
+    ],  # NHWC
+    filter: TileTensor[filter_type, ...],  # KRSC (out_ch, R, S, in_ch)
+    problem: Conv2dProblemShape,
+    epilogue_fn: EpilogueFnType,
+    ctx: DeviceContext,
+) raises:
+    """Launch Conv2D forward propagation with an elementwise epilogue closure.
+
+    The epilogue owns the output store: the kernel hands it each output
+    fragment instead of writing `output` itself.
+
+    Parameters:
+        act_type: Data type of the input activation tensor.
+        filter_type: Data type of the filter weights tensor.
+        out_type: Data type of the output tensor.
+        EpilogueFnType: Type of the elementwise epilogue closure.
+        config: Kernel configuration (tile sizes, pipeline stages, etc.).
+        register_based_epilogue: Forwarded to the kernel's output writer.
+
+    Args:
+        output: Output tensor [N, H_out, W_out, C_out] in NHWC layout.
+        activation: Input activation [N, H, W, C] in NHWC layout.
+        filter: Filter weights [K, R, S, C] in KRSC layout.
+        problem: Convolution problem shape specification.
+        epilogue_fn: Elementwise epilogue that stores each output value.
+            Signature: `def[dtype, width, *, alignment](Coord, SIMD)`,
+            with coordinates in the [M, N] GEMM view of the output.
+        ctx: Device context for kernel launch.
+
+    Raises:
+        Error if kernel launch fails or constraints are violated.
+    """
+    _conv2d_fprop_impl[
+        config=config,
+        register_based_epilogue=register_based_epilogue,
+        has_compute_fn=False,
+        has_epilogue_fn=True,
+    ](
+        output,
+        activation,
+        filter,
+        problem,
+        identity_compute_fn,
+        epilogue_fn,
+        ctx,
+    )
 
 
 def conv2d_fprop[
@@ -185,7 +253,7 @@ def conv2d_fprop[
         Error if kernel launch fails or constraints are violated.
     """
     _conv2d_fprop_impl[config=config, has_compute_fn=True](
-        output, activation, filter, problem, compute_fn, ctx
+        output, activation, filter, problem, compute_fn, no_epilogue_fn, ctx
     )
 
 
@@ -194,25 +262,30 @@ def _conv2d_fprop_impl[
     filter_type: DType,
     out_type: DType,
     ComputeFnType: ElementwiseComputeFn,
+    EpilogueFnType: ElementwiseEpilogueFn,
     //,
     *,
     config: Conv2dConfig[act_type, filter_type, out_type],
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     register_based_epilogue: Bool = True,
     has_compute_fn: Bool,
+    has_epilogue_fn: Bool = False,
 ](
     output: TileTensor[mut=True, out_type, ...],
     activation: TileTensor[mut=True, act_type, address_space=.GENERIC, ...],
     filter: TileTensor[filter_type, ...],
     problem: Conv2dProblemShape,
     compute_fn: ComputeFnType,
+    epilogue_fn: EpilogueFnType,
     ctx: DeviceContext,
 ) raises:
     """Shared body of the `conv2d_fprop` overloads.
 
-    `compute_fn` is launched with the kernel when `has_compute_fn` is True
-    and ignored otherwise.
+    `compute_fn` is launched with the kernel when `has_compute_fn` is True,
+    `epilogue_fn` when `has_epilogue_fn` is True; each is ignored otherwise.
     """
+    comptime assert not (
+        has_compute_fn and has_epilogue_fn
+    ), "an elementwise epilogue value excludes the compute epilogue"
     # Validate problem constraints
     if problem.stride_h != 1 or problem.stride_w != 1:
         raise Error("Only stride=1 is currently supported")
@@ -305,7 +378,6 @@ def _conv2d_fprop_impl[
             Int32(config.cluster_shape[1]),
             Int32(config.cluster_shape[2]),
         ),
-        elementwise_lambda_fn=elementwise_lambda_fn,
         register_based_epilogue=register_based_epilogue,
     ]
     comptime KernelType = type_of(conv_kernel)
@@ -393,6 +465,22 @@ def _conv2d_fprop_impl[
                 UInt32(b200_smem)
             ),
         )
+    elif has_epilogue_fn:
+        comptime kernel = conv_kernel.run_with_epilogue_fn[EpilogueFnType]
+        ctx.enqueue_function[kernel](
+            act_tma_op,
+            filter_tma_op,
+            out_tma_op,
+            cluster_dim,
+            mnk,
+            host_arg=epilogue_fn,
+            grid_dim=grid_dim,
+            block_dim=(conv_kernel.NUM_THREADS),
+            shared_mem_bytes=smem_size,
+            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                UInt32(b200_smem)
+            ),
+        )
     else:
         comptime kernel = conv_kernel.run
         ctx.enqueue_function[kernel](
@@ -419,13 +507,15 @@ def conv2d_fprop_with_residual[
     act_type: DType,
     filter_type: DType,
     out_type: DType,
+    EpilogueFnType: ElementwiseEpilogueFn = type_of(no_epilogue_fn),
+    //,
     *,
     config: Conv2dConfig[act_type, filter_type, out_type] = Conv2dConfig[
         act_type, filter_type, out_type
     ].default_bf16(),
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     register_based_epilogue: Bool = True,
     has_residual: Bool = False,
+    has_epilogue_fn: Bool = False,
 ](
     output: TileTensor[
         mut=True, out_type, ...
@@ -438,6 +528,7 @@ def conv2d_fprop_with_residual[
     beta: Float32,  # Residual scale factor
     problem: Conv2dProblemShape,
     ctx: DeviceContext,
+    epilogue_fn: EpilogueFnType = no_epilogue_fn,
 ) raises:
     """Launch Conv2D fprop with residual add.
 
@@ -445,8 +536,9 @@ def conv2d_fprop_with_residual[
     residual add support. The epilogue load warp pre-fetches source tensor C
     via TMA, overlapping with MMA computation for better performance.
 
-    The residual add is applied after the optional epilogue lambda:
-        D = lambda(Conv(A,B)) + beta * C
+    When `has_epilogue_fn` is True, `epilogue_fn` receives the
+    post-residual value and owns the store:
+        epilogue_fn(Conv(A,B) + beta * C)
 
     This supports common patterns like:
     - Skip connections: D = Conv(A,B) + C (beta=1.0)
@@ -457,11 +549,12 @@ def conv2d_fprop_with_residual[
         act_type: Data type of the input activation tensor.
         filter_type: Data type of the filter weights tensor.
         out_type: Data type of the output tensor.
+        EpilogueFnType: Type of `epilogue_fn` (inferred).
         config: Kernel configuration (tile sizes, pipeline stages, etc.).
-        elementwise_lambda_fn: Optional void epilogue lambda applied after
-            output write. Signature: `def(Coord, SIMD) -> None`.
-        register_based_epilogue: If True, apply lambda in registers (faster).
+        register_based_epilogue: If True, apply the epilogue in registers
+            (faster).
         has_residual: If True, apply residual add. If False, source is ignored.
+        has_epilogue_fn: Whether `epilogue_fn` stores the output.
 
     Args:
         output: Output tensor [N, H_out, W_out, C_out] in NHWC layout (D).
@@ -471,6 +564,8 @@ def conv2d_fprop_with_residual[
         beta: Residual scale factor. If 0.0, no residual is applied.
         problem: Convolution problem shape specification.
         ctx: Device context for kernel launch.
+        epilogue_fn: Elementwise epilogue that stores each output value;
+            ignored unless `has_epilogue_fn` is True.
 
     Raises:
         Error if kernel launch fails, constraints are violated, or source
@@ -484,17 +579,37 @@ def conv2d_fprop_with_residual[
 
     # If no residual requested or beta is 0, fall back to standard conv2d
     comptime if not has_residual:
-        conv2d_fprop[
+        _conv2d_fprop_impl[
             config=config,
             register_based_epilogue=register_based_epilogue,
-        ](output, activation, filter, problem, ctx)
+            has_compute_fn=False,
+            has_epilogue_fn=has_epilogue_fn,
+        ](
+            output,
+            activation,
+            filter,
+            problem,
+            identity_compute_fn,
+            epilogue_fn,
+            ctx,
+        )
         return
 
     if beta == 0.0:
-        conv2d_fprop[
+        _conv2d_fprop_impl[
             config=config,
             register_based_epilogue=register_based_epilogue,
-        ](output, activation, filter, problem, ctx)
+            has_compute_fn=False,
+            has_epilogue_fn=has_epilogue_fn,
+        ](
+            output,
+            activation,
+            filter,
+            problem,
+            identity_compute_fn,
+            epilogue_fn,
+            ctx,
+        )
         return
 
     # Validate source tensor shape matches output
@@ -544,7 +659,6 @@ def conv2d_fprop_with_residual[
             Int32(config.cluster_shape[1]),
             Int32(config.cluster_shape[2]),
         ),
-        elementwise_lambda_fn=elementwise_lambda_fn,
         register_based_epilogue=register_based_epilogue,
     ]
     comptime KernelType = type_of(conv_kernel)
@@ -604,8 +718,6 @@ def conv2d_fprop_with_residual[
         swizzle_mode=config.c_swizzle,
     ](ctx, src_tensor)
 
-    comptime kernel = conv_kernel.run_with_residual
-
     # Grid dimensions
     var grid_dim = (
         align_up(ceildiv(M, BM), cluster_shape[0]),
@@ -622,21 +734,43 @@ def conv2d_fprop_with_residual[
     var mnk = StaticTuple[UInt32, 3](UInt32(M), UInt32(N), UInt32(K))
 
     # Launch kernel with residual
-    ctx.enqueue_function[kernel](
-        act_tma_op,
-        filter_tma_op,
-        out_tma_op,
-        src_tma_op,
-        cluster_dim,
-        mnk,
-        beta,
-        grid_dim=grid_dim,
-        block_dim=(conv_kernel.NUM_THREADS),
-        shared_mem_bytes=smem_size,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(b200_smem)
-        ),
-    )
+    comptime if has_epilogue_fn:
+        comptime kernel = conv_kernel.run_with_residual_and_epilogue_fn[
+            EpilogueFnType
+        ]
+        ctx.enqueue_function[kernel](
+            act_tma_op,
+            filter_tma_op,
+            out_tma_op,
+            src_tma_op,
+            cluster_dim,
+            mnk,
+            beta,
+            host_arg=epilogue_fn,
+            grid_dim=grid_dim,
+            block_dim=(conv_kernel.NUM_THREADS),
+            shared_mem_bytes=smem_size,
+            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                UInt32(b200_smem)
+            ),
+        )
+    else:
+        comptime kernel = conv_kernel.run_with_residual
+        ctx.enqueue_function[kernel](
+            act_tma_op,
+            filter_tma_op,
+            out_tma_op,
+            src_tma_op,
+            cluster_dim,
+            mnk,
+            beta,
+            grid_dim=grid_dim,
+            block_dim=(conv_kernel.NUM_THREADS),
+            shared_mem_bytes=smem_size,
+            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                UInt32(b200_smem)
+            ),
+        )
 
 
 # =============================================================================
@@ -709,20 +843,9 @@ def im2col[
                                 and iw >= 0
                                 and iw < problem.in_width
                             ):
-                                var in_idx = (
-                                    b
-                                    * problem.in_height
-                                    * problem.in_width
-                                    * problem.in_channels
-                                    + ih
-                                    * problem.in_width
-                                    * problem.in_channels
-                                    + iw * problem.in_channels
-                                    + c
-                                )
                                 output.store_linear(
                                     IndexList[2](m_idx, k_idx),
-                                    activation.raw_load(in_idx),
+                                    activation[b, ih, iw, c],
                                 )
                             else:
                                 # Zero padding

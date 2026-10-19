@@ -133,7 +133,7 @@ public:
 
   /// Create the state the whole import tree nests inside. Called once, when
   /// the top-level decl exists.
-  void initializeTopLevel(ASTDecl &topLevelDecl);
+  void initializeTopLevel(TopLevelModuleASTDecl &topLevelDecl);
 
   /// The state of the top-level decl, which every import is nested within.
   ModuleState &getTopLevelState() const;
@@ -145,7 +145,7 @@ public:
   ///
   /// Given the binding that created it, `state` also takes its origin, and
   /// claims the naming of that origin's contents when no binding has yet.
-  void setState(ASTDecl &decl, ModuleState &state,
+  void setState(ModuleASTDecl &decl, ModuleState &state,
                 const BindingSpec *binding = nullptr);
 
   /// Record `state` as what `packageOp` was imported as.
@@ -161,9 +161,9 @@ public:
   /// Import the specified module or package, returning the decl. Always returns
   /// a valid decl, even if a corresponding module or package could not be
   /// found.
-  ASTDecl &importModule(const SharedState::ImportPath &path,
-                        PackageOp currentPackage, llvm::SMLoc loc,
-                        ASTDecl *importer);
+  ModuleASTDecl &importModule(const SharedState::ImportPath &path,
+                              PackageOp currentPackage, llvm::SMLoc loc,
+                              ASTDecl *importer);
 
   /// Import the specified module or package, returning the module state.
   /// Always returns a valid module state, even if the module could not be
@@ -181,8 +181,8 @@ public:
 
   /// Try to import a direct submodule with the given name, returning the
   /// submodule's decl, or null if no such submodule exists.
-  ASTDecl *tryImportSubModule(ModuleASTDecl &parent, StringRef name,
-                              llvm::SMLoc loc);
+  ModuleASTDecl *tryImportSubModule(ModuleASTDecl &parent, StringRef name,
+                                    llvm::SMLoc loc);
 
   /// Return true if the package has a nested module with the given name in the
   /// module-state cache. The package body must be resolved before calling this
@@ -192,7 +192,7 @@ public:
   /// Return the decls of every nested module/package currently materialized in
   /// the package's module-state cache. These are navigable but unlisted (not
   /// in the package's importable scope).
-  SmallVector<ASTDecl *> getNestedModuleDecls(PackageOp packageOp) const;
+  SmallVector<ModuleASTDecl *> getNestedModuleDecls(PackageOp packageOp) const;
 
   /// Scan a source package's directory and register a child decl for every
   /// sibling module/sub-package - a deferred `FileModuleOp` for each `.mojo`
@@ -241,7 +241,7 @@ public:
   /// `unlisted` is set, the erroneous decl is not registered in
   /// `errorContext`'s name table. A non-empty `note` is attached to the error.
   ModuleState &createErrorModuleState(SMLoc loc, StringAttr name,
-                                      ASTDecl &errorContext,
+                                      ModuleASTDecl &errorContext,
                                       const Twine &errorMsg,
                                       bool unlisted = false,
                                       const Twine &note = {});

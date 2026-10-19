@@ -35,7 +35,7 @@ from std.sys.intrinsics import readfirstlane
 from std.utils import Index, IndexList, StaticTuple
 from std.utils.numerics import get_accum_type
 
-from layout import TensorLayout, TensorEngine, TileTensor
+from layout import Coord, TensorLayout, TensorEngine, TileTensor
 from layout.swizzle import Swizzle
 from layout.tile_layout import row_major, col_major
 
@@ -731,13 +731,12 @@ struct AMDPingPongMatmul[
                         var m = warp_tile_m + m_mma * MMA_M + thread_m
 
                         if m < M:
-                            comptime src_off = (
-                                m_mma * num_n_mmas * c_frag_size
-                                + n_mma * c_frag_size
-                            )
-                            var v = c_reg.raw_load[width=c_frag_size](
-                                src_off
-                            ).cast[Self.c_type]()
+                            var v = c_reg.load[
+                                width=c_frag_size,
+                                alignment=align_of[Self.accum_dtype](),
+                            ](Coord(m_mma, n_mma * c_frag_size)).cast[
+                                Self.c_type
+                            ]()
 
                             comptime if MMA_M == 32:
                                 for e in range(c_frag_size):

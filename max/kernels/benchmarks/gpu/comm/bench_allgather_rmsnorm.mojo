@@ -92,7 +92,7 @@ def _launch_norm_full[
     @__copy_capture(in_buf)
     @__parameter
     def input_fn[width: Int](coords: Coord) -> SIMD[in_dtype, width]:
-        return in_buf.raw_load[width=width](in_buf.layout(coords))
+        return in_buf.load[width=width](coords)
 
     @inline(.always)
     @__copy_capture(out_buf)
@@ -100,9 +100,7 @@ def _launch_norm_full[
     def output_fn[
         width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[in_dtype, width]) -> None:
-        out_buf.raw_store[width=width, alignment=alignment](
-            out_buf.layout(coords), val
-        )
+        out_buf.store[alignment=alignment](coords, val)
 
     rms_norm_gpu[
         2,
@@ -215,7 +213,7 @@ def _verify_results[
         var world_out_views = Array[FullType, ngpus * ngpus](uninitialized=True)
         comptime for src in range(ngpus):
             world_out_views[i * ngpus + src] = FullType(
-                out_base + config.rank_unit_start(src) * num_cols,
+                out_base.unsafe_offset(config.rank_unit_start(src) * num_cols),
                 row_major(Coord(config.rank_units(src), num_cols)),
             )
         allgather(in_shards, world_out_views, rank_sigs, list_of_ctx[i], i)
@@ -507,7 +505,9 @@ def bench_allgather_rmsnorm[
             )
             comptime for src in range(ngpus):
                 world_out_views[ctx_idx * ngpus + src] = FullType(
-                    out_base + config.rank_unit_start(src) * num_cols,
+                    out_base.unsafe_offset(
+                        config.rank_unit_start(src) * num_cols
+                    ),
                     row_major(Coord(config.rank_units(src), num_cols)),
                 )
             allgather(in_shards, world_out_views, rank_sigs, ctx_inner, ctx_idx)
@@ -572,7 +572,9 @@ def bench_allgather_rmsnorm[
             )
             comptime for src in range(ngpus):
                 world_out_views[ctx_idx * ngpus + src] = FullType(
-                    out_base + config.rank_unit_start(src) * num_cols,
+                    out_base.unsafe_offset(
+                        config.rank_unit_start(src) * num_cols
+                    ),
                     row_major(Coord(config.rank_units(src), num_cols)),
                 )
             allgather(in_shards, world_out_views, rank_sigs, ctx_inner, ctx_idx)
@@ -651,7 +653,9 @@ def bench_allgather_rmsnorm[
                 )
                 comptime for src in range(ngpus):
                     world_out_views[ctx_idx * ngpus + src] = FullType(
-                        out_base + config.rank_unit_start(src) * num_cols,
+                        out_base.unsafe_offset(
+                            config.rank_unit_start(src) * num_cols
+                        ),
                         row_major(Coord(config.rank_units(src), num_cols)),
                     )
                 allgather(

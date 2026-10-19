@@ -2811,7 +2811,7 @@ static ErrorTreeOrSuccess interpreterWrite(ExternalCallOp op,
     return ErrorTree(op.getLoc(), "unable to interpret call to 'write', "
                                   "expected integer result type");
   ErrorOr<int64_t> fdOr =
-      getScalarIndexValue(dyn_cast_or_null<TypedAttr>(operands[0]));
+      getScalarIntegerValue(dyn_cast_or_null<TypedAttr>(operands[0]));
   if (fdOr.isError())
     return ErrorTree(op.getLoc(), "unable to interpret call to 'write', "
                                   "expected integer typed first operand");
@@ -2822,16 +2822,14 @@ static ErrorTreeOrSuccess interpreterWrite(ExternalCallOp op,
                                   "expected pointer typed second operand");
 
   ErrorOr<int64_t> nbytesOr =
-      getScalarIndexValue(dyn_cast_or_null<TypedAttr>(operands[2]));
+      getScalarIntegerValue(dyn_cast_or_null<TypedAttr>(operands[2]));
   if (nbytesOr.isError())
     return ErrorTree(op.getLoc(), "unable to interpret call to 'write', "
                                   "expected integer typed third operand");
-  unsigned ptrSize = state.getTarget().getDataLayout().getPointerSize();
-  ErrorOr<const void *> mem =
-      state.getReadableMemory(buffer.getAddr(), ptrSize);
+  int size = static_cast<int>(nbytesOr.get());
+  ErrorOr<const void *> mem = state.getReadableMemory(buffer.getAddr(), size);
   if (mem)
     return ErrorTree(op.getLoc(), mem.takeError());
-  int size = static_cast<int>(nbytesOr.get());
   int numWritten = write(fdOr.get(), (const void *)*mem, size);
   if (auto simdType = dyn_cast<SIMDType>(resultType)) {
     auto simdAttr = SIMDAttr::get(numWritten, simdType);

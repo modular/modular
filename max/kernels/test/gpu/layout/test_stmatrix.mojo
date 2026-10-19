@@ -77,14 +77,21 @@ def test_stmatrix(
 
     var lane = lane_id()
     var a_reg = ld_matrix[4](
-        a_shared + umod(lane, m) * k + ufloordiv(ufloordiv(lane, m) * k, 2)
+        a_shared.unsafe_offset(umod(lane, m) * k).unsafe_offset(
+            ufloordiv(ufloordiv(lane, m) * k, 2)
+        )
     )
     var b_reg = ld_matrix[2](
-        b_shared + umod(lane, k) * n + ufloordiv(ufloordiv(lane, k) * n, 2)
+        b_shared.unsafe_offset(umod(lane, k) * n).unsafe_offset(
+            ufloordiv(ufloordiv(lane, k) * n, 2)
+        )
     )
 
     mma(d_reg, a_reg, b_reg, d_reg)
-    st_matrix[4](c_shared + thread_idx.x * 4, rebind[SIMD[.float32, 4]](d_reg))
+    st_matrix[4](
+        c_shared.unsafe_offset(thread_idx.x * 4),
+        rebind[SIMD[.float32, 4]](d_reg),
+    )
 
     var base = tid * 4
     for i in range(4):
@@ -138,15 +145,19 @@ def test_stmatrix_gen[
     barrier()
 
     var a_reg = ld_matrix[a_frag_size](
-        a_shared + umod(lane, M) * K + ufloordiv(ufloordiv(lane, M) * K, 2)
+        a_shared.unsafe_offset(umod(lane, M) * K).unsafe_offset(
+            ufloordiv(ufloordiv(lane, M) * K, 2)
+        )
     )
     var b_reg = ld_matrix[b_frag_size, transpose=True](
-        b_shared + umod(lane, K) * N + ufloordiv(ufloordiv(lane, K) * N, 2)
+        b_shared.unsafe_offset(umod(lane, K) * N).unsafe_offset(
+            ufloordiv(ufloordiv(lane, K) * N, 2)
+        )
     )
 
     mma(d_reg, a_reg, b_reg, d_reg)
     st_matrix[c_frag_size](
-        c_shared + thread_idx.x * 4,
+        c_shared.unsafe_offset(thread_idx.x * 4),
         rebind[SIMD[.float32, c_frag_size]](d_reg),
     )
 

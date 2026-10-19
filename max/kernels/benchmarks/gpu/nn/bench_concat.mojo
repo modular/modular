@@ -175,12 +175,10 @@ def bench_concat[
             var out_coords = coord_to_index_list(coords)
             out_coords[axis] += offset
             var out_coord = Coord(out_coords)
-            if output_host.load[width=1](out_coord) != input.load[width=1](
-                coords
-            ):
+            if output_host[out_coord] != input[coords]:
                 abort(String("mismatch at coords ", out_coords))
 
-        elementwise[1](check, Coord(input_shape), ctx)
+        elementwise[1](check, Coord(input_shape), DeviceContext(api="cpu"))
         offset += input_shape[axis]
 
     _ = input0_device_buffer

@@ -131,7 +131,7 @@ def test_grouped_blockwise_fp8_matmul_amd[
 
     # NaN-poison every A row outside the active range. 0x7F is a NaN in
     # E4M3 (OCP). A correct kernel never touches these rows.
-    var a_bytes = a_host.unsafe_ptr().bitcast[UInt8]()
+    var a_bytes = a_host.unsafe_ptr().unsafe_bitcast[UInt8]()
     for r in range(sum_rows, total_tokens):
         for kk in range(K):
             a_bytes[r * K + kk] = UInt8(0x7F)
@@ -810,7 +810,7 @@ def test_grouped_grid_y_decode_bounded_bitidentity[
 
     # NaN-poison every A row outside the routed range (0x7F is a NaN in
     # E4M3); a correct launch never reads them.
-    var a_bytes = a_host.unsafe_ptr().bitcast[UInt8]()
+    var a_bytes = a_host.unsafe_ptr().unsafe_bitcast[UInt8]()
     for r in range(sum_rows, pad_rows):
         for kk in range(K):
             a_bytes[r * K + kk] = UInt8(0x7F)

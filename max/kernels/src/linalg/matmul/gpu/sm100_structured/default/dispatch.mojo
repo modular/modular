@@ -332,6 +332,8 @@ def dispatch_gemv[
         Index(7168, 8192),
         Index(7168, 21504),
         Index(7168, 18432),
+        Index(16384, 512),
+        Index(8192, 512),
     ]
 
     comptime if static_NK in SM100_GEMV_SHAPES:

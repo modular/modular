@@ -51,8 +51,10 @@ def _gather_rows_through_lds(
         var col = chunk % CHUNKS_PER_ROW
         var row = Int(indices[slot])
         _global_load_to_lds[width=LANE_BYTES](
-            src_global + row * ROW_BYTES + col * LANE_BYTES,
-            smem + r * WARP_SIZE * LANE_BYTES,
+            src_global.unsafe_offset(row * ROW_BYTES).unsafe_offset(
+                col * LANE_BYTES
+            ),
+            smem.unsafe_offset(r * WARP_SIZE * LANE_BYTES),
         )
     s_waitcnt[vmcnt=0]()
     comptime for r in range(NUM_CHUNKS // WARP_SIZE):
@@ -69,9 +71,9 @@ def main() raises:
     with DeviceContext() as ctx:
         comptime src_count = NUM_SRC_ROWS * ROW_BYTES
         comptime dst_count = NUM_ROWS * ROW_BYTES
-        var host_src = ctx.enqueue_create_host_buffer[DType.uint8](src_count)
-        var host_idx = ctx.enqueue_create_host_buffer[DType.int32](NUM_ROWS)
-        var host_dst = ctx.enqueue_create_host_buffer[DType.uint8](dst_count)
+        var host_src = ctx.enqueue_create_host_buffer[.uint8](src_count)
+        var host_idx = ctx.enqueue_create_host_buffer[.int32](NUM_ROWS)
+        var host_dst = ctx.enqueue_create_host_buffer[.uint8](dst_count)
         for row in range(NUM_SRC_ROWS):
             for b in range(ROW_BYTES):
                 host_src[row * ROW_BYTES + b] = _value(row, b)
@@ -81,9 +83,9 @@ def main() raises:
         host_idx[3] = 0
         host_idx[11] = NUM_SRC_ROWS - 1
 
-        var dev_src = ctx.enqueue_create_buffer[DType.uint8](src_count)
-        var dev_idx = ctx.enqueue_create_buffer[DType.int32](NUM_ROWS)
-        var dev_dst = ctx.enqueue_create_buffer[DType.uint8](dst_count)
+        var dev_src = ctx.enqueue_create_buffer[.uint8](src_count)
+        var dev_idx = ctx.enqueue_create_buffer[.int32](NUM_ROWS)
+        var dev_dst = ctx.enqueue_create_buffer[.uint8](dst_count)
         ctx.enqueue_copy(dev_src, host_src)
         ctx.enqueue_copy(dev_idx, host_idx)
         dev_dst.enqueue_fill(0)

@@ -342,7 +342,7 @@ def run_slot_indexed_gpu[
 def test_slot_indexed_single_sequence_targets_chosen_slot() raises:
     """Single sequence, KD=VD=128: writes only to slot 1 of a 3-slot pool."""
     var ctx = DeviceContext()
-    run_slot_indexed_gpu[.float32, DType.float32, 128, 128](
+    run_slot_indexed_gpu[.float32, .float32, 128, 128](
         batch_size=1,
         total_seq_len=4,
         num_value_heads=1,
@@ -357,7 +357,7 @@ def test_slot_indexed_single_sequence_targets_chosen_slot() raises:
 def test_slot_indexed_gqa_two_sequences() raises:
     """GQA (nv=2 nk=1), two sequences hitting non-adjacent slots, bf16 pool."""
     var ctx = DeviceContext()
-    run_slot_indexed_gpu[.float32, DType.bfloat16, 128, 128](
+    run_slot_indexed_gpu[.float32, .bfloat16, 128, 128](
         batch_size=2,
         total_seq_len=5,
         num_value_heads=2,
@@ -374,7 +374,7 @@ def test_decode_gqa_batch() raises:
     """Decode shape (seq_len 1 per request), GQA ratio 2, multi-request batch
     hitting distinct slots — mirrors Qwen3.5 decode."""
     var ctx = DeviceContext()
-    run_slot_indexed_gpu[.float32, DType.bfloat16, 128, 128](
+    run_slot_indexed_gpu[.float32, .bfloat16, 128, 128](
         batch_size=4,
         total_seq_len=4,
         num_value_heads=8,
@@ -391,7 +391,7 @@ def test_prefill_gqa_multi_seq() raises:
     """Prefill shape (longer seqs), GQA ratio 2, two requests in distinct slots.
     """
     var ctx = DeviceContext()
-    run_slot_indexed_gpu[.float32, DType.bfloat16, 128, 128](
+    run_slot_indexed_gpu[.float32, .bfloat16, 128, 128](
         batch_size=2,
         total_seq_len=24,
         num_value_heads=8,
@@ -407,7 +407,7 @@ def test_prefill_gqa_multi_seq() raises:
 def test_slot_indexed_batch1_single_token_production_shape() raises:
     """Checks batch 1 with a single token at 128-dim heads, 48 value heads."""
     var ctx = DeviceContext()
-    run_slot_indexed_gpu[.float32, DType.bfloat16, 128, 128](
+    run_slot_indexed_gpu[.float32, .bfloat16, 128, 128](
         batch_size=1,
         total_seq_len=1,
         num_value_heads=48,
@@ -423,7 +423,7 @@ def test_slot_indexed_batch1_single_token_production_shape() raises:
 def test_slot_indexed_mixed_ragged_batch_production_shape() raises:
     """Checks one launch mixing multi-token and single-token rows."""
     var ctx = DeviceContext()
-    run_slot_indexed_gpu[.float32, DType.bfloat16, 128, 128](
+    run_slot_indexed_gpu[.float32, .bfloat16, 128, 128](
         batch_size=4,
         total_seq_len=10,  # 1 (decode) + 5 (prefill) + 1 (decode) + 3 (prefill)
         num_value_heads=48,
@@ -822,19 +822,19 @@ def test_gated_delta_recurrence_gpu_deep_slot_no_alias() raises:
 
     var qkv_heap = List(length=conv_dim, fill=Float32(0))
     var qkv_h = TileTensor(qkv_heap, row_major(total_seq_len, conv_dim))
-    qkv_h.raw_store(0, Float32(1))
+    qkv_h[0, 0] = Float32(1)
     var decay_heap = List(length=num_value_heads, fill=Float32(0))
     var decay_h = TileTensor(
         decay_heap, row_major(total_seq_len, num_value_heads)
     )
-    decay_h.raw_store(0, decay_value)
+    decay_h[0, 0] = decay_value
     var beta_heap = List(length=num_value_heads, fill=Float32(0))
     var beta_h = TileTensor(
         beta_heap, row_major(total_seq_len, num_value_heads)
     )
     var offsets_heap = List(length=batch_size + 1, fill=UInt32(0))
     var offsets_h = TileTensor(offsets_heap, row_major(batch_size + 1))
-    offsets_h.raw_store(1, UInt32(total_seq_len))
+    offsets_h[1] = UInt32(total_seq_len)
     var slot_idx_heap = List(length=batch_size, fill=UInt32(slot_deep))
     var slot_idx_h = TileTensor(slot_idx_heap, row_major(batch_size))
 
@@ -938,13 +938,13 @@ def test_gated_delta_recurrence_gpu_deep_slot_no_alias() raises:
     ctx.synchronize()
 
     # The deep sentinel, not the front row it would alias onto.
-    assert_almost_equal(output_h.raw_load(0), Float32(50), rtol=0.01)
+    assert_almost_equal(output_h[0, 0], Float32(50), rtol=0.01)
 
     # The front of the pool must be untouched.
-    assert_equal(front_readback_h.raw_load(0), front_sentinel)
+    assert_equal(front_readback_h[0], front_sentinel)
 
     # The deep slot itself must carry the write.
-    assert_equal(deep_readback_h.raw_load(0), Scalar[state_dtype](50))
+    assert_equal(deep_readback_h[0], Scalar[state_dtype](50))
 
 
 def main() raises:

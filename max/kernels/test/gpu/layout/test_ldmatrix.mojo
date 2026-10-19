@@ -68,10 +68,14 @@ def test_ldmatrix_fp32(
     barrier()
 
     var a_reg = ld_matrix[4](
-        a_shared + umod(lane_id(), 16) * 8 + ufloordiv(lane_id(), 16) * 4
+        a_shared.unsafe_offset(umod(lane_id(), 16) * 8).unsafe_offset(
+            ufloordiv(lane_id(), 16) * 4
+        )
     )
     var b_reg = ld_matrix[2](
-        b_shared + umod(lane_id(), 8) * 8 + ufloordiv(lane_id(), 8) * 4
+        b_shared.unsafe_offset(umod(lane_id(), 8) * 8).unsafe_offset(
+            ufloordiv(lane_id(), 8) * 4
+        )
     )
 
     mma(d_reg, a_reg, b_reg, d_reg)
@@ -115,10 +119,14 @@ def test_ldmatrix_transposed[
     barrier()
 
     var a_reg = ld_matrix[a_frag_size](
-        a_shared + umod(lane, M) * K + ufloordiv(ufloordiv(lane, M) * K, 2)
+        a_shared.unsafe_offset(umod(lane, M) * K).unsafe_offset(
+            ufloordiv(ufloordiv(lane, M) * K, 2)
+        )
     )
     var b_reg = ld_matrix[b_frag_size, transpose=True](
-        b_shared + umod(lane, K) * N + ufloordiv(ufloordiv(lane, K) * N, 2)
+        b_shared.unsafe_offset(umod(lane, K) * N).unsafe_offset(
+            ufloordiv(ufloordiv(lane, K) * N, 2)
+        )
     )
 
     mma(d, a_reg, b_reg, d)

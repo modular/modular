@@ -25,9 +25,9 @@ from max.gpu.memory import external_memory
 
 
 def matrixMulKernel(
-    M: UnsafePointer[Float32, MutUntrackedOrigin],
-    N: UnsafePointer[Float32, MutUntrackedOrigin],
-    P: UnsafePointer[Float32, MutUntrackedOrigin],
+    M: MutPointer[Float32, MutUntrackedOrigin],
+    N: MutPointer[Float32, MutUntrackedOrigin],
+    P: MutPointer[Float32, MutUntrackedOrigin],
     width_dim: Int32,
     tile_width_dim: Int32,
 ):
@@ -46,7 +46,7 @@ def matrixMulKernel(
     # Allocate shared memory using external_memory (following working pattern)
     # Use max tile size of 32x32 for allocation
     var Mds = rebind[
-        UnsafePointer[Float32, MutUntrackedOrigin, address_space=.SHARED]
+        MutPointer[Float32, MutUntrackedOrigin, address_space=.SHARED]
     ](
         external_memory[
             Float32,
@@ -55,7 +55,7 @@ def matrixMulKernel(
             name="shared_dynamic_memory",
         ]()
     )
-    var Nds = Mds + 32 * 32  # Use max size for allocation
+    var Nds = Mds.unsafe_offset(32 * 32)  # Use max size for allocation
 
     var tx = thread_idx.x
     var ty = thread_idx.y
@@ -67,25 +67,19 @@ def matrixMulKernel(
     for ph in range(ceildiv(Width, tile_width)):
         # Collaborative loading of M and N tiles into shared memory
         if (Row < Width) and (ph * tile_width + tx) < Width:
-            Mds[ty * tile_width + tx] = Float32(
-                M[Row * Width + ph * tile_width + tx]
-            )
+            Mds[ty * tile_width + tx] = M[Row * Width + ph * tile_width + tx]
         else:
-            Mds[ty * tile_width + tx] = Float32(0.0)
+            Mds[ty * tile_width + tx] = 0.0
 
         if (ph * tile_width + ty) < Width and Col < Width:
-            Nds[ty * tile_width + tx] = Float32(
-                N[(ph * tile_width + ty) * Width + Col]
-            )
+            Nds[ty * tile_width + tx] = N[(ph * tile_width + ty) * Width + Col]
         else:
-            Nds[ty * tile_width + tx] = Float32(0.0)
+            Nds[ty * tile_width + tx] = 0.0
 
         barrier()
 
         for k in range(tile_width):
-            Pvalue += Float32(Mds[ty * tile_width + k]) * Float32(
-                Nds[k * tile_width + tx]
-            )
+            Pvalue += Mds[ty * tile_width + k] * Nds[k * tile_width + tx]
 
         barrier()
 
@@ -97,9 +91,9 @@ def matrixMulKernel(
 
 
 def cpu_matmul(
-    a: UnsafePointer[Float32, MutUntrackedOrigin],
-    b: UnsafePointer[Float32, MutUntrackedOrigin],
-    c: UnsafePointer[Float32, MutUntrackedOrigin],
+    a: MutPointer[Float32, MutUntrackedOrigin],
+    b: MutPointer[Float32, MutUntrackedOrigin],
+    c: MutPointer[Float32, MutUntrackedOrigin],
     width: Int,
 ):
     """CPU reference implementation for matrix multiplication.
@@ -117,8 +111,8 @@ def cpu_matmul(
 
 
 def initialize(
-    a: UnsafePointer[Float32, MutUntrackedOrigin],
-    b: UnsafePointer[Float32, MutUntrackedOrigin],
+    a: MutPointer[Float32, MutUntrackedOrigin],
+    b: MutPointer[Float32, MutUntrackedOrigin],
     width: Int,
 ):
     """Initialize input matrices with test data.

@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 """Tests for RMSNorm with fused residual connection."""
 
-from std.math import sqrt
-from std.sys.info import CompilationTarget
+from std.math import inf, nan, sqrt
+from std.sys.info import CompilationTarget, simd_width_of
 
 from layout import (
     Coord,
@@ -49,6 +49,7 @@ def _run_rms_norm_fused_residual_cpu_impl[
     rtol: Float64 = 0.001,
     dropout_p: Float64 = 0.0,
     seed: UInt64 = 0,
+    special_values: Bool = False,
 ) raises:
     """Test rms_norm_fused_residual CPU implementation.
 
@@ -71,6 +72,18 @@ def _run_rms_norm_fused_residual_cpu_impl[
     for i in range(rows * cols):
         input_ptr[i] = Scalar[dtype](Float64(i % 10) * 0.1)
         residual_ptr[i] = Scalar[dtype](Float64((i + 3) % 7) * 0.15)
+
+    if special_values:
+        for i in range(rows * cols):
+            match i % 4:
+                case 0:
+                    input_ptr[i] = nan[dtype]()
+                case 1:
+                    input_ptr[i] = inf[dtype]()
+                case 2:
+                    input_ptr[i] = -inf[dtype]()
+                case _:
+                    input_ptr[i] = Scalar[dtype](-0.0)
 
     # Initialize gamma (weight)
     for i in range(cols):
@@ -116,13 +129,13 @@ def _run_rms_norm_fused_residual_cpu_impl[
     def output_fn[
         width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[dtype, width]) {output_tensor} -> None:
-        output_tensor.store[width=width](coords, val)
+        output_tensor.store(coords, val)
 
     @inline(.always)
     def residual_output_fn[
         width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[dtype, width]) {residual_output_tensor} -> None:
-        residual_output_tensor.store[width=width](coords, val)
+        residual_output_tensor.store(coords, val)
 
     # Read back the (input + residual) buffer the kernel wrote in its first pass.
     # This reader and the writable `residual_output_fn` alias it; as runtime args
@@ -186,7 +199,13 @@ def _run_rms_norm_fused_residual_cpu_impl[
         # Verify residual output
         for c in range(cols):
             var idx = r * cols + c
-            assert_almost_equal(sum_ptr[c], residual_output_ptr[idx], rtol=rtol)
+            assert_almost_equal(
+                sum_ptr[c],
+                residual_output_ptr[idx],
+                rtol=0,
+                atol=0,
+                equal_nan=True,
+            )
 
         # Compute RMS of the sum
         var rms_val = compute_rms_ref(sum_ptr.unsafe_ptr(), cols, epsilon)
@@ -198,7 +217,9 @@ def _run_rms_norm_fused_residual_cpu_impl[
             var expected_norm = (sum_val / rms_val).cast[dtype]() * (
                 gamma_ptr[c] + weight_offset
             )
-            assert_almost_equal(expected_norm, output_ptr[idx], rtol=rtol)
+            assert_almost_equal(
+                expected_norm, output_ptr[idx], rtol=rtol, equal_nan=True
+            )
 
 
 def run_rms_norm_fused_residual_cpu[
@@ -288,6 +309,22 @@ def test_rms_norm_fused_residual_dropout_bfloat16() raises:
         run_rms_norm_fused_residual_cpu[.bfloat16](
             Index(4, 16), rtol=1e-2, dropout_p=0.2, seed=99
         )
+
+
+def test_rms_norm_fused_residual_dropout_tails() raises:
+    comptime width = simd_width_of[DType.float32]()
+    for cols in [1, width - 1, width + 1, 2 * width + 3]:
+        for dropout_p in [0.0, 0.25, 0.75]:
+            _run_rms_norm_fused_residual_cpu_impl[.float32](
+                Coord(3, cols), dropout_p=dropout_p, seed=17
+            )
+
+
+def test_rms_norm_fused_residual_dropout_nonfinite() raises:
+    comptime width = simd_width_of[DType.float32]()
+    _run_rms_norm_fused_residual_cpu_impl[.float32](
+        Coord(3, 4 * width + 3), dropout_p=0.5, seed=42, special_values=True
+    )
 
 
 def main() raises:

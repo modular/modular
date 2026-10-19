@@ -33,7 +33,6 @@ from kv_cache.types import KVCacheStaticParams, KVCollectionT
 from layout import (
     Coord,
     Layout,
-    RuntimeLayout,
     UNKNOWN_VALUE,
     row_major,
 )
@@ -70,8 +69,6 @@ from extensibility import (
 from std.logger import Logger
 
 comptime logger = Logger()
-
-from std.utils import IndexList
 
 # ===-----------------------------------------------------------------------===#
 from .kernels import *
@@ -117,11 +114,10 @@ struct Struct_kv_cache_store_paged:
         else:
             cache = paged_kv_collection.get_value_cache(Int(layer_idx))
 
-        @__parameter
         @inline(.always)
         def input_fn[
             width: Int, alignment: Int
-        ](idx: Coord) capturing -> SIMD[kv_type, width]:
+        ](idx: Coord) {var inputs} -> SIMD[kv_type, width]:
             # The value dtype is the producer compute dtype (bf16), which need
             # not match the cache: an FP8 cache saturates on the store rather
             # than emitting NaN for out-of-range values.
@@ -131,10 +127,11 @@ struct Struct_kv_cache_store_paged:
                 )
             )
 
-        kv_cache_store_ragged[input_fn=input_fn, target=target](
+        kv_cache_store_ragged[target=target](
             cache,
             inputs.shape_coord(),
             input_row_offsets.to_tile_tensor(),
+            input_fn,
             context,
         )
 
@@ -262,7 +259,7 @@ struct Struct_kv_cache_store_k_scales_paged:
             var input_row_offsets,
             var input_k_scales,
         }:
-            var row = Int(idx[0].value())
+            var row = Int(idx[0])
             # Same bound as the value store: a row past the last offset
             # belongs to no request, and the search below would answer with
             # the last one and write it past the end of that request's span.
@@ -275,16 +272,16 @@ struct Struct_kv_cache_store_k_scales_paged:
             ](
                 (
                     row,
-                    Int(idx[1].value()),
-                    Int(idx[2].value()),
+                    Int(idx[1]),
+                    Int(idx[2]),
                 ),
             )
             var batch_idx = get_batch_from_row_offsets(
                 input_row_offsets_tt, row
             )
             var token_idx = Int(UInt32(row) - input_row_offsets[batch_idx])
-            var h_idx = Int(idx[1].value())
-            var hd_idx = Int(idx[2].value())
+            var h_idx = Int(idx[1])
+            var hd_idx = Int(idx[2])
             var cache_length = k_cache.cache_length(batch_idx)
             var cache_token_idx = token_idx + cache_length
             k_cache.store_scale(
@@ -345,20 +342,20 @@ struct Struct_kv_cache_store_padded:
         else:
             cache = paged_kv_collection.get_value_cache(Int(layer_idx))
 
-        @__parameter
         @inline(.always)
         def input_fn[
             width: Int, alignment: Int
-        ](idx: Coord) capturing -> SIMD[dtype, width]:
+        ](idx: Coord) {var inputs} -> SIMD[dtype, width]:
             comptime assert idx.rank == 4
             return inputs._lambda_load[
                 width=width, element_alignment=alignment
             ](idx)
 
-        kv_cache_store_padded[input_fn=input_fn, target=target](
+        kv_cache_store_padded[target=target](
             cache,
             inputs.shape(),
             valid_lengths.to_tile_tensor(),
+            input_fn,
             context,
         )
 
@@ -528,7 +525,7 @@ struct Struct_fused_qk_rms_norm_rope_ragged_paged[interleaved: Bool]:
             width: Int, alignment: Int
         ](token: Int, head: Int, col: Int) {var q_proj} -> SIMD[dtype, width]:
             return q_proj._fused_load[width=width, element_alignment=alignment](
-                IndexList[3](token, head, col)
+                (token, head, col)
             )
 
         fused_qk_rms_norm_rope_ragged_paged[
@@ -697,7 +694,7 @@ def load_staged_row[
         The `width` elements starting at `[token, head, col]`.
     """
     return proj._fused_load[width=width, element_alignment=alignment](
-        IndexList[3](token, head, col)
+        (token, head, col)
     )
 
 

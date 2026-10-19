@@ -90,7 +90,7 @@ def _get_start_indices_of_nth_subvolume_static[
             # Dynamic dim: read the divisor from the runtime leaf value carried
             # in the `Coord`. Nothing folds here, so the quotient and the
             # remainder must come out of ONE division.
-            var divisor = Int(shape[i].value())
+            var divisor = Int(shape[i])
             curr, res[i] = udivmod(curr, divisor)
 
     res[0] = curr

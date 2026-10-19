@@ -19,8 +19,7 @@ containers (TMA descriptors, OffsetPosition, pipelines, etc.). A full
 correctness test lives elsewhere; this only proves the variant compiles.
 """
 
-from std.sys import default_accelerator
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, default_accelerator
 
 from nn.attention.gpu.nvidia.sm100.mla_decode_sparse_kv_fp8 import (
     MLA_SM100_Decode_Sparse_KV_FP8,

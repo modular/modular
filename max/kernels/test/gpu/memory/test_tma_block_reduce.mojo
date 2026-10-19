@@ -138,7 +138,7 @@ def tma_reduction_kernel[
     # Create barrier for TMA transfer from GMEM to SMEM.
     var mbar = unsafe_stack_allocation[1, Int64, address_space=.SHARED]()
 
-    var descriptor_ptr = Pointer(to=descriptor).bitcast[NoneType]()
+    var descriptor_ptr = Pointer(to=descriptor).unsafe_bitcast[NoneType]()
     mbarrier_init(mbar, 1)
 
     if thread_idx.x == 0:

@@ -66,7 +66,7 @@ def legalize_topk_ids[
     n_experts: Int, top_k: Int
 ](topk_ids: Pointer[mut=True, Int32, _], n_tokens: Int):
     for tok_id in range(n_tokens):
-        var topk_ids_for_token = topk_ids + tok_id * top_k
+        var topk_ids_for_token = topk_ids.unsafe_offset(tok_id * top_k)
 
         # The top-k ids for a token should be unique. If not, we will assign a
         # random id to the duplicate id.
@@ -79,7 +79,12 @@ def legalize_topk_ids[
 
         var duplicate_idx = is_duplicate()
         while duplicate_idx != -1:
-            randint(topk_ids_for_token + duplicate_idx, 1, 0, n_experts - 1)
+            randint(
+                topk_ids_for_token.unsafe_offset(duplicate_idx),
+                1,
+                0,
+                n_experts - 1,
+            )
             duplicate_idx = is_duplicate()
 
 
@@ -381,19 +386,24 @@ def test_dispatch[
             for rank in range(n_ranks):
                 seed(Int(rank) + i * n_ranks)
                 randn(
-                    all_ranks_input_tokens
-                    + rank * n_tokens_per_rank * hidden_size,
+                    all_ranks_input_tokens.unsafe_offset(
+                        rank * n_tokens_per_rank * hidden_size
+                    ),
                     n_tokens_per_rank * hidden_size,
                 )
                 seed(Int(rank) + i * n_ranks)
                 randint(
-                    all_ranks_topk_ids + rank * n_tokens_per_rank * top_k,
+                    all_ranks_topk_ids.unsafe_offset(
+                        rank * n_tokens_per_rank * top_k
+                    ),
                     n_tokens_per_rank * top_k,
                     0,
                     n_experts - 1,
                 )
                 legalize_topk_ids[n_experts, top_k](
-                    all_ranks_topk_ids + rank * n_tokens_per_rank * top_k,
+                    all_ranks_topk_ids.unsafe_offset(
+                        rank * n_tokens_per_rank * top_k
+                    ),
                     n_tokens_per_rank,
                 )
 

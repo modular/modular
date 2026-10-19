@@ -14,10 +14,10 @@
 from std.math import acosh, asinh, exp, inf, isinf, isnan, nan
 from std.math.math import _call_libm, _log_accurate
 from std.memory import bitcast
-from std.sys import bit_width_of, default_accelerator, simd_width_of
+from std.sys import bit_width_of, simd_width_of
 
 from max.algorithm.functional import elementwise
-from max.gpu.host import DeviceContext, HostBuffer
+from max.gpu.host import DeviceContext, HostBuffer, default_accelerator
 from std.testing import assert_true, TestSuite
 
 from std.utils.coord import Coord
@@ -209,7 +209,7 @@ def _run[
     def func[
         simd_width: Int, alignment: Int = 1
     ](idx0: Coord) {var out_buffer, var in_buffer}:
-        var idx = Int(idx0[0].value())
+        var idx = Int(idx0[0])
         var val = in_buffer.unsafe_ptr().unsafe_load[width=simd_width](idx)
         var result: type_of(val)
         comptime if is_acosh:
@@ -330,7 +330,7 @@ def _check_hard_cases[
     def func[
         simd_width: Int, alignment: Int = 1
     ](idx0: Coord) {var out_buffer, var in_buffer}:
-        var idx = Int(idx0[0].value())
+        var idx = Int(idx0[0])
         var val = in_buffer.unsafe_ptr().unsafe_load[width=simd_width](idx)
         var result: type_of(val)
         comptime if is_acosh:
@@ -399,7 +399,7 @@ def _check_log_subnormals[
     def func[
         simd_width: Int, alignment: Int = 1
     ](idx0: Coord) {var out_buffer, var in_buffer}:
-        var idx = Int(idx0[0].value())
+        var idx = Int(idx0[0])
         var val = in_buffer.unsafe_ptr().unsafe_load[width=simd_width](idx)
         out_buffer.unsafe_ptr().unsafe_store[width=simd_width](
             idx, _log_accurate(val)

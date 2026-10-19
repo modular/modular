@@ -43,8 +43,7 @@ owns each output, so the monoid state is already final after `reduce`.
 
 from std.atomic import Atomic
 from std.math import align_down, ceildiv
-from std.math.math import min as _min
-from std.memory import UnsafePointer, unsafe_memset_zero
+from std.memory import unsafe_memset_zero
 from std.memory import alloc as ptr_alloc
 from std.sys import size_of
 
@@ -294,7 +293,7 @@ def reduce[
         var split = Int(ctx._block_in_row)
         var stripe = ceildiv(axis_size, num_splits)
         var lo = split * stripe
-        var hi = _min((split + 1) * stripe, axis_size)
+        var hi = min((split + 1) * stripe, axis_size)
         _simd_walk_unrolled[W=ctx.simd_width, rank=rank, axis=ctx.axis](
             coords, lo, hi, tile_fn
         )
@@ -374,8 +373,8 @@ def reduce[
         var num_splits = Int(ctx._blocks_per_row) if fits else 1
         var split = Int(ctx._block_in_row)
         var stripe = ceildiv(axis_size, num_splits)
-        var lo = _min(split * stripe, axis_size)
-        var hi = _min((split + 1) * stripe, axis_size)
+        var lo = min(split * stripe, axis_size)
+        var hi = min((split + 1) * stripe, axis_size)
         _simd_walk_unrolled[W=ctx.simd_width, rank=rank, axis=ctx.axis](
             coords, lo, hi, state, tile_fn
         )
@@ -445,7 +444,9 @@ def pjoin[
             var num_splits = Int(ctx._blocks_per_row)
             var split = Int(ctx._block_in_row)
             ctx.row_partial[State.Single](split)[0] = sc
-            var counter_ptr = ctx._counters_base + Int(ctx._row_idx)
+            var counter_ptr = ctx._counters_base.unsafe_offset(
+                Int(ctx._row_idx)
+            )
             # `fetch_add` returns the prior value; `prev + 1 == num_splits`
             # means this worker arrived last.
             var prev = Atomic[Int32].fetch_add(counter_ptr, Int32(1))
@@ -656,7 +657,7 @@ def launch[
         # split keeps enough work to amortize.
         var splits_pool = num_workers // num_outputs if num_outputs > 0 else 1
         var splits_axis = axis_size // _CPU_SPLITK_MIN_AXIS_PER_SPLIT
-        var splits_per_row = _min(splits_pool, splits_axis)
+        var splits_per_row = min(splits_pool, splits_axis)
 
         comptime if num_phases > 1:
             # Only a single row splits: with two or more rows the
@@ -664,8 +665,8 @@ def launch[
             # phase launches plus the lost per-core cache locality between
             # phases outweigh the added parallelism (f32 measured 1.4-2x
             # slower from 4 rows up on a 2-socket, 192-thread host).
-            var phased_splits = _min(
-                _min(num_workers, axis_size // _CPU_SPLITK_MIN_AXIS_PER_SPLIT),
+            var phased_splits = min(
+                min(num_workers, axis_size // _CPU_SPLITK_MIN_AXIS_PER_SPLIT),
                 _CPU_POINTWISE_SPLIT_MAX_SPLITS,
             )
             if (
@@ -690,9 +691,7 @@ def launch[
                 var total_workers = num_outputs * num_splits
                 # No memset: slot [row, reduce, split] is written in its
                 # reduce's partial phase before any combine reads it.
-                var phased_buf = rebind[
-                    UnsafePointer[UInt8, MutUntrackedOrigin]
-                ](
+                var phased_buf = rebind[MutPointer[UInt8, MutUntrackedOrigin]](
                     ptr_alloc[UInt8](
                         num_outputs
                         * (num_phases - 1)
@@ -715,9 +714,9 @@ def launch[
                         )
                         var ctx = Context[params_phased](
                             partials_base=phased_buf,
-                            counters_base=UnsafePointer[
-                                Int32, MutUntrackedOrigin
-                            ](unsafe_from_address=1),
+                            counters_base=MutPointer[Int32, MutUntrackedOrigin](
+                                unsafe_from_address=1
+                            ),
                             blocks_per_row=Int32(num_splits),
                             block_in_row=Int32(split_idx),
                             row_idx=Int32(row_idx),
@@ -757,11 +756,11 @@ def launch[
             # Heap scratch: per-row counter + per-(row,split) partial
             # slot. Both freed at the end of the function.
             var partials_size = num_outputs * num_splits * _SPLITK_STATE_BYTES
-            var partials_buf = rebind[UnsafePointer[UInt8, MutUntrackedOrigin]](
+            var partials_buf = rebind[MutPointer[UInt8, MutUntrackedOrigin]](
                 ptr_alloc[UInt8](partials_size)
             )
             unsafe_memset_zero(partials_buf, partials_size)
-            var counters_buf = rebind[UnsafePointer[Int32, MutUntrackedOrigin]](
+            var counters_buf = rebind[MutPointer[Int32, MutUntrackedOrigin]](
                 ptr_alloc[Int32](num_outputs)
             )
             unsafe_memset_zero(counters_buf, num_outputs)
@@ -801,7 +800,7 @@ def launch[
             # 96-thread pool launches 96 workers, 64 of which return
             # immediately — ~700μs of empty-worker setup, larger than
             # the reduction itself.
-            var actual_workers = _min(num_workers, num_outputs)
+            var actual_workers = min(num_workers, num_outputs)
             var chunk = ceildiv(num_outputs, actual_workers)
 
             @inline(.always)
@@ -809,7 +808,7 @@ def launch[
                 @inline(.always)
                 def row_worker(w: Int) {var body, imm}:
                     var start = w * chunk
-                    var end = _min((w + 1) * chunk, num_outputs)
+                    var end = min((w + 1) * chunk, num_outputs)
                     if start >= end:
                         return
                     var ctx = Context[params].empty()
@@ -885,7 +884,7 @@ def launch[
         @inline(.always)
         def slice_worker(w: Int) {var body, imm}:
             var s_start = w * chunk
-            var s_end = _min((w + 1) * chunk, slice_size)
+            var s_end = min((w + 1) * chunk, slice_size)
             if s_start >= s_end:
                 return
             var ctx_scalar = Context[params_scalar_strided].empty()

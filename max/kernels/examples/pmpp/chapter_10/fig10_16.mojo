@@ -47,8 +47,8 @@ def warp_reduce(val: Float32) -> Float32:
 
 
 def two_stage_warp_level_sum_reduction_kernel(
-    input: UnsafePointer[Float32, ImmutAnyOrigin],
-    output: UnsafePointer[Float32, MutAnyOrigin],
+    input: ImmPointer[Float32, ImmutAnyOrigin],
+    output: MutPointer[Float32, MutAnyOrigin],
 ):
     """Two-stage warp-level sum reduction kernel.
 
@@ -56,10 +56,10 @@ def two_stage_warp_level_sum_reduction_kernel(
         input: Input array (in global memory).
         output: Output scalar for the sum result.
     """
-    var t = UInt32(thread_idx.x)
+    var t = thread_idx.x
 
     # Stage 1: Each thread loads and does initial reduction
-    var partial_sum = input[Int(t)] + input[Int(t + BLOCK_DIM)]
+    var partial_sum = input[t] + input[t + BLOCK_DIM]
     partial_sum = warp_reduce(partial_sum)
 
     # Allocate shared memory for partial sums from each warp
@@ -78,7 +78,7 @@ def two_stage_warp_level_sum_reduction_kernel(
     # Stage 2: First warp reduces the partial sums
     var warp_idx = warp_id()
     if warp_idx == 0:
-        partial_sum = partial_sums_s[Int(t)]
+        partial_sum = partial_sums_s[t]
         partial_sum = warp_reduce(partial_sum)
         if thread_idx.x == 0:
             output[0] = partial_sum
@@ -86,8 +86,8 @@ def two_stage_warp_level_sum_reduction_kernel(
 
 # ========================== TEST CODE ==========================
 def cpu_sum(
-    input: UnsafePointer[mut=False, Float32, _],
-    output: UnsafePointer[mut=True, Float32, _],
+    input: ImmPointer[Float32, _],
+    output: MutPointer[Float32, _],
     N: Int,
 ):
     """CPU reference sum implementation.

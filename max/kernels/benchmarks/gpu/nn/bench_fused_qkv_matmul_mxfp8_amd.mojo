@@ -356,7 +356,9 @@ def bench_shape[
         )
         var asf = (
             TileTensor(
-                cb_asf.offset_ptr(iteration).bitcast[Scalar[SCALE_DTYPE]](),
+                cb_asf.offset_ptr(iteration).unsafe_bitcast[
+                    Scalar[SCALE_DTYPE]
+                ](),
                 row_major(total_seq, Idx[k_scales]),
             )
             .as_imm()
@@ -364,7 +366,9 @@ def bench_shape[
         )
         var bsf = (
             TileTensor(
-                cb_bsf.offset_ptr(iteration).bitcast[Scalar[SCALE_DTYPE]](),
+                cb_bsf.offset_ptr(iteration).unsafe_bitcast[
+                    Scalar[SCALE_DTYPE]
+                ](),
                 row_major(Idx[n_total], Idx[k_scales]),
             )
             .as_imm()
@@ -442,7 +446,7 @@ def bench_shape[
             row_major(total_seq, Idx[hidden]),
         ).bitcast[.uint8]()
         var asf_tt = TileTensor(
-            cb_asf.offset_ptr(iteration).bitcast[Scalar[SCALE_DTYPE]](),
+            cb_asf.offset_ptr(iteration).unsafe_bitcast[Scalar[SCALE_DTYPE]](),
             row_major(total_seq, Idx[k_scales]),
         )
 
@@ -452,18 +456,20 @@ def bench_shape[
             band_n: Int
         ](
             col_off: Int,
-            out_ptr: MutPointer[Scalar[OUT_DTYPE], MutAnyOrigin],
-        ) raises {mut cb_w, mut cb_bsf, imm}:
+            c: TileTensor[mut=True, OUT_DTYPE, ...],
+        ) raises {
+            mut cb_w, mut cb_bsf, imm
+        }:
             var w = TileTensor(
-                cb_w.offset_ptr(iteration) + col_off * hidden,
+                cb_w.offset_ptr(iteration).unsafe_offset(col_off * hidden),
                 row_major(Idx[band_n], Idx[hidden]),
             )
             var bsf = TileTensor(
-                cb_bsf.offset_ptr(iteration).bitcast[Scalar[SCALE_DTYPE]]()
-                + col_off * k_scales,
+                cb_bsf.offset_ptr(iteration)
+                .unsafe_bitcast[Scalar[SCALE_DTYPE]]()
+                .unsafe_offset(col_off * k_scales),
                 row_major(Idx[band_n], Idx[k_scales]),
             )
-            var c = TileTensor(out_ptr, row_major(total_seq, Idx[band_n]))
             block_scaled_matmul_amd[lane_bytes=32](
                 c,
                 hs_tt,
@@ -473,68 +479,84 @@ def bench_shape[
                 ctx,
             )
 
-        band[q_dim](0, _any(q_out.unsafe_ptr()))
-        band[kv_dim](k_off, _any(kv_out_ptr))
-        band[kv_dim](v_off, _any(kv_out_ptr) + total_seq * kv_dim)
+        band[q_dim](0, q_out)
+        band[kv_dim](
+            k_off,
+            TileTensor(_any(kv_out_ptr), row_major(total_seq, Idx[kv_dim])),
+        )
+        band[kv_dim](
+            v_off,
+            TileTensor(
+                _any(kv_out_ptr).unsafe_offset(total_seq * kv_dim),
+                row_major(total_seq, Idx[kv_dim]),
+            ),
+        )
         comptime if HAS_INDEXER:
-            band[iq_dim](iq_off, _any(iq_out.unsafe_ptr()))
-            band[ik_dim](ik_off, _any(kv_out_ptr) + 2 * total_seq * kv_dim)
+            band[iq_dim](iq_off, iq_out)
+            band[ik_dim](
+                ik_off,
+                TileTensor(
+                    _any(kv_out_ptr).unsafe_offset(2 * total_seq * kv_dim),
+                    row_major(total_seq, Idx[ik_dim]),
+                ),
+            )
 
         # Placing K/V (and IndexK) is the other half of what the fused epilogue
         # does, so the unfused path pays for those paged-store launches on top
         # of its band GEMMs.
         @inline(.always)
-        @__copy_capture(kv_out_ptr)
         def k_in[
             width: Int, alignment: Int
-        ](idx: Coord) capturing -> SIMD[OUT_DTYPE, width]:
+        ](idx: Coord) {var kv_out_ptr} -> SIMD[OUT_DTYPE, width]:
             return (
                 _any(kv_out_ptr)
-                + Int(idx[0].value()) * kv_dim
-                + Int(idx[2].value())
-            ).load[width=width]()
+                .unsafe_offset(Int(idx[0]) * kv_dim)
+                .unsafe_offset(Int(idx[2]))
+                .load[width=width]()
+            )
 
         @inline(.always)
-        @__copy_capture(kv_out_ptr, total_seq)
         def v_in[
             width: Int, alignment: Int
-        ](idx: Coord) capturing -> SIMD[OUT_DTYPE, width]:
+        ](idx: Coord) {var kv_out_ptr, var total_seq} -> SIMD[OUT_DTYPE, width]:
             return (
                 _any(kv_out_ptr)
-                + total_seq * kv_dim
-                + Int(idx[0].value()) * kv_dim
-                + Int(idx[2].value())
+                .unsafe_offset(total_seq * kv_dim)
+                .unsafe_offset(Int(idx[0]) * kv_dim)
+                .unsafe_offset(Int(idx[2]))
             ).load[width=width]()
 
         @inline(.always)
-        @__copy_capture(kv_out_ptr, total_seq)
         def ik_in[
             width: Int, alignment: Int
-        ](idx: Coord) capturing -> SIMD[OUT_DTYPE, width]:
+        ](idx: Coord) {var kv_out_ptr, var total_seq} -> SIMD[OUT_DTYPE, width]:
             return (
                 _any(kv_out_ptr)
-                + 2 * total_seq * kv_dim
-                + Int(idx[0].value()) * ik_dim
-                + Int(idx[2].value())
+                .unsafe_offset(2 * total_seq * kv_dim)
+                .unsafe_offset(Int(idx[0]) * ik_dim)
+                .unsafe_offset(Int(idx[2]))
             ).load[width=width]()
 
-        kv_cache_store_ragged[target="gpu", input_fn=k_in](
+        kv_cache_store_ragged[target="gpu"](
             main_collection.get_key_cache(layer_idx),
             (total_seq, MAIN_KV_HEADS, HEAD_SIZE),
             iro_tt,
+            k_in,
             ctx,
         )
-        kv_cache_store_ragged[target="gpu", input_fn=v_in](
+        kv_cache_store_ragged[target="gpu"](
             main_collection.get_value_cache(layer_idx),
             (total_seq, MAIN_KV_HEADS, HEAD_SIZE),
             iro_tt,
+            v_in,
             ctx,
         )
         comptime if HAS_INDEXER:
-            kv_cache_store_ragged[target="gpu", input_fn=ik_in](
+            kv_cache_store_ragged[target="gpu"](
                 index_collection.get_key_cache(layer_idx),
                 (total_seq, 1, HEAD_SIZE),
                 iro_tt,
+                ik_in,
                 ctx,
             )
 

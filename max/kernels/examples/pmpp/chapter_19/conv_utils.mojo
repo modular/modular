@@ -53,9 +53,9 @@ def conv_cpu(
     H: Int,
     W: Int,
     K: Int,
-    X: UnsafePointer[mut=False, Float32, _],
-    F: UnsafePointer[mut=False, Float32, _],
-    Y: UnsafePointer[mut=True, Float32, _],
+    X: ImmPointer[Float32, _],
+    F: ImmPointer[Float32, _],
+    Y: MutPointer[Float32, _],
 ):
     """CPU implementation of batched convolution (Figure 19.4 logic).
 
@@ -86,7 +86,7 @@ def conv_cpu(
         Y[y_idx] = acc
 
 
-def init_data(data: UnsafePointer[mut=True, Float32, _], size: Int):
+def init_data(data: MutPointer[Float32, _], size: Int):
     """Initialize data with random values in [-0.5, 0.5].
 
     Args:
@@ -99,8 +99,8 @@ def init_data(data: UnsafePointer[mut=True, Float32, _], size: Int):
 
 
 def verify_results(
-    h_Y_cpu: UnsafePointer[mut=False, Float32, _],
-    h_Y_gpu: UnsafePointer[mut=False, Float32, _],
+    h_Y_cpu: ImmPointer[Float32, _],
+    h_Y_gpu: ImmPointer[Float32, _],
     N: Int,
     M: Int,
     H_out: Int,

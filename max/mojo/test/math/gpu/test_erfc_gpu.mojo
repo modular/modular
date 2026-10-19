@@ -13,10 +13,10 @@
 
 from std.math import erfc, inf, isinf, isnan, nan
 from std.math.math import _call_libm
-from std.sys import bit_width_of, default_accelerator, simd_width_of
+from std.sys import bit_width_of, simd_width_of
 
 from max.algorithm.functional import elementwise
-from max.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext, default_accelerator
 from std.testing import assert_true, TestSuite
 
 from std.utils.coord import Coord
@@ -119,7 +119,7 @@ def _run_erfc[
     def func[
         simd_width: Int, alignment: Int = 1
     ](idx0: Coord) {var out_buffer, var in_buffer}:
-        var idx = Int(idx0[0].value())
+        var idx = Int(idx0[0])
         var val = in_buffer.unsafe_ptr().unsafe_load[width=simd_width](idx)
         out_buffer.unsafe_ptr().unsafe_store[width=simd_width](idx, erfc(val))
 
@@ -182,7 +182,7 @@ def test_erfc_f64_hard_cases() raises:
         def func[
             simd_width: Int, alignment: Int = 1
         ](idx0: Coord) {var out_buffer, var in_buffer}:
-            var idx = Int(idx0[0].value())
+            var idx = Int(idx0[0])
             var val = in_buffer.unsafe_ptr().unsafe_load[width=simd_width](idx)
             out_buffer.unsafe_ptr().unsafe_store[width=simd_width](
                 idx, erfc(val)

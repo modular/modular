@@ -60,10 +60,10 @@ __extension Attention:
     @inline(.always)
     def mla_decode(
         mut self,
-        exp_sum_ptr: UnsafePointer[
+        exp_sum_ptr: MutPointer[
             Scalar[get_accum_type[Self.q_type]()], MutAnyOrigin
         ],
-        qk_max_ptr: UnsafePointer[
+        qk_max_ptr: MutPointer[
             Scalar[get_accum_type[Self.q_type]()], MutAnyOrigin
         ],
         num_partitions: Int,
@@ -200,7 +200,9 @@ __extension Attention:
             self.batch_idx,
             self.kv_head_idx(),
             VBufT.SmemParentType(
-                (self.v_smem_ptr + v_warp_smem_offset).as_unsafe_any_origin(),
+                self.v_smem_ptr.unsafe_offset(
+                    v_warp_smem_offset
+                ).as_unsafe_any_origin(),
                 VBufT._SmemParentLayout(),
             ),
             end,

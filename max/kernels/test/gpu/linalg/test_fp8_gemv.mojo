@@ -189,9 +189,7 @@ def _run_fp8_matmul_epilogue(
     ](idx: Coord, val: SIMD[dtype, width]) {var epi_ptr, var N}:
         comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
         var out = val.cast[.float32]() * 2 + 1
-        epi_ptr.unsafe_store[width=width](
-            Int(idx[0].value()) * N + Int(idx[1].value()), out
-        )
+        epi_ptr.unsafe_store[width=width](Int(idx[0]) * N + Int(idx[1]), out)
 
     enqueue_apple_fp8_matmul[c_type=.float32](out_tt, act_tt, weight_tt, ctx)
     enqueue_apple_fp8_matmul[c_type=.float32, has_epilogue_fn=True](

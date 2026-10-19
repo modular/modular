@@ -21,7 +21,7 @@ from std.testing import assert_true
 def do_prefetch[
     dtype: DType, *, offset: Int = 0
 ](addr: ImmPointer[Scalar[dtype], ImmutAnyOrigin]):
-    prefetch(addr + offset)
+    prefetch(addr.unsafe_offset(offset))
 
 
 def test_prefetch_nvidia() raises:

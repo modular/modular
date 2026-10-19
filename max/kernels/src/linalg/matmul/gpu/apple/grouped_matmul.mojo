@@ -136,15 +136,15 @@ def grouped_gemv_kernel[
     comptime A_ALIGN = align_of[Scalar[a_type]]() * (VW if K % VW == 0 else 1)
     comptime B_ALIGN = align_of[Scalar[b_type]]() * (VW if K % VW == 0 else 1)
 
-    var group = Int(block_idx.z)
+    var group = block_idx.z
     var a_start = Int(a_offsets[group])
     var m = Int(a_offsets[group + 1]) - a_start
     if m <= 0:
         return
 
-    var sg = Int(thread_idx.x) // WARP_SIZE
+    var sg = thread_idx.x // WARP_SIZE
     var lid = Int(lane_id())
-    var n0 = (Int(block_idx.x) * num_sg + sg) * rows_per_sg
+    var n0 = (block_idx.x * num_sg + sg) * rows_per_sg
     if n0 >= N:
         return
 
@@ -185,11 +185,11 @@ def grouped_gemv_kernel[
                 var x = Array[SIMD[.float32, VW], tokens_per_pass](fill=0)
                 comptime for t in range(tokens_per_pass):
                     x[t] = a_pass.load[width=VW, alignment=A_ALIGN](
-                        Coord(t_rows[t], k0)
+                        (t_rows[t], k0)
                     ).cast[.float32]()
                 comptime for r in range(rows_per_sg):
                     var w = b_e.load[width=VW, alignment=B_ALIGN](
-                        Coord(w_rows[r], k0)
+                        (w_rows[r], k0)
                     ).cast[.float32]()
                     comptime for t in range(tokens_per_pass):
                         acc[r * tokens_per_pass + t] += (w * x[t]).reduce_add[
@@ -200,13 +200,13 @@ def grouped_gemv_kernel[
                 var kt = K_VEC + lid
                 while kt < K:
                     comptime for r in range(rows_per_sg):
-                        var w = b_e.load[width=1](Coord(w_rows[r], kt)).cast[
+                        var w = b_e.load[width=1]((w_rows[r], kt)).cast[
                             .float32
                         ]()
                         comptime for t in range(tokens_per_pass):
-                            var xv = a_pass.load[width=1](
-                                Coord(t_rows[t], kt)
-                            ).cast[.float32]()
+                            var xv = a_pass.load[width=1]((t_rows[t], kt)).cast[
+                                .float32
+                            ]()
                             acc[r * tokens_per_pass + t][0] += (w * xv)[0]
                     kt += WARP_SIZE
 
@@ -224,7 +224,7 @@ def grouped_gemv_kernel[
                 else:
                     comptime if has_compute_fn:
                         out = compute_fn[c_type, 1, alignment=1](idx, out)
-                    c_pass.store(Coord(t, n0 + lid), out)
+                    c_pass.store((t, n0 + lid), out)
         t0 += tokens_per_pass
 
 
@@ -280,7 +280,7 @@ def grouped_matmul_mma_kernel[
     """
     comptime MM = _GroupedMma[a_type, b_type, c_type, linear_idx_type]
 
-    var group = Int(first_group) + Int(block_idx.z)
+    var group = Int(first_group) + block_idx.z
     var a_start = Int(a_offsets[group])
     var m = Int(a_offsets[group + 1]) - a_start
     if m <= 0:
@@ -325,11 +325,13 @@ def grouped_matmul_mma_kernel[
         var epilogue_fn, var compute_fn, var c_ptr, var a_start
     }:
         comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
-        var row = a_start + Int(idx[0].value())
-        var col = Int(idx[1].value())
+        var row = a_start + Int(idx[0])
+        var col = Int(idx[1])
         var row_idx = Coord(row, col)
         comptime if has_compute_fn:
-            (c_ptr + row * N + col).store[alignment=alignment](
+            c_ptr.unsafe_offset(row * N).unsafe_offset(col).store[
+                alignment=alignment
+            ](
                 rebind[SIMD[c_type, width]](
                     compute_fn[dtype, width, alignment=alignment](row_idx, val)
                 )

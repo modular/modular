@@ -82,7 +82,12 @@ modular_py_binary(
     # py_binary derives its entry point from the target name, which here ends
     # in `.bench` to match the Mojo benchmarks above.
     main = "builtin/bench_debug_assert_compiletime.py",
-    mojo_deps = ["@mojo//:std"],
+    # The generated GPU-target sources import `get_gpu_target` from
+    # `max.gpu.host`.
+    mojo_deps = [
+        "//max:max_mojo",
+        "@mojo//:std",
+    ],
     tags = [
         "manual",
         "stdlib-benchmark",

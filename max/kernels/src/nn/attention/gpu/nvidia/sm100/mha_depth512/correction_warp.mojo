@@ -104,10 +104,12 @@ def depth512_correction[
     var row: UInt32 = tid % 128
     var m_row = row % UInt32(BM)
 
+    # `tmem_addr` passed in by register (read once post-`cluster_sync` in the
+    # kernel prologue); do NOT re-read `smem.tmem_addr_ptr()` here.
     var o_tmem = TmemAddress(tmem_addr + UInt32(config.TMEM_O))
     var o_hi_tmem = TmemAddress(tmem_addr + UInt32(config.TMEM_O_hi))
 
-    var correction_smem = smem.correction_smem() + m_row
+    var correction_smem = smem.correction_smem().unsafe_offset(m_row)
 
     var pipeline_c = mbars.consumer_c()
     var pipeline_o_lo = mbars.consumer_o_lo()

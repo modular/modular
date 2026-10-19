@@ -116,7 +116,9 @@ mojo_library(
     deps = [
         "//max:extensibility",
         "//max:layout",
+        "//max:linalg",
         "//max:max_mojo",
+        "//max:structured_kernels",
         "@mojo//:std",
     ],
 )

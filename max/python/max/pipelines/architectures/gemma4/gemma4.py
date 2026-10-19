@@ -113,8 +113,8 @@ class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
         self.layer_ids = config.layer_ids or range(
             text_config.num_hidden_layers
         )
-        holds_first = self.layer_ids.start == 0
-        holds_last = self.layer_ids.stop == text_config.num_hidden_layers
+        self.holds_first = self.layer_ids.start == 0
+        self.holds_last = self.layer_ids.stop == text_config.num_hidden_layers
 
         # Build per-layer-type rotary embeddings.
         # sliding_attention uses default rope, full_attention uses proportional.
@@ -152,7 +152,7 @@ class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
         # predicate keeps layer selection and adapter key fusion in lockstep.
         use_fused_projections = gemma4_uses_fused_projections(config)
 
-        if holds_first or (holds_last and config.tie_word_embeddings):
+        if self.holds_first or (self.holds_last and config.tie_word_embeddings):
             self.embed_tokens = ScaledWordEmbedding(
                 text_config.vocab_size,
                 text_config.hidden_size,
@@ -161,7 +161,7 @@ class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
                 embed_scale=text_config.hidden_size**0.5,
             )
 
-        if holds_last:
+        if self.holds_last:
             self.norm = Gemma4RMSNorm(
                 text_config.hidden_size,
                 unquantized_dtype,
@@ -357,7 +357,8 @@ class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
         is_device_graph: bool = False,
     ) -> Graph:
         """Traces the language graph, whose inputs are :meth:`input_tree`'s
-        leaves.
+        leaves, then on a pipeline stage after the first the hidden states
+        per device the previous stage returned.
 
         Adapts the flat graph inputs to :meth:`__call__`: stages the row
         offsets on every device and splits the KV cache into its sliding and
@@ -410,6 +411,9 @@ class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
                 image_token_indices=[
                     v.tensor for v in vision["image_token_indices"]
                 ],
+                boundary_inputs=(
+                    None if self.holds_first else [v.tensor for v in remaining]
+                ),
             )
 
         return Graph(
@@ -431,25 +435,42 @@ class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
         input_row_offsets: Sequence[TensorValue],
         image_embeddings: Sequence[TensorValue],
         image_token_indices: Sequence[TensorValue],
+        *,
+        boundary_inputs: Sequence[TensorValue] | None = None,
         **kwargs: object,
     ) -> tuple[TensorValue, ...]:
+        """Runs this model's decoder layers.
+
+        A pipeline stage after the first starts from ``boundary_inputs``,
+        the hidden states per device the previous stage returned, and
+        ignores the tokens and image inputs. A stage before the last returns
+        its hidden states per device instead of logits.
+        """
         kv_collections_by_type = {
             "sliding_attention": sliding_kv_collections,
             "full_attention": global_kv_collections,
         }
 
-        h = self.embed_tokens(tokens, signal_buffers)
-
-        h = [
-            merge_multimodal_embeddings(
-                inputs_embeds=h_device,
-                multimodal_embeddings=img_embed,
-                image_token_indices=img_tok_indices,
+        if self.holds_first:
+            h = [
+                merge_multimodal_embeddings(
+                    inputs_embeds=h_device,
+                    multimodal_embeddings=img_embed,
+                    image_token_indices=img_tok_indices,
+                )
+                for h_device, img_embed, img_tok_indices in zip(
+                    self.embed_tokens(tokens, signal_buffers),
+                    image_embeddings,
+                    image_token_indices,
+                    strict=True,
+                )
+            ]
+        else:
+            assert boundary_inputs is not None, (
+                "A pipeline stage after the first takes the previous stage's"
+                " hidden states."
             )
-            for h_device, img_embed, img_tok_indices in zip(
-                h, image_embeddings, image_token_indices, strict=True
-            )
-        ]
+            h = list(boundary_inputs)
 
         capture_layer_set: set[int] | None = None
         capture_hidden_states: list[list[TensorValue]] | None = None
@@ -481,6 +502,8 @@ class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
             ):
                 capture_hidden_states.append(list(h))
 
+        if not self.holds_last:
+            return tuple(h)
         return self._postprocess_logits(
             h,
             input_row_offsets,

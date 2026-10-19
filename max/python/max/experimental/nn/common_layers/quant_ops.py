@@ -75,6 +75,7 @@ from .quant_tensor import (
     FP8BlockTensor,
     NVFP4Activation,
     NVFP4Tensor,
+    NVFP4TensorQuantizer,
     QuantAwareTensor,
     all_fp8_block,
     all_nvfp4,
@@ -340,6 +341,14 @@ def is_nvfp4_quantized(quant_config: QuantConfig | None) -> bool:
     return quant_config is not None and quant_config.is_nvfp4
 
 
+def is_nvfp4_fake_quantized(quant_config: QuantConfig | None) -> bool:
+    """Return ``True`` if ``quant_config`` selects Fake Quant NVFP4 block-scaled weights."""
+    return (
+        quant_config is not None
+        and quant_config.format == QuantFormat.FAKE_QUANT_NVFP4
+    )
+
+
 @dataclass(frozen=True)
 class EPDispatchPayload:
     """Named, per-device view of the fused EP dispatch outputs.
@@ -466,7 +475,11 @@ def moe_requires_scales_offsets(quant_config: QuantConfig | None) -> bool:
     return quant_config is not None and quant_config.format == QuantFormat.NVFP4
 
 
-_SUPPORTED_FORMATS = (QuantFormat.BLOCKSCALED_FP8, QuantFormat.NVFP4)
+_SUPPORTED_FORMATS = (
+    QuantFormat.BLOCKSCALED_FP8,
+    QuantFormat.NVFP4,
+    QuantFormat.FAKE_QUANT_NVFP4,
+)
 
 
 def routed_weight_dtype(quant_config: QuantConfig | None) -> DType:
@@ -498,6 +511,13 @@ def quantized_weight(
         assert block_size is not None
         return NVFP4Tensor.zeros(
             (int(out_dim), int(in_dim)), block_size=block_size
+        )
+    if is_nvfp4_fake_quantized(quant_config):
+        assert quant_config is not None
+        block_size = quant_config.weight_scale.block_size
+        assert block_size is not None
+        return NVFP4TensorQuantizer(
+            Tensor.zeros((int(out_dim), int(in_dim))), block_size=block_size
         )
     if is_fp8_block_quantized(quant_config):
         assert quant_config is not None
@@ -840,7 +860,8 @@ def grouped_matmul(
                 row_offsets=expert_start_indices,
                 scales_offsets=scales_offset,
                 expert_ids=expert_ids,
-                sf_tensor=1.0 / weight.input_scale,
+                # NVFP4Tensor keeps its scalars on the host.
+                sf_tensor=(1.0 / weight.input_scale).to(x.mesh),
                 sf_vector_size=_NVFP4_SF_VECTOR_SIZE,
                 scales_type=DType.float8_e4m3fn,
                 out_type=DType.uint8,

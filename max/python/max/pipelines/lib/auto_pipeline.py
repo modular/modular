@@ -51,6 +51,8 @@ class AutoPipeline:
             :class:`~max.pipelines.AutoModel`.
         device_graph_capture: Whether decode steps replay captured graphs, as
             for :class:`~max.pipelines.AutoModel`.
+        prefer_module_v3: Whether to load the architecture's ModuleV3
+            version, as for :class:`~max.pipelines.AutoModel`.
         **config_overrides: Flat :class:`~max.pipelines.lib.PipelineArgs`
             field names. The tokenizer loads with the revision and
             ``trust_remote_code`` of the resolved config.
@@ -67,6 +69,7 @@ class AutoPipeline:
         max_batch_size: int = 1,
         devices: str | None = None,
         device_graph_capture: bool = False,
+        prefer_module_v3: bool = False,
         **config_overrides: object,
     ) -> None:
         model = AutoModel(
@@ -74,6 +77,7 @@ class AutoPipeline:
             max_batch_size=max_batch_size,
             devices=devices,
             device_graph_capture=device_graph_capture,
+            prefer_module_v3=prefer_module_v3,
             **config_overrides,
         )
         try:

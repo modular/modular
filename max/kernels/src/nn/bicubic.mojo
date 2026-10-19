@@ -184,7 +184,7 @@ def cpu_bicubic_kernel(
             sum_weights += weight
 
         # store the result in the output tensor
-        output_host.store[width=1](
+        output_host.store(
             dyn_coord[.int64]((b, c, y_out, x_out)),
             sum_value.cast[output_host.dtype](),
         )
@@ -287,8 +287,8 @@ def gpu_bicubic_kernel[
             sum_value += pixel_value * weight
             sum_weights += weight
 
-        output.store[width=1](
-            Coord(b, c, y_out, x_out),
+        output.store(
+            (b, c, y_out, x_out),
             sum_value.cast[dtype](),
         )
 

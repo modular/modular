@@ -106,13 +106,11 @@ def _initialize_ragged_inputs[
         var unpadded_seq_len = prompt_lens[bs]
         var ragged_start_idx = Int(input_row_offsets_host_ptr[bs])
         for s in range(unpadded_seq_len):
-            var padded_ptr = (
-                hidden_state_padded_host_ptr
-                + (bs * max_seq_length_batch + s) * hidden_size
+            var padded_ptr = hidden_state_padded_host_ptr.unsafe_offset(
+                (bs * max_seq_length_batch + s) * hidden_size
             )
-            var ragged_ptr = (
-                hidden_state_ragged_host_ptr
-                + (ragged_start_idx + s) * hidden_size
+            var ragged_ptr = hidden_state_ragged_host_ptr.unsafe_offset(
+                (ragged_start_idx + s) * hidden_size
             )
             unsafe_memcpy(dest=padded_ptr, src=ragged_ptr, count=hidden_size)
 

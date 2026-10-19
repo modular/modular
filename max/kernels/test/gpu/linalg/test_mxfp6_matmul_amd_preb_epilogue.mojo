@@ -120,16 +120,16 @@ def _run_case[
         b_pre_d, row_major(Idx[N_static], Idx[K_BYTES])
     )
     var sfa_tt = TileTensor[mut=False](
-        sfa_d.unsafe_ptr().bitcast[Float8_e8m0fnu](),
+        sfa_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
         row_major(M_static, Idx[scale_K]),
     )
     var sfb_pre_tt = TileTensor[mut=False](
-        sfb_pre_d.unsafe_ptr().bitcast[Float8_e8m0fnu](),
+        sfb_pre_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
         row_major(Idx[N_static], Idx[scale_K]),
     )
 
     var sfb_raw_tt = TileTensor[mut=False](
-        sfb_raw_d.unsafe_ptr().bitcast[Float8_e8m0fnu](),
+        sfb_raw_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
         row_major(Idx[N_static], Idx[scale_K]),
     )
     var b_row_tt = TileTensor[mut=False](
@@ -157,7 +157,7 @@ def _run_case[
         _dtype: DType, width: SIMDLength, *, alignment: Int
     ](idx: Coord, val: SIMD[_dtype, width]) {var out_tt}:
         comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
-        out_tt.store[width=width](idx, rebind[SIMD[DType.float32, width]](val))
+        out_tt.store(idx, rebind[SIMD[DType.float32, width]](val))
 
     var direct_h = ctx.enqueue_create_host_buffer[.float32](M_static * N_static)
     var out_host = ctx.enqueue_create_host_buffer[.float32](M_static * N_static)

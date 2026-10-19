@@ -68,7 +68,7 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
 ](ctx: DeviceContext, m: MType, n: NType, k: KType) raises:
     comptime BLOCK_SCALE_K = 128
 
-    if Int(m.value()) * size_of[DType.float32]() % 16 != 0:
+    if Int(m) * size_of[DType.float32]() % 16 != 0:
         raise Error("TMA expects M to be divisible by 16 bytes")
 
     print(
@@ -80,11 +80,11 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
         c_type,
         ") ",
         " problem shape=(",
-        Int(m.value()),
+        Int(m),
         ", ",
-        Int(n.value()),
+        Int(n),
         ", ",
-        Int(k.value()),
+        Int(k),
         ") ",
         "mma_shape=",
         mma_shape,
@@ -109,22 +109,18 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
     )
     var c_shape = row_major(m, Idx[NType.static_value])
 
-    var a_scales_shape = row_major(ceildiv(Int(k.value()), BLOCK_SCALE_K), m)
+    var a_scales_shape = row_major(ceildiv(Int(k), BLOCK_SCALE_K), m)
     var b_scales_shape = row_major(
-        ceildiv(Int(n.value()), BLOCK_SCALE_K),
-        ceildiv(Int(k.value()), BLOCK_SCALE_K),
+        ceildiv(Int(n), BLOCK_SCALE_K),
+        ceildiv(Int(k), BLOCK_SCALE_K),
     )
 
-    var a_size = Int(m.value()) * Int(k.value())
-    var b_size = (
-        Int(n.value())
-        * Int(k.value()) if transpose_b else Int(k.value())
-        * Int(n.value())
-    )
-    var c_size = Int(m.value()) * Int(n.value())
-    var a_scales_size = ceildiv(Int(k.value()), BLOCK_SCALE_K) * Int(m.value())
-    var b_scales_size = ceildiv(Int(n.value()), BLOCK_SCALE_K) * ceildiv(
-        Int(k.value()), BLOCK_SCALE_K
+    var a_size = Int(m) * Int(k)
+    var b_size = Int(n) * Int(k) if transpose_b else Int(k) * Int(n)
+    var c_size = Int(m) * Int(n)
+    var a_scales_size = ceildiv(Int(k), BLOCK_SCALE_K) * Int(m)
+    var b_scales_size = ceildiv(Int(n), BLOCK_SCALE_K) * ceildiv(
+        Int(k), BLOCK_SCALE_K
     )
 
     var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](a_size)
@@ -164,20 +160,20 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
 
     # Initialize matmul operands
     if simple_init():
-        for m in range(Int(m.value())):
-            for k in range(Int(k.value())):
+        for m in range(Int(m)):
+            for k in range(Int(k)):
                 comptime assert a_host.flat_rank == 2
                 a_host[m, k] = Scalar[a_type](1.0)
-        for n in range(Int(n.value())):
-            for k in range(Int(k.value())):
+        for n in range(Int(n)):
+            for k in range(Int(k)):
                 b_host[n, k] = Scalar[b_type](1.0)
 
-        for m in range(Int(m.value())):
-            for k in range(Int(k.value())):
+        for m in range(Int(m)):
+            for k in range(Int(k)):
                 comptime assert a_scales_host.flat_rank == 2
                 a_scales_host[k // BLOCK_SCALE_K, m] = Scalar[scales_type](0.5)
-        for n in range(Int(n.value())):
-            for k in range(Int(k.value())):
+        for n in range(Int(n)):
+            for k in range(Int(k)):
                 b_scales_host[n // BLOCK_SCALE_K, k // BLOCK_SCALE_K] = Scalar[
                     scales_type
                 ](0.5)

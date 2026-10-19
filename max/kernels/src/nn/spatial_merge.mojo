@@ -129,7 +129,7 @@ def spatial_merge_kernel[
     var W_out = W // Int64(_merge_size)
     var C_out = _hidden_size * _merge_size * _merge_size
 
-    # Create a RuntimeLayout for the patch space [T, H_out, W_out]
+    # Create a layout for the patch space [T, H_out, W_out]
     # to convert linear patch_local_idx to (t, ho, wo) coordinates.
     var patch_space_rt_layout = row_major(T, H_out, W_out)
 
@@ -166,7 +166,7 @@ def spatial_merge_kernel[
     )
 
     var input_tensor = TileTensor(
-        input.ptr + Int(offset_in * Int64(_hidden_size)),
+        input.ptr.unsafe_offset(Int(offset_in * Int64(_hidden_size))),
         input_tiled_layout,
     )
 
@@ -175,7 +175,7 @@ def spatial_merge_kernel[
     # we use 4D for semantic clarity - internally in memory it is handled correctly.
     var output_runtime_layout = row_major((T, H_out, W_out, C_out))
     var output_tensor = TileTensor(
-        output.ptr + Int(offset_out * Int64(C_out)),
+        output.ptr.unsafe_offset(Int(offset_out * Int64(C_out))),
         output_runtime_layout,
     )
 
@@ -194,9 +194,7 @@ def spatial_merge_kernel[
             channel_coords[1].value(),
             channel_coords[2].value(),
         )
-        output_tensor[Coord(t, ho, wo, c_out)] = input_tensor[
-            Coord(ho, dh, wo, dw, c)
-        ]
+        output_tensor[t, ho, wo, c_out] = input_tensor[ho, dh, wo, dw, c]
 
 
 def spatial_merge[

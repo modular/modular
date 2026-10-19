@@ -1,0 +1,44 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+# 8x B200 recipe for Hy4-preview MXFP8, after vLLM's: tensor and expert
+# parallel 8, MTP with three speculative tokens, the hy_v4 reasoning and tool
+# parsers.
+#
+# Attention is tensor-parallel (data_parallel_degree 1 across eight devices).
+# vLLM's FLASHMLA_SPARSE backend has no MAX flag; the sparse MLA kernel is the
+# arch's own. device_graph_capture is left to the arch default, which is on.
+model:
+  model_path: tencent/Hy4-preview-FP8
+  device_specs: [0, 1, 2, 3, 4, 5, 6, 7]
+  data_parallel_degree: 1
+  max_length: 131072
+  kv_cache:
+    enable_prefix_caching: true
+
+speculative:
+  speculative_method: mtp
+  num_speculative_tokens: 3
+
+runtime:
+  ep_size: 8
+  reasoning_parser: hy_v4
+  tool_parser: hy_v4
+  # The memory plan under-reserves a chunk-linear prefill transient; halving
+  # the chunk serves 204800-token contexts on 8x B200.
+  max_batch_input_tokens: 4096
+  # Without it, first-turn prefill steps block decode entirely.
+  enable_in_flight_batching: true
+
+# tool_choice required/named needs the grammar.
+sampling:
+  enable_structured_output: true

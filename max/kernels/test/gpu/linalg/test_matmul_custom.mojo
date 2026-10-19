@@ -662,18 +662,16 @@ def run_batched_matmul(
     ctx.enqueue_copy(b_device, b_host)
 
     @inline(.always)
-    @__copy_capture(c_tensor)
-    @__parameter
-    def elementwise_epilogue_fn1[
+    def add_two[
         c_type: DType,
         width: SIMDLength,
         *,
-        alignment: Int = 1,
-    ](coord: Coord, val: SIMD[c_type, width]) -> None:
-        c_tensor.store(coord, val.cast[c_tensor.dtype]() + 2)
+        alignment: Int,
+    ](coord: Coord, val: SIMD[c_type, width]) -> SIMD[c_type, width]:
+        return val + 2
 
-    _batched_matmul_gpu[elementwise_epilogue_fn=elementwise_epilogue_fn1](
-        c_tensor, a_tensor.as_imm(), b_tensor.as_imm(), ctx
+    _batched_matmul_gpu(
+        c_tensor, a_tensor.as_imm(), b_tensor.as_imm(), add_two, ctx
     )
 
     ctx.enqueue_copy(c_host, c_device)
@@ -681,19 +679,8 @@ def run_batched_matmul(
     ctx.enqueue_copy(a_device_n, a_host_n)
     ctx.enqueue_copy(b_device_n, b_host_n)
 
-    @inline(.always)
-    @__copy_capture(c_tensor_n)
-    @__parameter
-    def elementwise_epilogue_fn2[
-        c_type: DType,
-        width: SIMDLength,
-        *,
-        alignment: Int = 1,
-    ](coord: Coord, val: SIMD[c_type, width]) -> None:
-        c_tensor_n.store(coord, val.cast[c_tensor_n.dtype]() + 2)
-
-    _batched_matmul_gpu[elementwise_epilogue_fn=elementwise_epilogue_fn2](
-        c_tensor_n, a_tensor_n.as_imm(), b_tensor_n.as_imm(), ctx
+    _batched_matmul_gpu(
+        c_tensor_n, a_tensor_n.as_imm(), b_tensor_n.as_imm(), add_two, ctx
     )
 
     ctx.enqueue_copy(c_host_n, c_device_n)

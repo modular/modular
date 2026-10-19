@@ -132,6 +132,12 @@ def _ep_forward(
     device_ids: list[int] = []
 
     batch_mgr = moe_shards[0].ep_batch_manager
+    router_folded = batch_mgr.config.eplb_router_folded
+    if router_folded and eplb_counter_buffers:
+        raise ValueError(
+            "EPLB routing profiling counts logical expert ids, but the "
+            "router is folded to emit physical ids; profile without folding"
+        )
     _eplb_remap_logged = False
     for i, (shard, x) in enumerate(zip(moe_shards, xs, strict=True)):
         gate = shard.gate
@@ -139,6 +145,7 @@ def _ep_forward(
 
         use_fused_eplb_router = (
             batch_mgr.config.eplb_enabled
+            and not router_folded
             and getattr(gate, "n_group", 1) == 1
             and not _eplb_is_identity_placement(batch_mgr)
             and hasattr(
@@ -210,7 +217,7 @@ def _ep_forward(
                     gate.num_experts,
                 )
 
-            if batch_mgr.config.eplb_enabled:
+            if batch_mgr.config.eplb_enabled and not router_folded:
                 assert layer_idx_per_device, (
                     "EPLB requires per-device layer_idx tensors; got "
                     f"{layer_idx_per_device!r}"

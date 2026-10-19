@@ -15,20 +15,15 @@
 
 from max.gpu import block_idx, thread_idx
 from max.gpu.host import DeviceContext
-from std.math import min, max
-
-
-def ceildiv(a: Int, b: Int) -> Int:
-    """Ceiling division."""
-    return (a + b - 1) // b
+from std.math import ceildiv, min, max
 
 
 def co_rank(
     k: Int,
     m: Int,
     n: Int,
-    A: UnsafePointer[Int32, _],
-    B: UnsafePointer[Int32, _],
+    A: Pointer[Int32, _],
+    B: Pointer[Int32, _],
 ) -> Int:
     """Find the co-rank of k in the merged sequence of A and B.
 
@@ -67,11 +62,11 @@ def co_rank(
 
 
 def local_subset_merge(
-    A: UnsafePointer[Int32, _],
+    A: Pointer[Int32, _],
     m_local: Int,
-    B: UnsafePointer[Int32, _],
+    B: Pointer[Int32, _],
     n_local: Int,
-    C: UnsafePointer[Int32, MutAnyOrigin],
+    C: MutPointer[Int32, MutAnyOrigin],
 ):
     """Sequential merge of two sorted subarrays.
 
@@ -99,11 +94,11 @@ def local_subset_merge(
 
 
 def merge_basic_kernel(
-    A: UnsafePointer[Int32, ImmutAnyOrigin],
+    A: ImmPointer[Int32, ImmutAnyOrigin],
     m_dev: Int32,
-    B: UnsafePointer[Int32, ImmutAnyOrigin],
+    B: ImmPointer[Int32, ImmutAnyOrigin],
     n_dev: Int32,
-    C: UnsafePointer[Int32, MutAnyOrigin],
+    C: MutPointer[Int32, MutAnyOrigin],
     block_dim_x_dev: Int32,
     grid_dim_x_dev: Int32,
 ):
@@ -138,15 +133,21 @@ def merge_basic_kernel(
     var n_local = n - b_idx
 
     # Perform local merge
-    local_subset_merge(A + a_idx, m_local, B + b_idx, n_local, C + k_begin)
+    local_subset_merge(
+        A.unsafe_offset(a_idx),
+        m_local,
+        B.unsafe_offset(b_idx),
+        n_local,
+        C.unsafe_offset(k_begin),
+    )
 
 
 def cpu_merge(
-    A: UnsafePointer[Int32, _],
+    A: Pointer[Int32, _],
     m: Int,
-    B: UnsafePointer[Int32, _],
+    B: Pointer[Int32, _],
     n: Int,
-    C: UnsafePointer[mut=True, Int32, _],
+    C: MutPointer[Int32, _],
 ):
     """CPU reference implementation of merge.
 

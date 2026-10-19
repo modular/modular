@@ -47,11 +47,15 @@ _MAX_PACKAGES = {
 # that build standalone.
 INTERNAL_PACKAGES = [
     "//Kernels/lib/attn_res",
+    "//Kernels/lib/csa",
+    "//Kernels/lib/engram",
     "//Kernels/lib/kda",
     "//Kernels/lib/matmul_rs",
     "//Kernels/lib/mega_ffn",
+    "//Kernels/lib/mega_mhc",
     "//Kernels/lib/msa",
     "//Kernels/lib/qsa",
+    "//Kernels/lib/topk_coop",
     "//max/driver/src/max_license/_hal",
     "//max/driver/src/max_license/machine",
 ]

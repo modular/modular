@@ -427,7 +427,7 @@ struct KVMmaOp[
         bk_tile: Int
     ](
         self,
-        smem_base: UnsafePointer[
+        smem_base: MutPointer[
             Scalar[Self.in_type], MutAnyOrigin, address_space=.SHARED
         ],
     ):
@@ -507,7 +507,9 @@ struct KVMmaOp[
                         var swizzled_elem = (
                             swizzle(vec_idx) * simd_w_elem + sub_vec
                         )
-                        return ds_read_tr16_b64(smem_base + swizzled_elem)
+                        return ds_read_tr16_b64(
+                            smem_base.unsafe_offset(swizzled_elem)
+                        )
 
                     var part_1 = _read_half[0]()
                     var part_2 = _read_half[1]()
@@ -533,7 +535,7 @@ struct KVMmaOp[
                         _MmaTileLayout,
                         MutAnyOrigin,
                         address_space=.SHARED,
-                    ](smem_base + offset, _MmaTileLayout())
+                    ](smem_base.unsafe_offset(offset), _MmaTileLayout())
                     var frag = TiledMmaLoader[
                         Self.in_type, Self.mma_shape
                     ].load_b_tr(mma_smem)
@@ -550,7 +552,7 @@ struct KVMmaOp[
         bk_tile: Int
     ](
         self,
-        smem_base: UnsafePointer[
+        smem_base: MutPointer[
             Scalar[Self.in_type], MutAnyOrigin, address_space=.SHARED
         ],
         rel_key: Int,

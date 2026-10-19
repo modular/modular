@@ -107,10 +107,10 @@ def fold[
     def fold_fn[width: Int, alignment: Int = 1](idx: Coord) {var}:
         comptime assert idx.rank == 4, "fold_fn: rank must be 4"
 
-        var batch = Int(idx[0].value())
-        var channel = Int(idx[1].value())
-        var h_out = Int(idx[2].value())
-        var w_out = Int(idx[3].value())
+        var batch = Int(idx[0])
+        var channel = Int(idx[1])
+        var h_out = Int(idx[2])
+        var w_out = Int(idx[3])
 
         var output_val = Scalar[dtype](0)
 

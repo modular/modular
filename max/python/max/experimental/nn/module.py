@@ -697,29 +697,79 @@ class Module(Generic[_P, _R]):
             Tracer(f"Module.compile({class_name})"),
             CompilationTimer(class_name) as timer,
         ):
-            declared: Module[_P, _R] = tree.map(
-                _ExternalWeight.like, self, leaf=Tensor, shared=True
-            )
-            name_weights(declared)
-            # Build the registry against the declared parameters, which record
-            # the layout each checkpoint entry arrives in.
-            registry = shard_checkpoint(
-                declared,
-                dict(self.parameters) if weights is None else weights,
-                auto_cast=auto_cast,
-            )
-            staged = compilation.stage(
-                declared,
-                name=type(self).__qualname__ if name is None else name,
+            staged, registry = self.stage(
+                *input_types,
+                weights=weights,
+                name=name,
                 custom_extensions=custom_extensions,
+                auto_cast=auto_cast,
                 allow_subgraphs=allow_subgraphs,
                 is_device_graph=is_device_graph,
                 signal_buffer_index=signal_buffer_index,
-            )(*input_types)
+            )
             timer.mark_build_complete()
             return compilation.CompiledCallable(
                 staged, registry, session=session
             )
+
+    def stage(
+        self,
+        *input_types: InputType,
+        weights: Mapping[str, DLPackArray] | None = None,
+        name: str | None = None,
+        custom_extensions: Iterable[Path] = (),
+        auto_cast: bool = False,
+        allow_subgraphs: bool = True,
+        is_device_graph: bool = False,
+        signal_buffer_index: int | None = None,
+    ) -> tuple[compilation.StagedGraph[_P, _R], dict[str, Tensor]]:
+        """Traces ``forward`` and builds the weight registry it binds.
+
+        This is the tracing half of :meth:`compile`. Use it to compile and
+        initialize the graph yourself, then wrap the initialized model with
+        :meth:`~max.experimental.compilation.CompiledCallable.from_engine_model`.
+
+        Args:
+            *input_types: As :meth:`compile`.
+            weights: As :meth:`compile`.
+            name: As :meth:`compile`.
+            custom_extensions: As :meth:`compile`.
+            auto_cast: As :meth:`compile`.
+            allow_subgraphs: As :meth:`compile`.
+            is_device_graph: As :meth:`compile`.
+            signal_buffer_index: As :meth:`compile`.
+
+        Returns:
+            The :class:`~max.experimental.compilation.StagedGraph` and the
+            weight registry: a mapping from the name of each weight the
+            graph declares to its data, with one entry per shard for a
+            distributed weight.
+
+        Raises:
+            TypeError: As :meth:`compile`.
+            ValueError: As :meth:`compile`.
+            KeyError: As :meth:`compile`.
+        """
+        declared: Module[_P, _R] = tree.map(
+            _ExternalWeight.like, self, leaf=Tensor, shared=True
+        )
+        name_weights(declared)
+        # Build the registry against the declared parameters, which record
+        # the layout each checkpoint entry arrives in.
+        registry = shard_checkpoint(
+            declared,
+            dict(self.parameters) if weights is None else weights,
+            auto_cast=auto_cast,
+        )
+        staged = compilation.stage(
+            declared,
+            name=type(self).__qualname__ if name is None else name,
+            custom_extensions=custom_extensions,
+            allow_subgraphs=allow_subgraphs,
+            is_device_graph=is_device_graph,
+            signal_buffer_index=signal_buffer_index,
+        )(*input_types)
+        return staged, registry
 
     def __rich_repr__(self):
         yield from self.children

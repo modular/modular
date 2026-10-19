@@ -83,7 +83,7 @@ struct GEMMKind(
     ].values
 
     comptime _enum_case_types = TypeList.splat[
-        ParameterList[Self._enum_case_names].size, NoneType
+        ParameterList[Self._enum_case_names].length, NoneType
     ].values
 
     @inline(.always)
@@ -281,7 +281,7 @@ def _compute_swizzle_modes(
             # When not swapped, output_tile_shape[1] is the N dimension.
             # Key the swizzle off bytes so it is dtype-generic: bf16 tile_n
             # {64,32,16} and fp32 tile_n {32,16,8} both map to {128B,64B,32B}.
-            var elem_size = 2 if c_type == DType.bfloat16 else 4
+            var elem_size = 2 if c_type == .bfloat16 else 4
             var row_bytes = output_tile_shape[1] * elem_size
             match row_bytes:
                 case 128:
@@ -937,7 +937,7 @@ def choose_config[
     # a larger range than mma_m.
     if M < M_pivote:
         # when output dtype is float8_e4m3fn, due to output TMA requirement, we need to use 16 as the granularity for 1CTA.
-        var MMA_N_GRANULARITY = 16 if c_type == DType.float8_e4m3fn else 8
+        var MMA_N_GRANULARITY = 16 if c_type == .float8_e4m3fn else 8
         for bm, mma_n in product(
             [64, 128],
             range(
@@ -999,8 +999,28 @@ def choose_config[
         select_mma_mn(N, M, True)
 
     # For small mmas, we group multiple tiles per tma-mma synchronization.
+    # Prefetch depth counts groups, so grouping doubles what each group
+    # prefetches; the two only coexist on blocks small enough for both.
+    # Prefetch also needs this grid to leave SMs free for the dependent
+    # kernel's prologue, so it stays off for second-wave shapes and inside
+    # the grouping zone, and turns on for one-wave shapes whose blocks are
+    # too large to group.
+    # Only a plain GEMM's B is a static weight; a batched matmul's operands
+    # are activations a predecessor may still be writing.
+    var prefetch_weights = gemm_kind == GEMMKind.GEMM and M < 128
     var output_block_size = (mma_mn[0] // cta_group) * mma_mn[1]
-    if output_block_size <= 64 * 96 and ceildiv(K, BK) % 2 == 0:
+    if (
+        gemm_kind == GEMMKind.GEMM
+        and not prefetch_weights
+        and min_num_waves == 1
+        and M <= 1024
+        and output_block_size > 64 * 160
+    ):
+        prefetch_weights = True
+    var max_k_group_2_block = 64 * 96
+    if mma_mn[0] // cta_group == 64 and not prefetch_weights:
+        max_k_group_2_block = 64 * 160
+    if output_block_size <= max_k_group_2_block and ceildiv(K, BK) % 2 == 0:
         k_group_size = 2
     # For very small mmas we can group more aggressively.
     if output_block_size <= 64 * 16 and ceildiv(K, BK) % 4 == 0:
@@ -1060,7 +1080,7 @@ def choose_config[
     # resident while the producer still runs and can spend that window on
     # weights. It stops paying once M fills the device. The depth is capped by
     # the ring: a deeper prefetch would fill it before any barrier can fire.
-    if M < 128:
+    if prefetch_weights:
         config.prefetch_tiles_n = min(
             4, config.num_pipeline_stages // config.k_group_size
         )
@@ -1519,7 +1539,7 @@ def choose_block_scaled_config[
         sfa_dtype == sfb_dtype
     ), "sfa_dtype and sfb_dtype must be the same"
 
-    comptime is_fp4 = a_type == DType.uint8
+    comptime is_fp4 = a_type == .uint8
 
     comptime num_SMs = B200.sm_count
     # Nvidia mma instruction process 32B in K.

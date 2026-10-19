@@ -910,7 +910,7 @@ VerifiedParamBindings ParamInf::inferForStruct() {
   auto attachNoteOnError = llvm::scope_exit([&]() {
     if (diag.hasErrorEmitted() && declIfKnown) {
       auto *defDecl = llvm::dyn_cast<DefASTDecl>(declIfKnown);
-      if (defDecl && defDecl->getOp()) {
+      if (defDecl) {
         diag.attachNote(*declIfKnown) << "function declared here";
       } else {
         diag.attachNote(*declIfKnown)
@@ -1289,8 +1289,7 @@ LogicalResult ParamInf::finalizeWithUnbound() {
 
     // If this is a method on a struct and we couldn't infer something from
     // its self parameters, complain about the struct.
-    if (auto *fnDecl = dyn_cast_if_present<DefASTDecl>(declIfKnown);
-        fnDecl && fnDecl->getOp()) {
+    if (auto *fnDecl = dyn_cast_if_present<DefASTDecl>(declIfKnown); fnDecl) {
       if (auto structOp =
               dyn_cast<StructDeclOp>(fnDecl->getOp()->getParentOp())) {
         auto structSig = structOp.getSignature();
@@ -2378,8 +2377,7 @@ VerifiedParamBindings CallParamInf::inferForCall() {
   //         pass
   // All of the arguments have been resolved here so all parameters must be
   // inferred (or not able to).
-  if (auto *fnDecl = dyn_cast_if_present<DefASTDecl>(declIfKnown);
-      fnDecl && fnDecl->getOp()) {
+  if (auto *fnDecl = dyn_cast_if_present<DefASTDecl>(declIfKnown); fnDecl) {
     if (fnDecl->getOp().getSpecialFunctionInfo().hasSelfResult())
       if (failed(inferSelfFromInitResult()))
         return {};

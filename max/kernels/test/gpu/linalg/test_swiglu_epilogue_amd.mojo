@@ -293,11 +293,11 @@ def _run_case[
         b_pre_d, row_major[num_experts, N * packed_K]()
     ).as_imm()
     var a_sc_tt = TileTensor(
-        a_sc_pre_d.unsafe_ptr().bitcast[Float8_e8m0fnu](),
+        a_sc_pre_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
         row_major(Coord(num_experts * max_padded_M, Idx[scale_K])),
     ).as_imm()
     var b_sc_tt = TileTensor(
-        b_sc_pre_d.unsafe_ptr().bitcast[Float8_e8m0fnu](),
+        b_sc_pre_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
         row_major[num_experts, N, scale_K](),
     ).as_imm()
     var a_off_tt = TileTensor(a_off_d, row_major(Coord(num_active + 1)))
@@ -520,11 +520,11 @@ def _run_dispatch_case[
         b_pre_d, row_major[num_experts, N * packed_K]()
     ).as_imm()
     var a_sc_tt = TileTensor(
-        a_sc_pre_d.unsafe_ptr().bitcast[Float8_e8m0fnu](),
+        a_sc_pre_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
         row_major(Coord(num_experts * max_padded_M, Idx[scale_K])),
     ).as_imm()
     var b_sc_tt = TileTensor(
-        b_sc_pre_d.unsafe_ptr().bitcast[Float8_e8m0fnu](),
+        b_sc_pre_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
         row_major[num_experts, N, scale_K](),
     ).as_imm()
     var a_off_tt = TileTensor(

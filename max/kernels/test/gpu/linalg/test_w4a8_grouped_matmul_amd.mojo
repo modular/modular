@@ -217,11 +217,11 @@ def _check[
             a.unsafe_ptr().as_imm().unsafe_origin_cast[ImmutAnyOrigin](),
             b.unsafe_ptr().as_imm().unsafe_origin_cast[ImmutAnyOrigin](),
             sa.unsafe_ptr()
-            .bitcast[UInt8]()
+            .unsafe_bitcast[UInt8]()
             .as_imm()
             .unsafe_origin_cast[ImmutAnyOrigin](),
             sb.unsafe_ptr()
-            .bitcast[UInt8]()
+            .unsafe_bitcast[UInt8]()
             .as_imm()
             .unsafe_origin_cast[ImmutAnyOrigin](),
             offsets.unsafe_ptr().as_imm().unsafe_origin_cast[ImmutAnyOrigin](),

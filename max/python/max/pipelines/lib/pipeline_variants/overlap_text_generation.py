@@ -1994,18 +1994,24 @@ class OverlapTextGenerationPipeline(
 
         self._sampler_with_bitmask: Model | None = None
         self._sampler_without_bitmask: Model | None = None
-        self.compiled_artifacts = self._pipeline_model.compiled_artifacts
+        compiled_modules = dict(self._pipeline_model.compiled_modules)
         if not is_spec_decode:
-            sampler_artifacts, samplers = load_sampler_graphs(
+            samplers = load_sampler_graphs(
                 session,
                 pipeline_config,
                 sampler_device_ref,
                 self.vocab_size,
                 custom_extensions=sampler_extensions,
             )
-            self._sampler_with_bitmask = samplers.get(GraphRole.SAMPLER_BITMASK)
-            self._sampler_without_bitmask = samplers[GraphRole.SAMPLER]
-            self.compiled_artifacts |= sampler_artifacts
+            bitmask_sampler = samplers.get(GraphRole.SAMPLER_BITMASK)
+            self._sampler_with_bitmask = (
+                bitmask_sampler.engine_model if bitmask_sampler else None
+            )
+            self._sampler_without_bitmask = samplers[
+                GraphRole.SAMPLER
+            ].engine_model
+            compiled_modules |= samplers
+        self.compiled_modules = compiled_modules
 
         # Pre-allocate pinned buffer for D2H token copies only when the
         # bitmask path is wired in. This buffer is used for async token

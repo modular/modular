@@ -22,9 +22,9 @@ from max.gpu.host import DeviceContext
 
 
 def vec_add_kernel(
-    a_d: UnsafePointer[Float32, MutUntrackedOrigin],
-    b_d: UnsafePointer[Float32, MutUntrackedOrigin],
-    c_d: UnsafePointer[Float32, MutUntrackedOrigin],
+    a_d: MutPointer[Float32, MutUntrackedOrigin],
+    b_d: MutPointer[Float32, MutUntrackedOrigin],
+    c_d: MutPointer[Float32, MutUntrackedOrigin],
     n_dev: Int32,
 ):
     """GPU kernel for vector addition.
@@ -43,9 +43,9 @@ def vec_add_kernel(
 
 
 def vec_add(
-    a: UnsafePointer[Float32, MutUntrackedOrigin],
-    b: UnsafePointer[Float32, MutUntrackedOrigin],
-    c: UnsafePointer[Float32, MutUntrackedOrigin],
+    a: MutPointer[Float32, MutUntrackedOrigin],
+    b: MutPointer[Float32, MutUntrackedOrigin],
+    c: MutPointer[Float32, MutUntrackedOrigin],
     n: Int,
     ctx: DeviceContext,
 ) raises:
@@ -70,7 +70,7 @@ def vec_add(
     ctx.enqueue_copy(b_d, b)
 
     # Calculate launch configuration
-    var block_dim = 256
+    comptime block_dim = 256
     var grid_dim = ceildiv(n, block_dim)
 
     # Launch kernel
@@ -94,7 +94,7 @@ def vec_add(
 
 
 def main() raises:
-    var n = 512
+    comptime n = 512
 
     # Allocate host memory
     var a = alloc[Float32](n)

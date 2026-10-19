@@ -28,7 +28,7 @@ def compute_rms[
     comptime assert data.rank == 1, "data.rank must be 1"
     var sum_of_squares = Float32()
     for i in range(size):
-        var d = data.raw_load(i).cast[.float32]()
+        var d = data.load[width=1]((i,)).cast[.float32]()
         sum_of_squares += d * d
     return sqrt((sum_of_squares / Float32(data.num_elements())) + eps)
 
@@ -64,15 +64,13 @@ def run_rms_norm_cpu[
     def input_fn[
         width: Int
     ](coords: Coord) {var input_buf} -> SIMD[dtype, width]:
-        var idx = input_buf.layout(coords)
-        return input_buf.raw_load[width=width](idx)
+        return input_buf.load[width=width](coords)
 
     @inline(.always)
     def identity_output_fn[
         width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[dtype, width]) {var output_buf} -> None:
-        var idx = output_buf.layout(coords)
-        output_buf.raw_store[width=width, alignment=alignment](idx, val)
+        output_buf.store[alignment=alignment](coords, val)
 
     rms_norm_cpu[
         epsilon=epsilon,
@@ -85,12 +83,10 @@ def run_rms_norm_cpu[
         gamma,
     )
 
-    var input_ptr_ptr: MutPointer[
-        input_ptr.T, origin_of(input_ptr)
-    ] = input_ptr.unsafe_ptr()
+    var input_ptr_ptr = input_ptr.unsafe_ptr()
     for r, c in product(range(rows), range(cols)):
         var vec = TileTensor(
-            input_ptr_ptr + r * cols,
+            input_ptr_ptr.unsafe_offset(r * cols),
             row_major(cols),
         )
         var rms_ref = compute_rms(vec, cols, epsilon)

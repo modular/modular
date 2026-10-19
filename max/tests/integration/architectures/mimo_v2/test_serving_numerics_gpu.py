@@ -13,7 +13,7 @@
 """Scores MAX's MiMo-V2 logits on the tiny fixture against HF goldens.
 
 Builds the ``tiny_fixture`` checkpoint, runs it through the weight adapter
-and the MAX model, tensor parallel over two GPUs when there are two, and
+and the MAX model, tensor parallel over the target's selected GPU count, and
 compares every logit row with the goldens that ``make_random_fixture.py
 --tiny-goldens`` computed from the checkpoint's own HF modeling code in
 float32. Both prompts
@@ -23,10 +23,12 @@ then decoded a token at a time.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import numpy as np
 import numpy.typing as npt
+import pytest
 import tiny_fixture
 from max.driver import accelerator_count
 from mimo_runner import Runner
@@ -61,28 +63,79 @@ def _kl(
     return (np.exp(lg) * (lg - lt)).sum(-1)
 
 
-def test_serving_logits_match_hf(tmp_path: Path) -> None:
-    goldens = np.load(GOLDENS)
+@pytest.fixture(scope="module")
+def logits_by_mode(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> dict[tuple[bool, bool], list[npt.NDArray[np.float32]]]:
     checkpoint = tiny_fixture.tensors()
+    goldens = np.load(GOLDENS)
     assert str(goldens["digest"]) == tiny_fixture.digest(checkpoint), (
         "tiny_fixture.py no longer builds the checkpoint the goldens were "
         "made from; rerun make_random_fixture.py --tiny-goldens."
     )
-    tiny_fixture.write(tmp_path, checkpoint)
-    num_devices = min(2, accelerator_count())
-    runner = Runner(
-        tmp_path,
-        num_devices=num_devices,
-        max_seq_len=256,
-        kv_cache_bytes=256 * 1024**2,
+    path = tmp_path_factory.mktemp("mimo")
+    tiny_fixture.write(path, checkpoint)
+    num_devices = int(
+        os.environ.get("MIMO_TEST_TP_DEGREE", str(min(2, accelerator_count())))
+    )
+    assert accelerator_count() >= num_devices
+    prompts = [
+        np.array(ids, np.int64) for ids in tiny_fixture.prompts().values()
+    ]
+    results = {}
+    for fused in (False, True):
+        model = Runner(
+            path,
+            num_devices=num_devices,
+            max_seq_len=256,
+            kv_cache_bytes=256 * 1024**2,
+            fused_sliding_qkv=fused,
+        )
+        assert (model.fused_qkv_count > 0) == fused
+        for captured in (False, True):
+            outputs = model.teacher_forced(
+                prompts, CHUNK, DECODE, device_graph_capture=captured
+            )
+            assert (model.capture_steps > 0) == captured
+            if captured:
+                assert model.capture_steps == len(
+                    model.capture_replays_by_batch_size
+                )
+                assert model.replay_steps > model.capture_steps
+                assert any(
+                    replays > 1
+                    for replays in model.capture_replays_by_batch_size.values()
+                )
+                assert any(
+                    len(set(lengths)) > 1
+                    for lengths in model.replay_cache_lengths_by_batch_size.values()
+                )
+            else:
+                assert model.replay_steps == 0
+            logits = []
+            for output, _ in outputs:
+                assert output is not None
+                logits.append(output)
+            results[fused, captured] = logits
+        del model
+    return results
+
+
+@pytest.mark.parametrize("fused", [False, True], ids=["unfused", "fused"])
+@pytest.mark.parametrize("captured", [False, True], ids=["eager", "capture"])
+def test_serving_logits_match_hf(
+    logits_by_mode: dict[tuple[bool, bool], list[npt.NDArray[np.float32]]],
+    fused: bool,
+    captured: bool,
+) -> None:
+    goldens = np.load(GOLDENS)
+    num_devices = int(
+        os.environ.get("MIMO_TEST_TP_DEGREE", str(min(2, accelerator_count())))
     )
     prompts = tiny_fixture.prompts()
-    outputs = runner.teacher_forced(
-        [np.array(ids, np.int64) for ids in prompts.values()], CHUNK, DECODE
-    )
-
+    outputs = logits_by_mode[fused, captured]
     kl, top1 = {}, {}
-    for name, (logits, _) in zip(prompts, outputs, strict=True):
+    for name, logits in zip(prompts, outputs, strict=True):
         assert logits is not None
         gold = goldens[f"logits_{name}"]
         kl[name] = _kl(gold, logits)
@@ -99,3 +152,16 @@ def test_serving_logits_match_hf(tmp_path: Path) -> None:
     assert rows.mean() <= MEAN_KL, summary
     assert rows.max() <= MAX_KL, summary
     assert agree >= TOP1, summary
+
+
+@pytest.mark.parametrize("captured", [False, True], ids=["eager", "capture"])
+def test_fused_logits_match_unfused(
+    logits_by_mode: dict[tuple[bool, bool], list[npt.NDArray[np.float32]]],
+    captured: bool,
+) -> None:
+    for unfused, fused in zip(
+        logits_by_mode[False, captured],
+        logits_by_mode[True, captured],
+        strict=True,
+    ):
+        np.testing.assert_array_equal(fused, unfused)

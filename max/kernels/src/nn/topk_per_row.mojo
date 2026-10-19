@@ -44,11 +44,11 @@ struct _PerRowSink[dtype: DType](TopkSink):
     count; every other slot holds `(-inf, -1)`.
     """
 
-    var scores: UnsafePointer[Scalar[Self.dtype], ImmUntrackedOrigin]
+    var scores: ImmPointer[Scalar[Self.dtype], ImmUntrackedOrigin]
     """The row's scores."""
-    var out_vals: UnsafePointer[Scalar[Self.dtype], MutUntrackedOrigin]
+    var out_vals: MutPointer[Scalar[Self.dtype], MutUntrackedOrigin]
     """Flat `[rows, max_k]` output values."""
-    var out_idxs: UnsafePointer[Int64, MutUntrackedOrigin]
+    var out_idxs: MutPointer[Int64, MutUntrackedOrigin]
     """Flat `[rows, max_k]` output columns."""
     var row_base: Int
     """Flat output slot of the row's first pick."""
@@ -82,13 +82,13 @@ struct _PerRowBound[dtype: DType](RowBound):
     comptime Sink = _PerRowSink[Self.dtype]
     """Writes the values and columns of each pick."""
 
-    var scores: UnsafePointer[Scalar[Self.dtype], ImmUntrackedOrigin]
+    var scores: ImmPointer[Scalar[Self.dtype], ImmUntrackedOrigin]
     """Flat `[rows, n]` scores."""
-    var k: UnsafePointer[Int64, ImmUntrackedOrigin]
+    var k: ImmPointer[Int64, ImmUntrackedOrigin]
     """Pick count per row."""
-    var out_vals: UnsafePointer[Scalar[Self.dtype], MutUntrackedOrigin]
+    var out_vals: MutPointer[Scalar[Self.dtype], MutUntrackedOrigin]
     """Flat `[rows, max_k]` output values."""
-    var out_idxs: UnsafePointer[Int64, MutUntrackedOrigin]
+    var out_idxs: MutPointer[Int64, MutUntrackedOrigin]
     """Flat `[rows, max_k]` output columns."""
     var n: Int32
     """Scores per row."""
@@ -97,7 +97,7 @@ struct _PerRowBound[dtype: DType](RowBound):
 
     @inline(.always)
     def row(
-        self, row: Int, out_idxs: UnsafePointer[Int32, MutAnyOrigin]
+        self, row: Int, out_idxs: MutPointer[Int32, MutAnyOrigin]
     ) -> Tuple[Int, Self.Sink]:
         """Returns the row's column count and its sink.
 
@@ -113,7 +113,7 @@ struct _PerRowBound[dtype: DType](RowBound):
         return (
             n,
             Self.Sink(
-                self.scores + row * n,
+                self.scores.unsafe_offset(row * n),
                 self.out_vals,
                 self.out_idxs,
                 row * max_k,
@@ -140,10 +140,10 @@ def topk_per_row_gpu[
     dtype: DType, //
 ](
     ctx: DeviceContext,
-    scores: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    k: UnsafePointer[Int64, ImmutAnyOrigin],
-    out_vals: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    out_idxs: UnsafePointer[Int64, MutAnyOrigin],
+    scores: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
+    k: ImmPointer[Int64, ImmutAnyOrigin],
+    out_vals: MutPointer[Scalar[dtype], MutAnyOrigin],
+    out_idxs: MutPointer[Int64, MutAnyOrigin],
     rows: Int,
     n: Int,
     max_k: Int,

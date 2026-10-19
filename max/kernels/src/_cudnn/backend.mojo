@@ -921,7 +921,7 @@ struct cudnnBackendNumericalNote_t(
 
 def cudnnBackendCreateDescriptor(
     descriptor_type: cudnnBackendDescriptorType_t,
-    descriptor: UnsafePointer[OpaquePointer[AnyOrigin[mut=True]], _],
+    descriptor: Pointer[OpaquePointer[AnyOrigin[mut=True]], _],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnBackendCreateDescriptor",
@@ -2558,7 +2558,7 @@ def cudnnBackendDestroyDescriptor(
 
 
 def cudnnBackendExecute(
-    handle: UnsafePointer[cudnnContext, _],
+    handle: Pointer[cudnnContext, _],
     execution_plan: OpaquePointer,
     variant_pack: OpaquePointer,
 ) raises -> cudnnStatus_t:
@@ -2625,7 +2625,7 @@ def cudnnBackendGetAttribute(
     attribute_name: cudnnBackendAttributeName_t,
     attribute_type: cudnnBackendAttributeType_t,
     requested_element_count: Int64,
-    element_count: UnsafePointer[Int64, _],
+    element_count: Pointer[Int64, _],
     array_of_elements: OpaquePointer,
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[

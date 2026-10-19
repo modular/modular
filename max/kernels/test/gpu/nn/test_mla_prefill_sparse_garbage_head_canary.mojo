@@ -86,7 +86,7 @@ post-fix, 0/24 seeds fail, every element bit-exact.
 """
 
 from std.math import ceildiv, sqrt
-from std.memory import UnsafePointer, alloc
+from std.memory import alloc
 from std.random import randn, randn_float64, seed
 from std.testing import assert_equal, assert_true
 
@@ -535,7 +535,7 @@ def _run_prefill_sparse_diff[
     # `None` (kernel skips the `exp2(sink - mi)` softmax term). Non-empty ->
     # a device buffer of EXACTLY `num_heads` Float32 so a broken sub-64
     # padded-row guard reading sink[num_heads..63] is a real OOB.
-    var attn_sink_ptr = Optional[UnsafePointer[Float32, ImmutAnyOrigin]](None)
+    var attn_sink_ptr = Optional[ImmPointer[Float32, ImmutAnyOrigin]](None)
     var sink_len = len(sink_values) if len(sink_values) > 0 else 1
     var sink_device = ctx.enqueue_create_buffer[.float32](sink_len)
     if len(sink_values) > 0:
@@ -545,8 +545,10 @@ def _run_prefill_sparse_diff[
         ctx.enqueue_copy(sink_device, sink_host)
         ctx.synchronize()
         sink_host.free()
-        attn_sink_ptr = Optional[UnsafePointer[Float32, ImmutAnyOrigin]](
-            sink_device.unsafe_ptr().bitcast[Float32]().as_unsafe_any_origin()
+        attn_sink_ptr = Optional[ImmPointer[Float32, ImmutAnyOrigin]](
+            sink_device.unsafe_ptr()
+            .unsafe_bitcast[Float32]()
+            .as_unsafe_any_origin()
         )
 
     mla_prefill_sparse[

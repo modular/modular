@@ -33,7 +33,7 @@ def compute_rms[
     comptime accum_type = get_accum_type[dtype]()
     var sum_of_squares = Scalar[accum_type]()
     for i in range(size):
-        var val = data[i][0].cast[accum_type]()
+        var val = data.load[width=1]((i,)).cast[accum_type]()
         sum_of_squares += val * val
     var result = sqrt(
         (sum_of_squares / Scalar[accum_type](data.num_elements()))
@@ -80,8 +80,7 @@ def run_rms_norm_gpu[
     @__copy_capture(data_buf)
     @__parameter
     def input_fn[width: Int](coords: Coord) -> SIMD[dtype, width]:
-        var idx = data_buf.layout(coords)
-        return data_buf.raw_load[width=width](idx)
+        return data_buf.load[width=width](coords)
 
     @inline(.always)
     @__copy_capture(data_buf)
@@ -89,8 +88,7 @@ def run_rms_norm_gpu[
     def identity_output_fn[
         width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[dtype, width]) -> None:
-        var idx = data_buf.layout(coords)
-        data_buf.raw_store[width=width, alignment=alignment](idx, val)
+        data_buf.store[alignment=alignment](coords, val)
 
     # `rms_norm_gpu` migrated to a `Coord` shape boundary (softmax PR #88203);
     # `rank` is now an explicit parameter (no longer inferred from `shape`).
@@ -107,7 +105,7 @@ def run_rms_norm_gpu[
 
     for r in range(rows):
         var vec = TileTensor(
-            data_h.unsafe_ptr() + r * cols,
+            data_h.unsafe_ptr().unsafe_offset(r * cols),
             row_major(cols),
         )
         var rms_ref = compute_rms(vec, cols, epsilon)
@@ -139,7 +137,7 @@ def run_rms_norm_gpu_static_dims[
     print("== run_rms_norm_gpu_static_dims")
 
     comptime rank = type_of(shape).rank
-    var cols = Int(shape[rank - 1].value())
+    var cols = Int(shape[rank - 1])
     var rows = Int(shape.product()) // cols
 
     var data_h = ctx.enqueue_create_host_buffer[dtype](rows * cols)
@@ -166,8 +164,7 @@ def run_rms_norm_gpu_static_dims[
     @__copy_capture(data_buf)
     @__parameter
     def input_fn[width: Int](coords: Coord) -> SIMD[dtype, width]:
-        var idx = data_buf.layout(coords)
-        return data_buf.raw_load[width=width](idx)
+        return data_buf.load[width=width](coords)
 
     @inline(.always)
     @__copy_capture(data_buf)
@@ -175,8 +172,7 @@ def run_rms_norm_gpu_static_dims[
     def identity_output_fn[
         width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[dtype, width]) -> None:
-        var idx = data_buf.layout(coords)
-        data_buf.raw_store[width=width, alignment=alignment](idx, val)
+        data_buf.store[alignment=alignment](coords, val)
 
     rms_norm_gpu[
         rank,
@@ -191,7 +187,7 @@ def run_rms_norm_gpu_static_dims[
 
     for r in range(rows):
         var vec = TileTensor(
-            data_h.unsafe_ptr() + r * cols,
+            data_h.unsafe_ptr().unsafe_offset(r * cols),
             row_major(cols),
         )
         var rms_ref = compute_rms(vec, cols, epsilon)
@@ -234,7 +230,7 @@ def run_rms_norm_gpu_zero_rows[dtype: DType](ctx: DeviceContext) raises:
     @__copy_capture(data_buf)
     @__parameter
     def input_fn[width: Int](coords: Coord) -> SIMD[dtype, width]:
-        return data_buf.raw_load[width=width](data_buf.layout(coords))
+        return data_buf.load[width=width](coords)
 
     @inline(.always)
     @__copy_capture(data_buf)
@@ -242,9 +238,7 @@ def run_rms_norm_gpu_zero_rows[dtype: DType](ctx: DeviceContext) raises:
     def identity_output_fn[
         width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[dtype, width]) -> None:
-        data_buf.raw_store[width=width, alignment=alignment](
-            data_buf.layout(coords), val
-        )
+        data_buf.store[alignment=alignment](coords, val)
 
     rms_norm_gpu[
         2,
@@ -311,21 +305,17 @@ def run_rms_norm_row_based[
     def input_fn[
         width: Int, alignment: Int
     ](coords: Coord) {var data_buf} -> SIMD[dtype, width]:
-        var idx = data_buf.layout(coords)
         # The closure's `alignment` counts elements, as the graph compiler's
-        # closures read it; `raw_load` / `raw_store` take bytes.
-        return data_buf.raw_load[
+        # closures read it; `load` / `store` take bytes.
+        return data_buf.load[
             width=width, alignment=alignment * align_of[dtype]()
-        ](idx)
+        ](coords)
 
     @inline(.always)
     def output_fn[
         width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[dtype, width]) {var out_buf}:
-        var idx = out_buf.layout(coords)
-        out_buf.raw_store[width=width, alignment=alignment * align_of[dtype]()](
-            idx, rebind[SIMD[dtype, width]](val)
-        )
+        out_buf.store[alignment=alignment * align_of[dtype]()](coords, val)
 
     rms_norm[
         dtype,
@@ -347,7 +337,7 @@ def run_rms_norm_row_based[
 
     for r in range(rows):
         var vec = TileTensor(
-            data_h.unsafe_ptr() + r * cols,
+            data_h.unsafe_ptr().unsafe_offset(r * cols),
             row_major(cols),
         )
         var rms_ref = compute_rms(vec, cols, eps_f32)

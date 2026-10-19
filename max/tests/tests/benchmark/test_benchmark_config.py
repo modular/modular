@@ -119,18 +119,17 @@ class TestServingConfigFileLoading:
     Config YAML format notes
     ------------------------
     ``ServingBenchmarkConfig`` uses ``section_name = "benchmark_config"`` as
-    its default, but that default is NOT visible to the ``model_validator``
-    because it runs before Pydantic applies defaults.  The section is only
-    extracted when ``section_name`` is explicitly supplied at construction time.
+    its default. The section is extracted when the file has it; a file
+    without it is read from the top level.
 
     Two valid file formats therefore exist:
 
-    * **Flat** (no section wrapper) — works without passing ``section_name``::
+    * **Flat** (no section wrapper)::
 
           model: myorg/model
           host: 10.0.0.1
 
-    * **Sectioned** — requires ``section_name="benchmark_config"``::
+    * **Sectioned**::
 
           benchmark_config:
               model: myorg/model

@@ -78,6 +78,43 @@ comptime _MAX_CUTOFF_CLUSTER = 4
 # the publish slots.
 comptime _MAX_STAGE_SMEM_BYTES = 216 * 1024
 
+# Headroom the staging budget leaves below the SM's shared memory: the
+# driver's per-block reserve, the static shared memory these kernels declare
+# (the cluster publish slots and the sampled-id slot), and scratch. It is the
+# margin `_MAX_STAGE_SMEM_BYTES` already leaves on a 228 KiB part, so on
+# Hopper and datacenter Blackwell the budget below is unchanged.
+comptime _STAGE_SMEM_HEADROOM_BYTES = 12 * 1024
+
+
+def _stage_smem_budget(ctx: DeviceContext) -> Int:
+    """The staging budget for one CTA on the target this launch compiles for.
+
+    `_MAX_STAGE_SMEM_BYTES` alone is not a safe bound. The sampling package
+    dispatches these kernels on `target._is_sm_9x_or_newer()`, which also admits
+    consumer Blackwell (`NvidiaBlackwellConsumerFamily`: `sm_120a` and
+    `sm_121`), whose SMs carry 100 KiB rather than 228 KiB. Taking the
+    target's own figure keeps the request inside its per-block opt-in limit.
+
+    On every `sm_90` and newer part that limit is 1 KiB under the SM figure,
+    and CUDA requires a kernel's static shared memory plus its
+    `MAX_DYNAMIC_SHARED_SIZE_BYTES` ceiling to fit under it, so the headroom
+    must exceed that 1 KiB: a 1 KiB reserve alone fails every launch on a
+    100 KiB part.
+
+    `ctx.default_device_info` is a comptime value of the compile target, so
+    the budget is one constant per compiled variant, and one compiled variant
+    takes one function-cache key however `d` varies. `flash_attention_dispatch`
+    in `nn/attention/gpu/mha.mojo` sizes its ceiling from the same figure.
+    """
+    comptime assert (
+        _MAX_STAGE_SMEM_BYTES == 228 * 1024 - _STAGE_SMEM_HEADROOM_BYTES
+    ), "_MAX_STAGE_SMEM_BYTES must encode the same headroom on a 228 KiB SM"
+    return min(
+        _MAX_STAGE_SMEM_BYTES,
+        Int(ctx.default_device_info.shared_memory_per_multiprocessor)
+        - _STAGE_SMEM_HEADROOM_BYTES,
+    )
+
 
 def _stage_smem_bytes(d: Int, vec_size: Int, cluster_size: Int) -> Int:
     """Bytes one CTA needs to stage its contiguous slice of the row."""
@@ -148,7 +185,7 @@ def _cluster_cutoff_search[
     low_init: Float32,
     high_init: Float32,
     mass_above_low_init: Float32,
-    staged: UnsafePointer[mut=True, Float32, _, address_space=.SHARED],
+    staged: MutPointer[Float32, _, address_space=.SHARED],
     vec_begin: Int,
     vec_end: Int,
 ) -> Tuple[Float32, Float32]:
@@ -265,7 +302,7 @@ def _cluster_cutoff_search[
             packed[i] = stats[i]
         var combined = cluster_allreduce[
             _cutoff_stats_combine, cluster_size, need_tail_sync=False
-        ](cluster_slot + phase * _CLUSTER_SLOT_FLOATS, packed)
+        ](cluster_slot.unsafe_offset(phase * _CLUSTER_SLOT_FLOATS), packed)
         phase ^= 1
 
         min_gt_low = combined[0]
@@ -305,18 +342,22 @@ def TopKTopPMaskedProbsClusterKernel[
     dtype: DType,
     LogitsLayoutType: TensorLayout,
     logits_origin: ImmOrigin,
+    ProbsLayoutType: TensorLayout,
     cluster_size: Int,
     LogitsEngine: TensorEngine,
+    ProbsEngine: TensorEngine,
 ](
     logits: TileTensor[
         dtype, LogitsLayoutType, logits_origin, Engine=LogitsEngine
     ],
-    probs_ptr: UnsafePointer[Float32, MutAnyOrigin],
-    top_k_arr: Optional[UnsafePointer[Int64, ImmutAnyOrigin]],
+    probs: TileTensor[
+        .float32, ProbsLayoutType, MutAnyOrigin, Engine=ProbsEngine
+    ],
+    top_k_arr: Optional[ImmPointer[Int64, ImmutAnyOrigin]],
     top_k_val: Int32,
-    top_p_arr: Optional[UnsafePointer[Float32, ImmutAnyOrigin]],
+    top_p_arr: Optional[ImmPointer[Float32, ImmutAnyOrigin]],
     top_p_val: Float32,
-    temperature: Optional[UnsafePointer[Float32, ImmutAnyOrigin]],
+    temperature: Optional[ImmPointer[Float32, ImmutAnyOrigin]],
     d: Int32,
 ):
     """`TopKTopPMaskedProbsKernel` with one row spread over a cluster.
@@ -404,7 +445,7 @@ def TopKTopPMaskedProbsClusterKernel[
     var thread_max = Float32.MIN
     for i in range(vec_begin + tx, vec_end, block_size):
         var v = logits_row.load[width=vec_size]((Idx[0], i * vec_size)).cast[
-            DType.float32
+            .float32
         ]()
         thread_max = max(thread_max, v.reduce_max())
 
@@ -416,11 +457,11 @@ def TopKTopPMaskedProbsClusterKernel[
     @inline(.always)
     def load_e(offset: Int) {imm} -> SIMD[.float32, vec_size]:
         var v = logits_row.load[width=vec_size]((Idx[0], offset)).cast[
-            DType.float32
+            .float32
         ]()
         return exp((v - m) * inv_temp)
 
-    var probs_row = TileTensor(probs_ptr + bx * _d, row_major(Idx[1], _d))
+    var probs_row = probs[bx : bx + 1, :]
 
     # Total mass, plus how many tokens carry any: a row whose every positive
     # token already satisfies the constraint has no boundary to find, and the
@@ -434,7 +475,7 @@ def TopKTopPMaskedProbsClusterKernel[
     var thread_pos: Int32 = 0
     for i in range(vec_begin + tx, vec_end, block_size):
         var e = load_e(i * vec_size)
-        smem.store[width=vec_size]((i - vec_begin) * vec_size, e)
+        smem.store((i - vec_begin) * vec_size, e)
         thread_sum += e.reduce_add()
         comptime for j in range(vec_size):
             if e[j] > 0:
@@ -444,7 +485,7 @@ def TopKTopPMaskedProbsClusterKernel[
     )
 
     var totals = cluster_allreduce[_sum, cluster_size, need_tail_sync=False](
-        cluster_slot + _CLUSTER_SLOT_FLOATS,
+        cluster_slot.unsafe_offset(_CLUSTER_SLOT_FLOATS),
         SIMD[.float32, 2](block_total.value, Float32(block_total.count)),
     )
     var z = totals[0]
@@ -480,7 +521,7 @@ def TopKTopPMaskedProbsClusterKernel[
     for i in range(vec_begin + tx, vec_end, block_size):
         var e = smem.load[width=vec_size]((i - vec_begin) * vec_size)
         var masked = (e.gt(cut)).select(e / mass_s, SIMD[.float32, vec_size](0))
-        probs_row.store[width=vec_size]((Idx[0], i * vec_size), masked)
+        probs_row.store((Idx[0], i * vec_size), masked)
 
     # Terminal keep-alive. Peers read this CTA's shared memory through `mapa`,
     # so it may not retire until every CTA of the cluster is done reading --
@@ -510,10 +551,14 @@ def topk_topp_masked_probs_cluster[
     TopKArrEngine: TensorEngine = DefaultEngine[element_width=1],
     TopPArrEngine: TensorEngine = DefaultEngine[element_width=1],
     TemperatureEngine: TensorEngine = DefaultEngine[element_width=1],
+    *,
+    ProbsEngine: TensorEngine,
 ](
     ctx: DeviceContext,
     logits: TileTensor[mut=False, dtype, ...],
-    probs: TileTensor[.float32, ProbsLayoutType, MutAnyOrigin],
+    probs: TileTensor[
+        .float32, ProbsLayoutType, MutAnyOrigin, Engine=ProbsEngine
+    ],
     top_k_val: Int,
     top_p_val: Float32 = 1.0,
     top_k_arr: Optional[
@@ -552,6 +597,7 @@ def topk_topp_masked_probs_cluster[
         TopKArrEngine: Engine policy of `top_k_arr`.
         TopPArrEngine: Engine policy of `top_p_arr`.
         TemperatureEngine: Engine policy of `temperature`.
+        ProbsEngine: Engine policy of `probs`.
 
     Args:
         ctx: Device context.
@@ -598,16 +644,16 @@ def topk_topp_masked_probs_cluster[
 
         var vec_size = gcd(8, d)
 
-        var top_k_ptr: Optional[UnsafePointer[Int64, ImmutAnyOrigin]] = None
+        var top_k_ptr: Optional[ImmPointer[Int64, ImmutAnyOrigin]] = None
         if case .Some(top_k_arr) = top_k_arr:
             top_k_ptr = top_k_arr.ptr
 
-        var top_p_ptr: Optional[UnsafePointer[Float32, ImmutAnyOrigin]] = None
+        var top_p_ptr: Optional[ImmPointer[Float32, ImmutAnyOrigin]] = None
         if case .Some(top_p_arr) = top_p_arr:
             top_p_ptr = top_p_arr.ptr
 
         var temperature_ptr: Optional[
-            UnsafePointer[Float32, ImmutAnyOrigin]
+            ImmPointer[Float32, ImmutAnyOrigin]
         ] = None
         if case .Some(temperature) = temperature:
             temperature_ptr = temperature.ptr
@@ -617,11 +663,12 @@ def topk_topp_masked_probs_cluster[
         # traffic), two when the row must split, four for the widest. A row
         # too wide for four slices takes the single-block kernel with no
         # staging.
+        var stage_budget = _stage_smem_budget(ctx)
         var cluster_size = 0
         comptime for c in [1, 2, _MAX_CUTOFF_CLUSTER]:
             if (
                 cluster_size == 0
-                and _stage_smem_bytes(d, vec_size, c) <= _MAX_STAGE_SMEM_BYTES
+                and _stage_smem_bytes(d, vec_size, c) <= stage_budget
             ):
                 cluster_size = c
 
@@ -632,13 +679,15 @@ def topk_topp_masked_probs_cluster[
                 dtype,
                 logits.LayoutType,
                 ImmOrigin(logits.origin),
+                probs.LayoutType,
                 cluster_size,
                 LogitsEngine=logits.Engine,
+                ProbsEngine=probs.Engine,
             ]
             var smem_bytes = _stage_smem_bytes(d, vec_size, cluster_size)
             ctx.enqueue_function[kernel](
                 logits.as_imm(),
-                probs.ptr,
+                probs,
                 top_k_ptr,
                 Int32(top_k_val),
                 top_p_ptr,
@@ -650,7 +699,7 @@ def topk_topp_masked_probs_cluster[
                 cluster_dim=Dim(cluster_size, 1, 1),
                 shared_mem_bytes=smem_bytes,
                 func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                    UInt32(smem_bytes)
+                    UInt32(stage_budget)
                 ),
                 attributes=pdl_launch_attributes(PDLLevel.ON),
             )
@@ -662,17 +711,20 @@ def topk_topp_masked_probs_cluster[
                 dtype,
                 logits.LayoutType,
                 ImmOrigin(logits.origin),
+                probs.LayoutType,
+                LogitsEngine=logits.Engine,
+                ProbsEngine=probs.Engine,
             ]
             ctx.enqueue_function[kernel](
                 logits.as_imm(),
-                probs.ptr,
+                probs,
                 top_k_ptr,
                 Int32(top_k_val),
                 top_p_ptr,
                 top_p_val,
                 temperature_ptr,
                 Int32(d),
-                Optional[UnsafePointer[Int32, MutAnyOrigin]](None),
+                Optional[MutPointer[Int32, MutAnyOrigin]](None),
                 grid_dim=batch_size,
                 block_dim=block_size,
                 attributes=pdl_launch_attributes(PDLLevel.ON),
@@ -721,7 +773,7 @@ def _sampling_rejection_loop_cluster[
     p_eff: Float32,
     z: Float32,
     mut generator: Random,
-    smem: UnsafePointer[mut=True, Float32, _, address_space=.SHARED],
+    smem: MutPointer[Float32, _, address_space=.SHARED],
     rank: Int,
     vec_begin: Int,
     vec_end: Int,
@@ -821,7 +873,7 @@ def _sampling_rejection_loop_cluster[
             slice_stats[2], slice_last, slice_last_val, 0
         )
         var table = cluster_allgather[cluster_size, need_tail_sync=False](
-            cluster_slot + phase * slot_floats, published
+            cluster_slot.unsafe_offset(phase * slot_floats), published
         )
         phase ^= 1
 
@@ -876,7 +928,7 @@ def _sampling_rejection_loop_cluster[
                 found[1] = smem[sid]
 
         var comb = cluster_allreduce[_max, cluster_size, need_tail_sync=False](
-            cluster_slot + phase * slot_floats, found
+            cluster_slot.unsafe_offset(phase * slot_floats), found
         )
         phase ^= 1
 
@@ -926,7 +978,7 @@ def _sampling_rejection_loop_cluster[
 
         var combined = cluster_allreduce[
             _sum, cluster_size, need_tail_sync=False
-        ](cluster_slot + phase * slot_floats, packed)
+        ](cluster_slot.unsafe_offset(phase * slot_floats), packed)
         phase ^= 1
         var mass_0 = combined[0]
         var mass_1 = combined[1]
@@ -976,17 +1028,17 @@ def TopKTopPSamplingEmitDistClusterKernel[
     output: TileTensor[
         out_idx_type, OutputLayoutType, output_origin, Engine=OutputEngine
     ],
-    out_dist: UnsafePointer[Scalar[dist_dtype], MutAnyOrigin],
-    indices: Optional[UnsafePointer[Scalar[out_idx_type], ImmutAnyOrigin]],
-    top_k_arr: Optional[UnsafePointer[Scalar[out_idx_type], ImmutAnyOrigin]],
+    out_dist: MutPointer[Scalar[dist_dtype], MutAnyOrigin],
+    indices: Optional[ImmPointer[Scalar[out_idx_type], ImmutAnyOrigin]],
+    top_k_arr: Optional[ImmPointer[Scalar[out_idx_type], ImmutAnyOrigin]],
     top_k_val: Int32,
-    top_p_arr: Optional[UnsafePointer[Float32, ImmutAnyOrigin]],
+    top_p_arr: Optional[ImmPointer[Float32, ImmutAnyOrigin]],
     top_p_val: Float32,
     d: Int32,
-    rng_seed: Optional[UnsafePointer[UInt64, ImmutAnyOrigin]],
+    rng_seed: Optional[ImmPointer[UInt64, ImmutAnyOrigin]],
     rng_offset: UInt64,
-    temperature: Optional[UnsafePointer[Float32, ImmutAnyOrigin]],
-    min_p: Optional[UnsafePointer[Float32, ImmutAnyOrigin]],
+    temperature: Optional[ImmPointer[Float32, ImmutAnyOrigin]],
+    min_p: Optional[ImmPointer[Float32, ImmutAnyOrigin]],
 ):
     """`TopKTopPSamplingFromProbKernel` with `from_logits` and `emit_dist`,
     spread over a cluster.
@@ -1119,7 +1171,7 @@ def TopKTopPSamplingEmitDistClusterKernel[
     var thread_max = Float32.MIN
     for i in range(vec_begin + tx, vec_end, block_size):
         var v = probs_row.load[width=vec_size]((Idx[0], i * vec_size)).cast[
-            DType.float32
+            .float32
         ]()
         thread_max = max(thread_max, v.reduce_max())
 
@@ -1138,7 +1190,7 @@ def TopKTopPSamplingEmitDistClusterKernel[
     var thread_masked_sum = Float32(0)
     for i in range(vec_begin + tx, vec_end, block_size):
         var v = probs_row.load[width=vec_size]((Idx[0], i * vec_size)).cast[
-            DType.float32
+            .float32
         ]()
         var e = exp((v - row_max) * inv_temp)
         thread_sum += e.reduce_add()
@@ -1147,10 +1199,10 @@ def TopKTopPSamplingEmitDistClusterKernel[
                 if e[j] < min_p_thresh:
                     e[j] = 0
             thread_masked_sum += e.reduce_add()
-        smem.store[width=vec_size]((i - vec_begin) * vec_size, e)
+        smem.store((i - vec_begin) * vec_size, e)
 
     var z = cluster_allreduce[_sum, cluster_size, need_tail_sync=False](
-        cluster_slot + _CLUSTER_SLOT_FLOATS,
+        cluster_slot.unsafe_offset(_CLUSTER_SLOT_FLOATS),
         Float32(block.sum[block_size=block_size, broadcast=False](thread_sum)),
     )[0]
     # `min_p_thresh` is cluster-uniform (one row per cluster), so every CTA
@@ -1217,15 +1269,15 @@ def TopKTopPSamplingEmitDistClusterKernel[
     # Masks the staged weights; each lane owns the elements it wrote (the
     # same partition as the staging pass), so this needs no barrier against
     # the search.
-    var dist_row = TileTensor(out_dist + bx * _d, row_major(Idx[1], _d))
+    var dist_row = TileTensor(
+        out_dist.unsafe_offset(bx * _d), row_major(Idx[1], _d)
+    )
     for i in range(vec_begin + tx, vec_end, block_size):
         var e = smem.load[width=vec_size]((i - vec_begin) * vec_size)
         var masked = (e.gt(cutoff)).select(
             e / kept_mass, SIMD[.float32, vec_size](0)
         )
-        dist_row.store[width=vec_size](
-            (Idx[0], i * vec_size), masked.cast[dist_dtype]()
-        )
+        dist_row.store((Idx[0], i * vec_size), masked.cast[dist_dtype]())
 
     if rank == 0 and tx == 0:
         output[bx] = Scalar[out_idx_type](sampled_id)
@@ -1276,6 +1328,9 @@ def topk_topp_sampling_from_prob_cluster[
     SeedEngine: TensorEngine = DefaultEngine[element_width=1],
     TemperatureEngine: TensorEngine = DefaultEngine[element_width=1],
     MinPEngine: TensorEngine = DefaultEngine[element_width=1],
+    # Defaulted because `out_dist` is optional: when it is None there is no
+    # tile argument for the engine to be inferred from.
+    OutDistEngine: TensorEngine = DefaultEngine[element_width=1],
 ](
     ctx: DeviceContext,
     probs: TileTensor[mut=False, dtype, ...],
@@ -1323,7 +1378,9 @@ def topk_topp_sampling_from_prob_cluster[
         TileTensor[.float32, MinPLayoutType, ImmutAnyOrigin, Engine=MinPEngine]
     ] = None,
     out_dist: Optional[
-        TileTensor[dist_dtype, DistLayoutType, MutAnyOrigin]
+        TileTensor[
+            dist_dtype, DistLayoutType, MutAnyOrigin, Engine=OutDistEngine
+        ]
     ] = None,
 ) raises:
     """Joint top-k + top-p sampling from probability distribution.
@@ -1369,6 +1426,7 @@ def topk_topp_sampling_from_prob_cluster[
         TemperatureEngine: Engine of the optional `temperature`
             tensor.
         MinPEngine: Engine of the optional `min_p` tensor.
+        OutDistEngine: Engine of the optional `out_dist` tensor.
 
     Args:
         ctx: Device context for kernel execution.
@@ -1429,37 +1487,37 @@ def topk_topp_sampling_from_prob_cluster[
         var vec_size = gcd(8, d)
 
         var indices_ptr: Optional[
-            UnsafePointer[Scalar[out_idx_type], ImmutAnyOrigin]
+            ImmPointer[Scalar[out_idx_type], ImmutAnyOrigin]
         ] = None
         if case .Some(indices) = indices:
             indices_ptr = indices.ptr
 
         var top_k_ptr: Optional[
-            UnsafePointer[Scalar[out_idx_type], ImmutAnyOrigin]
+            ImmPointer[Scalar[out_idx_type], ImmutAnyOrigin]
         ] = None
         if case .Some(top_k_arr) = top_k_arr:
             top_k_ptr = top_k_arr.ptr
 
-        var top_p_ptr: Optional[UnsafePointer[Float32, ImmutAnyOrigin]] = None
+        var top_p_ptr: Optional[ImmPointer[Float32, ImmutAnyOrigin]] = None
         if case .Some(top_p_arr) = top_p_arr:
             top_p_ptr = top_p_arr.ptr
 
-        var seed_ptr: Optional[UnsafePointer[UInt64, ImmutAnyOrigin]] = None
+        var seed_ptr: Optional[ImmPointer[UInt64, ImmutAnyOrigin]] = None
         if case .Some(rng_seed) = rng_seed:
             seed_ptr = rng_seed.ptr
 
         var temperature_ptr: Optional[
-            UnsafePointer[Float32, ImmutAnyOrigin]
+            ImmPointer[Float32, ImmutAnyOrigin]
         ] = None
         if case .Some(temperature) = temperature:
             temperature_ptr = temperature.ptr
 
-        var min_p_ptr: Optional[UnsafePointer[Float32, ImmutAnyOrigin]] = None
+        var min_p_ptr: Optional[ImmPointer[Float32, ImmutAnyOrigin]] = None
         if case .Some(min_p) = min_p:
             min_p_ptr = min_p.ptr
 
         var dist_ptr: Optional[
-            UnsafePointer[Scalar[dist_dtype], MutAnyOrigin]
+            MutPointer[Scalar[dist_dtype], MutAnyOrigin]
         ] = None
 
         comptime if emit_dist:
@@ -1482,13 +1540,13 @@ def topk_topp_sampling_from_prob_cluster[
         # the narrowest cluster whose slice fits the staging budget, exactly
         # as in the masked-probs launcher; a row too wide for four slices
         # keeps the single-block kernel with no staging.
+        var stage_budget = _stage_smem_budget(ctx)
         var cluster_size = 0
         comptime if emit_dist and from_logits:
             comptime for c in [1, 2, _MAX_CUTOFF_CLUSTER]:
                 if (
                     cluster_size == 0
-                    and _stage_smem_bytes(d, vec_size, c)
-                    <= _MAX_STAGE_SMEM_BYTES
+                    and _stage_smem_bytes(d, vec_size, c) <= stage_budget
                 ):
                     cluster_size = c
 
@@ -1531,7 +1589,7 @@ def topk_topp_sampling_from_prob_cluster[
                     cluster_dim=Dim(cluster_size, 1, 1),
                     shared_mem_bytes=smem_bytes,
                     func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                        UInt32(smem_bytes)
+                        UInt32(stage_budget)
                     ),
                     attributes=pdl_launch_attributes(PDLLevel.ON),
                 )
@@ -1567,7 +1625,7 @@ def topk_topp_sampling_from_prob_cluster[
                 rng_offset,
                 temperature_ptr,
                 min_p_ptr,
-                Optional[UnsafePointer[Int32, MutAnyOrigin]](None),
+                Optional[MutPointer[Int32, MutAnyOrigin]](None),
                 grid_dim=batch_size,
                 block_dim=block_size,
                 attributes=pdl_launch_attributes(PDLLevel.ON),

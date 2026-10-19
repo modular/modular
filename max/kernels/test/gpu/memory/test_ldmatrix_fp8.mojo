@@ -63,11 +63,15 @@ def test_ldmatrix_fp8[
     barrier()
 
     var a_reg = ld_matrix[a_frag_size](
-        a_shared + umod(lane_id(), 16) * 32 + ufloordiv(lane_id(), 16) * 16
+        a_shared.unsafe_offset(umod(lane_id(), 16) * 32).unsafe_offset(
+            ufloordiv(lane_id(), 16) * 16
+        )
     )
 
     var b_reg = ld_matrix[b_frag_size](
-        b_shared + umod(lane_id(), 8) * 32 + ufloordiv(lane_id(), 8) * 16
+        b_shared.unsafe_offset(umod(lane_id(), 8) * 32).unsafe_offset(
+            ufloordiv(lane_id(), 8) * 16
+        )
     )
 
     mma(d, a_reg, b_reg, d)

@@ -49,6 +49,7 @@ def _load_cpu(model_path: str, **overrides: object) -> AutoPipeline:
         model_path,
         max_batch_size=len(PROMPTS),
         device_graph_capture=False,
+        prefer_module_v3=False,
         devices="cpu",
         quantization_encoding="float32",
         max_length=512,
@@ -236,3 +237,10 @@ def test_tokenizer_failure_closes_the_model(
     with pytest.raises(OSError, match="no tokenizer"):
         _load_cpu(model_path)
     stub_pipeline.kv_manager.shutdown.assert_called_once_with()
+
+
+def test_prefer_module_v3_passes_through(
+    model_path: str, stub_pipeline: MagicMock
+) -> None:
+    with AutoPipeline(model_path, devices="cpu", prefer_module_v3=True) as pipe:
+        assert pipe.model.pipeline_config.runtime.prefer_module_v3 is True

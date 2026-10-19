@@ -1016,13 +1016,15 @@ struct TileLoaderLDSIm2col[
                 comptime if Self._is_uniform_substrip:
                     substrip_uniform = k_eff // Self.C
                     comptime if Self._is_3d:
-                        var rs_uniform = substrip_uniform % (Self.R * Self.S)
-                        kq_uniform = substrip_uniform // (Self.R * Self.S)
-                        kh_uniform = rs_uniform // Self.S
-                        kw_uniform = rs_uniform % Self.S
+                        var rs_uniform: Int
+                        kq_uniform, rs_uniform = divmod(
+                            substrip_uniform, Self.R * Self.S
+                        )
+                        kh_uniform, kw_uniform = divmod(rs_uniform, Self.S)
                     else:
-                        kh_uniform = substrip_uniform // Self.S
-                        kw_uniform = substrip_uniform % Self.S
+                        kh_uniform, kw_uniform = divmod(
+                            substrip_uniform, Self.S
+                        )
                     c_base_uniform = k_eff % Self.C
 
                 comptime for i in range(Self.num_iterations):
@@ -1063,13 +1065,11 @@ struct TileLoaderLDSIm2col[
                         var k_lane = k_eff + swizzled_col
                         var substrip_lane = k_lane // Self.C
                         comptime if Self._is_3d:
-                            var rs_lane = substrip_lane % (Self.R * Self.S)
-                            kq = substrip_lane // (Self.R * Self.S)
-                            kh = rs_lane // Self.S
-                            kw = rs_lane % Self.S
+                            var rs_lane: Int
+                            kq, rs_lane = divmod(substrip_lane, Self.R * Self.S)
+                            kh, kw = divmod(rs_lane, Self.S)
                         else:
-                            kh = substrip_lane // Self.S
-                            kw = substrip_lane % Self.S
+                            kh, kw = divmod(substrip_lane, Self.S)
                         c_lane = k_lane % Self.C
 
                     # M decomposition.
@@ -1252,25 +1252,23 @@ struct TileLoaderLDSIm2col[
                 comptime if Self._is_uniform_substrip:
                     var substrip_uniform = k_eff // Self.C
                     comptime if Self._is_3d:
-                        var rs_uniform = substrip_uniform % (Self.R * Self.S)
-                        kq = substrip_uniform // (Self.R * Self.S)
-                        kh = rs_uniform // Self.S
-                        kw = rs_uniform % Self.S
+                        var rs_uniform: Int
+                        kq, rs_uniform = divmod(
+                            substrip_uniform, Self.R * Self.S
+                        )
+                        kh, kw = divmod(rs_uniform, Self.S)
                     else:
-                        kh = substrip_uniform // Self.S
-                        kw = substrip_uniform % Self.S
+                        kh, kw = divmod(substrip_uniform, Self.S)
                     c_lane = (k_eff % Self.C) + self.thread_col
                 else:
                     var k_lane = k_eff + self.thread_col
                     var substrip_lane = k_lane // Self.C
                     comptime if Self._is_3d:
-                        var rs_lane = substrip_lane % (Self.R * Self.S)
-                        kq = substrip_lane // (Self.R * Self.S)
-                        kh = rs_lane // Self.S
-                        kw = rs_lane % Self.S
+                        var rs_lane: Int
+                        kq, rs_lane = divmod(substrip_lane, Self.R * Self.S)
+                        kh, kw = divmod(rs_lane, Self.S)
                     else:
-                        kh = substrip_lane // Self.S
-                        kw = substrip_lane % Self.S
+                        kh, kw = divmod(substrip_lane, Self.S)
                     c_lane = k_lane % Self.C
 
                 comptime for i in range(Self.num_iterations):

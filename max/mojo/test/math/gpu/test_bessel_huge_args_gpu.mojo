@@ -18,10 +18,10 @@
 # correctly rounded (MPFR via mpmath).
 
 from std.math import inf, isfinite, isnan, j0, j1, nan, y0, y1
-from std.sys import bit_width_of, default_accelerator, simd_width_of
+from std.sys import bit_width_of, simd_width_of
 
 from max.algorithm.functional import elementwise
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, default_accelerator
 from std.testing import TestSuite, assert_false, assert_true
 
 from std.utils.coord import Coord
@@ -54,7 +54,7 @@ def _run[
     def func[
         simd_width: Int, alignment: Int = 1
     ](idx0: Coord) {var out_buffer, var in_buffer}:
-        var idx = Int(idx0[0].value())
+        var idx = Int(idx0[0])
         var val = in_buffer.unsafe_ptr().unsafe_load[width=simd_width](idx)
         out_buffer.unsafe_ptr().unsafe_store[width=simd_width](
             idx, math_fn(val)

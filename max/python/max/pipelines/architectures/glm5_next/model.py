@@ -28,28 +28,14 @@ from __future__ import annotations
 import logging
 from typing import Any, ClassVar
 
-from max import tree
 from max.dtype import DType
-from max.engine import InferenceSession
-from max.graph import Graph
 from max.graph.weights import WeightData
-from max.nn.kv_cache import (
-    KVCacheInputsPerDevice,
-    RecurrentStateInputsPerDevice,
-)
 from max.nn.kv_cache.cache_params import KVCacheParams, MultiKVCacheParams
 from max.pipelines.architectures.deepseekV3_2.model import DeepseekV3_2Model
-from max.pipelines.architectures.deepseekV3_2.model_config import (
-    DeepseekV3_2Config,
-)
+from max.pipelines.lib.graph_specs import GraphRole, GraphSpec
 
 from .glm5_next import Glm5Next
 from .model_config import SPARSE_ATTENTION, Glm5NextConfig
-from .state_cache import (
-    INDEXER_CACHE_KEY,
-    MLA_CACHE_KEY,
-    STATE_CACHE_KEY,
-)
 
 logger = logging.getLogger("max.pipelines")
 
@@ -140,94 +126,23 @@ class Glm5NextModel(DeepseekV3_2Model):
     #: graph is built, so it has to be held somewhere.
     _glm_config: Glm5NextConfig | None = None
 
-    def _build_graph_for_compile(
-        self,
-        session: InferenceSession,
-        state_dict: dict[str, WeightData],
-        model_config: DeepseekV3_2Config,
-    ) -> tuple[Graph, dict[str, Any]]:
-        """Builds the GLM-5.3-Flash graph.
+    def graph_specs(self, model_config: Any) -> dict[str, GraphSpec]:
+        """Returns the GLM-5.3-Flash decoder graph.
 
-        Unpacks the input groups in the order
-        :meth:`Glm5Next.input_types` declares them, which is the one place that
-        order is written down.
+        Its inputs are in the order :meth:`Glm5Next.input_types` declares
+        them, which is the one place that order is written down.
         """
-        del session
         assert isinstance(model_config, Glm5NextConfig)
-
-        nn_model = Glm5Next(model_config)
+        nn_model = Glm5Next(model_config, kv_params=self.kv_params)
         nn_model.attach_layers(nn_model.build_layers())
-        nn_model.load_state_dict(state_dict, weight_alignment=1, strict=True)
-        weights_registry = nn_model.state_dict()
-
-        num_devices = len(self.devices)
-
-        with Graph(
-            "glm5_next_graph",
-            input_types=nn_model.input_types(self.kv_params),
-        ) as graph:
-            (
-                tokens,
-                device_input_row_offsets,
-                host_input_row_offsets,
-                return_n_logits,
-                _data_parallel_splits,
-                *variadic,
-            ) = graph.inputs
-            it = iter(variadic)
-
-            signal_buffers = [next(it).buffer for _ in range(num_devices)]
-            # The recurrent state is a child of the multi-cache, so one
-            # unflatten resolves the attention leaves and the state together.
-            kv_tree = self.kv_params.unflatten_kv_inputs(it)
-            # A multi-cache unflattens to its children keyed by cache name.
-            # `Tree` is a recursive union that cannot say so, so narrow once
-            # here and read each child through `tree.leaves`, which types the
-            # per-device list the sublayers take.
-            assert isinstance(kv_tree, dict)
-            if STATE_CACHE_KEY not in kv_tree:
-                raise ValueError(
-                    "the GLM-5.3-Flash graph needs KDA layers; the cache"
-                    " declared no recurrent state child"
-                )
-            mla_kv = tree.leaves(
-                kv_tree[MLA_CACHE_KEY], leaf=KVCacheInputsPerDevice
+        nn_model.load_state_dict(
+            self._weights_dict, weight_alignment=1, strict=True
+        )
+        return {
+            GraphRole.DECODER: GraphSpec(
+                nn_model,
+                "glm5_next_graph",
+                nn_model.input_types(self.kv_params),
+                weights=nn_model.state_dict(),
             )
-            indexer_kv = tree.leaves(
-                kv_tree[INDEXER_CACHE_KEY], leaf=KVCacheInputsPerDevice
-            )
-            state = tree.leaves(
-                kv_tree[STATE_CACHE_KEY], leaf=RecurrentStateInputsPerDevice
-            )
-            # Consumed to keep the input prefix identical to
-            # `DeepseekV3Inputs.buffers`; this graph does not read them yet.
-            for _ in range(num_devices):
-                next(it)
-            ep_inputs = (
-                [next(it) for _ in nn_model.ep_manager.input_types()]
-                if nn_model.ep_manager is not None
-                else None
-            )
-
-            outputs = nn_model(
-                tokens.tensor,
-                signal_buffers,
-                mla_kv,
-                indexer_kv,
-                return_n_logits.tensor,
-                device_input_row_offsets.tensor,
-                host_input_row_offsets.tensor,
-                state,
-                ep_inputs,
-            )
-            graph.output(*outputs)
-
-        return graph, weights_registry
-
-    def load_model(self, session: InferenceSession) -> Any:
-        """Compiles the model.
-
-        The graph is GLM-5.3-Flash's own; see
-        :meth:`_build_graph_for_compile`.
-        """
-        return super().load_model(session)
+        }

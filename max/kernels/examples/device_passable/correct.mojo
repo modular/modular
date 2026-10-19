@@ -47,7 +47,7 @@ def main() raises:
         # The closure is the kernel. No named kernel exists, so no signature can
         # disagree with the synthesized `device_type`.
         def scale_kernel() {var data}:
-            var i = Int(global_idx.x)
+            var i = global_idx.x
             if i >= N:
                 return
             data[i] = data[i] * SCALE

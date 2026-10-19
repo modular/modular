@@ -478,7 +478,7 @@ def test_offset_from() raises:
     # offset_from() and the `-` operator work on safe pointers too, and the
     # operands may mix pointer safety.
     var data = List[Int32](length=4, fill=0)
-    var first: Pointer[Int32, origin_of(data)] = data.unsafe_ptr()
+    var first = data.unsafe_ptr()
     var last = first.unsafe_offset(3)
     assert_equal(last.offset_from(first), 3)
     assert_equal(first.offset_from(last), -3)
@@ -532,7 +532,7 @@ def test_unsafe_methods_on_safe_pointer() raises:
     for i in range(len(data)):
         data[i] = Int32(i)
 
-    var ptr: Pointer[Int32, origin_of(data)] = data.unsafe_ptr()
+    var ptr = data.unsafe_ptr()
 
     assert_equal(ptr.unsafe_offset(2)[], Int32(2))
     assert_equal(ptr[unsafe_offset=3], Int32(3))

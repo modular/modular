@@ -36,11 +36,11 @@ comptime BLOCK_SIZE = 256
 
 
 def bfs_kernel(
-    dst_ptrs: UnsafePointer[UInt32, MutAnyOrigin],
-    src: UnsafePointer[UInt32, MutAnyOrigin],
+    dst_ptrs: MutPointer[UInt32, MutAnyOrigin],
+    src: MutPointer[UInt32, MutAnyOrigin],
     num_vertices_dev: Int32,
-    level: UnsafePointer[UInt32, MutAnyOrigin],
-    new_vertex_visited: UnsafePointer[UInt32, MutAnyOrigin],
+    level: MutPointer[UInt32, MutAnyOrigin],
+    new_vertex_visited: MutPointer[UInt32, MutAnyOrigin],
     curr_level: UInt32,
 ):
     """BFS kernel: vertex-centric pull-based traversal using CSC graph."""

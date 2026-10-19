@@ -34,7 +34,7 @@ def random_normal[
     shape: IndexList[rank],
     mean: Float32,
     stddev: Float32,
-    seed_ptr: UnsafePointer[UInt64, ImmutAnyOrigin],
+    seed_ptr: ImmPointer[UInt64, ImmutAnyOrigin],
     ctx: DeviceContext,
     output_fn: OutputFn,
 ) raises:

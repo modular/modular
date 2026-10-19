@@ -27,9 +27,9 @@ from std.memory import unsafe_stack_allocation
 
 
 def convolution_tiled_2D_const_mem_kernel(
-    N: UnsafePointer[Float32, ImmutAnyOrigin],
-    F: UnsafePointer[Float32, ImmutAnyOrigin],
-    P: UnsafePointer[Float32, MutAnyOrigin],
+    N: ImmPointer[Float32, ImmutAnyOrigin],
+    F: ImmPointer[Float32, ImmutAnyOrigin],
+    P: MutPointer[Float32, MutAnyOrigin],
     width_dev: Int32,
     height_dev: Int32,
 ):
@@ -89,17 +89,15 @@ def convolution_tiled_2D_const_mem_kernel(
                     var tile_idx = (tileRow + fRow) * IN_TILE_DIM + (
                         tileCol + fCol
                     )
-                    Pvalue += F[fRow * FILTER_WIDTH + fCol] * Float32(
-                        N_s[tile_idx]
-                    )
+                    Pvalue += F[fRow * FILTER_WIDTH + fCol] * N_s[tile_idx]
 
             P[row * width + col] = Pvalue
 
 
 def convolution_tiled_2d_const_mem(
-    h_in: UnsafePointer[mut=False, Float32, _],
-    h_filter: UnsafePointer[mut=False, Float32, _],
-    h_out: UnsafePointer[mut=True, Float32, _],
+    h_in: ImmPointer[Float32, _],
+    h_filter: ImmPointer[Float32, _],
+    h_out: MutPointer[Float32, _],
     width: Int,
     height: Int,
     ctx: DeviceContext,
@@ -156,11 +154,11 @@ def convolution_tiled_2d_const_mem(
 
 
 def cpu_2d_conv(
-    inarr: UnsafePointer[mut=False, Float32, _],
-    outarr: UnsafePointer[mut=True, Float32, _],
+    inarr: ImmPointer[Float32, _],
+    outarr: MutPointer[Float32, _],
     width: Int,
     height: Int,
-    h_filter: UnsafePointer[mut=False, Float32, _],
+    h_filter: ImmPointer[Float32, _],
     filter_width: Int,
     r: Int,
 ):

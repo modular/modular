@@ -68,9 +68,10 @@ from max.gpu import (
     lane_id,
 )
 from max.gpu.host import DeviceContext
+from std.algorithm import vectorize
 from std.math import ceildiv, rsqrt
 from std.collections import Array
-from std.sys import size_of
+from std.sys import simd_width_of, size_of
 from std.utils.index import StaticTuple
 from std.utils.numerics import get_accum_type
 import max.gpu.primitives.warp as warp
@@ -119,7 +120,7 @@ def gated_group_rmsnorm_kernel[
     # One warp owns one (row, group). All 32 lanes share `group_flat` (it is
     # `global_idx.x // WARP_SIZE`, constant within a simdgroup), so the early
     # return is warp-uniform -- safe before the `warp.sum` collective below.
-    var group_flat = Int(global_idx.x) // WARP_SIZE
+    var group_flat = global_idx.x // WARP_SIZE
     if group_flat >= n_rows * num_groups:
         return
     var n = group_flat // num_groups
@@ -131,7 +132,7 @@ def gated_group_rmsnorm_kernel[
     var j = lane
     while j < group_size:
         var col = base + j
-        var yv = y.load[width=1](Coord(n, col)).cast[.float32]()
+        var yv = y.load[width=1]((n, col)).cast[.float32]()
         var gv = gate_fn[1, 1](n, col).cast[.float32]()
         var gated = yv * silu(gv)
         acc += gated * gated
@@ -148,13 +149,13 @@ def gated_group_rmsnorm_kernel[
     var jj = lane
     while jj < group_size:
         var col = base + jj
-        var yv = y.load[width=1](Coord(n, col)).cast[.float32]()
+        var yv = y.load[width=1]((n, col)).cast[.float32]()
         var gv = gate_fn[1, 1](n, col).cast[.float32]()
         var gated = yv * silu(gv)
         var t_in = (gated * nf).cast[dtype]()
-        var w = weight.load[width=1](Coord(col)).cast[.float32]()
+        var w = weight.load[width=1]((col,)).cast[.float32]()
         var prod = w * t_in.cast[.float32]()
-        output.store(Coord(n, col), prod.cast[dtype]())
+        output.store((n, col), prod.cast[dtype]())
         jj += WARP_SIZE
 
 
@@ -224,9 +225,9 @@ def gated_group_rmsnorm_vec_kernel[
                 gated[k] = Vec(0)
                 w[k] = Vec(0)
                 continue
-        var yv = y.load[width=width, alignment=y_align](Coord(n, col))
+        var yv = y.load[width=width, alignment=y_align]((n, col))
         var gv = gate_fn[width, gate_align // size_of[gate_dtype]()](n, col)
-        w[k] = weight.load[width=width, alignment=w_align](Coord(col)).cast[
+        w[k] = weight.load[width=width, alignment=w_align]((col,)).cast[
             accum_type
         ]()
         gated[k] = yv.cast[accum_type]() * silu(gv.cast[accum_type]())
@@ -243,9 +244,7 @@ def gated_group_rmsnorm_vec_kernel[
         var col = base + (lane + k * WARP_SIZE) * width
         var t_in = (gated[k] * nf).cast[dtype]()
         var prod = w[k] * t_in.cast[accum_type]()
-        output.store[width=width, alignment=y_align](
-            Coord(n, col), prod.cast[dtype]()
-        )
+        output.store[alignment=y_align]((n, col), prod.cast[dtype]())
 
 
 @inline(.always)
@@ -254,12 +253,10 @@ def _is_vec_ok(t: TileTensor) -> Bool:
     comptime rank = t.flat_rank
     var row_ok = True
     comptime if rank > 1:
-        row_ok = (
-            Int(t.layout.stride[0]().value()) * size_of[t.dtype]() % 16 == 0
-        )
+        row_ok = Int(t.dynamic_stride(0)) * size_of[t.dtype]() % 16 == 0
     return (
         Int(t.unsafe_ptr()) % 16 == 0
-        and Int(t.layout.stride[rank - 1]().value()) == 1
+        and Int(t.dynamic_stride(rank - 1)) == 1
         and row_ok
     )
 
@@ -395,17 +392,27 @@ def gated_group_rmsnorm_cpu[
             var m2 = Float32(0)
             for j in range(group_size):
                 var col = base + j
-                var yv = y.load[width=1](Coord(n, col)).cast[.float32]()
+                var yv = y.load[width=1]((n, col)).cast[.float32]()
                 var gv = gate_fn[1, 1](n, col).cast[.float32]()
                 var gated = yv * silu(gv)
                 m2 += gated * gated
             var nf = rsqrt(m2 / Float32(group_size) + eps)
-            for j in range(group_size):
+
+            def normalize[width: Int](j: Int) {imm}:
                 var col = base + j
-                var yv = y.load[width=1](Coord(n, col)).cast[.float32]()
-                var gv = gate_fn[1, 1](n, col).cast[.float32]()
+                var yv = y.load[width=width]((n, col)).cast[.float32]()
+                var gv = gate_fn[width, 1](n, col).cast[.float32]()
                 var gated = yv * silu(gv)
                 var t_in = (gated * nf).cast[dtype]()
-                var w = weight.load[width=1](Coord(col)).cast[.float32]()
+                var w = weight.load[width=width]((col,))
                 var prod = w * t_in.cast[.float32]()
-                output.store(Coord(n, col), prod.cast[dtype]())
+                output.store((n, col), prod.cast[dtype]())
+
+            if (
+                Int(y.layout.stride_coord().flatten()[1]) == 1
+                and Int(output.layout.stride_coord().flatten()[1]) == 1
+                and Int(weight.layout.stride_coord().flatten()[0]) == 1
+            ):
+                vectorize[simd_width_of[DType.float32]()](group_size, normalize)
+            else:
+                vectorize[1](group_size, normalize)

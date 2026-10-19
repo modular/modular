@@ -22,6 +22,7 @@ and NVFP4 configs used to drive the quantized code paths.
 
 from __future__ import annotations
 
+import dataclasses
 from collections.abc import Iterator
 from unittest.mock import MagicMock, patch
 
@@ -137,4 +138,12 @@ def nvfp4_quant_config() -> QuantConfig:
         mlp_quantized_layers={0},
         attn_quantized_layers={0},
         format=QuantFormat.NVFP4,
+    )
+
+
+@pytest.fixture
+def nvfp4_fake_quant_config(nvfp4_quant_config: QuantConfig) -> QuantConfig:
+    """NVFP4 config whose weights are quantized from bf16 at runtime."""
+    return dataclasses.replace(
+        nvfp4_quant_config, format=QuantFormat.FAKE_QUANT_NVFP4
     )

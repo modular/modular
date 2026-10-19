@@ -101,7 +101,7 @@ def test_array_int() raises:
 
     def test_init_fill_scalars[*dts: DType, sizes: List[Int]]() raises {imm}:
         comptime for current_size in range(len(sizes)):
-            comptime for current_type in range(dts.size):
+            comptime for current_type in range(dts.length):
                 test_init_fill[sizes[current_size]](
                     Scalar[dts[current_type]].MAX
                 )

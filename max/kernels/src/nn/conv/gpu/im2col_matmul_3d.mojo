@@ -22,9 +22,9 @@ bf16, so this path gives the native 3D conv access to tensor cores
 without touching the TMA im2col descriptor layer.
 """
 
-from std.math import ceildiv, gcd
+from std.math import ceildiv, divmod, gcd
 from std.math.uutils import udivmod
-from std.sys import simd_width_of, size_of
+from std.sys import align_of, simd_width_of, size_of
 from max.gpu import block_dim, block_idx, global_idx, thread_idx
 from max.gpu.host import DeviceContext
 from layout import (
@@ -36,7 +36,6 @@ from layout import (
 )
 from linalg.matmul.gpu import _matmul_gpu
 from std.utils import IndexList
-from linalg.utils import elementwise_epilogue_type
 from nn.conv.conv_utils import elementwise_simd_epilogue_type
 
 
@@ -58,7 +57,7 @@ def _im2col_ndhwc_kernel[
     output_engine: TensorEngine,
     filter_is_fcrs: Bool,
 ](
-    im2col_ptr: UnsafePointer[Scalar[input_dtype], MutAnyOrigin],
+    im2col_ptr: MutPointer[Scalar[input_dtype], MutAnyOrigin],
     input: TileTensor[
         input_dtype, input_layout_type, ImmutAnyOrigin, Engine=input_engine
     ],
@@ -133,15 +132,11 @@ def _im2col_ndhwc_kernel[
     var d_out, rem = udivmod(spatial, HW_out)
     var h_out, w_out = udivmod(rem, W_out)
 
-    # Precompute input-base offsets and (batch, stride, pad)-dependent
-    # addends; within a block only (q, r, s, c) change across threads.
+    # Precompute the (stride, pad)-dependent input bases; within a block
+    # only (q, r, s, c) change across threads.
     var d_in_base = d_out * _stride_d - _pad_d
     var h_in_base = h_out * _stride_h - _pad_h
     var w_in_base = w_out * _stride_w - _pad_w
-    var batch_base = batch * D * H * W * C
-    var dhw_stride = H * W * C
-    var hw_stride = W * C
-    var w_stride = C
 
     var RSC = R * S * C
     var SC = S * C
@@ -159,14 +154,9 @@ def _im2col_ndhwc_kernel[
 
         var val = SIMD[input_dtype, simd_width](0)
         if 0 <= d_in < D and 0 <= h_in < H and 0 <= w_in < W:
-            var in_idx = (
-                batch_base
-                + d_in * dhw_stride
-                + h_in * hw_stride
-                + w_in * w_stride
-                + c
-            )
-            val = input.ptr.load[width=simd_width](in_idx)
+            val = input.load[
+                width=simd_width, alignment=align_of[input_dtype]()
+            ](Coord(batch, d_in, h_in, w_in, c))
 
         im2col_ptr.store(row_base + k, val)
         k += block_dim.x * simd_width
@@ -181,7 +171,7 @@ def _transpose_qrscf_to_nk[
     filter: TileTensor[
         dtype, filter_layout_type, ImmutAnyOrigin, Engine=filter_engine
     ],
-    dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    dst_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
 ):
     """QRSCF [Q,R,S,C,F] -> [F, Q*R*S*C] row-major for matmul transpose_b."""
     comptime assert filter.shape_known, "filter shape must be static"
@@ -206,8 +196,7 @@ def _transpose_qrscf_to_nk[
     var r, sc = udivmod(rsc, SC)
     var s, c = udivmod(sc, C)
 
-    var src_idx = ((q * R + r) * S + s) * C * F + c * F + f
-    dst_ptr.store(tid, filter.ptr.load(src_idx))
+    dst_ptr.store(tid, filter[q, r, s, c, f])
 
 
 @__name(t"conv3d_transpose_fcqrs_to_nk_{dtype}")
@@ -219,7 +208,7 @@ def _transpose_fcqrs_to_nk[
     filter: TileTensor[
         dtype, filter_layout_type, ImmutAnyOrigin, Engine=filter_engine
     ],
-    dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    dst_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
 ):
     """FCQRS [F,C,Q,R,S] -> [F, Q*R*S*C] row-major for matmul transpose_b."""
     comptime assert filter.shape_known, "filter shape must be static"
@@ -244,8 +233,7 @@ def _transpose_fcqrs_to_nk[
     var r, sc = udivmod(rsc, SC)
     var s, c = udivmod(sc, C)
 
-    var src_idx = f * C * Q * R * S + c * Q * R * S + q * R * S + r * S + s
-    dst_ptr.store(tid, filter.ptr.load(src_idx))
+    dst_ptr.store(tid, filter[f, c, q, r, s])
 
 
 # =========================================================================
@@ -393,9 +381,7 @@ def dispatch_im2col_matmul_conv3d[
     # avoid a tiny ragged tail tile that under-uses the matmul.
     var bytes_per_row = K * size_of[input_type]()
     var m_tile_by_budget = m_tile_byte_budget // bytes_per_row
-    var m_tile_cap = (
-        m_tile_by_budget if m_tile_by_budget > _MIN_M_TILE else _MIN_M_TILE
-    )
+    var m_tile_cap = max(m_tile_by_budget, _MIN_M_TILE)
     var m_tile: Int
     if full_M <= m_tile_cap:
         m_tile = full_M
@@ -412,7 +398,7 @@ def dispatch_im2col_matmul_conv3d[
     var _m_offset = 0
     while _m_offset < full_M:
         var remaining = full_M - _m_offset
-        var _m_count = m_tile if remaining > m_tile else remaining
+        var _m_count = min(m_tile, remaining)
 
         # Block-per-row: one block per output voxel, threads cooperate on K.
         comptime im2col_block = 256
@@ -449,43 +435,36 @@ def dispatch_im2col_matmul_conv3d[
         var b_tt = TileTensor(filter_nk_buf, row_major(N, K))
         # Output is NDHWC = [batch, D_out, H_out, W_out, C_out]; rows in the
         # flattened [M, N] layout are contiguous, so we advance by _m_offset * N.
-        var c_ptr = output.ptr + _m_offset * N
-        var c_tt = TileTensor(c_ptr, row_major(_m_count, N))
+        var c_engine = output._offset_storage(_m_offset * N)
+        var c_tt = TileTensor(c_engine, row_major(_m_count, N))
 
         comptime if case .Some(epilogue_5d) = maybe_epilogue_func:
 
-            @__parameter
             @inline(.always)
-            @__copy_capture(DHW_out, HW_out, H_out, W_out, _m_offset)
             def _gemm_epilogue[
                 _dtype: DType,
                 _width: SIMDLength,
                 *,
-                alignment: Int = 1,
-            ](coords_2d: Coord, val: SIMD[_dtype, _width]):
+                alignment: Int,
+            ](coords_2d: Coord, val: SIMD[_dtype, _width]) {
+                var DHW_out, var HW_out, var W_out, var _m_offset
+            }:
                 comptime assert (
                     coords_2d.rank == 2
                 ), "the matmul epilogue contract is rank 2"
-                var full_m = _m_offset + Int(coords_2d[0].value())
-                var n_idx = Int(coords_2d[1].value())
-                var batch_idx = full_m // DHW_out
-                var sp = full_m - batch_idx * DHW_out
-                var d_idx = sp // HW_out
-                var rem2 = sp - d_idx * HW_out
-                var h_idx = rem2 // W_out
-                var w_idx = rem2 - h_idx * W_out
+                var full_m = _m_offset + Int(coords_2d[0])
+                var n_idx = Int(coords_2d[1])
+                var batch_idx, sp = divmod(full_m, DHW_out)
+                var d_idx, rem2 = divmod(sp, HW_out)
+                var h_idx, w_idx = divmod(rem2, W_out)
                 epilogue_5d(
                     (batch_idx, d_idx, h_idx, w_idx, n_idx),
                     rebind[SIMD[output_type, _width]](val),
                 )
 
-            _matmul_gpu[
-                use_tensor_core=True,
-                transpose_b=True,
-                elementwise_lambda_fn=Optional[elementwise_epilogue_type](
-                    _gemm_epilogue
-                ),
-            ](c_tt, a_tt.as_imm(), b_tt.as_imm(), ctx)
+            _matmul_gpu[use_tensor_core=True, transpose_b=True](
+                c_tt, a_tt.as_imm(), b_tt.as_imm(), _gemm_epilogue, ctx
+            )
         else:
             _matmul_gpu[
                 use_tensor_core=True,

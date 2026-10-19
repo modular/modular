@@ -128,17 +128,18 @@ def test_kv_cache_store_ragged_basic(ctx: DeviceContext) raises:
 
     var q_device_tensor = q.device_tensor()
 
-    @__parameter
     @inline(.always)
-    @__copy_capture(q_device_tensor)
-    def input_fn[width: Int, alignment: Int](idx: Coord) -> SIMD[dtype, width]:
+    def input_fn[
+        width: Int, alignment: Int
+    ](idx: Coord) {var q_device_tensor} -> SIMD[dtype, width]:
         return q_device_tensor.load[width=width](idx)
 
     var k_cache_device = kv_collection_paged_device.get_key_cache(0)
-    kv_cache_store_ragged[input_fn=input_fn, target="gpu"](
+    kv_cache_store_ragged[target="gpu"](
         k_cache_device,
         q_shape,
         cache_lengths_table.input_row_offsets.device_tile_tensor(),
+        input_fn,
         ctx,
     )
     ctx.synchronize()
@@ -316,16 +317,16 @@ def test_kv_cache_store_padded_basic(ctx: DeviceContext) raises:
     q.to_device()
     var q_device_tensor = q.device_tensor()
 
-    @__parameter
     @inline(.always)
-    @__copy_capture(q_device_tensor)
-    def input_fn[width: Int, alignment: Int](idx: Coord) -> SIMD[dtype, width]:
+    def input_fn[
+        width: Int, alignment: Int
+    ](idx: Coord) {var q_device_tensor} -> SIMD[dtype, width]:
         comptime assert idx.rank == 4
         return q_device_tensor.load[width=width](idx)
 
     var k_cache_device = kv_collection_paged_device.get_key_cache(0)
-    kv_cache_store_padded[input_fn=input_fn, target="gpu"](
-        k_cache_device, q_shape, valid_lengths_tensor, ctx
+    kv_cache_store_padded[target="gpu"](
+        k_cache_device, q_shape, valid_lengths_tensor, input_fn, ctx
     )
     ctx.synchronize()
     kv_block.to_host()

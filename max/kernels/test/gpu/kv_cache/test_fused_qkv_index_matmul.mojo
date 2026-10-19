@@ -410,13 +410,15 @@ def execute_dual_cache_fused_bf16[
 
     # ---- main cache (K + V) flat compare ----
     var main_n = main_host.num_elements()
+    var main_flat = main_host.reshape(row_major(main_n))
+    var main_ref_flat = main_ref_host.reshape(row_major(main_n))
     var main_mism = 0
     var main_viol = 0
     var main_max_abs = Float32(0)
     var main_max_rel = Float32(0)
     for i in range(main_n):
-        var a = main_host.ptr[i].cast[.float32]()
-        var b = main_ref_host.ptr[i].cast[.float32]()
+        var a = main_flat[i].cast[.float32]()
+        var b = main_ref_flat[i].cast[.float32]()
         var d = abs(a - b)
         if a != b:
             main_mism += 1
@@ -428,13 +430,15 @@ def execute_dual_cache_fused_bf16[
 
     # ---- index cache (K only) flat compare ----
     var index_n = index_host.num_elements()
+    var index_flat = index_host.reshape(row_major(index_n))
+    var index_ref_flat = index_ref_host.reshape(row_major(index_n))
     var index_mism = 0
     var index_viol = 0
     var index_max_abs = Float32(0)
     var index_max_rel = Float32(0)
     for i in range(index_n):
-        var a = index_host.ptr[i].cast[.float32]()
-        var b = index_ref_host.ptr[i].cast[.float32]()
+        var a = index_flat[i].cast[.float32]()
+        var b = index_ref_flat[i].cast[.float32]()
         var d = abs(a - b)
         if a != b:
             index_mism += 1

@@ -14,7 +14,7 @@
 from std.sys.defines import get_defined_string, is_defined
 
 from max.gpu.host import DeviceContext
-from max.gpu.host.info import GPUInfo
+from max.gpu.host.info import get_gpu_info
 
 
 def api() -> String:
@@ -22,7 +22,7 @@ def api() -> String:
         comptime api = get_defined_string["MODULAR_ASYNCRT_DEVICE_CONTEXT_V2"]()
 
         comptime if api == "gpu":
-            return String(GPUInfo.default_accelerator().api)
+            return String(get_gpu_info().api)
         return String(api)
     return "default"
 

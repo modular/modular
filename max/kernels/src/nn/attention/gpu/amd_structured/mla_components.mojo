@@ -829,7 +829,7 @@ struct MlaPrefillV2Core[config: MlaConfigV2]:
             Self._ATT_BF16_FULL_LAYOUT_T,
             MutUntrackedOrigin,
         ](
-            att_block.ptr.bitcast[Scalar[Self.config.dtype]](),
+            att_block.ptr.unsafe_bitcast[Scalar[Self.config.dtype]](),
             Self._MmaOp.ATT_BF16_FULL_LAYOUT,
         )
         Self._att_bf16_full(p_view, att_block)

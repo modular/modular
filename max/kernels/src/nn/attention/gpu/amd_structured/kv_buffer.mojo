@@ -75,7 +75,7 @@ struct KVCacheIterator[
     """TileTensor-based DRAM tile iterator.
 
     Returns a TileTensor with Scalar for the row dimension (valid-row
-    count) and ComptimeInt for depth and strides. No RuntimeLayout storage.
+    count) and ComptimeInt for depth and strides.
 
     When cache_depth != depth, the DRAM stride uses cache_depth (e.g., MLA
     K_rope reads 64 columns from a 576-wide cache row). head_dim_offset
@@ -415,7 +415,7 @@ struct KVBuffer[
         * Self._IndexedLanes.num_strips if Self.kv_t.rows_indexed else 1
     )
     var _next_srcs: StaticTuple[
-        UnsafePointer[Scalar[Self.kv_t.dtype], ImmUntrackedOrigin],
+        ImmPointer[Scalar[Self.kv_t.dtype], ImmUntrackedOrigin],
         Self._indexed_num_srcs,
     ]
     var _next_srcs_ready: Bool
@@ -504,8 +504,9 @@ struct KVBuffer[
                             + warp_row * Self.warp_tile_rows
                             + row
                         ),
+                    ).unsafe_offset(
+                        warp_col * Self.bk_smem + Self.head_dim_offset + col
                     )
-                    + (warp_col * Self.bk_smem + Self.head_dim_offset + col)
                 ).unsafe_origin_cast[ImmUntrackedOrigin]()
         return srcs
 
@@ -1038,7 +1039,7 @@ struct DecodeStreamingKVBuffer[
     var kv_mma_op: Self.KVMmaOpType
 
     @__allow_legacy_any_origin_fields
-    var smem_ptr: UnsafePointer[
+    var smem_ptr: MutPointer[
         Scalar[Self.kv_t.dtype], MutAnyOrigin, address_space=.SHARED
     ]
     var warp_id: UInt32
@@ -1049,7 +1050,7 @@ struct DecodeStreamingKVBuffer[
         cache: Self.kv_t,
         batch_idx: Int,
         head_idx: Int,
-        smem_ptr: UnsafePointer[
+        smem_ptr: MutPointer[
             Scalar[Self.kv_t.dtype], MutAnyOrigin, address_space=.SHARED
         ],
         num_keys: Int,

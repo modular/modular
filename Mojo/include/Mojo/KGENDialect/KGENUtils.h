@@ -456,6 +456,10 @@ void printOptionalInline(AsmPrinter &p, Attribute attr);
 /// After it's done, we should remove the IntegerAttr case.
 ErrorOr<int64_t> getScalarIndexValue(TypedAttr value);
 
+/// Get the value of a scalar parameter value of any integer dtype, including
+/// IntegerAttr. As above, we should drop support for IntegerAttr.
+ErrorOr<int64_t> getScalarIntegerValue(TypedAttr value);
+
 /// The integer `spec` holds, in either the plain or the `InlineLevel` form.
 std::optional<int64_t> inlineLevelValueOf(TypedAttr spec);
 

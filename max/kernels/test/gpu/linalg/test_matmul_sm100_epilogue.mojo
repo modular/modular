@@ -67,11 +67,11 @@ def test_matmul_sm100_epilogue[
             c_type,
             ") ",
             " problem shape=(",
-            Int(m.value()),
+            Int(m),
             ", ",
-            Int(n.value()),
+            Int(n),
             ", ",
-            Int(k.value()),
+            Int(k),
             ") ",
             "mma_shape=",
             mma_shape,
@@ -93,13 +93,9 @@ def test_matmul_sm100_epilogue[
     )
     var c_shape = row_major(m, Idx[NType.static_value])
 
-    var a_size = Int(m.value()) * Int(k.value())
-    var b_size = (
-        Int(n.value())
-        * Int(k.value()) if transpose_b else Int(k.value())
-        * Int(n.value())
-    )
-    var c_size = Int(m.value()) * Int(n.value())
+    var a_size = Int(m) * Int(k)
+    var b_size = Int(n) * Int(k) if transpose_b else Int(k) * Int(n)
+    var c_size = Int(m) * Int(n)
 
     var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](a_size)
     var a_host = TileTensor(a_host_ptr, a_shape)
@@ -135,8 +131,8 @@ def test_matmul_sm100_epilogue[
     rand(a_host.as_span())
     rand(b_host.as_span())
 
-    for i in range(Int(m.value())):
-        for j in range(Int(n.value())):
+    for i in range(Int(m)):
+        for j in range(Int(n)):
             comptime assert c_host.flat_rank == 2
             c_host[i, j] = Scalar[c_type](random_float64(-1, 1))
             c_host_copy[i, j] = c_host[i, j]
@@ -215,8 +211,8 @@ def test_matmul_sm100_epilogue[
 
     comptime if test_lambda_fn:
         # Apply the compute lambda directly on the reference tensor
-        for i in range(Int(m.value())):
-            for j in range(Int(n.value())):
+        for i in range(Int(m)):
+            for j in range(Int(n)):
                 comptime assert c_host_ref.flat_rank == 2
                 c_host_ref[i, j] = test_lambda_add_coords_summ_local(
                     Coord(i, j), c_host_ref[i, j]

@@ -20,7 +20,7 @@ from nn.reshape import reshape
 from max.algorithm import elementwise, sync_parallelize
 from max.gpu.host import DeviceContext, get_gpu_target
 from max.gpu.host.info import is_cpu
-from layout import Coord, TileTensor, coord_to_index_list
+from layout import Coord, TileTensor, coord_to_index_list, row_major
 from max.runtime.asyncrt import parallelism_level
 
 from std.utils import IndexList
@@ -69,12 +69,10 @@ def index_tensor_shape[
     var indices_shape = IndexList[combined_indices_rank]()
 
     comptime for i in range(batch_dims):
-        indices_shape[i] = Int(input_buf.layout.shape[i]().value())
+        indices_shape[i] = Int(input_buf.dim[i]())
 
     comptime for i in range(indices_buf.rank):
-        indices_shape[batch_dims + i] = Int(
-            indices_buf.layout.shape[i]().value()
-        )
+        indices_shape[batch_dims + i] = Int(indices_buf.dim[i]())
 
     var index_size = indices_shape[combined_indices_rank - 1]
     # TODO: Revisit when we generalize (see above TODO).
@@ -249,18 +247,19 @@ def _index_tensor_1d[
         # each thread gets a chunk of output embedding vectors to avoid inter-thread reduction
         var work_start = task_id * work_per_thread
         var work_end = min((task_id + 1) * work_per_thread, batch_volume)
+        var output_flat = output.reshape(row_major(output.num_elements()))
 
         for i in range(work_start, work_end):
             for j in range(Int(indices.dim(0))):
                 var data_coord = IndexList[reshaped_data_rank]()
                 data_coord[0] = i
                 for k in range(last_index_dim):
-                    data_coord[k + 1] = Int(indices.load[width=1](Coord(j, k)))
+                    data_coord[k + 1] = Int(indices.load((j, k)))
 
                 var rd_coord = Coord(data_coord)
-                output.raw_store(
-                    i * Int(indices.dim(0)) + j,
-                    reshaped_data.load[width=1](rd_coord),
+                output_flat.store(
+                    (i * Int(indices.dim(0)) + j,),
+                    reshaped_data.load(rd_coord),
                 )
 
     sync_parallelize(calc_batch_dim, num_tasks, ctx)
@@ -289,7 +288,7 @@ def _index_tensor_impl[
     ](output_idx_arg: Coord) {var}:
         var output_idx = IndexList[output.rank]()
         comptime for i in range(output.rank):
-            output_idx[i] = Int(output_idx_arg[i].value())
+            output_idx[i] = Int(output_idx_arg[i])
         var data_idx = IndexList[data.rank]()
         var indices_idx = IndexList[indices.rank]()
         var indices_last_dim = Int(indices.dim[indices.rank - 1]())
@@ -306,7 +305,7 @@ def _index_tensor_impl[
         for i in range(indices_last_dim):
             indices_idx[indices.rank - 1] = i
             var coord = Coord(indices_idx)
-            data_idx[batch_dims + i] = Int(indices.load[width=1](coord))
+            data_idx[batch_dims + i] = Int(indices.load(coord))
 
         # fill in the last slices in the input
         var num_tail_elems = data.rank - batch_dims - indices_last_dim
@@ -317,7 +316,7 @@ def _index_tensor_impl[
 
         var data_coord = Coord(data_idx)
         var out_coord = Coord(output_idx)
-        output.store[width=simd_width, alignment=1](
+        output.store[alignment=1](
             out_coord, data.load[width=simd_width, alignment=1](data_coord)
         )
 
@@ -503,12 +502,10 @@ def advanced_indexing_getitem[
         # Find the associated output index from input index
         comptime for input_dim in range(input_rank):
             comptime if input_dim < start_axis:
-                input_index[input_dim] = Int(output_index[input_dim].value())
+                input_index[input_dim] = Int(output_index[input_dim])
             elif input_dim >= start_axis + num_index_tensors:
                 input_index[input_dim] = Int(
-                    output_index[
-                        input_dim - num_index_tensors + index_rank
-                    ].value()
+                    output_index[input_dim - num_index_tensors + index_rank]
                 )
             else:
                 comptime index_tensor_offset = input_dim - start_axis
@@ -516,13 +513,13 @@ def advanced_indexing_getitem[
 
                 comptime for offset in range(index_rank):
                     index_tensor_indices[offset] = Int(
-                        output_index[offset + start_axis].value()
+                        output_index[offset + start_axis]
                     )
                 input_index[input_dim] = Int(
                     indices_fn[index_tensor_offset](Coord(index_tensor_indices))
                 )
 
-        out_tensor.store[width=width, alignment=1](
+        out_tensor.store[alignment=1](
             output_index,
             input_tensor_fn[input_type, width=width](Coord(input_index)),
         )
@@ -699,12 +696,10 @@ def advanced_indexing_setitem_inplace[
     # Find the common iteration space
     comptime for i in range(iteration_rank):
         comptime if i < start_axis:
-            iteration_shape[i] = Int(input_tensor.layout.shape[i]().value())
+            iteration_shape[i] = Int(input_tensor.dim[i]())
         elif i >= start_axis + index_rank:
             iteration_shape[i] = Int(
-                input_tensor.layout.shape[
-                    i - index_rank + num_index_tensors
-                ]().value()
+                input_tensor.dim[i - index_rank + num_index_tensors]()
             )
         else:
             iteration_shape[i] = index_tensor_shape[i - start_axis]
@@ -719,21 +714,17 @@ def advanced_indexing_setitem_inplace[
 
         # Find the index into the indexing tensors from the common index
         comptime for i in range(index_rank):
-            index_tensor_indices[i] = Int(
-                iteration_indices[i + start_axis].value()
-            )
+            index_tensor_indices[i] = Int(iteration_indices[i + start_axis])
 
         # Find the index into the inputs from the common index
         var input_tensor_indices = IndexList[input_tensor.rank]()
 
         comptime for i in range(input_tensor.rank):
             comptime if i < start_axis:
-                input_tensor_indices[i] = Int(iteration_indices[i].value())
+                input_tensor_indices[i] = Int(iteration_indices[i])
             elif i >= start_axis + num_index_tensors:
                 input_tensor_indices[i] = Int(
-                    iteration_indices[
-                        i - num_index_tensors + index_rank
-                    ].value()
+                    iteration_indices[i - num_index_tensors + index_rank]
                 )
 
             else:
@@ -743,7 +734,7 @@ def advanced_indexing_setitem_inplace[
                 )
 
         var input_tensor_coord = Coord(input_tensor_indices)
-        input_tensor.store[width=width, alignment=1](
+        input_tensor.store[alignment=1](
             input_tensor_coord,
             updates_tensor_fn[input_type, width=width](iteration_indices),
         )

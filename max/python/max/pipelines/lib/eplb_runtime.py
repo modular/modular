@@ -30,10 +30,11 @@ import os
 from collections.abc import Mapping, Sequence
 from typing import TypeVar
 
-from max.driver import Buffer, Device
+from max.driver import Buffer, Device, is_virtual_device_mode
+from max.graph.weights import WeightData
 from max.nn.comm.ep import EPCommInitializer, EPConfig
 from max.nn.layer import Module
-from max.nn.moe import apply_eplb_placement
+from max.nn.moe import apply_eplb_placement, router_fold_supported
 
 from .eplb_stats import (
     EplbPlacement,
@@ -72,9 +73,14 @@ class EplbRuntime:
         self._devices = list(devices)
         self.metadata = metadata
         self.placement: EplbPlacement | None = None
+        self._fold_router = False
+        # Virtual exports stage devices that cannot service histogram
+        # buffers. The graph's histogram inputs are still exported, so a
+        # boot with the same env compiles the same graph; the serving
+        # process constructs its own accumulator from real devices.
         self.accumulator: EplbStatsAccumulator | None = (
             EplbStatsAccumulator(metadata=metadata, devices=self._devices)
-            if runtime.eplb_profile
+            if runtime.eplb_profile and not is_virtual_device_mode()
             else None
         )
 
@@ -134,6 +140,15 @@ class EplbRuntime:
         ep_config.num_logical_experts = placement.log2phy.shape[1]
         ep_config.n_experts = placement.num_phy
         ep_config.eplb_phy2log_plan = placement.phy2log
+        # Decided here, before the model and its EP manager copy the config,
+        # so every copy agrees with how remap_weights lays out the routers.
+        self._fold_router = (
+            self._runtime.eplb_fold_router
+            and not self._runtime.eplb_profile
+            and int(placement.logcnt.max()) == 1
+            and n_groups == 1
+        )
+        ep_config.eplb_router_folded = self._fold_router
         logger.info(
             "EPLB: placement installed (num_phy=%d, max_replicas=%d, "
             "num_moe_layers=%d)",
@@ -146,14 +161,35 @@ class EplbRuntime:
 
     def remap_weights(
         self, model: Module, state_dict: Mapping[str, _T]
-    ) -> Mapping[str, _T]:
+    ) -> Mapping[str, _T | Buffer | WeightData]:
         """Points every physical expert slot at its logical expert's weights.
 
-        Returns ``state_dict`` unchanged when no placement is installed.
+        For a permutation-only placement, also reorders each router's
+        expert rows (see ``eplb_fold_router``) to match what
+        :meth:`install_placement` told the EP config. Returns ``state_dict``
+        unchanged when no placement is installed.
+
+        Raises:
+            ValueError: If the placement was to be folded but some router
+                keeps an expert-indexed weight a row reorder cannot cover.
         """
         if self.placement is None:
             return state_dict
-        return apply_eplb_placement(model, state_dict, self.placement.phy2log)
+        phy2log = self.placement.phy2log
+        if self._fold_router and not router_fold_supported(model, phy2log):
+            raise ValueError(
+                "EPLB cannot fold this placement into the model's routers; "
+                "set eplb_fold_router=False"
+            )
+        logger.info(
+            "EPLB: %s",
+            "placement folded into the routers; no id remap at dispatch"
+            if self._fold_router
+            else "routers emit logical ids; dispatch remaps them",
+        )
+        return apply_eplb_placement(
+            model, state_dict, phy2log, fold_router=self._fold_router
+        )
 
     def bind(self, ep_comm_initializer: EPCommInitializer | None) -> None:
         """Hands the placement's device tables to the EP model inputs.

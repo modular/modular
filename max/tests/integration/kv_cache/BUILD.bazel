@@ -102,6 +102,7 @@ modular_py_test(
             "*_distributed_gpu.py",
             "test_lora_*.py",
             "test_msa_fp8_kv_store_gpu.py",
+            "test_chunked_qkv_rope_store_gpu.py",
             "test_msa_mxfp8_attention_gpu.py",
             "test_dual_qk_fp8_kv_store_gpu.py",
             "test_msa_nvfp4_kv_gpu.py",
@@ -171,6 +172,31 @@ modular_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/nn",
+    ],
+)
+
+modular_py_test(
+    name = "test_chunked_qkv_rope_store_gpu",
+    srcs = ["test_chunked_qkv_rope_store_gpu.py"],
+    # Producer runfiles and sandboxed replay otherwise infer different project
+    # roots, changing node IDs and preventing the recorded MEFs from matching.
+    args = ["--rootdir=max/tests/integration/kv_cache"],
+    exec_properties = {"test.resources:gpu-memory": "2"},
+    gpu_constraints = ["//:b200_gpu"],
+    precompile_mefs = True,
+    tags = ["gpu"],
+    deps = [
+        "//max/python/max:tree",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/mimo_v2",
+        "//max/tests/integration/test_common:graph_utils",
+        "//max/tests/integration/test_common:simple_kv_cache",
+        requirement("numpy"),
+        requirement("torch"),
     ],
 )
 
@@ -265,7 +291,11 @@ modular_py_test(
     exec_properties = {
         "test.resources:gpu-memory": "2",
     },
-    gpu_constraints = ["//:b200_gpu"],
+    gpu_constraints = select({
+        "//:b200_gpu": [],
+        "//:mi355_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     precompile_mefs = True,
     tags = [
         "gpu",

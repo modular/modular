@@ -46,32 +46,30 @@ def test_correlation(ctx: DeviceContext) raises:
         u[i] = (0.01 * Float64(i)).cast[.float32]()
         v[i] = (-0.01 * Float64(i)).cast[.float32]()
     for i, j in product(range(a), range(b)):
-        x[b * i + j] = (0.1 * Float64(i) + 0.1 * Float64(j)).cast[
-            DType.float32
-        ]()
+        x[b * i + j] = (0.1 * Float64(i) + 0.1 * Float64(j)).cast[.float32]()
 
     assert_almost_equal(
         1.0,
-        correlation[out_type=DType.float64](
+        correlation[out_type=.float64](
             u.unsafe_ptr(), u.unsafe_ptr(), len, ctx
         ),
     )
     assert_almost_equal(
         -1.0,
-        correlation[out_type=DType.float64](
+        correlation[out_type=.float64](
             u.unsafe_ptr(), v.unsafe_ptr(), len, ctx
         ),
     )
     # +/- 0.773957299203321 is the exactly rounded fp64 answer calculated using mpfr
     assert_almost_equal(
         0.773957299203321,
-        correlation[out_type=DType.float64](
+        correlation[out_type=.float64](
             u.unsafe_ptr(), x.unsafe_ptr(), len, ctx
         ),
     )
     assert_almost_equal(
         -0.773957299203321,
-        correlation[out_type=DType.float64](
+        correlation[out_type=.float64](
             v.unsafe_ptr(), x.unsafe_ptr(), len, ctx
         ),
     )

@@ -13,7 +13,7 @@
 """Implements the tensor split operation, dividing a tensor into chunks along a specified axis."""
 
 from std.collections.string import StaticString
-from std.sys import simd_width_of
+from std.sys import align_of, simd_width_of
 from std.sys.info import CompilationTarget
 
 from max.algorithm import elementwise
@@ -125,9 +125,9 @@ def split[
             else:
                 output_coords[i] = input_idx[i]
 
-        var idx = input.layout(input_coords)
-
-        var value = input.raw_load[width=width](idx)
+        var value = input.load[width=width, alignment=align_of[dtype]()](
+            input_coords
+        )
 
         # Write through a COMPILE-TIME index into the `outputs` StaticTuple.
         # On Metal (Apple M5), a StaticTuple[TileTensor, N] aggregate indexed
@@ -141,8 +141,9 @@ def split[
         # comptime StaticTuple probes (.derived/repro_*statictuple*).
         comptime for i in range(num_outputs):
             if output_idx == i:
-                var output_ptr_idx = outputs[i].layout(Coord(output_coords))
-                outputs[i].raw_store(output_ptr_idx, value)
+                outputs[i].store[alignment=align_of[dtype]()](
+                    Coord(output_coords), value
+                )
 
     # Can vectorize only if not splitting over last dim.
     if axis != input.rank - 1:

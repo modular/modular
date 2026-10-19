@@ -13,9 +13,8 @@
 
 from std.math import ceildiv
 from std.os import abort
-from std.sys import default_accelerator
 
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, default_accelerator
 from internal_utils import assert_almost_equal
 from std.random import rand
 from layout import TileTensor, row_major

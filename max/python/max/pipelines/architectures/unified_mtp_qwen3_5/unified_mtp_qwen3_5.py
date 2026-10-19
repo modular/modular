@@ -132,6 +132,10 @@ class UnifiedMTPQwen3_5(SequentialDriver[list[TensorValue]]):
                 devices=config.devices,
                 distributed=True,
                 data_parallel_degree=1,
+                # M-RoPE marks a checkpoint whose prompts can hold images. The
+                # encoder runs outside this graph, which takes its output.
+                enable_vision=target.mrope_enabled,
+                vision_hidden_size=config.hidden_size,
             ),
             speculative_config=speculative_config,
             enable_structured_output=enable_structured_output,

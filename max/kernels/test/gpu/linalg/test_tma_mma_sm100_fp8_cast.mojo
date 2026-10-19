@@ -64,30 +64,16 @@ def cpu_matmul_naive[
     var M = Int(C.dim[0]())
     var N = Int(C.dim[1]())
     var K = Int(A.dim[0]()) if transpose_a else Int(A.dim[1]())
-    var a_ptr = A.unsafe_ptr()
-    var b_ptr = B.unsafe_ptr()
-    var c_ptr = C.unsafe_ptr()
     for n in range(N):
         for m in range(M):
             var acc: Float32 = 0.0
             for k in range(K):
-                var a_idx: Int
-
-                comptime if transpose_a:
-                    a_idx = k * M + m
-                else:
-                    a_idx = m * K + k
-                var b_idx: Int
-
-                comptime if transpose_b:
-                    b_idx = n * K + k
-                else:
-                    b_idx = k * N + n
-                acc += (
-                    a_ptr[a_idx].cast[.float32]()
-                    * b_ptr[b_idx].cast[.float32]()
-                )
-            c_ptr[m * N + n] = acc.cast[C.dtype]()
+                var a_coord = Coord(k, m) if transpose_a else Coord(m, k)
+                var b_coord = Coord(n, k) if transpose_b else Coord(k, n)
+                acc += rebind[Float32](
+                    A.load(a_coord).cast[.float32]()
+                ) * rebind[Float32](B.load(b_coord).cast[.float32]())
+            C.store((m, n), acc.cast[C.dtype]())
 
 
 @__llvm_metadata(`nvvm.cluster_dim`=cluster_shape)
@@ -176,13 +162,15 @@ def tma_umma_kernel_sgs[
     comptime assert (
         (b_size * size_of[b_smem_type]()) % 16
     ) == 0, "preserve alignment"
-    var b_smem = (a_smem + a_size).bitcast[Scalar[b_smem_type]]()
+    var b_smem = a_smem.unsafe_offset(a_size).unsafe_bitcast[
+        Scalar[b_smem_type]
+    ]()
 
     var a_smem_tile = TileTensor(a_smem, a_smem_layout)
     var b_smem_tile = TileTensor(b_smem, b_smem_layout)
 
     # Shared memory pointer to hold tensor memory address
-    var ptr_tmem_addr = (b_smem + b_size).bitcast[UInt32]()
+    var ptr_tmem_addr = b_smem.unsafe_offset(b_size).unsafe_bitcast[UInt32]()
 
     comptime accum_type = get_accum_type[a_type]()
 
@@ -192,8 +180,10 @@ def tma_umma_kernel_sgs[
     comptime a_expected_bytes = a_size * size_of[a_type]()
     # B is loaded manually, not via TMA
 
-    var tma_mbar = (ptr_tmem_addr + 2).bitcast[SharedMemBarrier]()
-    var mma_mbar = tma_mbar + 1
+    var tma_mbar = ptr_tmem_addr.unsafe_offset(2).unsafe_bitcast[
+        SharedMemBarrier
+    ]()
+    var mma_mbar = tma_mbar.unsafe_offset(1)
 
     if thread_idx.x == 0:
         tma_mbar[0].init()
@@ -286,8 +276,9 @@ def tma_umma_kernel_sgs[
         comptime simd_size = 8
         comptime assert elems_per_thread % simd_size == 0
 
-        var tid = Int(thread_idx.x)
+        var tid = thread_idx.x
         comptime swizzle = make_swizzle[b_smem_type, b_swizzle]()
+        var b_smem_flat = b_smem_tile.reshape(row_major[b_size]())
 
         comptime for elem in range(elems_per_thread // simd_size):
             var local_idx = simd_size * (elem * num_threads + tid)
@@ -303,15 +294,15 @@ def tma_umma_kernel_sgs[
                 k_local, n_local = divmod(local_idx, BN)
 
             # Global coordinates
-            var gmem_n = Int(block_idx.x) * BN + n_local
+            var gmem_n = block_idx.x * BN + n_local
             var gmem_k = i * BK + k_local
 
             var fp8_val: SIMD[b_gmem_type, simd_size]
             # Load from gmem - layout is NxK when transpose_b, KxN otherwise
             comptime if transpose_b:
-                fp8_val = b.load[width=simd_size](Coord(gmem_n, gmem_k))
+                fp8_val = b.load[width=simd_size]((gmem_n, gmem_k))
             else:
-                fp8_val = b.load[width=simd_size](Coord(gmem_k, gmem_n))
+                fp8_val = b.load[width=simd_size]((gmem_k, gmem_n))
 
             # Cast and store to smem using local coordinates
             var bf16_val = fp8_val.cast[b_smem_type]()
@@ -320,9 +311,7 @@ def tma_umma_kernel_sgs[
             var k_q, k_r = divmod(k_local, b_shape10)
             var k_offset = k_q * b_stride11 + k_r * b_stride10
             var offset = swizzle(n_offset + k_offset)
-            b_smem_tile.raw_store[width=simd_size, alignment=2 * simd_size](
-                offset, bf16_val
-            )
+            b_smem_flat.store[alignment=2 * simd_size]((offset,), bf16_val)
 
         # Sync: wait for TMA to complete and all threads to finish storing to smem
         tma_mbar[0].wait(tma_phase)
@@ -379,7 +368,7 @@ def tma_umma_kernel_sgs[
         tcgen05_release_allocation_lock[1]()
         tcgen05_dealloc[1](tmem_addr, max_tmem_cols)
 
-    var ctile = c.tile[BM, BN](Int(block_idx.y), Int(block_idx.x))
+    var ctile = c.tile[BM, BN](block_idx.y, block_idx.x)
 
     comptime for m_mma in range(num_m_mmas):
         comptime for n_mma in range(num_n_mmas):

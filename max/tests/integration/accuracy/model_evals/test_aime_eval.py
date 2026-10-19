@@ -27,6 +27,110 @@ import aime_eval
 import pytest
 from click.testing import CliRunner
 
+# Captured verbatim from MiniMax-M3.1-preview2 on AIME25 problem 24
+# (finish_reason "stop", expected 907). The box opens an environment, so its
+# first closing brace is not its own, and the answer ends on a modulus.
+M31_PROBLEM_24 = r"""\[
+\boxed{
+\begin{aligned}
+&\text{Represent occupied chairs by 1's. The condition forbids three consecutive 1's,}\\
+&\text{so every run of occupied chairs has length 1 or 2.}\\[2pt]
+&\text{Suppose there are }k\text{ runs. Since there are 8 occupied chairs,}\\
+&\text{exactly }8-k\text{ runs have length 2, giving }\binom{k}{8-k}\text{ choices.}\\[2pt]
+&\text{There are 8 empty chairs. After placing }k-1\text{ separators between runs,}\\
+&\text{the remaining }9-k\text{ empties can be distributed among }k+1\text{ gaps in}\\
+&\binom{9}{k}\text{ ways. Thus}\\
+&N=\sum_{k=4}^{8}\binom{k}{8-k}\binom{9}{k}\\
+&\phantom{N}=126+1260+1260+252+9=2907.\\[2pt]
+&\therefore\quad N\equiv 907\pmod{1000}.
+\end{aligned}
+}
+\]"""
+
+
+@pytest.mark.parametrize(
+    ("content", "expected", "predicted"),
+    [
+        pytest.param(M31_PROBLEM_24, "907", "907", id="m31-captured"),
+        pytest.param(
+            r"So 12 cases, \boxed{1489}.", "106", "1489", id="out-of-range-box"
+        ),
+        pytest.param(r"So \boxed{070}.", "70", "070", id="leading-zero"),
+        pytest.param(r"\boxed{106 \pmod{1000}}", "106", "106", id="pmod"),
+        pytest.param(
+            r"\boxed{N \equiv 106 \bmod 1000}", "106", "106", id="bmod"
+        ),
+        pytest.param(
+            r"\boxed{106 \ (\text{mod } 1000)}", "106", "106", id="text-mod"
+        ),
+        pytest.param(
+            r"\boxed{\begin{aligned} N &= 2907 \\ &= 907 \\[2pt] \end{aligned}}",
+            "907",
+            "907",
+            id="tex-length-after-answer",
+        ),
+        pytest.param(
+            r"\boxed{\{1, 2\}} then finally \boxed{42}",
+            "42",
+            "42",
+            id="last-box",
+        ),
+        pytest.param(
+            r"Maybe 240. \boxed{\text{No such sum exists}}",
+            "240",
+            "",
+            id="boxed-refusal-does-not-borrow-from-text",
+        ),
+        pytest.param(
+            r"\boxed{N = 1000 + 106 = 1106}",
+            "106",
+            "1106",
+            id="out-of-range-final-is-not-skipped",
+        ),
+        pytest.param(r"\boxed{0.5}", "5", "", id="decimal-is-not-an-answer"),
+        pytest.param(r"\boxed{-9}", "9", "-9", id="negative-keeps-sign"),
+        pytest.param(r"\boxed{N-2025=279}", "279", "279", id="subtraction"),
+        pytest.param(r"\boxed{x^{-1}=3}", "3", "3", id="unary-minus-exponent"),
+        pytest.param(r"\boxed{N\equiv907}", "907", "907", id="after-command"),
+        pytest.param(
+            r"\boxed{\frac{562}{3}}", "3", "", id="fraction-is-not-an-answer"
+        ),
+        pytest.param(
+            r"\boxed{P=\frac{8}{33},\ m+n=41}",
+            "41",
+            "41",
+            id="fraction-then-sum",
+        ),
+        pytest.param(
+            r"\boxed{\begin{gathered} R=\frac{662}{3}. \end{gathered}}",
+            "3",
+            "",
+            id="fraction-before-end-environment",
+        ),
+        pytest.param("<think>maybe 12</think>The answer is 33.", "33", "33"),
+        pytest.param(r"truncated \boxed{\begin{aligned} N = 512", "512", "512"),
+        pytest.param(None, "1", "", id="none-content"),
+    ],
+)
+def test_grade(content: str | None, expected: str, predicted: str) -> None:
+    correct, got = aime_eval.grade(content, expected)
+    assert got == predicted
+    assert correct == (predicted != "" and int(predicted) == int(expected))
+
+
+def test_boxed_contents_counts_nested_braces() -> None:
+    assert aime_eval.boxed_contents(r"\boxed{\frac{1}{2}} and \boxed{3}") == [
+        r"\frac{1}{2}",
+        "3",
+    ]
+
+
+def test_boxed_contents_ignores_escaped_braces() -> None:
+    assert aime_eval.boxed_contents(r"\boxed{\{1\}} \boxed{2}") == [
+        r"\{1\}",
+        "2",
+    ]
+
 
 @pytest.mark.parametrize(
     ("content", "expected", "want_correct", "want_predicted"),
@@ -58,7 +162,7 @@ from click.testing import CliRunner
         ),
     ],
 )
-def test_grade(
+def test_grade_canonical_cases(
     content: str | None,
     expected: object,
     want_correct: bool,
@@ -105,6 +209,7 @@ def _run_main(args: list[str]) -> tuple[str, str]:
     with (
         patch.object(aime_eval, "make_client"),
         patch.object(aime_eval, "load_aime_dataset", return_value=[]),
+        patch.object(aime_eval, "dump_config"),
         patch.object(aime_eval, "run_eval", return_value=([], {})),
         patch.object(aime_eval, "write_outputs", fake_write_outputs),
     ):

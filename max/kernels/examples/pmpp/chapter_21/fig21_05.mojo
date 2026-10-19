@@ -30,8 +30,8 @@ from dcs_utils import GridDim, init_atoms, verify_grid
 
 
 def cenergy_scatter_kernel(
-    energygrid: UnsafePointer[Float32, MutAnyOrigin],
-    atoms: UnsafePointer[Float32, ImmutAnyOrigin],
+    energygrid: MutPointer[Float32, MutAnyOrigin],
+    atoms: ImmPointer[Float32, ImmutAnyOrigin],
     grid_x_dev: Int32,
     grid_y_dev: Int32,
     gridspacing: Float32,
@@ -84,16 +84,17 @@ def cenergy_scatter_kernel(
                 # Scatter add with atomic operation
                 var energy_contrib = charge / sqrt(dx * dx + dy2 + dz2)
                 _ = Atomic.fetch_add(
-                    energygrid + grid_row_offset + i, energy_contrib
+                    energygrid.unsafe_offset(grid_row_offset).unsafe_offset(i),
+                    energy_contrib,
                 )
 
 
 def cenergy_cpu_reference(
-    energygrid: UnsafePointer[mut=True, Float32, _],
+    energygrid: MutPointer[Float32, _],
     grid: GridDim,
     gridspacing: Float32,
     z: Float32,
-    atoms: UnsafePointer[mut=False, Float32, _],
+    atoms: ImmPointer[Float32, _],
     numatoms: Int,
 ):
     """CPU reference implementation for verification."""

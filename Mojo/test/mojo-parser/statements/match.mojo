@@ -210,9 +210,20 @@ def match_tuple_subject(point: Tuple[Int, Int]):
 # CHECK:       lit.call {{.*}}@"case_callee{{.*}}<index> 1
 def match_initializer_list(value: InitPattern):
     match value:
-    case {}:
+    case == {}:
         case_callee[0]()
-    case {1, offset=2}:
+    case == {1, offset=2}:
+        case_callee[1]()
+
+
+# CHECK-LABEL: lit.fn @"match_initializer_fields
+# CHECK:       lit.ref.struct.ger {{.*}}[value]
+# CHECK:       lit.call {{.*}}@"__eq__(
+def match_initializer_fields(value: InitPattern):
+    match value:
+    case {value=0}:
+        case_callee[0]()
+    case _:
         case_callee[1]()
 
 

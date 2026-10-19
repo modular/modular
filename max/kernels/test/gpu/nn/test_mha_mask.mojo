@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.sys import default_accelerator
 from std.sys.info import CompilationTarget
 
+from max.gpu.host import default_accelerator
 from max.gpu.host.compile import _compile_code
 from nn.attention.mha_mask import (
     AndMask,

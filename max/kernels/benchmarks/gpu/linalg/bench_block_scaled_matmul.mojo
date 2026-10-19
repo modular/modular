@@ -16,7 +16,6 @@ from std.sys import (
     get_defined_bool,
     get_defined_int,
     get_defined_string,
-    align_of,
 )
 from max.gpu import global_idx, grid_dim, block_dim, thread_idx, block_idx
 import linalg.matmul.vendor.blas as vendor_blas
@@ -68,7 +67,6 @@ from linalg.matmul.gpu.sm100.block_scaled_matmul import (
 )
 from linalg.matmul.gpu.sm100.config import BlockScaledMatmulConfig
 from linalg.matmul.gpu.sm100.tile_scheduler import RasterOrder
-from linalg.utils import elementwise_compute_lambda_type
 from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from std.utils.numerics import isfinite
 from max.gpu.primitives import block
@@ -358,9 +356,9 @@ def verify_matmul[
     comptime assert shape_b.element_types[1].DTYPE.is_integral()
     comptime assert shape_c.element_types[0].DTYPE.is_integral()
     comptime assert shape_c.element_types[1].DTYPE.is_integral()
-    var c_size = Int(shape_c[0].value()) * Int(shape_c[1].value())
-    var a_size = Int(shape_a[0].value()) * Int(shape_a[1].value())
-    var b_size = Int(shape_b[0].value()) * Int(shape_b[1].value())
+    var c_size = Int(shape_c[0]) * Int(shape_c[1])
+    var a_size = Int(shape_a[0]) * Int(shape_a[1])
+    var b_size = Int(shape_b[0]) * Int(shape_b[1])
 
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
     var a_device_nd = TileTensor(a_device, row_major(shape_a))
@@ -375,15 +373,15 @@ def verify_matmul[
     init_vector_launch[a_type](b_device, b_size, init_type, ctx)
 
     # M, N, K dimensions for scales calculation
-    var M = Int(shape_c[0].value())
-    var N = Int(shape_c[1].value())
+    var M = Int(shape_c[0])
+    var N = Int(shape_c[1])
     comptime K = shape_a.element_types[1].static_value * (
         2 if _is_packed_fp4_mode[micro_scaling_mode]() else 1
     )
 
     # Calculate scale buffer shapes - 5D tensors for MXFP8 format
     var a_scales_shape = Coord(
-        ceildiv(Int(shape_a[0].value()), SF_MN_GROUP_SIZE),
+        ceildiv(Int(shape_a[0]), SF_MN_GROUP_SIZE),
         Idx[ceildiv(K, SF_VECTOR_SIZE * SF_ATOM_K)],
         Idx[SF_ATOM_M[0]],
         Idx[SF_ATOM_M[1]],
@@ -701,21 +699,21 @@ def bench_matmul[
     # update: using 512 to be 2x the infinity cache on MI300x
     @inline(.always)
     def get_size(shape: Coord) -> Int:
-        return Int(shape[0].value()) * Int(shape[1].value())
+        return Int(shape[0]) * Int(shape[1])
 
     comptime scales_type = _scales_dtype[micro_scaling_mode]()
     comptime SF_VECTOR_SIZE = _sf_vector_size[micro_scaling_mode]()
 
     # M, N, K dimensions for scales calculation
-    var M = Int(shape_c[0].value())
-    var N = Int(shape_c[1].value())
+    var M = Int(shape_c[0])
+    var N = Int(shape_c[1])
     comptime K = shape_a.element_types[1].static_value * (
         2 if _is_packed_fp4_mode[micro_scaling_mode]() else 1
     )
 
     # Calculate scale buffer shapes - 5D tensors for MXFP8 format
     var a_scales_shape = Coord(
-        ceildiv(Int(shape_a[0].value()), SF_MN_GROUP_SIZE),
+        ceildiv(Int(shape_a[0]), SF_MN_GROUP_SIZE),
         Idx[ceildiv(K, SF_VECTOR_SIZE * SF_ATOM_K)],
         Idx[SF_ATOM_M[0]],
         Idx[SF_ATOM_M[1]],
@@ -802,28 +800,6 @@ def bench_matmul[
         var b_scales = TileTensor(
             cb_b_scales.offset_ptr(iteration), row_major(b_scales_shape)
         )
-
-        @inline(.always)
-        @__copy_capture(c)
-        def test_lambda_add_coords_prod[
-            _dtype: DType,
-            width: Int,
-            *,
-            alignment: Int = align_of[SIMD[_dtype, width]](),
-        ](idx: Coord, val: SIMD[_dtype, width]) capturing -> SIMD[
-            _dtype, width
-        ]:
-            comptime assert (
-                idx.rank == 2
-            ), "the matmul epilogue contract is rank 2"
-            comptime assert c.flat_rank >= 2
-            var x = c.load[width=width](idx).cast[_dtype]()
-            var y = val * x
-            return y
-
-        comptime optional_lambda_fn = Optional[elementwise_compute_lambda_type](
-            test_lambda_add_coords_prod
-        ) if epilogue else None
 
         comptime if use_vendor_blas:
             run_vendor_blas(ctx, c, a, b, a_scales, b_scales)
@@ -1280,7 +1256,7 @@ def bench_mxfp4_amd[
     comptime N_VAL = NType.static_value
     comptime K_SCALES = K_ELEMS // 32
 
-    var M = Int(m.value())
+    var M = Int(m)
     var a_size = M * K_PACKED
     var b_size = N_VAL * K_PACKED
     var c_size = M * N_VAL

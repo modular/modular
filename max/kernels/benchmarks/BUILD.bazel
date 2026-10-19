@@ -20,10 +20,54 @@ _EXTRA_DEPS = {
     "gpu/nn/bench_rms_norm_fused_residual_add.mojo": ["//max:builtin_kernels"],
     "gpu/nn/bench_rms_norm_rope.mojo": ["//max:builtin_kernels"],
     "gpu/nn/bench_softmax.mojo": ["//max:builtin_kernels"],
-    "linalg/bench_layout_tensor.mojo": ["//max:max_mojo"],
+    "gpu/state_space/bench_causal_conv1d_prefill.mojo": [
+        "//max:extensibility",
+        "//max/kernels/src/state_space",
+    ],
+    "gpu/state_space/bench_causal_conv1d_update.mojo": ["//max/kernels/src/state_space"],
+    "gpu/state_space/bench_gated_delta_conv1d.mojo": ["//max/kernels/src/state_space"],
+    "gpu/state_space/bench_gated_delta_recurrence.mojo": ["//max/kernels/src/state_space"],
+    "gpu/state_space/bench_gated_delta_verify.mojo": ["//max/kernels/src/state_space"],
+    "gpu/state_space/bench_mamba2_ssd_scan.mojo": [
+        "//max/kernels/src/state_space",
+        "//max/kernels/test/common/ssd_scan_test_utils:ssd_scan_test_utils",
+    ],
+    "gpu/state_space/bench_rms_norm_fused_residual.mojo": ["//max/kernels/src/state_space"],
+    "linalg/bench_tile_tensor.mojo": ["//max:max_mojo"],
 }
 
 _EXTRA_CONSTRAINTS = {
+    # TODO(GEX-3342): Metal execution is not supported for state-space kernels.
+    "gpu/state_space/bench_causal_conv1d_prefill.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    "gpu/state_space/bench_causal_conv1d_update.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    "gpu/state_space/bench_gated_delta_conv1d.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    "gpu/state_space/bench_gated_delta_recurrence.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    "gpu/state_space/bench_gated_delta_verify.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    "gpu/state_space/bench_mamba2_ssd_scan.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    "gpu/state_space/bench_rms_norm_fused_residual.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    # MXFP4 packing uses the SM100 conversion instructions.
+    "gpu/nn/bench_indexer_k_store.mojo": ["//:b200_gpu"],
     "algorithm/parallelize_overhead.mojo": select({
         "//:asan": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -172,7 +216,7 @@ _CPU_TESTS = glob(
         # Has a dedicated `mojo_test` below carrying the -D shape defines and
         # TEST_ONLY gate; one rule per source (see "Lint files in multiple
         # targets"), so it must leave the generic glob.
-        "linalg/bench_layout_tensor.mojo",
+        "linalg/bench_tile_tensor.mojo",
         "misc/**",
         "packages/**",
     ] + _RUN_BENCHMARKS,
@@ -708,7 +752,7 @@ filegroup(
 # timing so this target checks correctness rather than benchmark performance.
 mojo_test(
     name = "linalg/bench_tile_tensor_correctness",
-    srcs = ["linalg/bench_layout_tensor.mojo"],
+    srcs = ["linalg/bench_tile_tensor.mojo"],
     copts = IGNORED_POINTER_DEPRECATIONS_COPTS + [
         "-D",
         "M=16",

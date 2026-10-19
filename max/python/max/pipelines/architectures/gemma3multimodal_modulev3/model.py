@@ -31,6 +31,7 @@ from max.graph.weights import Weights, WeightsAdapter
 from max.nn.transformer import ReturnLogits
 from max.pipelines.context import TextAndVisionContext
 from max.pipelines.lib import (
+    GraphSpec,
     KVCacheConfig,
     ModelInputs,
     ModelOutputs,
@@ -94,7 +95,7 @@ class Gemma3MultiModalModelV3(
             max_batch_size=max_batch_size,
         )
 
-        self.vision_model, self.language_model = self.load_model()
+        self.vision_model, self.language_model = self._load_towers(session)
 
     @classmethod
     def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
@@ -130,14 +131,14 @@ class Gemma3MultiModalModelV3(
         self.config = model_config
         return model_config
 
-    def _compile_vision_model(
+    def _vision_spec(
         self,
         model_config: Gemma3ForConditionalGenerationConfig,
         state_dict: dict[str, Any],
-    ) -> Callable[..., Any]:
+    ) -> GraphSpec:
         device_ref = DeviceRef.from_device(self.devices[0])
 
-        # ---- Build and compile vision model ----
+        # ---- Build vision model ----
         with F.lazy():
             vision_nn = Gemma3VisionModel(model_config)
             vision_nn.to(self.devices[0])
@@ -153,22 +154,24 @@ class Gemma3MultiModalModelV3(
             device=device_ref,
         )
 
-        return vision_nn.compile(
-            pixel_values_type,
+        return GraphSpec(
+            vision_nn,
+            type(vision_nn).__qualname__,
+            [pixel_values_type],
             weights=state_dict,
         )
 
-    def _compile_language_model(
+    def _language_spec(
         self,
         model_config: Gemma3ForConditionalGenerationConfig,
         state_dict: dict[str, Any],
-    ) -> Callable[..., Any]:
+    ) -> GraphSpec:
         device_ref = DeviceRef.from_device(self.devices[0])
         n_devices = len(self.devices)
 
         mesh = DeviceMesh(tuple(self.devices), (n_devices,), ("tp",))
 
-        # ---- Build and compile language model ----
+        # ---- Build language model ----
         with F.lazy(), default_device(mesh):
             language_nn = Gemma3LanguageModel(model_config, self.kv_params)
 
@@ -183,8 +186,10 @@ class Gemma3MultiModalModelV3(
             )
         )
 
-        return language_nn.compile(
-            *language_input_types,
+        return GraphSpec(
+            language_nn,
+            type(language_nn).__qualname__,
+            language_input_types,
             weights=state_dict,
         )
 

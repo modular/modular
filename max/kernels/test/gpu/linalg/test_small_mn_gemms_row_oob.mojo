@@ -186,7 +186,7 @@ def run_case[
 
     # (b) THE OOB GUARD: the `tile_m` guard rows past row M must be untouched.
     assert_equal(
-        c_host_ptr + c_logical,
+        c_host_ptr.unsafe_offset(c_logical),
         sentinel_ref_ptr,
         guard_rows * N,
         (

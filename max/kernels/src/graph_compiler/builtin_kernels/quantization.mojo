@@ -103,7 +103,6 @@ from std.logger import Logger
 comptime logger = Logger()
 
 from std.utils import IndexList
-from std.utils.index import Index
 
 # ===-----------------------------------------------------------------------===#
 from .kernels import *
@@ -159,7 +158,7 @@ struct RMSNormFusedQuantizeDynamicScaledFP8:
         def output_fn[
             width: SIMDLength, alignment: Int
         ](coords: Coord, val: SIMD[output_dtype, width]) {var out_t}:
-            out_t.store[width=width, alignment=alignment](coords, val)
+            out_t.store[alignment=alignment](coords, val)
 
         @inline(.always)
         def scale_fn(
@@ -167,7 +166,7 @@ struct RMSNormFusedQuantizeDynamicScaledFP8:
         ) {var scale_t, var in_shape}:
             var row = 0
             comptime for i in range(rank - 1):
-                row = row * in_shape[i] + Int(coords[i].value())
+                row = row * in_shape[i] + Int(coords[i])
             scale_t.store_linear[width=1, alignment=1](IndexList[1](row), val)
 
         # Static row width (when known) enables the register-cached row path.
@@ -196,7 +195,7 @@ struct RMSNormFusedQuantizeDynamicScaledFP8:
                 output_fn,
                 scale_fn,
                 input.shape_coord(),
-                Int(Int(input.shape()[rank - 1])),
+                Int(input.shape()[rank - 1]),
                 gamma.to_tile_tensor[.int64](),
                 epsilon.cast[input_dtype](),
                 weight_offset.cast[input_dtype](),
@@ -263,7 +262,7 @@ struct RMSNormQuantizeDynamicScaledFloat8:
             width: Int, alignment: Int
         ](row: Int, col: Int) {var input} -> SIMD[input_type, width]:
             return input._lambda_load[width=width, element_alignment=alignment](
-                Index(row, col)
+                (row, col)
             )
 
         rms_norm_quantize_dynamic_scaled_fp8[
@@ -888,7 +887,7 @@ struct QMatmulGPURepackGPTQ_b4_g128_desc_act:
         gpu_qint4_repack_GPTQ[128, target](
             b.to_tile_tensor(),
             b_packed.to_tile_tensor(),
-            TileTensor(permutation.ptr, row_major(Int(permutation.dim[0]())))
+            permutation.reshape(row_major(Int(permutation.dim[0]())))
             .as_imm()
             .as_unsafe_any_origin(),
             ctx=ctx,
@@ -1434,10 +1433,10 @@ struct Struct_block_scaled_preshuffle_scale_4d_per_expert:
         var raw_e8 = input.to_tile_tensor[.int64]()
         var dst_e8 = output.to_tile_tensor[.int64]()
         var raw_tt = TileTensor[mut=False](
-            raw_e8._storage.bitcast[UInt8](), raw_e8.layout
+            raw_e8._storage.unsafe_bitcast[UInt8](), raw_e8.layout
         )
         var dst_tt = TileTensor[mut=True](
-            dst_e8._storage.bitcast[UInt8](), dst_e8.layout
+            dst_e8._storage.unsafe_bitcast[UInt8](), dst_e8.layout
         )
         var a_off_tt = expert_start_indices.to_tile_tensor[.int64]()
         comptime K_SCALES = type_of(raw_tt).static_shape[1]
@@ -1586,7 +1585,7 @@ struct QuantizeTensorDynamicScaledFloat8:
             width: Int, alignment: Int
         ](row: Int, col: Int) {var input} -> SIMD[input_type, width]:
             return input._lambda_load[width=width, element_alignment=alignment](
-                Index(row, col)
+                (row, col)
             )
 
         quantize_tensor_dynamic_scaled_fp8[
@@ -1634,7 +1633,7 @@ struct QuantizeDynamicScaledFloat8:
             width: Int, alignment: Int
         ](row: Int, col: Int) {var input} -> SIMD[input_type, width]:
             return input._lambda_load[width=width, element_alignment=alignment](
-                Index(row, col)
+                (row, col)
             )
 
         quantize_dynamic_scaled_fp8[
@@ -1691,7 +1690,7 @@ struct QuantizeDynamicScaledFloat8RowBounded:
             width: Int, alignment: Int
         ](row: Int, col: Int) {var input} -> SIMD[input_type, width]:
             return input._lambda_load[width=width, element_alignment=alignment](
-                Index(row, col)
+                (row, col)
             )
 
         # `row_offsets` is the grouped-matmul prefix sum, so its last entry is

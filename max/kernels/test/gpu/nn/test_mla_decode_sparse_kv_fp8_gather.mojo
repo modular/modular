@@ -43,9 +43,8 @@ covered by `test_mla_decode_sparse_kv_fp8.mojo` and friends.
 
 from std.math import ceildiv, exp, isnan
 from std.memory import bitcast
-from std.sys import default_accelerator
 
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, default_accelerator
 from internal_utils.fp8_utils import cast_saturating
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import (
@@ -351,11 +350,11 @@ def _run_case[
             k_cache.blocks_raw_ptr(),
             zero_row_buf.unsafe_ptr(),
             d_indices_device.unsafe_ptr(),
-            topk_lengths_device.unsafe_ptr().bitcast[UInt32](),
+            topk_lengths_device.unsafe_ptr().unsafe_bitcast[UInt32](),
             indices_stride,
         )
         var topk_lengths_tt = TileTensor(
-            topk_lengths_device.unsafe_ptr().bitcast[UInt32](),
+            topk_lengths_device.unsafe_ptr().unsafe_bitcast[UInt32](),
             row_major(batch_size),
         )
         flare_mla_decoding_rows[
@@ -408,7 +407,7 @@ def _run_case[
         )
 
         var topk_lengths_tt = TileTensor(
-            topk_lengths_device.unsafe_ptr().bitcast[UInt32](),
+            topk_lengths_device.unsafe_ptr().unsafe_bitcast[UInt32](),
             row_major(batch_size),
         )
         var padding_mask = PaddingMask(topk_lengths_tt)
@@ -833,9 +832,10 @@ def _check_s_gt_1_guard(ctx: DeviceContext) raises:
         scalar_args_dev.unsafe_ptr(), row_major[3]()
     )
 
-    @__parameter
     @always_inline
-    def kv_input_fn[width: Int](coords: IndexList[2]) -> SIMD[dtype, width]:
+    def kv_input_fn[
+        width: Int
+    ](coords: IndexList[2]) {var kv_in_tt} -> SIMD[dtype, width]:
         comptime assert type_of(kv_in_tt).flat_rank == 2
         return kv_in_tt.load[width=width](Coord(coords))
 
@@ -845,7 +845,6 @@ def _check_s_gt_1_guard(ctx: DeviceContext) raises:
             n_scale_granularity=n_scale_gran,
             k_scale_granularity=k_scale_gran,
             mask_str="causal",
-            kv_input_fn=kv_input_fn,
             target="gpu",
             sparse_mla=True,
             fp8_q=True,
@@ -864,6 +863,7 @@ def _check_s_gt_1_guard(ctx: DeviceContext) raises:
             w_uv_tt,
             w_uv_scale_tt,
             scalar_args_buf_tt,
+            kv_input_fn,
             ctx,
             d_indices=d_indices_device.unsafe_ptr().as_unsafe_any_origin(),
             indices_stride=indices_stride,
@@ -1197,7 +1197,7 @@ def _run_sentinel_case[
         )
     else:
         var topk_lengths_tt = TileTensor(
-            topk_lengths_device.unsafe_ptr().bitcast[UInt32](),
+            topk_lengths_device.unsafe_ptr().unsafe_bitcast[UInt32](),
             row_major(batch_size),
         )
         var padding_mask = PaddingMask(topk_lengths_tt)

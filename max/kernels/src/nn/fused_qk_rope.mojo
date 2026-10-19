@@ -178,7 +178,7 @@ def rope_q_proj[
         output.store[alignment=alignment](idx_dyn, res_inter)
     else:
         comptime if has_nope_prefix:
-            if Int(idx[rank - 1].value()) >= rope_dim:
+            if Int(idx[rank - 1]) >= rope_dim:
                 var val_pass = q_proj.load[width=width, alignment=alignment](
                     idx_dyn
                 )
@@ -193,9 +193,7 @@ def rope_q_proj[
         else:
             split_size = head_size
 
-        var indices = get_safetensors_idx(
-            Int(idx[rank - 1].value()), split_size
-        )
+        var indices = get_safetensors_idx(Int(idx[rank - 1]), split_size)
         var pos_re = idx_dyn
         var pos_im = idx_dyn
         pos_re.replace_dynamic[rank - 1](Int64(indices[0]))
@@ -425,7 +423,7 @@ def fused_qk_rope_ragged[
         comptime if width == 1:
             return
         else:
-            var global_token_idx = Int(idx[0].value())
+            var global_token_idx = Int(idx[0])
 
             var batch_idx: Int = get_batch_from_row_offsets(
                 input_row_offsets, global_token_idx
@@ -433,8 +431,8 @@ def fused_qk_rope_ragged[
             var token_idx = Int(
                 UInt32(global_token_idx) - input_row_offsets[batch_idx]
             )
-            var head_idx = Int(idx[1].value())
-            var head_dim_idx = Int(idx[2].value())
+            var head_idx = Int(idx[1])
+            var head_dim_idx = Int(idx[2])
 
             # Use position_ids if provided, otherwise fall back to cache calculation
             var post_seq_idx = k_cache.cache_length(batch_idx) + token_idx
@@ -448,7 +446,7 @@ def fused_qk_rope_ragged[
                     var section_idx = 0
 
                     comptime for i in range(len(sections)):
-                        comptime val = Int(sections[i].value())
+                        comptime val = Int(sections[i])
                         if head_dim_idx < val:
                             section_idx = i
                             break
@@ -539,7 +537,7 @@ def fused_qk_rope_ragged[
     comptime if case .Some(sections) = mrope_section:
         comptime for i in range(len(sections)):
             comptime assert (
-                Int(sections[i].value()) % kernel_simd_width == 0
+                Int(sections[i]) % kernel_simd_width == 0
             ), "mrope_section must be divisible by rope kernel simd_width"
 
     comptime assert kernel_simd_width >= 2, "invalid simd_width and head size"

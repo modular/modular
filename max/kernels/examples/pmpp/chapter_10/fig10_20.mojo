@@ -52,8 +52,8 @@ def warp_reduce(val: Float32) -> Float32:
 
 
 def coarsened_sum_reduction_kernel(
-    input: UnsafePointer[Float32, ImmutAnyOrigin],
-    output: UnsafePointer[Float32, MutAnyOrigin],
+    input: ImmPointer[Float32, ImmutAnyOrigin],
+    output: MutPointer[Float32, MutAnyOrigin],
 ):
     """Coarsened sum reduction kernel.
 
@@ -61,13 +61,13 @@ def coarsened_sum_reduction_kernel(
         input: Input array (in global memory).
         output: Output scalar for the sum result.
     """
-    var segment = COARSE_FACTOR * 2 * UInt32(block_dim.x) * UInt32(block_idx.x)
-    var i = segment + UInt32(thread_idx.x)
+    var segment = COARSE_FACTOR * 2 * block_dim.x * block_idx.x
+    var i = segment + thread_idx.x
 
     # Thread coarsening: each thread sums COARSE_FACTOR * 2 elements
-    var partial_sum = input[Int(i)]
+    var partial_sum = input[i]
     for c in range(1, COARSE_FACTOR * 2):
-        partial_sum += input[Int(i + UInt32(c) * BLOCK_DIM)]
+        partial_sum += input[i + c * BLOCK_DIM]
 
     # Warp-level reduction
     partial_sum = warp_reduce(partial_sum)
@@ -96,8 +96,8 @@ def coarsened_sum_reduction_kernel(
 
 # ========================== TEST CODE ==========================
 def cpu_sum(
-    input: UnsafePointer[mut=False, Float32, _],
-    output: UnsafePointer[mut=True, Float32, _],
+    input: ImmPointer[Float32, _],
+    output: MutPointer[Float32, _],
     N: Int,
 ):
     """CPU reference sum implementation.

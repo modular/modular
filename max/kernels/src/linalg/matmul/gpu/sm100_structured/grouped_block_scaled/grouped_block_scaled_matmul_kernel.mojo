@@ -35,7 +35,7 @@ Key differences from block_scaled_matmul_kernel.mojo:
 
 from std.math import align_up, ceildiv
 from std.math.uutils import ufloordiv, umod
-from std.memory import UnsafePointer, Pointer
+from std.memory import Pointer
 from std.sys import size_of
 
 from max.gpu import WARP_SIZE, block_idx, lane_id
@@ -163,48 +163,28 @@ struct GroupedTensormapSmem(TrivialRegisterPassable):
     """
 
     @__allow_legacy_any_origin_fields
-    var desc_a: UnsafePointer[
-        TMADescriptor, MutAnyOrigin, address_space=.SHARED
-    ]
+    var desc_a: MutPointer[TMADescriptor, MutAnyOrigin, address_space=.SHARED]
 
     @__allow_legacy_any_origin_fields
-    var desc_b: UnsafePointer[
-        TMADescriptor, MutAnyOrigin, address_space=.SHARED
-    ]
+    var desc_b: MutPointer[TMADescriptor, MutAnyOrigin, address_space=.SHARED]
 
     @__allow_legacy_any_origin_fields
-    var desc_sfa: UnsafePointer[
-        TMADescriptor, MutAnyOrigin, address_space=.SHARED
-    ]
+    var desc_sfa: MutPointer[TMADescriptor, MutAnyOrigin, address_space=.SHARED]
 
     @__allow_legacy_any_origin_fields
-    var desc_sfb: UnsafePointer[
-        TMADescriptor, MutAnyOrigin, address_space=.SHARED
-    ]
+    var desc_sfb: MutPointer[TMADescriptor, MutAnyOrigin, address_space=.SHARED]
 
     @__allow_legacy_any_origin_fields
-    var desc_c: UnsafePointer[
-        TMADescriptor, MutAnyOrigin, address_space=.SHARED
-    ]
+    var desc_c: MutPointer[TMADescriptor, MutAnyOrigin, address_space=.SHARED]
 
     @staticmethod
     @inline(.always)
     def from_smem(
-        ptr_a: UnsafePointer[
-            TMADescriptor, MutAnyOrigin, address_space=.SHARED
-        ],
-        ptr_b: UnsafePointer[
-            TMADescriptor, MutAnyOrigin, address_space=.SHARED
-        ],
-        ptr_sfa: UnsafePointer[
-            TMADescriptor, MutAnyOrigin, address_space=.SHARED
-        ],
-        ptr_sfb: UnsafePointer[
-            TMADescriptor, MutAnyOrigin, address_space=.SHARED
-        ],
-        ptr_c: UnsafePointer[
-            TMADescriptor, MutAnyOrigin, address_space=.SHARED
-        ],
+        ptr_a: MutPointer[TMADescriptor, MutAnyOrigin, address_space=.SHARED],
+        ptr_b: MutPointer[TMADescriptor, MutAnyOrigin, address_space=.SHARED],
+        ptr_sfa: MutPointer[TMADescriptor, MutAnyOrigin, address_space=.SHARED],
+        ptr_sfb: MutPointer[TMADescriptor, MutAnyOrigin, address_space=.SHARED],
+        ptr_c: MutPointer[TMADescriptor, MutAnyOrigin, address_space=.SHARED],
     ) -> Self:
         """Create tensormap pointers from explicit SMEM pointers.
 
@@ -356,19 +336,19 @@ struct GroupedTensormapManager(TrivialRegisterPassable):
         group_b_ptrs: _GroupPtrTile[max_groups, group_ptr_engine],
         group_sfa_ptrs: _GroupPtrTile[max_groups, group_ptr_engine],
         group_sfb_ptrs: _GroupPtrTile[max_groups, group_ptr_engine],
-        tma_a: UnsafePointer[
+        tma_a: MutPointer[
             TMATensorTile[a_dtype, a_tile_shape, a_desc_shape],
             MutAnyOrigin,
         ],
-        tma_b: UnsafePointer[
+        tma_b: MutPointer[
             TMATensorTile[b_dtype, b_tile_shape, b_desc_shape],
             MutAnyOrigin,
         ],
-        tma_sfa: UnsafePointer[
+        tma_sfa: MutPointer[
             TMATensorTile[sfa_dtype, sfa_tile_shape, sfa_desc_shape],
             MutAnyOrigin,
         ],
-        tma_sfb: UnsafePointer[
+        tma_sfb: MutPointer[
             TMATensorTile[sfb_dtype, sfb_tile_shape, sfb_desc_shape],
             MutAnyOrigin,
         ],
@@ -431,18 +411,18 @@ struct GroupedTensormapManager(TrivialRegisterPassable):
         if lane_id() == 0:
             var g = Int(group_idx)
 
-            var a_ptr = UnsafePointer[mut=True, Scalar[a_dtype], MutAnyOrigin](
+            var a_ptr = MutPointer[Scalar[a_dtype], MutAnyOrigin](
                 unsafe_from_address=Int(group_a_ptrs[g, 0])
             )
-            var b_ptr = UnsafePointer[mut=True, Scalar[b_dtype], MutAnyOrigin](
+            var b_ptr = MutPointer[Scalar[b_dtype], MutAnyOrigin](
                 unsafe_from_address=Int(group_b_ptrs[g, 0])
             )
-            var sfa_ptr = UnsafePointer[
-                mut=True, Scalar[sfa_dtype], MutAnyOrigin
-            ](unsafe_from_address=Int(group_sfa_ptrs[g, 0]))
-            var sfb_ptr = UnsafePointer[
-                mut=True, Scalar[sfb_dtype], MutAnyOrigin
-            ](unsafe_from_address=Int(group_sfb_ptrs[g, 0]))
+            var sfa_ptr = MutPointer[Scalar[sfa_dtype], MutAnyOrigin](
+                unsafe_from_address=Int(group_sfa_ptrs[g, 0])
+            )
+            var sfb_ptr = MutPointer[Scalar[sfb_dtype], MutAnyOrigin](
+                unsafe_from_address=Int(group_sfb_ptrs[g, 0])
+            )
 
             tma_a[].replace_tensormap_global_address_in_shared_mem(
                 self.smem.desc_a, a_ptr
@@ -479,7 +459,7 @@ struct GroupedTensormapManager(TrivialRegisterPassable):
         self,
         group_idx: UInt32,
         group_c_ptrs: _GroupPtrTile[max_groups, group_ptr_engine],
-        tma_c: UnsafePointer[
+        tma_c: MutPointer[
             TMATensorTile[c_dtype, c_tile_shape, c_desc_shape],
             MutAnyOrigin,
         ],
@@ -511,7 +491,7 @@ struct GroupedTensormapManager(TrivialRegisterPassable):
         # Step 2: Update SMEM descriptor (lane 0 only)
         if lane_id() == 0:
             var g = Int(group_idx)
-            var c_ptr = UnsafePointer[mut=True, Scalar[c_dtype], MutAnyOrigin](
+            var c_ptr = MutPointer[Scalar[c_dtype], MutAnyOrigin](
                 unsafe_from_address=Int(group_c_ptrs[g, 0])
             )
 
@@ -1179,7 +1159,7 @@ struct GroupedBlockScaledMatmulKernel[
         cta_tile_shape: Coord,
         desc_shape: Coord,
     ](
-        tma_desc_ptr: UnsafePointer[
+        tma_desc_ptr: MutPointer[
             TMATensorTile[dtype, cta_tile_shape, desc_shape],
             MutAnyOrigin,
         ],
@@ -1192,7 +1172,7 @@ struct GroupedBlockScaledMatmulKernel[
             new_addr: New global memory address for the tensor.
         """
         # Get pointer to the descriptor bytes
-        var desc_byte_ptr = tma_desc_ptr.bitcast[NoneType]()
+        var desc_byte_ptr = tma_desc_ptr.unsafe_bitcast[NoneType]()
 
         # Use PTX instruction to update the global address
         inlined_assembly[
@@ -1448,7 +1428,7 @@ struct GroupedBlockScaledMatmulKernel[
             UInt8,
             address_space=.SHARED,
             alignment=128,
-        ]().bitcast[Self.SmemType]()[]
+        ]().unsafe_bitcast[Self.SmemType]()[]
 
         # Get typed tile arrays from SMEM accessors
         var a_tiles = smem.a_tiles()
@@ -1500,11 +1480,11 @@ struct GroupedBlockScaledMatmulKernel[
             # Tensormap manager for SMEM descriptor updates
             var tensormap_mgr = Self.TensormapManagerType(
                 smem=GroupedTensormapSmem.from_smem(
-                    UnsafePointer(to=smem.tensormap_a).as_unsafe_any_origin(),
-                    UnsafePointer(to=smem.tensormap_b).as_unsafe_any_origin(),
-                    UnsafePointer(to=smem.tensormap_sfa).as_unsafe_any_origin(),
-                    UnsafePointer(to=smem.tensormap_sfb).as_unsafe_any_origin(),
-                    UnsafePointer(to=smem.tensormap_c).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_a).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_b).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_sfa).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_sfb).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_c).as_unsafe_any_origin(),
                 ),
             )
 
@@ -1581,11 +1561,11 @@ struct GroupedBlockScaledMatmulKernel[
             # Initialize SMEM tensormaps from templates (MMA warp, per CuTe DSL)
             var tensormap_mgr = Self.TensormapManagerType(
                 smem=GroupedTensormapSmem.from_smem(
-                    UnsafePointer(to=smem.tensormap_a).as_unsafe_any_origin(),
-                    UnsafePointer(to=smem.tensormap_b).as_unsafe_any_origin(),
-                    UnsafePointer(to=smem.tensormap_sfa).as_unsafe_any_origin(),
-                    UnsafePointer(to=smem.tensormap_sfb).as_unsafe_any_origin(),
-                    UnsafePointer(to=smem.tensormap_c).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_a).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_b).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_sfa).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_sfb).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_c).as_unsafe_any_origin(),
                 ),
             )
             tensormap_mgr.init_ab_tensormaps(
@@ -1650,11 +1630,11 @@ struct GroupedBlockScaledMatmulKernel[
             # Tensormap manager for C descriptor updates
             var tensormap_mgr = Self.TensormapManagerType(
                 smem=GroupedTensormapSmem.from_smem(
-                    UnsafePointer(to=smem.tensormap_a).as_unsafe_any_origin(),
-                    UnsafePointer(to=smem.tensormap_b).as_unsafe_any_origin(),
-                    UnsafePointer(to=smem.tensormap_sfa).as_unsafe_any_origin(),
-                    UnsafePointer(to=smem.tensormap_sfb).as_unsafe_any_origin(),
-                    UnsafePointer(to=smem.tensormap_c).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_a).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_b).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_sfa).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_sfb).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_c).as_unsafe_any_origin(),
                 ),
             )
 
@@ -1805,11 +1785,15 @@ struct GroupedBlockScaledMatmulKernel[
 
                 # Peer CTA slicing using TileTensor pattern (ptr + layout)
                 var a_peer_tile = type_of(a_tile)(
-                    a_tile._storage + peer_m_rank * Self.a_tma_load_size,
+                    a_tile._storage.unsafe_offset(
+                        peer_m_rank * Self.a_tma_load_size
+                    ),
                     a_tile.layout,
                 )
                 var b_peer_tile = type_of(b_tile)(
-                    b_tile._storage + peer_rank_m * Self.b_tma_load_size,
+                    b_tile._storage.unsafe_offset(
+                        peer_rank_m * Self.b_tma_load_size
+                    ),
                     b_tile.layout,
                 )
 
@@ -2100,7 +2084,7 @@ struct GroupedBlockScaledMatmulKernel[
             UInt8,
             address_space=.SHARED,
             alignment=128,
-        ]().bitcast[Self.SmemType]()[]
+        ]().unsafe_bitcast[Self.SmemType]()[]
 
         # Get typed tile arrays from SMEM accessors
         var a_tiles = smem.a_tiles()
@@ -2164,11 +2148,11 @@ struct GroupedBlockScaledMatmulKernel[
             # Tensormap manager for SMEM descriptor updates
             var tensormap_mgr = Self.TensormapManagerType(
                 smem=GroupedTensormapSmem.from_smem(
-                    UnsafePointer(to=smem.tensormap_a).as_unsafe_any_origin(),
-                    UnsafePointer(to=smem.tensormap_b).as_unsafe_any_origin(),
-                    UnsafePointer(to=smem.tensormap_sfa).as_unsafe_any_origin(),
-                    UnsafePointer(to=smem.tensormap_sfb).as_unsafe_any_origin(),
-                    UnsafePointer(to=smem.tensormap_c).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_a).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_b).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_sfa).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_sfb).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_c).as_unsafe_any_origin(),
                 ),
             )
 
@@ -2279,11 +2263,11 @@ struct GroupedBlockScaledMatmulKernel[
             # Initialize SMEM tensormaps from templates (MMA warp, per CuTe DSL)
             var tensormap_mgr = Self.TensormapManagerType(
                 smem=GroupedTensormapSmem.from_smem(
-                    UnsafePointer(to=smem.tensormap_a).as_unsafe_any_origin(),
-                    UnsafePointer(to=smem.tensormap_b).as_unsafe_any_origin(),
-                    UnsafePointer(to=smem.tensormap_sfa).as_unsafe_any_origin(),
-                    UnsafePointer(to=smem.tensormap_sfb).as_unsafe_any_origin(),
-                    UnsafePointer(to=smem.tensormap_c).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_a).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_b).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_sfa).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_sfb).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_c).as_unsafe_any_origin(),
                 ),
             )
             tensormap_mgr.init_ab_tensormaps(
@@ -2368,11 +2352,11 @@ struct GroupedBlockScaledMatmulKernel[
             # Tensormap manager for C descriptor updates
             var tensormap_mgr = Self.TensormapManagerType(
                 smem=GroupedTensormapSmem.from_smem(
-                    UnsafePointer(to=smem.tensormap_a).as_unsafe_any_origin(),
-                    UnsafePointer(to=smem.tensormap_b).as_unsafe_any_origin(),
-                    UnsafePointer(to=smem.tensormap_sfa).as_unsafe_any_origin(),
-                    UnsafePointer(to=smem.tensormap_sfb).as_unsafe_any_origin(),
-                    UnsafePointer(to=smem.tensormap_c).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_a).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_b).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_sfa).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_sfb).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_c).as_unsafe_any_origin(),
                 ),
             )
 

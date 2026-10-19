@@ -52,9 +52,9 @@ def kernel_lds[
     barrier()
 
     for i in range(0, aligned_size, width):
-        buffer.load_to_lds[width=width](Int32(i), a_shared + i)
+        buffer.load_to_lds[width=width](Int32(i), a_shared.unsafe_offset(i))
     for i in range(aligned_size, size):
-        buffer.load_to_lds[width=1](Int32(i), a_shared + i)
+        buffer.load_to_lds[width=1](Int32(i), a_shared.unsafe_offset(i))
     barrier()
 
     for i in range(size):

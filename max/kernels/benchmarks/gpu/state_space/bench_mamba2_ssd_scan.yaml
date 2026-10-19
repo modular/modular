@@ -1,0 +1,258 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+
+name: bench_mamba2_ssd_scan
+file: $KERNEL_BENCHMARKS_ROOT/gpu/state_space/bench_mamba2_ssd_scan.mojo
+
+# All dimensions and sequence vectors are runtime parameters. The extra quotes
+# preserve each vector as one kbench value rather than a flattened sweep.
+# Paired controls require NVIDIA SM80+; AUTO enables grouped reuse only on B200.
+# CSV rows are sample means. Indexed raw pairs and medians remain in stdout.
+params:
+- $cohort: smoke
+  $ssd-heads: 32
+  $ssd-head-dim: 64
+  $ssd-groups: 4
+  $sequence_lengths: "'[512]'"
+  $ssd-kernel: dispatch
+
+- $cohort: auto_grouped_h32_p64_g4_l512
+  $ssd-heads: 32
+  $ssd-head-dim: 64
+  $ssd-groups: 4
+  $sequence_lengths: "'[512]'"
+  $ssd-kernel: auto-paired
+
+- $cohort: auto_grouped_h32_p64_g4_l8192
+  $ssd-heads: 32
+  $ssd-head-dim: 64
+  $ssd-groups: 4
+  $sequence_lengths: "'[8192]'"
+  $ssd-kernel: auto-paired
+
+- $cohort: auto_grouped_h32_p64_g32_l512
+  $ssd-heads: 32
+  $ssd-head-dim: 64
+  $ssd-groups: 32
+  $sequence_lengths: "'[512]'"
+  $ssd-kernel: auto-paired
+
+- $cohort: auto_grouped_h32_p64_g32_l8192
+  $ssd-heads: 32
+  $ssd-head-dim: 64
+  $ssd-groups: 32
+  $sequence_lengths: "'[8192]'"
+  $ssd-kernel: auto-paired
+
+- $cohort: auto_grouped_h32_p128_g4_l512
+  $ssd-heads: 32
+  $ssd-head-dim: 128
+  $ssd-groups: 4
+  $sequence_lengths: "'[512]'"
+  $ssd-kernel: auto-paired
+
+- $cohort: auto_grouped_h32_p128_g4_l8192
+  $ssd-heads: 32
+  $ssd-head-dim: 128
+  $ssd-groups: 4
+  $sequence_lengths: "'[8192]'"
+  $ssd-kernel: auto-paired
+
+- $cohort: auto_grouped_h32_p128_g32_l512
+  $ssd-heads: 32
+  $ssd-head-dim: 128
+  $ssd-groups: 32
+  $sequence_lengths: "'[512]'"
+  $ssd-kernel: auto-paired
+
+- $cohort: auto_grouped_h32_p128_g32_l8192
+  $ssd-heads: 32
+  $ssd-head-dim: 128
+  $ssd-groups: 32
+  $sequence_lengths: "'[8192]'"
+  $ssd-kernel: auto-paired
+
+- $cohort: auto_grouped_h32_p128_g4_l16384
+  $ssd-heads: 32
+  $ssd-head-dim: 128
+  $ssd-groups: 4
+  $sequence_lengths: "'[16384]'"
+  $ssd-kernel: auto-paired
+
+- $cohort: auto_grouped_h16_p128_g2_l16384
+  $ssd-heads: 16
+  $ssd-head-dim: 128
+  $ssd-groups: 2
+  $sequence_lengths: "'[16384]'"
+  $ssd-kernel: auto-paired
+
+- $cohort: auto_grouped_h64_p128_g8_l8192
+  $ssd-heads: 64
+  $ssd-head-dim: 128
+  $ssd-groups: 8
+  $sequence_lengths: "'[8192]'"
+  $ssd-kernel: auto-paired
+
+- $cohort: auto_batch4_h32_p128_g4_l8192
+  $ssd-heads: 32
+  $ssd-head-dim: 128
+  $ssd-groups: 4
+  $sequence_lengths: "'[8192,8192,8192,8192]'"
+  $ssd-kernel: auto-paired
+
+- $cohort: auto_ragged4_h32_p128_g4_l8192
+  $ssd-heads: 32
+  $ssd-head-dim: 128
+  $ssd-groups: 4
+  $sequence_lengths: "'[1,8192,16383,8192]'"
+  $ssd-kernel: auto-paired
+
+- $cohort: auto_grouped_h32_p128_g4_l2048
+  $ssd-heads: 32
+  $ssd-head-dim: 128
+  $ssd-groups: 4
+  $sequence_lengths: "'[2048]'"
+  $ssd-kernel: auto-paired
+
+- $cohort: grouped_h32_p64_g4_l512
+  $ssd-heads: 32
+  $ssd-head-dim: 64
+  $ssd-groups: 4
+  $sequence_lengths: "'[512]'"
+  $ssd-kernel: grouped-paired
+
+- $cohort: grouped_h32_p64_g4_l8192
+  $ssd-heads: 32
+  $ssd-head-dim: 64
+  $ssd-groups: 4
+  $sequence_lengths: "'[8192]'"
+  $ssd-kernel: grouped-paired
+
+- $cohort: grouped_h32_p64_g32_l512
+  $ssd-heads: 32
+  $ssd-head-dim: 64
+  $ssd-groups: 32
+  $sequence_lengths: "'[512]'"
+  $ssd-kernel: grouped-paired
+
+- $cohort: grouped_h32_p64_g32_l8192
+  $ssd-heads: 32
+  $ssd-head-dim: 64
+  $ssd-groups: 32
+  $sequence_lengths: "'[8192]'"
+  $ssd-kernel: grouped-paired
+
+- $cohort: grouped_h32_p128_g4_l512
+  $ssd-heads: 32
+  $ssd-head-dim: 128
+  $ssd-groups: 4
+  $sequence_lengths: "'[512]'"
+  $ssd-kernel: grouped-paired
+
+- $cohort: grouped_h32_p128_g4_l8192
+  $ssd-heads: 32
+  $ssd-head-dim: 128
+  $ssd-groups: 4
+  $sequence_lengths: "'[8192]'"
+  $ssd-kernel: grouped-paired
+
+- $cohort: grouped_h32_p128_g32_l512
+  $ssd-heads: 32
+  $ssd-head-dim: 128
+  $ssd-groups: 32
+  $sequence_lengths: "'[512]'"
+  $ssd-kernel: grouped-paired
+
+- $cohort: grouped_h32_p128_g32_l8192
+  $ssd-heads: 32
+  $ssd-head-dim: 128
+  $ssd-groups: 32
+  $sequence_lengths: "'[8192]'"
+  $ssd-kernel: grouped-paired
+
+- $cohort: head80_serial_l128
+  $ssd-heads: 96
+  $ssd-head-dim: 80
+  $ssd-groups: 8
+  $sequence_lengths: "'[128]'"
+  $ssd-kernel: serial
+
+- $cohort: head80_serial_l512
+  $ssd-heads: 96
+  $ssd-head-dim: 80
+  $ssd-groups: 8
+  $sequence_lengths: "'[512]'"
+  $ssd-kernel: serial
+
+- $cohort: head80_serial_l4096
+  $ssd-heads: 96
+  $ssd-head-dim: 80
+  $ssd-groups: 8
+  $sequence_lengths: "'[4096]'"
+  $ssd-kernel: serial
+
+- $cohort: head80_serial_l8192
+  $ssd-heads: 96
+  $ssd-head-dim: 80
+  $ssd-groups: 8
+  $sequence_lengths: "'[8192]'"
+  $ssd-kernel: serial
+
+- $cohort: skew4096
+  $ssd-heads: 32
+  $ssd-head-dim: 64
+  $ssd-groups: 4
+  $sequence_lengths: "'[4096,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]'"
+  $ssd-kernel: paired
+
+- $cohort: homogeneous4096
+  $ssd-heads: 32
+  $ssd-head-dim: 64
+  $ssd-groups: 4
+  $sequence_lengths: "'[65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,64]'"
+  $ssd-kernel: paired
+
+- $cohort: decode64
+  $ssd-heads: 32
+  $ssd-head-dim: 64
+  $ssd-groups: 4
+  $sequence_lengths: "'[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]'"
+  $ssd-kernel: [dispatch, paired]
+
+- $cohort: dense4_grouped_l512
+  $ssd-heads: 32
+  $ssd-head-dim: 128
+  $ssd-groups: 4
+  $sequence_lengths: "'[512,512,512,512]'"
+  $ssd-kernel: grouped-paired
+
+- $cohort: ragged4_grouped_l512
+  $ssd-heads: 32
+  $ssd-head-dim: 128
+  $ssd-groups: 4
+  $sequence_lengths: "'[1,512,1023,512]'"
+  $ssd-kernel: grouped-paired
+
+- $cohort: dense4_grouped_l8192
+  $ssd-heads: 32
+  $ssd-head-dim: 128
+  $ssd-groups: 4
+  $sequence_lengths: "'[8192,8192,8192,8192]'"
+  $ssd-kernel: grouped-paired
+
+- $cohort: ragged4_grouped_l8192
+  $ssd-heads: 32
+  $ssd-head-dim: 128
+  $ssd-groups: 4
+  $sequence_lengths: "'[1,8192,16383,8192]'"
+  $ssd-kernel: grouped-paired

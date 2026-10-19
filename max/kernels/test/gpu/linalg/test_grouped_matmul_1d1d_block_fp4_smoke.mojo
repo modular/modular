@@ -397,7 +397,7 @@ def _test_grouped_1d1d_mixed_experts[
     )
 
     var a_scales_tt = TileTensor(
-        a_sf_buf.unsafe_ptr().bitcast[Scalar[sf_dtype]](),
+        a_sf_buf.unsafe_ptr().unsafe_bitcast[Scalar[sf_dtype]](),
         row_major(
             Int64(a_scale_dim0),
             Idx[k_groups],
@@ -407,7 +407,7 @@ def _test_grouped_1d1d_mixed_experts[
         ),
     ).as_unsafe_any_origin()
     var b_scales_tt = TileTensor(
-        b_sf_buf.unsafe_ptr().bitcast[Scalar[sf_dtype]](),
+        b_sf_buf.unsafe_ptr().unsafe_bitcast[Scalar[sf_dtype]](),
         row_major(
             Idx[num_experts],
             Idx[n_groups],

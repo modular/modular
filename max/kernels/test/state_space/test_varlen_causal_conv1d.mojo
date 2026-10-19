@@ -136,10 +136,10 @@ def run_varlen_causal_conv1d_fwd[
         ),
     )
     var cumsum = 0
-    query_start_loc_tt.raw_store(0, Int32(0))
+    query_start_loc_tt[0] = Int32(0)
     for i in range(batch):
         cumsum += seq_lengths[i]
-        query_start_loc_tt.raw_store(i + 1, Int32(cumsum))
+        query_start_loc_tt[i + 1] = Int32(cumsum)
 
     # cache_indices: (batch,) - identity mapping
     var cache_indices_heap = List(length=batch, fill=UInt32(0))
@@ -150,7 +150,7 @@ def run_varlen_causal_conv1d_fwd[
         ),
     )
     for i in range(batch):
-        cache_indices_tt.raw_store(i, UInt32(i))
+        cache_indices_tt[i] = UInt32(i)
 
     # has_initial_state: (batch,) - all False
     var has_initial_state_heap = List(length=batch, fill=Scalar[.bool](False))
@@ -192,14 +192,6 @@ def run_varlen_causal_conv1d_fwd[
     var query_start_loc_buf = query_start_loc_tt
     var output_ref_buf = output_ref_tt
 
-    # Strides for row-major layout
-    var x_dim_stride: UInt32 = UInt32(total_seqlen)
-    var x_seqlen_stride: UInt32 = 1
-    var weight_dim_stride: UInt32 = UInt32(width)
-    var weight_width_stride: UInt32 = 1
-    var out_dim_stride: UInt32 = UInt32(total_seqlen)
-    var out_seqlen_stride: UInt32 = 1
-
     comptime silu_activation = activation == "silu"
 
     # Test kernel
@@ -219,12 +211,12 @@ def run_varlen_causal_conv1d_fwd[
     # Reference implementation
     var width_minus_1: Int = width - 1
     for b in range(batch):
-        var seq_start = Int(query_start_loc_buf.raw_load(b))
-        var seq_end = Int(query_start_loc_buf.raw_load(b + 1))
+        var seq_start = Int(query_start_loc_buf[b])
+        var seq_end = Int(query_start_loc_buf[b + 1])
         var seqlen = seq_end - seq_start
 
         for d in range(dim):
-            var bias_val = bias_buf.raw_load(d)
+            var bias_val = bias_buf[d]
 
             for l in range(seqlen):
                 var conv_sum: Scalar[dtype] = bias_val
@@ -234,28 +226,16 @@ def run_varlen_causal_conv1d_fwd[
                     var input_val: Scalar[dtype] = Scalar[dtype](0.0)
 
                     if input_l >= 0:
-                        var x_offset = (
-                            UInt32(d) * x_dim_stride
-                            + UInt32((seq_start + input_l)) * x_seqlen_stride
-                        )
-                        input_val = x_buf.raw_load(x_offset)
+                        input_val = x_buf[d, seq_start + input_l]
 
-                    var weight_offset = (
-                        UInt32(d) * weight_dim_stride
-                        + UInt32(w_idx) * weight_width_stride
-                    )
-                    var weight_val = weight_buf.raw_load(weight_offset)
+                    var weight_val = weight_buf[d, w_idx]
                     conv_sum = conv_sum + input_val * weight_val
 
                 var out_val = conv_sum
                 if silu_activation:
                     out_val = silu_ref[dtype](out_val)
 
-                var out_offset = (
-                    UInt32(d) * out_dim_stride
-                    + UInt32((seq_start + l)) * out_seqlen_stride
-                )
-                output_ref_buf.raw_store(out_offset, out_val)
+                output_ref_buf[d, seq_start + l] = out_val
 
     # Compare results
     var flattened_size = dim * total_seqlen
@@ -325,7 +305,7 @@ def run_varlen_causal_conv1d_update[
         ),
     )
     for i in range(batch):
-        conv_state_indices_tt.raw_store(i, Int32(i))
+        conv_state_indices_tt[i] = Int32(i)
 
     # output: (batch, dim, seqlen)
     var output_heap = List(length=batch * dim * seqlen, fill=Scalar[dtype](0))
@@ -365,19 +345,6 @@ def run_varlen_causal_conv1d_update[
     var output_ref_buf = output_ref_tt
     var conv_state_ref_buf = conv_state_ref_tt
 
-    # Strides for row-major layout
-    var x_batch_stride: UInt32 = UInt32(dim * seqlen)
-    var x_dim_stride: UInt32 = UInt32(seqlen)
-    var x_seqlen_stride: UInt32 = 1
-    var weight_dim_stride: UInt32 = UInt32(width)
-    var weight_width_stride: UInt32 = 1
-    var conv_state_batch_stride: UInt32 = UInt32(dim * state_len)
-    var conv_state_dim_stride: UInt32 = UInt32(state_len)
-    var conv_state_seqlen_stride: UInt32 = 1
-    var out_batch_stride: UInt32 = UInt32(dim * seqlen)
-    var out_dim_stride: UInt32 = UInt32(seqlen)
-    var out_seqlen_stride: UInt32 = 1
-
     var silu_activation = activation == "silu"
 
     # Test kernel
@@ -387,8 +354,8 @@ def run_varlen_causal_conv1d_update[
         dtype,
         dtype,
         dtype,
-        DType.int32,
-        DType.int32,
+        .int32,
+        .int32,
     ](
         batch,
         dim,
@@ -415,7 +382,7 @@ def run_varlen_causal_conv1d_update[
         var state_batch_idx = b
 
         for d in range(dim):
-            var bias_val = bias_buf.raw_load(d)
+            var bias_val = bias_buf[d]
 
             for l in range(seqlen):
                 var conv_sum: Scalar[dtype] = bias_val
@@ -428,71 +395,41 @@ def run_varlen_causal_conv1d_update[
                         # Read from state
                         var state_pos: Int
                         # has_cache_seqlens is True in our test, so use circular buffer
-                        var cache_seqlen = Int(cache_seqlens_buf.raw_load(b))
+                        var cache_seqlen = Int(cache_seqlens_buf[b])
                         state_pos = (
                             cache_seqlen + rel_pos + l + state_len
                         ) % state_len
 
                         if state_pos >= 0 and state_pos < state_len:
-                            var state_offset = (
-                                UInt32(state_batch_idx)
-                                * conv_state_batch_stride
-                                + UInt32(d) * conv_state_dim_stride
-                                + UInt32(state_pos) * conv_state_seqlen_stride
-                            )
-                            input_val = conv_state_ref_buf.raw_load(
-                                state_offset
-                            )
+                            input_val = conv_state_ref_buf[
+                                state_batch_idx, d, state_pos
+                            ]
                     else:
                         # Read from x
                         var x_l = rel_pos + l
                         if x_l >= 0 and x_l < seqlen:
-                            var x_offset = (
-                                UInt32(b) * x_batch_stride
-                                + UInt32(d) * x_dim_stride
-                                + UInt32(x_l) * x_seqlen_stride
-                            )
-                            input_val = x_buf.raw_load(x_offset)
+                            input_val = x_buf[b, d, x_l]
 
-                    var weight_offset = (
-                        UInt32(d) * weight_dim_stride
-                        + UInt32(w_idx) * weight_width_stride
-                    )
-                    var weight_val = weight_buf.raw_load(weight_offset)
+                    var weight_val = weight_buf[d, w_idx]
                     conv_sum = conv_sum + input_val * weight_val
 
                 var out_val = conv_sum
                 if silu_activation:
                     out_val = silu_ref[dtype](out_val)
 
-                var out_offset = (
-                    UInt32(b) * out_batch_stride
-                    + UInt32(d) * out_dim_stride
-                    + UInt32(l) * out_seqlen_stride
-                )
-                output_ref_buf.raw_store(out_offset, out_val)
+                output_ref_buf[b, d, l] = out_val
 
             # Update state with new x values
             # This matches the CPU implementation logic exactly
             for l in range(seqlen):
-                var x_offset = (
-                    UInt32(b) * x_batch_stride
-                    + UInt32(d) * x_dim_stride
-                    + UInt32(l) * x_seqlen_stride
-                )
-                var x_val = x_buf.raw_load(x_offset)
+                var x_val = x_buf[b, d, l]
 
                 var state_pos: Int
                 # has_cache_seqlens is True in our test, so use circular buffer
-                var cache_seqlen = Int(cache_seqlens_buf.raw_load(b))
+                var cache_seqlen = Int(cache_seqlens_buf[b])
                 state_pos = (cache_seqlen + l) % state_len
 
-                var state_offset = (
-                    UInt32(state_batch_idx) * conv_state_batch_stride
-                    + UInt32(d) * conv_state_dim_stride
-                    + UInt32(state_pos) * conv_state_seqlen_stride
-                )
-                conv_state_ref_buf.raw_store(state_offset, x_val)
+                conv_state_ref_buf[state_batch_idx, d, state_pos] = x_val
 
     # Compare results
     var flattened_size = batch * dim * seqlen
@@ -542,10 +479,10 @@ def run_varlen_causal_conv1d_states[
         ),
     )
     var cumsum = 0
-    cu_seqlens_tt.raw_store(0, Int32(0))
+    cu_seqlens_tt[0] = Int32(0)
     for i in range(batch):
         cumsum += seq_lengths[i]
-        cu_seqlens_tt.raw_store(i + 1, Int32(cumsum))
+        cu_seqlens_tt[i + 1] = Int32(cumsum)
 
     # states: (batch, dim, state_len)
     var states_heap = List(
@@ -568,17 +505,10 @@ def run_varlen_causal_conv1d_states[
     var cu_seqlens_buf = cu_seqlens_tt
     var states_ref_buf = states_ref_tt
 
-    # Strides for row-major layout
-    var x_seqlen_stride: UInt32 = UInt32(dim)
-    var x_dim_stride: UInt32 = 1
-    var states_batch_stride: UInt32 = UInt32(dim * state_len)
-    var states_dim_stride: UInt32 = UInt32(state_len)
-    var states_seqlen_stride: UInt32 = 1
-
     # Test kernel
     causal_conv1d_varlen_states_cpu[
         dtype,
-        DType.int32,
+        .int32,
         dtype,
     ](
         total_tokens,
@@ -592,8 +522,8 @@ def run_varlen_causal_conv1d_states[
 
     # Reference implementation
     for b in range(batch):
-        var end_idx = Int(cu_seqlens_buf.raw_load(b + 1))
-        var start_idx_seq = Int(cu_seqlens_buf.raw_load(b))
+        var end_idx = Int(cu_seqlens_buf[b + 1])
+        var start_idx_seq = Int(cu_seqlens_buf[b])
         var start_idx = max(start_idx_seq, end_idx - state_len)
         var num_elements = end_idx - start_idx
 
@@ -602,17 +532,7 @@ def run_varlen_causal_conv1d_states[
             var states_seq_idx = state_len - num_elements + i
 
             for d in range(dim):
-                var x_offset = (
-                    UInt32(x_seq_idx) * x_seqlen_stride
-                    + UInt32(d) * x_dim_stride
-                )
-                var states_offset = (
-                    UInt32(b) * states_batch_stride
-                    + UInt32(d) * states_dim_stride
-                    + UInt32(states_seq_idx) * states_seqlen_stride
-                )
-                var val = x_buf.raw_load(x_offset)
-                states_ref_buf.raw_store(states_offset, val)
+                states_ref_buf[b, d, states_seq_idx] = x_buf[x_seq_idx, d]
 
     # Compare results
     var flattened_size = batch * dim * state_len
@@ -659,12 +579,12 @@ def run_conv_state_writeback[
         query_start_loc_heap, row_major(batch + 1)
     )
     for i in range(batch + 1):
-        query_start_loc_tt.raw_store(i, Int32(i * seqlen))
+        query_start_loc_tt[i] = Int32(i * seqlen)
 
     var cache_indices_heap = List(length=batch, fill=UInt32(0))
     var cache_indices_tt = TileTensor(cache_indices_heap, row_major(batch))
     for i in range(batch):
-        cache_indices_tt.raw_store(i, UInt32(i))
+        cache_indices_tt[i] = UInt32(i)
 
     var has_initial_state_heap = List(length=batch, fill=Scalar[.bool](True))
     var has_initial_state_tt = TileTensor(
@@ -685,10 +605,9 @@ def run_conv_state_writeback[
     for b in range(batch):
         for d in range(dim):
             for s in range(state_len):
-                var idx = (b * dim + d) * state_len + s
-                var value = Scalar[dtype](1 + idx)
-                conv_states_tt.raw_store(idx, value)
-                initial_tt.raw_store(idx, value)
+                var value = Scalar[dtype](1 + (b * dim + d) * state_len + s)
+                conv_states_tt[b, d, s] = value
+                initial_tt[b, d, s] = value
 
     _conv_cpu[False,](
         x_tt,
@@ -713,21 +632,11 @@ def run_conv_state_writeback[
                 var offset = seqlen - state_len + s
                 var expected: Scalar[dtype]
                 if offset >= 0:
-                    expected = x_tt.raw_load(
-                        UInt32(d) * UInt32(total_seqlen)
-                        + UInt32(b * seqlen + offset)
-                    )
+                    expected = x_tt[d, b * seqlen + offset]
                 else:
-                    expected = initial_tt.raw_load(
-                        UInt32((b * dim + d) * state_len)
-                        + UInt32(state_len + offset)
-                    )
+                    expected = initial_tt[b, d, state_len + offset]
                 assert_almost_equal(
-                    conv_states_tt.raw_load(
-                        UInt32((b * dim + d) * state_len) + UInt32(s)
-                    ),
-                    expected,
-                    rtol=0.001,
+                    conv_states_tt[b, d, s], expected, rtol=0.001
                 )
 
 
@@ -757,7 +666,7 @@ def test_conv_states_pool_offset_avoids_32bit_wrap() raises:
     this offset by hand in `UInt32`:
     `UInt32(cache_idx) * UInt32(conv_states_batch_stride) + ...`, which wraps
     for this `cache_idx` (asserted below). After the fix, the kernel indexes
-    `conv_states.load(Coord(cache_idx, d, state_idx))` /
+    `conv_states.load((cache_idx, d, state_idx))` /
     `.store(Coord(...), ...)`, which forms the offset at `conv_states`'s own
     `linear_idx_type` -- 64-bit for a dynamic, `GENERIC`-address-space pool
     per `_get_index_type` (`layout/tile_tensor.mojo`) -- so it no longer

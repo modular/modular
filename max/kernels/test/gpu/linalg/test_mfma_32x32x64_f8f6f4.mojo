@@ -30,7 +30,7 @@ from std.memory import bitcast
 from std.testing import assert_true
 from std.utils import StaticTuple
 
-from layout import Coord, Idx, TensorLayout, TileTensor, row_major
+from layout import Idx, TensorLayout, TileTensor, row_major
 from linalg.arch.amd.block_scaled_mma import (
     CDNA4F8F6F4MatrixFormat,
     cdna4_block_scaled_mfma,
@@ -97,8 +97,8 @@ def _mfma_32x32x64_kernel[
         CDNA4F8F6F4MatrixFormat.FLOAT4_E2M1,
     ](scaled_acc, a_frag, b_frag, two, one)
 
-    baseline_out.store[width=16](Coord(lane, Idx[0]), baseline_acc)
-    scaled_out.store[width=16](Coord(lane, Idx[0]), scaled_acc)
+    baseline_out.store((lane, Idx[0]), baseline_acc)
+    scaled_out.store((lane, Idx[0]), scaled_acc)
 
 
 def _run_mfma_32x32x64_smoke(ctx: DeviceContext) raises:

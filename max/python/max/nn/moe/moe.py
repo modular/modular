@@ -429,6 +429,35 @@ class MoE(Module, Shardable):
                 sources[f"{prefix_of[dst]}{name}"] = f"{prefix_of[src]}{name}"
         return sources
 
+    def eplb_router_weights(self) -> list[str] | None:
+        """Returns the router weights whose leading axis indexes experts.
+
+        Reordering these rows by a permutation placement makes the router
+        emit physical ids directly. Returns ``None`` when that is unsafe: the
+        router selects within expert groups, which a permutation can break,
+        or some router weight has an expert-sized dimension off axis 0, so a
+        row reorder would miss it.
+
+        Returns:
+            FQNs relative to this module, or ``None``.
+        """
+        if getattr(self.gate, "n_group", 1) != 1:
+            return None
+        num_experts = self.num_logical_experts
+        gate_prefix = next(
+            prefix
+            for prefix, module in self.named_modules()
+            if module is self.gate
+        )
+        names: list[str] = []
+        for name, weight in self.gate.raw_state_dict().items():
+            dims = list(weight.shape.static_dims)
+            if dims and dims[0] == num_experts:
+                names.append(f"{gate_prefix}{name}")
+            elif num_experts in dims:
+                return None
+        return names
+
     @property
     def ep_batch_manager(self) -> EPBatchManager:
         """Get the expert parallel batch manager."""

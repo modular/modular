@@ -249,14 +249,18 @@ def pv_ts_batched_kernel[
     var smem_base = external_memory[
         UInt8, address_space=.SHARED, alignment=128
     ]()
-    var v_smem_ptr = smem_base.bitcast[Scalar[OP_TYPE]]()
+    var v_smem_ptr = smem_base.unsafe_bitcast[Scalar[OP_TYPE]]()
 
-    var metadata_ptr = (smem_base + v_bytes).bitcast[UInt32]()
+    var metadata_ptr = smem_base.unsafe_offset(v_bytes).unsafe_bitcast[UInt32]()
     var ptr_tmem_addr = metadata_ptr
     # Per-tile TMA-done barriers (v_mbar[t]) and per-tile MMA-done barriers
     # (mma_mbar[t]). Fixed slots for up to 2 depth-tiles (8 B / barrier).
-    var v_mbar = (metadata_ptr + 2).bitcast[SharedMemBarrier]()
-    var mma_mbar = (metadata_ptr + 6).bitcast[SharedMemBarrier]()
+    var v_mbar = metadata_ptr.unsafe_offset(2).unsafe_bitcast[
+        SharedMemBarrier
+    ]()
+    var mma_mbar = metadata_ptr.unsafe_offset(6).unsafe_bitcast[
+        SharedMemBarrier
+    ]()
 
     var tid = thread_idx.x
     var wid = get_warp_id()
@@ -293,7 +297,8 @@ def pv_ts_batched_kernel[
                 # region t. All 256 keys land on the k axis (no per-quarter banding);
                 # the [256,64] descriptor reads them banded via the byte coincidence.
                 var chunk_tile = TileTensor(
-                    v_smem_ptr + t * V_REGION_ELEMS, nat_chunk_layout
+                    v_smem_ptr.unsafe_offset(t * V_REGION_ELEMS),
+                    nat_chunk_layout,
                 )
                 v_tma_op.async_copy(
                     chunk_tile,
@@ -303,7 +308,9 @@ def pv_ts_batched_kernel[
             else:
                 for gq in range(M_PACK):
                     var band_tile = TileTensor(
-                        v_smem_ptr + t * V_REGION_ELEMS + gq * BAND_ELEMS,
+                        v_smem_ptr.unsafe_offset(
+                            t * V_REGION_ELEMS
+                        ).unsafe_offset(gq * BAND_ELEMS),
                         v_band_layout,
                     )
                     v_tma_op.async_copy(
@@ -352,7 +359,7 @@ def pv_ts_batched_kernel[
         v_mbar[0].wait()
         PVAcc1.mma[stage_idx=0](a_tmem, b0, c_tmem, elect=e, c_scale=UInt32(0))
         if elect_one_thread:
-            mma_arrive(mma_mbar + 0)
+            mma_arrive(mma_mbar.unsafe_offset(0))
     else:
         # depth=128 target regime. Tile 0: staged 3/4 + 1/4 contraction
         # (`use_3_then_1_split` at m_pack=4). Tile 1: single-shot. Both from the
@@ -369,14 +376,14 @@ def pv_ts_batched_kernel[
         # stage 1 accumulates (scale forced to 1 internally): k-block [3,4) = 1/4.
         PVAcc2.mma[stage_idx=1](a_tmem, b0, c_tmem, elect=e, c_scale=UInt32(1))
         if elect_one_thread:
-            mma_arrive(mma_mbar + 0)
+            mma_arrive(mma_mbar.unsafe_offset(0))
 
         var b1 = smem_descriptor[
             BMN=MMA_N,
             BK=PART_KEYS,
             swizzle_mode=SWIZZLE,
             is_k_major=False,
-        ](v_smem_ptr + V_REGION_ELEMS)
+        ](v_smem_ptr.unsafe_offset(V_REGION_ELEMS))
         v_mbar[1].wait()
         PVAcc1.mma[stage_idx=0](
             a_tmem,
@@ -386,7 +393,7 @@ def pv_ts_batched_kernel[
             c_scale=UInt32(0),
         )
         if elect_one_thread:
-            mma_arrive(mma_mbar + 1)
+            mma_arrive(mma_mbar.unsafe_offset(1))
 
     for t in range(num_d_tiles):
         mma_mbar[t].wait(0)
@@ -450,8 +457,8 @@ def test_pv_ts_batched[
 
     var p_host = p_inp.host_tensor()
     var v_host = v_inp.host_tensor()
-    randn[OP_TYPE](p_host.unsafe_ptr(), MMA_M * BN_KEYS)
-    randn[OP_TYPE](v_host.unsafe_ptr(), BN_KEYS * depth)
+    randn(p_host.as_span())
+    randn(v_host.as_span())
 
     var o_out_buf = HostDeviceTileTensor[ACC_TYPE](
         row_major[MMA_M, out_cols](), ctx
@@ -497,15 +504,15 @@ def test_pv_ts_batched[
     #   O_g[m, dd] = sum_{k<PART_KEYS} P[m, g*PART_KEYS + k] * V[g*PART_KEYS+k, dd]
     # read straight from the natural V tensor; sum_g O_g == full attention P @ V.
     o_out_buf.to_host()
-    var o_out_ptr = o_out_buf.host_tensor().unsafe_ptr()
+    var o_out = o_out_buf.host_tensor()
 
     print(
         "  O_gpu[0,0]="
-        + String(o_out_ptr[0])
+        + String(o_out[0, 0])
         + "  O_gpu[31,"
         + String(out_cols - 1)
         + "]="
-        + String(o_out_ptr[31 * out_cols + (out_cols - 1)])
+        + String(o_out[31, out_cols - 1])
     )
 
     var max_abs_err: Float32 = 0.0
@@ -523,7 +530,7 @@ def test_pv_ts_batched[
                     var pv = p_host[m, gg * PART_KEYS + k].cast[ACC_TYPE]()
                     var vv = v_host[gg * PART_KEYS + k, dd].cast[ACC_TYPE]()
                     acc += pv * vv
-                var gpu_val = o_out_ptr[m * out_cols + (gg * depth + dd)]
+                var gpu_val = o_out[m, gg * depth + dd]
                 var abs_err = abs(gpu_val - acc)
                 var rel_err = abs_err / max(abs(acc), Float32(1.0))
                 if abs_err > max_abs_err:
@@ -567,7 +574,7 @@ def test_pv_ts_batched[
             var ref_sum: Float32 = 0.0
             var gpu_sum: Float32 = 0.0
             for gg in range(M_PACK):
-                gpu_sum += o_out_ptr[m * out_cols + (gg * depth + dd)]
+                gpu_sum += o_out[m, gg * depth + dd]
                 for k in range(PART_KEYS):
                     ref_sum += (
                         p_host[m, gg * PART_KEYS + k].cast[ACC_TYPE]()

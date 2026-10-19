@@ -167,14 +167,14 @@ struct Pipe:
     def set_input_only(mut self):
         """Close the output descriptor/ channel for this side of the pipe."""
         if case .Some(fd_out) = self.fd_out:
-            _ = close(fd_out.value)
+            _ = close(fd_out._value)
             self.fd_out = None
 
     @inline(.always)
     def set_output_only(mut self):
         """Close the input descriptor/ channel for this side of the pipe."""
         if case .Some(fd_in) = self.fd_in:
-            _ = close(fd_in.value)
+            _ = close(fd_in._value)
             self.fd_in = None
 
     @inline(.always)

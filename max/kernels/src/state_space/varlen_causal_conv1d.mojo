@@ -232,9 +232,12 @@ struct VarlenConvIO[
     out of the kernels.
 
     Every view parameter is inferred from the constructor arguments, so the
-    owner adapts to whatever storage the caller's views carry; the CPU
-    reference and the GPU kernels pass differently-parameterized views. Only
-    the store target `output` pins a mutable origin.
+    owner adapts to whatever storage the caller's views carry. Only the store
+    target `output` pins a mutable origin.
+
+    The CPU reference is the owner's user. The GPU forward kernel indexes
+    its tensors directly: on Metal, that kernel's accesses through these
+    fields read zero and drop stores.
 
     Parameters:
         weight_origin: Inferred origin of the weight view.
@@ -354,6 +357,42 @@ struct VarlenConvIO[
             self.output.store((d, s), val)
 
 
+@inline(.always)
+def _load_x[
+    dtype: DType,
+    channels_last: Bool,
+    width: Int,
+    XFn: ImplicitlyCopyable
+    & RegisterPassable
+    & def[width: Int, alignment: Int](Int, Int) -> SIMD[dtype, width],
+](x_fn: XFn, d: Int, s: Int) -> SIMD[dtype, width]:
+    """Reads `x[d:d + width, s]`, ordering the coordinates by `channels_last`.
+
+    The GPU forward kernel reads `x` through this helper with its own `x_fn`
+    parameter: on Metal, that kernel's loads through a `VarlenConvIO` field
+    read zero, so its DRAM I/O stays on plain loads and stores.
+
+    Parameters:
+        dtype: Element type of `x`.
+        channels_last: Whether `x` is `(total_seqlen, dim)` rather than
+            `(dim, total_seqlen)`.
+        width: The number of consecutive channels; above 1 needs
+            `channels_last`, where they are contiguous.
+        XFn: Reads `x` at its physical `(row, column)` index, claiming
+            `alignment` elements of alignment.
+
+    Args:
+        x_fn: Reads the input `x`.
+        d: The first channel index.
+        s: The packed sequence position.
+    """
+    comptime if channels_last:
+        return x_fn[width, width](s, d)
+    else:
+        comptime assert width == 1, "channel vectors need channels_last"
+        return x_fn[1, 1](d, s)
+
+
 # ============================================================================
 # CPU Reference Implementations
 # ============================================================================
@@ -402,7 +441,7 @@ def causal_conv1d_varlen_states_cpu[
     for b in range(batch):
         for d in range(dim):
             for s in range(state_len):
-                states.store[width=1]((b, d, s), Scalar[states_dtype](0))
+                states.store((b, d, s), Scalar[states_dtype](0))
 
     # Extract states for each sequence
     for b in range(batch):
@@ -419,9 +458,7 @@ def causal_conv1d_varlen_states_cpu[
 
             for d in range(dim):
                 var val = x.load[width=1]((x_seq_idx, d))
-                states.store[width=1](
-                    (b, d, states_seq_idx), Scalar[states_dtype](val)
-                )
+                states.store((b, d, states_seq_idx), Scalar[states_dtype](val))
 
 
 def causal_conv1d_varlen_fwd_cpu[
@@ -670,7 +707,7 @@ def causal_conv1d_varlen_update_cpu[
                 )
 
                 # Store output
-                output.store[width=1]((b, d, l), out_val)
+                output.store((b, d, l), out_val)
 
             # Update state with new x values
             for l in range(seqlen):
@@ -689,12 +726,10 @@ def causal_conv1d_varlen_update_cpu[
                             var val = conv_state.load[width=1](
                                 (state_batch_idx, d, s + seqlen)
                             )
-                            conv_state.store[width=1](
-                                (state_batch_idx, d, s), val
-                            )
+                            conv_state.store((state_batch_idx, d, s), val)
                     state_pos = state_len - seqlen + l
 
-                conv_state.store[width=1](
+                conv_state.store(
                     (state_batch_idx, d, state_pos),
                     Scalar[conv_state_dtype](x_val),
                 )
@@ -789,7 +824,7 @@ def causal_conv1d_varlen_states_gpu[
 
     # Store to states if in valid range
     if states_row >= 0 and col < _dim:
-        states.store[width=1]((batch_idx, col, states_row), val)
+        states.store((batch_idx, col, states_row), val)
 
 
 # Tuned on B200, untuned elsewhere. Without the register cap the compiler keeps
@@ -943,8 +978,10 @@ def _causal_conv1d_varlen_fwd_kernel[
             hi = min(hi, b + step)
 
     var d = (block_idx.x * _FWD_BLOCK_DIM + thread_idx.x) * VEC
-    var io = VarlenConvIO[channels_last](x_fn, weight, bias, output)
-    if d >= io.dim():
+    # On Apple GPUs this kernel's accesses through a `VarlenConvIO` field
+    # read zero and drop stores, so it indexes the tensors directly.
+    comptime dim_axis = 1 if channels_last else 0
+    if d >= Int(output.dim[dim_axis]()):
         return
 
     # These loads do not depend on each other, so they all go out before the
@@ -956,11 +993,15 @@ def _causal_conv1d_varlen_fwd_kernel[
         has_initial_state, conv_states, b
     )
     var write_state = _write_state(update_state, b)
-    var bias_val = io.load_bias[VEC](d).cast[accum_dtype]()
+    var bias_val = (
+        bias.load[width=VEC]((d,)) if Int(bias.dim[0]()) > 0 else Vec(0)
+    ).cast[accum_dtype]()
     var tap_weights = Array[AccVec, WIDTH](fill=AccVec(0))
     comptime for w in range(WIDTH):
         comptime for c in range(VEC):
-            tap_weights[w][c] = io.load_weight(d + c, w).cast[accum_dtype]()
+            tap_weights[w][c] = weight.load[width=1]((d + c, w)).cast[
+                accum_dtype
+            ]()
 
     var tile_start = 0
     var tile_end = seqlen
@@ -982,7 +1023,9 @@ def _causal_conv1d_varlen_fwd_kernel[
     comptime for i in range(WIDTH_MINUS_1):
         var pos = tile_start - WIDTH_MINUS_1 + i
         if pos >= 0:
-            win[i] = io.load_x[VEC](d, seq_start + pos).cast[accum_dtype]()
+            win[i] = _load_x[dtype, channels_last, VEC](
+                x_fn, d, seq_start + pos
+            ).cast[accum_dtype]()
         elif use_initial_state:
             comptime for c in range(VEC):
                 win[i][c] = (
@@ -1000,7 +1043,9 @@ def _causal_conv1d_varlen_fwd_kernel[
         var l0 = tile_start + tile_off
         var raw = Array[Vec, U](fill=Vec(0))
         comptime for u in range(U):
-            raw[u] = io.load_x[VEC](d, seq_start + l0 + u)
+            raw[u] = _load_x[dtype, channels_last, VEC](
+                x_fn, d, seq_start + l0 + u
+            )
 
         comptime for u in range(U):
             var cur = raw[u].cast[accum_dtype]()
@@ -1012,13 +1057,13 @@ def _causal_conv1d_varlen_fwd_kernel[
             comptime if use_residual:
                 conv_sum += cur
 
-            io.store_out[VEC](
-                d,
-                seq_start + l0 + u,
-                _apply_silu[accum_dtype, VEC](conv_sum, silu_activation).cast[
-                    dtype
-                ](),
-            )
+            var out_val = _apply_silu[accum_dtype, VEC](
+                conv_sum, silu_activation
+            ).cast[dtype]()
+            comptime if channels_last:
+                output.store((seq_start + l0 + u, d), out_val)
+            else:
+                output.store((d, seq_start + l0 + u), out_val)
 
             comptime if WIDTH_MINUS_1 > 0:
                 comptime for w in range(WIDTH_MINUS_1 - 1):
@@ -1035,8 +1080,8 @@ def _causal_conv1d_varlen_fwd_kernel[
     if Int(conv_states.dim[0]()) > 0 and tile_start == 0 and write_state:
         comptime for i in range(WIDTH_MINUS_1):
             if tile_end != seqlen:
-                win[i] = io.load_x[VEC](
-                    d, seq_start + seqlen - WIDTH_MINUS_1 + i
+                win[i] = _load_x[dtype, channels_last, VEC](
+                    x_fn, d, seq_start + seqlen - WIDTH_MINUS_1 + i
                 ).cast[accum_dtype]()
             comptime for c in range(VEC):
                 conv_states.store(
@@ -1206,8 +1251,7 @@ def causal_conv1d_varlen_fwd_gpu[
             x_addr % 8 == 0 and x_row_stride % V == 0 and x_col_stride == 1
         )
         var bias_ok = Int(bias.dim[0]()) == 0 or (
-            Int(bias.unsafe_ptr()) % 8 == 0
-            and Int(bias.layout.stride[0]().value()) == 1
+            Int(bias.unsafe_ptr()) % 8 == 0 and Int(bias.dynamic_stride(0)) == 1
         )
         if (
             dim % V == 0
@@ -1215,8 +1259,8 @@ def causal_conv1d_varlen_fwd_gpu[
             and bias_ok
             and Int(output.unsafe_ptr()) % 8 == 0
             and Int(weight.unsafe_ptr()) % 8 == 0
-            and Int(output.layout.stride[0]().value()) % V == 0
-            and Int(output.layout.stride[1]().value()) == 1
+            and Int(output.dynamic_stride(0)) % V == 0
+            and Int(output.dynamic_stride(1)) == 1
         ):
             launch[V, False]()
             return
@@ -1372,7 +1416,7 @@ def causal_conv1d_varlen_update_gpu[
         var out_val = _apply_silu[output_dtype](conv_sum, silu_activation != 0)
 
         # Store output
-        output.store[width=1]((batch_idx, d, l), out_val)
+        output.store((batch_idx, d, l), out_val)
 
         # Update state
         var x_val = x.load[width=1]((batch_idx, d, l))
@@ -1383,7 +1427,7 @@ def causal_conv1d_varlen_update_gpu[
         else:
             state_pos = _state_len - _seqlen + l
 
-        conv_state.store[width=1](
+        conv_state.store(
             (state_batch_idx, d, state_pos),
             Scalar[conv_state_dtype](x_val),
         )

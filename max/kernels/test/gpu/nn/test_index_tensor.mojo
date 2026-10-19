@@ -129,9 +129,9 @@ def test_advanced_indexing_getitem_gpu(ctx: DeviceContext) raises:
     ](coordinates: Coord) {var index_a_dyn, var index_b_dyn} -> Int:
         comptime assert coordinates.rank == index_rank
         comptime if indices_index == 0:
-            return Int(index_a_dyn.load[width=1](coordinates))
+            return Int(index_a_dyn[coordinates])
         else:
-            return Int(index_b_dyn.load[width=1](coordinates))
+            return Int(index_b_dyn[coordinates])
 
     var in_strides = IndexList[input_rank](
         Int(input_dyn.dynamic_stride(0)),
@@ -311,9 +311,9 @@ def test_advanced_indexing_setitem_inplace_gpu(ctx: DeviceContext) raises:
     ](coordinates: Coord) {var index_a_dyn, var index_b_dyn} -> Int:
         comptime assert coordinates.rank == index_rank
         comptime if indices_index == 0:
-            return Int(index_a_dyn.load[width=1](coordinates))
+            return Int(index_a_dyn[coordinates])
         else:
-            return Int(index_b_dyn.load[width=1](coordinates))
+            return Int(index_b_dyn[coordinates])
 
     var idx_shape = IndexList[index_rank](
         Int(index_a_dyn.dim(0)), Int(index_a_dyn.dim(1))

@@ -61,10 +61,8 @@ def main() raises:
         # Under poison, every lane reads poisoned `src` and copies NaN to `dst`.
         if nan_count != n:
             raise Error(
-                "expected all "
-                + String(n)
-                + " elements to be NaN under poison; got "
-                + String(nan_count)
+                t"expected all {n} elements to be NaN under poison; got"
+                t" {nan_count}"
             )
         _ = src
         _ = dst

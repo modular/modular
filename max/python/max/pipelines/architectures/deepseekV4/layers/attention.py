@@ -173,8 +173,14 @@ class DeepseekV4Attention(Module):
             shape=(self.n_heads,),
             device=device,
         )
-        self.wq_a = linear_for(
-            config, config.hidden_size, config.q_lora_rank, device
+        # ``wq_a`` and ``wkv`` read the same input, so the adapter stacks them
+        # into one projection (``[wq_a; wkv]`` along N): one GEMM, not two.
+        self.q_lora_rank = config.q_lora_rank
+        self.wqa_wkv = linear_for(
+            config,
+            config.hidden_size,
+            config.q_lora_rank + self.head_dim,
+            device,
         )
         self.q_norm = RMSNorm(
             config.q_lora_rank, DType.float32, config.rms_norm_eps
@@ -182,7 +188,6 @@ class DeepseekV4Attention(Module):
         self.wq_b = linear_for(
             config, config.q_lora_rank, self.n_heads * self.head_dim, device
         )
-        self.wkv = linear_for(config, config.hidden_size, self.head_dim, device)
         self.kv_norm = RMSNorm(
             self.head_dim, DType.float32, config.rms_norm_eps
         )
@@ -218,7 +223,7 @@ class DeepseekV4Attention(Module):
         The query side is cut along heads: ``wq_b`` and ``attn_sink`` per
         head, ``wo_a`` along its groups (a group is a run of whole heads), and
         ``wo_b`` along its input, so each device's output is a partial sum the
-        block all-reduces. The latent side (``wq_a``, ``q_norm``, ``wkv``,
+        block all-reduces. The latent side (``wqa_wkv``, ``q_norm``,
         ``kv_norm``) is shared by every head and stays whole.
         """
         if self.n_heads % num_devices or self.o_groups % num_devices:
@@ -283,10 +288,16 @@ class DeepseekV4Attention(Module):
         )
         return self.wo_b(flattened)
 
-    def latent(self, x: TensorValue, freqs_cis: TensorValue) -> TensorValue:
-        """The shared KV latent for a chunk: normed, rotated, FP8-simulated."""
+    def project(self, x: TensorValue) -> tuple[TensorValue, TensorValue]:
+        """``(wq_a(x), wkv(x))``, sliced out of the one stacked projection."""
+        out = self.wqa_wkv(x)
+        width = int(out.shape[-1])
+        return out[..., : self.q_lora_rank], out[..., self.q_lora_rank : width]
+
+    def latent(self, kv: TensorValue, freqs_cis: TensorValue) -> TensorValue:
+        """The KV latent from ``wkv(x)``: normed, rotated, FP8-simulated."""
         rd = self.rope_head_dim
-        kv = self.kv_norm(self.wkv(x))
+        kv = self.kv_norm(kv)
         kv = apply_rope_tail(kv, freqs_cis, rd)
         # Positive bounds: see the note in rope.py and ISSUES Issue 34. This
         # exact expression, with ``:-rd``, is what produced a latent rolled by
@@ -351,12 +362,13 @@ class DeepseekV4Attention(Module):
         freqs_cis = ops.gather(freqs_table, positions, axis=0)
 
         # Query: low-rank, normed, per-head normed again (weightless), rotated.
-        qr = self.q_norm(self.wq_a(x))
+        q_a, kv_a = self.project(x)
+        qr = self.q_norm(q_a)
         q = ops.reshape(self.wq_b(qr), [1, t, self.n_heads, self.head_dim])
         q = weightless_rms_normalize(q, self.eps)
         q = apply_rope_tail(q, freqs_cis, rd)
 
-        kv = self.latent(x, freqs_cis)
+        kv = self.latent(kv_a, freqs_cis)
         if cache is not None:
             cache.swa.store(
                 index.swa,

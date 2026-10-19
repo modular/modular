@@ -59,6 +59,12 @@ def _remainder_tiny[
     return remainder(x, SIMD[dtype, width](_subnormal_input[dtype](2)))
 
 
+def _pow_self[
+    dtype: DType, width: SIMDLength, //
+](x: SIMD[dtype, width]) -> SIMD[dtype, width] where dtype.is_floating_point():
+    return x**x
+
+
 def _scalb_double[
     dtype: DType, width: SIMDLength, //
 ](x: SIMD[dtype, width]) -> SIMD[dtype, width] where dtype.is_floating_point():
@@ -137,18 +143,18 @@ def _check_comptime_all[
 
 def main() raises:
     with DeviceContext() as ctx:
-        # TODO(MSTDL-3288): Use `_check_comptime_all` for `sqrt` and `rsqrt`
-        # once the interpreter can evaluate them for 16-bit floats.
-        _check_comptime[sqrt, "sqrt", .float32](ctx)
-        _check_comptime[rsqrt, "rsqrt", .float32](ctx)
+        _check_comptime_all[sqrt, "sqrt"](ctx)
+        _check_comptime_all[rsqrt, "rsqrt"](ctx)
         _check_comptime_all[exp2, "exp2"](ctx)
         _check_comptime_all[sin, "sin"](ctx)
         _check_comptime_all[cos, "cos"](ctx)
+        _check_comptime_all[_pow_self, "pow"](ctx)
         _check_all[sqrt, "sqrt"](ctx)
         _check_all[rsqrt, "rsqrt"](ctx)
         _check_all[exp2, "exp2"](ctx)
         _check_all[sin, "sin"](ctx)
         _check_all[cos, "cos"](ctx)
+        _check_all[_pow_self, "pow"](ctx)
         _check_all[log, "log", _subnormal_input](ctx)
         _check_all[j1, "j1", _subnormal_input](ctx)
         _check_all[_hypot_self, "hypot", _subnormal_input](ctx)

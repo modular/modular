@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import functools
+import os
 from typing import Any
 
 from max.experimental import functional as F
@@ -23,15 +24,21 @@ from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
 from max.experimental.nn.common_layers.multi_latent_attention import (
     MLAPrefillMetadata,
 )
-from max.experimental.nn.common_layers.quant_linear import tensor_parallel_mlp
+from max.experimental.nn.common_layers.quant_linear import (
+    QuantizedMLP,
+    tensor_parallel_mlp,
+)
 from max.experimental.nn.norm import RMSNorm
 from max.experimental.tensor import Tensor
 from max.nn.comm.ep import EPBatchManager, EPCommBuffers
+from max.nn.quant_config import QuantFormat
 
+from ...deepseekV3_modulev3.layers.moe_gate import DeepseekV3TopKRouter
 from ...deepseekV3_modulev3.layers.transformer_block import (
     ParallelismMode,
     post_attention,
     post_mlp,
+    residual_partial_sum,
 )
 from ..model_config import DeepseekV3_2Config
 from .mlp import DeepseekV3_2MLP
@@ -41,6 +48,7 @@ from .moe import (
     DeepseekV3_2TensorParallelMoE,
 )
 from .moe_gate import DeepseekV3_2TopKRouter
+from .rms_norm import MultiplyBeforeCastRMSNorm
 from .sparse_mla import (
     QuantizedSparseLatentAttentionWithRope,
     tensor_parallel_sparse_latent_attention_with_rope,
@@ -69,8 +77,21 @@ def _get_mlp(
         and layer_idx >= config.first_k_dense_replace
         and layer_idx % config.moe_layer_freq == 0
     )
+    # The graph-API model shards its router and shared expert into the plain
+    # DeepSeek-V3 ones, so its expert-parallel deployments run the gate GEMM
+    # in bfloat16 (casting the logits to float32) and the shared-expert
+    # SwiGLU in bfloat16. Match that for the NVFP4 checkpoints it serves; the
+    # others keep the float32 variants they were validated with.
+    plain_v3_numerics = (
+        ep_batch_manager is not None
+        and quant_cfg is not None
+        and quant_cfg.format == QuantFormat.NVFP4
+    )
+    router_cls = (
+        DeepseekV3TopKRouter if plain_v3_numerics else DeepseekV3_2TopKRouter
+    )
     gate_cls = functools.partial(
-        DeepseekV3_2TopKRouter,
+        router_cls,
         routed_scaling_factor=config.routed_scaling_factor,
         scoring_func=config.scoring_func,
         topk_method=config.topk_method,
@@ -92,7 +113,7 @@ def _get_mlp(
             quant_config=layer_quant_config,
             # V2 passes the same float32-activation MLP here; the base class
             # would otherwise give the shared expert a bf16 activation.
-            mlp_cls=DeepseekV3_2MLP,
+            mlp_cls=QuantizedMLP if plain_v3_numerics else DeepseekV3_2MLP,
         )
         if ep_batch_manager is not None:
             return DeepseekV3_2ExpertParallelMoE(
@@ -119,7 +140,7 @@ def _get_mlp(
     return mlp
 
 
-class DeepseekV3_2TransformerBlock(Module[..., tuple[Tensor, Tensor]]):
+class DeepseekV3_2TransformerBlock(Module[..., tuple[Tensor, ...]]):
     """Sparse MLA, MoE/MLP, and RMSNorm for DeepSeek V3.2.
 
     Differs from the V3 block in that attention is sparse: a lightning indexer
@@ -195,11 +216,33 @@ class DeepseekV3_2TransformerBlock(Module[..., tuple[Tensor, Tensor]]):
             )
 
         self.mlp = _get_mlp(config, self.mode, layer_idx, ep_batch_manager)
-        self.input_layernorm = RMSNorm(
+        # The graph-API model's opt-in for the fused all-gather + next input
+        # norm. That fused norm multiplies before the cast, so with it opted
+        # in every input norm does too, as there.
+        fuse_allgather_norm = (
+            os.environ.get("MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM") == "0"
+        )
+        input_norm_cls = (
+            MultiplyBeforeCastRMSNorm if fuse_allgather_norm else RMSNorm
+        )
+        self.input_layernorm = input_norm_cls(
             dim=config.hidden_size, eps=config.rms_norm_eps
         )
         self.post_attention_layernorm = RMSNorm(
             dim=config.hidden_size, eps=config.rms_norm_eps
+        )
+        # As in the graph-API model, TP attention with peer-to-peer EP fuses
+        # the post-attention reduce-scatter, residual add and norm into one
+        # collective launch.
+        self.fuse_post_attention_norm = (
+            self.mode is ParallelismMode.TP_EP
+            and config.ep_config is not None
+            and not config.ep_config.use_allreduce
+        )
+        # Whether the caller may pass ``next_input_gamma``, to fuse the post-MLP
+        # all-gather with the next block's input norm.
+        self.carry_next_input_norm = (
+            fuse_allgather_norm and self.fuse_post_attention_norm
         )
 
     def forward(
@@ -215,9 +258,20 @@ class DeepseekV3_2TransformerBlock(Module[..., tuple[Tensor, Tensor]]):
         prev_topk_indices: Tensor | None = None,
         reuse_prev_topk: bool = False,
         indexer_layer_idx: Tensor | None = None,
-    ) -> tuple[Tensor, Tensor]:
+        norm_x: Tensor | None = None,
+        next_input_gamma: Tensor | None = None,
+        selection_lag: int = 0,
+    ) -> tuple[Tensor, ...]:
+        """Returns the block output and its top-k selection.
+
+        With ``next_input_gamma`` (only when :attr:`carry_next_input_norm`),
+        also returns the next block's input norm of the output, fused into
+        the post-MLP all-gather; that block then takes it as ``norm_x``
+        instead of normalizing ``x`` itself.
+        """
         residual = x
-        norm_x = self.input_layernorm(x)
+        if norm_x is None:
+            norm_x = self.input_layernorm(x)
         attn_out, topk_indices = self.self_attn(
             norm_x,
             kv_collection,
@@ -229,16 +283,37 @@ class DeepseekV3_2TransformerBlock(Module[..., tuple[Tensor, Tensor]]):
             prev_topk_indices,
             reuse_prev_topk,
             indexer_layer_idx,
+            selection_lag,
         )
 
-        hidden_states = post_attention(
-            self.mode, self.config, residual, attn_out
-        )
-        norm_h = self.post_attention_layernorm(hidden_states)
+        if self.fuse_post_attention_norm:
+            norm = self.post_attention_layernorm
+            norm_h, hidden_states = F.reduce_scatter_rms_norm(
+                residual_partial_sum(residual, attn_out),
+                norm.weight.cast(x.dtype),
+                norm.eps,
+            )
+        else:
+            hidden_states = post_attention(
+                self.mode, self.config, residual, attn_out
+            )
+            norm_h = self.post_attention_layernorm(hidden_states)
         if isinstance(self.mlp, DeepseekV3_2ExpertParallelMoE):
             assert comm_buffers is not None
             mlp_out = self.mlp(norm_h, comm_buffers)
         else:
             mlp_out = self.mlp(norm_h)
+        if next_input_gamma is not None:
+            assert self.carry_next_input_norm
+            next_norm, hidden_states = F.allgather_rms_norm(
+                hidden_states + mlp_out,
+                next_input_gamma,
+                self.input_layernorm.eps,
+            )
+            return (
+                F.rebind(hidden_states, x.shape),
+                topk_indices,
+                F.rebind(next_norm, x.shape),
+            )
         hidden_states = post_mlp(self.mode, self.config, hidden_states, mlp_out)
         return F.rebind(hidden_states, x.shape), topk_indices

@@ -34,11 +34,11 @@ def _mla_prefill_kernel[
     keys: Int,
     query_rows: Int,
 ](
-    q: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    q: MutPointer[Scalar[dtype], MutAnyOrigin],
     k: k_t,
     v: v_t,
     k_rope: k_rope_t,
-    output: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    output: MutPointer[Scalar[dtype], MutAnyOrigin],
 ):
     # Keep platform-width Int values inside the GPU, not in its launch ABI.
     mla_prefill_single_batch[

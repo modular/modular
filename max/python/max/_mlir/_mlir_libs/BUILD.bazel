@@ -16,6 +16,7 @@ modular_nanobind_extension(
         "@llvm-raw//:mlir/lib/Bindings/Python/IRAttributes.cpp",
         "@llvm-raw//:mlir/lib/Bindings/Python/IRCore.cpp",
         "@llvm-raw//:mlir/lib/Bindings/Python/IRInterfaces.cpp",
+        "@llvm-raw//:mlir/lib/Bindings/Python/IRRemarks.cpp",
         "@llvm-raw//:mlir/lib/Bindings/Python/IRTypes.cpp",
         "@llvm-raw//:mlir/lib/Bindings/Python/MainModule.cpp",
         "@llvm-raw//:mlir/lib/Bindings/Python/Pass.cpp",

@@ -54,7 +54,7 @@ from std.utils.numerics import isfinite
 
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import _is_sm10x_gpu
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Idx, TileTensor, row_major
 from linalg.block_scaled_quantization import quantize_dynamic_scaled_fp4fp8
 from linalg.block_scaled_quantization import quantize_mx_amd
 from linalg.fp4_utils import (
@@ -139,7 +139,7 @@ def _check_contract(
                 ).cast[.float32]()
             else:
                 sf = rebind[Scalar[scales_dtype]](
-                    scales[Coord(r, c0 // SF_VECTOR_SIZE)]
+                    scales[r, c0 // SF_VECTOR_SIZE]
                 ).cast[.float32]()
             if not isfinite(sf):
                 print("FUZZ_CONTRACT_FAIL kind=scale row=", r, "block=", b)
@@ -180,7 +180,7 @@ def _check_roundtrip(
                 ).cast[.float32]()
             else:
                 sf = rebind[Scalar[scales_dtype]](
-                    scales[Coord(r, c // SF_VECTOR_SIZE)]
+                    scales[r, c // SF_VECTOR_SIZE]
                 ).cast[.float32]()
             var deq = outp[r * N + c].cast[.float32]() * sf
             total += 1

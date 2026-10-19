@@ -1,5 +1,5 @@
 load("@aspect_bazel_lib//lib:write_source_files.bzl", "write_source_files")
-load("//bazel:api.bzl", "modular_generate_stubfiles", "modular_nanobind_extension", "modular_py_library", "modular_pyo3_extension", "requirement")
+load("//bazel:api.bzl", "modular_generate_stubfiles", "modular_nanobind_extension", "modular_py_library", "modular_py_test", "modular_pyo3_extension", "requirement")
 load("//bazel:config.bzl", "TOP_LEVEL_TAG")
 
 package(default_visibility = ["//max:consumers"])
@@ -16,6 +16,74 @@ filegroup(
         "//bazel/internal:__pkg__",
         "//oss/modular/bazel/internal:__pkg__",
     ],
+)
+
+# Runs the docstring examples in the committed `_core` stubs under Sybil. The
+# docstrings are authored in the C++ nanobind bindings, so collection runs in
+# --stub-examples mode, which scans .pyi stubs. The directory argument is
+# scoped to _core because this package's own directory also holds the private
+# tblgen tooling under _core/max_license. Keep these targets unsharded:
+# conditional skips (`.. skip: next(if(...))`) read names imported by
+# preceding `invisible-code-block`s through the shared document namespace,
+# which per-example sharding could separate. The base target runs everywhere;
+# the `.gpu` variant runs on GPU hosts so hardware-gated examples execute in
+# CI.
+_CORE_DOCSTRING_EXAMPLES_ARGS = [
+    "max/python/max/_core",
+    "-p",
+    "sybil_collect",
+    "--stub-examples",
+    "--import-mode=importlib",
+    "-o",
+    "consider_namespace_packages=true",
+    # Surface the slowest examples so cost creep stays visible.
+    "--durations=20",
+]
+
+_CORE_DOCSTRING_EXAMPLES_DEPS = [
+    "//max/python/max/driver",
+    "//max/python/max/engine",
+    "//max/tests/docstring_examples:sybil_collect",
+    requirement("numpy"),
+]
+
+# CI runs without network access, so network-dependent examples fail on the
+# author's machine before they reach presubmit.
+_CORE_DOCSTRING_EXAMPLES_ENV = {
+    "HF_HUB_OFFLINE": "1",
+    "TRANSFORMERS_OFFLINE": "1",
+}
+
+modular_py_test(
+    name = "_core.docstring_examples",
+    timeout = "long",
+    srcs = [],
+    args = _CORE_DOCSTRING_EXAMPLES_ARGS,
+    data = [":_core_pyi_stubs"],
+    env = _CORE_DOCSTRING_EXAMPLES_ENV,
+    main = "pytest_runner.py",
+    tags = [
+        "no-pydeps",
+        "skip-ci-asan",
+    ],
+    deps = _CORE_DOCSTRING_EXAMPLES_DEPS,
+)
+
+modular_py_test(
+    name = "_core.docstring_examples.gpu",
+    timeout = "long",
+    srcs = [],
+    args = _CORE_DOCSTRING_EXAMPLES_ARGS,
+    data = [":_core_pyi_stubs"],
+    env = _CORE_DOCSTRING_EXAMPLES_ENV,
+    gpu_constraints = ["//:has_gpu"],
+    main = "pytest_runner.py",
+    tags = [
+        "gpu",
+        "no-pydeps",
+        "skip-ci-asan",
+    ],
+    deps = _CORE_DOCSTRING_EXAMPLES_DEPS,
 )
 
 modular_nanobind_extension(

@@ -18,6 +18,7 @@ from max.experimental import functional as F
 from max.experimental.nn import Conv2d, Module
 from max.experimental.tensor import Tensor
 from max.graph import DeviceRef
+from max.graph.ops import CoordinateTransformMode, RoundMode
 
 
 def interpolate_2d_nearest(
@@ -56,8 +57,8 @@ def interpolate_2d_nearest(
     return F.resize_nearest(
         x,
         [n, c, h * scale_factor, w * scale_factor],
-        coordinate_transform_mode=2,
-        round_mode=2,
+        coordinate_transform_mode=CoordinateTransformMode.ASYMMETRIC,
+        round_mode=RoundMode.FLOOR,
     )
 
 

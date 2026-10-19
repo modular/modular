@@ -293,20 +293,22 @@ def mma_throughput_kernel[
         (b_size * size_of[a_type]()) % 16
     ) == 0, "preserve alignment"
 
-    var b_smem = (a_smem + a_size).bitcast[Scalar[a_type]]()
+    var b_smem = a_smem.unsafe_offset(a_size).unsafe_bitcast[Scalar[a_type]]()
 
     var a_smem_tile = TileTensor(a_smem, a_smem_layout)
     var b_smem_tile = TileTensor(b_smem, b_smem_layout)
 
     # Shared memory pointer for tensor memory address handshake + mbarriers.
-    var ptr_tmem_addr = (b_smem + b_size).bitcast[UInt32]()
+    var ptr_tmem_addr = b_smem.unsafe_offset(b_size).unsafe_bitcast[UInt32]()
 
     comptime a_expected_bytes = a_size * size_of[a_type]()
     comptime b_expected_bytes = b_size * size_of[a_type]()
     comptime expected_bytes = a_expected_bytes + b_expected_bytes
 
-    var tma_mbar = (ptr_tmem_addr + 2).bitcast[SharedMemBarrier]()
-    var mma_mbar = tma_mbar + 1
+    var tma_mbar = ptr_tmem_addr.unsafe_offset(2).unsafe_bitcast[
+        SharedMemBarrier
+    ]()
+    var mma_mbar = tma_mbar.unsafe_offset(1)
 
     if thread_idx.x == 0:
         tma_mbar[0].init()

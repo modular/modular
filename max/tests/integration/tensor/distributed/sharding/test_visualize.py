@@ -15,7 +15,6 @@
 from __future__ import annotations
 
 import math
-import types
 
 import pytest
 from max.driver import CPU
@@ -32,6 +31,7 @@ from max.experimental.sharding import (
     visualize,
 )
 from max.experimental.sharding.visualize import _grid, _svg
+from max.experimental.tensor import Tensor
 from max.graph import ShapeLike
 
 
@@ -182,13 +182,17 @@ def test_too_many_axes_fall_back_to_the_tree(
 
 
 def test_accepted_values(capsys: pytest.CaptureFixture[str]) -> None:
-    fake_tensor = types.SimpleNamespace(layout=layout([4, 8], Sharded(1)))
-    visualize(fake_tensor, blocks=False)
+    tensor = Tensor.zeros(
+        [4, 8],
+        dtype=DType.float32,
+        device=DeviceMapping(mesh(4), (Sharded(1),)),
+    )
+    visualize(tensor, blocks=False)
     assert shown(capsys)[-1].endswith("tensor[:, 6:]")
     with pytest.raises(TypeError, match="Wrap it in a TensorLayout"):
-        visualize(DeviceMapping(mesh(4), (Sharded(0),)))
+        visualize(DeviceMapping(mesh(4), (Sharded(0),)))  # type: ignore[arg-type]
     with pytest.raises(TypeError, match="DeviceMesh"):
-        visualize("not a layout")
+        visualize("not a layout")  # type: ignore[arg-type]
 
 
 def test_dict_draws_side_by_side(capsys: pytest.CaptureFixture[str]) -> None:

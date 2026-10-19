@@ -30,18 +30,14 @@ def _project[
     output: TileTensor[mut=True, dtype, ...],
     context: Optional[DeviceContext],
 ) raises:
-    @__parameter
-    @__copy_capture(output)
     @inline(.always)
     def write_output[
-        value_type: DType, width: SIMDLength, *, alignment: Int = 1
-    ](idx: Coord, value: SIMD[value_type, width]):
+        value_type: DType, width: SIMDLength, *, alignment: Int
+    ](idx: Coord, value: SIMD[value_type, width]) {var output}:
         comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
-        output.store[width=width](idx, value.cast[dtype]())
+        output.store(idx, value.cast[dtype]())
 
-    _matmul_common[target=target, elementwise_lambda_fn=write_output](
-        hidden, weight, context
-    )
+    _matmul_common[target=target](hidden, weight, context, write_output)
 
 
 def _check_projection[

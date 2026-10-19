@@ -260,6 +260,16 @@ class PipelineRuntimeConfig(ConfigFileModel):
         ),
     )
 
+    eplb_fold_router: bool = Field(
+        default=True,
+        description=(
+            "When an EPLB placement only moves experts between GPUs (no "
+            "redundant experts), reorder each router's expert rows to match "
+            "so it emits physical ids and dispatch runs no remap kernel. "
+            "Ignored while routing profiling is on, which needs logical ids."
+        ),
+    )
+
     eplb_planner: Literal["per_layer", "aggregated"] = Field(
         default="per_layer",
         description=(

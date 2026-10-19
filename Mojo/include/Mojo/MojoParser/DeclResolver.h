@@ -68,57 +68,28 @@ public:
   //===--------------------------------------------------------------------===//
 
   /// Add a new declaration that needs to be resolved.
-  ASTDecl &addDecl(DeclIRValue irValue, llvm::SMLoc loc, StringAttr baseName,
+  ASTDecl &addDecl(Operation *operation, llvm::SMLoc loc, StringAttr baseName,
                    ASTDecl *parentDecl, LexerCursor cursor,
                    LexerCursor endCursor, ssize_t indentation);
-  TopLevelModuleASTDecl &addDecl(ModuleOp op, llvm::SMLoc loc,
-                                 StringAttr baseName, ASTDecl *parentDecl,
-                                 LexerCursor cursor, LexerCursor endCursor,
-                                 ssize_t indentation);
-  ImportASTDecl &addDecl(ImportOp op, llvm::SMLoc loc, StringAttr baseName,
-                         ASTDecl *parentDecl, LexerCursor cursor,
-                         LexerCursor endCursor, ssize_t indentation);
-  ImportASTDecl &addDecl(UnresolvedImportOp op, llvm::SMLoc loc,
-                         StringAttr baseName, ASTDecl *parentDecl,
-                         LexerCursor cursor, LexerCursor endCursor,
-                         ssize_t indentation);
+  IRASTDecl &addDecl(CValue value, llvm::SMLoc loc, StringAttr baseName,
+                     ASTDecl *parentDecl, LexerCursor cursor,
+                     LexerCursor endCursor, ssize_t indentation);
 
   /// Add a declaration that was loaded from bytecode.
   ASTDecl &addBytecodeDecl(Operation *op, StringAttr baseName,
                            ASTDecl *parentDecl, DeclResolvedness resolvedness);
 
   /// Add a declaration that is already fully resolved.
-  ASTDecl &addFullyResolvedDecl(DeclIRValue declVal, StringAttr baseName,
+  ASTDecl &addFullyResolvedDecl(Operation *operation, StringAttr baseName,
                                 llvm::SMLoc loc, ASTDecl *parentDecl);
-  ASTDecl &addFullyResolvedDecl(DeclIRValue declVal, StringRef baseName,
-                                llvm::SMLoc loc, ASTDecl *parentDecl);
+  IRASTDecl &addFullyResolvedDecl(CValue value, StringAttr baseName,
+                                  llvm::SMLoc loc, ASTDecl *parentDecl);
 
   /// Add a declaration that represents an erroneous declaration. The generated
   /// decl is treated as fully resolved, and in an error state. If `unlisted`
   /// is set, the decl is not registered in the parent's name table.
   ASTDecl &addErroneousDecl(StringRef baseName, llvm::SMLoc loc,
                             ASTDecl *parentDecl, bool unlisted = false);
-
-  /// Add a new declaration that needs to be resolved, but don't attach it to
-  /// parent's name table.  It needs to be added later.
-  /// "Unlisted" means it has no parent; it's not in any parent's name table.
-  /// Nothing else can find it, even if you traverse the entire tree.
-  /// Often, this is just the first step before adding it to a parent, but
-  /// sometimes it's not, and it must be found some other way.
-  ASTDecl &createUnlistedDecl(DeclIRValue irValue, llvm::SMLoc loc,
-                              ASTDecl *parentDecl, LexerCursor cursor,
-                              LexerCursor endCursor, ssize_t indentation);
-  ASTDecl &createUnlistedDecl(Operation *decl, llvm::SMLoc loc,
-                              ASTDecl *parentDecl, LexerCursor cursor,
-                              LexerCursor endCursor, ssize_t indentation);
-  FileModuleASTDecl &createUnlistedDecl(FileModuleOp op, llvm::SMLoc loc,
-                                        ASTDecl *parentDecl, LexerCursor cursor,
-                                        LexerCursor endCursor,
-                                        ssize_t indentation);
-  PackageASTDecl &createUnlistedDecl(PackageOp op, llvm::SMLoc loc,
-                                     ASTDecl *parentDecl, LexerCursor cursor,
-                                     LexerCursor endCursor,
-                                     ssize_t indentation);
 
   /// Create a witness declaration and install it in the trait's scope.
   WitnessASTDecl &
@@ -132,6 +103,24 @@ public:
 
   /// Remove an unreachable declaration and its owned children.
   void eraseDecl(ASTDecl &decl);
+
+  /// Remove a set of unreachable declarations and their owned children. O(N)
+  /// for an N-decl module, regardless of how many decls are removed.
+  void eraseDecls(llvm::ArrayRef<ASTDecl *> decls);
+
+  /// Replace a resolved declaration with a new declaration for \p value.
+  ///
+  /// Use this when resolving a declaration produces a value with a different
+  /// representation from the declaration's original IR. For example,
+  /// promoting a nested function with bound parameters moves its `FnOp` to a
+  /// new `DefASTDecl`; the source binding must then refer to the bound function
+  /// literal rather than leave a `DefASTDecl` holding a value.
+  ///
+  /// The replacement retains the old declaration's resolution state and every
+  /// name-table entry, including aliases, and takes ownership of any children
+  /// not already transferred elsewhere. The old declaration is retired, so
+  /// callers must not access it afterwards.
+  ASTDecl &replaceDecl(ASTDecl &decl, CValue value);
 
   /// Register a decl's symbol in the MLIR symbol table and declForTypeSymbol
   /// map, without adding it to the parent's declsInScope. This allows the
@@ -184,6 +173,14 @@ public:
                                  bool allowMultipleWithSameName);
 
 private:
+  /// Allocate a declaration without adding it to a parent name table.
+  ASTDecl &createUnlistedDecl(Operation *operation, llvm::SMLoc loc,
+                              ASTDecl *parentDecl, LexerCursor cursor,
+                              LexerCursor endCursor, ssize_t indentation);
+  IRASTDecl &createUnlistedDecl(CValue value, llvm::SMLoc loc,
+                                ASTDecl *parentDecl, LexerCursor cursor,
+                                LexerCursor endCursor, ssize_t indentation);
+
   /// Add a pre-existing set of declarations, which may optionally be imported
   /// from a given module, as children of the specified context, using the
   /// provided alias name (which may differ from that of the decl).

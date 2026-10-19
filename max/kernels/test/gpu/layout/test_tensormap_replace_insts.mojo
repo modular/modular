@@ -60,8 +60,8 @@ def test_tma_replace_global_addr_in_gmem_descriptor_kernel[
         num_of_tensormaps, dtype, cta_tile_shape, desc_shape
     ],
 ):
-    comptime M = Int(cta_tile_shape[0].value())
-    comptime N = Int(cta_tile_shape[1].value())
+    comptime M = Int(cta_tile_shape[0])
+    comptime N = Int(cta_tile_shape[1])
     comptime expected_bytes = _idx_product[cta_tile_shape]() * size_of[dtype]()
 
     comptime __cta_tile_layout = row_major[M, N]()
@@ -142,14 +142,10 @@ def test_tma_replace_global_addr_in_gmem_descriptor[
     ctx.synchronize()
 
     comptime __smem_M = Int(
-        type_of(template_tma_tensormap)
-        .tile_shape.element_types[0]
-        .static_value.value()
+        type_of(template_tma_tensormap).tile_shape.element_types[0].static_value
     )
     comptime __smem_N = Int(
-        type_of(template_tma_tensormap)
-        .tile_shape.element_types[1]
-        .static_value.value()
+        type_of(template_tma_tensormap).tile_shape.element_types[1].static_value
     )
     comptime __thread_layout = row_major[__smem_M, __smem_N]()
 
@@ -209,8 +205,8 @@ def test_tma_replace_global_addr_in_smem_descriptor_kernel[
         num_of_tensormaps, dtype, cta_tile_shape, desc_shape
     ],
 ):
-    comptime M = Int(cta_tile_shape[0].value())
-    comptime N = Int(cta_tile_shape[1].value())
+    comptime M = Int(cta_tile_shape[0])
+    comptime N = Int(cta_tile_shape[1])
     comptime expected_bytes = _idx_product[cta_tile_shape]() * size_of[dtype]()
 
     comptime __cta_tile_layout = row_major[M, N]()
@@ -310,14 +306,10 @@ def test_tma_replace_global_addr_in_smem_descriptor[
     ctx.synchronize()
 
     comptime __smem_M = Int(
-        type_of(template_tma_tensormap)
-        .tile_shape.element_types[0]
-        .static_value.value()
+        type_of(template_tma_tensormap).tile_shape.element_types[0].static_value
     )
     comptime __smem_N = Int(
-        type_of(template_tma_tensormap)
-        .tile_shape.element_types[1]
-        .static_value.value()
+        type_of(template_tma_tensormap).tile_shape.element_types[1].static_value
     )
     comptime __thread_layout = row_major[__smem_M, __smem_N]()
 
@@ -376,8 +368,8 @@ def test_tma_replace_global_dim_in_smem_descriptor_kernel[
         num_of_subtensors, dtype, cta_tile_shape, desc_shape
     ],
 ):
-    comptime tile_M = Int(cta_tile_shape[0].value())
-    comptime tile_N = Int(cta_tile_shape[1].value())
+    comptime tile_M = Int(cta_tile_shape[0])
+    comptime tile_N = Int(cta_tile_shape[1])
     comptime expected_bytes = _idx_product[cta_tile_shape]() * size_of[dtype]()
 
     comptime __cta_tile_layout = row_major[tile_M, tile_N]()
@@ -538,7 +530,7 @@ def test_tma_replace_global_dim_in_smem_descriptor[
     comptime swizzle = make_swizzle[dtype, swizzle_mode]()
 
     var dest_tile = stack_allocation[dtype](row_major[cta_tile_M, cta_tile_N]())
-    var dest_flat = dest_tile.reshape(row_major[cta_tile_M * cta_tile_N]())
+    var dest_flat = dest_tile.coalesce()
     comptime assert dest_flat.flat_rank == 1
 
     dst.to_host()

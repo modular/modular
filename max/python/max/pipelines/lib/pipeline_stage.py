@@ -13,12 +13,16 @@
 
 """Defines :class:`PipelineStage`, one stage of a decoder cut into stages.
 
-It has no dependencies, so a model config can carry one.
+It imports nothing else from :mod:`max.pipelines`, so a model config can carry
+one.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+
+from max.graph import TensorType
+from max.tree import Tree
 
 
 @dataclass(frozen=True)
@@ -34,7 +38,7 @@ class PipelineStage:
     layers: range
     """The decoder layers the stage builds."""
 
-    boundary_types: object = field(default=None, hash=False)
+    boundary_types: Tree[TensorType] | None = field(default=None, hash=False)
     """The types of what the previous stage's decoder returns, in the tree it
     returns them, or ``None`` on the first stage."""
 

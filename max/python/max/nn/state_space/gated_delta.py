@@ -285,12 +285,16 @@ def gated_delta_conv1d_verify_fwd(
     verify_width: TensorValue,
     *,
     rollback: bool,
-) -> TensorValue:
+) -> tuple[TensorValue, TensorValue]:
     """Runs :func:`gated_delta_conv1d_fwd` in a speculative verify graph.
 
     At a verify width of zero the forward launch writes the window and the
     rollback launch does nothing, leaving its output unwritten. Otherwise the
     forward launch only reads the window and the rollback launch writes it.
+
+    The forward launch with drafts also copies its input for the rollback to
+    replay. Every row is then one token and its drafts, so the copy is the
+    whole input. Every other launch leaves the copy unwritten.
 
     Args:
         qkv_input_ragged: The ``[total_seq_len, conv_dim]`` conv input.
@@ -302,9 +306,11 @@ def gated_delta_conv1d_verify_fwd(
         rollback: Whether this is the rollback's launch.
 
     Returns:
-        The conv output, ``[total_seq_len, conv_dim]``.
+        The conv output, ``[total_seq_len, conv_dim]``, and the copy of the
+        input, ``[batch_size * (1 + K), conv_dim]``.
     """
     device = qkv_input_ragged.device
+    conv_dim = qkv_input_ragged.shape[1]
     results = ops.inplace_custom(
         "gated_delta_conv1d_verify_fwd",
         device,
@@ -318,14 +324,20 @@ def gated_delta_conv1d_verify_fwd(
         ],
         [
             TensorType(
-                DType.float32,
-                [qkv_input_ragged.shape[0], qkv_input_ragged.shape[1]],
+                DType.float32, [qkv_input_ragged.shape[0], conv_dim], device
+            ),
+            TensorType(
+                qkv_input_ragged.dtype,
+                [
+                    Dim(slot_idx.shape[0]) * (Dim(verify_width.shape[0]) + 1),
+                    conv_dim,
+                ],
                 device,
-            )
+            ),
         ],
         parameters={"rollback": rollback},
     )
-    return cast(TensorValue, results[0])
+    return cast(TensorValue, results[0]), cast(TensorValue, results[1])
 
 
 def gated_delta_recurrence_fwd(

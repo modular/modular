@@ -86,12 +86,12 @@ def block_scaled_matmul_fp8_ref(
 
     var k_groups = K // MXFP8_SF_VECTOR_SIZE
 
-    var am_scales_ptr = a_scales_ptr + m * k_groups
-    var bn_scales_ptr = b_scales_ptr + n * k_groups
+    var am_scales_ptr = a_scales_ptr.unsafe_offset(m * k_groups)
+    var bn_scales_ptr = b_scales_ptr.unsafe_offset(n * k_groups)
 
     # One byte per element at MXFP8, so the row stride is K (not K // 2).
-    var am_ptr = (a_ptr + m * K).bitcast[Float8_e4m3fn]()
-    var bn_ptr = (b_ptr + n * K).bitcast[Float8_e4m3fn]()
+    var am_ptr = a_ptr.unsafe_offset(m * K).unsafe_bitcast[Float8_e4m3fn]()
+    var bn_ptr = b_ptr.unsafe_offset(n * K).unsafe_bitcast[Float8_e4m3fn]()
 
     var accum = Float32(0)
 
@@ -105,8 +105,8 @@ def block_scaled_matmul_fp8_ref(
             part += am_ptr[ki].cast[.float32]() * bn_ptr[ki].cast[.float32]()
         accum += part * a_scale * b_scale
 
-        am_ptr += MXFP8_SF_VECTOR_SIZE
-        bn_ptr += MXFP8_SF_VECTOR_SIZE
+        am_ptr = am_ptr.unsafe_offset(MXFP8_SF_VECTOR_SIZE)
+        bn_ptr = bn_ptr.unsafe_offset(MXFP8_SF_VECTOR_SIZE)
 
     c_ptr[m * N + n] = accum
 
@@ -212,7 +212,7 @@ def _rand_e4m3_byte() -> UInt8:
 
 def _fnv1a64[dtype: DType](buf: HostBuffer[dtype], n: Int) -> UInt64:
     """FNV-1a over the buffer's raw bytes."""
-    var ptr = buf.unsafe_ptr().bitcast[UInt8]()
+    var ptr = buf.unsafe_ptr().unsafe_bitcast[UInt8]()
     var h = UInt64(0xCBF29CE484222325)
     for i in range(n * size_of[dtype]()):
         h = (h ^ UInt64(Int(ptr[i]))) * UInt64(0x100000001B3)
@@ -564,15 +564,15 @@ def _test_grouped_case[
             continue
         var eid = Int(eid_h[slot])
         ctx.enqueue_function[block_scaled_matmul_fp8_ref](
-            (a_d.unsafe_ptr() + tok_start * K_BYTES).as_imm(),
-            (b_d.unsafe_ptr() + eid * N * K_BYTES).as_imm(),
-            (sfa_d.unsafe_ptr() + tok_start * scale_K)
-            .bitcast[Float8_e8m0fnu]()
+            a_d.unsafe_ptr().unsafe_offset(tok_start * K_BYTES).as_imm(),
+            b_d.unsafe_ptr().unsafe_offset(eid * N * K_BYTES).as_imm(),
+            (sfa_d.unsafe_ptr().unsafe_offset(tok_start * scale_K))
+            .unsafe_bitcast[Float8_e8m0fnu]()
             .as_imm(),
-            (sfb_d.unsafe_ptr() + eid * N * scale_K)
-            .bitcast[Float8_e8m0fnu]()
+            (sfb_d.unsafe_ptr().unsafe_offset(eid * N * scale_K))
+            .unsafe_bitcast[Float8_e8m0fnu]()
             .as_imm(),
-            c_ref_d.unsafe_ptr() + tok_start * N,
+            c_ref_d.unsafe_ptr().unsafe_offset(tok_start * N),
             Int32(m_slot),
             Int32(N),
             Int32(K),
@@ -774,15 +774,15 @@ def _probe_grouped_determinism[
             continue
         var eid = Int(eid_h[slot])
         ctx.enqueue_function[block_scaled_matmul_fp8_ref](
-            (a_d.unsafe_ptr() + tok_start * K_BYTES).as_imm(),
-            (b_d.unsafe_ptr() + eid * N * K_BYTES).as_imm(),
-            (sfa_d.unsafe_ptr() + tok_start * scale_K)
-            .bitcast[Float8_e8m0fnu]()
+            a_d.unsafe_ptr().unsafe_offset(tok_start * K_BYTES).as_imm(),
+            b_d.unsafe_ptr().unsafe_offset(eid * N * K_BYTES).as_imm(),
+            (sfa_d.unsafe_ptr().unsafe_offset(tok_start * scale_K))
+            .unsafe_bitcast[Float8_e8m0fnu]()
             .as_imm(),
-            (sfb_d.unsafe_ptr() + eid * N * scale_K)
-            .bitcast[Float8_e8m0fnu]()
+            (sfb_d.unsafe_ptr().unsafe_offset(eid * N * scale_K))
+            .unsafe_bitcast[Float8_e8m0fnu]()
             .as_imm(),
-            c_ref_d.unsafe_ptr() + tok_start * N,
+            c_ref_d.unsafe_ptr().unsafe_offset(tok_start * N),
             Int32(m_slot),
             Int32(N),
             Int32(K),

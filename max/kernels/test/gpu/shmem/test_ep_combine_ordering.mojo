@@ -61,7 +61,7 @@ def ordering_guard_kernel(
             barrier()
             if tid == 0:
                 _flag_atomic.store[ordering=Ordering.RELEASE](
-                    flags + c, DATA_READY
+                    flags.unsafe_offset(c), DATA_READY
                 )
     else:
         var c = block_idx.x - 1

@@ -146,14 +146,13 @@ def run_one_case(
 
     var in_tt = TileTensor(in_dev.unsafe_ptr(), row_major(Coord(shape)))
 
-    @__parameter
-    @__copy_capture(in_tt)
     def input_fn_device[
         _simd_width: Int
-    ](coords: Coord) -> SIMD[sm_type, _simd_width]:
+    ](coords: Coord) {var in_tt} -> SIMD[sm_type, _simd_width]:
         return in_tt.load[width=_simd_width](coords)
 
-    _softmax_gpu[sm_type, 1, sm_rank, input_fn_device](
+    _softmax_gpu[sm_type, 1, sm_rank](
+        input_fn_device,
         Coord(shape),
         TileTensor(out_dev, row_major(Coord(shape))),
         sm_rank - 1,  # axis must be the inner dim

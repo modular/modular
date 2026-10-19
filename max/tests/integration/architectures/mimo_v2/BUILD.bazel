@@ -45,7 +45,10 @@ modular_py_test(
     exec_properties = {
         "test.resources:gpu-memory": "1",
     },
-    gpu_constraints = ["//:b200_gpu"],
+    gpu_constraints = [
+        "//:b200_gpu",
+        "//:has_multi_gpu",
+    ],
     imports = ["."],
     tags = ["gpu"],
     deps = [
@@ -64,7 +67,10 @@ modular_py_library(
     testonly = True,
     srcs = ["tiny_fixture.py"],
     imports = ["."],
-    deps = [requirement("numpy")],
+    deps = [
+        requirement("ml-dtypes"),
+        requirement("numpy"),
+    ],
 )
 
 modular_py_library(
@@ -85,6 +91,7 @@ modular_py_library(
         "//max/python/max/pipelines/modeling",
         requirement("numpy"),
         requirement("transformers"),
+        requirement("ml-dtypes"),
     ],
 )
 
@@ -115,6 +122,36 @@ modular_py_test(
     tags = [
         "gpu",
         "postsubmit",
+    ],
+    deps = [
+        ":mimo_runner",
+        ":tiny_fixture",
+        "//max/python/max/driver",
+        requirement("numpy"),
+    ],
+)
+
+# TP4 uses the same goldens and bounds as TP2. The standard remote B200 lane
+# exposes two GPUs, so this target runs explicitly on a four-GPU workspace.
+modular_py_test(
+    name = "mimo_v2_numerics_tp4_gpu",
+    size = "large",
+    srcs = ["test_serving_numerics_gpu.py"],
+    data = [":tiny_goldens"],
+    env = {"MIMO_TEST_TP_DEGREE": "4"},
+    exec_properties = {
+        "test.resources:gpu-memory": "3",
+    },
+    gpu_constraints = [
+        "//:b200_gpu",
+        "//:has_4_gpus",
+    ],
+    imports = ["."],
+    precompile_device_count = 4,
+    precompile_mefs = True,
+    tags = [
+        "gpu",
+        "manual",
     ],
     deps = [
         ":mimo_runner",
