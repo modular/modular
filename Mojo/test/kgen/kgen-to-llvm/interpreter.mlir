@@ -142,29 +142,29 @@ kgen.func @long() {
 kgen.func @ptr_inside_blob() {
   // CHECK: %[[P0:.*]] = llvm.getelementptr inbounds %[[BASEPTR:.*]][0]
   // CHECK: %[[V0:.*]] = llvm.mlir.constant(#M.dense_array<0, 1, 2, 3> : vector<4xi8>)
-  // CHECK: llvm.store %[[V0]], %[[P0]]
+  // CHECK: llvm.store %[[V0]], %[[P0]] <alignment = 16>
 
   // CHECK: %[[P1:.*]] = llvm.getelementptr inbounds %[[BASEPTR]][4]
   // CHECK: %[[V1:.*]] = llvm.mlir.constant(#M.dense_array<4, 5> : vector<2xi8>)
-  // CHECK: llvm.store %[[V1]], %[[P1]]
+  // CHECK: llvm.store %[[V1]], %[[P1]] <alignment = 4>
 
   // CHECK: %[[P2:.*]] = llvm.getelementptr inbounds %[[BASEPTR]][6]
   // CHECK: %[[V2:.*]] = llvm.getelementptr inbounds %{{.*}}[1]
-  // CHECK: llvm.store %[[V2]], %[[P2]]
+  // CHECK: llvm.store %[[V2]], %[[P2]] <alignment = 2>
 
   // COM: 8-byte pointer occupies [6, 7, 8, 9, 0, 1, 2, 3], so next is 4
 
   // CHECK: %[[P3:.*]] = llvm.getelementptr inbounds %[[BASEPTR]][14]
   // CHECK: %[[V3:.*]] = llvm.mlir.constant(#M.dense_array<4, 5, 6, 7> : vector<4xi8>)
-  // CHECK: llvm.store %[[V3]], %[[P3]]
+  // CHECK: llvm.store %[[V3]], %[[P3]] <alignment = 2>
 
   // CHECK: %[[P4:.*]] = llvm.getelementptr inbounds %[[BASEPTR]][18]
   // CHECK: %[[V4:.*]] = llvm.mlir.constant(#M.dense_array<8, 9> : vector<2xi8>)
-  // CHECK: llvm.store %[[V4]], %[[P4]]
+  // CHECK: llvm.store %[[V4]], %[[P4]] <alignment = 2>
 
   // CHECK: %[[P5:.*]] = llvm.getelementptr inbounds %[[BASEPTR]][20]
   // CHECK: %[[V5:.*]] = llvm.mlir.constant(0 : i8)
-  // CHECK: llvm.store %[[V5]], %[[P5]]
+  // CHECK: llvm.store %[[V5]], %[[P5]] <alignment = 4>
 
   %0 = kgen.param.materialize: !kgen.pointer<i8> = <#interp.memref<{[
     (#large, stack, [(6, 1, 1)], []),
@@ -234,4 +234,38 @@ kgen.func export @persistent_global() -> !kgen.pointer<i8, 2> {
 
 // CHECK: llvm.mlir.global internal @memory_blob{{.*}}(#M.dense_array<0, 0, 0, 0> : !M.array<4xi8>) {addr_space = 2 : i32, alignment = 16 : i64} : !llvm.array<4 x i8>
 
+}
+
+// -----
+
+// COM: A pointer region at the start of an over-aligned blob shifts the
+// COM: following stores off the blob's alignment. Each store may only assume
+// COM: the alignment its offset into the blob allows.
+#overaligned = #interp.memory_handle<32, "0x00000000000000000100000000000000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000">
+#pointee = #interp.memory_handle<8, "0x0100000000000000">
+
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=256>} {
+// CHECK-LABEL: llvm.func internal @overaligned_after_pointer
+kgen.func @overaligned_after_pointer() {
+  // CHECK: %[[ALLOC:.*]] = pop.aligned_alloc %idx32, %idx64
+  // CHECK: %[[BASE_TYPED:.*]] = builtin.unrealized_conversion_cast %[[ALLOC]]
+  // CHECK: %[[BASE:.*]] = llvm.bitcast %[[BASE_TYPED]]
+
+  // CHECK: %[[P0:.*]] = llvm.getelementptr inbounds %[[BASE]][0]
+  // CHECK: llvm.store %{{.*}}, %[[P0]] <alignment = 32> : !llvm.ptr, !llvm.ptr
+
+  // CHECK: %[[P1:.*]] = llvm.getelementptr inbounds %[[BASE]][8]
+  // CHECK: llvm.store %{{.*}}, %[[P1]] <alignment = 8> : vector<32xi8>
+
+  // CHECK: %[[P2:.*]] = llvm.getelementptr inbounds %[[BASE]][40]
+  // CHECK: llvm.store %{{.*}}, %[[P2]] <alignment = 8> : vector<16xi8>
+
+  // CHECK: %[[P3:.*]] = llvm.getelementptr inbounds %[[BASE]][56]
+  // CHECK: llvm.store %{{.*}}, %[[P3]] <alignment = 8> : vector<8xi8>
+  %0 = kgen.param.materialize: !kgen.pointer<i8> = <#interp.memref<{[
+    (#overaligned, heap, [(0, 1, 0)], []),
+    (#pointee, heap, [], [])
+  ], []}, 0, 0>>
+  hlcf.return
+}
 }
