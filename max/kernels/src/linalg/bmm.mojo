@@ -290,6 +290,7 @@ def _batched_matmul_cpu_impl[
     var m = Int(c.dim[1]())
     var n = Int(c.dim[2]())
     var k = Int(a.dim[2]())
+    comptime accum_type = get_accum_type[c_type]()
     var num_threads = parallelism_level(ctx)
     # Prevent parallelizing tiny matrices, e.x. 1024x4x4x4.
     var max_num_tasks_batch = min(
@@ -297,11 +298,11 @@ def _batched_matmul_cpu_impl[
     )
     # Prevent parallelizing matmul with too many threads.
     var max_num_tasks_matmul = get_matmul_num_tasks[
-        a_type, b_type, c_type, simd_width_of[c_type](), True
+        a_type, b_type, accum_type, simd_width_of[accum_type](), True
     ](m, n, k, num_threads) if get_kernel_type(
         m, n, k
     ) else get_matmul_num_tasks[
-        a_type, b_type, c_type, simd_width_of[c_type](), False
+        a_type, b_type, accum_type, simd_width_of[accum_type](), False
     ](
         m, n, k, num_threads
     )
@@ -365,10 +366,10 @@ def _batched_matmul_cpu_impl[
             var c_view = c[batch, :, :]
             var a_view = a[batch, :, :]
 
-            comptime config = get_kernel_config[a_type, b_type, c_type]()
-            comptime use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
+            comptime config = get_kernel_config[a_type, b_type, accum_type]()
+            comptime use_i8mm = use_i8mm_fn[a_type, b_type, accum_type]()
             comptime simd_size = config.simd_size
-            comptime alignment = Alignment.of[SIMD[c_type, simd_size]]()
+            comptime alignment = Alignment.of[SIMD[accum_type, simd_size]]()
             var kh = align_up(k, 8)
             var mh = align_up(m, 2)
 
@@ -418,7 +419,11 @@ def _batched_matmul_cpu_impl[
                 )
 
             var sub_matmul_config = get_partitioned_matmul[
-                a_type, b_type, c_type, config.kernel_rows, config.kernel_cols
+                a_type,
+                b_type,
+                accum_type,
+                config.kernel_rows,
+                config.kernel_cols,
             ](m, n, k, matmul_task_id, num_tasks_matmul)
             if (
                 sub_matmul_config.shape[0] <= 0
@@ -426,7 +431,81 @@ def _batched_matmul_cpu_impl[
             ):
                 return
 
-            comptime if use_i8mm:
+            comptime if accum_type != c_type:
+                # Like the 2D KERN-2790 path, keep partial sums in the
+                # accumulation dtype until the final K tile. Scratch covers
+                # only this task's output partition, not the entire batch.
+                var sub_m = sub_matmul_config.shape[0]
+                var sub_n = sub_matmul_config.shape[1]
+                var row_offset = sub_matmul_config.offset[0]
+                var col_offset = sub_matmul_config.offset[1]
+                var scratch_alloc = alloc(
+                    AllocLayout[Scalar[accum_type], alignment=alignment](
+                        count=sub_m * sub_n
+                    )
+                ).into_managed()
+                var scratch = TileTensor(
+                    scratch_alloc.unsafe_ptr(), row_major(sub_m, sub_n)
+                )
+                var a_sub = a_view[row_offset : row_offset + sub_m, :]
+                var b_row = col_offset if transpose_b else 0
+                var b_col = 0 if transpose_b else col_offset
+                var b_rows = sub_n if transpose_b else k
+                var b_cols = k if transpose_b else sub_n
+                # Preserve the original row stride when partitioning B's
+                # columns; the B packer uses this layout to address its input.
+                var b_sub = b_view[
+                    b_row : b_row + b_rows, b_col : b_col + b_cols
+                ]
+
+                @inline(.always)
+                def cast_epilogue[
+                    dtype: DType, width: SIMDLength, *, alignment: Int
+                ](out_coords: Coord, val: SIMD[dtype, width]) {
+                    var row_offset,
+                    var col_offset,
+                    var c_view,
+                    var epilogue_2d,
+                    var compute_2d,
+                }:
+                    var global_coords = Coord(
+                        row_offset + Int(out_coords[0].value()),
+                        col_offset + Int(out_coords[1].value()),
+                    )
+                    var cast_val = val.cast[c_type]()
+                    comptime if has_epilogue_fn:
+                        epilogue_2d[c_type, width, alignment=alignment](
+                            global_coords, cast_val
+                        )
+                    elif has_compute_fn:
+                        c_view.store[alignment=alignment](
+                            global_coords,
+                            compute_2d[c_type, width, alignment=alignment](
+                                global_coords, cast_val
+                            ),
+                        )
+                    else:
+                        c_view.store[alignment=alignment](
+                            global_coords, cast_val
+                        )
+
+                _submatmul_sequential_sync[
+                    config,
+                    transpose_b,
+                    b_packed=False,
+                    has_epilogue_fn=True,
+                    has_compute_fn=False,
+                    saturated_vnni=saturated_vnni,
+                ](
+                    scratch,
+                    a_sub,
+                    b_sub,
+                    GemmShape(sub_m, sub_n, k),
+                    GemmShape(0, 0, 0),
+                    cast_epilogue,
+                    no_compute_fn,
+                )
+            elif use_i8mm:
                 var a_packed_alloc = alloc(
                     AllocLayout[Scalar[a_type], alignment=alignment](
                         count=mh * kh
