@@ -1095,6 +1095,23 @@ struct FnPtrAnyOriginArg(Movable where False):
 struct FnTypeParamBound[T: def(UnsafePointer[Int, MutAnyOrigin])](Movable where False):
     var t: Self.T
 
+# Associated types must be rebound before checking their stored field types for
+# AnyOrigin.
+trait HasPointerType:
+    comptime Ptr: ImplicitlyCopyable & Deinitable
+
+struct AnyPointerType(HasPointerType):
+    comptime Ptr = Pointer[Int, ImmutAnyOrigin]
+
+struct IndirectAnyOrigin[T: HasPointerType](Movable):
+    # expected-error @below {{struct fields cannot expose AnyOrigin in their type; p has type 'Pointer[Int, ImmutAnyOrigin]'}}
+    # expected-note @below {{consider parameterizing enclosing struct with an Origin}}
+    # expected-note @below {{alternatively, use UntrackedOrigin if lifetime is managed explicitly}}
+    var p: Self.T.Ptr
+
+    def __init__(out self, p: Self.T.Ptr):
+        self.p = p
+
 ##===----------------------------------------------------------------------===##
 # Struct/Trait conformance check failure
 ##===----------------------------------------------------------------------===##
