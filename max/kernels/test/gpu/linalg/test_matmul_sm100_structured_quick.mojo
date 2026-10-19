@@ -68,9 +68,9 @@ def test_structured[
     register_based_epilogue: Bool = True,
 ](ctx: DeviceContext, m: MType, n: NType, k: KType, test_name: String) raises:
     """Test structured kernel with given configuration."""
-    var M = Int(m.value())
-    var N = Int(n.value())
-    var K = Int(k.value())
+    var M = Int(m)
+    var N = Int(n)
+    var K = Int(k)
 
     print(
         "[",
@@ -101,13 +101,9 @@ def test_structured[
     )
     var c_shape = row_major(m, Idx[NType.static_value])
 
-    var a_size = Int(m.value()) * Int(k.value())
-    var b_size = (
-        Int(n.value())
-        * Int(k.value()) if transpose_b else Int(k.value())
-        * Int(n.value())
-    )
-    var c_size = Int(m.value()) * Int(n.value())
+    var a_size = Int(m) * Int(k)
+    var b_size = Int(n) * Int(k) if transpose_b else Int(k) * Int(n)
+    var c_size = Int(m) * Int(n)
 
     # Host allocations
     var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](a_size)

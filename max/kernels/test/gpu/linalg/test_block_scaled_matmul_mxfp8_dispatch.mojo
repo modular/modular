@@ -82,8 +82,8 @@ def test_mxfp8_dispatch[
     `heuristic_and_outliers_dispatch` with an epilogue closure and with a
     compute closure, each against the same reference."""
     var M = m
-    var N = Int(n.value())
-    var K = Int(k.value())
+    var N = Int(n)
+    var K = Int(k)
 
     comptime scales_type = MXFP8_SF_DTYPE
     comptime SF_VECTOR_SIZE = MXFP8_SF_VECTOR_SIZE
@@ -232,7 +232,7 @@ def test_mxfp8_dispatch[
             comptime assert (
                 idx.rank == 2
             ), "the matmul epilogue contract is rank 2"
-            c.store[width=width](idx, rebind[SIMD[output_type, width]](val))
+            c.store(idx, rebind[SIMD[output_type, width]](val))
 
         def identity_fn[
             _dtype: DType, width: SIMDLength, *, alignment: Int

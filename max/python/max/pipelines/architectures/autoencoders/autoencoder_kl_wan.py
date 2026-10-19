@@ -29,14 +29,13 @@ from collections.abc import Callable
 from typing import Any
 
 import numpy as np
-from max.driver import CPU, Buffer, Device
+from max.driver import CPU, Buffer, Device, float32_to_bfloat16_as_uint16
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import BufferType, DeviceRef, Graph, TensorType, ops
 from max.graph.buffer_utils import cast_dlpack_to
 from max.graph.weights import Weights
 from max.pipelines.lib import SupportedEncoding
-from max.pipelines.lib.bfloat16_utils import float32_to_bfloat16_as_uint16
 from max.pipelines.modeling.base.component_model import ComponentModel
 from max.profiler import Tracer
 

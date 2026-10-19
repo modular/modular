@@ -293,12 +293,12 @@ static StructFieldOp addFieldOpAndDecl(StringAttr name, Type type,
 }
 
 static std::pair<StructASTDecl &, StructDeclOp>
-createStruct(SharedState &shared, ASTDecl &moduleDecl, StringAttr name,
+createStruct(SharedState &shared, ModuleASTDecl &moduleDecl, StringAttr name,
              ArrayRef<ParamDeclAttr> params, SMLoc loc,
              ArrayRef<PassingKind> passingKinds) {
   assert(passingKinds.size() == params.size() &&
          "passing kind per struct parameter");
-  OpBuilder b(moduleDecl.getIfOperation()->getRegion(0));
+  OpBuilder b(&moduleDecl.getOp()->getRegion(0));
   SmallVector<StringAttr> paramNames;
 #ifndef NDEBUG // Only used for assertion checks below.
   SmallPtrSet<StringAttr, 16> paramNamesSet;
@@ -380,7 +380,7 @@ getReboundCaptureDeviceFieldType(ASTType captureStorageHostType,
 }
 
 static FailureOr<LIT::StructType>
-createDeviceTypeStruct(SharedState &shared, ASTDecl &moduleDecl,
+createDeviceTypeStruct(SharedState &shared, ModuleASTDecl &moduleDecl,
                        StructASTDecl &storageStructDecl,
                        ArrayRef<Type> deviceFieldTypes) {
   MLIRContext *ctx = shared.getContext();
@@ -1060,10 +1060,10 @@ static PromotedSignature buildPromotedSignature(
           std::move(newParams)};
 }
 
-DefASTDecl *ClosureEmitter::promoteClosure(
+ClosureEmitter::PromotedClosure ClosureEmitter::promoteClosure(
     DefASTDecl &nestedFnDecl, ArrayRef<ParamDeclAttr> prependedParams,
     std::optional<PromotedClosureSelfArg> selfArg, TriBool capturingOverride,
-    ASTDecl *targetParent) {
+    OpASTDecl *targetParent) {
   assert(nestedFnDecl.resolvedness == DeclResolvedness::body &&
          "nested decl must be fully resolved to promote");
   // Mark dead unparsed code as resolved to prevent resolution dependent on
@@ -1079,7 +1079,7 @@ DefASTDecl *ClosureEmitter::promoteClosure(
   FnOp function = nestedFnDecl.getOp();
   SMLoc loc = nestedFnDecl.getLoc();
   if (!targetParent)
-    targetParent = nestedFnDecl.getNearestDeclOfType<FileModuleOp>();
+    targetParent = nestedFnDecl.getNearestDeclOfType<FileModuleASTDecl>();
   assert(targetParent && "expected a target parent for promotion");
 
   auto [promotedSignature, promotedFunctionType, selfRuntimeArgType,
@@ -1102,6 +1102,21 @@ DefASTDecl *ClosureEmitter::promoteClosure(
       selfArgLoc = sourceLoc;
     entryBlock.insertArgument(static_cast<unsigned>(0), selfRuntimeArgType,
                               selfArgLoc);
+
+    DenseSet<ASTDecl *> adjustedDecls;
+    for (auto &[_, children] : nestedFnDecl.getDeclsInScope()) {
+      for (ASTDecl *child : children) {
+        if (!adjustedDecls.insert(child).second ||
+            child->getParentDecl() != &nestedFnDecl)
+          continue;
+        if (auto irDecl = dyn_cast<IRASTDecl>(child);
+            irDecl && irDecl->getArgNumber() >= 0)
+          irDecl->setArgOrParamNumber(irDecl->getArgNumber() + 1);
+        if (auto varDecl = dyn_cast<VarASTDecl>(child);
+            varDecl && varDecl->isArgument())
+          varDecl->setArgNumber(varDecl->getArgNumber() + 1);
+      }
+    }
 
     if (ArrayAttr argAttrs = function.getFnArgAttrs();
         argAttrs && !argAttrs.empty()) {
@@ -1159,10 +1174,8 @@ DefASTDecl *ClosureEmitter::promoteClosure(
   [[maybe_unused]] Operation *existing =
       shared.declResolver->finalizeFuncSignature(function, decl);
   assert(!existing && "unexpected redefinition of promoted closure");
-  if (prependedParams.empty()) {
-    nestedFnDecl.setIRValue(function);
-    return &decl;
-  }
+  if (prependedParams.empty())
+    return {&decl, nullptr};
 
   ArrayRef<ParamDeclAttr> promotedFnParams = function.getParams();
   ArrayRef<ParamDeclAttr> captureParams =
@@ -1179,16 +1192,18 @@ DefASTDecl *ClosureEmitter::promoteClosure(
   }
   assert(captureIndex == captureParams.size() &&
          "all capture params must be rebound");
-  nestedFnDecl.setIRValue(PValue(function.getFuncLiteralGenerator(
+  PValue boundFunction(function.getFuncLiteralGenerator(
       shared.getEvaluationContext(),
-      ParameterExprArrayAttr::get(ctx, bindings))));
-  return &decl;
+      ParameterExprArrayAttr::get(ctx, bindings)));
+  ASTDecl &valueDecl =
+      shared.declResolver->replaceDecl(nestedFnDecl, boundFunction);
+  return {&decl, &valueDecl};
 }
 
-DefASTDecl *ClosureEmitter::promoteClosure(
+ClosureEmitter::PromotedClosure ClosureEmitter::promoteClosure(
     DefASTDecl &nestedFnDecl, ArrayRef<ParamDeclRefAttr> prependedParamRefs,
     std::optional<PromotedClosureSelfArg> selfArg, TriBool capturingOverride,
-    ASTDecl *targetParent) {
+    OpASTDecl *targetParent) {
   SmallVector<ParamDeclAttr> prependedParams =
       llvm::map_to_vector(prependedParamRefs, [](ParamDeclRefAttr paramRef) {
         return ParamDeclAttr::get(paramRef);
@@ -1639,10 +1654,11 @@ DefASTDecl *ClosureEmitter::liftClosureIntoMethod(
   MLIRContext *ctx = shared.getContext();
   // Nest under the storage struct as a method. Captured parameters already
   // live on the storage struct, so do not prepend them to the method.
-  DefASTDecl *promotedDecl = promoteClosure(
-      nestedFnDecl, ArrayRef<ParamDeclAttr>{}, /*selfArg=*/selfArg,
-      /*capturingOverride=*/TriBool::yes(),
-      /*targetParent=*/&storageStructDecl);
+  DefASTDecl *promotedDecl =
+      promoteClosure(nestedFnDecl, ArrayRef<ParamDeclAttr>{},
+                     /*selfArg=*/selfArg, /*capturingOverride=*/TriBool::yes(),
+                     /*targetParent=*/&storageStructDecl)
+          .functionDecl;
   FnOp promotedCallFunction = promotedDecl->getOp();
   assert(concreteFieldDecls.size() == concreteFieldCaptures.size() &&
          "expected one capture value per closure field");
@@ -1723,7 +1739,7 @@ DefASTDecl *ClosureEmitter::liftClosureIntoMethod(
 }
 
 ClosureEmitter::Closure ClosureEmitter::liftClosure(
-    ASTDecl &moduleDecl, SMLoc smLoc,
+    ModuleASTDecl &moduleDecl, SMLoc smLoc,
     SmallVector<ClosureParent> &closureParents, SymbolRefAttr parentSymbolRef,
     SmallVector<StructDefFieldAttr> &&concreteFieldDecls,
     SmallVector<Value> &&concreteFieldCaptures,
@@ -2100,7 +2116,8 @@ static TypeConvention typeConventionOf(SharedState &shared, ParamType paramType,
                                                    shared);
 }
 
-Value ClosureEmitter::emitClosure(ASTDecl &moduleDecl, DefASTDecl &nestedFnDecl,
+Value ClosureEmitter::emitClosure(ModuleASTDecl &moduleDecl,
+                                  DefASTDecl &nestedFnDecl,
                                   ArrayRef<Capture> captures, Location location,
                                   bool isCopyable,
                                   ArrayRef<ParamDeclRefAttr> paramCaptures) {
@@ -2388,8 +2405,9 @@ ASTDecl *ClosureEmitter::addCaptureValue(DefASTDecl &closure, SMLoc location,
     return existing.front();
   }
   FnOp funcOp = closure.getOp();
-  ASTDecl *fnParentDecl = closure.getParentDecl()->getNearestDeclOfType<FnOp>();
-  auto &parentDef = cast<DefASTDecl>(*fnParentDecl);
+  DefASTDecl *fnParentDecl =
+      closure.getParentDecl()->getNearestDeclOfType<DefASTDecl>();
+  auto &parentDef = *fnParentDecl;
   auto parentFn = parentDef.getOp();
   ASTDecl *result = nullptr;
   if (usesClosurePipeline(parentFn)) {
@@ -2604,9 +2622,11 @@ ASTDecl *ClosureEmitter::addCaptureValue(DefASTDecl &closure, SMLoc location,
   assert(captureValue && "must set capture value");
   // Ensure the capture value we created is used when parsing the body of the
   // closure.
-  ASTDecl &captureValueDecl = shared.getDeclResolver().addFullyResolvedDecl(
-      captureValue, name, closure.getLoc(),
+  StringAttr captureName = StringAttr::get(shared.getContext(), name);
+  IRASTDecl &captureValueDecl = shared.getDeclResolver().addFullyResolvedDecl(
+      captureValue, captureName, closure.getLoc(),
       signatureDecl ? signatureDecl : &closure);
+  captureValueDecl.setCapturedName(captureName);
   shared.addCaptureToScope(closure, result,
                            Capture(captureValue, convention, name));
   return &captureValueDecl;
@@ -2884,7 +2904,8 @@ void ClosureEmitter::addConformanceToDevicePassable(
 void ClosureEmitter::addStorageConformanceToDevicePassable(
     StructASTDecl &structDecl, ArrayRef<Type> deviceCaptureFieldTypes,
     StringRef name) {
-  ASTDecl *fileModule = structDecl.getNearestDeclOfType<FileModuleOp>();
+  ModuleASTDecl *fileModule =
+      structDecl.getNearestDeclOfType<FileModuleASTDecl>();
   if (!fileModule) {
     // for parametric trait based closure, the struct decl is put within the top
     // level decl.

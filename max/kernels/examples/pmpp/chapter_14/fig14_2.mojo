@@ -15,12 +15,13 @@
 
 from max.gpu import block_idx, thread_idx
 from max.gpu.host import DeviceContext
+from std.math import ceildiv
 from std.random import random_ui64
 
 
 def sort_kernel(
-    data: UnsafePointer[UInt32, MutAnyOrigin],
-    hasChanged: UnsafePointer[UInt32, MutAnyOrigin],
+    data: MutPointer[UInt32, MutAnyOrigin],
+    hasChanged: MutPointer[UInt32, MutAnyOrigin],
     N_dev: Int32,
     isOddStep_dev: Int32,
     block_dim_x_dev: Int32,
@@ -50,7 +51,7 @@ def sort_kernel(
             hasChanged[0] = 1
 
 
-def cpu_odd_even_sort(data: UnsafePointer[mut=True, UInt32, _], N: Int):
+def cpu_odd_even_sort(data: MutPointer[UInt32, _], N: Int):
     """CPU reference implementation of odd-even sort.
 
     Args:
@@ -78,7 +79,7 @@ def cpu_odd_even_sort(data: UnsafePointer[mut=True, UInt32, _], N: Int):
                 sorted = False
 
 
-def verify_sorted(data: UnsafePointer[UInt32, _], N: Int) -> Bool:
+def verify_sorted(data: Pointer[UInt32, _], N: Int) -> Bool:
     """Verify if array is sorted.
 
     Args:
@@ -126,7 +127,7 @@ def main() raises:
 
     # Launch configuration
     var threads_per_block = 256
-    var num_blocks = (N // 2 + threads_per_block - 1) // threads_per_block
+    var num_blocks = ceildiv(N // 2, threads_per_block)
 
     print("\nLaunching odd-even sort kernel (Fig 14.2)")
     print("Array size:", N, "elements")

@@ -87,9 +87,9 @@ def run_causal_conv1d_gpu[
     )
 
     # Initialize input data
-    rand[dtype](input_h.unsafe_ptr(), input_h.num_elements())
-    rand[dtype](weight_h.unsafe_ptr(), weight_h.num_elements())
-    rand[dtype](bias_h.unsafe_ptr(), bias_h.num_elements())
+    rand[dtype](input_h.as_span())
+    rand[dtype](weight_h.as_span())
+    rand[dtype](bias_h.as_span())
 
     var input_buf = input_h
     var weight_buf = weight_h
@@ -312,10 +312,12 @@ def run_causal_conv1d_gpu[
 
     # Compare results
     var flattened_size = batch * dim * seqlen
+    var result_gpu_flat = result_gpu_h.reshape(row_major(flattened_size))
+    var result_cpu_flat = result_cpu_h.reshape(row_major(flattened_size))
     for i in range(flattened_size):
         assert_almost_equal(
-            result_gpu_h.unsafe_ptr()[i],
-            result_cpu_h.unsafe_ptr()[i],
+            result_gpu_flat[i],
+            result_cpu_flat[i],
             rtol=rtol,
         )
 

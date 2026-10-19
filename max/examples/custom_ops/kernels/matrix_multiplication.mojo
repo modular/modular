@@ -15,12 +15,11 @@
 
 from std.math import ceildiv
 from std.math.uutils import udivmod
-from std.sys import default_accelerator
 from std.sys.info import has_accelerator, simd_width_of
 
 import extensibility
 
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, default_accelerator
 from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,

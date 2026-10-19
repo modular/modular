@@ -418,6 +418,40 @@ def test_rsqrt() raises:
     assert_almost_equal(s2_f64[3], 0.89442)
 
 
+def _test_sqrt_rsqrt_comptime[
+    dtype: DType
+]() raises where dtype.is_floating_point():
+    comptime x = SIMD[dtype, 4](0.5, 2, 3, 100)
+    comptime sqrt_x = sqrt(x)
+    comptime rsqrt_x = rsqrt(x)
+    assert_equal(sqrt_x, sqrt(x))
+    assert_equal(rsqrt_x, rsqrt(x))
+
+
+def test_sqrt_rsqrt_comptime() raises:
+    _test_sqrt_rsqrt_comptime[.float16]()
+    _test_sqrt_rsqrt_comptime[.bfloat16]()
+    _test_sqrt_rsqrt_comptime[.float32]()
+    _test_sqrt_rsqrt_comptime[.float64]()
+
+
+def _test_sin_cos_comptime[
+    dtype: DType
+]() raises where dtype.is_floating_point():
+    # Compile time folds 16-bit inputs directly, while runtime computes them in
+    # float32 and rounds, so the two can differ by an ulp.
+    comptime x = SIMD[dtype, 4](0.5, 2, 3, 100)
+    comptime sin_x = sin(x)
+    comptime cos_x = cos(x)
+    assert_almost_equal(sin_x, sin(x), atol=0, rtol=1e-2)
+    assert_almost_equal(cos_x, cos(x), atol=0, rtol=1e-2)
+
+
+def test_sin_cos_comptime_16bit() raises:
+    _test_sin_cos_comptime[.float16]()
+    _test_sin_cos_comptime[.bfloat16]()
+
+
 def _test_frexp_impl[
     dtype: DType
 ](*, atol: Float64, rtol: Float64) raises where dtype.is_floating_point():

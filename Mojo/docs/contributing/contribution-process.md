@@ -35,6 +35,9 @@ your PR stating:
 
 > I have read the CLA Document and I hereby sign the CLA
 
+Signing the CLA is a legal commitment, so you must post this comment
+yourself rather than have an AI agent post it on your behalf.
+
 ## Stage 2: Planning
 
 ### Study the existing implementation

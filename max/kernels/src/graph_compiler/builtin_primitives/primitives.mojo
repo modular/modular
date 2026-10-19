@@ -36,6 +36,7 @@ from max.gpu.host import (
     DeviceGraphBuilder,
     DeviceGraphCache,
     DeviceGraphInput,
+    DeviceGraphInputKind,
     StableAddr,
 )
 from max.gpu.host.device_context import _DeviceContextPtr
@@ -247,8 +248,8 @@ struct OwnedByteBuffer(DeviceGraphInput, ImplicitlyCopyable, Movable):
         # silently discard those writes.
         #
         # Mutability now survives lowering: `!mo.buffer` lowers to a
-        # mut-marked `!mgp.tensor`, and `OwnedTensor[.., mut=True]` handles
-        # the in-place registration (`register_in_place_input` +
+        # mut-marked `!mgp.tensor`, and `OwnedTensor[.., kind=.mutable]`
+        # handles the in-place registration (`register_in_place_input` +
         # address-in-key). A raw `!mgp.buffer` reaching `add_input` therefore
         # indicates a lowering bug, not a missing feature; if a legitimate
         # buffer-typed graph input ever appears, implement it the same way
@@ -257,7 +258,9 @@ struct OwnedByteBuffer(DeviceGraphInput, ImplicitlyCopyable, Movable):
 
 
 struct OwnedTensor[
-    dtype: DType, rank: Int, mut: Bool = False, host: Bool = False
+    dtype: DType,
+    rank: Int,
+    kind: DeviceGraphInputKind = DeviceGraphInputKind.data,
 ](DeviceGraphInput, ImplicitlyCopyable, Movable):
     """Owning composite for an `mgp.tensor` value: a non-owning `DynamicTensor`
     view (precomputed pointer + shape) plus an `AnyAsyncValueRef` storage handle
@@ -270,18 +273,13 @@ struct OwnedTensor[
     Parameters:
         dtype: The element dtype of the tensor view.
         rank: The rank of the tensor view.
-        mut: Whether the tensor is mutable (the lowered form of `!mo.buffer`,
-            e.g. a KV cache the model writes in place). A mutable tensor used
-            as a device-graph input must not be copied to a graph-private
-            stable location; its address joins the graph cache key instead.
-        host: Whether the tensor's data is host-resident (the lowered form of
-            a cpu-placed `!mgp.tensor`, e.g. attention dispatch metadata).
-            Recorded ops read host values at enqueue time, freezing them into
-            the graph, so a host tensor used as a device-graph input has its
-            full contents baked into the graph cache key: changed bytes miss
-            the cache and re-record instead of replaying stale dispatch.
-            Mutually exclusive with `mut` (in-place host writes contradict
-            value-keyed replay; the op verifiers reject the combination).
+        kind: How the tensor participates as a device-graph input; see
+            `DeviceGraphInputKind`. `mutable` is the lowered form of
+            `!mo.buffer` (a KV cache the model writes in place), `host` a
+            cpu-placed `!mgp.tensor` (dispatch metadata read at enqueue time),
+            and `shape_only` a tensor the graph reads only for its shape. The
+            kind is fixed when the tensor is unpacked; `with_kind` rebinds it
+            for one graph's `add_input`.
     """
 
     var tensor: DynamicTensor[Self.dtype, Self.rank]
@@ -300,6 +298,10 @@ struct OwnedTensor[
         """
         self.tensor = tensor
         self.storage = storage^
+
+    @staticmethod
+    def shape_only() -> Bool:
+        return Self.kind == DeviceGraphInputKind.shape_only
 
     def unsafe_ptr(self) -> Pointer[Scalar[Self.dtype], MutAnyOrigin]:
         """Returns the view's raw device data pointer.
@@ -363,21 +365,37 @@ struct OwnedTensor[
         )
         return AnyAsyncValueRef(handle)
 
+    def with_kind[
+        new_kind: DeviceGraphInputKind
+    ](self) -> OwnedTensor[Self.dtype, Self.rank, new_kind]:
+        """Returns the same tensor viewed with another input kind.
+
+        A tensor is unpacked once per kernel with the kind its type implies,
+        but a collective's graphs may treat it differently: the graph on the
+        device that owns it reads its data, while a peer device's graph may
+        read only its shape. Rebinding the kind shares the view and retains
+        the storage; nothing is copied.
+
+        Parameters:
+            new_kind: The kind the returned tensor participates as.
+
+        Returns:
+            The same view and storage under `new_kind`.
+        """
+        return {self.tensor, self.storage}
+
     def write_graph_key(self, mut writer: Some[Writer]):
-        comptime assert not (
-            Self.mut and Self.host
-        ), "a device-graph input cannot be both mutable and host-resident"
-        comptime if Self.mut:
-            # A mutable input is recorded at its live address (no stable twin),
-            # so the address is part of what distinguishes graphs: a moved
-            # buffer must miss the cache and rebuild rather than replay stale
-            # addresses.
-            writer.write(
-                t"MutTensor({self.dtype}, {self.shape()}, "
-                t"{Int(self.unsafe_ptr())})"
-            )
-        else:
-            comptime if Self.host:
+        comptime match Self.kind:
+            case DeviceGraphInputKind.mutable:
+                # A mutable input is recorded at its live address (no stable twin),
+                # so the address is part of what distinguishes graphs: a moved
+                # buffer must miss the cache and rebuild rather than replay stale
+                # addresses.
+                writer.write(
+                    t"MutTensor({self.dtype}, {self.shape()}, "
+                    t"{Int(self.unsafe_ptr())})"
+                )
+            case DeviceGraphInputKind.host:
                 # Recorded ops read host values at enqueue time, so replay is
                 # only sound for the exact bytes that were recorded: the full
                 # contents join the key, and changed bytes re-record. Bytes
@@ -388,61 +406,66 @@ struct OwnedTensor[
                 for i in range(self.bytecount()):
                     writer.write(Int(raw[unsafe_offset=i]), ",")
                 writer.write(")")
-            else:
+            case _:
+                # `data` and `shape_only` both key on the shape alone. A shape-only
+                # input is recorded at its live address like a mutable one, but the
+                # graph baked nothing but its shape, so a same-shape tensor at any
+                # address may replay it and the address must stay out of the key.
                 writer.write(t"Tensor({self.dtype}, {self.shape()})")
 
     def allocate_stable(self, mut builder: DeviceGraphBuilder) raises -> Self:
-        comptime assert not (
-            Self.mut and Self.host
-        ), "a device-graph input cannot be both mutable and host-resident"
-        comptime if Self.mut:
-            # A mutable tensor (the lowered form of !mo.buffer, e.g. a KV
-            # cache) is written in place by the graph: a graph-private stable
-            # copy would silently discard those writes. Register an in-place
-            # marker so the replay copy skips this position, and record
-            # against the caller's live buffer. `write_graph_key` puts the
-            # address in the cache key, which is what makes replaying the
-            # recorded address sound.
-            #
-            # This is not the storage-pinning trap the immutable path's
-            # comment warns about: the returned copy retains `self.storage`
-            # only for the build closure's lifetime -- the graph itself
-            # retains nothing. Address stability across replays is the
-            # buffer owner's property (e.g. the KV manager's block pool),
-            # policed by address-in-key.
-            builder.register_in_place_input()
-            return self
-        else:
-            var shape = self.shape()
+        comptime match Self.kind:
+            case .mutable | .shape_only:
+                # A mutable tensor (the lowered form of !mo.buffer, e.g. a KV
+                # cache) is written in place by the graph: a graph-private stable
+                # copy would silently discard those writes. Register an in-place
+                # marker so the replay copy skips this position, and record
+                # against the caller's live buffer. `write_graph_key` puts the
+                # address in the cache key, which is what makes replaying the
+                # recorded address sound.
+                #
+                # A shape-only tensor takes the same path for the opposite reason:
+                # the graph reads only its shape, so there is nothing to copy and
+                # the address is irrelevant; the shape in the key is what keeps
+                # replay correct.
+                #
+                # This is not the storage-pinning trap the immutable path's
+                # comment warns about: the returned copy retains `self.storage`
+                # only for the build closure's lifetime -- the graph itself
+                # retains nothing. Address stability across replays is the
+                # buffer owner's property (e.g. the KV manager's block pool),
+                # policed by address-in-key.
+                builder.register_in_place_input()
+                return self
+            case _:
+                comptime is_host = Self.kind == DeviceGraphInputKind.host
+                var shape = self.shape()
 
-            # The stable twin lives where the input's data lives: recorded
-            # kernels read device inputs where they run, and recorded enqueues
-            # (dispatch reads, HtoD copy nodes) bake the *host* address of a
-            # host input, so both need a graph-stable location.
-            var buffer = builder.create_input_buffer[Self.dtype](
-                shape.flattened_length(), is_host=Self.host
-            )
+                # The stable twin lives where the input's data lives: recorded
+                # kernels read device inputs where they run, and recorded enqueues
+                # (dispatch reads, HtoD copy nodes) bake the *host* address of a
+                # host input, so both need a graph-stable location.
+                var buffer = builder.create_input_buffer[Self.dtype](
+                    shape.flattened_length(), is_host=is_host
+                )
 
-            var view = DynamicTensor[Self.dtype, Self.rank](
-                buffer.unsafe_ptr(), shape
-            )
+                var view = DynamicTensor[Self.dtype, Self.rank](
+                    buffer.unsafe_ptr(), shape
+                )
 
-            comptime if Self.host:
-                # Host values are read at enqueue time while the build closure
-                # records, so the stable buffer must hold the caller's bytes
-                # *before* any op is recorded against it. (The replay-time
-                # refresh copies the same bytes again -- byte-identical by
-                # cache-key construction -- purely to keep the positional
-                # input-refresh invariant uniform.)
-                var src = self.unsafe_ptr().unsafe_bitcast[UInt8]()
-                var dst = view.unsafe_ptr().unsafe_bitcast[UInt8]()
-                for i in range(self.bytecount()):
-                    dst[unsafe_offset=i] = src[unsafe_offset=i]
+                comptime if is_host:
+                    # Host values are read at enqueue time while the build closure
+                    # records, so the stable buffer must hold the caller's bytes
+                    # *before* any op is recorded against it.
+                    var src = self.unsafe_ptr().unsafe_bitcast[UInt8]()
+                    var dst = view.unsafe_ptr().unsafe_bitcast[UInt8]()
+                    for i in range(self.bytecount()):
+                        dst[unsafe_offset=i] = src[unsafe_offset=i]
 
-            # Storage is the pool buffer, never `self.storage` -- retaining
-            # the caller's handle would pin its memory for the graph's
-            # lifetime.
-            return Self(view, AnyAsyncValueRef(storage_buf=buffer^))
+                # Storage is the pool buffer, never `self.storage` -- retaining
+                # the caller's handle would pin its memory for the graph's
+                # lifetime.
+                return Self(view, AnyAsyncValueRef(storage_buf=buffer^))
 
 
 @export
@@ -496,9 +519,8 @@ def unpack_tensor[
     buffer_rank: Int,
     tensor_rank: Int,
     dtype: DType,
-    mut: Bool = False,
-    host: Bool = False,
-](async_ref: AnyAsyncValueRef) -> OwnedTensor[dtype, buffer_rank, mut, host]:
+    kind: DeviceGraphInputKind = DeviceGraphInputKind.data,
+](async_ref: AnyAsyncValueRef) -> OwnedTensor[dtype, buffer_rank, kind]:
     # Tensor and the underlying buffer must have the same rank, unless it is a
     # scalar tensor stored with a DynamicTensor<[1]>
     comptime assert tensor_rank == buffer_rank or (
@@ -557,13 +579,12 @@ def mgp_tensor_create[
     spec_rank: Int,
     buffer_rank: Int,
     dtype: DType,
-    mut: Bool = False,
-    host: Bool = False,
+    kind: DeviceGraphInputKind = DeviceGraphInputKind.data,
 ](
     buffer: OwnedByteBuffer,
     spec: IndexList[spec_rank],
 ) -> OwnedTensor[
-    dtype, buffer_rank, mut, host
+    dtype, buffer_rank, kind
 ]:
     # The tensor shares the buffer's backing memory, so it retains the buffer's
     # storage handle (copy) to keep it alive independently.
@@ -591,13 +612,12 @@ def mgp_device_graph_stable_tensor[
     spec_rank: Int,
     buffer_rank: Int,
     dtype: DType,
-    mut: Bool = False,
-    host: Bool = False,
+    kind: DeviceGraphInputKind = DeviceGraphInputKind.data,
 ](
     addr: StableAddr,
     spec: IndexList[spec_rank],
 ) -> OwnedTensor[
-    dtype, buffer_rank, mut, host
+    dtype, buffer_rank, kind
 ]:
     """Views a stable address slot as the tensor it stands for.
 
@@ -632,7 +652,7 @@ def mgp_tensor_extract_tensor_spec[
     tensor_rank: Int,
     buffer_rank: Int,
     dtype: DType,
-](tensor: OwnedTensor[dtype, buffer_rank, _, _]) -> IndexList[tensor_rank]:
+](tensor: OwnedTensor[dtype, buffer_rank, _]) -> IndexList[tensor_rank]:
     comptime if tensor_rank == 0:
         comptime assert buffer_rank == 1
         return rebind[IndexList[tensor_rank]](IndexList[0]())
@@ -646,7 +666,9 @@ def mgp_tensor_extract_tensor_spec[
 def mgp_tensor_extract_buffer[
     buffer_rank: Int,
     dtype: DType,
-](tensor: OwnedTensor[dtype, buffer_rank, _, _]) -> OwnedByteBuffer:
+](tensor: OwnedTensor[dtype, buffer_rank, _]) -> OwnedByteBuffer:
+    comptime assert not tensor.shape_only()
+
     # Unwrap the tensor into a size-less buffer view, retaining the tensor's
     # storage so the buffer keeps the backing memory alive independently.
     var view = MutByteBuffer(
@@ -666,7 +688,9 @@ def mgp_tensor_slice[
     output_spec: IndexList[rank],
     start: OwnedTensor[.int64, 1, ...],
     dev_context: DeviceContext,
-) raises -> OwnedTensor[dtype, rank, input.mut, input.host]:
+) raises -> OwnedTensor[dtype, rank, input.kind]:
+    comptime assert not input.shape_only()
+
     var input_shape = input.shape()
 
     # Find k: the first non-size-1 input dimension (the sliced dimension).
@@ -1261,8 +1285,8 @@ def mgp_debug_print[
 ](ctx: StateContext) raises:
     var prefix = String()
     if bLabel:
-        prefix = "[" + bLabel + "] "
-    print(prefix + aDebugString)
+        prefix = String(t"[{bLabel}] ")
+    print(t"{prefix}{aDebugString}")
 
 
 @register_internal("mgp.debug.print.int")
@@ -1272,8 +1296,8 @@ def mgp_debug_print_int[
 ](ctx: StateContext, value: Int):
     var prefix = String()
     if aLabel:
-        prefix = "[" + aLabel + "] "
-    print(prefix + String(value))
+        prefix = String(t"[{aLabel}] ")
+    print(t"{prefix}{value}")
 
 
 @register_internal("mgp.debug.tensor.print")
@@ -1675,7 +1699,7 @@ def mogg_async_error_value(
     """Returns a fresh error `AsyncValue`."""
     var error_message = String(err)
     if source_notes:
-        error_message = "\n" + source_notes + "\n\n" + error_message
+        error_message = String(t"\n{source_notes}\n\n{error_message}")
     var handle = external_call[
         "MGP_RT_AsyncRT_CreateAsync_Error", _AsyncValuePtr[mut=True]
     ](
@@ -1798,9 +1822,9 @@ def mogg_format_kernel_error(
         + String(error)
     )
     if fusion_info:
-        msg += "\n\nFusion info:\n" + fusion_info
+        msg += String(t"\n\nFusion info:\n{fusion_info}")
     if traceback:
-        msg += "\n\nSource Traceback:\n" + traceback
+        msg += String(t"\n\nSource Traceback:\n{traceback}")
     return Error(msg)
 
 
@@ -2857,7 +2881,7 @@ struct _ElementwiseFusionTileAdapter[
         LocalToGenericTileCopier[Self.thread_layout]().copy(out_tile, res_local)
 
 
-@register_internal("mogg.call.foreach_tile")
+@register_internal("mogg.call.foreach.tile")
 @inline(.never)
 def foreach_fusion_tile[
     dtype: DType,

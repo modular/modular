@@ -51,8 +51,8 @@ def test_tma_load_kernel[
     ],
     tma_tile: TMATensorTile[dtype, tile_shape],
 ):
-    comptime tileM = Int(tile_shape.element_types[0].static_value.value())
-    comptime tileN = Int(tile_shape.element_types[1].static_value.value())
+    comptime tileM = Int(tile_shape.element_types[0].static_value)
+    comptime tileN = Int(tile_shape.element_types[1].static_value)
     comptime expected_bytes = _idx_product[tile_shape]() * size_of[dtype]()
 
     comptime __tile_layout = Layout.row_major(tileM, tileN)
@@ -102,8 +102,8 @@ def test_tma_multiple_loads_kernel[
     ],
     tma_tile: TMATensorTile[dtype, tile_shape],
 ):
-    comptime tileM = Int(tile_shape.element_types[0].static_value.value())
-    comptime tileN = Int(tile_shape.element_types[1].static_value.value())
+    comptime tileM = Int(tile_shape.element_types[0].static_value)
+    comptime tileN = Int(tile_shape.element_types[1].static_value)
     comptime expected_bytes = _idx_product[tile_shape]() * size_of[dtype]()
 
     comptime N = layout.shape[1].value()
@@ -247,8 +247,8 @@ def test_tma_async_store_kernel[
         MutAnyOrigin,
     ],
 ):
-    comptime tileM = Int(tile_shape_param[0].value())
-    comptime tileN = Int(tile_shape_param[1].value())
+    comptime tileM = Int(tile_shape_param[0])
+    comptime tileN = Int(tile_shape_param[1])
     comptime __tile_layout = Layout.row_major(tileM, tileN)
     var tile = stack_allocation[
         dtype=dtype, address_space=.SHARED, alignment=128
@@ -285,8 +285,8 @@ def test_tma_async_multiple_store_kernel[
         MutAnyOrigin,
     ],
 ):
-    comptime tileM = Int(tile_shape_param[0].value())
-    comptime tileN = Int(tile_shape_param[1].value())
+    comptime tileM = Int(tile_shape_param[0])
+    comptime tileN = Int(tile_shape_param[1])
     comptime __tile_layout = Layout.row_major(tileM, tileN)
     var tile = stack_allocation[
         dtype=dtype, address_space=.SHARED, alignment=128
@@ -428,8 +428,8 @@ def test_tma_loads_two_buffers_kernel[
     a_tma_tile: TMATensorTile[dtype, a_tile_shape],
     b_tma_tile: TMATensorTile[dtype, b_tile_shape],
 ):
-    comptime tileM = Int(a_tile_shape[0].value())
-    comptime tileN = Int(a_tile_shape[1].value())
+    comptime tileM = Int(a_tile_shape[0])
+    comptime tileN = Int(a_tile_shape[1])
     comptime expected_bytes = _idx_product[a_tile_shape]() * size_of[dtype]()
 
     comptime N = a_layout.shape[1].value()
@@ -445,7 +445,7 @@ def test_tma_loads_two_buffers_kernel[
     )
 
     comptime __b_tile_layout = Layout.row_major(
-        Int(b_tile_shape[0].value()), Int(b_tile_shape[1].value())
+        Int(b_tile_shape[0]), Int(b_tile_shape[1])
     )
     var b_tile = stack_allocation[
         dtype=dtype, address_space=.SHARED, alignment=128
@@ -614,8 +614,8 @@ def test_tma_loads_and_store_two_buffers_kernel[
     a_tma_src_tile: TMATensorTile[dtype, a_tile_shape, a_desc_shape],
     b_tma_src_tile: TMATensorTile[dtype, b_tile_shape, b_desc_shape],
 ):
-    comptime tileM = Int(a_tile_shape[0].value())
-    comptime tileN = Int(a_tile_shape[1].value())
+    comptime tileM = Int(a_tile_shape[0])
+    comptime tileN = Int(a_tile_shape[1])
     comptime expected_bytes = _idx_product[a_tile_shape]() * size_of[dtype]()
 
     comptime N = a_layout.shape[1].value()
@@ -631,7 +631,7 @@ def test_tma_loads_and_store_two_buffers_kernel[
     )
 
     comptime __b_tile_layout = Layout.row_major(
-        Int(b_tile_shape[0].value()), Int(b_tile_shape[1].value())
+        Int(b_tile_shape[0]), Int(b_tile_shape[1])
     )
     var b_tile = stack_allocation[
         dtype=dtype, address_space=.SHARED, alignment=128

@@ -25,7 +25,7 @@ from linalg.utils import (
 )
 
 
-from layout import TileTensor, Coord, row_major
+from layout import TileTensor, row_major
 from layout.tensor_engine import DefaultEngine
 
 comptime dtype = DType.float32
@@ -35,10 +35,6 @@ comptime alignment = align_of[SIMD[dtype, simd_size]]()
 comptime kernel_shape = get_matmul_kernel_shape[dtype, dtype, dtype, False]()
 comptime MR = kernel_shape.simd_rows
 comptime NR = kernel_shape.simd_cols * simd_size
-
-# AVX512 values
-# alias MR = 6
-# alias NR = 64
 
 comptime prefetch_distance = get_matmul_prefetch_b_distance_k()
 
@@ -90,8 +86,8 @@ def kernel(
 
     comptime for idx0 in range(MR):
         for idx1 in range(NR2):
-            var cv = c.load[width=simd_size](Coord(n * idx0 + simd_size * idx1))
-            c_local.store(Coord(NR * idx0 + simd_size * idx1), cv)
+            var cv = c.load[width=simd_size]((n * idx0 + simd_size * idx1,))
+            c_local.store((NR * idx0 + simd_size * idx1,), cv)
 
     for pr in range(kc):
         comptime for i in range(NR2):
@@ -102,21 +98,19 @@ def kernel(
         comptime for idx0 in range(MR):
             for idx1 in range(NR2):
                 var av = a[idx0 * k + pr].cast[dtype]()
-                var bv = b.load[width=simd_size](
-                    Coord(NR * pr + simd_size * idx1)
-                )
+                var bv = b.load[width=simd_size]((NR * pr + simd_size * idx1,))
                 var cv = c_local.load[width=simd_size](
-                    Coord(NR * idx0 + simd_size * idx1)
+                    (NR * idx0 + simd_size * idx1,)
                 )
                 cv += av * bv
-                c_local.store(Coord(NR * idx0 + simd_size * idx1), cv)
+                c_local.store((NR * idx0 + simd_size * idx1,), cv)
 
     comptime for idx0 in range(MR):
         for idx1 in range(NR2):
             var cv = c_local.load[width=simd_size](
-                Coord(NR * idx0 + simd_size * idx1)
+                (NR * idx0 + simd_size * idx1,)
             )
-            c.store(Coord(n * idx0 + simd_size * idx1), cv)
+            c.store((n * idx0 + simd_size * idx1,), cv)
 
 
 def pack_B(
@@ -188,11 +182,7 @@ def main() raises:
         print("n must be a multiple of 64")
         return
 
-    print(m, end="")
-    print("x", end="")
-    print(n, end="")
-    print("x", end="")
-    print(k)
+    print(t"{m}x{n}x{k}")
 
     var a_alloc = alloc(
         AllocLayout[Scalar[dtype], alignment=.of_bytes[alignment]()](
@@ -247,10 +237,7 @@ def main() raises:
     for i in range(m * n):
         if c[i] != c2[i]:
             errors += 1
-    print(errors, end="")
-    print("/", end="")
-    print(m * n, end="")
-    print(" errors")
+    print(t"{errors}/{m * n} errors")
 
     def bench_gemm() {var}:
         gemm(a.ptr, b2.ptr, c2.ptr, m, n, k, mc, nc, kc)
@@ -258,15 +245,12 @@ def main() raises:
     var num_warmup: Int = 1
     var time = std.benchmark.run(bench_gemm, num_warmup).mean()
     var flops = 2.0 * Float64(m) * Float64(n) * Float64(k) / time / 1e9
-    print(time, end="")
-    print(" seconds")
-    print(flops, end="")
-    print(" GFLOPS")
+    print(t"{time} seconds")
+    print(t"{flops} GFLOPS")
 
     # assume turbo is disabled and the frequency set to 2.9 GHz
     var rpeak = flops / (2.9 * 64)
-    print(rpeak, end="")
-    print(" measured/peak FLOPS assuming 2.9 GHz")
+    print(t"{rpeak} measured/peak FLOPS assuming 2.9 GHz")
 
     dealloc(a_alloc^)
     dealloc(b_alloc^)

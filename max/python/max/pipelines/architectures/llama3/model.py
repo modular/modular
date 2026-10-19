@@ -37,8 +37,7 @@ from max.pipelines.lib import (
 from max.pipelines.lib.graph_specs import (
     GraphRole,
     GraphSpec,
-    compile_graphs,
-    init_graphs,
+    compile_and_init_graphs,
 )
 from max.pipelines.lib.log_probabilities import LogProbabilitiesMixin
 from max.pipelines.lib.memory_estimation import MemoryPlan
@@ -250,8 +249,11 @@ class LlamaModelBase(
         with CompilationTimer("model") as timer:
             specs = self.graph_specs(model_config)
             timer.mark_build_complete()
-            self.compiled_artifacts = compile_graphs(session, specs)
-            models = init_graphs(session, self.compiled_artifacts, specs)
+            self.compiled_modules = compile_and_init_graphs(session, specs)
+        models = {
+            role: compiled.engine_model
+            for role, compiled in self.compiled_modules.items()
+        }
         self._maybe_release_host_weights(*models.values())
         self._wire_batch_processor(models[GraphRole.DECODER], model_config)
         return models

@@ -17,7 +17,8 @@ from __future__ import annotations
 import functools
 import os
 from collections import OrderedDict
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
+from pathlib import Path
 from typing import Any, cast
 
 from max import tree
@@ -27,12 +28,15 @@ from max.graph import (
     BufferType,
     BufferValue,
     DeviceRef,
+    Graph,
     ShardingStrategy,
     TensorType,
     TensorValue,
+    Type,
     Value,
     ops,
 )
+from max.graph import Module as GraphModule
 from max.nn.attention.multi_latent_attention import MLAPrefillMetadata
 from max.nn.comm.ep import EPBatchManager
 from max.nn.data_parallelism import split_batch_replicated
@@ -917,3 +921,71 @@ class DeepseekV3_2(Module):
         self, kv_params: KVCacheParamInterface
     ) -> tuple[TensorType | BufferType, ...]:
         return tuple(tree.leaves(self.input_tree(kv_params)))
+
+    def trace(
+        self,
+        *input_types: Type[Any],
+        name: str | None = None,
+        module: GraphModule | None = None,
+        custom_extensions: Iterable[Path] = (),
+        is_device_graph: bool = False,
+    ) -> Graph:
+        """Traces the graph, whose inputs are the leaves of
+        :meth:`input_tree` for the config's KV cache parameters.
+
+        Adapts the flat graph inputs to :meth:`__call__`: splits off the
+        signal buffers and splits the KV cache into its MLA and indexer
+        collections. The EP inputs pass through as the trailing inputs.
+
+        Args:
+            *input_types: The graph's input types.
+            name: The name of the graph. Defaults to the class's qualified
+                name.
+            module: The MLIR module to add the graph to. Defaults to a new
+                module.
+            custom_extensions: Paths to custom kernel libraries the graph
+                uses.
+            is_device_graph: Whether to build a device graph.
+
+        Returns:
+            The traced :class:`~max.graph.Graph`.
+        """
+        n_devices = len(self.config.devices)
+
+        def forward(
+            tokens: Value[Any],
+            row_offsets: Value[Any],
+            host_row_offsets: Value[Any],
+            return_n_logits: Value[Any],
+            data_parallel_splits: Value[Any],
+            *variadic_args: Value[Any],
+        ) -> tuple[TensorValue, ...]:
+            remaining = iter(variadic_args)
+            signal_buffers = [next(remaining).buffer for _ in range(n_devices)]
+            mla_kv_collections, indexer_kv_collections = (
+                self.config.kv_params.unflatten_basic_kv_tree(remaining)
+            )
+            batch_context_lengths = [
+                next(remaining).tensor for _ in range(n_devices)
+            ]
+            return self(
+                tokens.tensor,
+                signal_buffers,
+                mla_kv_collections,
+                indexer_kv_collections,
+                return_n_logits.tensor,
+                row_offsets.tensor,
+                host_row_offsets.tensor,
+                data_parallel_splits.tensor,
+                batch_context_lengths,
+                list(remaining),
+            )
+
+        return Graph(
+            type(self).__qualname__ if name is None else name,
+            forward,
+            input_types=input_types,
+            custom_extensions=list(custom_extensions),
+            module=module,
+            is_device_graph=is_device_graph,
+        )

@@ -31,6 +31,7 @@ from max.pipelines.lib.eplb_stats import (
     EplbPlacement,
     EplbStatsMetadata,
     EplbStatsSnapshot,
+    EplbTopology,
     PerLayerEplbPlanner,
     eplb_planner_for,
 )
@@ -316,7 +317,7 @@ def test_eplb_placement_from_skewed_snapshot_logs_improvement(
     snap = EplbStatsSnapshot.from_array(md, h)
     with caplog.at_level("INFO", logger="max.serve"):
         EplbPlacement.from_snapshot(snap, ep_size=4, n_nodes=1, n_groups=1)
-    assert "EPLB: per-GPU load max/min" in caplog.text
+    assert "EPLB: per-GPU load max/mean across 1 MoE layers" in caplog.text
 
 
 def _two_layer_skewed_snapshot() -> EplbStatsSnapshot:
@@ -381,3 +382,32 @@ def test_default_planner_is_per_layer() -> None:
 def test_unknown_planner_name_raises() -> None:
     with pytest.raises(ValueError, match="Unknown EPLB planner"):
         eplb_planner_for("greedy")
+
+
+def test_log2phy_is_padded_to_a_vector_width() -> None:
+    # One very hot expert takes all 4 extra slots: 5 replicas, padded to 8.
+    load = np.ones((1, 16), dtype=np.int64)
+    load[0, 3] = 1_000_000
+    p = EplbPlacement.from_rebalance(
+        load,
+        EplbTopology(
+            ep_size=4, n_nodes=1, n_groups=1, redundant_experts_per_gpu=1
+        ),
+    )
+    assert p.logcnt[0, 3] == 5
+    assert p.max_replicas == 8
+    assert p.log2phy.shape == (1, 16, 8)
+    np.testing.assert_array_equal(p.log2phy[0, 3, 5:], -1)
+    assert (p.log2phy[0, 3, :5] >= 0).all()
+
+
+def test_too_many_replicas_raises() -> None:
+    load = np.ones((1, 4), dtype=np.int64)
+    load[0, 0] = 1_000_000
+    with pytest.raises(ValueError, match="at most 16"):
+        EplbPlacement.from_rebalance(
+            load,
+            EplbTopology(
+                ep_size=4, n_nodes=1, n_groups=1, redundant_experts_per_gpu=5
+            ),
+        )

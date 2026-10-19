@@ -22,7 +22,7 @@ from std.math import ceildiv, align_up
 from std.memory import (
     bitcast,
 )
-from std.sys import size_of
+from std.sys import align_of, size_of
 from std.sys._assembly import inlined_assembly
 
 import max.gpu.primitives.warp as warp
@@ -36,8 +36,6 @@ from layout import (
     Idx,
     IntTuple,
     DefaultEngine,
-    RuntimeLayout,
-    RuntimeTuple,
     TensorEngine,
     TileTensor,
     UNKNOWN_VALUE,
@@ -146,9 +144,7 @@ comptime ImmutTileTensor1D[
 
 def immut_tile_tensor_1d[
     mut: Bool, dtype: DType, origin: Origin[mut=mut], //
-](ptr: UnsafePointer[Scalar[dtype], origin], size: Int) -> ImmutTileTensor1D[
-    dtype
-]:
+](ptr: Pointer[Scalar[dtype], origin], size: Int) -> ImmutTileTensor1D[dtype]:
     """Views `size` contiguous elements at `ptr` as an `ImmutTileTensor1D`.
 
     Parameters:
@@ -167,6 +163,25 @@ def immut_tile_tensor_1d[
         ptr.as_imm().unsafe_origin_cast[ImmutAnyOrigin](),
         _1d_row_major_tt_layout(Coord(Int64(size)), Coord(ComptimeInt[1]())),
     )
+
+
+def immut_tile_tensor_1d[
+    dtype: DType, //
+](tensor: TileTensor[dtype, address_space=.GENERIC, ...]) -> ImmutTileTensor1D[
+    dtype
+]:
+    """Views the contiguous elements of `tensor` as an `ImmutTileTensor1D`.
+
+    Parameters:
+        dtype: Element type of the tensor (inferred).
+
+    Args:
+        tensor: Tensor whose elements are viewed as one flat dimension.
+
+    Returns:
+        An immutable, untracked-origin 1-D view over the elements.
+    """
+    return immut_tile_tensor_1d(tensor.ptr, tensor.num_elements())
 
 
 struct Pack[
@@ -353,7 +368,7 @@ struct MHAPosition[
     @inline(.always)
     def q_out_gmem_tensor[
         dtype: DType
-    ](self, ptr: UnsafePointer[mut=True, Scalar[dtype], _]) -> TileTensor[
+    ](self, ptr: MutPointer[Scalar[dtype], _]) -> TileTensor[
         dtype, Self.q_output_gmem_layout, type_of(ptr).origin
     ]:
         """Views this tile's `BM x depth` output block in global memory.
@@ -374,7 +389,7 @@ struct MHAPosition[
         return TileTensor[
             dtype, Self.q_output_gmem_layout, type_of(ptr).origin
         ](
-            ptr + self.q_out_offset,
+            ptr.unsafe_offset(self.q_out_offset),
             Self.q_output_gmem_layout(
                 Coord(Idx[Self.BM], Idx[Self.depth]),
                 Coord(Idx[Self.q_stride], Idx[1]),
@@ -425,8 +440,8 @@ struct MHAPosition[
         partition: partition_t,
         batch_size: UInt32,
     ) -> Tuple[
-        UnsafePointer[Scalar[partition_t.accum_dtype], MutAnyOrigin],
-        UnsafePointer[Scalar[partition_t.accum_dtype], MutAnyOrigin],
+        MutPointer[Scalar[partition_t.accum_dtype], MutAnyOrigin],
+        MutPointer[Scalar[partition_t.accum_dtype], MutAnyOrigin],
     ]:
         comptime assert partition_t.do_partition, (
             "exp_sum_qk_max_ptr is split-K only; a non-partitioning scheme has"
@@ -442,13 +457,14 @@ struct MHAPosition[
         var exp_sum_offset = UInt32(Self.q_num_heads) * (
             self.prompt_idx + batch_size * self.prompt_offset
         )
-        var exp_sum_ptr = (
-            rebind[
-                UnsafePointer[Scalar[partition_t.accum_dtype], MutAnyOrigin]
-            ](partition.lse_pointer().value().unsafe_mut_cast[True]())
-            + exp_sum_offset
+        var exp_sum_ptr = rebind[
+            MutPointer[Scalar[partition_t.accum_dtype], MutAnyOrigin]
+        ](
+            partition.lse_pointer().value().unsafe_mut_cast[True]()
+        ).unsafe_offset(
+            exp_sum_offset
         )
-        var qk_max_ptr = exp_sum_ptr + (
+        var qk_max_ptr = exp_sum_ptr.unsafe_offset(
             UInt32(Self.q_num_heads) * batch_size * partition.num_partitions()
         )
         return (exp_sum_ptr, qk_max_ptr)
@@ -582,7 +598,7 @@ def get_seq_info[
     ](partition.num_partitions())
     # SAFETY: Stored in MHATileState.sidx_ptr but never dereferenced.
     var state: MHATileState = scheduler.initial_state(
-        UnsafePointer[
+        MutPointer[
             UInt32, MutAnyOrigin, address_space=.SHARED
         ].unsafe_dangling(),
         tile_summary,
@@ -898,7 +914,7 @@ def q_tma_prefill[
     num_qk_stages: Int = 1,
 ](
     ctx: DeviceContext,
-    ptr: UnsafePointer[Scalar[dtype], _],
+    ptr: Pointer[Scalar[dtype], _],
     rows: Int,
 ) raises -> QTMATilePrefill[
     dtype, swizzle_mode, BM=BM, depth=depth, num_qk_stages=num_qk_stages
@@ -936,7 +952,7 @@ def q_tma_fused[
     num_qk_stages: Int = 1,
 ](
     ctx: DeviceContext,
-    ptr: UnsafePointer[Scalar[dtype], _],
+    ptr: Pointer[Scalar[dtype], _],
     rows: Int,
 ) raises -> QTMATileFused[
     dtype,
@@ -1080,28 +1096,24 @@ def output_reg_to_smem_st_matrix[
         size_of[output_type]() == 2
     ), "output_reg_to_smem_st_matrix only supports bf16/f16 output_type"
 
-    comptime st_matrix_rt_layout = RuntimeLayout[
-        st_matrix_n_layout[
-            output_type, padded_depth, num_m_mmas, num_consumer
-        ](),
-        element_type=.int32,
-        linear_idx_type=.int32,
-    ]()
+    comptime st_matrix_layout = st_matrix_n_layout[
+        output_type, padded_depth, num_m_mmas, num_consumer
+    ]
 
     comptime for m_mma in range(num_m_mmas):
         comptime for i in range(padded_depth // 16):
-            var st_matrix_args = RuntimeTuple[
-                IntTuple(UNKNOWN_VALUE, IntTuple(i, m_mma, UNKNOWN_VALUE))
-            ](
+            var st_matrix_args = Coord(
                 Int(warp_group_thread_idx),
-                i,
-                m_mma,
-                Int(local_warp_group_idx),
+                Coord(Idx[i], Idx[m_mma], Int(local_warp_group_idx)),
             )
-            var accum_smem_idx = swizzle(st_matrix_rt_layout(st_matrix_args))
-            var offset = accum_smem_tile.ptr + accum_smem_idx
-            var output_frag = output_reg_tile.raw_load[width=8](
-                m_mma * o_frag_size + i * 8
-            ).cast[output_type]()
+            var accum_smem_idx = swizzle(
+                st_matrix_layout.__call__[linear_idx_type=.int32](
+                    st_matrix_args
+                )
+            )
+            var offset = accum_smem_tile.ptr.unsafe_offset(accum_smem_idx)
+            var output_frag = output_reg_tile.load[
+                width=8, alignment=align_of[accum_type]()
+            ](Coord(Idx[m_mma], Idx[i * 8])).cast[output_type]()
             var output_frag_f32_packed = bitcast[.float32, 4](output_frag)
             st_matrix[simd_width=4](offset, output_frag_f32_packed)

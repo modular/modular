@@ -25,9 +25,9 @@ from std.sys import size_of
 from max.gpu import global_idx
 from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
-from layout import TileTensor, row_major
+from layout import TensorEngine, TensorLayout, TileTensor, row_major
 from std.utils.index import IndexList
-from linalg.utils import elementwise_epilogue_type
+from linalg.utils import ElementwiseEpilogueFn, no_epilogue_fn
 
 
 # =========================================================================
@@ -38,9 +38,12 @@ from linalg.utils import elementwise_epilogue_type
 @__name(t"transpose_rscf_to_krsc_{dtype}")
 def _transpose_rscf_to_krsc[
     dtype: DType,
+    SrcLayoutType: TensorLayout,
+    src_origin: ImmOrigin,
+    SrcEngine: TensorEngine,
 ](
-    src_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    src: TileTensor[dtype, SrcLayoutType, src_origin, Engine=SrcEngine],
+    dst_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
     R: Int32,
     S: Int32,
     C: Int32,
@@ -58,16 +61,18 @@ def _transpose_rscf_to_krsc[
     var r: Int
     r, rem = divmod(rem, _S * _C)
     var s, c = divmod(rem, _C)
-    var src_idx = r * _S * _C * _F + s * _C * _F + c * _F + k
-    dst_ptr.store(tid, src_ptr.load(src_idx))
+    dst_ptr.store(tid, src.load((r, s, c, k))[0])
 
 
 @__name(t"transpose_fcrs_to_krsc_{dtype}")
 def _transpose_fcrs_to_krsc[
     dtype: DType,
+    SrcLayoutType: TensorLayout,
+    src_origin: ImmOrigin,
+    SrcEngine: TensorEngine,
 ](
-    src_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    src: TileTensor[dtype, SrcLayoutType, src_origin, Engine=SrcEngine],
+    dst_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
     F: Int32,
     C: Int32,
     R: Int32,
@@ -85,8 +90,7 @@ def _transpose_fcrs_to_krsc[
     var r: Int
     r, rem = divmod(rem, _S * _C)
     var s, c = divmod(rem, _C)
-    var src_idx = k * _C * _R * _S + c * _R * _S + r * _S + s
-    dst_ptr.store(tid, src_ptr.load(src_idx))
+    dst_ptr.store(tid, src.load((k, c, r, s))[0])
 
 
 # =========================================================================
@@ -125,10 +129,11 @@ def dispatch_sm100_conv2d[
     input_type: DType,
     filter_type: DType,
     output_type: DType,
+    EpilogueFnType: ElementwiseEpilogueFn = type_of(no_epilogue_fn),
     //,
     filter_is_fcrs: Bool = False,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     has_residual: Bool = False,
+    has_epilogue_fn: Bool = False,
 ](
     input: TileTensor[mut=True, input_type, address_space=.GENERIC, ...],
     filter: TileTensor[filter_type, ...],
@@ -136,9 +141,10 @@ def dispatch_sm100_conv2d[
     symmetric_padding: IndexList[2],
     ctx: DeviceContext,
     source_ptr: OptionalReg[
-        UnsafePointer[Scalar[output_type], MutAnyOrigin]
+        MutPointer[Scalar[output_type], MutAnyOrigin]
     ] = None,
     beta: Float32 = 0.0,
+    epilogue_fn: EpilogueFnType = no_epilogue_fn,
 ) raises:
     """Dispatch to SM100 structured conv2d with filter transpose.
 
@@ -149,10 +155,10 @@ def dispatch_sm100_conv2d[
         input_type: Data type of the input activation tensor.
         filter_type: Data type of the filter weights tensor.
         output_type: Data type of the output tensor.
+        EpilogueFnType: Type of `epilogue_fn` (inferred).
         filter_is_fcrs: If True, filter is FCRS layout; otherwise RSCF.
-        elementwise_lambda_fn: Optional void epilogue lambda applied after
-            output write. Signature: `def(Coord, SIMD) -> None`.
         has_residual: If True, fuse residual add D = Conv(A,B) + beta*C.
+        has_epilogue_fn: Whether `epilogue_fn` stores the output.
 
     Args:
         input: Input activation tensor in NHWC layout.
@@ -163,6 +169,9 @@ def dispatch_sm100_conv2d[
         source_ptr: Pointer to residual source tensor C (NHWC, same shape
             as output). Only used when has_residual is True.
         beta: Residual scale factor. D = Conv(A,B) + beta*C.
+        epilogue_fn: Elementwise epilogue that stores each output value,
+            with coordinates in the [M, N] GEMM view of the output; ignored
+            unless `has_epilogue_fn` is True.
 
     Raises:
         Error if kernel launch fails.
@@ -207,8 +216,14 @@ def dispatch_sm100_conv2d[
             var C = Int(filter.dim[1]())
             var R = Int(filter.dim[2]())
             var S = Int(filter.dim[3]())
-            ctx.enqueue_function[_transpose_fcrs_to_krsc[filter_type]](
-                filter.ptr,
+            comptime transpose_kernel = _transpose_fcrs_to_krsc[
+                filter_type,
+                filter.LayoutType,
+                ImmOrigin(filter.origin),
+                filter.Engine,
+            ]
+            ctx.enqueue_function[transpose_kernel](
+                filter.as_imm(),
                 filter_krsc_ptr,
                 Int32(F),
                 Int32(C),
@@ -222,8 +237,14 @@ def dispatch_sm100_conv2d[
             var S = Int(filter.dim[1]())
             var C = Int(filter.dim[2]())
             var F = Int(filter.dim[3]())
-            ctx.enqueue_function[_transpose_rscf_to_krsc[filter_type]](
-                filter.ptr,
+            comptime transpose_kernel = _transpose_rscf_to_krsc[
+                filter_type,
+                filter.LayoutType,
+                ImmOrigin(filter.origin),
+                filter.Engine,
+            ]
+            ctx.enqueue_function[transpose_kernel](
+                filter.as_imm(),
                 filter_krsc_ptr,
                 Int32(R),
                 Int32(S),
@@ -279,14 +300,26 @@ def dispatch_sm100_conv2d[
                 )
                 conv2d_fprop_with_residual[
                     config=config,
-                    elementwise_lambda_fn=elementwise_lambda_fn,
                     has_residual=True,
-                ](out_tt, act_tt, filter_tt, src_tt, beta, problem, ctx)
+                    has_epilogue_fn=has_epilogue_fn,
+                ](
+                    out_tt,
+                    act_tt,
+                    filter_tt,
+                    src_tt,
+                    beta,
+                    problem,
+                    ctx,
+                    epilogue_fn,
+                )
+            elif has_epilogue_fn:
+                conv2d_fprop[config=config](
+                    out_tt, act_tt, filter_tt, problem, epilogue_fn, ctx
+                )
             else:
-                conv2d_fprop[
-                    config=config,
-                    elementwise_lambda_fn=elementwise_lambda_fn,
-                ](out_tt, act_tt, filter_tt, problem, ctx)
+                conv2d_fprop[config=config](
+                    out_tt, act_tt, filter_tt, problem, ctx
+                )
 
         if in_c_bytes % 128 == 0:
             _launch[TensorMapSwizzle.SWIZZLE_128B]()

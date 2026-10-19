@@ -359,9 +359,7 @@ def warp_specialize_gemm_with_multicasting[
     # The epilogue owns every store, so the kernel never dereferences C;
     # it reads only C's shape, and C's TMA descriptor is encoded over a
     # null address.
-    var c_ptr: Optional[
-        UnsafePointer[Scalar[c_type], MutUntrackedOrigin]
-    ] = None
+    var c_ptr: Optional[MutPointer[Scalar[c_type], MutUntrackedOrigin]] = None
     var c_shape_only = TileTensor(
         c_ptr._unsafe_nullable(), row_major(c_shape[0], Idx[N])
     )

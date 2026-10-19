@@ -21,7 +21,7 @@ from typing import Any, ClassVar, cast
 from max import tree
 from max.driver import Buffer, Device, DLPackArray, is_virtual_device_mode
 from max.dtype import DType
-from max.engine import InferenceSession
+from max.engine import InferenceSession, Model
 from max.graph import Graph, ops
 from max.graph.weights import WeightData, Weights, WeightsAdapter
 from max.nn.comm.ep import EPCommInitializer
@@ -34,6 +34,7 @@ from max.pipelines.lib import (
     ModelOutputs,
     PipelineConfig,
 )
+from max.pipelines.lib.graph_specs import GraphRole
 from max.pipelines.lib.memory_estimation import MemoryPlan
 from typing_extensions import override
 
@@ -200,6 +201,12 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
             raise ValueError(
                 "EP node ID is not set. Please check if the EP initialization is successful."
             )
+
+    @override
+    def load_graphs(self, session: InferenceSession) -> dict[str, Model]:
+        """Loads the decoder graph through :meth:`load_model`."""
+        # TODO(kathywu): Build this graph through `graph_specs`.
+        return {GraphRole.DECODER: self.load_model(session)}
 
     @override
     def _build_graph_for_compile(

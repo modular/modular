@@ -76,9 +76,8 @@ def test_grouped_tensormap_update_kernel[
         dtype,
         type_of(
             row_major[
-                num_groups
-                * Int(tile_shape.element_types[0].static_value.value()),
-                Int(tile_shape.element_types[1].static_value.value()),
+                num_groups * Int(tile_shape.element_types[0].static_value),
+                Int(tile_shape.element_types[1].static_value),
             ]()
         ),
         MutAnyOrigin,
@@ -87,9 +86,8 @@ def test_grouped_tensormap_update_kernel[
         dtype,
         type_of(
             row_major[
-                num_groups
-                * Int(tile_shape.element_types[0].static_value.value()),
-                Int(tile_shape.element_types[1].static_value.value()),
+                num_groups * Int(tile_shape.element_types[0].static_value),
+                Int(tile_shape.element_types[1].static_value),
             ]()
         ),
         MutAnyOrigin,
@@ -116,8 +114,8 @@ def test_grouped_tensormap_update_kernel[
     3. Load A and B tiles using block's GMEM tensormaps
     4. Store results to output for verification
     """
-    comptime M = Int(tile_shape.element_types[0].static_value.value())
-    comptime N = Int(tile_shape.element_types[1].static_value.value())
+    comptime M = Int(tile_shape.element_types[0].static_value)
+    comptime N = Int(tile_shape.element_types[1].static_value)
     comptime expected_bytes = _idx_product[tile_shape]() * size_of[dtype]()
 
     # Allocate SMEM for tiles
@@ -228,8 +226,8 @@ def test_grouped_tensormap_update[
     """
     print("  Testing", num_groups, "groups with tile shape", tile_shape)
 
-    comptime M = Int(tile_shape.element_types[0].static_value.value())
-    comptime N = Int(tile_shape.element_types[1].static_value.value())
+    comptime M = Int(tile_shape.element_types[0].static_value)
+    comptime N = Int(tile_shape.element_types[1].static_value)
     comptime tile_layout = row_major[M, N]()
     comptime num_blocks = 1  # Single block for this test
 

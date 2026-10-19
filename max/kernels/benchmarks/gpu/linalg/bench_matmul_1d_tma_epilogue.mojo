@@ -14,7 +14,7 @@
 # Benchmarks three SM100 (Blackwell) BF16 matmul+1D-bias epilogue variants:
 #
 #   1. plain              — bare _matmul_gpu (no epilogue tensor)
-#   2. compute_lambda_bias — 1D bias via elementwise_compute_lambda_fn (broadcast)
+#   2. compute_lambda_bias — 1D bias via a compute closure (broadcast)
 #   3. tma_bias           — 1D bias loaded via TMA epilogue (cp.async.bulk)
 #
 # Only runs on SM100+ (B200) GPUs; prints a warning and exits on other hardware.
@@ -278,8 +278,8 @@ def bench_matmul_1d_tma_epilogue[
             # pointer for 1D bias.
             var epi_1 = Int64(1)
             var epi_n = Int64(N)
-            var epilogue_for_gpu = TileTensor(
-                bias_tile.ptr, row_major(epi_1, epi_n)
+            var epilogue_for_gpu = bias_tile.reshape(
+                row_major(epi_1, epi_n)
             ).as_imm()
             fused_bias_residual_matmul_dispatch_sm100[
                 transpose_b=transpose_b,

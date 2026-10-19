@@ -182,36 +182,37 @@ public:
 
   /// Get a document symbol with the given ASTDecl, appending it to the given
   /// vector.
-  void getDocumentSymbols(MojoASTDeclRef decl,
+  void getDocumentSymbols(KGEN::LIT::ASTDecl *decl,
                           std::vector<llvm::lsp::DocumentSymbol> &symbols);
 
   /// Get a document symbol with the given ASTDecl, appending it to the given
   /// vector. The provided functor defines whether a decl should be included in
   /// the symbol list.
-  void getDocumentSymbols(MojoASTDeclRef decl,
-                          std::vector<llvm::lsp::DocumentSymbol> &symbols,
-                          function_ref<bool(MojoASTDeclRef)> shouldIncludeDecl);
+  void getDocumentSymbols(
+      KGEN::LIT::ASTDecl *decl, std::vector<llvm::lsp::DocumentSymbol> &symbols,
+      function_ref<bool(KGEN::LIT::ASTDecl *)> shouldIncludeDecl);
 
   /// Recursively process the document strings in decls nested within `decl`.
   /// The provided functor defines whether a decl should be processed. If the
   /// main document represents a REPL module, `curReplDecl` is the AST decl for
   /// the REPL module that contains `decl`. In the case of a normal text
   /// document, `curReplDecl` is null.
-  void processDocStrings(MojoDocStrings &docStrings, MojoASTDeclRef decl,
-                         unsigned bufferId,
-                         function_ref<bool(MojoASTDeclRef)> shouldIncludeDecl,
-                         MojoASTDeclRef curReplDecl = {});
+  void
+  processDocStrings(MojoDocStrings &docStrings, KGEN::LIT::ASTDecl *decl,
+                    unsigned bufferId,
+                    function_ref<bool(KGEN::LIT::ASTDecl *)> shouldIncludeDecl,
+                    KGEN::LIT::ASTDecl *curReplDecl = nullptr);
 
   /// Recursively process the document strings in decls nested within `decl`. If
   /// the main document represents a REPL module, `curReplDecl` is the AST decl
   /// for the REPL module that contains `decl`. In the case of a normal text
   /// document, `curReplDecl` is null.
-  void processDocStrings(MojoDocStrings &docStrings, MojoASTDeclRef decl,
-                         MojoASTDeclRef curReplDecl = {});
+  void processDocStrings(MojoDocStrings &docStrings, KGEN::LIT::ASTDecl *decl,
+                         KGEN::LIT::ASTDecl *curReplDecl = nullptr);
 
   /// Check the given the parsed module decl for high-level semantic issues. Any
   /// errors are reported to the source manager.
-  void checkModuleSemantics(MojoASTDeclRef decl);
+  void checkModuleSemantics(KGEN::LIT::ASTDecl *decl);
 
   /// Starts the document parse task. This must be invoked _after_ construction,
   /// because there is setup code that runs after the constructor that has to be
@@ -508,7 +509,7 @@ public:
     SmallVector<std::pair<StringRef, Type>> persistentVariables;
 
     /// The AST decl for the module containing this code block.
-    MojoASTDeclRef decl;
+    KGEN::LIT::ASTDecl *decl = nullptr;
 
     /// The indent of the code within the contents.
     unsigned contentsIndent;
@@ -527,8 +528,8 @@ public:
   /// represents a REPL module, `curReplDecl` is the AST decl for the REPL
   /// module that contains `decl`. In the case of a normal text document,
   /// `curReplDecl` is null.
-  void addDocString(MojoDocument &mainDoc, MojoASTDeclRef decl,
-                    MojoASTDeclRef curReplDecl, unsigned bufferId);
+  void addDocString(MojoDocument &mainDoc, KGEN::LIT::ASTDecl *decl,
+                    KGEN::LIT::ASTDecl *curReplDecl, unsigned bufferId);
 
   /// When true, parse and type-check code blocks inside doc strings. Defaults
   /// to off, since docstring examples need not be fully correct Mojo code.
@@ -636,7 +637,7 @@ private:
   std::string contents;
 
   /// The AST decl for the module containing this document.
-  MojoASTDeclRef parsedDecl;
+  KGEN::LIT::ASTDecl *parsedDecl = nullptr;
 
   /// The doc strings within this document.
   MojoDocStrings docStrings;
@@ -672,7 +673,7 @@ public:
     unsigned bufferId = 0;
 
     /// The AST decl for the module containing this cell.
-    MojoASTDeclRef decl;
+    KGEN::LIT::ASTDecl *decl = nullptr;
 
     /// The persistent REPL variables defined before this cell.
     SmallVector<std::pair<StringRef, Type>> persistentVariables;

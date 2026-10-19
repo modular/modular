@@ -122,3 +122,29 @@ def test_mismatched_snapshot_raises(
     runtime = EplbRuntime(PipelineRuntimeConfig(), _METADATA, devices=[])
     with pytest.raises(ValueError, match="doesn't match model"):
         runtime.install_placement(_ep_config(), n_groups=1)
+
+
+@pytest.mark.parametrize(
+    ("redundant", "profile", "folded"),
+    [(0, False, True), (1, False, False), (0, True, False)],
+)
+def test_router_fold_needs_a_permutation_and_no_profiling(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    redundant: int,
+    profile: bool,
+    folded: bool,
+) -> None:
+    monkeypatch.setenv(
+        EPLB_STATS_ENV, str(_write_snapshot(tmp_path / "snap.json"))
+    )
+    runtime = EplbRuntime(
+        PipelineRuntimeConfig(
+            eplb_redundant_experts_per_gpu=redundant, eplb_profile=profile
+        ),
+        _METADATA,
+        devices=[],
+    )
+    config = _ep_config()
+    runtime.install_placement(config, n_groups=1)
+    assert config.eplb_router_folded is folded

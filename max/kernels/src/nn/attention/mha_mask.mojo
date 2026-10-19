@@ -67,7 +67,7 @@ struct MaskName(EnumLike, Equatable, Writable):
     ].values
 
     comptime _enum_case_types = TypeList.splat[
-        ParameterList[Self._enum_case_names].size, NoneType
+        ParameterList[Self._enum_case_names].length, NoneType
     ].values
 
     @inline(.always)
@@ -2306,7 +2306,7 @@ struct MaterializedMask[
                     )
                 ):
                     adjusted_coord[rank - 1] = coord[3] + i
-                    retval[i] = self.mask_tensor.load[width=1](
+                    retval[i] = self.mask_tensor.load(
                         Coord(adjusted_coord)
                     ).cast[dtype]()
 
@@ -3180,7 +3180,9 @@ struct RelativeLogitsMask[
             # funnel shift can realign them by one element when `lo` is odd.
             var lo_even = lo & ~1
             if lo_even >= 0 and lo_even + BN + 2 <= extent:
-                var words = (row_ptr + lo_even).bitcast[UInt32]()
+                var words = row_ptr.unsafe_offset(lo_even).unsafe_bitcast[
+                    UInt32
+                ]()
                 var shift = UInt32(lo & 1) * 16
                 var w = words[0]
                 comptime for m in range(BN // 2):

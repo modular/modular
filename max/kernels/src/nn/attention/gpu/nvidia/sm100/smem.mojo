@@ -26,6 +26,7 @@ Non-shared-mode memory layout (low to high address):
     [q_scale: BM * scale_dtype (0 when scale_dtype is invalid)]
     [k_scale: num_k_scale_bufs * BN * scale_dtype (0 when invalid)]
     [mbars: FA4MiscMBars.size SharedMemBarriers]
+    [tmem_addr: 1 UInt32]
 
 All K stages are contiguous, followed by all V stages contiguous.
 
@@ -38,6 +39,7 @@ Shared-KV-mode memory layout (low to high address):
     [q_scale: BM * scale_dtype (0 when scale_dtype is invalid)]
     [k_scale: num_k_scale_bufs * BN * scale_dtype (0 when invalid)]
     [mbars: FA4MiscMBars.size SharedMemBarriers]
+    [tmem_addr: 1 UInt32]
 
 In shared mode, K_nope and V alternate in the same buffer, and rope data is
 stored separately at half the staging rate. k_smem_base() and v_smem_base()
@@ -86,7 +88,7 @@ struct SM100AttentionSMem[
     """Shared memory layout manager for SM100 Flash Attention kernels.
 
     Stores a base pointer into dynamic shared memory and provides accessor
-    methods for each region (Q, K, V, correction, mbarriers).
+    methods for each region (Q, K, V, correction, mbarriers, tmem address).
     All byte-offset arithmetic is comptime so the accessors compile down to a
     single pointer add + bitcast.
 
@@ -144,8 +146,8 @@ struct SM100AttentionSMem[
     # branch: `bytes_per_subtile = BN * sub_depth * qkv_dt + 2 * mbar_size` --
     # the two per-slot barriers are part of the slot and must NOT be dropped
     # from this reconciliation), so the struct total
-    # reconciles with it — the reservation must EQUAL this struct or the mbar
-    # region laid out after KV spills past it (OOB __shared__). rope and
+    # reconciles with it — the reservation must EQUAL this struct or the mbar /
+    # tmem_addr regions laid out after KV spill past it (OOB __shared__). rope and
     # scale are 0 on the WS MHA path (enforced by `supported()`), so a sub-tile is
     # pure K/V data. `use_ws == False` folds to the byte-identical non-WS path.
     comptime ws_subtile_bytes: Int = (
@@ -209,7 +211,7 @@ struct SM100AttentionSMem[
     # 1Q, `BM` for 2Q) only happens to be correct when BM==128/256. For the
     # warp-specialized MMA_M=32 path (BM=32) a BM-derived size would allocate
     # only 64 slots while `tid` reaches 255 -> OOB __shared__ writes that
-    # corrupt the trailing mbar region and spill past the allocation.
+    # corrupt the trailing mbar/tmem regions and spill past the allocation.
     comptime correction_byte_offset: Int = Self.kv_byte_offset + Self.kv_bytes
     comptime correction_bytes: Int = (
         2 * WARPGROUP_SIZE * size_of[DType.float32]()
@@ -276,14 +278,19 @@ struct SM100AttentionSMem[
         SharedMemBarrier
     ]()
 
+    # tmem_addr: 1 UInt32, immediately after the barriers.
+    comptime tmem_addr_byte_offset: Int = (
+        Self.mbar_byte_offset + Self.mbar_bytes
+    )
+
     # BLASST (arXiv 2512.12087) per-warp skip-vote region, placed after
-    # the barriers so it's 0 bytes (byte-identical layout) when off. Slot =
+    # tmem_addr so it's 0 bytes (byte-identical layout) when off. Slot =
     # (wg*2+phase)*4+warp_in_wg; double-buffered on phase since softmax can run
     # one block ahead of the MMA's P@V consumption.
     comptime _enable_blasst: Bool = get_defined_bool["ENABLE_BLASST", False]()
     comptime blasst_vote_slots: Int = 2 * 2 * 4 if Self._enable_blasst else 0
     comptime blasst_vote_byte_offset: Int = (
-        Self.mbar_byte_offset + Self.mbar_bytes
+        Self.tmem_addr_byte_offset + size_of[UInt32]()
     )
     comptime blasst_vote_bytes: Int = Self.blasst_vote_slots * size_of[UInt8]()
 
@@ -329,20 +336,22 @@ struct SM100AttentionSMem[
     def misc_mbars(self) -> Self.MiscMBarsType:
         """Return the FA4MiscMBars wrapper over the mbarrier region."""
         return Self.MiscMBarsType(
-            (self.base + Self.mbar_byte_offset).bitcast[SharedMemBarrier]()
+            self.base.unsafe_offset(Self.mbar_byte_offset).unsafe_bitcast[
+                SharedMemBarrier
+            ]()
         )
 
     @inline(.always)
     def q_smem(self) -> SharedMemPointer[Scalar[Self.qkv_dtype]]:
         """Base of the Q region (offset 0)."""
-        return (self.base + Self.q_byte_offset).bitcast[
+        return self.base.unsafe_offset(Self.q_byte_offset).unsafe_bitcast[
             Scalar[Self.qkv_dtype]
         ]()
 
     @inline(.always)
     def q_rope_smem(self) -> SharedMemPointer[Scalar[Self.rope_dtype]]:
         """Base of the Q rope region (after Q nope in smem)."""
-        return (self.base + Self.q_rope_byte_offset).bitcast[
+        return self.base.unsafe_offset(Self.q_rope_byte_offset).unsafe_bitcast[
             Scalar[Self.rope_dtype]
         ]()
 
@@ -355,12 +364,14 @@ struct SM100AttentionSMem[
         Parameters:
             output_type: Element type to reinterpret the Q region as.
         """
-        return (self.base + Self.q_byte_offset).bitcast[Scalar[output_type]]()
+        return self.base.unsafe_offset(Self.q_byte_offset).unsafe_bitcast[
+            Scalar[output_type]
+        ]()
 
     @inline(.always)
     def k_smem_base(self) -> SharedMemPointer[Scalar[Self.qkv_dtype]]:
         """Base of the K region (first stage, offset = kv_byte_offset)."""
-        return (self.base + Self.kv_byte_offset).bitcast[
+        return self.base.unsafe_offset(Self.kv_byte_offset).unsafe_bitcast[
             Scalar[Self.qkv_dtype]
         ]()
 
@@ -373,33 +384,35 @@ struct SM100AttentionSMem[
         Shared mode: Returns the same pointer as k_smem_base() since
         K_nope and V share the same buffer.
         """
-        return (self.base + Self.v_byte_offset).bitcast[
+        return self.base.unsafe_offset(Self.v_byte_offset).unsafe_bitcast[
             Scalar[Self.qkv_dtype]
         ]()
 
     @inline(.always)
     def rope_smem_base(self) -> SharedMemPointer[Scalar[Self.rope_dtype]]:
         """Base of the rope region (shared mode only)."""
-        return (self.base + Self.rope_byte_offset).bitcast[
+        return self.base.unsafe_offset(Self.rope_byte_offset).unsafe_bitcast[
             Scalar[Self.rope_dtype]
         ]()
 
     @inline(.always)
     def correction_smem(self) -> SharedMemPointer[Float32]:
         """Base of the correction region (BM Float32 elements)."""
-        return (self.base + Self.correction_byte_offset).bitcast[Float32]()
+        return self.base.unsafe_offset(
+            Self.correction_byte_offset
+        ).unsafe_bitcast[Float32]()
 
     @inline(.always)
     def q_scale_smem(self) -> SharedMemPointer[Scalar[Self.scale_dtype]]:
         """Base of the q_scale region (BM elements)."""
-        return (self.base + Self.q_scale_byte_offset).bitcast[
+        return self.base.unsafe_offset(Self.q_scale_byte_offset).unsafe_bitcast[
             Scalar[Self.scale_dtype]
         ]()
 
     @inline(.always)
     def k_scale_smem(self) -> SharedMemPointer[Scalar[Self.scale_dtype]]:
         """Base of the k_scale region (num_k_scale_bufs * BN elements)."""
-        return (self.base + Self.k_scale_byte_offset).bitcast[
+        return self.base.unsafe_offset(Self.k_scale_byte_offset).unsafe_bitcast[
             Scalar[Self.scale_dtype]
         ]()
 
@@ -425,7 +438,7 @@ struct SM100AttentionSMem[
             "the shared-key P region must be 16 B aligned; the P@V"
             " A-descriptor truncates a misaligned base instead of failing"
         )
-        return (self.base + Self.p_byte_offset).bitcast[
+        return self.base.unsafe_offset(Self.p_byte_offset).unsafe_bitcast[
             Scalar[Self.qkv_dtype]
         ]()
 
@@ -437,7 +450,16 @@ struct SM100AttentionSMem[
         parity `p` owns `[(wg*2 + p) * WARPGROUP_SIZE, +WARPGROUP_SIZE)`;
         `fa4_ws_exchange4` does that indexing.
         """
-        return (self.base + Self.ws_exchange_byte_offset).bitcast[Float32]()
+        return self.base.unsafe_offset(
+            Self.ws_exchange_byte_offset
+        ).unsafe_bitcast[Float32]()
+
+    @inline(.always)
+    def tmem_addr_ptr(self) -> SharedMemPointer[UInt32]:
+        """Pointer to the single UInt32 storing the TMEM address."""
+        return self.base.unsafe_offset(
+            Self.tmem_addr_byte_offset
+        ).unsafe_bitcast[UInt32]()
 
     @inline(.always)
     def blasst_vote_smem(self) -> SharedMemPointer[UInt8]:
@@ -446,10 +468,16 @@ struct SM100AttentionSMem[
         Slot `(wg*2 + phase)*4 + warp_in_wg` holds softmax warp `warp_in_wg`'s
         skip vote for warp group `wg` at S-consumer phase `phase`.
         """
-        return (self.base + Self.blasst_vote_byte_offset).bitcast[UInt8]()
+        return self.base.unsafe_offset(
+            Self.blasst_vote_byte_offset
+        ).unsafe_bitcast[UInt8]()
 
     @staticmethod
     @inline(.always)
     def smem_size() -> Int:
         """Total dynamic shared memory bytes required."""
-        return Self.blasst_vote_byte_offset + Self.blasst_vote_bytes
+        return (
+            Self.tmem_addr_byte_offset
+            + size_of[UInt32]()
+            + Self.blasst_vote_bytes
+        )

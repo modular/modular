@@ -13,8 +13,7 @@
 """Implements the gpu host package."""
 
 
-@__doc_inline
-from std._gpu.host import get_gpu_target
+from .info import default_accelerator, get_gpu_target
 
 from .constant_memory_mapping import ConstantMemoryMapping
 from .device_attribute import DeviceAttribute
@@ -39,6 +38,7 @@ from .device_graph import (
     DeviceGraphBuilder,
     DeviceGraphCache,
     DeviceGraphInput,
+    DeviceGraphInputKind,
     DeviceGraphNode,
     StableAddr,
 )

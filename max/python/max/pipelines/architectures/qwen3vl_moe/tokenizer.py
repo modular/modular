@@ -46,6 +46,7 @@ from max.pipelines.architectures.qwen3vl_moe.nn.video_processing import (
     preprocess_clip,
 )
 from max.pipelines.context import (
+    GrammarEnforcementState,
     ImageMetadata,
     TokenBuffer,
 )
@@ -997,6 +998,14 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
             else None
         )
 
+        grammar = (
+            request.response_format.grammar if request.response_format else None
+        )
+
+        grammar_state = GrammarEnforcementState.from_response_format(
+            request.response_format
+        )
+
         if self.max_length and encoded_prompt.shape[0] > self.max_length:
             raise PromptTooLongError(encoded_prompt.shape[0], self.max_length)
 
@@ -1161,6 +1170,8 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
             if max_gen_tokens is not None
             else self.max_length,
             json_schema=json_schema,
+            grammar=grammar,
+            grammar_state=grammar_state,
             log_probabilities=request.logprobs,
             log_probabilities_echo=request.echo,
             sampling_params=request.sampling_params,

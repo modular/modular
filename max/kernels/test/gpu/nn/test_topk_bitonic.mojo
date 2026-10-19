@@ -1649,15 +1649,15 @@ def test_unordered_small_n(ctx: DeviceContext) raises:
 struct _MirrorSink(TopkSink):
     """Writes each slot to `out` and a row-dependent image of it to `mirror`."""
 
-    var out: UnsafePointer[Int32, MutUntrackedOrigin]
-    var mirror: UnsafePointer[Int32, MutUntrackedOrigin]
+    var out: MutPointer[Int32, MutUntrackedOrigin]
+    var mirror: MutPointer[Int32, MutUntrackedOrigin]
     var row: Int
 
     @inline(.always)
     def __init__(
         out self,
-        out_ptr: UnsafePointer[Int32, MutAnyOrigin],
-        mirror: UnsafePointer[Int32, MutUntrackedOrigin],
+        out_ptr: MutPointer[Int32, MutAnyOrigin],
+        mirror: MutPointer[Int32, MutUntrackedOrigin],
         row: Int,
     ):
         self.out = out_ptr.unsafe_origin_cast[MutUntrackedOrigin]()
@@ -1687,20 +1687,20 @@ struct _MirrorBound(RowBound):
     comptime device_type: AnyType = Self
     comptime Sink = _MirrorSink
 
-    var bounds: UnsafePointer[Int32, ImmUntrackedOrigin]
-    var mirror: UnsafePointer[Int32, MutUntrackedOrigin]
+    var bounds: ImmPointer[Int32, ImmUntrackedOrigin]
+    var mirror: MutPointer[Int32, MutUntrackedOrigin]
 
     def __init__(
         out self,
-        bounds: UnsafePointer[Int32, ImmutAnyOrigin],
-        mirror: UnsafePointer[Int32, MutAnyOrigin],
+        bounds: ImmPointer[Int32, ImmutAnyOrigin],
+        mirror: MutPointer[Int32, MutAnyOrigin],
     ):
         self.bounds = bounds.unsafe_origin_cast[ImmUntrackedOrigin]()
         self.mirror = mirror.unsafe_origin_cast[MutUntrackedOrigin]()
 
     @inline(.always)
     def row(
-        self, row: Int, out_idxs: UnsafePointer[Int32, MutAnyOrigin]
+        self, row: Int, out_idxs: MutPointer[Int32, MutAnyOrigin]
     ) -> Tuple[Int, _MirrorSink]:
         return (Int(self.bounds[row]), _MirrorSink(out_idxs, self.mirror, row))
 

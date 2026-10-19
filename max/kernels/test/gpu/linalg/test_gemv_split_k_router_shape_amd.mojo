@@ -26,13 +26,13 @@ the same kernel catches indexing errors in the `grid.x=M` path.
 
 from std.math import ceildiv
 from std.random import randn, random_float64, seed
-from std.sys import simd_width_of, default_accelerator
+from std.sys import simd_width_of
 from std.testing import assert_equal
 
 from internal_utils import assert_almost_equal
 from layout import TileTensor, row_major
 from linalg.gemv import gemv_split_k
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, default_accelerator
 
 # K3's MoE router gate at TP8: N = routed-expert count, K = hidden_size. The
 # weight is replicated (not TP-split, see `KimiK3MoEGate`), so this is the

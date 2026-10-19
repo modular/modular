@@ -37,10 +37,7 @@ def c_value(row: Int, col: Int) -> Float32:
 
 def bulk_tile_kernel[
     MG: Int, NG: Int, IM: Int, IN: Int, output_layout: TensorLayout
-](
-    output: TileTensor[.float32, output_layout, MutAnyOrigin],
-    legacy_output: TileTensor[.float32, output_layout, MutAnyOrigin],
-):
+](output: TileTensor[.float32, output_layout, MutAnyOrigin],):
     comptime IK = 16
     comptime KG = 3
     var tc = TensorCore[.float32, .float16, (IM, IN, IK)]()
@@ -69,13 +66,6 @@ def bulk_tile_kernel[
         c_storage.unsafe_ptr(),
         Layout(coord[MG * NG, CR], coord[CR + 1, 1]),
     )
-    var legacy_c_storage = stack_allocation[.float32, address_space=.LOCAL](
-        row_major[MG * NG, CR + 1]()
-    )
-    var legacy_c = TileTensor(
-        legacy_c_storage.unsafe_ptr(),
-        Layout(coord[MG * NG, CR], coord[CR + 1, 1]),
-    )
     var a_tile = stack_allocation[.float16, address_space=.LOCAL](
         row_major[IM, IK]()
     )
@@ -93,7 +83,6 @@ def bulk_tile_kernel[
             var fragment = tc.load_c(c_tile)
             comptime for reg in range(CR):
                 c[n * MG + m, reg] = fragment[0, reg]
-                legacy_c[n * MG + m, reg] = fragment[0, reg]
     comptime for kg in range(KG):
         comptime for m in range(MG):
             for r in range(IM):
@@ -110,11 +99,6 @@ def bulk_tile_kernel[
             comptime for reg in range(BR):
                 b[n, reg] = fragment[reg, 0]
         tc.mma(a.vectorize[1, AR](), b.vectorize[1, BR](), c.vectorize[1, CR]())
-        tc.mma(
-            a.to_layout_tensor().vectorize[1, AR](),
-            b.to_layout_tensor().vectorize[1, BR](),
-            legacy_c.to_layout_tensor().vectorize[1, CR](),
-        )
     comptime for m in range(MG):
         comptime for n in range(NG):
             var fragment = stack_allocation[.float32, address_space=.LOCAL](
@@ -123,9 +107,6 @@ def bulk_tile_kernel[
             comptime for reg in range(CR):
                 fragment[0, reg] = c[n * MG + m, reg]
             tc.store_d(output.tile[IM, IN](m, n), fragment)
-            comptime for reg in range(CR):
-                fragment[0, reg] = legacy_c[n * MG + m, reg]
-            tc.store_d(legacy_output.tile[IM, IN](m, n), fragment)
 
 
 def test_bulk_tile[
@@ -134,23 +115,17 @@ def test_bulk_tile[
     comptime K = 48
     comptime output_layout = row_major[MG * IM, NG * IN]()
     var output = HostDeviceTileTensor[.float32](output_layout, ctx)
-    var legacy = HostDeviceTileTensor[.float32](output_layout, ctx)
     _ = output.host_tensor().fill(-999)
-    _ = legacy.host_tensor().fill(-999)
     output.to_device()
-    legacy.to_device()
     ctx.enqueue_function[
         bulk_tile_kernel[MG, NG, IM, IN, type_of(output_layout)]
     ](
         output.device_tensor().as_unsafe_any_origin(),
-        legacy.device_tensor().as_unsafe_any_origin(),
         grid_dim=1,
         block_dim=WARP_SIZE,
     )
     output.to_host()
-    legacy.to_host()
     var actual = output.host_tensor()
-    var previous = legacy.host_tensor()
     for row in range(MG * IM):
         for col in range(NG * IN):
             var expected = c_value(row, col)
@@ -160,7 +135,6 @@ def test_bulk_tile[
                     * b_value(k, col).cast[.float32]()
                 )
             assert_equal(actual[row, col], expected)
-            assert_equal(previous[row, col], expected)
 
 
 def main() raises:

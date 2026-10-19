@@ -15,7 +15,13 @@
 from std.algorithm.functional import vectorize
 from max.gpu import block_dim, block_idx, thread_idx
 from max.gpu.host import DeviceContext, DeviceBuffer, DeviceAttribute
-from layout import Coord, TensorEngine, TensorLayout, TileTensor
+from layout import (
+    Coord,
+    TensorEngine,
+    TensorLayout,
+    TileTensor,
+    coord_to_index_list,
+)
 from layout.tile_layout import Layout
 from std.math import align_down, ceildiv
 from std.sys.info import align_of
@@ -50,8 +56,8 @@ def _vectorized_copy_row[
     dtype: DType,
     simd_width: Int,
 ](
-    input_ptr: UnsafePointer[mut=False, Scalar[dtype], _],
-    output_ptr: UnsafePointer[mut=True, Scalar[dtype], _],
+    input_ptr: ImmPointer[Scalar[dtype], _],
+    output_ptr: MutPointer[Scalar[dtype], _],
     row_length: Int,
     threads_per_row: Int,
 ):
@@ -96,9 +102,7 @@ def _vectorized_copy_row[
         def _copy[n: Int](blk: Int) {input_ptr, output_ptr, mut}:
             for j in range(n):
                 var off = my_start + (blk + j) * stride
-                output_ptr.store[width=simd_width](
-                    off, input_ptr.load[width=simd_width](off)
-                )
+                output_ptr.store(off, input_ptr.load[width=simd_width](off))
 
         vectorize[simd_width](num_blocks, _copy)
 
@@ -144,8 +148,8 @@ def padded_copy_kernel[
         var output_offset = Int(output_tensor.layout(coord))
         var input_offset = row * _row_length
 
-        var output_ptr = output_tensor.ptr + output_offset
-        var input_ptr = input_tensor.ptr + input_offset
+        var output_ptr = output_tensor.ptr.unsafe_offset(output_offset)
+        var input_ptr = input_tensor.ptr.unsafe_offset(input_offset)
 
         _vectorized_copy_row[dtype, simd_width](
             input_ptr,
@@ -221,11 +225,11 @@ def _pad_constant_impl[
 def pad_constant[
     rank: Int, dtype: DType, padding_type: DType
 ](
-    output: UnsafePointer[mut=True, Scalar[dtype], _],
+    output: MutPointer[Scalar[dtype], _],
     output_shape: IndexList[rank],
-    input: UnsafePointer[mut=False, Scalar[dtype], _],
+    input: ImmPointer[Scalar[dtype], _],
     input_shape: IndexList[rank],
-    paddings: UnsafePointer[mut=False, Scalar[padding_type], _],
+    paddings: ImmPointer[Scalar[padding_type], _],
     constant: Scalar[dtype],
     ctx: DeviceContext,
 ) raises:
@@ -256,6 +260,43 @@ def pad_constant[
     """
 
     var input_strides = Array[Int, rank]()
+    _fill_strides_indexlist[rank](input_shape, input_strides)
+
+    var input_tensor = TileTensor(
+        input,
+        Layout(Coord(input_shape), Coord(input_strides)),
+    )
+    pad_constant[rank, dtype, padding_type](
+        output, output_shape, input_tensor, paddings, constant, ctx
+    )
+
+
+def pad_constant[
+    rank: Int, dtype: DType, padding_type: DType
+](
+    output: MutPointer[Scalar[dtype], _],
+    output_shape: IndexList[rank],
+    input: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
+    paddings: ImmPointer[Scalar[padding_type], _],
+    constant: Scalar[dtype],
+    ctx: DeviceContext,
+) raises:
+    """
+    Fill `output` with values from `input`, and edges padded with `constant`
+    based on `paddings`.
+
+    Args:
+        output: The output buffer.
+        output_shape: The output shape.
+        input: The input tensor, copied with its own layout.
+        paddings: Ordered (before, after) padding sizes for each axis.
+        constant: The constant to pad output with.
+        ctx: Device context for participating GPU.
+    """
+
+    var input_shape = rebind[IndexList[rank]](
+        coord_to_index_list(input.layout.shape_coord())
+    )
     var output_strides = Array[Int, rank]()
 
     var output_size: Int = 1
@@ -268,20 +309,14 @@ def pad_constant[
     )
     output_buffer.enqueue_fill(constant)
 
-    _fill_strides_indexlist[rank](input_shape, input_strides)
     _fill_strides_indexlist[rank](output_shape, output_strides)
-
-    var input_tensor = TileTensor(
-        input,
-        Layout(Coord(input_shape), Coord(input_strides)),
-    )
 
     var pre_pad_offset = 0
 
     for i in range(rank):
         pre_pad_offset += Int(paddings[2 * i]) * output_strides[i]
 
-    var adjusted_output_ptr = output + pre_pad_offset
+    var adjusted_output_ptr = output.unsafe_offset(pre_pad_offset)
 
     var output_tensor = TileTensor(
         adjusted_output_ptr,
@@ -289,7 +324,7 @@ def pad_constant[
     )
 
     _pad_constant_impl[dtype](
-        input_tensor,
+        input,
         output_tensor,
         ctx,
     )
@@ -374,33 +409,28 @@ def padded_index_mode_kernel[
     for row in range(start_row, end_row, rows_per_iter):
         var out_coord = output_tensor.layout.idx2crd(row * _row_length)
 
-        # Compute the source base offset for axes 0..rank-2 via the shared
+        # Compute the source coordinate for axes 0..rank-2 via the shared
         # index map. The last axis is handled per-element below.
-        var base_offset = 0
+        var src_idx = IndexList[rank]()
         comptime for axis in range(output_tensor.rank - 1):
-            var in_len = Int(input_tensor.layout.shape[axis]().value())
-            var src = _pad_src_index[mode](
-                Int(out_coord[axis].value()), in_len, Int(pre_pads[axis])
+            var in_len = Int(input_tensor.dim[axis]())
+            src_idx[axis] = _pad_src_index[mode](
+                Int(out_coord[axis]), in_len, Int(pre_pads[axis])
             )
-            base_offset += src * Int(input_tensor.layout.stride[axis]().value())
 
-        var in_last = Int(
-            input_tensor.layout.shape[output_tensor.rank - 1]().value()
-        )
+        var in_last = Int(input_tensor.dim[output_tensor.rank - 1]())
         var pre_last = Int(pre_pads[output_tensor.rank - 1])
-        var in_stride_last = Int(
-            input_tensor.layout.stride[output_tensor.rank - 1]().value()
-        )
 
-        var output_ptr = output_tensor.ptr + Int(
-            output_tensor.layout(out_coord)
-        )
-        var input_ptr = input_tensor.ptr + base_offset
+        var out_idx = rebind[IndexList[rank]](coord_to_index_list(out_coord))
 
         var tid = thread_idx.x % threads_per_row
         for j in range(tid, _row_length, threads_per_row):
-            var src_last = _pad_src_index[mode](j, in_last, pre_last)
-            output_ptr[j] = input_ptr[src_last * in_stride_last]
+            src_idx[rank - 1] = _pad_src_index[mode](j, in_last, pre_last)
+            out_idx[rank - 1] = j
+            output_tensor.store(
+                Coord(out_idx),
+                input_tensor.load[invariant=False](Coord(src_idx)),
+            )
 
 
 def _pad_index_mode_impl[
@@ -412,11 +442,11 @@ def _pad_index_mode_impl[
     max_threads: Int = 256,
     threads_per_row: Int = 16,
 ](
-    output: UnsafePointer[mut=True, Scalar[dtype], _],
+    output: MutPointer[Scalar[dtype], _],
     output_shape: IndexList[rank],
-    input: UnsafePointer[mut=False, Scalar[dtype], _],
+    input: ImmPointer[Scalar[dtype], _],
     input_shape: IndexList[rank],
-    paddings: UnsafePointer[mut=False, Scalar[padding_type], _],
+    paddings: ImmPointer[Scalar[padding_type], _],
     ctx: DeviceContext,
 ) raises:
     """Launch `padded_index_mode_kernel` for the given pad `mode`.
@@ -495,11 +525,11 @@ def _pad_index_mode_impl[
 def pad_reflect[
     rank: Int, dtype: DType, padding_type: DType
 ](
-    output: UnsafePointer[mut=True, Scalar[dtype], _],
+    output: MutPointer[Scalar[dtype], _],
     output_shape: IndexList[rank],
-    input: UnsafePointer[mut=False, Scalar[dtype], _],
+    input: ImmPointer[Scalar[dtype], _],
     input_shape: IndexList[rank],
-    paddings: UnsafePointer[mut=False, Scalar[padding_type], _],
+    paddings: ImmPointer[Scalar[padding_type], _],
     ctx: DeviceContext,
 ) raises:
     """
@@ -538,11 +568,11 @@ def pad_reflect[
 def pad_repeat[
     rank: Int, dtype: DType, padding_type: DType
 ](
-    output: UnsafePointer[mut=True, Scalar[dtype], _],
+    output: MutPointer[Scalar[dtype], _],
     output_shape: IndexList[rank],
-    input: UnsafePointer[mut=False, Scalar[dtype], _],
+    input: ImmPointer[Scalar[dtype], _],
     input_shape: IndexList[rank],
-    paddings: UnsafePointer[mut=False, Scalar[padding_type], _],
+    paddings: ImmPointer[Scalar[padding_type], _],
     ctx: DeviceContext,
 ) raises:
     """

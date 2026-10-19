@@ -22,7 +22,7 @@ from max.gpu import (
     warp_id,
     lane_id,
 )
-from max.gpu.sync import barrier, syncwarp
+from max.gpu.sync import barrier
 from max.gpu.globals import WARPGROUP_SIZE
 from max.gpu.primitives.grid_controls import launch_dependent_grids
 from max.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
@@ -33,7 +33,10 @@ from max.gpu.memory import (
 )
 from max.gpu.sync import named_barrier
 from max.gpu.compute.arch.tcgen05 import (
+    tcgen05_alloc,
+    tcgen05_dealloc,
     tcgen05_fence_before,
+    tcgen05_release_allocation_lock,
 )
 from layout.swizzle import make_swizzle
 from layout.tma_async import (
@@ -63,7 +66,6 @@ from std.utils.numerics import get_accum_type, min_or_neg_inf
 from std.utils.static_tuple import StaticTuple
 
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
-    attn_tmem_addr,
     elect,
     elect_mma_arrive,
     expect_bytes_pred,
@@ -361,10 +363,10 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
             MaskType=Self.MaskType,
             SplitAccumType=Self.SplitAccumType,
         ],
-        d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
+        d_indices: OptionalReg[MutPointer[Int32, MutAnyOrigin]],
         indices_stride_dev: Int32,
         topk_lengths: Self.TopkLengthsPtrType,
-        scales_ptr: UnsafePointer[Float32, origin=MutAnyOrigin],
+        scales_ptr: MutPointer[Float32, origin=MutAnyOrigin],
         attn_sink_ptr: Self.AttnSinkPtrType,
         # Extra KV parameters: separate cache for always-attend tokens.
         # Single TMA covering full 576-byte row (all-FP8).
@@ -374,12 +376,10 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
             desc_shape=coord[1, Self.kv_gather4_box_w],
         ],
         extra_kv_lut: Self.KVLUTType,
-        extra_d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
+        extra_d_indices: OptionalReg[MutPointer[Int32, MutAnyOrigin]],
         extra_topk_lengths: Self.TopkLengthsPtrType,
         extra_indices_stride_dev: Int32,
-        extra_scales_ptr: OptionalReg[
-            UnsafePointer[Float32, origin=MutAnyOrigin]
-        ],
+        extra_scales_ptr: OptionalReg[MutPointer[Float32, origin=MutAnyOrigin]],
         scalar_args: TileTensor[
             .int64,
             RowMajorLayout[ComptimeInt[3]],
@@ -418,9 +418,9 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
         comptime num_reg_keep_fp8tofp16 = 184
         var indices_stride = Int(indices_stride_dev)
         var extra_indices_stride = Int(extra_indices_stride_dev)
-        var batch_size = Int(scalar_args.ptr[0])
+        var batch_size = Int(scalar_args[0])
         var selection_lag = Int(selection_lag_dev)
-        var q_max_seq_len = Int(scalar_args.ptr[1])
+        var q_max_seq_len = Int(scalar_args[1])
         var num_partitions = Int(mla_decode_pack.num_partitions)
         var mask = mla_decode_pack.mask
         var valid_length = mla_decode_pack.valid_length
@@ -441,7 +441,7 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
         ](
             kv_lut,
             rebind[
-                UnsafePointer[
+                ImmPointer[
                     Scalar[Self.ValidLengthType.dtype],
                     ImmutAnyOrigin,
                     address_space=.GENERIC,
@@ -547,7 +547,9 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
             alignment=128,
             name="mha_dynamic_shared_memory",
         ]()
-        var kv_smem_bf16 = q_smem + Self.BlockElems * Self.NumQKBlocks
+        var kv_smem_bf16 = q_smem.unsafe_offset(
+            Self.BlockElems * Self.NumQKBlocks
+        )
 
         # All-FP8 KV layout: TMA loads the full 576-byte row as FP8 into
         # the upper half of the first BF16 stage (dense-style overlay, see
@@ -556,10 +558,9 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
         # FP8 needs NumQKBlocks * BlockElems = 36864 bytes per stage, so
         # placing FP8 at the upper half of BF16 keeps two staged FP8 buffers
         # inside the BF16 allocation without collision.
-        var kv_smem_fp8 = (
-            kv_smem_bf16.bitcast[Scalar[Self.fp8_type]]()
-            + Self.BlockElems * Self.NumQKBlocks
-        )
+        var kv_smem_fp8 = kv_smem_bf16.unsafe_bitcast[
+            Scalar[Self.fp8_type]
+        ]().unsafe_offset(Self.BlockElems * Self.NumQKBlocks)
 
         comptime kv_total_stages = Self.config.num_kv_stages
         # to reuse the K for V as well, we break KV as 9 stages of 64x64 to cover 64x576
@@ -569,7 +570,9 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
         # We move P to the last slot of KV pipeline SO now we have tile of 64x
         # 32 of float or 64x64 of FP16 to save output into
         # tiles in SMEM and smooth the pipeline for the next batch if we use splitk
-        var out_smem_start = kv_smem_bf16.bitcast[Scalar[Self.output_type]]()
+        var out_smem_start = kv_smem_bf16.unsafe_bitcast[
+            Scalar[Self.output_type]
+        ]()
         # there is potential to have two Tmem for S, because we have two K so we can
         # unblock the MMA while loading S to reg for softmax
         # if it was splitk we need to use the extra P slot. If not we need
@@ -581,12 +584,12 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
 
         # max_smem is double-buffered (2 x 128 elements) to avoid a race
         # condition in softmax; li_smem is a single 128-element buffer.
-        var max_smem = (out_smem + out_smem_total).bitcast[
+        var max_smem = out_smem.unsafe_offset(out_smem_total).unsafe_bitcast[
             Scalar[Self.AccumType]
         ]()
 
-        var li_smem = (
-            max_smem + 2 * WARPGROUP_SIZE
+        var li_smem = max_smem.unsafe_offset(
+            2 * WARPGROUP_SIZE
         )  # 128 x1 for SMEM correction for Softmax
 
         # Scale SMEM for blockwise FP8 scaling (e8m0, 1 byte per scale).
@@ -594,20 +597,25 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
         # stage 1 at scale_smem_base + scale_smem_per_stage.
         # When scale_block_size == 0 (tensorwise), scale_smem_per_stage is 0
         # and this region is empty.
-        var scale_smem_base = (li_smem + WARPGROUP_SIZE).bitcast[UInt8]()
+        var scale_smem_base = li_smem.unsafe_offset(
+            WARPGROUP_SIZE
+        ).unsafe_bitcast[UInt8]()
 
         #  Now we have to define MBARS for the kernel
         var mbar_base: MBarType = (
             (
-                scale_smem_base
-                + Self.config.scale_smem_per_stage * Self.config.num_kv_stages
+                scale_smem_base.unsafe_offset(
+                    Self.config.scale_smem_per_stage * Self.config.num_kv_stages
+                )
             )
-            .bitcast[SharedMemBarrier]()
+            .unsafe_bitcast[SharedMemBarrier]()
             .as_unsafe_any_origin()
         )
 
         var mbar_q: MBarType = mbar_base  # q uses 0
-        var mbar_kv_base: MBarType = mbar_base + 1  # barrier total[1]
+        var mbar_kv_base: MBarType = mbar_base.unsafe_offset(
+            1
+        )  # barrier total[1]
 
         var kv_cvt2mma_pipe = KVPipelineGeneric[
             num_kv_stages=Self.config.num_kv_stages,  # 2
@@ -617,7 +625,9 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
         ](mbar_kv_base)
 
         # Move mbar_base to the first free barrier *after* KV:
-        mbar_base = mbar_kv_base + kv_cvt2mma_pipe.num_mbars()  # kv uses 1..4
+        mbar_base = mbar_kv_base.unsafe_offset(
+            kv_cvt2mma_pipe.num_mbars()
+        )  # kv uses 1..4
         # Move mbar_base to the first free barrier *after* k done:
         var s_bars = DecodeSM100MiscMBars[
             num_stages=2, num_producer=1, num_consumer=WARPGROUP_SIZE
@@ -667,7 +677,9 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
         ](
             mbar_base
         )  # kv_load2cvt_pipe uses 23..26
-        mbar_base += kv_load2cvt_pipe.num_mbars()  # barrier total [27]
+        mbar_base = mbar_base.unsafe_offset(
+            kv_load2cvt_pipe.num_mbars()
+        )  # barrier total [27]
         # We need (num_out_stages * 2) more barriers for the out pipeline.
         # num_out_stages = (Depth/BN_QK) / blocks_per_stage = 8/2 = 4, so 4*2 = 8.
         comptime OutPipeType = DecodeOutProducer[Self.output_type, Self.config]
@@ -678,7 +690,7 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
         ](
             mbar_base
         )  # Write uses 27 + (num_out_stages)*2
-        mbar_base += out_pipeline.num_mbars()
+        mbar_base = mbar_base.unsafe_offset(out_pipeline.num_mbars())
 
         # Index pipeline: warp 11 (producer, 32 threads) transforms
         # d_indices → TMA rows and loads scales, then signals readiness.
@@ -703,14 +715,20 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
         # Reuse across tiles is safe: the convert WG re-arms a stage's bars
         # only after its cvt2mma acquire, i.e. after QK/PV released them.
         var cvt_blk_bars: MBarType = mbar_base
-        mbar_base += Self.NumQKBlocks * Self.config.num_kv_stages
+        mbar_base = mbar_base.unsafe_offset(
+            Self.NumQKBlocks * Self.config.num_kv_stages
+        )
+
+        var ptr_tmem_addr = (mbar_base).unsafe_bitcast[UInt32]()
 
         # Double-buffered SMEM for transformed gather4 row indices.
         # d_indices stores physical_block * page_size + offset; we use
         # kv_lut.get_tma_row() to convert to actual TMA row indices.
         # Two BN_QK-sized buffers (2 * 64 * 4 = 512 bytes) for pipelining
         # between warp 11 (producer) and warp 8 (consumer).
-        var idx_smem_base = mbar_base.bitcast[Int32]()
+        var idx_smem_base = ptr_tmem_addr.unsafe_offset(1).unsafe_bitcast[
+            Int32
+        ]()
         comptime idx_smem_stride = Self.config.BN_QK  # 64 Int32 values per stage
 
         var warp_idx = UInt32(warp_id[broadcast=True]())
@@ -737,6 +755,10 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
                 o_tma.prefetch_descriptor()
                 comptime if Self.has_extra_kv:
                     extra_k_tma.prefetch_descriptor()
+        elif warp_idx == 9:
+            tcgen05_alloc[Self.config.cta_group](
+                ptr_tmem_addr, Self.config.sm100_tmem_cols
+            )
         barrier()
 
         if warp_idx < 4:  # softmax warpgroup
@@ -751,7 +773,7 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
             comptime if Self.has_attn_sink:
                 # The softmax row this thread owns; lane_id() would fold rows
                 # 32-63 onto 0-31 and give them the wrong heads' sinks.
-                var row = Int(thread_idx.x) & 0x3F
+                var row = thread_idx.x & 0x3F
                 var head_idx_local = block_idx.x * Self.config.BM + row
                 if head_idx_local < Self.config.num_q_heads:
                     attn_sink_log2 = attn_sink_ptr.value()[head_idx_local].cast[
@@ -772,7 +794,7 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
                 q_len_fold=Self.q_len_fold,
                 sparse_row=Self.sparse_row,
             ](
-                attn_tmem_addr[cluster_size=1](),
+                ptr_tmem_addr[0],
                 s_bars,
                 p_bars,
                 kv_smem_bf16.as_unsafe_any_origin(),
@@ -794,7 +816,7 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
         elif warp_idx >= 4 and warp_idx < 8:  # correction warpgroup
             warpgroup_reg_dealloc[num_reg_correction]()
             Self.Common_MLA_Op.Correction(
-                attn_tmem_addr[cluster_size=1](),
+                ptr_tmem_addr[0],
                 o_bars,
                 c_bars,
                 corr_done_bars,
@@ -820,7 +842,7 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
                 )
             elif warp_idx == 9:
                 Self.mmaQK(
-                    attn_tmem_addr[cluster_size=1](),
+                    ptr_tmem_addr[0],
                     q_smem.as_unsafe_any_origin(),
                     kv_smem_bf16.as_unsafe_any_origin(),
                     mbar_q,
@@ -832,7 +854,7 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
                 )
             elif warp_idx == 10:
                 Self.mmaPV(
-                    attn_tmem_addr[cluster_size=1](),
+                    ptr_tmem_addr[0],
                     kv_smem_bf16.as_unsafe_any_origin(),
                     p_bars,
                     o_bars,
@@ -846,14 +868,17 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
                 # activates in the epilogue), so we use it to
                 # transform d_indices → TMA rows and load scales
                 # into SMEM, one tile ahead of warp 8's TMA loads.
-                var batch_d_indices_w11 = d_indices.unsafe_value() + (
-                    offset_position.q_token_idx * indices_stride
+                var batch_d_indices_w11 = (
+                    d_indices.unsafe_value().unsafe_offset(
+                        offset_position.q_token_idx * indices_stride
+                    )
                 )
                 var batch_extra_d_indices_w11 = extra_d_indices
                 comptime if Self.has_extra_kv:
                     batch_extra_d_indices_w11 = (
-                        extra_d_indices.unsafe_value()
-                        + (offset_position.q_token_idx * extra_indices_stride)
+                        extra_d_indices.unsafe_value().unsafe_offset(
+                            offset_position.q_token_idx * extra_indices_stride
+                        )
                     )
                 Self.idx_producer(
                     idx_bars,
@@ -897,17 +922,23 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
                 num_k_tiles,
                 scale_smem_base.as_unsafe_any_origin(),
             )
-        syncwarp()
+        barrier()
 
-        # PDL: the combine kernel can launch once every thread of the CTA has
-        # signaled (or exited), so each thread signals after its own work.
+        # PDL: Signal that this CTA is done so dependent grids (combine kernel) can start.
+        # This must be called by all threads in the CTA after all work is complete.
         comptime if Self.config.decoding_warp_split_k:
             launch_dependent_grids()
+
+        if warp_idx == 9:
+            tcgen05_release_allocation_lock[Self.config.cta_group]()
+            tcgen05_dealloc[Self.config.cta_group](
+                ptr_tmem_addr[0], Self.config.sm100_tmem_cols
+            )
 
     @staticmethod
     @inline(.always)
     def _transform_indices_to_smem(
-        d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
+        d_indices: OptionalReg[MutPointer[Int32, MutAnyOrigin]],
         idx_smem: SharedMemPointer[Int32],
         indices_base: Int,
         kv_lut: Self.KVLUTType,
@@ -945,9 +976,9 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
         ],
         idx_smem_base: SharedMemPointer[Int32],
         kv_lut: Self.KVLUTType,
-        d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
+        d_indices: OptionalReg[MutPointer[Int32, MutAnyOrigin]],
         topk: Int,
-        scales_ptr: UnsafePointer[Float32, origin=MutAnyOrigin],
+        scales_ptr: MutPointer[Float32, origin=MutAnyOrigin],
         scale_smem_base: SharedMemPointer[UInt8],
         offset_position: OffsetPosition[
             Self.config,
@@ -962,11 +993,9 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
         ],
         num_orig_blocks: Int,
         extra_kv_lut: Self.KVLUTType,
-        extra_d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
+        extra_d_indices: OptionalReg[MutPointer[Int32, MutAnyOrigin]],
         extra_topk: Int,
-        extra_scales_ptr: OptionalReg[
-            UnsafePointer[Float32, origin=MutAnyOrigin]
-        ],
+        extra_scales_ptr: OptionalReg[MutPointer[Float32, origin=MutAnyOrigin]],
     ):
         """Index transform producer running on warp 11 (32 threads).
 
@@ -1009,8 +1038,8 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
 
         # --- Produce first tile (no acquire — idx_free starts ready) ---
         if first_tile_from_orig:
-            var idx_smem = idx_smem_base + kv_stage_idx * UInt32(
-                Self.config.BN_QK
+            var idx_smem = idx_smem_base.unsafe_offset(
+                kv_stage_idx * UInt32(Self.config.BN_QK)
             )
             Self._transform_indices_to_smem(
                 d_indices,
@@ -1036,8 +1065,8 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
         var t: Int = 0
         while t < remaining_orig:
             idx_prod.acquire()
-            var idx_smem = idx_smem_base + kv_stage_idx * UInt32(
-                Self.config.BN_QK
+            var idx_smem = idx_smem_base.unsafe_offset(
+                kv_stage_idx * UInt32(Self.config.BN_QK)
             )
             Self._transform_indices_to_smem(
                 d_indices,
@@ -1069,8 +1098,8 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
 
             if not first_tile_from_orig:
                 # First tile from extra cache — no acquire.
-                var idx_smem = idx_smem_base + kv_stage_idx * UInt32(
-                    Self.config.BN_QK
+                var idx_smem = idx_smem_base.unsafe_offset(
+                    kv_stage_idx * UInt32(Self.config.BN_QK)
                 )
                 Self._transform_indices_to_smem(
                     extra_d_indices,
@@ -1095,8 +1124,8 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
             var te: Int = 0
             while te < num_extra_tiles:
                 idx_prod.acquire()
-                var idx_smem = idx_smem_base + kv_stage_idx * UInt32(
-                    Self.config.BN_QK
+                var idx_smem = idx_smem_base.unsafe_offset(
+                    kv_stage_idx * UInt32(Self.config.BN_QK)
                 )
                 Self._transform_indices_to_smem(
                     extra_d_indices,
@@ -1267,7 +1296,7 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
     @inline(.always)
     def _load_scales_for_tile(
         scale_smem_base: SharedMemPointer[UInt8],
-        scales_ptr: UnsafePointer[Float32, origin=MutAnyOrigin],
+        scales_ptr: MutPointer[Float32, origin=MutAnyOrigin],
         kv_lut: Self.KVLUTType,
         stage_idx: UInt32,
         tile_kv_row_start: UInt32,
@@ -1282,8 +1311,8 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
         and convert to e8m0 (1 byte each) in SMEM.
         """
         comptime scales_per_token = Self.config.scales_per_token
-        var scale_smem_stage = scale_smem_base + stage_idx * UInt32(
-            Self.config.scale_smem_per_stage
+        var scale_smem_stage = scale_smem_base.unsafe_offset(
+            stage_idx * UInt32(Self.config.scale_smem_per_stage)
         )
         var lane = thread_idx.x & 31
         var max_key = max(num_keys, UInt32(1)) - 1
@@ -1295,7 +1324,9 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
             var clamped_tok = min(tok_idx, max_key)
             # ONE page table lookup per row.
             var gmem_row = kv_lut.row_idx(batch_idx, clamped_tok)
-            var row_base = scales_ptr + Int(gmem_row) * scales_per_token
+            var row_base = scales_ptr.unsafe_offset(
+                Int(gmem_row) * scales_per_token
+            )
             var smem_off = row_in_tile * scales_per_token
 
             # Cast each FP32 scale to e8m0 individually.
@@ -1335,8 +1366,8 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
 
         # Wait for warp 11 to produce indices + scales for this tile.
         idx_cons.wait()
-        var idx_smem = idx_smem_base + idx_cons.state.index() * UInt32(
-            Self.config.BN_QK
+        var idx_smem = idx_smem_base.unsafe_offset(
+            idx_cons.state.index() * UInt32(Self.config.BN_QK)
         )
 
         expect_bytes_pred(k_mbar, Int32(kv_bytes), Int32(is_leader))
@@ -1345,7 +1376,7 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
                 tile_width=Self.config.input_q_depth // 8,
                 eviction_policy=CacheEviction.EVICT_LAST,
             ](
-                kv_stage_ptr.bitcast[Int64](),
+                kv_stage_ptr.unsafe_bitcast[Int64](),
                 k_mbar[],
                 idx_smem,
                 start_idx=0,
@@ -1393,8 +1424,8 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
 
             # Wait for warp 11 to produce indices + scales.
             idx_cons.wait()
-            var idx_smem = idx_smem_base + idx_cons.state.index() * UInt32(
-                Self.config.BN_QK
+            var idx_smem = idx_smem_base.unsafe_offset(
+                idx_cons.state.index() * UInt32(Self.config.BN_QK)
             )
 
             expect_bytes_pred(k_mbar, Int32(kv_bytes), Int32(is_leader))
@@ -1403,7 +1434,7 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
                     tile_width=Self.config.input_q_depth // 8,
                     eviction_policy=CacheEviction.EVICT_LAST,
                 ](
-                    kv_stage_ptr.bitcast[Int64](),
+                    kv_stage_ptr.unsafe_bitcast[Int64](),
                     k_mbar[],
                     idx_smem,
                     start_idx=0,
@@ -1420,7 +1451,7 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
     @inline(.always)
     def _load_scales_for_tile_sparse(
         scale_smem_base: SharedMemPointer[UInt8],
-        scales_ptr: OptionalReg[UnsafePointer[Float32, origin=MutAnyOrigin]],
+        scales_ptr: OptionalReg[MutPointer[Float32, origin=MutAnyOrigin]],
         stage_idx: UInt32,
         idx_smem: SharedMemPointer[Int32],
     ):
@@ -1433,8 +1464,8 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
         so its scale is 1 rather than a load from before the pool.
         """
         comptime scales_per_token = Self.config.scales_per_token
-        var scale_smem_stage = scale_smem_base + stage_idx * UInt32(
-            Self.config.scale_smem_per_stage
+        var scale_smem_stage = scale_smem_base.unsafe_offset(
+            stage_idx * UInt32(Self.config.scale_smem_per_stage)
         )
         var lane = thread_idx.x & 31
 
@@ -1612,15 +1643,17 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
             kv_load_cons_cvt.wait()
             kv_cvt_prod.acquire()
 
-            var src_u8 = kv_load_cons_cvt.stage_base_ptr().bitcast[UInt8]()
+            var src_u8 = kv_load_cons_cvt.stage_base_ptr().unsafe_bitcast[
+                UInt8
+            ]()
             var dst = kv_cvt_prod.stage_base_ptr()
 
             var cvt_stage_idx = kv_load_cons_cvt.pipe.state.index()
-            var scale_smem_stage = scale_smem_base + cvt_stage_idx * UInt32(
-                Self.config.scale_smem_per_stage
+            var scale_smem_stage = scale_smem_base.unsafe_offset(
+                cvt_stage_idx * UInt32(Self.config.scale_smem_per_stage)
             )
-            var blk_bar0 = cvt_blk_bars + kv_cvt_prod.stage_index() * UInt32(
-                Self.NumQKBlocks
+            var blk_bar0 = cvt_blk_bars.unsafe_offset(
+                kv_cvt_prod.stage_index() * UInt32(Self.NumQKBlocks)
             )
 
             # Non-overlay blocks: convert, store, publish per block so the
@@ -1635,7 +1668,7 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
                     row_1,
                     idx_in_group,
                 )
-                var dst_block = dst + c * BlockElems
+                var dst_block = dst.unsafe_offset(c * BlockElems)
                 st_shared_v4_b32_at_bf16_elem_off[out_dtype=Self.q_type](
                     dst_block, bf16_sw_0a, p[0]
                 )
@@ -1692,7 +1725,7 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
 
             # Store the overlay blocks, publishing each as it completes.
             comptime for c in range(num_free_blocks, COLS_PER_GROUP):
-                var dst_block = dst + c * BlockElems
+                var dst_block = dst.unsafe_offset(c * BlockElems)
                 comptime held = (c - num_free_blocks) * 4
 
                 st_shared_v4_b32_at_bf16_elem_off[out_dtype=Self.q_type](
@@ -1843,8 +1876,8 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
             var b_desc = k_descriptor + k_slot_index * UInt32(
                 stage_stride_in_bytes
             )
-            var blk_bar0 = cvt_blk_bars + k_slot_index * UInt32(
-                Self.NumQKBlocks
+            var blk_bar0 = cvt_blk_bars.unsafe_offset(
+                k_slot_index * UInt32(Self.NumQKBlocks)
             )
             # Slot s is used at tiles s, s+2, ...; its n-th use waits
             # parity n & 1.
@@ -1921,7 +1954,9 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
         )
         var p_cons = DecodePConsumer(p_bars.consumer())
         var o_prod = DecodeOProducer(o_bars.producer())
-        var p_smem_base = kv_smem + Self.NumVOBlocks * Self.BlockElems
+        var p_smem_base = kv_smem.unsafe_offset(
+            Self.NumVOBlocks * Self.BlockElems
+        )
         var p_descriptor = Self.UMMAPVSS.descriptor_p_block(p_smem_base)
         var v_descriptor = Self.UMMAPVSS.descriptor_v_block(kv_smem)
         comptime block_step = Self.config.MMA_PV_N // Self.config.BN_QK

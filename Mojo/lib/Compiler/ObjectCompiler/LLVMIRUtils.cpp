@@ -163,8 +163,13 @@ private:
 
 class LLVMModuleSplitterImpl {
 public:
-  explicit LLVMModuleSplitterImpl(LLVMModuleAndContext module)
-      : mainModule(std::move(module)) {}
+  LLVMModuleSplitterImpl(
+      LLVMModuleAndContext module,
+      llvm::StringMap<llvm::GlobalValue::LinkageTypes> &symbolLinkageTypes,
+      bool outlineSharedSubtrees, unsigned threads)
+      : mainModule(std::move(module)), symbolLinkageTypes(symbolLinkageTypes),
+        outlineSharedSubtrees(outlineSharedSubtrees),
+        threads(std::max(2u, threads)) {}
 
   /// Split the LLVM module into multiple modules using the provided process
   /// function.
@@ -208,6 +213,34 @@ private:
   /// symbol to be duplicated.
   llvm::MapVector<const llvm::GlobalValue *, llvm::SetVector<TransitiveDeps *>>
       splitAnchorUsers;
+
+  /// Collect `root` and every value reachable from it through dependency
+  /// edges, each mapped to its index in the module. The walk stops at any
+  /// value in `stopAt`, which is how one outlined subtree is kept out of
+  /// another.
+  llvm::MapVector<const llvm::GlobalValue *, unsigned> collectReachable(
+      const llvm::GlobalValue *root,
+      const llvm::SmallPtrSetImpl<const llvm::GlobalValue *> &stopAt) const;
+
+  /// Choose the subtrees to emit once rather than clone into every partition.
+  void pickOutlineRoots();
+
+  /// Subtree roots to outline, one module each.
+  llvm::SmallPtrSet<const llvm::GlobalValue *, 32> outlineRoots;
+
+  /// Owns the member sets; `setsToProcess` holds pointers into these.
+  SmallVector<llvm::MapVector<const llvm::GlobalValue *, unsigned>>
+      outlinedSets;
+
+  /// Linkage promoted for outlining, for `MCLinker` to restore afterwards.
+  llvm::StringMap<llvm::GlobalValue::LinkageTypes> &symbolLinkageTypes;
+
+  /// False for accelerator modules.
+  const bool outlineSharedSubtrees;
+
+  /// Threads the partitions are optimized over. Never below two: splitting
+  /// only happens above one thread.
+  const unsigned threads;
 };
 } // namespace
 
@@ -298,12 +331,229 @@ static LLVMModuleAndContext readAndMaterializeDependencies(
 /// support for splitting an LLVM module into multiple parts using exported
 /// functions as anchors, and pull in all dependency on the call stack into one
 /// module.
-void KGEN::splitPerExported(LLVMModuleAndContext module,
-                            LLVMSplitProcessFn processFn) {
+void KGEN::splitPerExported(
+    LLVMModuleAndContext module, LLVMSplitProcessFn processFn,
+    llvm::StringMap<llvm::GlobalValue::LinkageTypes> &symbolLinkageTypes,
+    bool outlineSharedSubtrees, unsigned threads) {
 
   CompilerTimeTraceScope traceScope("splitPerExported");
-  LLVMModuleSplitterImpl impl(std::move(module));
+  LLVMModuleSplitterImpl impl(std::move(module), symbolLinkageTypes,
+                              outlineSharedSubtrees, threads);
   impl.split(processFn);
+}
+
+llvm::MapVector<const llvm::GlobalValue *, unsigned>
+LLVMModuleSplitterImpl::collectReachable(
+    const llvm::GlobalValue *root,
+    const llvm::SmallPtrSetImpl<const llvm::GlobalValue *> &stopAt) const {
+  llvm::MapVector<const llvm::GlobalValue *, unsigned> members;
+  SmallVector<const llvm::GlobalValue *> worklist{root};
+  while (!worklist.empty()) {
+    const llvm::GlobalValue *item = worklist.pop_back_val();
+    if (item != root && stopAt.contains(item))
+      continue;
+    auto info = infos.find(item);
+    if (info == infos.end())
+      continue;
+    if (!members.insert({item, info->second.gvIdx}).second)
+      continue;
+    llvm::append_range(worklist, info->second.dependencies);
+  }
+  return members;
+}
+
+/// Longest-processing-time makespan. Within 4/3 of optimal, which is NP-hard,
+/// and well inside the error of using instruction counts for time.
+static uint64_t estimateMakespan(ArrayRef<uint64_t> sizes, unsigned threads) {
+  SmallVector<uint64_t> load(threads, 0);
+  SmallVector<uint64_t> sorted(sizes);
+  llvm::sort(sorted, std::greater<uint64_t>());
+  for (uint64_t size : sorted)
+    *llvm::min_element(load) += size;
+  return *llvm::max_element(load);
+}
+
+/// Pick the subtree roots worth emitting into a module of their own.
+///
+/// A partition is the transitive closure of one anchor, so a function that
+/// several anchors reach is cloned into each of them and optimized again in
+/// each. Outlining it emits one module instead and leaves a declaration in
+/// the partitions that referenced it:
+///
+///     before                          after
+///     A -- R -- S, T                  A -- declare R
+///     B -- R -- S, T                  B -- declare R
+///     (R, S, T optimized twice)       R -- S, T  (optimized once)
+///
+/// In four steps:
+///   1. Walk each anchor's closure, recording which anchors reach each value
+///      and how many instructions each partition currently carries.
+///   2. For a value two or more anchors reach, take the part of its subtree
+///      it dominates and score it: that IR stops being optimized in all but
+///      one partition, less the shared tail copied into the new module.
+///      A non-positive score means cloning is cheaper, so it is dropped.
+///   3. Sort by score, ties broken by name.
+///   4. Accept greedily while the estimated critical path over `threads`
+///      does not grow, updating the partition sizes after each acceptance.
+void LLVMModuleSplitterImpl::pickOutlineRoots() {
+  // Reverse edges, for the dominance test below.
+  llvm::DenseMap<const llvm::GlobalValue *,
+                 SmallVector<const llvm::GlobalValue *>>
+      users;
+  for (auto &[value, info] : infos)
+    for (const llvm::GlobalValue *dep : info.dependencies)
+      if (const auto *gv = dyn_cast<llvm::GlobalValue>(value))
+        users[dep].push_back(gv);
+
+  // Which anchors reach each value, and how big each partition currently is.
+  llvm::DenseMap<const llvm::GlobalValue *,
+                 SmallVector<const llvm::GlobalValue *>>
+      reachedBy;
+  llvm::MapVector<const llvm::GlobalValue *, uint64_t> partitionSize;
+  llvm::DenseSet<const llvm::GlobalValue *> seen;
+  SmallVector<const llvm::GlobalValue *> worklist;
+  for (const llvm::GlobalValue *anchor :
+       llvm::make_first_range(transitiveDeps)) {
+    seen.clear();
+    worklist.assign({anchor});
+    uint64_t size = 0;
+    while (!worklist.empty()) {
+      const llvm::GlobalValue *it = worklist.pop_back_val();
+      if (!seen.insert(it).second)
+        continue;
+      if (const auto *fn = dyn_cast<llvm::Function>(it))
+        size += fn->getInstructionCount();
+      if (it != anchor)
+        reachedBy[it].push_back(anchor);
+      auto info = infos.find(it);
+      if (info != infos.end())
+        llvm::append_range(worklist, info->second.dependencies);
+    }
+    partitionSize[anchor] = size;
+  }
+
+  llvm::SmallPtrSet<const llvm::GlobalValue *, 1> nothing;
+  auto subtreeInsts =
+      [&](const llvm::MapVector<const llvm::GlobalValue *, unsigned> &members) {
+        uint64_t insts = 0;
+        for (const llvm::GlobalValue *member : llvm::make_first_range(members))
+          if (const auto *fn = dyn_cast<llvm::Function>(member))
+            insts += fn->getInstructionCount();
+        return insts;
+      };
+
+  // A candidate has to be safe to move, and worth moving.
+  struct Candidate {
+    const llvm::GlobalValue *root;
+    /// Everything the new partition holds.
+    uint64_t size;
+    /// The part that leaves the partitions that used to clone it.
+    uint64_t exclusive;
+    unsigned reaching;
+    uint64_t saving;
+  };
+  SmallVector<Candidate> candidates;
+  for (auto &[value, anchors] : reachedBy) {
+    if (anchors.size() < 2)
+      continue;
+    const auto *fn = dyn_cast<llvm::Function>(value);
+    if (!fn || fn->isDeclaration() || !fn->hasInternalLinkage())
+      continue;
+
+    // Functions marked with AlwaysInline should never be outlined as an anchor.
+    if (fn->hasFnAttribute(llvm::Attribute::AlwaysInline))
+      continue;
+
+    auto members = collectReachable(value, nothing);
+
+    // Only the dominated part leaves the other partitions; the shared tail
+    // stays put and gains a copy here. Requiring the whole closure to be
+    // dominated rejects every candidate worth taking.
+    llvm::DenseSet<const llvm::GlobalValue *> dominated{value};
+    bool changed = true;
+    while (changed) {
+      changed = false;
+      for (const llvm::GlobalValue *member : llvm::make_first_range(members)) {
+        if (dominated.contains(member))
+          continue;
+        auto found = users.find(member);
+        if (found == users.end())
+          continue;
+        if (llvm::all_of(found->second, [&](const llvm::GlobalValue *user) {
+              return dominated.contains(user);
+            })) {
+          dominated.insert(member);
+          changed = true;
+        }
+      }
+    }
+
+    uint64_t exclusive = 0;
+    for (const llvm::GlobalValue *member : dominated)
+      if (const auto *memberFn = dyn_cast<llvm::Function>(member))
+        exclusive += memberFn->getInstructionCount();
+
+    // Saving: dominated IR stops being optimized in all but one partition,
+    // less the shared tail copied here. Non-positive means cloning is cheaper.
+    uint64_t size = subtreeInsts(members);
+    uint64_t shared = size - exclusive;
+    uint64_t gained = exclusive * (anchors.size() - 1);
+    if (gained <= shared)
+      continue;
+    candidates.push_back(
+        {value, size, exclusive, unsigned(anchors.size()), gained - shared});
+  }
+
+  // Best saving first, ties by name so a build is reproducible.
+  llvm::sort(candidates, [](const Candidate &lhs, const Candidate &rhs) {
+    if (lhs.saving != rhs.saving)
+      return lhs.saving > rhs.saving;
+    return lhs.root->getName() < rhs.root->getName();
+  });
+
+  // Accept while the critical path does not grow. Neutral still wins, since
+  // every candidate has a positive saving. No size threshold: a module with
+  // nothing worth sharing yields no improving candidate.
+  SmallVector<uint64_t> sizes;
+  for (uint64_t size : llvm::make_second_range(partitionSize))
+    sizes.push_back(size);
+  uint64_t makespan = estimateMakespan(sizes, threads);
+
+  llvm::DenseSet<const llvm::GlobalValue *> covered;
+  for (const Candidate &candidate : candidates) {
+    if (covered.contains(candidate.root))
+      continue;
+
+    SmallVector<uint64_t> trial;
+    for (auto &[anchor, size] : partitionSize) {
+      uint64_t next = size;
+      if (llvm::is_contained(reachedBy[candidate.root], anchor))
+        next -= std::min(size, candidate.exclusive);
+      trial.push_back(next);
+    }
+    trial.push_back(candidate.size);
+    uint64_t trialMakespan = estimateMakespan(trial, threads);
+    if (trialMakespan > makespan)
+      continue;
+
+    outlineRoots.insert(candidate.root);
+    makespan = trialMakespan;
+    for (auto &[anchor, size] : partitionSize)
+      if (llvm::is_contained(reachedBy[candidate.root], anchor))
+        size -= std::min(size, candidate.exclusive);
+    partitionSize[candidate.root] = candidate.size;
+
+    auto members = collectReachable(candidate.root, nothing);
+    for (const llvm::GlobalValue *member : llvm::make_first_range(members))
+      if (member != candidate.root)
+        covered.insert(member);
+  }
+
+  LLVM_DEBUG({
+    llvm::dbgs() << "outlining " << outlineRoots.size() << " subtrees, "
+                 << "critical path " << makespan << " insts over " << threads
+                 << " threads\n";
+  });
 }
 
 void LLVMModuleSplitterImpl::split(LLVMSplitProcessFn processFn) {
@@ -344,6 +594,9 @@ void LLVMModuleSplitterImpl::split(LLVMSplitProcessFn processFn) {
     return processFn(forwardModule(std::move(mainModule)), std::nullopt,
                      /*numFunctionBase=*/0);
 
+  if (outlineSharedSubtrees)
+    pickOutlineRoots();
+
   // Now for each export'd global value, compute the transitive set of
   // dependencies using DFS.
   SmallVector<const llvm::GlobalValue *> worklist;
@@ -352,6 +605,12 @@ void LLVMModuleSplitterImpl::split(LLVMSplitProcessFn processFn) {
     worklist.push_back(value);
     while (!worklist.empty()) {
       const llvm::GlobalValue *it = worklist.pop_back_val();
+
+      // Outlined roots stay out, leaving a declaration behind. Not an anchor
+      // on purpose: as one it would merge every partition reaching it into a
+      // single partition, undoing the parallelism the split creates.
+      if (it != value && outlineRoots.contains(it))
+        continue;
 
       auto [iter, inserted] = deps.deps.insert({it, -1});
       if (!inserted) {
@@ -446,6 +705,23 @@ void LLVMModuleSplitterImpl::split(LLVMSplitProcessFn processFn) {
     if (!deps.mutIdx)
       setsToProcess.push_back(&deps.deps);
   }
+
+  // An outlined root needs a definition the others can resolve. Record the
+  // original linkage first; `MCLinker` restores it, so nothing reaches the
+  // final object as anything but internal.
+  //
+  // WeakODR, not the WeakAny the per-function splitter uses: WeakAny is
+  // interposable, which blocks inlining even in the module owning the
+  // definition.
+  outlinedSets.reserve(outlineRoots.size());
+  for (const llvm::GlobalValue *root : outlineRoots) {
+    outlinedSets.push_back(collectReachable(root, outlineRoots));
+    auto *fn = const_cast<llvm::Function *>(cast<llvm::Function>(root));
+    symbolLinkageTypes.insert({fn->getName().str(), fn->getLinkage()});
+    fn->setLinkage(llvm::GlobalValue::WeakODRLinkage);
+  }
+  for (auto &set : outlinedSets)
+    setsToProcess.push_back(&set);
 
   if (setsToProcess.size() <= 1)
     return processFn(forwardModule(std::move(mainModule)), std::nullopt,

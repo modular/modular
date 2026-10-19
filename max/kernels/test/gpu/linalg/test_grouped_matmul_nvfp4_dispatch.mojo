@@ -42,7 +42,7 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.row_scales import (
 )
 from std.random import random_float64, random_ui64, seed, rand
 from std.simd import _convert_f32_to_float8_scalar
-from layout import Idx, TileTensor, row_major
+from layout import Coord, Idx, TileTensor, row_major
 from linalg.fp4_utils import (
     SF_MN_GROUP_SIZE,
     SF_ATOM_M,
@@ -275,7 +275,7 @@ def _test_dispatch[
             * Int(b_scales_host.dim(5))
         )
         var b_scales_tensor_expert_slice = TileTensor(
-            b_scales_host_ptr.unsafe_ptr() + e * expert_slice_size,
+            b_scales_host_ptr.unsafe_ptr().unsafe_offset(e * expert_slice_size),
             row_major(
                 Idx[n_groups],
                 Idx[k_groups],
@@ -353,15 +353,6 @@ def _test_dispatch[
     ctx.synchronize()
 
     # --- Reference computation via vendor_blas (per-expert) ---
-    var c_row_stride = N
-    var a_row_stride = packed_K
-    comptime b_expert_stride = N * packed_K
-    comptime b_scales_expert_stride = n_groups * k_groups * SF_ATOM_M[
-        0
-    ] * SF_ATOM_M[1] * SF_ATOM_K
-    comptime a_scales_row_stride = k_groups * SF_ATOM_M[0] * SF_ATOM_M[
-        1
-    ] * SF_ATOM_K
 
     for i in range(num_active_experts):
         var start = Int(a_offsets_host_ptr[i])
@@ -372,22 +363,22 @@ def _test_dispatch[
             continue
 
         var c_slice = TileTensor(
-            c_ref_tensor.ptr + start * c_row_stride,
+            c_ref_tensor.ptr_at_offset(Coord(start, 0)),
             row_major((end - start, Idx[N])),
         )
 
         var new_a_tensor = TileTensor(
-            a_tensor.ptr + start * a_row_stride,
+            a_tensor.ptr_at_offset(Coord(start, 0)),
             row_major((end - start, Idx[packed_K])),
         )
 
         var new_b_tensor = TileTensor(
-            b_tensor.ptr + Int(expert_id) * b_expert_stride,
+            b_tensor.ptr_at_offset(Coord(Int(expert_id), 0, 0)),
             row_major((Idx[N], Idx[packed_K])),
         )
 
         var new_b_scales_tensor = TileTensor(
-            b_scales_tensor.ptr + Int(expert_id) * b_scales_expert_stride,
+            b_scales_tensor.ptr_at_offset(Coord(Int(expert_id), 0, 0, 0, 0, 0)),
             row_major(
                 Idx[n_groups],
                 Idx[k_groups],
@@ -401,7 +392,7 @@ def _test_dispatch[
             a_scale_offsets_ptr[i]
         )
         var new_a_scales_tensor = TileTensor(
-            a_scales_tensor.ptr + a_scales_start * a_scales_row_stride,
+            a_scales_tensor.ptr_at_offset(Coord(a_scales_start, 0, 0, 0, 0)),
             row_major(
                 ceildiv(end - start, SF_MN_GROUP_SIZE),
                 Idx[k_groups],

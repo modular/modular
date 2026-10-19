@@ -64,7 +64,7 @@
 from std.collections import Set
 from max.gpu import block_idx
 from max.gpu.host import DeviceBuffer, DeviceContext
-from std.math import max, min
+from std.math import align_up, max, min
 from std.random import random_ui64, seed as set_seed
 from std.sys.defines import get_defined_int
 from std.utils.numerics import min_or_neg_inf
@@ -192,8 +192,7 @@ def _snap_block_dim(bd: Int) -> Int:
     keeps every launch valid regardless of what the orchestrator's generic shrink
     passes for `block_dim` (it treats the field as a free Int).
     """
-    var w = 64
-    var up = ((max(1, bd) + w - 1) // w) * w
+    var up = align_up(max(1, bd), 64)
     return max(64, min(1024, up))
 
 
@@ -352,7 +351,7 @@ def run_one_case(
     out_dev.enqueue_fill(Int32(-2))
 
     var data_buf = DeviceBuffer[score_type](
-        ctx, scores_dev.unsafe_ptr() + 1, n_scores, owning=False
+        ctx, scores_dev.unsafe_ptr().unsafe_offset(1), n_scores, owning=False
     )
     var scores_t = TileTensor(data_buf, row_major((num_rows, num_blocks)))
     var out_t = TileTensor(out_dev, row_major((num_rows, k)))

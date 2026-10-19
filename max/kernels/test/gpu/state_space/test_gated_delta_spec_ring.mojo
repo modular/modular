@@ -74,12 +74,12 @@ struct RingCase(Copyable, Movable):
 
 def _upload_table(
     ctx: DeviceContext, values: List[Int]
-) raises -> DeviceBuffer[DType.uint32]:
+) raises -> DeviceBuffer[.uint32]:
     """Copies `values` into a new device buffer of uint32."""
-    var host = ctx.enqueue_create_host_buffer[DType.uint32](len(values))
+    var host = ctx.enqueue_create_host_buffer[.uint32](len(values))
     for i in range(len(values)):
         host[i] = UInt32(values[i])
-    var device = ctx.enqueue_create_buffer[DType.uint32](len(values))
+    var device = ctx.enqueue_create_buffer[.uint32](len(values))
     ctx.enqueue_copy(device, host.unsafe_ptr())
     ctx.synchronize()
     return device^
@@ -364,7 +364,7 @@ def run_ring_case[
     ctx.synchronize()
     for l in range(num_layers):
         var slot_col = TileTensor(
-            state_table_dev.create_sub_buffer[DType.uint32](
+            state_table_dev.create_sub_buffer[.uint32](
                 l * batch_size, batch_size
             ),
             row_major(batch_size),
@@ -402,7 +402,7 @@ def run_ring_case[
             window_offsets_tt,
             ring_tt,
             TileTensor(
-                ring_table_dev.create_sub_buffer[DType.uint32](
+                ring_table_dev.create_sub_buffer[.uint32](
                     l * batch_size, batch_size
                 ),
                 row_major(batch_size),
@@ -779,7 +779,7 @@ def _deep_ring_arm[
 ](
     ctx: DeviceContext,
     pool_dev: DeviceBuffer[STATE_DTYPE],
-    ring_dev: DeviceBuffer[DType.uint8],
+    ring_dev: DeviceBuffer[.uint8],
     ring_rows: Int,
     ring_row: Int,
     qkv_dev: DeviceBuffer[WORK_DTYPE],
@@ -911,12 +911,10 @@ def run_deep_ring_row(ctx: DeviceContext) raises:
     var gate_dev = ctx.enqueue_create_buffer[WORK_DTYPE](2)
     var deep_pool_dev = ctx.enqueue_create_buffer[STATE_DTYPE](1)
     var shallow_pool_dev = ctx.enqueue_create_buffer[STATE_DTYPE](1)
-    var deep_ring_dev = ctx.enqueue_create_buffer[DType.uint8](
+    var deep_ring_dev = ctx.enqueue_create_buffer[.uint8](
         (deep_row + 1) * ring_row_elems
     )
-    var shallow_ring_dev = ctx.enqueue_create_buffer[DType.uint8](
-        2 * ring_row_elems
-    )
+    var shallow_ring_dev = ctx.enqueue_create_buffer[.uint8](2 * ring_row_elems)
     ctx.enqueue_memset(deep_ring_dev, sentinel)
     ctx.enqueue_memset(shallow_ring_dev, sentinel)
     with ctx.push_context():
@@ -941,25 +939,25 @@ def run_deep_ring_row(ctx: DeviceContext) raises:
 
     var deep_pool_h = ctx.enqueue_create_host_buffer[STATE_DTYPE](1)
     var shallow_pool_h = ctx.enqueue_create_host_buffer[STATE_DTYPE](1)
-    var front_h = ctx.enqueue_create_host_buffer[DType.uint8](ring_row_elems)
-    var deep_h = ctx.enqueue_create_host_buffer[DType.uint8](ring_row_elems)
-    var shallow_h = ctx.enqueue_create_host_buffer[DType.uint8](ring_row_elems)
+    var front_h = ctx.enqueue_create_host_buffer[.uint8](ring_row_elems)
+    var deep_h = ctx.enqueue_create_host_buffer[.uint8](ring_row_elems)
+    var shallow_h = ctx.enqueue_create_host_buffer[.uint8](ring_row_elems)
     with ctx.push_context():
         ctx.enqueue_copy(deep_pool_h.unsafe_ptr(), deep_pool_dev)
         ctx.enqueue_copy(shallow_pool_h.unsafe_ptr(), shallow_pool_dev)
         ctx.enqueue_copy(
             front_h.unsafe_ptr(),
-            deep_ring_dev.create_sub_buffer[DType.uint8](0, ring_row_elems),
+            deep_ring_dev.create_sub_buffer[.uint8](0, ring_row_elems),
         )
         ctx.enqueue_copy(
             deep_h.unsafe_ptr(),
-            deep_ring_dev.create_sub_buffer[DType.uint8](
+            deep_ring_dev.create_sub_buffer[.uint8](
                 deep_row * ring_row_elems, ring_row_elems
             ),
         )
         ctx.enqueue_copy(
             shallow_h.unsafe_ptr(),
-            shallow_ring_dev.create_sub_buffer[DType.uint8](
+            shallow_ring_dev.create_sub_buffer[.uint8](
                 ring_row_elems, ring_row_elems
             ),
         )

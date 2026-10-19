@@ -47,10 +47,14 @@ from typing import Any, ClassVar
 
 import numpy as np
 import pytest
+from max.driver import Accelerator
+from max.dtype import DType
 from max.experimental.functional import (
     allgather,
+    allgather_rms_norm,
     allreduce_sum,
     reduce_scatter,
+    reduce_scatter_rms_norm,
     transfer_to,
 )
 from max.experimental.sharding import (
@@ -288,6 +292,105 @@ class CollectivesTests:
                 expected_full[i : i + 1],
                 rtol=1e-5,
             )
+
+    # ── fused collective + RMS norm ──────────────────────────────────
+
+    _NORM_EPS = 1e-6
+
+    def _norm_dtype(self) -> DType:
+        # The fused kernels are bfloat16-only; a mesh without accelerators
+        # takes the simulated path, which runs in float32 on CPU.
+        if all(isinstance(d, Accelerator) for d in self.MESH_1D.devices):
+            return DType.bfloat16
+        return DType.float32
+
+    def _assert_close_in(
+        self, actual: Tensor, expected: np.ndarray, dtype: DType
+    ) -> None:
+        tol = 3e-2 if dtype == DType.bfloat16 else 1e-4
+        np.testing.assert_allclose(
+            actual.cast(DType.float32).to_numpy(),
+            expected,
+            rtol=tol,
+            atol=tol,
+        )
+
+    def _replicated_gamma(self, gamma: np.ndarray, dtype: DType) -> Tensor:
+        return transfer_to(
+            Tensor(gamma), DeviceMapping(self.MESH_1D, (Replicated(),))
+        ).cast(dtype)
+
+    @classmethod
+    def _rms_norm(cls, x: np.ndarray, gamma: np.ndarray) -> np.ndarray:
+        rms = np.sqrt(np.mean(x * x, axis=-1, keepdims=True) + cls._NORM_EPS)
+        return x / rms * gamma
+
+    def test_reduce_scatter_rms_norm_1d(self) -> None:
+        mesh = self.MESH_1D
+        dtype = self._norm_dtype()
+        rng = np.random.default_rng(0)
+        fragments = [
+            rng.standard_normal((8, 64)).astype(np.float32)
+            for _ in range(mesh.num_devices)
+        ]
+        gamma = rng.standard_normal(64).astype(np.float32)
+
+        shards = []
+        for fragment, device in zip(fragments, mesh.devices, strict=True):
+            shard = Tensor(fragment)
+            if shard.device != device:
+                shard = Tensor(storage=shard.driver_tensor.to(device))
+            shards.append(shard.cast(dtype).driver_tensor)
+        t = Tensor._from_shards(
+            tuple(shards), DeviceMapping(mesh, (Partial(),))
+        )
+
+        normed, summed = reduce_scatter_rms_norm(
+            t, self._replicated_gamma(gamma, dtype), self._NORM_EPS
+        )
+
+        assert normed.placements == (Sharded(0),)
+        assert summed.placements == (Sharded(0),)
+        total = np.sum(fragments, axis=0)
+        for i in range(mesh.num_devices):
+            rows = total[2 * i : 2 * i + 2]
+            self._assert_close_in(summed.local_shards[i], rows, dtype)
+            self._assert_close_in(
+                normed.local_shards[i], self._rms_norm(rows, gamma), dtype
+            )
+
+    def test_allgather_rms_norm_1d(self) -> None:
+        mesh = self.MESH_1D
+        dtype = self._norm_dtype()
+        rng = np.random.default_rng(1)
+        full = rng.standard_normal((8, 64)).astype(np.float32)
+        gamma = rng.standard_normal(64).astype(np.float32)
+        sharded = transfer_to(
+            Tensor(full), DeviceMapping(mesh, (Sharded(0),))
+        ).cast(dtype)
+
+        normed, gathered = allgather_rms_norm(
+            sharded, self._replicated_gamma(gamma, dtype), self._NORM_EPS
+        )
+
+        assert normed.placements == (Replicated(),)
+        assert gathered.placements == (Replicated(),)
+        for i in range(mesh.num_devices):
+            self._assert_close_in(gathered.local_shards[i], full, dtype)
+            self._assert_close_in(
+                normed.local_shards[i], self._rms_norm(full, gamma), dtype
+            )
+
+    def test_reduce_scatter_rms_norm_rejects_sharded(self) -> None:
+        sharded = transfer_to(
+            Tensor(np.ones((8, 4), dtype=np.float32)),
+            DeviceMapping(self.MESH_1D, (Sharded(0),)),
+        )
+        gamma = self._replicated_gamma(
+            np.ones(4, dtype=np.float32), DType.float32
+        )
+        with pytest.raises(ValueError, match="Partial"):
+            reduce_scatter_rms_norm(sharded, gamma, self._NORM_EPS)
 
     # ═════════════════════════════════════════════════════════════════════
     #  Section 2: allreduce_sum / allgather multi-axis tests

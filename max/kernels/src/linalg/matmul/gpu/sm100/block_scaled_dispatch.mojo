@@ -36,7 +36,6 @@ from linalg.utils import (
     no_compute_fn,
     no_epilogue_fn,
 )
-from std.utils.index import Index
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.sys import size_of
 from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
@@ -395,8 +394,8 @@ def _heuristic_and_outliers_dispatch_impl[
         ](
             scaling_kind=scaling_kind,
             cta_group=1,
-            mma_shape=Index(128, 8, 32),
-            cluster_shape=Index(1, 1, 1),
+            mma_shape=(128, 8, 32),
+            cluster_shape=(1, 1, 1),
             block_swizzle_size=8,
             num_accum_pipeline_stages=1,
             k_group_size=k_group_size,

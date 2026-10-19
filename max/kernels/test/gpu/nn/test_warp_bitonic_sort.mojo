@@ -203,14 +203,12 @@ def test_router_group_limited_fused_scores[
     # Descends strictly with the expert index, so group 0 wins the group stage
     # and its experts come back in index order.
     @inline(.always)
-    def scores_input_fn[
-        width: Int
-    ](coords: Coord) capturing -> SIMD[.float32, width]:
+    def scores_input_fn[width: Int](coords: Coord) -> SIMD[.float32, width]:
         comptime assert (
             coords.rank == 2
         ), "the expert-scores lambda contract is rank 2"
         return SIMD[.float32, width](
-            Float32(n_experts) - Float32(Int(coords[1].value()))
+            Float32(n_experts) - Float32(Int(coords[1]))
         )
 
     router_group_limited[
@@ -220,11 +218,11 @@ def test_router_group_limited_fused_scores[
         topk_group,
         True,
         target="gpu",
-        scores_input_fn=scores_input_fn,
     ](
         indices_tensor,
         weights_tensor,
         scores_tensor.layout,
+        scores_input_fn,
         bias_tensor.as_imm(),
         Float32(1.0),
         ctx,
@@ -302,14 +300,12 @@ def test_single_group_router_fused_scores[
     var bias_tensor = TileTensor(bias_dev, row_major[n_experts]())
 
     @inline(.always)
-    def scores_input_fn[
-        width: Int
-    ](coords: Coord) capturing -> SIMD[.float32, width]:
+    def scores_input_fn[width: Int](coords: Coord) -> SIMD[.float32, width]:
         comptime assert (
             coords.rank == 2
         ), "the expert-scores lambda contract is rank 2"
-        var token = Int(coords[0].value())
-        var expert = Int(coords[1].value())
+        var token = Int(coords[0])
+        var expert = Int(coords[1])
         var score = Float32(expert)
         if token == 0:
             score = Float32(n_experts - expert)
@@ -320,11 +316,11 @@ def test_single_group_router_fused_scores[
         topk_experts,
         True,
         "gpu",
-        scores_input_fn=scores_input_fn,
     ](
         indices_tensor,
         weights_tensor,
         scores_tensor.layout,
+        scores_input_fn,
         bias_tensor.as_imm(),
         Float32(1.0),
         ctx,
@@ -438,14 +434,12 @@ def test_single_group_router_eplb_fused_scores[
     var layer_idx = TileTensor(layer_idx_dev, row_major[1]())
 
     @inline(.always)
-    def scores_input_fn[
-        width: Int
-    ](coords: Coord) capturing -> SIMD[.float32, width]:
+    def scores_input_fn[width: Int](coords: Coord) -> SIMD[.float32, width]:
         comptime assert (
             coords.rank == 2
         ), "the expert-scores lambda contract is rank 2"
-        var token = Int(coords[0].value())
-        var expert = Int(coords[1].value())
+        var token = Int(coords[0])
+        var expert = Int(coords[1])
         var score = Float32(expert)
         if token == 0:
             score = Float32(n_experts - expert)
@@ -459,12 +453,12 @@ def test_single_group_router_eplb_fused_scores[
         max_replicas=max_replicas,
         hash_decorrelate=False,
         target="gpu",
-        scores_input_fn=scores_input_fn,
     ](
         expert_indices,
         expert_indices_log,
         expert_weights,
         expert_scores.layout,
+        scores_input_fn,
         expert_bias.as_imm(),
         logcnt.as_imm(),
         log2phy.as_imm(),
@@ -687,21 +681,18 @@ def test_single_group_router_scores_from_layout_and_lambda[
     var weights_tensor = TileTensor(weights_dev, out_layout)
     var bias_tensor = TileTensor(bias_dev, row_major[n_experts]())
 
-    def scores_fn[width: Int](coords: Coord) capturing -> SIMD[.float32, width]:
+    def scores_fn[width: Int](coords: Coord) -> SIMD[.float32, width]:
         comptime assert (
             coords.rank == 2
         ), "the expert-scores lambda contract is rank 2"
-        var rotated = (
-            Int(coords[1].value()) - Int(coords[0].value()) + n_experts
-        ) % n_experts
+        var rotated = (Int(coords[1]) - Int(coords[0]) + n_experts) % n_experts
         return SIMD[.float32, width](Float32(n_experts - rotated))
 
-    single_group_router[
-        n_experts, topk_experts, True, "gpu", scores_input_fn=scores_fn
-    ](
+    single_group_router[n_experts, topk_experts, True, "gpu"](
         indices_tensor,
         weights_tensor,
         row_major(Coord(num_tokens, Idx[n_experts])),
+        scores_fn,
         bias_tensor.as_imm(),
         Float32(1.0),
         ctx,
@@ -718,6 +709,153 @@ def test_single_group_router_scores_from_layout_and_lambda[
                 var i = t * topk_experts + r
                 assert_equal(Int(idx_map[i]), t + r)
                 assert_equal(wgt_map[i], Float32(n_experts - r) / raw_sum)
+
+
+def test_single_group_router_ties[
+    n_experts: Int,
+    topk_experts: Int,
+](ctx: DeviceContext) raises:
+    """Exact ties resolve to the lower expert index, as graph top-k does.
+
+    Two tokens. Token 0 scores every expert equally, so the winners are
+    experts `0 .. k-1`. Token 1 has four distinct winners spread over
+    several warps and a five-way tie at the cutoff, also spread over warps
+    (and over phase-2 survivors), of which only the lowest `k - 4` indices
+    may survive. Every score is an integer, so the weights are exact.
+    """
+    comptime assert 4 < topk_experts and topk_experts < 9
+    comptime num_tokens = 2
+    var scores_dev = ctx.enqueue_create_buffer[.float32](num_tokens * n_experts)
+    var bias_dev = ctx.enqueue_create_buffer[.float32](n_experts)
+    var indices_dev = ctx.enqueue_create_buffer[.int32](
+        num_tokens * topk_experts
+    )
+    var weights_dev = ctx.enqueue_create_buffer[.float32](
+        num_tokens * topk_experts
+    )
+    ctx.synchronize()
+
+    var lead: List[Int] = [n_experts - 1, 129, 64, 1]
+    var lead_score: List[Float32] = [100.0, 90.0, 80.0, 70.0]
+    var tied: List[Int] = [3, 33, 70, 130, n_experts - 2]
+    comptime tie_score = Float32(5.0)
+
+    with scores_dev.map_to_host() as s, bias_dev.map_to_host() as b:
+        for e in range(n_experts):
+            b[e] = 0.0
+            s[e] = 1.0
+            s[n_experts + e] = 1.0
+        for i in range(len(lead)):
+            s[n_experts + lead[i]] = lead_score[i]
+        for i in range(len(tied)):
+            s[n_experts + tied[i]] = tie_score
+
+    var expected = List[Int]()
+    var expected_score = List[Float32]()
+    for i in range(topk_experts):
+        expected.append(i)
+        expected_score.append(1.0)
+    for i in range(topk_experts):
+        if i < len(lead):
+            expected.append(lead[i])
+            expected_score.append(lead_score[i])
+        else:
+            expected.append(tied[i - len(lead)])
+            expected_score.append(tie_score)
+
+    var indices_tensor = TileTensor(
+        indices_dev, row_major[num_tokens, topk_experts]()
+    )
+    var weights_tensor = TileTensor(
+        weights_dev, row_major[num_tokens, topk_experts]()
+    )
+    var scores_tensor = TileTensor(
+        scores_dev, row_major[num_tokens, n_experts]()
+    )
+    var bias_tensor = TileTensor(bias_dev, row_major[n_experts]())
+
+    single_group_router[n_experts, topk_experts, True, "gpu"](
+        indices_tensor,
+        weights_tensor,
+        scores_tensor.as_imm(),
+        bias_tensor.as_imm(),
+        Float32(1.0),
+        ctx,
+    )
+    ctx.synchronize()
+
+    with indices_dev.map_to_host() as idx_map, weights_dev.map_to_host() as wgt_map:
+        for t in range(num_tokens):
+            var raw_sum: Float32 = 0
+            for r in range(topk_experts):
+                raw_sum += expected_score[t * topk_experts + r]
+            for r in range(topk_experts):
+                var i = t * topk_experts + r
+                assert_equal(
+                    Int(idx_map[i]),
+                    expected[i],
+                    msg=String("tie token ", t, " index[", r, "]"),
+                )
+                assert_equal(
+                    wgt_map[i],
+                    expected_score[i] / raw_sum,
+                    msg=String("tie token ", t, " weight[", r, "]"),
+                )
+
+
+def test_router_group_limited_ties[
+    n_experts: Int,
+    n_groups: Int,
+    topk_experts: Int,
+    topk_group: Int,
+](ctx: DeviceContext) raises:
+    """All-equal scores tie at both the group and the expert stage.
+
+    The lowest-index groups win the group stage, and the lowest-index experts
+    of those the expert stage, so the winners are experts `0 .. k-1` with
+    equal weights.
+    """
+    comptime assert topk_experts <= n_experts // n_groups
+    var scores_dev = ctx.enqueue_create_buffer[.float32](n_experts)
+    var bias_dev = ctx.enqueue_create_buffer[.float32](n_experts)
+    var indices_dev = ctx.enqueue_create_buffer[.int32](topk_experts)
+    var weights_dev = ctx.enqueue_create_buffer[.float32](topk_experts)
+    ctx.synchronize()
+
+    with scores_dev.map_to_host() as s, bias_dev.map_to_host() as b:
+        for e in range(n_experts):
+            b[e] = 0.0
+            s[e] = 1.0
+
+    var indices_tensor = TileTensor(indices_dev, row_major[1, topk_experts]())
+    var weights_tensor = TileTensor(weights_dev, row_major[1, topk_experts]())
+    var scores_tensor = TileTensor(scores_dev, row_major[1, n_experts]())
+    var bias_tensor = TileTensor(bias_dev, row_major[n_experts]())
+
+    router_group_limited[
+        n_experts, topk_experts, n_groups, topk_group, True, target="gpu"
+    ](
+        indices_tensor,
+        weights_tensor,
+        scores_tensor.as_imm(),
+        bias_tensor.as_imm(),
+        Float32(1.0),
+        ctx,
+    )
+    ctx.synchronize()
+
+    with indices_dev.map_to_host() as idx_map, weights_dev.map_to_host() as wgt_map:
+        for r in range(topk_experts):
+            assert_equal(
+                Int(idx_map[r]),
+                r,
+                msg=String("group-limited tie index[", r, "]"),
+            )
+            assert_equal(
+                wgt_map[r],
+                Float32(1.0) / Float32(topk_experts),
+                msg=String("group-limited tie weight[", r, "]"),
+            )
 
 
 def main() raises:
@@ -742,3 +880,10 @@ def main() raises:
         test_router_group_limited_fused_scores[64, 8, 8, 4](ctx)
         test_single_group_router_fused_scores[384, 8](ctx)
         test_single_group_router_eplb_fused_scores[384, 8](ctx)
+
+        # Exact ties pick the lower expert index on every router path.
+        test_single_group_router_ties[256, 6](ctx)
+        test_single_group_router_ties[384, 8](ctx)
+        test_single_group_router_ties[288, 8](ctx)
+        test_router_group_limited_ties[64, 8, 8, 4](ctx)
+        test_router_group_limited_ties[256, 8, 8, 4](ctx)

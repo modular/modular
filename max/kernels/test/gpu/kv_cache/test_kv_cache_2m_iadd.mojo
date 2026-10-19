@@ -279,8 +279,9 @@ def test_kv_cache_2m_iadd_gpu[
         ctx,
     )
     var a_host = a.host_tensor()
+    var a_host_flat = a_host.reshape(row_major(a_host.num_elements()))
     for i in range(a_host.num_elements()):
-        a_host.raw_store(i, Scalar[dtype](i))
+        a_host_flat[i] = Scalar[dtype](i)
     a.to_device()
 
     var layer_idx = 1
@@ -439,8 +440,9 @@ def test_kv_cache_2m_iadd_cpu[
         a_host_ptr,
         row_major(2 * total_slice_length, Idx[num_heads * head_dim]),
     )
+    var a_host_flat = a_host.reshape(row_major(a_host.num_elements()))
     for i in range(a_host.num_elements()):
-        a_host.raw_store(i, Scalar[dtype](i))
+        a_host_flat[i] = Scalar[dtype](i)
 
     var layer_idx = 1
     kv_cache_2m_iadd_dispatch[target="cpu"](

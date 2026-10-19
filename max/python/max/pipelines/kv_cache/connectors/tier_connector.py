@@ -403,13 +403,16 @@ class _TierTransfer:
 
 def _compact_unevictable_allowed(
     path: str = "/proc/sys/vm/compact_unevictable_allowed",
-) -> bool | None:
-    """Whether kernel compaction may migrate mlocked pages, if readable."""
+) -> bool:
+    """Whether the sysctl reads as letting compaction migrate mlocked pages.
+
+    False when it reads 0 or can't be read.
+    """
     try:
         with open(path) as f:
             return f.read().strip() != "0"
     except OSError:
-        return None
+        return False
 
 
 def _alloc_chunked_staging_region(
@@ -643,7 +646,7 @@ class TierConnector(KVConnector):
                     "host_staging_alloc='registered'; driver-allocated "
                     "staging memory is already owned by the driver."
                 )
-            if _compact_unevictable_allowed() is True:
+            if _compact_unevictable_allowed():
                 logger.warning(
                     "host_staging_mlock locks the staging pages, but with "
                     "vm.compact_unevictable_allowed=1 (the kernel default) "

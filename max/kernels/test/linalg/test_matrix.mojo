@@ -25,7 +25,7 @@ def test_matrix(ptr: MutPointer[Int32, MutAnyOrigin], rows: Int, cols: Int):
     print(ptr.load[width=4](3 * cols + 0))
 
     var v = iota[.int32, 4]()
-    ptr.store[width=4](3 * cols + 0, v)
+    ptr.store(3 * cols + 0, v)
     # CHECK: [0, 1, 2, 3]
     print(ptr.load[width=4](3 * cols + 0))
 

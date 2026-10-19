@@ -459,8 +459,12 @@ class EplbPlacement:
 
     @property
     def max_replicas(self) -> int:
-        """Largest replica count across all (layer, logical) cells."""
-        return int(self.logcnt.max())
+        """Width of each ``log2phy`` row, at least the largest replica count.
+
+        Rows are padded with ``-1`` to a width the fused router kernels can
+        load as one vector, so this may exceed ``logcnt.max()``.
+        """
+        return int(self.log2phy.shape[-1])
 
     @classmethod
     def from_snapshot(
@@ -517,7 +521,7 @@ class EplbPlacement:
         )
         return cls(
             phy2log=phy2log,
-            log2phy=log2phy.astype(np.int32),
+            log2phy=_pad_replicas(log2phy).astype(np.int32),
             logcnt=logcnt.astype(np.int32),
         )
 
@@ -539,35 +543,68 @@ class EplbPlacement:
         logcnt: NDArray[np.int64] | NDArray[np.int32],
         n_gpus: int,
     ) -> None:
-        """Logs per-GPU load max/min ratio before vs after rebalance.
+        """Logs how far the busiest GPU is above the mean, per MoE layer.
 
-        For replicated experts, runtime load splits across replicas; the
-        reported metric must do the same to reflect actual per-GPU work
-        rather than double-counting replicated experts' load.
+        Each MoE layer ends in an all-to-all that waits for its slowest GPU,
+        so the ratio that bounds step time is max/mean within a layer.
+        Summing load over layers first would hide skew that differs between
+        layers, which is exactly what a per-layer placement removes.
+        Replicated experts split their load evenly across replicas.
         """
-        phy_per_gpu = phy2log.shape[1] // n_gpus
-        log_per_gpu = weight.shape[1] // n_gpus
-
-        # Identity baseline (no rebalancing): each GPU hosts a contiguous
-        # block of logical experts, each contributing its full weight.
-        before = weight.sum(0).reshape(n_gpus, log_per_gpu).sum(-1)
-
-        # Rebalanced placement: each phy contributes weight / logcnt of
-        # its logical, since runtime traffic to that logical is split
-        # across all of its replicas.
+        num_layers = weight.shape[0]
+        # Before: GPU g hosts the contiguous block of logical experts g.
+        before = weight.reshape(num_layers, n_gpus, -1).sum(-1)
         counts_per_phy = np.take_along_axis(weight, phy2log, axis=-1)
         logcnt_per_phy = np.take_along_axis(
             logcnt.astype(np.int64), phy2log, axis=-1
         )
         normalized = counts_per_phy / np.maximum(logcnt_per_phy, 1)
+        after = normalized.reshape(num_layers, n_gpus, -1).sum(-1)
 
-        after = normalized.sum(0).reshape(n_gpus, phy_per_gpu).sum(-1)
+        active = before.sum(-1) > 0
+        if not active.any():
+            logger.info("EPLB: snapshot has no routed tokens")
+            return
 
+        def skew(load: NDArray[np.float64]) -> NDArray[np.float64]:
+            return load.max(-1) / np.maximum(load.mean(-1), 1e-9)
+
+        b = skew(before[active].astype(np.float64))
+        a = skew(after[active])
         logger.info(
-            "EPLB: per-GPU load max/min %.2f -> %.2f",
-            before.max() / max(before.min(), 1),
-            after.max() / max(after.min(), 1),
+            "EPLB: per-GPU load max/mean across %d MoE layers: median "
+            "%.3f -> %.3f, worst %.3f -> %.3f",
+            int(active.sum()),
+            float(np.median(b)),
+            float(np.median(a)),
+            float(b.max()),
+            float(a.max()),
         )
+
+
+_REPLICA_WIDTHS = (1, 2, 4, 8, 16)
+"""``log2phy`` row widths the fused router kernels load as one SIMD vector."""
+
+
+def _pad_replicas(log2phy: NDArray[np.int64]) -> NDArray[np.int64]:
+    """Pads ``log2phy``'s replica axis with ``-1`` to a supported width.
+
+    Raises:
+        ValueError: If some expert has more replicas than the widest width.
+    """
+    width = log2phy.shape[-1]
+    padded = next((w for w in _REPLICA_WIDTHS if w >= width), None)
+    if padded is None:
+        raise ValueError(
+            f"EPLB placement gives an expert {width} replicas; at most "
+            f"{_REPLICA_WIDTHS[-1]} are supported. Lower "
+            "eplb_redundant_experts_per_gpu."
+        )
+    return np.pad(
+        log2phy,
+        ((0, 0), (0, 0), (0, padded - width)),
+        constant_values=-1,
+    )
 
 
 @dataclass(frozen=True)

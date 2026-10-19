@@ -350,7 +350,8 @@ class KVCacheConfig(ConfigFileModel):
             "``float4_e2m1fn`` (alias ``float4_e2m1``). ``float4_e2m1fn`` "
             "is NVFP4: two E2M1 values per byte with an E4M3 scale per 16 "
             "values. It is supported only by architectures that implement "
-            "it (MiniMax-M3 sparse attention on NVIDIA SM100), and there it "
+            "it (MiniMax-M3 sparse attention on NVIDIA SM100 and AMD "
+            "MI355X/gfx950), and there it "
             "also puts the indexer cache in NVFP4 unless "
             "``indexer_kv_cache_format`` says otherwise."
         ),
@@ -368,8 +369,9 @@ class KVCacheConfig(ConfigFileModel):
             "bfloat16 otherwise, so ``--kv-cache-format=float8_e4m3fn`` "
             "still means main GQA FP8 plus indexer BF16. Ignored by "
             "architectures without an indexer cache. FP8 IndexK is "
-            "scale-free and AMD-only. FP4 IndexK is NVIDIA SM100-only and "
-            "needs ``--kv-cache-format=float4_e2m1fn``."
+            "scale-free and AMD-only. FP4 IndexK runs on NVIDIA SM100 and "
+            "AMD MI355X (gfx950) and needs "
+            "``--kv-cache-format=float4_e2m1fn``."
         ),
     )
     """Independent IndexK cache dtype for MiniMax sparse attention."""

@@ -14,11 +14,11 @@
 from std.sys.info import _TargetType, _accelerator_arch, _current_target
 from std.testing import assert_true, TestSuite
 
-from std._gpu.host.info import (
+from max.gpu.host.info import (
+    _device_type_encoder_target,
     _encode_device_types_with_host_layout,
     get_gpu_target,
 )
-from max.gpu.host.info import _device_type_encoder_target
 
 
 def _same_target[a: _TargetType, b: _TargetType]() -> Bool:

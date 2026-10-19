@@ -49,16 +49,13 @@ using namespace M::KGEN::LIT;
 // Public entry points
 //===----------------------------------------------------------------------===//
 
-void M::KGEN::printFunctionSignature(LIT::FnOp fnOp, LIT::SharedState &shared,
+void M::KGEN::printFunctionSignature(LIT::DefASTDecl &decl,
                                      llvm::raw_string_ostream &os,
-                                     const LIT::ASTDecl *contextDecl,
                                      const SignatureOffsets &offsets) {
-  // The DeclResolver context-changer only records the decl; it does not
-  // mutate it. Const-cast lets us thread it through from `const`-qualified
-  // doc-tooling callers.
-  DeclResolver::DiagnosticDeclContextChanger scope(
-      const_cast<LIT::ASTDecl *>(contextDecl));
+  DeclResolver::DiagnosticDeclContextChanger scope(&decl);
+  auto &shared = decl.getShared();
 
+  FnOp fnOp = decl.getOp();
   Operation *parentOp = fnOp->getParentOp();
   bool isStatic = fnOp.getIsStatic();
   bool isMethod =
@@ -79,7 +76,7 @@ void M::KGEN::printFunctionSignature(LIT::FnOp fnOp, LIT::SharedState &shared,
 
   SmallVector<ParameterInfo, 2> params;
   ParameterEvaluator evaluator =
-      populateParameterInfos(shared, signature.getInputParamTypes(),
+      populateParameterInfos(decl, signature.getInputParamTypes(),
                              signature.getParamListAttrs(), params, selfType);
 
   // Function-level constraints (the trailing "where ...").
@@ -89,7 +86,7 @@ void M::KGEN::printFunctionSignature(LIT::FnOp fnOp, LIT::SharedState &shared,
 
   SmallVector<ArgumentInfo, 2> args;
   populateArgumentInfos(
-      shared, signature, fnOp.getArgumentTypes(), selfType, evaluator,
+      decl, signature, fnOp.getArgumentTypes(), selfType, evaluator,
       [&] { return fnOp.getSpecialFunctionInfo().hasSelfResult(); }, args);
 
   // Pre-render the return type for the shared printer; suppressed entirely
@@ -125,17 +122,16 @@ void M::KGEN::printFunctionSignature(LIT::FnOp fnOp, LIT::SharedState &shared,
       offsets);
 }
 
-void M::KGEN::printStructSignature(LIT::StructDeclOp structOp,
-                                   LIT::SharedState &shared,
+void M::KGEN::printStructSignature(LIT::StructASTDecl &decl,
                                    llvm::raw_string_ostream &os,
-                                   const LIT::ASTDecl *contextDecl,
                                    const SignatureOffsets &offsets) {
-  DeclResolver::DiagnosticDeclContextChanger scope(
-      const_cast<LIT::ASTDecl *>(contextDecl));
+  DeclResolver::DiagnosticDeclContextChanger scope(&decl);
+  auto &shared = decl.getShared();
+  StructDeclOp structOp = decl.getOp();
   TypeSignatureType signature = structOp.getSignature();
   SmallVector<ParameterInfo, 2> params;
   ParameterEvaluator evaluator =
-      populateParameterInfos(shared, signature.getInputParamTypes(),
+      populateParameterInfos(decl, signature.getInputParamTypes(),
                              signature.getParamListAttrs(), params);
 
   // Struct-level constraints (the trailing "where ...").
@@ -147,13 +143,12 @@ void M::KGEN::printStructSignature(LIT::StructDeclOp structOp,
                                 os, offsets);
 }
 
-void M::KGEN::printAliasSignature(LIT::AliasDeclOp aliasOp,
-                                  LIT::SharedState &shared,
+void M::KGEN::printAliasSignature(LIT::AliasASTDecl &decl,
                                   llvm::raw_string_ostream &os,
-                                  const LIT::ASTDecl *contextDecl,
                                   const SignatureOffsets &offsets) {
-  DeclResolver::DiagnosticDeclContextChanger scope(
-      const_cast<LIT::ASTDecl *>(contextDecl));
+  DeclResolver::DiagnosticDeclContextChanger scope(&decl);
+  auto &shared = decl.getShared();
+  AliasDeclOp aliasOp = decl.getOp();
   auto maybeValue = aliasOp.getValue();
   if (!maybeValue)
     return;
@@ -166,7 +161,7 @@ void M::KGEN::printAliasSignature(LIT::AliasDeclOp aliasOp,
 
   SmallVector<ParameterInfo, 2> params;
   ParameterEvaluator evaluator =
-      populateParameterInfos(shared, generatorType.getInputParamTypes(),
+      populateParameterInfos(decl, generatorType.getInputParamTypes(),
                              generatorType.getParamListAttrs(), params);
 
   // Decl-level constraints (the trailing "where ...").
@@ -180,13 +175,11 @@ void M::KGEN::printAliasSignature(LIT::AliasDeclOp aliasOp,
                                os, offsets);
 }
 
-void M::KGEN::printTraitSignature(LIT::TraitDeclOp traitOp,
-                                  LIT::SharedState &shared,
+void M::KGEN::printTraitSignature(LIT::TraitASTDecl &decl,
                                   llvm::raw_string_ostream &os,
-                                  const LIT::ASTDecl *contextDecl,
                                   const SignatureOffsets &offsets) {
-  DeclResolver::DiagnosticDeclContextChanger scope(
-      const_cast<LIT::ASTDecl *>(contextDecl));
+  DeclResolver::DiagnosticDeclContextChanger scope(&decl);
+  TraitDeclOp traitOp = decl.getOp();
 
   auto name = demangleParameterName(traitOp.getName(), /*forUser=*/true);
   os << "trait " << name;
@@ -196,26 +189,17 @@ void M::KGEN::printTraitSignature(LIT::TraitDeclOp traitOp,
 // Diagnostic-oriented helpers
 //===----------------------------------------------------------------------===//
 
-std::string M::KGEN::synthesizeDeclSignature(Operation *op, SharedState &shared,
-                                             const ASTDecl *contextDecl) {
-  if (!op)
-    return {};
+std::string M::KGEN::synthesizeDeclSignature(const ASTDecl &decl) {
   std::string out;
   llvm::raw_string_ostream os(out);
-  llvm::TypeSwitch<Operation *>(op)
-      .Case<FnOp>([&](FnOp fnOp) {
-        printFunctionSignature(fnOp, shared, os, contextDecl);
-      })
-      .Case<StructDeclOp>([&](StructDeclOp structOp) {
-        printStructSignature(structOp, shared, os, contextDecl);
-      })
-      .Case<AliasDeclOp>([&](AliasDeclOp aliasOp) {
-        printAliasSignature(aliasOp, shared, os, contextDecl);
-      })
-      .Case<TraitDeclOp>([&](TraitDeclOp traitOp) {
-        printTraitSignature(traitOp, shared, os, contextDecl);
-      })
-      .Default([](Operation *) {});
+  if (auto *fnDecl = dyn_cast<DefASTDecl>(&decl))
+    printFunctionSignature(const_cast<DefASTDecl &>(*fnDecl), os);
+  else if (auto *structDecl = dyn_cast<StructASTDecl>(&decl))
+    printStructSignature(const_cast<StructASTDecl &>(*structDecl), os);
+  else if (auto *aliasDecl = dyn_cast<AliasASTDecl>(&decl))
+    printAliasSignature(const_cast<AliasASTDecl &>(*aliasDecl), os);
+  else if (auto *traitDecl = dyn_cast<TraitASTDecl>(&decl))
+    printTraitSignature(const_cast<TraitASTDecl &>(*traitDecl), os);
   return out;
 }
 
@@ -243,7 +227,7 @@ MojoInflightDiag &MojoInflightDiag::attachNote(const ASTDecl &ctxDecl) & {
   // If we can't, print out the ASTType directly.
   if (auto fnOp = dyn_cast_if_present<FnOp>(op); fnOp && fnOp.isSynthetic()) {
     if (shared) {
-      note.addCustomLineText(synthesizeDeclSignature(fnOp, *shared, &ctxDecl));
+      note.addCustomLineText(synthesizeDeclSignature(ctxDecl));
     } else {
       std::string out;
       llvm::raw_string_ostream os(out);
@@ -259,7 +243,7 @@ MojoInflightDiag &MojoInflightDiag::attachNote(const ASTDecl &ctxDecl) & {
     return note;
 
   // Else synthetize a signature for this op and print that
-  if (auto sig = synthesizeDeclSignature(op, *shared, &ctxDecl); !sig.empty()) {
+  if (auto sig = synthesizeDeclSignature(ctxDecl); !sig.empty()) {
     note.addCustomLineText(sig);
     note.addCustomLineText("    # note - synthetic signature");
   }

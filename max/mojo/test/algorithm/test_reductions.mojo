@@ -74,23 +74,22 @@ def test_fused_reductions_inner() raises:
         vector[i] = Float32(i + 1)
 
     @inline(.always)
-    @__copy_capture(vector)
-    @__parameter
     def input_fn[
         dtype: DType, width: Int
-    ](indices: Coord) -> SIMD[dtype, width]:
+    ](indices: Coord) {var vector} -> SIMD[dtype, width]:
         var loaded_val = vector.unsafe_ptr().unsafe_load[width=width](
-            Int(indices[0].value())
+            Int(indices[0])
         )
         return loaded_val._refine[dtype]()
 
     var out = StaticTuple[Scalar[test_type], num_reductions]()
 
     @inline(.always)
-    @__parameter
     def output_fn[
         dtype: DType, width: SIMDLength
-    ](indices: Coord, val: StaticTuple[SIMD[dtype, width], num_reductions],):
+    ](indices: Coord, val: StaticTuple[SIMD[dtype, width], num_reductions]) {
+        mut out
+    }:
         comptime assert (
             width == 1
         ), "Cannot write output if width is not equal to 1"
@@ -98,7 +97,6 @@ def test_fused_reductions_inner() raises:
         out = rebind[StaticTuple[Scalar[test_type], num_reductions]](val)
 
     @inline(.always)
-    @__parameter
     def reduce_fn[
         ty: DType,
         width: SIMDLength,
@@ -120,12 +118,7 @@ def test_fused_reductions_inner() raises:
     )
     var shape = Coord((size,))
 
-    _reduce_generator[
-        num_reductions, test_type, input_fn, output_fn, reduce_fn, reduce_dim=0
-    ](
-        shape,
-        init=init,
-    )
+    _reduce_generator[reduce_dim=0](shape, init, input_fn, output_fn, reduce_fn)
 
     # CHECK: 1.0
     print(out[0])
@@ -155,18 +148,15 @@ def test_fused_reductions_outer() raises:
         vector[i] = Float32(i + 1)
 
     @inline(.always)
-    @__copy_capture(vector)
-    @__parameter
     def input_fn[
         dtype: DType, width: Int
-    ](indices: Coord) -> SIMD[dtype, width]:
+    ](indices: Coord) {var vector} -> SIMD[dtype, width]:
         var loaded_val = vector.unsafe_ptr().unsafe_load[width=width](
-            Int(indices[0].value()) * 2 + Int(indices[1].value())
+            Int(indices[0]) * 2 + Int(indices[1])
         )
         return loaded_val._refine[dtype]()
 
     @inline(.always)
-    @__parameter
     def reduce_fn[
         ty: DType,
         width: SIMDLength,
@@ -205,12 +195,7 @@ def test_fused_reductions_outer() raises:
             val[2],
         )
 
-    _reduce_generator[
-        num_reductions, test_type, input_fn, output_fn, reduce_fn, reduce_dim=0
-    ](
-        shape,
-        init=init,
-    )
+    _reduce_generator[reduce_dim=0](shape, init, input_fn, output_fn, reduce_fn)
 
 
 # We use a smaller vector so that we do not overflow

@@ -212,7 +212,12 @@ def _model(
             [
                 [
                     GatedDeltaReplayInputs(
-                        qkv_v, conv_w, decay_v, beta_v, ops.silu(verify_conv)
+                        qkv_v,
+                        conv_w,
+                        decay_v,
+                        beta_v,
+                        ops.silu(verify_conv),
+                        qkv_window=qkv_v,
                     )
                 ]
             ],

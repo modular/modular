@@ -15,9 +15,8 @@
 Mirrors `max/kernels/src/nn/conv/gpu/nvidia/sm100/conv2d.mojo`'s
 `conv2d_fprop_with_residual` API so the production-level dispatcher
 can swap SM100 (Blackwell) for AMD MI355X (CDNA4) without touching
-the call site. Same `Conv2dProblemShape`, same `elementwise_lambda_fn`
-and `elementwise_compute_lambda_fn` hooks, same
-`D = Conv(A,B) + beta*C` semantics.
+the call site. Same `Conv2dProblemShape`, same store and compute
+epilogue hooks, same `D = Conv(A,B) + beta*C` semantics.
 
 The residual add fires inside `AMD4WaveMatmul.run_conv2d`'s epilogue,
 which bulk-prefetches `source` into a per-lane VGPR cluster before
@@ -28,22 +27,22 @@ When `has_residual=False` (or `beta == 0.0`), the call routes to
 `amd_4wave_conv` directly: same code path, no residual cost.
 
 Epilogue ordering matches SM100: `D = lambda(Conv(A,B)) + beta * C`,
-i.e. `elementwise_compute_lambda_fn` (pre-residual: bias / ReLU /
-SiLU / GELU) fires on the post-cast `c_type` MMA output before the
-residual FMA, and `elementwise_lambda_fn` (post-residual: void
-store-site lambda) fires after with the fused value.
+i.e. `compute_fn` (pre-residual: bias / ReLU / SiLU / GELU) fires on
+the post-cast `c_type` MMA output before the residual FMA, and
+`epilogue_fn` (post-residual store) fires after with the fused value.
 """
 
 from max.gpu import global_idx
 from max.gpu.host import DeviceContext
-from std.math import ceildiv
-from std.sys import align_of
+from std.math import align_up, ceildiv
 
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Idx, TensorEngine, TensorLayout, TileTensor, row_major
 
 from linalg.utils import (
-    elementwise_compute_lambda_type,
-    elementwise_epilogue_type,
+    ElementwiseComputeFn,
+    ElementwiseEpilogueFn,
+    no_compute_fn,
+    no_epilogue_fn,
 )
 
 from nn.conv.gpu.amd.amd_4wave_conv import amd_4wave_conv
@@ -57,10 +56,13 @@ from nn.conv.gpu.nvidia.sm100.conv_config import Conv2dProblemShape
 
 @__name(t"amd_4wave_conv_residual_kpad_{dtype}")
 def _kpad_filter_frsc[
-    dtype: DType
+    dtype: DType,
+    SrcLayoutType: TensorLayout,
+    src_origin: ImmOrigin,
+    SrcEngine: TensorEngine,
 ](
-    src_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    src: TileTensor[dtype, SrcLayoutType, src_origin, Engine=SrcEngine],
+    dst_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
     K_real: Int32,
     K_padded: Int32,
     F: Int32,
@@ -82,22 +84,23 @@ def _kpad_filter_frsc[
     if k >= _K_real:
         dst_ptr.store(tid, Scalar[dtype](0))
         return
-    dst_ptr.store(tid, src_ptr.load(f * _K_real + k))
+    dst_ptr.store(
+        tid,
+        rebind[Scalar[dtype]](src.reshape(row_major(_F, _K_real)).load((f, k))),
+    )
 
 
 @inline(.always)
 def amd_4wave_conv_fprop_with_residual[
+    EpilogueFnType: ElementwiseEpilogueFn = type_of(no_epilogue_fn),
+    ComputeFnType: ElementwiseComputeFn = type_of(no_compute_fn),
+    //,
     act_type: DType,
     filter_type: DType,
     out_type: DType,
     *,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
-    # Pre-residual fused compute lambda (bias / ReLU / SiLU / GELU).
-    # Fires on the MMA output BEFORE the residual FMA. Matches the
-    # SM100 `D = lambda(Conv(A,B)) + beta * C` semantics.
-    elementwise_compute_lambda_fn: Optional[
-        elementwise_compute_lambda_type
-    ] = None,
+    has_epilogue_fn: Bool = False,
+    has_compute_fn: Bool = False,
     has_residual: Bool = False,
 ](
     output: TileTensor[
@@ -109,33 +112,32 @@ def amd_4wave_conv_fprop_with_residual[
     beta: Float32,
     problem: Conv2dProblemShape,
     ctx: DeviceContext,
+    epilogue_fn: EpilogueFnType = no_epilogue_fn,
+    compute_fn: ComputeFnType = no_compute_fn,
 ) raises:
     """Launch AMD 4-wave Conv2D fprop with optional residual add.
 
-    Computes
-    `D = elementwise_lambda(elementwise_compute_lambda(Conv(A,B)) + beta*C)`
-    (lambdas optional, see `Parameters`). Mirrors the SM100
+    Computes `D = epilogue_fn(compute_fn(Conv(A,B)) + beta*C)` (both
+    epilogues optional, see `Parameters`). Mirrors the SM100
     `conv2d_fprop_with_residual` API so the high-level dispatcher can
     swap platforms without changing call sites.
 
     Supports common UNet / ResNet patterns:
     - Skip connection: `D = Conv(A,B) + C` (beta=1.0, has_residual=True)
     - Residual scaling: `D = Conv(A,B) + 0.5*C` (beta=0.5)
-    - Fused bias + residual: `D = (Conv + bias) + C` (compute lambda + beta=1)
+    - Fused bias + residual: `D = (Conv + bias) + C` (`compute_fn` + beta=1)
 
     Parameters:
+        EpilogueFnType: Type of `epilogue_fn`.
+        ComputeFnType: Type of `compute_fn`.
         act_type: Input activation dtype. FP8 / BF16 / FP16.
         filter_type: Filter dtype. Must equal `act_type`.
         out_type: Output dtype. BF16 when `act_type` is FP8;
             matches `act_type` otherwise.
-        elementwise_lambda_fn: Optional void epilogue lambda applied
-            at the store site, *after* the residual add. Signature:
-            `def(Coord, SIMD) -> None`. Responsible for the
-            output store when set.
-        elementwise_compute_lambda_fn: Optional value-transforming
-            lambda applied *before* the residual add. Signature:
-            `def(Coord, SIMD) -> SIMD`. Use for bias / ReLU /
-            SiLU / GELU fusion in the SM100 ordering.
+        has_epilogue_fn: Whether `epilogue_fn` stores each output chunk
+            instead of the kernel.
+        has_compute_fn: Whether `compute_fn` transforms each output
+            chunk before the residual add.
         has_residual: If True, fuse residual add. If False, `source`
             is ignored and this routes through plain `amd_4wave_conv`.
 
@@ -151,6 +153,13 @@ def amd_4wave_conv_fprop_with_residual[
             `nvidia/sm100/conv_config.mojo`). The shared shape struct
             lets a single call site target either SM100 or MI355X.
         ctx: Device context.
+        epilogue_fn: Stores each output chunk at a 2D coordinate
+            `(m, n)` *after* the residual add, where
+            `m = b*H_out*W_out + h*W_out + w` and `n` is the output
+            channel. Used when `has_epilogue_fn` is set.
+        compute_fn: Transforms each output chunk *before* the residual
+            add. Use for bias / ReLU / SiLU / GELU fusion in the SM100
+            ordering. Used when `has_compute_fn` is set.
 
     Raises:
         Error if device enqueue fails or source shape doesn't match
@@ -165,16 +174,14 @@ def amd_4wave_conv_fprop_with_residual[
     # plumbing.
     comptime if not has_residual:
         _launch_plain_conv[
-            elementwise_lambda_fn=elementwise_lambda_fn,
-            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-        ](output, activation, filter, problem, ctx)
+            has_epilogue_fn=has_epilogue_fn, has_compute_fn=has_compute_fn
+        ](output, activation, filter, problem, ctx, epilogue_fn, compute_fn)
         return
 
     if beta == 0.0:
         _launch_plain_conv[
-            elementwise_lambda_fn=elementwise_lambda_fn,
-            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-        ](output, activation, filter, problem, ctx)
+            has_epilogue_fn=has_epilogue_fn, has_compute_fn=has_compute_fn
+        ](output, activation, filter, problem, ctx, epilogue_fn, compute_fn)
         return
 
     # Validate source shape matches output (NHWC == NHWC).
@@ -202,21 +209,21 @@ def amd_4wave_conv_fprop_with_residual[
     # K-pad to a multiple of `2*BK = 256`. The kernel asserts on this
     # alignment internally; when `K_real` already meets it we skip
     # the alloc + zero-pad entirely.
-    comptime K_padded = ((K_real + 255) // 256) * 256
+    comptime K_padded = align_up(K_real, 256)
     comptime _needs_kpad = K_padded != K_real
     var output_2d = output.reshape(row_major(M, Idx[_C_out]))
 
     # The 2D residual view's row stride is `C_out` (NHWC contiguous).
     var _source_row_stride = _C_out
 
-    # Both lambdas are wired through `amd_4wave_conv` →
+    # Both epilogues are wired through `amd_4wave_conv` →
     # `AMD4WaveMatmul.run_conv2d`:
-    #   - `elementwise_compute_lambda_fn` fires on the MMA output
-    #     (post-cast to `c_type`) BEFORE the residual FMA, matching the
-    #     SM100 `D = lambda(Conv(A,B)) + beta * C` semantics.
-    #   - `elementwise_lambda_fn` fires at the store site (via
-    #     `RegTileEpilogue.store`) AFTER the residual FMA, taking
-    #     responsibility for the final write.
+    #   - `compute_fn` fires on the MMA output (post-cast to `c_type`)
+    #     BEFORE the residual FMA, matching the SM100
+    #     `D = lambda(Conv(A,B)) + beta * C` semantics.
+    #   - `epilogue_fn` fires at the store site (via
+    #     `RegTileEpilogue.store_with_epilogue_fn`) AFTER the residual
+    #     FMA, taking responsibility for the final write.
 
     if problem.stride_h != problem.stride_w or problem.pad_h != problem.pad_w:
         raise Error(
@@ -234,8 +241,14 @@ def amd_4wave_conv_fprop_with_residual[
         comptime _kpad_block = 256
         var _kpad_total = _C_out * K_padded
         var _kpad_grid = ceildiv(_kpad_total, _kpad_block)
-        ctx.enqueue_function[_kpad_filter_frsc[filter_type]](
-            filter.ptr,
+        comptime kpad_kernel = _kpad_filter_frsc[
+            filter_type,
+            filter.LayoutType,
+            ImmOrigin(filter.origin),
+            filter.Engine,
+        ]
+        ctx.enqueue_function[kpad_kernel](
+            filter.as_imm(),
             filter_padded_buf,
             Int32(K_real),
             Int32(K_padded),
@@ -250,8 +263,8 @@ def amd_4wave_conv_fprop_with_residual[
         def _launch_kpad[stride_v: Int, pad_v: Int]() raises {imm}:
             amd_4wave_conv[
                 has_residual=True,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                has_epilogue_fn=has_epilogue_fn,
+                has_compute_fn=has_compute_fn,
                 R=_R,
                 S=_S,
                 stride_h=stride_v,
@@ -265,11 +278,13 @@ def amd_4wave_conv_fprop_with_residual[
                 filter_2d,
                 output_2d,
                 ctx,
-                source_ptr=UnsafePointer[Scalar[out_type], ImmutAnyOrigin](
+                source_ptr=ImmPointer[Scalar[out_type], ImmutAnyOrigin](
                     unsafe_from_address=Int(source.ptr)
                 ),
                 source_row_stride=_source_row_stride,
                 beta=beta,
+                epilogue_fn=epilogue_fn,
+                compute_fn=compute_fn,
             )
 
         var s = problem.stride_h
@@ -299,8 +314,8 @@ def amd_4wave_conv_fprop_with_residual[
         def _launch_no_pad[stride_v: Int, pad_v: Int]() raises {imm}:
             amd_4wave_conv[
                 has_residual=True,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                has_epilogue_fn=has_epilogue_fn,
+                has_compute_fn=has_compute_fn,
                 R=_R,
                 S=_S,
                 stride_h=stride_v,
@@ -314,11 +329,13 @@ def amd_4wave_conv_fprop_with_residual[
                 filter_2d_no_pad,
                 output_2d,
                 ctx,
-                source_ptr=UnsafePointer[Scalar[out_type], ImmutAnyOrigin](
+                source_ptr=ImmPointer[Scalar[out_type], ImmutAnyOrigin](
                     unsafe_from_address=Int(source.ptr)
                 ),
                 source_row_stride=_source_row_stride,
                 beta=beta,
+                epilogue_fn=epilogue_fn,
+                compute_fn=compute_fn,
             )
 
         var s = problem.stride_h
@@ -352,30 +369,29 @@ def _launch_plain_conv[
     act_type: DType,
     filter_type: DType,
     out_type: DType,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
-    elementwise_compute_lambda_fn: Optional[
-        elementwise_compute_lambda_type
-    ] = None,
+    EpilogueFnType: ElementwiseEpilogueFn,
+    ComputeFnType: ElementwiseComputeFn,
+    //,
+    *,
+    has_epilogue_fn: Bool,
+    has_compute_fn: Bool,
 ](
     output: TileTensor[mut=True, out_type, ...],
     activation: TileTensor[act_type, ...],
     filter: TileTensor[filter_type, ...],
     problem: Conv2dProblemShape,
     ctx: DeviceContext,
+    epilogue_fn: EpilogueFnType,
+    compute_fn: ComputeFnType,
 ) raises:
-    """Route through `amd_4wave_conv` when residual is disabled.
-
-    When a user-supplied void lambda is set, wrap it so the inner
-    4-wave launcher can decompose 2D coords back to 4D NHWC before
-    calling the user lambda. Otherwise pass through with no lambda.
-    """
+    """Route through `amd_4wave_conv` when residual is disabled."""
     var M = Int(output.dim[0]()) * Int(output.dim[1]()) * Int(output.dim[2]())
     comptime _C_out = filter.static_shape[0]
     comptime _R = filter.static_shape[1]
     comptime _S = filter.static_shape[2]
     comptime _C_in = filter.static_shape[3]
     comptime K_real = _R * _S * _C_in
-    comptime K_padded = ((K_real + 255) // 256) * 256
+    comptime K_padded = align_up(K_real, 256)
     comptime _needs_kpad = K_padded != K_real
     var output_2d = output.reshape(row_major(M, Idx[_C_out]))
 
@@ -384,38 +400,6 @@ def _launch_plain_conv[
             "asymmetric stride or pad not supported by"
             " amd_4wave_conv_with_residual"
         )
-
-    # Composed epilogue: user's lambda (if any) wrapped so the 4-wave
-    # launcher's 2D coords get to the user (the user keeps the 2D
-    # signature; 4D NHWC decomposition is for compute-lambdas only).
-    var H_out = problem.out_height()
-    var W_out = problem.out_width()
-    var HW_out = H_out * W_out
-
-    @__parameter
-    @inline(.always)
-    @__copy_capture(output, H_out, W_out, HW_out)
-    def composed_epilogue[
-        _dtype: DType,
-        width: SIMDLength,
-        *,
-        alignment: Int = align_of[SIMD[_dtype, width]](),
-    ](idx: Coord, val: SIMD[_dtype, width]) capturing -> None:
-        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
-        comptime if case .Some(_user_lambda) = elementwise_lambda_fn:
-            _user_lambda[alignment=alignment](idx, val)
-        else:
-            # No user lambda — store directly.
-            var m = Int(idx[0].value())
-            var n = Int(idx[1].value())
-            var batch_idx = m // HW_out
-            var rem = m - batch_idx * HW_out
-            var h_idx = rem // W_out
-            var w_idx = rem - h_idx * W_out
-            var coords_4d = Coord(batch_idx, h_idx, w_idx, n)
-            output.store[width=width, alignment=alignment](
-                coords_4d, rebind[SIMD[out_type, width]](val)
-            )
 
     # K-padded filter buffer (alloc + zero-pad) when needed; otherwise
     # reuse the caller's buffer directly. Dispatch (stride, pad) inside
@@ -428,8 +412,14 @@ def _launch_plain_conv[
         comptime _kpad_block = 256
         var _kpad_total = _C_out * K_padded
         var _kpad_grid = ceildiv(_kpad_total, _kpad_block)
-        ctx.enqueue_function[_kpad_filter_frsc[filter_type]](
-            filter.ptr,
+        comptime kpad_kernel = _kpad_filter_frsc[
+            filter_type,
+            filter.LayoutType,
+            ImmOrigin(filter.origin),
+            filter.Engine,
+        ]
+        ctx.enqueue_function[kpad_kernel](
+            filter.as_imm(),
             filter_padded_buf,
             Int32(K_real),
             Int32(K_padded),
@@ -442,31 +432,25 @@ def _launch_plain_conv[
 
         @inline(.always)
         def _launch_kpad[stride_v: Int, pad_v: Int]() raises {imm}:
-            comptime if Bool(elementwise_lambda_fn):
-                amd_4wave_conv[
-                    elementwise_lambda_fn=composed_epilogue,
-                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                    R=_R,
-                    S=_S,
-                    stride_h=stride_v,
-                    stride_w=stride_v,
-                    pad_h=pad_v,
-                    pad_w=pad_v,
-                    C_in=_C_in,
-                    use_runtime_hw=True,
-                ](activation, filter_2d, output_2d, ctx)
-            else:
-                amd_4wave_conv[
-                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                    R=_R,
-                    S=_S,
-                    stride_h=stride_v,
-                    stride_w=stride_v,
-                    pad_h=pad_v,
-                    pad_w=pad_v,
-                    C_in=_C_in,
-                    use_runtime_hw=True,
-                ](activation, filter_2d, output_2d, ctx)
+            amd_4wave_conv[
+                has_epilogue_fn=has_epilogue_fn,
+                has_compute_fn=has_compute_fn,
+                R=_R,
+                S=_S,
+                stride_h=stride_v,
+                stride_w=stride_v,
+                pad_h=pad_v,
+                pad_w=pad_v,
+                C_in=_C_in,
+                use_runtime_hw=True,
+            ](
+                activation,
+                filter_2d,
+                output_2d,
+                ctx,
+                epilogue_fn=epilogue_fn,
+                compute_fn=compute_fn,
+            )
 
         var s = problem.stride_h
         var p = problem.pad_h
@@ -493,31 +477,25 @@ def _launch_plain_conv[
 
         @inline(.always)
         def _launch_no_pad[stride_v: Int, pad_v: Int]() raises {imm}:
-            comptime if Bool(elementwise_lambda_fn):
-                amd_4wave_conv[
-                    elementwise_lambda_fn=composed_epilogue,
-                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                    R=_R,
-                    S=_S,
-                    stride_h=stride_v,
-                    stride_w=stride_v,
-                    pad_h=pad_v,
-                    pad_w=pad_v,
-                    C_in=_C_in,
-                    use_runtime_hw=True,
-                ](activation, filter_2d_no_pad, output_2d, ctx)
-            else:
-                amd_4wave_conv[
-                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                    R=_R,
-                    S=_S,
-                    stride_h=stride_v,
-                    stride_w=stride_v,
-                    pad_h=pad_v,
-                    pad_w=pad_v,
-                    C_in=_C_in,
-                    use_runtime_hw=True,
-                ](activation, filter_2d_no_pad, output_2d, ctx)
+            amd_4wave_conv[
+                has_epilogue_fn=has_epilogue_fn,
+                has_compute_fn=has_compute_fn,
+                R=_R,
+                S=_S,
+                stride_h=stride_v,
+                stride_w=stride_v,
+                pad_h=pad_v,
+                pad_w=pad_v,
+                C_in=_C_in,
+                use_runtime_hw=True,
+            ](
+                activation,
+                filter_2d_no_pad,
+                output_2d,
+                ctx,
+                epilogue_fn=epilogue_fn,
+                compute_fn=compute_fn,
+            )
 
         var s = problem.stride_h
         var p = problem.pad_h

@@ -240,8 +240,16 @@ public:
         buildLLVMArgAttrs(argAttrs, sigClass, op, numFixedArgs, rewriter);
     // resAttrs are dropped when sret is active (no LLVM-level return value).
     mlir::ArrayAttr expectedResAttrs;
-    if (resAttrs && !sigClass.ret.useSRet)
-      expectedResAttrs = rewriter.getArrayAttr(resAttrs);
+    if (!sigClass.ret.useSRet) {
+      NamedAttrList attrs =
+          resAttrs ? NamedAttrList(resAttrs) : NamedAttrList();
+      assert(sigClass.getResultAttrs(getContext()).empty() &&
+             "Not expecting call-side result attrs");
+      if (!attrs.empty()) {
+        expectedResAttrs =
+            rewriter.getArrayAttr({attrs.getDictionary(getContext())});
+      }
+    }
 
     // Step 5: Lookup existing function (unified path - no early return!)
     auto func = symtab.lookup<LLVM::LLVMFuncOp>(op.getCallee().getValue());

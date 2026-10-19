@@ -14,7 +14,6 @@
 from std.os import abort
 from std.pathlib import Path
 from std.sys import (
-    default_accelerator,
     has_accelerator,
     size_of,
 )
@@ -23,6 +22,8 @@ from std.ffi import CStringSpan, _Global, OwnedDLHandle, _try_find_dylib
 from std.sys.defines import get_defined_int
 
 from std.utils.variant import Variant
+
+from ..host import default_accelerator
 
 # ===-----------------------------------------------------------------------===#
 # Library Load

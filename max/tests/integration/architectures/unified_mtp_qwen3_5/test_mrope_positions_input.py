@@ -11,14 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""The fused spec graph declares M-RoPE positions exactly when it should.
+"""The fused spec graph declares its image inputs exactly when it should.
 
 ``vision_config`` normally carries two facts at once: an encoder must be built,
 and images can appear in a request's context. The fused speculative model
 clears it to avoid compiling a tower it never calls, which used to clear
 ``mrope_enabled`` with it -- so the positions input silently vanished from the
 export and every token after an image was placed on the static rope table.
-``mrope_without_encoder`` separates the two.
+``mrope_without_encoder`` separates the two, and also declares the inputs that
+take the encoder's output.
 
 That failure is invisible from the graph's behavior: it compiles, runs, and
 produces fluent text. Only the declared arity shows it, which is what these
@@ -108,29 +109,40 @@ def _spec_input_types(config: Qwen3_5Config) -> tuple[object, ...]:
     return tuple(UnifiedMTPQwen3_5(config).input_types(spec_kv))
 
 
-def test_positions_are_declared_without_a_vision_encoder() -> None:
+def test_image_inputs_are_declared_without_a_vision_encoder() -> None:
     """The decoupling itself: no encoder, no vision config, still M-RoPE."""
-    without = _spec_input_types(
+    text = _spec_input_types(
         _config(mrope_section=MROPE_SECTION, without_encoder=False)
     )
-    with_positions = _spec_input_types(
+    vision = _spec_input_types(
         _config(mrope_section=MROPE_SECTION, without_encoder=True)
     )
 
-    assert len(with_positions) == len(without) + 1, (
-        "the positions input is the only difference the flag may make"
+    assert len(vision) == len(text) + 3, (
+        "one device's embeddings and scatter indices, and the positions, are"
+        " the only difference the flag may make"
     )
 
-    tail = with_positions[-1]
+    # The encoder's output follows the tokens, where the canonical
+    # spec-decode signature declares it.
+    embeddings, indices = vision[1:3]
+    assert isinstance(embeddings, TensorType)
+    assert embeddings.dtype == DType.bfloat16
+    assert [str(d) for d in embeddings.shape] == [
+        "vision_merged_seq_len",
+        str(HIDDEN),
+    ]
+    assert isinstance(indices, TensorType)
+    assert indices.dtype == DType.int32
+
+    tail = vision[-1]
     assert isinstance(tail, TensorType)
     assert tail.dtype == DType.int64
     # Three axes over the merged `[real, draft_1..draft_k]` window, which is
     # longer than the token count the rest of the signature is sized by.
     assert [str(d) for d in tail.shape] == ["3", "merged_total_seq_len"]
 
-    # Everything before it keeps its slot, so one export's map is the other's
-    # prefix and the engine can drive either.
-    assert with_positions[:-1] == without
+    assert (vision[0], *vision[3:-1]) == text, "every other slot is unchanged"
 
 
 def test_no_mrope_section_means_no_positions() -> None:

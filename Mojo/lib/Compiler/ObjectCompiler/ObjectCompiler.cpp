@@ -342,7 +342,8 @@ runLlcPasses(llvm::Module &module, CompilationOptions &options,
   }
 
   const_cast<TargetLoweringObjectFile *>(llvmTargetMachine.getObjFileLowering())
-      ->Initialize(machineModInfoPass->getMMI().getContext(), targetMachine);
+      ->initialize(machineModInfoPass->getMMI().getContext(), targetMachine,
+                   module);
 
   passMgr.run(module);
 
@@ -891,7 +892,10 @@ ObjectCompiler::emitArchiveParallelCompilation(
     if (strategy == SplitStrategy::PerFunction)
       splitPerFunction(std::move(llvmModule), handleSplit, symbolLinkageTypes);
     else
-      splitPerExported(std::move(llvmModule), handleSplit);
+      // A kernel module must stay self-contained to be loadable.
+      splitPerExported(std::move(llvmModule), handleSplit, symbolLinkageTypes,
+                       /*outlineSharedSubtrees=*/!backend.isOffload(),
+                       cpuDevice.getWorkQueue()->getParallelismLevel());
   }
   return cacheResults;
 }
@@ -1856,7 +1860,10 @@ ObjectCompiler::emitOffloadKernels(
         cachedResults.push_back(std::move(result.second));
       };
 
-  splitPerExported(std::move(llvmModule), handleSplit);
+  // Required by the signature; offload never outlines, so it stays empty.
+  llvm::StringMap<llvm::GlobalValue::LinkageTypes> unusedLinkageTypes;
+  splitPerExported(std::move(llvmModule), handleSplit, unusedLinkageTypes,
+                   /*outlineSharedSubtrees=*/false);
 
   auto result = AsyncRT::AsyncValueRef<
       DenseMap<uint64_t, DenseMap<EmitAs, BufferRef>>>::allocate(cpuDevice);

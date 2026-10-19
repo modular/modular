@@ -124,9 +124,8 @@ def bench_rms_norm_fused_fp8[
             @inline(.always)
             @__parameter
             def input_fn[width: Int](coords: Coord) -> SIMD[in_dtype, width]:
-                var idx = data_buf_offset.layout(coords)
-                return data_buf_offset.raw_load[width=width, alignment=width](
-                    idx
+                return data_buf_offset.load[width=width, alignment=width](
+                    coords
                 )
 
             # Output function for RMS norm
@@ -136,10 +135,7 @@ def bench_rms_norm_fused_fp8[
             def rms_output_fn[
                 width: SIMDLength, alignment: Int
             ](coords: Coord, val: SIMD[in_dtype, width]) -> None:
-                var idx = rms_output_buf_offset.layout(coords)
-                rms_output_buf_offset.raw_store[
-                    width=width, alignment=alignment
-                ](idx, val)
+                rms_output_buf_offset.store[alignment=alignment](coords, val)
 
             rms_norm_gpu[
                 rank,
@@ -237,9 +233,8 @@ def bench_rms_norm_fused_fp8[
                 var data_buf_offset = TileTensor(
                     data_ptr_offset, row_major(Coord(shape))
                 )
-                var idx = data_buf_offset.layout(Coord(coords))
-                return data_buf_offset.raw_load[width=width, alignment=width](
-                    idx
+                return data_buf_offset.load[width=width, alignment=width](
+                    Coord(coords)
                 )
 
             var fused_output_tt = TileTensor(
@@ -310,8 +305,7 @@ def bench_rms_norm_fused_fp8[
     @inline(.always)
     @__parameter
     def input_fn_verify[width: Int](coords: Coord) -> SIMD[in_dtype, width]:
-        var idx = data_buf_verify.layout(coords)
-        return data_buf_verify.raw_load[width=width](idx)
+        return data_buf_verify.load[width=width](coords)
 
     # Output function for verification
     @inline(.always)
@@ -320,10 +314,7 @@ def bench_rms_norm_fused_fp8[
     def rms_output_fn_verify[
         width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[in_dtype, width]) -> None:
-        var idx = rms_output_buf_verify.layout(coords)
-        rms_output_buf_verify.raw_store[width=width, alignment=alignment](
-            idx, val
-        )
+        rms_output_buf_verify.store[alignment=alignment](coords, val)
 
     # Run RMS norm
     rms_norm_gpu[
@@ -381,8 +372,7 @@ def bench_rms_norm_fused_fp8[
     ](coords: IndexList[_rank]) -> SIMD[in_dtype, width]:
         var data_ptr = data_base_ptr_verify
         var data_buf = TileTensor(data_ptr, row_major(Coord(shape)))
-        var idx = data_buf.layout(Coord(coords))
-        return data_buf.raw_load[width=width](idx)
+        return data_buf.load[width=width](Coord(coords))
 
     var fused_output_tt_verify = TileTensor(
         fused_verify_base_ptr,

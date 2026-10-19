@@ -47,7 +47,7 @@ from max.gpu import (
     warp_id,
 )
 from max.gpu import barrier, syncwarp
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, default_accelerator
 from max.gpu.primitives import block
 from max.gpu.primitives import warp
 from max.gpu.primitives.grid_controls import (
@@ -57,9 +57,9 @@ from max.gpu.primitives.grid_controls import (
 )
 from std.math import ceildiv
 from std.math.uutils import udivmod
-from std.memory import UnsafePointer, stack_allocation
+from std.memory import stack_allocation
 from std.sys import size_of, get_defined_int
-from std.sys.info import default_accelerator, is_apple_gpu
+from std.sys.info import is_apple_gpu
 from std.utils.coord import Coord, DynamicCoord, coord_to_index_list
 from std.utils.static_tuple import StaticTuple
 
@@ -278,8 +278,8 @@ def _warp_shuffle_combine[S: ReduceOp](mut state: S):
     comptime for step in reversed(range(log2_floor(WARP_SIZE))):
         var stride = UInt32(1 << step)
         var partner = S()
-        var state_ptr = UnsafePointer(to=state).bitcast[UInt32]()
-        var partner_ptr = UnsafePointer(to=partner).bitcast[UInt32]()
+        var state_ptr = Pointer(to=state).unsafe_bitcast[UInt32]()
+        var partner_ptr = Pointer(to=partner).unsafe_bitcast[UInt32]()
 
         comptime for word in range(n_words):
             partner_ptr[word] = warp.shuffle_xor(state_ptr[word], stride)
@@ -657,7 +657,7 @@ def reduce[
         var blocks_per_row = Int(ctx._blocks_per_row)
         var block_in_row = Int(ctx._block_in_row)
         var tid = thread_idx.x
-        var row_tid = block_in_row * ctx.BLOCK_SIZE + Int(tid)
+        var row_tid = block_in_row * ctx.BLOCK_SIZE + tid
         var row_total_threads = blocks_per_row * ctx.BLOCK_SIZE
 
         # `sw > 1` is dispatched only when `sw` divides the row, so the stripe
@@ -752,7 +752,7 @@ def reduce[
         var blocks_per_row = Int(ctx._blocks_per_row) if fits else 1
         var block_in_row = Int(ctx._block_in_row)
         var tid = thread_idx.x
-        var row_tid = block_in_row * ctx.BLOCK_SIZE + Int(tid)
+        var row_tid = block_in_row * ctx.BLOCK_SIZE + tid
         var row_total_threads = blocks_per_row * ctx.BLOCK_SIZE
 
         if fits or block_in_row == 0:
@@ -854,7 +854,9 @@ def pjoin[
             # block's result is a scalar, which holds the second `BlockReducer`
             # tree's shmem at width-1 whatever `simd_width` the tier runs at.
             var blocks_per_row_ = Int(ctx._blocks_per_row)
-            var counter_ptr = ctx._counters_base + Int(ctx._row_idx)
+            var counter_ptr = ctx._counters_base.unsafe_offset(
+                Int(ctx._row_idx)
+            )
             var last_shmem = stack_allocation[1, Bool, address_space=.SHARED]()
             var tid_ = thread_idx.x
             if tid_ == 0:
@@ -889,8 +891,8 @@ def pjoin[
                 # the identity, so the lowest per-block index won the
                 # tie-break instead of the row's argmax.
                 var local = State.Single()
-                if Int(tid_) < blocks_per_row_:
-                    local = ctx.row_partial[State.Single](Int(tid_))[0]
+                if tid_ < blocks_per_row_:
+                    local = ctx.row_partial[State.Single](tid_)[0]
                 local.join_parallel(BlockReducer[ctx.BLOCK_SIZE]())
                 state = State(local)
     else:
@@ -1034,6 +1036,9 @@ struct _BlockKernel[rank: Int, params: ContextParams, Body: RowBody](
         self.body = body
         self.shape = shape
 
+    @__name(
+        t"{Self.params.name}_block_t{Self.params._tier.value}_r{Self.rank}_ax{Self.params.axis}_w{Self.params.simd_width}_bs{Self.params.BLOCK_SIZE}",
+    )
     @__llvm_metadata(
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
             Int32(Self.params.BLOCK_SIZE)
@@ -1069,6 +1074,9 @@ struct _WarpKernel[rank: Int, params: ContextParams, Body: RowBody](
         self.body = body
         self.shape = shape
 
+    @__name(
+        t"{Self.params.name}_warp_t{Self.params._tier.value}_r{Self.rank}_ax{Self.params.axis}_w{Self.params.simd_width}_bs{Self.params.BLOCK_SIZE}",
+    )
     @__llvm_metadata(
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
             Int32(Self.params.BLOCK_SIZE)
@@ -1112,6 +1120,9 @@ struct _TiledKernel[rank: Int, params: ContextParams, Body: RowBody](
         self.body = body
         self.shape = shape
 
+    @__name(
+        t"{Self.params.name}_tiled_t{Self.params._tier.value}_r{Self.rank}_ax{Self.params.axis}_ew{Self.params.emit_tile_width}_w{Self.params.simd_width}_bs{Self.params.BLOCK_SIZE}",
+    )
     @__llvm_metadata(
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
             Int32(Self.params.BLOCK_SIZE)
@@ -1159,8 +1170,8 @@ struct _SplitkKernel[rank: Int, params: ContextParams, Body: RowBody](
 
     var body: Self.Body
     var shape: DynamicCoord[.int64, Self.rank]
-    var partials: UnsafePointer[UInt8, MutUntrackedOrigin]
-    var counters: UnsafePointer[Int32, MutUntrackedOrigin]
+    var partials: MutPointer[UInt8, MutUntrackedOrigin]
+    var counters: MutPointer[Int32, MutUntrackedOrigin]
     var blocks_per_row: Int32
 
     @inline(.always)
@@ -1168,8 +1179,8 @@ struct _SplitkKernel[rank: Int, params: ContextParams, Body: RowBody](
         out self,
         body: Self.Body,
         shape: DynamicCoord[.int64, Self.rank],
-        partials: UnsafePointer[UInt8, MutUntrackedOrigin],
-        counters: UnsafePointer[Int32, MutUntrackedOrigin],
+        partials: MutPointer[UInt8, MutUntrackedOrigin],
+        counters: MutPointer[Int32, MutUntrackedOrigin],
         blocks_per_row: Int32,
     ):
         self.body = body
@@ -1178,6 +1189,9 @@ struct _SplitkKernel[rank: Int, params: ContextParams, Body: RowBody](
         self.counters = counters
         self.blocks_per_row = blocks_per_row
 
+    @__name(
+        t"{Self.params.name}_splitk_t{Self.params._tier.value}_r{Self.rank}_ax{Self.params.axis}_w{Self.params.simd_width}_bs{Self.params.BLOCK_SIZE}",
+    )
     @__llvm_metadata(
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
             Int32(Self.params.BLOCK_SIZE)
@@ -1220,7 +1234,7 @@ struct _PointwiseSplitkKernel[rank: Int, params: ContextParams, Body: RowBody](
 
     var body: Self.Body
     var shape: DynamicCoord[.int64, Self.rank]
-    var partials: UnsafePointer[UInt8, MutUntrackedOrigin]
+    var partials: MutPointer[UInt8, MutUntrackedOrigin]
     var num_splits: Int32
     var phase: Int32
 
@@ -1229,7 +1243,7 @@ struct _PointwiseSplitkKernel[rank: Int, params: ContextParams, Body: RowBody](
         out self,
         body: Self.Body,
         shape: DynamicCoord[.int64, Self.rank],
-        partials: UnsafePointer[UInt8, MutUntrackedOrigin],
+        partials: MutPointer[UInt8, MutUntrackedOrigin],
         num_splits: Int32,
         phase: Int32,
     ):
@@ -1239,6 +1253,9 @@ struct _PointwiseSplitkKernel[rank: Int, params: ContextParams, Body: RowBody](
         self.num_splits = num_splits
         self.phase = phase
 
+    @__name(
+        t"{Self.params.name}_splitk_pointwise_t{Self.params._tier.value}_r{Self.rank}_ax{Self.params.axis}_ph{Self.params._num_phases}_w{Self.params.simd_width}_bs{Self.params.BLOCK_SIZE}",
+    )
     @__llvm_metadata(
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
             Int32(Self.params.BLOCK_SIZE)
@@ -1258,7 +1275,7 @@ struct _PointwiseSplitkKernel[rank: Int, params: ContextParams, Body: RowBody](
         )
         var ctx = Context[Self.params](
             partials_base=self.partials,
-            counters_base=UnsafePointer[Int32, MutUntrackedOrigin](
+            counters_base=MutPointer[Int32, MutUntrackedOrigin](
                 unsafe_from_address=1
             ),
             blocks_per_row=self.num_splits,
@@ -1287,6 +1304,7 @@ def launch[
     WARP_BLOCK_WARPS: Int = 4,
     num_phases: Int = 0,
     dtype_size: Int = 0,
+    name: StaticString = "rowwise",
 ](body: Body, shape: Coord, ctx: DeviceContext) raises:
     """Top-level scaffolder. Picks the tier from shape + axis,
     instantiates the matching kernel, and launches.
@@ -1344,6 +1362,9 @@ def launch[
         dtype_size: Byte size of the body's primary dtype, used only by the
             per-element-output split-K byte gate above (`0` when the tier is
             off). Bodies pass `size_of[dtype]()`.
+        name: Operation name interpolated into each tier kernel's
+            `@__name` so a profile row identifies the op (defaults to
+            `"rowwise"`).
 
     Args:
         body: The per-row computation. Receives a `Context` and the
@@ -1414,6 +1435,7 @@ def launch[
                 BLOCK_SIZE=tiled_block_size,
                 simd_width=W,
                 target="gpu",
+                name=name,
             )
             var num_blocks = min(
                 ceildiv(num_rows, tiled_block_size * W),
@@ -1445,6 +1467,7 @@ def launch[
                 simd_width=1,
                 target="gpu",
                 tier=ReduceTier.Serial,
+                name=name,
             )
             var w1_num_blocks = min(
                 ceildiv(num_rows, tiled_block_size),
@@ -1465,6 +1488,7 @@ def launch[
             BLOCK_SIZE=COOPERATIVE_BLOCK_SIZE,
             simd_width=1,
             target="gpu",
+            name=name,
         )
         var coop_num_blocks = min(num_rows, sm_count * _SM_OVERPROVISION)
         ctx.enqueue_function(
@@ -1534,6 +1558,7 @@ def launch[
                     simd_width=sw,
                     target="gpu",
                     num_phases=num_phases,
+                    name=name,
                 )
 
                 # K+1 launches on this stream (`num_phases == K + 1`). Phase
@@ -1604,6 +1629,7 @@ def launch[
                 tier=ReduceTier.Warp,
                 simd_width=sw,
                 target="gpu",
+                name=name,
             )
             ctx.enqueue_function(
                 _WarpKernel[rank, warp_params, Body](body, shape_dc),
@@ -1711,6 +1737,7 @@ def launch[
                     tier=ReduceTier.Splitk,
                     simd_width=sw,
                     target="gpu",
+                    name=name,
                 )
                 ctx.enqueue_function(
                     _SplitkKernel[rank, splitk_params, Body](
@@ -1781,6 +1808,7 @@ def launch[
                 BLOCK_SIZE=BS,
                 simd_width=sw,
                 target="gpu",
+                name=name,
             )
             ctx.enqueue_function(
                 _BlockKernel[rank, block_params, Body](body, shape_dc),
@@ -1821,6 +1849,7 @@ def launch[
                 BLOCK_SIZE=BLOCK_SIZE,
                 simd_width=sw,
                 target="gpu",
+                name=name,
             )
             ctx.enqueue_function(
                 _BlockKernel[rank, block_params, Body](body, shape_dc),
@@ -1849,6 +1878,7 @@ def launch[
                 BLOCK_SIZE=BS,
                 simd_width=sw,
                 target="gpu",
+                name=name,
             )
             ctx.enqueue_function(
                 _BlockKernel[rank, block_params, Body](body, shape_dc),

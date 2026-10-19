@@ -195,7 +195,7 @@ struct AllReduceAlgorithm(EnumLike, TrivialRegisterPassable, Writable):
     ].values
 
     comptime _enum_case_types = TypeList.splat[
-        ParameterList[Self._enum_case_names].size, NoneType
+        ParameterList[Self._enum_case_names].length, NoneType
     ].values
 
     @inline(.always)
@@ -840,11 +840,10 @@ def _allreduce_2stage_kernel[
         comptime PtrType = MutPointer[Scalar[dtype], MutAnyOrigin]
         var tmps = Array[_, ngpus](
             fill_with_unrolled=lambda [i: Int]() -> PtrType: (
-                rank_sigs[circular_add[ngpus](_my_rank, i)].address_space_cast[
-                    .GENERIC
-                ]()
-                + 1
-            ).bitcast[Scalar[dtype]]()
+                rank_sigs[circular_add[ngpus](_my_rank, i)]
+                .unsafe_address_space_cast[.GENERIC]()
+                .unsafe_offset(1)
+            ).unsafe_bitcast[Scalar[dtype]]()
         )
 
         # Current rank's output buffer.
@@ -874,11 +873,8 @@ def _allreduce_2stage_kernel[
             _alignment: Int,
         ](coords: Coord, val: SIMD[_dtype, _width]) -> None:
             tmp_buff.address_space_cast[_target_address_space]().store[
-                width=_width, alignment=_alignment
-            ](
-                coords,
-                val.cast[dtype](),
-            )
+                alignment=_alignment
+            ](coords, val.cast[dtype]())
 
         # Slice input tiles to this rank's partition for reduce-scatter. The
         # slice goes through the engine, so a slot-backed input keeps
@@ -928,7 +924,7 @@ def _allreduce_2stage_kernel[
                 output_lambda[width=simd_width, alignment=alignment](
                     output_layout.idx2crd(dst_idx),
                     tmps[gpu_idx]
-                    .address_space_cast[_target_address_space]()
+                    .unsafe_address_space_cast[_target_address_space]()
                     .load[width=simd_width, alignment=alignment](idx),
                 )
 
@@ -943,7 +939,7 @@ def _allreduce_2stage_kernel[
                 output_lambda[width=simd_width, alignment=alignment](
                     output_layout.idx2crd(dst_idx),
                     tmps[global_tid]
-                    .address_space_cast[_target_address_space]()
+                    .unsafe_address_space_cast[_target_address_space]()
                     .load[width=simd_width, alignment=alignment](idx),
                 )
 
@@ -973,16 +969,14 @@ def _allreduce_1stage_reduce_store_one[
     var accum = (
         ptrs[0]
         .address_space_cast[_target_address_space]()
-        .load[width=1, alignment=scalar_align, invariant=True](Coord(elem_idx))
+        .load[width=1, alignment=scalar_align]((elem_idx,))
         .cast[accum_type]()
     )
     comptime for gpu_idx in range(1, num_tensors):
         accum += (
             ptrs[gpu_idx]
             .address_space_cast[_target_address_space]()
-            .load[width=1, alignment=scalar_align, invariant=True](
-                Coord(elem_idx)
-            )
+            .load[width=1, alignment=scalar_align]((elem_idx,))
             .cast[accum_type]()
         )
     var reduced = accum.cast[dtype]()
@@ -1283,7 +1277,7 @@ def _allreduce_lamport_kernel[
             var local = remove_neg_zero[dtype, atomic_width](
                 src_tensors[_my_rank]
                 .address_space_cast[_target_address_space]()
-                .load[width=atomic_width, alignment=alignment](Coord(elem_idx))
+                .load[width=atomic_width, alignment=alignment]((elem_idx,))
             )
 
             # (b) Push into each PEER's generation buffer at this rank's slot
@@ -1364,7 +1358,7 @@ def _allreduce_lamport_kernel[
         barrier()
         if thread_idx.x == 0:
             var arrived = Atomic.fetch_add(
-                state + Lamport.STATE_ARRIVAL, UInt32(1)
+                state.unsafe_offset(Lamport.STATE_ARRIVAL), UInt32(1)
             )
             if Int(arrived) == grid_dim.x - 1:
                 state.store[volatile=True](
@@ -1833,9 +1827,7 @@ def allreduce[
         *,
         _alignment: Int,
     ](coords: Coord, val: SIMD[_dtype, _width]) -> None:
-        output_tensor.store[width=_width, alignment=_alignment](
-            coords, val.cast[dtype]()
-        )
+        output_tensor.store[alignment=_alignment](coords, val.cast[dtype]())
 
     allreduce[
         ngpus=ngpus,

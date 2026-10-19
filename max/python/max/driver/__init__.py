@@ -42,6 +42,11 @@ from max._core.driver import (
 )
 from max._core_types.driver import DLPackArray
 
+from .bfloat16 import (
+    bfloat16_as_uint16_to_float32,
+    float32_array_to_buffer,
+    float32_to_bfloat16_as_uint16,
+)
 from .buffer import (
     Buffer,
     _ChunkedStagingRegion,
@@ -141,11 +146,14 @@ __all__ = [
     "accelerator_count",
     "batch_inplace_copy",
     "begin_launch_trace",
+    "bfloat16_as_uint16_to_float32",
     "calculate_virtual_device_count",
     "calculate_virtual_device_count_from_cli",
     "copy_pinned_to_destinations",
     "devices_exist",
     "enable_all_peer_access",
+    "float32_array_to_buffer",
+    "float32_to_bfloat16_as_uint16",
     "get_virtual_cpu_target",
     "get_virtual_device_api",
     "get_virtual_device_count",

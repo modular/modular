@@ -45,7 +45,7 @@ class _FakeClient:
         self.chat = SimpleNamespace(completions=_FakeCompletions(message))
 
 
-def _infer(message: SimpleNamespace, **kwargs: Any) -> dict[str, Any]:
+def _infer(message: SimpleNamespace) -> dict[str, Any]:
     return gpqa_eval.infer(
         _FakeClient(message),
         "model",
@@ -53,39 +53,23 @@ def _infer(message: SimpleNamespace, **kwargs: Any) -> dict[str, Any]:
         GenParams(),
         root_preamble="",
         system_prompt="sys",
-        **kwargs,
     )
 
 
-def test_rows_omit_response_text_by_default() -> None:
+def test_rows_keep_content_and_reasoning() -> None:
     row = _infer(SimpleNamespace(content="Answer: A", reasoning="hmm"))
-    assert "response" not in row
-    assert "reasoning" not in row
+    assert row["response"] == "Answer: A"
+    assert row["reasoning"] == "hmm"
     assert row["prompt_index"] == 3
     assert row["completion_tokens"] == 7
 
 
-def test_save_responses_keeps_content_and_reasoning() -> None:
-    row = _infer(
-        SimpleNamespace(content="Answer: A", reasoning="hmm"),
-        save_responses=True,
-    )
-    assert row["response"] == "Answer: A"
+def test_rows_read_reasoning_content() -> None:
+    row = _infer(SimpleNamespace(content="Answer: A", reasoning_content="hmm"))
     assert row["reasoning"] == "hmm"
 
 
-def test_save_responses_reads_reasoning_content() -> None:
-    row = _infer(
-        SimpleNamespace(content="Answer: A", reasoning_content="hmm"),
-        save_responses=True,
-    )
-    assert row["reasoning"] == "hmm"
-
-
-def test_save_responses_without_separate_reasoning() -> None:
-    row = _infer(
-        SimpleNamespace(content="<think>hmm</think>Answer: A"),
-        save_responses=True,
-    )
+def test_rows_without_separate_reasoning() -> None:
+    row = _infer(SimpleNamespace(content="<think>hmm</think>Answer: A"))
     assert row["response"] == "<think>hmm</think>Answer: A"
     assert row["reasoning"] is None

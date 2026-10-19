@@ -418,11 +418,15 @@ def load_AB_SFA_SFB[
             var sfb_smem_tile = sfb_smem_tiles[offset]
 
             var a_smem_slice = type_of(a_smem_tile)(
-                a_smem_tile.ptr + peer_cta_coord[2] * a_tma_load_size,
+                a_smem_tile.ptr.unsafe_offset(
+                    peer_cta_coord[2] * a_tma_load_size
+                ),
                 a_smem_tile.layout,
             )
             var b_smem_slice = type_of(b_smem_tile)(
-                b_smem_tile.ptr + peer_cta_coord[1] * b_tma_load_size,
+                b_smem_tile.ptr.unsafe_offset(
+                    peer_cta_coord[1] * b_tma_load_size
+                ),
                 b_smem_tile.layout,
             )
 
@@ -591,7 +595,9 @@ def _prefetch_weight_tiles[
             comptime if not AB_swapped:
                 var b_smem_tile = b_smem_tiles[offset]
                 var b_smem_slice = type_of(b_smem_tile)(
-                    b_smem_tile.ptr + peer_cta_coord[1] * b_tma_load_size,
+                    b_smem_tile.ptr.unsafe_offset(
+                        peer_cta_coord[1] * b_tma_load_size
+                    ),
                     b_smem_tile.layout,
                 )
                 b_tma_op.async_multicast_load_3d[cta_group](
@@ -619,7 +625,9 @@ def _prefetch_weight_tiles[
             else:
                 var a_smem_tile = a_smem_tiles[offset]
                 var a_smem_slice = type_of(a_smem_tile)(
-                    a_smem_tile.ptr + peer_cta_coord[2] * a_tma_load_size,
+                    a_smem_tile.ptr.unsafe_offset(
+                        peer_cta_coord[2] * a_tma_load_size
+                    ),
                     a_smem_tile.layout,
                 )
                 a_tma_op.async_multicast_load_3d[cta_group](
@@ -732,7 +740,9 @@ def _complete_activation_tiles[
             comptime if not AB_swapped:
                 var a_smem_tile = a_smem_tiles[offset]
                 var a_smem_slice = type_of(a_smem_tile)(
-                    a_smem_tile.ptr + peer_cta_coord[2] * a_tma_load_size,
+                    a_smem_tile.ptr.unsafe_offset(
+                        peer_cta_coord[2] * a_tma_load_size
+                    ),
                     a_smem_tile.layout,
                 )
                 a_tma_op.async_multicast_load_3d[cta_group](
@@ -760,7 +770,9 @@ def _complete_activation_tiles[
             else:
                 var b_smem_tile = b_smem_tiles[offset]
                 var b_smem_slice = type_of(b_smem_tile)(
-                    b_smem_tile.ptr + peer_cta_coord[1] * b_tma_load_size,
+                    b_smem_tile.ptr.unsafe_offset(
+                        peer_cta_coord[1] * b_tma_load_size
+                    ),
                     b_smem_tile.layout,
                 )
                 b_tma_op.async_multicast_load_3d[cta_group](
@@ -1041,7 +1053,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
         UInt8,
         address_space=.SHARED,
         alignment=128,
-    ]().bitcast[SmemType]()[]
+    ]().unsafe_bitcast[SmemType]()[]
 
     ref a_smem_storage = smem_storage.a_smem
     ref b_smem_storage = smem_storage.b_smem
@@ -1070,7 +1082,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     )
     comptime TileWriterType = TileWriter[
         a_type=a_type,
-        accum_type=DType.float32,
+        accum_type=.float32,
         block_tile_shape=config.block_tile_shape,
         mma_shape=config.mma_shape,
         opc=opc,
@@ -1152,17 +1164,17 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
         clc_throttle_storage.unsafe_ptr(),
     )
 
-    var ptr_tmem_addr: UnsafePointer[
+    var ptr_tmem_addr: MutPointer[
         UInt32, origin_of(tmem_addr_storage), address_space=.SHARED
     ] = tmem_addr_storage.unsafe_ptr()
 
     var clc_response = clc_response_storage.unsafe_ptr()
-    var clc_full_mbar: UnsafePointer[
+    var clc_full_mbar: MutPointer[
         SharedMemBarrier,
         origin_of(clc_mbars_full_storage),
         address_space=.SHARED,
     ] = clc_mbars_full_storage.unsafe_ptr()
-    var clc_empty_mbar: UnsafePointer[
+    var clc_empty_mbar: MutPointer[
         SharedMemBarrier,
         origin_of(clc_mbars_empty_storage),
         address_space=.SHARED,
@@ -2114,11 +2126,11 @@ def _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     # element. The FP4-only kinds want exactly that dense layout.
     comptime assert config.scaling_kind != UMMAKind.KIND_MXF8F6F4 or (
         (
-            config.a_type != DType.uint8
+            config.a_type != .uint8
             or _is_packed_fp4[config.a_type, config.b_type]()
         )
         and (
-            config.b_type != DType.uint8
+            config.b_type != .uint8
             or _is_packed_fp4[config.b_type, config.a_type]()
         )
     ), String(

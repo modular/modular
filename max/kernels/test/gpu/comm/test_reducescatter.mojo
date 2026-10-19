@@ -118,11 +118,11 @@ def reducescatter_test[
         axis_size = num_elements // simd_width
         unit_numel = simd_width
     elif axis == 0:
-        axis_size = Int(shape[0].value())
-        unit_numel = Int(shape[1].value())
+        axis_size = Int(shape[0])
+        unit_numel = Int(shape[1])
     else:
-        axis_size = Int(shape[1].value()) // simd_width
-        unit_numel = Int(shape[0].value()) * simd_width
+        axis_size = Int(shape[1]) // simd_width
+        unit_numel = Int(shape[0]) * simd_width
     var config = ReduceScatterConfig[dtype, ngpus](axis_size, unit_numel, 0)
 
     # Allocate and initialize buffers (shared across all axis values).
@@ -227,11 +227,11 @@ def reducescatter_test[
                 ](config.rank_units(i))
                 runtime_shape[1] = _coerce_dynamic[
                     runtime_shape.element_types[1]
-                ](Int(shape[1].value()))
+                ](Int(shape[1]))
             else:
                 runtime_shape[0] = _coerce_dynamic[
                     runtime_shape.element_types[0]
-                ](Int(shape[0].value()))
+                ](Int(shape[0]))
                 runtime_shape[1] = _coerce_dynamic[
                     runtime_shape.element_types[1]
                 ](config.rank_units(i) * simd_width)
@@ -252,7 +252,7 @@ def reducescatter_test[
         _alignment: Int,
     ](coords: Coord, val: SIMD[_dtype, _width]) -> None:
         var out_buf = out_bufs[input_index]
-        out_buf.store[width=_width, alignment=_alignment](
+        out_buf.store[alignment=_alignment](
             coords,
             rebind[SIMD[dtype, _width]](-val),
         )
@@ -353,10 +353,8 @@ def reducescatter_test[
                 var row_start = config.rank_unit_start(gpu_idx)
                 var my_rows = config.rank_units(gpu_idx)
                 for r in range(my_rows):
-                    for c in range(Int(shape[1].value())):
-                        var global_flat = (row_start + r) * Int(
-                            shape[1].value()
-                        ) + c
+                    for c in range(Int(shape[1])):
+                        var global_flat = (row_start + r) * Int(shape[1]) + c
                         comptime accum_t = get_accum_type[dtype]()
                         var accum = Scalar[accum_t](0)
                         comptime for k in range(ngpus):
@@ -370,7 +368,7 @@ def reducescatter_test[
                             -expected_sum if use_custom_epilogue else expected_sum
                         )
                         assert_almost_equal(
-                            result_host[r * Int(shape[1].value()) + c],
+                            result_host[r * Int(shape[1]) + c],
                             expected,
                             msg=String(
                                 "GPU ",
@@ -385,11 +383,9 @@ def reducescatter_test[
             else:
                 var col_start = config.rank_unit_start(gpu_idx) * simd_width
                 var my_cols = config.rank_units(gpu_idx) * simd_width
-                for r in range(Int(shape[0].value())):
+                for r in range(Int(shape[0])):
                     for c in range(my_cols):
-                        var global_flat = r * Int(shape[1].value()) + (
-                            col_start + c
-                        )
+                        var global_flat = r * Int(shape[1]) + (col_start + c)
                         comptime accum_t = get_accum_type[dtype]()
                         var accum = Scalar[accum_t](0)
                         comptime for k in range(ngpus):

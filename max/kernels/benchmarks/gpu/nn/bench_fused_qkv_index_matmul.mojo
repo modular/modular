@@ -355,7 +355,7 @@ def bench_shape(
         )
         var w_idx = (
             TileTensor(
-                cb_w.offset_ptr(iteration) + qkv_n * hidden,
+                cb_w.offset_ptr(iteration).unsafe_offset(qkv_n * hidden),
                 row_major(Idx[idx_n], Idx[hidden]),
             )
             .as_imm()

@@ -24,7 +24,15 @@ import pytest
 from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef, Graph, TensorType, TensorValue, Weight, ops
+from max.graph import (
+    BufferType,
+    DeviceRef,
+    Graph,
+    TensorType,
+    TensorValue,
+    Weight,
+    ops,
+)
 from max.nn import LayerList, MissingLayer, Module
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
@@ -35,16 +43,21 @@ from max.pipelines.lib import (
     PipelineConfig,
 )
 from max.pipelines.lib.pipeline_parallel import (
+    ArchConfigWithPartitionSpec,
     PartitionSpec,
     PipelinedModel,
     PipelineStage,
     StageTraced,
     partition_spec,
     pipeline_stages,
+    raise_stage_traced,
     split_layers,
+    stage_graph,
     stage_layers,
+    stage_outputs,
     stage_pipeline_config,
 )
+from max.tree import Tree
 
 NUM_LAYERS = 4
 HIDDEN = 4
@@ -121,7 +134,7 @@ class ToyModel(PipelinedModel[TextContext]):
         self,
         stage: int | None = None,
         num_stages: int = 1,
-        boundary_types: object = None,
+        boundary_types: Tree[TensorType] | None = None,
         trace_only: bool = False,
     ) -> None:
         config = PipelineConfig.model_construct(
@@ -149,7 +162,7 @@ class ToyModel(PipelinedModel[TextContext]):
     def build(self) -> tuple[Graph, dict[str, Any]]:
         stage = self.pipeline_config.model.pipeline_stage
         index = stage.index if stage else 0
-        with self.stage_graph(f"toy_{index}", INPUT_TYPES) as (
+        with stage_graph(stage, f"toy_{index}", INPUT_TYPES) as (
             graph,
             inputs,
             boundary_inputs,
@@ -158,7 +171,7 @@ class ToyModel(PipelinedModel[TextContext]):
             outputs = self.decoder(
                 tokens, scale, bias, boundary_inputs=boundary_inputs
             )
-            graph.output(*self.stage_outputs(outputs))
+            graph.output(*stage_outputs(stage, outputs))
         return graph, dict(self.decoder.state_dict())
 
 
@@ -188,7 +201,9 @@ def _host(array: np.ndarray) -> Buffer:
     return Buffer.from_numpy(array)
 
 
-def _traced(stage: int, num_stages: int, boundary_types: object = None) -> Any:
+def _traced(
+    stage: int, num_stages: int, boundary_types: Tree[TensorType] | None = None
+) -> Any:
     with pytest.raises(StageTraced) as traced:
         ToyModel(stage, num_stages, boundary_types, trace_only=True).build()
     return traced.value.boundary_types
@@ -318,21 +333,23 @@ def test_stage_layers_must_fit_the_decoder() -> None:
         stage_layers(last, 9)
 
 
+SPEC = PartitionSpec(num_layers=8, forbidden_cuts=frozenset({1}))
+
+
+class _CutConfig(ArchConfigWithPartitionSpec):
+    @classmethod
+    def construct_partition_spec(cls, huggingface_config: Any) -> PartitionSpec:
+        return SPEC
+
+
+class _UncutConfig:
+    pass
+
+
 def test_partition_spec_comes_from_the_architecture() -> None:
-    spec = PartitionSpec(num_layers=8, forbidden_cuts=frozenset({1}))
-    arch = Mock(config=Mock(construct_partition_spec=Mock(return_value=spec)))
-    assert partition_spec(arch, Mock()) is spec
-    counted = Mock(
-        config=Mock(
-            spec=["get_num_layers"], get_num_layers=Mock(return_value=6)
-        )
-    )
-    assert partition_spec(counted, Mock()) == PartitionSpec(num_layers=6)
-    refused = Mock(
-        config=Mock(construct_partition_spec=Mock(return_value=None))
-    )
-    with pytest.raises(ValueError, match="does not allow"):
-        partition_spec(refused, Mock())
+    assert partition_spec(Mock(config=_CutConfig), Mock()) is SPEC
+    with pytest.raises(TypeError, match="ArchConfigWithPartitionSpec"):
+        partition_spec(Mock(config=_UncutConfig), Mock())
 
 
 def test_a_traced_stage_carries_its_boundary_types() -> None:
@@ -353,9 +370,14 @@ def test_a_later_stage_needs_boundary_types() -> None:
 
 
 def test_an_algebraic_dim_cannot_cross_a_cut() -> None:
-    model = ToyModel(0, 2, trace_only=True)
+    stage = replace(pipeline_stages([2, 2])[0], trace_only=True)
     with Graph("cut", input_types=INPUT_TYPES[:1]) as graph:
         tokens = graph.inputs[0].tensor
         doubled = ops.concat([tokens, tokens])
         with pytest.raises(ValueError, match="algebraic dim"):
-            model.stage_outputs(doubled)
+            stage_outputs(stage, doubled)
+
+
+def test_only_tensors_cross_a_cut() -> None:
+    with pytest.raises(ValueError, match="Only tensors"):
+        raise_stage_traced((BufferType(DType.float32, [HIDDEN], CPU_REF),))

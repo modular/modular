@@ -26,35 +26,34 @@ To get started with the Mojo language, see
 
 ## About the repo
 
-We're constantly open-sourcing more of the Modular Platform and you can find
-all of it in here.
+We're actively open-sourcing more of the Modular Platform over time.
 
-The main components include:
+The main components for which source is available today include:
 
-- Mojo compiler: [/Mojo](/Mojo)
-- Mojo standard library: [/Mojo/stdlib](/Mojo/stdlib)
-- MAX accelerator library: [/max/kernels](/max/kernels)
-- MAX inference server: [/max/python/max/serve](/max/python/max/serve)
-  (OpenAI-compatible endpoint)
+- Mojo compiler: [/Mojo](/Mojo) (since August 2026)
+- Mojo standard library: [/Mojo/stdlib](/Mojo/stdlib) (since March
+  2024)
+- MAX GPU programming abstractions: [/max/mojo/max/gpu](/max/mojo/max/gpu)
+  (GPU programming in Mojo, since May 2025)
+- MAX accelerator library: [/max/kernels](/max/kernels) (Mojo compute kernels,
+  since May 2025)
+- MAX AI framework: [/max/python/max](/max/python/max) (model authoring in
+  Python, since November 2025)
 - MAX model pipelines: [/max/python/max/pipelines](/max/python/max/pipelines)
-  (Python-based graphs)
-- Code examples: [/max/examples](/max/examples) +
+  (models built on the framework, since May 2025)
+- MAX inference server: [/max/python/max/serve](/max/python/max/serve)
+  (OpenAI-compatible endpoint, since May 2025)
+- Code examples: [/max/examples](/max/examples) and
   [/Mojo/examples](/Mojo/examples)
 
 ## Contribute
 
-We accept contributions to the [Mojo standard library](/Mojo/stdlib), [MAX
-accelerator library](./max/kernels), [MAX model
-architectures](/max/python/max/pipelines/architectures), code examples, Mojo
-docs, and more. We aren't accepting contributions to the Mojo compiler yet.
-
-First, please read the [Contribution Guide](./CONTRIBUTING.md), and then refer
-to the following documentation about how to develop in the repo:
-
-- [`/max/docs`](/max/docs): Docs for developers working in the MAX framework
-  codebase.
-- [`/Mojo/docs/stdlib`](/Mojo/docs/stdlib): Docs for developers working in the
-  Mojo standard library.
+We accept contributions to both Mojo
+([Mojo contributor guide](https://mojolang.org/community/contributing/)) and MAX
+([MAX contributor guide](/max/docs/contributing/README.md)). For information
+about what changes we accept in different areas, see the
+[Mojo contribution areas](https://mojolang.org/community/contributing/contribution-areas/)
+and [MAX contribution areas](/max/docs/contributing/contribution-areas.md).
 
 We also welcome your bug reports. If you have a bug, please [file an issue
 here](https://github.com/modular/modular/issues/new/choose).
@@ -75,20 +74,8 @@ downloaded.
 
 ## Community & Events
 
-Get help from community members, tune in for a community meeting, or join a
-local meetup.
-
-| Channel               | Link                                            |
-|-----------------------|-------------------------------------------------|
-| 💬 Discord            | [discord.gg/modular][discord]                   |
-| 💬 Forum              | [forum.modular.com][forum]                      |
-| 📅 Meetup Group       | [meetup.com/modular-meetup-group][meetup-group] |
-| 🎦 Community Meetings | [Upcoming community calls][public-com-meet-doc] |
-| 📺 YouTube            | [youtube.com/@modularinc][youtube]              |
-
-**Upcoming events** will be posted on our [Meetup page][meetup-group] and
-[Discord][discord]. Community meeting recordings will be posted on our
-[YouTube][youtube].
+There are a lot of great ways to get involved! Check out the
+[Modular community page][community] for details.
 
 ## Thanks to our contributors
 
@@ -105,8 +92,4 @@ local meetup.
 [Mojo docs]: https://mojolang.org/docs/
 
 <!-- Community & Events links -->
-[discord]: https://discord.gg/modular
-[forum]: https://forum.modular.com/
-[meetup-group]: https://www.meetup.com/modular-meetup-group/
-[youtube]: https://www.youtube.com/@modularinc
-[public-com-meet-doc]: https://modul.ar/community-meeting-doc
+[community]: https://www.modular.com/open-source/community

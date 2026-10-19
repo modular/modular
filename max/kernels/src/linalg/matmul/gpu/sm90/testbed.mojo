@@ -107,9 +107,9 @@ def test_matmul_sm90[
         compute_fn: Maps each output index and value to the value to store
             when `has_compute_fn` is set.
     """
-    var M = Int(m.value())
-    var N = Int(n.value())
-    var K = Int(k.value())
+    var M = Int(m)
+    var N = Int(n)
+    var K = Int(k)
 
     comptime CLUSTER_N = cluster_shape[0]
     comptime CLUSTER_M = cluster_shape[1]
@@ -135,7 +135,7 @@ def test_matmul_sm90[
     var c_host_ref_alloc = alloc(
         AllocLayout[Scalar[c_type]](count=c_size)
     ).into_managed()
-    var c_host_ref: UnsafePointer[
+    var c_host_ref: MutPointer[
         Scalar[c_type], origin_of(c_host_ref_alloc)
     ] = c_host_ref_alloc.unsafe_ptr()
 

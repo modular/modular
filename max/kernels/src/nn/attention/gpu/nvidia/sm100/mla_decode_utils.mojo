@@ -63,7 +63,6 @@ from nn.attention.gpu.nvidia.common import (
 from nn.attention.mha_mask import MHAMask, MASK_VALUE
 from nn.attention.mha_utils import null_pointer, unread_pointer
 from nn.attention.mha_operand import MHAOperand
-from kv_cache.types import kv_sub_tile_rows, kv_tma_fold_chunks
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type, min_or_neg_inf
 from std.utils.static_tuple import StaticTuple
@@ -410,32 +409,6 @@ def fp8_p_bias[fp8_p: Bool](threshold: Float32) -> Float32:
     ) if fp8_p else Float32(0)
 
 
-@inline(.always)
-def mla_decode_k_fold_chunks[
-    kv_dtype: DType, config: MLA_SM100_Decode_Config
-]() -> Int:
-    """Returns the depth-chunk fold factor for the dense decode K descriptor.
-
-    The SW128 box is at most one 64-element atom wide, so a 64 x 576 bf16 stage
-    otherwise takes 9 TMAs. The chunk-outer rank-4 fold writes byte-identical
-    SMEM in one TMA. Only the bf16 kernel issues K through `tma_copy_k` with
-    this fold; the native-fp8 kernels share the descriptor but issue rank-3
-    copies, so fp8 KV always gets 1. The descriptor builder and the
-    `tma_copy_k` issue site must both use this value.
-    """
-    comptime if kv_dtype != DType.bfloat16:
-        return 1
-    return kv_tma_fold_chunks[
-        kv_dtype,
-        config.kv_tma_swizzle_mode,
-        BK=config.input_q_depth,
-        head_size=config.input_q_depth,
-        box_rows=kv_sub_tile_rows(config.BK_PV, config.page_size),
-        smem_BN=config.BN_QK,
-        page_size=config.page_size,
-    ]()
-
-
 # ------------------------------------------------------------------------------
 # MLA decoding configuration for SM100
 # ------------------------------------------------------------------------------
@@ -637,7 +610,8 @@ struct MLA_SM100_Decode_Config:
         else:
             self.num_threads = WARPGROUP_SIZE * 3
 
-        var smem_use = 0
+        # 4 bytes for the TMEM base pointer
+        var smem_use = 4
         self.tmem_used = Self.TMEM_CORR_LI + 1
         self.decoding_warp_split_k = decoding_warp_split_k
         self.page_size = page_size
@@ -773,11 +747,12 @@ struct MLA_SM100_Decode_Config:
             # stage and its barrier pair does. Spend the leftover there only.
             if native_fp8_unified_gather:
                 var extra_kv_stage = smem_per_kv + 2 * Self.mbar_size
-                # The sparse dispatch adds idx_bars and idx_smem on top of
-                # `smem_used`; reserve them or the deeper ring overflows the
-                # carveout at launch rather than here.
+                # The sparse dispatch adds idx_bars, idx_smem and the TMEM
+                # pointer on top of `smem_used`; reserve them or the deeper
+                # ring overflows the carveout at launch rather than here.
                 var sparse_reserve = (
                     2 * self.num_kv_stages * Self.mbar_size
+                    + 4
                     + self.num_kv_stages * self.BN_QK * 4
                 )
                 var leftover = (
@@ -1017,7 +992,7 @@ struct SparseRowLayout(TrivialRegisterPassable):
 def _sparse_row_packed[
     sparse_row: SparseRowLayout
 ](
-    d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
+    d_indices: OptionalReg[MutPointer[Int32, MutAnyOrigin]],
     indices_stride: Int,
     q_token_idx: Int,
     visible: Int,
@@ -1027,7 +1002,7 @@ def _sparse_row_packed[
     var n = sparse_row.row_limit(visible, selection_lag)
     if not d_indices or n == Int.MAX:
         return True
-    var row = d_indices.value() + q_token_idx * indices_stride
+    var row = d_indices.value().unsafe_offset(q_token_idx * indices_stride)
     if min(n, sparse_topk) > 0 and row[min(n, sparse_topk) - 1] < 0:
         return False
     # At or past the slot count, the scan stops before the padding.
@@ -1038,7 +1013,7 @@ def _sparse_row_packed[
 def assert_sparse_row_packed[
     sparse_row: SparseRowLayout
 ](
-    d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
+    d_indices: OptionalReg[MutPointer[Int32, MutAnyOrigin]],
     indices_stride: Int,
     q_token_idx: Int,
     visible: Int,
@@ -1148,7 +1123,7 @@ struct OffsetPosition[
     def __init__(
         out self,
         k: Self.KVLUTType,
-        valid_length: UnsafePointer[
+        valid_length: ImmPointer[
             Scalar[Self.ValidLengthType.dtype], origin=ImmutAnyOrigin
         ],
         max_seq_len: Int,
@@ -1361,7 +1336,7 @@ struct OffsetPosition[
         sparse_row: SparseRowLayout
     ](
         self,
-        d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
+        d_indices: OptionalReg[MutPointer[Int32, MutAnyOrigin]],
         indices_stride: Int,
         selection_lag: Int,
     ):
@@ -1481,8 +1456,8 @@ struct KVLoad2CvtProducer[dtype: DType, config: MLA_SM100_Decode_Config](
         *, qk_stage: Int = 0
     ](self) -> SharedMemPointer[Scalar[Self.dtype]]:
         var stage_idx: UInt32 = self.pipe.state.index()
-        return self.smem_upper_fp8 + stage_idx * UInt32(
-            Self.fp8_stage_stride_elems
+        return self.smem_upper_fp8.unsafe_offset(
+            stage_idx * UInt32(Self.fp8_stage_stride_elems)
         )
 
     @inline(.always)
@@ -1546,7 +1521,9 @@ struct KVLoad2CvtConsumer[dtype: DType, config: MLA_SM100_Decode_Config](
     @inline(.always)
     def stage_base_ptr(self) -> SharedMemPointer[Scalar[Self.dtype]]:
         var idx: UInt32 = self.pipe.state.index()
-        return self.smem_upper_fp8 + idx * UInt32(Self.fp8_stage_stride_elems)
+        return self.smem_upper_fp8.unsafe_offset(
+            idx * UInt32(Self.fp8_stage_stride_elems)
+        )
 
     @inline(.nodebug)
     def wait(self):
@@ -1604,7 +1581,7 @@ struct KVCvt2MmaProducer[dtype: DType, config: MLA_SM100_Decode_Config](
     @inline(.always)
     def stage_base_ptr(self) -> SharedMemPointer[Scalar[Self.dtype]]:
         var idx = self.pipe.state.index()
-        return self.smem + idx * UInt32(Self.kv_stage_elems)
+        return self.smem.unsafe_offset(idx * UInt32(Self.kv_stage_elems))
 
     @inline(.nodebug)
     def commit_all(mut self):
@@ -1652,7 +1629,7 @@ struct KVCvt2MmaConsumer[dtype: DType, config: MLA_SM100_Decode_Config](
     ](self) -> SharedMemPointer[Scalar[Self.dtype]]:
         var stage_idx: UInt32 = self.pipe.state.index()
         var stage_offset: UInt32 = stage_idx * UInt32(Self.kv_stage_elems)
-        return self.smem + stage_offset
+        return self.smem.unsafe_offset(stage_offset)
 
     @inline(.always)
     def stage_index[*, qk_stage: Int = 0](self) -> UInt32:
@@ -1736,7 +1713,7 @@ struct DecodeKVProducer[
     ](self) -> SharedMemPointer[Scalar[Self.dtype]]:
         var stage_idx: UInt32 = self.pipe.state.index()
         var stage_offset: UInt32 = stage_idx * UInt32(Self.kv_stage_elems)
-        return self.smem + stage_offset
+        return self.smem.unsafe_offset(stage_offset)
 
     @inline(.always)
     def stage_index[*, qk_stage: Int = 0](self) -> UInt32:
@@ -1828,7 +1805,7 @@ struct DecodeKVConsumer[
     ](self) -> SharedMemPointer[Scalar[Self.dtype]]:
         var stage_idx: UInt32 = self.pipe.state.index()
         var stage_offset: UInt32 = stage_idx * UInt32(Self.kv_stage_elems)
-        return self.smem + stage_offset
+        return self.smem.unsafe_offset(stage_offset)
 
     @inline(.always)
     def stage_index[*, qk_stage: Int = 0](self) -> UInt32:
@@ -1914,12 +1891,16 @@ struct KVPipelineGeneric[
     @inline(.always)
     def producer_mbar[qk_stage: Int](self) -> MBarType:
         var idx: UInt32 = self.state.index()
-        return self.mbar + UInt32(Self.num_qk_stages) * idx + qk_stage
+        return self.mbar.unsafe_offset(
+            UInt32(Self.num_qk_stages) * idx
+        ).unsafe_offset(qk_stage)
 
     @inline(.always)
     def consumer_mbar[qk_stage: Int](self, idx: UInt32) -> MBarType:
         comptime const_offset = qk_stage + Self.num_stages
-        return self.mbar + UInt32(Self.num_qk_stages) * idx + const_offset
+        return self.mbar.unsafe_offset(
+            UInt32(Self.num_qk_stages) * idx
+        ).unsafe_offset(const_offset)
 
     @inline(.always)
     def consumer_mbar[qk_stage: Int](self) -> MBarType:
@@ -1993,16 +1974,16 @@ struct DecodeSM100MiscMBars[
 
     @inline(.always)
     def producer(self) -> ProducerPipeline[Self.num_stages]:
-        return {self.mbar_base, self.mbar_base + Self.num_stages}
+        return {self.mbar_base, self.mbar_base.unsafe_offset(Self.num_stages)}
 
     @inline(.always)
     def consumer(self) -> ConsumerPipeline[Self.num_stages]:
-        return {self.mbar_base, self.mbar_base + Self.num_stages}
+        return {self.mbar_base, self.mbar_base.unsafe_offset(Self.num_stages)}
 
     @inline(.always)
     def end(self) -> MBarType:
         # We consumed 2 * s_num_stages mbars: prod[2] + cons[2]
-        return self.mbar_base + 2 * Self.num_stages
+        return self.mbar_base.unsafe_offset(2 * Self.num_stages)
 
 
 # ------------------------------------------------------------------------------
@@ -2375,7 +2356,9 @@ struct OutPipeline[num_out_stages: Int, num_producer: Int, num_consumer: Int](
             self.mbar[i].init(Int32(Self.num_producer))
 
         comptime for i in range(Self.num_stages):
-            (self.mbar + Self.num_stages)[i].init(Int32(Self.num_consumer))
+            self.mbar.unsafe_offset(Self.num_stages)[i].init(
+                Int32(Self.num_consumer)
+            )
 
     @inline(.always)
     def producer_mbar(self) -> MBarType:
@@ -2383,7 +2366,7 @@ struct OutPipeline[num_out_stages: Int, num_producer: Int, num_consumer: Int](
 
     @inline(.always)
     def consumer_mbar(self) -> MBarType:
-        return self.mbar + Self.num_stages
+        return self.mbar.unsafe_offset(Self.num_stages)
 
     @inline(.nodebug)
     def producer_acquire(self):
@@ -2401,7 +2384,7 @@ struct OutPipeline[num_out_stages: Int, num_producer: Int, num_consumer: Int](
     @inline(.nodebug)
     def consumer_release[](mut self, e: Int32):
         var idx = self.state.index()
-        elect_mma_arrive(self.consumer_mbar() + idx, e)
+        elect_mma_arrive(self.consumer_mbar().unsafe_offset(idx), e)
         self.state.step()
 
     @inline(.nodebug)
@@ -2475,7 +2458,7 @@ struct DecodeOutProducer[dtype: DType, config: MLA_SM100_Decode_Config](
         ) * UInt32(Self.blocks_per_stage) + UInt32(
             half_idx * Self.out_stage_elems
         )
-        return self.smem + stage_offset
+        return self.smem.unsafe_offset(stage_offset)
 
     @inline(.always)
     def producer_mbar(self) -> MBarType:
@@ -2538,7 +2521,7 @@ struct DecodeOutConsumer[dtype: DType, config: MLA_SM100_Decode_Config](
         ) * UInt32(Self.blocks_per_stage) + UInt32(
             half_idx * Self.out_stage_elems
         )
-        return self.smem + stage_offset
+        return self.smem.unsafe_offset(stage_offset)
 
     @inline(.nodebug)
     def wait(self):
@@ -3243,7 +3226,7 @@ def write_bf16x2_row_to_smem_chunked[
     chunk_size: Int = 16,
     scale_needed: Bool = False,
 ](
-    shared_mem: UnsafePointer[
+    shared_mem: MutPointer[
         Scalar[out_dtype], MutAnyOrigin, address_space=.SHARED
     ],
     local_mem: LocalTensor[in_dtype, row_major[local_tile_size](), _],
@@ -3331,7 +3314,7 @@ def write_fp8_row_to_smem_chunked[
     row_size: Int = config.BN_QK,
     swizzle_kind: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_64B,
 ](
-    shared_mem: UnsafePointer[
+    shared_mem: MutPointer[
         Scalar[out_dtype], MutAnyOrigin, address_space=.SHARED
     ],
     local_mem: LocalTensor[in_dtype, row_major[local_tile_size](), _],
@@ -3417,9 +3400,7 @@ def write_fp8_row_to_smem_chunked[
 def st_shared_v4_b32_at_fp8_elem_off[
     out_dtype: DType
 ](
-    dst_fp8: UnsafePointer[
-        Scalar[out_dtype], MutAnyOrigin, address_space=.SHARED
-    ],
+    dst_fp8: MutPointer[Scalar[out_dtype], MutAnyOrigin, address_space=.SHARED],
     elem_off: Int,  # FP8 element offset
     packed: SIMD[.uint32, 4],
 ):
@@ -3442,7 +3423,7 @@ def st_shared_v4_b32_at_fp8_elem_off[
 
 @inline(.always)
 def ld_shared_v4_u32(
-    src_u8: UnsafePointer[mut=True, UInt8, _, address_space=.SHARED],
+    src_u8: MutPointer[UInt8, _, address_space=.SHARED],
     byte_off: Int,
 ) -> SIMD[.uint32, 4]:
     """Loads four contiguous uint32 values from shared memory at a byte offset.
@@ -3451,7 +3432,7 @@ def ld_shared_v4_u32(
         src_u8: Byte-typed shared memory pointer to the base of the load.
         byte_off: Byte offset from `src_u8` to the first uint32 to load.
     """
-    var addr = src_u8 + byte_off
+    var addr = src_u8.unsafe_offset(byte_off)
     var result = inlined_assembly[
         "ld.shared.v4.b32 {$0, $1, $2, $3}, [$4];",
         _RegisterPackType[UInt32, UInt32, UInt32, UInt32],
@@ -3509,9 +3490,7 @@ def cvt_fp8x16_from_u32x4_to_bf16x16_packed_2xu32x4[
 def st_shared_v4_b32_at_bf16_elem_off[
     out_dtype: DType
 ](
-    dst_bf16: UnsafePointer[
-        mut=True, Scalar[out_dtype], _, address_space=.SHARED
-    ],
+    dst_bf16: MutPointer[Scalar[out_dtype], _, address_space=.SHARED],
     elem_off: Int,  # bf16 element offset
     packed: SIMD[.uint32, 4],
 ):
@@ -3739,7 +3718,7 @@ struct MLA_SM100_Decode_Common[
                     + head_idx
                 )
                 var lse_ptr = rebind[
-                    UnsafePointer[Scalar[Self.AccumType], origin=MutAnyOrigin]
+                    MutPointer[Scalar[Self.AccumType], origin=MutAnyOrigin]
                 ](lse_accum_split_ptr.value())
                 lse_ptr[lse_offset] = neg_inf_val
 
@@ -3835,7 +3814,7 @@ struct MLA_SM100_Decode_Common[
         # [total_q_tokens, indices_stride] layout as the physical `d_indices`
         # gather buffer, with -1 for invalid/padding slots. Only read when
         # SparseCausalLogical=True.
-        logical_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+        logical_indices: OptionalReg[MutPointer[Int32, MutAnyOrigin]] = None,
         logical_indices_stride: Int = 0,
         q_token_idx: Int = 0,
         # Valid per-q_token length of `logical_indices` (the main sparse topk,
@@ -3951,7 +3930,7 @@ struct MLA_SM100_Decode_Common[
                 var n_readable = max(
                     min(logical_indices_len - col_base, half_load), 0
                 )
-                var logical_row = logical_ptr + (
+                var logical_row = logical_ptr.unsafe_offset(
                     q_token_idx * logical_indices_stride + col_base
                 )
                 # `pos <= causal_limit - 1` in 32 bits is `pos <
@@ -4097,12 +4076,12 @@ struct MLA_SM100_Decode_Common[
         lse_accum_split_ptr: Self.SplitAccumType,
         batch_size: Int,
         scale_k_smem: OptionalReg[SharedMemPointer[Float32]] = None,
-        q_scale_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]] = None,
+        q_scale_ptr: OptionalReg[MutPointer[Float32, MutAnyOrigin]] = None,
         attn_sink_log2: Float32 = Float32(min_or_neg_inf[.float32]()),
         # Logical sparse indices and their valid per-q_token length, forwarded
         # to the inner apply_mask (documented there); required non-null when
         # SparseCausalLogical is derived below.
-        logical_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+        logical_indices: OptionalReg[MutPointer[Int32, MutAnyOrigin]] = None,
         logical_indices_stride: Int = 0,
         logical_indices_len: Int = 0,
         # Positions between the token the sparse row was computed for and
@@ -4281,7 +4260,7 @@ struct MLA_SM100_Decode_Common[
             ](s_tmem_slot)
 
             comptime for _i in range(type_of(s_row_val).length):
-                s_row.raw_store(_i, s_row_val[_i])
+                s_row[_i] = s_row_val[_i]
             tcgen05_load_wait()
 
             s_cons.release()
@@ -4307,8 +4286,9 @@ struct MLA_SM100_Decode_Common[
                 # In float32 elements per stage: BN_QK = 64.
                 comptime _scale_elems_per_stage = Self.config.BN_QK
                 var _scale_stage_ptr = (
-                    scale_k_smem.unsafe_value()
-                    + slot_idx * UInt32(_scale_elems_per_stage)
+                    scale_k_smem.unsafe_value().unsafe_offset(
+                        slot_idx * UInt32(_scale_elems_per_stage)
+                    )
                 )
                 # Load all 32 sigma_KV values for this thread's columns into
                 # registers ONCE. This is the ONLY SMEM read for scales in the
@@ -4319,14 +4299,11 @@ struct MLA_SM100_Decode_Common[
                 # via max(sigma, 0) maps NaN→0 per PTX semantics (max(NaN,0)=0)
                 # and is a no-op for valid positive scales.
                 comptime for _j in range(half_load):
-                    _sigma_kv_regs.raw_store(
-                        _j,
-                        max(
-                            rebind[Scalar[Self.AccumType]](
-                                _scale_stage_ptr[col0 + _j]
-                            ),
-                            Scalar[Self.AccumType](0),
+                    _sigma_kv_regs[_j] = max(
+                        rebind[Scalar[Self.AccumType]](
+                            _scale_stage_ptr[col0 + _j]
                         ),
+                        Scalar[Self.AccumType](0),
                     )
 
                 # Place 1: QK dequant — multiply each score column by its
@@ -4422,7 +4399,7 @@ struct MLA_SM100_Decode_Common[
             var buf_offset = (tiles_done & 1) * WARPGROUP_SIZE
             var max_buf = TileTensor[
                 Self.AccumType, type_of(smem_1d_layout), address_space=.SHARED
-            ](max_smem + buf_offset, smem_1d_layout)
+            ](max_smem.unsafe_offset(buf_offset), smem_1d_layout)
             max_buf[lane_id] = current_max
             named_barrier[Int32(WARPGROUP_SIZE)](2)
             # 0 ^ 64 = 64, 1 ^ 64 = 65, ... 63 ^ 64 = 127
@@ -4645,9 +4622,7 @@ struct MLA_SM100_Decode_Common[
                     )
                     # need to rebind the pointer to mutable pointer for write access
                     var lse_ptr = rebind[
-                        UnsafePointer[
-                            Scalar[Self.AccumType], origin=MutAnyOrigin
-                        ]
+                        MutPointer[Scalar[Self.AccumType], origin=MutAnyOrigin]
                     ](lse_accum_split_ptr.value())
                     lse_ptr[lse_offset] = partial_lse
 
@@ -4755,7 +4730,7 @@ struct MLA_SM100_Decode_Common[
                 ](o_tmem_base)
 
                 comptime for _i in range(total_elems):
-                    o_row_subtile.raw_store(_i, _o_ld_result[_i])
+                    o_row_subtile[_i] = _o_ld_result[_i]
                 tcgen05_load_wait()
 
                 out_prod.acquire()
@@ -4886,7 +4861,7 @@ struct MLA_SM100_Decode_Common[
                         ](o_tmem_subtile)
 
                         comptime for _i in range(Self.config.BN_QK):
-                            o_row_subtile.raw_store(_i, _o_ld_corr[_i])
+                            o_row_subtile[_i] = _o_ld_corr[_i]
                         tcgen05_load_wait()
 
                         var float2_register = o_row_subtile.vectorize[2]()
@@ -4901,7 +4876,7 @@ struct MLA_SM100_Decode_Common[
                         var _o_st_corr = Array[_, Self.config.BN_QK](
                             fill_with_unrolled=lambda [i: Int]() -> Scalar[
                                 Self.AccumType
-                            ]: o_row_subtile.raw_load(i)
+                            ]: o_row_subtile[i]
                         )
                         tcgen05_st[
                             datapaths=32,

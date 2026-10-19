@@ -83,6 +83,7 @@ class DeepseekV3_2NextN(Module[..., tuple[Tensor, Tensor]]):
         comm_buffers: EPCommBuffers | None = None,
         prev_topk_indices: Tensor | None = None,
         reuse_prev_topk: bool = False,
+        selection_lag: int = 0,
     ) -> tuple[Tensor, Tensor]:
         """Returns the decoder output and its top-k selection.
 
@@ -99,6 +100,8 @@ class DeepseekV3_2NextN(Module[..., tuple[Tensor, Tensor]]):
             prev_topk_indices: A top-k selection to reuse, or ``None``.
             reuse_prev_topk: Whether to reuse ``prev_topk_indices`` rather
                 than run the indexer.
+            selection_lag: The positions between the token a reused
+                selection was computed for and this call's token.
         """
         dtype = embedded.dtype
         # The enorm and hnorm normalizations and their concatenation, fused.
@@ -109,7 +112,7 @@ class DeepseekV3_2NextN(Module[..., tuple[Tensor, Tensor]]):
             self.hnorm.weight.cast(dtype),
             self.enorm.eps,
         ).rebind_mapping(embedded.mapping)
-        return self.decoder_layer(
+        h, topk_indices = self.decoder_layer(
             # The draft's caches hold this one layer.
             F.constant(0, DType.uint32, device=CPU()),
             self.eh_proj(normed),
@@ -121,4 +124,6 @@ class DeepseekV3_2NextN(Module[..., tuple[Tensor, Tensor]]):
             comm_buffers,
             prev_topk_indices,
             reuse_prev_topk,
+            selection_lag=selection_lag,
         )
+        return h, topk_indices

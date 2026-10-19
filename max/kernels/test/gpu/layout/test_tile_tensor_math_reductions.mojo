@@ -22,9 +22,9 @@ def mixed_dtype_reductions(
     src: TileTensor[.float16, type_of(row_major[12]()), ImmutAnyOrigin],
     dst: TileTensor[.float32, type_of(row_major[16]()), MutAnyOrigin],
 ):
-    var inp = TileTensor(src.unsafe_ptr(), Layout(coord[2, 3], coord[1, 4]))
-    var summed = TileTensor(dst.unsafe_ptr(), Layout(coord[3], coord[2]))
-    var maxima = TileTensor(dst.unsafe_ptr() + 6, Layout(coord[3], coord[2]))
+    var inp = src.reshape(Layout(coord[2, 3], coord[1, 4]))
+    var summed = dst.reshape(Layout(coord[3], coord[2]))
+    var maxima = dst.slice[6:12]().reshape(Layout(coord[3], coord[2]))
     sum[0](inp, summed)
     max[0](inp, maxima)
     var rows_sum = sum[1](inp)
@@ -39,16 +39,13 @@ def vector_reductions(
     dst: TileTensor[.float32, type_of(row_major[76]()), MutAnyOrigin],
 ):
     # Scalar-aligned SIMD cells need not have vector-aligned base addresses.
-    var inp = TileTensor(src.unsafe_ptr() + 1, row_major[2, 12]()).vectorize[
-        1, 4
-    ]()
+    var inp = src.slice[1:25]().reshape(row_major[2, 12]()).vectorize[1, 4]()
     var rows_sum = (
-        TileTensor(dst.unsafe_ptr(), row_major[2, 9]())
-        .vectorize[1, 4]()
-        .slice[:, 0]()
+        dst.reshape(row_major[2, 9]()).vectorize[1, 4]().slice[:, 0]()
     )
     var rows_max = (
-        TileTensor(dst.unsafe_ptr() + 18, row_major[2, 9]())
+        dst.slice[18:36]()
+        .reshape(row_major[2, 9]())
         .vectorize[1, 4]()
         .slice[:, 0]()
     )

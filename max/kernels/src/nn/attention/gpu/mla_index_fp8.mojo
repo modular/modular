@@ -12,25 +12,33 @@
 # ===----------------------------------------------------------------------=== #
 """MLA FP8 index kernel for computing attention scores with paged KV cache."""
 
-from std.bit import pop_count
+from std.bit import log2_floor, pop_count
 from std.builtin.device_passable import DeviceTypeEncoder
 from std.sys import get_defined_int, size_of
-from std.sys.info import _has_blackwell_tcgen05
 from std.math import align_up, ceildiv, clamp
+from std.utils.numerics import neg_inf
 
 from layout import (
+    DefaultEngine,
     TensorLayout,
     TileTensor,
     row_major,
 )
+from layout.coord import Coord, Idx
+from layout.tile_layout import Layout as InternalLayout
 from layout.tile_tensor import ImmTileTensor, MutTileTensor
 
 from max.gpu import WARP_SIZE, lane_id
 import max.gpu.primitives.warp as warp
-from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
 
 from kv_cache.paged_sparse_kv_index_remap import NoRemap, SparseIndexRemap
-from kv_cache.types import KVCollectionT
+from kv_cache.types import (
+    KVCacheStaticParams,
+    KVCacheT,
+    KVCollectionT,
+    PagedKVCache,
+)
 
 from nn.index_fp8 import (
     IndexSmemStorage,
@@ -40,18 +48,28 @@ from nn.index_fp8 import (
 )
 from nn.attention.gpu.sparse_index_fp8_sm100 import (
     _BM_KEY,
-    _INDEX_SWIZZLE,
     KTMATileT,
     SPEC_DECODE_N_TOKENS_ALT,
     fp8_index_score_sm100,
+    mxfp4_index_score_sm100,
 )
 from nn.attention.gpu.sparse_index_fp8_sm100_prefill import (
+    IndexerScoreHook,
+    NoScoreHook,
+    _index_swizzle,
+    _is_mxfp4,
     _k_box_rows,
     _k_tile_fits_pages,
 )
+from nn.attention.gpu.nvidia.sm100.attention_utils import store_global_pred
 from nn.attention.mha_mask import MaskName
 from nn.attention.mha_operand import KVCacheMHAOperand, KVCacheScalesMHAOperand
 from nn.attention.mha_utils import indexer_key_bound
+from nn.indexer_k_store import (
+    MXFP4_INDEX_RECORD_BYTES,
+    MXFP4_INDEX_VALUE_BYTES,
+    index_key_layer_pages,
+)
 from nn.topk_bitonic import (
     PERSISTENT_TOPK_MAX_N,
     RowBound,
@@ -80,6 +98,328 @@ comptime _SCORES_BUDGET_BYTES = (
 comptime _SCORES_DTYPE = DType.bfloat16
 
 
+trait IndexerTopk:
+    """Selects each indexer score row's top-k key positions.
+
+    The contract is `persistent_topk_block_split`'s with `ordered=False`: row
+    `r` scans its first `row_bounds.row(r)[0]` columns, a row with at most `k`
+    of them takes them all with `-1` in the slots past them, and the order of
+    the `k` columns, and which columns tied at the k-th score survive, are
+    unspecified.
+    """
+
+    @staticmethod
+    def select[
+        in_dtype: DType, RB: RowBound
+    ](
+        ctx: DeviceContext,
+        scores: ImmPointer[Scalar[in_dtype], ImmutAnyOrigin],
+        out_idxs: MutPointer[Int32, MutAnyOrigin],
+        n: Int,
+        k: Int,
+        rows: Int,
+        row_bounds: RB,
+    ) raises:
+        """Writes the top-`k` columns of each row of `scores` to `out_idxs`.
+
+        Parameters:
+            in_dtype: Score element type.
+            RB: Type of `row_bounds`.
+
+        Args:
+            ctx: Device context.
+            scores: Row-major scores, `[rows, n]`.
+            out_idxs: Row-major output, `[rows, k]`.
+            n: Score columns per row, the row stride.
+            k: Columns selected per row.
+            rows: Score rows.
+            row_bounds: Per-row live column counts and output sinks.
+        """
+        ...
+
+
+struct BlockSplitTopk(IndexerTopk):
+    """`persistent_topk_block_split`, the indexers' default top-k."""
+
+    @staticmethod
+    def select[
+        in_dtype: DType, RB: RowBound
+    ](
+        ctx: DeviceContext,
+        scores: ImmPointer[Scalar[in_dtype], ImmutAnyOrigin],
+        out_idxs: MutPointer[Int32, MutAnyOrigin],
+        n: Int,
+        k: Int,
+        rows: Int,
+        row_bounds: RB,
+    ) raises:
+        """Writes the top-`k` columns of each row of `scores` to `out_idxs`.
+
+        Parameters:
+            in_dtype: Score element type.
+            RB: Type of `row_bounds`.
+
+        Args:
+            ctx: Device context.
+            scores: Row-major scores, `[rows, n]`.
+            out_idxs: Row-major output, `[rows, k]`.
+            n: Score columns per row, the row stride.
+            k: Columns selected per row.
+            rows: Score rows.
+            row_bounds: Per-row live column counts and output sinks.
+        """
+        persistent_topk_block_split[RB=RB](
+            ctx, scores, out_idxs, n, k, rows, Optional(row_bounds)
+        )
+
+
+struct BlockMaxScoreHook[block_size: Int](IndexerScoreHook):
+    """Writes each row's maximum score per block of `block_size` keys.
+
+    Block `b` covers keys `[b * block_size, (b + 1) * block_size)`; its
+    maximum is over the keys below the scorer's bound for the row, `-inf` if
+    none is. The maxima are taken in the scorer's epilogue, on the stored
+    scores.
+
+    Parameters:
+        block_size: Keys per block, a power of two.
+    """
+
+    comptime device_type: AnyType = Self
+    """Device-side type; the struct is trivially device-passable."""
+
+    comptime enabled = True
+    """Always runs."""
+
+    var block_max: MutPointer[Float32, MutUntrackedOrigin]
+    """Per-block maxima, `[tokens, num_blocks]` float32."""
+    var num_blocks: Int32
+    """Blocks per row."""
+
+    def __init__(
+        out self,
+        block_max: MutPointer[Float32, MutAnyOrigin],
+        num_blocks: Int,
+    ):
+        """Creates the hook.
+
+        Args:
+            block_max: Per-block maxima output, `[tokens, num_blocks]`.
+            num_blocks: Blocks per row.
+        """
+        self.block_max = block_max.unsafe_origin_cast[MutUntrackedOrigin]()
+        self.num_blocks = Int32(num_blocks)
+
+    def window(
+        self, ctx: DeviceContext, first_row: Int, rows: Int
+    ) raises -> Self:
+        """Sets the window's maxima to `-inf` and returns its hook.
+
+        The scorer streams only the keys a row can see, so blocks past them
+        keep this `-inf`.
+
+        Args:
+            ctx: Device context.
+            first_row: Query token of the window's row 0.
+            rows: Rows in the window.
+
+        Returns:
+            The hook whose row 0 is query token `first_row`.
+        """
+        var block_max = self.block_max.unsafe_offset(
+            first_row * Int(self.num_blocks)
+        )
+        ctx.enqueue_memset(
+            DeviceBuffer(
+                ctx,
+                block_max.as_unsafe_any_origin(),
+                rows * Int(self.num_blocks),
+                owning=False,
+            ),
+            neg_inf[DType.float32](),
+        )
+        var hook = self
+        hook.block_max = block_max
+        return hook
+
+    @inline(.always)
+    def score[
+        dtype: DType, lane_keys: Int
+    ](
+        self,
+        value: Scalar[dtype],
+        row: Int32,
+        key: Int32,
+        key_live: Bool,
+        row_live: Bool,
+    ) -> Scalar[dtype]:
+        """Folds `value` into its block's maximum and returns it unchanged.
+
+        Parameters:
+            dtype: Score element type.
+            lane_keys: Consecutive keys a warp holds.
+
+        Args:
+            value: The score.
+            row: Window row of the query token.
+            key: Key column.
+            key_live: Whether the key is below the scorer's bound.
+            row_live: Whether the row is in the window.
+
+        Returns:
+            `value`.
+        """
+        comptime assert (
+            1 << log2_floor(Self.block_size) == Self.block_size
+            and lane_keys % Self.block_size == 0
+        ), "a block must be a power of two of keys within one warp's span"
+        # Keys past the scorer's bound count as `-inf`; a dead row stores
+        # nothing.
+        var best = value.cast[DType.float32]() if key_live else neg_inf[
+            DType.float32
+        ]()
+        best = warp.lane_group_max[num_lanes=Self.block_size](best)
+        var block = key // Int32(Self.block_size)
+        store_global_pred(
+            self.block_max.unsafe_offset(
+                Int(row) * Int(self.num_blocks) + Int(block)
+            ),
+            best,
+            Int32(
+                row_live
+                and key % Int32(Self.block_size) == 0
+                and block < self.num_blocks
+            ),
+        )
+        return value
+
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode_fields[Self](self, target)
+
+    @staticmethod
+    def get_type_name() -> String:
+        """Returns the type name for runtime diagnostics.
+
+        Returns:
+            Always `"BlockMaxScoreHook"`.
+        """
+        return "BlockMaxScoreHook"
+
+
+struct BlockMaskScoreHook[block_size: Int](IndexerScoreHook):
+    """Drops every key whose block of `block_size` keys a row does not keep.
+
+    A dropped key scores `-inf`. The top-k still takes every key below a
+    row's bound when it has at most `top_k`, so each row must keep at least
+    `min(top_k, bound)` keys for no dropped key to be selected.
+
+    Parameters:
+        block_size: Keys per block.
+    """
+
+    comptime device_type: AnyType = Self
+    """Device-side type; the struct is trivially device-passable."""
+
+    comptime enabled = True
+    """Always runs."""
+
+    var keep: ImmPointer[UInt8, ImmUntrackedOrigin]
+    """Nonzero for each kept block, `[tokens, num_blocks]`."""
+    var num_blocks: Int32
+    """Blocks per row; keys past the last block are dropped."""
+
+    def __init__(
+        out self, keep: ImmPointer[UInt8, ImmutAnyOrigin], num_blocks: Int
+    ):
+        """Creates the hook.
+
+        Args:
+            keep: Nonzero for each kept block, `[tokens, num_blocks]`.
+            num_blocks: Blocks per row.
+        """
+        self.keep = keep.unsafe_origin_cast[ImmUntrackedOrigin]()
+        self.num_blocks = Int32(num_blocks)
+
+    def window(
+        self, ctx: DeviceContext, first_row: Int, rows: Int
+    ) raises -> Self:
+        """Returns the hook whose row 0 is query token `first_row`.
+
+        Args:
+            ctx: Device context.
+            first_row: Query token of the window's row 0.
+            rows: Rows in the window.
+
+        Returns:
+            The window's hook.
+        """
+        var hook = self
+        hook.keep = self.keep.unsafe_offset(first_row * Int(self.num_blocks))
+        return hook
+
+    @inline(.always)
+    def score[
+        dtype: DType, lane_keys: Int
+    ](
+        self,
+        value: Scalar[dtype],
+        row: Int32,
+        key: Int32,
+        key_live: Bool,
+        row_live: Bool,
+    ) -> Scalar[dtype]:
+        """Returns `value` if its block is kept, else `-inf`.
+
+        Parameters:
+            dtype: Score element type.
+            lane_keys: Consecutive keys a warp holds.
+
+        Args:
+            value: The score.
+            row: Window row of the query token.
+            key: Key column.
+            key_live: Whether the key is below the scorer's bound.
+            row_live: Whether the row is in the window.
+
+        Returns:
+            The score to store.
+        """
+        comptime assert (
+            lane_keys % Self.block_size == 0
+        ), "a block must lie within one warp's span of keys"
+        var block = key // Int32(Self.block_size)
+        var in_range = row_live and block < self.num_blocks
+        # A dead row or block reads entry 0 and is dropped regardless. The
+        # load is invariant and unbranched so it does not stall the epilogue.
+        var kept = (
+            (
+                self.keep.unsafe_offset(
+                    Int(row) * Int(self.num_blocks)
+                    + Int(block) if in_range else 0
+                )
+            )
+            .unsafe_address_space_cast[.GLOBAL]()
+            .unsafe_load[invariant=True]()
+        )
+        return value if in_range and kept != 0 else neg_inf[dtype]()
+
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode_fields[Self](self, target)
+
+    @staticmethod
+    def get_type_name() -> String:
+        """Returns the type name for runtime diagnostics.
+
+        Returns:
+            Always `"BlockMaskScoreHook"`.
+        """
+        return "BlockMaskScoreHook"
+
+
 struct _IndexerSink[R: SparseIndexRemap, write_logical: Bool](TopkSink):
     """Writes a top-k slot's logical index and, through `R`, its remap.
 
@@ -88,7 +428,7 @@ struct _IndexerSink[R: SparseIndexRemap, write_logical: Bool](TopkSink):
         write_logical: Whether the logical index is written at all.
     """
 
-    var logical: UnsafePointer[Int32, MutUntrackedOrigin]
+    var logical: MutPointer[Int32, MutUntrackedOrigin]
     """Flat logical output, `[rows, top_k]`."""
     var remap: Self.R
     """Second output derived from each logical index."""
@@ -98,7 +438,7 @@ struct _IndexerSink[R: SparseIndexRemap, write_logical: Bool](TopkSink):
     @inline(.always)
     def __init__(
         out self,
-        logical: UnsafePointer[Int32, MutAnyOrigin],
+        logical: MutPointer[Int32, MutAnyOrigin],
         remap: Self.R,
         batch: Int,
     ):
@@ -143,9 +483,9 @@ struct _IndexerRowBound[
     comptime Sink = _IndexerSink[Self.R, Self.write_logical]
     """Writes the logical indices and their remap."""
 
-    var row_offsets: UnsafePointer[UInt32, ImmUntrackedOrigin]
+    var row_offsets: ImmPointer[UInt32, ImmUntrackedOrigin]
     """Ragged query row offsets, `batch_size + 1` entries."""
-    var cache_lengths: UnsafePointer[UInt32, ImmUntrackedOrigin]
+    var cache_lengths: ImmPointer[UInt32, ImmUntrackedOrigin]
     """Per-batch cached-prefix length."""
     var batch_size: Int32
     """Number of batch entries."""
@@ -157,8 +497,8 @@ struct _IndexerRowBound[
     @inline(.always)
     def __init__(
         out self,
-        row_offsets: UnsafePointer[UInt32, ImmutAnyOrigin],
-        cache_lengths: UnsafePointer[UInt32, ImmutAnyOrigin],
+        row_offsets: ImmPointer[UInt32, ImmutAnyOrigin],
+        cache_lengths: ImmPointer[UInt32, ImmutAnyOrigin],
         batch_size: Int,
         first_row: Int,
         remap: Self.R,
@@ -182,7 +522,7 @@ struct _IndexerRowBound[
 
     @inline(.always)
     def row(
-        self, row: Int, out_idxs: UnsafePointer[Int32, MutAnyOrigin]
+        self, row: Int, out_idxs: MutPointer[Int32, MutAnyOrigin]
     ) -> Tuple[Int, Self.Sink]:
         """Returns the live key count of launch row `row` and its sink.
 
@@ -196,19 +536,52 @@ struct _IndexerRowBound[
         """
         var token = Int(self.first_row) + row
         var batch = Int(self.batch_size)
+        var lane = Int(lane_id())
         # The owning entry is the number of entries that end at or before the
-        # token. Offsets are monotone, so a warp counts a whole warp-width of
-        # them with one vote: a single load latency where a serial walk takes
-        # one dependent load per entry.
+        # token. Offsets are monotone, so a warp counts `SPAN` of them per
+        # round with every load in flight at once, and takes the owner's
+        # offsets and cache length from the same loads by shuffles: one load
+        # latency per round where a serial walk takes one per entry.
         comptime vote_t = DType.uint32 if WARP_SIZE == 32 else DType.uint64
+        comptime CH = 4
+        comptime SPAN = CH * WARP_SIZE
         var batch_idx = 0
-        for base in range(0, batch, WARP_SIZE):
-            var b = base + Int(lane_id())
-            var ended = b < batch and Int(self.row_offsets[b + 1]) <= token
-            batch_idx += Int(pop_count(warp.vote[vote_t](ended)))
-        var q_start = Int(self.row_offsets[batch_idx])
-        var seq_len = Int(self.row_offsets[batch_idx + 1]) - q_start
-        var cache_len = Int(self.cache_lengths[batch_idx])
+        var q_start = Int(self.row_offsets[0])
+        var q_end = 0
+        var cache_len = 0
+        for base in range(0, batch, SPAN):
+            var ends = SIMD[DType.uint32, CH](0)
+            var lens = SIMD[DType.uint32, CH](0)
+            comptime for c in range(CH):
+                var b = base + c * WARP_SIZE + lane
+                if b < batch:
+                    ends[c] = self.row_offsets[b + 1]
+                    lens[c] = self.cache_lengths[b]
+            var ended = 0
+            comptime for c in range(CH):
+                var b = base + c * WARP_SIZE + lane
+                ended += Int(
+                    pop_count(
+                        warp.vote[vote_t](b < batch and Int(ends[c]) <= token)
+                    )
+                )
+            batch_idx += ended
+            # The owner is entry `ended` of this round: slot `ended / WS` of
+            # lane `ended % WS`, and its start is the entry before's end.
+            var own = UInt32(ended % WARP_SIZE)
+            var prev = UInt32((ended + WARP_SIZE - 1) % WARP_SIZE)
+            comptime for c in range(CH):
+                var end_c = Int(warp.shuffle_idx(ends[c], own))
+                var len_c = Int(warp.shuffle_idx(lens[c], own))
+                var prev_c = Int(warp.shuffle_idx(ends[c], prev))
+                if c == ended // WARP_SIZE:
+                    q_end = end_c
+                    cache_len = len_c
+                if ended > 0 and c == (ended - 1) // WARP_SIZE:
+                    q_start = prev_c
+            if ended < SPAN:
+                break
+        var seq_len = q_end - q_start
         return (
             indexer_key_bound[Self.kpool](
                 cache_len + seq_len, seq_len, token - q_start, Int(Self.causal)
@@ -251,6 +624,7 @@ def mla_indexer_ragged_float8_paged[
     mask_str: StaticString,
     scores_dtype: DType = _SCORES_DTYPE,
     kpool: Int = 1,
+    Topk: IndexerTopk = BlockSplitTopk,
 ](
     output_indices: MutTileTensor[.int32, oi_layout, _],
     q: ImmTileTensor[dtype, q_layout, _],
@@ -280,6 +654,7 @@ def mla_indexer_ragged_float8_paged[
         mask_str: Name of the mask, `MaskName.NULL` or `MaskName.CAUSAL`.
         scores_dtype: Element type of the transient score matrix.
         kpool: Tokens per pooled cache row.
+        Topk: The top-k over the score rows.
 
     Args:
         output_indices: Dense `[total_seq_len, top_k]` top-k output.
@@ -301,6 +676,7 @@ def mla_indexer_ragged_float8_paged[
         scores_dtype,
         kpool,
         write_logical=True,
+        Topk=Topk,
     ](
         output_indices,
         q,
@@ -331,6 +707,7 @@ def mla_indexer_ragged_float8_paged[
     scores_dtype: DType = _SCORES_DTYPE,
     kpool: Int = 1,
     write_logical: Bool = False,
+    Topk: IndexerTopk = BlockSplitTopk,
 ](
     output_indices: MutTileTensor[.int32, oi_layout, _],
     q: ImmTileTensor[dtype, q_layout, _],
@@ -376,6 +753,7 @@ def mla_indexer_ragged_float8_paged[
         write_logical: Whether to write `output_indices` (defaults to
             `False`). `False` leaves it untouched, so it may be empty, and
             requires a remap: the remap output is then the only one.
+        Topk: The top-k over the score rows.
 
     Args:
         output_indices: Dense output tensor for top-k indices [total_seq_len, top_k].
@@ -413,6 +791,537 @@ def mla_indexer_ragged_float8_paged[
         " == 1)"
     )
 
+    _mla_indexer_paged_impl[
+        dtype,
+        num_heads,
+        depth,
+        top_k,
+        mask_str,
+        scores_dtype,
+        kpool,
+        write_logical,
+        Topk=Topk,
+    ](
+        output_indices,
+        q,
+        q_s,
+        input_row_offsets,
+        k_collection.get_key_cache(Int(layer_idx)),
+        ctx,
+        remap,
+        NoScoreHook(),
+        scores_budget_bytes,
+    )
+
+
+# ===----------------------------------------------------------------------=== #
+# MXFP4: mla_indexer_ragged_mxfp4_paged
+# ===----------------------------------------------------------------------=== #
+
+comptime _MXFP4_INDEX_KV_PARAMS = KVCacheStaticParams(
+    num_heads=1, head_size=MXFP4_INDEX_VALUE_BYTES, is_mla=True
+)
+
+comptime MXFP4IndexKCache[page_size: Int] = PagedKVCache[
+    DType.uint8,
+    _MXFP4_INDEX_KV_PARAMS,
+    page_size,
+    MutUntrackedOrigin,
+    DefaultEngine[element_width=1],
+    ImmutAnyOrigin,
+    DefaultEngine[element_width=1],
+    ImmutAnyOrigin,
+    DefaultEngine[element_width=1],
+    MutUntrackedOrigin,
+    DefaultEngine[element_width=1],
+    scale_dtype_=DType.uint32,
+    quantization_granularity_=MXFP4_INDEX_VALUE_BYTES,
+]
+"""A paged MXFP4 index-key cache in `indexer_k_store`'s page layout.
+
+A page holds `page_size` keys: their E2M1 values, then their 32-bit scale
+words. The values are the cache's blocks and the words its scales, both
+strided by the page pitch, so the FP8 indexer's paged operands and TMA tiles
+read it unchanged.
+"""
+
+
+def _mxfp4_index_k_cache[
+    page_size: Int
+](
+    base: MutPointer[UInt8, MutUntrackedOrigin],
+    num_pages: Int64,
+    page_stride: Int64,
+    lookup_table: TileTensor[.uint32, ...],
+    cache_lengths: TileTensor[.uint32, ...],
+    max_seq_length: Int,
+    max_cache_length: Int,
+) -> MXFP4IndexKCache[page_size]:
+    """Views `num_pages` pages, `page_stride` bytes apart from `base`."""
+    comptime assert lookup_table.rank == 2 and cache_lengths.rank == 1
+    var blocks = TileTensor(
+        base,
+        InternalLayout(
+            Coord(
+                num_pages,
+                Idx[page_size],
+                Idx[1],
+                Idx[MXFP4_INDEX_VALUE_BYTES],
+            ),
+            Coord(
+                page_stride,
+                Idx[MXFP4_INDEX_VALUE_BYTES],
+                Idx[MXFP4_INDEX_VALUE_BYTES],
+                Idx[1],
+            ),
+        ),
+    )
+    var scales = TileTensor(
+        base.unsafe_offset(page_size * MXFP4_INDEX_VALUE_BYTES).unsafe_bitcast[
+            UInt32
+        ](),
+        InternalLayout(
+            Coord(num_pages, Idx[page_size], Idx[1], Idx[1]),
+            Coord(page_stride // 4, Idx[1], Idx[1], Idx[1]),
+        ),
+    )
+    # The cache stores its 1D and 2D tensors on the default engine.
+    var lengths = TileTensor(
+        cache_lengths.ptr.unsafe_address_space_cast[
+            .GENERIC
+        ]().as_unsafe_any_origin(),
+        InternalLayout(Coord(Int64(cache_lengths.dim[0]())), Coord(Idx[1])),
+    )
+    var lut_cols = Int64(lookup_table.dim[1]())
+    var lut = TileTensor(
+        lookup_table.ptr.unsafe_address_space_cast[
+            .GENERIC
+        ]().as_unsafe_any_origin(),
+        InternalLayout(
+            Coord(Int64(lookup_table.dim[0]()), lut_cols),
+            Coord(lut_cols, Idx[1]),
+        ),
+    )
+    return MXFP4IndexKCache[page_size](
+        blocks,
+        lengths,
+        lut,
+        UInt32(max_seq_length),
+        UInt32(max_cache_length),
+        scales=rebind[MXFP4IndexKCache[page_size].scales_tt_type](scales),
+    )
+
+
+def mxfp4_index_k_cache[
+    page_size: Int
+](
+    cache: ImmTileTensor[.uint8, ...],
+    lookup_table: ImmTileTensor[.uint32, ...],
+    cache_lengths: ImmTileTensor[.uint32, ...],
+    max_seq_length: Int,
+    max_cache_length: Int,
+) -> MXFP4IndexKCache[page_size]:
+    """Views packed MXFP4 index-key pages as a paged cache.
+
+    Parameters:
+        page_size: Keys per page.
+
+    Args:
+        cache: Pages written by `indexer_k_store` with `fp4=True`,
+            `[pages, page_stride]` row-major; `page_stride` is a multiple of
+            16 and holds `page_size` records of `MXFP4_INDEX_RECORD_BYTES`.
+        lookup_table: Physical page of each request's logical page,
+            `[batch, max_pages]`.
+        cache_lengths: Tokens each request had cached before this call,
+            `[batch]`. The keys this call scores are already stored.
+        max_seq_length: Most new tokens any request brings.
+        max_cache_length: Most cached tokens any request has.
+
+    Returns:
+        The cache view.
+    """
+    var page_stride = Int64(cache.dim[1]())
+    debug_assert(
+        page_stride % 16 == 0
+        and page_stride >= Int64(page_size * MXFP4_INDEX_RECORD_BYTES),
+        "mxfp4 index pages need a 16-byte pitch holding every row and word",
+    )
+    comptime assert (
+        cache_lengths.is_row_major and lookup_table.is_row_major
+    ), "cache lengths and the lookup table must be row-major"
+    return _mxfp4_index_k_cache[page_size](
+        cache.ptr.unsafe_mut_cast[True]()
+        .unsafe_origin_cast[MutUntrackedOrigin]()
+        .unsafe_address_space_cast[.GENERIC](),
+        Int64(cache.dim[0]()),
+        page_stride,
+        lookup_table,
+        cache_lengths,
+        max_seq_length,
+        max_cache_length,
+    )
+
+
+def mxfp4_index_k_cache[
+    page_size: Int
+](
+    blocks: TileTensor[.uint8, ...],
+    page_stride: Int,
+    layer: Int,
+    lookup_table: TileTensor[.uint32, ...],
+    cache_lengths: TileTensor[.uint32, ...],
+    max_seq_length: Int,
+    max_cache_length: Int,
+) raises -> MXFP4IndexKCache[page_size]:
+    """Views one layer of a multi-layer MXFP4 index-key leaf as a paged cache.
+
+    Parameters:
+        page_size: Keys per page.
+
+    Args:
+        blocks: The leaf's blocks, `[blocks, 1, layers, page_size, 1, record]`
+            with `MXFP4_INDEX_RECORD_BYTES` records, written by
+            `indexer_k_norm_rope_store_layer` with `fp4=True`.
+        page_stride: Bytes from one block to the next, or `-1` when packed.
+        layer: The layer's index within the leaf.
+        lookup_table: Physical block of each request's logical page,
+            `[batch, max_pages]`.
+        cache_lengths: Tokens each request had cached before this call,
+            `[batch]`. The keys this call scores are already stored.
+        max_seq_length: Most new tokens any request brings.
+        max_cache_length: Most cached tokens any request has.
+
+    Returns:
+        The cache view.
+
+    Raises:
+        If the leaf does not hold `page_size` MXFP4 records a page, its pitch
+        or the layer is invalid, or the cache lengths or the lookup table are
+        not row-major.
+    """
+    if Int(blocks.dim[3]()) != page_size:
+        raise Error("index-key blocks do not hold page_size keys a page")
+    if (
+        Int(cache_lengths.layout.stride[0]().value()) != 1
+        or Int(lookup_table.layout.stride[1]().value()) != 1
+        or Int(lookup_table.layout.stride[0]().value())
+        != Int(lookup_table.dim[1]())
+    ):
+        raise Error("cache lengths and the lookup table must be row-major")
+    var base, pitch = index_key_layer_pages[MXFP4_INDEX_RECORD_BYTES](
+        blocks, page_stride, layer
+    )
+    return _mxfp4_index_k_cache[page_size](
+        base,
+        Int64(blocks.dim[0]()),
+        Int64(pitch),
+        lookup_table,
+        cache_lengths,
+        max_seq_length,
+        max_cache_length,
+    )
+
+
+@inline(.always)
+def mla_indexer_ragged_mxfp4_paged[
+    oi_layout: TensorLayout,
+    q_layout: TensorLayout,
+    qsf_layout: TensorLayout,
+    w_layout: TensorLayout,
+    iro_layout: TensorLayout,
+    //,
+    num_heads: Int,
+    top_k: Int,
+    mask_str: StaticString,
+    page_size: Int,
+    scores_dtype: DType = _SCORES_DTYPE,
+    kpool: Int = 1,
+    Topk: IndexerTopk = BlockSplitTopk,
+](
+    output_indices: MutTileTensor[.int32, oi_layout, _],
+    q: ImmTileTensor[.uint8, q_layout, _],
+    q_sf: ImmTileTensor[.uint32, qsf_layout, _],
+    weights: ImmTileTensor[.float32, w_layout, _],
+    input_row_offsets: ImmTileTensor[.uint32, iro_layout, _],
+    k_cache: MXFP4IndexKCache[page_size],
+    ctx: DeviceContext,
+    scores_budget_bytes: Int = _SCORES_BUDGET_BYTES,
+) raises:
+    """Computes the MXFP4 indexer's top-k key positions, without a remap.
+
+    See the overload taking `remap`; this one writes the logical indices
+    only.
+
+    Parameters:
+        oi_layout: Layout of the top-k index output.
+        q_layout: Layout of the query tensor.
+        qsf_layout: Layout of the query block scales.
+        w_layout: Layout of the per-head weights.
+        iro_layout: Layout of the ragged query row offsets.
+        num_heads: Index heads per token.
+        top_k: Key positions to select per token.
+        mask_str: `MaskName.NULL` or `MaskName.CAUSAL`.
+        page_size: Keys per cache page.
+        scores_dtype: Element type of the transient score matrix.
+        kpool: Tokens per cache row, the compression ratio.
+        Topk: The top-k over the score rows.
+
+    Args:
+        output_indices: Dense `[total_seq_len, top_k]` top-k output.
+        q: Packed E2M1 queries, `[total_seq_len, num_heads, 64]`.
+        q_sf: Query block scales, `[total_seq_len, num_heads]`.
+        weights: Per-head weights, `[total_seq_len, num_heads]`.
+        input_row_offsets: Ragged row offsets for queries `[batch_size + 1]`.
+        k_cache: The index keys, from `mxfp4_index_k_cache`.
+        ctx: Device context.
+        scores_budget_bytes: Peak bytes the transient score matrix may occupy.
+    """
+    mla_indexer_ragged_mxfp4_paged[
+        num_heads,
+        top_k,
+        mask_str,
+        page_size,
+        scores_dtype,
+        kpool,
+        write_logical=True,
+        Topk=Topk,
+    ](
+        output_indices,
+        q,
+        q_sf,
+        weights,
+        input_row_offsets,
+        k_cache,
+        ctx,
+        NoRemap(),
+        scores_budget_bytes,
+    )
+
+
+@inline(.always)
+def mla_indexer_ragged_mxfp4_paged[
+    oi_layout: TensorLayout,
+    q_layout: TensorLayout,
+    qsf_layout: TensorLayout,
+    w_layout: TensorLayout,
+    iro_layout: TensorLayout,
+    R: SparseIndexRemap,
+    //,
+    num_heads: Int,
+    top_k: Int,
+    mask_str: StaticString,
+    page_size: Int,
+    scores_dtype: DType = _SCORES_DTYPE,
+    kpool: Int = 1,
+    write_logical: Bool = False,
+    Topk: IndexerTopk = BlockSplitTopk,
+](
+    output_indices: MutTileTensor[.int32, oi_layout, _],
+    q: ImmTileTensor[.uint8, q_layout, _],
+    q_sf: ImmTileTensor[.uint32, qsf_layout, _],
+    weights: ImmTileTensor[.float32, w_layout, _],
+    input_row_offsets: ImmTileTensor[.uint32, iro_layout, _],
+    k_cache: MXFP4IndexKCache[page_size],
+    ctx: DeviceContext,
+    remap: R,
+    scores_budget_bytes: Int = _SCORES_BUDGET_BYTES,
+) raises:
+    """Computes the MXFP4 indexer's top-k key positions over packed pages.
+
+    The lightning indexer with MXFP4 queries and keys:
+
+        score[t, s] = sum_h relu(q[t, h] . k[s]) * weights[t, h]
+
+    where `q[t, h]` and `k[s]` are 128 E2M1 values, each run of 32 scaled by
+    its UE8M0 exponent, and `weights` already folds the softmax and head
+    scales. Scores land in a transient matrix and the bounded top-k selects
+    from it, as `mla_indexer_ragged_float8_paged` does.
+
+    Parameters:
+        oi_layout: Layout of the top-k index output.
+        q_layout: Layout of the query tensor.
+        qsf_layout: Layout of the query block scales.
+        w_layout: Layout of the per-head weights.
+        iro_layout: Layout of the ragged query row offsets.
+        R: Type of `remap`.
+        num_heads: Index heads per token; 32.
+        top_k: Key positions to select per token.
+        mask_str: `MaskName.NULL` or `MaskName.CAUSAL`.
+        page_size: Keys per cache page; a multiple of 128 or a power-of-two
+            fraction of it down to 8.
+        scores_dtype: Element type of the transient score matrix.
+        kpool: Tokens per cache row, the compression ratio. A key row covers
+            `kpool` consecutive tokens, so indices count rows.
+        write_logical: Whether to write `output_indices`.
+        Topk: The top-k over the score rows.
+
+    Args:
+        output_indices: Dense `[total_seq_len, top_k]` top-k output; `-1`
+            fills a row with fewer live keys than `top_k`.
+        q: Packed E2M1 queries, `[total_seq_len, num_heads, 64]`, two
+            channels a byte with the even one in the low nibble.
+        q_sf: Query block scales, `[total_seq_len, num_heads]`: each word is
+            four UE8M0 bytes, channels 32j..32j+31 in byte j.
+        weights: Per-head weights, `[total_seq_len, num_heads]`.
+        input_row_offsets: Ragged row offsets for queries `[batch_size + 1]`.
+        k_cache: The index keys, from `mxfp4_index_k_cache`.
+        ctx: Device context.
+        remap: Second output beside each logical index; see
+            `mla_indexer_ragged_float8_paged`.
+        scores_budget_bytes: Peak bytes the transient score matrix may occupy.
+    """
+    mla_indexer_ragged_mxfp4_paged[
+        num_heads,
+        top_k,
+        mask_str,
+        page_size,
+        scores_dtype,
+        kpool,
+        write_logical,
+        Topk,
+    ](
+        output_indices,
+        q,
+        q_sf,
+        weights,
+        input_row_offsets,
+        k_cache,
+        ctx,
+        remap,
+        NoScoreHook(),
+        scores_budget_bytes,
+    )
+
+
+@inline(.always)
+def mla_indexer_ragged_mxfp4_paged[
+    oi_layout: TensorLayout,
+    q_layout: TensorLayout,
+    qsf_layout: TensorLayout,
+    w_layout: TensorLayout,
+    iro_layout: TensorLayout,
+    R: SparseIndexRemap,
+    H: IndexerScoreHook,
+    //,
+    num_heads: Int,
+    top_k: Int,
+    mask_str: StaticString,
+    page_size: Int,
+    scores_dtype: DType = _SCORES_DTYPE,
+    kpool: Int = 1,
+    write_logical: Bool = False,
+    Topk: IndexerTopk = BlockSplitTopk,
+](
+    output_indices: MutTileTensor[.int32, oi_layout, _],
+    q: ImmTileTensor[.uint8, q_layout, _],
+    q_sf: ImmTileTensor[.uint32, qsf_layout, _],
+    weights: ImmTileTensor[.float32, w_layout, _],
+    input_row_offsets: ImmTileTensor[.uint32, iro_layout, _],
+    k_cache: MXFP4IndexKCache[page_size],
+    ctx: DeviceContext,
+    remap: R,
+    score_hook: H,
+    scores_budget_bytes: Int = _SCORES_BUDGET_BYTES,
+) raises:
+    """Computes the MXFP4 indexer's top-k key positions with a score hook.
+
+    The hook sees each score in the scorer's epilogue as it is stored for the
+    top-k, so it can read the scores (`BlockMaxScoreHook`) or drop keys from
+    the selection (`BlockMaskScoreHook`).
+
+    Parameters:
+        oi_layout: Layout of the top-k index output.
+        q_layout: Layout of the query tensor.
+        qsf_layout: Layout of the query block scales.
+        w_layout: Layout of the per-head weights.
+        iro_layout: Layout of the ragged query row offsets.
+        R: Type of `remap`.
+        H: Type of `score_hook`.
+        num_heads: Index heads per token; 32.
+        top_k: Key positions to select per token.
+        mask_str: `MaskName.NULL` or `MaskName.CAUSAL`.
+        page_size: Keys per cache page.
+        scores_dtype: Element type of the transient score matrix.
+        kpool: Tokens per cache row, the compression ratio.
+        write_logical: Whether to write `output_indices`.
+        Topk: The top-k over the score rows.
+
+    Args:
+        output_indices: Dense `[total_seq_len, top_k]` top-k output.
+        q: Packed E2M1 queries, `[total_seq_len, num_heads, 64]`.
+        q_sf: Query block scales, `[total_seq_len, num_heads]`.
+        weights: Per-head weights, `[total_seq_len, num_heads]`.
+        input_row_offsets: Ragged row offsets for queries `[batch_size + 1]`.
+        k_cache: The index keys, from `mxfp4_index_k_cache`.
+        ctx: Device context.
+        remap: Second output beside each logical index.
+        score_hook: Runs on every score before the top-k.
+        scores_budget_bytes: Peak bytes the transient score matrix may occupy.
+    """
+    _mla_indexer_paged_impl[
+        DType.uint8,
+        num_heads,
+        MXFP4_INDEX_VALUE_BYTES,
+        top_k,
+        mask_str,
+        scores_dtype,
+        kpool,
+        write_logical,
+        Topk,
+    ](
+        output_indices,
+        q,
+        weights,
+        input_row_offsets,
+        k_cache,
+        ctx,
+        remap,
+        score_hook,
+        scores_budget_bytes,
+        q_sf.unsafe_ptr().as_unsafe_any_origin(),
+    )
+
+
+@inline(.always)
+def _mla_indexer_paged_impl[
+    oi_layout: TensorLayout,
+    q_layout: TensorLayout,
+    qs_layout: TensorLayout,
+    iro_layout: TensorLayout,
+    CacheT: KVCacheT,
+    R: SparseIndexRemap,
+    H: IndexerScoreHook,
+    //,
+    dtype: DType,
+    num_heads: Int,
+    depth: Int,
+    top_k: Int,
+    mask_str: StaticString,
+    scores_dtype: DType,
+    kpool: Int,
+    write_logical: Bool,
+    Topk: IndexerTopk = BlockSplitTopk,
+](
+    output_indices: MutTileTensor[.int32, oi_layout, _],
+    q: ImmTileTensor[dtype, q_layout, _],
+    q_s: ImmTileTensor[.float32, qs_layout, _],
+    input_row_offsets: ImmTileTensor[.uint32, iro_layout, _],
+    k_cache: CacheT,
+    ctx: DeviceContext,
+    remap: R,
+    score_hook: H,
+    scores_budget_bytes: Int,
+    q_sf: OptionalPointer[UInt32, ImmutAnyOrigin] = None,
+) raises:
+    """Scores, bounds and selects the indexer's top-k over one paged K cache.
+
+    The body of both public entries: `mla_indexer_ragged_float8_paged` over a
+    KV collection's layer and `mla_indexer_ragged_mxfp4_paged` over packed
+    MXFP4 pages. See the former for the parameters; `q_sf` carries MXFP4's
+    query block scales and `q_s` its per-head weights. `score_hook` runs on
+    every score in the MXFP4 scorer's epilogue.
+    """
+    comptime CacheType = CacheT
     comptime assert (
         top_k <= PERSISTENT_TOPK_MAX_N
     ), "the bounded top-k selects at most PERSISTENT_TOPK_MAX_N per row"
@@ -427,24 +1336,40 @@ def mla_indexer_ragged_float8_paged[
     if total_seq_len == 0:
         return
 
-    var k_cache = k_collection.get_key_cache(Int(layer_idx))
-
     # max_new_tokens is used for grid dimensions (maximum possible new tokens)
     var max_new_tokens = Int(k_cache.max_prompt_length())
 
     var k_operand = KVCacheMHAOperand(k_cache)
     var ks_operand = KVCacheScalesMHAOperand(k_cache)
 
-    comptime use_sm100_scorer = (
-        _has_blackwell_tcgen05()
-        and num_heads in (64, 32, 8, 4)
-        and depth == 128
-        and _k_tile_fits_pages[
-            _BM_KEY,
-            type_of(k_operand).page_size,
-            # `pool_row_tokens`, derived below.
-            1 if CacheType.kv_params.head_size == depth else kpool,
-        ]()
+    # MXFP4 has no other scorer: its tile is 32 heads at 64 bytes a row, and
+    # it splits a page smaller than a key tile (ratio-2 pages of 64 rows).
+    comptime FP4 = _is_mxfp4[dtype]()
+    comptime use_sm100_scorer = ctx.target._has_blackwell_tcgen05() and (
+        (
+            num_heads == 32
+            and depth == 64
+            and _k_tile_fits_pages[
+                _BM_KEY, type_of(k_operand).page_size, 1, split_pages=True
+            ]()
+        ) if FP4 else (
+            num_heads in (64, 32, 8, 4)
+            and depth == 128
+            and _k_tile_fits_pages[
+                _BM_KEY,
+                type_of(k_operand).page_size,
+                # `pool_row_tokens`, derived below.
+                1 if CacheType.kv_params.head_size == depth else kpool,
+            ]()
+        )
+    )
+    comptime assert (
+        not H.enabled or FP4
+    ), "score hooks run in the MXFP4 scorer's epilogue"
+    comptime assert not FP4 or use_sm100_scorer, (
+        "the MXFP4 indexer runs only on the SM100 scorer: 32 heads of 128"
+        " values, on pages of a whole number of 128-key tiles or a power-of-two"
+        " fraction of one"
     )
 
     # gfx950 MFMA scorer: same score-buffer contract as SM100 (fused causal
@@ -560,7 +1485,7 @@ def mla_indexer_ragged_float8_paged[
                 scores_dt == .float32
             ), "the AMD scorer writes float32 scores"
             var scores_tile_f32 = TileTensor(
-                scores_buf.unsafe_ptr().bitcast[Float32](),
+                scores_buf.unsafe_ptr().unsafe_bitcast[Float32](),
                 row_major(chunk_rows, max_num_keys),
             )
             fp8_index_score_amd[
@@ -597,54 +1522,81 @@ def mla_indexer_ragged_float8_paged[
             ]()
             var k_tma_tile = rebind[KTMATileT[dtype, k_box_rows, depth]](
                 k_cache.create_paged_tma_tile[
-                    _INDEX_SWIZZLE,
+                    _index_swizzle[dtype, depth](),
                     BN=k_box_rows,
                     BK=depth,
                     pool_row_tokens=pool_row_tokens,
                 ](ctx)
             )
-            fp8_index_score_sm100[
-                dtype,
-                type_of(k_operand),
-                type_of(ks_operand),
-                num_heads,
-                depth,
-                _is_cache_length_accurate=False,
-                # Speculative-decode tile: 3 divides a 6-token MTP step, which
-                # the default 4-token tile at nh=32 covers only by spending 256
-                # MMA columns on 192 live ones. Inert at every other head count.
-                #
-                # The `max_seq_len` this entry passes is `max_prompt_length()`,
-                # the batch maximum of NEW tokens -- not a context length -- so
-                # the reachability bound is "no request in the batch brings more
-                # than 9 new tokens", not "not a prefill". A short prompt, a
-                # chunked-prefill final chunk, or a prefix-cache-hit tail of 3,
-                # 6 or 9 tokens does reach this tile when some entry's cache
-                # makes `max_num_keys` deep enough to open the key-split arm.
-                # That is intended: at <= 9 query tokens against >= 8065 keys
-                # the launch is decode-shaped by every measure the route uses,
-                # and it is already on the key-split arm without this hint --
-                # the tile only makes its MMA columns exact. What cannot happen
-                # is a many-token prefill landing here.
-                N_TOKENS_ALT=SPEC_DECODE_N_TOKENS_ALT,
-                kpool=kpool,
-                pool_row_tokens=pool_row_tokens,
-                k_box_rows=k_box_rows,
-            ](
-                scores_tile,
-                q,
-                q_s,
-                k_operand,
-                ks_operand,
-                k_tma_tile,
-                input_row_offsets,
-                batch_size,
-                max_new_tokens,
-                max_num_keys,
-                mask_str == MaskName.CAUSAL.name,
-                ctx,
-                chunk_begin,
-            )
+            comptime if _is_mxfp4[dtype]():
+                mxfp4_index_score_sm100[
+                    type_of(k_operand),
+                    type_of(ks_operand),
+                    num_heads,
+                    _is_cache_length_accurate=False,
+                    kpool=kpool,
+                    pool_row_tokens=pool_row_tokens,
+                    k_box_rows=k_box_rows,
+                ](
+                    scores_tile,
+                    q,
+                    q_sf.value(),
+                    q_s,
+                    k_operand,
+                    ks_operand,
+                    rebind[KTMATileT[dtype, k_box_rows, 64]](k_tma_tile),
+                    input_row_offsets,
+                    batch_size,
+                    max_new_tokens,
+                    max_num_keys,
+                    mask_str == MaskName.CAUSAL.name,
+                    ctx,
+                    chunk_begin,
+                    score_hook.window(ctx, chunk_begin, chunk_rows),
+                )
+            else:
+                fp8_index_score_sm100[
+                    dtype,
+                    type_of(k_operand),
+                    type_of(ks_operand),
+                    num_heads,
+                    depth,
+                    _is_cache_length_accurate=False,
+                    # Speculative-decode tile: 3 divides a 6-token MTP step, which
+                    # the default 4-token tile at nh=32 covers only by spending 256
+                    # MMA columns on 192 live ones. Inert at every other head count.
+                    #
+                    # The `max_seq_len` this entry passes is `max_prompt_length()`,
+                    # the batch maximum of NEW tokens -- not a context length -- so
+                    # the reachability bound is "no request in the batch brings more
+                    # than 9 new tokens", not "not a prefill". A short prompt, a
+                    # chunked-prefill final chunk, or a prefix-cache-hit tail of 3,
+                    # 6 or 9 tokens does reach this tile when some entry's cache
+                    # makes `max_num_keys` deep enough to open the key-split arm.
+                    # That is intended: at <= 9 query tokens against >= 8065 keys
+                    # the launch is decode-shaped by every measure the route uses,
+                    # and it is already on the key-split arm without this hint --
+                    # the tile only makes its MMA columns exact. What cannot happen
+                    # is a many-token prefill landing here.
+                    N_TOKENS_ALT=SPEC_DECODE_N_TOKENS_ALT,
+                    kpool=kpool,
+                    pool_row_tokens=pool_row_tokens,
+                    k_box_rows=k_box_rows,
+                ](
+                    scores_tile,
+                    q,
+                    q_s,
+                    k_operand,
+                    ks_operand,
+                    k_tma_tile,
+                    input_row_offsets,
+                    batch_size,
+                    max_new_tokens,
+                    max_num_keys,
+                    mask_str == MaskName.CAUSAL.name,
+                    ctx,
+                    chunk_begin,
+                )
         else:
             comptime assert num_heads % 16 == 0, (
                 "the scalar fp8_index_kernel tiles heads by thread_dim_y == 8"
@@ -705,7 +1657,7 @@ def mla_indexer_ragged_float8_paged[
             chunk_begin,
             remap.offset(chunk_begin * top_k),
         )
-        persistent_topk_block_split[RB=type_of(row_bound)](
+        Topk.select(
             ctx,
             scores_buf.unsafe_ptr().as_imm().as_unsafe_any_origin(),
             output_indices.unsafe_ptr()
@@ -714,7 +1666,7 @@ def mla_indexer_ragged_float8_paged[
             max_num_keys,
             top_k,
             chunk_rows,
-            Optional(row_bound),
+            row_bound,
         )
 
     _ = scores_buf

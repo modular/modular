@@ -14,8 +14,15 @@
 from std.math import ceildiv
 from std.sys.info import align_of, size_of
 
-from quantization import Q4sym
-from std.testing import assert_true
+from quantization import (
+    Q4sym,
+    block_Q4_K,
+    block_Q6_K,
+    q4_k_dequantize_impl,
+    q6_k_dequantize_impl,
+    scale_min_k4,
+)
+from std.testing import assert_almost_equal, assert_true
 from layout import TileTensor, row_major
 
 from std.utils import IndexList
@@ -224,6 +231,86 @@ def test_read_write_to_tensors[rtol: FloatLiteral, atol: FloatLiteral]() raises:
     print()
 
 
+def _fill_pattern(mut bytes: List[UInt8]):
+    for i in range(len(bytes)):
+        bytes[i] = UInt8((i * 37 + 11) & 0xFF)
+
+
+def test_q4_k_dequantize() raises:
+    comptime num_blocks = 3
+    comptime block_nbytes = size_of[block_Q4_K]()
+    var encoded = List[UInt8](length=num_blocks * block_nbytes, fill=0)
+    _fill_pattern(encoded)
+    var blocks = encoded.unsafe_ptr().unsafe_bitcast[block_Q4_K]()
+    for b in range(num_blocks):
+        blocks[b].base_scale = Float16(0.37 + 0.11 * Float32(b))
+        blocks[b].base_min = Float16(0.21 - 0.05 * Float32(b))
+
+    var out = List[Float32](length=num_blocks * 256, fill=-1)
+    q4_k_dequantize_impl(
+        TileTensor(encoded, row_major(len(encoded))).as_imm(),
+        TileTensor(out, row_major(len(out))),
+    )
+
+    for b in range(num_blocks):
+        var blk = blocks + b
+        var d = blk[].base_scale.cast[.float32]()
+        var m = blk[].base_min.cast[.float32]()
+        for g in range(8):
+            var scale, minimum = scale_min_k4(blk, g)
+            # Pairs of groups share 32 bytes: low nibbles, then high nibbles.
+            var byte_base = (g // 2) * 32
+            for e in range(32):
+                var byte = blk[].q_bits[byte_base + e]
+                var nibble = byte & 0xF if g % 2 == 0 else byte >> 4
+                assert_almost_equal(
+                    out[b * 256 + g * 32 + e],
+                    d * scale * nibble.cast[.float32]() - m * minimum,
+                    rtol=1e-5,
+                    atol=1e-6,
+                )
+
+
+def test_q6_k_dequantize() raises:
+    comptime num_blocks = 3
+    comptime block_nbytes = size_of[block_Q6_K]()
+    var encoded = List[UInt8](length=num_blocks * block_nbytes, fill=0)
+    _fill_pattern(encoded)
+    var blocks = encoded.unsafe_ptr().unsafe_bitcast[block_Q6_K]()
+    for b in range(num_blocks):
+        blocks[b].base_scale = Float16(0.043 + 0.01 * Float32(b))
+
+    var out = List[Float32](length=num_blocks * 256, fill=-1)
+    q6_k_dequantize_impl(
+        TileTensor(encoded, row_major(len(encoded))).as_imm(),
+        TileTensor(out, row_major(len(out))),
+        IndexList[2](num_blocks, 256),
+    )
+
+    for b in range(num_blocks):
+        var blk = blocks + b
+        var d = blk[].base_scale.cast[.float32]()
+        for half in range(2):
+            for l in range(32):
+                var ql0 = blk[].q_bits_lo[half * 64 + l]
+                var ql1 = blk[].q_bits_lo[half * 64 + l + 32]
+                var qh = blk[].q_bits_hi[half * 32 + l]
+                var is_ = half * 8 + l // 16
+                var q: List[Int] = [
+                    Int((ql0 & 0xF) | (((qh >> 0) & 3) << 4)) - 32,
+                    Int((ql1 & 0xF) | (((qh >> 2) & 3) << 4)) - 32,
+                    Int((ql0 >> 4) | (((qh >> 4) & 3) << 4)) - 32,
+                    Int((ql1 >> 4) | (((qh >> 6) & 3) << 4)) - 32,
+                ]
+                for k in range(4):
+                    var scale = blk[].q_scales[is_ + 2 * k].cast[.float32]()
+                    assert_almost_equal(
+                        out[b * 256 + half * 128 + k * 32 + l],
+                        d * scale * Float32(q[k]),
+                        rtol=1e-5,
+                    )
+
+
 def main() raises:
     comptime l2_tolerance = 0.1
 
@@ -233,3 +320,6 @@ def main() raises:
 
     # Tests via compile-time constraints on size_of(Q4Sym)
     test_alignment_and_size()
+
+    test_q4_k_dequantize()
+    test_q6_k_dequantize()

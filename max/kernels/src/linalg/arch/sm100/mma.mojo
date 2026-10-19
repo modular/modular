@@ -42,9 +42,7 @@ from linalg.fp4_utils import (
 
 def _create_mma_desc_k_major[
     dtype: DType, swizzle_mode: TensorMapSwizzle
-](
-    ptr: UnsafePointer[Scalar[dtype], address_space=.SHARED, ...]
-) -> MMASmemDescriptor:
+](ptr: Pointer[Scalar[dtype], address_space=.SHARED, ...]) -> MMASmemDescriptor:
     """Creates an MMA descriptor for K-major layout directly from swizzle mode.
 
     Bypasses the legacy Layout pipeline by computing SBO/LBO from swizzle
@@ -127,7 +125,7 @@ def max_contiguous_tile_shape[
 def _create_mma_desc_pair[
     dtype: DType, //, canonical_layout: Layout, swizzle_mode: TensorMapSwizzle
 ](
-    ptr: UnsafePointer[Scalar[dtype], address_space=.SHARED, ...]
+    ptr: Pointer[Scalar[dtype], address_space=.SHARED, ...]
 ) -> MMASmemDescriptorPair:
     # Extract the stride values from the canonical layout
     # The canonical layout is expected to have at least 2 dimensions
@@ -152,7 +150,7 @@ def smem_descriptor[
     is_k_major: Bool,
     page_dense: Bool = False,
 ](
-    ptr: UnsafePointer[Scalar[dtype], address_space=.SHARED, ...]
+    ptr: Pointer[Scalar[dtype], address_space=.SHARED, ...]
 ) -> MMASmemDescriptorPair:
     """Creates an MMASmemDescriptorPair for an SM100 MMA operand tile in shared memory.
 
@@ -384,9 +382,7 @@ struct MmaOpSM100_SS[
                 (k % sw_K_b) + (k // sw_K_b) * BN * sw_K_b
             ) * size_of[Self.b_type]()
 
-            var c_scale: UInt32 = UInt32(0) if (init_c and k == 0) else UInt32(
-                1
-            )
+            var c_scale: UInt32 = 0 if (init_c and k == 0) else 1
 
             mma[Self.cta_group](
                 a_desc + a_offset,
@@ -399,7 +395,7 @@ struct MmaOpSM100_SS[
     @inline(.always)
     def commit(
         self,
-        ptr_mbar: UnsafePointer[address_space=.SHARED, ...],
+        ptr_mbar: Pointer[address_space=.SHARED, ...],
     ):
         comptime if product(Self.cluster_shape) == 1:
             mma_arrive[Self.cta_group](ptr_mbar)
@@ -415,9 +411,9 @@ struct MmaOpSM100_SS[
         comptime match dtype:
             case .float32:
                 return UMMAKind.KIND_TF32
-            case .float16 | DType.bfloat16:
+            case .float16 | .bfloat16:
                 return UMMAKind.KIND_F16
-            case .float8_e4m3fn | DType.float8_e5m2:
+            case .float8_e4m3fn | .float8_e5m2:
                 return UMMAKind.KIND_F8F6F4
             case _:
                 comptime assert False, String(
@@ -557,9 +553,7 @@ struct MmaOpSM100_BlockScaled_SS[
         sfa_tmem: UInt32,
         sfb_tmem: UInt32,
         init_c: Bool,
-        sfb_tmem_adj: UInt32 = UInt32(
-            0
-        ),  # TMEM col offset for MMA_N < SF_MN_GROUP_SIZE
+        sfb_tmem_adj: UInt32 = 0,  # TMEM col offset for MMA_N < SF_MN_GROUP_SIZE
     ):
         """TileTensor overload for block-scaled MMA input tiles.
 
@@ -636,9 +630,7 @@ struct MmaOpSM100_BlockScaled_SS[
             comptime a_offset = k * size_of[Self.a_type]()
             comptime b_offset = k * size_of[Self.b_type]()
 
-            var c_scale: UInt32 = UInt32(0) if (init_c and k == 0) else UInt32(
-                1
-            )
+            var c_scale: UInt32 = 0 if (init_c and k == 0) else 1
 
             comptime sf_idx = k // Self.mma_shape[2]
 
@@ -716,7 +708,7 @@ struct MmaOpSM100_BlockScaled_SS[
     @inline(.always)
     def commit(
         self,
-        ptr_mbar: UnsafePointer[address_space=.SHARED, ...],
+        ptr_mbar: Pointer[address_space=.SHARED, ...],
     ):
         comptime if product(Self.cluster_shape) == 1:
             mma_arrive[Self.cta_group](ptr_mbar)
@@ -760,7 +752,7 @@ struct MmaOpSM100_BlockScaled_SS[
             )
             var sf_desc = MMASmemDescriptor.create[
                 8 * 16, 0, TensorMapSwizzle.SWIZZLE_NONE
-            ](sf_smem.ptr + sf_offset)
+            ](sf_smem.ptr.unsafe_offset(sf_offset))
             tcgen05_cp[
                 cta_group=Int32(Self.cta_group),
                 datapaths=32,

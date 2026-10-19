@@ -601,7 +601,7 @@ def test_row_major_nested_depth3() raises:
 
 
 # ===----------------------------------------------------------------------=== #
-# Group G — the nested-layout LayoutTensor bridge
+# Group G — nested Coord to IntTuple conversion
 # ===----------------------------------------------------------------------=== #
 
 
@@ -616,26 +616,3 @@ def test_coord_to_int_tuple_types_nested() raises:
     comptime t = coord_to_int_tuple[*type_of(s).element_types]()
     assert_equal(t, IntTuple(IntTuple(2, IntTuple(3, 5)), 4))
     _ = s
-
-
-def test_to_layout_tensor_nested_layout() raises:
-    """`to_layout_tensor()` carries a nested layout across unchanged.
-
-    The runtime shape/stride are flat arrays of the layout's leaves, so a
-    rank-2 nested layout contributes four entries, not two.
-    """
-    var L = row_major_nested(
-        Coord(Coord(Idx[4], Idx[16]), Coord(Idx[2], Idx[8]))
-    )
-    var storage = Array[Float32, 1024](fill=0.0)
-    var t = TileTensor(storage, L)
-    var lt = t.to_layout_tensor()
-
-    comptime LTLayout = type_of(lt).layout
-    assert_equal(LTLayout.shape, IntTuple(IntTuple(4, 16), IntTuple(2, 8)))
-
-    # Flat shape (4, 16, 2, 8) -> flat strides (256, 16, 8, 1).
-    var shape = lt.runtime_layout.shape.value
-    var stride = lt.runtime_layout.stride.value
-    assert_equal(shape, type_of(shape)(4, 16, 2, 8))
-    assert_equal(stride, type_of(stride)(256, 16, 8, 1))

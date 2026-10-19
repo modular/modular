@@ -465,9 +465,9 @@ def _run_mha_composition(
     # Fillers (slots 1..) from `filler_seed`.
     if batch_size > 1:
         seed(filler_seed)
-        rand(q_host.unsafe_ptr() + probe_q, q_size - probe_q)
-        rand(k_host.unsafe_ptr() + probe_kv, kv_size - probe_kv)
-        rand(v_host.unsafe_ptr() + probe_kv, kv_size - probe_kv)
+        rand(q_host.unsafe_ptr().unsafe_offset(probe_q), q_size - probe_q)
+        rand(k_host.unsafe_ptr().unsafe_offset(probe_kv), kv_size - probe_kv)
+        rand(v_host.unsafe_ptr().unsafe_offset(probe_kv), kv_size - probe_kv)
 
     # valid_lengths: the probe attends to all keys (full); fillers get varied
     # lengths (they exercise different masking but are not compared).

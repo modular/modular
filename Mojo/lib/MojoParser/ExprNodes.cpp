@@ -584,17 +584,15 @@ AnyValue SimpleLiteralNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
 
   assert(kind == kSelfLiteral && "Unknown simple literal kind");
   // Self resolves to the type of the enclosing structure type.
-  ASTDecl *astDecl =
-      emitter.declScope
-          .getNearestDeclOfType<StructDeclOp, TraitDeclOp, ExtensionDeclOp>();
-  if (!astDecl) {
+  TypeScopeASTDecl *typeScopeDecl =
+      emitter.declScope.getNearestDeclOfType<TypeScopeASTDecl>();
+  if (!typeScopeDecl) {
     emitter.emitError(
         getLoc(),
         "'Self' type may only be used inside a struct, trait, or extension");
     return {};
   }
 
-  auto *typeScopeDecl = cast<TypeScopeASTDecl>(astDecl);
   ASTType selfType = typeScopeDecl->getSelfType();
   if (!selfType) {
     // The user is attempting to use "Self" when the self type hasn't yet been
@@ -605,11 +603,11 @@ AnyValue SimpleLiteralNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
 
   // Notify the listener that the Self is a reference of the parent
   // struct.
-  emitter.shared.notifyListenerOnRef(astDecl, "Self", getRange());
+  emitter.shared.notifyListenerOnRef(typeScopeDecl, "Self", getRange());
 
   // Once we have the type in question we can just return its Self type as an
   // PValue.  This already includes bound parameters etc.
-  assert(astDecl->resolvedness >= DeclResolvedness::signature);
+  assert(typeScopeDecl->resolvedness >= DeclResolvedness::signature);
   return emitter.emitResult(typeScopeDecl->getSelfType(), this, dest);
 }
 
@@ -895,7 +893,8 @@ LogicalResult DeclRefNode::emitDestructuringPValue(PValue toBind,
                                                    IREmitter &emitter) const {
   assert(toBind && "No PValue provided when binding a parameter?");
   ASTDecl &paramASTDecl = emitter.getDeclResolver().addFullyResolvedDecl(
-      toBind, spelling, getLoc(), &emitter.getDeclScope());
+      toBind, StringAttr::get(emitter.getContext(), spelling), getLoc(),
+      &emitter.getDeclScope());
   emitter.shared.notifyListenerOnVariableDecl(paramASTDecl, getLoc());
   return success();
 }
@@ -998,12 +997,11 @@ diagnoseUnknownDeclaration(StringRef spelling, ASTDecl &lookupScope,
       const char *replacement =
           isa<StructASTDecl>(parentDecl) ? "self." : "Self.";
       // References to static methods can always use capital Self.
-      Operation *firstCandidate = failureDecls[0]->getIfOperation();
-      if (auto fnCandidate = dyn_cast_or_null<FnOp>(firstCandidate)) {
+      if (auto *defDecl = dyn_cast<DefASTDecl>(failureDecls[0])) {
         declKind = "method ";
-        if (fnCandidate.getIsStatic())
+        if (defDecl->getOp().getIsStatic())
           replacement = "Self.";
-      } else if (isa_and_nonnull<AliasDeclOp>(firstCandidate)) {
+      } else if (isa<AliasASTDecl>(failureDecls[0])) {
         declKind = "comptime ";
         // Aliases are properties of the type, so `Self` is more idiomatic.
         // However `self.` is also supported.
@@ -1023,13 +1021,13 @@ diagnoseUnknownDeclaration(StringRef spelling, ASTDecl &lookupScope,
     }
   }
 
-  if (auto lookupOp = lookupScope.getIfOperation();
-      lookupOp && isa<PackageOp, FileModuleOp>(lookupOp)) {
+  if (isa_and_nonnull<PackageASTDecl, FileModuleASTDecl>(&lookupScope)) {
     auto diag = emitter.emitError(loc);
-    if (auto packageOp = dyn_cast<PackageOp>(lookupOp))
-      diag << "package '" << packageOp.getName();
+    if (auto *packageDecl = dyn_cast<PackageASTDecl>(&lookupScope))
+      diag << "package '" << packageDecl->getOp().getName();
     else {
-      diag << "module '" << cast<FileModuleOp>(lookupOp).getName();
+      diag << "module '"
+           << cast<FileModuleASTDecl>(&lookupScope)->getOp().getName();
     }
     diag << "' has no declaration '" << spelling << "'" << expr->getRange();
     return {};
@@ -1264,10 +1262,9 @@ lookupMembersInDecls(SmallVectorImpl<ASTDecl *> &memberDecls,
     bool isExtension = isa<ExtensionASTDecl>(containerDecl);
     for (ASTDecl *decl : lookup.getIfSuccess()) {
       if (isExtension)
-        if (!decl->getIfOperation())
-          if (PValue cv = decl->getIfIRValue().getIfPValue())
-            if (sugarIsa<ParamDeclRefAttr>(cv.get()))
-              continue;
+        if (PValue cv = decl->getIfIRValue().getIfPValue())
+          if (sugarIsa<ParamDeclRefAttr>(cv.get()))
+            continue;
       memberDecls.push_back(decl);
     }
   }
@@ -1297,7 +1294,7 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
       return {};
     }
     // We need to be in a function body to declare a variable.
-    if (!emitter.builder || !lookupScope.getNearestDeclOfType<FnOp>()) {
+    if (!emitter.builder || !lookupScope.getNearestDeclOfType<DefASTDecl>()) {
       emitter.emitError(loc, "cannot declare '")
           << spelling << "' in this context" << expr->getRange();
       return {};
@@ -1346,7 +1343,7 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
         spelling, varType, expr->getLocation(emitter), declKind);
     auto &varASTDecl =
         cast<VarASTDecl>(emitter.getDeclResolver().addFullyResolvedDecl(
-            DeclIRValue(varDecl), varDecl.getNameAttr(), loc, &lookupScope));
+            varDecl.getOperation(), varDecl.getNameAttr(), loc, &lookupScope));
     emitter.shared.notifyListenerOnVariableDecl(varASTDecl, loc);
 
     CValue result = isRefOrBind ? CValue(RLValue(varDecl)) : MLValue(varDecl);
@@ -1382,7 +1379,7 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
     }
 
     // An assignment outside any function is rejected before name resolution.
-    if (ASTDecl *fn = lookupScope.getNearestDeclOfType<FnOp>())
+    if (DefASTDecl *fn = lookupScope.getNearestDeclOfType<DefASTDecl>())
       emitter.getDeclResolver().addErroneousDecl(spelling, loc, fn);
     return {};
   }
@@ -1456,8 +1453,7 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
   }
 
   // Functions form an address, and may be overloaded.
-  if (auto *fnDecl = dyn_cast<DefASTDecl>(decls[0]);
-      fnDecl && fnDecl->getOp()) {
+  if (auto *fnDecl = dyn_cast<DefASTDecl>(decls[0]); fnDecl) {
     // Form an overload set value with all the candidates.
     auto result = OverloadSetUValue::create(
         spelling, decls, ParamBindings(emitter.getDeclScope(), expr),
@@ -1548,14 +1544,14 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
   // If this is a capture we need to emit a capture value.
   ASTDecl *declRef = nullptr;
   auto *defDecl = decls.size() == 1 ? dyn_cast<DefASTDecl>(decls[0]) : nullptr;
-  if (decls.size() == 1 && (!defDecl || !defDecl->getOp())) {
+  if (decls.size() == 1 && !defDecl) {
     assert(decls.size() == 1 && "Only functions may be overloaded");
     declRef = decls[0];
   }
 
   // Find the nearest escaping closure, if there is one.
-  ASTDecl *nearestEscapingFnOrNone =
-      declRef ? lookupScope.getNearestDeclOfType<FnOp>() : nullptr;
+  DefASTDecl *nearestEscapingFnOrNone =
+      declRef ? lookupScope.getNearestDeclOfType<DefASTDecl>() : nullptr;
   bool needsCapture = false;
   if (nearestEscapingFnOrNone) {
     needsCapture = true;
@@ -1567,7 +1563,7 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
     };
   }
   if (needsCapture) {
-    auto &nearestEscapingDef = cast<DefASTDecl>(*nearestEscapingFnOrNone);
+    auto &nearestEscapingDef = *nearestEscapingFnOrNone;
     FnOp parent = nearestEscapingDef.getOp();
     if (usesClosurePipeline(parent)) {
       if (!emitter.shared.captureInstanceExistsInScope(*nearestEscapingFnOrNone,
@@ -2227,12 +2223,11 @@ auto AttributeRefNode::emitLCVIR(ExprDest &dest, IREmitter &emitter,
   if (spelling.empty())
     return {};
 
-  // This could be null for TraitType.
-  auto typeDeclOp = typeDecl->getIfOperation();
-
   // Handle import-gated module references. ImportOp gates access to the
   // real package: nested ImportOps control which child modules are accessible.
-  if (auto importOp = dyn_cast_or_null<ImportOp>(typeDeclOp)) {
+  if (auto *gateDecl = dyn_cast<ImportASTDecl>(typeDecl);
+      gateDecl && gateDecl->isResolved()) {
+    ImportOp importOp = gateDecl->getIfResolvedOp();
     // The gate may be only signature-resolved when reached here (e.g., reloaded
     // from a precompiled package) so body-resolve it before looking in its
     // scope.
@@ -2269,13 +2264,13 @@ auto AttributeRefNode::emitLCVIR(ExprDest &dest, IREmitter &emitter,
             ModuleAttr::get(LIT::ModuleType::get(memberDecl->getSymbolRef())));
         return emitter.emitCResult(result, this, dest);
       }
-      if (isa_and_nonnull<PackageOp, FileModuleOp>(
-              memberDecl->getIfOperation())) {
+      if (isa_and_nonnull<PackageASTDecl, FileModuleASTDecl>(memberDecl)) {
         // A raw submodule bound in __init__'s scope. It is reachable precisely
         // because __init__ bound it, so access is allowed. Bind a child
         // ImportOp over it and hand that back (not the raw module) so deeper
         // access stays gated.
-        OpBuilder gateBuilder = typeDecl->getDeclEndBuilder();
+        OpBuilder gateBuilder =
+            cast<ImportASTDecl>(typeDecl)->getDeclEndBuilder();
         SharedState::ImportPath childPath =
             SharedState::ImportPath::fromAttr(importOp.getModulePath());
         childPath.components.push_back(spelling);
@@ -2299,12 +2294,12 @@ auto AttributeRefNode::emitLCVIR(ExprDest &dest, IREmitter &emitter,
   // scan in an ancestor package scope. (Cross-package access goes through an
   // ImportOp, handled above.)
   // FIXME: Can we remove this?
-  if (isa_and_nonnull<PackageOp, FileModuleOp>(typeDeclOp))
+  if (isa_and_nonnull<PackageASTDecl, FileModuleASTDecl>(typeDecl))
     return DeclRefNode::emitUnqualLookup(spelling, this, *typeDecl, dest,
                                          emitter, false);
 
   // We can only look up in something of struct or trait type.
-  if (!isa_and_nonnull<StructDeclOp, TraitDeclOp>(typeDeclOp) &&
+  if (!isa_and_nonnull<TypeASTDecl>(typeDecl) &&
       !sugarIsa<TraitType>(typeDecl->getIfTypeValue())) {
     emitter.emitError(getLoc(), "cannot access attribute in type ")
         << baseVal.getType() << base->getRange();
@@ -2753,7 +2748,8 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
       auto region = std::make_unique<Region>();
       region->takeBody(unboundRegion.getRegion());
       unboundRegion.erase();
-      results.front()->setIRValue(PValue(BoolAttr::get(context, false)));
+      emitter.getDeclResolver().replaceDecl(
+          *results.front(), PValue(BoolAttr::get(context, false)));
       state.addRegion(std::move(region));
       continue;
     }
@@ -4889,9 +4885,9 @@ AnyValue FunctionTypeNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
       return {};
   }
 
-  // Set the value of the dummy scope to the generated signature so that we can
-  // still resolve information about it in tools.
-  dummyScope.setIRValue(PValue(signature));
+  // Preserve the parameter scope for tooling while replacing its temporary
+  // declaration with the generated signature.
+  emitter.getDeclResolver().replaceDecl(dummyScope, PValue(signature));
 
   // The parsed FuncTypeGeneratorType is set to the pretty type that includes
   // implicit origins, we strip off the named origin decl references and replace
@@ -4939,7 +4935,7 @@ AnyValue GeneratorTypeNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
   Type genType = GeneratorType::get(
       inputParamTypes, remapper.replace(bodyType.mlirType), metadata);
 
-  dummyScope.setIRValue(PValue(genType));
+  emitter.getDeclResolver().replaceDecl(dummyScope, PValue(genType));
   return emitter.emitResult(ASTType(genType), this, dest);
 }
 
@@ -5200,9 +5196,9 @@ MagicFunctionNode::emitGetCurrentFunctionName(ExprDest &dest,
   // Intentional choice: return an empty string
   // if used outside of a function (e.g. in a comptime field initializer)
   std::string funcName;
-  ASTDecl *fnDecl = emitter.declScope.getNearestDeclOfType<FnOp>();
+  DefASTDecl *fnDecl = emitter.declScope.getNearestDeclOfType<DefASTDecl>();
   if (fnDecl) {
-    FnOp fnOp = cast<DefASTDecl>(fnDecl)->getOp();
+    FnOp fnOp = fnDecl->getOp();
     // This implementation should be kept in sync with the
     // evaluation of KGEN_GetSourceNameAttr in
     // IREvaluatorContext::evaluateGetSourceNameAttr().
@@ -5237,8 +5233,8 @@ AnyValue MagicFunctionNode::emitFunctionsInModule(ExprDest &dest,
 
   // Collect a SyntheticNode for each function declaration in the module.
   SmallVector<SyntheticNode> funcValues;
-  if (ASTDecl *fileModuleDecl =
-          emitter.getDeclScope().getNearestDeclOfType<FileModuleOp>()) {
+  if (FileModuleASTDecl *fileModuleDecl =
+          emitter.getDeclScope().getNearestDeclOfType<FileModuleASTDecl>()) {
     for (auto &[name, decls] : fileModuleDecl->getDeclsInScope()) {
       for (ASTDecl *decl : decls) {
         // TODO: consider allowing imported functions. This could be a feature,
@@ -5249,7 +5245,7 @@ AnyValue MagicFunctionNode::emitFunctionsInModule(ExprDest &dest,
           continue;
 
         auto *fnDecl = dyn_cast<DefASTDecl>(decl);
-        if (!fnDecl || !fnDecl->getOp() || fnDecl->getOp().isSynthetic())
+        if (!fnDecl || fnDecl->getOp().isSynthetic())
           continue;
 
         // TODO(MOCO-2556): consistently allow recursive references.

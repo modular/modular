@@ -38,6 +38,7 @@ from max.experimental.nn.common_layers.quant_mla import (
 from max.experimental.nn.common_layers.quant_tensor import FP8BlockTensor
 from max.experimental.sharding import DeviceMapping
 from max.experimental.tensor import Tensor
+from max.graph import TensorValue, ops
 from max.nn.attention import MHAMaskVariant
 from max.nn.quant_config import QuantConfig
 
@@ -104,6 +105,25 @@ def _placed_like(scale: Tensor, weight: Tensor) -> Tensor:
     if weight.mesh.num_devices == 1:
         return scale
     return scale.to(weight.mapping)
+
+
+def _zero_prefill_plan(
+    input_row_offsets: TensorValue,
+) -> tuple[TensorValue, TensorValue, TensorValue]:
+    """Returns zeroed outputs shaped like a one-chunk dense prefill plan."""
+    if input_row_offsets.dtype != DType.uint32:
+        raise ValueError("sparse metadata requires uint32 input row offsets")
+    offsets = ops.broadcast_to(
+        ops.constant(0, DType.uint32, device=input_row_offsets.device),
+        (1, input_row_offsets.shape[0]),
+    )
+    lengths = ops.broadcast_to(
+        ops.constant(0, DType.int32, device=input_row_offsets.device), (1,)
+    )
+    return offsets, offsets, lengths
+
+
+_sparse_prefill_plan = F.functional(_zero_prefill_plan)
 
 
 class QuantizedSparseLatentAttentionWithRope(QuantizedLatentAttention):
@@ -278,6 +298,26 @@ class QuantizedSparseLatentAttentionWithRope(QuantizedLatentAttention):
         ).reshape((-1, self.kv_lora_rank // self._b_scale_granularity))
         return w_k, _placed_like(scale, w_k)
 
+    def create_mla_prefill_metadata(
+        self, input_row_offsets: Tensor, kv_collection: PagedCacheValues
+    ) -> MLAPrefillMetadata:
+        """Creates unused dense metadata fields for the sparse graph signature.
+
+        Sparse kernels gather physical cache rows in both prefill and decode,
+        so the dense planner, whose budget a valid batch's page-aligned
+        aggregate context can exceed, never runs.
+        """
+        replicated = DeviceMapping.replicated(input_row_offsets.mesh)
+        buffer_row_offsets, cache_offsets, buffer_lengths = (
+            value.rebind_mapping(replicated)
+            for value in _sparse_prefill_plan(input_row_offsets)
+        )
+        return MLAPrefillMetadata(
+            buffer_row_offsets=buffer_row_offsets,
+            cache_offsets=cache_offsets,
+            buffer_lengths=buffer_lengths,
+        )
+
     def _effective_graph_mode(self) -> str:
         """Graph mode after the sparse-prefill kernel's head-count gating."""
         mode = self.graph_mode
@@ -316,7 +356,10 @@ class QuantizedSparseLatentAttentionWithRope(QuantizedLatentAttention):
         *,
         sparse_indices: Tensor | None = None,
         sparse_indices_stride: int | None = None,
+        selection_lag: int = 0,
     ) -> Tensor:
+        if sparse_indices is None:
+            raise ValueError("sparse attention requires physical sparse rows")
         attn_kwargs: dict[str, Any] = {
             "q": xq,
             "kv": kv,
@@ -376,16 +419,15 @@ class QuantizedSparseLatentAttentionWithRope(QuantizedLatentAttention):
         assert kv_collection.mla_num_partitions is not None
         attn_kwargs["num_partitions_scalar"] = kv_collection.mla_num_partitions
 
-        sparse_kw: dict[str, Any] = {}
-        if sparse_indices is not None:
-            sparse_kw = {
-                "sparse_indices": sparse_indices,
-                "physical_indices": True,
-                "sparse_indices_stride": sparse_indices_stride,
-                # The op always passes a no-op sink; the AMD sparse arms
-                # reject one unless it is declared inert.
-                "sparse_attn_sink_inert": True,
-            }
+        sparse_kw: dict[str, Any] = {
+            "sparse_indices": sparse_indices,
+            "physical_indices": True,
+            "sparse_indices_stride": sparse_indices_stride,
+            "selection_lag": selection_lag,
+            # The op always passes a no-op sink; the AMD sparse arms
+            # reject one unless it is declared inert.
+            "sparse_attn_sink_inert": True,
+        }
 
         if effective_graph_mode == "decode":
             result = mla_decode_graph(**attn_kwargs, **sparse_kw)
@@ -409,7 +451,18 @@ class QuantizedSparseLatentAttentionWithRope(QuantizedLatentAttention):
         prev_topk_indices: Tensor | None = None,
         reuse_prev_topk: bool = False,
         indexer_layer_idx: Tensor | None = None,
+        selection_lag: int = 0,
     ) -> tuple[Tensor, Tensor]:
+        """Returns the attention output and the top-k selection it used.
+
+        ``selection_lag`` is the number of positions between the token a
+        reused selection was computed for and this call's token.
+        """
+        if selection_lag != 0 and not reuse_prev_topk:
+            raise ValueError(
+                f"selection_lag={selection_lag} describes a reused selection,"
+                " but reuse_prev_topk is False."
+            )
         q_lora_rank = self.q_lora_rank
         assert q_lora_rank is not None  # enforced in __init__
         qkv = quant_ops.matmul(x, self.wqkv)
@@ -460,6 +513,7 @@ class QuantizedSparseLatentAttentionWithRope(QuantizedLatentAttention):
             mla_prefill_metadata,
             sparse_indices=topk_indices,
             sparse_indices_stride=self.index_topk,
+            selection_lag=selection_lag,
         )
 
         return self.o_proj(attn_out), topk_indices

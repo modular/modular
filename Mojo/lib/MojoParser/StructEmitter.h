@@ -151,10 +151,11 @@ public:
                                          ParamListAttr caseNames,
                                          ParamListAttr caseTypes);
   /// Synthesize the static method that constructs case `caseName` of an
-  /// `__enum` from its `payload` types.
+  /// `__enum` from its `payload` types, documented by the case's `docString`.
   LogicalResult synthesizeEnumCaseConstructor(StringRef caseName,
                                               ArrayRef<Type> payload,
-                                              SMLoc caseLoc);
+                                              SMLoc caseLoc,
+                                              DocStringAttr docString);
   /// Populate the body of a case constructor synthesized by
   /// `synthesizeEnumCaseConstructor`.
   LogicalResult populateEnumCaseConstructor(DefASTDecl &fnDecl);

@@ -15,8 +15,6 @@ from std.sys import (
     get_defined_bool,
     get_defined_dtype,
     get_defined_int,
-    align_of,
-    default_accelerator,
 )
 
 import linalg.matmul.vendor.blas as vendor_blas
@@ -29,7 +27,7 @@ from std.benchmark import (
     ThroughputMeasure,
 )
 from max.gpu import global_idx, grid_dim, block_dim, thread_idx, block_idx
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, default_accelerator
 from max.gpu.primitives import block
 from internal_utils import (
     CacheBustingBuffer,
@@ -46,10 +44,6 @@ from layout import (
     row_major,
 )
 from linalg.matmul.gpu import _matmul_gpu
-from linalg.utils import (
-    elementwise_compute_lambda_type,
-    elementwise_epilogue_type,
-)
 
 
 def _verify_buffers_gpu[
@@ -124,9 +118,9 @@ def verify_matmul[
     b_shape: Coord,
     init_type: InitializationType,
 ) raises:
-    var c_size = Int(c_shape[0].value()) * Int(c_shape[1].value())
-    var a_size = Int(a_shape[0].value()) * Int(a_shape[1].value())
-    var b_size = Int(b_shape[0].value()) * Int(b_shape[1].value())
+    var c_size = Int(c_shape[0]) * Int(c_shape[1])
+    var a_size = Int(a_shape[0]) * Int(a_shape[1])
+    var b_size = Int(b_shape[0]) * Int(b_shape[1])
 
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
     var a_device_nd = TileTensor(a_device, row_major(a_shape))
@@ -179,22 +173,18 @@ def verify_matmul[
         transpose_b=transpose_b,
     )
 
-    # Dummy epilogue that just stores the result.
     @inline(.always)
-    @__parameter
-    @__copy_capture(c_device_nd)
-    def normal_elementwise_epilogue[
-        dtype: DType, width: SIMDLength, *, alignment: Int = 1
-    ](idx: Coord, val: SIMD[dtype, width]) capturing -> None:
+    def identity_compute_fn[
+        dtype: DType, width: SIMDLength, *, alignment: Int
+    ](idx: Coord, val: SIMD[dtype, width]) -> SIMD[dtype, width]:
         comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
-        c_device_nd.store[width=width](idx, val.cast[c_type]())
+        return val
 
     comptime if enable_normal_epilogue:
         _matmul_gpu[
             use_tensor_core=True,
             transpose_b=transpose_b,
-            elementwise_lambda_fn=normal_elementwise_epilogue,
-        ](c_device_nd, a_device_nd, b_device_nd, ctx)
+        ](c_device_nd, a_device_nd, b_device_nd, identity_compute_fn, ctx)
     else:
         _matmul_gpu[
             use_tensor_core=True,
@@ -429,15 +419,13 @@ def bench_matmul[
         )
         comptime assert tensor_c.flat_rank >= 2
 
-        @__parameter
         @inline(.always)
-        @__copy_capture(tensor_c)
         def test_lambda_add_coords_prod[
             _dtype: DType,
             width: SIMDLength,
             *,
-            alignment: Int = align_of[SIMD[_dtype, width]](),
-        ](idx: Coord, val: SIMD[_dtype, width]) capturing -> SIMD[
+            alignment: Int,
+        ](idx: Coord, val: SIMD[_dtype, width]) {var tensor_c} -> SIMD[
             _dtype, width
         ]:
             comptime assert (
@@ -447,40 +435,32 @@ def bench_matmul[
             var y = val * x
             return y
 
-        comptime optional_compute_lambda_fn = Optional[
-            elementwise_compute_lambda_type
-        ](test_lambda_add_coords_prod) if enable_compute_epilogue else None
-
         @inline(.always)
-        @__parameter
-        @__copy_capture(tensor_c)
-        def normal_elementwise_epilogue[
-            dtype: DType, width: SIMDLength, *, alignment: Int = 1
-        ](idx: Coord, val: SIMD[dtype, width]) capturing -> None:
+        def identity_compute_fn[
+            dtype: DType, width: SIMDLength, *, alignment: Int
+        ](idx: Coord, val: SIMD[dtype, width]) -> SIMD[dtype, width]:
             comptime assert (
                 idx.rank == 2
             ), "the matmul epilogue contract is rank 2"
-            tensor_c.store[width=width](idx, val.cast[c_type]())
-
-        comptime optional_normal_lambda_fn = Optional[
-            elementwise_epilogue_type
-        ](normal_elementwise_epilogue) if enable_normal_epilogue else None
+            return val
 
         comptime if use_vendor_blas:
             run_vendor_blas(ctx, tensor_a, tensor_b, tensor_c)
+        elif enable_normal_epilogue:
+            _matmul_gpu[
+                use_tensor_core=True,
+                transpose_b=transpose_b,
+            ](tensor_c, tensor_a, tensor_b, identity_compute_fn, ctx)
+        elif enable_compute_epilogue:
+            _matmul_gpu[
+                use_tensor_core=True,
+                transpose_b=transpose_b,
+            ](tensor_c, tensor_a, tensor_b, test_lambda_add_coords_prod, ctx)
         else:
-            comptime if enable_normal_epilogue:
-                _matmul_gpu[
-                    use_tensor_core=True,
-                    transpose_b=transpose_b,
-                    elementwise_lambda_fn=optional_normal_lambda_fn,
-                ](tensor_c, tensor_a, tensor_b, ctx)
-            else:
-                _matmul_gpu[
-                    use_tensor_core=True,
-                    transpose_b=transpose_b,
-                    elementwise_compute_lambda_fn=optional_compute_lambda_fn,
-                ](tensor_c, tensor_a, tensor_b, ctx)
+            _matmul_gpu[
+                use_tensor_core=True,
+                transpose_b=transpose_b,
+            ](tensor_c, tensor_a, tensor_b, ctx)
 
     @inline(.always)
     def bench_func(mut b: Bencher) raises {imm}:
@@ -489,10 +469,7 @@ def bench_matmul[
     var flops = ThroughputMeasure(
         BenchMetric.flops,
         # Flop: 2*M*N*K. Use A and C shapes since they're not transposed.
-        2
-        * Int(shape_c[0].value())
-        * Int(shape_c[1].value())
-        * Int(shape_a[1].value()),
+        2 * Int(shape_c[0]) * Int(shape_c[1]) * Int(shape_a[1]),
     )
     if run_benchmark:
         b.bench_function(

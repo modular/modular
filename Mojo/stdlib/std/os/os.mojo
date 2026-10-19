@@ -274,6 +274,10 @@ def _abort_report[
     comptime if is_apple_gpu():
         # FIXME: Remove after MOCO-3697 is fixed.
         pass
+    elif is_gpu() and not CurrentPlugin.print_emit_fn:
+        # A GPU target without a print hook, such as one named only by its
+        # triple, has no way to report the message; `abort` still traps.
+        pass
     elif is_gpu():
         # On GPU, gate the print to a single thread to avoid flooding the
         # printf buffer with identical messages from thousands of threads.
@@ -648,6 +652,8 @@ def isatty(fd: Int) -> Bool:
         ```
     """
 
+    if fd < 0:
+        return False
     return RawFileDescriptor(c_int(fd)).isatty()
 
 

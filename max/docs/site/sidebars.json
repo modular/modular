@@ -429,6 +429,17 @@
             },
             {
               "type": "category",
+              "label": "sequence",
+              "link": {
+                "type": "doc",
+                "id": "api/python/graph.ops.sequence"
+              },
+              "items": [
+                "__AUTOGEN:max.graph.ops.sequence__"
+              ]
+            },
+            {
+              "type": "category",
               "label": "weights",
               "link": {
                 "type": "doc",
@@ -552,6 +563,7 @@
                 "api/python/pipelines.architectures.deepseekV3_2",
                 "api/python/pipelines.architectures.deepseekV3_nextn",
                 "api/python/pipelines.architectures.deepseekV4",
+                "api/python/pipelines.architectures.deepseekV41",
                 "api/python/pipelines.architectures.dflash2_qwen3_5",
                 "api/python/pipelines.architectures.dflash_llama3",
                 "api/python/pipelines.architectures.diffusion_gemma",
@@ -606,6 +618,7 @@
                 "api/python/pipelines.architectures.unified_dflash_llama3",
                 "api/python/pipelines.architectures.unified_dflash_mimo_v2",
                 "api/python/pipelines.architectures.unified_dspark_deepseekV4",
+                "api/python/pipelines.architectures.unified_dspark_deepseekV41",
                 "api/python/pipelines.architectures.unified_dspark_gemma4_12b",
                 "api/python/pipelines.architectures.unified_dspark_gemma4_31b",
                 "api/python/pipelines.architectures.unified_dspark_nemotron_h",
@@ -998,7 +1011,7 @@
           ]
         },
         {
-          "label": "Layouts and LayoutTensor",
+          "label": "IntTuple-based layouts",
           "type": "category",
           "collapsed": true,
           "items": [

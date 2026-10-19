@@ -40,7 +40,7 @@ architecture.
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.collections import Array, Optional
 from std.math import align_up, ceildiv
-from std.memory import Pointer, UnsafePointer, bitcast
+from std.memory import Pointer, bitcast
 from std.math.uutils import ufloordiv, umod
 from std.sys import align_of, get_defined_int, size_of
 
@@ -511,22 +511,20 @@ struct RealSwiGLUOutput[
     comptime device_type: AnyType = Self
 
     @__allow_legacy_any_origin_fields
-    var c_packed_ptr: UnsafePointer[UInt8, MutAnyOrigin]
+    var c_packed_ptr: MutPointer[UInt8, MutAnyOrigin]
 
     @__allow_legacy_any_origin_fields
-    var c_swiglu_scales_ptr: UnsafePointer[Scalar[Self._sf_dtype], MutAnyOrigin]
+    var c_swiglu_scales_ptr: MutPointer[Scalar[Self._sf_dtype], MutAnyOrigin]
 
     @__allow_legacy_any_origin_fields
-    var c_input_scales_ptr: UnsafePointer[Float32, ImmutAnyOrigin]
+    var c_input_scales_ptr: ImmPointer[Float32, ImmutAnyOrigin]
 
     @inline(.always)
     def __init__(
         out self,
-        c_packed_ptr: UnsafePointer[UInt8, MutAnyOrigin],
-        c_swiglu_scales_ptr: UnsafePointer[
-            Scalar[Self._sf_dtype], MutAnyOrigin
-        ],
-        c_input_scales_ptr: UnsafePointer[Float32, ImmutAnyOrigin],
+        c_packed_ptr: MutPointer[UInt8, MutAnyOrigin],
+        c_swiglu_scales_ptr: MutPointer[Scalar[Self._sf_dtype], MutAnyOrigin],
+        c_input_scales_ptr: ImmPointer[Float32, ImmutAnyOrigin],
     ):
         self.c_packed_ptr = c_packed_ptr
         self.c_swiglu_scales_ptr = c_swiglu_scales_ptr
@@ -541,7 +539,7 @@ struct RealSwiGLUOutput[
     def store_packed_word(self, m: Int, byte_pos: Int, val: UInt32):
         # Caller guarantees `byte_pos` and `c_packed_row_stride` are
         # multiples of 4 so PTX lowers to one ST.GLOBAL.B32.
-        self.c_packed_ptr.bitcast[UInt32]().store(
+        self.c_packed_ptr.unsafe_bitcast[UInt32]().store(
             (m * Self.c_packed_row_stride + byte_pos) // 4, val
         )
 
@@ -595,7 +593,7 @@ struct RealSwiGLUOutput[
         if pad_total <= 0:
             return
         var total_writes = pad_total * Self.sf_dim1
-        var ptr_u32 = self.c_swiglu_scales_ptr.bitcast[UInt32]()
+        var ptr_u32 = self.c_swiglu_scales_ptr.unsafe_bitcast[UInt32]()
         for i in range(tid, total_writes, stride):
             var pad_idx, i1 = divmod(i, Self.sf_dim1)
             var m = tokens_e + pad_idx + sf_block_base
@@ -1527,7 +1525,7 @@ struct Grouped1D1DMatmulKernel[
         K: UInt32,
         # Raw SFB pointer and strides for cp.async path (MMA_N < 64 only).
         # When group_size < SF_MN_GROUP_SIZE, cp.async replaces TMA for SFB.
-        sfb_global_ptr: UnsafePointer[Scalar[Self.sfb_dtype], ImmutAnyOrigin],
+        sfb_global_ptr: ImmPointer[Scalar[Self.sfb_dtype], ImmutAnyOrigin],
         sfb_n_stride: Int32,
         sfb_k_tiles: Int32,
         # Fused-SwiGLU+quant output sink. Pass `NullSwiGLUOutput[]()` for
@@ -1608,7 +1606,7 @@ struct Grouped1D1DMatmulKernel[
             UInt8,
             address_space=.SHARED,
             alignment=128,
-        ]().bitcast[Self.SmemType]()[]
+        ]().unsafe_bitcast[Self.SmemType]()[]
 
         # Get typed tile arrays from SMEM
         var a_tiles = smem.a_tiles()
@@ -2363,12 +2361,19 @@ struct Grouped1D1DMatmulKernel[
                                             fill=Scalar[Self.sfb_dtype](0),
                                         ](
                                             (
-                                                sfb_global_ptr + global_offset
-                                            ).address_space_cast[.GLOBAL](),
+                                                sfb_global_ptr.unsafe_offset(
+                                                    global_offset
+                                                )
+                                            ).unsafe_address_space_cast[
+                                                .GLOBAL
+                                            ](),
                                             (
-                                                sfb_smem_tile._storage
-                                                + smem_offset
-                                            ).address_space_cast[.SHARED](),
+                                                sfb_smem_tile._storage.unsafe_offset(
+                                                    smem_offset
+                                                )
+                                            ).unsafe_address_space_cast[
+                                                .SHARED
+                                            ](),
                                             src_size=Int32(
                                                 copy_size
                                             ) if is_valid else Int32(0),
@@ -2410,8 +2415,9 @@ struct Grouped1D1DMatmulKernel[
                                         )
 
                                         var atom_dst = TileTensor(
-                                            sfb_smem_tile._storage
-                                            + smem_offset,
+                                            sfb_smem_tile._storage.unsafe_offset(
+                                                smem_offset
+                                            ),
                                             row_major[
                                                 Self.SFB_TMA_ROWS, ROW_STRIDE
                                             ](),
@@ -2435,7 +2441,7 @@ struct Grouped1D1DMatmulKernel[
                                             address_space=.SHARED,
                                         ](
                                             rebind[
-                                                UnsafePointer[
+                                                MutPointer[
                                                     Scalar[Self.sf_tma_dtype],
                                                     MutAnyOrigin,
                                                     address_space=.SHARED,
@@ -2712,6 +2718,9 @@ struct Grouped1D1DMatmulKernel[
 
             # SFB SMEM tile at this pipeline offset
             var sfb_smem_tile = sfb_tiles[offset]
+            var sfb_smem_flat = sfb_smem_tile.reshape(
+                row_major[type_of(sfb_smem_tile).LayoutType.static_product]()
+            )
             var sfb_tmem_offset = UInt32(tmem_region.sfb(Int(offset)).col_addr)
 
             comptime SFB_TILE_BYTES = SF_ATOM_M[0] * SF_ATOM_M[
@@ -2756,10 +2765,10 @@ struct Grouped1D1DMatmulKernel[
                         * (UInt(SF_ATOM_M[1]) * UInt(SF_ATOM_K))
                         + (outer / UInt(SF_ATOM_M[0])) * UInt(SF_ATOM_K)
                     )
-                    sfb_scales = sfb_smem_tile.raw_load[
+                    sfb_scales = sfb_smem_flat.load[
                         width=SF_ATOM_K,
                         alignment=align_of[SIMD[Self.sfb_dtype, SF_ATOM_K]](),
-                    ](scales_offset)
+                    ](Coord(Int(scales_offset)))
 
                 # Reconverge the divergent load above before the
                 # warp-collective store.
@@ -3025,11 +3034,15 @@ struct Grouped1D1DMatmulKernel[
 
                 # Peer CTA slice using TileTensor pattern (ptr + layout)
                 var a_peer_tt = type_of(a_tt)(
-                    a_tt._storage + peer_m_rank * Self.a_tma_load_size,
+                    a_tt._storage.unsafe_offset(
+                        peer_m_rank * Self.a_tma_load_size
+                    ),
                     a_tt.layout,
                 )
                 var b_peer_tt = type_of(b_tt)(
-                    b_tt._storage + peer_rank_m * Self.b_tma_load_size,
+                    b_tt._storage.unsafe_offset(
+                        peer_rank_m * Self.b_tma_load_size
+                    ),
                     b_tt.layout,
                 )
 
@@ -3081,7 +3094,7 @@ struct Grouped1D1DMatmulKernel[
                         address_space=.SHARED,
                     ](
                         rebind[
-                            UnsafePointer[
+                            MutPointer[
                                 Scalar[Self.sf_tma_dtype],
                                 MutAnyOrigin,
                                 address_space=.SHARED,
@@ -3113,7 +3126,7 @@ struct Grouped1D1DMatmulKernel[
                             address_space=.SHARED,
                         ](
                             rebind[
-                                UnsafePointer[
+                                MutPointer[
                                     Scalar[Self.sf_tma_dtype],
                                     MutAnyOrigin,
                                     address_space=.SHARED,
@@ -3460,12 +3473,15 @@ struct Grouped1D1DMatmulKernel[
                 num_output_warps, stageN, SfVectorSize // 4, 4
             ]()
             var tok_rows = TileTensor[
-                DType.float32,
+                .float32,
                 type_of(tok_rows_layout),
                 MutAnyOrigin,
                 address_space=AddressSpace.SHARED,
                 linear_idx_type=DType.uint32,
-            ](c_tiles[0].unsafe_ptr().bitcast[Float32](), tok_rows_layout)
+            ](
+                c_tiles[0].unsafe_ptr().unsafe_bitcast[Float32](),
+                tok_rows_layout,
+            )
             var tok_warp = UInt32(warp_id_v)
             var tok_is_even = (lane_row & UInt32(1)) == UInt32(0)
             # A row's 4-float granule g sits at g ^ ((token >> 1) & 3): the
@@ -3633,7 +3649,7 @@ struct Grouped1D1DMatmulKernel[
             # MXFP8 cross-warp amax staging: 32 fp32 slots indexed
             # warp * 8 + token. Reuses the c_tiles SMEM, idle in this
             # path (no bf16 scatter).
-            var amax_smem = c_tiles[0]._storage.bitcast[Float32]()
+            var amax_smem = c_tiles[0]._storage.unsafe_bitcast[Float32]()
 
             comptime PartialType = Array[Scalar[Self.accum_type], rep_frag_size]
             var lane_row_is_even = (lane_row & UInt32(1)) == UInt32(0)
@@ -3880,9 +3896,7 @@ struct Grouped1D1DMatmulKernel[
 
                         comptime if is_mxfp8:
                             # 16 fp32 -> 16 fp8 bytes -> 4 word stores.
-                            var packed16_ip = p_scaled.cast[
-                                DType.float8_e4m3fn
-                            ]()
+                            var packed16_ip = p_scaled.cast[.float8_e4m3fn]()
                             var byte_base = (
                                 Int(n_abs) // 2 + Int(warp_row_offset) // 2
                             )
@@ -3977,7 +3991,7 @@ struct Grouped1D1DMatmulKernel[
         # GMEM); the GMEM round trip is replaced by a SMEM round trip. bf16
         # SMEM matches the unfused kernel's BF16-from-GMEM read pattern
         # exactly, so swiglu_match_bf16 precision is automatic.
-        var smem_bf16_ptr = c_tiles[0]._storage.bitcast[BFloat16]()
+        var smem_bf16_ptr = c_tiles[0]._storage.unsafe_bitcast[BFloat16]()
 
         comptime PartialType = Array[Scalar[Self.accum_type], rep_frag_size]
 

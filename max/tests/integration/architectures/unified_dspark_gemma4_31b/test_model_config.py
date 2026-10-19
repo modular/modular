@@ -458,7 +458,9 @@ def _kv_pipeline_stand_in(kv_cache: KVCacheConfig) -> PipelineConfig:
     return cast(
         PipelineConfig,
         SimpleNamespace(
-            model=SimpleNamespace(kv_cache=kv_cache, data_parallel_degree=1),
+            model=SimpleNamespace(
+                kv_cache=kv_cache, data_parallel_degree=1, pipeline_stage=None
+            ),
             speculative=SpeculativeConfig(
                 speculative_method="dspark", num_speculative_tokens=7
             ),

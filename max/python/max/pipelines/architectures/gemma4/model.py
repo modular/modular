@@ -43,6 +43,12 @@ from max.pipelines.lib import (
 )
 from max.pipelines.lib.graph_specs import GraphRole, GraphSpec
 from max.pipelines.lib.memory_estimation import MemoryPlan
+from max.pipelines.lib.pipeline_parallel import (
+    PipelinedModel,
+    PipelineStage,
+    raise_stage_traced,
+    stage_input_types,
+)
 from max.pipelines.lib.vision_encoder_cache import VisionEncodeResult
 from max.profiler import traced
 
@@ -67,6 +73,55 @@ logger = logging.getLogger("max.pipelines")
 
 # The language and vision graphs compile into one artifact.
 _COMPILE_GROUP = "gemma4"
+
+
+def language_spec(
+    config: Gemma4ForConditionalGenerationConfig,
+    state_dict: Mapping[str, WeightData],
+    *,
+    stage: PipelineStage | None = None,
+    strict: bool = True,
+    is_device_graph: bool = False,
+) -> GraphSpec:
+    """Returns the language graph, or one pipeline stage's part of it.
+
+    Args:
+        config: The model config, a stage's for a pipeline stage.
+        state_dict: The adapted language weights of the whole model.
+        stage: The pipeline stage to build, or ``None`` for the whole model.
+        strict: Whether every declared weight must load.
+        is_device_graph: Whether to synthesize a device graph.
+
+    Raises:
+        StageTraced: On a stage that only traces, carrying the types of the
+            hidden states it hands the next stage.
+    """
+    language_model = Gemma4TextModel(config)
+    if stage is not None:
+        # A pipeline stage declares only its own layers, so it loads only
+        # their weights, strictly, and a misnamed one still fails.
+        declared = language_model.raw_state_dict()
+        state_dict = {
+            name: weight
+            for name, weight in state_dict.items()
+            if name in declared
+        }
+    language_model.load_state_dict(
+        state_dict, weight_alignment=1, strict=strict
+    )
+    spec = GraphSpec(
+        language_model,
+        "gemma4_language",
+        tree.leaves(
+            stage_input_types(stage, tree.leaves(language_model.input_tree()))
+        ),
+        weights=language_model.state_dict(),
+        group=_COMPILE_GROUP,
+        is_device_graph=is_device_graph,
+    )
+    if stage is not None and stage.trace_only:
+        raise_stage_traced(tuple(spec.trace().output_types))
+    return spec
 
 
 @dataclass
@@ -109,6 +164,7 @@ class Gemma3MultiModalModelInputs(ModelInputs):
 
 class Gemma3_MultiModalModel(
     AlwaysSignalBuffersMixin,
+    PipelinedModel[Gemma4Context],
     PipelineModelWithKVCache[
         Gemma4Context, Gemma4ForConditionalGenerationConfig, Model | None
     ],
@@ -332,22 +388,18 @@ class Gemma3_MultiModalModel(
         config: Gemma4ForConditionalGenerationConfig,
         state_dict: dict[str, WeightData],
     ) -> GraphSpec:
-        language_model = Gemma4TextModel(config)
-        language_model.load_state_dict(
+        spec = language_spec(
+            config,
             state_dict,
-            weight_alignment=1,
+            stage=self.pipeline_config.model.pipeline_stage,
             strict=self._strict_state_dict_loading,
-        )
-        return GraphSpec(
-            language_model,
-            "gemma4_language",
-            self._bind_graph_inputs(language_model.input_tree()),
-            weights=language_model.state_dict(),
-            group=_COMPILE_GROUP,
             is_device_graph=(
                 self.pipeline_config.runtime.experimental_device_graph_synthesis
             ),
         )
+        assert isinstance(spec.module, Gemma4TextModel)
+        self._bind_graph_inputs(spec.module.input_tree())
+        return spec
 
     def _vision_spec(
         self,

@@ -61,10 +61,10 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
 
     comptime assert transpose_b, "transpose_b must be true"
 
-    var M = Int(m.value())
-    var N = Int(n.value())
-    var K = Int(k.value())
-    var bs = Int(batch_size.value())
+    var M = Int(m)
+    var N = Int(n)
+    var K = Int(k)
+    var bs = Int(batch_size)
 
     assert (
         M * size_of[DType.float32]() % 16 == 0

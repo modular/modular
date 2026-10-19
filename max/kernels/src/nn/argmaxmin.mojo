@@ -18,13 +18,15 @@
 # ===-----------------------------------------------------------------------===#
 
 from std.math import align_down, ceildiv, iota
+from std.sys import align_of
 from std.sys.info import simd_width_of
 
 from max.algorithm import sync_parallelize
 from max.algorithm.functional import _get_num_workers
 from max.gpu.host import DeviceContext
 from std.math.math import min as _min
-from layout import TileTensor
+from layout import Coord, Idx, TileTensor
+from layout.tile_layout import Layout
 
 
 def _argn[
@@ -129,11 +131,13 @@ def _argn[
         # iterate over flattened axes
         var start = task_id * chunk_size
         var end = _min((task_id + 1) * chunk_size, parallel_size)
+        var input_rows = input.reshape(
+            Layout(Coord(parallel_size, axis_size), Coord(input_stride, Idx[1]))
+        )
+        var output_rows = output.reshape(
+            Layout(Coord(parallel_size), Coord(output_stride))
+        )
         for i in range(start, end):
-            var input_offset = i * input_stride
-            var output_offset = i * output_stride
-            var input_dim_ptr = input.ptr.unsafe_offset(input_offset)
-            var output_dim_ptr = output.ptr.unsafe_offset(output_offset)
             var global_val: Scalar[input.dtype]
 
             # initialize limits
@@ -147,14 +151,18 @@ def _argn[
             if axis_size < simd_width:
                 global_values = global_val
             else:
-                global_values = input_dim_ptr.unsafe_load[width=simd_width]()
+                global_values = input_rows.load[
+                    width=simd_width, alignment=align_of[input.dtype]()
+                ]((i, 0))
 
             # iterate over values evenly divisible by simd_width
             var indices = iota[output.dtype, simd_width]()
             var global_indices = indices
             var last_simd_index = align_down(axis_size, simd_width)
             for j in range(simd_width, last_simd_index, simd_width):
-                var curr_values = input_dim_ptr.unsafe_load[width=simd_width](j)
+                var curr_values = input_rows.load[
+                    width=simd_width, alignment=align_of[input.dtype]()
+                ]((i, j))
                 indices += Scalar[output.dtype](simd_width)
 
                 var mask = cmpeq(curr_values, global_values)
@@ -170,7 +178,7 @@ def _argn[
             var idx = Scalar[output.dtype](0)
             var found_min: Bool = False
             for j in range(last_simd_index, axis_size, 1):
-                var elem = input_dim_ptr.unsafe_load(j)
+                var elem = input_rows.load[width=1]((i, j))
                 if cmp(global_val, elem):
                     global_val = elem
                     idx = Scalar[output.dtype](j)
@@ -183,7 +191,7 @@ def _argn[
                     global_indices, Scalar[output.dtype].MAX
                 )
                 idx = min_indices.reduce_min()
-            output_dim_ptr[] = idx
+            output_rows.store((i,), idx)
 
     sync_parallelize(task_func, parallel_size, ctx)
 

@@ -41,11 +41,9 @@ sessions; do not use in production.
 
 ## Enable kernel-level bounds checking
 
-Mojo's assertion-enabled APIs can catch some kernel-authoring bugs. For
-example, flat legacy
-[`LayoutTensor`](/api/mojo/layout/layout_tensor/LayoutTensor/) accesses have
-bounds checks when all assertions are enabled. These checks aren't present in
-every tensor or pointer API.
+Mojo's assertion-enabled APIs can catch some kernel-authoring bugs when all
+assertions are enabled, but these checks aren't present in every tensor or
+pointer API.
 
 For new kernels, use [`TileTensor`](/tile-tensor/tensors/), but don't assume
 ordinary pointer-backed indexing, `load()`, or `store()` checks coordinates

@@ -33,13 +33,16 @@ SMEM Layout (native FP8):
 from std.math import ceildiv
 from std.sys import size_of
 from max.gpu import MAX_THREADS_PER_BLOCK_METADATA, block_idx, warp_id
-from max.gpu.sync import barrier, syncwarp
+from max.gpu.sync import barrier
 from max.gpu.globals import WARPGROUP_SIZE
 from max.gpu.primitives.grid_controls import launch_dependent_grids
 from max.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from max.gpu.memory import external_memory
 from max.gpu.compute.arch.tcgen05 import (
+    tcgen05_alloc,
+    tcgen05_dealloc,
     tcgen05_fence_before,
+    tcgen05_release_allocation_lock,
 )
 from layout.tma_async import (
     SharedMemBarrier,
@@ -62,7 +65,6 @@ from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
 
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
-    attn_tmem_addr,
     elect,
     expect_bytes_pred,
     SharedMemPointer,
@@ -286,7 +288,7 @@ struct MLA_SM100_Decode_QKV_FP8[
             MaskType=Self.MaskType,
             SplitAccumType=Self.SplitAccumType,
         ],
-        scales_ptr: UnsafePointer[Float32, origin=MutAnyOrigin],
+        scales_ptr: MutPointer[Float32, origin=MutAnyOrigin],
         scalar_args: TileTensor[
             .int64,
             RowMajorLayout[ComptimeInt[3]],
@@ -308,8 +310,8 @@ struct MLA_SM100_Decode_QKV_FP8[
         )
 
         # Extract scalar launch args from the stable device buffer.
-        var batch_size = Int(scalar_args.raw_load(0))
-        var q_max_seq_len = Int(scalar_args.raw_load(1))
+        var batch_size = Int(scalar_args[0])
+        var q_max_seq_len = Int(scalar_args[1])
         var num_partitions = Int(mla_decode_pack.num_partitions)
 
         # Register allocation: same as BF16 kernel (3 WGs)
@@ -329,7 +331,7 @@ struct MLA_SM100_Decode_QKV_FP8[
         ](
             kv_lut,
             rebind[
-                UnsafePointer[
+                ImmPointer[
                     Scalar[Self.ValidLengthType.dtype],
                     ImmutAnyOrigin,
                     address_space=.GENERIC,
@@ -442,38 +444,38 @@ struct MLA_SM100_Decode_QKV_FP8[
 
         # KV FP8 SMEM: N stages, starts right after Q FP8
         # Each stage = 64 x 576 x 1 = 36864 bytes
-        var kv_smem = q_smem + Self.BlockElems * Self.NumQKBlocks
+        var kv_smem = q_smem.unsafe_offset(Self.BlockElems * Self.NumQKBlocks)
 
         # P FP8 SMEM: separate region after KV stages
         # Each stage = 64 x 64 x 1 = 4096 bytes
         comptime kv_total_stages = Self.config.num_kv_stages
-        var p_smem = kv_smem + Self.KVStageElems * kv_total_stages
+        var p_smem = kv_smem.unsafe_offset(Self.KVStageElems * kv_total_stages)
 
         # P stages: num_stages * 4096 elems
         comptime p_total_stages = Self.num_stages
 
         # Output SMEM reuses KV SMEM (same as BF16 kernel)
         var out_smem_start = kv_smem
-        var out_smem = out_smem_start.bitcast[Scalar[Self.output_type]]()
+        var out_smem = out_smem_start.unsafe_bitcast[Scalar[Self.output_type]]()
 
         # max_smem/li_smem: placed after P stages
         # max_smem is double-buffered (2 x 128 elements) to avoid a race
         # condition in softmax; li_smem is a single 128-element buffer.
-        var max_smem = (p_smem + Self.PStageElems * p_total_stages).bitcast[
-            Scalar[Self.AccumType]
-        ]()
-        var li_smem = max_smem + 2 * WARPGROUP_SIZE
+        var max_smem = (
+            p_smem.unsafe_offset(Self.PStageElems * p_total_stages)
+        ).unsafe_bitcast[Scalar[Self.AccumType]]()
+        var li_smem = max_smem.unsafe_offset(2 * WARPGROUP_SIZE)
 
         # ---- Barrier layout (6N+11 fixed for N-stage pipelines) ----
         # bar_q(1) + kv(2N) + s(2N) + p(2N) + o(4) + c(2) + corr_done(4)
         var mbar_base: MBarType = (
-            (li_smem + WARPGROUP_SIZE)
-            .bitcast[SharedMemBarrier]()
+            (li_smem.unsafe_offset(WARPGROUP_SIZE))
+            .unsafe_bitcast[SharedMemBarrier]()
             .as_unsafe_any_origin()
         )
 
         var mbar_q: MBarType = mbar_base
-        var mbar_kv_base: MBarType = mbar_base + 1
+        var mbar_kv_base: MBarType = mbar_base.unsafe_offset(1)
 
         var kv_pipeline = KVPipelineGeneric[
             num_kv_stages=Self.config.num_kv_stages,
@@ -482,7 +484,7 @@ struct MLA_SM100_Decode_QKV_FP8[
             num_consumer=2,
         ](mbar_kv_base)
 
-        mbar_base = mbar_kv_base + kv_pipeline.num_mbars()
+        mbar_base = mbar_kv_base.unsafe_offset(kv_pipeline.num_mbars())
         # S pipeline: N-stage (matching KV stages)
         var s_bars = DecodeSM100MiscMBars[
             num_stages=Self.num_stages,
@@ -519,9 +521,10 @@ struct MLA_SM100_Decode_QKV_FP8[
             num_producer=WARPGROUP_SIZE,
             num_consumer=1,
         ](mbar_base)
-        mbar_base += out_pipeline.num_mbars()
+        mbar_base = mbar_base.unsafe_offset(out_pipeline.num_mbars())
 
         var warp_idx = UInt32(warp_id[broadcast=True]())
+        var ptr_tmem_addr = (mbar_base).unsafe_bitcast[UInt32]()
         var is_leader = elect() != 0
 
         if warp_idx == 8:
@@ -537,6 +540,10 @@ struct MLA_SM100_Decode_QKV_FP8[
                 q_tma.prefetch_descriptor()
                 k_tma.prefetch_descriptor()
                 o_tma.prefetch_descriptor()
+        elif warp_idx == 9:
+            tcgen05_alloc[Self.config.cta_group](
+                ptr_tmem_addr, Self.config.sm100_tmem_cols
+            )
         barrier()
 
         if warp_idx < 4:  # softmax warpgroup
@@ -547,10 +554,10 @@ struct MLA_SM100_Decode_QKV_FP8[
                 fold_q=Self.fold_q,
                 q_len_fold=Self.q_len_fold,
             ](
-                attn_tmem_addr[cluster_size=1](),
+                ptr_tmem_addr[0],
                 s_bars,
                 p_bars,
-                p_smem.bitcast[
+                p_smem.unsafe_bitcast[
                     Scalar[Self.Common_MLA_Op.q_type]
                 ]().as_unsafe_any_origin(),
                 max_smem.as_unsafe_any_origin(),
@@ -569,7 +576,7 @@ struct MLA_SM100_Decode_QKV_FP8[
         elif warp_idx >= 4 and warp_idx < 8:  # correction warpgroup
             warpgroup_reg_alloc[num_reg_correction]()
             Self.Common_MLA_Op.Correction(
-                attn_tmem_addr[cluster_size=1](),
+                ptr_tmem_addr[0],
                 o_bars,
                 c_bars,
                 corr_done_bars,
@@ -590,7 +597,7 @@ struct MLA_SM100_Decode_QKV_FP8[
                 )
             elif warp_idx == 9:
                 Self.mmaQK(
-                    attn_tmem_addr[cluster_size=1](),
+                    ptr_tmem_addr[0],
                     q_smem.as_unsafe_any_origin(),
                     kv_smem.as_unsafe_any_origin(),
                     mbar_q,
@@ -600,7 +607,7 @@ struct MLA_SM100_Decode_QKV_FP8[
                 )
             elif warp_idx == 10:
                 Self.mmaPV(
-                    attn_tmem_addr[cluster_size=1](),
+                    ptr_tmem_addr[0],
                     kv_smem.as_unsafe_any_origin(),
                     p_smem.as_unsafe_any_origin(),
                     p_bars,
@@ -617,12 +624,17 @@ struct MLA_SM100_Decode_QKV_FP8[
                     o_tma,
                     offset_position,
                 )
-        syncwarp()
+        barrier()
 
-        # PDL: the combine kernel can launch once every thread of the CTA has
-        # signaled (or exited), so each thread signals after its own work.
+        # PDL: Signal that this CTA is done
         comptime if Self.config.decoding_warp_split_k:
             launch_dependent_grids()
+
+        if warp_idx == 9:
+            tcgen05_release_allocation_lock[Self.config.cta_group]()
+            tcgen05_dealloc[Self.config.cta_group](
+                ptr_tmem_addr[0], Self.config.sm100_tmem_cols
+            )
 
     # --------------------------------------------------------------------------
     # Load: TMA Q (FP8) directly, TMA KV (FP8) directly
@@ -687,7 +699,7 @@ struct MLA_SM100_Decode_QKV_FP8[
             num_k_tiles -= _tile_skip
 
         var kv_prod = DecodeKVProducer[Self.kv_type, Self.config](
-            kv_pipeline, kv_smem.bitcast[Scalar[Self.kv_type]]()
+            kv_pipeline, kv_smem.unsafe_bitcast[Scalar[Self.kv_type]]()
         )
         var elect_mask = elect()
         var is_leader = elect_mask != 0
@@ -724,7 +736,7 @@ struct MLA_SM100_Decode_QKV_FP8[
                 type_of(q_tt_layout),
                 MutAnyOrigin,
                 address_space=.SHARED,
-            ](q_smem.bitcast[Scalar[Self.kv_type]](), q_tt_layout)
+            ](q_smem.unsafe_bitcast[Scalar[Self.kv_type]](), q_tt_layout)
             q_tma.async_copy(q_smem_tensor, mbar_q[], (0, row))
 
         # Load first KV tile (FP8)

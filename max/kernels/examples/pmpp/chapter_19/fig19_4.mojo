@@ -30,9 +30,9 @@ def conv_layer_batched(
     H: Int,
     W: Int,
     K: Int,
-    X: UnsafePointer[mut=False, Float32, _],
-    F: UnsafePointer[mut=False, Float32, _],
-    Y: UnsafePointer[mut=True, Float32, _],
+    X: ImmPointer[Float32, _],
+    F: ImmPointer[Float32, _],
+    Y: MutPointer[Float32, _],
 ):
     """Batched convolution (Figure 19.4).
 

@@ -67,6 +67,22 @@ modular_cc_test(
 )
 
 modular_cc_test(
+    name = "LLVMThreadPoolTest",
+    size = "small",
+    srcs = ["LLVMThreadPoolTest.cpp"],
+    target_compatible_with = select({
+        "//:tsan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//AsyncRT:CompilerSupport",
+        "//AsyncRT:Runtime",
+        "//AsyncRT:RuntimeGlobals",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
+modular_cc_test(
     name = "WorkQueueTest",
     size = "small",
     srcs = ["WorkQueueTest.cpp"],

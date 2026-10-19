@@ -27,7 +27,6 @@ from max.gpu.host import DeviceContext
 from max.gpu.primitives import block
 from max.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
 from layout import (
-    Coord,
     TensorLayout,
     TensorEngine,
     TileTensor,
@@ -327,7 +326,7 @@ def _rms_norm_fused_fp8_kernel_warp_tiling[
     ](val: SIMD[accum_type, width], col: Int) {
         var gamma, var _weight_offset
     } -> SIMD[accum_type, width]:
-        var gamma_val = gamma.load[width=width, alignment=align](Coord(col))
+        var gamma_val = gamma.load[width=width, alignment=align]((col,))
         var gamma_accum = (
             gamma_val.cast[accum_type]() + _weight_offset.cast[accum_type]()
         )
@@ -447,7 +446,7 @@ def _rms_norm_fused_fp8_kernel_block[
     ](val: SIMD[accum_type, width], col: Int) {
         var gamma, var _weight_offset
     } -> SIMD[accum_type, width]:
-        var gamma_val = gamma.load[width=width, alignment=align](Coord(col))
+        var gamma_val = gamma.load[width=width, alignment=align]((col,))
         var gamma_accum = (
             gamma_val.cast[accum_type]() + _weight_offset.cast[accum_type]()
         )

@@ -34,11 +34,16 @@ owns the numerics, this one owns the wiring.
 """
 
 from std.memory import bitcast
-from std.sys import default_accelerator, simd_width_of, size_of
+from std.sys import simd_width_of, size_of
 from std.testing import assert_equal, assert_true
 from std.utils.index import Index
 
-from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
+from max.gpu.host import (
+    DeviceBuffer,
+    DeviceContext,
+    get_gpu_target,
+    default_accelerator,
+)
 from layout import Coord, TileTensor, row_major
 
 from comm import Signal, group_end, group_start
@@ -304,8 +309,8 @@ def _run_case[
                 # the quantizer cannot emit is what makes the route visible to
                 # a compare that is otherwise blind to it.
                 if col < num_cols:
-                    quant_view.store[width=width](
-                        Coord(row, col),
+                    quant_view.store(
+                        (row, col),
                         bitcast[.float8_e4m3fn](SIMD[.uint8, width](0x7F)),
                     )
             else:
@@ -319,10 +324,10 @@ def _run_case[
                     SF_VECTOR_SIZE=MXFP8_SF_VECTOR_SIZE,
                 ](val)
                 if col < num_cols:
-                    quant_view.store[width=width](Coord(row, col), quantized)
+                    quant_view.store((row, col), quantized)
                     if col % MXFP8_SF_VECTOR_SIZE == 0:
                         scale_view.store(
-                            Coord(row, col // MXFP8_SF_VECTOR_SIZE), e8m0
+                            (row, col // MXFP8_SF_VECTOR_SIZE), e8m0
                         )
 
         # This branch owes the SAME outputs as the fused one; dropping the

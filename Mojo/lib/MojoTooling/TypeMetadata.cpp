@@ -13,20 +13,15 @@
 
 #include "Mojo/MojoTooling/TypeMetadata.h"
 
-namespace M {
-namespace KGEN {
+using namespace M;
+using namespace M::KGEN;
+using namespace M::KGEN::LIT;
 
 llvm::json::Object TypeMetadata::toJSON() const {
   llvm::json::Object result;
 
   result["type"] = typeString;
-
-  if (!relativeDocPath.empty()) {
+  if (!relativeDocPath.empty())
     result["path"] = relativeDocPath;
-  }
-
   return result;
 }
-
-} // namespace KGEN
-} // namespace M

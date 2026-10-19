@@ -64,7 +64,7 @@ def tcgen05_st_ld_roundtrip_kernel[
         datapaths=16,
         bits=256,
         repeat=2,
-        dtype=DType.float32,
+        dtype=.float32,
         pack=False,
         width=width,
     ](tmem_addr)
@@ -77,7 +77,7 @@ def tcgen05_st_ld_roundtrip_kernel[
 
     for n in range(N):
         if data_ld[n] == data_st[n]:
-            data[Int(thread_idx.x), n] = data_ld[n]
+            data[thread_idx.x, n] = data_ld[n]
 
 
 def test_tcgen05_st_ld_roundtrip(ctx: DeviceContext) raises:
@@ -218,7 +218,7 @@ def tcgen05_cp_ld_roundtrip_kernel[
         datapaths=16,
         bits=bits,
         repeat=1,
-        dtype=DType.float32,
+        dtype=.float32,
         pack=False,
         width=width,
     ](tmem_addr)
@@ -231,7 +231,7 @@ def tcgen05_cp_ld_roundtrip_kernel[
 
     for n in range(N):
         if data_ld[n] == Float32(thread_idx.x * N + n):
-            data[Int(thread_idx.x), n] = data_ld[n]
+            data[thread_idx.x, n] = data_ld[n]
 
 
 def test_tcgen05_cp_ld_roundtrip(ctx: DeviceContext) raises:

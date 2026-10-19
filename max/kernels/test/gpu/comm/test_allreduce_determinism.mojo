@@ -102,7 +102,7 @@ def hash_positive_control() raises -> None:
     var h0 = hash_output(buf, n)
     # Flip the lowest bit of one element through an integer view (a true
     # single-bit change of the stored float bits), re-hash, then restore.
-    var ibuf = buf.bitcast[UInt32]()
+    var ibuf = buf.unsafe_bitcast[UInt32]()
     var saved_bits = ibuf[n // 2]
     ibuf[n // 2] = saved_bits ^ 1
     var h1 = hash_output(buf, n)
@@ -175,9 +175,7 @@ def allreduce_determinism_test[
     ]
     var in_tensors = Array[_, ngpus](
         fill_with=lambda (i: Int) -> InTensorType: TileTensor(
-            rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
-                in_dev[i].unsafe_ptr()
-            ),
+            in_dev[i].unsafe_ptr(),
             row_major(length),
         )
     )

@@ -387,9 +387,15 @@ def verify_output[
     """Checks output against the reference, printing at most six mismatches."""
     var mismatches = 0
     for i in range(output.num_elements()):
-        var idx = Int(output.layout(output.layout.idx2crd(i)))
+        var crd = output.layout.idx2crd(i)
+        var idx = Int(output.layout(crd))
+        var actual = output.load[width=1](crd)
+        var expected = ref_output.load[width=1](crd)
         if not isclose(
-            output.ptr[idx], ref_output.ptr[idx], atol=1e-5, rtol=1e-4
+            actual,
+            expected,
+            atol=1e-5,
+            rtol=1e-4,
         ):
             if mismatches == 0:
                 print(
@@ -404,8 +410,8 @@ def verify_output[
             print(
                 "Mismatch at",
                 idx,
-                output.ptr[idx],
-                ref_output.ptr[idx],
+                actual,
+                expected,
             )
 
             mismatches = mismatches + 1
@@ -646,7 +652,7 @@ def test_case_split_kv[
         simd_width: Int, _rank: Int
     ](idx: IndexList[_rank]) {imm} -> SIMD[dtype, simd_width]:
         return k.load[width=simd_width, alignment=align_of[dtype]()](
-            Coord(idx[0], idx[1] + cfg.prev_seq_len(), idx[2], idx[3])
+            (idx[0], idx[1] + cfg.prev_seq_len(), idx[2], idx[3])
         )
 
     @inline(.always)
@@ -654,7 +660,7 @@ def test_case_split_kv[
         simd_width: Int, _rank: Int
     ](idx: IndexList[_rank]) {imm} -> SIMD[dtype, simd_width]:
         return v.load[width=simd_width, alignment=align_of[dtype]()](
-            Coord(idx[0], idx[1] + cfg.prev_seq_len(), idx[2], idx[3])
+            (idx[0], idx[1] + cfg.prev_seq_len(), idx[2], idx[3])
         )
 
     @inline(.always)
@@ -662,7 +668,7 @@ def test_case_split_kv[
         simd_width: Int, _rank: Int
     ](idx: IndexList[_rank]) {imm} -> SIMD[dtype, simd_width]:
         return k.load[width=simd_width, alignment=align_of[dtype]()](
-            Coord(idx[1], idx[3], idx[2], idx[4])
+            (idx[1], idx[3], idx[2], idx[4])
         )
 
     @inline(.always)
@@ -670,7 +676,7 @@ def test_case_split_kv[
         simd_width: Int, _rank: Int
     ](idx: IndexList[_rank]) {imm} -> SIMD[dtype, simd_width]:
         return v.load[width=simd_width, alignment=align_of[dtype]()](
-            Coord(idx[1], idx[3], idx[2], idx[4])
+            (idx[1], idx[3], idx[2], idx[4])
         )
 
     @inline(.always)
@@ -852,9 +858,10 @@ def test_flash_attention_with_sinks[dtype: DType]() raises:
     # Verify no-sinks result
     var mismatches_no_sinks = 0
     for i in range(output_no_sinks.num_elements()):
+        var coord = output_no_sinks.layout.idx2crd(i)
         if not isclose(
-            output_no_sinks.ptr[i],
-            ref_output_no_sinks.ptr[i],
+            output_no_sinks[coord],
+            ref_output_no_sinks[coord],
             atol=1e-5,
             rtol=1e-4,
         ):
@@ -863,9 +870,9 @@ def test_flash_attention_with_sinks[dtype: DType]() raises:
                     "No-sinks mismatch at",
                     i,
                     ":",
-                    output_no_sinks.ptr[i],
+                    output_no_sinks[coord],
                     "vs",
-                    ref_output_no_sinks.ptr[i],
+                    ref_output_no_sinks[coord],
                 )
             mismatches_no_sinks += 1
 
@@ -915,9 +922,10 @@ def test_flash_attention_with_sinks[dtype: DType]() raises:
     # Verify sinks result
     var mismatches_with_sinks = 0
     for i in range(output_with_sinks.num_elements()):
+        var coord = output_with_sinks.layout.idx2crd(i)
         if not isclose(
-            output_with_sinks.ptr[i],
-            ref_output_with_sinks.ptr[i],
+            output_with_sinks[coord],
+            ref_output_with_sinks[coord],
             atol=1e-5,
             rtol=1e-4,
         ):
@@ -926,9 +934,9 @@ def test_flash_attention_with_sinks[dtype: DType]() raises:
                     "With-sinks mismatch at",
                     i,
                     ":",
-                    output_with_sinks.ptr[i],
+                    output_with_sinks[coord],
                     "vs",
-                    ref_output_with_sinks.ptr[i],
+                    ref_output_with_sinks[coord],
                 )
             mismatches_with_sinks += 1
 

@@ -23,9 +23,9 @@ from std.itertools import product
 
 
 def matrix_mul_kernel(
-    M: UnsafePointer[Float32, MutUntrackedOrigin],
-    N: UnsafePointer[Float32, MutUntrackedOrigin],
-    P: UnsafePointer[Float32, MutUntrackedOrigin],
+    M: MutPointer[Float32, MutUntrackedOrigin],
+    N: MutPointer[Float32, MutUntrackedOrigin],
+    P: MutPointer[Float32, MutUntrackedOrigin],
     width_dev: Int32,
 ):
     """GPU kernel for matrix multiplication.
@@ -52,9 +52,9 @@ def matrix_mul_kernel(
 
 
 def matmul_cpu(
-    A_host: UnsafePointer[mut=False, Float32, _],
-    B_host: UnsafePointer[mut=False, Float32, _],
-    C_ref: UnsafePointer[mut=True, Float32, _],
+    A_host: ImmPointer[Float32, _],
+    B_host: ImmPointer[Float32, _],
+    C_ref: MutPointer[Float32, _],
     Width: Int,
 ):
     """CPU reference implementation for matrix multiplication.
@@ -74,8 +74,8 @@ def matmul_cpu(
 
 
 def initialize_host(
-    A_host: UnsafePointer[Float32, MutUntrackedOrigin],
-    B_host: UnsafePointer[Float32, MutUntrackedOrigin],
+    A_host: MutPointer[Float32, MutUntrackedOrigin],
+    B_host: MutPointer[Float32, MutUntrackedOrigin],
     Width: Int,
 ):
     """Initialize input matrices with test data.

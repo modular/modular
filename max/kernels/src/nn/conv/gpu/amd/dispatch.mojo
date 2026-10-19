@@ -42,14 +42,14 @@ Mirrors the structure of `nn.conv.gpu.amd.rdna.dispatch` and
 
 from max.gpu import global_idx
 from max.gpu.host import DeviceContext
-from std.math import ceildiv
+from std.math import align_up, ceildiv
 from std.sys import simd_width_of
 from std.sys.info import _accelerator_arch
 from std.utils import IndexList
 
-from layout import Coord, TileTensor, row_major
+from layout import Coord, TensorEngine, TensorLayout, TileTensor, row_major
 
-from linalg.utils import elementwise_epilogue_type
+from linalg.utils import ElementwiseEpilogueFn, no_epilogue_fn
 
 from nn.conv.gpu.amd.amd_4wave_conv import amd_4wave_conv
 
@@ -62,9 +62,12 @@ from nn.conv.gpu.amd.amd_4wave_conv import amd_4wave_conv
 @__name(t"amd_4wave_transpose_rscf_to_frsc_kpad_{dtype}")
 def _transpose_rscf_to_frsc_kpad[
     dtype: DType,
+    SrcLayoutType: TensorLayout,
+    src_origin: ImmOrigin,
+    SrcEngine: TensorEngine,
 ](
-    src_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    src: TileTensor[dtype, SrcLayoutType, src_origin, Engine=SrcEngine],
+    dst_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
     R: Int32,
     S: Int32,
     C: Int32,
@@ -94,17 +97,18 @@ def _transpose_rscf_to_frsc_kpad[
     var sc = k - r * (_S * _C)
     var s = sc // _C
     var c = sc - s * _C
-    # RSCF source index: ((r * _S + s) * _C + c) * _F + f.
-    var rscf_idx = ((r * _S + s) * _C + c) * _F + f
-    dst_ptr.store(tid, src_ptr.load(rscf_idx))
+    dst_ptr.store(tid, src.load((r, s, c, f))[0])
 
 
 @__name(t"amd_4wave_transpose_fcrs_to_frsc_kpad_{dtype}")
 def _transpose_fcrs_to_frsc_kpad[
     dtype: DType,
+    SrcLayoutType: TensorLayout,
+    src_origin: ImmOrigin,
+    SrcEngine: TensorEngine,
 ](
-    src_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    src: TileTensor[dtype, SrcLayoutType, src_origin, Engine=SrcEngine],
+    dst_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
     F: Int32,
     C: Int32,
     R: Int32,
@@ -134,9 +138,7 @@ def _transpose_fcrs_to_frsc_kpad[
     var sc = k - r * (_S * _C)
     var s = sc // _C
     var c = sc - s * _C
-    # FCRS source index: f*_C*_R*_S + c*_R*_S + r*_S + s.
-    var fcrs_idx = f * _C * _R * _S + c * _R * _S + r * _S + s
-    dst_ptr.store(tid, src_ptr.load(fcrs_idx))
+    dst_ptr.store(tid, src.load((f, c, r, s))[0])
 
 
 # ---------------------------------------------------------------------------
@@ -150,6 +152,7 @@ def _launch_amd_4wave_conv2d_runtime[
     input_type: DType,
     filter_type: DType,
     output_type: DType,
+    EpilogueFnType: ElementwiseEpilogueFn,
     //,
     C_in: Int,
     C_out: Int,
@@ -157,7 +160,7 @@ def _launch_amd_4wave_conv2d_runtime[
     S: Int,
     K_padded: Int,
     has_residual: Bool = False,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    has_epilogue_fn: Bool = False,
 ](
     input: TileTensor[input_type, ...],
     filter_frsc_tt: TileTensor[filter_type, ...],
@@ -165,10 +168,11 @@ def _launch_amd_4wave_conv2d_runtime[
     stride: Int,
     pad: Int,
     ctx: DeviceContext,
-    source_ptr: UnsafePointer[
+    source_ptr: ImmPointer[Scalar[output_type], ImmutAnyOrigin] = ImmPointer[
         Scalar[output_type], ImmutAnyOrigin
-    ] = UnsafePointer[Scalar[output_type], ImmutAnyOrigin].unsafe_dangling(),
+    ].unsafe_dangling(),
     beta: Float32 = 0.0,
+    epilogue_fn: EpilogueFnType = no_epilogue_fn,
 ) raises -> Bool:
     """Runtime-HW launch for the 4-wave conv dispatcher.
 
@@ -194,11 +198,10 @@ def _launch_amd_4wave_conv2d_runtime[
         var _rt_W_out = (_rt_W + 2 * pad_v - _eff_S) // stride_v + 1
         var _rt_M_total = _rt_N * _rt_H_out * _rt_W_out
         # Dynamic 2D `[M_total, C_out]` output view.
-        var _output_dims = IndexList[2](_rt_M_total, C_out)
-        var _dyn_out_layout = row_major(Coord(_output_dims))
+        var _dyn_out_layout = row_major(Coord(_rt_M_total, C_out))
         var output_2d_tt = output.reshape(_dyn_out_layout)
         amd_4wave_conv[
-            elementwise_lambda_fn=elementwise_lambda_fn,
+            has_epilogue_fn=has_epilogue_fn,
             R=R,
             S=S,
             stride_h=stride_v,
@@ -216,6 +219,7 @@ def _launch_amd_4wave_conv2d_runtime[
             source_ptr=source_ptr,
             source_row_stride=C_out,
             beta=beta,
+            epilogue_fn=epilogue_fn,
         )
 
     match (stride, pad):
@@ -242,17 +246,14 @@ def _launch_amd_4wave_conv2d_runtime[
 
 
 def dispatch_amd_4wave_conv2d[
+    EpilogueFnType: ElementwiseEpilogueFn = type_of(no_epilogue_fn),
+    //,
     input_type: DType,
     filter_type: DType,
     output_type: DType,
     filter_is_fcrs: Bool,
     has_residual: Bool = False,
-    # Optional fused 2D-coord epilogue lambda. The caller is expected
-    # to have wrapped any 4D NHWC `elementwise_simd_epilogue_type` into
-    # this 2D-coord form (m=b*H_out*W_out+h*W_out+w, n=channel). See
-    # the SM100 dispatch site in `nn/conv/conv.mojo` for the wrapper
-    # template. When None, no epilogue fuses; pure conv (+ residual).
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    has_epilogue_fn: Bool = False,
 ](
     input: TileTensor[input_type, ...],
     filter: TileTensor[filter_type, ...],
@@ -262,10 +263,9 @@ def dispatch_amd_4wave_conv2d[
     symmetric_padding: IndexList[2],
     num_groups: Int,
     ctx: DeviceContext,
-    source_ptr: Optional[
-        UnsafePointer[Scalar[output_type], MutAnyOrigin]
-    ] = None,
+    source_ptr: Optional[MutPointer[Scalar[output_type], MutAnyOrigin]] = None,
     beta: Float32 = 0.0,
+    epilogue_fn: EpilogueFnType = no_epilogue_fn,
 ) raises -> Bool:
     """Try to dispatch a Conv2D to `amd_4wave_conv` on MI355X.
 
@@ -282,6 +282,7 @@ def dispatch_amd_4wave_conv2d[
     the launch packet's 16 bytes (DCE'd source_ptr / stride / beta).
 
     Parameters:
+        EpilogueFnType: Type of `epilogue_fn`.
         input_type: `DType` of the input activation tensor; must be
             `float8_e4m3fn`, `bfloat16`, or `float16`.
         filter_type: `DType` of the filter tensor; must equal
@@ -292,9 +293,9 @@ def dispatch_amd_4wave_conv2d[
             for RSCF. Selects the transpose path and the R/S dim indices.
         has_residual: `True` to fuse `D = Conv + beta * source` in-kernel
             via `source_ptr` (defaults to `False`).
-        elementwise_lambda_fn: Optional fused 2D-coord epilogue lambda
-            wrapping a 4D NHWC `elementwise_simd_epilogue_type`; `None`
-            fuses no epilogue (defaults to `None`).
+        has_epilogue_fn: `True` to store each output chunk through
+            `epilogue_fn` instead of writing `output` (defaults to
+            `False`).
 
     Args:
         input: Input activation `TileTensor`, rank-4 NHWC with static
@@ -315,6 +316,9 @@ def dispatch_amd_4wave_conv2d[
             when `has_residual=True` (defaults to `None`).
         beta: Scale factor for the residual term in
             `D = Conv + beta * source` (defaults to `0.0`).
+        epilogue_fn: Stores each output chunk at a 2D coordinate
+            `(m, n)`, where `m = b*H_out*W_out + h*W_out + w` and `n` is
+            the output channel. Used when `has_epilogue_fn` is set.
     """
     comptime assert input.flat_rank == 4, "input must be rank 4 (NHWC)"
     comptime assert filter.flat_rank == 4, "filter must be rank 4"
@@ -399,7 +403,7 @@ def dispatch_amd_4wave_conv2d[
 
         # -------- Filter repack: caller layout -> FRSC, K-padded -----
         comptime _K_real = _R * _S * _C_in
-        comptime _K_padded = ((_K_real + 255) // 256) * 256
+        comptime _K_padded = align_up(_K_real, 256)
         var filter_frsc_buf = ctx.enqueue_create_buffer[filter_type](
             _C_out * _K_padded
         )
@@ -408,8 +412,14 @@ def dispatch_amd_4wave_conv2d[
         var transpose_total = _C_out * _K_padded
         var transpose_grid = ceildiv(transpose_total, _transpose_block)
         comptime if filter_is_fcrs:
-            ctx.enqueue_function[_transpose_fcrs_to_frsc_kpad[filter_type]](
-                filter.ptr,
+            comptime transpose_kernel = _transpose_fcrs_to_frsc_kpad[
+                filter_type,
+                filter.LayoutType,
+                ImmOrigin(filter.origin),
+                filter.Engine,
+            ]
+            ctx.enqueue_function[transpose_kernel](
+                filter.as_imm(),
                 filter_frsc_ptr,
                 Int32(_C_out),
                 Int32(_C_in),
@@ -420,8 +430,14 @@ def dispatch_amd_4wave_conv2d[
                 block_dim=_transpose_block,
             )
         else:
-            ctx.enqueue_function[_transpose_rscf_to_frsc_kpad[filter_type]](
-                filter.ptr,
+            comptime transpose_kernel = _transpose_rscf_to_frsc_kpad[
+                filter_type,
+                filter.LayoutType,
+                ImmOrigin(filter.origin),
+                filter.Engine,
+            ]
+            ctx.enqueue_function[transpose_kernel](
+                filter.as_imm(),
                 filter_frsc_ptr,
                 Int32(_R),
                 Int32(_S),
@@ -441,20 +457,20 @@ def dispatch_amd_4wave_conv2d[
         # the kernel arg (which only reads it when has_residual=True at
         # comptime, so the value is never dereferenced in the
         # has_residual=False path).
-        var _src_ptr_immut = UnsafePointer[
+        var _src_ptr_immut = ImmPointer[
             Scalar[output_type], ImmutAnyOrigin
         ].unsafe_dangling()
 
         @inline(.always)
         def _src_immut() {
             imm
-        } -> UnsafePointer[Scalar[output_type], ImmutAnyOrigin]:
+        } -> ImmPointer[Scalar[output_type], ImmutAnyOrigin]:
             comptime if has_residual:
                 # When called with has_residual=True, the caller must
                 # supply source_ptr. Materialize an immutable view of it
                 # (the kernel only reads).
                 if case .Some(source_ptr) = source_ptr:
-                    return UnsafePointer[Scalar[output_type], ImmutAnyOrigin](
+                    return ImmPointer[Scalar[output_type], ImmutAnyOrigin](
                         unsafe_from_address=Int(source_ptr)
                     )
             return _src_ptr_immut
@@ -498,7 +514,7 @@ def dispatch_amd_4wave_conv2d[
                 var input_nhwc_tt = input.reshape(_nhwc_in_layout)
                 var output_2d_tt = output.reshape(_output_2d_layout)
                 amd_4wave_conv[
-                    elementwise_lambda_fn=elementwise_lambda_fn,
+                    has_epilogue_fn=has_epilogue_fn,
                     H=_H_static,
                     W=_W_static,
                     H_out=_H_out_v,
@@ -519,6 +535,7 @@ def dispatch_amd_4wave_conv2d[
                     source_ptr=_src_ptr_for_kernel,
                     source_row_stride=_C_out,
                     beta=beta,
+                    epilogue_fn=epilogue_fn,
                 )
                 return True
 
@@ -551,7 +568,7 @@ def dispatch_amd_4wave_conv2d[
                 S=_S,
                 K_padded=_K_padded,
                 has_residual=has_residual,
-                elementwise_lambda_fn=elementwise_lambda_fn,
+                has_epilogue_fn=has_epilogue_fn,
             ](
                 input,
                 filter_frsc_tt,
@@ -561,6 +578,7 @@ def dispatch_amd_4wave_conv2d[
                 ctx,
                 source_ptr=_src_ptr_for_kernel,
                 beta=beta,
+                epilogue_fn=epilogue_fn,
             ):
                 return False
         return True

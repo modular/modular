@@ -118,7 +118,7 @@ def corrupt_src_info_kernel(
     """
     # `Int` is not device-passable; widen the fixed-width arg.
     var n_rows = Int(n_rows_dev)
-    var gid = Int(global_idx.x)
+    var gid = global_idx.x
     if gid < n_rows:
         src_info[gid * 2] = bad_src_idx
         src_info[gid * 2 + 1] = bad_topk_idx
@@ -224,7 +224,7 @@ def run_one_case(ctx: DeviceContext, spec: CaseSpec) raises:
     # Make each token's top-k expert ids unique (a token isn't sent to one
     # expert twice).
     for tok in range(n_tokens_per_rank):
-        var base = host_topk + tok * top_k
+        var base = host_topk.unsafe_offset(tok * top_k)
 
         def dup() {imm} -> Int:
             for i in range(top_k):
@@ -235,7 +235,7 @@ def run_one_case(ctx: DeviceContext, spec: CaseSpec) raises:
 
         var d = dup()
         while d != -1:
-            randint(base + d, 1, 0, n_experts - 1)
+            randint(base.unsafe_offset(d), 1, 0, n_experts - 1)
             d = dup()
     randn(host_tokens, n_tokens_per_rank * hidden_size)
     ctx.enqueue_copy(topk_ids_dev, host_topk)

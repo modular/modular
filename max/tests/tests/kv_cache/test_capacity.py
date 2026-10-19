@@ -338,13 +338,11 @@ def test_connector_config_defaults_disk_io_to_buffered() -> None:
     assert KVConnectorConfig(use_disk_direct_io=True).use_disk_direct_io is True
 
 
-def test_create_refuses_direct_io_with_unaligned_leaf_sizes(
-    monkeypatch: pytest.MonkeyPatch,
+def _create_with_unaligned_direct_io(
+    monkeypatch: pytest.MonkeyPatch, host_staging_mlock: bool = False
 ) -> None:
-    """Every leaf whose block width is not a 4 KiB multiple must be named in
-    one error before anything is allocated, since no buffered fallback
-    exists and a single unaligned leaf makes every one of its blocks unable
-    to take the direct path."""
+    """Drives ``TierConnector.create`` with registered staging on CUDA up to
+    its direct-I/O alignment check, which raises."""
     monkeypatch.setattr(tier_connector, "accelerator_api", lambda: "cuda")
     monkeypatch.setattr(
         tier_connector,
@@ -362,7 +360,7 @@ def test_create_refuses_direct_io_with_unaligned_leaf_sizes(
         type=KVConnectorType.rust_tiered,
         host_staging_alloc="registered",
         use_disk_direct_io=True,
-        host_staging_mlock=False,
+        host_staging_mlock=host_staging_mlock,
         host_offload_max_gb=None,
         disk_offload_max_gb=1.0,
         disk_offload_dir=None,
@@ -378,6 +376,42 @@ def test_create_refuses_direct_io_with_unaligned_leaf_sizes(
             params=SimpleNamespace(kv_connector_config=cfg),
             device_memory_bytes=0,
         )
+
+
+def test_create_refuses_direct_io_with_unaligned_leaf_sizes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Every leaf whose block width is not a 4 KiB multiple must be named in
+    one error before anything is allocated, since no buffered fallback
+    exists and a single unaligned leaf makes every one of its blocks unable
+    to take the direct path."""
+    _create_with_unaligned_direct_io(monkeypatch)
+
+
+@pytest.mark.parametrize(
+    ("sysctl", "warns"),
+    [("allowed", True), ("disallowed", False), ("missing", False)],
+)
+def test_create_warns_on_mlock_only_when_compaction_migrates_locked_pages(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    tmp_path: Path,
+    sysctl: str,
+    warns: bool,
+) -> None:
+    (tmp_path / "allowed").write_text("1\n")
+    (tmp_path / "disallowed").write_text("0\n")
+    path = tmp_path / sysctl
+    read_sysctl = tier_connector._compact_unevictable_allowed
+    monkeypatch.setattr(
+        tier_connector,
+        "_compact_unevictable_allowed",
+        lambda: read_sysctl(str(path)),
+    )
+
+    _create_with_unaligned_direct_io(monkeypatch, host_staging_mlock=True)
+
+    assert ("vm.compact_unevictable_allowed=1" in caplog.text) is warns
 
 
 @pytest.mark.parametrize(
@@ -452,12 +486,12 @@ def test_compact_unevictable_allowed_reads_the_sysctl(
     assert tier_connector._compact_unevictable_allowed(str(path)) is expected
 
 
-def test_compact_unevictable_allowed_is_unknown_when_unreadable(
+def test_compact_unevictable_allowed_is_false_when_unreadable(
     tmp_path: Path,
 ) -> None:
     missing = str(tmp_path / "missing")
 
-    assert tier_connector._compact_unevictable_allowed(missing) is None
+    assert tier_connector._compact_unevictable_allowed(missing) is False
 
 
 @pytest.fixture

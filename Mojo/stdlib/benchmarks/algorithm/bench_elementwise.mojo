@@ -32,7 +32,7 @@ def bench_elementwise[n: Int](mut b: Bencher) raises:
     def call_fn() raises {var}:
         @inline(.always)
         def func[simd_width: Int, alignment: Int = 1](idx: Coord) {var}:
-            span[Int(idx[0].value())] = 42
+            span[Int(idx[0])] = 42
 
         elementwise[simd_width=simd_width_of[DType.int]()](
             func, Coord(IndexList[1](n)), DeviceContext(api="cpu")

@@ -28,7 +28,6 @@ from std.memory import Pointer
 from std.sys import (
     align_of,
     bit_width_of,
-    is_apple_gpu,
     is_gpu,
     is_nvidia_gpu,
     size_of,
@@ -2036,9 +2035,9 @@ struct Pointer[
             alignment.is_power_of_two()
         ), "alignment must be a power of two integer value"
 
-        comptime if is_apple_gpu():
-            # `Int(self)` would erase the address space; on Apple AIR the
-            # resulting GENERIC load silently reads zero (MOCO-3762).
+        comptime if not CurrentPlugin.has_generic_address_space:
+            # The vector path below rebuilds lane pointers from `Int(self)`,
+            # which loses the address space, so load through `self` instead.
             var result = default
             comptime for i in range(width):
                 if mask[i]:
@@ -2133,8 +2132,8 @@ struct Pointer[
             alignment.is_power_of_two()
         ), "alignment must be a power of two integer value"
 
-        comptime if is_apple_gpu():
-            # See `gather` for the address-space rationale (MOCO-3762).
+        comptime if not CurrentPlugin.has_generic_address_space:
+            # See `unsafe_gather`.
             comptime for i in range(width):
                 if mask[i]:
                     self.unsafe_store[alignment=alignment](

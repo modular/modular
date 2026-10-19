@@ -313,9 +313,14 @@ IREvaluator::evaluateContextSpecific(ContextuallyEvaluatedAttrInterface attr) {
 
 FailureOr<TypedAttr> IREvaluator::evaluateApplyLike(ParamOperatorAttr op,
                                                     bool withResultSlot) {
+  SymbolConstantAttr callee =
+      extractSymbolConstantAttr(op.getOperands().front());
+  if (hasUnresolvedParamValue(callee))
+    return failure();
+
   // Attempt to concretize the function first.
-  ErrorTreeOr<FuncOp> funcOr = elaborator->getConcreteFunction(
-      parent, *errorLoc, extractSymbolConstantAttr(op.getOperands().front()));
+  ErrorTreeOr<FuncOp> funcOr =
+      elaborator->getConcreteFunction(parent, *errorLoc, callee);
   if (funcOr.isError()) {
     emitError(funcOr.takeError());
     return failure();

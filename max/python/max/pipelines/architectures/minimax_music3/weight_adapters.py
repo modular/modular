@@ -35,11 +35,16 @@ Every rewrite here happens once at load time rather than in the graph:
 from __future__ import annotations
 
 import numpy as np
-from max.driver import CPU, Buffer, DLPackArray
+from max.driver import (
+    CPU,
+    Buffer,
+    DLPackArray,
+    bfloat16_as_uint16_to_float32,
+    float32_array_to_buffer,
+)
 from max.dtype import DType
 from max.experimental.tensor import Tensor
 from max.graph.weights import WeightData, Weights
-from max.pipelines.lib.bfloat16_utils import float32_array_to_buffer
 
 from .model_config import LanguageModelConfig
 
@@ -251,7 +256,7 @@ def _row_slice(data: WeightData, rows: np.ndarray, dtype: DType) -> Buffer:
     )
     if dtype == DType.bfloat16:
         return Buffer.from_numpy(gathered).view(DType.bfloat16)
-    widened = (gathered.astype(np.uint32) << 16).view(np.float32)
+    widened = bfloat16_as_uint16_to_float32(gathered)
     return float32_array_to_buffer(widened, dtype=dtype, device=CPU())
 
 

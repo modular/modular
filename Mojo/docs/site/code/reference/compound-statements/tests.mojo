@@ -183,7 +183,7 @@ def _struct_kind(p: Point) -> String:
     match p:
         case Point(x=0, y=0):
             return "origin"
-        case {1, 1}:
+        case {x = 1, y = 1}:
             return "unit"
         case _:
             return "other"

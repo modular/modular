@@ -100,7 +100,6 @@ from max.gpu.primitives.grid_controls import (
     pdl_launch_attributes,
     wait_on_dependent_grids,
 )
-from std.memory import UnsafePointer
 from std.sys import align_of, get_defined_int, size_of
 from std.utils.numerics import min_or_neg_inf
 from nn.attention.gpu.nvidia.sm100.attention import MHA_PDL_LEVEL
@@ -139,9 +138,9 @@ def _fa4_splitk_combine_kernel[
     intermediate_type: DType = output_type,
     P_STATIC: Int = 0,
 ](
-    output_ptr: UnsafePointer[Scalar[output_type], MutAnyOrigin],
-    o_partial_ptr: UnsafePointer[Scalar[intermediate_type], MutAnyOrigin],
-    lse_partial_ptr: UnsafePointer[Scalar[_ACC], MutAnyOrigin],
+    output_ptr: MutPointer[Scalar[output_type], MutAnyOrigin],
+    o_partial_ptr: MutPointer[Scalar[intermediate_type], MutAnyOrigin],
+    lse_partial_ptr: MutPointer[Scalar[_ACC], MutAnyOrigin],
     num_partitions: UInt32,
     rows_heads: UInt32,
 ):
@@ -230,7 +229,7 @@ def _fa4_splitk_combine_kernel[
     )
     comptime max_d_per_lane = ceildiv(ov_depth, WARP_SIZE)
 
-    var oaccum_base = (o_partial_ptr + rh * ov_depth).as_imm()
+    var oaccum_base = o_partial_ptr.unsafe_offset(rh * ov_depth).as_imm()
 
     # Effective partition count: the comptime `P_STATIC` when this is a
     # ladder-rung specialization, otherwise the runtime `num_partitions`.
@@ -428,9 +427,9 @@ def fa4_splitk_combine[
     intermediate_type: DType = output_type,
 ](
     ctx: DeviceContext,
-    output_ptr: UnsafePointer[Scalar[output_type], MutAnyOrigin],
-    o_partial_ptr: UnsafePointer[Scalar[intermediate_type], MutAnyOrigin],
-    lse_partial_ptr: UnsafePointer[Scalar[_ACC], MutAnyOrigin],
+    output_ptr: MutPointer[Scalar[output_type], MutAnyOrigin],
+    o_partial_ptr: MutPointer[Scalar[intermediate_type], MutAnyOrigin],
+    lse_partial_ptr: MutPointer[Scalar[_ACC], MutAnyOrigin],
     num_partitions: UInt32,
     num_rows_q: UInt32,
     num_q_heads: UInt32,

@@ -49,8 +49,8 @@ def _bmm0_bs[
     q_type: DType,
     p_type: DType,
 ](
-    p_ptr: UnsafePointer[Scalar[p_type], MutAnyOrigin],
-    q_ptr: UnsafePointer[Scalar[q_type], ImmutAnyOrigin],
+    p_ptr: MutPointer[Scalar[p_type], MutAnyOrigin],
+    q_ptr: ImmPointer[Scalar[q_type], ImmutAnyOrigin],
     k_cache: cache_t,
     q_input_row_offsets: TileTensor[.uint32, QLayoutType, ImmutAnyOrigin],
     kv_input_row_offsets: TileTensor[.uint32, KVLayoutType, ImmutAnyOrigin],
@@ -110,11 +110,11 @@ def _bmm0_bs[
     if x >= (_kv_max_seq_len + _max_cache_size) or y >= _q_max_seq_len:
         return
 
-    var q = q_ptr + q_offset
+    var q = q_ptr.unsafe_offset(q_offset)
 
     var kv_head = ufloordiv(head, _group)
 
-    var p = p_ptr + p_offset
+    var p = p_ptr.unsafe_offset(p_offset)
 
     var accum = Scalar[p_type](0.0)
 
@@ -164,8 +164,8 @@ def _bmm1_bs[
     p_type: DType,
     output_type: DType,
 ](
-    output_ptr: UnsafePointer[Scalar[output_type], MutAnyOrigin],
-    p_ptr: UnsafePointer[Scalar[p_type], ImmutAnyOrigin],
+    output_ptr: MutPointer[Scalar[output_type], MutAnyOrigin],
+    p_ptr: ImmPointer[Scalar[p_type], ImmutAnyOrigin],
     v_cache: cache_t,
     q_input_row_offsets: TileTensor[.uint32, QLayoutType, ImmutAnyOrigin],
     kv_input_row_offsets: TileTensor[.uint32, KVLayoutType, ImmutAnyOrigin],
@@ -218,10 +218,10 @@ def _bmm1_bs[
     if x >= _depth or y >= cur_query_len:
         return
 
-    var p = p_ptr + p_offset
+    var p = p_ptr.unsafe_offset(p_offset)
 
     var kv_head = ufloordiv(head, _group)
-    var output = output_ptr + output_offset
+    var output = output_ptr.unsafe_offset(output_offset)
 
     var accum = Float32(0.0)
 
@@ -346,9 +346,7 @@ def mha_cross_gpu_naive[
         p_device.unsafe_ptr(),
         row_major((batch_size * num_heads, q_max_seq_len, num_keys)),
     )
-    var q_device = DeviceBuffer[q_type](
-        ctx, q.ptr, q.num_elements(), owning=False
-    )
+    var q_device = q.to_device_buffer(ctx)
 
     comptime kernel_0 = _bmm0_bs[
         QLayoutType=q.LayoutType,
@@ -381,23 +379,20 @@ def mha_cross_gpu_naive[
         block_dim=(32, 16, 1),
     )
 
-    @__parameter
-    @__copy_capture(p_buffer)
     def input_fn_device[
         _simd_width: Int
-    ](coords: Coord) -> SIMD[p_type, _simd_width]:
+    ](coords: Coord) {var p_buffer} -> SIMD[p_type, _simd_width]:
         comptime assert p_buffer.flat_rank >= coords.flat_rank
         return p_buffer.load[width=_simd_width](coords)
 
-    _softmax_gpu[p_type, 1, 3, input_fn_device](
+    _softmax_gpu[p_type, 1, 3](
+        input_fn_device,
         Coord(batch_size * num_heads, q_max_seq_len, num_keys),
         p_buffer,
         2,
         ctx,
     )
-    var output_device = DeviceBuffer[output.dtype](
-        ctx, output.ptr, output.num_elements(), owning=False
-    )
+    var output_device = output.to_device_buffer(ctx)
 
     comptime kernel_1 = _bmm1_bs[
         QLayoutType=q.LayoutType,

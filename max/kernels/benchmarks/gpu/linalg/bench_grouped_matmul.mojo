@@ -323,13 +323,9 @@ def bench_grouped_matmul[
         var new_val = val
 
         comptime for i in range(width):
-            new_val[i] = test_epilogue(
-                Int(idx[0].value()), Int(idx[1].value()) + i, val[i]
-            )
+            new_val[i] = test_epilogue(Int(idx[0]), Int(idx[1]) + i, val[i])
 
-        c_dev.store[width=width, alignment=alignment](
-            idx, new_val.cast[out_type]()
-        )
+        c_dev.store[alignment=alignment](idx, new_val.cast[out_type]())
 
     comptime if is_fp4e2m1:
         comptime assert (

@@ -197,7 +197,7 @@ def blockwise_scaled_fp8_grouped_matmul_amd_kernel[
     comptime N_SCALES = N // N_SCALE
     comptime K_SCALES = K // K_SCALE
 
-    var slot = Int(block_idx.z)
+    var slot = block_idx.z
     var M = Int(a_offsets[slot + 1]) - Int(a_offsets[slot])
     if M == 0 or N == 0:
         return
@@ -225,7 +225,7 @@ def blockwise_scaled_fp8_grouped_matmul_amd_kernel[
 
     # M-tile stride loop: this CTA strides its expert's M-tiles by grid_dim.y,
     # so coverage is independent of grid.y (any grid.y covers every tile).
-    var m_tile = Int(block_idx.y)
+    var m_tile = block_idx.y
     var num_m_tiles = ceildiv(M, BM)
     while m_tile < num_m_tiles:
         blockwise_scaled_fp8_matmul_amd_tile[
@@ -262,11 +262,11 @@ def blockwise_scaled_fp8_grouped_matmul_amd_kernel[
             a_scales,
             b_scale_tile,
             m_tile,
-            Int(block_idx.x),
+            block_idx.x,
             a_start_row,
             M,
         )
-        m_tile += Int(grid_dim.y)
+        m_tile += grid_dim.y
 
 
 def blockwise_scaled_fp8_grouped_matmul_amd[

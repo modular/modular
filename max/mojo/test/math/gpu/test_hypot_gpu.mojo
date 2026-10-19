@@ -12,11 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import hypot, inf, isinf, isnan, nan
-from std.sys import default_accelerator, simd_width_of
+from std.sys import simd_width_of
 from std.utils.numerics import max_finite
 
 from max.algorithm.functional import elementwise
-from max.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext, default_accelerator
 from std.testing import TestSuite, assert_equal, assert_raises
 from test_utils.math import (
     PairMode,
@@ -83,7 +83,7 @@ def run_hypot[
     def func[
         simd_width: Int, alignment: Int = 1
     ](idx0: Coord) {var out_buffer, var x_buffer, var y_buffer}:
-        var idx = Int(idx0[0].value())
+        var idx = Int(idx0[0])
         var a = x_buffer.unsafe_ptr().unsafe_load[width=simd_width](idx)
         var b = y_buffer.unsafe_ptr().unsafe_load[width=simd_width](idx)
         out_buffer.unsafe_ptr().unsafe_store[width=simd_width](idx, hypot(a, b))

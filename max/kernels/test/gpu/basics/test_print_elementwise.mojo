@@ -32,8 +32,8 @@ def test_elementwise_print[
 
     @inline(.always)
     def binary[simd_width: Int, alignment: Int = 1](idx0: Coord) {var}:
-        var m: Int = Int(idx0[0].value())
-        var n: Int = Int(idx0[1].value())
+        var m: Int = Int(idx0[0])
+        var n: Int = Int(idx0[1])
         print("print thousands of messages: m=", m, " n=", n, sep="")
 
     print("about to call elementwise, M=", M, "N=", N)

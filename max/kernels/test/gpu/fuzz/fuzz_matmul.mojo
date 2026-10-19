@@ -225,7 +225,7 @@ def _run_rows(
     rand(b_host.as_span())
     for j in range(m):
         seed(base_seed + j)
-        rand(a_host.unsafe_ptr() + j * K, K)
+        rand(a_host.unsafe_ptr().unsafe_offset(j * K), K)
 
     var a_dev = ctx.enqueue_create_buffer[dtype](a_size)
     var b_dev = ctx.enqueue_create_buffer[dtype](b_size)

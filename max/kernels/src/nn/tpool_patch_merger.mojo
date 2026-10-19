@@ -118,9 +118,9 @@ def tpool_patch_merger_kernel[
     if vid >= _n_vids:
         return
 
-    var t = Int(grid_thws[Coord(vid, Idx[0])])
-    var h = Int(grid_thws[Coord(vid, Idx[1])])
-    var w = Int(grid_thws[Coord(vid, Idx[2])])
+    var t = Int(grid_thws[vid, Idx[0]])
+    var h = Int(grid_thws[vid, Idx[1]])
+    var w = Int(grid_thws[vid, Idx[2]])
 
     var new_H = h // _kH
     var new_W = w // _kW
@@ -135,9 +135,9 @@ def tpool_patch_merger_kernel[
     var in_offset: Int = 0
     var out_offset: Int = 0
     for i in range(vid):
-        var ti = Int(grid_thws[Coord(i, Idx[0])])
-        var hi = Int(grid_thws[Coord(i, Idx[1])])
-        var wi = Int(grid_thws[Coord(i, Idx[2])])
+        var ti = Int(grid_thws[i, Idx[0]])
+        var hi = Int(grid_thws[i, Idx[1]])
+        var wi = Int(grid_thws[i, Idx[2]])
         in_offset += ti * hi * wi
         out_offset += hi * wi
 
@@ -155,9 +155,9 @@ def tpool_patch_merger_kernel[
         var acc = Scalar[dtype](0)
         for t_i in range(t):
             var row = in_offset + t_i * (h * w) + spatial_flat
-            acc += x_tile[Coord(row, d)][0]
+            acc += x_tile[row, d][0]
         acc /= Scalar[dtype](t)
-        out_tile.store(Coord(out_offset + pat_idx, d), acc)
+        out_tile.store((out_offset + pat_idx, d), acc)
     else:
         var d_start = (d_tile * num_threads + tid) * vec_width
         if d_start >= _D:
@@ -165,11 +165,9 @@ def tpool_patch_merger_kernel[
         var acc = SIMD[dtype, vec_width](0)
         for t_i in range(t):
             var row = in_offset + t_i * (h * w) + spatial_flat
-            acc += x_tile.load[width=vec_width](Coord(row, d_start))
+            acc += x_tile.load[width=vec_width]((row, d_start))
         acc /= Scalar[dtype](t)
-        out_tile.store[width=vec_width](
-            Coord(out_offset + pat_idx, d_start), acc
-        )
+        out_tile.store((out_offset + pat_idx, d_start), acc)
 
 
 # ------------------------------------------------------------------------------

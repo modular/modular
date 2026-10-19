@@ -309,7 +309,6 @@ class Qwen3_5RecurrentState:
         merged_offsets: TensorValue,
         num_accepted: TensorValue,
         num_draft_tokens: TensorValue,
-        total_rows: Dim,
         signal_buffers: Sequence[BufferValue],
         device: DeviceRef,
     ) -> None:
@@ -330,17 +329,21 @@ class Qwen3_5RecurrentState:
             num_accepted: ``[batch]`` accepted draft tokens per request.
             num_draft_tokens: This step's draft width, as a scalar on
                 ``device``, zero on a prefill.
-            total_rows: Row count of the verified window.
             signal_buffers: Used only to place the plan on each device.
             device: The device the batch-wide tensors live on.
         """
         assert self.verify_width is not None, "roll_forward before capturing"
         assert self.num_draft_tokens is not None
+        window = self.captures[0][0].qkv_window
+        assert window is not None
+        # The verify copied its rows whenever it had drafts, which is
+        # whenever the rollback runs. Clamping to the copy keeps the gather in
+        # bounds when it does not.
         row_indices, replay_offsets = accepted_row_plan(
             merged_offsets,
             num_accepted,
             num_draft_tokens,
-            total_rows,
+            window.shape[0],
             device,
             # Each row is one token and its drafts whenever the rollback
             # runs, and the plan shrinks to a row per request when it does

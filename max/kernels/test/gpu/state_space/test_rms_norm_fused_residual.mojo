@@ -56,7 +56,7 @@ def _run_rms_norm_fused_residual_gpu_impl[
     differently from an all-runtime one.
     """
     comptime rank = type_of(shape).rank
-    var cols = Int(shape[rank - 1].value())
+    var cols = Int(shape[rank - 1])
     var rows = Int(shape.product()) // cols
 
     # Allocate host memory
@@ -118,7 +118,7 @@ def _run_rms_norm_fused_residual_gpu_impl[
     def output_fn[
         width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[dtype, width]) {var output_tensor} -> None:
-        output_tensor.store[width=width](coords, val)
+        output_tensor.store(coords, val)
 
     @inline(.always)
     def residual_output_fn[
@@ -126,7 +126,7 @@ def _run_rms_norm_fused_residual_gpu_impl[
     ](coords: Coord, val: SIMD[dtype, width]) {
         var residual_output_tensor
     } -> None:
-        residual_output_tensor.store[width=width](coords, val)
+        residual_output_tensor.store(coords, val)
 
     var dropout_p_scalar = Scalar[dtype](dropout_p)
 

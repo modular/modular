@@ -85,7 +85,7 @@ comptime _FP4_AMAX_FLOOR = Float32(6.0) * Float32(1.1754943508222875e-38)
 @inline(.always)
 def _fake_quantize[
     vec: Int, //, group: Int, fp4: Bool
-](x: SIMD[DType.float32, vec]) -> type_of(x):
+](x: SIMD[.float32, vec]) -> type_of(x):
     """Snaps ``x`` to the FP4 or FP8 grid and back, a scale per group.
 
     A group of ``group`` channels spans ``group // vec`` consecutive lanes,
@@ -98,21 +98,19 @@ def _fake_quantize[
     var amax = warp.lane_group_max[num_lanes=group // vec](abs(x).reduce_max())
     var scale = (
         (max(amax, amax_floor) * inv_max)
-        .cast[DType.float8_e8m0fnu]()
-        .cast[DType.float32]()
+        .cast[.float8_e8m0fnu]()
+        .cast[.float32]()
     )
     var q = (x / scale).clamp(-value_max, value_max)
     comptime if fp4:
         q = cast_fp_to_fp4e2m1(q)
     else:
-        q = q.cast[DType.float8_e4m3fn]().cast[DType.float32]()
+        q = q.cast[.float8_e4m3fn]().cast[.float32]()
     return q * scale
 
 
 @inline(.always)
-def _hadamard[
-    vec: Int, //, width: Int
-](x: SIMD[DType.float32, vec]) -> type_of(x):
+def _hadamard[vec: Int, //, width: Int](x: SIMD[.float32, vec]) -> type_of(x):
     """``x`` times the orthonormal Sylvester Hadamard matrix of order ``width``.
 
     The row is spread over one warp, ``vec`` consecutive channels per lane.
@@ -253,21 +251,21 @@ def compress_windows_ragged_paged[
     }:
         var w = block_idx.x
         var batch = Int(window_offsets.dim[0]()) - 1
-        if w >= Int(window_offsets.load[width=1]((batch,))):
+        if w >= Int(window_offsets.load((batch,))):
             return
         var b = get_batch_from_row_offsets(window_offsets, w)
-        var first_row = Int(input_row_offsets.load[width=1]((b,)))
-        var last_row = Int(input_row_offsets.load[width=1]((b + 1,))) - 1
-        var cached = Int(starts.load[width=1]((b,)))
+        var first_row = Int(input_row_offsets.load((b,)))
+        var last_row = Int(input_row_offsets.load((b + 1,))) - 1
+        var cached = Int(starts.load((b,)))
         var start = align_down(cached, ratio) + ratio * (
-            w - Int(window_offsets.load[width=1]((b,)))
+            w - Int(window_offsets.load((b,)))
         )
         var c = thread_idx.x * vec
 
         # Online softmax over the window's positions, `chunk` at a time.
-        var run_max = SIMD[DType.float32, vec](min_or_neg_inf[DType.float32]())
-        var den = SIMD[DType.float32, vec](0)
-        var num = SIMD[DType.float32, vec](0)
+        var run_max = SIMD[.float32, vec](min_or_neg_inf[DType.float32]())
+        var den = SIMD[.float32, vec](0)
+        var num = SIMD[.float32, vec](0)
         comptime for half in range(coff):
             var col = half * head_dim + c
             var first = start + (half + 1 - coff) * ratio
@@ -275,16 +273,16 @@ def compress_windows_ragged_paged[
             # (the first window's predecessor) or wholly after it.
             if first >= 0:
                 for k0 in range(0, ratio, chunk):
-                    var values = Array[SIMD[DType.float32, vec], chunk](fill=0)
-                    var logits = Array[SIMD[DType.float32, vec], chunk](fill=0)
+                    var values = Array[SIMD[.float32, vec], chunk](fill=0)
+                    var logits = Array[SIMD[.float32, vec], chunk](fill=0)
                     comptime for i in range(chunk):
                         var pos = first + k0 + i
                         if pos < cached:
                             values[i] = kv_cache.load[
-                                width=vec, output_dtype=DType.float32
+                                width=vec, output_dtype=.float32
                             ](b, 0, pos, col)
                             logits[i] = score_cache.load[
-                                width=vec, output_dtype=DType.float32
+                                width=vec, output_dtype=.float32
                             ](b, 0, pos, col)
                         else:
                             var row = min(first_row + pos - cached, last_row)
@@ -310,13 +308,13 @@ def compress_windows_ragged_paged[
         ](
             w,
             c,
-            (num / den).cast[dtype]().cast[DType.float32](),
+            (num / den).cast[dtype]().cast[.float32](),
             norm_weight.load[width=vec]((c,)),
             epsilon,
             Float32(0),
             head_dim,
         )
-        var y = normed.cast[DType.float32]()
+        var y = normed.cast[.float32]()
 
         if c >= rope_start:
             comptime for p in range(0, vec, 2):
@@ -327,16 +325,16 @@ def compress_windows_ragged_paged[
                 var im = y[p + 1]
                 y[p] = re * cos_sin[0] - im * cos_sin[1]
                 y[p + 1] = re * cos_sin[1] + im * cos_sin[0]
-            y = y.cast[dtype]().cast[DType.float32]()
+            y = y.cast[dtype]().cast[.float32]()
 
         comptime if rotate:
-            y = _hadamard[head_dim](y).cast[dtype]().cast[DType.float32]()
+            y = _hadamard[head_dim](y).cast[dtype]().cast[.float32]()
             y = _fake_quantize[group, fp4=True](y)
         else:
             # Every lane joins the group reduction; the rotary ones drop it.
             var q = _fake_quantize[group, fp4=False](y)
             if c < rope_start:
                 y = q
-        output.store[width=vec]((w, c), y.cast[dtype]())
+        output.store((w, c), y.cast[dtype]())
 
     ctx.enqueue_function(kernel, grid_dim=rows, block_dim=threads)

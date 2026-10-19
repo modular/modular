@@ -34,18 +34,21 @@ from max.runtime.asyncrt import parallelism_level
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
 
-from ...gemv import gemv
+from ...gemv import _gemv_cpu
 from ...packing import BTileGenerator
 from ...utils import (
+    ElementwiseComputeFn,
+    ElementwiseEpilogueFn,
     GemmShape,
     InnerKernelID,
     KernelConfig,
     calculate_tile_n_k,
     dispatch_get_kernel_type,
-    elementwise_epilogue_type,
     get_kernel_config,
     get_min_task_size,
     get_partitioned_matmul,
+    no_compute_fn,
+    no_epilogue_fn,
     packA_i8mm,
     select_inner_kernel,
 )
@@ -108,30 +111,41 @@ trait InnerMatmulKernel(Deinitable, ImplicitlyCopyable):
 
 
 def elementwise_epilogue_c_tile[
+    EpilogueFnType: ElementwiseEpilogueFn,
+    ComputeFnType: ElementwiseComputeFn,
+    //,
     simd_width: Int,
     c_type: DType,
-    func: def[dtype: DType, width: SIMDLength, *, alignment: Int = 1](
-        Coord, SIMD[dtype, width]
-    ) capturing -> None,
+    *,
+    has_compute_fn: Bool,
 ](
     offset: GemmShape,
     tile_len: GemmShape,
-    c: TileTensor[mut=False, c_type, address_space=.GENERIC, ...],
+    c: TileTensor[mut=True, c_type, address_space=.GENERIC, ...],
+    epilogue_fn: EpilogueFnType,
+    compute_fn: ComputeFnType,
 ):
     """Applies a vectorized epilogue function over a 2D C output tile.
 
-    Iterates column chunks of `tile_len.N` using SIMD width `simd_width`,
-    calling `func` with the global (m, n) coordinates and the loaded values.
+    Iterates column chunks of `tile_len.N` using SIMD width `simd_width`. With
+    `has_compute_fn`, stores `compute_fn` of each loaded chunk back into `c`;
+    otherwise hands the global (m, n) coordinates and the loaded values to
+    `epilogue_fn`.
 
     Parameters:
+        EpilogueFnType: Type of `epilogue_fn` (inferred).
+        ComputeFnType: Type of `compute_fn` (inferred).
         simd_width: SIMD vector width for epilogue loads.
         c_type: Data type of the C matrix.
-        func: Epilogue function called with coordinates and a SIMD value chunk.
+        has_compute_fn: Whether to apply `compute_fn` instead of
+            `epilogue_fn`.
 
     Args:
         offset: Starting (M, N, K) offset within the global matmul space.
         tile_len: Number of rows and columns to process.
-        c: Read-only view of the C output tile.
+        c: The C output tile.
+        epilogue_fn: Epilogue called with coordinates and a SIMD value chunk.
+        compute_fn: Compute epilogue whose result is stored into `c`.
     """
 
     @inline(.always)
@@ -141,7 +155,15 @@ def elementwise_epilogue_c_tile[
             var m_coord = idx_m + offset.M
             var c_coord = Coord(m_coord, n_coord)
             var c_val = c.load[width=col_chunk_size, alignment=1](c_coord)
-            func[c_type, col_chunk_size](c_coord, c_val)
+            comptime if has_compute_fn:
+                c.store[alignment=1](
+                    c_coord,
+                    compute_fn[c_type, col_chunk_size, alignment=1](
+                        c_coord, c_val
+                    ),
+                )
+            else:
+                epilogue_fn[c_type, col_chunk_size, alignment=1](c_coord, c_val)
 
     vectorize[simd_width](tile_len.N, activation_on_col_chunk)
 
@@ -159,7 +181,7 @@ def tiled_matmul_run[
     & def(
         GemmShape,
         GemmShape,
-        TileTensor[mut=False, address_space=.GENERIC, ...],
+        TileTensor[mut=True, address_space=.GENERIC, ...],
     ) -> None,
 ](
     alg: algorithm,
@@ -256,7 +278,7 @@ struct TiledMatmul[
     & def(
         GemmShape,
         GemmShape,
-        TileTensor[mut=False, address_space=.GENERIC, ...],
+        TileTensor[mut=True, address_space=.GENERIC, ...],
     ) -> None,
 ](ImplicitlyCopyable):
     """Tiled matmul implementation integrating packing, inner loop and tile
@@ -388,7 +410,7 @@ struct TiledMatmul[
                     GemmShape(
                         tile_kernel_rows, sub_tile_n_k[0], sub_tile_n_k[1]
                     ),
-                    self.c.as_imm(),
+                    self.c,
                 )
 
         comptime if Self.kernel_id == InnerKernelID.I8MM:
@@ -493,10 +515,14 @@ struct TiledMatmul[
 
 @inline(.always)
 def _matmul_cpu_impl[
+    EpilogueFnType: ElementwiseEpilogueFn,
+    ComputeFnType: ElementwiseComputeFn,
+    //,
     config: KernelConfig,
     transpose_b: Bool,
     b_packed: Bool,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type],
+    has_epilogue_fn: Bool,
+    has_compute_fn: Bool,
     kernel_id: InnerKernelID,
     algorithm: InnerMatmulKernel,
 ](
@@ -504,6 +530,8 @@ def _matmul_cpu_impl[
     c: TileTensor[mut=True, address_space=.GENERIC, ...],
     a: TileTensor[mut=False, address_space=.GENERIC, ...],
     b: TileTensor[mut=False, address_space=.GENERIC, ...],
+    epilogue_fn: EpilogueFnType,
+    compute_fn: ComputeFnType,
     num_threads: Int = -1,
     ctx: Optional[DeviceContext.CPU] = None,
 ) raises:
@@ -517,11 +545,13 @@ def _matmul_cpu_impl[
     var k = shape.K
     # Matrix by vector pattern -> use gemv
     if n == 1:
-        var out = TileTensor(c.ptr, row_major(Int(c.dim[0]())))
-        var rhs = TileTensor(b.ptr, row_major(Int(b.dim[0]())))
-        gemv[parallelize=True, elementwise_lambda_fn=elementwise_lambda_fn](
-            out, a, rhs
-        )
+        var out = c.reshape(row_major(Int(c.dim[0]())))
+        var rhs = b.reshape(row_major(Int(b.dim[0]())))
+        _gemv_cpu[
+            parallelize=True,
+            has_epilogue_fn=has_epilogue_fn,
+            has_compute_fn=has_compute_fn,
+        ](out, a, rhs, epilogue_fn, compute_fn)
     else:
         # SGEMM calls for MacOS >= 13.0.0 and a, b, c of type Float32 are
         # directed to the special Apple-specific implementations.
@@ -532,14 +562,16 @@ def _matmul_cpu_impl[
                 apple_gemv[
                     b_packed=b_packed,
                     transpose_b=transpose_b,
-                    elementwise_lambda_fn=elementwise_lambda_fn,
-                ](c, a, b, ctx=ctx)
+                    has_epilogue_fn=has_epilogue_fn,
+                    has_compute_fn=has_compute_fn,
+                ](c, a, b, epilogue_fn, compute_fn, ctx=ctx)
             else:
                 comptime apple_transpose = True if b_packed else transpose_b
                 apple_matmul[
                     transpose_b=apple_transpose,
-                    elementwise_lambda_fn=elementwise_lambda_fn,
-                ](c, a, b)
+                    has_epilogue_fn=has_epilogue_fn,
+                    has_compute_fn=has_compute_fn,
+                ](c, a, b, epilogue_fn, compute_fn)
             return
 
         var complexity = m * n * k
@@ -591,7 +623,7 @@ def _matmul_cpu_impl[
             var t0 = sub_matmul_config.offset[0]
             var t1 = t0 + sub_matmul_config.shape[0]
             packA_i8mm[a.dtype](
-                t0, t1, k, a.ptr, a_packed_alloc.unsafe_value().unsafe_ptr()
+                t0, t1, k, a, a_packed_alloc.unsafe_value().unsafe_ptr()
             )
 
         @inline(.always)
@@ -619,7 +651,8 @@ def _matmul_cpu_impl[
                     config,
                     transpose_b,
                     b_packed,
-                    elementwise_lambda_fn,
+                    has_epilogue_fn,
+                    has_compute_fn,
                     kernel_id,
                 ](
                     alg,
@@ -631,24 +664,26 @@ def _matmul_cpu_impl[
                     b,
                     GemmShape(sub_matmul_config.shape),
                     GemmShape(sub_matmul_config.offset),
+                    epilogue_fn,
+                    compute_fn,
                 )
             else:
                 _submatmul_sequential_sync[
                     config,
                     transpose_b,
                     b_packed,
-                    elementwise_lambda_fn,
+                    has_epilogue_fn,
+                    has_compute_fn,
                     kernel_id,
                 ](
                     alg,
                     c,
-                    TileTensor(
-                        a.ptr.unsafe_mut_cast[True]().as_unsafe_any_origin(),
-                        a.layout,
-                    ),
+                    a.as_unsafe_any_origin(),
                     b,
                     GemmShape(sub_matmul_config.shape),
                     GemmShape(sub_matmul_config.offset),
+                    epilogue_fn,
+                    compute_fn,
                 )
 
         # i8mm partition needs to be optimized as a function of m, n and k
@@ -669,7 +704,6 @@ def matmul[
     *,
     transpose_b: Bool = False,
     b_packed: Bool = False,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     saturated_vnni: Bool = False,
 ](
     c: TileTensor[mut=True, address_space=.GENERIC, ...],
@@ -687,8 +721,6 @@ def matmul[
             `False`).
         b_packed: Whether B was pre-packed offline in the cache-friendly
             layout (defaults to `False`).
-        elementwise_lambda_fn: Optional elementwise epilogue applied to each
-            output tile (defaults to `None`).
         saturated_vnni: When `True`, uses the saturating x86 variant, which
             requires the `a` operand to lie in `[0, 127]`; it saves
             instructions only on the AVX2 emulation path used when the target
@@ -704,12 +736,179 @@ def matmul[
             which selects automatically).
         ctx: Device context governing parallelism (defaults to `None`).
     """
+    _matmul_cpu_dispatch[
+        transpose_b=transpose_b,
+        b_packed=b_packed,
+        saturated_vnni=saturated_vnni,
+        has_epilogue_fn=False,
+        has_compute_fn=False,
+    ](
+        c,
+        a,
+        b,
+        no_epilogue_fn,
+        no_compute_fn,
+        kernel_type_m,
+        num_threads,
+        ctx,
+    )
+
+
+@inline(.always)
+def matmul[
+    EpilogueFnType: ElementwiseEpilogueFn,
+    //,
+    *,
+    transpose_b: Bool = False,
+    b_packed: Bool = False,
+    saturated_vnni: Bool = False,
+](
+    c: TileTensor[mut=True, address_space=.GENERIC, ...],
+    a: TileTensor[mut=False, address_space=.GENERIC, ...],
+    b: TileTensor[mut=False, address_space=.GENERIC, ...],
+    epilogue_fn: EpilogueFnType,
+    kernel_type_m: Int,
+    num_threads: Int = -1,
+    ctx: Optional[DeviceContext.CPU] = None,
+) raises:
+    """TileTensor matmul dispatcher with a fused elementwise epilogue.
+
+    The kernel accumulates into `c`, then calls `epilogue_fn` with the
+    `(m, n)` coordinates and value of each finished output chunk.
+
+    Parameters:
+        EpilogueFnType: Type of `epilogue_fn` (inferred).
+        transpose_b: Whether the B operand is transposed (defaults to
+            `False`).
+        b_packed: Whether B was pre-packed offline in the cache-friendly
+            layout (defaults to `False`).
+        saturated_vnni: When `True`, uses the saturating x86 variant, which
+            requires the `a` operand to lie in `[0, 127]`; it saves
+            instructions only on the AVX2 emulation path used when the target
+            lacks VNNI (defaults to `False`).
+
+    Args:
+        c: Output matrix buffer accumulating the matmul result.
+        a: Left operand of the matmul.
+        b: Right operand of the matmul.
+        epilogue_fn: Epilogue applied to each finished output chunk.
+        kernel_type_m: M dimension used to select the kernel variant, or `0`
+            if unknown.
+        num_threads: Number of worker threads to use (defaults to `-1`,
+            which selects automatically).
+        ctx: Device context governing parallelism (defaults to `None`).
+    """
+    _matmul_cpu_dispatch[
+        transpose_b=transpose_b,
+        b_packed=b_packed,
+        saturated_vnni=saturated_vnni,
+        has_epilogue_fn=True,
+        has_compute_fn=False,
+    ](
+        c,
+        a,
+        b,
+        epilogue_fn,
+        no_compute_fn,
+        kernel_type_m,
+        num_threads,
+        ctx,
+    )
+
+
+@inline(.always)
+def matmul[
+    ComputeFnType: ElementwiseComputeFn,
+    //,
+    *,
+    transpose_b: Bool = False,
+    b_packed: Bool = False,
+    saturated_vnni: Bool = False,
+](
+    c: TileTensor[mut=True, address_space=.GENERIC, ...],
+    a: TileTensor[mut=False, address_space=.GENERIC, ...],
+    b: TileTensor[mut=False, address_space=.GENERIC, ...],
+    compute_fn: ComputeFnType,
+    kernel_type_m: Int,
+    num_threads: Int = -1,
+    ctx: Optional[DeviceContext.CPU] = None,
+) raises:
+    """TileTensor matmul dispatcher with a fused elementwise compute epilogue.
+
+    The kernel accumulates into `c`, then stores `compute_fn` of each
+    finished output chunk back into `c`, so `compute_fn` never needs to
+    capture `c`.
+
+    Parameters:
+        ComputeFnType: Type of `compute_fn` (inferred).
+        transpose_b: Whether the B operand is transposed (defaults to
+            `False`).
+        b_packed: Whether B was pre-packed offline in the cache-friendly
+            layout (defaults to `False`).
+        saturated_vnni: When `True`, uses the saturating x86 variant, which
+            requires the `a` operand to lie in `[0, 127]`; it saves
+            instructions only on the AVX2 emulation path used when the target
+            lacks VNNI (defaults to `False`).
+
+    Args:
+        c: Output matrix buffer accumulating the matmul result.
+        a: Left operand of the matmul.
+        b: Right operand of the matmul.
+        compute_fn: Compute epilogue applied to each finished output chunk.
+        kernel_type_m: M dimension used to select the kernel variant, or `0`
+            if unknown.
+        num_threads: Number of worker threads to use (defaults to `-1`,
+            which selects automatically).
+        ctx: Device context governing parallelism (defaults to `None`).
+    """
+    _matmul_cpu_dispatch[
+        transpose_b=transpose_b,
+        b_packed=b_packed,
+        saturated_vnni=saturated_vnni,
+        has_epilogue_fn=False,
+        has_compute_fn=True,
+    ](
+        c,
+        a,
+        b,
+        no_epilogue_fn,
+        compute_fn,
+        kernel_type_m,
+        num_threads,
+        ctx,
+    )
+
+
+@inline(.always)
+def _matmul_cpu_dispatch[
+    EpilogueFnType: ElementwiseEpilogueFn,
+    ComputeFnType: ElementwiseComputeFn,
+    //,
+    *,
+    transpose_b: Bool,
+    b_packed: Bool,
+    saturated_vnni: Bool,
+    has_epilogue_fn: Bool,
+    has_compute_fn: Bool,
+](
+    c: TileTensor[mut=True, address_space=.GENERIC, ...],
+    a: TileTensor[mut=False, address_space=.GENERIC, ...],
+    b: TileTensor[mut=False, address_space=.GENERIC, ...],
+    epilogue_fn: EpilogueFnType,
+    compute_fn: ComputeFnType,
+    kernel_type_m: Int,
+    num_threads: Int,
+    ctx: Optional[DeviceContext.CPU],
+) raises:
     comptime assert c.rank == 2, "c must be rank 2"
     comptime assert a.rank == 2, "a must be rank 2"
     comptime assert b.rank == 2, "b must be rank 2"
     comptime assert c.flat_rank == 2
     comptime assert a.flat_rank == 2
     comptime assert b.flat_rank == 2
+    comptime assert not (
+        has_epilogue_fn and has_compute_fn
+    ), "pass either epilogue_fn or compute_fn, not both"
 
     # KERN-2790: for low-precision output (f16/bf16), route through an f32
     # scratch buffer so we accumulate in fp32 across all K tiles and cast
@@ -730,31 +929,53 @@ def matmul[
                 count=scratch_m * scratch_n
             )
         ).into_managed()
-        var scratch_ptr: UnsafePointer[
+        var scratch_ptr: MutPointer[
             Scalar[scratch_type], origin_of(scratch_alloc)
         ] = scratch_alloc.unsafe_ptr()
         var scratch = TileTensor(scratch_ptr, row_major(scratch_m, scratch_n))
 
-        @__parameter
         @inline(.always)
         def cast_epilogue[
-            dtype: DType, width: SIMDLength, *, alignment: Int = 1
-        ](coord: Coord, val: SIMD[dtype, width]):
+            dtype: DType, width: SIMDLength, *, alignment: Int
+        ](coord: Coord, val: SIMD[dtype, width]) {
+            var c,
+            var epilogue_fn,
+            var compute_fn,
+        }:
             comptime assert (
                 coord.rank == 2
             ), "the matmul epilogue contract is rank 2"
             var cast_val = val.cast[c.dtype]()
-            comptime if case .Some(user_fn) = elementwise_lambda_fn:
-                user_fn[c.dtype, width, alignment=alignment](coord, cast_val)
+            comptime if has_epilogue_fn:
+                epilogue_fn[c.dtype, width, alignment=alignment](
+                    coord, cast_val
+                )
+            elif has_compute_fn:
+                c.store[alignment=alignment](
+                    coord,
+                    compute_fn[c.dtype, width, alignment=alignment](
+                        coord, cast_val
+                    ),
+                )
             else:
-                c.store[width=width, alignment=alignment](coord, cast_val)
+                c.store[alignment=alignment](coord, cast_val)
 
-        matmul[
+        _matmul_cpu_dispatch[
             transpose_b=transpose_b,
             b_packed=b_packed,
-            elementwise_lambda_fn=cast_epilogue,
             saturated_vnni=saturated_vnni,
-        ](scratch, a, b, kernel_type_m, num_threads, ctx)
+            has_epilogue_fn=True,
+            has_compute_fn=False,
+        ](
+            scratch,
+            a,
+            b,
+            cast_epilogue,
+            no_compute_fn,
+            kernel_type_m,
+            num_threads,
+            ctx,
+        )
 
         return
 
@@ -763,7 +984,7 @@ def matmul[
     @inline(.always)
     def dispatch_on_kernel_type[
         kernel_type: Bool
-    ]() raises {c, a, b, num_threads, ctx}:
+    ]() raises {c, a, b, epilogue_fn, compute_fn, num_threads, ctx}:
         comptime config = get_kernel_config[
             a.dtype,
             b.dtype,
@@ -777,13 +998,16 @@ def matmul[
                     config,
                     transpose_b,
                     b_packed,
-                    elementwise_lambda_fn,
+                    has_epilogue_fn,
+                    has_compute_fn,
                     kernel_id,
                 ](
                     Inner_matmul_default(),
                     c,
                     a,
                     b,
+                    epilogue_fn,
+                    compute_fn,
                     num_threads,
                     ctx,
                 )
@@ -792,13 +1016,16 @@ def matmul[
                     config,
                     transpose_b,
                     b_packed,
-                    elementwise_lambda_fn,
+                    has_epilogue_fn,
+                    has_compute_fn,
                     kernel_id,
                 ](
                     Inner_matmul_vnni[saturated_vnni](),
                     c,
                     a,
                     b,
+                    epilogue_fn,
+                    compute_fn,
                     num_threads,
                     ctx,
                 )
@@ -807,13 +1034,16 @@ def matmul[
                     config,
                     transpose_b,
                     b_packed,
-                    elementwise_lambda_fn,
+                    has_epilogue_fn,
+                    has_compute_fn,
                     kernel_id,
                 ](
                     Inner_matmul_neon(),
                     c,
                     a,
                     b,
+                    epilogue_fn,
+                    compute_fn,
                     num_threads,
                     ctx,
                 )
@@ -822,13 +1052,16 @@ def matmul[
                     config,
                     transpose_b,
                     b_packed,
-                    elementwise_lambda_fn,
+                    has_epilogue_fn,
+                    has_compute_fn,
                     kernel_id,
                 ](
                     Inner_matmul_i8mm(),
                     c,
                     a,
                     b,
+                    epilogue_fn,
+                    compute_fn,
                     num_threads,
                     ctx,
                 )
@@ -842,10 +1075,14 @@ def matmul[
 
 
 def _submatmul_sequential_sync[
+    EpilogueFnType: ElementwiseEpilogueFn,
+    ComputeFnType: ElementwiseComputeFn,
+    //,
     config: KernelConfig,
     transpose_b: Bool,
     b_packed: Bool,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type],
+    has_epilogue_fn: Bool,
+    has_compute_fn: Bool,
     kernel_id: InnerKernelID,
     algorithm: InnerMatmulKernel,
 ](
@@ -855,33 +1092,28 @@ def _submatmul_sequential_sync[
     b: TileTensor[mut=False, address_space=.GENERIC, ...],
     sub_matrix_shape: GemmShape,
     sub_matrix_offset: GemmShape,
+    epilogue_fn: EpilogueFnType,
+    compute_fn: ComputeFnType,
 ):
     comptime simd_size = config.simd_size
+    comptime has_epilogue = has_epilogue_fn or has_compute_fn
 
     def elementwise_closure(
         offset: GemmShape,
         shape: GemmShape,
-        c_read: TileTensor[mut=False, address_space=.GENERIC, ...],
-    ):
-        comptime if case .Some(func) = elementwise_lambda_fn:
+        c_tile: TileTensor[mut=True, address_space=.GENERIC, ...],
+    ) {var epilogue_fn, var compute_fn}:
+        comptime if has_epilogue:
             elementwise_epilogue_c_tile[
-                simd_size,
-                c_read.dtype,
-                func,
-            ](
-                offset,
-                shape,
-                c_read,
-            )
-        else:
-            pass
+                simd_size, c_tile.dtype, has_compute_fn=has_compute_fn
+            ](offset, shape, c_tile, epilogue_fn, compute_fn)
 
     tiled_matmul_run[
         config,
         transpose_b,
         b_packed,
         simd_size,
-        elementwise_lambda_fn.__bool__(),
+        has_epilogue,
         kernel_id,
     ](
         alg,
@@ -895,10 +1127,14 @@ def _submatmul_sequential_sync[
 
 
 def _submatmul_sequential_sync[
+    EpilogueFnType: ElementwiseEpilogueFn,
+    ComputeFnType: ElementwiseComputeFn,
+    //,
     config: KernelConfig,
     transpose_b: Bool,
     b_packed: Bool,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type],
+    has_epilogue_fn: Bool,
+    has_compute_fn: Bool,
     saturated_vnni: Bool,
 ](
     c: TileTensor[mut=True, address_space=.GENERIC, ...],
@@ -906,6 +1142,8 @@ def _submatmul_sequential_sync[
     b: TileTensor[mut=False, address_space=.GENERIC, ...],
     sub_matrix_shape: GemmShape,
     sub_matrix_offset: GemmShape,
+    epilogue_fn: EpilogueFnType,
+    compute_fn: ComputeFnType,
 ):
     comptime kernel_id = select_inner_kernel[a.dtype, b.dtype, c.dtype]()
 
@@ -915,7 +1153,8 @@ def _submatmul_sequential_sync[
                 config,
                 transpose_b,
                 b_packed,
-                elementwise_lambda_fn,
+                has_epilogue_fn,
+                has_compute_fn,
                 kernel_id,
             ](
                 Inner_matmul_default(),
@@ -924,13 +1163,16 @@ def _submatmul_sequential_sync[
                 b,
                 sub_matrix_shape,
                 sub_matrix_offset,
+                epilogue_fn,
+                compute_fn,
             )
         case .VNNI:
             _submatmul_sequential_sync[
                 config,
                 transpose_b,
                 b_packed,
-                elementwise_lambda_fn,
+                has_epilogue_fn,
+                has_compute_fn,
                 kernel_id,
             ](
                 Inner_matmul_vnni[saturated_vnni](),
@@ -939,13 +1181,16 @@ def _submatmul_sequential_sync[
                 b,
                 sub_matrix_shape,
                 sub_matrix_offset,
+                epilogue_fn,
+                compute_fn,
             )
         case .NEON:
             _submatmul_sequential_sync[
                 config,
                 transpose_b,
                 b_packed,
-                elementwise_lambda_fn,
+                has_epilogue_fn,
+                has_compute_fn,
                 kernel_id,
             ](
                 Inner_matmul_neon(),
@@ -954,13 +1199,16 @@ def _submatmul_sequential_sync[
                 b,
                 sub_matrix_shape,
                 sub_matrix_offset,
+                epilogue_fn,
+                compute_fn,
             )
         case .I8MM:
             _submatmul_sequential_sync[
                 config,
                 transpose_b,
                 b_packed,
-                elementwise_lambda_fn,
+                has_epilogue_fn,
+                has_compute_fn,
                 kernel_id,
             ](
                 Inner_matmul_i8mm(),
@@ -969,6 +1217,8 @@ def _submatmul_sequential_sync[
                 b,
                 sub_matrix_shape,
                 sub_matrix_offset,
+                epilogue_fn,
+                compute_fn,
             )
         case _:
             comptime assert False, "no _run_inner_loop implementation"

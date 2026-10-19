@@ -57,18 +57,13 @@ pluggable-writer shape.
 Target hardware: SM100 (B200).
 """
 
-from std.collections import Optional
 from std.memory import Pointer
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 
 from layout import Coord
 from layout.tma_async import TMATensorTile
 
-from linalg.utils import (
-    ElementwiseComputeFn,
-    ElementwiseEpilogueFn,
-    elementwise_epilogue_type,
-)
+from linalg.utils import ElementwiseComputeFn, ElementwiseEpilogueFn
 
 from std.utils.index import IndexList
 
@@ -115,7 +110,6 @@ trait OutputWriter:
         c_smem_dim1: Int,
         num_output_stages: Int,
         num_output_warps: Int,
-        elementwise_lambda_fn: Optional[elementwise_epilogue_type],
         has_epilogue_fn: Bool,
         has_compute_fn: Bool,
         register_based_epilogue: Bool,
@@ -165,8 +159,6 @@ trait OutputWriter:
             c_smem_dim1: Second dimension of the C SMEM tile array.
             num_output_stages: Number of stages in the C SMEM tile array.
             num_output_warps: Number of warps participating in the epilogue.
-            elementwise_lambda_fn: Optional fused elementwise epilogue that
-                writes the output tile to global memory, or `None`.
             has_epilogue_fn: Whether `epilogue_fn` stores the output tile
                 to global memory instead of the TMA store.
             has_compute_fn: Whether `compute_fn` is applied to the

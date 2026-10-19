@@ -38,7 +38,7 @@ comptime log = logger.Logger[logger.Level.INFO](fd=stderr, prefix="[OP] ")
 """Logger instance for operation tracing with INFO level and [OP] prefix."""
 
 
-def get_safe_task_id(ctx: DeviceContext) -> OptionalReg[Int]:
+def get_safe_task_id(ctx: DeviceContext.Generic) -> OptionalReg[Int]:
     """Safely extract task_id from DeviceContext, returning None if null/invalid.
 
     Args:
@@ -108,7 +108,7 @@ struct TraceCategory(EnumLike, Equatable, Intable, TrivialRegisterPassable):
     ].values
 
     comptime _enum_case_types = TypeList.splat[
-        ParameterList[Self._enum_case_names].size, NoneType
+        ParameterList[Self._enum_case_names].length, NoneType
     ].values
 
     @inline(.always)
@@ -188,7 +188,7 @@ struct TraceLevel(Comparable, EnumLike, TrivialRegisterPassable):
     ].values
 
     comptime _enum_case_types = TypeList.splat[
-        ParameterList[Self._enum_case_names].size, NoneType
+        ParameterList[Self._enum_case_names].length, NoneType
     ].values
 
     @inline(.always)

@@ -2141,4 +2141,25 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         },
         device_encoding_map={"gpu": ["bfloat16"]},
     ),
+    # transformers cannot load the NVFP4 checkpoint, so the torch reference
+    # is the BF16 checkpoint it was quantized from, and the quantization error
+    # lands in the logit_verification_config.yaml tolerances. MAX runs the
+    # ModuleV3 path like the smoke-test recipe, but keeps the default BF16 KV
+    # cache rather than the recipe's FP8 one, so only the weight quantization
+    # differs from the reference. The context and batch are capped like the
+    # Nano entry above so the paged KV cache and the per-slot SSM state pool
+    # stay small. Tensor parallelism comes from the device list: the yaml
+    # entry runs on the 2x B200 job (gpu:0,1), so MAX runs at TP=2.
+    "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4": NemotronHOracle(
+        model_path="nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4",
+        torch_model_path="nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16",
+        config_params={
+            "max_length": 8192,
+            "max_batch_size": 8,
+            "trust_remote_code": True,
+            "device_memory_utilization": 0.9,
+            "prefer_module_v3": True,
+        },
+        device_encoding_map={"gpu": ["float4_e2m1fnx2"]},
+    ),
 }

@@ -11,9 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.sys import default_accelerator
 
-from max.gpu.host import get_gpu_target
+from max.gpu.host import get_gpu_target, default_accelerator
 from max.gpu.host.compile import _compile_code
 from layout import ComptimeInt, RowMajorLayout
 from layout.tensor_engine import DefaultEngine

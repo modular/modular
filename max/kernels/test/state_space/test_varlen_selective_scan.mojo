@@ -162,16 +162,16 @@ def run_varlen_selective_scan_fwd[
         row_major(batch + 1),
     )
     var cumsum = 0
-    query_start_loc_h.unsafe_ptr().store(0, Int32(0))
+    query_start_loc_h[0] = Int32(0)
     for i in range(batch):
         cumsum += seq_lengths[i]
-        query_start_loc_h.unsafe_ptr().store(i + 1, Int32(cumsum))
+        query_start_loc_h[i + 1] = Int32(cumsum)
 
     # cache_indices: (batch,) - can be empty or identity mapping
     var cache_indices_heap = List(length=batch, fill=Int32(0))
     var cache_indices_h = TileTensor(cache_indices_heap, row_major(batch))
     for i in range(batch):
-        cache_indices_h.unsafe_ptr().store(i, Int32(i))
+        cache_indices_h[i] = Int32(i)
 
     # has_initial_state: (batch,) - can be empty or all False
     var has_initial_state_heap = List(length=batch, fill=Scalar[.bool](False))
@@ -190,14 +190,16 @@ def run_varlen_selective_scan_fwd[
         random(delta_bias_h)
 
     # Scale A to be negative for stability
+    var A_flat = A_h.reshape(row_major(dim * dstate))
     for i in range(dim * dstate):
-        var val = A_h.unsafe_ptr().load(i)
-        A_h.unsafe_ptr().store(i, Scalar[dtype](Float32(val) * -0.5))
+        var val = A_flat[i]
+        A_flat[i] = Scalar[dtype](Float32(val) * -0.5)
 
     # Scale delta to be positive
+    var delta_flat = delta_h.reshape(row_major(dim * total_length))
     for i in range(dim * total_length):
-        var val = delta_h.unsafe_ptr().load(i)
-        delta_h.unsafe_ptr().store(i, Scalar[dtype](abs(Float32(val)) * 0.5))
+        var val = delta_flat[i]
+        delta_flat[i] = Scalar[dtype](abs(Float32(val)) * 0.5)
 
     var ssm_states_tt = TileTensor(
         ssm_states_heap,
@@ -240,15 +242,15 @@ def run_varlen_selective_scan_fwd[
 
     # Basic sanity check: output should not be all zeros
     var has_nonzero = False
-    var output_size = dim * total_length
-    for i in range(output_size):
-        var value = (
-            z_buf.unsafe_ptr()
-            .load(i) if has_z else output_buf.unsafe_ptr()
-            .load(i)
-        )
-        if abs(Float32(value)) > 1e-6:
-            has_nonzero = True
+    for d in range(dim):
+        for t in range(total_length):
+            var value = Float32(z_buf[d, t]) if has_z else Float32(
+                output_buf[d, t]
+            )
+            if abs(value) > 1e-6:
+                has_nonzero = True
+                break
+        if has_nonzero:
             break
 
     if not has_nonzero:
@@ -355,7 +357,7 @@ def run_varlen_selective_state_update[
         row_major(batch),
     )
     for i in range(batch):
-        state_batch_indices_h.unsafe_ptr().store(i, Int32(i))
+        state_batch_indices_h[i] = Int32(i)
 
     # Initialize input data
     random(x_h)
@@ -371,14 +373,16 @@ def run_varlen_selective_state_update[
         random(dt_bias_h)
 
     # Scale A to be negative for stability
+    var A_flat = A_h.reshape(row_major(nheads * dim * dstate))
     for i in range(nheads * dim * dstate):
-        var val = A_h.unsafe_ptr().load(i)
-        A_h.unsafe_ptr().store(i, Scalar[dtype](Float32(val) * -0.5))
+        var val = A_flat[i]
+        A_flat[i] = Scalar[dtype](Float32(val) * -0.5)
 
     # Scale dt to be positive
+    var dt_flat = dt_h.reshape(row_major(batch * nheads * dim))
     for i in range(batch * nheads * dim):
-        var val = dt_h.unsafe_ptr().load(i)
-        dt_h.unsafe_ptr().store(i, Scalar[dtype](abs(Float32(val)) * 0.5))
+        var val = dt_flat[i]
+        dt_flat[i] = Scalar[dtype](abs(Float32(val)) * 0.5)
 
     var state_tt = TileTensor(
         state_heap,
@@ -412,8 +416,9 @@ def run_varlen_selective_state_update[
 
     # Basic sanity check: output should not be all zeros
     var has_nonzero = False
+    var output_flat = output_h.reshape(row_major(batch * nheads * dim))
     for i in range(batch * nheads * dim):
-        if abs(Float32(output_h.unsafe_ptr().load(i))) > 1e-6:
+        if abs(Float32(output_flat[i])) > 1e-6:
             has_nonzero = True
             break
 
@@ -431,7 +436,7 @@ def run_varlen_selective_state_update[
 def test_varlen_selective_scan_fwd_equal_lengths() raises:
     """Test varlen selective scan forward with equal-length sequences."""
     run_varlen_selective_scan_fwd[
-        DType.float32,
+        .float32,
         4,
         has_D=True,
         has_z=True,
@@ -443,7 +448,7 @@ def test_varlen_selective_scan_fwd_equal_lengths() raises:
 def test_varlen_selective_scan_fwd_variable_lengths() raises:
     """Test varlen selective scan forward with variable-length sequences."""
     run_varlen_selective_scan_fwd[
-        DType.float32,
+        .float32,
         4,
         has_D=True,
         has_z=True,
@@ -455,7 +460,7 @@ def test_varlen_selective_scan_fwd_variable_lengths() raises:
 def test_varlen_selective_scan_fwd_without_D() raises:
     """Test varlen selective scan forward without D tensor."""
     run_varlen_selective_scan_fwd[
-        DType.float32,
+        .float32,
         4,
         has_D=False,
         has_z=True,
@@ -467,7 +472,7 @@ def test_varlen_selective_scan_fwd_without_D() raises:
 def test_varlen_selective_scan_fwd_without_z() raises:
     """Test varlen selective scan forward without z tensor."""
     run_varlen_selective_scan_fwd[
-        DType.float32,
+        .float32,
         4,
         has_D=True,
         has_z=False,
@@ -479,7 +484,7 @@ def test_varlen_selective_scan_fwd_without_z() raises:
 def test_varlen_selective_scan_fwd_with_delta_softplus() raises:
     """Test varlen selective scan forward with delta softplus activation."""
     run_varlen_selective_scan_fwd[
-        DType.float32,
+        .float32,
         4,
         has_D=True,
         has_z=True,
@@ -496,7 +501,7 @@ def test_varlen_selective_scan_fwd_with_delta_softplus() raises:
 def test_varlen_selective_state_update_basic() raises:
     """Test basic varlen selective state update."""
     run_varlen_selective_state_update[
-        DType.float32,
+        .float32,
         4,
         has_D=True,
         has_z=True,
@@ -508,7 +513,7 @@ def test_varlen_selective_state_update_basic() raises:
 def test_varlen_selective_state_update_without_D() raises:
     """Test varlen selective state update without D tensor."""
     run_varlen_selective_state_update[
-        DType.float32,
+        .float32,
         4,
         has_D=False,
         has_z=True,
@@ -520,7 +525,7 @@ def test_varlen_selective_state_update_without_D() raises:
 def test_varlen_selective_state_update_without_z() raises:
     """Test varlen selective state update without z tensor."""
     run_varlen_selective_state_update[
-        DType.float32,
+        .float32,
         4,
         has_D=True,
         has_z=False,
@@ -532,7 +537,7 @@ def test_varlen_selective_state_update_without_z() raises:
 def test_varlen_selective_state_update_with_dt_softplus() raises:
     """Test varlen selective state update with dt softplus activation."""
     run_varlen_selective_state_update[
-        DType.float32,
+        .float32,
         4,
         has_D=True,
         has_z=True,

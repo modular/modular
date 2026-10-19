@@ -1107,7 +1107,7 @@ struct ConvertPOPLoad : ConvertPOPToLLVMPattern<LoadOp> {
         /*isVolatile=*/cast<BoolAttr>(adaptor.getIsVolatile()).getValue(),
         /*isNonTemporal=*/cast<BoolAttr>(adaptor.getIsNonTemporal()).getValue(),
         /*isInvariant=*/cast<BoolAttr>(adaptor.getIsInvariant()).getValue(),
-        /*isInvariantGroup=*/false,
+        /*isInvariantGroup=*/false, /*isNoundef=*/false,
         /*ordering=*/getAtomicOrdering(adaptor.getOrdering()),
         /*syncscope=*/adaptor.getSyncscope()
             ? cast<StringAttr>(*adaptor.getSyncscope())

@@ -17,7 +17,7 @@
 
 from std.sys.info import CompilationTarget
 
-from layout import TileTensor
+from layout import Coord, TileTensor
 from layout.tile_layout import row_major
 from linalg.matmul import matmul
 from linalg.matmul.cpu import matmul as _matmul_cpu
@@ -47,9 +47,9 @@ def gemm_naive[
     for i in range(m):
         for p in range(k):
             for j in range(n):
-                var cur = rebind[Scalar[c_type]](c[i, j])
-                var av = rebind[Scalar[c_type]](a[i, p].cast[c_type]())
-                var bv = rebind[Scalar[c_type]](b[p, j].cast[c_type]())
+                var cur = c.load[width=1]((i, j))
+                var av = a.load[width=1]((i, p)).cast[c_type]()
+                var bv = b.load[width=1]((p, j)).cast[c_type]()
                 c[i, j] = cur + av * bv
 
 
@@ -60,6 +60,7 @@ def test_matmul[
     transpose_b: Bool,
     b_packed: Bool,
     saturated: Bool,
+    with_compute_fn: Bool = False,
 ](m: Int, n: Int, k: Int, kernel_type_m: Int) raises:
     var a_ptr = alloc[Scalar[a_type],](m * k, alignment=alignment)
     var b_ptr = alloc[Scalar[b_type],](k * n, alignment=alignment)
@@ -112,20 +113,38 @@ def test_matmul[
     comptime if b_packed:
         pack_b_ndbuffer[a_type, c_type](b, bp, kernel_type_m)
 
-    if kernel_type_m != 0:
+    @inline(.always)
+    def add_one_compute_fn[
+        dtype: DType, width: SIMDLength, *, alignment: Int
+    ](idx: Coord, val: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        return val + 1
+
+    comptime if with_compute_fn:
         _matmul_cpu[
             transpose_b=transpose_b,
             b_packed=b_packed,
             saturated_vnni=saturated,
-        ](c, a, bp, kernel_type_m)
+        ](c, a, bp, add_one_compute_fn, kernel_type_m)
     else:
-        matmul[
-            transpose_b=transpose_b,
-            b_packed=b_packed,
-            saturated_vnni=saturated,
-        ](c, a, bp)
+        if kernel_type_m != 0:
+            _matmul_cpu[
+                transpose_b=transpose_b,
+                b_packed=b_packed,
+                saturated_vnni=saturated,
+            ](c, a, bp, kernel_type_m)
+        else:
+            matmul[
+                transpose_b=transpose_b,
+                b_packed=b_packed,
+                saturated_vnni=saturated,
+            ](c, a, bp)
 
     gemm_naive(a, b, golden, m, n, k)
+
+    comptime if with_compute_fn:
+        for i in range(m):
+            for j in range(n):
+                golden[i, j] = golden[i, j] + 1
 
     for i in range(m):
         for j in range(n):
@@ -164,6 +183,7 @@ def test_matmul[
     b_packed: Bool,
     saturated: Bool,
     mixed_kernels: Bool,
+    with_compute_fn: Bool = False,
 ](m: Int, n: Int, k: Int) raises:
     test_matmul[
         a_type,
@@ -172,6 +192,7 @@ def test_matmul[
         False,  # transpose_b
         b_packed,
         saturated=saturated,
+        with_compute_fn=with_compute_fn,
     ](m, n, k, m if mixed_kernels else 0)
 
 
@@ -182,6 +203,7 @@ def test_shapes[
     b_packed: Bool,
     saturated: Bool,
     mixed_kernels: Bool,
+    with_compute_fn: Bool = False,
 ]() raises:
     def test_shapes_helper(m: Int, n: Int, k: Int) raises:
         test_matmul[
@@ -191,6 +213,7 @@ def test_shapes[
             b_packed=b_packed,
             saturated=saturated,
             mixed_kernels=mixed_kernels,
+            with_compute_fn=with_compute_fn,
         ](m, n, k)
 
     test_shapes_helper(256, 1024, 4096)
@@ -247,3 +270,22 @@ def main() raises:
     test_types[b_packed=True, saturated=False, mixed_kernels=True]()
     test_types[b_packed=False, saturated=True, mixed_kernels=True]()
     test_types[b_packed=True, saturated=True, mixed_kernels=True]()
+
+    test_shapes[
+        DType.uint8,
+        DType.int8,
+        DType.int32,
+        b_packed=False,
+        saturated=False,
+        mixed_kernels=True,
+        with_compute_fn=True,
+    ]()
+    test_shapes[
+        DType.float32,
+        DType.float32,
+        DType.float32,
+        b_packed=False,
+        saturated=False,
+        mixed_kernels=True,
+        with_compute_fn=True,
+    ]()

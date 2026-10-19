@@ -60,7 +60,6 @@ from .matmul.gpu.sm100_structured.blockwise_fp8.blockwise_fp8_matmul import (
 )
 from .utils import (
     ElementwiseEpilogueFn,
-    elementwise_epilogue_type,
     no_epilogue_fn,
 )
 from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
@@ -153,9 +152,8 @@ def quantize_static_scaled_fp8[
     )
 
 
-def zero_scale_global_kernel(
-    scale_global: UnsafePointer[Float32, MutAnyOrigin]
-):
+@__name("fp8_zero_scale_global_kernel")
+def zero_scale_global_kernel(scale_global: MutPointer[Float32, MutAnyOrigin]):
     """Zeros the global FP8 scale factor in a single thread.
 
     Writes ``0`` to ``scale_global[0]`` directly rather than using
@@ -174,6 +172,9 @@ def zero_scale_global_kernel(
 
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
+)
+@__name(
+    t"fp8_max_reduction_scale_{in_dtype}_{out_dtype}_t{num_threads}",
 )
 def max_reduction_scale_kernel[
     in_dtype: DType,
@@ -709,14 +710,17 @@ struct _QuantizeFp8Kernel[
             Int32(Self.num_threads)
         )
     )
+    @__name(
+        t"fp8_quantize_{Self.out_type}_{Self.scales_type}_gs{Self.group_size}_w{Self.simd_width}_t{Self.num_threads}{'_rb' if Self.row_bounded else ''}",
+    )
     def __call__(self) capturing:
         comptime if _groups_per_warp[Self.group_size, Self.simd_width]() > 0:
             self._quantize_warp_groups()
             return
 
         var input_fn = self.input_fn
-        var output = TileTensor(self.output.ptr, self.output.layout)
-        var scales = TileTensor(self.scales.ptr, self.scales.layout)
+        var output = self.output
+        var scales = self.scales
         var scale_ub = self.scale_ub
         var amax_floor = self.amax_floor
         comptime use_warp_tiling = Self.group_size <= Self.num_threads * Self.simd_width
@@ -735,7 +739,7 @@ struct _QuantizeFp8Kernel[
         # Both bounds are block-uniform, so every thread runs the same trip
         # count and the `block.max` barrier below stays convergent. Unbounded
         # launches keep one row per block, exactly as before.
-        var row_start = Int(block_idx.x)
+        var row_start = block_idx.x
         var row_end: Int
         var row_step: Int
         comptime if Self.row_bounded:
@@ -743,7 +747,7 @@ struct _QuantizeFp8Kernel[
             # trust it: a malformed prefix sum would otherwise write past the
             # end of both output buffers.
             row_end = min(Int(self.row_limit.value()[]), Int(output.dim[0]()))
-            row_step = Int(grid_dim.x)
+            row_step = grid_dim.x
         else:
             row_end = row_start + 1
             row_step = 1
@@ -830,6 +834,9 @@ struct _ComputeScalesFp8Kernel[
             Int32(Self.num_threads)
         )
     )
+    @__name(
+        t"fp8_compute_scales_{Self.out_type}_{Self.scales_type}_gs{Self.group_size}_w{Self.simd_width}_t{Self.num_threads}",
+    )
     def __call__(self) capturing:
         """Compute per-group FP8 scale factors without quantizing.
 
@@ -839,7 +846,7 @@ struct _ComputeScalesFp8Kernel[
         reduces these maxes to the tensor-wide scale.
         """
         var input_fn = self.input_fn
-        var scales = TileTensor(self.scales.ptr, self.scales.layout)
+        var scales = self.scales
         comptime fp8_max = Scalar[Self.out_type].MAX_FINITE
         comptime accum_type = get_accum_type[Self.in_type]()
 
@@ -910,6 +917,9 @@ struct _ReducePerTensorScaleFp8Kernel[
             Int32(Self.num_threads)
         )
     )
+    @__name(
+        t"fp8_reduce_per_tensor_scale_{Self.scales_type}_{Self.out_type}_g{Self.num_groups}_t{Self.num_threads}",
+    )
     def __call__(self) capturing:
         """Reduces the per-group maxes to one per-tensor FP8 scale.
 
@@ -918,9 +928,9 @@ struct _ReducePerTensorScaleFp8Kernel[
         slot with the per-tensor scale factor, so downstream readers that index
         ``scales[group_idx, row]`` all see the same value.
         """
-        var scales = TileTensor(self.scales.ptr, self.scales.layout)
+        var scales = self.scales
         var num_rows = Int(self.num_rows_dev)
-        var tid = Int(thread_idx.x)
+        var tid = thread_idx.x
 
         with PDL():
             var thread_max = Scalar[Self.scales_type](0)
@@ -989,6 +999,9 @@ struct _QuantizeFp8KernelPerTensor[
             Int32(Self.num_threads)
         )
     )
+    @__name(
+        t"fp8_quantize_per_tensor_{Self.out_type}_{Self.scales_type}_gs{Self.group_size}_w{Self.simd_width}_t{Self.num_threads}",
+    )
     def __call__(self) capturing:
         """Quantizes one (row, group) tile with the per-tensor FP8 scale.
 
@@ -996,8 +1009,8 @@ struct _QuantizeFp8KernelPerTensor[
         ``scales[group_idx, row]`` and does not write ``scales``.
         """
         var input_fn = self.input_fn
-        var output = TileTensor(self.output.ptr, self.output.layout)
-        var scales = TileTensor(self.scales.ptr, self.scales.layout)
+        var output = self.output
+        var scales = self.scales
         comptime accum_type = get_accum_type[Self.in_type]()
 
         var tid = thread_idx.x
@@ -1147,10 +1160,13 @@ struct _BatchedQuantizeFp8Kernel[
             Int32(Self.num_threads)
         )
     )
+    @__name(
+        t"fp8_batched_quantize_{Self.out_type}_{Self.scales_type}_gs{Self.group_size}_w{Self.simd_width}_t{Self.num_threads}",
+    )
     def __call__(self) capturing:
         var input_fn = self.input_fn
-        var output = TileTensor(self.output.ptr, self.output.layout)
-        var scales = TileTensor(self.scales.ptr, self.scales.layout)
+        var output = self.output
+        var scales = self.scales
         var scale_ub = self.scale_ub
         comptime use_warp_tiling = Self.group_size <= Self.num_threads * Self.simd_width
         comptime accum_type = get_accum_type[Self.in_type]()
@@ -1389,57 +1405,53 @@ def _matmul_dynamic_scaled_fp8_impl[
 
         comptime if _is_sm10x_gpu(ctx.default_device_info):
 
-            @__parameter
             @inline(.always)
-            @__copy_capture(a_scales, b_scales)
             def scale_compute_lambda_fn[
                 _dtype: DType,
                 width: SIMDLength,
                 *,
-                alignment: Int = align_of[SIMD[_dtype, width]](),
-            ](idx: Coord, val: SIMD[_dtype, width]) capturing -> SIMD[
-                _dtype, width
-            ]:
+                alignment: Int,
+            ](idx: Coord, val: SIMD[_dtype, width]) {
+                var a_scales, var b_scales
+            } -> SIMD[_dtype, width]:
                 comptime assert (
                     idx.rank == 2
                 ), "the matmul epilogue contract is rank 2"
-                var a_scale = a_scales.load[width=1](
-                    Coord(Idx[0], idx[0])
-                ).cast[.float32]()
+                var a_scale = a_scales.load[width=1]((Idx[0], idx[0])).cast[
+                    .float32
+                ]()
                 var b_scale: SIMD[.float32, width]
 
                 comptime if transpose_b:
-                    b_scale = b_scales.load[width=width](
-                        Coord(idx[1], Idx[0])
-                    ).cast[.float32]()
+                    b_scale = b_scales.load[width=width]((idx[1], Idx[0])).cast[
+                        .float32
+                    ]()
                 else:
-                    b_scale = b_scales.load[width=width](
-                        Coord(Idx[0], idx[1])
-                    ).cast[.float32]()
+                    b_scale = b_scales.load[width=width]((Idx[0], idx[1])).cast[
+                        .float32
+                    ]()
 
                 var scaled_val = val.cast[.float32]() * a_scale * b_scale
                 return scaled_val.cast[_dtype]()
 
-            @__parameter
             @inline(.always)
-            @__copy_capture(a_scales, b_scales)
             def scale_compute_lambda_fn_tensor[
                 _dtype: DType,
                 width: SIMDLength,
                 *,
-                alignment: Int = align_of[SIMD[_dtype, width]](),
-            ](idx: Coord, val: SIMD[_dtype, width]) capturing -> SIMD[
-                _dtype, width
-            ]:
+                alignment: Int,
+            ](idx: Coord, val: SIMD[_dtype, width]) {
+                var a_scales, var b_scales
+            } -> SIMD[_dtype, width]:
                 comptime assert (
                     idx.rank == 2
                 ), "the matmul epilogue contract is rank 2"
-                var a_scale = a_scales.load[width=1](
-                    Coord(Idx[0], Idx[0])
-                ).cast[.float32]()
-                var b_scale = b_scales.load[width=1](
-                    Coord(Idx[0], Idx[0])
-                ).cast[.float32]()
+                var a_scale = a_scales.load[width=1]((Idx[0], Idx[0])).cast[
+                    .float32
+                ]()
+                var b_scale = b_scales.load[width=1]((Idx[0], Idx[0])).cast[
+                    .float32
+                ]()
                 var scaled_val = val.cast[.float32]() * a_scale * b_scale
                 return scaled_val.cast[_dtype]()
 
@@ -1447,70 +1459,76 @@ def _matmul_dynamic_scaled_fp8_impl[
                 matmul[
                     target=target,
                     transpose_b=transpose_b,
-                    elementwise_compute_lambda_fn=scale_compute_lambda_fn_tensor,
                     _trace_description=_trace_string,
-                ](c, a, b, Optional[DeviceContext](ctx))
+                ](
+                    c,
+                    a,
+                    b,
+                    scale_compute_lambda_fn_tensor,
+                    Optional[DeviceContext](ctx),
+                )
             else:
                 matmul[
                     target=target,
                     transpose_b=transpose_b,
-                    elementwise_compute_lambda_fn=scale_compute_lambda_fn,
                     _trace_description=_trace_string,
-                ](c, a, b, Optional[DeviceContext](ctx))
+                ](
+                    c,
+                    a,
+                    b,
+                    scale_compute_lambda_fn,
+                    Optional[DeviceContext](ctx),
+                )
 
         else:
             # create a dummy TileTensor to instruct the matmul kernel to
             # output values in the correct dtype.
 
-            @__parameter
-            @__copy_capture(c, a_scales, b_scales)
             @inline(.always)
             def scaled_output_fn[
-                dtype: DType, width: SIMDLength, *, alignment: Int = 1
-            ](idx: Coord, val: SIMD[dtype, width]):
+                dtype: DType, width: SIMDLength, *, alignment: Int
+            ](idx: Coord, val: SIMD[dtype, width]) {
+                var c, var a_scales, var b_scales
+            }:
                 comptime assert (
                     idx.rank == 2
                 ), "the matmul epilogue contract is rank 2"
-                var a_scale = a_scales.load[width=1](
-                    Coord(Idx[0], idx[0])
-                ).cast[dtype]()
+                var a_scale = a_scales.load[width=1]((Idx[0], idx[0])).cast[
+                    dtype
+                ]()
                 var b_scale: SIMD[dtype, width]
 
                 comptime if transpose_b:
-                    b_scale = b_scales.load[width=width](
-                        Coord(idx[1], Idx[0])
-                    ).cast[dtype]()
+                    b_scale = b_scales.load[width=width]((idx[1], Idx[0])).cast[
+                        dtype
+                    ]()
                 else:
-                    b_scale = b_scales.load[width=width](
-                        Coord(Idx[0], idx[1])
-                    ).cast[dtype]()
+                    b_scale = b_scales.load[width=width]((Idx[0], idx[1])).cast[
+                        dtype
+                    ]()
 
                 var scaled_val = val * a_scale * b_scale
 
-                c.store[width=width, alignment=alignment](
-                    idx, scaled_val.cast[c_type]()
-                )
+                c.store[alignment=alignment](idx, scaled_val.cast[c_type]())
 
-            @__parameter
-            @__copy_capture(c, a_scales, b_scales)
             @inline(.always)
             def scaled_output_fn_tensor[
-                dtype: DType, width: SIMDLength, *, alignment: Int = 1
-            ](idx: Coord, val: SIMD[dtype, width]):
+                dtype: DType, width: SIMDLength, *, alignment: Int
+            ](idx: Coord, val: SIMD[dtype, width]) {
+                var c, var a_scales, var b_scales
+            }:
                 comptime assert (
                     idx.rank == 2
                 ), "the matmul epilogue contract is rank 2"
-                var a_scale = a_scales.load[width=1](
-                    Coord(Idx[0], Idx[0])
-                ).cast[dtype]()
-                var b_scale = b_scales.load[width=1](
-                    Coord(Idx[0], Idx[0])
-                ).cast[dtype]()
+                var a_scale = a_scales.load[width=1]((Idx[0], Idx[0])).cast[
+                    dtype
+                ]()
+                var b_scale = b_scales.load[width=1]((Idx[0], Idx[0])).cast[
+                    dtype
+                ]()
                 var scaled_val = val * a_scale * b_scale
 
-                c.store[width=width, alignment=alignment](
-                    idx, scaled_val.cast[c_type]()
-                )
+                c.store[alignment=alignment](idx, scaled_val.cast[c_type]())
 
             # Allocate an fp32 scratch buffer for the matmul accumulator;
             # the epilogue lambda reads from it, applies scaling, and
@@ -1531,16 +1549,26 @@ def _matmul_dynamic_scaled_fp8_impl[
                     matmul[
                         target=target,
                         transpose_b=transpose_b,
-                        elementwise_lambda_fn=scaled_output_fn_tensor,
                         _trace_description=_trace_string,
-                    ](c_scratch, a, b, Optional[DeviceContext](ctx))
+                    ](
+                        c_scratch,
+                        a,
+                        b,
+                        scaled_output_fn_tensor,
+                        Optional[DeviceContext](ctx),
+                    )
                 else:
                     matmul[
                         target=target,
                         transpose_b=transpose_b,
-                        elementwise_lambda_fn=scaled_output_fn,
                         _trace_description=_trace_string,
-                    ](c_scratch, a, b, Optional[DeviceContext](ctx))
+                    ](
+                        c_scratch,
+                        a,
+                        b,
+                        scaled_output_fn,
+                        Optional[DeviceContext](ctx),
+                    )
             else:
                 var N_rt = Int(b.dim[b_row_axis]())
                 var scratch_buffer = ctx.enqueue_create_buffer[.float32](
@@ -1555,16 +1583,26 @@ def _matmul_dynamic_scaled_fp8_impl[
                     matmul[
                         target=target,
                         transpose_b=transpose_b,
-                        elementwise_lambda_fn=scaled_output_fn_tensor,
                         _trace_description=_trace_string,
-                    ](c_scratch, a, b, Optional[DeviceContext](ctx))
+                    ](
+                        c_scratch,
+                        a,
+                        b,
+                        scaled_output_fn_tensor,
+                        Optional[DeviceContext](ctx),
+                    )
                 else:
                     matmul[
                         target=target,
                         transpose_b=transpose_b,
-                        elementwise_lambda_fn=scaled_output_fn,
                         _trace_description=_trace_string,
-                    ](c_scratch, a, b, Optional[DeviceContext](ctx))
+                    ](
+                        c_scratch,
+                        a,
+                        b,
+                        scaled_output_fn,
+                        Optional[DeviceContext](ctx),
+                    )
 
     elif (
         input_scale_granularity == "block"
@@ -1712,6 +1750,9 @@ def naive_blockwise_scaled_fp8_matmul[
     )
 
 
+@__name(
+    t"naive_blockwise_scaled_fp8_matmul_{c_type}_{a_type}_{b_type}_bd{BLOCK_DIM}{'_tb' if transpose_b else ''}{'_ep' if has_epilogue_fn else ''}",
+)
 def naive_blockwise_scaled_fp8_matmul_kernel[
     c_type: DType,
     a_type: DType,
@@ -1990,6 +2031,9 @@ def naive_blockwise_scaled_fp8_grouped_matmul[
     )
 
 
+@__name(
+    t"naive_blockwise_scaled_fp8_grouped_matmul_{c_type}_{a_type}_{b_type}{'_ntb' if not transpose_b else ''}",
+)
 def naive_blockwise_scaled_fp8_grouped_matmul_kernel[
     c_layout: TensorLayout,
     a_layout: TensorLayout,
@@ -2087,19 +2131,21 @@ def naive_blockwise_scaled_fp8_grouped_matmul_kernel[
     var skip = expert == -1
     var accum = Scalar[accum_type](0)
 
+    var a_rows = a.reshape(row_major(Int(a.dim[0]()), K))
+    var b_rows = b.reshape(row_major(Int(b.dim[0]()), N, K))
+    var c_rows = c.reshape(row_major(Int(c.dim[0]()), N))
+
     if not skip:
         var m_global = a_start_row + m_local
-        var a_row_ptr = a.ptr + m_global * K
-        var b_expert_ptr = b.ptr + expert * N * K
         for k in range(K):
-            var a_val = a_row_ptr[k].cast[accum_type]()
+            var a_val = a_rows[m_global, k].cast[accum_type]()
             var a_scale = rebind[Scalar[a_scales_type]](
                 a_scales[
                     k // MAT_A_ROWS_SCALE_SIZE,
                     m_global // MAT_A_COLS_SCALE_SIZE,
                 ]
             ).cast[accum_type]()
-            var b_val = b_expert_ptr[n * K + k].cast[accum_type]()
+            var b_val = b_rows[expert, n, k].cast[accum_type]()
             var b_scale = rebind[Scalar[b_scales_type]](
                 b_scales[
                     expert,
@@ -2109,8 +2155,7 @@ def naive_blockwise_scaled_fp8_grouped_matmul_kernel[
             ).cast[accum_type]()
             accum += a_val * b_val * a_scale * b_scale
 
-    var c_ptr = c.ptr + a_start_row * N
-    c_ptr[m_local * N + n] = accum.cast[c_type]()
+    c_rows[a_start_row + m_local, n] = accum.cast[c_type]()
 
 
 ########################################################
@@ -2303,9 +2348,11 @@ def blockwise_scaled_fp8_with_epilogue[
                 config=matmul_config,
                 n_scale_granularity=scales_granularity_mnk[1],
             ](c, a, b, a_scales, b_scales, ctx)
-            elementwise[simd_size, target="gpu"](
-                value_epilogue_wrapper, Coord(m, n), ctx
-            )
+            elementwise[
+                simd_size,
+                target="gpu",
+                _trace_description="elementwise_blockwise_scaled_fp8_epilogue",
+            ](value_epilogue_wrapper, Coord(m, n), ctx)
         else:
             blockwise_fp8_matmul[
                 transpose_b=transpose_b,

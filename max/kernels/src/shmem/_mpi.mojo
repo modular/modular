@@ -20,7 +20,7 @@ from std.ffi import (
     c_int,
     RTLD,
 )
-from std.sys import default_accelerator
+from max.gpu.host import default_accelerator
 
 # ===-----------------------------------------------------------------------===#
 # Library Load
@@ -74,7 +74,7 @@ def _get_mpi_function[
 # Types and constants
 # ===-----------------------------------------------------------------------===#
 
-comptime MPIComm = UnsafePointer[
+comptime MPIComm = MutPointer[
     OpaquePointer[MutUntrackedOrigin], MutUntrackedOrigin
 ]
 
@@ -95,10 +95,10 @@ def MPI_Init(
     var result = _get_mpi_function[
         "MPI_Init",
         def(
-            UnsafePointer[Int, origin_of(argc)],
-            UnsafePointer[Span[StaticString, ImmStaticOrigin], origin_of(argv)],
+            MutPointer[Int, origin_of(argc)],
+            MutPointer[Span[StaticString, ImmStaticOrigin], origin_of(argv)],
         ) thin -> c_int,
-    ]()(UnsafePointer(to=argc), UnsafePointer(to=argv))
+    ]()(Pointer(to=argc), Pointer(to=argv))
     if result != 0:
         raise Error("failed to MPI_Init with error code:", result)
 
@@ -107,23 +107,23 @@ def MPI_Init_thread(
     mut argc: Int,
     mut argv: Span[StaticString, ImmStaticOrigin],
     required: c_int,
-    provided: UnsafePointer[c_int, MutAnyOrigin],
+    provided: MutPointer[c_int, MutAnyOrigin],
 ) raises:
     """Initialize MPI."""
     var result = _get_mpi_function[
         "MPI_Init_thread",
         def(
-            UnsafePointer[Int, origin_of(argc)],
-            UnsafePointer[Span[StaticString, ImmStaticOrigin], origin_of(argv)],
+            MutPointer[Int, origin_of(argc)],
+            MutPointer[Span[StaticString, ImmStaticOrigin], origin_of(argv)],
             c_int,
-            UnsafePointer[c_int, MutAnyOrigin],
+            MutPointer[c_int, MutAnyOrigin],
         ) thin -> c_int,
-    ]()(UnsafePointer(to=argc), UnsafePointer(to=argv), required, provided)
+    ]()(Pointer(to=argc), Pointer(to=argv), required, provided)
     if result != 0:
         raise Error("failed to MPI_Init_thread with error code:", result)
 
 
-def MPI_Initialized(flag: UnsafePointer[c_int, MutUntrackedOrigin]) raises:
+def MPI_Initialized(flag: MutPointer[c_int, MutUntrackedOrigin]) raises:
     """Check if MPI has been initialized.
 
     Raises:
@@ -131,7 +131,7 @@ def MPI_Initialized(flag: UnsafePointer[c_int, MutUntrackedOrigin]) raises:
     """
     var result = _get_mpi_function[
         "MPI_Initialized",
-        def(UnsafePointer[c_int, MutUntrackedOrigin]) thin -> c_int,
+        def(MutPointer[c_int, MutUntrackedOrigin]) thin -> c_int,
     ]()(flag)
     if result != 0:
         raise Error("failed to check MPI_Initialized with error code:", result)
@@ -155,38 +155,34 @@ def MPI_Comm_split(
     comm: MPIComm,
     color: c_int,
     key: c_int,
-    newcomm: UnsafePointer[MPIComm, MutAnyOrigin],
+    newcomm: MutPointer[MPIComm, MutAnyOrigin],
 ) raises:
     """Split a communicator into multiple subcommunicators."""
     var result = _get_mpi_function[
         "MPI_Comm_split",
         def(
-            MPIComm, c_int, c_int, UnsafePointer[MPIComm, MutAnyOrigin]
+            MPIComm, c_int, c_int, MutPointer[MPIComm, MutAnyOrigin]
         ) thin -> c_int,
     ]()(comm, color, key, newcomm)
     if result != 0:
         raise Error("failed to MPI_Comm_split with error code:", result)
 
 
-def MPI_Comm_rank(
-    comm: MPIComm, rank: UnsafePointer[c_int, MutAnyOrigin]
-) raises:
+def MPI_Comm_rank(comm: MPIComm, rank: MutPointer[c_int, MutAnyOrigin]) raises:
     """Get the rank of the current process in the communicator."""
     var result = _get_mpi_function[
         "MPI_Comm_rank",
-        def(MPIComm, UnsafePointer[c_int, MutAnyOrigin]) thin -> c_int,
+        def(MPIComm, MutPointer[c_int, MutAnyOrigin]) thin -> c_int,
     ]()(comm, rank)
     if result != 0:
         raise Error("failed to get MPI_Comm_rank with error code:", result)
 
 
-def MPI_Comm_size(
-    comm: MPIComm, size: UnsafePointer[c_int, MutAnyOrigin]
-) raises:
+def MPI_Comm_size(comm: MPIComm, size: MutPointer[c_int, MutAnyOrigin]) raises:
     """Get the size of the communicator."""
     var result = _get_mpi_function[
         "MPI_Comm_size",
-        def(MPIComm, UnsafePointer[c_int, MutAnyOrigin]) thin -> c_int,
+        def(MPIComm, MutPointer[c_int, MutAnyOrigin]) thin -> c_int,
     ]()(comm, size)
     if result != 0:
         raise Error("failed to get MPI_Comm_size with error code:", result)

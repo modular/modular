@@ -47,9 +47,9 @@ def test_nvfp4_quantization[
 ) raises:
     comptime out_dtype = DType.uint8
 
-    var _B = Int(batch.value())
-    var M = Int(m.value())
-    var N = Int(n.value())
+    var _B = Int(batch)
+    var M = Int(m)
+    var N = Int(n)
 
     var input_shape = Coord(m, n)
     comptime output_n = ceildiv(NType.static_value, 2)

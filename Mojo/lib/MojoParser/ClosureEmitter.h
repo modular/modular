@@ -27,6 +27,7 @@
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
 
 namespace M::KGEN::LIT {
+class OpASTDecl;
 class TraitASTDecl;
 
 // Naming schemes used for emitting closure related-struct.
@@ -50,6 +51,11 @@ public:
     ArgConvention convention;
   };
 
+  struct PromotedClosure {
+    DefASTDecl *functionDecl;
+    ASTDecl *valueDecl;
+  };
+
   /// Move `nestedFnDecl` into `storageStructDecl` as a method and wire its
   /// captured values to the storage struct fields. Returns the method decl.
   DefASTDecl *
@@ -61,24 +67,24 @@ public:
                         ArrayRef<CaptureConvention> captureConventions,
                         ArrayRef<Type> selfBoundFieldTypes, Location location);
 
-  /// Promote a closure decl into `targetParent`. nullptr → nearest FileModuleOp
-  /// (thin/stateless promotions).
-  DefASTDecl *
+  /// Promote a closure decl into `targetParent`. nullptr → nearest
+  /// FileModuleASTDecl (thin/stateless promotions).
+  PromotedClosure
   promoteClosure(DefASTDecl &nestedFnDecl,
                  ArrayRef<ParamDeclAttr> prependedParams = {},
                  std::optional<PromotedClosureSelfArg> selfArg = std::nullopt,
                  TriBool capturingOverride = TriBool::unknown(),
-                 ASTDecl *targetParent = nullptr);
+                 OpASTDecl *targetParent = nullptr);
 
   /// Adapter overload for callsites that currently hold ParamDeclRefAttr.
-  DefASTDecl *
+  PromotedClosure
   promoteClosure(DefASTDecl &nestedFnDecl,
                  ArrayRef<ParamDeclRefAttr> prependedParamRefs,
                  std::optional<PromotedClosureSelfArg> selfArg = std::nullopt,
                  TriBool capturingOverride = TriBool::unknown(),
-                 ASTDecl *targetParent = nullptr);
+                 OpASTDecl *targetParent = nullptr);
 
-  Value emitClosure(ASTDecl &moduleDecl, DefASTDecl &nestedFnDecl,
+  Value emitClosure(ModuleASTDecl &moduleDecl, DefASTDecl &nestedFnDecl,
                     ArrayRef<Capture> captures, Location location,
                     bool isCopyable, ArrayRef<ParamDeclRefAttr> paramCaptures);
   static ASTDecl *addCaptureValue(SharedState &shared, DefASTDecl &closure,
@@ -162,7 +168,7 @@ private:
 
   /// Construct the closure struct, lift the nested function into a method, and
   /// emit witness tables for all closure parents.
-  Closure liftClosure(ASTDecl &moduleDecl, SMLoc smLoc,
+  Closure liftClosure(ModuleASTDecl &moduleDecl, SMLoc smLoc,
                       SmallVector<ClosureParent> &closureParents,
                       SymbolRefAttr parentSymbolRef,
                       SmallVector<StructDefFieldAttr> &&fieldDecls,

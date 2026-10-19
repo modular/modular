@@ -49,15 +49,16 @@ def extend_shape_5d[
     out_shape[0] = first
     out_shape[4] = last
 
-    comptime if rank == 1:
-        out_shape[3] = in_shape[0]
-    elif rank == 2:
-        out_shape[2] = in_shape[0]
-        out_shape[3] = in_shape[1]
-    elif rank == 3:
-        out_shape[1] = in_shape[0]
-        out_shape[2] = in_shape[1]
-        out_shape[3] = in_shape[2]
+    comptime match rank:
+        case 1:
+            out_shape[3] = in_shape[0]
+        case 2:
+            out_shape[2] = in_shape[0]
+            out_shape[3] = in_shape[1]
+        case 3:
+            out_shape[1] = in_shape[0]
+            out_shape[2] = in_shape[1]
+            out_shape[3] = in_shape[2]
 
     return out_shape
 
@@ -80,15 +81,16 @@ def append_shape_5d[
     out_shape[3] = last2nd
     out_shape[4] = last
 
-    comptime if rank == 1:
-        out_shape[2] = in_shape[0]
-    elif rank == 2:
-        out_shape[1] = in_shape[0]
-        out_shape[2] = in_shape[1]
-    elif rank == 3:
-        out_shape[0] = in_shape[0]
-        out_shape[1] = in_shape[1]
-        out_shape[2] = in_shape[2]
+    comptime match rank:
+        case 1:
+            out_shape[2] = in_shape[0]
+        case 2:
+            out_shape[1] = in_shape[0]
+            out_shape[2] = in_shape[1]
+        case 3:
+            out_shape[0] = in_shape[0]
+            out_shape[1] = in_shape[1]
+            out_shape[2] = in_shape[2]
 
     return out_shape
 
@@ -123,15 +125,16 @@ def test_conv_transposed[
     var pad_h = IndexList[2](0)
     var pad_w = IndexList[2](0)
 
-    comptime if rank == 1:
-        pad_w = Index(pad[0], pad[1])
-    elif rank == 2:
-        pad_h = Index(pad[0], pad[1])
-        pad_w = Index(pad[2], pad[3])
-    elif rank == 3:
-        pad_d = Index(pad[0], pad[1])
-        pad_h = Index(pad[2], pad[3])
-        pad_w = Index(pad[4], pad[5])
+    comptime match rank:
+        case 1:
+            pad_w = Index(pad[0], pad[1])
+        case 2:
+            pad_h = Index(pad[0], pad[1])
+            pad_w = Index(pad[2], pad[3])
+        case 3:
+            pad_d = Index(pad[0], pad[1])
+            pad_h = Index(pad[2], pad[3])
+            pad_w = Index(pad[4], pad[5])
 
     var conv_shape = ConvShape[rank](
         n=N,
@@ -225,8 +228,8 @@ def test_conv_transposed[
     var output_image_size = output_dims.flattened_length()
     for n in range(N):
         for i in range(output_image_size):
-            var output_ref_ptr = output_ref._storage + F * (
-                i + output_image_size * n
+            var output_ref_ptr = output_ref._storage.unsafe_offset(
+                F * (i + output_image_size * n)
             )
 
             @inline(.always)
@@ -252,16 +255,14 @@ def test_conv_transposed[
     def epilogue(coords: Coord, f_size: Int) {var output, var bias_ptr}:
         @inline(.always)
         def body1[width: Int](idx: Int) {var}:
-            var f = Int(coords[rank + 1].value()) + idx
+            var f = Int(coords[rank + 1]) + idx
             var curr_coords = coords
             curr_coords.replace_dynamic[rank + 1](f)
 
-            var output_idx = output.layout(curr_coords)
+            var vec = output.load[width=width](curr_coords)
 
-            var vec = output.raw_load[width=width](output_idx)
-
-            output.raw_store(
-                output_idx, 10.0 * (vec + bias_ptr.load[width=width](f))
+            output.store(
+                curr_coords, 10.0 * (vec + bias_ptr.load[width=width](f))
             )
 
         vectorize[simd_size](f_size, body1)
@@ -285,11 +286,13 @@ def test_conv_transposed[
     )
 
     # Check results, return on the first failed comparison.
+    var output_ref_flat = output_ref.reshape(row_major(output_size))
+    var output_flat = output.reshape(row_major(output_size))
     for i in range(output_size):
         if not all(
             isclose(
-                output_ref.raw_load[width=1](i),
-                output.raw_load[width=1](i),
+                output_ref_flat[i],
+                output_flat[i],
                 atol=1e-4,  # absolute error tolerance
                 rtol=1e-4,  # relative error tolerance
             )
@@ -298,8 +301,8 @@ def test_conv_transposed[
             print("filter shape: ", filter_shape)
             print("num groups", num_groups)
             print("flat output index:", i)
-            print("Golden value: ", output_ref.raw_load[width=1](i))
-            print("Actual value: ", output.raw_load[width=1](i))
+            print("Golden value: ", output_ref_flat[i])
+            print("Actual value: ", output_flat[i])
             bias_ptr.free()
             return
 

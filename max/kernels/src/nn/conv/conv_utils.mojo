@@ -73,7 +73,7 @@ comptime elementwise_simd_epilogue_type = def[
 """Fused elementwise epilogue for convolution: `(coord, value) -> None`.
 
 The coordinate is rank-N in the output's own space (NHWC / NDHWC), unlike
-`linalg.utils.elementwise_epilogue_type`, which is always rank 2. The `Coord`
+`linalg.utils.ElementwiseEpilogueFn`, which is always rank 2. The `Coord`
 carries its own rank.
 """
 
@@ -162,7 +162,7 @@ struct ConvShape[rank: Int](TrivialRegisterPassable):
         """Input depth."""
 
         comptime if Self.rank >= 3:
-            return Int(self.input_dims[Self.rank - 3].value())
+            return Int(self.input_dims[Self.rank - 3])
         else:
             return 1
 
@@ -171,21 +171,21 @@ struct ConvShape[rank: Int](TrivialRegisterPassable):
         """Input height."""
 
         comptime if Self.rank >= 2:
-            return Int(self.input_dims[Self.rank - 2].value())
+            return Int(self.input_dims[Self.rank - 2])
         else:
             return 1
 
     @inline(.always)
     def w(self) -> Int:
         """Input width."""
-        return Int(self.input_dims[Self.rank - 1].value())
+        return Int(self.input_dims[Self.rank - 1])
 
     @inline(.always)
     def do(self) -> Int:
         """Output depth."""
 
         comptime if Self.rank >= 3:
-            return Int(self.output_dims[Self.rank - 3].value())
+            return Int(self.output_dims[Self.rank - 3])
         else:
             return 1
 
@@ -194,21 +194,21 @@ struct ConvShape[rank: Int](TrivialRegisterPassable):
         """Output height."""
 
         comptime if Self.rank >= 2:
-            return Int(self.output_dims[Self.rank - 2].value())
+            return Int(self.output_dims[Self.rank - 2])
         else:
             return 1
 
     @inline(.always)
     def wo(self) -> Int:
         """Output width."""
-        return Int(self.output_dims[Self.rank - 1].value())
+        return Int(self.output_dims[Self.rank - 1])
 
     @inline(.always)
     def q(self) -> Int:
         """Filter window depth."""
 
         comptime if Self.rank >= 3:
-            return Int(self.filter_dims[Self.rank - 3].value())
+            return Int(self.filter_dims[Self.rank - 3])
         else:
             return 1
 
@@ -217,14 +217,14 @@ struct ConvShape[rank: Int](TrivialRegisterPassable):
         """Filter window height."""
 
         comptime if Self.rank >= 2:
-            return Int(self.filter_dims[Self.rank - 2].value())
+            return Int(self.filter_dims[Self.rank - 2])
         else:
             return 1
 
     @inline(.always)
     def s(self) -> Int:
         """Filter window width."""
-        return Int(self.filter_dims[Self.rank - 1].value())
+        return Int(self.filter_dims[Self.rank - 1])
 
     @inline(.always)
     def stride_at[axis: Int](self) -> Int:
@@ -233,7 +233,7 @@ struct ConvShape[rank: Int](TrivialRegisterPassable):
         Parameters:
             axis: Spatial axis to read.
         """
-        return Int(self.stride[axis].value())
+        return Int(self.stride[axis])
 
     @inline(.always)
     def dilation_at[axis: Int](self) -> Int:
@@ -242,22 +242,22 @@ struct ConvShape[rank: Int](TrivialRegisterPassable):
         Parameters:
             axis: Spatial axis to read.
         """
-        return Int(self.dilation[axis].value())
+        return Int(self.dilation[axis])
 
     @inline(.always)
     def pad_d_lower(self) -> Int:
         """Depth padding before the first input point."""
-        return Int(self.pad_d[0].value())
+        return Int(self.pad_d[0])
 
     @inline(.always)
     def pad_h_lower(self) -> Int:
         """Height padding above the first input row."""
-        return Int(self.pad_h[0].value())
+        return Int(self.pad_h[0])
 
     @inline(.always)
     def pad_w_lower(self) -> Int:
         """Width padding left of the first input column."""
-        return Int(self.pad_w[0].value())
+        return Int(self.pad_w[0])
 
     @inline(.always)
     def filter_window_flat_size(self) -> Int:
@@ -917,12 +917,8 @@ def get_conv_num_partitions[
     )
     comptime min_c_per_task = min_c_per_task_avx512 if CompilationTarget.has_avx512f() else 1024
 
-    # alias min_rows_per_task = (196 // micro_kernel_w) * micro_kernel_w
-    # alias min_c_per_task = 64
-
     var matmul_M = conv_shape.matmul_M()
     var matmul_N = conv_shape.matmul_N()
-    # var matmul_K = conv_shape.matmul_K()
 
     # Accessing A is more expensive in im2col than accessing B.
     # Time a factor to M to var the heuristic bias on partitioning M.

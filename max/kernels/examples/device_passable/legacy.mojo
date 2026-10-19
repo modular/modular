@@ -28,7 +28,7 @@ def scale_kernel[
     the `DeviceBuffer` the host passes into this device pointer. `epilogue` is
     a comptime parameter, so it is part of the kernel's code, not its
     arguments."""
-    var i = Int(global_idx.x)
+    var i = global_idx.x
     if i >= Int(n):
         return
     epilogue(i, src[unsafe_offset=i] * SCALE)

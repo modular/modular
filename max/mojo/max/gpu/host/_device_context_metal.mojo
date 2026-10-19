@@ -209,25 +209,17 @@ def call_with_pack_metal[
 
 @inline(.always)
 def call_with_pack_checked_metal[
+    HostArgs: TypeList[Trait=RegisterPassable, ...],
+    //,
     func: Some[TrivialRegisterPassable],
     *Ts: DevicePassable,
     ContextT: _FunctionEnqueuer,
     num_passed_args: Int,
     num_captures_static: Int,
-    extra_host_count: Int = 0,
 ](
     ctx: ContextT,
     *args: *Ts,
-    host0: Optional[OpaquePointer[MutAnyOrigin]] = None,
-    host1: Optional[OpaquePointer[MutAnyOrigin]] = None,
-    host2: Optional[OpaquePointer[MutAnyOrigin]] = None,
-    host3: Optional[OpaquePointer[MutAnyOrigin]] = None,
-    host4: Optional[OpaquePointer[MutAnyOrigin]] = None,
-    host0_size: Int = 0,
-    host1_size: Int = 0,
-    host2_size: Int = 0,
-    host3_size: Int = 0,
-    host4_size: Int = 0,
+    host_args: Tuple[*HostArgs],
     func_handle: _DeviceFunctionPtr[mut=True],
     device_context: DeviceContext,
     capture_sizes: Pointer[UInt64, ImmUntrackedOrigin],
@@ -253,21 +245,11 @@ def call_with_pack_checked_metal[
         num_passed_args: The compile-time count of arguments in `args`.
         num_captures_static: The static capture-count threshold for stack
             allocation. Heap allocation is used when `num_captures` exceeds it.
-        extra_host_count: Host-layout arguments appended after `args`.
 
     Args:
         ctx: The enqueuer that dispatches the kernel.
         args: The host-side kernel arguments to encode.
-        host0: Pointer to the first host-layout argument, or `None`.
-        host1: Pointer to the second host-layout argument, or `None`.
-        host2: Pointer to the third host-layout argument, or `None`.
-        host3: Pointer to the fourth host-layout argument, or `None`.
-        host4: Pointer to the fifth host-layout argument, or `None`.
-        host0_size: Byte size of the first host-layout argument.
-        host1_size: Byte size of the second host-layout argument.
-        host2_size: Byte size of the third host-layout argument.
-        host3_size: Byte size of the fourth host-layout argument.
-        host4_size: Byte size of the fifth host-layout argument.
+        host_args: Pack of host-layout arguments to encode.
         func_handle: Handle to the compiled `DeviceFunction` to launch.
         device_context: The device context backing the function, used for
             error reporting in `_checked_call`.
@@ -290,6 +272,8 @@ def call_with_pack_checked_metal[
         location: Source location threaded through `_checked_call` for error
             messages.
     """
+    comptime extra_host_count = host_args.Ts.length
+
     # Stack-allocated backing storage for the small-capture path. Using
     # `Array` (rather than `unsafe_stack_allocation`) gives the compiler a
     # named local whose origin flows into the `MetalEnqueueFunctionArgs`
@@ -370,30 +354,20 @@ def call_with_pack_checked_metal[
             )
             translated_arg_idx += 1
 
-    if extra_host_count >= 1 and host0:
-        dense_args_addrs[unsafe_offset=translated_arg_idx] = host0.value()
-        dense_args_sizes[unsafe_offset=translated_arg_idx] = UInt64(host0_size)
-        dense_args_is_device_ptr[unsafe_offset=translated_arg_idx] = False
-        translated_arg_idx += 1
-    if extra_host_count >= 2 and host1:
-        dense_args_addrs[unsafe_offset=translated_arg_idx] = host1.value()
-        dense_args_sizes[unsafe_offset=translated_arg_idx] = UInt64(host1_size)
-        dense_args_is_device_ptr[unsafe_offset=translated_arg_idx] = False
-        translated_arg_idx += 1
-    if extra_host_count >= 3 and host2:
-        dense_args_addrs[unsafe_offset=translated_arg_idx] = host2.value()
-        dense_args_sizes[unsafe_offset=translated_arg_idx] = UInt64(host2_size)
-        dense_args_is_device_ptr[unsafe_offset=translated_arg_idx] = False
-        translated_arg_idx += 1
-    if extra_host_count >= 4 and host3:
-        dense_args_addrs[unsafe_offset=translated_arg_idx] = host3.value()
-        dense_args_sizes[unsafe_offset=translated_arg_idx] = UInt64(host3_size)
-        dense_args_is_device_ptr[unsafe_offset=translated_arg_idx] = False
-        translated_arg_idx += 1
-    if extra_host_count >= 5 and host4:
-        dense_args_addrs[unsafe_offset=translated_arg_idx] = host4.value()
-        dense_args_sizes[unsafe_offset=translated_arg_idx] = UInt64(host4_size)
-        dense_args_is_device_ptr[unsafe_offset=translated_arg_idx] = False
+    comptime for i in range(extra_host_count):
+        comptime arg_size = size_of[host_args.Ts[i], device_context.target]()
+        # Skip zero-sized types (ZSTs).
+        if arg_size == 0:
+            continue
+
+        var arg_addr = (
+            Pointer(to=host_args[i])
+            .unsafe_bitcast[NoneType]()
+            .unsafe_mut_cast[True]()
+            .as_unsafe_any_origin()
+        )
+        dense_args_addrs[unsafe_offset=translated_arg_idx] = arg_addr
+        dense_args_sizes[unsafe_offset=translated_arg_idx] = UInt64(arg_size)
         translated_arg_idx += 1
 
     # Drop zero-sized captures so the packed slots (and their sizes) match the

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """A `TileTensor` iterator that walks a buffer one tile at a time.
 
-`TileTensorIter` is the `TileTensor` counterpart of `LayoutTensorIter`. It
+`TileTensorIter` steps through a buffer of equally shaped tiles. It
 holds a pointer, a fixed tile layout and a step between consecutive tiles, and
 dereferences to a `TileTensor` view of the current tile. It supports the
 circular multi-stage shared-memory buffers used by software-pipelined kernels
@@ -155,6 +155,82 @@ struct TileTensorIter[
         )
 
     @always_inline
+    def __init__(
+        out self,
+        tensor: TileTensor[
+            Self.dtype,
+            _,
+            Self.origin,
+            address_space=Self.address_space,
+            ...,
+        ],
+        tile_layout: Self.LayoutType,
+        *,
+        bound: Int,
+        stride: Int,
+        offset: Int = 0,
+        num_valid_rows: Int = 0,
+    ):
+        """Creates an iterator starting at the base of a tensor's storage.
+
+        Args:
+            tensor: Tensor whose base pointer starts the buffer; pass a tile or
+                view to start elsewhere.
+            tile_layout: Layout of every tile.
+            bound: Buffer size in elements; the wrap-around point when
+                `circular`.
+            stride: Element distance between consecutive tiles.
+            offset: Element offset of the first tile from the start of the
+                buffer.
+            num_valid_rows: Valid rows of each tile; only meaningful when
+                `masked`.
+        """
+        self = Self(
+            tensor.unsafe_ptr(),
+            tile_layout,
+            bound=bound,
+            stride=stride,
+            offset=offset,
+            num_valid_rows=num_valid_rows,
+        )
+
+    @always_inline
+    def __init__(
+        out self,
+        tensor: TileTensor[
+            Self.dtype,
+            _,
+            Self.origin,
+            address_space=Self.address_space,
+            ...,
+        ],
+        tile_layout: Self.LayoutType,
+        *,
+        bound: Int,
+        num_valid_rows: Int = 0,
+    ) where Self.LayoutType.all_dims_known:
+        """Creates an iterator starting at the base of a tensor's storage, with
+        tiles laid out back to back.
+
+        Args:
+            tensor: Tensor whose base pointer starts the buffer; pass a tile or
+                view to start elsewhere.
+            tile_layout: Layout of every tile; its element count is the
+                stride.
+            bound: Buffer size in elements; the wrap-around point when
+                `circular`.
+            num_valid_rows: Valid rows of each tile; only meaningful when
+                `masked`.
+        """
+        self = Self(
+            tensor,
+            tile_layout,
+            bound=bound,
+            stride=Self.LayoutType.static_product,
+            num_valid_rows=num_valid_rows,
+        )
+
+    @always_inline
     def get(self) -> Self.TileType:
         """Returns the tile at the current position.
 
@@ -269,7 +345,7 @@ struct TileTensorIter[
             An iterator over the same memory and position.
         """
         return Self.BitcastType[target_dtype](
-            self.ptr.bitcast[Scalar[target_dtype]](),
+            self.ptr.unsafe_bitcast[Scalar[target_dtype]](),
             self.tile_layout,
             bound=Int(self.bound),
             stride=Int(self.stride),

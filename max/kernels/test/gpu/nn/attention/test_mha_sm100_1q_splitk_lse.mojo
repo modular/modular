@@ -602,19 +602,20 @@ def main() raises:
         assert_equal(_auto_p[SM_COUNT, True](8, rg), 8)
 
     with DeviceContext() as ctx:
-        comptime if MASK == 0:
-            execute_combine_test[NullMask, DEPTH](NullMask(), ctx)
-        elif MASK == 1:
-            execute_combine_test[CausalMask, DEPTH](CausalMask(), ctx)
-        elif MASK == 2:
-            execute_combine_test[ChunkedMask[CHUNK], DEPTH](
-                ChunkedMask[CHUNK](), ctx
-            )
-        elif MASK == 3:
-            execute_combine_test[SlidingWindowCausalMask[SW_WINDOW], DEPTH](
-                SlidingWindowCausalMask[SW_WINDOW](), ctx
-            )
-        else:
-            execute_combine_test[SlidingWindowNonCausalMask[SW_WINDOW], DEPTH](
-                SlidingWindowNonCausalMask[SW_WINDOW](), ctx
-            )
+        comptime match MASK:
+            case 0:
+                execute_combine_test[NullMask, DEPTH](NullMask(), ctx)
+            case 1:
+                execute_combine_test[CausalMask, DEPTH](CausalMask(), ctx)
+            case 2:
+                execute_combine_test[ChunkedMask[CHUNK], DEPTH](
+                    ChunkedMask[CHUNK](), ctx
+                )
+            case 3:
+                execute_combine_test[SlidingWindowCausalMask[SW_WINDOW], DEPTH](
+                    SlidingWindowCausalMask[SW_WINDOW](), ctx
+                )
+            case _:
+                execute_combine_test[
+                    SlidingWindowNonCausalMask[SW_WINDOW], DEPTH
+                ](SlidingWindowNonCausalMask[SW_WINDOW](), ctx)

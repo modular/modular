@@ -25,13 +25,14 @@ from typing import Any, ClassVar
 
 from max.driver import Buffer
 from max.dtype import DType
-from max.engine import InferenceSession
+from max.engine import InferenceSession, Model
 from max.graph import Graph
 from max.graph.weights import load_weights
 from max.nn.kv_cache import (
     KVCacheParams,
     MultiKVCacheParams,
 )
+from max.pipelines.lib.graph_specs import GraphRole
 from max.pipelines.lib.interfaces import UnifiedSpecDecodeInputs
 from max.pipelines.lib.pipeline_variants.unified_spec_decode_model import (
     _UnifiedSpecDecodeModelMixin,
@@ -188,6 +189,12 @@ class Eagle3MHADeepseekV3Model(_UnifiedSpecDecodeModelMixin, DeepseekV3Model):
             sliding_window_override=draft_model_config.sliding_window,
         )
         return config
+
+    @override
+    def load_graphs(self, session: InferenceSession) -> dict[str, Model]:
+        """Loads the decoder graph through :meth:`load_model`."""
+        # TODO(kathywu): Build this graph through `graph_specs`.
+        return {GraphRole.DECODER: self.load_model(session)}
 
     @override
     def _build_graph_for_compile(

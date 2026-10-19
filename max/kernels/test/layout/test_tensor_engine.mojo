@@ -131,7 +131,7 @@ def test_unsafe_ptr() raises:
     # `unsafe_ptr` yields the scalar base pointer of the storage. It lands at
     # the same address as an independent bitcast and reads the same elements.
     var raw = DefaultEngine[element_width=1].unsafe_ptr(storage)
-    var expected = storage.bitcast[Float32]()
+    var expected = storage.unsafe_bitcast[Float32]()
     assert_equal(Int(raw), Int(expected))
     assert_equal(raw.load[width=4](), expected.load[width=4]())
 
@@ -140,7 +140,7 @@ def test_unsafe_ptr_vectorized() raises:
     var buf = Array[Float32, 4](fill=0.0)
     # A vectorized (element_width=2) storage handle over the same buffer.
     var buf_ptr: MutPointer[Float32, origin_of(buf)] = buf.unsafe_ptr()
-    var storage = buf_ptr.bitcast[SIMD[.float32, 2]]()
+    var storage = buf_ptr.unsafe_bitcast[SIMD[.float32, 2]]()
 
     # `unsafe_ptr` bitcasts the SIMD-typed handle down to the scalar base,
     # which coincides with the buffer's own base address.

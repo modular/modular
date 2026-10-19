@@ -240,8 +240,7 @@ static bool isReferenceFromOwnFnBody(ASTDecl &fnDecl, ASTDecl &useScope) {
 TypedAttr LIT::getBoundConstAttrForFn(ASTDecl &fnDecl, SharedState &shared,
                                       const VerifiedParamBindings &verified,
                                       ASTDecl &useScope, SMLoc useLoc) {
-  if (auto *defDecl = dyn_cast<DefASTDecl>(&fnDecl);
-      defDecl && defDecl->getOp()) {
+  if (auto *defDecl = dyn_cast<DefASTDecl>(&fnDecl); defDecl) {
     FnOp funcOp = defDecl->getOp();
     if (isReferenceFromOwnFnBody(fnDecl, useScope)) {
       StringRef name = funcOp.getDeclName().getValue();

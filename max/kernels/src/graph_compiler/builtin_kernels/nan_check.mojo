@@ -45,10 +45,10 @@ from extensibility import InputTensor, OutputTensor
 def _nan_check_gpu_kernel[
     dtype: DType,
 ](
-    src_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    src_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
     total_elements: Int32,
-    out_nan: UnsafePointer[Int32, MutAnyOrigin],
-    out_inf: UnsafePointer[Int32, MutAnyOrigin],
+    out_nan: MutPointer[Int32, MutAnyOrigin],
+    out_inf: MutPointer[Int32, MutAnyOrigin],
 ):
     """GPU kernel: count NaN/Inf values via parallel reduction."""
     var nan_local = unsafe_stack_allocation[1, Int32, address_space=.SHARED]()
@@ -138,8 +138,8 @@ def nan_check_count[
 
         @__name(t"nan_check_zero_counts")
         def zero_counts(
-            nan_ptr: UnsafePointer[Int32, MutAnyOrigin],
-            inf_ptr: UnsafePointer[Int32, MutAnyOrigin],
+            nan_ptr: MutPointer[Int32, MutAnyOrigin],
+            inf_ptr: MutPointer[Int32, MutAnyOrigin],
         ):
             nan_ptr[] = Int32(0)
             inf_ptr[] = Int32(0)
@@ -157,9 +157,7 @@ def nan_check_count[
 
         comptime kernel = _nan_check_gpu_kernel[dtype]
         gpu_ctx.enqueue_function[kernel](
-            rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
-                input.unsafe_ptr()
-            ),
+            rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](input.unsafe_ptr()),
             Int32(total),
             out_nan_ptr,
             out_inf_ptr,

@@ -15,12 +15,14 @@ This package includes the following main types:
   a set of logical coordinates (like (*x*, *y*) in a two-dimensional array) to a
   linear index value. Layouts can be hierarchical (for example, representing a
   2D matrix that's further subdivided into tiles).
-- [`LayoutTensor`](/api/mojo/layout/layout_tensor/LayoutTensor/)
-  is a flexible tensor type that combines a `Layout` and a pointer to data.
 - The [`IntTuple`](/api/mojo/layout/int_tuple/IntTuple/)
   struct is a hierarchical tuple type, where each element of the tuple can
   either be an integral value or a nested `IntTuple`. The `IntTuple` type is
   used extensively for defining and indexing layouts and layout tensors.
+
+Tensor code uses `TileTensor` and its own `Coord`-based layout type,
+described in [`TileTensor` layouts](/tile-tensor/layouts/); `Layout` and
+`IntTuple` remain for layout algebra such as tensor core descriptors.
 
 :::tip Example code
 

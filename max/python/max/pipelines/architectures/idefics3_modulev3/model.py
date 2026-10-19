@@ -33,6 +33,7 @@ from max.graph.weights import SafetensorWeights, Weights, WeightsAdapter
 from max.nn.transformer import ReturnLogits
 from max.pipelines.context import TextAndVisionContext
 from max.pipelines.lib import (
+    GraphSpec,
     KVCacheConfig,
     ModelInputs,
     ModelOutputs,
@@ -117,7 +118,7 @@ class Idefics3Model(
             memory_plan=memory_plan,
         )
 
-        self.vision_model, self.language_model = self.load_model()
+        self.vision_model, self.language_model = self._load_towers(session)
         self.image_token_id = self.huggingface_config.image_token_id
 
     def _load_state_dict(self) -> dict[str, Any]:
@@ -150,12 +151,12 @@ class Idefics3Model(
         )
         return idefics3_config
 
-    def _compile_vision_model(
+    def _vision_spec(
         self,
         config: Idefics3Config,
         state_dict: dict[str, Any],
-    ) -> Callable[..., Any]:
-        """Build and compile the vision model using F.lazy()."""
+    ) -> GraphSpec:
+        """Build the vision model using F.lazy()."""
         image_size = config.vision_config.image_size
 
         pixel_values_type = TensorType(
@@ -168,20 +169,20 @@ class Idefics3Model(
             nn_vision = Idefics3VisionModel(config.vision_config)
             nn_vision.to(self.devices[0])
 
-        compiled = nn_vision.compile(
-            pixel_values_type,
+        return GraphSpec(
+            nn_vision,
+            type(nn_vision).__qualname__,
+            [pixel_values_type],
             weights=state_dict,
             auto_cast=auto_cast_weights_from_env(),
         )
 
-        return compiled
-
-    def _compile_language_model(
+    def _language_spec(
         self,
         config: Idefics3Config,
         state_dict: dict[str, Any],
-    ) -> Callable[..., Any]:
-        """Build and compile the language model using F.lazy()."""
+    ) -> GraphSpec:
+        """Build the language model using F.lazy()."""
         device0 = self.devices[0]
         device_ref = DeviceRef(device0.label, device0.id)
 
@@ -203,12 +204,12 @@ class Idefics3Model(
             )
             nn_language.to(self.devices[0])
 
-        compiled = nn_language.compile(
-            *language_input_types,
+        return GraphSpec(
+            nn_language,
+            type(nn_language).__qualname__,
+            language_input_types,
             weights=state_dict,
         )
-
-        return compiled
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         """Execute the Idefics3 model."""

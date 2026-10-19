@@ -272,9 +272,7 @@ def test_quantize_bf16_exhaustive[
         for g in range(NUM_BF16_MAGS):
             var v = bitcast[.bfloat16](UInt16(g))
             var neg = bitcast[.bfloat16](UInt16(g) | UInt16(0x8000))
-            var tiny = (v.cast[.float32]() * Float32(1.0e-9)).cast[
-                DType.bfloat16
-            ]()
+            var tiny = (v.cast[.float32]() * Float32(1.0e-9)).cast[.bfloat16]()
             for j in range(MXFP8_SF_VECTOR_SIZE):
                 var idx = g * MXFP8_SF_VECTOR_SIZE + j
                 comptime if ragged:
@@ -488,39 +486,42 @@ def _fill_pattern(
         var ui = token * input_dim + SILU_HIDDEN + k
         var gv = Float32(0.0)
         var uv = Float32(0.0)
-        if p == 1:
-            gv = Float32(1.0e-38)
-            uv = Float32(1.0e-38)
-        elif p == 2:
-            gv = BF16_MAX
-            uv = BF16_MAX
-        elif p == 3:
-            gv = Float32(1.0e20)
-            uv = Float32(1.0e20)
-        elif p == 4:
-            gv = Float32(1.0e20)
-            uv = Float32(1.0e-20)
-        elif p == 5:
-            gv = -BF16_MAX
-            uv = BF16_MAX
-        elif p == 6:
-            gv = BF16_MAX if j == 0 else Float32(1.0e-3)
-            uv = Float32(1.0) if j == 0 else Float32(1.0e-3)
-        elif p == 7:
-            # sigmoid(64) rounds to 1.0 in fp32, so silu(64) == 64 exactly.
-            gv = Float32(64.0)
-            uv = Float32(7.03125)  # 64 * 7.03125 = 450 > 448
-        elif p == 8:
-            gv = Float32(64.0)
-            uv = Float32(6.96875)  # 64 * 6.96875 = 446 < 448
-        elif p == 9:
-            if j == 0:
-                h[gi] = bf16_denorm
-                h[ui] = bf16_denorm
-            else:
-                h[gi] = BFloat16(0)
-                h[ui] = BFloat16(0)
-            continue
+        match p:
+            case 1:
+                gv = Float32(1.0e-38)
+                uv = Float32(1.0e-38)
+            case 2:
+                gv = BF16_MAX
+                uv = BF16_MAX
+            case 3:
+                gv = Float32(1.0e20)
+                uv = Float32(1.0e20)
+            case 4:
+                gv = Float32(1.0e20)
+                uv = Float32(1.0e-20)
+            case 5:
+                gv = -BF16_MAX
+                uv = BF16_MAX
+            case 6:
+                gv = BF16_MAX if j == 0 else Float32(1.0e-3)
+                uv = Float32(1.0) if j == 0 else Float32(1.0e-3)
+            case 7:
+                # sigmoid(64) rounds to 1.0 in fp32, so silu(64) == 64 exactly.
+                gv = Float32(64.0)
+                uv = Float32(7.03125)  # 64 * 7.03125 = 450 > 448
+            case 8:
+                gv = Float32(64.0)
+                uv = Float32(6.96875)  # 64 * 6.96875 = 446 < 448
+            case 9:
+                if j == 0:
+                    h[gi] = bf16_denorm
+                    h[ui] = bf16_denorm
+                else:
+                    h[gi] = BFloat16(0)
+                    h[ui] = BFloat16(0)
+                continue
+            case _:
+                pass
         h[gi] = gv.cast[.bfloat16]()
         h[ui] = uv.cast[.bfloat16]()
 
@@ -636,7 +637,7 @@ def test_fused_silu_adversarial[
                 var k = g * MXFP8_SF_VECTOR_SIZE + j
                 var gp = input_h[t * input_dim + k].cast[.float32]()
                 var up = input_h[t * input_dim + SILU_HIDDEN + k].cast[
-                    DType.float32
+                    .float32
                 ]()
                 var z: Float32
                 comptime if clamp_activation:
@@ -684,7 +685,7 @@ def test_fused_silu_adversarial[
                         input_h[t * input_dim + k].cast[.float32](),
                         " up=",
                         input_h[t * input_dim + SILU_HIDDEN + k].cast[
-                            DType.float32
+                            .float32
                         ](),
                         " out_byte=",
                         Int(ob2),

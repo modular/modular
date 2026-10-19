@@ -309,6 +309,160 @@ def reduce_scatter(
     )
 
 
+def reduce_scatter_rms_norm(
+    t: Tensor,
+    gamma: Tensor,
+    epsilon: float,
+    weight_offset: float = 0.0,
+) -> tuple[Tensor, Tensor]:
+    """Reduce-scatters a tensor along axis 0 and RMS-normalizes each shard.
+
+    Fuses :func:`reduce_scatter` over every device of a one-dimensional
+    mesh with an RMS norm of the result, in one collective launch (see
+    :func:`max.graph.ops.reduce_scatter_rms_norm`). The norm multiplies by
+    ``gamma`` before casting back to the input dtype.
+
+    Args:
+        t: A ``[rows, cols]`` bfloat16 tensor that is
+            :class:`~max.experimental.sharding.Partial` on a one-dimensional
+            mesh.
+        gamma: The norm weight, replicated on the mesh of ``t``.
+        epsilon: The norm epsilon.
+        weight_offset: A constant added to ``gamma``.
+
+    Returns:
+        A pair ``(normed, summed)``, each
+        :class:`~max.experimental.sharding.Sharded` along axis 0: the norm
+        of the reduce-scatter sum, and the sum itself.
+    """
+    mesh = t.mesh
+    if mesh.ndim != 1 or not isinstance(t.placements[0], Partial):
+        raise ValueError(
+            "reduce_scatter_rms_norm needs a Partial tensor on a "
+            f"one-dimensional mesh, got {t.mapping}."
+        )
+
+    def run(
+        shards: list[Tensor],
+        gammas: list[Tensor],
+        signal_buffers: list[BufferValue] | None,
+    ) -> list[tuple[TensorValue, TensorValue]]:
+        if signal_buffers is not None:
+            normed, summed = ops.reduce_scatter_rms_norm(
+                shards,
+                signal_buffers,
+                gammas,
+                epsilon,
+                weight_offset=weight_offset,
+            )
+        else:
+            values = [TensorValue(shard) for shard in shards]
+            home = values[0].device
+            total = functools.reduce(
+                ops.add,
+                [v if v.device == home else v.to(home) for v in values],
+            )
+            summed = [
+                chunk if v.device == home else chunk.to(v.device)
+                for chunk, v in zip(
+                    _even_split_along_axis(total, 0, len(values)),
+                    values,
+                    strict=True,
+                )
+            ]
+            normed = [
+                ops.rms_norm(
+                    s,
+                    g,
+                    epsilon,
+                    weight_offset,
+                    multiply_before_cast=True,
+                )
+                for s, g in zip(summed, gammas, strict=True)
+            ]
+        return list(zip(normed, summed, strict=True))
+
+    sharded = DeviceMapping(mesh, (Sharded(0),))
+    with ensure_context():
+        return call_on_mesh(run, mesh, (0,), out_specs=[sharded, sharded])(
+            t, gamma, _signal_buffers(mesh)
+        )
+
+
+def allgather_rms_norm(
+    t: Tensor,
+    gamma: Tensor,
+    epsilon: float,
+    weight_offset: float = 0.0,
+) -> tuple[Tensor, Tensor]:
+    """All-gathers a tensor along axis 0 and RMS-normalizes the result.
+
+    Fuses :func:`allgather` over every device of a one-dimensional mesh with
+    an RMS norm of the gathered rows, in one collective launch (see
+    :func:`max.graph.ops.allgather_rms_norm`). The norm multiplies by
+    ``gamma`` before casting back to the input dtype.
+
+    Args:
+        t: A ``[rows, cols]`` bfloat16 tensor that is
+            :class:`~max.experimental.sharding.Sharded` along axis 0 on a
+            one-dimensional mesh.
+        gamma: The norm weight, replicated on the mesh of ``t``.
+        epsilon: The norm epsilon.
+        weight_offset: A constant added to ``gamma``.
+
+    Returns:
+        A pair ``(normed, gathered)``, each
+        :class:`~max.experimental.sharding.Replicated`: the norm of the
+        gathered tensor, and the gathered tensor itself.
+    """
+    mesh = t.mesh
+    if mesh.ndim != 1 or t.placements[0] != Sharded(0):
+        raise ValueError(
+            "allgather_rms_norm needs a tensor sharded along axis 0 on a "
+            f"one-dimensional mesh, got {t.mapping}."
+        )
+
+    def run(
+        shards: list[Tensor],
+        gammas: list[Tensor],
+        signal_buffers: list[BufferValue] | None,
+    ) -> list[tuple[TensorValue, TensorValue]]:
+        if signal_buffers is not None:
+            normed, gathered = ops.allgather_rms_norm(
+                shards,
+                signal_buffers,
+                gammas,
+                epsilon=epsilon,
+                weight_offset=weight_offset,
+            )
+        else:
+            values = [TensorValue(shard) for shard in shards]
+            home = values[0].device
+            full = ops.concat(
+                [v if v.device == home else v.to(home) for v in values], 0
+            )
+            gathered = [
+                full if v.device == home else full.to(v.device) for v in values
+            ]
+            normed = [
+                ops.rms_norm(
+                    g,
+                    w,
+                    epsilon,
+                    weight_offset,
+                    multiply_before_cast=True,
+                )
+                for g, w in zip(gathered, gammas, strict=True)
+            ]
+        return list(zip(normed, gathered, strict=True))
+
+    replicated = DeviceMapping(mesh, (Replicated(),))
+    with ensure_context():
+        return call_on_mesh(
+            run, mesh, (0,), out_specs=[replicated, replicated]
+        )(t, gamma, _signal_buffers(mesh))
+
+
 def _local_split(
     t: Tensor, mesh_axes: Sequence[int], target: Sharded
 ) -> Tensor:

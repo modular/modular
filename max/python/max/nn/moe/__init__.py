@@ -13,7 +13,11 @@
 """Mixture of Experts (MoE) module."""
 
 from ..activation import GatedActivation
-from .eplb import EplbExpertContainer, apply_eplb_placement
+from .eplb import (
+    EplbExpertContainer,
+    apply_eplb_placement,
+    router_fold_supported,
+)
 from .expert_parallel import forward_moe_sharded_layers
 from .moe import (
     MoE,
@@ -57,4 +61,5 @@ __all__ = [
     "make_concatenated_gated_activation_fn",
     "make_interleaved_gated_activation_fn",
     "make_stacked_gated_activation_fn",
+    "router_fold_supported",
 ]

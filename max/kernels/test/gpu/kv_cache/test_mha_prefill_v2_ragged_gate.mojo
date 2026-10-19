@@ -294,16 +294,19 @@ def _run_ragged_at[
                 )
                 var n_cpy = block_sz * kv_params.num_heads * kv_params.head_size
                 unsafe_memcpy(
-                    dest=kv_block_paged_tensor.unsafe_ptr() + paged_offset,
-                    src=kv_block_continuous_tensor.unsafe_ptr()
-                    + continuous_offset,
+                    dest=kv_block_paged_tensor.unsafe_ptr().unsafe_offset(
+                        paged_offset
+                    ),
+                    src=kv_block_continuous_tensor.unsafe_ptr().unsafe_offset(
+                        continuous_offset
+                    ),
                     count=n_cpy,
                 )
                 if block_sz < page_size:
                     unsafe_memset_zero(
                         kv_block_paged_tensor.unsafe_ptr()
-                        + paged_offset
-                        + n_cpy,
+                        .unsafe_offset(paged_offset)
+                        .unsafe_offset(n_cpy),
                         (page_size - block_sz)
                         * kv_params.num_heads
                         * kv_params.head_size,

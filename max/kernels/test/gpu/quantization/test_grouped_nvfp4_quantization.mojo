@@ -173,7 +173,7 @@ def test_grouped_nvfp4_quantization[
         var ref_output = ctx.enqueue_create_buffer[out_dtype](count * output_N)
         var ref_scales = ctx.enqueue_create_buffer[scales_dtype](scales_total_i)
 
-        ctx.enqueue_copy(ref_input, host_input + row_start * N)
+        ctx.enqueue_copy(ref_input, host_input.unsafe_offset(row_start * N))
 
         var ref_input_shape = Coord(count, Idx[N])
         var ref_output_shape = Coord(count, Idx[output_N])
@@ -212,7 +212,7 @@ def test_grouped_nvfp4_quantization[
 
         # Compare output for this expert.
         var grouped_out = TileTensor(
-            host_output + row_start * output_N,
+            host_output.unsafe_offset(row_start * output_N),
             row_major(ref_output_shape),
         )
         var ref_out = TileTensor(host_ref_output, row_major(ref_output_shape))
@@ -236,7 +236,7 @@ def test_grouped_nvfp4_quantization[
         # Compare scales for this expert.
         var tile_start_i = tile_starts[expert_i]
         var grouped_scales = TileTensor(
-            host_scales + tile_start_i * scales_per_m_tile,
+            host_scales.unsafe_offset(tile_start_i * scales_per_m_tile),
             row_major(ref_scales_shape),
         )
         var ref_sc = TileTensor(host_ref_scales, row_major(ref_scales_shape))

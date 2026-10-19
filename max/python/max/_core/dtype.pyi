@@ -13,7 +13,7 @@
 # GENERATED FILE, DO NOT EDIT MANUALLY!
 # ===----------------------------------------------------------------------=== #
 
-"""Max DType definitions."""
+"""Defines the data types of MAX tensors."""
 
 import enum
 
@@ -73,7 +73,7 @@ class DType(enum.Enum):
 
     float4_e2m1fn = 64
     """
-    4-bit floating-point with 2 exponent bits and 1 mantissa bits, finite values only.
+    4-bit floating-point with 2 exponent bits and 1 mantissa bit, finite values only.
     """
 
     float6_e2m3fn = 65
@@ -112,7 +112,7 @@ class DType(enum.Enum):
     @property
     def align(self) -> int:
         """
-        Returns the alignment requirement of the data type in bytes.
+        The alignment requirement of the data type in bytes.
 
         The alignment specifies the memory boundary that values of this data type
         must be aligned to for optimal performance and correctness.
@@ -121,7 +121,7 @@ class DType(enum.Enum):
     @property
     def size_in_bits(self) -> int:
         """
-        Returns the size of the data type in bits.
+        The size of the data type in bits.
 
         This indicates how many bits are required to store a single value
         of this data type in memory.
@@ -130,7 +130,7 @@ class DType(enum.Enum):
     @property
     def size_in_bytes(self) -> int:
         """
-        Returns the size of the data type in bytes.
+        The size of the data type in bytes.
 
         This indicates how many bytes are required to store a single value
         of this data type in memory.
@@ -156,10 +156,10 @@ class DType(enum.Enum):
 
     def to_numpy(self) -> numpy.dtype:
         """
-        Converts this ``DType`` to the corresponding NumPy dtype.
+        Converts this :class:`DType` to the corresponding NumPy dtype.
 
         Returns:
-            DType: The corresponding NumPy dtype object.
+            The corresponding NumPy dtype object.
 
         Raises:
             ValueError: If the dtype is not supported.
@@ -168,13 +168,13 @@ class DType(enum.Enum):
     @classmethod
     def from_numpy(cls, dtype: numpy.dtype) -> DType:
         """
-        Converts a NumPy dtype to the corresponding DType.
+        Converts a NumPy dtype to the corresponding :class:`DType`.
 
         Args:
-            dtype (np.dtype): The NumPy dtype to convert.
+            dtype: The NumPy dtype to convert.
 
         Returns:
-            DType: The corresponding DType enum value.
+            The corresponding :class:`DType` enum value.
 
         Raises:
             ValueError: If the input dtype is not supported.

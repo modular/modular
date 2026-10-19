@@ -38,8 +38,8 @@ def _sum(x: SIMD, y: type_of(x)) -> type_of(x):
 def coop_combine_kernel[
     group_size: Int
 ](
-    workspace: UnsafePointer[Int32, MutAnyOrigin],
-    sink: UnsafePointer[Float32, MutAnyOrigin],
+    workspace: MutPointer[Int32, MutAnyOrigin],
+    sink: MutPointer[Float32, MutAnyOrigin],
     iters: Int32,
 ):
     var rank = block_idx.x % group_size

@@ -173,7 +173,7 @@ def _reducescatter_rmsnorm_kernel[
     var gamma_vec = SIMD[accum_type, simd_width](0)
     if is_valid:
         gamma_vec = (
-            gamma.load[width=simd_width, alignment=align](Coord(col_idx)).cast[
+            gamma.load[width=simd_width, alignment=align]((col_idx,)).cast[
                 accum_type
             ]()
             + weight_offset.cast[accum_type]()
@@ -201,7 +201,7 @@ def _reducescatter_rmsnorm_kernel[
             comptime for gpu_idx in range(ngpus):
                 accum += (
                     ptrs[gpu_idx]
-                    .address_space_cast[_target_address_space]()
+                    .unsafe_address_space_cast[_target_address_space]()
                     .load[
                         width=simd_width,
                         alignment=align,
@@ -223,15 +223,13 @@ def _reducescatter_rmsnorm_kernel[
                 reduced = (
                     reduced.cast[accum_type]()
                     + residual[]
-                    .load[width=simd_width, alignment=align](
-                        Coord(row, col_idx)
-                    )
+                    .load[width=simd_width, alignment=align]((row, col_idx))
                     .cast[accum_type]()
                 ).cast[in_dtype]()
         var reduced_f = reduced.cast[accum_type]()
         if is_valid:
             # `reduced` == the standalone reduce-scatter shard (residual stream).
-            sum_out.store[width=simd_width](Coord(local_row, col_idx), reduced)
+            sum_out.store((local_row, col_idx), reduced)
 
         # Mean-square over the full row. Divide by `cols` (full H) FIRST, add
         # epsilon SECOND (not the shard count; epsilon outside the division).
@@ -246,9 +244,7 @@ def _reducescatter_rmsnorm_kernel[
         if is_valid:
             # (x * norm) * gamma in f32, cast to in_dtype last: mbc=True.
             var normalized = (reduced_f * norm_factor) * gamma_vec
-            normed_out.store[width=simd_width](
-                Coord(local_row, col_idx), normalized.cast[in_dtype]()
-            )
+            normed_out.store((local_row, col_idx), normalized.cast[in_dtype]())
 
     # End barrier: peers P2P-read this rank's `src_ptrs`, so they must not be
     # reused until every peer is done. Deferring to the next collective's start

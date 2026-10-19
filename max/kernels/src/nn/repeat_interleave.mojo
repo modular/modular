@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Implements `repeat_interleave`, which repeats each tensor element a specified number of times along an axis."""
 
-from std.sys import simd_width_of
+from std.sys import align_of, simd_width_of
 
 from max.algorithm.functional import elementwise
 from max.gpu import (
@@ -102,14 +102,10 @@ def _repeat_interleave_cpu[
     assert collapsed_output_shape[0] == collapsed_input_shape[0]
     assert collapsed_output_shape[2] == collapsed_input_shape[2]
 
-    var collapsed_input = TileTensor(
-        input.ptr,
-        row_major(Coord(collapsed_input_shape)),
-    )
+    var collapsed_input = input.reshape(row_major(Coord(collapsed_input_shape)))
 
-    var collapsed_output = TileTensor(
-        output.ptr,
-        row_major(Coord(collapsed_output_shape)),
+    var collapsed_output = output.reshape(
+        row_major(Coord(collapsed_output_shape))
     )
 
     var input_repeat_dim = collapsed_input_shape[1]
@@ -148,11 +144,12 @@ def _repeat_interleave_cpu[
         var input_index = output_index
         input_index[1] = offset_mapping_view[output_index[1]]
 
-        var input_idx = collapsed_input.layout(Coord(input_index))
-        var input_value = collapsed_input.raw_load[width=width](input_idx)
-
-        var output_idx = collapsed_output.layout(Coord(output_index))
-        collapsed_output.raw_store(output_idx, input_value)
+        var input_value = collapsed_input.load[
+            width=width, alignment=align_of[dtype]()
+        ](Coord(input_index))
+        collapsed_output.store[alignment=align_of[dtype]()](
+            Coord(output_index), input_value
+        )
 
     elementwise[simd_width_of[output.dtype]()](
         func, collapsed_output.layout.shape_coord(), ctx
@@ -197,7 +194,7 @@ def _repeat_offset_map_kernel[
         var selected: Int64 = 0
         var i = chunk + tid
         if i < axis_size:
-            var r = Int64(repeats.raw_load(i))
+            var r = Int64(repeats[i])
             if r < 0:
                 r = 0
             selected = r
@@ -208,12 +205,12 @@ def _repeat_offset_map_kernel[
         )
 
         if i < axis_size:
-            var r = Int(repeats.raw_load(i))
+            var r = Int(repeats[i])
             if r < 0:
                 r = 0
             var s = Int(start)
             for _ in range(r):
-                offset_map.raw_store(s, Int32(i))
+                offset_map[s] = Int32(i)
                 s += 1
 
         # Advance the running base by this chunk's total.
@@ -262,16 +259,17 @@ def _repeat_interleave_emit_kernel[
     var outer = Int(outer_arg)
     var inner = Int(inner_arg)
     var tid = thread_idx.x
-    var flat = Int(block_idx.x) * BLOCK_SIZE + tid
+    var flat = block_idx.x * BLOCK_SIZE + tid
     if flat >= outer * out_axis * inner:
         return
     var inner_idx = flat % inner
     var axis_idx = (flat // inner) % out_axis
     var outer_idx = flat // (inner * out_axis)
-    var src_axis = Int(offset_map.raw_load(axis_idx))
+    var src_axis = Int(offset_map[axis_idx])
     var src_flat = outer_idx * in_axis * inner + src_axis * inner + inner_idx
-    var value = input_buffer.raw_load(src_flat)
-    output_buffer.raw_store(flat, value)
+    var input_flat = input_buffer.reshape(row_major(outer * in_axis * inner))
+    var output_flat = output_buffer.reshape(row_major(outer * out_axis * inner))
+    output_flat.store((flat,), input_flat.load[width=1]((src_flat,)))
 
 
 def _repeat_interleave_gpu[
@@ -312,13 +310,9 @@ def _repeat_interleave_gpu[
     assert collapsed_output_shape[0] == collapsed_input_shape[0]
     assert collapsed_output_shape[2] == collapsed_input_shape[2]
 
-    var collapsed_input = TileTensor(
-        input.ptr,
-        row_major(Coord(collapsed_input_shape)),
-    )
-    var collapsed_output = TileTensor(
-        output.ptr,
-        row_major(Coord(collapsed_output_shape)),
+    var collapsed_input = input.reshape(row_major(Coord(collapsed_input_shape)))
+    var collapsed_output = output.reshape(
+        row_major(Coord(collapsed_output_shape))
     )
 
     var num_elements = output.num_elements()
@@ -347,11 +341,12 @@ def _repeat_interleave_gpu[
             var input_index = output_index
             input_index[1] = output_index[1] // repeat_count
 
-            var input_idx = collapsed_input.layout(Coord(input_index))
-            var input_value = collapsed_input.raw_load[width=width](input_idx)
-
-            var output_idx = collapsed_output.layout(Coord(output_index))
-            collapsed_output.raw_store(output_idx, input_value)
+            var input_value = collapsed_input.load[
+                width=width, alignment=align_of[dtype]()
+            ](Coord(input_index))
+            collapsed_output.store[alignment=align_of[dtype]()](
+                Coord(output_index), input_value
+            )
 
         elementwise[simd_width_of[output.dtype](), target=target](
             scalar_func, collapsed_output.layout.shape_coord(), ctx

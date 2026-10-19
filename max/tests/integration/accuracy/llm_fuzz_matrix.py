@@ -62,6 +62,14 @@ PIPELINES: Final[list[PipelineEntry]] = [
         timeout=90,
     ),
     PipelineEntry(
+        pipeline="tencent/Hy4-preview-FP8-ep-tp-mtp",
+        model_path="tencent/Hy4-preview-FP8",
+        runner="modrunner-b200-efa-8x",
+        gpu_flag="--devices gpu:0,1,2,3,4,5,6,7",
+        instance_type="bm.gpu.b200.8",
+        timeout=210,
+    ),
+    PipelineEntry(
         pipeline="minimax/MiniMax-M3-MXFP8-ep-tp",
         model_path="MiniMaxAI/MiniMax-M3-MXFP8",
         runner="modrunner-b200-efa-8x",

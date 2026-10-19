@@ -81,11 +81,11 @@ def test_grouped_gemm_epilogue[
     print("\n--- Testing grouped GEMM with epilogue ---")
     print(
         "  M=",
-        Int(m.value()),
+        Int(m),
         " N=",
-        Int(n.value()),
+        Int(n),
         " K=",
-        Int(k.value()),
+        Int(k),
         " cta_group=",
         cta_group,
         " register_based_epilogue=",
@@ -103,9 +103,9 @@ def test_grouped_gemm_epilogue[
     )
     var c_shape = row_major(m, Idx[NType.static_value])
 
-    var a_size = Int(m.value()) * Int(k.value())
-    var b_size = Int(n.value()) * Int(k.value())
-    var c_size = Int(m.value()) * Int(n.value())
+    var a_size = Int(m) * Int(k)
+    var b_size = Int(n) * Int(k)
+    var c_size = Int(m) * Int(n)
 
     # Host allocations
     var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](a_size)
@@ -181,11 +181,11 @@ def test_grouped_gemm_epilogue[
     rand(b_host.as_span())
 
     # Initialize C with random values for epilogue test
-    for i in range(Int(m.value())):
-        for j in range(Int(n.value())):
+    for i in range(Int(m)):
+        for j in range(Int(n)):
             comptime assert c_host.flat_rank >= 2
-            c_host[Coord(i, j)] = Scalar[c_type](random_float64(-1, 1))
-            c_host_original[Coord(i, j)] = c_host[i, j]
+            c_host[i, j] = Scalar[c_type](random_float64(-1, 1))
+            c_host_original[i, j] = c_host[i, j]
 
     # Copy to device
     ctx.enqueue_copy(a_device, a_host_ptr)
@@ -210,9 +210,9 @@ def test_grouped_gemm_epilogue[
     var problem_sizes_host = ctx.enqueue_create_host_buffer[.int32](
         max_groups * 4
     )
-    problem_sizes_host[0] = Int32(Int(m.value()))  # M
-    problem_sizes_host[1] = Int32(Int(n.value()))  # N
-    problem_sizes_host[2] = Int32(Int(k.value()))  # K
+    problem_sizes_host[0] = Int32(Int(m))  # M
+    problem_sizes_host[1] = Int32(Int(n))  # N
+    problem_sizes_host[2] = Int32(Int(k))  # K
     problem_sizes_host[3] = Int32(1)  # L (batch)
 
     var problem_sizes_device = ctx.enqueue_create_buffer[.int32](max_groups * 4)
@@ -260,7 +260,7 @@ def test_grouped_gemm_epilogue[
     # Compute total tiles
     comptime BM = config.block_tile_shape[0]
     comptime BN = mma_shape[1]
-    var total_tiles = ceildiv(Int(m.value()), BM) * ceildiv(Int(n.value()), BN)
+    var total_tiles = ceildiv(Int(m), BM) * ceildiv(Int(n), BN)
 
     # Template tensors - 3D TileTensors with batch=1
     var a_3d_shape = row_major(Idx[1], m, k)
@@ -345,10 +345,10 @@ def test_grouped_gemm_epilogue[
         comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
         return val + c_host_original.load[width=width](idx).cast[_dtype]()
 
-    for i in range(Int(m.value())):
-        for j in range(Int(n.value())):
+    for i in range(Int(m)):
+        for j in range(Int(n)):
             comptime assert c_host_ref.flat_rank >= 2
-            c_host_ref[Coord(i, j)] = epilogue_add_c_host(
+            c_host_ref[i, j] = epilogue_add_c_host(
                 Coord(i, j),
                 c_host_ref[i, j],
             )

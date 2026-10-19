@@ -113,18 +113,29 @@ def _str(self: Buffer) -> str:
 def _view(self: Buffer, dtype: DType, shape: ShapeType | None = None) -> Buffer:
     """Return a new buffer with the given type and shape that shares the underlying memory.
 
-    If the shape is not given, it will be deduced if possible, or a
-    ValueError is raised.
+    If ``shape`` is not given, it is deduced by resizing the last axis to fit
+    the new dtype. A rank-0 buffer has no axis to resize, so it keeps shape
+    ``()`` and only accepts a dtype of the same size. A ``ValueError`` is raised
+    when no shape can be deduced.
     """
     if shape is None:
-        last_axis_size = self.element_size * self.shape[-1]
-        if last_axis_size % dtype.size_in_bytes:
-            raise ValueError(
-                "When changing to a larger dtype, its size must be a"
-                " divisor of the total size in bytes of the last axis of"
-                " the array."
-            )
-        shape = (*self.shape[:-1], last_axis_size // dtype.size_in_bytes)
+        if self.rank == 0:
+            # Matches numpy, which rejects itemsize changes on 0-d arrays.
+            if dtype.size_in_bytes != self.element_size:
+                raise ValueError(
+                    "Cannot deduce a shape when viewing a rank-0 buffer as a"
+                    " dtype of a different size."
+                )
+            shape = ()
+        else:
+            last_axis_size = self.element_size * self.shape[-1]
+            if last_axis_size % dtype.size_in_bytes:
+                raise ValueError(
+                    "When changing to a different dtype, its size must be a"
+                    " divisor of the total size in bytes of the last axis of"
+                    " the array."
+                )
+            shape = (*self.shape[:-1], last_axis_size // dtype.size_in_bytes)
 
     return self._view(dtype, shape)
 

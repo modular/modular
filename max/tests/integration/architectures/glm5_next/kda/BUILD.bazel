@@ -43,6 +43,29 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_kda_chunk_prefill",
+    srcs = ["test_kda_chunk_prefill.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    gpu_constraints = ["//:b200_gpu"],
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        requirement("numpy"),
+        requirement("torch"),
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+    ],
+)
+
+modular_py_test(
     name = "test_kda_state_cache",
     srcs = ["test_kda_state_cache.py"],
     deps = [

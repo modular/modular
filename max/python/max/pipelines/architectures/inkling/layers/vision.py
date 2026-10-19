@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import itertools
 import math
+from collections.abc import Sequence
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorType, TensorValue, ops
@@ -154,11 +155,16 @@ class InklingVisionModel(Module):
         config: InklingVisionConfig,
         dtype: DType,
         device: DeviceRef,
+        *,
+        image_mean: Sequence[float],
+        image_std: Sequence[float],
     ) -> None:
         super().__init__()
         self.config = config
         self.dtype = dtype
         self.device = device
+        self.image_mean = tuple(image_mean)
+        self.image_std = tuple(image_std)
         self.folds = plan_folds(config)
 
         linears = []
@@ -198,8 +204,30 @@ class InklingVisionModel(Module):
             else None
         )
 
+    def normalize(self, pixels: TensorValue) -> TensorValue:
+        """Raw pixels ``[patches, patch, patch, channels]`` to the tower's
+        input frames ``[patches, temporal_patch_size, patch, patch, channels]``.
+
+        Normalizes in float32 in the reference's order, then repeats the one
+        image frame across the temporal axis.
+        """
+        f32 = DType.float32
+        x = (
+            pixels.cast(f32) * ops.constant(1.0 / 255.0, f32, self.device)
+            - ops.constant(self.image_mean, f32, self.device)
+        ) / ops.constant(self.image_std, f32, self.device)
+        frames = ops.unsqueeze(x.cast(self.dtype), 1)
+        return ops.broadcast_to(
+            frames,
+            [
+                pixels.shape[0],
+                self.config.temporal_patch_size,
+                *pixels.shape[1:],
+            ],
+        )
+
     def __call__(self, patches: TensorValue) -> TensorValue:
-        x = patches.cast(self.dtype)
+        x = self.normalize(patches)
         for index, (t_fold, hw_fold, _) in enumerate(self.folds):
             x = fold_timespace_to_depth(x, t_fold, hw_fold)
             x = self.linears[index](x)
@@ -213,10 +241,9 @@ class InklingVisionModel(Module):
         """One block of raw patches, as the image processor emits them."""
         return (
             TensorType(
-                DType.float32,
+                DType.int16,
                 shape=[
                     "total_patches",
-                    self.config.temporal_patch_size,
                     self.config.patch_size,
                     self.config.patch_size,
                     self.config.n_channels,

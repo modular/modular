@@ -44,11 +44,11 @@ def _register_value(n_mma: Int, m_mma: Int, lane: Int, frag: Int) -> Float32:
     return Float32(n_mma * 10000 + m_mma * 1000 + lane * 16 + frag + 1) / 32
 
 
-def _scatter[dtype: DType](output: UnsafePointer[Scalar[dtype], MutAnyOrigin]):
+def _scatter[dtype: DType](output: MutPointer[Scalar[dtype], MutAnyOrigin]):
     comptime mma = get_mma_shape[dtype, .float32]()
     comptime assert mma[0] == MMA_M and mma[1] == MMA_N
     comptime assert get_fragment_size[mma]()[2] == FRAGMENT
-    var lane = Int(thread_idx.x)
+    var lane = thread_idx.x
     var storage = stack_allocation[dtype, address_space=.SHARED](
         row_major[RING_SIZE + 2 * GUARD]()
     )
@@ -60,7 +60,7 @@ def _scatter[dtype: DType](output: UnsafePointer[Scalar[dtype], MutAnyOrigin]):
     registers_storage[0] = -29
     registers_storage[REG_ROWS * FRAGMENT + 1] = -30
     var registers = TileTensor[address_space=.LOCAL, linear_idx_type=.int32](
-        registers_storage.unsafe_ptr() + 1,
+        registers_storage.unsafe_ptr().unsafe_offset(1),
         row_major[REG_ROWS, FRAGMENT](),
     )
     comptime for n_mma in range(WN // MMA_N):
@@ -77,7 +77,7 @@ def _scatter[dtype: DType](output: UnsafePointer[Scalar[dtype], MutAnyOrigin]):
         address_space=.SHARED,
         circular=True,
     ](
-        storage.unsafe_ptr() + GUARD,
+        storage.unsafe_ptr().unsafe_offset(GUARD),
         tile_layout,
         bound=RING_SIZE,
         stride=BM * BK,

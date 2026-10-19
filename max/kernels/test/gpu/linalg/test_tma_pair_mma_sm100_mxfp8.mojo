@@ -178,18 +178,27 @@ def blockscaled_pair_cta_mxfp8[
         b_scales_type
     ]()
 
-    var a_smem = smem.bitcast[Scalar[a_type]]()
-    var b_smem = (smem + a_smem_bytes).bitcast[Scalar[b_type]]()
-    var a_scales_smem = (smem + a_smem_bytes + b_smem_bytes).bitcast[
-        Scalar[a_scales_type]
+    var a_smem = smem.unsafe_bitcast[Scalar[a_type]]()
+    var b_smem = smem.unsafe_offset(a_smem_bytes).unsafe_bitcast[
+        Scalar[b_type]
     ]()
+    var a_scales_smem = (
+        smem.unsafe_offset(a_smem_bytes)
+        .unsafe_offset(b_smem_bytes)
+        .unsafe_bitcast[Scalar[a_scales_type]]()
+    )
     var b_scales_smem = (
-        smem + a_smem_bytes + b_smem_bytes + a_scales_bytes
-    ).bitcast[Scalar[b_scales_type]]()
+        smem.unsafe_offset(a_smem_bytes)
+        .unsafe_offset(b_smem_bytes)
+        .unsafe_offset(a_scales_bytes)
+    ).unsafe_bitcast[Scalar[b_scales_type]]()
 
     var smem_pool = (
-        smem + a_smem_bytes + b_smem_bytes + a_scales_bytes + b_scales_bytes
-    ).bitcast[Int64]()
+        smem.unsafe_offset(a_smem_bytes)
+        .unsafe_offset(b_smem_bytes)
+        .unsafe_offset(a_scales_bytes)
+        .unsafe_offset(b_scales_bytes)
+    ).unsafe_bitcast[Int64]()
 
     var a_smem_tile = TileTensor(
         a_smem, tile_layout_k_major_typed[a_type, BM, BK, a_swizzle]
@@ -216,7 +225,11 @@ def blockscaled_pair_cta_mxfp8[
     comptime accum_type = get_accum_type[a_type]()
 
     # Shared memory pointer to hold tensor memory address
-    var ptr_tmem_addr = (smem_pool.bitcast[Int64]() + 4).bitcast[UInt32]()
+    var ptr_tmem_addr = (
+        smem_pool.unsafe_bitcast[Int64]()
+        .unsafe_offset(4)
+        .unsafe_bitcast[UInt32]()
+    )
 
     comptime c_frag_size = MMA_M * MMA_N // 128 // cta_group
     var c_frag: Array[Scalar[accum_type], c_frag_size]
@@ -228,11 +241,11 @@ def blockscaled_pair_cta_mxfp8[
         a_expected_bytes + b_expected_bytes
     ) + a_scales_bytes + b_scales_bytes
 
-    var tma_mbar_ptr = smem_pool.bitcast[Int64]()
-    var mma_mbar_ptr = smem_pool.bitcast[Int64]() + 2
+    var tma_mbar_ptr = smem_pool.unsafe_bitcast[Int64]()
+    var mma_mbar_ptr = smem_pool.unsafe_bitcast[Int64]().unsafe_offset(2)
 
-    var tma_mbar = tma_mbar_ptr.bitcast[SharedMemBarrier]()
-    var mma_mbar = mma_mbar_ptr.bitcast[SharedMemBarrier]()
+    var tma_mbar = tma_mbar_ptr.unsafe_bitcast[SharedMemBarrier]()
+    var mma_mbar = mma_mbar_ptr.unsafe_bitcast[SharedMemBarrier]()
 
     var elect_one_warp = get_warp_id() == 0
     var elect_one_thread = elect_one_sync_with_mask()
@@ -402,7 +415,11 @@ def blockscaled_pair_cta_mxfp8[
                         )
                         var a_scales_desc = MMASmemDescriptor.create[
                             8 * 16, 0, TensorMapSwizzle.SWIZZLE_NONE
-                        ](a_scales_smem_tile.unsafe_ptr() + a_scales_offset)
+                        ](
+                            a_scales_smem_tile.unsafe_ptr().unsafe_offset(
+                                a_scales_offset
+                            )
+                        )
                         tcgen05_cp[
                             cta_group=2,
                             datapaths=32,
@@ -421,7 +438,11 @@ def blockscaled_pair_cta_mxfp8[
                         )
                         var b_scales_desc = MMASmemDescriptor.create[
                             8 * 16, 0, TensorMapSwizzle.SWIZZLE_NONE
-                        ](b_scales_smem_tile.unsafe_ptr() + b_scales_offset)
+                        ](
+                            b_scales_smem_tile.unsafe_ptr().unsafe_offset(
+                                b_scales_offset
+                            )
+                        )
                         tcgen05_cp[
                             cta_group=2,
                             datapaths=32,
@@ -741,8 +762,8 @@ def test_blockscaled_pair_cta_mxfp8[
 ](ctx: DeviceContext, m: MType, n: NType) raises:
     comptime assert transpose_b, "transpose_b must be true"
 
-    var M = Int(m.value())
-    var N = Int(n.value())
+    var M = Int(m)
+    var N = Int(n)
     var K = k
 
     comptime BM = block_tile_shape[0]
@@ -804,7 +825,7 @@ def test_blockscaled_pair_cta_mxfp8[
 
     for i in range(ceildiv(N, REF_BLOCK_SCALE)):
         for j in range(ceildiv(K, REF_BLOCK_SCALE)):
-            b_scales_host_ref[Coord(i, j)] = (1 << random_ui64(0, 3)).cast[
+            b_scales_host_ref[i, j] = (1 << random_ui64(0, 3)).cast[
                 ref_scales_type
             ]()
 

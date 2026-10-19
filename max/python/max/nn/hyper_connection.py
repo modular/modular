@@ -44,9 +44,12 @@ class HyperConnection(Module):
     A decoder layer holds two of these, one for the attention site and one for
     the feed-forward site. The caller drives the surrounding residual update::
 
-        post, comb, collapsed = hc(hidden_streams)
+        post, comb, collapsed, pre = hc(hidden_streams)
         sublayer_out = sublayer(collapsed)
         hidden_streams = comb @ hidden_streams + post.unsqueeze(-1) * sublayer_out
+
+    A model that carries the collapse weights from one sublayer to the next
+    passes ``pre`` to the next call as its ``pre_mix``.
 
     The gate math always runs in float32, regardless of ``dtype``, matching the
     reference implementation. ``collapsed`` is cast back to the input's dtype.
@@ -66,8 +69,8 @@ class HyperConnection(Module):
             DType.bfloat16, ["total_seq_len", 4, 4096], device=device_ref
         )
         with Graph("hyper_connection", input_types=[input_type]) as graph:
-            post, comb, collapsed = hc(graph.inputs[0].tensor)
-            graph.output(post, comb, collapsed)
+            post, comb, collapsed, pre = hc(graph.inputs[0].tensor)
+            graph.output(post, comb, collapsed, pre)
 
     Args:
         hidden_size: Width of a single residual stream.
@@ -126,26 +129,35 @@ class HyperConnection(Module):
         )
 
     def __call__(
-        self, hidden_streams: TensorValue
-    ) -> tuple[TensorValue, TensorValue, TensorValue]:
+        self,
+        hidden_streams: TensorValue,
+        pre_mix: TensorValue | None = None,
+    ) -> tuple[TensorValue, TensorValue, TensorValue, TensorValue]:
         """Computes the mHC gates and collapses the streams for the sublayer.
 
         Args:
             hidden_streams: The parallel residual streams, shaped
                 ``[total_seq_len, hc_mult, hidden_size]``. The batch and
                 sequence axes are folded into the leading axis.
+            pre_mix: Weights for the collapse, shaped ``[total_seq_len,
+                hc_mult]`` or ``[hc_mult]``, such as the previous sublayer's
+                ``pre``. Defaults to this call's own ``pre``.
 
         Returns:
-            A tuple of three tensors:
+            A tuple of four tensors:
 
             - ``post``: float32 ``[total_seq_len, hc_mult]``.
             - ``comb``: float32 ``[total_seq_len, hc_mult, hc_mult]``.
             - ``collapsed``: ``[total_seq_len, hidden_size]``, in
               ``hidden_streams``' dtype.
+            - ``pre``: float32 ``[total_seq_len, hc_mult]``, the collapse
+              weights computed from ``hidden_streams``.
 
         Raises:
-            ValueError: If ``hidden_streams`` is not rank 3 or its trailing two
-                dimensions do not match ``hc_mult`` and ``hidden_size``.
+            ValueError: If ``hidden_streams`` is not rank 3, its trailing two
+                dimensions do not match ``hc_mult`` and ``hidden_size``, or
+                the trailing dimension of ``pre_mix`` does not match
+                ``hc_mult``.
         """
         if hidden_streams.rank != 3:
             raise ValueError(
@@ -162,6 +174,11 @@ class HyperConnection(Module):
             raise ValueError(
                 f"expected hidden_streams of width {self.hidden_size}, got"
                 f" {hidden_streams.shape[2]}"
+            )
+        if pre_mix is not None and pre_mix.shape[-1] != self.hc_mult:
+            raise ValueError(
+                f"expected pre_mix with {self.hc_mult} streams, got"
+                f" {pre_mix.shape[-1]}"
             )
 
         device = hidden_streams.device
@@ -184,12 +201,15 @@ class HyperConnection(Module):
             hc_eps=self.hc_eps,
             hc_sinkhorn_iters=self.hc_sinkhorn_iters,
         )
+        comb = ops.reshape(comb, [rows, self.hc_mult, self.hc_mult])
 
+        weights = pre if pre_mix is None else ops.cast(pre_mix, DType.float32)
         collapsed = ops.squeeze(
-            ops.sum(ops.unsqueeze(pre, -1) * streams, axis=1), 1
+            ops.sum(ops.unsqueeze(weights, -1) * streams, axis=1), 1
         )
         return (
             post,
-            ops.reshape(comb, [rows, self.hc_mult, self.hc_mult]),
+            comb,
             ops.cast(collapsed, hidden_streams.dtype),
+            pre,
         )

@@ -33,21 +33,20 @@ from builtin_kernels.rowwise_reductions import reduce_argmax, reduce_argmin
 from max.algorithm.backend.cpu.parallelize import _get_num_workers
 from std.testing import TestSuite, assert_equal, assert_true
 from std.utils.coord import Coord
-from std.utils.index import Index
 from std.utils.numerics import nan
 
 
 def _argmax_index(values: List[Float32]) -> Int:
     var acc = ArgMax[.float32, 1]()
     for i in range(len(values)):
-        acc.accumulate[.float32, 1](Float32(values[i]), Int64(i))
+        acc.accumulate[.float32, 1](values[i], Int64(i))
     return Int(acc.reduce().acc_indices[0])
 
 
 def _argmin_index(values: List[Float32]) -> Int:
     var acc = ArgMin[.float32, 1]()
     for i in range(len(values)):
-        acc.accumulate[.float32, 1](Float32(values[i]), Int64(i))
+        acc.accumulate[.float32, 1](values[i], Int64(i))
     return Int(acc.reduce().acc_indices[0])
 
 
@@ -55,8 +54,6 @@ comptime _SPLITK_AXIS_SIZE = 1 << 21
 """Clears `_CPU_SPLITK_MIN_AXIS`, so a single row this long fans out across
 multiple CPU workers (`algorithm.cpu.rowwise`'s split-K tier) whenever the
 host has at least 4 logical cores."""
-
-comptime _SPLITK_ROW_SHAPE = Index(1, _SPLITK_AXIS_SIZE)
 
 comptime _SPLITK_WINNER_IDX = 1_000_000
 """Split-K requires >= 4 workers to fire at all (`num_outputs * 4 <=
@@ -82,7 +79,7 @@ def _assert_reaches_splitk_tier() raises:
 
 
 def _run_splitk_arg[
-    is_max: Bool, dtype: DType = DType.float32
+    is_max: Bool, dtype: DType = .float32
 ](mut row: List[Scalar[dtype]]) raises -> Int:
     """Drives `reduce_argmax` (`is_max`) or `reduce_argmin` over `row` as a
     single `[1, len(row)]` row. `input_fn`/`output_fn` read/write straight
@@ -96,7 +93,7 @@ def _run_splitk_arg[
     def input_fn[
         width: Int, alignment: Int
     ](coords: Coord) {input_ptr} -> SIMD[dtype, width]:
-        return input_ptr.unsafe_load[width=width](Int(coords[1].value()))
+        return input_ptr.unsafe_load[width=width](Int(coords[1]))
 
     @inline(.always)
     def output_fn[
@@ -106,11 +103,11 @@ def _run_splitk_arg[
 
     comptime if is_max:
         reduce_argmax[dtype, target="cpu", reduce_dim=1](
-            input_fn, output_fn, Coord(_SPLITK_ROW_SHAPE)
+            input_fn, output_fn, Coord(1, _SPLITK_AXIS_SIZE)
         )
     else:
         reduce_argmin[dtype, target="cpu", reduce_dim=1](
-            input_fn, output_fn, Coord(_SPLITK_ROW_SHAPE)
+            input_fn, output_fn, Coord(1, _SPLITK_AXIS_SIZE)
         )
     return Int(output_row[0])
 

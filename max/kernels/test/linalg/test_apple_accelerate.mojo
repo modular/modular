@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from layout import Coord, TileTensor, row_major
+from layout import TileTensor, row_major
 from linalg.matmul.cpu.apple_accelerate import (
     apple_batched_matmul,
     apple_matmul,
@@ -42,10 +42,10 @@ def gemm_naive(
     for i in range(m):
         for p in range(k):
             for j in range(n):
-                var a_val = a.load(Coord(i, p)).cast[c.dtype]()[0]
-                var b_val = b.load(Coord(p, j)).cast[c.dtype]()[0]
-                var cur = c.load(Coord(i, j))[0]
-                c.store(Coord(i, j), cur + a_val * b_val)
+                var a_val = a.load((i, p)).cast[c.dtype]()[0]
+                var b_val = b.load((p, j)).cast[c.dtype]()[0]
+                var cur = c.load((i, j))[0]
+                c.store((i, j), cur + a_val * b_val)
 
 
 def test_matmul(
@@ -65,21 +65,21 @@ def test_matmul(
     for i in range(m):
         for j in range(k):
             a.store(
-                Coord(i, j),
+                (i, j),
                 Scalar[a.dtype](i + j) * Scalar[a.dtype](0.001),
             )
 
     for i in range(k):
         for j in range(n):
             b.store(
-                Coord(i, j),
+                (i, j),
                 Scalar[b.dtype](i + k) * Scalar[b.dtype](0.001),
             )
 
     for i in range(m):
         for j in range(n):
-            c.store(Coord(i, j), Scalar[c.dtype](0))
-            golden.store(Coord(i, j), Scalar[golden.dtype](0))
+            c.store((i, j), Scalar[c.dtype](0))
+            golden.store((i, j), Scalar[golden.dtype](0))
 
     apple_matmul(c, a, b)
     gemm_naive(golden, a, b, m, n, k)
@@ -87,9 +87,9 @@ def test_matmul(
     var errors: Int = 0
     for i in range(m):
         for j in range(n):
-            if c.load(Coord(i, j)) != golden.load(Coord(i, j)):
+            if c.load((i, j)) != golden.load((i, j)):
                 if errors < 10:
-                    print(c.load(Coord(i, j)) - golden.load(Coord(i, j)))
+                    print(c.load((i, j)) - golden.load((i, j)))
                 errors += 1
 
     assert_true(
@@ -152,10 +152,10 @@ def bmm_naive(
         for i in range(m):
             for p in range(k):
                 for j in range(n):
-                    var a_val = a.load(Coord(batch, i, p)).cast[c.dtype]()[0]
-                    var b_val = b.load(Coord(batch, p, j)).cast[c.dtype]()[0]
-                    var cur = c.load(Coord(batch, i, j))[0]
-                    c.store(Coord(batch, i, j), cur + a_val * b_val)
+                    var a_val = a.load((batch, i, p)).cast[c.dtype]()[0]
+                    var b_val = b.load((batch, p, j)).cast[c.dtype]()[0]
+                    var cur = c.load((batch, i, j))[0]
+                    c.store((batch, i, j), cur + a_val * b_val)
 
 
 def test_batched_matmul(
@@ -179,7 +179,7 @@ def test_batched_matmul(
         for i in range(m):
             for j in range(k):
                 a.store(
-                    Coord(batch, i, j),
+                    (batch, i, j),
                     Scalar[a.dtype](i + j) * Scalar[a.dtype](0.001),
                 )
 
@@ -187,15 +187,15 @@ def test_batched_matmul(
         for i in range(k):
             for j in range(n):
                 b.store(
-                    Coord(batch, i, j),
+                    (batch, i, j),
                     Scalar[b.dtype](i + k) * Scalar[b.dtype](0.001),
                 )
 
     for batch in range(batches):
         for i in range(m):
             for j in range(n):
-                c.store(Coord(batch, i, j), Scalar[c.dtype](0))
-                golden.store(Coord(batch, i, j), Scalar[golden.dtype](0))
+                c.store((batch, i, j), Scalar[c.dtype](0))
+                golden.store((batch, i, j), Scalar[golden.dtype](0))
 
     var c_shape = Index(batches, m, n)
     apple_batched_matmul(c, a, b, c_shape)
@@ -205,13 +205,10 @@ def test_batched_matmul(
     for batch in range(batches):
         for i in range(m):
             for j in range(n):
-                if c.load(Coord(batch, i, j)) != golden.load(
-                    Coord(batch, i, j)
-                ):
+                if c.load((batch, i, j)) != golden.load((batch, i, j)):
                     if errors < 10:
                         print(
-                            c.load(Coord(batch, i, j))
-                            - golden.load(Coord(batch, i, j)),
+                            c.load((batch, i, j)) - golden.load((batch, i, j)),
                             "at",
                             batch,
                             i,

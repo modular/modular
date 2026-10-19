@@ -78,18 +78,19 @@ def test_pad_constant_nd[rank: Int, n: Int, verify: Bool = False]() raises:
         var in_shape = IndexList[rank]()
         var out_shape = IndexList[rank]()
 
-        comptime if rank == 1:
-            in_shape = [n]
-            out_shape = [n + d]
-        elif rank == 2:
-            in_shape = [n, n]
-            out_shape = [n + d, n + d]
-        elif rank == 3:
-            in_shape = [n, n, n]
-            out_shape = [n + d, n + d, n + d]
-        elif rank == 4:
-            in_shape = [n, n, n, n]
-            out_shape = [n + d, n + d, n + d, n + d]
+        comptime match rank:
+            case 1:
+                in_shape = [n]
+                out_shape = [n + d]
+            case 2:
+                in_shape = [n, n]
+                out_shape = [n + d, n + d]
+            case 3:
+                in_shape = [n, n, n]
+                out_shape = [n + d, n + d, n + d]
+            case 4:
+                in_shape = [n, n, n, n]
+                out_shape = [n + d, n + d, n + d, n + d]
         return [in_shape, out_shape]
 
     comptime in_out_shape = get_in_out_shapes[rank]()
@@ -130,9 +131,10 @@ def test_pad_constant_nd[rank: Int, n: Int, verify: Bool = False]() raises:
     if verify:
         # Simple verification: check that the padding values are correct
         # and the center contains the input values
+        var output_flat = output.reshape(row_major[out_size]())
         for i in range(out_size):
             # Just verify no crash occurs and values are set
-            _ = output.raw_load(i)
+            _ = output_flat[i]
     _ = output_ptr^
     _ = input_ptr^
 
@@ -147,18 +149,19 @@ def test_pad_reflect_nd[rank: Int, n: Int, verify: Bool = False]() raises:
         var in_shape = IndexList[rank]()
         var out_shape = IndexList[rank]()
 
-        comptime if rank == 1:
-            in_shape = [n]
-            out_shape = [n + d]
-        elif rank == 2:
-            in_shape = [n, n]
-            out_shape = [n + d, n + d]
-        elif rank == 3:
-            in_shape = [n, n, n]
-            out_shape = [n + d, n + d, n + d]
-        elif rank == 4:
-            in_shape = [n, n, n, n]
-            out_shape = [n + d, n + d, n + d, n + d]
+        comptime match rank:
+            case 1:
+                in_shape = [n]
+                out_shape = [n + d]
+            case 2:
+                in_shape = [n, n]
+                out_shape = [n + d, n + d]
+            case 3:
+                in_shape = [n, n, n]
+                out_shape = [n + d, n + d, n + d]
+            case 4:
+                in_shape = [n, n, n, n]
+                out_shape = [n + d, n + d, n + d, n + d]
         return [in_shape, out_shape]
 
     comptime in_out_shape = get_in_out_shapes[rank]()
@@ -195,8 +198,9 @@ def test_pad_reflect_nd[rank: Int, n: Int, verify: Bool = False]() raises:
 
     if verify:
         # Simple verification: check that values are set
+        var output_flat = output.reshape(row_major[out_size]())
         for i in range(out_size):
-            _ = output.raw_load(i)
+            _ = output_flat[i]
     _ = output_ptr^
     _ = input_ptr^
 

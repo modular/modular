@@ -207,7 +207,7 @@ def _build_shared_b[
     )
     for e in range(num_experts):
         var expert_view = TileTensor(
-            b_scales_host_ptr + e * b_expert_sf_size,
+            b_scales_host_ptr.unsafe_offset(e * b_expert_sf_size),
             row_major(
                 Idx[n_groups_b],
                 Idx[k_groups],
@@ -242,7 +242,7 @@ def _build_shared_b[
 
     for e in range(num_experts):
         var src_view = TileTensor(
-            b_scales_host_ptr + e * b_expert_sf_size,
+            b_scales_host_ptr.unsafe_offset(e * b_expert_sf_size),
             row_major(
                 Idx[n_groups_b],
                 Idx[k_groups],
@@ -252,7 +252,7 @@ def _build_shared_b[
             ),
         )
         var dst_view = TileTensor(
-            b_scales_perm_host_ptr + e * b_expert_sf_size,
+            b_scales_perm_host_ptr.unsafe_offset(e * b_expert_sf_size),
             row_major(
                 Idx[n_groups_b],
                 Idx[k_groups],
@@ -549,8 +549,8 @@ def _test_swiglu_dispatch[
     # left the pad rows untouched).
     var sf_garbage_ref_ptr = alloc[Scalar[scales_dtype]](S_size)
     var sf_garbage_test_ptr = alloc[Scalar[scales_dtype]](S_size)
-    var sf_garbage_ref_bytes = sf_garbage_ref_ptr.bitcast[UInt8]()
-    var sf_garbage_test_bytes = sf_garbage_test_ptr.bitcast[UInt8]()
+    var sf_garbage_ref_bytes = sf_garbage_ref_ptr.unsafe_bitcast[UInt8]()
+    var sf_garbage_test_bytes = sf_garbage_test_ptr.unsafe_bitcast[UInt8]()
     for i in range(S_size):
         sf_garbage_ref_bytes[i] = UInt8(0xAA)
         sf_garbage_test_bytes[i] = UInt8(0x55)
@@ -860,11 +860,7 @@ def _test_swiglu_dispatch[
                 var i4 = (post_col_lo // NVFP4_SF_VECTOR_SIZE) % SF_ATOM_K
                 var sf_idx = (
                     (
-                        (
-                            Int(i0)
-                            * Int(S_ref_tensor.layout.shape[1]().value())
-                            + Int(i1)
-                        )
+                        (Int(i0) * Int(S_ref_tensor.dim[1]()) + Int(i1))
                         * Int(SF_ATOM_M[0])
                         + Int(i2)
                     )

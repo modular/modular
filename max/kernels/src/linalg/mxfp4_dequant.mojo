@@ -22,7 +22,7 @@ SF_VECTOR_SIZE (32) consecutive elements.
 from std.math import ceildiv
 from max.gpu import block_idx, thread_idx, grid_dim, block_dim
 from max.gpu.host import DeviceContext
-from max.gpu.host.info import GPUInfo
+from max.gpu.host.info import get_gpu_info
 from max.gpu.primitives.grid_controls import (
     PDL,
     PDLLevel,
@@ -95,7 +95,7 @@ def _dequant_mxfp4_to_fp8_kernel[
                 # Load packed uint8 bytes
                 var packed_byte_col = global_col_idx // 2
                 var packed_bytes = input.load[BYTES_PER_THREAD](
-                    Coord(global_row_idx, packed_byte_col)
+                    (global_row_idx, packed_byte_col)
                 )
 
                 # Unpack to float32 via E2M1 lookup table.
@@ -109,7 +109,7 @@ def _dequant_mxfp4_to_fp8_kernel[
                 # Load the E8M0 scale from 2D layout
                 var scale_col = global_col_idx // SF_VECTOR_SIZE
                 var scale_e8m0 = rebind[Scalar[scales_dtype]](
-                    scales.load(Coord(global_row_idx, scale_col))
+                    scales.load((global_row_idx, scale_col))
                 )
 
                 # Convert E8M0 to float32 using stdlib SIMD cast.
@@ -123,8 +123,8 @@ def _dequant_mxfp4_to_fp8_kernel[
                 var out_values = scaled_values.cast[out_dtype]()
 
                 # Store output
-                output.store[width=ELEMENTS_PER_THREAD](
-                    Coord(global_row_idx, global_col_idx),
+                output.store(
+                    (global_row_idx, global_col_idx),
                     out_values,
                 )
 
@@ -183,7 +183,7 @@ def dequant_mxfp4[
         "num_cols must be a multiple of ELEMENTS_PER_THREAD (8)",
     )
     comptime num_max_threads = 512
-    comptime _gpu = GPUInfo.default_accelerator()
+    comptime _gpu = get_gpu_info()
     comptime num_SMs = _gpu.sm_count
 
     var num_col_threads = ceildiv(num_cols, ELEMENTS_PER_THREAD)
@@ -259,7 +259,7 @@ def _cast_bf16_to_fp8(
     @inline(.always)
     def cast_fn[width: Int, alignment: Int = 1](idx: Coord) {var}:
         comptime assert idx.rank == 2, "cast_fn only supports rank-2 tensors"
-        out_tt.store[width=width](
+        out_tt.store(
             idx,
             in_tt.load[width=width](idx).cast[out_tt.dtype](),
         )

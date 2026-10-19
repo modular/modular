@@ -66,11 +66,9 @@ def test_gpu_softmax(ctx: DeviceContext) raises:
     rand[type](in_host_ptr.as_span())
     ctx.enqueue_copy(in_device_ptr, in_host_ptr)
 
-    @__parameter
-    @__copy_capture(in_device)
     def input_fn_device[
         _simd_width: Int
-    ](coords: Coord) -> SIMD[type, _simd_width]:
+    ](coords: Coord) {var in_device} -> SIMD[type, _simd_width]:
         return in_device.load[width=_simd_width](coords)
 
     def input_fn_host[
@@ -78,7 +76,8 @@ def test_gpu_softmax(ctx: DeviceContext) raises:
     ](coords: Coord) {var in_host} -> SIMD[type, _simd_width]:
         return in_host.load[width=_simd_width](coords)
 
-    _softmax_gpu[type, 1, rank, input_fn_device](
+    _softmax_gpu[type, 1, rank](
+        input_fn_device,
         Coord(shape),
         TileTensor(out_device_ptr, row_major(Coord(shape))),
         rank - 1,
@@ -152,28 +151,26 @@ def test_gpu_softmax_half[test_type: DType](ctx: DeviceContext) raises:
     ctx.enqueue_copy(in_device_test_ptr, in_host_test_ptr)
     ctx.enqueue_copy(in_device_ref_ptr, in_host_ref_ptr)
 
-    @__parameter
-    @__copy_capture(in_device_ref)
     def input_fn_ref[
         _simd_width: Int
-    ](coords: Coord) -> SIMD[ref_type, _simd_width]:
+    ](coords: Coord) {var in_device_ref} -> SIMD[ref_type, _simd_width]:
         return in_device_ref.load[width=_simd_width](coords)
 
-    @__parameter
-    @__copy_capture(in_device_test)
     def input_fn_test[
         _simd_width: Int
-    ](coords: Coord) -> SIMD[test_type, _simd_width]:
+    ](coords: Coord) {var in_device_test} -> SIMD[test_type, _simd_width]:
         return in_device_test.load[width=_simd_width](coords)
 
-    _softmax_gpu[ref_type, 1, rank, input_fn_ref](
+    _softmax_gpu[ref_type, 1, rank](
+        input_fn_ref,
         Coord(shape),
         TileTensor(out_device_ref_ptr, row_major(Coord(shape))),
         rank - 1,
         ctx,
     )
 
-    _softmax_gpu[test_type, 1, rank, input_fn_test](
+    _softmax_gpu[test_type, 1, rank](
+        input_fn_test,
         Coord(shape),
         TileTensor(out_device_test_ptr, row_major(Coord(shape))),
         rank - 1,
@@ -240,11 +237,9 @@ def test_gpu_softmax_warp_short_axis[
 
     ctx.enqueue_copy(in_device_test_ptr, in_host_test_ptr)
 
-    @__parameter
-    @__copy_capture(in_device_test)
     def input_fn_device[
         _simd_width: Int
-    ](coords: Coord) -> SIMD[test_type, _simd_width]:
+    ](coords: Coord) {var in_device_test} -> SIMD[test_type, _simd_width]:
         return in_device_test.load[width=_simd_width](coords)
 
     def input_fn_host[
@@ -256,9 +251,9 @@ def test_gpu_softmax_warp_short_axis[
         test_type,
         1,
         rank,
-        input_fn_device,
         has_prologue_fusion=has_prologue_fusion,
     ](
+        input_fn_device,
         Coord(shape),
         TileTensor(out_device_test_ptr, row_major(Coord(shape))),
         rank - 1,
@@ -341,7 +336,6 @@ def test_gpu_softmax_large_vocab[test_type: DType](ctx: DeviceContext) raises:
     comptime ref_type = DType.float32
     comptime rank = 2
     var shape = IndexList[rank](32, 128256)
-    var length = shape.flattened_length()
 
     var layout = row_major(Coord(shape))
     var in_ref = HostDeviceTileTensor[ref_type](layout, ctx)
@@ -349,38 +343,35 @@ def test_gpu_softmax_large_vocab[test_type: DType](ctx: DeviceContext) raises:
     var out_ref = HostDeviceTileTensor[ref_type](layout, ctx)
     var out_test = HostDeviceTileTensor[test_type](layout, ctx)
 
-    var in_host_test = in_test.host_tensor().unsafe_ptr()
-    var in_host_ref = in_ref.host_tensor().unsafe_ptr()
-    for i in range(length):
-        var v = random_float64(-3, 3).cast[.float32]().cast[test_type]()
-        in_host_test[i] = v
-        in_host_ref[i] = v.cast[ref_type]()
+    var in_host_test = in_test.host_tensor()
+    var in_host_ref = in_ref.host_tensor()
+    for row in range(shape[0]):
+        for col in range(shape[1]):
+            var v = random_float64(-3, 3).cast[.float32]().cast[test_type]()
+            in_host_test[row, col] = v
+            in_host_ref[row, col] = v.cast[ref_type]()
 
     in_ref.to_device()
     in_test.to_device()
     var in_device_ref = in_ref.device_tensor()
     var in_device_test = in_test.device_tensor()
 
-    @__parameter
-    @__copy_capture(in_device_ref)
     def input_fn_ref[
         _simd_width: Int
-    ](coords: Coord) -> SIMD[ref_type, _simd_width]:
+    ](coords: Coord) {var in_device_ref} -> SIMD[ref_type, _simd_width]:
         return in_device_ref.load[width=_simd_width](coords)
 
-    @__parameter
-    @__copy_capture(in_device_test)
     def input_fn_test[
         _simd_width: Int
-    ](coords: Coord) -> SIMD[test_type, _simd_width]:
+    ](coords: Coord) {var in_device_test} -> SIMD[test_type, _simd_width]:
         return in_device_test.load[width=_simd_width](coords)
 
     _softmax_gpu[
         ref_type,
         simd_width_of[ref_type, target=ctx.target](),
         rank,
-        input_fn_ref,
     ](
+        input_fn_ref,
         Coord(shape),
         out_ref.device_tensor(),
         rank - 1,
@@ -391,8 +382,8 @@ def test_gpu_softmax_large_vocab[test_type: DType](ctx: DeviceContext) raises:
         test_type,
         simd_width_of[test_type, target=ctx.target](),
         rank,
-        input_fn_test,
     ](
+        input_fn_test,
         Coord(shape),
         out_test.device_tensor(),
         rank - 1,
@@ -401,12 +392,13 @@ def test_gpu_softmax_large_vocab[test_type: DType](ctx: DeviceContext) raises:
 
     out_ref.to_host()
     out_test.to_host()
-    var out_host_ref = out_ref.host_tensor().unsafe_ptr()
-    var out_host_test = out_test.host_tensor().unsafe_ptr()
-    for i in range(length):
-        var ref_val = out_host_ref[i]
-        var test_val = out_host_test[i].cast[ref_type]()
-        assert_almost_equal(ref_val, test_val, atol=1e-2)
+    var out_host_ref = out_ref.host_tensor()
+    var out_host_test = out_test.host_tensor()
+    for row in range(shape[0]):
+        for col in range(shape[1]):
+            var ref_val = out_host_ref[row, col]
+            var test_val = out_host_test[row, col].cast[ref_type]()
+            assert_almost_equal(ref_val, test_val, atol=1e-2)
 
 
 def test_gpu_softmax_masked_split[test_type: DType](ctx: DeviceContext) raises:
@@ -460,11 +452,9 @@ def test_gpu_softmax_masked_split[test_type: DType](ctx: DeviceContext) raises:
     var out_device_ptr = ctx.enqueue_create_buffer[test_type](length)
     var out_ref_ptr = alloc[Scalar[ref_type]](length)
 
-    @__parameter
-    @__copy_capture(in_device)
     def input_fn_device[
         _simd_width: Int
-    ](coords: Coord) -> SIMD[test_type, _simd_width]:
+    ](coords: Coord) {var in_device} -> SIMD[test_type, _simd_width]:
         return in_device.load[width=_simd_width](coords)
 
     def input_fn_host[
@@ -476,8 +466,8 @@ def test_gpu_softmax_masked_split[test_type: DType](ctx: DeviceContext) raises:
         test_type,
         simd_width_of[test_type, target=ctx.target](),
         rank,
-        input_fn_device,
     ](
+        input_fn_device,
         Coord(shape),
         TileTensor(out_device_ptr, row_major(Coord(shape))),
         rank - 1,
@@ -550,11 +540,9 @@ def test_gpu_logsoftmax(ctx: DeviceContext) raises:
         rand[type](in_host_ptr.as_span())
         ctx.enqueue_copy(in_device_ptr, in_host_ptr)
 
-        @__parameter
-        @__copy_capture(in_device)
         def input_fn_device[
             _simd_width: Int
-        ](coords: Coord) -> SIMD[type, _simd_width]:
+        ](coords: Coord) {var in_device} -> SIMD[type, _simd_width]:
             return in_device.load[width=_simd_width](coords)
 
         def input_fn_host[
@@ -562,7 +550,8 @@ def test_gpu_logsoftmax(ctx: DeviceContext) raises:
         ](coords: Coord) {var in_host} -> SIMD[type, _simd_width]:
             return in_host.load[width=_simd_width](coords)
 
-        _softmax_gpu[type, 1, rank, input_fn_device, logsoftmax=True](
+        _softmax_gpu[type, 1, rank, logsoftmax=True](
+            input_fn_device,
             Coord(shape),
             TileTensor(out_device_ptr, row_major(Coord(shape))),
             rank - 1,

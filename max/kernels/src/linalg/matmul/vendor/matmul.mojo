@@ -116,9 +116,7 @@ def matmul[
     comptime c_type = c.dtype
     comptime simd_size = _epilogue_simd_size[c_type]()
 
-    var c_tt = TileTensor(
-        c.ptr, row_major(Coord(Int(c.dim[0]()), Int(c.dim[1]())))
-    )
+    var c_tt = c
 
     def epilogue_wrapper[
         simd_width: Int, alignment: Int = 1
@@ -141,7 +139,11 @@ def matmul[
         c_row_major=True,
         transpose_b=transpose_b,
     )
-    elementwise[simd_size, target="gpu"](epilogue_wrapper, (m, n), ctx)
+    elementwise[
+        simd_size,
+        target="gpu",
+        _trace_description="elementwise_vendor_matmul_epilogue",
+    ](epilogue_wrapper, (m, n), ctx)
 
 
 def matmul[
@@ -212,9 +214,7 @@ def apply_compute_fn_in_place[
     comptime c_type = c.dtype
     comptime simd_size = _epilogue_simd_size[c_type]()
 
-    var c_tt = TileTensor(
-        c.ptr, row_major(Coord(Int(c.dim[0]()), Int(c.dim[1]())))
-    )
+    var c_tt = c
 
     def compute_wrapper[
         simd_width: Int, alignment: Int = 1
@@ -222,11 +222,13 @@ def apply_compute_fn_in_place[
         # Load and store take alignment in bytes, compute_fn takes elements.
         comptime byte_alignment = alignment * size_of[c_type]()
         var c_val = c_tt.load[width=simd_width, alignment=byte_alignment](idx)
-        c_tt.store[width=simd_width, alignment=byte_alignment](
+        c_tt.store[alignment=byte_alignment](
             idx,
             compute_fn[c_type, simd_width, alignment=alignment](idx, c_val),
         )
 
-    elementwise[simd_size, target="gpu"](
-        compute_wrapper, (Int(c.dim[0]()), Int(c.dim[1]())), ctx
-    )
+    elementwise[
+        simd_size,
+        target="gpu",
+        _trace_description="apply_compute_fn_in_place",
+    ](compute_wrapper, (Int(c.dim[0]()), Int(c.dim[1]())), ctx)

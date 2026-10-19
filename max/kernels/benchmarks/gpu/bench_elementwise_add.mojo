@@ -64,7 +64,7 @@ def bench_add[
         var val = input0.load[width=simd_width](idx) + input1.load[
             width=simd_width
         ](idx)
-        output.store[width=simd_width](idx, val)
+        output.store(idx, val)
 
     @inline(.always)
     def bench_func(mut b: Bencher, shape: IndexList[rank]) raises {imm}:

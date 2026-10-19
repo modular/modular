@@ -12,9 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 """Implements the ONNX CumSum operator, computing prefix sums along a specified tensor axis."""
 
+from std.algorithm import vectorize
 from std.math import align_up, ceildiv
 from std.memory import stack_allocation
 from std.sys import bit_width_of
+from std.sys.info import simd_width_of
 from std.utils.static_tuple import StaticTuple
 
 from layout import (
@@ -120,56 +122,41 @@ def cumsum[
         else:
             depth = shape[i]
 
-    var output_data = TileTensor(
-        output.ptr,
-        row_major(output.num_elements()),
-    )
-    var input_data = TileTensor(
-        input.ptr,
-        row_major(input.num_elements()),
-    )
+    var output_data = output.reshape(row_major(output.num_elements()))
+    var input_data = input.reshape(row_major(input.num_elements()))
 
-    for outer_index in range(outer):
-        var outer_index_adj: Int
-
-        comptime if reverse:
-            outer_index_adj = (outer - 1) - outer_index
-        else:
-            outer_index_adj = outer_index
-
-        for inner_index in range(inner):
-            var accumulator: Scalar[accum_type] = 0
-            var inner_index_adj: Int
-
-            comptime if reverse:
-                inner_index_adj = (inner - 1) - inner_index
-            else:
-                inner_index_adj = inner_index
-
+    comptime simd_width = simd_width_of[accum_type]()
+    for inner_index in range(inner):
+        # SIMD lanes scan independent trailing positions without reassociating
+        # the additions along the scan axis.
+        def scan_chunk[
+            width: Int
+        ](outer_index: Int) {
+            input_data, output_data, inner_index, depth, outer
+        }:
+            var accumulator = SIMD[accum_type, width](0)
             for depth_index in range(depth):
-                var depth_index_adj: Int
-
-                comptime if reverse:
-                    depth_index_adj = (depth - 1) - depth_index
-                else:
-                    depth_index_adj = depth_index
-
+                var depth_index_adj = (
+                    depth - 1 - depth_index if reverse else depth_index
+                )
                 var index = (
-                    outer_index_adj
-                    + inner_index_adj * depth * outer
+                    outer_index
+                    + inner_index * depth * outer
                     + depth_index_adj * outer
                 )
 
                 comptime if exclusive:
-                    output_data[index] = accumulator.cast[dtype]()
-                    accumulator = (
-                        accumulator + input_data[index].cast[accum_type]()
-                    )
+                    output_data.store((index,), accumulator.cast[dtype]())
+                    accumulator += input_data.load[width=width]((index,)).cast[
+                        accum_type
+                    ]()
                 else:
-                    accumulator = (
-                        accumulator + input_data[index].cast[accum_type]()
-                    )
-                    output_data[index] = accumulator.cast[dtype]()
+                    accumulator += input_data.load[width=width]((index,)).cast[
+                        accum_type
+                    ]()
+                    output_data.store((index,), accumulator.cast[dtype]())
+
+        vectorize[simd_width](outer, scan_chunk)
 
 
 def _gpu_accum_type[dtype: DType]() -> DType:
@@ -457,8 +444,8 @@ def _enqueue_scan[
     var num_chunks = ceildiv(axis_len, chunk_len)
     if row_scan:
         var rows_layout = row_major((num_rows, axis_len))
-        var out_rows = TileTensor(output.unsafe_ptr(), rows_layout)
-        var in_rows = TileTensor(input.unsafe_ptr(), rows_layout)
+        var out_rows = output.reshape(rows_layout)
+        var in_rows = input.reshape(rows_layout)
         comptime kernel = _cumsum_row_scan_kernel[
             dtype,
             accum_type,
@@ -480,8 +467,8 @@ def _enqueue_scan[
         return
 
     var lines_layout = row_major((num_rows, axis_len, stride))
-    var out_lines = TileTensor(output.unsafe_ptr(), lines_layout)
-    var in_lines = TileTensor(input.unsafe_ptr(), lines_layout)
+    var out_lines = output.reshape(lines_layout)
+    var in_lines = input.reshape(lines_layout)
     comptime kernel = _cumsum_serial_kernel[
         dtype,
         accum_type,
@@ -520,9 +507,7 @@ def _enqueue_chunk_totals[
     `[num_rows * stride, num_chunks]` tensor `totals`, in scan order."""
     var num_chunks = ceildiv(axis_len, chunk_len)
     if row_scan:
-        var in_rows = TileTensor(
-            input.unsafe_ptr(), row_major((num_rows, axis_len))
-        )
+        var in_rows = input.reshape(row_major((num_rows, axis_len)))
         comptime kernel = _cumsum_row_total_kernel[
             dtype,
             accum_type,
@@ -539,9 +524,7 @@ def _enqueue_chunk_totals[
         )
         return
 
-    var in_lines = TileTensor(
-        input.unsafe_ptr(), row_major((num_rows, axis_len, stride))
-    )
+    var in_lines = input.reshape(row_major((num_rows, axis_len, stride)))
     comptime kernel = _cumsum_serial_total_kernel[
         dtype, accum_type, reverse, in_lines.LayoutType, totals.LayoutType
     ]
@@ -630,10 +613,7 @@ def _cumsum_gpu[
     var row_scan = _use_row_scan(num_lines, axis_len, stride, sm_count)
     var chunk_len = _chunk_len(row_scan, num_lines, axis_len, sm_count)
     # Stands in for `carry` wherever `has_carry` is False; never read.
-    var no_carry = TileTensor(
-        input.unsafe_ptr().unsafe_bitcast[Scalar[accum_type]](),
-        row_major((1, 1)),
-    )
+    var no_carry = input.bitcast[accum_type]().reshape(row_major((1, 1)))
     if chunk_len == axis_len:
         _enqueue_scan[dtype, accum_type, exclusive, reverse, False](
             output,

@@ -19,6 +19,7 @@ from collections.abc import Mapping
 from dataclasses import replace
 from typing import Any, ClassVar
 
+from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import Graph, TensorValue
 from max.nn.kv_cache import (
@@ -74,8 +75,9 @@ class UnifiedMTPQwen3_5Model(_UnifiedSpecDecodeModelMixin, Qwen3_5Model):
     def load_model(self, session: InferenceSession) -> Model:
         """Compiles the one fused graph.
 
-        Skips the base architecture's vision encoder, since this graph is
-        text-only.
+        Skips the base architecture's vision encoder. A vision checkpoint's
+        graph takes the encoder's output as inputs, for an engine that runs
+        the encoder itself; this model refuses image prompts instead.
         """
         return GraphPipelineModelWithKVCache.load_model(self, session)
 
@@ -83,13 +85,16 @@ class UnifiedMTPQwen3_5Model(_UnifiedSpecDecodeModelMixin, Qwen3_5Model):
     def _wire_batch_processor(
         self, model: Model, model_config: Qwen3_5Config
     ) -> None:
-        """Tells the batch processor whether the graph declares positions."""
+        """Tells the batch processor which optional inputs the graph declares."""
         super()._wire_batch_processor(model, model_config)
         assert isinstance(
             self._batch_processor, UnifiedMTPQwen3_5BatchProcessor
         )
         self._batch_processor.mrope_enabled = (
             self._fused_nn_model.target.mrope_enabled
+        )
+        self._batch_processor.vision_enabled = (
+            self._fused_nn_model.input_spec.enable_vision
         )
 
     @override
@@ -140,11 +145,9 @@ class UnifiedMTPQwen3_5Model(_UnifiedSpecDecodeModelMixin, Qwen3_5Model):
         # The rollback reads the verify pass's per-layer state-kernel inputs,
         # which cannot cross a subgraph boundary.
         config.use_subgraphs = False
-        # No encoder here: it ran before the tokens this graph verifies ever
-        # reached it, so compiling one would build a tower nothing calls. The
-        # positions are a separate matter -- a request whose context holds an
-        # image needs 3-axis positions for every token after it -- so M-RoPE
-        # survives the clear.
+        # No encoder here: the graph takes its output as inputs instead. A
+        # request whose context holds an image still needs 3-axis positions
+        # for every token after it, so M-RoPE survives the clear.
         config.mrope_without_encoder = config.vision_config is not None
         config.vision_config = None
 
@@ -203,6 +206,11 @@ class UnifiedMTPQwen3_5Model(_UnifiedSpecDecodeModelMixin, Qwen3_5Model):
         weights_registry = nn_model.state_dict()
         self.state_dict = weights_registry
         self._fused_nn_model = nn_model
+        # The zero-row vision inputs packed on every batch take these, which
+        # the base graph build would otherwise set. The spec-decode signature
+        # declares the embeddings bf16.
+        self._hidden_size = model_config.hidden_size
+        self._model_dtype = DType.bfloat16
 
         kv_params = graph_kv_params(self.kv_params)
         num_devices = len(self.devices)
@@ -238,6 +246,8 @@ class UnifiedMTPQwen3_5Model(_UnifiedSpecDecodeModelMixin, Qwen3_5Model):
                 draft_kv_collections=graph_inputs.kv("draft"),
                 return_n_logits=graph_inputs.return_n_logits,
                 signal_buffers=graph_inputs.signal_buffers,
+                vision_embeddings=graph_inputs.vision_embeddings,
+                vision_scatter_indices=graph_inputs.vision_scatter_indices,
                 host_input_row_offsets=graph_inputs.host_offsets,
                 data_parallel_splits=graph_inputs.dp_splits,
                 seed=graph_inputs.seed,

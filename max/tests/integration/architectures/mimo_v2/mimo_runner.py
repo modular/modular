@@ -22,19 +22,25 @@ from __future__ import annotations
 import dataclasses
 import json
 import time
+from contextlib import ExitStack
 from pathlib import Path
 from typing import Any
 
+import ml_dtypes
 import numpy as np
 import numpy.typing as npt
 from max import tree
-from max.driver import CPU, Accelerator, Buffer
+from max.driver import CPU, Accelerator, Buffer, batch_inplace_copy
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.graph.weights import SafetensorWeights
 from max.nn.comm import Signals
-from max.nn.kv_cache import MHAKVCacheParams, MultiKVCacheParams
+from max.nn.kv_cache import (
+    BatchCharacteristics,
+    MHAKVCacheParams,
+    MultiKVCacheParams,
+)
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures.mimo_v2.mimo_v2 import MiMoV2
 from max.pipelines.architectures.mimo_v2.model_config import (
@@ -89,6 +95,13 @@ def kv_params(
     )
 
 
+@dataclasses.dataclass
+class _CapturedDecode:
+    keys: list[int]
+    inputs: list[Buffer]
+    outputs: list[Buffer]
+
+
 class Runner:
     """A compiled MAX MiMo-V2 that returns every layer's output and logit.
 
@@ -105,6 +118,7 @@ class Runner:
         isolated: bool = False,
         sabotage: str | None = None,
         kv_cache_bytes: int = 16 * 1024**3,
+        fused_sliding_qkv: bool = False,
     ) -> None:
         """Adapts the checkpoint, then compiles and loads the model.
 
@@ -116,7 +130,16 @@ class Runner:
             isolated: Whether to run each layer on its own input.
             sabotage: One of :data:`SABOTAGES` to build in, or ``None``.
             kv_cache_bytes: The paged KV cache's size per device.
+            fused_sliding_qkv: Whether sliding layers use fused QKV preparation.
         """
+        self.capture_steps = 0
+        self.replay_steps = 0
+        self.capture_replays_by_batch_size: dict[int, int] = {}
+        self.replay_cache_lengths_by_batch_size: dict[
+            int, list[tuple[int, ...]]
+        ] = {}
+        self._decode_cache_bound = 0
+        self._captured_decode: dict[int, _CapturedDecode] = {}
         self.isolated = isolated
         self.hf = PretrainedConfig(
             **json.loads((checkpoint / "config.json").read_text())
@@ -130,6 +153,7 @@ class Runner:
             kv_params=self.kv_params,
             max_seq_len=max_seq_len,
         )
+        config.fused_sliding_qkv = fused_sliding_qkv
         config.return_logits = ReturnLogits.ALL
         config.return_hidden_states = ReturnHiddenStates.SELECTED_LAYERS
         config.target_layer_ids = list(range(self.hf.num_hidden_layers))
@@ -145,8 +169,10 @@ class Runner:
             for name in state:
                 if name.endswith("e_score_correction_bias"):
                     bias = np.from_dlpack(state[name].data).astype(np.float32)
-                    rounded = (bf16_bits(bias).astype(np.uint32) << 16).view(
-                        np.float32
+                    rounded = (
+                        bf16_bits(bias)
+                        .view(ml_dtypes.bfloat16)
+                        .astype(np.float32)
                     )
                     state[name] = dataclasses.replace(
                         state[name], data=Buffer.from_numpy(rounded)
@@ -226,6 +252,9 @@ class Runner:
                     )
                 )
             graph.output(*outputs)
+        self.fused_qkv_count = graph.module.mlir_module.asm().count(
+            "mo.chunked_qkv_rope_store.ragged.paged"
+        )
         t0 = time.time()
         session = InferenceSession(devices=self.devices)
         self.model = session.load(graph, weights_registry=self.registry)
@@ -242,11 +271,32 @@ class Runner:
         self,
         batch: list[TextContext],
         layer_inputs: list[list[npt.NDArray[np.float32]]] | None,
+        device_graph_capture: bool = False,
     ) -> tuple[npt.NDArray[np.float32] | None, list[npt.NDArray[np.float32]]]:
         for ctx in batch:
             self.kv.alloc(ctx)
-        kv_inputs = self.kv.runtime_inputs([batch])
         sizes = [ctx.tokens.active_length for ctx in batch]
+        capture_decode = device_graph_capture and all(
+            size == 1 for size in sizes
+        )
+        # Match production capture: host dispatch bounds and LUT width stay
+        # fixed while token IDs, GPU cache lengths and LUT contents change.
+        # Real per-step host maxima would change attention's launch trace.
+        kv_inputs = self.kv.runtime_inputs(
+            [batch],
+            max_cache_length=self._decode_cache_bound
+            if capture_decode
+            else None,
+            batch_characteristics=(
+                BatchCharacteristics(
+                    batch_size=len(batch),
+                    max_prompt_length=1,
+                    max_cache_valid_length=self._decode_cache_bound,
+                )
+                if capture_decode
+                else None
+            ),
+        )
         offsets = Buffer.from_numpy(np.cumsum([0] + sizes).astype(np.uint32))
         if layer_inputs is None:
             feeds = [
@@ -273,12 +323,63 @@ class Runner:
                 ).to(self.devices[0])
                 for i in range(self.num_layers)
             ]
-        out = self.model.execute(
+        inputs = [
             *feeds,
             *(offsets.to(d) for d in self.devices),
             *self.signals,
             *tree.leaves(kv_inputs),
-        )
+        ]
+        if capture_decode:
+            # Cache append overwrites the same positions until kv.step, so
+            # capture and trace verification leave the teacher history intact.
+            batch_size = len(batch)
+            captured = self._captured_decode.get(batch_size)
+            if captured is None:
+                keys = [631 + batch_size] * len(self.devices)
+                captured = _CapturedDecode(
+                    keys, inputs, self.model.capture(keys, *inputs)
+                )
+                self._captured_decode[batch_size] = captured
+                self.capture_steps += 1
+                self.capture_replays_by_batch_size[batch_size] = 0
+            else:
+                assert [(value.shape, value.dtype) for value in inputs] == [
+                    (value.shape, value.dtype) for value in captured.inputs
+                ], (
+                    "Decode inputs changed signature within one batch-size bucket"
+                )
+                dsts: list[Buffer] = []
+                srcs: list[Buffer] = []
+                for index, (live, stable) in enumerate(
+                    zip(inputs, captured.inputs, strict=True)
+                ):
+                    if stable.device.is_host or stable.pinned:
+                        np.testing.assert_array_equal(
+                            stable.to_numpy(),
+                            live.to_numpy(),
+                            err_msg=f"Captured host input {index} changed",
+                        )
+                        continue
+                    assert stable.device == live.device
+                    dsts.append(stable)
+                    srcs.append(live)
+                # Replay binds the captured GPU addresses, as production does.
+                # Refresh their values; shared cache/signal aliases are skipped.
+                batch_inplace_copy(dsts, srcs)
+            self.model.debug_verify_replay(captured.keys, *inputs)
+            self.model.replay(captured.keys, *captured.inputs)
+            self.replay_steps += 1
+            self.capture_replays_by_batch_size[batch_size] += 1
+            self.replay_cache_lengths_by_batch_size.setdefault(
+                batch_size, []
+            ).append(tuple(ctx.tokens.processed_length for ctx in batch))
+            out = captured.outputs
+            if layer_inputs is not None:
+                return None, [bf16_to_f32(o) for o in out]
+            logits = out[1].to(CPU()).to_numpy().copy()
+            hidden = [bf16_to_f32(out[3 + i]) for i in range(self.num_layers)]
+            return logits, hidden
+        out = self.model.execute(*inputs)
         if layer_inputs is not None:
             return None, [bf16_to_f32(o) for o in out]
         # (last-token logits, all logits, offsets, one capture per layer per
@@ -293,6 +394,7 @@ class Runner:
         chunk: int,
         decode: int,
         layer_inputs: list[list[npt.NDArray[np.float32]]] | None = None,
+        device_graph_capture: bool = False,
     ) -> list[
         tuple[npt.NDArray[np.float32] | None, list[npt.NDArray[np.float32]]]
     ]:
@@ -302,8 +404,15 @@ class Runner:
         is prefilled in chunks of at most ``chunk`` tokens, and its last
         ``decode`` tokens are fed one decode step at a time. For an isolated
         runner, ``layer_inputs[i][k]`` is sequence ``i``'s ``[T, hidden]``
-        input to layer ``k``.
+        input to layer ``k``. With ``device_graph_capture``, each decode batch
+        size is captured once; later steps verify and replay that graph with
+        new token inputs and cache metadata before their logits are scored.
         """
+        self.capture_steps = 0
+        self.replay_steps = 0
+        self.capture_replays_by_batch_size.clear()
+        self.replay_cache_lengths_by_batch_size.clear()
+        self._decode_cache_bound = max((len(seq) for seq in seqs), default=0)
         ctxs = [
             TextContext(
                 request_id=RequestID(),
@@ -333,6 +442,7 @@ class Runner:
                     None
                     if layer_inputs is None
                     else [layer_inputs[i] for i in live],
+                    device_graph_capture=device_graph_capture,
                 )
                 bounds = np.cumsum([0] + sizes)
                 for j, i in enumerate(live):
@@ -353,8 +463,16 @@ class Runner:
                     still.append(i)
                 live = still
         finally:
-            for ctx in ctxs:
-                self.kv.release(ctx)
+            try:
+                with ExitStack() as cleanup:
+                    for ctx in ctxs:
+                        cleanup.callback(self.kv.release, ctx)
+                    for captured in self._captured_decode.values():
+                        cleanup.callback(
+                            self.model.release_captured_graph, captured.keys
+                        )
+            finally:
+                self._captured_decode.clear()
         return [
             (
                 np.concatenate(rows[i]) if rows[i] else None,
@@ -372,14 +490,21 @@ def bf16_to_f32(buffer: Any) -> npt.NDArray[np.float32]:
     host = buffer.to(CPU())
     if host.dtype == DType.float32:
         return host.to_numpy()
-    bits = host.view(DType.uint16).to_numpy().astype(np.uint32) << 16
-    return bits.view(np.float32)
+    return (
+        host.view(DType.uint16)
+        .to_numpy()
+        .view(ml_dtypes.bfloat16)
+        .astype(np.float32)
+    )
 
 
 def bf16_bits(x: npt.NDArray[np.float32]) -> npt.NDArray[np.uint16]:
     """Rounds to nearest even, as a float32 -> bfloat16 cast does."""
-    bits = np.ascontiguousarray(x, dtype=np.float32).view(np.uint32)
-    return ((bits + 0x7FFF + ((bits >> 16) & 1)) >> 16).astype(np.uint16)
+    return (
+        np.asarray(x, dtype=np.float32)
+        .astype(ml_dtypes.bfloat16)
+        .view(np.uint16)
+    )
 
 
 def f32_to_bf16(x: npt.NDArray[np.float32]) -> Buffer:

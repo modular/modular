@@ -103,9 +103,9 @@ def _load_reduce[
             consistency=Consistency.RELAXED,
             accum_type=accum_type,
         ](
-            (in_tiles[0].ptr_at_offset(Coord(elem_idx))).address_space_cast[
-                .GLOBAL
-            ]()
+            (
+                in_tiles[0].ptr_at_offset(Coord(elem_idx))
+            ).unsafe_address_space_cast[.GLOBAL]()
         )
     else:
         # Regular mode: manual accumulation
@@ -113,15 +113,15 @@ def _load_reduce[
         var accum = (
             in_tiles[0]
             .address_space_cast[_target_address_space]()
-            .load[width=simd_width, alignment=alignment](Coord(elem_idx))
+            .load[width=simd_width, alignment=alignment]((elem_idx,))
             .cast[accum_type]()
         )
 
         comptime for gpu_idx in range(1, ngpus):
             accum += (
                 in_tiles[gpu_idx]
-                .address_space_cast[_target_address_space]()
-                .load[width=simd_width, alignment=alignment](Coord(elem_idx))
+                .unsafe_address_space_cast[_target_address_space]()
+                .load[width=simd_width, alignment=alignment]((elem_idx,))
                 .cast[accum_type]()
             )
         return accum.cast[dtype]()
@@ -428,7 +428,7 @@ def _reducescatter_kernel[
             var elem_start = u_start * config.unit_numel
             var flat_tiles = Array[_, num_buffers](
                 fill_with_unrolled=lambda [i: Int]() -> FlatTile: FlatTile(
-                    reordered[i]._storage + elem_start,
+                    reordered[i]._storage.unsafe_offset(elem_start),
                     row_major(n_elements),
                 )
             )
@@ -566,7 +566,7 @@ def _reducescatter_relay_kernel[
             comptime for i in range(ngpus):
                 accum += (
                     in_ptrs[i]
-                    .address_space_cast[_target_address_space]()
+                    .unsafe_address_space_cast[_target_address_space]()
                     .load[
                         width=simd_width,
                         alignment=alignment,
@@ -580,13 +580,15 @@ def _reducescatter_relay_kernel[
             comptime if has_residual:
                 reduced = (
                     reduced.cast[accum_type]()
-                    + residual_ptr.address_space_cast[_target_address_space]()
+                    + residual_ptr.unsafe_address_space_cast[
+                        _target_address_space
+                    ]()
                     .load[width=simd_width, alignment=alignment](
                         base + elem_idx
                     )
                     .cast[accum_type]()
                 ).cast[dtype]()
-            out_ptr.address_space_cast[_target_address_space]().store[
+            out_ptr.unsafe_address_space_cast[_target_address_space]().store[
                 width=simd_width, alignment=alignment
             ](elem_idx, reduced)
     else:
@@ -627,10 +629,10 @@ def _reducescatter_relay_kernel[
         # destination inside the loop makes the compiler stage the whole
         # table through scratch memory.
         var base = Int(peer_starts[dst])
-        var dst_ptr = peer_out_ptrs[dst].address_space_cast[
+        var dst_ptr = peer_out_ptrs[dst].unsafe_address_space_cast[
             _target_address_space
         ]()
-        var dst_res_ptr = peer_residual_ptrs[dst].address_space_cast[
+        var dst_res_ptr = peer_residual_ptrs[dst].unsafe_address_space_cast[
             _target_address_space
         ]()
 
@@ -661,7 +663,7 @@ def _reducescatter_relay_kernel[
                     comptime for g in range(ngpus):
                         data[u * ngpus + g] = (
                             src_ptrs[g]
-                            .address_space_cast[_target_address_space]()
+                            .unsafe_address_space_cast[_target_address_space]()
                             .load[
                                 width=simd_width,
                                 alignment=alignment,
@@ -1061,16 +1063,14 @@ def _reducescatter_p2p[
         comptime if has_residual:
             var local_flat = Int(output_buffer.layout(coords))
             var res = res_ptr_local.load[width=_width](local_flat + res_base)
-            output_buffer.store[width=_width, alignment=_alignment](
+            output_buffer.store[alignment=_alignment](
                 coords,
                 (val.cast[_accum_type]() + res.cast[_accum_type]()).cast[
                     dtype
                 ](),
             )
         else:
-            output_buffer.store[width=_width, alignment=_alignment](
-                coords, val.cast[dtype]()
-            )
+            output_buffer.store[alignment=_alignment](coords, val.cast[dtype]())
 
     _reducescatter_launch[
         dtype,
@@ -1289,8 +1289,8 @@ def _reducescatter_plan[
         unit_numel = simd_width
     elif axis == 0:
         # 2D axis-0: partition rows, unit = one row
-        var dim_0 = Int(input_buffers[group_start].layout.shape[0]().value())
-        var dim_1 = Int(input_buffers[group_start].layout.shape[1]().value())
+        var dim_0 = Int(input_buffers[group_start].dim[0]())
+        var dim_1 = Int(input_buffers[group_start].dim[1]())
         if dim_1 % simd_width != 0:
             raise Error(
                 "inner dimension (axis 1) must be a multiple of SIMD width"
@@ -1300,8 +1300,8 @@ def _reducescatter_plan[
         unit_numel = dim_1
     else:
         # axis == 1: partition column groups, unit = simd_width columns
-        var dim_0 = Int(input_buffers[group_start].layout.shape[0]().value())
-        var dim_1 = Int(input_buffers[group_start].layout.shape[1]().value())
+        var dim_0 = Int(input_buffers[group_start].dim[0]())
+        var dim_1 = Int(input_buffers[group_start].dim[1]())
         if dim_1 % simd_width != 0:
             raise Error(
                 "scatter dimension (axis 1) must be a multiple of SIMD width"
@@ -1332,14 +1332,14 @@ def _reducescatter_plan[
         ), "axis >= 0 requires 2D output buffer"
         var n_units = config_check.rank_units(loc_rank)
         var expected_rows = n_units if axis == 0 else Int(
-            input_buffers[group_start].layout.shape[0]().value()
+            input_buffers[group_start].dim[0]()
         )
         var expected_cols = (
-            Int(input_buffers[group_start].layout.shape[1]().value()) if axis
+            Int(input_buffers[group_start].dim[1]()) if axis
             == 0 else n_units * simd_width
         )
-        var out_rows = Int(output_layout.shape[0]().value())
-        var out_cols = Int(output_layout.shape[1]().value())
+        var out_rows = Int(output_layout.shape[0]())
+        var out_cols = Int(output_layout.shape[1]())
         if out_rows != expected_rows or out_cols != expected_cols:
             raise Error(
                 "output buffer shape ("

@@ -64,14 +64,12 @@ def _rand_mxfp4_value() -> Scalar[MXFP4_SF_DTYPE]:
     return bitcast[MXFP4_SF_DTYPE](random_ui64(1, 254).cast[.uint8]())
 
 
-def _rand_mxfp4[
-    scales_dtype: DType
-](ptr: UnsafePointer[mut=True, Scalar[scales_dtype], ...], size: Int):
+def _rand_mxfp4[scales_dtype: DType](span: MutSpan[Scalar[scales_dtype], _]):
     comptime assert (
         scales_dtype == MXFP4_SF_DTYPE
     ), "_rand_mxfp4 only supports MXFP4 scales dtype"
-    for i in range(size):
-        ptr[i] = _rand_mxfp4_value().cast[scales_dtype]()
+    for i in range(len(span)):
+        span[i] = _rand_mxfp4_value().cast[scales_dtype]()
 
 
 def simple_init() -> Bool:
@@ -181,21 +179,21 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     )
     var c_shape = row_major(m, Idx[NType.static_value])
 
-    var a_size = Int(m.value()) * (KType.static_value // 2)
-    var b_size = Int(n.value()) * (KType.static_value // 2)
-    var c_size = Int(m.value()) * Int(n.value())
+    var a_size = Int(m) * (KType.static_value // 2)
+    var b_size = Int(n) * (KType.static_value // 2)
+    var c_size = Int(m) * Int(n)
 
     var a_host_alloc = alloc(
         AllocLayout[Scalar[a_type]](count=a_size)
     ).into_managed()
-    var a_host_ptr: UnsafePointer[
+    var a_host_ptr: MutPointer[
         Scalar[a_type], origin_of(a_host_alloc)
     ] = a_host_alloc.unsafe_ptr()
     var a_host = TileTensor(a_host_ptr, a_shape)
     var b_host_alloc = alloc(
         AllocLayout[Scalar[b_type]](count=b_size)
     ).into_managed()
-    var b_host_ptr: UnsafePointer[
+    var b_host_ptr: MutPointer[
         Scalar[b_type], origin_of(b_host_alloc)
     ] = b_host_alloc.unsafe_ptr()
     var b_host = TileTensor(b_host_ptr, b_shape)
@@ -206,7 +204,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     var c_host_ref_alloc = alloc(
         AllocLayout[Scalar[c_type]](count=c_size)
     ).into_managed()
-    var c_host_ref_ptr: UnsafePointer[
+    var c_host_ref_ptr: MutPointer[
         Scalar[c_type], origin_of(c_host_ref_alloc)
     ] = c_host_ref_alloc.unsafe_ptr()
     var c_host_ref = TileTensor(c_host_ref_ptr, c_shape)
@@ -234,14 +232,14 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     # Dim 4: each subrow has 4 scale factors.
 
     var a_scales_shape = row_major(
-        ceildiv(Int(m.value()), SF_MN_GROUP_SIZE),
+        ceildiv(Int(m), SF_MN_GROUP_SIZE),
         Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
         Idx[SF_ATOM_M[0]],
         Idx[SF_ATOM_M[1]],
         Idx[SF_ATOM_K],
     )
     var b_scales_shape = row_major(
-        ceildiv(Int(n.value()), SF_MN_GROUP_SIZE),
+        ceildiv(Int(n), SF_MN_GROUP_SIZE),
         Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
         Idx[SF_ATOM_M[0]],
         Idx[SF_ATOM_M[1]],
@@ -254,14 +252,14 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     var a_scales_host_alloc = alloc(
         AllocLayout[Scalar[scales_dtype]](count=a_scales_total)
     ).into_managed()
-    var a_scales_host_ptr: UnsafePointer[
+    var a_scales_host_ptr: MutPointer[
         Scalar[scales_dtype], origin_of(a_scales_host_alloc)
     ] = a_scales_host_alloc.unsafe_ptr()
     var a_scales_host = TileTensor(a_scales_host_ptr, a_scales_shape)
     var b_scales_host_alloc = alloc(
         AllocLayout[Scalar[scales_dtype]](count=b_scales_total)
     ).into_managed()
-    var b_scales_host_ptr: UnsafePointer[
+    var b_scales_host_ptr: MutPointer[
         Scalar[scales_dtype], origin_of(b_scales_host_alloc)
     ] = b_scales_host_alloc.unsafe_ptr()
     var b_scales_host = TileTensor(b_scales_host_ptr, b_scales_shape)
@@ -278,46 +276,46 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     # Initialize matmul operands using TileTensor host views before moving them
     # to the device.
     if simple_init():
-        for m in range(Int(m.value())):
-            for k in range(Int(k.value()) // 2):
+        for m in range(Int(m)):
+            for k in range(Int(k) // 2):
                 comptime assert a_host.flat_rank == 2
                 a_host[m, k] = UInt8(m).cast[a_type]()
-        for n in range(Int(n.value())):
-            for k in range(Int(k.value()) // 2):
+        for n in range(Int(n)):
+            for k in range(Int(k) // 2):
                 comptime assert b_host.flat_rank >= 2
                 b_host[n, k] = UInt8(n).cast[b_type]()
     else:
-        rand(a_host.ptr, a_host.num_elements(), min=0, max=255)
-        rand(b_host.ptr, b_host.num_elements(), min=0, max=255)
+        rand(a_host.as_span(), min=0, max=255)
+        rand(b_host.as_span(), min=0, max=255)
 
     comptime if scales_dtype == NVFP4_SF_DTYPE:
-        rand(a_scales_host.ptr, a_scales_host.num_elements())
-        rand(b_scales_host.ptr, b_scales_host.num_elements())
+        rand(a_scales_host.as_span())
+        rand(b_scales_host.as_span())
     elif scales_dtype == MXFP4_SF_DTYPE:
-        _rand_mxfp4(a_scales_host.ptr, a_scales_host.num_elements())
-        _rand_mxfp4(b_scales_host.ptr, b_scales_host.num_elements())
+        _rand_mxfp4(a_scales_host.as_span())
+        _rand_mxfp4(b_scales_host.as_span())
     else:
         comptime assert False, "Unsupported scales_dtype in FP4 testbed"
 
     # NOTE: It is very important that we set unused scales to 0.0 otherwise we will hit accuracy issues
-    for idx0 in range(align_up(Int(m.value()), SF_MN_GROUP_SIZE)):
+    for idx0 in range(align_up(Int(m), SF_MN_GROUP_SIZE)):
         for idx1 in range(
             0,
-            align_up(Int(k.value()), SF_VECTOR_SIZE * SF_ATOM_K),
+            align_up(Int(k), SF_VECTOR_SIZE * SF_ATOM_K),
             SF_VECTOR_SIZE,
         ):
-            if idx0 >= Int(m.value()) or idx1 >= Int(k.value()):
+            if idx0 >= Int(m) or idx1 >= Int(k):
                 set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
                     a_scales_host, idx0, idx1, Scalar[scales_dtype](0.0)
                 )
 
-    for idx0 in range(align_up(Int(n.value()), SF_MN_GROUP_SIZE)):
+    for idx0 in range(align_up(Int(n), SF_MN_GROUP_SIZE)):
         for idx1 in range(
             0,
-            align_up(Int(k.value()), SF_VECTOR_SIZE * SF_ATOM_K),
+            align_up(Int(k), SF_VECTOR_SIZE * SF_ATOM_K),
             SF_VECTOR_SIZE,
         ):
-            if idx0 >= Int(n.value()) or idx1 >= Int(k.value()):
+            if idx0 >= Int(n) or idx1 >= Int(k):
                 set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
                     b_scales_host, idx0, idx1, Scalar[scales_dtype](0.0)
                 )
@@ -450,13 +448,15 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
 
     # When epilogue multiplies by 2, scale reference to match.
     comptime if value_epilogue or value_compute:
-        for i in range(c_host_ref.num_elements()):
-            c_host_ref.raw_store(i, c_host_ref.raw_load(i) * Scalar[c_type](2))
+        var c_ref_flat = c_host_ref.reshape(
+            row_major(c_host_ref.num_elements())
+        )
+        for i in range(c_ref_flat.num_elements()):
+            c_ref_flat[i] = c_ref_flat[i] * Scalar[c_type](2)
 
     assert_almost_equal(
-        c_host.ptr,
-        c_host_ref.ptr,
-        c_host.num_elements(),
+        c_host.as_span(),
+        c_host_ref.as_span(),
         atol=1e-2,
         rtol=1e-2,
     )

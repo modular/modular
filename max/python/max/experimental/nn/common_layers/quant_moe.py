@@ -721,7 +721,20 @@ class ExpertParallelMoE(QuantizedMoE):
             global_scale = None
             input_scales = None
 
+        has_unfused_shared = (
+            self.shared_experts is not None and not config.fused_shared_expert
+        )
+        # As in the graph-API EP path, split the peer-to-peer dispatch and
+        # combine into launch + wait and run the shared expert in between. It
+        # reads only ``x``, so it overlaps the EP communication.
+        overlap_shared_expert = (
+            has_unfused_shared
+            and not config.use_allreduce
+            and not config.nvfp4_dyn_global_scales
+        )
+
         # Dispatch tokens to the device owning each routed expert.
+        shared_by_device: dict[int, Tensor] = {}
         if config.use_allreduce:
             dispatch_results = [
                 batch_mgr.ep_dispatch(
@@ -732,6 +745,29 @@ class ExpertParallelMoE(QuantizedMoE):
                 )
                 for i in range(self.mesh.num_devices)
             ]
+        elif overlap_shared_expert:
+            for i in range(self.mesh.num_devices):
+                batch_mgr.ep_dispatch_async(
+                    x_shards[i],
+                    topk_id_shards[i],
+                    device_ids[i],
+                    input_scales=input_scales[i] if input_scales else None,
+                )
+            all_devices = range(self.mesh.num_devices)
+            shared_by_device = dict(
+                zip(
+                    all_devices,
+                    self._compute_shared_experts(x, all_devices),
+                    strict=True,
+                )
+            )
+            dispatch_results = [
+                tuple(
+                    Tensor.from_graph_value(value)
+                    for value in batch_mgr.ep_dispatch_wait(device_ids[i])
+                )
+                for i in range(self.mesh.num_devices)
+            ]
         else:
             dispatch_results = batch_mgr.ep_dispatch_all(
                 x_shards, topk_id_shards, device_ids, input_scales=input_scales
@@ -739,8 +775,7 @@ class ExpertParallelMoE(QuantizedMoE):
 
         # Under allreduce, combine outputs are per-device partial sums that get
         # summed later, so add the replicated shared expert on one device only.
-        shared_by_device: dict[int, Tensor] = {}
-        if self.shared_experts is not None and not config.fused_shared_expert:
+        if has_unfused_shared and not overlap_shared_expert:
             devices = (
                 [0] if config.use_allreduce else range(self.mesh.num_devices)
             )
@@ -776,6 +811,15 @@ class ExpertParallelMoE(QuantizedMoE):
                     router_weight_shards[i],
                     device_ids[i],
                     topk_id_shards[i],
+                )
+                for i in range(self.mesh.num_devices)
+            ]
+        elif overlap_shared_expert:
+            for i in range(self.mesh.num_devices):
+                batch_mgr.ep_combine_async(down_bundle[i], device_ids[i])
+            combine_results = [
+                batch_mgr.ep_combine_wait(
+                    router_weight_shards[i], device_ids[i]
                 )
                 for i in range(self.mesh.num_devices)
             ]

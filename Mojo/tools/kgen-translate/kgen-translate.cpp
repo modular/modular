@@ -16,6 +16,7 @@
 #include "Init/Init.h"
 #include "Mojo/KGENDialect/KGENDialect.h"
 #include "Mojo/MojoParser/EntryPoint.h"
+#include "Mojo/MojoTooling/DocGen.h"
 #include "Mojo/MojoTooling/ParserDriver.h"
 #include "Mojo/MojoTooling/PublicASTDecl.h"
 #include "Mojo/Support/CompilerProfiling.h"
@@ -61,6 +62,105 @@ public:
 private:
   const llvm::SourceMgr &sourceMgr;
 };
+
+std::optional<int> tryEmitMojoDoc(int argc, char *argv[], ContextRef &ctxRef) {
+  std::optional<std::filesystem::path> inputPath;
+  std::vector<std::string> includePaths;
+  std::vector<std::string> ignoredDeprecations;
+  bool emitMojoDoc = false;
+  bool diagnoseMissingDocStrings = false;
+  bool warningsAsErrors = false;
+  bool hasExplicitWarningPolicy = false;
+  bool validateDocStrings = false;
+  std::string stripFilePrefix;
+  std::string outputPath;
+  DiagnosticFormat diagnosticFormat = DiagnosticFormat::Text;
+  for (int i = 1; i < argc; ++i) {
+    llvm::StringRef argument(argv[i]);
+    if (argument == "-emit-mojo-doc") {
+      emitMojoDoc = true;
+      continue;
+    }
+    if (argument.consume_front("-mojo-search-paths=")) {
+      includePaths.push_back(argument.str());
+      continue;
+    }
+    if (argument == "-mojo-search-paths" && i + 1 < argc) {
+      includePaths.emplace_back(argv[++i]);
+      continue;
+    }
+    if (argument == "--diagnose-missing-doc-strings") {
+      diagnoseMissingDocStrings = true;
+      continue;
+    }
+    if (argument == "-Werror") {
+      warningsAsErrors = true;
+      hasExplicitWarningPolicy = true;
+      continue;
+    }
+    if (argument == "-Wno-error") {
+      warningsAsErrors = false;
+      hasExplicitWarningPolicy = true;
+      continue;
+    }
+    if (argument == "--validate-doc-strings") {
+      validateDocStrings = true;
+      continue;
+    }
+    if (argument.consume_front("--ignore-deprecated=")) {
+      ignoredDeprecations.push_back(argument.str());
+      continue;
+    }
+    if (argument.consume_front("-strip-file-prefix=")) {
+      stripFilePrefix = argument.str();
+      continue;
+    }
+    if (argument.consume_front("--diagnostic-format=")) {
+      diagnosticFormat =
+          argument == "json" ? DiagnosticFormat::JSON : DiagnosticFormat::Text;
+      continue;
+    }
+    if (argument == "--diagnostic-format" && i + 1 < argc) {
+      diagnosticFormat = llvm::StringRef(argv[++i]) == "json"
+                             ? DiagnosticFormat::JSON
+                             : DiagnosticFormat::Text;
+      continue;
+    }
+    if (argument == "-o" && i + 1 < argc) {
+      outputPath = argv[++i];
+      continue;
+    }
+    if (!argument.starts_with('-'))
+      inputPath = argument.str();
+  }
+
+  if (!emitMojoDoc)
+    return std::nullopt;
+  if (!inputPath) {
+    llvm::errs() << "kgen-translate: error: no input file provided\n";
+    return 1;
+  }
+  if (validateDocStrings && !hasExplicitWarningPolicy) {
+    llvm::errs() << "warning: --validate-doc-strings is deprecated, use "
+                    "-Werror instead\n";
+    warningsAsErrors = true;
+  }
+
+  DialectRegistry registry;
+  registerAllKGENDialects(registry);
+  registerContext(registry, ctxRef);
+  MLIRContext context(registry);
+
+  DocGenConfig config;
+  config.includePaths = std::move(includePaths);
+  config.ignoredDeprecations = std::move(ignoredDeprecations);
+  config.diagnoseMissingDocStrings = diagnoseMissingDocStrings;
+  config.warningsAsErrors = warningsAsErrors;
+  config.stripFilePrefix = std::move(stripFilePrefix);
+  config.diagnosticFormat = diagnosticFormat;
+  llvm::raw_ostream &output = outputPath.empty() ? llvm::outs() : llvm::nulls();
+  return generateMojoDocJSON(*inputPath, context, config, output) ? 0 : 1;
+}
 } // namespace
 
 int main(int argc, char *argv[]) {
@@ -127,6 +227,9 @@ int main(int argc, char *argv[]) {
       cl::desc("If specified, the parser output is also printed as bytecode."),
       cl::init("")};
 
+  if (auto result = tryEmitMojoDoc(argc, argv, *ctxOr))
+    return *result;
+
   cl::list<std::string> parserSearchPaths{
       "mojo-search-paths",
       cl::desc("Additional search paths for Mojo modules. Can be specified "
@@ -186,7 +289,7 @@ int main(int argc, char *argv[]) {
           config.parserListener = &lspListener;
 
           MojoParserContext parserContext(sourceMgr, config);
-          MojoASTDeclRef decl =
+          LIT::ASTDecl *decl =
               parserContext.parseFileForLSP(sourceMgr.getMainFileID());
           parserContext.ensureSignaturesResolved();
           if (!decl)

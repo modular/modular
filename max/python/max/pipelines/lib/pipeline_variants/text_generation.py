@@ -18,7 +18,7 @@ import dataclasses
 import json
 import logging
 from abc import abstractmethod
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from os import environ
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Generic
@@ -35,6 +35,7 @@ from max.driver import (
 )
 from max.dtype import DType
 from max.engine import InferenceSession, Model
+from max.experimental.compilation import CompiledCallable
 from max.graph import DeviceRef
 from max.graph.weights import (
     WeightsAdapter,
@@ -86,13 +87,7 @@ from max.pipelines.sampling import (
     apply_logits_processors,
 )
 
-from ..graph_specs import (
-    CompiledArtifacts,
-    GraphRole,
-    GraphSpec,
-    compile_graphs,
-    init_graphs,
-)
+from ..graph_specs import GraphRole, GraphSpec, compile_and_init_graphs
 from ..interfaces import (
     ModelInputs,
     ModelOutputs,
@@ -112,7 +107,7 @@ def load_sampler_graphs(
     device: DeviceRef,
     vocab_size: int | None,
     custom_extensions: Sequence[Path] = (),
-) -> tuple[CompiledArtifacts, dict[str, Model]]:
+) -> dict[str, CompiledCallable[..., Any]]:
     """Compiles the sampler, and the bitmask sampler if constraints may fire.
 
     The bitmask sampler compiles when ``needs_bitmask_constraints`` is set.
@@ -126,7 +121,7 @@ def load_sampler_graphs(
         custom_extensions: Paths to custom kernel libraries the samplers use.
 
     Returns:
-        The compiled artifacts, and the initialized models keyed by role: the
+        The compiled, initialized samplers keyed by role: the
         :attr:`GraphRole.SAMPLER` role, and the
         :attr:`GraphRole.SAMPLER_BITMASK` role if compiled.
     """
@@ -149,8 +144,7 @@ def load_sampler_graphs(
                 custom_extensions=custom_extensions,
             )
         sampler_timer.mark_build_complete()
-        artifacts = compile_graphs(session, specs)
-        return artifacts, init_graphs(session, artifacts, specs)
+        return compile_and_init_graphs(session, specs)
 
 
 @dataclasses.dataclass
@@ -176,7 +170,7 @@ class TextGenerationPipelineInterface(
     _devices: list[Device]
     _pipeline_model: PipelineModelWithKVCache[TextGenerationContextType]
 
-    compiled_artifacts: CompiledArtifacts
+    compiled_modules: Mapping[str, CompiledCallable[..., Any]]
     """The graphs this pipeline compiled, by role, for export: the model's,
     then the sampler's."""
 
@@ -353,18 +347,20 @@ class TextGenerationPipeline(
         )
         sampler_device_ref = DeviceRef.from_device(self._sampler_device)
 
-        sampler_artifacts, samplers = load_sampler_graphs(
+        samplers = load_sampler_graphs(
             session, pipeline_config, sampler_device_ref, self.vocab_size
         )
-        self._sampler_with_bitmask: Model | None = samplers.get(
-            GraphRole.SAMPLER_BITMASK
+        bitmask_sampler = samplers.get(GraphRole.SAMPLER_BITMASK)
+        self._sampler_with_bitmask: Model | None = (
+            bitmask_sampler.engine_model if bitmask_sampler else None
         )
         self._sampler_without_bitmask: Model | None = samplers[
             GraphRole.SAMPLER
-        ]
-        self.compiled_artifacts = (
-            self._pipeline_model.compiled_artifacts | sampler_artifacts
-        )
+        ].engine_model
+        self.compiled_modules = {
+            **self._pipeline_model.compiled_modules,
+            **samplers,
+        }
 
         # Pre-allocate pinned buffer for D2H token copies only when the
         # bitmask path is wired in. This buffer is used for async token

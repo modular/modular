@@ -74,9 +74,9 @@ def test_blackwell_matmul[
     num_split_k: Int = 1,
 ](ctx: DeviceContext, m: MType, n: NType, k: KType) raises:
     """Generic test function for SM100 matmul kernel variants."""
-    var M = Int(m.value())
-    var N = Int(n.value())
-    var K = Int(k.value())
+    var M = Int(m)
+    var N = Int(n)
+    var K = Int(k)
 
     print(
         "[SMOKE] dtypes=(",
@@ -115,13 +115,9 @@ def test_blackwell_matmul[
     )
     var c_shape = row_major(m, Idx[NType.static_value])
 
-    var a_size = Int(m.value()) * Int(k.value())
-    var b_size = (
-        Int(n.value())
-        * Int(k.value()) if transpose_b else Int(k.value())
-        * Int(n.value())
-    )
-    var c_size = Int(m.value()) * Int(n.value())
+    var a_size = Int(m) * Int(k)
+    var b_size = Int(n) * Int(k) if transpose_b else Int(k) * Int(n)
+    var c_size = Int(m) * Int(n)
 
     # Host allocations
     var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](a_size)

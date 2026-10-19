@@ -149,7 +149,10 @@ def _run_case(
     else:
         for r in range(num_rows):
             _fill_row(
-                scores_host.unsafe_ptr() + r * num_blocks, num_blocks, k, mode
+                scores_host.unsafe_ptr().unsafe_offset(r * num_blocks),
+                num_blocks,
+                k,
+                mode,
             )
     # Force a known block to a large value in every row; it must be selected.
     if force_idx >= 0:
@@ -172,7 +175,7 @@ def _run_case(
     out_dev.enqueue_fill(Int32(-2))  # poison: must be overwritten
 
     var data_buf = DeviceBuffer[.float32](
-        ctx, scores_dev.unsafe_ptr() + 1, n_scores, owning=False
+        ctx, scores_dev.unsafe_ptr().unsafe_offset(1), n_scores, owning=False
     )
     var scores_t = TileTensor(data_buf, row_major((num_rows, num_blocks)))
     var out_t = TileTensor(out_dev, row_major((num_rows, k)))
@@ -257,7 +260,9 @@ def _run_case(
 
         if mode == MODE_RANDOM:
             # Tie-free: exact set must match the independent host reference.
-            var expected = _host_topk_set(host_ptr + base, num_blocks, k)
+            var expected = _host_topk_set(
+                host_ptr.unsafe_offset(base), num_blocks, k
+            )
             for e in expected:
                 assert_true(e in got, "kernel missed an expected top-k index")
         elif mode == MODE_BOUNDARY_TIE:
@@ -355,7 +360,10 @@ def _run_block_dim_invariance(
     else:
         for r in range(num_rows):
             _fill_row(
-                scores_host.unsafe_ptr() + r * num_blocks, num_blocks, k, mode
+                scores_host.unsafe_ptr().unsafe_offset(r * num_blocks),
+                num_blocks,
+                k,
+                mode,
             )
     ctx.synchronize()
     var host_ptr = rebind[MutPointer[Float32, MutAnyOrigin]](

@@ -30,9 +30,9 @@ comptime NUM_THREADS = 128
 
 
 def mm_tiled_kernel_double_buffer(
-    A: UnsafePointer[Float32, ImmutAnyOrigin],
-    B: UnsafePointer[Float32, ImmutAnyOrigin],
-    C: UnsafePointer[Float32, MutAnyOrigin],
+    A: ImmPointer[Float32, ImmutAnyOrigin],
+    B: ImmPointer[Float32, ImmutAnyOrigin],
+    C: MutPointer[Float32, MutAnyOrigin],
     M: UInt32,
     N: UInt32,
     K: UInt32,
@@ -217,9 +217,9 @@ def mm_tiled_kernel_double_buffer(
 
 
 def cpu_mm(
-    A: UnsafePointer[Float32, _],
-    B: UnsafePointer[Float32, _],
-    C: UnsafePointer[mut=True, Float32, _],
+    A: Pointer[Float32, _],
+    B: Pointer[Float32, _],
+    C: MutPointer[Float32, _],
     M: Int,
     N: Int,
     K: Int,

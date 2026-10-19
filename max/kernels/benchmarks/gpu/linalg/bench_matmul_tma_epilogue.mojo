@@ -14,7 +14,7 @@
 # Benchmarks three SM100 (Blackwell) BF16 matmul+epilogue variants head-to-head:
 #
 #   1. plain         — bare _matmul_gpu (no epilogue tensor)
-#   2. compute_lambda_bias — epilogue tensor applied via elementwise_compute_lambda_fn
+#   2. compute_lambda_bias — epilogue tensor applied via a compute closure
 #   3. tma_bias      — epilogue tensor passed as a TMA epilogue parameter to _matmul_gpu
 #
 # Only runs on SM100+ (B200) GPUs; prints a warning and exits on other hardware.
@@ -299,8 +299,8 @@ def bench_matmul_tma_epilogue[
             # returns Int which mismatches; use Int64 directly.
             var epi_m = Int64(epilogue_shape[0].value())
             var epi_n = Int64(epilogue_shape[1].value())
-            var epilogue_for_gpu = TileTensor(
-                tensor_epilogue.ptr, row_major(epi_m, epi_n)
+            var epilogue_for_gpu = tensor_epilogue.reshape(
+                row_major(epi_m, epi_n)
             ).as_imm()
             fused_bias_residual_matmul_dispatch_sm100[transpose_b=transpose_b,](
                 tensor_c,
@@ -316,10 +316,7 @@ def bench_matmul_tma_epilogue[
 
     var flops = ThroughputMeasure(
         BenchMetric.flops,
-        2
-        * Int(shape_c[0].value())
-        * Int(shape_c[1].value())
-        * Int(shape_a[1].value()),
+        2 * Int(shape_c[0]) * Int(shape_c[1]) * Int(shape_a[1]),
     )
 
     var bench_name = String(
@@ -327,11 +324,11 @@ def bench_matmul_tma_epilogue[
         " (dtype=",
         String(dtype),
         ") : ",
-        Int(shape_c[0].value()),
+        Int(shape_c[0]),
         "_dynamic x ",
-        Int(shape_c[1].value()),
+        Int(shape_c[1]),
         " x ",
-        Int(shape_a[1].value()),
+        Int(shape_a[1]),
     )
 
     if run_benchmark:
@@ -344,9 +341,9 @@ def bench_matmul_tma_epilogue[
         kernel_launch(ctx, 0)
 
     if verify:
-        var M = Int(shape_c[0].value())
-        var N = Int(shape_c[1].value())
-        var K = Int(shape_a[1].value())
+        var M = Int(shape_c[0])
+        var N = Int(shape_c[1])
+        var K = Int(shape_a[1])
         var c_size = M * N
         var a_size = M * K
         var b_size = N * K  # transpose_b=True → B is N×K

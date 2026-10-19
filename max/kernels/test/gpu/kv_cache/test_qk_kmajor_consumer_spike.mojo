@@ -40,11 +40,16 @@ bf16, SWIZZLE_128B, M=N=K=128 so `num_chunks = BK // gran = 2` makes the
 chunk-inner ordering observable. B200-only (SM100), single CTA.
 """
 
-from std.sys import default_accelerator, size_of
+from std.sys import size_of
 
 from max.gpu import thread_idx, warp_id as get_warp_id
 from max.gpu.sync import barrier
-from max.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
+from max.gpu.host import (
+    DeviceBuffer,
+    DeviceContext,
+    FuncAttribute,
+    default_accelerator,
+)
 from max.gpu.memory import external_memory
 from max.gpu.host.nvidia.tma import TensorMapSwizzle, create_tma_descriptor
 from max.gpu.compute.arch.mma_nvidia_sm100 import mma_arrive
@@ -169,18 +174,20 @@ def qk_consumer_kernel[
     )
     comptime q_size = BM * BK
     comptime k_size = BN * BK
-    var k_smem = (q_smem + q_size).bitcast[Scalar[ab_type]]()
+    var k_smem = q_smem.unsafe_offset(q_size).unsafe_bitcast[Scalar[ab_type]]()
 
     var q_smem_tile = TileTensor(q_smem, q_smem_layout)
     var k_smem_tile = TileTensor(k_smem, k_smem_layout)
 
-    var ptr_tmem_addr = (k_smem + k_size).bitcast[UInt32]()
+    var ptr_tmem_addr = k_smem.unsafe_offset(k_size).unsafe_bitcast[UInt32]()
 
     comptime q_expected_bytes = q_size * size_of[ab_type]()
     comptime k_expected_bytes = k_size * size_of[ab_type]()
 
-    var tma_mbar = (ptr_tmem_addr + 2).bitcast[SharedMemBarrier]()
-    var mma_mbar = tma_mbar + 1
+    var tma_mbar = ptr_tmem_addr.unsafe_offset(2).unsafe_bitcast[
+        SharedMemBarrier
+    ]()
+    var mma_mbar = tma_mbar.unsafe_offset(1)
 
     var tid = thread_idx.x
     var wid = get_warp_id()
@@ -334,7 +341,9 @@ def run_qk_consumer[
         var k_desc = create_tma_descriptor[ab_type, 2, swizzle_mode](
             DeviceBuffer(
                 ctx,
-                k_ptr.unsafe_mut_cast[True]().address_space_cast[.GENERIC](),
+                k_ptr.unsafe_mut_cast[True]().unsafe_address_space_cast[
+                    .GENERIC
+                ](),
                 1,
                 owning=False,
             ),
@@ -412,7 +421,7 @@ def run_qk_consumer[
                     o_host_ref[m, n],
                     atol=0.05,
                     rtol=0.05,
-                    msg=String(m) + "," + String(n),
+                    msg=String(t"{m},{n}"),
                 )
             except e:
                 if mismatches < 8:
@@ -430,7 +439,7 @@ def run_qk_consumer[
     if mismatches == 0:
         print("  PASS")
     else:
-        print("  FAIL: " + String(mismatches) + " mismatches")
+        print(t"  FAIL: {mismatches} mismatches")
         raise Error(
             "qk_kmajor_consumer (pagedense="
             + String(use_pagedense)

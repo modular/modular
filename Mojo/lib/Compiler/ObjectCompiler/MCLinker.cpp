@@ -368,11 +368,12 @@ ErrorOr<WriteableBufferRef> MCLinker::linkAndPrint(StringRef moduleName,
     return Error("failed to add to ObjectFile Print pass");
   }
 
+  llvm::Module &moduleToRun = hasOneSplit ? *oneSplitModule : *linkedModule;
+
   const_cast<llvm::TargetLoweringObjectFile *>(
       llvmTargetMachine.getObjFileLowering())
-      ->Initialize(machineModInfoPass->getMMI().getContext(), targetMachine);
-
-  llvm::Module &moduleToRun = hasOneSplit ? *oneSplitModule : *linkedModule;
+      ->initialize(machineModInfoPass->getMMI().getContext(), targetMachine,
+                   moduleToRun);
   passMgr.run(moduleToRun);
 
   // Release some of the AsyncValue memory to avoid

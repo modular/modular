@@ -28,7 +28,12 @@ from max.algorithm.functional import elementwise
 
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.collections import Optional
-from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
+from max.gpu.host import (
+    DeviceBuffer,
+    DeviceContext,
+    get_gpu_target,
+    default_accelerator,
+)
 from max.gpu.host.info import is_cpu
 from max.gpu.host.info import is_gpu as _is_gpu
 from std.math import ceil, fma
@@ -1211,16 +1216,10 @@ struct ManagedTensorSlice[
 
     @staticmethod
     def get_type_name() -> String:
-        return (
-            "ManagedTensorSlice[mut = "
-            + String(Self.mut)
-            + ", dtype = "
-            + String(Self.dtype)
-            + ", rank = "
-            + String(Self.rank)
-            + ", static_spec (as Layout) = "
-            + String(Self.static_spec.to_layout())
-            + "]"
+        return String(
+            t"ManagedTensorSlice[mut = {Self.mut}, dtype = {Self.dtype},"
+            t" rank = {Self.rank}, static_spec (as Layout) ="
+            t" {Self.static_spec.to_layout()}]"
         )
 
     comptime address_space = Self.static_spec.address_space
@@ -1492,7 +1491,7 @@ struct ManagedTensorSlice[
         var result = IndexList[Self.rank]()
 
         comptime for i in range(Self.rank):
-            result[i] = Int(self._runtime_layout.shape[i]().value())
+            result[i] = Int(self._runtime_layout.shape[i]())
 
         return result
 
@@ -1572,7 +1571,7 @@ struct ManagedTensorSlice[
             t" {Self.rank}]"
         )
 
-        return Int(self._runtime_layout.shape[index]().value())
+        return Int(self._runtime_layout.shape[index]())
 
     @inline(.always)
     def strides(self) -> IndexList[Self.rank]:
@@ -1584,7 +1583,7 @@ struct ManagedTensorSlice[
         var result = IndexList[Self.rank]()
 
         comptime for i in range(Self.rank):
-            result[i] = Int(self._runtime_layout.stride[i]().value())
+            result[i] = Int(self._runtime_layout.stride[i]())
 
         return result
 
@@ -1618,7 +1617,7 @@ struct ManagedTensorSlice[
             t" [0, {Self.rank}]"
         )
 
-        return Int(self._runtime_layout.stride[index]().value())
+        return Int(self._runtime_layout.stride[index]())
 
     @inline(.always)
     def size(self) -> Int:
@@ -1824,9 +1823,9 @@ struct ManagedTensorSlice[
             AddressSpace.LOCAL,
             AddressSpace.CONSTANT,
         ):
-            return Int(crd2idx[out_type=DType.int32](index, shape, strides))
+            return Int(crd2idx[out_type=.int32](index, shape, strides))
 
-        return Int(crd2idx[out_type=DType.int](index, shape, strides))
+        return Int(crd2idx[out_type=.int](index, shape, strides))
 
     @__allow_legacy_custom_self_type
     @inline(.always)
@@ -2681,9 +2680,7 @@ def get_kernel_simd_width[dtype: DType, target: StaticString]() -> Int:
     comptime if _is_gpu[target]():
         # We hardcode simd width to 16B for Nvidia GPUs but >= sm_100
         # arch support 32B load/store to global memory, see KERN-2037.
-        comptime if CompilationTarget.default_accelerator()._is_arch[
-            "sm_100a"
-        ]():
+        comptime if default_accelerator()._is_arch["sm_100a"]():
             return 32 // size_of[dtype]()
 
         return simd_width_of[dtype, target=get_gpu_target()]()

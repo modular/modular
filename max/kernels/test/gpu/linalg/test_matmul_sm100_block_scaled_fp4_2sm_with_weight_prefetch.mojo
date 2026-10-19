@@ -84,7 +84,7 @@ def _test_impl[
     print(
         t"[prefetch-2sm] in/out dtypes=({a_type}, {b_type}, {c_type},"
         t" {scales_dtype})"
-        t" shape=({Int(m.value())}, {Int(n.value())}, {Int(k.value())})"
+        t" shape=({Int(m)}, {Int(n)}, {Int(k)})"
         t" mma_shape={mma_shape} block_tile_shape={block_tile_shape}"
         t" cta_group={cta_group}"
         t" cluster_shape=({cluster_shape[0]}, {cluster_shape[1]},"
@@ -100,9 +100,9 @@ def _test_impl[
     )
     var c_shape = row_major(m, Idx[NType.static_value])
 
-    var a_size = Int(m.value()) * (KType.static_value // 2)
-    var b_size = Int(n.value()) * (KType.static_value // 2)
-    var c_size = Int(m.value()) * Int(n.value())
+    var a_size = Int(m) * (KType.static_value // 2)
+    var b_size = Int(n) * (KType.static_value // 2)
+    var c_size = Int(m) * Int(n)
 
     var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](a_size)
     var a_host = TileTensor(a_host_ptr, a_shape)
@@ -123,7 +123,7 @@ def _test_impl[
     var c_ref_tensor = TileTensor(c_device_ref, c_shape)
 
     var a_scales_shape = row_major(
-        ceildiv(Int(m.value()), SF_MN_GROUP_SIZE),
+        ceildiv(Int(m), SF_MN_GROUP_SIZE),
         Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
         Idx[SF_ATOM_M[0]],
         Idx[SF_ATOM_M[1]],
@@ -163,24 +163,24 @@ def _test_impl[
     rand(a_scales_host.as_span())
     rand(b_scales_host.as_span())
 
-    for idx0 in range(align_up(Int(m.value()), SF_MN_GROUP_SIZE)):
+    for idx0 in range(align_up(Int(m), SF_MN_GROUP_SIZE)):
         for idx1 in range(
             0,
-            align_up(Int(k.value()), SF_VECTOR_SIZE * SF_ATOM_K),
+            align_up(Int(k), SF_VECTOR_SIZE * SF_ATOM_K),
             SF_VECTOR_SIZE,
         ):
-            if idx0 >= Int(m.value()) or idx1 >= Int(k.value()):
+            if idx0 >= Int(m) or idx1 >= Int(k):
                 set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
                     a_scales_host, idx0, idx1, Scalar[scales_dtype](0.0)
                 )
 
-    for idx0 in range(align_up(Int(n.value()), SF_MN_GROUP_SIZE)):
+    for idx0 in range(align_up(Int(n), SF_MN_GROUP_SIZE)):
         for idx1 in range(
             0,
-            align_up(Int(k.value()), SF_VECTOR_SIZE * SF_ATOM_K),
+            align_up(Int(k), SF_VECTOR_SIZE * SF_ATOM_K),
             SF_VECTOR_SIZE,
         ):
-            if idx0 >= Int(n.value()) or idx1 >= Int(k.value()):
+            if idx0 >= Int(n) or idx1 >= Int(k):
                 set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
                     b_scales_host, idx0, idx1, Scalar[scales_dtype](0.0)
                 )

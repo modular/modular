@@ -118,6 +118,20 @@ def _adopt_shards(
         )
 
 
+def head_logits(head: Linear, x: TensorValue) -> TensorValue:
+    """float32 logits from a GEMM in the head's stored dtype.
+
+    The reference upcasts the bf16 head and runs the GEMM in float32; on the
+    real checkpoint that is a 2 GiB weight read per step on each device. A
+    bf16 GEMM halves it; the logits are rounded to bf16 before the float32
+    cast, which is also what vLLM's bf16 ``ParallelLMHead`` returns. A float32
+    checkpoint keeps the float32 GEMM (both casts are no-ops).
+    """
+    weight = head.weight
+    logits = ops.matmul(ops.cast(x, weight.dtype), ops.transpose(weight, 0, 1))
+    return ops.cast(logits, DType.float32)
+
+
 def _hyper_connection(
     config: DeepseekV4Config, device: DeviceRef
 ) -> HyperConnection:
@@ -147,7 +161,7 @@ def _hc_pre(
     they are read off the state *before* the sublayer, not after it.
     """
     b, s = x.shape[0], x.shape[1]
-    post, comb, y = hc(ops.reshape(x, [-1, hc.hc_mult, hc.hidden_size]))
+    post, comb, y, _ = hc(ops.reshape(x, [-1, hc.hc_mult, hc.hidden_size]))
     return (
         ops.reshape(y, [b, s, hc.hidden_size]),
         ops.reshape(post, [b, s, hc.hc_mult]),
@@ -517,10 +531,7 @@ class DSparkBlock(DeepseekV4Block):
             self.hc_eps,
         )
         vocab = int(head.weight.shape[0])
-        logits = ops.matmul(
-            ops.cast(self.norm(contracted), DType.float32),
-            ops.transpose(ops.cast(head.weight, DType.float32), 0, 1),
-        )
+        logits = head_logits(head, self.norm(contracted))
         batch = anchor_ids.shape[0]
         logits = ops.reshape(
             ops.rebind(ops.reshape(logits, [-1, vocab]), [batch * k, vocab]),
@@ -625,9 +636,9 @@ class DeepseekV4(Module):
             shape=(1,),
             device=device,
         )
-        # float32, as the reference declares it; stored bf16, upcast on load.
+        # Stored dtype, not the reference's float32: see ``head_logits``.
         self.head = Linear(
-            config.hidden_size, config.vocab_size, DType.float32, device
+            config.hidden_size, config.vocab_size, config.dtype, device
         )
         self.mtp = LayerList(
             [
@@ -671,11 +682,8 @@ class DeepseekV4(Module):
         )
 
     def _lm_head(self, x: TensorValue) -> TensorValue:
-        """The reference's head: a float32 matmul."""
-        return ops.matmul(
-            ops.cast(x, DType.float32),
-            ops.transpose(ops.cast(self.head.weight, DType.float32), 0, 1),
-        )
+        """float32 logits off the head (:func:`head_logits`)."""
+        return head_logits(self.head, x)
 
     def trunk(
         self,
@@ -745,8 +753,8 @@ class DeepseekV4(Module):
         Returns:
             ``[batch, seq_len, vocab_size]`` float32 logits, and the
             ``[batch, seq_len, hidden * n_targets]`` trunk state DSpark would
-            read. The logits are float32 because the reference's head is --
-            it stores bf16 and upcasts before the matmul.
+            read. The logits are float32, as the reference's are
+            (:func:`head_logits`).
         """
         batch = int(tokens.shape[0])
         rows = RaggedRows.uniform(

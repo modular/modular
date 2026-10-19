@@ -12,13 +12,15 @@
 # ===----------------------------------------------------------------------=== #
 """Tests applying an EPLB placement to MoE weights through the module tree."""
 
+from collections.abc import Mapping
+
 import numpy as np
 import pytest
 from max.driver import Buffer
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.layer import LayerList, Module
-from max.nn.moe import MoE, apply_eplb_placement
+from max.nn.moe import MoE, apply_eplb_placement, router_fold_supported
 
 NUM_LOGICAL = 4
 
@@ -81,7 +83,7 @@ def _logical_checkpoint(num_layers: int) -> dict[str, np.ndarray | Buffer]:
 
 
 def _expert_tag(
-    state_dict: dict[str, np.ndarray | Buffer], layer: int, slot: int
+    state_dict: Mapping[str, object], layer: int, slot: int
 ) -> float:
     value = state_dict[f"layers.{layer}.mlp.experts.{slot}.down_proj.weight"]
     assert isinstance(value, np.ndarray)
@@ -172,4 +174,61 @@ def test_logical_id_out_of_range_raises() -> None:
             model,
             _logical_checkpoint(num_layers=1),
             np.array([[0, 1, 2, NUM_LOGICAL]]),
+        )
+
+
+def _tag_gate(
+    checkpoint: dict[str, np.ndarray | Buffer], num_layers: int
+) -> None:
+    """Replaces each bf16 gate with rows whose raw bits encode the expert."""
+    for layer in range(num_layers):
+        name = f"layers.{layer}.mlp.gate.gate_score.weight"
+        gate = checkpoint[name]
+        assert isinstance(gate, Buffer)
+        rows, cols = gate.shape
+        bits = np.repeat(
+            np.arange(rows, dtype=np.uint16)[:, None] + 100 * layer,
+            cols,
+            axis=1,
+        )
+        checkpoint[name] = Buffer.from_numpy(bits).view(
+            DType.bfloat16, [rows, cols]
+        )
+
+
+def _gate_row_tags(value: object) -> list[int]:
+    assert isinstance(value, Buffer)
+    bits = value.view(DType.uint16, list(value.shape)).to_numpy()
+    return [int(t) for t in bits[:, 0]]
+
+
+def test_fold_reorders_router_rows() -> None:
+    model = _Model(num_layers=2)
+    checkpoint = _logical_checkpoint(num_layers=2)
+    _tag_gate(checkpoint, num_layers=2)
+    phy2log = np.array([[1, 2, 0, 3], [3, 2, 1, 0]])
+
+    assert router_fold_supported(model, phy2log)
+    remapped = apply_eplb_placement(
+        model, checkpoint, phy2log, fold_router=True
+    )
+
+    for layer in range(2):
+        gate = remapped[f"layers.{layer}.mlp.gate.gate_score.weight"]
+        assert _gate_row_tags(gate) == [
+            100 * layer + int(log) for log in phy2log[layer]
+        ]
+    model.load_state_dict(remapped, strict=True)
+
+
+def test_replicas_cannot_be_folded() -> None:
+    model = _Model(num_layers=1, num_experts=NUM_LOGICAL + 2)
+    phy2log = np.array([[0, 1, 2, 3, 0, 2]])
+    assert not router_fold_supported(model, phy2log)
+    with pytest.raises(ValueError, match="cannot be folded"):
+        apply_eplb_placement(
+            model,
+            _logical_checkpoint(num_layers=1),
+            phy2log,
+            fold_router=True,
         )

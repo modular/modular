@@ -48,19 +48,19 @@ def check_paged_qkv[
     var block_storage = List(length=5 * 2 * 2 * PAGE * N, fill=inf[.float32]())
     var blocks = TileTensor(
         Span(block_storage),
-        row_major((Idx[5], Idx[2], Int(2), Idx[PAGE], Idx[1], Idx[N])),
+        row_major((Idx[5], Idx[2], 2, Idx[PAGE], Idx[1], Idx[N])),
     )
     var offsets_storage: List[UInt32] = [0, 2, 3]
-    var offsets = TileTensor(Span(offsets_storage), row_major(Int(3)))
+    var offsets = TileTensor(Span(offsets_storage), row_major(3))
     var lengths_storage: List[UInt32] = [15, 3]
-    var lengths = TileTensor(Span(lengths_storage), row_major(Int(2)))
+    var lengths = TileTensor(Span(lengths_storage), row_major(2))
     var lookup_storage: List[UInt32] = [3, 1, 2, 0]
-    var lookup = TileTensor(Span(lookup_storage), row_major((Int(2), Int(2))))
+    var lookup = TileTensor(Span(lookup_storage), row_major((2, 2)))
     var cache = PagedKVCacheCollection[
         .float32, params, PAGE, scales_origin=MutUntrackedOrigin
     ](blocks, lengths.as_imm(), lookup.as_imm(), UInt32(2), UInt32(17))
 
-    var hidden = q.a.reshape(row_major((Int(M), Idx[K]))).as_imm()
+    var hidden = q.a.reshape(row_major((M, Idx[K]))).as_imm()
     var qw = q.b_packed.reshape(
         row_major((Idx[N], Int(q.b_packed.dim[1]())))
     ).as_imm()

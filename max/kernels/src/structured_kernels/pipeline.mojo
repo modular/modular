@@ -125,7 +125,7 @@ struct ProducerConsumerPipeline[
     @inline(.always)
     def __init__(
         out self,
-        ptr: UnsafePointer[
+        ptr: MutPointer[
             Self.Backend.BarrierStorage,
             MutUntrackedOrigin,
             address_space=.SHARED,

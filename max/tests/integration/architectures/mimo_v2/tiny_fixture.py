@@ -43,6 +43,7 @@ import struct
 from pathlib import Path
 from typing import Any
 
+import ml_dtypes
 import numpy as np
 
 VOCAB, HIDDEN, HEADS = 256, 256, 16
@@ -200,9 +201,12 @@ def chunked_fp8_decode(
 
 def _bf16(x: np.ndarray) -> tuple[str, np.ndarray]:
     """``x`` rounded to BF16, nearest even, as raw ``uint16``."""
-    bits = np.ascontiguousarray(x, dtype=np.float32).view(np.uint32)
-    rounded = (bits + 0x7FFF + ((bits >> 16) & 1)) >> 16
-    return "BF16", rounded.astype(np.uint16)
+    rounded = (
+        np.asarray(x, dtype=np.float32)
+        .astype(ml_dtypes.bfloat16)
+        .view(np.uint16)
+    )
+    return "BF16", rounded
 
 
 def qkv_rows(sliding: bool) -> tuple[int, int, int]:

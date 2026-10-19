@@ -324,7 +324,7 @@ FnOp StructEmitter::synthesizeDefaultTraitMethodWrapper(
       funcOp.getContext(), funcOp.getFunctionType().getInputs(), {resultType}));
 
   // Attach the new operation to the provided declaration.
-  existingDecl.setIRValue(funcOp.getOperation());
+  existingDecl.setOp(funcOp);
   existingDecl.resolvedness = DeclResolvedness::signature;
 
   [[maybe_unused]] Operation *existing =
@@ -1000,8 +1000,7 @@ std::optional<ValueInfo> ValueInfo::lookupExisting(ASTDecl &structDecl) {
       return success();
     for (ASTDecl *decl : lookupResult.getIfSuccess()) {
       if (auto *fnDecl = dyn_cast<DefASTDecl>(decl))
-        if (fnDecl->getOp() &&
-            SpecialFunctionKind(fnDecl->getOp().getSpecialFnKind()) == kind)
+        if (SpecialFunctionKind(fnDecl->getOp().getSpecialFnKind()) == kind)
           member = fnDecl->getOp();
     }
 
@@ -1096,7 +1095,7 @@ TypedAttr StructEmitter::populateSpecialFnIsTrivial(SpecialFunctionKind kind) {
     return nullptr;
   for (ASTDecl *decl : spDecls.getIfSuccess()) {
     auto *fnDecl = dyn_cast<DefASTDecl>(decl);
-    if (!fnDecl || !fnDecl->getOp())
+    if (!fnDecl)
       continue;
     auto fnOp = fnDecl->getOp();
     if (fnOp.getSpecialFunctionKind() == kind) {
@@ -1267,7 +1266,8 @@ static SmallVector<Type> getEnumCasePayload(EnumCaseOp caseOp) {
 }
 
 LogicalResult StructEmitter::synthesizeEnumCaseConstructor(
-    StringRef caseName, ArrayRef<Type> payload, SMLoc caseLoc) {
+    StringRef caseName, ArrayRef<Type> payload, SMLoc caseLoc,
+    DocStringAttr docString) {
   MLIRContext *ctx = getContext();
   SMLoc loc = structDecl.getLoc();
   ASTType selfType = structDecl.getSelfType();
@@ -1307,6 +1307,7 @@ LogicalResult StructEmitter::synthesizeEnumCaseConstructor(
            << "internal error: could not synthesize enum case '" << caseName
            << "'";
   fn.setIsStatic(true);
+  fn.setDocStringAttr(docString);
   fnDecl->resolvedness = DeclResolvedness::signature;
   auto atEnd = OpBuilder::atBlockEnd(fn.getBody());
   EndFnOp::create(atEnd, fn.getLoc(), /*unresolved=*/true);
@@ -1415,8 +1416,9 @@ void StructEmitter::synthesizeEnumCaseListsAndStorage(
         AliasDeclOp::create(builder, ParamDeclAttr::get(name, value.getType()));
     aliasOp.setValueAttr(value);
     aliasOp.setHasDocHiddenDecorator(true);
-    getDeclResolver().addFullyResolvedDecl(aliasOp.getOperation(), name, loc,
-                                           &structDecl);
+    getDeclResolver().addFullyResolvedDecl(
+        aliasOp.getOperation(), StringAttr::get(structDecl.getContext(), name),
+        loc, &structDecl);
   };
   addAlias(kEnumCaseNamesName, caseNames);
   addAlias(kEnumCaseTypesName, caseTypes);
@@ -1427,7 +1429,9 @@ void StructEmitter::synthesizeEnumCaseListsAndStorage(
       StructFieldOp::create(builder, kEnumStorageFieldName, storageType);
   storageField.setIsDocHidden(true);
   getDeclResolver().addFullyResolvedDecl(
-      storageField.getOperation(), kEnumStorageFieldName, loc, &structDecl);
+      storageField.getOperation(),
+      StringAttr::get(structDecl.getContext(), kEnumStorageFieldName), loc,
+      &structDecl);
 }
 
 LogicalResult StructEmitter::synthesizeEnumMembers() {
@@ -1473,6 +1477,8 @@ LogicalResult StructEmitter::synthesizeEnumMembers() {
     return failure();
   auto [caseNames, caseTypes] = *lists;
   synthesizeEnumCaseListsAndStorage(enumStorageDeclOp, caseNames, caseTypes);
+  // The case op is unlisted, so its doc string reaches doc validation and doc
+  // generation only through the member synthesized for it.
   for (auto [caseOp, caseLoc] : llvm::zip_equal(cases, caseLocs)) {
     StringRef caseName = caseOp.getName();
     SmallVector<Type> payload = getEnumCasePayload(caseOp);
@@ -1484,9 +1490,11 @@ LogicalResult StructEmitter::synthesizeEnumMembers() {
       aliasDecl->setLoc(caseLoc);
       AliasDeclOp aliasOp = aliasDecl->getOp();
       aliasOp->setLoc(caseOp.getLoc());
+      aliasOp.setDocStringAttr(caseOp.getDocStringAttr());
       continue;
     }
-    if (failed(synthesizeEnumCaseConstructor(caseName, payload, caseLoc)))
+    if (failed(synthesizeEnumCaseConstructor(caseName, payload, caseLoc,
+                                             caseOp.getDocStringAttr())))
       return failure();
   }
   return success();

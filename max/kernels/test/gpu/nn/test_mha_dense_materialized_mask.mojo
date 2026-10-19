@@ -18,7 +18,7 @@ from std.testing import assert_almost_equal, assert_equal, assert_raises
 
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import H100
-from layout import Coord, MixedLayout, TileTensor, coord, row_major
+from layout import Coord, MixedLayout, coord, row_major
 from layout._host_device_tile_tensor import HostDeviceTileTensor
 from nn.attention.gpu.mha import flash_attention, flash_attention_ragged
 from nn.attention.mha_mask import MASK_VALUE, NullMask
@@ -185,9 +185,10 @@ def test_ragged_rejects_strided_offsets() raises:
 
     # Dynamic stride must be rejected before the contiguous metadata ABI is built.
     var stride = 2
-    var strided_offsets = TileTensor(
-        offsets.device_tensor().as_imm().unsafe_ptr(),
-        MixedLayout(coord[2], Coord(stride)),
+    var strided_offsets = (
+        offsets.device_tensor()
+        .as_imm()
+        .reshape(MixedLayout(coord[2], Coord(stride)))
     )
     with assert_raises(contains="input_row_offsets must have unit stride"):
         flash_attention_ragged[config=config](

@@ -122,16 +122,14 @@ def run_one_case[
     def input_fn[
         width: Int, alignment: Int
     ](coords: Coord) {var data_buf} -> SIMD[dtype, width]:
-        var idx = data_buf.layout(coords)
-        return data_buf.raw_load[width=width, alignment=alignment](idx)
+        return data_buf.load[width=width, alignment=alignment](coords)
 
     @inline(.always)
     def output_fn[
         width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[dtype, width]) {var out_buf}:
-        var idx = out_buf.layout(coords)
-        out_buf.raw_store[width=width, alignment=alignment](
-            idx, rebind[SIMD[dtype, width]](val)
+        out_buf.store[alignment=alignment](
+            coords, rebind[SIMD[dtype, width]](val)
         )
 
     layer_norm[dtype, 2, target="gpu"](

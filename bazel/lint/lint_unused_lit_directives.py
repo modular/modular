@@ -81,6 +81,7 @@ _BINARY_SUFFIXES = {
     ".ico",
     ".jpeg",
     ".jpg",
+    ".mp4",
     ".otf",
     ".png",
     ".ttf",

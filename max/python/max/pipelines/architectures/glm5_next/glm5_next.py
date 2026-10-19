@@ -46,23 +46,30 @@ Two structural facts drive the assembly:
 from __future__ import annotations
 
 import functools
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
+from pathlib import Path
 from typing import Any
 
+from max import tree
 from max.dtype import DType
 from max.graph import (
     BufferType,
     BufferValue,
     DeviceRef,
+    Graph,
     ShardingStrategy,
     TensorType,
     TensorValue,
+    Type,
+    Value,
     ops,
 )
+from max.graph import Module as GraphModule
 from max.nn.comm import Signals
 from max.nn.comm.ep import EPBatchManager
 from max.nn.embedding import VocabParallelEmbedding
 from max.nn.kv_cache import (
+    KVCacheInputsPerDevice,
     KVCacheParamInterface,
     PagedCacheValues,
     RecurrentStateInputsPerDevice,
@@ -95,7 +102,13 @@ from .layers.sparse_mla import (
     nope_pad_rotary,
 )
 from .model_config import SPARSE_ATTENTION, Glm5NextConfig
-from .state_cache import TAIL_RING_LEAF_ID, leaf_inputs
+from .state_cache import (
+    INDEXER_CACHE_KEY,
+    MLA_CACHE_KEY,
+    STATE_CACHE_KEY,
+    TAIL_RING_LEAF_ID,
+    leaf_inputs,
+)
 
 __all__ = ["Glm5Next"]
 
@@ -109,9 +122,15 @@ class Glm5Next(Module):
     modules and needs no edit to accommodate them.
     """
 
-    def __init__(self, config: Glm5NextConfig) -> None:
+    def __init__(
+        self,
+        config: Glm5NextConfig,
+        kv_params: KVCacheParamInterface | None = None,
+    ) -> None:
         super().__init__()
         self.config = config
+        # The pipeline model's KV cache parameters, which :meth:`trace` reads.
+        self._kv_params = kv_params
 
         if not config.layer_types:
             raise ValueError(
@@ -483,6 +502,101 @@ class Glm5Next(Module):
         if self.ep_manager is not None:
             types.extend(self.ep_manager.input_types())
         return types
+
+    def trace(
+        self,
+        *input_types: Type[Any],
+        name: str | None = None,
+        module: GraphModule | None = None,
+        custom_extensions: Iterable[Path] = (),
+        is_device_graph: bool = False,
+    ) -> Graph:
+        """Traces the graph, whose inputs are :meth:`input_types` for the KV
+        cache parameters this module was built with.
+
+        Adapts the flat graph inputs to :meth:`__call__`: splits off the
+        signal buffers, unflattens the MLA, indexer and recurrent state
+        caches, and skips ``batch_context_lengths``, which the graph does not
+        read yet.
+
+        Args:
+            *input_types: The graph's input types.
+            name: The name of the graph. Defaults to the class's qualified
+                name.
+            module: The MLIR module to add the graph to. Defaults to a new
+                module.
+            custom_extensions: Paths to custom kernel libraries the graph
+                uses.
+            is_device_graph: Whether to build a device graph.
+
+        Returns:
+            The traced :class:`~max.graph.Graph`.
+        """
+        kv_params = self._kv_params
+        assert kv_params is not None, "trace needs the KV cache parameters"
+        num_devices = len(self.config.devices)
+
+        def forward(
+            tokens: Value[Any],
+            device_input_row_offsets: Value[Any],
+            host_input_row_offsets: Value[Any],
+            return_n_logits: Value[Any],
+            _data_parallel_splits: Value[Any],
+            *variadic: Value[Any],
+        ) -> tuple[TensorValue, ...]:
+            it = iter(variadic)
+            signal_buffers = [next(it).buffer for _ in range(num_devices)]
+            # The recurrent state is a child of the multi-cache, so one
+            # unflatten resolves the attention leaves and the state together.
+            kv_tree = kv_params.unflatten_kv_inputs(it)
+            # A multi-cache unflattens to its children keyed by cache name.
+            # `Tree` is a recursive union that cannot say so, so narrow once
+            # here and read each child through `tree.leaves`, which types the
+            # per-device list the sublayers take.
+            assert isinstance(kv_tree, dict)
+            if STATE_CACHE_KEY not in kv_tree:
+                raise ValueError(
+                    "the GLM-5.3-Flash graph needs KDA layers; the cache"
+                    " declared no recurrent state child"
+                )
+            mla_kv = tree.leaves(
+                kv_tree[MLA_CACHE_KEY], leaf=KVCacheInputsPerDevice
+            )
+            indexer_kv = tree.leaves(
+                kv_tree[INDEXER_CACHE_KEY], leaf=KVCacheInputsPerDevice
+            )
+            state = tree.leaves(
+                kv_tree[STATE_CACHE_KEY], leaf=RecurrentStateInputsPerDevice
+            )
+            # Consumed to keep the input prefix identical to
+            # `DeepseekV3Inputs.buffers`; this graph does not read them yet.
+            for _ in range(num_devices):
+                next(it)
+            ep_inputs = (
+                [next(it) for _ in self.ep_manager.input_types()]
+                if self.ep_manager is not None
+                else None
+            )
+            return self(
+                tokens.tensor,
+                signal_buffers,
+                mla_kv,
+                indexer_kv,
+                return_n_logits.tensor,
+                device_input_row_offsets.tensor,
+                host_input_row_offsets.tensor,
+                state,
+                ep_inputs,
+            )
+
+        return Graph(
+            type(self).__qualname__ if name is None else name,
+            forward,
+            input_types=input_types,
+            custom_extensions=list(custom_extensions),
+            module=module,
+            is_device_graph=is_device_graph,
+        )
 
     def __call__(
         self,

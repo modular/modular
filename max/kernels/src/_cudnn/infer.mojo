@@ -85,8 +85,8 @@ comptime AnyOpaquePointer = OpaquePointer[AnyOrigin[mut=True]]
 # This is for calls that have two levels of nesting i.e. 3 UnsafePointers.
 # `type` doesn't do anything here, it's just for descriptive purposes, allowing
 # the ability to pass the descriptive pointer names below
-comptime DoubleNestedPointer[type: AnyType] = UnsafePointer[
-    Optional[UnsafePointer[AnyOpaquePointer, AnyOrigin[mut=True]]], _
+comptime DoubleNestedPointer[type: AnyType] = Pointer[
+    Optional[MutPointer[AnyOpaquePointer, AnyOrigin[mut=True]]], _
 ]
 
 comptime cudnnContext = AnyOpaquePointer
@@ -194,17 +194,17 @@ struct cudnnReduceTensorIndices_t(
 
 
 def cudnnReduceTensor(
-    handle: UnsafePointer[cudnnContext, _],
-    reduce_tensor_desc: UnsafePointer[cudnnReduceTensorStruct, _],
+    handle: Pointer[cudnnContext, _],
+    reduce_tensor_desc: Pointer[cudnnReduceTensorStruct, _],
     indices: OpaquePointer,
     indices_size_in_bytes: Int,
     workspace: OpaquePointer,
     workspace_size_in_bytes: Int,
     alpha: OpaquePointer,
-    a_desc: UnsafePointer[cudnnTensorStruct, _],
+    a_desc: Pointer[cudnnTensorStruct, _],
     _a: OpaquePointer,
     beta: OpaquePointer,
-    c_desc: UnsafePointer[cudnnTensorStruct, _],
+    c_desc: Pointer[cudnnTensorStruct, _],
     _c: OpaquePointer,
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
@@ -240,8 +240,8 @@ def cudnnReduceTensor(
 
 
 def cudnnGetActivationDescriptorSwishBeta(
-    activation_desc: UnsafePointer[cudnnActivationStruct, _],
-    swish_beta: UnsafePointer[Float64, _],
+    activation_desc: Pointer[cudnnActivationStruct, _],
+    swish_beta: Pointer[Float64, _],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetActivationDescriptorSwishBeta",
@@ -252,7 +252,7 @@ def cudnnGetActivationDescriptorSwishBeta(
 
 
 def cudnnDestroyAlgorithmDescriptor(
-    algo_desc: UnsafePointer[cudnnAlgorithmStruct, _],
+    algo_desc: Pointer[cudnnAlgorithmStruct, _],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnDestroyAlgorithmDescriptor",
@@ -260,16 +260,16 @@ def cudnnDestroyAlgorithmDescriptor(
     ]()(algo_desc)
 
 
-comptime cudnnTensorTransformDescriptor_t = UnsafePointer[
+comptime cudnnTensorTransformDescriptor_t = Pointer[
     cudnnTensorTransformStruct, _
 ]
 
-comptime cudnnTensorDescriptor_t = UnsafePointer[cudnnTensorStruct, _]
+comptime cudnnTensorDescriptor_t = Pointer[cudnnTensorStruct, _]
 
 
 def cudnnDropoutGetReserveSpaceSize(
-    xdesc: UnsafePointer[cudnnTensorStruct, _],
-    size_in_bytes: UnsafePointer[Int, _],
+    xdesc: Pointer[cudnnTensorStruct, _],
+    size_in_bytes: Pointer[Int, _],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnDropoutGetReserveSpaceSize",
@@ -278,12 +278,12 @@ def cudnnDropoutGetReserveSpaceSize(
 
 
 def cudnnGetReduceTensorDescriptor(
-    reduce_tensor_desc: UnsafePointer[cudnnReduceTensorStruct, _],
-    reduce_tensor_op: UnsafePointer[cudnnReduceTensorOp_t, _],
-    reduce_tensor_comp_type: UnsafePointer[cudnnDataType_t, _],
-    reduce_tensor_nan_opt: UnsafePointer[cudnnNanPropagation_t, _],
-    reduce_tensor_indices: UnsafePointer[cudnnReduceTensorIndices_t, _],
-    reduce_tensor_indices_type: UnsafePointer[cudnnIndicesType_t, _],
+    reduce_tensor_desc: Pointer[cudnnReduceTensorStruct, _],
+    reduce_tensor_op: Pointer[cudnnReduceTensorOp_t, _],
+    reduce_tensor_comp_type: Pointer[cudnnDataType_t, _],
+    reduce_tensor_nan_opt: Pointer[cudnnNanPropagation_t, _],
+    reduce_tensor_indices: Pointer[cudnnReduceTensorIndices_t, _],
+    reduce_tensor_indices_type: Pointer[cudnnIndicesType_t, _],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetReduceTensorDescriptor",
@@ -306,7 +306,7 @@ def cudnnGetReduceTensorDescriptor(
 
 
 def cudnnSetPoolingNdDescriptor(
-    pooling_desc: UnsafePointer[cudnnPoolingStruct, _],
+    pooling_desc: Pointer[cudnnPoolingStruct, _],
     mode: cudnnPoolingMode_t,
     maxpooling_nan_opt: cudnnNanPropagation_t,
     nb_dims: Int32,
@@ -389,7 +389,7 @@ struct cudnnReduceTensorOp_t(Equatable, TrivialRegisterPassable, Writable):
 
 
 def cudnnSetTensor4dDescriptor(
-    tensor_desc: UnsafePointer[cudnnTensorStruct, _],
+    tensor_desc: Pointer[cudnnTensorStruct, _],
     format: cudnnTensorFormat_t,
     data_type: cudnnDataType_t,
     n: Int32,
@@ -412,14 +412,14 @@ def cudnnSetTensor4dDescriptor(
 
 
 def cudnnLRNCrossChannelForward(
-    handle: UnsafePointer[cudnnContext, _],
-    norm_desc: UnsafePointer[cudnnLRNStruct, _],
+    handle: Pointer[cudnnContext, _],
+    norm_desc: Pointer[cudnnLRNStruct, _],
     lrn_mode: cudnnLRNMode_t,
     alpha: OpaquePointer,
-    x_desc: UnsafePointer[cudnnTensorStruct, _],
+    x_desc: Pointer[cudnnTensorStruct, _],
     x: OpaquePointer,
     beta: OpaquePointer,
-    y_desc: UnsafePointer[cudnnTensorStruct, _],
+    y_desc: Pointer[cudnnTensorStruct, _],
     y: OpaquePointer,
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
@@ -471,9 +471,9 @@ struct cudnnDeterminism_t(
         return Int(self._value)
 
 
-comptime cudnnAlgorithmDescriptor_t = UnsafePointer[cudnnAlgorithmStruct, _]
+comptime cudnnAlgorithmDescriptor_t = Pointer[cudnnAlgorithmStruct, _]
 
-comptime cudnnActivationDescriptor_t = UnsafePointer[cudnnActivationStruct, _]
+comptime cudnnActivationDescriptor_t = Pointer[cudnnActivationStruct, _]
 
 
 @fieldwise_init
@@ -747,13 +747,13 @@ struct cudnnCTCLossAlgo_t(
 
 
 def cudnnGetFilter4dDescriptor(
-    filter_desc: UnsafePointer[cudnnFilterStruct, _],
-    data_type: UnsafePointer[cudnnDataType_t, _],
-    format: UnsafePointer[cudnnTensorFormat_t, _],
-    k: UnsafePointer[Int32, _],
-    c: UnsafePointer[Int32, _],
-    h: UnsafePointer[Int32, _],
-    w: UnsafePointer[Int32, _],
+    filter_desc: Pointer[cudnnFilterStruct, _],
+    data_type: Pointer[cudnnDataType_t, _],
+    format: Pointer[cudnnTensorFormat_t, _],
+    k: Pointer[Int32, _],
+    c: Pointer[Int32, _],
+    h: Pointer[Int32, _],
+    w: Pointer[Int32, _],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetFilter4dDescriptor",
@@ -806,12 +806,12 @@ struct cudnnTensorFormat_t(
 
 
 def cudnnAddTensor(
-    handle: UnsafePointer[cudnnContext, _],
+    handle: Pointer[cudnnContext, _],
     alpha: OpaquePointer,
-    a_desc: UnsafePointer[cudnnTensorStruct, _],
+    a_desc: Pointer[cudnnTensorStruct, _],
     _a: OpaquePointer,
     beta: OpaquePointer,
-    c_desc: UnsafePointer[cudnnTensorStruct, _],
+    c_desc: Pointer[cudnnTensorStruct, _],
     _c: OpaquePointer,
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
@@ -829,7 +829,7 @@ def cudnnAddTensor(
 
 
 def cudnnDestroyFilterDescriptor(
-    filter_desc: UnsafePointer[cudnnFilterStruct, _],
+    filter_desc: Pointer[cudnnFilterStruct, _],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnDestroyFilterDescriptor",
@@ -838,13 +838,13 @@ def cudnnDestroyFilterDescriptor(
 
 
 def cudnnGetTensorTransformDescriptor(
-    transform_desc: UnsafePointer[cudnnTensorTransformStruct, _],
+    transform_desc: Pointer[cudnnTensorTransformStruct, _],
     nb_dims_requested: UInt32,
-    dest_format: UnsafePointer[cudnnTensorFormat_t, _],
+    dest_format: Pointer[cudnnTensorFormat_t, _],
     pad_before_a: OpaquePointer,
     pad_after_a: OpaquePointer,
     fold_a: OpaquePointer,
-    direction: UnsafePointer[cudnnFoldingDirection_t, _],
+    direction: Pointer[cudnnFoldingDirection_t, _],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetTensorTransformDescriptor",
@@ -877,8 +877,8 @@ def cudnnGetCudartVersion() raises -> Int:
 
 
 def cudnnGetCallback(
-    mask: UnsafePointer[Int32, _],
-    udata: UnsafePointer[OpaquePointer[UntrackedOrigin[mut=True]], _],
+    mask: Pointer[Int32, _],
+    udata: Pointer[OpaquePointer[UntrackedOrigin[mut=True]], _],
     fptr: OpaquePointer,
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
@@ -910,7 +910,7 @@ def cudnnCreateLRNDescriptor(
 
 
 def cudnnSetActivationDescriptor(
-    activation_desc: UnsafePointer[cudnnActivationStruct, _],
+    activation_desc: Pointer[cudnnActivationStruct, _],
     mode: cudnnActivationMode_t,
     relu_nan_opt: cudnnNanPropagation_t,
     coef: Float64,
@@ -1014,8 +1014,8 @@ def cudnnCreateReduceTensorDescriptor(
 
 
 def cudnnGetPoolingNdForwardOutputDim(
-    pooling_desc: UnsafePointer[cudnnPoolingStruct, _],
-    input_tensor_desc: UnsafePointer[cudnnTensorStruct, _],
+    pooling_desc: Pointer[cudnnPoolingStruct, _],
+    input_tensor_desc: Pointer[cudnnTensorStruct, _],
     nb_dims: Int32,
     output_tensor_dim_a: OpaquePointer,
 ) raises -> cudnnStatus_t:
@@ -1031,7 +1031,7 @@ def cudnnGetPoolingNdForwardOutputDim(
 
 
 def cudnnDestroySpatialTransformerDescriptor(
-    st_desc: UnsafePointer[cudnnSpatialTransformerStruct, _],
+    st_desc: Pointer[cudnnSpatialTransformerStruct, _],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnDestroySpatialTransformerDescriptor",
@@ -1039,9 +1039,7 @@ def cudnnDestroySpatialTransformerDescriptor(
     ]()(st_desc)
 
 
-comptime cudnnReduceTensorDescriptor_t = UnsafePointer[
-    cudnnReduceTensorStruct, _
-]
+comptime cudnnReduceTensorDescriptor_t = Pointer[cudnnReduceTensorStruct, _]
 
 
 def cudnnCreateTensorDescriptor(
@@ -1054,7 +1052,7 @@ def cudnnCreateTensorDescriptor(
 
 
 def cudnnSetOpTensorDescriptor(
-    op_tensor_desc: UnsafePointer[cudnnOpTensorStruct, _],
+    op_tensor_desc: Pointer[cudnnOpTensorStruct, _],
     op_tensor_op: cudnnOpTensorOp_t,
     op_tensor_comp_type: cudnnDataType_t,
     op_tensor_nan_opt: cudnnNanPropagation_t,
@@ -1071,15 +1069,15 @@ def cudnnSetOpTensorDescriptor(
 
 
 def cudnnBatchNormalizationForwardInference(
-    handle: UnsafePointer[cudnnContext, _],
+    handle: Pointer[cudnnContext, _],
     mode: cudnnBatchNormMode_t,
     alpha: OpaquePointer,
     beta: OpaquePointer,
-    x_desc: UnsafePointer[cudnnTensorStruct, _],
+    x_desc: Pointer[cudnnTensorStruct, _],
     x: OpaquePointer,
-    y_desc: UnsafePointer[cudnnTensorStruct, _],
+    y_desc: Pointer[cudnnTensorStruct, _],
     y: OpaquePointer,
-    bn_scale_bias_mean_var_desc: UnsafePointer[cudnnTensorStruct, _],
+    bn_scale_bias_mean_var_desc: Pointer[cudnnTensorStruct, _],
     bn_scale: OpaquePointer,
     bn_bias: OpaquePointer,
     estimated_mean: OpaquePointer,
@@ -1135,11 +1133,11 @@ def cudnnCreateAlgorithmPerformance(
 
 
 def cudnnDropoutForward(
-    handle: UnsafePointer[cudnnContext, _],
-    dropout_desc: UnsafePointer[cudnnDropoutStruct, _],
-    xdesc: UnsafePointer[cudnnTensorStruct, _],
+    handle: Pointer[cudnnContext, _],
+    dropout_desc: Pointer[cudnnDropoutStruct, _],
+    xdesc: Pointer[cudnnTensorStruct, _],
     x: OpaquePointer,
-    ydesc: UnsafePointer[cudnnTensorStruct, _],
+    ydesc: Pointer[cudnnTensorStruct, _],
     y: OpaquePointer,
     reserve_space: OpaquePointer,
     reserve_space_size_in_bytes: Int,
@@ -1168,19 +1166,17 @@ def cudnnDropoutForward(
     )
 
 
-def cudnnDestroy(
-    handle: UnsafePointer[cudnnContext, _]
-) raises -> cudnnStatus_t:
+def cudnnDestroy(handle: Pointer[cudnnContext, _]) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnDestroy", def(type_of(handle)) thin -> cudnnStatus_t
     ]()(handle)
 
 
 def cudnnGetActivationDescriptor(
-    activation_desc: UnsafePointer[cudnnActivationStruct, _],
-    mode: UnsafePointer[cudnnActivationMode_t, _],
-    relu_nan_opt: UnsafePointer[cudnnNanPropagation_t, _],
-    coef: UnsafePointer[Float64, _],
+    activation_desc: Pointer[cudnnActivationStruct, _],
+    mode: Pointer[cudnnActivationMode_t, _],
+    relu_nan_opt: Pointer[cudnnNanPropagation_t, _],
+    coef: Pointer[Float64, _],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetActivationDescriptor",
@@ -1194,16 +1190,16 @@ def cudnnGetActivationDescriptor(
 
 
 def cudnnOpTensor(
-    handle: UnsafePointer[cudnnContext, _],
-    op_tensor_desc: UnsafePointer[cudnnOpTensorStruct, _],
+    handle: Pointer[cudnnContext, _],
+    op_tensor_desc: Pointer[cudnnOpTensorStruct, _],
     alpha1: OpaquePointer,
-    a_desc: UnsafePointer[cudnnTensorStruct, _],
+    a_desc: Pointer[cudnnTensorStruct, _],
     _a: OpaquePointer,
     alpha2: OpaquePointer,
-    b_desc: UnsafePointer[cudnnTensorStruct, _],
+    b_desc: Pointer[cudnnTensorStruct, _],
     _b: OpaquePointer,
     beta: OpaquePointer,
-    c_desc: UnsafePointer[cudnnTensorStruct, _],
+    c_desc: Pointer[cudnnTensorStruct, _],
     _c: OpaquePointer,
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
@@ -1237,8 +1233,8 @@ def cudnnOpTensor(
 
 
 def cudnnDeriveBNTensorDescriptor(
-    derived_bn_desc: UnsafePointer[cudnnTensorStruct, _],
-    x_desc: UnsafePointer[cudnnTensorStruct, _],
+    derived_bn_desc: Pointer[cudnnTensorStruct, _],
+    x_desc: Pointer[cudnnTensorStruct, _],
     mode: cudnnBatchNormMode_t,
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
@@ -1300,8 +1296,8 @@ struct cudnnActivationMode_t(
 
 
 def cudnnSpatialTfGridGeneratorForward(
-    handle: UnsafePointer[cudnnContext, _],
-    st_desc: UnsafePointer[cudnnSpatialTransformerStruct, _],
+    handle: Pointer[cudnnContext, _],
+    st_desc: Pointer[cudnnSpatialTransformerStruct, _],
     theta: OpaquePointer,
     grid: OpaquePointer,
 ) raises -> cudnnStatus_t:
@@ -1317,8 +1313,8 @@ def cudnnSpatialTfGridGeneratorForward(
 
 
 def cudnnGetTensorSizeInBytes(
-    tensor_desc: UnsafePointer[cudnnTensorStruct, _],
-    size: UnsafePointer[Int, _],
+    tensor_desc: Pointer[cudnnTensorStruct, _],
+    size: Pointer[Int, _],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetTensorSizeInBytes",
@@ -1381,11 +1377,11 @@ struct cudnnConvolutionBwdDataAlgo_t(
 
 
 def cudnnGetFilterNdDescriptor(
-    filter_desc: UnsafePointer[cudnnFilterStruct, _],
+    filter_desc: Pointer[cudnnFilterStruct, _],
     nb_dims_requested: Int32,
-    data_type: UnsafePointer[cudnnDataType_t, _],
-    format: UnsafePointer[cudnnTensorFormat_t, _],
-    nb_dims: UnsafePointer[Int32, _],
+    data_type: Pointer[cudnnDataType_t, _],
+    format: Pointer[cudnnTensorFormat_t, _],
+    nb_dims: Pointer[Int32, _],
     filter_dim_a: OpaquePointer,
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
@@ -1404,12 +1400,12 @@ def cudnnGetFilterNdDescriptor(
 
 
 def cudnnGetPooling2dForwardOutputDim(
-    pooling_desc: UnsafePointer[cudnnPoolingStruct, _],
-    input_tensor_desc: UnsafePointer[cudnnTensorStruct, _],
-    n: UnsafePointer[Int32, _],
-    c: UnsafePointer[Int32, _],
-    h: UnsafePointer[Int32, _],
-    w: UnsafePointer[Int32, _],
+    pooling_desc: Pointer[cudnnPoolingStruct, _],
+    input_tensor_desc: Pointer[cudnnTensorStruct, _],
+    n: Pointer[Int32, _],
+    c: Pointer[Int32, _],
+    h: Pointer[Int32, _],
+    w: Pointer[Int32, _],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetPooling2dForwardOutputDim",
@@ -1424,7 +1420,7 @@ def cudnnGetPooling2dForwardOutputDim(
     ]()(pooling_desc, input_tensor_desc, n, c, h, w)
 
 
-comptime cudnnLRNDescriptor_t = UnsafePointer[cudnnLRNStruct, _]
+comptime cudnnLRNDescriptor_t = Pointer[cudnnLRNStruct, _]
 
 
 @fieldwise_init
@@ -1458,14 +1454,14 @@ struct cudnnSamplerType_t(
 
 
 def cudnnSpatialTfSamplerForward(
-    handle: UnsafePointer[cudnnContext, _],
-    st_desc: UnsafePointer[cudnnSpatialTransformerStruct, _],
+    handle: Pointer[cudnnContext, _],
+    st_desc: Pointer[cudnnSpatialTransformerStruct, _],
     alpha: OpaquePointer,
-    x_desc: UnsafePointer[cudnnTensorStruct, _],
+    x_desc: Pointer[cudnnTensorStruct, _],
     x: OpaquePointer,
     grid: OpaquePointer,
     beta: OpaquePointer,
-    y_desc: UnsafePointer[cudnnTensorStruct, _],
+    y_desc: Pointer[cudnnTensorStruct, _],
     y: OpaquePointer,
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
@@ -1518,7 +1514,7 @@ struct cudnnNormMode_t(
 
 
 def cudnnSetPooling2dDescriptor(
-    pooling_desc: UnsafePointer[cudnnPoolingStruct, _],
+    pooling_desc: Pointer[cudnnPoolingStruct, _],
     mode: cudnnPoolingMode_t,
     maxpooling_nan_opt: cudnnNanPropagation_t,
     window_height: Int32,
@@ -1555,15 +1551,15 @@ def cudnnSetPooling2dDescriptor(
 
 
 def cudnnGetPooling2dDescriptor(
-    pooling_desc: UnsafePointer[cudnnPoolingStruct, _],
-    mode: UnsafePointer[cudnnPoolingMode_t, _],
-    maxpooling_nan_opt: UnsafePointer[cudnnNanPropagation_t, _],
-    window_height: UnsafePointer[Int32, _],
-    window_width: UnsafePointer[Int32, _],
-    vertical_padding: UnsafePointer[Int32, _],
-    horizontal_padding: UnsafePointer[Int32, _],
-    vertical_stride: UnsafePointer[Int32, _],
-    horizontal_stride: UnsafePointer[Int32, _],
+    pooling_desc: Pointer[cudnnPoolingStruct, _],
+    mode: Pointer[cudnnPoolingMode_t, _],
+    maxpooling_nan_opt: Pointer[cudnnNanPropagation_t, _],
+    window_height: Pointer[Int32, _],
+    window_width: Pointer[Int32, _],
+    vertical_padding: Pointer[Int32, _],
+    horizontal_padding: Pointer[Int32, _],
+    vertical_stride: Pointer[Int32, _],
+    horizontal_stride: Pointer[Int32, _],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetPooling2dDescriptor",
@@ -1628,14 +1624,14 @@ struct cudnnNormOps_t(
 
 
 def cudnnSoftmaxForward(
-    handle: UnsafePointer[cudnnContext, _],
+    handle: Pointer[cudnnContext, _],
     algo: cudnnSoftmaxAlgorithm_t,
     mode: cudnnSoftmaxMode_t,
     alpha: OpaquePointer,
-    x_desc: UnsafePointer[cudnnTensorStruct, _],
+    x_desc: Pointer[cudnnTensorStruct, _],
     x: OpaquePointer,
     beta: OpaquePointer,
-    y_desc: UnsafePointer[cudnnTensorStruct, _],
+    y_desc: Pointer[cudnnTensorStruct, _],
     y: OpaquePointer,
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
@@ -1654,7 +1650,7 @@ def cudnnSoftmaxForward(
     ]()(handle, algo, mode, alpha, x_desc, x, beta, y_desc, y)
 
 
-comptime cudnnSpatialTransformerDescriptor_t = UnsafePointer[
+comptime cudnnSpatialTransformerDescriptor_t = Pointer[
     cudnnSpatialTransformerStruct, _
 ]
 
@@ -1697,21 +1693,21 @@ struct cudnnSoftmaxAlgorithm_t(
 
 def cudnnGetErrorString(
     status: cudnnStatus_t,
-) raises -> UnsafePointer[Int8, ImmUntrackedOrigin]:
+) raises -> ImmPointer[Int8, ImmUntrackedOrigin]:
     return _get_dylib_function[
         "cudnnGetErrorString",
-        def(type_of(status),) thin -> UnsafePointer[Int8, ImmUntrackedOrigin],
+        def(type_of(status),) thin -> ImmPointer[Int8, ImmUntrackedOrigin],
     ]()(status)
 
 
 def cudnnPoolingForward(
-    handle: UnsafePointer[cudnnContext, _],
-    pooling_desc: UnsafePointer[cudnnPoolingStruct, _],
+    handle: Pointer[cudnnContext, _],
+    pooling_desc: Pointer[cudnnPoolingStruct, _],
     alpha: OpaquePointer,
-    x_desc: UnsafePointer[cudnnTensorStruct, _],
+    x_desc: Pointer[cudnnTensorStruct, _],
     x: OpaquePointer,
     beta: OpaquePointer,
-    y_desc: UnsafePointer[cudnnTensorStruct, _],
+    y_desc: Pointer[cudnnTensorStruct, _],
     y: OpaquePointer,
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
@@ -1730,8 +1726,8 @@ def cudnnPoolingForward(
 
 
 def cudnnGetStream(
-    handle: UnsafePointer[cudnnContext, _],
-    stream_id: UnsafePointer[CUstream, _],
+    handle: Pointer[cudnnContext, _],
+    stream_id: Pointer[CUstream, _],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetStream",
@@ -1837,8 +1833,8 @@ struct cudnnConvolutionFwdAlgo_t(Equatable, TrivialRegisterPassable, Writable):
 
 
 def cudnnSaveAlgorithm(
-    handle: UnsafePointer[cudnnContext, _],
-    algo_desc: UnsafePointer[cudnnAlgorithmStruct, _],
+    handle: Pointer[cudnnContext, _],
+    algo_desc: Pointer[cudnnAlgorithmStruct, _],
     algo_space: OpaquePointer,
     algo_space_size_in_bytes: Int,
 ) raises -> cudnnStatus_t:
@@ -1854,8 +1850,8 @@ def cudnnSaveAlgorithm(
 
 
 def cudnnCopyAlgorithmDescriptor(
-    src: UnsafePointer[cudnnAlgorithmStruct, _],
-    dest: UnsafePointer[cudnnAlgorithmStruct, _],
+    src: Pointer[cudnnAlgorithmStruct, _],
+    dest: Pointer[cudnnAlgorithmStruct, _],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnCopyAlgorithmDescriptor",
@@ -1867,9 +1863,9 @@ def cudnnCopyAlgorithmDescriptor(
 
 
 def cudnnDeriveNormTensorDescriptor(
-    derived_norm_scale_bias_desc: UnsafePointer[cudnnTensorStruct, _],
-    derived_norm_mean_var_desc: UnsafePointer[cudnnTensorStruct, _],
-    x_desc: UnsafePointer[cudnnTensorStruct, _],
+    derived_norm_scale_bias_desc: Pointer[cudnnTensorStruct, _],
+    derived_norm_mean_var_desc: Pointer[cudnnTensorStruct, _],
+    x_desc: Pointer[cudnnTensorStruct, _],
     mode: cudnnNormMode_t,
     group_cnt: Int32,
 ) raises -> cudnnStatus_t:
@@ -1892,13 +1888,13 @@ def cudnnDeriveNormTensorDescriptor(
 
 
 def cudnnTransformFilter(
-    handle: UnsafePointer[cudnnContext, _],
-    trans_desc: UnsafePointer[cudnnTensorTransformStruct, _],
+    handle: Pointer[cudnnContext, _],
+    trans_desc: Pointer[cudnnTensorTransformStruct, _],
     alpha: OpaquePointer,
-    src_desc: UnsafePointer[cudnnFilterStruct, _],
+    src_desc: Pointer[cudnnFilterStruct, _],
     src_data: OpaquePointer,
     beta: OpaquePointer,
-    dest_desc: UnsafePointer[cudnnFilterStruct, _],
+    dest_desc: Pointer[cudnnFilterStruct, _],
     dest_data: OpaquePointer,
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
@@ -1932,13 +1928,13 @@ def cudnnOpsInferVersionCheck() raises -> cudnnStatus_t:
 
 
 def cudnnActivationForward(
-    handle: UnsafePointer[cudnnContext, _],
-    activation_desc: UnsafePointer[cudnnActivationStruct, _],
+    handle: Pointer[cudnnContext, _],
+    activation_desc: Pointer[cudnnActivationStruct, _],
     alpha: OpaquePointer,
-    x_desc: UnsafePointer[cudnnTensorStruct, _],
+    x_desc: Pointer[cudnnTensorStruct, _],
     x: OpaquePointer,
     beta: OpaquePointer,
-    y_desc: UnsafePointer[cudnnTensorStruct, _],
+    y_desc: Pointer[cudnnTensorStruct, _],
     y: OpaquePointer,
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
@@ -1957,8 +1953,8 @@ def cudnnActivationForward(
 
 
 def cudnnSetAlgorithmPerformance(
-    algo_perf: UnsafePointer[cudnnAlgorithmPerformanceStruct, _],
-    algo_desc: UnsafePointer[cudnnAlgorithmStruct, _],
+    algo_perf: Pointer[cudnnAlgorithmPerformanceStruct, _],
+    algo_desc: Pointer[cudnnAlgorithmStruct, _],
     status: cudnnStatus_t,
     time: Float32,
     memory: Int,
@@ -1993,7 +1989,7 @@ struct libraryPropertyType_t(TrivialRegisterPassable):
 
 
 def cudnnGetProperty(
-    type: libraryPropertyType_t, value: UnsafePointer[Int32, _]
+    type: libraryPropertyType_t, value: Pointer[Int32, _]
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetProperty",
@@ -2002,7 +1998,7 @@ def cudnnGetProperty(
 
 
 def cudnnDestroyPoolingDescriptor(
-    pooling_desc: UnsafePointer[cudnnPoolingStruct, _],
+    pooling_desc: Pointer[cudnnPoolingStruct, _],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnDestroyPoolingDescriptor",
@@ -2011,8 +2007,8 @@ def cudnnDestroyPoolingDescriptor(
 
 
 def cudnnGetFilterSizeInBytes(
-    filter_desc: UnsafePointer[cudnnFilterStruct, _],
-    size: UnsafePointer[Int, _],
+    filter_desc: Pointer[cudnnFilterStruct, _],
+    size: Pointer[Int, _],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetFilterSizeInBytes",
@@ -2051,7 +2047,7 @@ struct cudnnLRNMode_t(
 
 
 def cudnnSetTensorNdDescriptorEx(
-    tensor_desc: UnsafePointer[cudnnTensorStruct, _],
+    tensor_desc: Pointer[cudnnTensorStruct, _],
     format: cudnnTensorFormat_t,
     data_type: cudnnDataType_t,
     nb_dims: Int32,
@@ -2070,7 +2066,7 @@ def cudnnSetTensorNdDescriptorEx(
 
 
 def cudnnSetTensorNdDescriptor(
-    tensor_desc: UnsafePointer[cudnnTensorStruct, _],
+    tensor_desc: Pointer[cudnnTensorStruct, _],
     data_type: cudnnDataType_t,
     nb_dims: Int32,
     dim_a: OpaquePointer,
@@ -2089,13 +2085,13 @@ def cudnnSetTensorNdDescriptor(
 
 
 def cudnnTransformTensorEx(
-    handle: UnsafePointer[cudnnContext, _],
-    trans_desc: UnsafePointer[cudnnTensorTransformStruct, _],
+    handle: Pointer[cudnnContext, _],
+    trans_desc: Pointer[cudnnTensorTransformStruct, _],
     alpha: OpaquePointer,
-    src_desc: UnsafePointer[cudnnTensorStruct, _],
+    src_desc: Pointer[cudnnTensorStruct, _],
     src_data: OpaquePointer,
     beta: OpaquePointer,
-    dest_desc: UnsafePointer[cudnnTensorStruct, _],
+    dest_desc: Pointer[cudnnTensorStruct, _],
     dest_data: OpaquePointer,
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
@@ -2123,8 +2119,8 @@ def cudnnTransformTensorEx(
 
 
 def cudnnGetAlgorithmDescriptor(
-    algo_desc: UnsafePointer[cudnnAlgorithmStruct, _],
-    algorithm: UnsafePointer[cudnnAlgorithmUnionStruct, _],
+    algo_desc: Pointer[cudnnAlgorithmStruct, _],
+    algorithm: Pointer[cudnnAlgorithmUnionStruct, _],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetAlgorithmDescriptor",
@@ -2169,10 +2165,10 @@ struct cudnnFoldingDirection_t(
 
 
 def cudnnGetTensorNdDescriptor(
-    tensor_desc: UnsafePointer[cudnnTensorStruct, _],
+    tensor_desc: Pointer[cudnnTensorStruct, _],
     nb_dims_requested: Int32,
-    data_type: UnsafePointer[cudnnDataType_t, _],
-    nb_dims: UnsafePointer[Int32, _],
+    data_type: Pointer[cudnnDataType_t, _],
+    nb_dims: Pointer[Int32, _],
     dim_a: OpaquePointer,
     stride_a: OpaquePointer,
 ) raises -> cudnnStatus_t:
@@ -2226,10 +2222,10 @@ struct cudnnErrQueryMode_t(
 
 
 def cudnnGetOpTensorDescriptor(
-    op_tensor_desc: UnsafePointer[cudnnOpTensorStruct, _],
-    op_tensor_op: UnsafePointer[cudnnOpTensorOp_t, _],
-    op_tensor_comp_type: UnsafePointer[cudnnDataType_t, _],
-    op_tensor_nan_opt: UnsafePointer[cudnnNanPropagation_t, _],
+    op_tensor_desc: Pointer[cudnnOpTensorStruct, _],
+    op_tensor_op: Pointer[cudnnOpTensorOp_t, _],
+    op_tensor_comp_type: Pointer[cudnnDataType_t, _],
+    op_tensor_nan_opt: Pointer[cudnnNanPropagation_t, _],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetOpTensorDescriptor",
@@ -2243,11 +2239,11 @@ def cudnnGetOpTensorDescriptor(
 
 
 def cudnnGetReductionIndicesSize(
-    handle: UnsafePointer[cudnnContext, _],
-    reduce_tensor_desc: UnsafePointer[cudnnReduceTensorStruct, _],
-    a_desc: UnsafePointer[cudnnTensorStruct, _],
-    c_desc: UnsafePointer[cudnnTensorStruct, _],
-    size_in_bytes: UnsafePointer[Int, _],
+    handle: Pointer[cudnnContext, _],
+    reduce_tensor_desc: Pointer[cudnnReduceTensorStruct, _],
+    a_desc: Pointer[cudnnTensorStruct, _],
+    c_desc: Pointer[cudnnTensorStruct, _],
+    size_in_bytes: Pointer[Int, _],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetReductionIndicesSize",
@@ -2262,12 +2258,12 @@ def cudnnGetReductionIndicesSize(
 
 
 def cudnnTransformTensor(
-    handle: UnsafePointer[cudnnContext, _],
+    handle: Pointer[cudnnContext, _],
     alpha: OpaquePointer,
-    x_desc: UnsafePointer[cudnnTensorStruct, _],
+    x_desc: Pointer[cudnnTensorStruct, _],
     x: OpaquePointer,
     beta: OpaquePointer,
-    y_desc: UnsafePointer[cudnnTensorStruct, _],
+    y_desc: Pointer[cudnnTensorStruct, _],
     y: OpaquePointer,
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
@@ -2287,8 +2283,8 @@ def cudnnTransformTensor(
 comptime cudnnCallback_t = def(
     cudnnSeverity_t,
     OpaquePointer,
-    UnsafePointer[cudnnDebugStruct, _],
-    UnsafePointer[Int8, _],
+    Pointer[cudnnDebugStruct, _],
+    Pointer[Int8, _],
 ) thin -> NoneType
 
 
@@ -2297,11 +2293,11 @@ struct cudnnAlgorithmUnionStruct(TrivialRegisterPassable):
     var algo: OpaquePointer[MutAnyOrigin]
 
 
-comptime cudnnDropoutDescriptor_t = UnsafePointer[cudnnDropoutStruct, _]
+comptime cudnnDropoutDescriptor_t = Pointer[cudnnDropoutStruct, _]
 
 
 def cudnnSetTensor4dDescriptorEx(
-    tensor_desc: UnsafePointer[cudnnTensorStruct, _],
+    tensor_desc: Pointer[cudnnTensorStruct, _],
     data_type: cudnnDataType_t,
     n: Int32,
     c: Int32,
@@ -2376,15 +2372,15 @@ struct cudnnBatchNormMode_t(
         return Int(self._value)
 
 
-comptime cudnnCTCLossDescriptor_t = UnsafePointer[cudnnCTCLossStruct, _]
+comptime cudnnCTCLossDescriptor_t = Pointer[cudnnCTCLossStruct, _]
 
 
 def cudnnGetLRNDescriptor(
-    norm_desc: UnsafePointer[cudnnLRNStruct, _],
-    lrn_n: UnsafePointer[Int32, _],
-    lrn_alpha: UnsafePointer[Float64, _],
-    lrn_beta: UnsafePointer[Float64, _],
-    lrn_k: UnsafePointer[Float64, _],
+    norm_desc: Pointer[cudnnLRNStruct, _],
+    lrn_n: Pointer[Int32, _],
+    lrn_alpha: Pointer[Float64, _],
+    lrn_beta: Pointer[Float64, _],
+    lrn_k: Pointer[Float64, _],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetLRNDescriptor",
@@ -2398,14 +2394,14 @@ def cudnnGetLRNDescriptor(
     ]()(norm_desc, lrn_n, lrn_alpha, lrn_beta, lrn_k)
 
 
-comptime cudnnAlgorithmPerformance_t = UnsafePointer[
+comptime cudnnAlgorithmPerformance_t = Pointer[
     cudnnAlgorithmPerformanceStruct, _
 ]
 
 
 def cudnnScaleTensor(
-    handle: UnsafePointer[cudnnContext, _],
-    y_desc: UnsafePointer[cudnnTensorStruct, _],
+    handle: Pointer[cudnnContext, _],
+    y_desc: Pointer[cudnnTensorStruct, _],
     y: OpaquePointer,
     alpha: OpaquePointer,
 ) raises -> cudnnStatus_t:
@@ -2534,7 +2530,7 @@ struct cudnnNanPropagation_t(
         return Int(self._value)
 
 
-comptime cudnnFilterDescriptor_t = UnsafePointer[cudnnFilterStruct, _]
+comptime cudnnFilterDescriptor_t = Pointer[cudnnFilterStruct, _]
 
 
 @fieldwise_init
@@ -2579,7 +2575,7 @@ struct cudnnRNNAlgo_t(
         return Int(self._value)
 
 
-comptime cudnnOpTensorDescriptor_t = UnsafePointer[cudnnOpTensorStruct, _]
+comptime cudnnOpTensorDescriptor_t = Pointer[cudnnOpTensorStruct, _]
 
 
 struct Algorithm(TrivialRegisterPassable):
@@ -2591,11 +2587,11 @@ struct Algorithm(TrivialRegisterPassable):
 
 
 def cudnnGetReductionWorkspaceSize(
-    handle: UnsafePointer[cudnnContext, _],
-    reduce_tensor_desc: UnsafePointer[cudnnReduceTensorStruct, _],
-    a_desc: UnsafePointer[cudnnTensorStruct, _],
-    c_desc: UnsafePointer[cudnnTensorStruct, _],
-    size_in_bytes: UnsafePointer[Int, _],
+    handle: Pointer[cudnnContext, _],
+    reduce_tensor_desc: Pointer[cudnnReduceTensorStruct, _],
+    a_desc: Pointer[cudnnTensorStruct, _],
+    c_desc: Pointer[cudnnTensorStruct, _],
+    size_in_bytes: Pointer[Int, _],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetReductionWorkspaceSize",
@@ -2610,7 +2606,7 @@ def cudnnGetReductionWorkspaceSize(
 
 
 def cudnnSetFilter4dDescriptor(
-    filter_desc: UnsafePointer[cudnnFilterStruct, _],
+    filter_desc: Pointer[cudnnFilterStruct, _],
     data_type: cudnnDataType_t,
     format: cudnnTensorFormat_t,
     k: Int32,
@@ -2633,7 +2629,7 @@ def cudnnSetFilter4dDescriptor(
 
 
 def cudnnDestroyActivationDescriptor(
-    activation_desc: UnsafePointer[cudnnActivationStruct, _],
+    activation_desc: Pointer[cudnnActivationStruct, _],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnDestroyActivationDescriptor",
@@ -2642,9 +2638,9 @@ def cudnnDestroyActivationDescriptor(
 
 
 def cudnnGetAlgorithmSpaceSize(
-    handle: UnsafePointer[cudnnContext, _],
-    algo_desc: UnsafePointer[cudnnAlgorithmStruct, _],
-    algo_space_size_in_bytes: UnsafePointer[Int, _],
+    handle: Pointer[cudnnContext, _],
+    algo_desc: Pointer[cudnnAlgorithmStruct, _],
+    algo_space_size_in_bytes: Pointer[Int, _],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetAlgorithmSpaceSize",
@@ -2748,7 +2744,7 @@ struct cudnnDataType_t(Equatable, TrivialRegisterPassable, Writable):
 
 
 def cudnnSetLRNDescriptor(
-    norm_desc: UnsafePointer[cudnnLRNStruct, _],
+    norm_desc: Pointer[cudnnLRNStruct, _],
     lrn_n: Int32,
     lrn_alpha: Float64,
     lrn_beta: Float64,
@@ -2767,7 +2763,7 @@ def cudnnSetLRNDescriptor(
 
 
 def cudnnDestroyDropoutDescriptor(
-    dropout_desc: UnsafePointer[cudnnDropoutStruct, _],
+    dropout_desc: Pointer[cudnnDropoutStruct, _],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnDestroyDropoutDescriptor",
@@ -2776,16 +2772,16 @@ def cudnnDestroyDropoutDescriptor(
 
 
 def cudnnGetTensor4dDescriptor(
-    tensor_desc: UnsafePointer[cudnnTensorStruct, _],
-    data_type: UnsafePointer[cudnnDataType_t, _],
-    n: UnsafePointer[Int32, _],
-    c: UnsafePointer[Int32, _],
-    h: UnsafePointer[Int32, _],
-    w: UnsafePointer[Int32, _],
-    n_stride: UnsafePointer[Int32, _],
-    c_stride: UnsafePointer[Int32, _],
-    h_stride: UnsafePointer[Int32, _],
-    w_stride: UnsafePointer[Int32, _],
+    tensor_desc: Pointer[cudnnTensorStruct, _],
+    data_type: Pointer[cudnnDataType_t, _],
+    n: Pointer[Int32, _],
+    c: Pointer[Int32, _],
+    h: Pointer[Int32, _],
+    w: Pointer[Int32, _],
+    n_stride: Pointer[Int32, _],
+    c_stride: Pointer[Int32, _],
+    h_stride: Pointer[Int32, _],
+    w_stride: Pointer[Int32, _],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetTensor4dDescriptor",
@@ -2816,11 +2812,11 @@ def cudnnGetTensor4dDescriptor(
 
 
 def cudnnGetAlgorithmPerformance(
-    algo_perf: UnsafePointer[cudnnAlgorithmPerformanceStruct, _],
+    algo_perf: Pointer[cudnnAlgorithmPerformanceStruct, _],
     algo_desc: DoubleNestedPointer[cudnnAlgorithmStruct],
-    status: UnsafePointer[cudnnStatus_t, _],
-    time: UnsafePointer[Float32, _],
-    memory: UnsafePointer[Int, _],
+    status: Pointer[cudnnStatus_t, _],
+    time: Pointer[Float32, _],
+    memory: Pointer[Int, _],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetAlgorithmPerformance",
@@ -2842,7 +2838,7 @@ struct cudnnDebugStruct(ImplicitlyCopyable, RegisterPassable):
     var time_delta: Int32
 
     @__allow_legacy_any_origin_fields
-    var handle: UnsafePointer[cudnnContext, UntrackedOrigin[mut=True]]
+    var handle: MutPointer[cudnnContext, UntrackedOrigin[mut=True]]
     var stream: CUstream
     var pid: Int64
     var tid: Int64
@@ -2851,7 +2847,7 @@ struct cudnnDebugStruct(ImplicitlyCopyable, RegisterPassable):
 
 
 def cudnnSetSpatialTransformerNdDescriptor(
-    st_desc: UnsafePointer[cudnnSpatialTransformerStruct, _],
+    st_desc: Pointer[cudnnSpatialTransformerStruct, _],
     sampler_type: cudnnSamplerType_t,
     data_type: cudnnDataType_t,
     nb_dims: Int32,
@@ -2912,7 +2908,7 @@ struct cudnnIndicesType_t(
 
 
 def cudnnSetTensorTransformDescriptor(
-    transform_desc: UnsafePointer[cudnnTensorTransformStruct, _],
+    transform_desc: Pointer[cudnnTensorTransformStruct, _],
     nb_dims: UInt32,
     dest_format: cudnnTensorFormat_t,
     pad_before_a: OpaquePointer,
@@ -2943,7 +2939,7 @@ def cudnnSetTensorTransformDescriptor(
 
 
 def cudnnSetStream(
-    handle: UnsafePointer[cudnnContext, _], stream_id: CUstream
+    handle: Pointer[cudnnContext, _], stream_id: CUstream
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnSetStream",
@@ -2952,7 +2948,7 @@ def cudnnSetStream(
 
 
 def cudnnDestroyReduceTensorDescriptor(
-    reduce_tensor_desc: UnsafePointer[cudnnReduceTensorStruct, _],
+    reduce_tensor_desc: Pointer[cudnnReduceTensorStruct, _],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnDestroyReduceTensorDescriptor",
@@ -2961,8 +2957,8 @@ def cudnnDestroyReduceTensorDescriptor(
 
 
 def cudnnSetTensor(
-    handle: UnsafePointer[cudnnContext, _],
-    y_desc: UnsafePointer[cudnnTensorStruct, _],
+    handle: Pointer[cudnnContext, _],
+    y_desc: Pointer[cudnnTensorStruct, _],
     y: OpaquePointer,
     value_ptr: OpaquePointer,
 ) raises -> cudnnStatus_t:
@@ -2978,17 +2974,17 @@ def cudnnSetTensor(
 
 
 def cudnnDivisiveNormalizationForward(
-    handle: UnsafePointer[cudnnContext, _],
-    norm_desc: UnsafePointer[cudnnLRNStruct, _],
+    handle: Pointer[cudnnContext, _],
+    norm_desc: Pointer[cudnnLRNStruct, _],
     mode: cudnnDivNormMode_t,
     alpha: OpaquePointer,
-    x_desc: UnsafePointer[cudnnTensorStruct, _],
+    x_desc: Pointer[cudnnTensorStruct, _],
     x: OpaquePointer,
     means: OpaquePointer,
     temp: OpaquePointer,
     temp2: OpaquePointer,
     beta: OpaquePointer,
-    y_desc: UnsafePointer[cudnnTensorStruct, _],
+    y_desc: Pointer[cudnnTensorStruct, _],
     y: OpaquePointer,
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
@@ -3024,7 +3020,7 @@ def cudnnDivisiveNormalizationForward(
 
 
 def cudnnSetActivationDescriptorSwishBeta(
-    activation_desc: UnsafePointer[cudnnActivationStruct, _],
+    activation_desc: Pointer[cudnnActivationStruct, _],
     swish_beta: Float64,
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
@@ -3041,8 +3037,8 @@ def cudnnSetCallback(
     fptr: def(
         cudnnSeverity_t,
         OpaquePointer[UntrackedOrigin[mut=True]],
-        UnsafePointer[cudnnDebugStruct, UntrackedOrigin[mut=True]],
-        UnsafePointer[Int8, AnyOrigin[mut=True]],
+        MutPointer[cudnnDebugStruct, UntrackedOrigin[mut=True]],
+        MutPointer[Int8, AnyOrigin[mut=True]],
     ) thin -> NoneType,
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
@@ -3056,7 +3052,7 @@ def cudnnSetCallback(
 
 
 def cudnnDropoutGetStatesSize(
-    handle: UnsafePointer[cudnnContext, _], size_in_bytes: UnsafePointer[Int, _]
+    handle: Pointer[cudnnContext, _], size_in_bytes: Pointer[Int, _]
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnDropoutGetStatesSize",
@@ -3074,24 +3070,24 @@ def cudnnCreateDropoutDescriptor(
 
 
 def cudnnNormalizationForwardInference(
-    handle: UnsafePointer[cudnnContext, _],
+    handle: Pointer[cudnnContext, _],
     mode: cudnnNormMode_t,
     norm_ops: cudnnNormOps_t,
     algo: cudnnNormAlgo_t,
     alpha: OpaquePointer,
     beta: OpaquePointer,
-    x_desc: UnsafePointer[cudnnTensorStruct, _],
+    x_desc: Pointer[cudnnTensorStruct, _],
     x: OpaquePointer,
-    norm_scale_bias_desc: UnsafePointer[cudnnTensorStruct, _],
+    norm_scale_bias_desc: Pointer[cudnnTensorStruct, _],
     norm_scale: OpaquePointer,
     norm_bias: OpaquePointer,
-    norm_mean_var_desc: UnsafePointer[cudnnTensorStruct, _],
+    norm_mean_var_desc: Pointer[cudnnTensorStruct, _],
     estimated_mean: OpaquePointer,
     estimated_variance: OpaquePointer,
-    z_desc: UnsafePointer[cudnnTensorStruct, _],
+    z_desc: Pointer[cudnnTensorStruct, _],
     z: OpaquePointer,
-    activation_desc: UnsafePointer[cudnnActivationStruct, _],
-    y_desc: UnsafePointer[cudnnTensorStruct, _],
+    activation_desc: Pointer[cudnnActivationStruct, _],
+    y_desc: Pointer[cudnnTensorStruct, _],
     y: OpaquePointer,
     epsilon: Float64,
     group_cnt: Int32,
@@ -3206,10 +3202,10 @@ struct cudnnConvolutionBwdFilterAlgo_t(
 
 
 def cudnnQueryRuntimeError(
-    handle: UnsafePointer[cudnnContext, _],
-    rstatus: UnsafePointer[cudnnStatus_t, _],
+    handle: Pointer[cudnnContext, _],
+    rstatus: Pointer[cudnnStatus_t, _],
     mode: cudnnErrQueryMode_t,
-    tag: UnsafePointer[cudnnRuntimeTag_t, _],
+    tag: Pointer[cudnnRuntimeTag_t, _],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnQueryRuntimeError",
@@ -3223,7 +3219,7 @@ def cudnnQueryRuntimeError(
 
 
 def cudnnDestroyLRNDescriptor(
-    lrn_desc: UnsafePointer[cudnnLRNStruct, _],
+    lrn_desc: Pointer[cudnnLRNStruct, _],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnDestroyLRNDescriptor",
@@ -3232,7 +3228,7 @@ def cudnnDestroyLRNDescriptor(
 
 
 def cudnnDestroyTensorTransformDescriptor(
-    transform_desc: UnsafePointer[cudnnTensorTransformStruct, _],
+    transform_desc: Pointer[cudnnTensorTransformStruct, _],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnDestroyTensorTransformDescriptor",
@@ -3241,7 +3237,7 @@ def cudnnDestroyTensorTransformDescriptor(
 
 
 def cudnnSetReduceTensorDescriptor(
-    reduce_tensor_desc: UnsafePointer[cudnnReduceTensorStruct, _],
+    reduce_tensor_desc: Pointer[cudnnReduceTensorStruct, _],
     reduce_tensor_op: cudnnReduceTensorOp_t,
     reduce_tensor_comp_type: cudnnDataType_t,
     reduce_tensor_nan_opt: cudnnNanPropagation_t,
@@ -3269,7 +3265,7 @@ def cudnnSetReduceTensorDescriptor(
 
 
 def cudnnSetAlgorithmDescriptor(
-    algo_desc: UnsafePointer[cudnnAlgorithmStruct, _],
+    algo_desc: Pointer[cudnnAlgorithmStruct, _],
     algorithm: cudnnAlgorithmUnionStruct,
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
@@ -3287,13 +3283,13 @@ def cudnnCreateFilterDescriptor(
     ]()(filter_desc)
 
 
-comptime cudnnHandle_t = UnsafePointer[cudnnContext, _]
+comptime cudnnHandle_t = Pointer[cudnnContext, _]
 
-comptime cudnnPoolingDescriptor_t = UnsafePointer[cudnnPoolingStruct, _]
+comptime cudnnPoolingDescriptor_t = Pointer[cudnnPoolingStruct, _]
 
 
 def cudnnDestroyOpTensorDescriptor(
-    op_tensor_desc: UnsafePointer[cudnnOpTensorStruct, _],
+    op_tensor_desc: Pointer[cudnnOpTensorStruct, _],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnDestroyOpTensorDescriptor",
@@ -3360,8 +3356,8 @@ def cudnnCreatePoolingDescriptor(
 
 
 def cudnnRestoreDropoutDescriptor(
-    dropout_desc: UnsafePointer[cudnnDropoutStruct, _],
-    handle: UnsafePointer[cudnnContext, _],
+    dropout_desc: Pointer[cudnnDropoutStruct, _],
+    handle: Pointer[cudnnContext, _],
     dropout: Float32,
     states: OpaquePointer,
     state_size_in_bytes: Int,
@@ -3381,11 +3377,11 @@ def cudnnRestoreDropoutDescriptor(
 
 
 def cudnnGetDropoutDescriptor(
-    dropout_desc: UnsafePointer[cudnnDropoutStruct, _],
-    handle: UnsafePointer[cudnnContext, _],
-    dropout: UnsafePointer[Float32, _],
+    dropout_desc: Pointer[cudnnDropoutStruct, _],
+    handle: Pointer[cudnnContext, _],
+    dropout: Pointer[Float32, _],
     states: AnyOpaquePointer,
-    seed: UnsafePointer[Int64, _],
+    seed: Pointer[Int64, _],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetDropoutDescriptor",
@@ -3439,7 +3435,7 @@ def cudnnCreateOpTensorDescriptor(
 
 
 def cudnnSetFilterNdDescriptor(
-    filter_desc: UnsafePointer[cudnnFilterStruct, _],
+    filter_desc: Pointer[cudnnFilterStruct, _],
     data_type: cudnnDataType_t,
     format: cudnnTensorFormat_t,
     nb_dims: Int32,
@@ -3458,10 +3454,10 @@ def cudnnSetFilterNdDescriptor(
 
 
 def cudnnRestoreAlgorithm(
-    handle: UnsafePointer[cudnnContext, _],
+    handle: Pointer[cudnnContext, _],
     algo_space: OpaquePointer,
     algo_space_size_in_bytes: Int,
-    algo_desc: UnsafePointer[cudnnAlgorithmStruct, _],
+    algo_desc: Pointer[cudnnAlgorithmStruct, _],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnRestoreAlgorithm",
@@ -3475,11 +3471,11 @@ def cudnnRestoreAlgorithm(
 
 
 def cudnnGetPoolingNdDescriptor(
-    pooling_desc: UnsafePointer[cudnnPoolingStruct, _],
+    pooling_desc: Pointer[cudnnPoolingStruct, _],
     nb_dims_requested: Int32,
-    mode: UnsafePointer[cudnnPoolingMode_t, _],
-    maxpooling_nan_opt: UnsafePointer[cudnnNanPropagation_t, _],
-    nb_dims: UnsafePointer[Int32, _],
+    mode: Pointer[cudnnPoolingMode_t, _],
+    maxpooling_nan_opt: Pointer[cudnnNanPropagation_t, _],
+    nb_dims: Pointer[Int32, _],
     window_dim_a: OpaquePointer,
     padding_a: OpaquePointer,
     stride_a: OpaquePointer,
@@ -3509,8 +3505,8 @@ def cudnnGetPoolingNdDescriptor(
 
 
 def cudnnSetDropoutDescriptor(
-    dropout_desc: UnsafePointer[cudnnDropoutStruct, _],
-    handle: UnsafePointer[cudnnContext, _],
+    dropout_desc: Pointer[cudnnDropoutStruct, _],
+    handle: Pointer[cudnnContext, _],
     dropout: Float32,
     states: OpaquePointer,
     state_size_in_bytes: Int,
@@ -3539,10 +3535,10 @@ def cudnnCreateSpatialTransformerDescriptor(
 
 
 def cudnnInitTransformDest(
-    transform_desc: UnsafePointer[cudnnTensorTransformStruct, _],
-    src_desc: UnsafePointer[cudnnTensorStruct, _],
-    dest_desc: UnsafePointer[cudnnTensorStruct, _],
-    dest_size_in_bytes: UnsafePointer[Int, _],
+    transform_desc: Pointer[cudnnTensorTransformStruct, _],
+    src_desc: Pointer[cudnnTensorStruct, _],
+    dest_desc: Pointer[cudnnTensorStruct, _],
+    dest_size_in_bytes: Pointer[Int, _],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnInitTransformDest",
@@ -3565,7 +3561,7 @@ def cudnnCreateAlgorithmDescriptor(
 
 
 def cudnnDestroyTensorDescriptor(
-    tensor_desc: UnsafePointer[cudnnTensorStruct, _],
+    tensor_desc: Pointer[cudnnTensorStruct, _],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnDestroyTensorDescriptor",

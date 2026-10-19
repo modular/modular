@@ -30,9 +30,8 @@ fused output matches the two-step output bit for bit.
 
 from std.math import ceildiv
 from std.memory import bitcast
-from std.sys import default_accelerator
 
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, default_accelerator
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import Idx, TileTensor, row_major
 from layout.tile_layout import Layout as TileLayout
@@ -189,7 +188,8 @@ def _bench(batch_size: Int, valid_len: Int, ctx: DeviceContext) raises:
     var out_fused_tt = TileTensor(out_fused.unsafe_ptr(), out_layout)
 
     var lengths_tt = TileTensor(
-        lengths_device.unsafe_ptr().bitcast[UInt32](), row_major(batch_size)
+        lengths_device.unsafe_ptr().unsafe_bitcast[UInt32](),
+        row_major(batch_size),
     )
     var scalar_args_tt = TileTensor(scalar_args.unsafe_ptr(), row_major[3]())
     var k_scratch = TileTensor(
@@ -200,7 +200,7 @@ def _bench(batch_size: Int, valid_len: Int, ctx: DeviceContext) raises:
         k_cache.blocks_raw_ptr(),
         zero_row.unsafe_ptr(),
         idx_device.unsafe_ptr(),
-        lengths_device.unsafe_ptr().bitcast[UInt32](),
+        lengths_device.unsafe_ptr().unsafe_bitcast[UInt32](),
         TOPK,
     )
     var blocks_base = k_cache.blocks_raw_ptr()

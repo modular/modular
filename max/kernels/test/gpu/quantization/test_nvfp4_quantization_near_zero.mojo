@@ -59,8 +59,8 @@ def test_nvfp4_quant_near_zero[
     output (fp4_value * fp8_scale) is finite for every element."""
     comptime out_dtype = DType.uint8
 
-    var M = Int(m.value())
-    var N = Int(n.value())
+    var M = Int(m)
+    var N = Int(n)
 
     var input_shape = Coord(m, n)
     comptime output_n = ceildiv(NType.static_value, 2)

@@ -56,7 +56,13 @@ from max._interpreter_ops import (
     topk_gc,
     unary_elementwise_gc,
 )
-from max.driver import CPU, Buffer, Device
+from max.driver import (
+    CPU,
+    Buffer,
+    Device,
+    bfloat16_as_uint16_to_float32,
+    float32_to_bfloat16_as_uint16,
+)
 from max.dtype import DType
 from max.experimental import custom
 from max.graph.ops.rms_norm import _float32_attr_value
@@ -177,6 +183,23 @@ def _get_target_device(op: _core.Operation) -> Device:
     """
     result_mlir_type: mo.TensorType = list(op.results)[0].type  # type: ignore[assignment]
     return graph.DeviceRef.from_mlir(result_mlir_type.device_ref).to_device()
+
+
+def _buffer_to_numpy_safe(buf: Buffer) -> npt.NDArray[Any]:
+    """Converts a host buffer to NumPy, handling dtypes NumPy can't hold."""
+    if buf.dtype == DType.bfloat16:
+        return bfloat16_as_uint16_to_float32(buf.view(DType.uint16).to_numpy())
+    return buf.to_numpy()
+
+
+def _numpy_to_buffer_safe(
+    arr: npt.NDArray[Any], dtype: DType, device: Device
+) -> Buffer:
+    """Inverse of `_buffer_to_numpy_safe`."""
+    if dtype == DType.bfloat16:
+        bf16_bits = float32_to_bfloat16_as_uint16(arr.astype(np.float32))
+        return Buffer.from_numpy(bf16_bits).view(DType.bfloat16).to(device)
+    return Buffer.from_numpy(arr).to(device)
 
 
 # Constant operations
@@ -507,7 +530,7 @@ def _handle_debug_tensor_print(
     tensor_buf = inputs[1]
     label = op.label
     if tensor_buf is not None:
-        np_array = tensor_buf.to_numpy()
+        np_array = _buffer_to_numpy_safe(tensor_buf)
         if label:
             print(f"[{label}] {np_array}")
         else:
@@ -1639,13 +1662,17 @@ def _handle_gather_sum(
     assert isinstance(x, Buffer)
     assert isinstance(indices, Buffer)
 
-    input_np = x.to_numpy()
+    input_np = _buffer_to_numpy_safe(x)
     indices_np = indices.to_numpy().astype(np.intp)
 
     gathered = np.take(input_np, indices_np, axis=0)
     result = gathered.sum(axis=1, keepdims=True)
 
-    return [Buffer.from_numpy(np.ascontiguousarray(result))]
+    return [
+        _numpy_to_buffer_safe(
+            np.ascontiguousarray(result), x.dtype, target_device
+        )
+    ]
 
 
 @register_op_handler(mo.GatherNdOp)
@@ -2420,9 +2447,10 @@ def _handle_distributed_allreduce_sum(
     group_size = op.group_size or num_inputs
     totals: list[npt.NDArray[Any]] = []
     for group_start in range(0, num_inputs, group_size):
-        total = bufs[group_start].to(CPU()).to_numpy().copy()
+        # `to(CPU())` doesn't copy a host buffer, so `+=` would mutate the input.
+        total = _buffer_to_numpy_safe(bufs[group_start].to(CPU())).copy()
         for buf in bufs[group_start + 1 : group_start + group_size]:
-            total += buf.to(CPU()).to_numpy()
+            total += _buffer_to_numpy_safe(buf.to(CPU()))
         totals.extend([total] * group_size)
 
     # Place each group's sum on its output devices.
@@ -2431,7 +2459,9 @@ def _handle_distributed_allreduce_sum(
     for i, result in enumerate(results[:-1]):
         result_type: mo.TensorType = result.type  # type: ignore[assignment]
         device = graph.DeviceRef.from_mlir(result_type.device_ref).to_device()
-        output_buffers.append(Buffer.from_numpy(totals[i]).to(device))
+        output_buffers.append(
+            _numpy_to_buffer_safe(totals[i], bufs[i].dtype, device)
+        )
 
     # Trailing None for the output chain.
     output_buffers.append(None)

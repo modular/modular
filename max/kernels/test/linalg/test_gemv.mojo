@@ -37,13 +37,7 @@ def test_gemv() raises:
     comptime absolute_tolerance = 1e-08
     comptime relative_tolerance = 1e-05
 
-    # alias type = DType.float16
-    # alias absolute_tolerance = 5e-02
-    # alias relative_tolerance = 5e-01
-
     comptime simd_width = simd_width_of[type]()
-    # alias m = 22016
-    # alias k = 4096
 
     comptime m = 4096
     comptime k = 11008

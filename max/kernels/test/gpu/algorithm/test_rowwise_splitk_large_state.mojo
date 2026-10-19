@@ -70,7 +70,7 @@ def _check(rows: Int, cols: Int) raises:
         var x_d = ctx.enqueue_create_buffer[dtype](n)
         var out_d = ctx.enqueue_create_buffer[dtype](rows)
         ctx.enqueue_copy(x_d, x_h)
-        var x = TileTensor(x_d, row_major(Coord(Index(rows, cols))))
+        var x = TileTensor(x_d, row_major(rows, cols))
         var out_ptr = out_d.unsafe_ptr()
 
         @inline(.always)
@@ -85,7 +85,7 @@ def _check(rows: Int, cols: Int) raises:
             def load[
                 width: Int, alignment: Int
             ](idx: RowCoord[rank]) {var x} -> SIMD[dtype, width]:
-                return x.raw_load[width=width](x.layout(idx.coord))
+                return x.load[width=width](idx.coord)
 
             var row = rowwise.Row[
                 params, dtype, dtype, 1, rank, is_cached=False
@@ -103,7 +103,7 @@ def _check(rows: Int, cols: Int) raises:
 
             @inline(.always)
             def write(oc: RowCoord[rank]) {var acc, var out_ptr}:
-                out_ptr.unsafe_store(Int(oc.coord[0].value()), acc[0])
+                out_ptr.unsafe_store(Int(oc.coord[0]), acc[0])
 
             row.emit(write)
 

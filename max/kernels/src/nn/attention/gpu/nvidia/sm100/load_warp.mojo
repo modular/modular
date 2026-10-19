@@ -13,7 +13,7 @@
 """TMA load warp logic for FA4 (SM100 Flash Attention)."""
 
 from std.math import ceildiv
-from std.sys import size_of
+from std.sys import align_of, size_of
 from max.gpu import thread_idx
 from max.gpu.memory import CacheEviction, fence_async_view_proxy
 from max.gpu.sync import syncwarp
@@ -308,14 +308,16 @@ def fa4_load[
             comptime nblk = config.BK0 // gran
             comptime chunk = 16 // size_of[qkv_type]()
             comptime chunks_per_blk = q_pad_rows * gran // chunk
-            var lane = Int(thread_idx.x) % 32
+            var lane = thread_idx.x % 32
             for c in range(lane, nblk * chunks_per_blk, 32):
                 var off = (
                     (c // chunks_per_blk) * BM * gran
                     + (BM - q_pad_rows) * gran
                     + (c % chunks_per_blk) * chunk
                 )
-                (smem_dst.ptr + off).store(SIMD[qkv_type, chunk](0))
+                smem_dst.store[alignment=align_of[qkv_type]()](
+                    Coord(off), SIMD[qkv_type, chunk](0)
+                )
             fence_async_view_proxy()
             syncwarp()
             comptime for blk in range(nblk):
@@ -323,7 +325,7 @@ def fa4_load[
                     cta_group=cta_group, eviction_policy=eviction_policy
                 ](
                     QType(
-                        smem_dst.ptr + blk * BM * gran,
+                        smem_dst.ptr.unsafe_offset(blk * BM * gran),
                         tt_row_major[q_elements](),
                     ),
                     mbar,
@@ -562,7 +564,7 @@ def fa4_load[
             # Elect-predicated in-PTX by q_async_copy; no if-guard here.
             q_async_copy(
                 QType(
-                    q_smem + q_elements * qk_stage,
+                    q_smem.unsafe_offset(q_elements * qk_stage),
                     tt_row_major[q_elements](),
                 ),
                 mbar[],
@@ -736,7 +738,9 @@ def fa4_load[
                 oob_fill_pages=v_oob_fill,
             ](
                 v_tma_op,
-                smem_ptr + UInt32(p) * UInt32(partition_region_elems),
+                smem_ptr.unsafe_offset(
+                    UInt32(p) * UInt32(partition_region_elems)
+                ),
                 mbar[],
                 kv_head_idx=kv_head_idx,
                 elect=e,
@@ -873,8 +877,8 @@ def fa4_load[
                 comptime if acquire or qk_stage != 0:
                     kv_pipeline.producer_acquire()
                 var mbar = kv_pipeline.producer_mbar()
-                var smem_ptr = kv_smem + kv_pipeline.state.index() * UInt32(
-                    kv_stage_elems
+                var smem_ptr = kv_smem.unsafe_offset(
+                    kv_pipeline.state.index() * UInt32(kv_stage_elems)
                 )
                 _produce_k[partial=partial, qk_stage=qk_stage, with_q=with_q](
                     rows, smem_ptr, mbar, k_num_valid_pages
@@ -976,8 +980,8 @@ def fa4_load[
                     comptime for t in range(config.num_o_tiles()):
                         kv_pipeline.producer_acquire()
                         var mbar_sk = kv_pipeline.producer_mbar()
-                        var smem_sk = kv_smem + kv_pipeline.state.index() * (
-                            UInt32(kv_stage_elems)
+                        var smem_sk = kv_smem.unsafe_offset(
+                            kv_pipeline.state.index() * (UInt32(kv_stage_elems))
                         )
                         _produce_v_sk[partial=partial, t=t](
                             chunk_rows, smem_sk, mbar_sk, chunk_nvp
@@ -989,8 +993,8 @@ def fa4_load[
                 comptime if acquire or stage != 0:
                     kv_pipeline.producer_acquire()
                 var mbar = kv_pipeline.producer_mbar()
-                var smem_ptr = kv_smem + kv_pipeline.state.index() * UInt32(
-                    kv_stage_elems
+                var smem_ptr = kv_smem.unsafe_offset(
+                    kv_pipeline.state.index() * UInt32(kv_stage_elems)
                 )
                 comptime if config.m_pack == 2:
                     # No `v_num_valid_pages`: Layout-E derives its own count
@@ -1262,7 +1266,10 @@ def fa4_load[
                     expect_bytes_pred(q1_mbar, Int32(cta_group * q_bytes), e)
                 comptime q1_smem_offset = q_elements * 1  # num_qk_stages=1
                 q_async_copy(
-                    QType(q_smem + q1_smem_offset, tt_row_major[q_elements]()),
+                    QType(
+                        q_smem.unsafe_offset(q1_smem_offset),
+                        tt_row_major[q_elements](),
+                    ),
                     q1_mbar[0],
                 )
 
@@ -1331,7 +1338,10 @@ def fa4_load[
                 # Elect-predicated in-PTX by q_async_copy; no if-guard here.
                 comptime q1_smem_offset = q_elements * 1  # num_qk_stages=1
                 q_async_copy(
-                    QType(q_smem + q1_smem_offset, tt_row_major[q_elements]()),
+                    QType(
+                        q_smem.unsafe_offset(q1_smem_offset),
+                        tt_row_major[q_elements](),
+                    ),
                     q1_mbar[0],
                 )
 
@@ -1463,11 +1473,16 @@ def fa4_load[
                 comptime d_idx = qk_stage * config.BK0
                 comptime if is_leader:
                     expect_bytes_pred(
-                        q1_mbar + qk_stage, Int32(cta_group * q_bytes), e
+                        q1_mbar.unsafe_offset(qk_stage),
+                        Int32(cta_group * q_bytes),
+                        e,
                     )
                 # Elect-predicated in-PTX by q_async_copy; no if-guard here.
                 q_async_copy(
-                    QType(q_smem + q_smem_offset, tt_row_major[q_elements]()),
+                    QType(
+                        q_smem.unsafe_offset(q_smem_offset),
+                        tt_row_major[q_elements](),
+                    ),
                     q1_mbar[qk_stage],
                     depth_idx=UInt32(d_idx),
                 )

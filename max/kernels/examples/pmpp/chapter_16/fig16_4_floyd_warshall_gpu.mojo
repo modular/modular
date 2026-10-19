@@ -27,7 +27,7 @@ comptime INF_DIST = Float32.MAX
 
 
 def floyd_warshall_kernel(
-    A: UnsafePointer[Float32, MutAnyOrigin],
+    A: MutPointer[Float32, MutAnyOrigin],
     num_vertices_dev: Int32,
     curr_k_dev: Int32,
 ):
@@ -59,12 +59,12 @@ def floyd_warshall_kernel(
 
     # Thread 0 loads A[i][k] into shared memory once for the whole block
     if thread_idx.x == 0:
-        k_row_shared[0] = Float32(A[i * num_vertices + curr_k])
+        k_row_shared[0] = A[i * num_vertices + curr_k]
 
     barrier()
 
     # Get k_row from shared memory
-    var k_row = Float32(k_row_shared[0])
+    var k_row = k_row_shared[0]
 
     # Early exit if no path through curr_k from row i
     if k_row == INF_DIST:
@@ -87,7 +87,7 @@ def floyd_warshall_kernel(
 # ========================== CPU REFERENCE ==========================
 
 
-def cpu_floyd_warshall(dist: UnsafePointer[mut=True, Float32, _], V: Int):
+def cpu_floyd_warshall(dist: MutPointer[Float32, _], V: Int):
     """CPU version of Floyd-Warshall algorithm for verification.
 
     Args:
@@ -107,7 +107,7 @@ def cpu_floyd_warshall(dist: UnsafePointer[mut=True, Float32, _], V: Int):
                 dist[idx_ij] = new_dist
 
 
-def initialize_dist(dist: UnsafePointer[mut=True, Float32, _], V: Int):
+def initialize_dist(dist: MutPointer[Float32, _], V: Int):
     """Initialize distance matrix with diagonal = 0, others = INF.
 
     Args:
@@ -121,7 +121,7 @@ def initialize_dist(dist: UnsafePointer[mut=True, Float32, _], V: Int):
             dist[i * V + j] = INF_DIST
 
 
-def print_dist(dist: UnsafePointer[Float32, _], V: Int, title: String):
+def print_dist(dist: Pointer[Float32, _], V: Int, title: String):
     """Print distance matrix (partial for large matrices).
 
     Args:
@@ -141,13 +141,7 @@ def print_dist(dist: UnsafePointer[Float32, _], V: Int, title: String):
                 row_str += String(d) + " "
         print(row_str)
     if V > 10:
-        print(
-            "... (showing first 10x10 of "
-            + String(V)
-            + "x"
-            + String(V)
-            + " matrix)"
-        )
+        print(t"... (showing first 10x10 of {V}x{V} matrix)")
     print("")
 
 

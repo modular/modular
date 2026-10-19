@@ -15,6 +15,8 @@
 from __future__ import annotations
 
 import json
+import os
+import stat
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -22,18 +24,18 @@ from pathlib import Path
 import huggingface_hub
 import pytest
 from max import _core
-from max.pipelines.lib.artifact import (
+from max._artifact import (
     ArtifactError,
     ArtifactFile,
     ArtifactType,
     HuggingFaceRef,
-    ModelArtifact,
-    deserialize,
-    serialize,
 )
-from max.pipelines.lib.artifact.codec import encode
-from max.pipelines.lib.artifact.metadata import ARTIFACT_VERSION
-from max.pipelines.lib.artifact.types import sha256_file
+from max._artifact.codec import encode, prefix_files
+from max._artifact.metadata import ARTIFACT_VERSION
+from max._artifact.model_artifact import ModelArtifact
+from max._artifact.pipeline_modules import PipelineModules
+from max._artifact.serialization import deserialize, serialize
+from max._artifact.value_types import sha256_file
 from typing_extensions import Self
 
 MODEL_REVISION = "a" * 40
@@ -100,23 +102,23 @@ class FailingComponent(FakeComponent):
 
 @dataclass(frozen=True)
 class FakeArtifact(ModelArtifact):
-    model: FakeComponent | None = None
+    engine_config: FakeComponent | None = None
     tokenizer: FakeComponent | None = None
 
 
 @dataclass(frozen=True)
 class FailingArtifact(ModelArtifact):
-    model: FailingComponent | None = None
+    engine_config: FailingComponent | None = None
 
 
 @dataclass(frozen=True)
 class AmbiguousArtifact(ModelArtifact):
-    model: FakeComponent | FailingComponent | None = None
+    engine_config: FakeComponent | FailingComponent | None = None
 
 
 def _artifact(**components: FakeComponent) -> FakeArtifact:
     return FakeArtifact(
-        model=components.get("model"),
+        engine_config=components.get("engine_config"),
         tokenizer=components.get("tokenizer"),
     )
 
@@ -136,7 +138,7 @@ def test_round_trip(tmp_path: Path) -> None:
     tokenizer = FakeComponent({"files": TOKENIZER_REF})
 
     dest = serialize(
-        _artifact(model=model, tokenizer=tokenizer), tmp_path / "a"
+        _artifact(engine_config=model, tokenizer=tokenizer), tmp_path / "a"
     )
     assert dest == tmp_path / "a.m"
     assert (dest / "model.mef").read_bytes() == b"\x00mef"
@@ -156,11 +158,15 @@ def test_round_trip(tmp_path: Path) -> None:
 
     loaded = deserialize(dest, FakeArtifact)
     assert isinstance(loaded, FakeArtifact)
-    assert loaded.model_sources() == (DRAFT_REF, MODEL_REF, TOKENIZER_REF)
+    assert loaded.model_sources() == (
+        DRAFT_REF,
+        MODEL_REF,
+        TOKENIZER_REF,
+    )
     assert loaded.tokenizer == tokenizer
     assert loaded.format_spec is None
-    assert isinstance(loaded.model, FakeComponent)
-    value = loaded.model.value
+    assert isinstance(loaded.engine_config, FakeComponent)
+    value = loaded.engine_config.value
     assert value["engine_model"] == ArtifactFile(
         "model.mef", dest / "model.mef"
     )
@@ -179,7 +185,9 @@ def test_round_trip(tmp_path: Path) -> None:
 
 def test_metadata(tmp_path: Path) -> None:
     dest = serialize(
-        _artifact(model=FakeComponent({"f": ArtifactFile("x.txt", "x")})),
+        _artifact(
+            engine_config=FakeComponent({"f": ArtifactFile("x.txt", "x")})
+        ),
         tmp_path / "a.m",
     )
     assert dest == tmp_path / "a.m"
@@ -192,7 +200,7 @@ def test_metadata(tmp_path: Path) -> None:
         "x.txt": sha256_file(dest / "x.txt"),
     }
     sections = json.loads((dest / "artifact.json").read_text())
-    assert sections == {"model": {"f": {"$file": "x.txt"}}}
+    assert sections == {"engine_config": {"f": {"$file": "x.txt"}}}
 
 
 def test_existing_destination_rejected(tmp_path: Path) -> None:
@@ -205,11 +213,11 @@ def test_failed_export_leaves_nothing(tmp_path: Path) -> None:
     ok = FakeComponent({"f": ArtifactFile("x.txt", "x")})
     bad = FakeComponent({"f": ArtifactFile("x.txt", Path("/nonexistent"))})
     with pytest.raises(ArtifactError):
-        serialize(_artifact(model=ok, tokenizer=bad), tmp_path / "a")
-    with pytest.raises(FileNotFoundError):
-        serialize(_artifact(model=bad), tmp_path / "a")
+        serialize(_artifact(engine_config=ok, tokenizer=bad), tmp_path / "a")
+    with pytest.raises(ArtifactError, match="does not exist"):
+        serialize(_artifact(engine_config=bad), tmp_path / "a")
     with pytest.raises(RuntimeError):
-        serialize(_artifact(model=FailingComponent()), tmp_path / "a")
+        serialize(_artifact(engine_config=FailingComponent()), tmp_path / "a")
     assert list(tmp_path.iterdir()) == []
 
 
@@ -217,7 +225,8 @@ def test_identical_files_deduplicated(tmp_path: Path) -> None:
     f = ArtifactFile("x.txt", "x")
     dest = serialize(
         _artifact(
-            model=FakeComponent({"f": f}), tokenizer=FakeComponent({"f": f})
+            engine_config=FakeComponent({"f": f}),
+            tokenizer=FakeComponent({"f": f}),
         ),
         tmp_path / "a",
     )
@@ -237,7 +246,9 @@ def test_corrupt_artifact_rejected(
     tmp_path: Path, corrupt: Callable[[Path], object]
 ) -> None:
     dest = serialize(
-        _artifact(model=FakeComponent({"f": ArtifactFile("x.txt", "x")})),
+        _artifact(
+            engine_config=FakeComponent({"f": ArtifactFile("x.txt", "x")})
+        ),
         tmp_path / "a",
     )
     corrupt(dest)
@@ -255,13 +266,13 @@ def test_requires_m_suffix(tmp_path: Path) -> None:
 
 
 def test_missing_component_type(tmp_path: Path) -> None:
-    dest = serialize(_artifact(model=FakeComponent()), tmp_path / "a")
+    dest = serialize(_artifact(engine_config=FakeComponent()), tmp_path / "a")
     with pytest.raises(ArtifactError, match="no concrete component type"):
         deserialize(dest)
 
 
 def test_component_deserialize_error_wrapped(tmp_path: Path) -> None:
-    dest = serialize(_artifact(model=FakeComponent()), tmp_path / "a")
+    dest = serialize(_artifact(engine_config=FakeComponent()), tmp_path / "a")
     with pytest.raises(ArtifactError, match="re-export"):
         deserialize(dest, FailingArtifact)
 
@@ -293,7 +304,7 @@ def test_invalid_values_rejected(
     tmp_path: Path, value: Mapping[str, ArtifactType], match: str
 ) -> None:
     with pytest.raises(ArtifactError, match=match):
-        serialize(_artifact(model=FakeComponent(value)), tmp_path / "a")
+        serialize(_artifact(engine_config=FakeComponent(value)), tmp_path / "a")
 
 
 @pytest.mark.parametrize(
@@ -337,16 +348,16 @@ def test_uncached_hf_repo_warns(
     tmp_path: Path, ref: HuggingFaceRef, caplog: pytest.LogCaptureFixture
 ) -> None:
     model = FakeComponent({"ref": ref})
-    dest = serialize(_artifact(model=model), tmp_path / "a")
+    dest = serialize(_artifact(engine_config=model), tmp_path / "a")
     with caplog.at_level("WARNING", logger="max.pipelines"):
-        assert deserialize(dest, FakeArtifact).model == model
+        assert deserialize(dest, FakeArtifact).engine_config == model
     assert f"{ref.repo_id}@{ref.revision} is not in the local" in caplog.text
 
 
 def test_missing_path_in_cached_snapshot_rejected(tmp_path: Path) -> None:
     ref = HuggingFaceRef("org/model", MODEL_REVISION, "missing.json")
     dest = serialize(
-        _artifact(model=FakeComponent({"ref": ref})), tmp_path / "a"
+        _artifact(engine_config=FakeComponent({"ref": ref})), tmp_path / "a"
     )
     with pytest.raises(ArtifactError, match=r"missing\.json from org/model"):
         deserialize(dest, FakeArtifact)
@@ -358,7 +369,7 @@ def test_local_repo_source(tmp_path: Path) -> None:
     (repo / "config.json").write_text("{}")
     ref = HuggingFaceRef(str(repo), "main", "config.json")
     dest = serialize(
-        _artifact(model=FakeComponent({"ref": ref})), tmp_path / "a"
+        _artifact(engine_config=FakeComponent({"ref": ref})), tmp_path / "a"
     )
     assert deserialize(dest, FakeArtifact).model_sources() == (ref,)
 
@@ -376,7 +387,7 @@ def test_same_bytes_in_different_forms_deduplicated(tmp_path: Path) -> None:
             "other_path": ArtifactFile("x.txt", src / "b.txt"),
         }
     )
-    dest = serialize(_artifact(model=model), tmp_path / "a")
+    dest = serialize(_artifact(engine_config=model), tmp_path / "a")
     assert (dest / "x.txt").read_text() == "x"
 
 
@@ -389,7 +400,7 @@ def test_different_bytes_rejected(tmp_path: Path) -> None:
             {"a": ArtifactFile("x.txt", "x"), "b": ArtifactFile("x.txt", other)}
         )
         with pytest.raises(ArtifactError, match="different content"):
-            serialize(_artifact(model=model), tmp_path / "a")
+            serialize(_artifact(engine_config=model), tmp_path / "a")
 
 
 @pytest.mark.parametrize(
@@ -407,19 +418,23 @@ def test_colliding_names_rejected(
     model = FakeComponent({"a": ArtifactFile(first, "a")})
     tokenizer = FakeComponent({"b": ArtifactFile(second, "b")})
     with pytest.raises(ArtifactError, match=match):
-        serialize(_artifact(model=model, tokenizer=tokenizer), tmp_path / "a")
+        serialize(
+            _artifact(engine_config=model, tokenizer=tokenizer), tmp_path / "a"
+        )
     assert list(tmp_path.iterdir()) == []
 
 
 def test_component_types() -> None:
     # Resolving the real ModelArtifact guards against slot annotations that
     # can't be loaded.
-    assert ModelArtifact.component_types() == dict.fromkeys(
-        ModelArtifact.component_slots()
-    )
+    assert ModelArtifact.component_types() == {
+        **dict.fromkeys(ModelArtifact.component_slots()),
+        "model": PipelineModules,
+    }
     assert FakeArtifact.component_types() == {
         **dict.fromkeys(ModelArtifact.component_slots()),
-        "model": FakeComponent,
+        "model": PipelineModules,
+        "engine_config": FakeComponent,
         "tokenizer": FakeComponent,
     }
 
@@ -427,3 +442,32 @@ def test_component_types() -> None:
 def test_ambiguous_slot_rejected() -> None:
     with pytest.raises(ArtifactError, match="exactly one class"):
         AmbiguousArtifact.component_types()
+
+
+def test_from_components_checks_slot_types() -> None:
+    with pytest.raises(ArtifactError, match="expects PipelineModules"):
+        ModelArtifact.from_components({"model": FakeComponent()})
+    with pytest.raises(ArtifactError, match="no slot 'bogus'"):
+        ModelArtifact.from_components({"bogus": FakeComponent()})
+    artifact = FakeArtifact.from_components({"tokenizer": FakeComponent()})
+    assert artifact.tokenizer == FakeComponent()
+
+
+def test_artifact_dir_respects_umask(tmp_path: Path) -> None:
+    previous = os.umask(0o022)
+    try:
+        dest = serialize(_artifact(), tmp_path / "a")
+    finally:
+        os.umask(previous)
+    assert stat.S_IMODE(dest.stat().st_mode) == 0o755
+
+
+def test_prefix_files_moves_every_file() -> None:
+    value: ArtifactType = {
+        "mef": ArtifactFile("model.mef", b"mef"),
+        "nested": [{"graph": ArtifactFile("graph.mlir", "graph")}, 1],
+    }
+    assert prefix_files(value, "decoder") == {
+        "mef": ArtifactFile("decoder/model.mef", b"mef"),
+        "nested": [{"graph": ArtifactFile("decoder/graph.mlir", "graph")}, 1],
+    }

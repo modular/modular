@@ -41,7 +41,7 @@ from max.gpu import (
 from std.math import ceildiv, exp
 from std.utils.index import StaticTuple
 
-from layout import Coord, TensorLayout, TileTensor
+from layout import TensorLayout, TileTensor
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_gpu
 from max.gpu.primitives.grid_controls import (
@@ -158,12 +158,12 @@ def hyper_connection_gates_kernel[
     # the grid this one waits on. Loading them first puts the fetch in flight
     # across the wait instead of behind it. Every index here is within the
     # bias, whatever `elem` is, so none of it needs a bound.
-    var s_pre = pre_post_comb_scale.load[width=1](Coord(0))
-    var s_post = pre_post_comb_scale.load[width=1](Coord(1))
-    var s_comb = pre_post_comb_scale.load[width=1](Coord(2))
-    var pre_b = pre_post_comb_b.load[width=1](Coord(elem))
-    var post_b = pre_post_comb_b.load[width=1](Coord(H + elem))
-    var comb_b = pre_post_comb_b.load[width=1](Coord(2 * H + elem))
+    var s_pre = pre_post_comb_scale.load((0,))
+    var s_post = pre_post_comb_scale.load((1,))
+    var s_comb = pre_post_comb_scale.load((2,))
+    var pre_b = pre_post_comb_b.load((elem,))
+    var post_b = pre_post_comb_b.load((H + elem,))
+    var comb_b = pre_post_comb_b.load((2 * H + elem,))
 
     wait_on_dependent_grids()
     launch_dependent_grids()
@@ -175,15 +175,15 @@ def hyper_connection_gates_kernel[
     var in_range = row < Int(num_rows)
 
     if in_range and elem < H:
-        var pre_w = hc_proj.load[width=1]((row, elem))
+        var pre_w = hc_proj.load((row, elem))
         pre[row, elem] = sigmoid(pre_w * s_pre + pre_b) + hc_eps
 
-        var post_w = hc_proj.load[width=1]((row, H + elem))
+        var post_w = hc_proj.load((row, H + elem))
         post[row, elem] = 2 * sigmoid(post_w * s_post + post_b)
 
     var logit = Float32(0)
     if in_range:
-        logit = hc_proj.load[width=1]((row, 2 * H + elem)) * s_comb + comb_b
+        logit = hc_proj.load((row, 2 * H + elem)) * s_comb + comb_b
 
     # Softmax over the matrix row, max-subtracted to match torch.
     var e = exp(logit - warp.lane_group_max[num_lanes=H](logit))

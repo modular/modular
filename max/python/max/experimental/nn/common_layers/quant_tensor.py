@@ -16,10 +16,12 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TypeAlias, TypeGuard
+from functools import cached_property
+from typing import Any, TypeAlias, TypeGuard
 
 from max.driver import CPU, Device
 from max.dtype import DType
+from max.experimental import functional as F
 from max.experimental.nn import Module
 from max.experimental.nn.module import module_dataclass
 from max.experimental.sharding import (
@@ -28,7 +30,12 @@ from max.experimental.sharding import (
     Sharded,
 )
 from max.experimental.tensor import Tensor
+from max.graph import Shape, TensorValue
+from max.nn.kernels import quantize_dynamic_block_scaled
 from typing_extensions import Self
+
+MAX_E2M1 = 6.0
+MAX_E4M3 = 448.0
 
 
 def _ceildiv(n: int, d: int) -> int:
@@ -292,6 +299,118 @@ class NVFP4Tensor(QTensor):
         )
 
 
+class NVFP4TensorQuantizer(NVFP4Tensor):
+    """FakeQuant-style on-the-fly quantizable weight tensor.
+
+    By contrast to NVFP4Tensor, which serves as a container
+    for loading pre-quantized weights and scales from the checkpoint, LazyNVFP4Tensor wraps the native precision tensor,
+    while exposing scales tensors via properties that, on first use, trigger dynamic quantization via a kernel.
+    Subclassing from NVFP4Tensor allows for quant ops dispatch, like a normal NVFP4 weight tensor.
+    """
+
+    _tensor: Tensor
+
+    def __init__(
+        self,
+        tensor: Tensor,
+        block_size: tuple[int, int] = (1, 16),
+    ):
+        if int(tensor.shape[-1]) % block_size[-1]:
+            raise ValueError(
+                f"NVFP4 needs a K that is a multiple of {block_size[-1]}, got "
+                f"{tensor.shape[-1]}"
+            )
+        self._tensor = tensor
+        self._block_size = block_size
+
+    @property
+    def shape(self) -> Shape:
+        """Delegates shape to underlying tensor."""
+        return self._tensor.shape
+
+    def __tree_flatten__(self) -> tuple[dict[str, Any], None]:
+        # "" adds no segment, so the leaf path stays "...gate_proj.weight".
+        return {"": self._tensor, "_block_size": self._block_size}, None
+
+    def __tree_setattr__(self, key: Any, value: Any) -> None:
+        if key == "":
+            key = "_tensor"
+        super().__tree_setattr__(key, value)
+
+    def to(
+        self, target: Device | DeviceMesh | DeviceMapping
+    ) -> NVFP4TensorQuantizer:
+        """Delegates placement to underlying tensor."""
+        self._tensor = self._tensor.to(target)
+        return self
+
+    @property
+    def block_size(self) -> tuple[int, int]:
+        """Quantization block shape as ``(rows, cols)``."""
+        return self._block_size
+
+    def _quantize(self) -> NVFP4Tensor:
+        amax = (
+            F.abs(self._tensor)
+            .max(axis=None)
+            .reshape([])
+            .cast(DType.float32)
+            .to(CPU())
+        )
+        encode_scale = (MAX_E2M1 * MAX_E4M3) / amax
+        decode_scale = 1.0 / encode_scale
+
+        packed_value, scales_value = quantize_dynamic_block_scaled(
+            TensorValue(self._tensor),
+            tensor_sf=TensorValue(encode_scale),
+            sf_vector_size=self.block_size[1],
+            scales_type=DType.float8_e4m3fn,
+            out_type=DType.uint8,
+        )
+        packed = Tensor.from_graph_value(packed_value)
+        scales = Tensor.from_graph_value(scales_value)
+        rows = self._tensor.shape[0]
+        scale_cols = self._tensor.shape[1] // self.block_size[1]
+        weight_scale = scales.permute([0, 3, 2, 1, 4]).reshape(
+            [rows, scale_cols]
+        )
+        input_scale = Tensor.ones((), dtype=DType.float32, device=CPU())
+
+        return NVFP4Tensor(
+            data=packed,
+            weight_scale=weight_scale,
+            weight_scale_2=decode_scale,
+            input_scale=input_scale,
+        )
+
+    @cached_property
+    def quant_tensor(self) -> NVFP4Tensor:
+        """Holds a cached quantized tensor."""
+        return self._quantize()
+
+    # The base class stores these as attributes. These stay read-only views
+    # of the cached quantized tensor so dispatch can read them the same way.
+    @property
+    def data(self) -> Tensor:  # type: ignore[override]
+        """Packed NVFP4 weights."""
+        return self.quant_tensor.data
+
+    @property
+    def weight_scale(self) -> Tensor:  # type: ignore[override]
+        """FP8 block scales."""
+        return self.quant_tensor.weight_scale
+
+    @property
+    def weight_scale_2(self) -> Tensor:  # type: ignore[override]
+        """Global weight scaling factor."""
+        return self.quant_tensor.weight_scale_2
+
+    @property
+    def input_scale(self) -> Tensor:  # type: ignore[override]
+        """Global activations scaling factor."""
+        return self.quant_tensor.input_scale
+
+
 @module_dataclass(frozen=True)
 class NVFP4Activation(QTensor):
     """NVFP4-quantized activation tensor.
@@ -310,7 +429,11 @@ class NVFP4Activation(QTensor):
 
 
 QuantAwareTensor: TypeAlias = (
-    Tensor | FP8BlockTensor | NVFP4Tensor | NVFP4Activation
+    Tensor
+    | FP8BlockTensor
+    | NVFP4Tensor
+    | NVFP4TensorQuantizer
+    | NVFP4Activation
 )
 
 

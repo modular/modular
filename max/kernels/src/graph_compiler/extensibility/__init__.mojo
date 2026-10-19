@@ -49,3 +49,7 @@ from .stable_tensor import (
     _StableMutableInputTensor,
     _StableMutableInputVariadicTensors,
 )
+
+# TODO(GEX-4386): Remove once a `TensorTuple` device kernel can type a dense
+# element without rebinding to the projection.
+from .tile_tensor_adapters import _TileProjection

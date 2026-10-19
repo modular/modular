@@ -45,7 +45,6 @@ from std.collections import Optional
 from max.gpu.host import DeviceContext
 from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from max.gpu.primitives.grid_controls import PDLLevel
-from std.utils.index import Index
 from layout import TileTensor
 
 from linalg.fp4_utils import (
@@ -185,13 +184,13 @@ def _launch_grouped_block_scaled[
     comptime c_type = c.dtype
     comptime sfa_dtype = a_scales.dtype
     comptime sfb_dtype = b_scales.dtype
-    comptime umma_shape = Index(128 * cta_group, mma_bn, 32)
+    comptime umma_shape = (128 * cta_group, mma_bn, 32)
 
     comptime config = BlockScaledMatmulConfig[
         a_type, b_type, c_type, sfa_dtype, sfb_dtype, transpose_b
     ](
         scaling_kind=scaling_kind,
-        cluster_shape=Index(cta_group, 1, 1),
+        cluster_shape=(cta_group, 1, 1),
         mma_shape=umma_shape,
         block_swizzle_size=8,
         cta_group=cta_group,

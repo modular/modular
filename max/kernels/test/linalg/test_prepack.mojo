@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.math import ceildiv
+from std.math import align_up
 
 from layout import TileTensor
 from layout.tile_layout import row_major
@@ -31,8 +31,8 @@ def test_prepack():
     comptime tile_n = 8
     comptime type = DType.float32
 
-    comptime k_padded = ceildiv(k, tile_k) * tile_k
-    comptime n_padded = ceildiv(n, tile_n) * tile_n
+    comptime k_padded = align_up(k, tile_k)
+    comptime n_padded = align_up(n, tile_n)
 
     var src_ptr = unsafe_stack_allocation[n * k, type, alignment=64]()
     unsafe_memset_zero(src_ptr, n * k)

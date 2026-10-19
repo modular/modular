@@ -108,7 +108,7 @@ Each `case` can be indented under `match` or aligned with it.
 | Value            | `case == threshold:`                    | A value equal to an existing expression         |
 | Tuple            | `case (0, 0):` or `case True, False:`   | Each element against its own pattern            |
 | Struct           | `case Point(x=0, y=0):`                 | Each named field against its own pattern        |
-| Initializer list | `case {0, 0}:`                          | A value equal to one built from the list        |
+| Initializer list | `case {x = 0, y = 0}:`                  | Each named subject field against its pattern    |
 | Enum case        | `case .Some(reading):` or `case .None:` | One case of an `EnumLike` type, like `Optional` |
 | List             | `case [first, *middle, last]:`          | A collection by length and elements             |
 

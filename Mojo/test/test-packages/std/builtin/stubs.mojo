@@ -977,7 +977,7 @@ trait EnumLike:
 struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
     TrivialRegisterPassable
 ):
-    comptime size: Int = Int(
+    comptime length: Int = Int(
         mlir_value=__mlir_attr[
             `#kgen.param_list.size<:`,
             type_of(Self.values),
@@ -1385,7 +1385,7 @@ struct AddressSpace(EnumLike, TrivialRegisterPassable):
     comptime _enum_case_types: _MLIR.KGENParamListType[
         AnyType
     ] = TypeList.splat[
-        ParameterList[Self._enum_case_names].size, NoneType
+        ParameterList[Self._enum_case_names].length, NoneType
     ].values
     comptime _enum_is_exhaustive = False
 

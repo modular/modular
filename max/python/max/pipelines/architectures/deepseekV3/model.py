@@ -22,13 +22,14 @@ from max import tree
 from max.driver import Buffer, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import Graph, ops
 from max.nn.comm.ep import EPCommInitializer, EPConfig
-from max.nn.kv_cache import KVCacheInputsPerDevice
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
+    GraphRole,
+    GraphSpec,
     ModelInputs,
     ModelOutputs,
+    compile_and_init_graphs,
 )
 from max.pipelines.weights.quant import parse_quant_config
 from typing_extensions import override
@@ -259,9 +260,8 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
             logger.info(
                 f"Upsizing EP buffers for draft model dispatch dtype: {draft_ep_dtype}"
             )
-        self.ep_comm_initializer = EPCommInitializer(ep_alloc_config)
-        self.ep_comm_initializer.ep_init(session)
-        # ep_init() sets node_id on the initializer's config; propagate
+        self.ep_comm_initializer = self._init_ep_comm(session, ep_alloc_config)
+        # EP init sets node_id on the initializer's config; propagate
         # it back to the model's ep_config (which may be a different
         # object when we created a copy above).
         model_config.ep_config.node_id = ep_alloc_config.node_id
@@ -270,78 +270,49 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
                 "EP node ID is not set. Please check if the EP initialization is successful."
             )
 
+    def _init_ep_comm(
+        self, session: InferenceSession, ep_config: EPConfig
+    ) -> EPCommInitializer:
+        """Sets up expert parallelism for ``ep_config``.
+
+        Compiles the one-time EP init graph under :attr:`GraphRole.EP_INIT`,
+        keeps it in :attr:`compiled_modules`, and runs it.
+
+        Args:
+            session: The session that compiles and runs the EP init graph.
+            ep_config: The EP configuration. EP init sets its node ID.
+
+        Returns:
+            The initialized EP communication buffers.
+        """
+        ep_comm_initializer = EPCommInitializer(ep_config)
+        init = ep_comm_initializer.init_module()
+        specs: dict[str, GraphSpec] = {
+            GraphRole.EP_INIT: GraphSpec(init, "ep_init", init.input_types())
+        }
+        modules = compile_and_init_graphs(session, specs)
+        ep_comm_initializer.run_init(modules[GraphRole.EP_INIT].engine_model)
+        self.compiled_modules = {**self.compiled_modules, **modules}
+        return ep_comm_initializer
+
     @override
-    def _build_graph_for_compile(
-        self,
-        session: InferenceSession,
-        state_dict: dict[str, Any],
-        model_config: Any,
-    ) -> tuple[Graph, dict[str, Any]]:
-        del session
+    def graph_specs(self, model_config: Any) -> dict[str, GraphSpec]:
+        """Returns the decoder graph."""
         assert isinstance(model_config, DeepseekV3Config)
         nn_model = DeepseekV3(model_config)
-        nn_model.load_state_dict(state_dict, weight_alignment=1, strict=True)
-        weights_registry = nn_model.state_dict()
-
-        # Create the graph
-        with Graph(
-            "deepseekV3_graph",
-            input_types=self._bind_graph_inputs(
-                nn_model.input_tree(self.kv_params)
-            ),
-        ) as graph:
-            (
-                tokens,
-                devices_input_row_offsets,
-                host_input_row_offsets,
-                return_n_logits,
-                data_parallel_splits,
-                *variadic_args,
-            ) = graph.inputs
-
-            variadic_args_iter = iter(variadic_args)
-            # Multi-GPU passes a signal buffer per device: unmarshal these.
-            signal_buffers = [
-                next(variadic_args_iter).buffer
-                for _ in range(len(self.devices))
-            ]
-
-            # Unmarshal the KV cache arguments.
-            kv_inputs = self.kv_params.unflatten_kv_inputs(variadic_args_iter)
-            kv_caches_per_dev = tree.leaves(
-                kv_inputs, leaf=KVCacheInputsPerDevice
+        nn_model.load_state_dict(
+            self._weights_dict, weight_alignment=1, strict=True
+        )
+        return {
+            GraphRole.DECODER: GraphSpec(
+                nn_model,
+                "deepseekV3_graph",
+                self._bind_graph_inputs(
+                    nn_model.input_tree(model_config.kv_params)
+                ),
+                weights=nn_model.state_dict(),
             )
-
-            # Unmarshal the batch context lengths
-            batch_context_lengths = [
-                next(variadic_args_iter).tensor
-                for _ in range(len(self.devices))
-            ]
-
-            # all remaining arguments are for EP inputs
-            ep_model_inputs = list(variadic_args_iter)
-
-            # DeepseekV3.__call__ expects a per-device list for
-            # input_row_offsets
-            input_row_offsets_per_dev = list(
-                ops.distributed_broadcast(
-                    devices_input_row_offsets.tensor, signal_buffers
-                )
-            )
-            outputs = nn_model(
-                tokens.tensor,
-                signal_buffers,
-                kv_caches_per_dev,
-                return_n_logits.tensor,
-                input_row_offsets_per_dev,
-                host_input_row_offsets.tensor,
-                data_parallel_splits.tensor,
-                batch_context_lengths,
-                ep_model_inputs,
-            )
-
-            graph.output(*outputs)
-            return graph, weights_registry
+        }
 
     def execute(
         self,

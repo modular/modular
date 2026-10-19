@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Crd2idx parity gate for the SM90 MHA online-softmax fragment layouts.
 
-This test is a *de-risk gate* for the LayoutTensor->TileTensor migration of the
+This test is a *de-risk gate* for the TileTensor migration of the
 online-softmax helpers (`_rowmax_online_softmax` / `_rowsum` in
 `nn/softmax.mojo`) and their SM90 caller (`sm90/mha.mojo`
 `vectorize_p_reg_tile` / `vectorize_o_reg_tile`). Those helpers index a per-warp

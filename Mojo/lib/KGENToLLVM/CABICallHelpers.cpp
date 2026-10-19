@@ -14,12 +14,21 @@
 #include "CABICallHelpers.h"
 #include "CABILowering.h"
 #include "LLVMLoweringUtils.h"
+#include "Mojo/KGENDialect/KGENTypes.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Transforms/DialectConversion.h"
 
 using namespace mlir;
 using namespace mlir::LLVM;
 using namespace M::KGEN;
+
+bool M::KGEN::isSignedIntegerScalar(Type type) {
+  auto simd = dyn_cast<SIMDType>(type);
+  if (!simd || simd.getResolvedSize() != 1)
+    return false;
+  std::optional<KGENDType> dtype = simd.getResolvedDType();
+  return dtype && dtype->isSInt();
+}
 
 //===----------------------------------------------------------------------===//
 // CABICallHelper implementation
@@ -231,8 +240,11 @@ CABICallPrep CABICallHelper::prepareCall(TypeRange argTypes,
     llvmArgTypes.push_back(tc->convertType(t));
   Type llvmRetTy = origRetTy ? tc->convertType(origRetTy) : Type();
 
-  SignatureClassification sigClass =
-      handler->computeSignatureInfo(llvmArgTypes, llvmRetTy, loc, numFixedArgs);
+  SmallVector<bool> isArgSigned =
+      llvm::map_to_vector(argTypes, isSignedIntegerScalar);
+  SignatureClassification sigClass = handler->computeSignatureInfo(
+      llvmArgTypes, llvmRetTy, loc, CABIRole::caller(isArgSigned),
+      numFixedArgs);
 
   LLVMFunctionType sig = sigClass.getFunctionType(
       ctx, argValues.getTypes(), origRetTy, isVariadic, numFixedArgs);
@@ -273,6 +285,8 @@ Value CABICallHelper::finishCall(CallOp call, const CABICallPrep &prep,
         paramAttrs, [&](const NamedAttrList &attrs) -> Attribute {
           return attrs.getDictionary(ctx);
         })));
+  assert(sigClass.getResultAttrs(ctx).empty() &&
+         "Not expecting call-side result attrs");
 
   // A tail call is only safe when the callee does not write through any
   // pointer that lives in the caller's stack frame.  The sret alloca

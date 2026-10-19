@@ -55,7 +55,7 @@ def do_test[
 
     var blocks_ptr = List(length=shape.flattened_length(), fill=Float32(0))
     comptime Collection = PagedKVCacheCollection[
-        DType.float32,
+        .float32,
         kv_params,
         page_size,
         MutAnyOrigin,
@@ -94,7 +94,7 @@ def do_test[
     var max_seq_length = UInt32(2048)
     var max_cache_length = UInt32(2048)
 
-    comptime scales_dtype = scale_dtype.or_else(DType.float32)
+    comptime scales_dtype = scale_dtype.or_else(.float32)
     var scales: OptionalReg[Collection.scales_tt_type] = None
 
     comptime if scale_dtype == DType.float8_e4m3fn:
@@ -145,7 +145,7 @@ def test_paged_kv_cache_stride_is_unknown() raises:
     from just the 4D shape, which was incorrect for view tensors.
     """
     comptime CacheType = PagedKVCache[
-        DType.float32,
+        .float32,
         kv_params,
         16,
         MutUntrackedOrigin,
@@ -235,7 +235,7 @@ def test_paged_kv_cache_offset_correctness() raises:
         blocks_ptr[i] = Float32(i)
 
     comptime Collection = PagedKVCacheCollection[
-        DType.float32,
+        .float32,
         kv_params_small,
         page_size,
         MutAnyOrigin,
@@ -310,7 +310,7 @@ def test_paged_kv_cache_offset_correctness() raises:
 
     # Access via the blocks TileTensor - this tests the layout offset computation
     var idx = dyn_coord[.int64]((1, 0, 1, 2))
-    var value = key_cache.blocks.raw_load[width=1](key_cache.blocks.layout(idx))
+    var value = key_cache.blocks.load(idx)
     var expected_value = Float32(expected_6d_offset)
 
     assert_true(
@@ -327,7 +327,7 @@ def test_paged_kv_cache_offset_correctness() raises:
 
 def test_paged_kv_cache_quantization() raises:
     comptime CacheType = PagedKVCache[
-        DType.float32,
+        .float32,
         kv_params,
         16,
         MutUntrackedOrigin,
@@ -371,7 +371,7 @@ def test_scales_resolve_through_their_own_lookup_table() raises:
         length=blocks_shape.flattened_length(), fill=Float32(0)
     )
     comptime Collection = PagedKVCacheCollection[
-        DType.float32,
+        .float32,
         kv_params_small,
         page_size,
         MutAnyOrigin,
@@ -500,7 +500,7 @@ def _build_collection_and_page_stride[
     var page = packed_page if page_stride < 0 else page_stride
     var blocks_ptr = List(length=num_blocks * page, fill=Float32(0))
     comptime Collection = PagedKVCacheCollection[
-        DType.float32,
+        .float32,
         kv_params,
         page_size,
         MutAnyOrigin,

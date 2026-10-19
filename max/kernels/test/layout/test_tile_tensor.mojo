@@ -324,8 +324,8 @@ def test_tensor_span_constructor() raises:
 def test_fill() raises:
     var stack = Array[UInt32, 16](fill=0)
     var tensor = TileTensor(stack, row_major[4, 4]()).fill(1)
-    for i in range(Int(tensor.layout.shape[0]().value())):
-        for j in range(Int(tensor.layout.shape[1]().value())):
+    for i in range(Int(tensor.dim[0]())):
+        for j in range(Int(tensor.dim[1]())):
             assert_equal(tensor[i, j], 1)
 
 
@@ -333,8 +333,8 @@ def test_fill_large() raises:
     # layout._fillers.BATCH_SIZE is 2048, so we do 4096
     var stack = Array[UInt32, 4096](fill=0)
     var tensor = TileTensor(stack, row_major[2048, 2]()).fill(1)
-    for i in range(Int(tensor.layout.shape[0]().value())):
-        for j in range(Int(tensor.layout.shape[1]().value())):
+    for i in range(Int(tensor.dim[0]())):
+        for j in range(Int(tensor.dim[1]())):
             assert_equal(tensor[i, j], 1)
 
 
@@ -494,7 +494,7 @@ def test_slice_3d() raises:
 
     # Test that it's a view
     sliced_3d[Coord(Idx[0], Idx[0], Idx[0])] = 999
-    assert_equal(tensor_3d[Coord(Idx[1], Idx[1], Idx[1])], 999)
+    assert_equal(tensor_3d[Idx[1], Idx[1], Idx[1]], 999)
 
 
 # def test_slice_runtime_shapes() raises:
@@ -570,7 +570,7 @@ def test_slice_dynamic() raises:
 
     # Verify it's a view
     sliced[Coord(Idx[0], Idx[0])] = 99
-    assert_equal(tensor_2d[Coord(Idx[1], Idx[1])], 99)
+    assert_equal(tensor_2d[Idx[1], Idx[1]], 99)
 
 
 def test_vectorize() raises:
@@ -596,19 +596,19 @@ def test_vectorize() raises:
 
     # Verify that vectorized[i, j] returns a SIMD vector starting at the (i,j) block
     # Block (0, 0) starts at element 0 - check first element of the SIMD vector
-    assert_equal(vectorized[Coord(Idx[0], Idx[0])][0], 0)
+    assert_equal(vectorized[Idx[0], Idx[0]][0], 0)
 
     # Block (0, 1) starts at element 4 (column offset by vector width)
-    assert_equal(vectorized[Coord(Idx[0], Idx[1])][0], 4)
+    assert_equal(vectorized[Idx[0], Idx[1]][0], 4)
 
     # Block (1, 0) starts at element 64 (row offset by vector height * row stride)
-    assert_equal(vectorized[Coord(Idx[1], Idx[0])][0], 64)
+    assert_equal(vectorized[Idx[1], Idx[0]][0], 64)
 
     # Block (1, 1) starts at element 68
-    assert_equal(vectorized[Coord(Idx[1], Idx[1])][0], 68)
+    assert_equal(vectorized[Idx[1], Idx[1]][0], 68)
 
     # Block (3, 3) is the last block, starts at element 3*64 + 3*4 = 204
-    assert_equal(vectorized[Coord(Idx[3], Idx[3])][0], 204)
+    assert_equal(vectorized[Idx[3], Idx[3]][0], 204)
 
 
 def test_vectorize_non_square() raises:
@@ -704,10 +704,10 @@ def test_vectorize_fully_runtime_dims() raises:
     assert_equal(vectorized.layout.stride[0]().value(), 64)
     assert_equal(vectorized.layout.stride[1]().value(), 4)
 
-    assert_equal(vectorized[Coord(Idx[0], Idx[0])][0], 0)
-    assert_equal(vectorized[Coord(Idx[0], Idx[1])][0], 4)
-    assert_equal(vectorized[Coord(Idx[1], Idx[0])][0], 64)
-    assert_equal(vectorized[Coord(Idx[3], Idx[3])][0], 204)
+    assert_equal(vectorized[Idx[0], Idx[0]][0], 0)
+    assert_equal(vectorized[Idx[0], Idx[1]][0], 4)
+    assert_equal(vectorized[Idx[1], Idx[0]][0], 64)
+    assert_equal(vectorized[Idx[3], Idx[3]][0], 204)
 
 
 def test_distribute_runtime_dims() raises:
@@ -780,44 +780,6 @@ def test_indexing() raises:
     var tensor = TileTensor(stack, row_major[2, 2]())
     assert_equal(tensor[Int32(0), Int64(0)], 1)
     assert_equal(tensor[Int(1), Int64(0)], 3)
-
-
-def test_to_layout_tensor_square() raises:
-    var stack: Array[UInt8, 4] = [1, 2, 3, 4]
-    var tensor = TileTensor(stack, row_major[2, 2]()).to_layout_tensor()
-    assert_equal(materialize[tensor.layout](), Layout.row_major(2, 2))
-    assert_equal(tensor.rank, 2)
-    assert_equal(
-        rebind[IndexList[2]](tensor.runtime_layout.shape.value.canonicalize()),
-        IndexList[2](2, 2),
-    )
-
-
-def test_to_layout_tensor_3d() raises:
-    var stack = Array[UInt8, 64 * 8 * 4](fill=0)
-    var tensor = TileTensor(stack, row_major[64, 8, 4]())
-    var lt = tensor.to_layout_tensor()
-    assert_equal(materialize[lt.layout](), Layout.row_major(64, 8, 4))
-    assert_equal(lt.rank, 3)
-    assert_equal(
-        rebind[IndexList[3]](lt.runtime_layout.shape.value.canonicalize()),
-        IndexList[3](64, 8, 4),
-    )
-
-
-def test_to_layout_tensor_3d_dynamic() raises:
-    var stack = Array[UInt8, 64 * 8 * 4](fill=0)
-    var tensor = TileTensor(stack, row_major(Idx[64], Idx[8], Int(4)))
-    var lt = tensor.to_layout_tensor()
-    assert_equal(
-        materialize[lt.layout](),
-        Layout.row_major(64, 8, UNKNOWN_VALUE),
-    )
-    assert_equal(lt.rank, 3)
-    assert_equal(
-        rebind[IndexList[3]](lt.runtime_layout.shape.value.canonicalize()),
-        IndexList[3](64, 8, 4),
-    )
 
 
 def test_coalesce_2d() raises:
@@ -1010,11 +972,11 @@ def test_linear_idx_type_recomputed_after_tile() raises:
     var stack = Array[Int32, 256](fill=0)
     var tensor = TileTensor(stack, row_major[16, 16]())
     # Original: cosize=256, int32
-    assert_equal(type_of(tensor).linear_idx_type, DType.int32)
+    assert_equal(type_of(tensor).linear_idx_type, .int32)
 
     # After tiling: new layout has smaller cosize, still int32
     var tiled = tensor.tile[4, 4]((Idx[0], Idx[0]))
-    assert_equal(type_of(tiled).linear_idx_type, DType.int32)
+    assert_equal(type_of(tiled).linear_idx_type, .int32)
     _ = tiled
 
 
@@ -1022,12 +984,12 @@ def test_linear_idx_type_recomputed_after_distribute() raises:
     """After distribute(), linear_idx_type is recomputed from the new layout."""
     var stack = Array[Int32, 16](fill=0)
     var tensor = TileTensor(stack, row_major[4, 4]())
-    assert_equal(type_of(tensor).linear_idx_type, DType.int32)
+    assert_equal(type_of(tensor).linear_idx_type, .int32)
 
     comptime thread_layout = row_major(Idx[2], Idx[2])
     var frag = tensor.distribute[thread_layout=thread_layout](0)
     # Distributed fragment: shape [2,2], strides [8,2] -> cosize = (2-1)*8 + (2-1)*2 + 1 = 11
-    assert_equal(type_of(frag).linear_idx_type, DType.int32)
+    assert_equal(type_of(frag).linear_idx_type, .int32)
     _ = frag
 
 
@@ -1035,11 +997,11 @@ def test_linear_idx_type_recomputed_after_vectorize() raises:
     """After vectorize(), linear_idx_type is recomputed from the new layout."""
     var stack = Array[Int32, 256](fill=0)
     var tensor = TileTensor(stack, row_major[16, 16]())
-    assert_equal(type_of(tensor).linear_idx_type, DType.int32)
+    assert_equal(type_of(tensor).linear_idx_type, .int32)
 
     var vectorized = tensor.vectorize[4, 4]()
     # Vectorized: shape [4,4], strides [64,4] -> cosize = (4-1)*64 + (4-1)*4 + 1 = 205
-    assert_equal(type_of(vectorized).linear_idx_type, DType.int32)
+    assert_equal(type_of(vectorized).linear_idx_type, .int32)
     _ = vectorized
 
 
@@ -1081,11 +1043,11 @@ def test_transpose_is_view() raises:
 
     # Modify through transposed view: trans[1, 0] -> tensor[0, 1]
     trans[Coord(Idx[1], Idx[0])] = 42
-    assert_equal(tensor[Coord(Idx[0], Idx[1])], 42)
+    assert_equal(tensor[Idx[0], Idx[1]], 42)
 
     # Modify through original: tensor[1, 2] -> trans[2, 1]
     tensor[Coord(Idx[1], Idx[2])] = 99
-    assert_equal(trans[Coord(Idx[2], Idx[1])], 99)
+    assert_equal(trans[Idx[2], Idx[1]], 99)
 
 
 def test_transpose_square() raises:

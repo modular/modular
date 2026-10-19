@@ -60,6 +60,8 @@ _EXTRA_CONSTRAINTS = {
     "test_wmma_amd.mojo": ["//:amd_gpu"],
     "test_tcgen05.mojo": ["//:b200_gpu"],
     "test_metal_math.mojo": ["//:apple_gpu"],  # Metal math lowering and subnormal handling (Apple only)
+    "test_metal_memory.mojo": ["//:apple_gpu"],  # Metal address-space handling (Apple only)
+    "test_metal_simd.mojo": ["//:apple_gpu"],  # Metal SIMD subvector operations (Apple only)
     "test_metal_print.mojo": ["//:apple_gpu"],  # Metal GPU print tests (Apple only)
     "test_debug_assert_gpu_error.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-2405
     "test_print_elementwise.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-2366

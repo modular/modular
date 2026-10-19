@@ -15,7 +15,8 @@
 from __future__ import annotations
 
 import functools
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -25,13 +26,16 @@ from max.graph import (
     BufferType,
     BufferValue,
     DeviceRef,
+    Graph,
     ShardingStrategy,
     TensorType,
     TensorValue,
+    Type,
     Value,
     Weight,
     ops,
 )
+from max.graph import Module as GraphModule
 from max.nn.comm import Signals
 from max.nn.embedding import Embedding, VocabParallelEmbedding
 from max.nn.kv_cache import (
@@ -842,4 +846,43 @@ class Inkling(Module):
             [value.buffer for value in signals],
             kv_collections_by_key(kv_tree),
             state,
+        )
+
+    def trace(
+        self,
+        *input_types: Type[Any],
+        name: str | None = None,
+        module: GraphModule | None = None,
+        custom_extensions: Iterable[Path] = (),
+        is_device_graph: bool = False,
+    ) -> Graph:
+        """Traces the graph, whose inputs are :meth:`input_types`.
+
+        Splits the flat graph inputs into :meth:`__call__`'s arguments with
+        :meth:`unpack_inputs`.
+
+        Args:
+            *input_types: The graph's input types, :meth:`input_types`.
+            name: The name of the graph. Defaults to the class's qualified
+                name.
+            module: The MLIR module to add the graph to. Defaults to a new
+                module.
+            custom_extensions: Paths to custom kernel libraries the graph
+                uses.
+            is_device_graph: Whether to build a device graph.
+
+        Returns:
+            The traced :class:`~max.graph.Graph`.
+        """
+
+        def forward(*inputs: Value[Any]) -> tuple[TensorValue, ...]:
+            return self(*self.unpack_inputs(inputs))
+
+        return Graph(
+            type(self).__qualname__ if name is None else name,
+            forward,
+            input_types=input_types,
+            custom_extensions=list(custom_extensions),
+            module=module,
+            is_device_graph=is_device_graph,
         )
