@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.gpu.host import DeviceContext
-from std.sys.info import _has_blackwell_tcgen05
 from nn.index_fp8 import fp8_index, fp8_index_naive
 from nn.attention.gpu.sparse_index_fp8_sm100_prefill import _FOLD_DTYPE
 from std.random import rand
@@ -278,7 +277,7 @@ def main() raises:
         # TP-head-sharded indexer counts exist only on the SM100 tensor-core
         # path (the scalar fallback's [16, 8] thread layout copies nothing
         # below 16 heads), so they are compile-gated to Blackwell.
-        comptime if _has_blackwell_tcgen05():
+        comptime if ctx.target._has_blackwell_tcgen05():
             # num_heads=8 (GLM 32 heads over 4 ranks; DSv3.2 64 over 8):
             # N_TOKENS=16, cover partial tiles around the 16-token boundary.
             test_index_fp8[num_heads=8, depth=128](2, 128, 128, ctx)

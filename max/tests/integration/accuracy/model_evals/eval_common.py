@@ -26,12 +26,15 @@ without a server or network.
 
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import json
 import os
 import re
 import statistics
-from collections.abc import Callable, Mapping, Sequence
+import sys
+from collections import Counter
+from collections.abc import Callable, Mapping, Sequence, Sized
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Any, Protocol
@@ -71,14 +74,16 @@ class ChatClient(Protocol):
 class GenParams:
     """Generation and sampling parameters for a single request.
 
-    ``top_p`` and ``seed`` are ``Optional``: ``None`` omits the field entirely
-    (server default). Judges pass ``top_p=None`` since they send no ``top_p``.
+    ``top_p``, ``seed``, and ``chat_template_kwargs`` are ``Optional``: ``None``
+    omits the field entirely (server default). Judges pass ``top_p=None`` since
+    they send no ``top_p``.
     """
 
     max_tokens: int = 98304
     temperature: float = 1.0
     top_p: float | None = 0.95
     seed: int | None = None
+    chat_template_kwargs: dict[str, Any] | None = None
 
 
 def make_client(base_url: str, api_key: str | None = None) -> OpenAI:
@@ -138,7 +143,71 @@ def build_chat_kwargs(
         kwargs["top_p"] = params.top_p
     if params.seed is not None:
         kwargs["seed"] = params.seed
+    if params.chat_template_kwargs is not None:
+        kwargs["extra_body"] = {
+            "chat_template_kwargs": params.chat_template_kwargs
+        }
     return kwargs
+
+
+def reasoning_text(message: Any) -> str | None:
+    """Reads the reasoning a server returns beside ``content``, if any.
+
+    MAX names the field ``reasoning`` and other OpenAI-compatible servers
+    ``reasoning_content``. Returns ``None`` when the reasoning is inline in
+    ``content`` (inside ``<think>``) or absent.
+    """
+    return getattr(message, "reasoning", None) or getattr(
+        message, "reasoning_content", None
+    )
+
+
+def response_fields(message: Any) -> dict[str, str | None]:
+    """Returns a message's full text as row fields.
+
+    ``response`` is the raw ``content`` (any inline ``<think>`` span kept) and
+    ``reasoning`` the separately returned reasoning, if any.
+    """
+    return {"response": message.content, "reasoning": reasoning_text(message)}
+
+
+def dump_config(
+    out_dir: str,
+    base_url: str,
+    params: GenParams,
+    selected: Sized,
+    dataset: Sized,
+    *,
+    system_prompt: str | None = None,
+    root_preamble: str | None = None,
+) -> None:
+    """Writes ``config.json``: the endpoint and request parameters of a run.
+
+    The results uploader reads it for the run's provenance. Written before
+    the first request, so a run that dies midway still has it.
+
+    Args:
+        out_dir: The eval's output directory.
+        base_url: Server base URL the eval sends requests to.
+        params: Generation parameters every request is sent with.
+        selected: The questions evaluated, from :func:`select_rows`.
+        dataset: The full dataset they were selected from.
+        system_prompt: System turn sent with every request, if any.
+        root_preamble: Root turn sent with every request, if any.
+    """
+    os.makedirs(out_dir, exist_ok=True)
+    config = {
+        "argv": sys.argv[1:],
+        "base_url": base_url,
+        **dataclasses.asdict(params),
+        "system_prompt": system_prompt or None,
+        "root_preamble": root_preamble or None,
+        "sample_size": (
+            len(selected) if len(selected) != len(dataset) else None
+        ),
+    }
+    with open(os.path.join(out_dir, "config.json"), "w") as f:
+        json.dump(config, f, indent=2)
 
 
 def subsample(
@@ -219,6 +288,89 @@ def expand_repeats(
     ]
 
 
+RUN_CONFIG_FILE = "run_config.json"
+
+#: CLI options that change how a run executes but not what it asks the model,
+#: so a resumed run may change them (e.g. a redeployed endpoint's new URL).
+RESUME_NEUTRAL_OPTIONS = frozenset(
+    {"base_url", "workers", "out_dir", "resume", "metric_prefix"}
+)
+
+
+def resumable_config(params: Mapping[str, object]) -> dict[str, object]:
+    """Returns the CLI ``params`` a resumed run must repeat exactly."""
+    return {k: v for k, v in params.items() if k not in RESUME_NEUTRAL_OPTIONS}
+
+
+def prepare_out_dir(
+    out_dir: str, config: Mapping[str, object], resume: bool
+) -> None:
+    """Records ``config`` in ``out_dir``, first checking it when resuming.
+
+    A resumed run pools rows from two processes, which is only sound if both
+    sent the same requests. GPQA, for one, shuffles answer options by seed, so
+    a letter predicted under another seed names a different option.
+
+    Raises:
+        ValueError: ``resume`` is set, ``out_dir`` already holds results, and
+            the config they were produced with is missing or differs.
+    """
+    os.makedirs(out_dir, exist_ok=True)
+    path = os.path.join(out_dir, RUN_CONFIG_FILE)
+    normalized = json.loads(json.dumps(config, sort_keys=True))
+    if resume and os.path.exists(os.path.join(out_dir, "results.jsonl")):
+        if not os.path.exists(path):
+            raise ValueError(
+                f"--resume: {out_dir} has results but no {RUN_CONFIG_FILE}, "
+                "so there is no way to check they came from the same config. "
+                "Use a fresh --out-dir or drop --resume."
+            )
+        with open(path) as f:
+            recorded = json.load(f)
+        differing = sorted(
+            k
+            for k in recorded.keys() | normalized.keys()
+            if recorded.get(k) != normalized.get(k)
+        )
+        if differing:
+            raise ValueError(
+                f"--resume: {out_dir} was produced with different "
+                f"{', '.join(differing)}. Use a fresh --out-dir or drop "
+                "--resume."
+            )
+    with open(path, "w") as f:
+        json.dump(normalized, f, indent=2, sort_keys=True)
+
+
+def _item_key(item: Sequence[Any]) -> tuple[object, object]:
+    # Items are ``(repeat_index, prompt_index, sample)`` from expand_repeats or
+    # ``(prompt_index, sample)`` from select_rows.
+    if len(item) == 3:
+        return item[0], item[1]
+    return None, item[0]
+
+
+def _row_key(row: Mapping[str, Any]) -> tuple[object, object]:
+    return row.get("repeat_index"), row.get("prompt_index")
+
+
+def _load_finished_rows(path: str) -> list[dict[str, Any]]:
+    """Reads the rows of a previous run that completed without an error."""
+    if not os.path.exists(path):
+        return []
+    rows = []
+    with open(path) as f:
+        for line in f:
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                # The last line of a killed run can be cut off mid-write.
+                continue
+            if "error" not in row:
+                rows.append(row)
+    return rows
+
+
 def run_parallel(
     items: list[Any],
     fn: Callable[[Any], dict[str, Any]],
@@ -226,6 +378,7 @@ def run_parallel(
     workers: int,
     desc: str,
     out_dir: str | None = None,
+    resume: bool = False,
 ) -> tuple[list[dict[str, Any]], int]:
     """Runs ``fn`` over ``items`` on a thread pool with a tqdm progress bar.
 
@@ -238,15 +391,53 @@ def run_parallel(
     because the file would otherwise only be written after the slowest
     request finishes.
 
+    With ``resume``, rows already in ``results.jsonl`` that finished without
+    an error are kept and their items skipped; errored rows are retried.
+    Items match rows by ``(repeat_index, prompt_index)`` counted as a
+    multiset, so duplicated ``--row-ids`` resume correctly. Check the run's
+    config with :func:`prepare_out_dir` first.
+
     Returns:
-        A ``(results, errors)`` tuple.
+        A ``(results, errors)`` tuple. ``errors`` counts only this process's
+        errors, since a previous run's errored rows are retried.
+
+    Raises:
+        ValueError: ``resume`` is set without ``out_dir``.
     """
     results: list[dict[str, Any]] = []
     errors = 0
     out_f = None
+    if resume and out_dir is None:
+        raise ValueError("resume needs an out_dir to resume from.")
     if out_dir is not None:
         os.makedirs(out_dir, exist_ok=True)
-        out_f = open(os.path.join(out_dir, "results.jsonl"), "w")
+        path = os.path.join(out_dir, "results.jsonl")
+        if resume:
+            wanted = Counter(_item_key(it) for it in items)
+            for row in _load_finished_rows(path):
+                key = _row_key(row)
+                if wanted[key] > 0:
+                    wanted[key] -= 1
+                    results.append(row)
+            finished = Counter(_row_key(r) for r in results)
+            pending = []
+            for it in items:
+                key = _item_key(it)
+                if finished[key] > 0:
+                    finished[key] -= 1
+                else:
+                    pending.append(it)
+            print(
+                f"{desc}: resuming with {len(results)} finished samples, "
+                f"{len(pending)} to go"
+            )
+            items = pending
+        # Rewritten rather than appended, to drop the previous run's errored
+        # rows and any line cut off by a kill.
+        out_f = open(path, "w")
+        for r in results:
+            out_f.write(json.dumps(r) + "\n")
+        out_f.flush()
     try:
         with ThreadPoolExecutor(max_workers=workers) as ex:
             futures = {ex.submit(fn, it): it for it in items}

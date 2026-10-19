@@ -42,7 +42,7 @@ from std.simd import (
     _convert_f32_to_float8_scalar,
     _convert_f32_to_float8_ue8m0,
 )
-from layout import Idx, TileTensor, row_major
+from layout import Coord, Idx, TileTensor, row_major
 from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 
@@ -283,7 +283,7 @@ def _test_kernel_impl_base[
             expert_shape[1], SF_VECTOR_SIZE * SF_ATOM_K
         )
         var b_scales_tensor_expert_slice = TileTensor(
-            b_scales_host_ptr.unsafe_ptr() + e * expert_slice_size,
+            b_scales_host_ptr.unsafe_ptr().unsafe_offset(e * expert_slice_size),
             row_major(
                 Idx[n_groups],
                 Idx[k_groups_local],
@@ -415,16 +415,6 @@ def _test_kernel_impl_base[
     comptime ref_k_groups = ceildiv(expert_shape[1], SF_VECTOR_SIZE * SF_ATOM_K)
     comptime ref_n_groups = ceildiv(expert_shape[0], SF_MN_GROUP_SIZE)
 
-    var c_row_stride = expert_shape[0]
-    var a_row_stride = packed_K
-    comptime b_expert_stride = expert_shape[0] * packed_K
-    comptime b_scales_expert_stride = ref_n_groups * ref_k_groups * SF_ATOM_M[
-        0
-    ] * SF_ATOM_M[1] * SF_ATOM_K
-    comptime a_scales_row_stride = ref_k_groups * SF_ATOM_M[0] * SF_ATOM_M[
-        1
-    ] * SF_ATOM_K
-
     for i in range(num_active_experts):
         var start = Int(a_offsets_host_ptr[i])
         var end = Int(a_offsets_host_ptr[i + 1])
@@ -434,22 +424,22 @@ def _test_kernel_impl_base[
             continue
 
         var c_slice = TileTensor(
-            c_ref_tensor.ptr + start * c_row_stride,
+            c_ref_tensor.ptr_at_offset(Coord(start, 0)),
             row_major(end - start, Idx[expert_shape[0]]),
         )
 
         var new_a_tensor = TileTensor(
-            a_tensor.ptr + start * a_row_stride,
+            a_tensor.ptr_at_offset(Coord(start, 0)),
             row_major(end - start, Idx[packed_K]),
         )
 
         var new_b_tensor = TileTensor(
-            b_tensor.ptr + Int(expert_id) * b_expert_stride,
+            b_tensor.ptr_at_offset(Coord(Int(expert_id), 0, 0)),
             row_major(Idx[expert_shape[0]], Idx[packed_K]),
         )
 
         var new_b_scales_tensor = TileTensor(
-            b_scales_tensor.ptr + Int(expert_id) * b_scales_expert_stride,
+            b_scales_tensor.ptr_at_offset(Coord(Int(expert_id), 0, 0, 0, 0, 0)),
             row_major(
                 Idx[ref_n_groups],
                 Idx[ref_k_groups],
@@ -464,7 +454,7 @@ def _test_kernel_impl_base[
         )
         var new_a_scales_tensor = TileTensor(
             (
-                a_scales_tensor.ptr + a_scales_start * a_scales_row_stride
+                a_scales_tensor.ptr_at_offset(Coord(a_scales_start, 0, 0, 0, 0))
             ).as_unsafe_any_origin(),
             row_major(
                 ceildiv(end - start, SF_MN_GROUP_SIZE),

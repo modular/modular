@@ -32,19 +32,19 @@ def _copy_with_metadata[
 ):
     var row = global_idx.y
     var col = global_idx.x
-    var rows = Int(source.layout.shape[0]().value())
-    var cols = Int(source.layout.shape[1]().value())
+    var rows = Int(source.dim[0]())
+    var cols = Int(source.dim[1]())
     if row >= rows or col >= cols:
         return
     var metadata = Float32(
         rows
         + 3 * cols
-        + 5 * Int(output.layout.shape[0]().value())
-        + 7 * Int(output.layout.shape[1]().value())
-        + 11 * Int(source.layout.stride[0]().value())
-        + 13 * Int(source.layout.stride[1]().value())
-        + 17 * Int(output.layout.stride[0]().value())
-        + 19 * Int(output.layout.stride[1]().value())
+        + 5 * Int(output.dim[0]())
+        + 7 * Int(output.dim[1]())
+        + 11 * Int(source.dynamic_stride(0))
+        + 13 * Int(source.dynamic_stride(1))
+        + 17 * Int(output.dynamic_stride(0))
+        + 19 * Int(output.dynamic_stride(1))
     )
     var idx = Coord(row, col)
     output.store(idx, source.load(idx) + metadata)
@@ -115,13 +115,17 @@ def _run_case[
     ctx.enqueue_copy(input_device, input_host)
     output_device.enqueue_fill(nan[.float32]())
     var source = Input(
-        input_device.unsafe_ptr() + 1, (rows, cols), input_strides
+        input_device.unsafe_ptr().unsafe_offset(1), (rows, cols), input_strides
     )
     var output = Output(
-        output_device.unsafe_ptr() + 1, (rows, cols), output_strides
+        output_device.unsafe_ptr().unsafe_offset(1),
+        (rows, cols),
+        output_strides,
     )
     var output_alias = Output(
-        output_device.unsafe_ptr() + 1, (rows, cols), output_strides
+        output_device.unsafe_ptr().unsafe_offset(1),
+        (rows, cols),
+        output_strides,
     )
 
     # Passing the slices themselves exercises DevicePassable, not projection.
@@ -148,13 +152,13 @@ def _run_case[
         io_spec=IOSpec.MutableInput, static_spec=input_spec
     ]
     var inplace_source = MutableInput(
-        input_device.unsafe_ptr() + 1, (rows, cols), input_strides
+        input_device.unsafe_ptr().unsafe_offset(1), (rows, cols), input_strides
     )
     var inplace = InPlaceOutput(
-        input_device.unsafe_ptr() + 1, (rows, cols), input_strides
+        input_device.unsafe_ptr().unsafe_offset(1), (rows, cols), input_strides
     )
     var inplace_alias = InPlaceOutput(
-        input_device.unsafe_ptr() + 1, (rows, cols), input_strides
+        input_device.unsafe_ptr().unsafe_offset(1), (rows, cols), input_strides
     )
     ctx.enqueue_function[
         _copy_with_metadata[Input.RuntimeLayout, InPlaceOutput.RuntimeLayout]

@@ -174,8 +174,14 @@ class Glm5_2ModuleV3MTPProposer(TensorAdapter):
         hidden = self.draft.shared_head_norm(
             Tensor.from_shard_values(draft_input.hidden, self._replicated)
         )
+        # Every step reuses step 0's selection, made for the token one
+        # position before step 1's.
         h, _, offsets = self._decode(
-            batch, draft_input.tokens, hidden, draft_input.reuse
+            batch,
+            draft_input.tokens,
+            hidden,
+            draft_input.reuse,
+            selection_lag=index,
         )
         last = gather_last_tokens(h, offsets)
         return Proposed(
@@ -203,6 +209,7 @@ class Glm5_2ModuleV3MTPProposer(TensorAdapter):
         tokens: Tensor,
         hidden: list[Tensor] | Tensor,
         reuse: list[Tensor] | None,
+        selection_lag: int = 0,
     ) -> tuple[Tensor, Tensor, Tensor]:
         """Runs the draft layer, returning its output, top-k and offsets."""
         replicated = self._replicated
@@ -253,5 +260,6 @@ class Glm5_2ModuleV3MTPProposer(TensorAdapter):
             if reuse is not None
             else None,
             reuse is not None,
+            selection_lag=selection_lag,
         )
         return h, topk, offsets

@@ -16,10 +16,10 @@ from max.pipelines.architectures.gpt_oss.batch_processor import (
     GptOssBatchProcessor,
 )
 from max.pipelines.context import TextContext
+from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib import SupportedArchitecture, TextTokenizer
 from max.pipelines.modeling.types import PipelineTask
 
-from .memory_planner import MiMoV2MemoryPlanner
 from .model import MiMoV2Model
 from .model_config import MiMoV2Config
 from .weight_adapters import convert_safetensor_state_dict
@@ -27,7 +27,7 @@ from .weight_adapters import convert_safetensor_state_dict
 mimo_v2_arch = SupportedArchitecture(
     name="MiMoV2ForCausalLM",
     task=PipelineTask.TEXT_GENERATION,
-    example_repo_ids=["ProCreations/MiMo-V2.6-Flash-RL-NVFP4"],
+    example_repo_ids=["XiaomiMiMo/MiMo-V2.6-Flash-RL"],
     default_weights_format=WeightsFormat.safetensors,
     default_encoding=MiMoV2Config.DEFAULT_ENCODING,
     supported_encodings=MiMoV2Config.SUPPORTED_ENCODINGS,
@@ -40,7 +40,10 @@ mimo_v2_arch = SupportedArchitecture(
     config=MiMoV2Config,
     batching=GptOssBatchProcessor,
     multi_gpu_supported=True,
-    memory_planner=MiMoV2MemoryPlanner,
+    # The checkpoint loads as stored, so its files size the weights.
+    memory_planner=PagedMemoryPlanner.with_activation_reservation(
+        0, always_signal_buffers=True
+    ),
     supports_overlap_scheduler=False,
     supports_device_graph_capture=False,
 )

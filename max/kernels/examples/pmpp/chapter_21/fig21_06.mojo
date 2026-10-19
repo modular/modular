@@ -20,7 +20,7 @@ The gather pattern provides better parallelism (one thread per grid point)
 and avoids atomic operations since each grid point is written by only one thread.
 """
 
-from std.math import sqrt
+from std.math import ceildiv, sqrt
 from max.gpu import block_idx, thread_idx, block_dim
 from max.gpu.host import DeviceContext
 from std.itertools import product
@@ -29,8 +29,8 @@ from dcs_utils import GridDim, init_atoms, verify_grid
 
 
 def cenergy_gather_kernel(
-    energygrid: UnsafePointer[Float32, MutAnyOrigin],
-    atoms: UnsafePointer[Float32, ImmutAnyOrigin],
+    energygrid: MutPointer[Float32, MutAnyOrigin],
+    atoms: ImmPointer[Float32, ImmutAnyOrigin],
     grid_x_dev: Int32,
     grid_y_dev: Int32,
     gridspacing: Float32,
@@ -76,11 +76,11 @@ def cenergy_gather_kernel(
 
 
 def cenergy_cpu_reference(
-    energygrid: UnsafePointer[mut=True, Float32, _],
+    energygrid: MutPointer[Float32, _],
     grid: GridDim,
     gridspacing: Float32,
     z: Float32,
-    atoms: UnsafePointer[mut=False, Float32, _],
+    atoms: ImmPointer[Float32, _],
     numatoms: Int,
 ):
     """CPU reference implementation for verification."""
@@ -139,8 +139,8 @@ def main() raises:
     # Launch config: one thread per grid point (2D grid)
     comptime BLOCK_DIM_X = 16
     comptime BLOCK_DIM_Y = 16
-    var grid_dim_x = (vol_dim.x + BLOCK_DIM_X - 1) // BLOCK_DIM_X
-    var grid_dim_y = (vol_dim.y + BLOCK_DIM_Y - 1) // BLOCK_DIM_Y
+    var grid_dim_x = ceildiv(vol_dim.x, BLOCK_DIM_X)
+    var grid_dim_y = ceildiv(vol_dim.y, BLOCK_DIM_Y)
 
     ctx.enqueue_function[cenergy_gather_kernel](
         d_energygrid,

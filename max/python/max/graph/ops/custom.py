@@ -35,15 +35,26 @@ from ..value import (
     _is_strong_tensor_value_like,
     _OpaqueValue,
 )
+from .rms_norm import _float32_attr
 
 
-def _parameter_attribute(param: bool | int | str | DType) -> mlir.Attribute:
+def _parameter_attribute(
+    param: bool | float | str | DType,
+) -> mlir.Attribute:
     """Converts a Python type to an MLIR attribute to parametrize a kernel."""
     context = default_mlir_context()
     if isinstance(param, bool):
         return BoolAttr.get(param, context)
     if isinstance(param, int):
         return IntegerAttr.get(IndexType.get(context), param)
+    if isinstance(param, float):
+        # Same rank-0 f32 encoding the RMS norm ops use: `max._core`'s
+        # bytecode writer does not recognize a `FloatAttr` (GEX-4052).
+        # `_float32_attr` returns a `max._core`-family attribute; re-own it
+        # as an `mlir.Attribute`, as `graph._add_op_get_op_with_results`
+        # does for every `_core` attribute it stages.
+        float32_attr = _float32_attr(param)
+        return mlir.Attribute._CAPICreate(float32_attr._CAPIPtr)  # type: ignore
     if isinstance(param, str):
         return StringAttr.get(param, context)
     if isinstance(param, DType):
@@ -60,7 +71,7 @@ def custom(
     device: Device | DeviceRef,
     values: Sequence[Value[Any]],
     out_types: Sequence[Type[Any]],
-    parameters: Mapping[str, bool | int | str | DType] | None = None,
+    parameters: Mapping[str, bool | int | float | str | DType] | None = None,
 ) -> list[Value[Any]]:
     """Creates a node to execute a custom graph operation in the graph.
 
@@ -123,7 +134,7 @@ def inplace_custom(
     device: Device | DeviceRef,
     values: Sequence[Value[Any]],
     out_types: Sequence[Type[Any]] | None = None,
-    parameters: dict[str, bool | int | str | DType] | None = None,
+    parameters: Mapping[str, bool | int | float | str | DType] | None = None,
 ) -> list[Value[Any]]:
     """Creates a node to execute an in-place custom graph operation in the graph.
 

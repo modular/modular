@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv
-from std.sys import simd_width_of, size_of
+from std.sys import align_of, simd_width_of, size_of
 
 from nn.attention.mha_operand import MHAOperand
 from nn.attention.mha_mask import MHAMask, TileMaskStatus
@@ -37,7 +37,7 @@ from nn.attention.gpu.nvidia.common import (
 )
 from nn.attention.mha_utils import OptionallyStaticInt, MHAPartitionScheme
 
-from layout import TileTensor
+from layout import Coord, TileTensor
 from layout.tma_async import PipelineState
 from layout.swizzle import Swizzle
 from layout.tile_layout import row_major as tt_row_major
@@ -448,7 +448,7 @@ def split_smem[
     TMA only uses .ptr — flat row_major layout avoids needing
     InternalLayout equivalents of swizzled layouts.
     """
-    comptime SmemPtr[dt: DType] = UnsafePointer[
+    comptime SmemPtr[dt: DType] = MutPointer[
         Scalar[dt], MutAnyOrigin, address_space=.SHARED
     ]
     var ptr = rebind[SmemPtr[first_dtype]](tensor.ptr)
@@ -467,7 +467,7 @@ def split_smem[
             MutAnyOrigin,
             address_space=.SHARED,
         ](
-            rebind[SmemPtr[second_dtype]](ptr + first_size),
+            rebind[SmemPtr[second_dtype]](ptr.unsafe_offset(first_size)),
             second_layout,
         ),
     }
@@ -603,12 +603,12 @@ struct TMAtoCvtPipeline[
     @inline(.always)
     def producer_mbar(self) -> MBarType:
         var idx: UInt32 = self.state.index()
-        return self.producer_mbars + idx
+        return self.producer_mbars.unsafe_offset(idx)
 
     @inline(.always)
     def consumer_mbar(self) -> MBarType:
         var idx: UInt32 = self.state.index()
-        return self.consumer_mbars + idx
+        return self.consumer_mbars.unsafe_offset(idx)
 
     @inline(.always)
     def producer_acquire(self):
@@ -660,12 +660,12 @@ struct CvtToMMAPipeline[
     @inline(.always)
     def producer_mbar(self) -> MBarType:
         var idx: UInt32 = self.state.index()
-        return self.producer_mbars + idx
+        return self.producer_mbars.unsafe_offset(idx)
 
     @inline(.always)
     def consumer_mbar(self) -> MBarType:
         var idx: UInt32 = self.state.index()
-        return self.consumer_mbars + idx
+        return self.consumer_mbars.unsafe_offset(idx)
 
     @inline(.always)
     def producer_acquire(self):
@@ -723,12 +723,16 @@ def cvt_block_fp8_to_bf16_with_scale[
     var t_row, t_col = divmod(tid, 16)
 
     var fp8_regs = SIMD[input_type, num_regs](0)
+    var input_flat = input.reshape(tt_row_major(input.num_elements()))
+    var output_flat = output.reshape(tt_row_major(output.num_elements()))
 
     comptime for i in range(num_regs // 4):
         var row = UInt32(i * 2) + t_row
         var col = t_col * 4
         var elem_offset = row * UInt32(row_stride) + col
-        var fp8x4 = (input.ptr + Int(swizzle_fp8(elem_offset))).load[width=4]()
+        var fp8x4 = input_flat.load[width=4, alignment=align_of[input_type]()](
+            Coord(Int(swizzle_fp8(elem_offset)))
+        )
         fp8_regs = fp8_regs.insert[offset=i * 4](fp8x4)
 
     # make sure all the fp8_regs are loaded
@@ -756,12 +760,15 @@ def cvt_block_fp8_to_bf16_with_scale[
                 KRopeType.scale_dtype
             ]()
             fp32x4 = fp32x4 * scale
-            (output.ptr + Int(swizzle_bf16(elem_offset))).store[width=4](
-                fp32x4.cast[output_dtype]()
+            output_flat.store[alignment=align_of[output_dtype]()](
+                Coord(Int(swizzle_bf16(elem_offset))),
+                fp32x4.cast[output_dtype](),
             )
         else:
             var fp16x4 = fp8_regs.slice[4, offset=i * 4]().cast[output_dtype]()
-            (output.ptr + Int(swizzle_bf16(elem_offset))).store[width=4](fp16x4)
+            output_flat.store[alignment=align_of[output_dtype]()](
+                Coord(Int(swizzle_bf16(elem_offset))), fp16x4
+            )
 
     fence_async_view_proxy()
 

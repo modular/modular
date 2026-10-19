@@ -103,6 +103,7 @@ MODELS: Mapping[str, set[str]] = {
     "nvidia/DeepSeek-V3.1-NVFP4__tpep": VARIANT | _8xB200,
     "nvidia/DeepSeek-V3.1-NVFP4__tpep_ar": VARIANT | _8xB200,
     "nvidia/DeepSeek-V3.1-NVFP4__tptp": VARIANT | _8xB200,
+    "nvidia/DeepSeek-V4.1-Flash-NVFP4": _4xB200,
     "nvidia/diffusiongemma-26B-A4B-it-NVFP4": DISABLE,
     "nvidia/Gemma-4-26B-A4B-NVFP4": NIGHTLY | _1xB200,
     "nvidia/Gemma-4-26B-A4B-NVFP4__tuned": NIGHTLY | VARIANT | _1xB200,
@@ -113,8 +114,8 @@ MODELS: Mapping[str, set[str]] = {
     "nvidia/Kimi-K2.7-Code-NVFP4__modulev3": VARIANT | _8xB200,
     "nvidia/Llama-3.1-405B-Instruct-NVFP4": _8xB200,
     "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16__modulev3": NIGHTLY | VARIANT | _1xMI355 | _2xMI355,
-    "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16__modulev3_dspark": NIGHTLY | VARIANT | _1xB200 | _2xB200,
     "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4__modulev3": NIGHTLY | VARIANT | _1xB200 | _2xB200,
+    "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4__modulev3_dspark": NIGHTLY | VARIANT | _1xB200 | _2xB200,
     "openai/gpt-oss-20b": _1xB200 | _1xMI355 | _2xB200,
     "OpenGVLab/InternVL3_5-8B-Instruct": _1xB200 | _1xMI355,
     "Qwen/Qwen2.5-7B-Instruct": _1xB200 | _1xMI355,
@@ -130,9 +131,13 @@ MODELS: Mapping[str, set[str]] = {
     "RadixArk/Qwen3.8-27B-NVFP4__mtp": NIGHTLY | VARIANT | _1xB200,
     "RedHatAI/gemma-3-27b-it-FP8-dynamic": _1xB200 | _1xMI355,  # TODO(MODELS-1021)
     "RedHatAI/Meta-Llama-3.1-405B-Instruct-FP8-dynamic": _4xMI355 | _8xB200,
+    "tencent/Hy4-preview-FP8": NIGHTLY | _8xB200,
+    "tencent/Hy4-preview-FP8__mtp": NIGHTLY | VARIANT | _8xB200,
     "thinkingmachines/Inkling-Small-NVFP4": NIGHTLY | _2xB200,
     "thinkingmachines/Inkling-Small-NVFP4__mtp": NIGHTLY | VARIANT | _2xB200,
     "zai-org/GLM-5.3-Flash__tpep": NIGHTLY | VARIANT | _8xB200,
+    "zai-org/GLM-5.3-Flash__tpep_mi355": NIGHTLY | VARIANT | _2xMI355,
+    "zai-org/GLM-5.3__fp8_tpep_mi355": NIGHTLY | VARIANT | _8xMI355,
 }
 # fmt: on
 

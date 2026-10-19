@@ -19,8 +19,7 @@ from max.gpu import thread_idx
 from max.gpu.host import DeviceContext
 from max.gpu.sync import barrier
 from layout import TileTensor, row_major, stack_allocation
-from layout.layout import Layout as LegacyLayout
-from layout.layout_tensor import LayoutTensorIter
+from layout.tile_iterator import TileTensorIter
 from layout.tensor_core import get_fragment_size, get_mma_shape
 from nn.attention.mha_utils import _copy_frag_to_smem
 
@@ -48,13 +47,13 @@ def _register_value(n_mma: Int, m_mma: Int, lane: Int, frag: Int) -> Float32:
 
 def _scatter[
     dtype: DType, WIDTH: Int
-](output: UnsafePointer[Scalar[dtype], MutAnyOrigin]):
+](output: MutPointer[Scalar[dtype], MutAnyOrigin]):
     comptime assert WIDTH == 1 or WIDTH == 2
     comptime mma = get_mma_shape[dtype, DType.float32]()
     comptime assert mma[0] == MMA_M and mma[1] == MMA_N
     comptime assert get_fragment_size[mma]()[2] == FRAGMENT
     comptime assert simd_width_of[dtype]() == (4 if dtype == .float32 else 8)
-    var lane = Int(thread_idx.x)
+    var lane = thread_idx.x
     var storage = stack_allocation[dtype, address_space=.SHARED, alignment=16](
         row_major[RING_SIZE + 2 * GUARD]()
     )
@@ -66,7 +65,7 @@ def _scatter[
     registers_storage[0] = -29
     registers_storage[REG_ROWS * FRAGMENT + 1] = -30
     var registers = TileTensor[address_space=.LOCAL, linear_idx_type=.int32](
-        registers_storage.unsafe_ptr() + 1,
+        registers_storage.unsafe_ptr().unsafe_offset(1),
         row_major[REG_ROWS, FRAGMENT](),
     )
     comptime for n_mma in range(WN // MMA_N):
@@ -75,17 +74,19 @@ def _scatter[
                 registers[
                     n_mma * (WM // MMA_M) + m_mma, frag
                 ] = _register_value(n_mma, m_mma, lane, frag)
-    comptime Iterator = LayoutTensorIter[
+    comptime tile_layout = row_major[BM, BK]()
+    var stages = TileTensorIter[
         dtype,
-        LegacyLayout.row_major(BM, BK),
+        type_of(tile_layout),
         _,
         address_space=.SHARED,
         circular=True,
-    ]
-    var stages = Iterator(
-        storage.unsafe_ptr() + GUARD,
-        Iterator.linear_uint_type(RING_SIZE),
-        offset=Iterator.linear_uint_type(INITIAL_STAGE * BM * BK),
+    ](
+        storage.unsafe_ptr().unsafe_offset(GUARD),
+        tile_layout,
+        bound=RING_SIZE,
+        stride=BM * BK,
+        offset=INITIAL_STAGE * BM * BK,
     )
     barrier()
     _copy_frag_to_smem[BM, BN, BK, WM, WN, MMA_M, MMA_N, WIDTH](

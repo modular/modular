@@ -30,7 +30,6 @@ from max.gpu import block_idx, grid_dim, thread_idx
 from layout import (
     Coord,
     DefaultEngine,
-    Layout,
     TensorEngine,
     TensorLayout,
     TileTensor,
@@ -42,8 +41,6 @@ from std.bit import log2_floor
 from std.utils.index import Index, IndexList
 
 from .tile_scheduler import RasterOrder, WorkInfo
-
-from ...structuring import RegTile
 
 
 @inline(.nodebug)
@@ -162,7 +159,7 @@ struct ReductionMode(EnumLike, TrivialRegisterPassable):
     ].values
 
     comptime _enum_case_types = TypeList.splat[
-        ParameterList[Self._enum_case_names].size, NoneType
+        ParameterList[Self._enum_case_names].length, NoneType
     ].values
 
     @inline(.always)
@@ -238,7 +235,7 @@ struct SplitKTileScheduler[
 
     var cluster_blk_major: UInt32
 
-    var locks_ptr: UnsafePointer[Int32, Self.locks_origin]
+    var locks_ptr: MutPointer[Int32, Self.locks_origin]
 
     comptime k_tiles_per_output_tile = UInt32(
         ceildiv(Self.problem_shape_nk[1], Self.tile_shape[2])
@@ -257,7 +254,7 @@ struct SplitKTileScheduler[
         out self,
         prob_shape: IndexList[3],
         block_id_in_cluster: IndexList[2],
-        locks_ptr: UnsafePointer[UInt8, Self.locks_origin],
+        locks_ptr: MutPointer[UInt8, Self.locks_origin],
     ):
         _check_scheduler_constraints[
             Self.problem_shape_nk,
@@ -272,7 +269,7 @@ struct SplitKTileScheduler[
 
         self.prob_shape = prob_shape
         self.block_id_in_cluster = block_id_in_cluster
-        self.locks_ptr = locks_ptr.bitcast[Int32]()
+        self.locks_ptr = locks_ptr.unsafe_bitcast[Int32]()
 
         var problem_blocks = Self.get_problem_blocks_shape(
             prob_shape, Self.tile_shape, Self.cluster_shape
@@ -631,7 +628,7 @@ struct SplitKTileScheduler[
     @inline(.always)
     def reduction[
         accum_type: DType,
-        c_reg_layout: Layout,
+        c_reg_layout: TensorLayout,
         workspace_layout: TensorLayout,
         workspace_engine: TensorEngine,
     ](
@@ -639,7 +636,9 @@ struct SplitKTileScheduler[
         reduction_workspace: TileTensor[
             mut=True, accum_type, workspace_layout, _, Engine=workspace_engine
         ],
-        c_reg_tile: RegTile[accum_type, c_reg_layout],
+        c_reg_tile: TileTensor[
+            mut=True, accum_type, c_reg_layout, address_space=.LOCAL, ...
+        ],
         work_tile_info: WorkInfo,
         num_barriers: UInt32,
         warp_group_local_idx: UInt32,
@@ -734,7 +733,7 @@ struct SplitKTileScheduler[
     @staticmethod
     @inline(.always)
     def wait_eq(
-        lock_ptr: UnsafePointer[mut=True, Int32, _],
+        lock_ptr: MutPointer[Int32, _],
         barrier_id: Int32,
         barrier_group_thread_idx: Int,
         lock_idx: UInt32,
@@ -742,13 +741,13 @@ struct SplitKTileScheduler[
     ):
         var sema = NamedBarrierSemaphore[
             Int32(WARPGROUP_SIZE), 4, Int32(Self.num_consumer)
-        ](lock_ptr + lock_idx, barrier_group_thread_idx)
+        ](lock_ptr.unsafe_offset(lock_idx), barrier_group_thread_idx)
         sema.wait_eq(barrier_id, Int32(val))
 
     @staticmethod
     @inline(.always)
     def wait_lt(
-        lock_ptr: UnsafePointer[mut=True, Int32, _],
+        lock_ptr: MutPointer[Int32, _],
         barrier_id: Int32,
         barrier_group_thread_idx: Int,
         lock_idx: UInt32,
@@ -756,13 +755,13 @@ struct SplitKTileScheduler[
     ):
         var sema = NamedBarrierSemaphore[
             Int32(WARPGROUP_SIZE), 4, Int32(Self.num_consumer)
-        ](lock_ptr + lock_idx, barrier_group_thread_idx)
+        ](lock_ptr.unsafe_offset(lock_idx), barrier_group_thread_idx)
         sema.wait_lt(barrier_id, Int32(count))
 
     @staticmethod
     @inline(.always)
     def arrive_set(
-        lock_ptr: UnsafePointer[mut=True, Int32, _],
+        lock_ptr: MutPointer[Int32, _],
         barrier_id: Int32,
         barrier_group_thread_idx: Int,
         lock_idx: UInt32,
@@ -770,13 +769,13 @@ struct SplitKTileScheduler[
     ):
         var sema = NamedBarrierSemaphore[
             Int32(WARPGROUP_SIZE), 4, Int32(Self.num_consumer)
-        ](lock_ptr + lock_idx, barrier_group_thread_idx)
+        ](lock_ptr.unsafe_offset(lock_idx), barrier_group_thread_idx)
         sema.arrive_set(barrier_id, Int32(increment))
 
     @inline(.always)
     def store_accumulator[
         accum_type: DType,
-        c_reg_layout: Layout,
+        c_reg_layout: TensorLayout,
         workspace_layout: TensorLayout,
         workspace_origin: MutOrigin,
         workspace_engine: TensorEngine,
@@ -788,7 +787,9 @@ struct SplitKTileScheduler[
             workspace_origin,
             Engine=workspace_engine,
         ],
-        c_reg_tile: RegTile[accum_type, c_reg_layout],
+        c_reg_tile: TileTensor[
+            mut=True, accum_type, c_reg_layout, address_space=.LOCAL, ...
+        ],
         reduction_tile_idx: UInt32,
         warp_group_local_idx: UInt32,
         warp_group_thread_idx: UInt32,
@@ -797,8 +798,8 @@ struct SplitKTileScheduler[
             accum_type == .float32
         ), "Only support float32 accumulator type"
 
-        comptime num_mma = c_reg_tile.layout.shape[0].value()
-        comptime c_frag_size = c_reg_tile.layout.shape[1].value()
+        comptime num_mma = c_reg_tile.static_shape[0]
+        comptime c_frag_size = c_reg_tile.static_shape[1]
         comptime slab_scalar_count = (
             Int(UInt32(workspace_layout.static_shape[1]) // Self.num_consumer)
             * workspace_layout.static_shape[2]
@@ -813,15 +814,15 @@ struct SplitKTileScheduler[
 
         comptime for mma_id in range(num_mma):
             comptime for i in range(c_frag_size):
-                work_space_tile_reshaped.store[width=1](
+                work_space_tile_reshaped.store(
                     (mma_id * c_frag_size + i, Int(warp_group_thread_idx)),
-                    rebind[Scalar[accum_type]](c_reg_tile[mma_id, i]),
+                    c_reg_tile.load[width=1]((mma_id, i)),
                 )
 
     @inline(.always)
     def reduce_add[
         accum_type: DType,
-        c_reg_layout: Layout,
+        c_reg_layout: TensorLayout,
         workspace_layout: TensorLayout,
         workspace_origin: MutOrigin,
         workspace_engine: TensorEngine,
@@ -836,7 +837,9 @@ struct SplitKTileScheduler[
             workspace_origin,
             Engine=workspace_engine,
         ],
-        c_reg_tile: RegTile[accum_type, c_reg_layout],
+        c_reg_tile: TileTensor[
+            mut=True, accum_type, c_reg_layout, address_space=.LOCAL, ...
+        ],
         reduction_tile_idx: UInt32,
         warp_group_local_idx: UInt32,
         warp_group_thread_idx: UInt32,
@@ -845,8 +848,8 @@ struct SplitKTileScheduler[
             accum_type == .float32
         ), "Only support float32 accumulator type"
 
-        comptime num_mma = c_reg_tile.layout.shape[0].value()
-        comptime c_frag_size = c_reg_tile.layout.shape[1].value()
+        comptime num_mma = c_reg_tile.static_shape[0]
+        comptime c_frag_size = c_reg_tile.static_shape[1]
         comptime slab_scalar_count = (
             Int(UInt32(workspace_layout.static_shape[1]) // Self.num_consumer)
             * workspace_layout.static_shape[2]
@@ -863,7 +866,7 @@ struct SplitKTileScheduler[
             comptime for i in range(c_frag_size):
                 var sum_val = work_space_tile_reshaped.load[width=1](
                     (mma_id * c_frag_size + i, Int(warp_group_thread_idx))
-                ) + rebind[Scalar[accum_type]](c_reg_tile[mma_id, i])
+                ) + c_reg_tile.load[width=1]((mma_id, i))
 
                 comptime if write_back:
                     comptime if Self.reduction_mode == ReductionMode.Nondeterministic:
@@ -872,11 +875,11 @@ struct SplitKTileScheduler[
                             + warp_group_thread_idx
                         )
                         _ = Atomic.fetch_add(
-                            work_space_tile_reshaped.ptr + offset,
-                            rebind[Scalar[accum_type]](c_reg_tile[mma_id, i]),
+                            work_space_tile_reshaped.ptr.unsafe_offset(offset),
+                            c_reg_tile.load[width=1]((mma_id, i)),
                         )
                     else:
-                        work_space_tile_reshaped.store[width=1](
+                        work_space_tile_reshaped.store(
                             (
                                 mma_id * c_frag_size + i,
                                 Int(warp_group_thread_idx),

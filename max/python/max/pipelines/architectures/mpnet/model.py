@@ -18,26 +18,27 @@ Implementation is based on MPNetModel from the transformers library.
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, ClassVar
 
 from max.driver import Buffer, Device
 from max.engine import InferenceSession, Model
-from max.graph import Graph
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn.transformer import ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
-    GraphPipelineModel,
     KVCacheConfig,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
+    PipelineModel,
 )
+from max.pipelines.lib.graph_specs import GraphRole, GraphSpec
 from max.pipelines.lib.memory_estimation import MemoryPlan
 
 from .batch_processor import MPNetBatchProcessor
-from .graph import build_graph
+from .graph import MPNetModel
 from .model_config import MPNetConfig
 
 logger = logging.getLogger("max.pipelines")
@@ -58,13 +59,14 @@ class MPNetInputs(ModelInputs):
     attention_mask: Buffer
 
 
-class MPNetPipelineModel(GraphPipelineModel[TextContext]):
+class MPNetPipelineModel(PipelineModel[TextContext, MPNetConfig, Model]):
     model_config_cls: ClassVar[type[MPNetConfig]] = MPNetConfig
     batch_processor_cls: ClassVar[type[MPNetBatchProcessor]] = (
         MPNetBatchProcessor
     )
 
-    model: Model
+    state_dict: dict[str, Any]
+    """The weights, kept for :meth:`graph_specs`."""
 
     def __init__(
         self,
@@ -90,7 +92,12 @@ class MPNetPipelineModel(GraphPipelineModel[TextContext]):
             max_batch_size=max_batch_size,
             memory_plan=memory_plan,
         )
-        self.model = self.load_model(session)
+        self._models = self.load_graphs(session)
+
+    @property
+    def model(self) -> Model:
+        """The compiled and initialized encoder."""
+        return self._models[GraphRole.ENCODER]
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         assert isinstance(model_inputs, MPNetInputs)
@@ -101,17 +108,18 @@ class MPNetPipelineModel(GraphPipelineModel[TextContext]):
 
         return ModelOutputs(logits=model_outputs[0])
 
+    def _load_state_dict(self) -> dict[str, Any]:
+        self.state_dict = super()._load_state_dict()
+        return self.state_dict
+
     def _create_model_config(self, state_dict: dict[str, Any]) -> MPNetConfig:
         del state_dict
         return self.arch_config_as(MPNetConfig)
 
-    def _build_graph_for_compile(
-        self,
-        session: InferenceSession,
-        state_dict: dict[str, Any],
-        model_config: Any,
-    ) -> tuple[Graph, dict[str, Any]]:
-        del session
-        assert isinstance(model_config, MPNetConfig)
-        graph = build_graph(model_config, state_dict)
-        return graph, state_dict
+    def graph_specs(self, model_config: MPNetConfig) -> Mapping[str, GraphSpec]:
+        """Returns the encoder graph."""
+        model = MPNetModel(model_config)
+        model.load_state_dict(self.state_dict)
+        return {
+            GraphRole.ENCODER: GraphSpec(model, "mpnet", model.input_types())
+        }

@@ -14,14 +14,16 @@
 
 from __future__ import annotations
 
-from max.graph import TensorValue
 from max.nn.kv_cache import KVCacheParamInterface, MultiKVCacheParams
-from max.pipelines.speculative.block_driver import BlockDriver
 from max.pipelines.speculative.spec_input_types import SpecDecodeInputTypeSpec
 from typing_extensions import override
 
 from ..dflash_llama3 import DFlashLlama3
-from ..gemma4.block_spec_adapters import SLIDING_KV, Gemma4BlockTarget
+from ..gemma4.block_spec_adapters import (
+    SLIDING_KV,
+    Gemma4BlockDriver,
+    Gemma4BlockTarget,
+)
 from ..gemma4.gemma4 import Gemma4TextModel
 from .model_config import UnifiedDflashGemma4_31BConfig
 from .spec_adapters import DFlashGemma4_31BProposer
@@ -29,7 +31,7 @@ from .spec_adapters import DFlashGemma4_31BProposer
 __all__ = ["SLIDING_KV", "UnifiedDflashGemma4_31B"]
 
 
-class UnifiedDflashGemma4_31B(BlockDriver[TensorValue, TensorValue]):
+class UnifiedDflashGemma4_31B(Gemma4BlockDriver):
     """Flash + Gemma4-31B: the block draft wired to the block driver
 
     The block reuses the target's embedding and ``lm_head``; the phases

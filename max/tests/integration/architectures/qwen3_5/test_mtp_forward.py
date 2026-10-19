@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import functools
 
+import ml_dtypes
 import numpy as np
 import pytest
 import torch
@@ -181,12 +182,6 @@ def compiled():  # noqa: ANN201
     # leaf rather than the whole tree.
     kv_params = config.kv_params
     assert isinstance(kv_params, KVCacheParams)
-    kv_manager = PagedKVCacheManager(
-        params=kv_params,
-        total_num_pages=8,
-        session=session,
-        max_batch_size=4,
-    )
 
     signals = Signals(devices=[device])
     tokens_type = TensorType(DType.int64, ["total_seq_len"], device=device)
@@ -229,6 +224,15 @@ def compiled():  # noqa: ANN201
         )
 
     model = session.load(graph, weights_registry=head.state_dict())
+    # Built after the load: the cache allocates on the device, which a
+    # `precompile_mefs` record run refuses, so allocating first would stop
+    # the recording before the graph compiled.
+    kv_manager = PagedKVCacheManager(
+        params=kv_params,
+        total_num_pages=8,
+        session=session,
+        max_batch_size=4,
+    )
     return model, kv_manager, accelerator
 
 
@@ -236,18 +240,16 @@ def _bf16(value: np.ndarray) -> Buffer:
     """A bf16 device-ready buffer from float32 data.
 
     DLPack has no bf16, so the bits are built as ``uint16`` and reinterpreted
-    -- the same approach ``test_state_warmup.py`` uses. Truncating the
-    mantissa is fine here: it is deterministic, and every comparison in this
-    file is between two runs of the same graph.
+    -- the same approach ``test_state_warmup.py`` uses.
     """
-    bits = (value.astype(np.float32).view(np.uint32) >> 16).astype(np.uint16)
+    bits = value.astype(np.float32).astype(ml_dtypes.bfloat16).view(np.uint16)
     return Buffer.from_numpy(bits).view(DType.bfloat16)
 
 
 def _from_bf16(buffer: Buffer) -> np.ndarray:
     """Reads a bf16 buffer back as float32, again via the uint16 view."""
     bits = buffer.to(CPU()).view(DType.uint16).to_numpy()
-    return (bits.astype(np.uint32) << 16).view(np.float32)
+    return bits.view(ml_dtypes.bfloat16).astype(np.float32)
 
 
 def _run(

@@ -416,6 +416,8 @@ class TextBatchConstructor:
     - Once a replica's device KV usage exceeds
       ``TG_PRIORITY_KV_PERCENTAGE_ENV_VAR`` percent, it prioritizes TG over CE
       so in-flight generations drain before new prefills compete for blocks.
+      With in-flight batching, the same threshold stops the CE backfill from
+      admitting new requests; prefills that already hold KV blocks continue.
     - During TG, if allocating KV blocks for a candidate request fails due to
       insufficient capacity, the constructor may preempt other TG candidates
       to free KV space, ensuring that at least a subset of requests can
@@ -543,6 +545,9 @@ class TextBatchConstructor:
         )
         self._ce_arrival: dict[RequestID, float] = {}
         self._ce_deferred_replicas: set[int] = set()
+        # Replicas whose last mixed step deferred a prompt too long for it;
+        # their next step runs prefill only. Cleared once read.
+        self._ce_priority_replicas: set[int] = set()
         # Per-replica CE token quota for this iteration, set by
         # ``_plan_ce_step`` when it reduces a below-threshold step's chunk
         # size to its balance level. ``None`` means no quota (full CE chunk
@@ -1176,6 +1181,9 @@ class TextBatchConstructor:
         if kv_percentage > self.tg_priority_kv_percentage:
             return RequestType.TG
 
+        if replica_idx in self._ce_priority_replicas:
+            return RequestType.CE
+
         # If we've enabled in flight batching, prioritize TG
         if self.scheduler_config.enable_in_flight_batching:
             return RequestType.TG
@@ -1269,10 +1277,20 @@ class TextBatchConstructor:
 
         replica_requests = self.replicas[replica_idx]
         max_batch_size = self.scheduler_config.max_batch_size
+        draft_width = self.scheduler_config.spec_decode_mixed_verify_width
 
         # If there is anything in the batch, we can assume its TG, and the requests
         # are also counted in the tg_reqs.
         starting_tg_reqs_count = len(batch)
+        # The in-flight backfill runs under a TG priority, so it also slips
+        # past the KV-pressure check in _identify_priority. Above that
+        # threshold a new prefill takes blocks the running generations need
+        # next, so only prefills that already hold KV continue.
+        admit_new = not (
+            starting_tg_reqs_count > 0
+            and self.kv_cache.pressure_pct(replica_idx)
+            > self.tg_priority_kv_percentage
+        )
         max_batch_size = self.scheduler_config.max_batch_size
         while (
             len(batch) < max_batch_size
@@ -1285,6 +1303,10 @@ class TextBatchConstructor:
         ):
             # Pop new request off the queue.
             req_id, ctx = replica_requests.ce_reqs.popitem(last=False)
+
+            if not admit_new and not self.kv_cache.contains(ctx):
+                self._return_to_request_queue(ctx, replica_idx)
+                break
 
             # Check LoRA budget before resource allocation
             if not replica_requests.can_allocate_lora_request(
@@ -1346,14 +1368,31 @@ class TextBatchConstructor:
                     )
                     continue
 
-            # Check if it fits within the token budget
+            # Check if it fits within the token budget. Under DP, a decode row
+            # on any replica makes every row in the step carry drafts, so a
+            # prompt row needs room for them on every path.
+            batch.token_budget.reserve(draft_width)
             match batch.token_budget.status_after_context(
                 ctx, request_type=RequestType.CE
             ):
                 case BudgetStatus.BUDGET_EXHAUSTED:
+                    batch.token_budget.reserve(-draft_width)
                     self._return_to_request_queue(ctx, replica_idx)
                     return
                 case BudgetStatus.BUDGET_REACHED:
+                    # Without chunking the budget is soft, so a prompt longer
+                    # than this mixed step's room would go in whole and its
+                    # drafts would overrun the step. Prefill it alone next.
+                    if (
+                        draft_width > 0
+                        and starting_tg_reqs_count > 0
+                        and ctx.tokens.active_length
+                        > batch.token_budget.remaining
+                    ):
+                        batch.token_budget.reserve(-draft_width)
+                        self._ce_priority_replicas.add(replica_idx)
+                        self._return_to_request_queue(ctx, replica_idx)
+                        return
                     batch.batch[req_id] = ctx
                     replica_requests.add_active_lora(ctx, self._lora_manager)
                     batch.token_budget.add_to_budget(
@@ -1582,6 +1621,7 @@ class TextBatchConstructor:
             if priority_override is not None
             else self._identify_priority(replica_idx)
         )
+        self._ce_priority_replicas.discard(replica_idx)
 
         match priority:
             case RequestType.CE:
@@ -1612,6 +1652,11 @@ class TextBatchConstructor:
                     and priority_override is None
                     and self._ce_backfill_open
                 ):
+                    # A mixed step verifies each decode row's drafts too.
+                    batch.token_budget.reserve(
+                        len(batch)
+                        * self.scheduler_config.spec_decode_mixed_verify_width
+                    )
                     self._add_ce_requests(batch, replica_idx)
 
             case None:

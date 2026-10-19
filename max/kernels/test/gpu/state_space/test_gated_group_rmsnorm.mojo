@@ -169,7 +169,7 @@ def test_gated_group_rmsnorm_decode_production() raises:
     var ctx = DeviceContext()
     if not ctx.is_compatible():
         return
-    run_gated_group_rmsnorm[.bfloat16, DType.float32, 960](
+    run_gated_group_rmsnorm[.bfloat16, .float32, 960](
         ctx, n_rows=1, num_groups=8
     )
 
@@ -179,7 +179,7 @@ def test_gated_group_rmsnorm_prefill_rows() raises:
     var ctx = DeviceContext()
     if not ctx.is_compatible():
         return
-    run_gated_group_rmsnorm[.bfloat16, DType.float32, 960](
+    run_gated_group_rmsnorm[.bfloat16, .float32, 960](
         ctx, n_rows=5, num_groups=8
     )
 
@@ -190,7 +190,7 @@ def test_gated_group_rmsnorm_small() raises:
     var ctx = DeviceContext()
     if not ctx.is_compatible():
         return
-    run_gated_group_rmsnorm[.bfloat16, DType.float32, 100](
+    run_gated_group_rmsnorm[.bfloat16, .float32, 100](
         ctx, n_rows=3, num_groups=4
     )
 
@@ -200,7 +200,7 @@ def test_gated_group_rmsnorm_bf16_gate() raises:
     var ctx = DeviceContext()
     if not ctx.is_compatible():
         return
-    run_gated_group_rmsnorm[.bfloat16, DType.bfloat16, 960](
+    run_gated_group_rmsnorm[.bfloat16, .bfloat16, 960](
         ctx, n_rows=1, num_groups=8
     )
 
@@ -215,7 +215,7 @@ def test_gated_group_rmsnorm_strided_gate() raises:
     if not ctx.is_compatible():
         return
     # intermediate = 8 * 960 = 7680; pad the gate row stride to 8192 (> 7680).
-    run_gated_group_rmsnorm[.bfloat16, DType.bfloat16, 960](
+    run_gated_group_rmsnorm[.bfloat16, .bfloat16, 960](
         ctx, n_rows=3, num_groups=8, gate_stride=8192
     )
 
@@ -225,7 +225,7 @@ def test_gated_group_rmsnorm_f32() raises:
     var ctx = DeviceContext()
     if not ctx.is_compatible():
         return
-    run_gated_group_rmsnorm[.float32, DType.float32, 960](
+    run_gated_group_rmsnorm[.float32, .float32, 960](
         ctx, n_rows=2, num_groups=8, rtol=1e-4, atol=1e-5
     )
 
@@ -236,7 +236,7 @@ def test_gated_group_rmsnorm_nemotron_lightning_decode() raises:
     if not ctx.is_compatible():
         return
     comptime for rows in [1, 8, 64]:
-        run_gated_group_rmsnorm[.bfloat16, DType.bfloat16, 512](
+        run_gated_group_rmsnorm[.bfloat16, .bfloat16, 512](
             ctx, n_rows=rows, num_groups=8, gate_stride=10304
         )
 
@@ -245,7 +245,7 @@ def test_gated_group_rmsnorm_nemotron_lightning_prefill() raises:
     var ctx = DeviceContext()
     if not ctx.is_compatible():
         return
-    run_gated_group_rmsnorm[.bfloat16, DType.bfloat16, 512](
+    run_gated_group_rmsnorm[.bfloat16, .bfloat16, 512](
         ctx, n_rows=4096, num_groups=8, gate_stride=10304
     )
 
@@ -255,7 +255,7 @@ def test_gated_group_rmsnorm_vector_tail() raises:
     var ctx = DeviceContext()
     if not ctx.is_compatible():
         return
-    run_gated_group_rmsnorm[.bfloat16, DType.bfloat16, 520](
+    run_gated_group_rmsnorm[.bfloat16, .bfloat16, 520](
         ctx, n_rows=7, num_groups=3, gate_stride=1600
     )
 
@@ -265,6 +265,6 @@ def test_gated_group_rmsnorm_unaligned_gate_stride() raises:
     var ctx = DeviceContext()
     if not ctx.is_compatible():
         return
-    run_gated_group_rmsnorm[.bfloat16, DType.bfloat16, 512](
+    run_gated_group_rmsnorm[.bfloat16, .bfloat16, 512](
         ctx, n_rows=5, num_groups=8, gate_stride=4100
     )

@@ -126,7 +126,7 @@ SourceNameAttr SourceNames::getSourceName(Type type) {
   if (auto declRef = dyn_cast<StructType>(type)) {
     ASTDecl &decl =
         shared.declResolver->getDeclForTypeSymbol(declRef.getSymbol());
-    StructDeclOp op = cast<StructDeclOp>(decl.getIfOperation());
+    StructDeclOp op = cast<StructASTDecl>(decl).getOp();
     SourceNameAttr name = getSourceName(op);
     // Add the parameter values.
     SmallVector<StringAttr> paramValues;

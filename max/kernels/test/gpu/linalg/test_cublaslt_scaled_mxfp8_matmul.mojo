@@ -44,9 +44,9 @@ def test_scaled_mxfp8_cublaslt[
         transpose_b == True
     ), "Only transpose_b = True is supported for scaled FP8 matmul"
 
-    var M = Int(m.value())
-    var N = Int(n.value())
-    var K = Int(k.value())
+    var M = Int(m)
+    var N = Int(n)
+    var K = Int(k)
 
     var cublaslt_version = cublasLtGetVersion()
 

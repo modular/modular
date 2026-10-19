@@ -62,9 +62,9 @@ def test_pad_constant_gpu[
     )
 
     # Initialize input with sequential values
+    var input_flat = input.reshape(row_major(input_shape.flattened_length()))
     for i in range(input_shape.flattened_length()):
-        var idx = input.layout(i)
-        input.raw_store(idx, Scalar[dtype](i))
+        input_flat[input.layout(i)] = Scalar[dtype](i)
 
     if verbose:
         print(input)
@@ -135,8 +135,7 @@ def test_pad_constant_gpu[
 
     # Compare GPU and CPU results
     for i in range(output.num_elements()):
-        var idx = output.layout(i)
-        assert_equal(output.raw_load(idx), output_cpu.raw_load(idx))
+        assert_equal(output[i], output_cpu[i])
 
     print("PASS: rank=" + String(rank))
 
@@ -171,9 +170,9 @@ def test_pad_reflect_gpu[
     )
 
     # Initialize input with sequential values
+    var input_flat = input.reshape(row_major(input_shape.flattened_length()))
     for i in range(input_shape.flattened_length()):
-        var idx = input.layout(i)
-        input.raw_store(idx, Scalar[dtype](i))
+        input_flat[input.layout(i)] = Scalar[dtype](i)
 
     if verbose:
         print(input)
@@ -240,8 +239,7 @@ def test_pad_reflect_gpu[
 
     # Compare GPU and CPU results
     for i in range(output.num_elements()):
-        var idx = output.layout(i)
-        assert_equal(output.raw_load(idx), output_cpu.raw_load(idx))
+        assert_equal(output[i], output_cpu[i])
 
     print("PASS: rank=" + String(rank))
 
@@ -276,9 +274,9 @@ def test_pad_repeat_gpu[
     )
 
     # Initialize input with sequential values
+    var input_flat = input.reshape(row_major(input_shape.flattened_length()))
     for i in range(input_shape.flattened_length()):
-        var idx = input.layout(i)
-        input.raw_store(idx, Scalar[dtype](i))
+        input_flat[input.layout(i)] = Scalar[dtype](i)
 
     if verbose:
         print(input)
@@ -345,8 +343,7 @@ def test_pad_repeat_gpu[
 
     # Compare GPU and CPU results
     for i in range(output.num_elements()):
-        var idx = output.layout(i)
-        assert_equal(output.raw_load(idx), output_cpu.raw_load(idx))
+        assert_equal(output[i], output_cpu[i])
 
     print("PASS: rank=" + String(rank))
 

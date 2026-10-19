@@ -49,7 +49,7 @@ bazelrc_lines=("# Generated from tools/bazel, do not edit.")
 bazelrc_lines+=("build --build_metadata=USER=${GITHUB_ACTOR:-${USER:-unknown}}")
 
 if [[ -z "${GITHUB_REPOSITORY:-}" ]]; then
-  bazelrc_lines+=("build --config=disk-cache")
+  bazelrc_lines+=("build --config=disk-cache" "build --config=download-headers")
 fi
 
 if [[ $OSTYPE == darwin* ]]; then

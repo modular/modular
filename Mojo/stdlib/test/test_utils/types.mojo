@@ -29,7 +29,7 @@
 * `ExplicitDestroy`
 """
 
-from std.hashlib import Hasher
+from std.hash import Hasher
 from std.memory import MaybeUninit
 from std.os import abort
 from std.reflection import call_location
@@ -580,7 +580,7 @@ struct PinnedExplicitDelOnly(not Deinitable, not Movable):
 
 
 @fieldwise_init
-struct Pinned(not Movable):
+struct Pinned(Defaultable, not Movable):
     """Utility testing container which is non-movable."""
 
     var data: Int

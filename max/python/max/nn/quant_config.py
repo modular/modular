@@ -94,6 +94,9 @@ class QuantFormat(Enum):
     NVFP4 = "nvfp4"
     """NVIDIA FP4 quantization format."""
 
+    FAKE_QUANT_NVFP4 = "fake-quant-nvfp4"
+    """Checkpoint weights in bf16 precision, quantized to NVFP4 on the fly."""
+
     MXFP4 = "mxfp4"
     """Microscaling FP4 (MX) quantization format."""
 

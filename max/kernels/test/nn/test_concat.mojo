@@ -78,7 +78,7 @@ def test_concat() raises:
         c_type: DType, width: SIMDLength, *, alignment: Int
     ](coord: Coord, val: SIMD[c_type, width]) {var output}:
         comptime assert output.flat_rank >= coord.flat_rank
-        output.store[width=width](
+        output.store(
             coord,
             rebind[SIMD[dtype, width]](val + 1),
         )
@@ -106,7 +106,7 @@ def test_concat() raises:
         row_major(output.num_elements()),
     )
     for i in range(output.layout.product()):
-        print(output_flat.load[1]((i,)))
+        print(output_flat[i])
 
 
 def test_concat_parallel() raises:
@@ -148,7 +148,7 @@ def test_concat_parallel() raises:
         c_type: DType, width: SIMDLength, *, alignment: Int
     ](coord: Coord, val: SIMD[c_type, width]) {var output}:
         comptime assert output.flat_rank >= coord.flat_rank
-        output.store[width=width](
+        output.store(
             coord,
             rebind[SIMD[dtype, width]](val + 1),
         )
@@ -176,7 +176,7 @@ def test_concat_parallel() raises:
         row_major(output.num_elements()),
     )
     for i in range(output.layout.product()):
-        print(output_flat.load[1]((i,)))
+        print(output_flat[i])
 
 
 # CHECK-LABEL: test_concat_inner
@@ -221,7 +221,7 @@ def test_concat_inner() raises:
         c_type: DType, width: SIMDLength, *, alignment: Int
     ](coord: Coord, val: SIMD[c_type, width]) {var output}:
         comptime assert output.flat_rank >= coord.flat_rank
-        output.store[width=width](
+        output.store(
             coord,
             rebind[SIMD[dtype, width]](val + 1),
         )
@@ -241,7 +241,7 @@ def test_concat_inner() raises:
         row_major(output.num_elements()),
     )
     for i in range(output.layout.product()):
-        print(output_flat.load[1]((i,)))
+        print(output_flat[i])
 
 
 def main() raises:

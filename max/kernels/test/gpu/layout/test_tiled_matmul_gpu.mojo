@@ -280,26 +280,23 @@ def single_warp_mma_sync_m16n8k8[
     # MMA fragments address the row-major A and column-major B storage
     # directly; each axis describes a lane or a value owned by that lane.
     # https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#mma-1688-a-tf32
-    var mat_a_mma = TileTensor(
-        ptr=mat_a.unsafe_ptr(),
-        layout=MixedLayout(
+    var mat_a_mma = mat_a.reshape(
+        MixedLayout(
             Coord(Idx[4], Idx[8], Idx[2], Idx[2]),
             Coord(Idx[1], Idx[8], Idx[64], Idx[4]),
         ),
     )
     # https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#mma-1688-b-tf32
     # These strides address column-major KxN storage without a transpose.
-    var mat_b_mma = TileTensor(
-        ptr=mat_b.unsafe_ptr(),
-        layout=MixedLayout(
+    var mat_b_mma = mat_b.reshape(
+        MixedLayout(
             Coord(Idx[4], Idx[8], Idx[2]),
             Coord(Idx[1], Idx[8], Idx[4]),
         ),
     )
     # https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#mma-1688-c
-    var mat_c_mma = TileTensor(
-        ptr=mat_c.unsafe_ptr(),
-        layout=MixedLayout(
+    var mat_c_mma = mat_c.reshape(
+        MixedLayout(
             Coord(Idx[4], Idx[8], Idx[2], Idx[2]),
             Coord(Idx[2], Idx[8], Idx[1], Idx[64]),
         ),

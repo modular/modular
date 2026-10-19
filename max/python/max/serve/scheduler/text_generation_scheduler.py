@@ -225,7 +225,7 @@ class TokenGenerationScheduler(Scheduler):
                     )
                     traced = (
                         self._kernel_capture is not None
-                        and self._kernel_capture.admit(context)
+                        and self._kernel_capture.admit(context, parent)
                     )
                     self._batch_links.admit(context.request_id, parent, traced)
 

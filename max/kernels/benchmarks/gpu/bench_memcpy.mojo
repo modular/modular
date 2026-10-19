@@ -57,26 +57,27 @@ struct Config(ImplicitlyCopyable, Writable):
 
     @staticmethod
     def get(handle: String) -> Self:
-        if handle == "host_to_device":
-            return Self.HOST_TO_DEVICE
-        elif handle == "host_pinned_to_device":
-            return Self.HOST_PINNED_TO_DEVICE
-        elif handle == "device_to_host":
-            return Self.DEVICE_TO_HOST
-        elif handle == "device_to_host_pinned":
-            return Self.DEVICE_TO_HOST_PINNED
-        elif handle == "device_to_device":
-            return Self.DEVICE_TO_DEVICE
-        elif handle == "peer_to_peer":
-            return Self.PEER_TO_PEER
-        else:
-            print("UNDEFINED")
-            print(
-                "options: host_to_device, host_pinned_to_device,"
-                " device_to_host, device_to_host_pinned, device_to_device,"
-                " peer_to_peer"
-            )
-            return Self.UNDEFINED
+        match handle:
+            case "host_to_device":
+                return Self.HOST_TO_DEVICE
+            case "host_pinned_to_device":
+                return Self.HOST_PINNED_TO_DEVICE
+            case "device_to_host":
+                return Self.DEVICE_TO_HOST
+            case "device_to_host_pinned":
+                return Self.DEVICE_TO_HOST_PINNED
+            case "device_to_device":
+                return Self.DEVICE_TO_DEVICE
+            case "peer_to_peer":
+                return Self.PEER_TO_PEER
+            case _:
+                print("UNDEFINED")
+                print(
+                    "options: host_to_device, host_pinned_to_device,"
+                    " device_to_host, device_to_host_pinned, device_to_device,"
+                    " peer_to_peer"
+                )
+                return Self.UNDEFINED
 
     def write_to(self, mut writer: Some[Writer]):
         if self.direction == Self.DToD:

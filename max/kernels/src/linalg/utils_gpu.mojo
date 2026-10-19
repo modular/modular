@@ -13,7 +13,7 @@
 
 """Provides GPU matmul configuration selection, block-swizzling, and Hilbert-curve tile-ordering utilities."""
 
-from std.hashlib.hasher import Hasher
+from std.hash.hasher import Hasher
 from std.math import ceildiv
 from std.math.uutils import uceildiv
 from std.sys import (
@@ -665,7 +665,7 @@ def get_hilbert_lut_with_cache(
     # store the device pointer directly in global cache
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
         StringSlice(key_str),
-        device_ptr.bitcast[NoneType](),
+        device_ptr.unsafe_bitcast[NoneType](),
     )
 
     # the buffer will live for the duration of the program

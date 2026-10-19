@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Provides utilities for testing hash function quality and distribution."""
 
-from std.hashlib.hasher import Hasher
+from std.hash.hasher import Hasher
 
 from std.bit import pop_count
 from std.reflection import call_location
@@ -98,7 +98,7 @@ def assert_dif_hashes(hashes: List[UInt64], upper_bound: Int) raises:
 
 @inline(.always)
 def assert_fill_factor[
-    label: String, HasherType: Hasher
+    label: String, HasherType: Hasher & Defaultable & Deinitable
 ](words: List[String], num_buckets: Int, lower_bound: Float64) raises:
     """Asserts that the hash function achieves a minimum fill factor.
 

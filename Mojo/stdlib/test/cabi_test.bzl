@@ -80,19 +80,31 @@ def mojo_cabi_test(name, platforms):
         ],
     )
 
-    native.genrule(
-        name = name + "_reference_src",
-        testonly = True,
-        outs = [name + "_reference.c"],
-        cmd = "$(location :{}_gen) > $@".format(name),
-        tools = [":" + name + "_gen"],
-        target_compatible_with = compatible_with,
-    )
+    # The generator reads the struct mirrors at its own compilation target,
+    # the exec platform. A mirror selected per target OS (`platform_type_map`)
+    # would otherwise resolve to the exec OS's layout, such as Linux's when a
+    # macOS build executes remotely, so each OS gets a genrule pinned to it.
+    for os in platforms:
+        native.genrule(
+            name = "{}_reference_src_{}".format(name, os),
+            testonly = True,
+            outs = ["{}_reference_{}.c".format(name, os)],
+            cmd = "$(location :{}_gen) > $@".format(name),
+            tools = [":" + name + "_gen"],
+            exec_compatible_with = ["@platforms//os:" + os],
+            target_compatible_with = ["@platforms//os:" + os],
+        )
+
+    reference_srcs = {
+        "@platforms//os:" + os: ["{}_reference_{}.c".format(name, os)]
+        for os in platforms
+    }
+    reference_srcs["//conditions:default"] = []
 
     modular_cc_library(
         name = name + "_reference",
         testonly = True,
-        srcs = [name + "_reference.c"],
+        srcs = select(reference_srcs),
         # A same-width signedness mismatch (`int32_t *` vs `unsigned int *`)
         # or a const/volatile mismatch is only a warning by default, unlike
         # most other incompatible-pointer-types cases; promote both to

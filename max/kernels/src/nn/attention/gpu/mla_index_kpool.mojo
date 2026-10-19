@@ -33,7 +33,7 @@ job instead.
 
 from std.math import ceildiv, exp, max
 
-from layout import TensorEngine, TensorLayout, TileTensor
+from layout import TensorEngine, TensorLayout, TileTensor, row_major
 
 from max.gpu import block_dim, block_idx, thread_idx
 from max.gpu.primitives import block
@@ -72,7 +72,7 @@ def _batch_of_pool_row(
 ) -> Int:
     """Batch owning output row `pool_row`."""
     for b in range(batch_size):
-        if pool_row < Int(pool_row_offsets.raw_load(b + 1)):
+        if pool_row < Int(pool_row_offsets[b + 1]):
             return b
     return batch_size - 1
 
@@ -170,7 +170,7 @@ def kpool_compress_kernel[
     # The last offset is the exact pool count, so an over-sized grid is
     # harmless.
     var batch_size = Int(pool_row_offsets.dim[0]()) - 1
-    if pool_row >= Int(pool_row_offsets.raw_load(batch_size)):
+    if pool_row >= Int(pool_row_offsets[batch_size]):
         return
 
     var c = thread_idx.x
@@ -179,27 +179,32 @@ def kpool_compress_kernel[
 
     var b = _batch_of_pool_row(pool_row_offsets, batch_size, pool_row)
 
-    var local_pool = pool_row - Int(pool_row_offsets.raw_load(b))
+    var local_pool = pool_row - Int(pool_row_offsets[b])
     # A cached prefix ending mid-pool means this call opens partway through a
     # pool it cannot build. Skip those leading tokens; the tail ring carries
     # that pool.
     var cache_len = Int(cache_lengths[b])
     var align = (kpool - cache_len % kpool) % kpool
-    var first_row = (
-        Int(input_row_offsets.raw_load(b)) + align + local_pool * kpool
-    )
+    var first_row = Int(input_row_offsets[b]) + align + local_pool * kpool
+
+    var k_flat = k.reshape(row_major(k.num_elements()))
+    var gate_flat = gate.reshape(row_major(gate.num_elements()))
+    var ape_flat = ape.reshape(row_major(ape.num_elements()))
 
     # Every member of a written pool exists, so nothing needs masking.
     var logits = Array[Float32, kpool]()
     var vals = Array[Float32, kpool]()
     for m in range(kpool):
-        logits[m] = gate.raw_load((first_row + m) * head_dim + c).cast[
+        logits[m] = gate_flat.load[width=1](
+            ((first_row + m) * head_dim + c,)
+        ).cast[.float32]() + ape_flat.load[width=1]((m * head_dim + c,))
+        vals[m] = k_flat.load[width=1](((first_row + m) * head_dim + c,)).cast[
             .float32
-        ]() + ape.raw_load(m * head_dim + c)
-        vals[m] = k.raw_load((first_row + m) * head_dim + c).cast[.float32]()
+        ]()
 
-    pooled.raw_store(
-        pool_row * head_dim + c, pool_channel[kpool](logits, vals).cast[dtype]()
+    pooled.reshape(row_major(pooled.num_elements())).store(
+        (pool_row * head_dim + c,),
+        pool_channel[kpool](logits, vals).cast[dtype](),
     )
 
 
@@ -328,26 +333,34 @@ def kpool_tail_update_kernel[
         return
 
     comptime max_closed = ceildiv(next_n, kpool)
-    var tail_base = Int(slot_idx.raw_load(r)) * 2 * kpool * head_dim
+    var tail_base = Int(slot_idx[r]) * 2 * kpool * head_dim
     var n_closed = 0
+
+    var tail_flat = tail.reshape(row_major(tail.num_elements()))
+    var pooled_flat = pooled.reshape(row_major(pooled.num_elements()))
+    var closed_flat = closed_pool.reshape(row_major(closed_pool.num_elements()))
+    var k_flat = k.reshape(row_major(k.num_elements()))
+    var gate_flat = gate.reshape(row_major(gate.num_elements()))
+    var ape_flat = ape.reshape(row_major(ape.num_elements()))
+    var positions_flat = positions.reshape(row_major(positions.num_elements()))
 
     # Walk in position order: a pool closing here reads slots that earlier
     # tokens stashed in this same call. No barrier is needed, because each
     # stash is read back by the same thread.
     for t in range(next_n):
-        var pos = Int(positions.raw_load(r * next_n + t))
+        var pos = Int(positions_flat.load[width=1]((r * next_n + t,)))
         # A padded entry in a speculative batch.
         if pos < 0:
             continue
 
         var slot = pos % kpool
-        tail.raw_store(
-            tail_base + slot * head_dim + c,
-            k.raw_load((r * next_n + t) * head_dim + c),
+        tail_flat.store(
+            (tail_base + slot * head_dim + c,),
+            k_flat.load[width=1](((r * next_n + t) * head_dim + c,)),
         )
-        tail.raw_store(
-            tail_base + (kpool + slot) * head_dim + c,
-            gate.raw_load((r * next_n + t) * head_dim + c),
+        tail_flat.store(
+            (tail_base + (kpool + slot) * head_dim + c,),
+            gate_flat.load[width=1](((r * next_n + t) * head_dim + c,)),
         )
 
         if slot != kpool - 1:
@@ -358,26 +371,24 @@ def kpool_tail_update_kernel[
         var logits = Array[Float32, kpool]()
         var vals = Array[Float32, kpool]()
         for m in range(kpool):
-            logits[m] = tail.raw_load(
-                tail_base + (kpool + m) * head_dim + c
-            ).cast[.float32]() + ape.raw_load(m * head_dim + c)
-            vals[m] = tail.raw_load(tail_base + m * head_dim + c).cast[
-                .float32
-            ]()
+            logits[m] = tail_flat.load[width=1](
+                (tail_base + (kpool + m) * head_dim + c,)
+            ).cast[.float32]() + ape_flat.load[width=1]((m * head_dim + c,))
+            vals[m] = tail_flat.load[width=1](
+                (tail_base + m * head_dim + c,)
+            ).cast[.float32]()
 
-        pooled.raw_store(
-            (r * max_closed + n_closed) * head_dim + c,
+        pooled_flat.store(
+            ((r * max_closed + n_closed) * head_dim + c,),
             pool_channel[kpool](logits, vals).cast[dtype](),
         )
         if c == 0:
-            closed_pool.raw_store(
-                r * max_closed + n_closed, Int32(pos // kpool)
-            )
+            closed_flat.store((r * max_closed + n_closed,), Int32(pos // kpool))
         n_closed += 1
 
     if c == 0:
         for j in range(n_closed, max_closed):
-            closed_pool.raw_store(r * max_closed + j, Int32(-1))
+            closed_flat.store((r * max_closed + j,), Int32(-1))
 
 
 @__name(t"mla_kpool_seed_tail_{kpool}_{head_dim}")
@@ -472,23 +483,28 @@ def kpool_seed_tail_kernel[
     if c >= head_dim:
         return
 
-    var row_start = Int(input_row_offsets.raw_load(r))
-    var n = Int(input_row_offsets.raw_load(r + 1)) - row_start
+    var row_start = Int(input_row_offsets[r])
+    var n = Int(input_row_offsets[r + 1]) - row_start
     var cache_len = Int(cache_lengths[r])
     var end = cache_len + n
     # Positions after the last complete pool, clipped to this call.
     var seed_start = max((end // kpool) * kpool, cache_len)
-    var tail_base = Int(slot_idx.raw_load(r)) * 2 * kpool * head_dim
+    var tail_base = Int(slot_idx[r]) * 2 * kpool * head_dim
+
+    var tail_flat = tail.reshape(row_major(tail.num_elements()))
+    var k_flat = k.reshape(row_major(k.num_elements()))
+    var gate_flat = gate.reshape(row_major(gate.num_elements()))
 
     for pos in range(seed_start, end):
         var slot = pos % kpool
         var row = row_start + (pos - cache_len)
-        tail.raw_store(
-            tail_base + slot * head_dim + c, k.raw_load(row * head_dim + c)
+        tail_flat.store(
+            (tail_base + slot * head_dim + c,),
+            k_flat.load[width=1]((row * head_dim + c,)),
         )
-        tail.raw_store(
-            tail_base + (kpool + slot) * head_dim + c,
-            gate.raw_load(row * head_dim + c),
+        tail_flat.store(
+            (tail_base + (kpool + slot) * head_dim + c,),
+            gate_flat.load[width=1]((row * head_dim + c,)),
         )
 
 
@@ -635,46 +651,59 @@ def kpool_ring_close_kernel[
         # Nothing pending: this request's cache already sits on a pool
         # boundary, so there is no partial pool for this call to close.
         if c == 0:
-            closed_pool.raw_store(r, Int32(-1))
+            closed_pool[r] = Int32(-1)
         return
 
-    var row_start = Int(input_row_offsets.raw_load(r))
-    var row_end = Int(input_row_offsets.raw_load(r + 1))
+    var row_start = Int(input_row_offsets[r])
+    var row_end = Int(input_row_offsets[r + 1])
     var align = kpool - ring_members
     if row_end - row_start < align:
         # Not enough new tokens yet to finish the pending pool; it stays in
         # the ring, extended by `kpool_seed_tail_kernel`, for a later call.
         if c == 0:
-            closed_pool.raw_store(r, Int32(-1))
+            closed_pool[r] = Int32(-1)
         return
 
     # The pending pool runs from `(cache_len // kpool) * kpool` to
     # `cache_len - 1`: its first `ring_members` members already sit in the
     # ring at slots `[0, ring_members)`, and this call's first `align` new
     # tokens are its remaining members, at slots `[ring_members, kpool)`.
-    var ring_base = Int(slot_idx.raw_load(r)) * 2 * kpool * head_dim
+    var ring_base = Int(slot_idx[r]) * 2 * kpool * head_dim
+    var tail_flat = tail.reshape(row_major(tail.num_elements()))
+    var k_flat = k.reshape(row_major(k.num_elements()))
+    var gate_flat = gate.reshape(row_major(gate.num_elements()))
+    var ape_flat = ape.reshape(row_major(ape.num_elements()))
     var logits = Array[Float32, kpool]()
     var vals = Array[Float32, kpool]()
     for m in range(kpool):
+        var ape_m = ape_flat.load[width=1]((m * head_dim + c,))
         if m < ring_members:
-            logits[m] = tail.raw_load(
-                ring_base + (kpool + m) * head_dim + c
-            ).cast[.float32]() + ape.raw_load(m * head_dim + c)
-            vals[m] = tail.raw_load(ring_base + m * head_dim + c).cast[
-                .float32
-            ]()
+            logits[m] = (
+                tail_flat.load[width=1](
+                    (ring_base + (kpool + m) * head_dim + c,)
+                ).cast[.float32]()
+                + ape_m
+            )
+            vals[m] = tail_flat.load[width=1](
+                (ring_base + m * head_dim + c,)
+            ).cast[.float32]()
         else:
             var new_row = row_start + (m - ring_members)
-            logits[m] = gate.raw_load(new_row * head_dim + c).cast[
+            logits[m] = (
+                gate_flat.load[width=1]((new_row * head_dim + c,)).cast[
+                    .float32
+                ]()
+                + ape_m
+            )
+            vals[m] = k_flat.load[width=1]((new_row * head_dim + c,)).cast[
                 .float32
-            ]() + ape.raw_load(m * head_dim + c)
-            vals[m] = k.raw_load(new_row * head_dim + c).cast[.float32]()
+            ]()
 
-    pooled.raw_store(
-        r * head_dim + c, pool_channel[kpool](logits, vals).cast[dtype]()
+    pooled.reshape(row_major(pooled.num_elements())).store(
+        (r * head_dim + c,), pool_channel[kpool](logits, vals).cast[dtype]()
     )
     if c == 0:
-        closed_pool.raw_store(r, Int32(cache_len // kpool))
+        closed_pool[r] = Int32(cache_len // kpool)
 
 
 @__name(t"mla_kpool_expand_topk_{kpool}_{pool_topk}_{always_select_tail}")
@@ -763,7 +792,7 @@ def kpool_expand_topk_kernel[
     comptime pools_per_thread = ceildiv(pool_topk, KPOOL_EXPAND_BLOCK_SIZE)
 
     debug_assert(
-        Int(block_dim.x) == KPOOL_EXPAND_BLOCK_SIZE,
+        block_dim.x == KPOOL_EXPAND_BLOCK_SIZE,
         "kpool_expand_topk_kernel needs KPOOL_EXPAND_BLOCK_SIZE threads",
     )
     # Uniform across the block, so returning before the block scans is safe.
@@ -774,11 +803,11 @@ def kpool_expand_topk_kernel[
     var batch_size = Int(input_row_offsets.dim[0]()) - 1
     var b = 0
     for i in range(batch_size):
-        if token_idx < Int(input_row_offsets.raw_load(i + 1)):
+        if token_idx < Int(input_row_offsets[i + 1]):
             b = i
             break
 
-    var local = token_idx - Int(input_row_offsets.raw_load(b))
+    var local = token_idx - Int(input_row_offsets[b])
     # Causal: a query sees its own position and everything before it.
     var visible = Int(cache_lengths[b]) + local + 1
 
@@ -789,13 +818,15 @@ def kpool_expand_topk_kernel[
     # per-thread counts gives every selected pool its packed rank in selection
     # order, and the last thread's inclusive sum is the row's total.
     var row = token_idx * pool_topk
-    var first_slot = Int(thread_idx.x) * pools_per_thread
+    var pool_ids_flat = pool_ids.reshape(row_major(pool_ids.num_elements()))
+    var out_flat = out_indices.reshape(row_major(out_indices.num_elements()))
+    var first_slot = thread_idx.x * pools_per_thread
     var pids = Array[Int32, pools_per_thread](fill=-1)
     var num_selected = 0
     for i in range(pools_per_thread):
         var j = first_slot + i
         if j < pool_topk:
-            pids[i] = pool_ids.raw_load(row + j)
+            pids[i] = pool_ids_flat.load[width=1]((row + j,))
             if pids[i] >= 0:
                 num_selected += 1
     var inclusive = block.prefix_sum[block_size=KPOOL_EXPAND_BLOCK_SIZE](
@@ -813,17 +844,17 @@ def kpool_expand_topk_kernel[
         var pid = Int(pids[i])
         if pid >= 0:
             for c in range(kpool):
-                out_indices.raw_store(
-                    out_row + rank * kpool + c, Int32(pid * kpool + c)
+                out_flat.store(
+                    (out_row + rank * kpool + c,), Int32(pid * kpool + c)
                 )
             rank += 1
 
     var packed = total_selected * kpool
-    var col = packed + Int(thread_idx.x)
+    var col = packed + thread_idx.x
     while col < out_width:
         var tail_idx = col - packed
-        out_indices.raw_store(
-            out_row + col,
+        out_flat.store(
+            (out_row + col,),
             Int32(tail_start + tail_idx) if tail_idx
             < tail_count else Int32(-1),
         )

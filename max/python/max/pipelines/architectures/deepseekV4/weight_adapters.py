@@ -24,21 +24,24 @@ adapter changes the *storage* of the quantized tensors, which the reference's
   ``float8_e4m3fn`` weight; the ``<proj>.scale`` companion (e8m0, one per
   128x128 block) becomes ``<proj>.weight_scale`` **in float32**, because the
   blockwise fp8 matmul reads float32 scales. ``2 ** (e - 127)`` is exact.
-* ``attn.wo_a`` is the exception: the checkpoint stores it fp8, but the
-  reference declares it bf16 and uses the raw weight in a grouped einsum
-  rather than through ``linear()``, so no activation quantization happens
-  there and the block scale has to be folded in on the host (to bf16, which
-  is exact). Loading it fp8 and dropping the scale is what makes wo_a about
-  2400x too large.
 * routed experts (``ffn.experts.<e>.w{1,2,3}``, e2m1 packed two per int8 byte,
   e8m0 scale per 32 elements) are stacked per layer into the two
   ``[E, N, K/2]`` uint8 tensors of :class:`DeepseekV4RoutedExperts`
   (``gate_up_proj`` = ``[w1; w3]`` along N, ``down_proj`` = ``w2``) with
   ``[E, N, K/32]`` e8m0 scales; the grouped W4A8 kernel reads both as is.
-* the compressors' ``wkv`` / ``wgate``, every norm weight and ``head`` are
-  stored bf16 but declared float32 by the reference, which upcasts them on
-  load; so does this adapter (exact).
+* the compressors' ``wkv`` / ``wgate`` and every norm weight are stored bf16
+  but declared float32 by the reference, which upcasts them on load; so does
+  this adapter (exact). ``head`` is the exception: the reference upcasts it
+  too, but here it stays bf16 (see ``DeepseekV4._lm_head``).
 * everything else (bf16 / f32 / the int64 ``tid2eid`` tables) passes through.
+
+Last, projections that read the same input are stacked along N into one
+module weight, so each pair runs as one GEMM: ``attn.wq_a`` + ``attn.wkv`` ->
+``attn.wqa_wkv``, ``shared_experts.w1`` + ``w3`` -> ``w13``, and each
+compressor's ``wkv`` + ``wgate`` -> ``wkv_wgate``. The rows are concatenated
+after the storage conversion, the ``weight_scale`` block rows with them: every
+fp8 projection's N is a multiple of the 128-row scale block, so block ``i`` of
+the second projection lands at block ``N1 / 128 + i``, as its rows do.
 
 The adapter keys on the *stored* dtypes, so a dequantized f32 copy of the
 checkpoint passes through untouched and drives the dense f32 modules.
@@ -54,7 +57,7 @@ import re
 from collections.abc import Mapping
 
 import numpy as np
-from max.driver import Buffer, DLPackArray
+from max.driver import Buffer, DLPackArray, bfloat16_as_uint16_to_float32
 from max.dtype import DType
 from max.graph.type import Shape
 from max.graph.weights import WeightData, Weights
@@ -78,21 +81,25 @@ _HC_SITE_TENSOR = re.compile(
 GATE_UP_PROJ = "gate_up_proj"
 DOWN_PROJ = "down_proj"
 
-# Projections stored fp8 that the model runs dequantized (see the module
-# docstring): matched on the module name, so ``mtp.*`` stages come along.
-_HOST_DEQUANT_PROJECTIONS = (".attn.wo_a",)
-
 # bf16 in the checkpoint, float32 in the reference (and here), which upcasts
 # them on load: the compressor's raw projections (it pools in float32), every
-# norm weight (``*norm.weight``) and the head.
+# norm weight (``*norm.weight``).
 _FLOAT32_WEIGHTS = (
     ".compressor.wkv.weight",
     ".compressor.wgate.weight",
     "norm.weight",
 )
-_FLOAT32_HEAD = "head.weight"
 
 _FP8_WEIGHT_BLOCK = 128
+
+# ``(first, second, stacked)`` module-name suffixes; ``stacked`` is
+# ``[first; second]`` along N. ``.attn.wkv`` does not match the compressors'
+# ``.compressor.wkv``.
+_STACKED_PROJECTIONS = (
+    (".attn.wq_a", ".attn.wkv", ".attn.wqa_wkv"),
+    (".shared_experts.w1", ".shared_experts.w3", ".shared_experts.w13"),
+    (".compressor.wkv", ".compressor.wgate", ".compressor.wkv_wgate"),
+)
 
 
 def as_uint8(data: DLPackArray) -> np.ndarray:
@@ -106,52 +113,12 @@ def e8m0_to_float32(raw: np.ndarray) -> np.ndarray:
     return np.exp2(raw.astype(np.float32) - 127.0)
 
 
-def _e4m3_table() -> np.ndarray:
-    """The 256 ``float8_e4m3fn`` values, indexed by their byte."""
-    code = np.arange(256, dtype=np.uint8)
-    exponent = ((code >> 3) & 0x0F).astype(np.int32)
-    mantissa = (code & 0x07).astype(np.float32)
-    magnitude = np.where(
-        exponent == 0,
-        mantissa * 2.0**-9,
-        (1.0 + mantissa / 8.0) * np.exp2((exponent - 7).astype(np.float32)),
-    ).astype(np.float32)
-    # e4m3fn has no infinities; the all-ones exponent with a full mantissa is
-    # the only NaN.
-    magnitude[0x7F] = np.nan
-    magnitude[0xFF] = np.nan
-    return np.where(code >> 7 == 1, -magnitude, magnitude).astype(np.float32)
-
-
-_E4M3 = _e4m3_table()
-
-
 def with_dtype(array: np.ndarray, dtype: DType, name: str) -> WeightData:
     """``WeightData`` whose bytes are ``array`` reinterpreted as ``dtype``."""
     buffer = Buffer.from_numpy(np.ascontiguousarray(array))
     if dtype != DType.from_numpy(array.dtype):
         buffer = buffer.view(dtype)
     return WeightData(buffer, name, dtype, Shape(buffer.shape))
-
-
-def dequantize_fp8_blocks(
-    weight: WeightData, scale: WeightData, name: str
-) -> WeightData:
-    """An fp8 weight times its ``[N/128, K/128]`` e8m0 block scale, bfloat16.
-
-    bf16 is what the reference declares for these projections, and it is
-    exact: an e4m3 value (3 mantissa bits) times a power of two fits bf16's
-    7 mantissa bits and f32's exponent range, so dropping the low 16 bits of
-    the float32 product loses nothing.
-    """
-    values = _E4M3[as_uint8(weight.data)]
-    blocks = e8m0_to_float32(as_uint8(scale.data))
-    expanded = np.repeat(
-        np.repeat(blocks, _FP8_WEIGHT_BLOCK, axis=0), _FP8_WEIGHT_BLOCK, axis=1
-    )[: values.shape[0], : values.shape[1]]
-    product = np.ascontiguousarray(values * expanded, dtype=np.float32)
-    bf16_bits = (product.view(np.uint32) >> 16).astype(np.uint16)
-    return with_dtype(bf16_bits, DType.bfloat16, name)
 
 
 def bfloat16_to_float32(weight: WeightData, name: str) -> WeightData:
@@ -161,8 +128,70 @@ def bfloat16_to_float32(weight: WeightData, name: str) -> WeightData:
         if isinstance(weight.data, Buffer)
         else Buffer.from_dlpack(weight.data)
     )
-    bits = np.from_dlpack(buffer.view(DType.uint16)).astype(np.uint32) << 16
-    return with_dtype(bits, DType.float32, name)
+    widened = bfloat16_as_uint16_to_float32(
+        np.from_dlpack(buffer.view(DType.uint16)).view(np.uint16)
+    )
+    return with_dtype(widened, DType.float32, name)
+
+
+def _row_bytes(weight: WeightData) -> np.ndarray:
+    """``weight``'s bytes as ``[N, row_bytes]`` uint8, whatever its dtype."""
+    buffer = (
+        weight.data
+        if isinstance(weight.data, Buffer)
+        else Buffer.from_dlpack(weight.data)
+    )
+    rows = int(weight.shape[0])
+    width = buffer.num_elements * buffer.element_size // rows
+    return np.from_dlpack(buffer.view(DType.uint8, [rows, width]))
+
+
+def concat_rows(first: WeightData, second: WeightData, name: str) -> WeightData:
+    """``[first; second]`` along axis 0, bytes copied unchanged."""
+    dims = [[int(d) for d in w.shape] for w in (first, second)]
+    if first.dtype != second.dtype or dims[0][1:] != dims[1][1:]:
+        raise ValueError(
+            f"{name}: cannot stack {first.name} {first.dtype} {dims[0]} "
+            f"with {second.name} {second.dtype} {dims[1]}"
+        )
+    joined = np.concatenate([_row_bytes(first), _row_bytes(second)], axis=0)
+    shape = [dims[0][0] + dims[1][0], *dims[0][1:]]
+    buffer = Buffer.from_numpy(joined).view(first.dtype, shape)
+    return WeightData(buffer, name, first.dtype, Shape(shape))
+
+
+def stack_projections(state_dict: dict[str, WeightData]) -> None:
+    """Replaces each :data:`_STACKED_PROJECTIONS` pair with its stack, in place.
+
+    ``weight`` always, ``weight_scale`` when the pair is fp8.
+    """
+    for first, second, stacked in _STACKED_PROJECTIONS:
+        suffix = f"{first}.weight"
+        prefixes = [n[: -len(suffix)] for n in state_dict if n.endswith(suffix)]
+        for prefix in prefixes:
+            n_first = int(state_dict[prefix + suffix].shape[0])
+            for part in ("weight", "weight_scale"):
+                a = f"{prefix}{first}.{part}"
+                b = f"{prefix}{second}.{part}"
+                if a not in state_dict and b not in state_dict:
+                    continue
+                if a not in state_dict or b not in state_dict:
+                    raise ValueError(f"{a} and {b} must both be present")
+                if (
+                    part == "weight_scale"
+                    and int(state_dict[a].shape[0]) * _FP8_WEIGHT_BLOCK
+                    != n_first
+                ):
+                    # The second projection's scale rows would land on the
+                    # wrong weight rows.
+                    raise ValueError(
+                        f"{a}: {n_first} rows are not whole "
+                        f"{_FP8_WEIGHT_BLOCK}-row scale blocks"
+                    )
+                out = f"{prefix}{stacked}.{part}"
+                state_dict[out] = concat_rows(
+                    state_dict.pop(a), state_dict.pop(b), out
+                )
 
 
 def stack_experts(
@@ -250,9 +279,6 @@ def convert_weight_data(
 
         if name.endswith(_SCALE_SUFFIX):
             base = name[: -len(_SCALE_SUFFIX)]
-            if base.endswith(_HOST_DEQUANT_PROJECTIONS):
-                # Folded into the weight below; the module has no scale.
-                continue
             max_name = base + _MAX_SCALE_SUFFIX
             weight = state_dict.get(f"{base}.weight")
             if (
@@ -269,16 +295,7 @@ def convert_weight_data(
             new_state_dict[max_name] = data
             continue
 
-        if name.endswith(".weight") and data.dtype == DType.float8_e4m3fn:
-            base = name[: -len(".weight")]
-            scale = state_dict.get(base + _SCALE_SUFFIX)
-            if base.endswith(_HOST_DEQUANT_PROJECTIONS) and scale is not None:
-                new_state_dict[name] = dequantize_fp8_blocks(data, scale, name)
-                continue
-
-        if (
-            name.endswith(_FLOAT32_WEIGHTS) or name == _FLOAT32_HEAD
-        ) and data.dtype == DType.bfloat16:
+        if name.endswith(_FLOAT32_WEIGHTS) and data.dtype == DType.bfloat16:
             new_state_dict[name] = bfloat16_to_float32(data, name)
             continue
 
@@ -286,6 +303,7 @@ def convert_weight_data(
 
     for prefix, experts in packed_experts.items():
         new_state_dict.update(stack_experts(experts, prefix))
+    stack_projections(new_state_dict)
     return new_state_dict
 
 
@@ -319,8 +337,7 @@ def convert_dspark_safetensor_state_dict(
 ) -> dict[str, WeightData]:
     """The trunk's weights and the DSpark stages', under the same rules.
 
-    The stages' projections need no rule of their own: their ``attn.wo_a``
-    is host-dequantized by the trunk's suffix match, and ``mtp.0.main_proj``
+    The stages' projections need no rule of their own: ``mtp.0.main_proj``
     is an fp8 weight with a 128x128 block scale like the attention
     projections, in the minimized checkpoint as in the real one.
     """

@@ -44,7 +44,7 @@ def run_elementwise(exponent: BFloat16, ctx: DeviceContext) raises:
     def func[
         simd_width: Int, alignment: Int = 1
     ](idx0: Coord) {var out_buffer, var in_buffer, var exponent}:
-        var idx = Int(idx0[0].value())
+        var idx = Int(idx0[0])
 
         var val = (
             in_buffer.unsafe_ptr()

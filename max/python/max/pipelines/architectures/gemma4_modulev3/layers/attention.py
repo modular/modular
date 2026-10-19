@@ -19,6 +19,7 @@ from max.driver import CPU
 from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.nn import Module
+from max.experimental.nn.common_layers import quant_ops
 from max.experimental.nn.common_layers.functional_kernels import (
     flash_attention_ragged,
     rope_split_store_ragged,
@@ -27,13 +28,23 @@ from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
 from max.experimental.nn.common_layers.linear import (
     ColumnParallelLinear,
     RowParallelLinear,
+    col_parallel,
+    row_parallel,
+)
+from max.experimental.nn.common_layers.quant_linear import (
+    QuantizedLinear,
 )
 from max.experimental.nn.common_layers.rotary_embedding import RotaryEmbedding
 from max.experimental.tensor import Tensor
 from max.nn.attention import MHAMaskVariant
 from max.nn.kv_cache import KVCacheParams
+from max.nn.quant_config import QuantConfig
 
 from .rms_norm import Gemma4RMSNorm
+
+# One attention projection: a plain parallel Linear (bf16) or a
+# QuantizedLinear wrapping a QTensor weight (NVFP4 community quants).
+_AttentionProj = ColumnParallelLinear | RowParallelLinear | QuantizedLinear
 
 
 class Gemma4Attention(Module[..., Tensor]):
@@ -54,6 +65,7 @@ class Gemma4Attention(Module[..., Tensor]):
         is_sliding: bool,
         qk_norm_eps: float = 1e-6,
         local_window_size: int = 1024,
+        quant_config: QuantConfig | None = None,
     ) -> None:
         super().__init__()
         self.rope_global = rope_global
@@ -86,31 +98,84 @@ class Gemma4Attention(Module[..., Tensor]):
         # Global layers with attention_k_eq_v share K weights for V: the
         # checkpoint has no v_proj there.
         self._has_v_proj = not (attention_k_eq_v and not is_sliding)
-        self.q_proj = ColumnParallelLinear(
-            in_dim=hidden_size, out_dim=self.q_weight_dim, bias=False
-        )
-        self.k_proj = ColumnParallelLinear(
-            in_dim=hidden_size, out_dim=self.kv_weight_dim, bias=False
-        )
-        if self._has_v_proj:
-            self.v_proj = ColumnParallelLinear(
-                in_dim=hidden_size, out_dim=self.kv_weight_dim, bias=False
+        self._is_quantized = quant_config is not None
+
+        def proj(in_dim: int, out_dim: int, parallel: str) -> _AttentionProj:
+            """Build one projection, quantized (NVFP4) or plain parallel.
+
+            Quantized projections run per-projection matmuls (see
+            :meth:`forward`); each still gets the TP sharding intent so
+            ``quant_ops.matmul``'s sharding rules match the bf16 path.
+            """
+            if self._is_quantized:
+                quantized = QuantizedLinear(
+                    in_dim=in_dim,
+                    out_dim=out_dim,
+                    bias=False,
+                    quant_config=quant_config,
+                )
+                # Same sharding intent as the plain layers. The helpers'
+                # protocol types `weight` as a Tensor, but a QTensor's
+                # `to()` co-shards data and scales the same way (as in
+                # `tensor_parallel_mlp`).
+                if parallel == "col":
+                    return col_parallel(quantized)  # type: ignore[type-var]
+                return row_parallel(quantized)  # type: ignore[type-var]
+            if parallel == "col":
+                return col_parallel(
+                    ColumnParallelLinear(
+                        in_dim=in_dim, out_dim=out_dim, bias=False
+                    )
+                )
+            return row_parallel(
+                RowParallelLinear(in_dim=in_dim, out_dim=out_dim, bias=False)
             )
-        self.o_proj = RowParallelLinear(
-            in_dim=self.q_weight_dim, out_dim=hidden_size, bias=False
-        )
+
+        self.q_proj = proj(hidden_size, self.q_weight_dim, "col")
+        self.k_proj = proj(hidden_size, self.kv_weight_dim, "col")
+        if self._has_v_proj:
+            self.v_proj = proj(hidden_size, self.kv_weight_dim, "col")
+        self.o_proj = proj(self.q_weight_dim, hidden_size, "row")
 
     @property
     def wqkv(self) -> Tensor:
         """Q, K (and V when present) weights stacked along the output dim.
 
-        The concat runs on weights only, so it constant-folds at graph
+        Only the bf16 path fuses: the concat constant-folds at graph
         compile time and decode issues a single fused QKV matmul.
+        Quantized (NVFP4) weights skip this (see :meth:`forward`).
         """
         weights = [self.q_proj.weight, self.k_proj.weight]
         if self._has_v_proj:
             weights.append(self.v_proj.weight)
         return F.concat(weights, axis=0)
+
+    def _project_qkv(self, x: Tensor) -> tuple[Tensor, ...]:
+        """Runs the Q/K/V projections, fused when bf16, split when quantized.
+
+        The bf16 path issues one fused matmul over the stacked weights.
+        Quantized weights carry per-projection scales, so each projection
+        runs its own ``quant_ops.matmul`` — exactly the per-projection
+        scales the checkpoint encodes, with no cross-projection scale
+        sharing assumptions.
+        """
+        if not self._is_quantized:
+            fused = x @ self.wqkv.T
+            splits = (
+                [self.q_weight_dim, self.kv_weight_dim, self.kv_weight_dim]
+                if self._has_v_proj
+                else [self.q_weight_dim, self.kv_weight_dim]
+            )
+            parts = fused.split(splits, axis=-1)
+            return parts[0], parts[1], parts[-1]
+
+        x_q = quant_ops.matmul(x, self.q_proj.weight)
+        x_k = quant_ops.matmul(x, self.k_proj.weight)
+        if self._has_v_proj:
+            x_v = quant_ops.matmul(x, self.v_proj.weight)
+        else:
+            x_v = x_k
+        return x_q, x_k, x_v
 
     def forward(
         self,
@@ -127,12 +192,7 @@ class Gemma4Attention(Module[..., Tensor]):
         q_dim, kv_dim = self.q_weight_dim, self.kv_weight_dim
         num_kv_heads = self.num_key_value_heads
 
-        fused = x @ self.wqkv.T
-        splits = (
-            [q_dim, kv_dim, kv_dim] if self._has_v_proj else [q_dim, kv_dim]
-        )
-        parts = fused.split(splits, axis=-1)
-        x_q, x_k, x_v = parts[0], parts[1], parts[-1]
+        x_q, x_k, x_v = self._project_qkv(x)
 
         x_q = self.q_norm(x_q.reshape((-1, self.n_heads, head_dim))).reshape(
             (-1, q_dim)

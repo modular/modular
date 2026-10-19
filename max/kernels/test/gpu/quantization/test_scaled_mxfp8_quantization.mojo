@@ -27,6 +27,7 @@ from linalg.fp4_utils import (
     get_scale_factor,
 )
 from std.math import isnan
+from std.memory import bitcast
 
 
 def test_dynamic_mxfp8_quant[
@@ -147,8 +148,120 @@ def test_dynamic_mxfp8_quant[
                 )
 
 
+def test_dynamic_mxfp8_quant_degenerate_blocks(
+    ctx: DeviceContext, m: Int
+) raises:
+    """Checks that all-zero and E8M0-floor blocks quantize without NaN.
+
+    E8M0 has no zero, and its smallest scale (2^-127) is an fp32 subnormal.
+    A block of values around 2^-119, such as a checkpoint block stored with
+    E8M0 byte 0x00, gets that floor scale. The block must still dequantize to
+    finite values: a NaN anywhere in a row poisons every dot product the
+    block-scaled MMA takes over that row.
+    """
+    comptime N = 256
+    comptime in_dtype = DType.bfloat16
+    comptime out_dtype = DType.float8_e4m3fn
+    comptime SF_VECTOR_SIZE = MXFP8_SF_VECTOR_SIZE
+    comptime last_block = N // SF_VECTOR_SIZE - 1
+    comptime tiny_block = 5
+    # 2^-119: values in [-1, 1] scaled by this land at the E8M0 floor scale.
+    comptime tiny = Float32(1.504632769052528e-36)
+
+    var input_layout = row_major(m, Idx[N])
+    var scales_layout = row_major(
+        ceildiv(m, SF_MN_GROUP_SIZE),
+        ceildiv(N, SF_VECTOR_SIZE * SF_ATOM_K),
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
+    )
+
+    var in_device = ctx.enqueue_create_buffer[in_dtype](input_layout.size())
+    var out_device = ctx.enqueue_create_buffer[out_dtype](input_layout.size())
+    var scales_device = ctx.enqueue_create_buffer[MXFP8_SF_DTYPE](
+        scales_layout.size()
+    )
+    var input_tensor = TileTensor(in_device, input_layout)
+    var output_tensor = TileTensor(out_device, input_layout)
+    var scales_tensor = TileTensor(scales_device, scales_layout)
+
+    with in_device.map_to_host() as in_host:
+        var in_host_tensor = TileTensor(in_host, input_layout)
+        random(in_host_tensor, min=-1.0, max=1.0)
+        for row in range(m):
+            for col in range(N):
+                var block = col // SF_VECTOR_SIZE
+                if block == 2 or block == last_block:
+                    in_host_tensor[row, col] = Scalar[in_dtype](0)
+                elif block == tiny_block:
+                    var value = in_host_tensor[row, col].cast[DType.float32]()
+                    if col % SF_VECTOR_SIZE == 0:
+                        value = 0
+                    in_host_tensor[row, col] = (value * tiny).cast[in_dtype]()
+
+    quantize_dynamic_scaled_fp4fp8[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
+        ctx,
+        output_tensor.as_unsafe_any_origin(),
+        scales_tensor.as_unsafe_any_origin(),
+        input_tensor.as_unsafe_any_origin(),
+        num_cols=N,
+        num_cols_padded=N,
+    )
+    ctx.synchronize()
+
+    with out_device.map_to_host() as out_host:
+        with scales_device.map_to_host() as scales_host:
+            var output_tensor_host = TileTensor(out_host, input_layout)
+            var scales_tensor_host = TileTensor(scales_host, scales_layout)
+            print(
+                "M =",
+                m,
+                "e8m0 scale byte: zero block",
+                bitcast[DType.uint8](
+                    get_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
+                        scales_tensor_host.as_unsafe_any_origin(), 0, 64
+                    )
+                ),
+                "tiny block",
+                bitcast[DType.uint8](
+                    get_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
+                        scales_tensor_host.as_unsafe_any_origin(),
+                        0,
+                        tiny_block * SF_VECTOR_SIZE,
+                    )
+                ),
+            )
+            for row in range(m):
+                for col in range(N):
+                    var fp8_sf = get_scale_factor[
+                        SF_VECTOR_SIZE=SF_VECTOR_SIZE
+                    ](scales_tensor_host.as_unsafe_any_origin(), row, col)
+                    var dequantized = (
+                        output_tensor_host[row, col].cast[DType.float32]()
+                        * fp8_sf.cast[DType.float32]()
+                    )
+                    if isnan(dequantized):
+                        print(
+                            "row",
+                            row,
+                            "col",
+                            col,
+                            "scale byte",
+                            bitcast[DType.uint8](fp8_sf),
+                        )
+                        raise Error("NaN dequantized value for an MXFP8 block")
+                    var block = col // SF_VECTOR_SIZE
+                    if (block == 2 or block == last_block) and dequantized != 0:
+                        raise Error("all-zero MXFP8 block dequantized nonzero")
+                    if block == tiny_block and abs(dequantized) > 2 * tiny:
+                        raise Error("E8M0-floor MXFP8 block dequantized wrong")
+
+
 def main() raises:
     with DeviceContext() as ctx:
+        test_dynamic_mxfp8_quant_degenerate_blocks(ctx, 1)
+        test_dynamic_mxfp8_quant_degenerate_blocks(ctx, 130)
         test_dynamic_mxfp8_quant[
             DType.bfloat16,
             MXFP8_SF_DTYPE,

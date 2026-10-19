@@ -312,8 +312,8 @@ def test_encode_fields_bit_copies_coord_field() raises:
     assert_equal(buf[].scaled.raw, 14)
     # `dims` is a `Coord` (opaque `_RegTuple` storage); it is bit-copied, so its
     # values are preserved.
-    assert_equal(Int(buf[].dims[0].value()), 3)
-    assert_equal(Int(buf[].dims[1].value()), 4)
+    assert_equal(Int(buf[].dims[0]), 3)
+    assert_equal(Int(buf[].dims[1]), 4)
 
 
 def test_encode_fields_bit_copies_bool_field() raises:
@@ -342,8 +342,8 @@ def test_to_device_type_encodes_fields_with_coord() raises:
     # a real composite would encode itself to the device.
     box._to_device_type(encoder, buf.unsafe_bitcast[NoneType]())
     assert_equal(buf[].scaled.raw, 16)
-    assert_equal(Int(buf[].dims[0].value()), 5)
-    assert_equal(Int(buf[].dims[1].value()), 6)
+    assert_equal(Int(buf[].dims[0]), 5)
+    assert_equal(Int(buf[].dims[1]), 6)
 
 
 def test_coord_is_device_passable() raises:
@@ -359,8 +359,8 @@ def test_coord_to_device_type_bit_copies() raises:
     var buf = allocation.unsafe_ptr()
     var encoder = DefaultDeviceTypeEncoder()
     c._to_device_type(encoder, buf.unsafe_bitcast[NoneType]())
-    assert_equal(Int(buf[][0].value()), 3)
-    assert_equal(Int(buf[][1].value()), 4)
+    assert_equal(Int(buf[][0]), 3)
+    assert_equal(Int(buf[][1]), 4)
 
 
 # The static (zero-sized) dim lives entirely in the type, so the bit-copy
@@ -371,8 +371,8 @@ def test_coord_to_device_type_mixed_static_dynamic() raises:
     var buf = allocation.unsafe_ptr()
     var encoder = DefaultDeviceTypeEncoder()
     c._to_device_type(encoder, buf.unsafe_bitcast[NoneType]())
-    assert_equal(Int(buf[][0].value()), 7)
-    assert_equal(Int(buf[][1].value()), 9)
+    assert_equal(Int(buf[][0]), 7)
+    assert_equal(Int(buf[][1]), 9)
 
 
 def test_unsafe_device_type_converts_to_safe_pointer_param() raises:

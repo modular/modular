@@ -276,6 +276,7 @@ class JitExecutor:
         return future.result()(*inputs)
 
 
+#: Alias for :class:`JitExecutor`.
 CompositeExecutor = JitExecutor
 
 

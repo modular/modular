@@ -39,12 +39,13 @@ from max.gpu.sync import barrier
 from layout import (
     Coord,
     Idx,
-    Layout,
-    LayoutTensor,
     MixedLayout,
+    TensorLayout,
     TileTensor,
     coord,
+    row_major,
 )
+from layout.tile_tensor import stack_allocation
 from layout.swizzle import make_swizzle
 from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tensor_tile
 from std.memory import unsafe_stack_allocation
@@ -58,12 +59,12 @@ comptime FP4_BOX_SMEM_BYTES = FP4_BOX_ELEMS
 
 @__llvm_arg_metadata(tma_tile, `nvvm.grid_constant`)
 def packed_fp4_load_kernel[
-    dst_layout: Layout,
+    DstLayout: TensorLayout,
     tile_rows: Int,
     tile_shape: Coord,
     desc_shape: Coord,
 ](
-    dst: LayoutTensor[DType.uint8, dst_layout, MutAnyOrigin],
+    dst: TileTensor[DType.uint8, DstLayout, MutAnyOrigin],
     tma_tile: TMATensorTile[DType.uint8, tile_shape, desc_shape],
 ):
     """Loads one padded FP4 tile and copies the raw shared-memory bytes out.
@@ -71,13 +72,9 @@ def packed_fp4_load_kernel[
     The copy-out is byte-for-byte, so `dst` holds the swizzled, padded image
     and the host undoes both.
     """
-    var smem_tile = LayoutTensor[
-        DType.uint8,
-        Layout.row_major(tile_rows, FP4_BOX_SMEM_BYTES),
-        MutAnyOrigin,
-        address_space=.SHARED,
-        alignment=1024,
-    ].stack_allocation()
+    var smem_tile = stack_allocation[
+        dtype=DType.uint8, address_space=.SHARED, alignment=1024
+    ](row_major[tile_rows, FP4_BOX_SMEM_BYTES]())
 
     var mbar = unsafe_stack_allocation[
         1,
@@ -97,9 +94,11 @@ def packed_fp4_load_kernel[
     barrier()
     mbar[0].wait()
 
-    var row0 = block_idx.y * tile_rows
-    var col0 = block_idx.x * FP4_BOX_SMEM_BYTES
-    for i in range(thread_idx.x, tile_rows * FP4_BOX_SMEM_BYTES, block_dim.x):
+    var row0 = Int(block_idx.y) * tile_rows
+    var col0 = Int(block_idx.x) * FP4_BOX_SMEM_BYTES
+    for i in range(
+        Int(thread_idx.x), tile_rows * FP4_BOX_SMEM_BYTES, Int(block_dim.x)
+    ):
         var row = i // FP4_BOX_SMEM_BYTES
         var col = i % FP4_BOX_SMEM_BYTES
         dst[row0 + row, col0 + col] = smem_tile[row, col]
@@ -131,9 +130,9 @@ def test_packed_fp4_load[
     comptime k_bytes = k_elems // 2
     comptime rows_roundup = align_up(rows, tile_rows)
     comptime num_k_tiles = k_elems // FP4_BOX_ELEMS
-    comptime dst_layout = Layout.row_major(
+    comptime dst_layout = row_major[
         rows_roundup, num_k_tiles * FP4_BOX_SMEM_BYTES
-    )
+    ]()
 
     print(
         "test_packed_fp4_load rows=",
@@ -147,11 +146,11 @@ def test_packed_fp4_load[
         sep="",
     )
 
-    var src_host = ctx.enqueue_create_host_buffer[DType.uint8](rows * k_bytes)
+    var src_host = ctx.enqueue_create_host_buffer[.uint8](rows * k_bytes)
     for r in range(rows):
         for c in range(k_bytes):
             src_host[r * k_bytes + c] = _src_byte(r, c)
-    var src_device = ctx.enqueue_create_buffer[DType.uint8](rows * k_bytes)
+    var src_device = ctx.enqueue_create_buffer[.uint8](rows * k_bytes)
     ctx.enqueue_copy(src_device, src_host)
 
     var src_tensor = TileTensor(
@@ -169,29 +168,25 @@ def test_packed_fp4_load[
     ](ctx, src_tensor)
 
     comptime dst_size = dst_layout.size()
-    var dst_device = ctx.enqueue_create_buffer[DType.uint8](dst_size)
+    var dst_device = ctx.enqueue_create_buffer[.uint8](dst_size)
 
     comptime kernel = packed_fp4_load_kernel[
-        dst_layout,
+        type_of(dst_layout),
         tile_rows,
         type_of(tma_tensor).tile_shape,
         type_of(tma_tensor).desc_shape,
     ]
     ctx.enqueue_function[kernel](
-        LayoutTensor[DType.uint8, dst_layout, MutAnyOrigin](
-            dst_device.unsafe_ptr().as_unsafe_any_origin()
-        ),
+        TileTensor(dst_device, dst_layout).as_unsafe_any_origin(),
         tma_tensor,
         grid_dim=(num_k_tiles, rows_roundup // tile_rows),
         block_dim=(128),
     )
 
-    var dst_host_buffer = ctx.enqueue_create_host_buffer[DType.uint8](dst_size)
+    var dst_host_buffer = ctx.enqueue_create_host_buffer[.uint8](dst_size)
     ctx.enqueue_copy(dst_host_buffer, dst_device)
     ctx.synchronize()
-    var dst_host = LayoutTensor[DType.uint8, dst_layout, MutAnyOrigin](
-        dst_host_buffer
-    )
+    var dst_host = TileTensor(dst_host_buffer, dst_layout)
     comptime swizzle = make_swizzle[DType.uint8, swizzle_mode]()
 
     for tile_row in range(rows_roundup // tile_rows):
@@ -218,7 +213,7 @@ def test_packed_fp4_load[
                         row, packed_col
                     ) if row < rows else UInt8(0)
                     assert_equal(
-                        got[0],
+                        got,
                         expected,
                         msg=String(
                             "row=",

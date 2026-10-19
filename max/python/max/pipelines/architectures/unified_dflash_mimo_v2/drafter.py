@@ -38,32 +38,30 @@ class DrafterExport:
     """What an export built into the graph from the drafter.
 
     ``gen_mef`` records it in the sidecar with the hashes of the files in
-    ``directory``, and Mach requires the spec and base-ctx records to agree.
+    ``directory``, which Mach re-hashes at boot.
     """
 
     directory: Path
     """The drafter directory whose files the graph was built from."""
     target_layer_ids: list[int]
-    num_speculative_tokens: int | None = None
-    """The verify width of a speculative graph; ``None`` for base-ctx."""
-    spec_block_size: int | None = None
-    """The drafter's block width in a speculative graph."""
+    num_speculative_tokens: int
+    """The verify width of the speculative graph."""
+    spec_block_size: int
+    """The drafter's block width."""
 
 
 def drafter_export(
     config: DFlashMiMoV2Config,
     directory: Path,
     *,
-    num_speculative_tokens: int | None = None,
+    num_speculative_tokens: int,
 ) -> DrafterExport:
     """Describes a graph built from ``config`` for its export sidecar."""
     return DrafterExport(
         directory=directory,
         target_layer_ids=list(config.target_layer_ids),
         num_speculative_tokens=num_speculative_tokens,
-        spec_block_size=(
-            None if num_speculative_tokens is None else config.block_size
-        ),
+        spec_block_size=config.block_size,
     )
 
 

@@ -4110,6 +4110,145 @@ def _compile_xml_arguments(
     return _qwen_compiler().compile_structural_tag(tag)
 
 
+def _compile_m3_xml_policy(
+    schema: dict[str, Any],
+    paired: bool | None,
+    *,
+    strict_mode: bool = False,
+    reject_unsupported: bool = False,
+) -> xgr.CompiledGrammar:
+    tag = xgr.StructuralTag(
+        format=JSONSchemaFormat(
+            json_schema=schema,
+            style="minimax_m3_xml",
+            xml_tag_prefix=_M3_PREFIX,
+            xml_require_paired_tags=paired or False,
+            strict_mode=strict_mode,
+            reject_unsupported=reject_unsupported,
+        )
+    )
+    payload = tag.model_dump()
+    if paired is None:
+        del payload["format"]["xml_require_paired_tags"]
+    return _qwen_compiler().compile_structural_tag(json.dumps(payload))
+
+
+@pytest.mark.parametrize("paired", [None, False, True])
+@pytest.mark.parametrize("strict_mode", [False, True])
+@pytest.mark.parametrize("reject_unsupported", [False, True])
+@pytest.mark.parametrize("min_properties", [0, 1])
+def test_m3_variable_keys_require_an_explicit_paired_tag_policy(
+    paired: bool | None,
+    strict_mode: bool,
+    reject_unsupported: bool,
+    min_properties: int,
+) -> None:
+    schema = {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": {"type": "integer"},
+        "propertyNames": {"const": "state"},
+        "minProperties": min_properties,
+        "maxProperties": 1,
+    }
+    if paired and min_properties:
+        with pytest.raises(
+            Exception, match="variable keys whose tags cannot be paired"
+        ):
+            _compile_m3_xml_policy(
+                schema,
+                paired,
+                strict_mode=strict_mode,
+                reject_unsupported=reject_unsupported,
+            )
+        return
+    compiled = _compile_m3_xml_policy(
+        schema,
+        paired,
+        strict_mode=strict_mode,
+        reject_unsupported=reject_unsupported,
+    )
+    assert _accepts(compiled, "") == (min_properties == 0)
+    assert _accepts(compiled, _m3_state("42")) == (not paired)
+    assert not _accepts(compiled, _m3_state("wrong"))
+    assert not _accepts(compiled, _m3_state("42") * 2)
+    assert not _accepts(compiled, f"{_M3_PREFIX}<other>42{_M3_PREFIX}</other>")
+
+
+@pytest.mark.parametrize(
+    "field", ["additionalProperties", "unevaluatedProperties"]
+)
+@pytest.mark.parametrize("reject_unsupported", [False, True])
+def test_m3_legacy_min_properties_keeps_undeclared_keys(
+    field: str, reject_unsupported: bool
+) -> None:
+    schema = {
+        "type": "object",
+        "properties": {"state": {"type": "integer"}},
+        "required": ["state"],
+        "minProperties": 2,
+        field: {"type": "boolean"},
+    }
+    extra = f"{_M3_PREFIX}<extra>true{_M3_PREFIX}</extra>"
+    for paired in (None, False):
+        compiled = _compile_m3_xml_policy(
+            schema, paired, reject_unsupported=reject_unsupported
+        )
+        assert _accepts(compiled, _m3_state("42") + extra)
+        assert not _accepts(compiled, _m3_state("42"))
+        assert not _accepts(
+            compiled, _m3_state("42") + extra.replace("true", "wrong")
+        )
+    with pytest.raises(
+        Exception, match="undeclared keys whose tags cannot be paired"
+    ):
+        _compile_m3_xml_policy(
+            schema, True, reject_unsupported=reject_unsupported
+        )
+
+
+@pytest.mark.parametrize("paired", [None, False, True])
+def test_m3_json_object_leaf_requires_paired_tag_policy(
+    paired: bool | None,
+) -> None:
+    schema = {
+        "type": "object",
+        "properties": {
+            "state": {
+                "type": "object",
+                "additionalProperties": {"type": "integer"},
+                "minProperties": 1,
+                "x-modular-json-leaf": True,
+            }
+        },
+        "required": ["state"],
+        "additionalProperties": False,
+    }
+    compiled = _compile_m3_xml_policy(schema, paired, reject_unsupported=True)
+    xml = f"{_M3_PREFIX}<foo>42{_M3_PREFIX}</foo>"
+    assert _accepts(compiled, _m3_state(xml)) == (not paired)
+    assert _accepts(compiled, _m3_state('{"foo":42}')) == bool(paired)
+    assert not _accepts(compiled, _m3_state('{"foo":"wrong"}'))
+
+
+@pytest.mark.parametrize("paired", [None, False, True])
+def test_m3_untyped_xml_containers_follow_the_paired_tag_policy(
+    paired: bool | None,
+) -> None:
+    schema = {
+        "type": "object",
+        "properties": {"state": {}},
+        "required": ["state"],
+        "additionalProperties": False,
+    }
+    compiled = _compile_m3_xml_policy(schema, paired)
+    xml = f"{_M3_PREFIX}<foo>42{_M3_PREFIX}</foo>"
+    array = f"{_M3_PREFIX}<item>{xml}{_M3_PREFIX}</item>"
+    assert _accepts(compiled, _m3_state("42"))
+    assert _accepts(compiled, _m3_state(xml)) == (not paired)
+    assert _accepts(compiled, _m3_state(array)) == (not paired)
+
+
 def _one_parameter(parameter: dict[str, Any]) -> dict[str, Any]:
     return {
         "type": "object",

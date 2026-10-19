@@ -16,10 +16,7 @@ Implements FA2 and FA3 flash-attention for NVIDIA and AMD GPUs, a naive
 two-BMM reference path, split-K decode partitioning, and the host-side
 dispatch layer (`flash_attention_dispatch`) that selects among them based
 on dtype, head depth, and target architecture. Dispatch, register tiles,
-and softmax/MMA fragments are `TileTensor`-native; the residual
-`LayoutTensor` use is the iterator-driven pipeline (gmem/smem
-`LayoutTensorIter`s) and the legacy fp32->half downcast copies, which
-have no TileTensor equivalent yet.
+softmax/MMA fragments, and the output epilogues are `TileTensor`-native.
 """
 
 from std.math import ceildiv, recip
@@ -32,7 +29,6 @@ from std.sys import (
     align_of,
     get_defined_bool,
     has_amd_rdna_gpu_accelerator,
-    default_accelerator,
     is_amd_gpu,
     is_nvidia_gpu,
     simd_width_of,
@@ -59,7 +55,7 @@ from max.gpu import (
     warp_id,
 )
 from max.gpu.sync import barrier
-from max.gpu.host import DeviceContext, DeviceBuffer
+from max.gpu.host import DeviceContext, DeviceBuffer, default_accelerator
 from max.gpu.host import Dim as LaunchDim
 from max.gpu.host import FuncAttribute
 from max.gpu.host.info import A100, H100, GPUInfo, _is_sm10x_gpu
@@ -72,11 +68,7 @@ from kv_cache.types import KVCacheT
 from layout import (
     Coord,
     Idx,
-    IntTuple,
     Layout,
-    LayoutTensor,
-    RuntimeLayout,
-    RuntimeTuple,
     TensorLayout,
     TileTensor,
     UNKNOWN_VALUE,
@@ -84,15 +76,14 @@ from layout import (
     coord_to_index_list,
 )
 from layout.layout import *
-from layout.tile_io import copy_local_to_dram as copy_local_to_dram_native
-from layout.tile_layout import Layout as TileLayout
-from layout.layout_tensor import (
-    LayoutTensorIter,
-    copy_dram_to_sram_async,
+from layout.tile_async_copy import copy_dram_to_sram_async_ldmatrix
+from layout.tile_io import (
     copy_local_to_dram,
     copy_local_to_shared,
     copy_sram_to_dram,
 )
+from layout.tile_iterator import TileTensorIter
+from layout.tile_layout import Layout as TileLayout
 from layout.swizzle import make_swizzle
 from layout.tile_tensor import stack_allocation
 from layout.tensor_core import get_fragment_size, get_mma_shape
@@ -271,8 +262,7 @@ def flash_attention[
             v,
             MaterializedMask(
                 TileTensor(
-                    mask.unsafe_ptr(),
-                    row_major(mask.layout.shape_coord()),
+                    mask.unsafe_ptr(), row_major(mask.layout.shape_coord())
                 )
             ),
             scale,
@@ -527,6 +517,7 @@ def depth_supported_by_gpu[
     mask_t: MHAMask,
     config: MHAConfig,
     info: GPUInfo,
+    target: CompilationTarget,
 ]() -> Bool:
     """Return `True` if the given head depth is supported for flash attention on this GPU.
 
@@ -540,12 +531,12 @@ def depth_supported_by_gpu[
         mask_t: Mask type; some depths require `mask_safe_out_of_bounds`.
         config: MHA tile configuration, used to check the algorithm variant.
         info: GPU architecture descriptor.
+        target: GPU target.
 
     Returns:
         `True` when the optimised flash-attention kernel supports `depth`
         on the given GPU.
     """
-    comptime target = CompilationTarget.from[info]()
 
     comptime is_sm100 = _is_sm10x_gpu(info)
     comptime is_sm90or100 = is_sm100 or (info == H100)
@@ -678,7 +669,7 @@ def _flash_attention_kv_cache[
         comptime head_depth_known = q.static_shape[q.rank - 2] != -1 and q.static_shape[q.rank - 1] != -1
         comptime depth = q.static_shape[q.rank-1]
         comptime gpu_info = ctx.default_device_info
-        comptime head_depth_supported = depth_supported_by_gpu[depth, mask_t, config, gpu_info]()
+        comptime head_depth_supported = depth_supported_by_gpu[depth, mask_t, config, gpu_info, ctx.target]()
         comptime flash_attention_applicable = flash_attention_hw_supported[dtype]() and head_depth_known and head_depth_supported and not naive_kernel
         # fmt: on
         comptime kv_num_heads = cache_t.kv_params.num_heads
@@ -844,7 +835,7 @@ def flash_attention[
         k,
         v,
         mask_functor,
-        immut_tile_tensor_1d(valid_length.ptr, valid_length.num_elements()),
+        immut_tile_tensor_1d(valid_length),
         scale,
         ctx,
         q_max_seq_len,
@@ -1898,7 +1889,9 @@ def flash_attention_dispatch[
                             exp_sum_qk_max_data.unsafe_ptr(), stats_layout
                         )
                         var qk_max = TileTensor(
-                            exp_sum_qk_max_data.unsafe_ptr() + data_len,
+                            exp_sum_qk_max_data.unsafe_ptr().unsafe_offset(
+                                data_len
+                            ),
                             stats_layout,
                         )
 
@@ -2248,7 +2241,7 @@ def _flash_attention_dense[
     comptime head_depth_known = q.static_shape[2] != -1 and q.static_shape[3] != -1 and k.static_shape[2] != -1
     comptime depth = q.static_shape[q.rank-1]
     comptime gpu_info = ctx.default_device_info
-    comptime head_depth_supported = depth_supported_by_gpu[depth, mask_t, config, gpu_info]()
+    comptime head_depth_supported = depth_supported_by_gpu[depth, mask_t, config, gpu_info, ctx.target]()
     comptime flash_attention_applicable = flash_attention_hw_supported[dtype]() and head_depth_known and head_depth_supported and not naive_kernel
 
     comptime q_half_float = q.dtype in (DType.float16, DType.bfloat16)
@@ -2280,30 +2273,27 @@ def _flash_attention_dense[
         seq_len == 1 or fold_seq_len_ok
     ) and num_keys > seq_len
 
-    # Build the row-major K/V TileTensors directly (no throwaway LayoutTensor
-    # round-trip). BSHD layout: batch/seq are runtime, head/depth static, so
-    # mirror `k`'s static pattern with `Idx` for the known dims. The operand
-    # infers `buffer_layout` from the passed TileTensor.
+    # BSHD layout: batch/seq are runtime, head/depth static, so mirror `k`'s
+    # static pattern with `Idx` for the known dims. The operand infers
+    # `buffer_layout` from the passed TileTensor.
     var k_operand = TileTensorMHAOperand(
-        TileTensor(
-            k.unsafe_ptr(),
+        k.reshape(
             row_major(
                 Int(k.dim[0]()),
                 Int(k.dim[1]()),
                 Idx[kv_num_heads],
                 Idx[depth],
-            ),
+            )
         )
     )
     var v_operand = TileTensorMHAOperand(
-        TileTensor(
-            v.unsafe_ptr(),
+        v.reshape(
             row_major(
                 Int(v.dim[0]()),
                 Int(v.dim[1]()),
                 Idx[kv_num_heads],
                 Idx[depth],
-            ),
+            )
         )
     )
 
@@ -2499,7 +2489,7 @@ def flash_attention_ragged[
     comptime assert q.rank == 3, "only support rank 3 inputs for ragged inputs."
     comptime assert input_row_offsets.rank == input_row_offsets.flat_rank == 1
     comptime assert input_row_offsets.element_size == 1
-    if Int(input_row_offsets.layout.stride[0]().value()) != 1:
+    if Int(input_row_offsets.dynamic_stride(0)) != 1:
         raise Error("input_row_offsets must have unit stride")
     comptime assert (
         q.dtype == k.dtype == v.dtype == output.dtype
@@ -2517,16 +2507,14 @@ def flash_attention_ragged[
     comptime head_depth_known = q.static_shape[1] != UNKNOWN_VALUE and q.static_shape[2] != UNKNOWN_VALUE and k.static_shape[1] != UNKNOWN_VALUE
     comptime depth = q.static_shape[q.rank - 1]
     comptime gpu_info = ctx.default_device_info
-    comptime head_depth_supported = depth_supported_by_gpu[depth, mask_t, config, gpu_info]()
+    comptime head_depth_supported = depth_supported_by_gpu[depth, mask_t, config, gpu_info, ctx.target]()
     comptime flash_attention_applicable = flash_attention_hw_supported[type]() and head_depth_known and head_depth_supported and not naive_kernel
     comptime kv_num_heads = k.static_shape[1]
     # fmt: on
 
     var is_token_generation = False
 
-    var cache_row_offsets = immut_tile_tensor_1d(
-        input_row_offsets.unsafe_ptr(), input_row_offsets.num_elements()
-    )
+    var cache_row_offsets = immut_tile_tensor_1d(input_row_offsets)
     var k_operand = RaggedMHAOperand(
         TileTensor(
             k.unsafe_ptr(),
@@ -2626,10 +2614,10 @@ def mha[
     _is_cache_length_accurate: Bool = False,
     _padded_ndbuffer: Bool = False,
 ](
-    q_ptr: UnsafePointer[Scalar[q_type], ImmutAnyOrigin],
+    q_ptr: ImmPointer[Scalar[q_type], ImmutAnyOrigin],
     k: k_t,
     v: v_t,
-    output_ptr: UnsafePointer[Scalar[output_type], MutAnyOrigin],
+    output_ptr: MutPointer[Scalar[output_type], MutAnyOrigin],
     scale: Float32,
     batch_size: Int32,
     seq_len_arg: Int32,
@@ -2722,10 +2710,10 @@ def mha[
                 group=group,
                 sink=sink,
             ](
-                q_ptr + q_batch_offset,
+                q_ptr.unsafe_offset(q_batch_offset),
                 k,
                 v,
-                output_ptr + q_batch_offset,
+                output_ptr.unsafe_offset(q_batch_offset),
                 scale,
                 seq_len,
                 max_seq_len,
@@ -2742,10 +2730,10 @@ def mha[
                 group=group,
                 sink=sink,
             ](
-                q_ptr + q_batch_offset,
+                q_ptr.unsafe_offset(q_batch_offset),
                 k,
                 v,
-                output_ptr + q_batch_offset,
+                output_ptr.unsafe_offset(q_batch_offset),
                 scale,
                 seq_len,
                 max_seq_len,
@@ -2763,15 +2751,15 @@ def mha[
         # gfx950 (CDNA) and gfx11/12 (RDNA) need different fragment
         # geometry / wave size / WMMA intrinsics.
         var sink_weights_ptr = OptionalReg[
-            UnsafePointer[Scalar[q_type], ImmutAnyOrigin]
+            ImmPointer[Scalar[q_type], ImmutAnyOrigin]
         ]()
         comptime if sink:
             sink_weights_ptr = sink_weights.value().ptr
 
         comptime if _is_amd_rdna():
             var attention = AttentionRDNA[config, group, sink](
-                output_ptr + q_batch_offset,
-                q_ptr + q_batch_offset,
+                output_ptr.unsafe_offset(q_batch_offset),
+                q_ptr.unsafe_offset(q_batch_offset),
                 k,
                 v,
                 mask,
@@ -2791,8 +2779,8 @@ def mha[
             # the kernel is inlined here — measured ~14% loss vs `MhaPrefillV2`
             # as a top-level kernel).
             var attention = Attention[config, group, sink](
-                output_ptr + q_batch_offset,
-                q_ptr + q_batch_offset,
+                output_ptr.unsafe_offset(q_batch_offset),
+                q_ptr.unsafe_offset(q_batch_offset),
                 k,
                 v,
                 mask,
@@ -2830,10 +2818,10 @@ def mha_single_batch[
     group: Int = 1,
     sink: Bool = False,
 ](
-    q_ptr: UnsafePointer[Scalar[q_type], ImmutAnyOrigin],
+    q_ptr: ImmPointer[Scalar[q_type], ImmutAnyOrigin],
     k: k_t,
     v: v_t,
-    output_ptr: UnsafePointer[Scalar[output_type], MutAnyOrigin],
+    output_ptr: MutPointer[Scalar[output_type], MutAnyOrigin],
     scale: Float32,
     seq_len: Int,  # valid sequence length i.e. w/o padding.
     max_seq_len: Int,  # sequence length after padding.
@@ -2917,61 +2905,44 @@ def mha_single_batch[
         address_space=.SHARED,
         alignment=alignment,
     ]()
-    comptime IteratorTypeQ = LayoutTensorIter[
-        q_type,
-        Layout.row_major(BM, BK),
-        _,
-        address_space=.SHARED,
-        alignment=alignment,
-    ]
-    var q_smem_iter = IteratorTypeQ(
-        rebind[
-            type_of(
-                LayoutTensorIter[
-                    q_type,
-                    Layout.row_major(BM, BK),
-                    q_smem.origin,
-                    address_space=.SHARED,
-                    alignment=alignment,
-                ]().ptr
-            )
-        ](q_smem),
-        IteratorTypeQ.layout_uint_type(q_smem_size),
-    )
+    comptime q_smem_layout = row_major[BM, BK]()
+    var q_smem_iter = TileTensorIter[
+        q_type, type_of(q_smem_layout), _, address_space=.SHARED
+    ](q_smem, q_smem_layout, bound=q_smem_size)
     # There is one pre-allocated dynamic shared buffer.
     # Need to explicitly offset key after at query's end.
     comptime k_smem_size = config.k_smem_size()
-    var k_smem = (q_smem + q_smem_size).bitcast[Scalar[k_type]]()
-    comptime IteratorTypeK = LayoutTensorIter[
+    var k_smem = q_smem.unsafe_offset(q_smem_size).unsafe_bitcast[
+        Scalar[k_type]
+    ]()
+    comptime k_smem_layout = row_major[BN, BK]()
+    var k_smem_iter = TileTensorIter[
         k_type,
-        Layout.row_major(BN, BK),
+        type_of(k_smem_layout),
         _,
         address_space=.SHARED,
         circular=True,
-    ]
-    var k_smem_iter = IteratorTypeK(
-        k_smem, IteratorTypeK.layout_uint_type(k_smem_size)
-    )
+    ](k_smem, k_smem_layout, bound=k_smem_size)
 
     comptime v_smem_size = config.v_smem_size()
-    var v_smem = (k_smem + k_smem_size).bitcast[Scalar[v_type]]()
-    comptime IteratorTypeV = LayoutTensorIter[
+    var v_smem = k_smem.unsafe_offset(k_smem_size).unsafe_bitcast[
+        Scalar[v_type]
+    ]()
+    comptime v_smem_layout = row_major[BK, BN]()
+    var v_smem_iter = TileTensorIter[
         v_type,
-        Layout.row_major(BK, BN),
+        type_of(v_smem_layout),
         _,
         address_space=.SHARED,
         circular=True,
-    ]
-    var v_smem_iter = IteratorTypeV(
-        v_smem, IteratorTypeV.layout_uint_type(v_smem_size)
-    )
+    ](v_smem, v_smem_layout, bound=v_smem_size)
 
     var head_idx = UInt32(block_idx.y)
     var q_tile_idx = UInt32(block_idx.x)
 
     # Query global memory iterator
-    comptime q_gmem_layout = Layout(
-        IntTuple(BM, depth), IntTuple(num_heads * depth, 1)
+    comptime q_gmem_tile_layout = TileLayout(
+        Coord(Idx[BM], Idx[BK]), Coord(Idx[num_heads * depth], Idx[1])
     )
     var q_tile_num_rows = min(
         UInt32(BM), UInt32(seq_len) - q_tile_idx * UInt32(BM)
@@ -2979,24 +2950,15 @@ def mha_single_batch[
     var q_offset = UInt32(depth) * (
         head_idx + UInt32(num_heads) * q_tile_idx * UInt32(BM)
     )
-    var q_gmem_block = LayoutTensor[
-        q_type,
-        q_gmem_layout,
-        layout_int_type=.int32,
-        linear_idx_type=.int32,
-        masked=True,
+    var q_gmem_iter = TileTensorIter[
+        q_type, type_of(q_gmem_tile_layout), _, masked=True
     ](
-        q_ptr + Int(q_offset),
-        RuntimeLayout[element_type=.int32, linear_idx_type=.int32](
-            RuntimeTuple[q_gmem_layout.shape, element_type=.int32](
-                Int(q_tile_num_rows), depth
-            ),
-            RuntimeTuple[q_gmem_layout.stride, element_type=.int32](
-                num_heads * depth, 1
-            ),
-        ),
+        q_ptr.unsafe_offset(Int(q_offset)),
+        q_gmem_tile_layout,
+        bound=BM * num_heads * depth,
+        stride=BK,
+        num_valid_rows=Int(q_tile_num_rows),
     )
-    var q_gmem_iter = q_gmem_block.tiled_iterator[BM, BK, axis=1](0, 0)
     # q tile has valid shape q_tile_num_rows x depth
     # q_tile_num_rows could be less than BM when seqlen % BM != 0
 
@@ -3052,21 +3014,21 @@ def mha_single_batch[
 
     # Shared memory for P = Q * K^t
     # This overlaps key tile but are used at the same time i.e. no race condition.
-    var p_smem = (v_smem + v_smem_size).bitcast[Scalar[v_type]]()
-    comptime IteratorTypeP = LayoutTensorIter[
+    var p_smem = v_smem.unsafe_offset(v_smem_size).unsafe_bitcast[
+        Scalar[v_type]
+    ]()
+    comptime p_smem_layout = row_major[BM, BK]()
+    var p_smem_iter = TileTensorIter[
         v_type,
-        Layout.row_major(BM, BK),
+        type_of(p_smem_layout),
         _,
         address_space=.SHARED,
         circular=True,
-    ]
-    var p_smem_iter = IteratorTypeP(
-        p_smem, IteratorTypeP.layout_uint_type(BM * BN)
-    )
+    ](p_smem, p_smem_layout, bound=BM * BN)
 
     # Scratch shared memory for reduction across warps.
     var warp_scratch = TileTensor(
-        (p_smem + (BM * BN if num_warps_n > 1 else 0)).bitcast[
+        p_smem.unsafe_offset(BM * BN if num_warps_n > 1 else 0).unsafe_bitcast[
             Scalar[accum_type]
         ](),
         row_major[2 * num_warps_n, BM](),
@@ -3084,24 +3046,21 @@ def mha_single_batch[
 
     comptime q_num_vecs = BM * BK // simd_size
 
-    comptime async_copy_q_layout = Layout.row_major(
+    comptime async_copy_q_layout = row_major[
         min(num_threads, q_num_vecs) * simd_size // BK,
         BK // simd_size,
-    )
+    ]()
 
     comptime for q_id in range(depth // BK):
-        var q_smem_tile = q_smem_iter.next_unsafe(
-            q_smem_iter.layout_uint_type(q_id)
-        )[]
+        var q_smem_tile = q_smem_iter.next_unsafe(q_id)[]
 
-        copy_dram_to_sram_async[
-            thread_layout=async_copy_q_layout,
+        copy_dram_to_sram_async_ldmatrix[
+            async_copy_q_layout,
+            simd_size=simd_size,
             swizzle=True,
+            masked=True,
             num_threads=num_threads,
-        ](
-            q_smem_tile.vectorize[1, simd_size](),
-            q_gmem_iter[].vectorize[1, simd_size](),
-        )
+        ](q_smem_tile, q_gmem_iter[], q_gmem_iter.num_valid_rows)
 
         # we `async_copy_commit_group()` and after we finish copying `k`.
 
@@ -3142,23 +3101,19 @@ def mha_single_batch[
             mask_warp_col += UInt32(BN)
             return
 
-        comptime kv_gmem_layout = Layout(
-            IntTuple(BN, depth),
-            IntTuple(kv_num_heads * depth, 1),
+        comptime k_gmem_tile_layout = TileLayout(
+            Coord(Idx[BN], Idx[BK]), Coord(Idx[kv_num_heads * depth], Idx[1])
         )
+        comptime v_gmem_tile_layout = TileLayout(
+            Coord(Idx[BK], Idx[BN]), Coord(Idx[kv_num_heads * depth], Idx[1])
+        )
+        # kv cache gmem has to clip num rows when masked.
         var kv_tile_num_rows = min(tile_size, end - kv_tile_start_row)
 
-        # kv cache gmem has to clip num rows as runtime layout
-        var kv_runtime_layout = RuntimeLayout[kv_gmem_layout](
-            {kv_tile_num_rows, depth},
-            {kv_num_heads * depth, 1},
-        )
-
-        var k_gmem_block = LayoutTensor[
+        var k_gmem_iter = TileTensorIter[
             k_type,
-            kv_gmem_layout,
-            layout_int_type=.int32,
-            linear_idx_type=.int32,
+            type_of(k_gmem_tile_layout),
+            _,
             masked=not not_last_iter,
         ](
             k.block_paged_ptr[BN](
@@ -3167,15 +3122,16 @@ def mha_single_batch[
                 UInt32(Int(head_idx // UInt32(group))),
                 0,
             ),
-            kv_runtime_layout,
+            k_gmem_tile_layout,
+            bound=BN * kv_num_heads * depth,
+            stride=BK,
+            num_valid_rows=kv_tile_num_rows,
         )
-        var k_gmem_iter = k_gmem_block.tiled_iterator[BN, BK, axis=1](0, 0)
 
-        var v_gmem_block = LayoutTensor[
+        var v_gmem_iter = TileTensorIter[
             v_type,
-            kv_gmem_layout,
-            layout_int_type=.int32,
-            linear_idx_type=.int32,
+            type_of(v_gmem_tile_layout),
+            _,
             masked=not not_last_iter,
         ](
             v.block_paged_ptr[BN](
@@ -3184,52 +3140,34 @@ def mha_single_batch[
                 UInt32(Int(head_idx // UInt32(group))),
                 0,
             ),
-            kv_runtime_layout,
+            v_gmem_tile_layout,
+            bound=BN * kv_num_heads * depth,
+            stride=BK * kv_num_heads * depth,
+            num_valid_rows=kv_tile_num_rows,
         )
-        var v_gmem_iter = v_gmem_block.tiled_iterator[BK, BN, axis=0](0, 0)
 
         # P = Q @ K, register tile holding mma result.
         _ = p_reg_tile.fill(0)
 
-        # Retained legacy: both the input (a legacy iterator deref) and the
-        # consumer (`copy_dram_to_sram_async`) are legacy-only, so a native
-        # slice view would just round-trip.
-        @inline(.always)
-        def _mask_tensor_row(
-            tensor: LayoutTensor, num_rows: Int, out result: type_of(tensor)
-        ) {imm}:
-            return {
-                tensor.ptr,
-                type_of(tensor.runtime_layout)(
-                    type_of(tensor.runtime_layout.shape)(
-                        num_rows, tensor.dim[1]()
-                    ),
-                    tensor.runtime_layout.stride,
-                ),
-            }
-
         comptime kv_num_vecs = BN * BK // simd_size
-        comptime async_copy_k_layout = Layout.row_major(
+        comptime async_copy_k_layout = row_major[
             min(num_threads, kv_num_vecs)
             * simd_size
-            // k_smem_iter.layout.stride[0].value(),
-            k_smem_iter.layout.stride[0].value() // simd_size,
-        )
+            // type_of(k_smem_layout).static_stride[0],
+            type_of(k_smem_layout).static_stride[0] // simd_size,
+        ]()
 
         # load K tile into smem
         comptime for k_id in range(depth // BK):
-            var k_smem_tile = k_smem_iter.next_unsafe(
-                k_smem_iter.layout_uint_type(k_id)
-            )[]
+            var k_smem_tile = k_smem_iter.next_unsafe(k_id)[]
 
-            copy_dram_to_sram_async[
-                thread_layout=async_copy_k_layout,
+            copy_dram_to_sram_async_ldmatrix[
+                async_copy_k_layout,
+                simd_size=simd_size,
                 swizzle=True,
+                masked=not not_last_iter,
                 num_threads=num_threads,
-            ](
-                k_smem_tile.vectorize[1, simd_size](),
-                k_gmem_iter[].vectorize[1, simd_size](),
-            )
+            ](k_smem_tile, k_gmem_iter[], k_gmem_iter.num_valid_rows)
 
             k_gmem_iter._incr()
 
@@ -3371,36 +3309,30 @@ def mha_single_batch[
             rowsum,
         )
 
-        comptime async_copy_v_layout = Layout.row_major(
+        comptime async_copy_v_layout = row_major[
             min(num_threads, kv_num_vecs)
             * simd_size
-            // v_smem_iter.layout.stride[0].value(),
-            v_smem_iter.layout.stride[0].value() // simd_size,
-        )
+            // type_of(v_smem_layout).static_stride[0],
+            type_of(v_smem_layout).static_stride[0] // simd_size,
+        ]()
 
-        var v_tensor: type_of(v_gmem_iter[])
         # load V tile into smem
         comptime for v_id in range(BN // BK):
-            var v_smem_tile = v_smem_iter.next_unsafe(
-                v_smem_iter.layout_uint_type(v_id)
-            )[]
+            var v_smem_tile = v_smem_iter.next_unsafe(v_id)[]
 
+            # Only the last tile is masked; its rows are bounded by what is
+            # left of the sequence, not by the iterator's tile.
+            var num_rows_bound = BK
             comptime if not not_last_iter:
-                var num_rows_bound = min(
-                    BK, end - (kv_tile_start_row + v_id * BK)
-                )
-                v_tensor = _mask_tensor_row(v_gmem_iter[], num_rows_bound)
-            else:
-                v_tensor = v_gmem_iter[]
+                num_rows_bound = min(BK, end - (kv_tile_start_row + v_id * BK))
 
-            copy_dram_to_sram_async[
-                thread_layout=async_copy_v_layout,
-                swizzle=v_smem_tile.dtype.is_half_float(),
+            copy_dram_to_sram_async_ldmatrix[
+                async_copy_v_layout,
+                simd_size=simd_size,
+                swizzle=v_type.is_half_float(),
+                masked=not not_last_iter,
                 num_threads=num_threads,
-            ](
-                v_smem_tile.vectorize[1, simd_size](),
-                v_tensor.vectorize[1, simd_size](),
-            )
+            ](v_smem_tile, v_gmem_iter[], num_rows_bound)
 
             v_gmem_iter._incr()
 
@@ -3447,11 +3379,19 @@ def mha_single_batch[
         else:
             # Reuse 1st mma output (MMA_M, MMA_N) as 2nd mma's input (MMA_M, MMA_K).
             # The num_n_mmas dim becomes "num_k_mmas" for 2nd mma.
-            # Retained legacy: multistage_mma takes a LayoutTensorIter for
-            # its A operand; there is no TileTensor iterator equivalent yet.
-            var p_reg_iter = p_reg_tile.to_layout_tensor().tiled_iterator[
+            comptime p_reg_tile_layout = row_major[
                 MMA_K // MMA_N * num_m_mmas, p_frag_size
-            ](0, 0)
+            ]()
+            var p_reg_iter = TileTensorIter[
+                accum_type,
+                type_of(p_reg_tile_layout),
+                _,
+                address_space=.LOCAL,
+            ](
+                p_reg_tile,
+                p_reg_tile_layout,
+                bound=num_m_mmas * num_n_mmas * p_frag_size,
+            )
 
             async_copy_wait_all()
             barrier()
@@ -3492,32 +3432,18 @@ def mha_single_batch[
                     n_mma * num_m_mmas + m_mma, i + p_frag_size // 2
                 ] *= rowsum_inv1
 
-    comptime output_gmem_layout = Layout(
-        IntTuple(BM, depth), IntTuple(num_heads * depth, 1)
+    # The tile keeps its static BM-row shape so the copies distribute threads
+    # the same way as the shared-memory source; `q_tile_num_rows` bounds the
+    # rows actually stored.
+    comptime output_gmem_layout = TileLayout(
+        Coord(Idx[BM], Idx[depth]), Coord(Idx[num_heads * depth], Idx[1])
     )
-    var output_gmem_tile = LayoutTensor[
-        output_type,
-        output_gmem_layout,
-        layout_int_type=.int32,
-        linear_idx_type=.int32,
-        masked=True,
-    ](
-        output_ptr + Int(q_offset),
-        RuntimeLayout[element_type=.int32, linear_idx_type=.int32](
-            RuntimeTuple[output_gmem_layout.shape, element_type=.int32](
-                Int(q_tile_num_rows), depth
-            ),
-            RuntimeTuple[output_gmem_layout.stride, element_type=.int32](
-                num_heads * depth, 1
-            ),
-        ),
+    var output_gmem_tile = TileTensor[linear_idx_type=.int32](
+        output_ptr.unsafe_offset(Int(q_offset)), output_gmem_layout
     )
     var output_gmem_warp_tile = output_gmem_tile.tile[WM, WN](
-        Int(warp_y), Int(warp_x)
+        Coord(Int(warp_y), Int(warp_x))
     )
-
-    # The FP32 -> half downcast copy still lives on the legacy path.
-    var output_reg_tile_legacy = output_reg_tile.to_layout_tensor()
 
     # Write to global memory.
     comptime if output_type.is_half_float():
@@ -3525,20 +3451,17 @@ def mha_single_batch[
             num_rows=MMA_M // 2, row_size=WN, access_size=MMA_N
         ]()
         # Reuse a_smem for c tile in smem
-        var accum_smem_tile = LayoutTensor[
-            output_type,
-            Layout.row_major(BM, depth),
-            address_space=.SHARED,
-        ](q_smem.bitcast[Scalar[output_type]]())
+        comptime accum_smem_layout = row_major[BM, depth]()
+        var accum_smem_tile = TileTensor(
+            q_smem.unsafe_bitcast[Scalar[output_type]](), accum_smem_layout
+        )
 
         var accum_smem_warp_tile = accum_smem_tile.tile[WM, WN](
-            Int(warp_y), Int(warp_x)
+            Coord(Int(warp_y), Int(warp_x))
         )
-        copy_local_to_shared[
-            thread_layout=Layout.row_major(8, 4), swizzle=swizzle
-        ](
+        copy_local_to_shared[row_major[8, 4](), swizzle=swizzle](
             accum_smem_warp_tile.vectorize[1, 2](),
-            output_reg_tile_legacy.vectorize[1, 2]().transpose(),
+            output_reg_tile.vectorize[1, 2]().transpose(),
         )
 
         # Guard writing to shared memory.
@@ -3548,69 +3471,20 @@ def mha_single_batch[
         # are cast to 2 BF16 so that 2 4xFP32 vectors are merged into 1 8xBF16
         # vector and stored using 16B store instruction.
         copy_sram_to_dram[
-            thread_layout=Layout.row_major(
-                num_threads * simd_size // depth,
-                depth // simd_size,
-            ),
+            row_major[num_threads * simd_size // depth, depth // simd_size](),
             swizzle=swizzle,
+            masked=True,
         ](
             output_gmem_tile.vectorize[1, simd_size](),
             accum_smem_tile.vectorize[1, simd_size](),
+            Int(q_tile_num_rows),
         )
     else:
-        var native_output_written = False
-        comptime if (
-            is_nvidia_gpu()
-            and q_type == .float32
-            and output_type == .float32
-            and accum_type == .float32
-            and MMA_M == 16
-            and MMA_N == 8
-            and p_frag_size == 4
-            and BM > 0
-            and WM > 0
-            and WN > 0
-            and depth > 0
-            and num_heads > 0
-            and WM % 16 == 0
-            and WN % 8 == 0
-            and depth % 2 == 0
-            and BM == num_warps_m * WM
-            and depth == num_warps_n * WN
-            and num_heads * depth <= 2147483647 // (BM + 1)
-        ):
-            var warp_row = Int(warp_y) * WM
-            var warp_col = Int(warp_x) * WN
-            # Keep the original vector-alignment admission contract.
-            if Int(output_ptr) % align_of[SIMD[output_type, 2]]() == 0:
-                var output_native_layout = TileLayout(
-                    Coord(Idx[WM], Idx[WN]),
-                    Coord(Int32(num_heads * depth), Idx[1]),
-                )
-                var output_native_tile = TileTensor[
-                    output_type,
-                    type_of(output_native_layout),
-                    MutAnyOrigin,
-                    linear_idx_type=.int32,
-                ](
-                    output_ptr
-                    + Int(q_offset)
-                    + warp_row * (num_heads * depth)
-                    + warp_col,
-                    output_native_layout,
-                )
-                copy_local_to_dram_native[row_major[8, 4]()](
-                    output_native_tile.vectorize[1, 2](),
-                    output_reg_tile.vectorize[1, 2]().transpose(),
-                    Int(q_tile_num_rows) - warp_row,
-                )
-                native_output_written = True
-
-        if not native_output_written:
-            copy_local_to_dram[dst_thread_layout=Layout.row_major(8, 4)](
-                output_gmem_warp_tile.vectorize[1, 2](),
-                output_reg_tile_legacy.vectorize[1, 2]().transpose(),
-            )
+        copy_local_to_dram[row_major[8, 4]()](
+            output_gmem_warp_tile.vectorize[1, 2](),
+            output_reg_tile.vectorize[1, 2]().transpose(),
+            Int(q_tile_num_rows) - Int(warp_y) * WM,
+        )
 
 
 @__llvm_metadata(
@@ -3633,10 +3507,10 @@ def mha_single_batch_pipelined[
     group: Int = 1,
     sink: Bool = False,
 ](
-    q_ptr: UnsafePointer[Scalar[q_type], ImmutAnyOrigin],
+    q_ptr: ImmPointer[Scalar[q_type], ImmutAnyOrigin],
     k: k_t,
     v: v_t,
-    output_ptr: UnsafePointer[Scalar[output_type], MutAnyOrigin],
+    output_ptr: MutPointer[Scalar[output_type], MutAnyOrigin],
     scale: Float32,
     seq_len: Int,  # valid sequence length i.e. w/o padding.
     max_seq_len: Int,  # sequence length after padding.
@@ -3721,48 +3595,31 @@ def mha_single_batch_pipelined[
         address_space=.SHARED,
         alignment=alignment,
     ]()
-    comptime IteratorTypeQ = LayoutTensorIter[
-        q_type,
-        Layout.row_major(BM, BK),
-        _,
-        address_space=.SHARED,
-        alignment=alignment,
-    ]
-    var q_smem_iter = IteratorTypeQ(
-        rebind[
-            type_of(
-                LayoutTensorIter[
-                    q_type,
-                    Layout.row_major(BM, BK),
-                    q_smem.origin,
-                    address_space=.SHARED,
-                    alignment=alignment,
-                ]().ptr
-            )
-        ](q_smem),
-        IteratorTypeQ.layout_uint_type(q_smem_size),
-    )
+    comptime q_smem_layout = row_major[BM, BK]()
+    var q_smem_iter = TileTensorIter[
+        q_type, type_of(q_smem_layout), _, address_space=.SHARED
+    ](q_smem, q_smem_layout, bound=q_smem_size)
     # There is one pre-allocated dynamic shared buffer.
     # Need to explicitly offset key after at query's end.
     comptime k_smem_size = config.kv_smem_size()
-    var k_smem = (q_smem + q_smem_size).bitcast[Scalar[k_type]]()
-    comptime IteratorTypeK = LayoutTensorIter[
+    var k_smem = q_smem.unsafe_offset(q_smem_size).unsafe_bitcast[
+        Scalar[k_type]
+    ]()
+    comptime k_smem_layout = row_major[BN, BK]()
+    var k_smem_iter = TileTensorIter[
         k_type,
-        Layout.row_major(BN, BK),
+        type_of(k_smem_layout),
         _,
         address_space=.SHARED,
         circular=True,
-    ]
-    var k_smem_iter = IteratorTypeK(
-        k_smem, IteratorTypeK.layout_uint_type(k_smem_size)
-    )
+    ](k_smem, k_smem_layout, bound=k_smem_size)
 
     var head_idx = UInt32(block_idx.y)
     var q_tile_idx = UInt32(block_idx.x)
 
     # Query global memory iterator
-    comptime q_gmem_layout = Layout(
-        IntTuple(BM, depth), IntTuple(num_heads * depth, 1)
+    comptime q_gmem_tile_layout = TileLayout(
+        Coord(Idx[BM], Idx[BK]), Coord(Idx[num_heads * depth], Idx[1])
     )
     var q_tile_num_rows = min(
         UInt32(BM), UInt32(seq_len) - q_tile_idx * UInt32(BM)
@@ -3770,24 +3627,15 @@ def mha_single_batch_pipelined[
     var q_offset = UInt32(depth) * (
         head_idx + UInt32(num_heads) * q_tile_idx * UInt32(BM)
     )
-    var q_gmem_block = LayoutTensor[
-        q_type,
-        q_gmem_layout,
-        layout_int_type=.int32,
-        linear_idx_type=.int32,
-        masked=True,
+    var q_gmem_iter = TileTensorIter[
+        q_type, type_of(q_gmem_tile_layout), _, masked=True
     ](
-        q_ptr + Int(q_offset),
-        RuntimeLayout[element_type=.int32, linear_idx_type=.int32](
-            RuntimeTuple[q_gmem_layout.shape, element_type=.int32](
-                Int(q_tile_num_rows), depth
-            ),
-            RuntimeTuple[q_gmem_layout.stride, element_type=.int32](
-                num_heads * depth, 1
-            ),
-        ),
+        q_ptr.unsafe_offset(Int(q_offset)),
+        q_gmem_tile_layout,
+        bound=BM * num_heads * depth,
+        stride=BK,
+        num_valid_rows=Int(q_tile_num_rows),
     )
-    var q_gmem_iter = q_gmem_block.tiled_iterator[BM, BK, axis=1](0, 0)
     # q tile has valid shape q_tile_num_rows x depth
     # q_tile_num_rows could be less than BM when seqlen % BM != 0
 
@@ -3849,21 +3697,21 @@ def mha_single_batch_pipelined[
     # Shared memory for P = Q * K^t
     # Only use BN/BK tiles. Setting circular so that the prefetch in matmul
     # doesn't go OOB at the last tile.
-    var p_smem = (k_smem + k_smem_size).bitcast[Scalar[v_type]]()
-    comptime IteratorTypeP = LayoutTensorIter[
+    var p_smem = k_smem.unsafe_offset(k_smem_size).unsafe_bitcast[
+        Scalar[v_type]
+    ]()
+    comptime p_smem_layout = row_major[BM, BK]()
+    var p_smem_iter = TileTensorIter[
         v_type,
-        Layout.row_major(BM, BK),
+        type_of(p_smem_layout),
         _,
         address_space=.SHARED,
         circular=True,
-    ]
-    var p_smem_iter = IteratorTypeP(
-        p_smem, IteratorTypeP.layout_uint_type(BM * BN)
-    )
+    ](p_smem, p_smem_layout, bound=BM * BN)
 
     # Scratch shared memory for reduction across warps.
     var warp_scratch = TileTensor(
-        (p_smem + (BM * BN if num_warps_n > 1 else 0)).bitcast[
+        p_smem.unsafe_offset(BM * BN if num_warps_n > 1 else 0).unsafe_bitcast[
             Scalar[accum_type]
         ](),
         row_major[p_frag_simdwidth * num_warps_n, BM](),
@@ -3912,29 +3760,19 @@ def mha_single_batch_pipelined[
             mask_warp_col += UInt32(BN)
             return
 
-        comptime kv_gmem_layout = Layout(
-            IntTuple(BN, depth),
-            IntTuple(kv_num_heads * depth, 1),
+        comptime k_gmem_tile_layout = TileLayout(
+            Coord(Idx[BN], Idx[BK]), Coord(Idx[kv_num_heads * depth], Idx[1])
         )
+        comptime v_gmem_tile_layout = TileLayout(
+            Coord(Idx[BK], Idx[BN]), Coord(Idx[kv_num_heads * depth], Idx[1])
+        )
+        # kv cache gmem has to clip num rows when masked.
         var kv_tile_num_rows = min(tile_size, end - kv_tile_start_row)
 
-        # kv cache gmem has to clip num rows as runtime layout
-        var kv_runtime_layout = RuntimeLayout[
-            element_type=.int32, linear_idx_type=.int32
-        ](
-            RuntimeTuple[kv_gmem_layout.shape, element_type=.int32](
-                kv_tile_num_rows, depth
-            ),
-            RuntimeTuple[kv_gmem_layout.stride, element_type=.int32](
-                kv_num_heads * depth, 1
-            ),
-        )
-
-        var k_gmem_block = LayoutTensor[
+        var k_gmem_iter = TileTensorIter[
             k_type,
-            kv_gmem_layout,
-            layout_int_type=.int32,
-            linear_idx_type=.int32,
+            type_of(k_gmem_tile_layout),
+            _,
             masked=not not_last_iter,
         ](
             k.block_paged_ptr[BN](
@@ -3943,15 +3781,16 @@ def mha_single_batch_pipelined[
                 UInt32(Int(head_idx // UInt32(group))),
                 0,
             ),
-            kv_runtime_layout,
+            k_gmem_tile_layout,
+            bound=BN * kv_num_heads * depth,
+            stride=BK,
+            num_valid_rows=kv_tile_num_rows,
         )
-        var k_gmem_iter = k_gmem_block.tiled_iterator[BN, BK, axis=1](0, 0)
 
-        var v_gmem_block = LayoutTensor[
+        var v_gmem_iter = TileTensorIter[
             v_type,
-            kv_gmem_layout,
-            layout_int_type=.int32,
-            linear_idx_type=.int32,
+            type_of(v_gmem_tile_layout),
+            _,
             masked=not not_last_iter,
         ](
             v.block_paged_ptr[BN](
@@ -3960,9 +3799,11 @@ def mha_single_batch_pipelined[
                 UInt32(Int(head_idx // UInt32(group))),
                 0,
             ),
-            kv_runtime_layout,
+            v_gmem_tile_layout,
+            bound=BN * kv_num_heads * depth,
+            stride=BK * kv_num_heads * depth,
+            num_valid_rows=kv_tile_num_rows,
         )
-        var v_gmem_iter = v_gmem_block.tiled_iterator[BK, BN, axis=0](0, 0)
 
         # P = Q @ K, register tile holding mma result.
         _ = p_reg_tile.fill(0)
@@ -3984,10 +3825,9 @@ def mha_single_batch_pipelined[
                 True,  # transpose_b
                 swizzle_a=True,
                 continue_prefetch_b=True,
-                b_next_smem_layout=Layout.row_major(BK, BN),
+                b_next_gmem_layout=type_of(v_gmem_tile_layout),
+                b_next_smem_layout=type_of(row_major[BK, BN]()),
                 next_op_b_iter_masked=type_of(v_gmem_iter).masked,
-                next_op_b_layout_int_type=type_of(v_gmem_iter).layout_int_type,
-                next_op_b_linear_idx_type=type_of(v_gmem_iter).linear_idx_type,
                 k_group_size=config.k_group_size,
             ](
                 p_reg_tile,
@@ -4015,10 +3855,9 @@ def mha_single_batch_pipelined[
                 True,  # transpose_b
                 swizzle_a=True,
                 continue_prefetch_b=True,
-                b_next_smem_layout=Layout.row_major(BK, BN),
+                b_next_gmem_layout=type_of(v_gmem_tile_layout),
+                b_next_smem_layout=type_of(row_major[BK, BN]()),
                 next_op_b_iter_masked=type_of(v_gmem_iter).masked,
-                next_op_b_layout_int_type=type_of(v_gmem_iter).layout_int_type,
-                next_op_b_linear_idx_type=type_of(v_gmem_iter).linear_idx_type,
                 k_group_size=config.k_group_size,
             ](
                 p_reg_tile,
@@ -4154,9 +3993,9 @@ def mha_single_batch_pipelined[
         )
 
         # V reuse K's smem iterator. They has same smem footage expect for different layouts.
-        var v_smem_iter = k_smem_iter.reshape[
-            Layout.row_major(BK, BN)
-        ]().bitcast[v_type]()
+        var v_smem_iter = k_smem_iter.reshape(row_major[BK, BN]()).bitcast[
+            v_type
+        ]()
 
         comptime if num_warps_n > 1:
             # Pack the per-thread fragments in shared memory for 2nd mma.
@@ -4196,11 +4035,19 @@ def mha_single_batch_pipelined[
         else:
             # Reuse 1st mma output (MMA_M, MMA_N) as 2nd mma's input (MMA_M, MMA_K).
             # The num_n_mmas dim becomes "num_k_mmas" for 2nd mma.
-            # Retained legacy: multistage_mma takes a LayoutTensorIter for
-            # its A operand; there is no TileTensor iterator equivalent yet.
-            var p_reg_iter = p_reg_tile.to_layout_tensor().tiled_iterator[
+            comptime p_reg_tile_layout = row_major[
                 MMA_K // MMA_N * num_m_mmas, p_frag_size
-            ](0, 0)
+            ]()
+            var p_reg_iter = TileTensorIter[
+                accum_type,
+                type_of(p_reg_tile_layout),
+                _,
+                address_space=.LOCAL,
+            ](
+                p_reg_tile,
+                p_reg_tile_layout,
+                bound=num_m_mmas * num_n_mmas * p_frag_size,
+            )
 
             multistage_mma[
                 BM,
@@ -4238,64 +4085,47 @@ def mha_single_batch_pipelined[
                     n_mma * num_m_mmas + m_mma, i + p_frag_size // 2
                 ] *= rowsum_inv1
 
-    comptime output_gmem_layout = Layout(
-        IntTuple(BM, depth), IntTuple(num_heads * depth, 1)
+    # The tile keeps its static BM-row shape so the copies distribute threads
+    # the same way as the shared-memory source; `q_tile_num_rows` bounds the
+    # rows actually stored.
+    comptime output_gmem_layout = TileLayout(
+        Coord(Idx[BM], Idx[depth]), Coord(Idx[num_heads * depth], Idx[1])
     )
-    var output_gmem_tile = LayoutTensor[
-        output_type,
-        output_gmem_layout,
-        layout_int_type=.int32,
-        linear_idx_type=.int32,
-        masked=True,
-    ](
-        output_ptr + Int(q_offset),
-        RuntimeLayout[element_type=.int32, linear_idx_type=.int32](
-            RuntimeTuple[output_gmem_layout.shape, element_type=.int32](
-                Int(q_tile_num_rows), depth
-            ),
-            RuntimeTuple[output_gmem_layout.stride, element_type=.int32](
-                num_heads * depth, 1
-            ),
-        ),
+    var output_gmem_tile = TileTensor[linear_idx_type=.int32](
+        output_ptr.unsafe_offset(Int(q_offset)), output_gmem_layout
     )
     var output_gmem_warp_tile = output_gmem_tile.tile[WM, WN](
-        Int(warp_y), Int(warp_x)
+        Coord(Int(warp_y), Int(warp_x))
     )
-    # The FP32 -> half downcast copy still lives on the legacy path.
-    var output_reg_tile_legacy = output_reg_tile.to_layout_tensor()
 
     # Write to global memory.
     comptime if output_type.is_half_float():
         # Reuse a_smem for c tile in smem
-        var accum_smem_tile = LayoutTensor[
-            output_type,
-            Layout.row_major(BM, depth),
-            address_space=.SHARED,
-        ](q_smem.bitcast[Scalar[output_type]]())
+        comptime accum_smem_layout = row_major[BM, depth]()
+        var accum_smem_tile = TileTensor(
+            q_smem.unsafe_bitcast[Scalar[output_type]](), accum_smem_layout
+        )
 
         var accum_smem_warp_tile = accum_smem_tile.tile[WM, WN](
-            Int(warp_y), Int(warp_x)
+            Coord(Int(warp_y), Int(warp_x))
         )
 
         comptime swizzle = make_swizzle[
             num_rows=MMA_M // 2, row_size=WN, access_size=MMA_N
         ]()
-        copy_local_to_shared[
-            thread_layout=Layout.row_major(8, 4), swizzle=swizzle
-        ](
+        copy_local_to_shared[row_major[8, 4](), swizzle=swizzle](
             accum_smem_warp_tile.vectorize[1, 2](),
-            output_reg_tile_legacy.vectorize[1, 2]().transpose(),
+            output_reg_tile.vectorize[1, 2]().transpose(),
         )
         barrier()
         copy_sram_to_dram[
-            thread_layout=Layout.row_major(
-                num_threads * simd_size // depth,
-                depth // simd_size,
-            ),
+            row_major[num_threads * simd_size // depth, depth // simd_size](),
             swizzle=swizzle,
+            masked=True,
         ](
             output_gmem_tile.vectorize[1, simd_size](),
             accum_smem_tile.vectorize[1, simd_size](),
+            Int(q_tile_num_rows),
         )
 
         # Guard writing to shared memory.
@@ -4307,9 +4137,10 @@ def mha_single_batch_pipelined[
         # vector and stored using 16B store instruction.
 
     else:
-        copy_local_to_dram[dst_thread_layout=Layout.row_major(8, 4)](
+        copy_local_to_dram[row_major[8, 4]()](
             output_gmem_warp_tile.vectorize[1, 2](),
-            output_reg_tile_legacy.vectorize[1, 2]().transpose(),
+            output_reg_tile.vectorize[1, 2]().transpose(),
+            Int(q_tile_num_rows) - Int(warp_y) * WM,
         )
 
 
@@ -4363,12 +4194,12 @@ def mha_decoding[
     decoding_warp_split_k: Bool = False,
     q_seq_len: Int = 1,
 ](
-    q_ptr: UnsafePointer[Scalar[q_type], ImmutAnyOrigin],
+    q_ptr: ImmPointer[Scalar[q_type], ImmutAnyOrigin],
     k: k_t,
     v: v_t,
-    output_ptr: UnsafePointer[Scalar[output_type], MutAnyOrigin],
-    exp_sum_ptr: UnsafePointer[Scalar[get_accum_type[q_type]()], MutAnyOrigin],
-    qk_max_ptr: UnsafePointer[Scalar[get_accum_type[q_type]()], MutAnyOrigin],
+    output_ptr: MutPointer[Scalar[output_type], MutAnyOrigin],
+    exp_sum_ptr: MutPointer[Scalar[get_accum_type[q_type]()], MutAnyOrigin],
+    qk_max_ptr: MutPointer[Scalar[get_accum_type[q_type]()], MutAnyOrigin],
     scale: Float32,
     batch_size: Int32,
     num_partitions: Int32,
@@ -4516,11 +4347,11 @@ def mha_decoding[
     # split-k intermediate buffers — only used when _num_partitions > 1
     var qk_max_batch_ptr = qk_max_ptr
     if _num_partitions > 1:
-        qk_max_batch_ptr = qk_max_ptr + qk_max_offset
+        qk_max_batch_ptr = qk_max_ptr.unsafe_offset(qk_max_offset)
 
     var exp_sum_batch_ptr = exp_sum_ptr
     if _num_partitions > 1:
-        exp_sum_batch_ptr = exp_sum_ptr + exp_sum_offset
+        exp_sum_batch_ptr = exp_sum_ptr.unsafe_offset(exp_sum_offset)
 
     var num_keys = k.cache_length(batch_idx)
 
@@ -4543,10 +4374,10 @@ def mha_decoding[
                 decoding_warp_split_k=decoding_warp_split_k,
                 sink=sink,
             ](
-                q_ptr + q_batch_offset,
+                q_ptr.unsafe_offset(q_batch_offset),
                 k,
                 v,
-                output_ptr + output_batch_offset,
+                output_ptr.unsafe_offset(output_batch_offset),
                 exp_sum_batch_ptr,
                 qk_max_batch_ptr,
                 scale,
@@ -4571,10 +4402,10 @@ def mha_decoding[
                 decoding_warp_split_k=decoding_warp_split_k,
                 sink=sink,
             ](
-                q_ptr + q_batch_offset,
+                q_ptr.unsafe_offset(q_batch_offset),
                 k,
                 v,
-                output_ptr + output_batch_offset,
+                output_ptr.unsafe_offset(output_batch_offset),
                 exp_sum_batch_ptr,
                 qk_max_batch_ptr,
                 scale,
@@ -4602,7 +4433,7 @@ def mha_decoding[
         ]()
 
         var sink_weights_ptr = OptionalReg[
-            UnsafePointer[Scalar[q_type], ImmutAnyOrigin]
+            ImmPointer[Scalar[q_type], ImmutAnyOrigin]
         ]()
         comptime if sink:
             sink_weights_ptr = sink_weights.value().ptr
@@ -4616,8 +4447,8 @@ def mha_decoding[
                 q_seq_len == 1
             ), "RDNA MHA decode does not implement the query-token fold"
             var attention = AttentionRDNA[config, group, sink, token_gen=True](
-                output_ptr + output_batch_offset,
-                q_ptr + q_batch_offset,
+                output_ptr.unsafe_offset(output_batch_offset),
+                q_ptr.unsafe_offset(q_batch_offset),
                 k,
                 v,
                 mask,
@@ -4645,8 +4476,8 @@ def mha_decoding[
             var attention = Attention[
                 config, group, sink, token_gen=True, q_seq_len=tile_q_seq_len
             ](
-                output_ptr + output_batch_offset,
-                q_ptr + q_batch_offset,
+                output_ptr.unsafe_offset(output_batch_offset),
+                q_ptr.unsafe_offset(q_batch_offset),
                 k,
                 v,
                 mask,
@@ -4791,12 +4622,12 @@ def mha_decoding_single_batch[
     decoding_warp_split_k: Bool = False,
     sink: Bool = False,
 ](
-    q_ptr: UnsafePointer[Scalar[q_type], ImmutAnyOrigin],
+    q_ptr: ImmPointer[Scalar[q_type], ImmutAnyOrigin],
     k: k_t,
     v: v_t,
-    output_ptr: UnsafePointer[Scalar[output_type], MutAnyOrigin],
-    exp_sum_ptr: UnsafePointer[Scalar[get_accum_type[q_type]()], MutAnyOrigin],
-    qk_max_ptr: UnsafePointer[Scalar[get_accum_type[q_type]()], MutAnyOrigin],
+    output_ptr: MutPointer[Scalar[output_type], MutAnyOrigin],
+    exp_sum_ptr: MutPointer[Scalar[get_accum_type[q_type]()], MutAnyOrigin],
+    qk_max_ptr: MutPointer[Scalar[get_accum_type[q_type]()], MutAnyOrigin],
     scale: Float32,
     num_keys: Int,
     num_partitions: Int,
@@ -4883,53 +4714,36 @@ def mha_decoding_single_batch[
         address_space=.SHARED,
         alignment=alignment,
     ]()
-    comptime IteratorTypeQ = LayoutTensorIter[
-        q_type,
-        Layout.row_major(BM, BK),
-        _,
-        address_space=.SHARED,
-        alignment=alignment,
-    ]
-    var q_smem_iter = IteratorTypeQ(
-        rebind[
-            type_of(
-                LayoutTensorIter[
-                    q_type,
-                    Layout.row_major(BM, BK),
-                    q_smem.origin,
-                    address_space=.SHARED,
-                    alignment=alignment,
-                ]().ptr
-            )
-        ](q_smem),
-        IteratorTypeQ.layout_uint_type(q_smem_size),
-    )
+    comptime q_smem_layout = row_major[BM, BK]()
+    var q_smem_iter = TileTensorIter[
+        q_type, type_of(q_smem_layout), _, address_space=.SHARED
+    ](q_smem, q_smem_layout, bound=q_smem_size)
 
     comptime k_smem_size = BN * depth
-    var k_smem = (q_smem + q_smem_size).bitcast[Scalar[k_type]]()
-    comptime IteratorTypeK = LayoutTensorIter[
+    var k_smem = q_smem.unsafe_offset(q_smem_size).unsafe_bitcast[
+        Scalar[k_type]
+    ]()
+    comptime k_smem_layout = row_major[BN, BK]()
+    var k_smem_iter = TileTensorIter[
         k_type,
-        Layout.row_major(BN, BK),
+        type_of(k_smem_layout),
         _,
         address_space=.SHARED,
         circular=True,
-    ]
-    var k_smem_iter = IteratorTypeK(
-        k_smem, IteratorTypeK.layout_uint_type(k_smem_size)
-    )
+    ](k_smem, k_smem_layout, bound=k_smem_size)
 
     comptime v_smem_size = BN * BN
-    var v_smem = (k_smem + k_smem_size).bitcast[Scalar[v_type]]()
-    comptime IteratorTypeV = LayoutTensorIter[
+    var v_smem = k_smem.unsafe_offset(k_smem_size).unsafe_bitcast[
+        Scalar[v_type]
+    ]()
+    comptime v_smem_layout = row_major[BK, BN]()
+    var v_smem_iter = TileTensorIter[
         v_type,
-        Layout.row_major(BK, BN),
+        type_of(v_smem_layout),
         _,
         address_space=.SHARED,
         circular=True,
-    ]
-    var v_smem_iter = IteratorTypeV(
-        v_smem, IteratorTypeV.layout_uint_type(v_smem_size)
-    )
+    ](v_smem, v_smem_layout, bound=v_smem_size)
 
     var kv_head_idx = block_idx.y
     var q_head_idx = kv_head_idx * group + ufloordiv(thread_idx.x, 4)
@@ -4990,20 +4804,17 @@ def mha_decoding_single_batch[
 
     # Shared memory for P = Q * K^t
     # This overlaps key tile but are used at the same time i.e. no race condition.
-    var p_smem = (v_smem + v_smem_size).bitcast[Scalar[v_type]]()
-    comptime IteratorTypeP = LayoutTensorIter[
-        v_type,
-        Layout.row_major(BM, BK),
-        _,
-        address_space=.SHARED,
-    ]
-    var p_smem_iter = IteratorTypeP(
-        p_smem, IteratorTypeP.layout_uint_type(BM * BN)
-    )
+    var p_smem = v_smem.unsafe_offset(v_smem_size).unsafe_bitcast[
+        Scalar[v_type]
+    ]()
+    comptime p_smem_layout = row_major[BM, BK]()
+    var p_smem_iter = TileTensorIter[
+        v_type, type_of(p_smem_layout), _, address_space=.SHARED
+    ](p_smem, p_smem_layout, bound=BM * BN)
 
     # Scratch shared memory for reduction across warps.
     var warp_scratch = TileTensor(
-        (p_smem + BM * BN).bitcast[Scalar[accum_type]](),
+        p_smem.unsafe_offset(BM * BN).unsafe_bitcast[Scalar[accum_type]](),
         row_major[2 * num_warps_n, BM](),
     )
 
@@ -5012,23 +4823,18 @@ def mha_decoding_single_batch[
 
     var q_offset = depth * kv_head_idx * group
 
-    comptime q_gmem_layout = Layout.row_major(BM, depth)
-    var q_gmem_block = LayoutTensor[
-        q_type,
-        q_gmem_layout,
-        layout_int_type=.int32,
-        linear_idx_type=.int32,
-        masked=True,
-    ](
-        q_ptr + q_offset,
-        RuntimeLayout[element_type=.int32, linear_idx_type=.int32](
-            RuntimeTuple[q_gmem_layout.shape, element_type=.int32](
-                group, depth
-            ),
-            RuntimeTuple[q_gmem_layout.stride, element_type=.int32](depth, 1),
-        ),
+    comptime q_gmem_tile_layout = TileLayout(
+        Coord(Idx[BM], Idx[BK]), Coord(Idx[depth], Idx[1])
     )
-    var q_gmem_iter = q_gmem_block.tiled_iterator[BM, BK, axis=1](0, 0)
+    var q_gmem_iter = TileTensorIter[
+        q_type, type_of(q_gmem_tile_layout), _, masked=True
+    ](
+        q_ptr.unsafe_offset(q_offset),
+        q_gmem_tile_layout,
+        bound=BM * depth,
+        stride=BK,
+        num_valid_rows=group,
+    )
 
     var start, end = get_start_and_end_for_partitions[BN](
         num_keys, num_partitions, block_idx.x
@@ -5036,35 +4842,21 @@ def mha_decoding_single_batch[
 
     comptime q_num_vecs = BM * BK // simd_size
 
-    comptime async_copy_q_layout = Layout.row_major(
+    comptime async_copy_q_layout = row_major[
         min(num_threads, q_num_vecs) * simd_size // BK,
         BK // simd_size,
-    )
-
-    # Retained legacy: both the input (a legacy iterator deref) and the
-    # consumer (`copy_dram_to_sram_async`) are legacy-only.
-    @inline(.always)
-    def _mask_tensor_row(
-        tensor: LayoutTensor, num_rows: Int
-    ) {imm} -> type_of(tensor):
-        return {
-            tensor.ptr,
-            {{num_rows, tensor.dim[1]()}, tensor.runtime_layout.stride},
-        }
+    ]()
 
     comptime for q_id in range(depth // BK):
-        var q_smem_tile = q_smem_iter.next_unsafe(
-            q_smem_iter.layout_uint_type(q_id)
-        )[]
+        var q_smem_tile = q_smem_iter.next_unsafe(q_id)[]
 
-        copy_dram_to_sram_async[
-            thread_layout=async_copy_q_layout,
+        copy_dram_to_sram_async_ldmatrix[
+            async_copy_q_layout,
+            simd_size=simd_size,
             swizzle=True,
+            masked=True,
             num_threads=num_threads,
-        ](
-            q_smem_tile.vectorize[1, simd_size](),
-            q_gmem_iter[].vectorize[1, simd_size](),
-        )
+        ](q_smem_tile, q_gmem_iter[], q_gmem_iter.num_valid_rows)
 
         # we `async_copy_commit_group()` and after we finish copying `k`.
 
@@ -5084,48 +4876,44 @@ def mha_decoding_single_batch[
         var k_ptr = k.block_paged_ptr[BN](
             UInt32(batch_idx), UInt32(kv_tile_start_row), UInt32(kv_head_idx), 0
         )
-        var k_gmem_block = LayoutTensor[
-            k_type,
-            Layout(
-                IntTuple(BN, depth),
-                IntTuple(kv_num_heads * depth, 1),
-            ),
-            masked=not not_last_iter,
-        ](k_ptr)
-        var k_gmem_iter = k_gmem_block.tiled_iterator[BN, BK, axis=1](0, 0)
-
+        comptime k_gmem_tile_layout = TileLayout(
+            Coord(Idx[BN], Idx[BK]), Coord(Idx[kv_num_heads * depth], Idx[1])
+        )
         var kv_tile_num_rows = min(BN, end - kv_tile_start_row)
+        var k_gmem_iter = TileTensorIter[
+            k_type,
+            type_of(k_gmem_tile_layout),
+            _,
+            masked=not not_last_iter,
+        ](
+            k_ptr,
+            k_gmem_tile_layout,
+            bound=BN * kv_num_heads * depth,
+            stride=BK,
+            num_valid_rows=kv_tile_num_rows,
+        )
 
         _ = p_reg_tile.fill(0)
 
         comptime kv_num_vecs = BN * BK // simd_size
-        comptime async_copy_k_layout = Layout.row_major(
+        comptime async_copy_k_layout = row_major[
             min(num_threads, kv_num_vecs)
             * simd_size
-            // k_smem_iter.layout.stride[0].value(),
-            k_smem_iter.layout.stride[0].value() // simd_size,
-        )
+            // type_of(k_smem_layout).static_stride[0],
+            type_of(k_smem_layout).static_stride[0] // simd_size,
+        ]()
 
-        var k_tensor: type_of(k_gmem_iter[])
         # load K tile into smem
         comptime for k_id in range(depth // BK):
-            var k_smem_tile = k_smem_iter.next_unsafe(
-                k_smem_iter.layout_uint_type(k_id)
-            )[]
+            var k_smem_tile = k_smem_iter.next_unsafe(k_id)[]
 
-            comptime if not not_last_iter:
-                k_tensor = _mask_tensor_row(k_gmem_iter[], kv_tile_num_rows)
-            else:
-                k_tensor = k_gmem_iter[]
-
-            copy_dram_to_sram_async[
-                thread_layout=async_copy_k_layout,
+            copy_dram_to_sram_async_ldmatrix[
+                async_copy_k_layout,
+                simd_size=simd_size,
                 swizzle=True,
+                masked=not not_last_iter,
                 num_threads=num_threads,
-            ](
-                k_smem_tile.vectorize[1, simd_size](),
-                k_tensor.vectorize[1, simd_size](),
-            )
+            ](k_smem_tile, k_gmem_iter[], kv_tile_num_rows)
 
             k_gmem_iter._incr()
 
@@ -5222,44 +5010,41 @@ def mha_decoding_single_batch[
         var v_ptr = v.block_paged_ptr[BN](
             UInt32(batch_idx), UInt32(kv_tile_start_row), UInt32(kv_head_idx), 0
         )
-        var v_gmem_block = LayoutTensor[
+        comptime v_gmem_tile_layout = TileLayout(
+            Coord(Idx[BK], Idx[BN]), Coord(Idx[kv_num_heads * depth], Idx[1])
+        )
+        var v_gmem_iter = TileTensorIter[
             v_type,
-            Layout(
-                IntTuple(BN, depth),
-                IntTuple(kv_num_heads * depth, 1),
-            ),
+            type_of(v_gmem_tile_layout),
+            _,
             masked=not not_last_iter,
-        ](v_ptr)
-        var v_gmem_iter = v_gmem_block.tiled_iterator[BK, BN, axis=0](0, 0)
-
-        comptime async_copy_v_layout = Layout.row_major(
-            min(num_threads, kv_num_vecs) * simd_size // BN,
-            BN // simd_size,
+        ](
+            v_ptr,
+            v_gmem_tile_layout,
+            bound=BN * kv_num_heads * depth,
+            stride=BK * kv_num_heads * depth,
         )
 
-        var v_tensor: type_of(v_gmem_iter[])
+        comptime async_copy_v_layout = row_major[
+            min(num_threads, kv_num_vecs) * simd_size // BN,
+            BN // simd_size,
+        ]()
+
         # load V tile into smem
         comptime for v_id in range(BN // BK):
-            var v_smem_tile = v_smem_iter.next_unsafe(
-                v_smem_iter.layout_uint_type(v_id)
-            )[]
+            var v_smem_tile = v_smem_iter.next_unsafe(v_id)[]
 
+            var num_rows_bound = BK
             comptime if not not_last_iter:
-                var num_rows_bound = max(
-                    0, end - (kv_tile_start_row + v_id * BK)
-                )
-                v_tensor = _mask_tensor_row(v_gmem_iter[], num_rows_bound)
-            else:
-                v_tensor = v_gmem_iter[]
+                num_rows_bound = max(0, end - (kv_tile_start_row + v_id * BK))
 
-            copy_dram_to_sram_async[
-                thread_layout=async_copy_v_layout,
-                swizzle=v_smem_tile.dtype.is_half_float(),
+            copy_dram_to_sram_async_ldmatrix[
+                async_copy_v_layout,
+                simd_size=simd_size,
+                swizzle=v_type.is_half_float(),
+                masked=not not_last_iter,
                 num_threads=num_threads,
-            ](
-                v_smem_tile.vectorize[1, simd_size](),
-                v_tensor.vectorize[1, simd_size](),
-            )
+            ](v_smem_tile, v_gmem_iter[], num_rows_bound)
 
             v_gmem_iter._incr()
 
@@ -5290,22 +5075,30 @@ def mha_decoding_single_batch[
         # else:
         #   S[m, :] @ V[:, (0:WN) + n*WN]
         comptime if decoding_warp_split_k:
-            # Warp split-k is dead in every current instantiation; keep the
-            # legacy iterator view local to this branch until multistage_mma
-            # grows a native register iterator.
-            var p_reg_iter = p_reg_tile.to_layout_tensor().tiled_iterator[
+            comptime p_reg_tile_layout = row_major[
                 MMA_K // MMA_N * num_m_mmas, p_frag_size
-            ](0, 0)
-            comptime IteratorTypeVSub = LayoutTensorIter[
+            ]()
+            var p_reg_iter = TileTensorIter[
+                accum_type,
+                type_of(p_reg_tile_layout),
+                _,
+                address_space=.LOCAL,
+            ](
+                p_reg_tile,
+                p_reg_tile_layout,
+                bound=num_m_mmas * num_n_mmas * p_frag_size,
+            )
+            comptime v_sub_layout = row_major[WN, BN]()
+            var v_smem_sub = TileTensorIter[
                 v_type,
-                Layout.row_major(WN, BN),
+                type_of(v_sub_layout),
                 _,
                 address_space=.SHARED,
                 circular=True,
-            ]
-            var v_smem_sub = IteratorTypeVSub(
-                v_smem + BN * WN * warp_x,
-                IteratorTypeVSub.layout_uint_type(v_smem_size),
+            ](
+                v_smem.unsafe_offset(BN * WN * warp_x),
+                v_sub_layout,
+                bound=v_smem_size,
             )
             multistage_mma[
                 BM,
@@ -5357,7 +5150,7 @@ def mha_decoding_single_batch[
         ](0, 0).vectorize[1, p_frag_size // 2]()
         # offset on the pointer is to avoid possible races
         # with `accum_smem_warp_tile`.
-        var o_smem_ptr = q_smem.bitcast[Scalar[accum_type]]()
+        var o_smem_ptr = q_smem.unsafe_bitcast[Scalar[accum_type]]()
         var scratch = TileTensor[
             accum_type,
             type_of(row_major[2 * num_warps_n, BM]()),
@@ -5365,7 +5158,9 @@ def mha_decoding_single_batch[
             address_space=.SHARED,
         ](
             ptr=(
-                o_smem_ptr + num_warps_n * (num_warps_n - 1) * WM * WN
+                o_smem_ptr.unsafe_offset(
+                    num_warps_n * (num_warps_n - 1) * WM * WN
+                )
             ).unsafe_origin_cast[MutAnyOrigin](),
             layout=row_major[2 * num_warps_n, BM](),
         )
@@ -5410,75 +5205,65 @@ def mha_decoding_single_batch[
             qk_max_ptr[q_head_idx] = row_max
 
     # Pack results in shared memory for wider simd width.
-    var accum_smem_warp_ptr = (
-        q_smem.bitcast[Scalar[output_type]]() + warp_id * WM * WN
-    )
+    var accum_smem_warp_ptr = q_smem.unsafe_bitcast[
+        Scalar[output_type]
+    ]().unsafe_offset(warp_id * WM * WN)
 
     comptime if decoding_warp_split_k:
-        accum_smem_warp_ptr += ufloordiv(
-            (
-                (num_warps_n * (num_warps_n - 1))
-                * WM
-                * WN
-                * size_of[accum_type]()
-            ),
-            size_of[output_type](),
+        accum_smem_warp_ptr = accum_smem_warp_ptr.unsafe_offset(
+            ufloordiv(
+                (
+                    (num_warps_n * (num_warps_n - 1))
+                    * WM
+                    * WN
+                    * size_of[accum_type]()
+                ),
+                size_of[output_type](),
+            )
         )
-    var accum_smem_warp_tile = LayoutTensor[
-        output_type,
-        Layout.row_major(WM, WN),
-        address_space=.SHARED,
-    ](accum_smem_warp_ptr)
+    comptime accum_smem_layout = row_major[WM, WN]()
+    var accum_smem_warp_tile = TileTensor(
+        accum_smem_warp_ptr, accum_smem_layout
+    )
 
     comptime swizzle = make_swizzle[
         num_rows=MMA_M // 2, row_size=WN, access_size=MMA_N
     ]()
 
-    # The FP32 -> half downcast copy still lives on the legacy path.
-    var output_reg_tile_legacy = output_reg_tile.to_layout_tensor()
-
     comptime if decoding_warp_split_k:
-        copy_local_to_shared[
-            thread_layout=Layout.row_major(8, 4), swizzle=swizzle
-        ](
+        copy_local_to_shared[row_major[8, 4](), swizzle=swizzle](
             accum_smem_warp_tile.vectorize[1, 2](),
-            output_reg_tile_legacy.tile[num_output_rows, p_frag_size](0, 0)
+            output_reg_tile.tile[num_output_rows, p_frag_size](Coord(0, 0))
             .vectorize[1, 2]()
             .transpose(),
         )
     else:
-        copy_local_to_shared[
-            thread_layout=Layout.row_major(8, 4), swizzle=swizzle
-        ](
+        copy_local_to_shared[row_major[8, 4](), swizzle=swizzle](
             accum_smem_warp_tile.vectorize[1, 2](),
-            output_reg_tile_legacy.vectorize[1, 2]().transpose(),
+            output_reg_tile.vectorize[1, 2]().transpose(),
         )
 
     # Guard writing to shared memory.
     barrier()
 
-    # FIXME: Using RuntimeLayout to override the layout of the output tensor.
-    comptime output_gmem_layout = Layout.row_major(BM, depth)
-    var output_gmem_runtime_layout = RuntimeLayout[
-        output_gmem_layout
-    ].row_major(Index(group, depth))
-    var output_gmem_tile = LayoutTensor[
-        output_type,
-        output_gmem_layout,
-        layout_int_type=.int32,
-        linear_idx_type=.int32,
-        masked=True,
-    ](output_ptr + q_offset, output_gmem_runtime_layout)
-    var output_gmem_warp_tile = output_gmem_tile.tile[WM, WN](warp_y, warp_x)
+    # The tile keeps its static BM-row shape; only the first `group` rows are
+    # real query heads, so the copy is bounded to the rows this warp owns.
+    comptime output_gmem_layout = row_major[BM, depth]()
+    var output_gmem_tile = TileTensor[linear_idx_type=.int32](
+        output_ptr.unsafe_offset(q_offset), output_gmem_layout
+    )
+    var output_gmem_warp_tile = output_gmem_tile.tile[WM, WN](
+        Coord(warp_y, warp_x)
+    )
 
     copy_sram_to_dram[
-        thread_layout=Layout.row_major(
-            WARP_SIZE * simd_size // WN, WN // simd_size
-        ),
+        row_major[WARP_SIZE * simd_size // WN, WN // simd_size](),
         swizzle=swizzle,
+        masked=True,
     ](
         output_gmem_warp_tile.vectorize[1, simd_size](),
         accum_smem_warp_tile.vectorize[1, simd_size](),
+        group - warp_y * WM,
     )
 
 
@@ -5502,12 +5287,12 @@ def mha_decoding_single_batch_pipelined[
     decoding_warp_split_k: Bool = False,
     sink: Bool = False,
 ](
-    q_ptr: UnsafePointer[Scalar[q_type], ImmutAnyOrigin],
+    q_ptr: ImmPointer[Scalar[q_type], ImmutAnyOrigin],
     k: k_t,
     v: v_t,
-    output_ptr: UnsafePointer[Scalar[output_type], MutAnyOrigin],
-    exp_sum_ptr: UnsafePointer[Scalar[get_accum_type[q_type]()], MutAnyOrigin],
-    qk_max_ptr: UnsafePointer[Scalar[get_accum_type[q_type]()], MutAnyOrigin],
+    output_ptr: MutPointer[Scalar[output_type], MutAnyOrigin],
+    exp_sum_ptr: MutPointer[Scalar[get_accum_type[q_type]()], MutAnyOrigin],
+    qk_max_ptr: MutPointer[Scalar[get_accum_type[q_type]()], MutAnyOrigin],
     scale: Float32,
     num_keys: Int,
     num_partitions: Int,
@@ -5599,43 +5384,25 @@ def mha_decoding_single_batch_pipelined[
         address_space=.SHARED,
         alignment=alignment,
     ]()
-    comptime IteratorTypeQ = LayoutTensorIter[
-        q_type,
-        Layout.row_major(BM, BK),
-        _,
-        address_space=.SHARED,
-        alignment=alignment,
-    ]
-    var q_smem_iter = IteratorTypeQ(
-        rebind[
-            type_of(
-                LayoutTensorIter[
-                    q_type,
-                    Layout.row_major(BM, BK),
-                    q_smem.origin,
-                    address_space=.SHARED,
-                    alignment=alignment,
-                ]().ptr
-            )
-        ](q_smem),
-        IteratorTypeQ.layout_uint_type(q_smem_size),
-    )
+    comptime q_smem_layout = row_major[BM, BK]()
+    var q_smem_iter = TileTensorIter[
+        q_type, type_of(q_smem_layout), _, address_space=.SHARED
+    ](q_smem, q_smem_layout, bound=q_smem_size)
 
     # There is one pre-allocated dynamic shared buffer.
     # Need to explicitly offset key after at query's end.
     comptime k_smem_size = num_pipeline_stages * BN * BK
-    var k_smem = (q_smem + q_smem_size).bitcast[Scalar[k_type]]()
-    comptime IteratorTypeK = LayoutTensorIter[
+    var k_smem = q_smem.unsafe_offset(q_smem_size).unsafe_bitcast[
+        Scalar[k_type]
+    ]()
+    comptime k_smem_layout = row_major[BN, BK]()
+    var k_smem_iter = TileTensorIter[
         k_type,
-        Layout.row_major(BN, BK),
+        type_of(k_smem_layout),
         MutAnyOrigin,
         address_space=.SHARED,
         circular=True,
-    ]
-    var k_smem_iter = IteratorTypeK(
-        k_smem.as_unsafe_any_origin(),
-        IteratorTypeK.layout_uint_type(k_smem_size),
-    )
+    ](k_smem.as_unsafe_any_origin(), k_smem_layout, bound=k_smem_size)
 
     var kv_head_idx = block_idx.y
 
@@ -5694,59 +5461,53 @@ def mha_decoding_single_batch_pipelined[
 
     # Share memory tile for Value, reuse K's shared memory tile.
     comptime v_smem_size = num_pipeline_stages * BN * BK
-    var v_smem = k_smem.bitcast[Scalar[v_type]]()
-    comptime IteratorTypeV = LayoutTensorIter[
+    var v_smem = k_smem.unsafe_bitcast[Scalar[v_type]]()
+    comptime v_smem_layout = row_major[BK, BN]()
+    var v_smem_iter = TileTensorIter[
         v_type,
-        Layout.row_major(BK, BN),
+        type_of(v_smem_layout),
         MutAnyOrigin,
         address_space=.SHARED,
         circular=True,
-    ]
-    var v_smem_iter = IteratorTypeV(
-        v_smem.as_unsafe_any_origin(),
-        IteratorTypeV.layout_uint_type(v_smem_size),
-    )
+    ](v_smem.as_unsafe_any_origin(), v_smem_layout, bound=v_smem_size)
 
     # Shared memory for P = Q * K^t
     # This overlaps key tile but are used at the same time i.e. no race condition.
-    var p_smem = (v_smem + v_smem_size).bitcast[Scalar[v_type]]()
+    var p_smem = v_smem.unsafe_offset(v_smem_size).unsafe_bitcast[
+        Scalar[v_type]
+    ]()
     comptime p_smem_size = BM * BN
-    comptime IteratorTypeP = LayoutTensorIter[
+    comptime p_smem_layout = row_major[BM, BK]()
+    var p_smem_iter = TileTensorIter[
         v_type,
-        Layout.row_major(BM, BK),
+        type_of(p_smem_layout),
         _,
         address_space=.SHARED,
         circular=True,
-    ]
-    var p_smem_iter = IteratorTypeP(
-        p_smem, IteratorTypeP.layout_uint_type(p_smem_size)
-    )
+    ](p_smem, p_smem_layout, bound=p_smem_size)
 
     # Scratch shared memory for reduction across warps.
     var warp_scratch = TileTensor(
-        (p_smem + BM * BN).bitcast[Scalar[accum_type]]().as_unsafe_any_origin(),
+        (p_smem.unsafe_offset(BM * BN))
+        .unsafe_bitcast[Scalar[accum_type]]()
+        .as_unsafe_any_origin(),
         row_major[p_frag_simdwidth * num_warps_n, BM](),
     )
 
     var q_offset = depth * kv_head_idx * group
 
-    comptime q_gmem_layout = Layout.row_major(BM, depth)
-    var q_gmem_block = LayoutTensor[
-        q_type,
-        q_gmem_layout,
-        layout_int_type=.int32,
-        linear_idx_type=.int32,
-        masked=True,
-    ](
-        q_ptr + q_offset,
-        RuntimeLayout[element_type=.int32, linear_idx_type=.int32](
-            RuntimeTuple[q_gmem_layout.shape, element_type=.int32](
-                group, depth
-            ),
-            RuntimeTuple[q_gmem_layout.stride, element_type=.int32](depth, 1),
-        ),
+    comptime q_gmem_tile_layout = TileLayout(
+        Coord(Idx[BM], Idx[BK]), Coord(Idx[depth], Idx[1])
     )
-    var q_gmem_iter = q_gmem_block.tiled_iterator[BM, BK, axis=1](0, 0)
+    var q_gmem_iter = TileTensorIter[
+        q_type, type_of(q_gmem_tile_layout), _, masked=True
+    ](
+        q_ptr.unsafe_offset(q_offset),
+        q_gmem_tile_layout,
+        bound=BM * depth,
+        stride=BK,
+        num_valid_rows=group,
+    )
 
     # Loop over Key and Value tiles
     var start, end = get_start_and_end_for_partitions[BN](
@@ -5769,17 +5530,22 @@ def mha_decoding_single_batch_pipelined[
         var k_ptr = k.block_paged_ptr[BN](
             UInt32(batch_idx), UInt32(kv_tile_start_row), UInt32(kv_head_idx), 0
         )
-        var k_gmem_block = LayoutTensor[
-            k_type,
-            Layout(
-                IntTuple(BN, depth),
-                IntTuple(kv_num_heads * depth, 1),
-            ),
-            masked=not not_last_iter,
-        ](k_ptr)
-        var k_gmem_iter = k_gmem_block.tiled_iterator[BN, BK, axis=1](0, 0)
-
+        comptime k_gmem_tile_layout = TileLayout(
+            Coord(Idx[BN], Idx[BK]), Coord(Idx[kv_num_heads * depth], Idx[1])
+        )
         var kv_tile_num_rows = min(BN, end - kv_tile_start_row)
+        var k_gmem_iter = TileTensorIter[
+            k_type,
+            type_of(k_gmem_tile_layout),
+            _,
+            masked=not not_last_iter,
+        ](
+            k_ptr,
+            k_gmem_tile_layout,
+            bound=BN * kv_num_heads * depth,
+            stride=BK,
+            num_valid_rows=kv_tile_num_rows,
+        )
 
         _ = p_reg_tile.fill(0)
 
@@ -5865,15 +5631,21 @@ def mha_decoding_single_batch_pipelined[
         var v_ptr = v.block_paged_ptr[BN](
             UInt32(batch_idx), UInt32(kv_tile_start_row), UInt32(kv_head_idx), 0
         )
-        var v_gmem_block = LayoutTensor[
+        comptime v_gmem_tile_layout = TileLayout(
+            Coord(Idx[BK], Idx[BN]), Coord(Idx[kv_num_heads * depth], Idx[1])
+        )
+        var v_gmem_iter = TileTensorIter[
             v_type,
-            Layout(
-                IntTuple(BN, depth),
-                IntTuple(kv_num_heads * depth, 1),
-            ),
+            type_of(v_gmem_tile_layout),
+            _,
             masked=not not_last_iter,
-        ](v_ptr)
-        var v_gmem_iter = v_gmem_block.tiled_iterator[BK, BN, axis=0](0, 0)
+        ](
+            v_ptr,
+            v_gmem_tile_layout,
+            bound=BN * kv_num_heads * depth,
+            stride=BK * kv_num_heads * depth,
+            num_valid_rows=kv_tile_num_rows,
+        )
 
         # Copy score fragments to shared memory with swizzling to resolve bank
         # conflicts for ldmatrix in the 2nd matmul.
@@ -5929,48 +5701,40 @@ def mha_decoding_single_batch_pipelined[
             qk_max_ptr[q_head_idx] = row_max
 
     # Pack results in shared memory for wider simd width.
-    var accum_smem_warp_tile = LayoutTensor[
-        output_type,
-        Layout.row_major(WM, WN),
-        address_space=.SHARED,
-    ](q_smem.bitcast[Scalar[output_type]]() + warp_id * WM * WN)
+    comptime accum_smem_layout = row_major[WM, WN]()
+    var accum_smem_warp_tile = TileTensor(
+        q_smem.unsafe_bitcast[Scalar[output_type]]().unsafe_offset(
+            warp_id * WM * WN
+        ),
+        accum_smem_layout,
+    )
 
     comptime swizzle = make_swizzle[
         num_rows=MMA_M // 2, row_size=WN, access_size=MMA_N
     ]()
-    # The FP32 -> half downcast copy still lives on the legacy path.
-    var output_reg_tile_legacy = output_reg_tile.to_layout_tensor()
-    copy_local_to_shared[thread_layout=Layout.row_major(8, 4), swizzle=swizzle](
+    copy_local_to_shared[row_major[8, 4](), swizzle=swizzle](
         accum_smem_warp_tile.vectorize[1, 2](),
-        output_reg_tile_legacy.vectorize[1, 2]().transpose(),
+        output_reg_tile.vectorize[1, 2]().transpose(),
     )
     # Guard writing to shared memory.
     barrier()
-    comptime output_gmem_layout = Layout.row_major(BM, depth)
-    var output_gmem_runtime_layout = RuntimeLayout[
-        element_type=.int32, linear_idx_type=.int32
-    ](
-        RuntimeTuple[output_gmem_layout.shape, element_type=.int32](
-            group, depth
-        ),
-        RuntimeTuple[output_gmem_layout.stride, element_type=.int32](depth, 1),
+    # The tile keeps its static BM-row shape; only the first `group` rows are
+    # real query heads, so the copy is bounded to the rows this warp owns.
+    comptime output_gmem_layout = row_major[BM, depth]()
+    var output_gmem_tile = TileTensor[linear_idx_type=.int32](
+        output_ptr.unsafe_offset(q_offset), output_gmem_layout
     )
-    var output_gmem_tile = LayoutTensor[
-        output_type,
-        Layout.row_major(BM, depth),
-        layout_int_type=.int32,
-        linear_idx_type=.int32,
-        masked=True,
-    ](output_ptr + q_offset, output_gmem_runtime_layout)
-    var output_gmem_warp_tile = output_gmem_tile.tile[WM, WN](warp_y, warp_x)
+    var output_gmem_warp_tile = output_gmem_tile.tile[WM, WN](
+        Coord(warp_y, warp_x)
+    )
     copy_sram_to_dram[
-        thread_layout=Layout.row_major(
-            WARP_SIZE * simd_size // WN, WN // simd_size
-        ),
+        row_major[WARP_SIZE * simd_size // WN, WN // simd_size](),
         swizzle=swizzle,
+        masked=True,
     ](
         output_gmem_warp_tile.vectorize[1, simd_size](),
         accum_smem_warp_tile.vectorize[1, simd_size](),
+        group - warp_y * WM,
     )
 
 
@@ -5983,12 +5747,12 @@ def mha_splitk_reduce[
     num_threads: Int,
     use_exp2: Bool = False,
 ](
-    intermediate_ptr: UnsafePointer[Scalar[intermediate_type], ImmutAnyOrigin],
-    output_ptr: UnsafePointer[Scalar[output_type], MutAnyOrigin],
-    exp_sum_ptr: UnsafePointer[
+    intermediate_ptr: ImmPointer[Scalar[intermediate_type], ImmutAnyOrigin],
+    output_ptr: MutPointer[Scalar[output_type], MutAnyOrigin],
+    exp_sum_ptr: ImmPointer[
         Scalar[get_accum_type[output_type]()], ImmutAnyOrigin
     ],
-    qk_max_ptr: UnsafePointer[
+    qk_max_ptr: ImmPointer[
         Scalar[get_accum_type[output_type]()], ImmutAnyOrigin
     ],
     batch_size: Int32,
@@ -6292,15 +6056,14 @@ def mha_gpu_naive[
         block_dim=_NAIVE_BMM_BLOCK_DIM,
     )
 
-    @__parameter
-    @__copy_capture(p_buffer)
     def input_fn_device[
         _simd_width: Int
-    ](coords: Coord) -> SIMD[p_type, _simd_width]:
+    ](coords: Coord) {var p_buffer} -> SIMD[p_type, _simd_width]:
         comptime assert p_buffer.flat_rank >= coords.flat_rank
         return p_buffer.load[width=_simd_width](coords)
 
-    _softmax_gpu[p_type, 1, 3, input_fn_device, sink=sink](
+    _softmax_gpu[p_type, 1, 3, sink=sink](
+        input_fn_device,
         Coord(batch_size * num_heads, max_prompt_len, num_keys),
         p_buffer,
         2,
@@ -6348,8 +6111,8 @@ def _bmm0_bs[
     _use_valid_length: Bool = False,
     _is_cache_length_accurate: Bool = False,
 ](
-    p_ptr: UnsafePointer[Scalar[p_type], MutAnyOrigin],
-    q_ptr: UnsafePointer[Scalar[q_type], ImmutAnyOrigin],
+    p_ptr: MutPointer[Scalar[p_type], MutAnyOrigin],
+    q_ptr: ImmPointer[Scalar[q_type], ImmutAnyOrigin],
     k: k_t,
     valid_length: OptionalReg[ImmutTileTensor1D[.uint32]],
     scale: Float32,
@@ -6414,11 +6177,11 @@ def _bmm0_bs[
     if x >= padded_num_keys or y >= _max_prompt_len:
         return
 
-    var q = q_ptr + q_offset
+    var q = q_ptr.unsafe_offset(q_offset)
 
     var kv_head = ufloordiv(head, _group)
 
-    var p = p_ptr + p_offset
+    var p = p_ptr.unsafe_offset(p_offset)
 
     var accum = Scalar[p_type](0.0)
 
@@ -6481,8 +6244,8 @@ def _bmm1_bs[
     _use_valid_length: Bool = False,
     _is_cache_length_accurate: Bool = False,
 ](
-    output_ptr: UnsafePointer[Scalar[output_type], MutAnyOrigin],
-    p_ptr: UnsafePointer[Scalar[p_type], ImmutAnyOrigin],
+    output_ptr: MutPointer[Scalar[output_type], MutAnyOrigin],
+    p_ptr: ImmPointer[Scalar[p_type], ImmutAnyOrigin],
     v: v_t,
     valid_length: OptionalReg[ImmutTileTensor1D[.uint32]],
     max_prompt_len: Int32,
@@ -6542,10 +6305,10 @@ def _bmm1_bs[
     if x >= _depth or y >= cur_query_len:
         return
 
-    var p = p_ptr + p_offset
+    var p = p_ptr.unsafe_offset(p_offset)
 
     var kv_head = ufloordiv(head, _group)
-    var output = output_ptr + output_offset
+    var output = output_ptr.unsafe_offset(output_offset)
 
     var accum = Float32(0.0)
 
@@ -6711,10 +6474,10 @@ def mha_gpu_naive[
         sink_weights: Optional sink-token weight tensor for attention sinks.
     """
     var k_operand = TileTensorMHAOperand(
-        TileTensor(k.unsafe_ptr(), row_major(k.layout.shape_coord()))
+        k.reshape(row_major(k.layout.shape_coord()))
     )
     var v_operand = TileTensorMHAOperand(
-        TileTensor(v.unsafe_ptr(), row_major(v.layout.shape_coord()))
+        v.reshape(row_major(v.layout.shape_coord()))
     )
     mha_gpu_naive[_is_cache_length_accurate=True, sink=sink](
         q,
@@ -6821,7 +6584,7 @@ def mha_gpu_naive[
         mask_functor,
         output,
         OptionalReg[ImmutTileTensor1D[.uint32]](
-            immut_tile_tensor_1d(valid_length.ptr, valid_length.num_elements())
+            immut_tile_tensor_1d(valid_length)
         ),
         scale,
         batch_size,
@@ -6919,7 +6682,7 @@ def mha_gpu_naive[
         mask_functor,
         output,
         OptionalReg[ImmutTileTensor1D[.uint32]](
-            immut_tile_tensor_1d(valid_length.ptr, valid_length.num_elements())
+            immut_tile_tensor_1d(valid_length)
         ),
         scale,
         batch_size,

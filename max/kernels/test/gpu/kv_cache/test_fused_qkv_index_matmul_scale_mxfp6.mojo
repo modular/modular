@@ -97,9 +97,9 @@ def _fill_random_u8(t: TileTensor[mut=True, ...], n: Int, lo: Int, hi: Int):
     Writes through a byte view so the same helper serves the packed-FP6 uint8
     operands and the E8M0 scales, whose dtype has no integer conversion.
     """
-    var bytes = t.ptr.bitcast[UInt8]()
+    var bytes = t.bitcast[.uint8]().reshape(row_major(n))
     for i in range(n):
-        bytes[i] = UInt8(Int(random_ui64(UInt64(lo), UInt64(hi))))
+        bytes.store((i,), UInt8(Int(random_ui64(UInt64(lo), UInt64(hi)))))
 
 
 def execute_dual_cache_fused_mxfp6[
@@ -425,14 +425,14 @@ def execute_dual_cache_fused_mxfp6[
     var iq_maxdiff = Float32(0.0)
     for m in range(total_length):
         for c in range(q_dim):
-            var a = fused_q_host.ptr[m * q_dim + c].cast[.float32]()
-            var b = q_host.ptr[m * q_dim + c].cast[.float32]()
+            var a = fused_q_host[m, c].cast[.float32]()
+            var b = q_host[m, c].cast[.float32]()
             if not isclose(a, b, atol=Float64(atol_f), rtol=Float64(rtol_f)):
                 q_mm += 1
             q_maxdiff = max(q_maxdiff, abs(a - b))
         for c in range(iq_dim):
-            var a = fused_iq_host.ptr[m * iq_dim + c].cast[.float32]()
-            var b = iq_host.ptr[m * iq_dim + c].cast[.float32]()
+            var a = fused_iq_host[m, c].cast[.float32]()
+            var b = iq_host[m, c].cast[.float32]()
             if not isclose(a, b, atol=Float64(atol_f), rtol=Float64(rtol_f)):
                 iq_mm += 1
             iq_maxdiff = max(iq_maxdiff, abs(a - b))
@@ -455,21 +455,25 @@ def execute_dual_cache_fused_mxfp6[
     assert_equal(iq_mm, 0)
 
     var main_n = main_host.num_elements()
+    var main_flat = main_host.reshape(row_major(main_n))
+    var main_ref_flat = main_ref_host.reshape(row_major(main_n))
     var main_mismatches = 0
     var main_max_diff = Float32(0.0)
     for i in range(main_n):
-        var a = main_host.ptr[i].cast[.float32]()
-        var b = main_ref_host.ptr[i].cast[.float32]()
+        var a = main_flat[i].cast[.float32]()
+        var b = main_ref_flat[i].cast[.float32]()
         if not isclose(a, b, atol=Float64(atol_f), rtol=Float64(rtol_f)):
             main_mismatches += 1
         main_max_diff = max(main_max_diff, abs(a - b))
 
     var index_n = index_host.num_elements()
+    var index_flat = index_host.reshape(row_major(index_n))
+    var index_ref_flat = index_ref_host.reshape(row_major(index_n))
     var index_mismatches = 0
     var index_max_diff = Float32(0.0)
     for i in range(index_n):
-        var a = index_host.ptr[i].cast[.float32]()
-        var b = index_ref_host.ptr[i].cast[.float32]()
+        var a = index_flat[i].cast[.float32]()
+        var b = index_ref_flat[i].cast[.float32]()
         if not isclose(a, b, atol=Float64(atol_f), rtol=Float64(rtol_f)):
             index_mismatches += 1
         index_max_diff = max(index_max_diff, abs(a - b))

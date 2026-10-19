@@ -61,11 +61,11 @@ def test_tma_5d_load_kernel[
     comptime dst_dim0 = dst_layout.shape[0].value()
     comptime dst_dim1 = dst_layout.shape[1].value()
 
-    comptime cta_tile_dim0 = Int(cta_tile_shape[0].value())
-    comptime cta_tile_dim1 = Int(cta_tile_shape[1].value())
-    comptime cta_tile_dim2 = Int(cta_tile_shape[2].value())
-    comptime cta_tile_dim3 = Int(cta_tile_shape[3].value())
-    comptime cta_tile_dim4 = Int(cta_tile_shape[4].value())
+    comptime cta_tile_dim0 = Int(cta_tile_shape[0])
+    comptime cta_tile_dim1 = Int(cta_tile_shape[1])
+    comptime cta_tile_dim2 = Int(cta_tile_shape[2])
+    comptime cta_tile_dim3 = Int(cta_tile_shape[3])
+    comptime cta_tile_dim4 = Int(cta_tile_shape[4])
 
     comptime assert (
         dst_dim1 == cta_tile_dim4
@@ -228,19 +228,19 @@ def test_tma_5d_load_row_major[
     comptime cta_tile_size = cta_tile_layout.size()
 
     comptime desc_tile_dim0 = Int(
-        type_of(tma_tensor).desc_shape.element_types[0].static_value.value()
+        type_of(tma_tensor).desc_shape.element_types[0].static_value
     )
     comptime desc_tile_dim1 = Int(
-        type_of(tma_tensor).desc_shape.element_types[1].static_value.value()
+        type_of(tma_tensor).desc_shape.element_types[1].static_value
     )
     comptime desc_tile_dim2 = Int(
-        type_of(tma_tensor).desc_shape.element_types[2].static_value.value()
+        type_of(tma_tensor).desc_shape.element_types[2].static_value
     )
     comptime desc_tile_dim3 = Int(
-        type_of(tma_tensor).desc_shape.element_types[3].static_value.value()
+        type_of(tma_tensor).desc_shape.element_types[3].static_value
     )
     comptime desc_tile_dim4 = Int(
-        type_of(tma_tensor).desc_shape.element_types[4].static_value.value()
+        type_of(tma_tensor).desc_shape.element_types[4].static_value
     )
 
     comptime desc_tile_size = (
@@ -252,6 +252,7 @@ def test_tma_5d_load_row_major[
             desc_tile_dim1, desc_tile_dim2, desc_tile_dim3, desc_tile_dim4
         ]()
     )
+    var desc_flat = desc_tile.coalesce()
 
     var dest_ptr = dst_host.ptr
     for dest_tile_v in range(src_dim0 // cta_tile_dim0):
@@ -288,11 +289,13 @@ def test_tma_5d_load_row_major[
                                             for i in range(desc_tile_size):
                                                 var desc_idx = swizzle(i)
                                                 assert_equal(
-                                                    desc_tile.ptr[desc_idx],
+                                                    desc_flat[desc_idx],
                                                     dest_ptr[i],
                                                 )
 
-                                            dest_ptr += desc_tile_size
+                                            dest_ptr = dest_ptr.unsafe_offset(
+                                                desc_tile_size
+                                            )
 
     _ = src^
     _ = dst^

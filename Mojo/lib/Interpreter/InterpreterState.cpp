@@ -830,10 +830,10 @@ InterpreterState::internalizeMemory(MutableArrayRef<Attribute> args) {
   mlir::AttrTypeWalker walker;
   std::function<ErrorOrSuccess(MemorySpaceAttr memSpace,
                                InternedMemorySpace & internedSpace,
-                               size_t blobIdx)>
+                               size_t blobIdx, DenseSet<size_t> &visited)>
       refCountBlob = [&](MemorySpaceAttr memSpace,
-                         InternedMemorySpace &internedSpace,
-                         size_t blobIdx) -> ErrorOrSuccess {
+                         InternedMemorySpace &internedSpace, size_t blobIdx,
+                         DenseSet<size_t> &visited) -> ErrorOrSuccess {
     MemoryBlobAttr blob = memSpace[blobIdx];
     if (isGlobalBlob(blob))
       return success();
@@ -845,12 +845,18 @@ InterpreterState::internalizeMemory(MutableArrayRef<Attribute> args) {
       memBlob.refCount++;
     }
 
+    // The increment above deliberately stays outside this guard, to leave
+    // reference counts as they were; the guard bounds only the walk, which a
+    // cycle would otherwise run forever.
+    if (!visited.insert(blobIdx).second)
+      return success();
+
     // Recurse to ptrRegions for indirect memory references.
     auto ptrItr = blob.getPointerRegions().begin();
     auto ptrEnd = blob.getPointerRegions().end();
     for (; ptrItr != ptrEnd; ++ptrItr) {
       ErrorOrSuccess result =
-          refCountBlob(memSpace, internedSpace, ptrItr->blobIndex);
+          refCountBlob(memSpace, internedSpace, ptrItr->blobIndex, visited);
       if (result.isError())
         return result.takeError();
     }
@@ -864,8 +870,10 @@ InterpreterState::internalizeMemory(MutableArrayRef<Attribute> args) {
       return WalkResult::interrupt();
     }
 
-    ErrorOrSuccess result =
-        refCountBlob(ref.getModel().getMemory(), *space, ref.getIndex());
+    // Each reference contributes its own counts.
+    DenseSet<size_t> visited;
+    ErrorOrSuccess result = refCountBlob(ref.getModel().getMemory(), *space,
+                                         ref.getIndex(), visited);
     if (result.isError()) {
       err = result.takeError();
       return WalkResult::interrupt();

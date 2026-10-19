@@ -113,6 +113,29 @@ Token management
 
    TokenSlice
 
+Video
+-----
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/class.rst
+
+   SampledVideo
+   VideoSource
+   VideoStreamInfo
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/function.rst
+
+   decode_video_frames
+   open_video_container
+   plan_frame_indices
+   probe_video
+   validate_video
+
 Grammar and structured output
 ------------------------------
 
@@ -174,6 +197,8 @@ Exceptions
    :template: autosummary/class.rst
 
    InputError
+   MediaBudgetExceeded
+   MediaDecodeError
    PromptTooLongError
 
 Validation functions

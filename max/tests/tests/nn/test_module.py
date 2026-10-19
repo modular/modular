@@ -16,9 +16,18 @@ from typing import Generic, TypeVar, get_args, get_origin
 
 import numpy as np
 import pytest
+from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef, Graph, SymbolicDim, Weight
+from max.graph import (
+    DeviceRef,
+    Graph,
+    SymbolicDim,
+    TensorType,
+    TensorValue,
+    Weight,
+)
+from max.graph import Module as GraphModule
 from max.nn import Module
 
 _T = TypeVar("_T")
@@ -175,3 +184,61 @@ def test_load_state_dict_symbolic_validation_errors() -> None:
     # Correct shape should work
     correct_array = np.random.uniform(size=[1024, 32, 256]).astype(np.float32)
     module.load_state_dict({"weight": correct_array})
+
+
+class AddWeight(Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.layer = TestLayer()
+
+    def __call__(self, x: TensorValue) -> TensorValue:
+        return x + self.layer()
+
+
+_INPUT_TYPE = TensorType(DType.float32, [10], device=DeviceRef.CPU())
+
+
+def test_trace_names_graph_after_class() -> None:
+    graph = AddWeight().trace(_INPUT_TYPE)
+    assert graph.name == "AddWeight"
+    assert [i.type for i in graph.inputs] == [_INPUT_TYPE]
+
+
+def test_trace_takes_name() -> None:
+    assert AddWeight().trace(_INPUT_TYPE, name="add").name == "add"
+
+
+def test_compile_runs_with_loaded_weights(session: InferenceSession) -> None:
+    module = AddWeight()
+    weight = np.arange(10, dtype=np.float32)
+    module.load_state_dict({"layer.weight": weight})
+
+    model = module.compile(_INPUT_TYPE, session=session)
+
+    x = np.ones(10, dtype=np.float32)
+    (out,) = model(Buffer.from_numpy(x))
+    assert isinstance(out, Buffer)
+    np.testing.assert_array_equal(out.to_numpy(), x + weight)
+
+
+def test_compile_takes_weights(session: InferenceSession) -> None:
+    weight = np.full(10, 3.0, dtype=np.float32)
+    model = AddWeight().compile(
+        _INPUT_TYPE, session=session, weights={"weight": weight}
+    )
+
+    (out,) = model(Buffer.from_numpy(np.zeros(10, dtype=np.float32)))
+    assert isinstance(out, Buffer)
+    np.testing.assert_array_equal(out.to_numpy(), weight)
+
+
+def test_trace_into_one_module(session: InferenceSession) -> None:
+    first, second = AddWeight(), AddWeight()
+    first.load_state_dict({"layer.weight": np.ones(10, dtype=np.float32)})
+    second.load_state_dict({"layer.weight": np.ones(10, dtype=np.float32)})
+    module = GraphModule()
+    first.trace(_INPUT_TYPE, name="first", module=module)
+    second.trace(_INPUT_TYPE, name="second", module=module)
+
+    models = session.load_all(module, weights_registry=first.state_dict())
+    assert set(models) == {"first", "second"}

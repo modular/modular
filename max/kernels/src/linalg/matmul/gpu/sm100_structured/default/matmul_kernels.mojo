@@ -32,7 +32,6 @@ The kernel implements a warp-specialized architecture:
 from std.math import ceildiv
 from std.sys import align_of, size_of
 
-from std.memory import UnsafePointer
 from max.gpu import WARP_SIZE, warp_id as get_warp_id
 from max.gpu.sync import barrier
 from max.gpu.primitives.cluster import (
@@ -92,7 +91,6 @@ from linalg.arch.sm100 import MmaOpSM100_SS
 from linalg.utils import (
     ElementwiseComputeFn,
     ElementwiseEpilogueFn,
-    elementwise_epilogue_type,
     identity_compute_fn,
     no_epilogue_fn,
 )
@@ -360,7 +358,6 @@ struct BlackwellMatmulSM100Kernel[
     # Cluster shape (must match config, needed for LLVM metadata)
     cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1),
     # Optional features
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     pdl_level: PDLLevel = PDLLevel(),
     max_profiled_tiles_per_SM: UInt32 = 0,
     # Injected output-writer policy (see structured_kernels/output_writer_trait).
@@ -397,8 +394,6 @@ struct BlackwellMatmulSM100Kernel[
             tile shape, pipeline stage counts, and swizzle modes.
         cluster_shape: Thread block cluster dimensions, must match
             `config.cluster_shape` (defaults to `(1, 1, 1)`).
-        elementwise_lambda_fn: Optional epilogue function applied to output
-            elements after MMA (defaults to `None`).
         pdl_level: Programmatic Dependent Launch level for inter-grid
             dependency ordering (defaults to `PDLLevel()`, off).
         max_profiled_tiles_per_SM: Maximum number of tiles to profile per SM
@@ -758,7 +753,6 @@ struct BlackwellMatmulSM100Kernel[
         c_smem_dim1=Self.SmemType.OutputN,
         num_output_stages=Self.SmemType.num_output_stages,
         num_output_warps=Self.num_output_warps,
-        elementwise_lambda_fn=Self.elementwise_lambda_fn,
         register_based_epilogue=Self.register_based_epilogue,
         batched=True,
     ]
@@ -776,7 +770,6 @@ struct BlackwellMatmulSM100Kernel[
         c_smem_dim1=Self.SmemType.OutputN,
         num_output_stages=Self.SmemType.num_output_stages,
         num_output_warps=Self.num_output_warps,
-        elementwise_lambda_fn=Self.elementwise_lambda_fn,
         register_based_epilogue=Self.register_based_epilogue,
         batched=False,
     ]
@@ -848,7 +841,6 @@ struct BlackwellMatmulSM100Kernel[
             Self.SmemType.OutputN,
             Self.SmemType.num_output_stages,
             Self.num_output_warps,
-            Self.elementwise_lambda_fn,
             has_epilogue_fn,
             has_compute_fn,
             Self.register_based_epilogue,
@@ -1115,11 +1107,15 @@ struct BlackwellMatmulSM100Kernel[
 
                 # Peer CTA slice using pointer arithmetic
                 var a_peer_tile = type_of(a_tile)(
-                    a_tile._storage + peer_m_rank * Self.a_tma_load_size,
+                    a_tile._storage.unsafe_offset(
+                        peer_m_rank * Self.a_tma_load_size
+                    ),
                     a_tile.layout,
                 )
                 var b_peer_tile = type_of(b_tile)(
-                    b_tile._storage + peer_rank_m * Self.b_tma_load_size,
+                    b_tile._storage.unsafe_offset(
+                        peer_rank_m * Self.b_tma_load_size
+                    ),
                     b_tile.layout,
                 )
 
@@ -1196,7 +1192,9 @@ struct BlackwellMatmulSM100Kernel[
                 ](tiles.stage(), j)
 
                 var a_peer_tile = type_of(a_tile)(
-                    a_tile._storage + peer_m_rank * Self.a_tma_load_size,
+                    a_tile._storage.unsafe_offset(
+                        peer_m_rank * Self.a_tma_load_size
+                    ),
                     a_tile.layout,
                 )
 
@@ -1253,7 +1251,9 @@ struct BlackwellMatmulSM100Kernel[
                 )
 
                 var b_peer_tile = type_of(b_tile)(
-                    b_tile._storage + peer_rank_m * Self.b_tma_load_size,
+                    b_tile._storage.unsafe_offset(
+                        peer_rank_m * Self.b_tma_load_size
+                    ),
                     b_tile.layout,
                 )
 
@@ -1326,7 +1326,9 @@ struct BlackwellMatmulSM100Kernel[
                 ](tiles.stage(), j)
 
                 var b_peer_tile = type_of(b_tile)(
-                    b_tile._storage + peer_rank_m * Self.b_tma_load_size,
+                    b_tile._storage.unsafe_offset(
+                        peer_rank_m * Self.b_tma_load_size
+                    ),
                     b_tile.layout,
                 )
 
@@ -1380,7 +1382,9 @@ struct BlackwellMatmulSM100Kernel[
                 )
 
                 var a_peer_tile = type_of(a_tile)(
-                    a_tile._storage + peer_m_rank * Self.a_tma_load_size,
+                    a_tile._storage.unsafe_offset(
+                        peer_m_rank * Self.a_tma_load_size
+                    ),
                     a_tile.layout,
                 )
 
@@ -1485,11 +1489,15 @@ struct BlackwellMatmulSM100Kernel[
                 # TMA descriptor layout. Pointer arithmetic with a_tma_load_size
                 # preserves the original working behavior.
                 var a_peer_tile = type_of(a_tile)(
-                    a_tile._storage + peer_m_rank * Self.a_tma_load_size,
+                    a_tile._storage.unsafe_offset(
+                        peer_m_rank * Self.a_tma_load_size
+                    ),
                     a_tile.layout,
                 )
                 var b_peer_tile = type_of(b_tile)(
-                    b_tile._storage + peer_rank_m * Self.b_tma_load_size,
+                    b_tile._storage.unsafe_offset(
+                        peer_rank_m * Self.b_tma_load_size
+                    ),
                     b_tile.layout,
                 )
 
@@ -1567,6 +1575,9 @@ struct BlackwellMatmulSM100Kernel[
             mnk: Problem dimensions `(M, N, K)`; `N` bounds the bias extent for
                 OOB zero-fill.
         """
+        # The epilogue tensor may be the previous kernel's output.
+        comptime if Self.pdl_level > PDLLevel.OFF:
+            wait_on_dependent_grids()
 
         comptime if Self.config.epilogue_is_1d:
             # 1D bias: warp-wide cp.async GMEM->SMEM with zero-fill
@@ -1609,15 +1620,15 @@ struct BlackwellMatmulSM100Kernel[
                     var src_ptr = TileTensor(
                         bias_1d_tile._offset_storage(gmem_offset + lane_start),
                         bias_1d_tile.layout,
-                    ).ptr.address_space_cast[.GLOBAL]()
-                    var dst_ptr = smem_tile._storage + lane_start
+                    ).ptr.unsafe_address_space_cast[.GLOBAL]()
+                    var dst_ptr = smem_tile._storage.unsafe_offset(lane_start)
                     comptime for chunk in range(num_copies):
                         async_copy[
                             copy_bytes,
                             fill=Scalar[Self.c_type](0),
                         ](
-                            src_ptr + chunk * elems_per_copy,
-                            dst_ptr + chunk * elems_per_copy,
+                            src_ptr.unsafe_offset(chunk * elems_per_copy),
+                            dst_ptr.unsafe_offset(chunk * elems_per_copy),
                             src_size=src_bytes,
                         )
                 var mbar = epilogue_load_pipeline.producer_mbar(stage)
@@ -1698,12 +1709,7 @@ struct BlackwellMatmulSM100Kernel[
     @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(c_tma_ops, `nvvm.grid_constant`)
     @__llvm_arg_metadata(epilogue_load_tma_op, `nvvm.grid_constant`)
-    @__name(
-        StaticString(Self.config.get_kernel_name())
-        + StaticString(
-            "_fused_epi" if Self.elementwise_lambda_fn is not None else ""
-        ),
-    )
+    @__name(StaticString(Self.config.get_kernel_name()))
     def run(
         a_tma_op: Self.ATmaOp,
         b_tma_op: Self.BTmaOp,
@@ -1715,7 +1721,7 @@ struct BlackwellMatmulSM100Kernel[
         workspace: Span[UInt64, MutAnyOrigin],
         rank_sigs: Optional[
             Array[
-                UnsafePointer[Signal, MutAnyOrigin],
+                MutPointer[Signal, MutAnyOrigin],
                 Self.num_c_tma_descriptors,
             ]
         ] = None,
@@ -1852,7 +1858,7 @@ struct BlackwellMatmulSM100Kernel[
         workspace: Span[UInt64, MutAnyOrigin],
         rank_sigs: Optional[
             Array[
-                UnsafePointer[Signal, MutAnyOrigin],
+                MutPointer[Signal, MutAnyOrigin],
                 Self.num_c_tma_descriptors,
             ]
         ],
@@ -1920,7 +1926,7 @@ struct BlackwellMatmulSM100Kernel[
         workspace: Span[UInt64, MutAnyOrigin],
         rank_sigs: Optional[
             Array[
-                UnsafePointer[Signal, MutAnyOrigin],
+                MutPointer[Signal, MutAnyOrigin],
                 Self.num_c_tma_descriptors,
             ]
         ],
@@ -1946,7 +1952,7 @@ struct BlackwellMatmulSM100Kernel[
             UInt8,
             address_space=.SHARED,
             alignment=128,
-        ]().bitcast[Self.SmemType]()[]
+        ]().unsafe_bitcast[Self.SmemType]()[]
 
         # Create input pipeline for TMA→MMA synchronization (with payload)
         var tile_payload = Self.TilePayload(smem.a_tiles(), smem.b_tiles())
@@ -1996,6 +2002,12 @@ struct BlackwellMatmulSM100Kernel[
         )
 
         var num_iters: UInt32 = ceildiv(mnk[2], UInt32(Self.BK))
+
+        # Let the next kernel launch now: its CTAs run their prologue and
+        # weight prefetch on SMs this grid leaves free, and its own
+        # wait_on_dependent_grids still orders every read of our output.
+        comptime if Self.pdl_level == PDLLevel.OVERLAP_AT_BEGINNING:
+            launch_dependent_grids()
 
         comptime MatmulProfilerType[warp_role: UInt32] = MatmulProfileWarp[
             warp_role, Self.max_profiled_tiles_per_SM
@@ -2266,7 +2278,10 @@ struct BlackwellMatmulSM100Kernel[
                         if not ctx.elect_one_cta:
                             mma_ctx.output_pipeline.pipeline.wait_producer()
 
-                comptime if Self.pdl_level > PDLLevel.OFF:
+                comptime if (
+                    Self.pdl_level > PDLLevel.OFF
+                    and Self.pdl_level != PDLLevel.OVERLAP_AT_BEGINNING
+                ):
                     launch_dependent_grids()
 
         comptime if not Self.config.use_tma_epilogue_load:
@@ -2447,12 +2462,7 @@ struct BlackwellMatmulSM100Kernel[
     @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
-    @__name(
-        StaticString(Self.config.get_kernel_name())
-        + StaticString(
-            "_fused_epi" if Self.elementwise_lambda_fn is not None else ""
-        ),
-    )
+    @__name(StaticString(Self.config.get_kernel_name()))
     def run_splitk[
         reduction_layout: TensorLayout,
         reduction_engine: TensorEngine,
@@ -2460,7 +2470,7 @@ struct BlackwellMatmulSM100Kernel[
         a_tma_op: Self.ATmaOp_splitk,
         b_tma_op: Self.BTmaOp_splitk,
         c_tma_op: Self.CTmaOp_splitk,
-        c_ptr: UnsafePointer[Scalar[Self.c_type], MutAnyOrigin],
+        c_ptr: MutPointer[Scalar[Self.c_type], MutAnyOrigin],
         c_row_stride: UInt32,
         counter_slot: Int32,
         reduction_tensor: TileTensor[
@@ -2469,7 +2479,7 @@ struct BlackwellMatmulSM100Kernel[
             MutAnyOrigin,
             Engine=reduction_engine,
         ],
-        lock_ptr: UnsafePointer[UInt8, AnyOrigin[mut=True]],
+        lock_ptr: MutPointer[UInt8, AnyOrigin[mut=True]],
         cluster_dim: StaticTuple[Int32, 3],
         mnk: StaticTuple[UInt32, 3],
         workspace: Span[UInt64, MutAnyOrigin],
@@ -2507,7 +2517,7 @@ struct BlackwellMatmulSM100Kernel[
             UInt8,
             address_space=.SHARED,
             alignment=128,
-        ]().bitcast[Self.SmemType]()[]
+        ]().unsafe_bitcast[Self.SmemType]()[]
 
         # Create input pipeline for TMA→MMA synchronization (with payload)
         var tile_payload = Self.TilePayload(smem.a_tiles(), smem.b_tiles())
@@ -2713,13 +2723,12 @@ struct BlackwellMatmulSM100Kernel[
 
             var tile_counters: SplitKTileCounters
             if counter_slot >= 0:
-                tile_counters = (
-                    splitk_tile_counters()
-                    + Int(counter_slot) * SPLITK_SLOT_WORDS
+                tile_counters = splitk_tile_counters().unsafe_offset(
+                    Int(counter_slot) * SPLITK_SLOT_WORDS
                 )
             else:
                 tile_counters = rebind[SplitKTileCounters](
-                    lock_ptr.bitcast[UInt32]().unsafe_address_space_cast[
+                    lock_ptr.unsafe_bitcast[UInt32]().unsafe_address_space_cast[
                         AddressSpace.GLOBAL
                     ]()
                 )
@@ -2750,7 +2759,7 @@ struct BlackwellMatmulSM100Kernel[
                                     output_stage,
                                     scheduler,
                                     rebind[
-                                        UnsafePointer[
+                                        MutPointer[
                                             Scalar[Self.config.accum_type],
                                             MutAnyOrigin,
                                         ]
@@ -2807,7 +2816,6 @@ struct BlackwellMatmulSM100FallbackKernel[
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     num_threads: Int = 128,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ]:
     """Simple fallback matmul kernel for SM100 (B200).
 
@@ -2841,8 +2849,6 @@ struct BlackwellMatmulSM100FallbackKernel[
             `TensorMapSwizzle.SWIZZLE_128B`).
         num_threads: Number of threads per CTA; must be 128 or 256 (defaults
             to 128).
-        elementwise_lambda_fn: Optional epilogue function applied to output
-            elements (defaults to `None`).
     """
 
     # ========== Derived Constants ==========
@@ -2927,6 +2933,9 @@ struct BlackwellMatmulSM100FallbackKernel[
     @inline(.always)
     @__llvm_metadata(`nvvm.cluster_dim`=Self.cluster_shape)
     @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
+    @__name(
+        t"sm100_matmul_fallback_{Self.a_type}_{Self.b_type}_{Self.c_type}_nt{Self.num_threads}",
+    )
     @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
     def run(
         a_tma_op: Self.ATmaOp,
@@ -2944,6 +2953,63 @@ struct BlackwellMatmulSM100FallbackKernel[
             c: Output tensor C (TileTensor, direct global memory writes).
             num_iters: Number of K-dimension iterations.
         """
+        Self._run_impl[has_compute_fn=False](
+            a_tma_op, b_tma_op, c, num_iters, identity_compute_fn
+        )
+
+    @staticmethod
+    @inline(.always)
+    @__llvm_metadata(`nvvm.cluster_dim`=Self.cluster_shape)
+    @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
+    @__name(
+        t"sm100_matmul_fallback_compute_fn_{Self.a_type}_{Self.b_type}_{Self.c_type}_nt{Self.num_threads}",
+    )
+    @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
+    def run_with_compute_fn[
+        ComputeFnType: ElementwiseComputeFn
+    ](
+        a_tma_op: Self.ATmaOp,
+        b_tma_op: Self.BTmaOp,
+        c: TileTensor[
+            Self.c_type, Self.c_layout, MutAnyOrigin, Engine=Self.c_engine
+        ],
+        num_iters: Int32,
+        compute_fn: ComputeFnType,
+    ):
+        """Run the fallback matmul kernel with a compute epilogue value.
+
+        Parameters:
+            ComputeFnType: Type of the compute epilogue closure.
+
+        Args:
+            a_tma_op: TMA descriptor for matrix A.
+            b_tma_op: TMA descriptor for matrix B.
+            c: Output tensor C (TileTensor, direct global memory writes).
+            num_iters: Number of K-dimension iterations.
+            compute_fn: Element-wise epilogue applied to each output value
+                before it is stored to `c`.
+        """
+        Self._run_impl[has_compute_fn=True](
+            a_tma_op, b_tma_op, c, num_iters, compute_fn
+        )
+
+    @staticmethod
+    @inline(.always)
+    def _run_impl[
+        ComputeFnType: ElementwiseComputeFn,
+        //,
+        has_compute_fn: Bool,
+    ](
+        a_tma_op: Self.ATmaOp,
+        b_tma_op: Self.BTmaOp,
+        c: TileTensor[
+            Self.c_type, Self.c_layout, MutAnyOrigin, Engine=Self.c_engine
+        ],
+        num_iters: Int32,
+        compute_fn: ComputeFnType,
+    ):
+        """Shared body of `run` and `run_with_compute_fn`; `compute_fn` is
+        ignored unless `has_compute_fn` is True."""
         var _num_iters = Int(num_iters)
         Self.validate_constraints()
 
@@ -2957,7 +3023,9 @@ struct BlackwellMatmulSM100FallbackKernel[
             ]()
         )
 
-        var b_smem = (a_smem + Self.a_size).bitcast[Scalar[Self.b_type]]()
+        var b_smem = a_smem.unsafe_offset(Self.a_size).unsafe_bitcast[
+            Scalar[Self.b_type]
+        ]()
 
         var a_smem_tile = Self.ATile(
             a_smem.as_unsafe_any_origin(), Self.a_smem_layout_typed
@@ -2967,7 +3035,9 @@ struct BlackwellMatmulSM100FallbackKernel[
         )
 
         # Shared memory pointer to hold tensor memory address
-        var ptr_tmem_addr = (b_smem + Self.b_size).bitcast[UInt32]()
+        var ptr_tmem_addr = b_smem.unsafe_offset(Self.b_size).unsafe_bitcast[
+            UInt32
+        ]()
 
         var c_frag: Array[Scalar[Self.accum_type], Self.c_frag_size]
 
@@ -2975,8 +3045,10 @@ struct BlackwellMatmulSM100FallbackKernel[
         comptime b_expected_bytes = Self.b_size * size_of[Self.b_type]()
         comptime expected_bytes = a_expected_bytes + b_expected_bytes
 
-        var tma_mbar = (ptr_tmem_addr + 2).bitcast[SharedMemBarrier]()
-        var mma_mbar = tma_mbar + 1
+        var tma_mbar = ptr_tmem_addr.unsafe_offset(2).unsafe_bitcast[
+            SharedMemBarrier
+        ]()
+        var mma_mbar = tma_mbar.unsafe_offset(1)
 
         var elect_one_warp = get_warp_id() == 0
         var elect_one_thread = elect_one_warp and elect_one_sync()
@@ -3118,16 +3190,13 @@ struct BlackwellMatmulSM100FallbackKernel[
                                 c_frag[2 * i_vec], c_frag[2 * i_vec + 1]
                             ).cast[Self.c_type]()
 
-                            comptime if case .Some(
-                                epilogue
-                            ) = Self.elementwise_lambda_fn:
+                            comptime if has_compute_fn:
                                 comptime alignment = align_of[
                                     SIMD[Self.c_type, 2]
                                 ]()
-                                epilogue[alignment=alignment](
-                                    (Int(m), Int(n)), c_mn
+                                c_mn = compute_fn[alignment=alignment](
+                                    Coord(Int(m), Int(n)), c_mn
                                 )
-                            else:
-                                frag[m_vec, n_vec] = rebind[
-                                    type_of(frag).ElementType
-                                ](c_mn)
+                            frag[m_vec, n_vec] = rebind[
+                                type_of(frag).ElementType
+                            ](c_mn)

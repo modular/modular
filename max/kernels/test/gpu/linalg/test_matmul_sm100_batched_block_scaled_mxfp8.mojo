@@ -77,8 +77,8 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
 ](ctx: DeviceContext, batch: BatchType, m: MType, n: NType, k: KType) raises:
     print(
         t"in/out dtypes=({a_type}, {b_type}, {c_type}, {scales_dtype})  problem"
-        t" shape=({Int(batch.value())}, {Int(m.value())}, {Int(n.value())},"
-        t" {Int(k.value())})"
+        t" shape=({Int(batch)}, {Int(m)}, {Int(n)},"
+        t" {Int(k)})"
         t" mma_shape={mma_shape} block_tile_shape={block_tile_shape} cta_group={cta_group} cluster_shape=({cluster_shape[0]},"
         t" {cluster_shape[1]}, {cluster_shape[2]})"
         t" swapAB={swapAB} k_group_size={k_group_size} SF_VECTOR_SIZE={SF_VECTOR_SIZE}"
@@ -92,9 +92,9 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     )
     var c_shape = row_major(batch, m, Idx[NType.static_value])
 
-    var a_size = Int(batch.value()) * Int(m.value()) * Int(k.value())
-    var b_size = Int(batch.value()) * Int(n.value()) * Int(k.value())
-    var c_size = Int(batch.value()) * Int(m.value()) * Int(n.value())
+    var a_size = Int(batch) * Int(m) * Int(k)
+    var b_size = Int(batch) * Int(n) * Int(k)
+    var c_size = Int(batch) * Int(m) * Int(n)
 
     var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](a_size)
     var a_host = TileTensor(a_host_ptr, a_shape)
@@ -116,7 +116,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
 
     var a_scales_shape = row_major(
         batch.value(),
-        ceildiv(Int(m.value()), SF_MN_GROUP_SIZE),
+        ceildiv(Int(m), SF_MN_GROUP_SIZE),
         Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
         Idx[SF_ATOM_M[0]],
         Idx[SF_ATOM_M[1]],
@@ -154,14 +154,14 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
 
     # Initialize matmul operands
     if simple_init():
-        for b in range(Int(batch.value())):
-            for m in range(Int(m.value())):
-                for k in range(Int(k.value())):
+        for b in range(Int(batch)):
+            for m in range(Int(m)):
+                for k in range(Int(k)):
                     comptime assert a_host.flat_rank == 3
                     a_host[b, m, k] = random_ui64(0, 1).cast[a_type]()
-        for b in range(Int(batch.value())):
-            for n in range(Int(n.value())):
-                for k in range(Int(k.value())):
+        for b in range(Int(batch)):
+            for n in range(Int(n)):
+                for k in range(Int(k)):
                     comptime assert b_host.flat_rank == 3
                     b_host[b, n, k] = random_ui64(0, 1).cast[b_type]()
     else:
@@ -169,14 +169,14 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         rand(b_host.as_span())
 
     # NOTE: It is very important that we set unused scales to 0.0 otherwise we will hit accuracy issues
-    for batch_idx in range(Int(batch.value())):
-        for row_idx in range(align_up(Int(m.value()), SF_MN_GROUP_SIZE)):
+    for batch_idx in range(Int(batch)):
+        for row_idx in range(align_up(Int(m), SF_MN_GROUP_SIZE)):
             for col_idx in range(
                 0,
-                align_up(Int(k.value()), SF_VECTOR_SIZE * SF_ATOM_K),
+                align_up(Int(k), SF_VECTOR_SIZE * SF_ATOM_K),
                 SF_VECTOR_SIZE,
             ):
-                if row_idx < Int(m.value()) and col_idx < Int(k.value()):
+                if row_idx < Int(m) and col_idx < Int(k):
                     var scale_value = _convert_f32_to_float8_ue8m0[
                         scales_dtype
                     ]((1 << random_ui64(0, 3)).cast[.float32]())
@@ -196,14 +196,14 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
                         Scalar[scales_dtype](0.0),
                     )
 
-    for batch_idx in range(Int(batch.value())):
-        for row_idx in range(align_up(Int(n.value()), SF_MN_GROUP_SIZE)):
+    for batch_idx in range(Int(batch)):
+        for row_idx in range(align_up(Int(n), SF_MN_GROUP_SIZE)):
             for col_idx in range(
                 0,
-                align_up(Int(k.value()), SF_VECTOR_SIZE * SF_ATOM_K),
+                align_up(Int(k), SF_VECTOR_SIZE * SF_ATOM_K),
                 SF_VECTOR_SIZE,
             ):
-                if row_idx < Int(n.value()) and col_idx < Int(k.value()):
+                if row_idx < Int(n) and col_idx < Int(k):
                     var scale_value = _convert_f32_to_float8_ue8m0[
                         scales_dtype
                     ]((1 << random_ui64(0, 3)).cast[.float32]())
@@ -271,7 +271,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     )
     var c_2d_shape = row_major(m, Idx[NType.static_value])
     var a_scales_5d_shape = row_major(
-        ceildiv(Int(m.value()), SF_MN_GROUP_SIZE),
+        ceildiv(Int(m), SF_MN_GROUP_SIZE),
         Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
         Idx[SF_ATOM_M[0]],
         Idx[SF_ATOM_M[1]],
@@ -285,28 +285,28 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         Idx[SF_ATOM_K],
     )
 
-    var a_batch_stride = Int(m.value()) * Int(k.value())
-    var b_batch_stride = Int(n.value()) * Int(k.value())
-    var c_batch_stride = Int(m.value()) * Int(n.value())
+    var a_batch_stride = Int(m) * Int(k)
+    var b_batch_stride = Int(n) * Int(k)
+    var c_batch_stride = Int(m) * Int(n)
     var a_scales_batch_stride = a_scales_5d_shape.product()
     var b_scales_batch_stride = b_scales_5d_shape.product()
 
-    for b in range(Int(batch.value())):
+    for b in range(Int(batch)):
         var a_2d = TileTensor(
-            a_tensor._storage + b * a_batch_stride, a_2d_shape
+            a_tensor._storage.unsafe_offset(b * a_batch_stride), a_2d_shape
         )
         var b_2d = TileTensor(
-            b_tensor._storage + b * b_batch_stride, b_2d_shape
+            b_tensor._storage.unsafe_offset(b * b_batch_stride), b_2d_shape
         )
         var c_ref_2d = TileTensor(
-            c_ref_tensor._storage + b * c_batch_stride, c_2d_shape
+            c_ref_tensor._storage.unsafe_offset(b * c_batch_stride), c_2d_shape
         )
         var a_scales_5d = TileTensor(
-            a_scales_tensor._storage + b * a_scales_batch_stride,
+            a_scales_tensor._storage.unsafe_offset(b * a_scales_batch_stride),
             a_scales_5d_shape,
         )
         var b_scales_5d = TileTensor(
-            b_scales_tensor._storage + b * b_scales_batch_stride,
+            b_scales_tensor._storage.unsafe_offset(b * b_scales_batch_stride),
             b_scales_5d_shape,
         )
 

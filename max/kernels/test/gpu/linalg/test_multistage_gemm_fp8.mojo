@@ -94,6 +94,9 @@ def test_fp8_multistage_gemm[
         c_linear_idx_type=c_tt.linear_idx_type,
         a_linear_idx_type=a_tt.linear_idx_type,
         b_linear_idx_type=b_tt.linear_idx_type,
+        c_engine=c_tt.Engine,
+        a_engine=a_tt.Engine,
+        b_engine=b_tt.Engine,
         config=config,
     ]
 

@@ -208,6 +208,14 @@ def call_eval(
             "--fewshot_as_multiturn",
         ]
 
+        # Hy4 thinks by default and its reasoning parser moves the think span
+        # out of `content`, so a span longer than max_gen_toks leaves no answer
+        # to score. lm-eval merges repeated --gen_kwargs.
+        if "hy4" in model.casefold():
+            eval_cmd.append(
+                '--gen_kwargs={"chat_template_kwargs": {"reasoning_effort": "no_think"}}'
+            )
+
         # Passed verbatim to lm-eval; merged into each task's config metadata to
         # parameterize it at runtime (e.g. babilong context length).
         if lm_eval_metadata is not None:

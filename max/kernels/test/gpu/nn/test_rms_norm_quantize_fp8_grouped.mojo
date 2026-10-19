@@ -63,42 +63,45 @@ struct Diff(ImplicitlyCopyable, Movable):
 
 
 def launch_rms_norm[
-    in_dtype: DType, cols: Int, multiply_before_cast: Bool
+    in_dtype: DType,
+    cols: Int,
+    epsilon: Float32,
+    weight_offset: Float32,
+    multiply_before_cast: Bool,
 ](
     ctx: DeviceContext,
     x_tt: TileTensor[in_dtype, ...],
     normed_tt: TileTensor[mut=True, in_dtype, ...],
     gamma_tt: TileTensor[in_dtype, ...],
     shape: Coord,
-    epsilon: Scalar[in_dtype],
-    weight_offset: Scalar[in_dtype],
 ) raises:
     @inline(.always)
     def input_fn[
         width: Int, alignment: Int
     ](coords: Coord) {var x_tt} -> SIMD[in_dtype, width]:
-        var idx = x_tt.layout(coords)
-        return x_tt.raw_load[width=width, alignment=alignment](idx)
+        return x_tt.load[width=width, alignment=alignment](coords)
 
     @inline(.always)
     def output_fn[
         width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[in_dtype, width]) {var normed_tt}:
-        var idx = normed_tt.layout(coords)
-        normed_tt.raw_store[width=width, alignment=alignment](
-            idx, rebind[SIMD[in_dtype, width]](val)
+        normed_tt.store[alignment=alignment](
+            coords, rebind[SIMD[in_dtype, width]](val)
         )
 
     rms_norm[
-        in_dtype, 2, target="gpu", multiply_before_cast=multiply_before_cast
+        in_dtype,
+        2,
+        target="gpu",
+        epsilon=epsilon,
+        weight_offset=weight_offset,
+        multiply_before_cast=multiply_before_cast,
     ](
         input_fn,
         output_fn,
         shape,
         ComptimeInt[cols](),
         gamma_tt,
-        epsilon,
-        weight_offset,
         ctx,
     )
 
@@ -116,8 +119,7 @@ def launch_quantize[
     def input_fn[
         width: Int, alignment: Int
     ](row: Int, col: Int) {var normed_tt} -> SIMD[in_dtype, width]:
-        var idx = normed_tt.layout(Coord(row, col))
-        return normed_tt.raw_load[width=width, alignment=alignment](idx)
+        return normed_tt.load[width=width, alignment=alignment]((row, col))
 
     quantize_dynamic_scaled_fp8[
         in_dtype=in_dtype, group_size_or_per_token=GROUP, num_cols=cols
@@ -144,8 +146,7 @@ def launch_fused[
     def input_fn[
         width: Int, alignment: Int
     ](row: Int, col: Int) {var x_tt} -> SIMD[in_dtype, width]:
-        var idx = x_tt.layout(Coord(row, col))
-        return x_tt.raw_load[width=width, alignment=alignment](idx)
+        return x_tt.load[width=width, alignment=alignment]((row, col))
 
     rms_norm_quantize_dynamic_scaled_fp8[
         group_size=GROUP,
@@ -169,13 +170,9 @@ def run_case[
     out_dtype: DType,
     scale_dtype: DType,
     cols: Int,
-    multiply_before_cast: Bool,
-](
-    ctx: DeviceContext,
-    rows: Int,
-    fused_weight_offset: Float32,
     sep_weight_offset: Float32,
-) raises -> Diff:
+    multiply_before_cast: Bool,
+](ctx: DeviceContext, rows: Int, fused_weight_offset: Float32,) raises -> Diff:
     comptime groups = cols // GROUP
     # f32 scales pad rows to a 16-byte multiple, as the graph op does.
     var rows_pad = (rows + 3) // 4 * 4
@@ -200,9 +197,9 @@ def run_case[
             g = -g
         gamma_host[c] = g.cast[in_dtype]()
 
-    var eps = Float32(1e-6).cast[in_dtype]()
+    comptime eps_f32 = Float32(1e-6)
+    var eps = eps_f32.cast[in_dtype]()
     var fused_off = fused_weight_offset.cast[in_dtype]()
-    var sep_off = sep_weight_offset.cast[in_dtype]()
 
     var x_buf = ctx.enqueue_create_buffer[in_dtype](n)
     var gamma_buf = ctx.enqueue_create_buffer[in_dtype](cols)
@@ -221,14 +218,14 @@ def run_case[
     var scale_shape = Coord(groups, rows_pad)
 
     # Unfused pair, exactly as `mo.reduce.rms_norm` + the group quantize run.
-    launch_rms_norm[in_dtype, cols, multiply_before_cast](
+    launch_rms_norm[
+        in_dtype, cols, eps_f32, sep_weight_offset, multiply_before_cast
+    ](
         ctx,
         TileTensor(x_buf, row_major(shape)),
         TileTensor(normed_buf, row_major(shape)),
         TileTensor(gamma_buf, row_major(Coord(cols))),
         shape,
-        eps,
-        sep_off,
     )
     launch_quantize[in_dtype, out_dtype, scale_dtype, cols](
         ctx,
@@ -337,8 +334,8 @@ def check_case[
     cols: Int, multiply_before_cast: Bool
 ](ctx: DeviceContext, rows: Int) raises:
     var d = run_case[
-        IN_DTYPE, OUT_DTYPE, SCALE_DTYPE, cols, multiply_before_cast
-    ](ctx, rows, 0.0, 0.0)
+        IN_DTYPE, OUT_DTYPE, SCALE_DTYPE, cols, 0.0, multiply_before_cast
+    ](ctx, rows, 0.0)
     var n = rows * cols
     print(
         "rows=",
@@ -377,8 +374,8 @@ def check_case[
 def check_canary(ctx: DeviceContext) raises:
     # Different weight offsets must show up as FP8 mismatches, or the byte
     # comparison above proves nothing (only the pairwise compare is expected).
-    var d = run_case[IN_DTYPE, OUT_DTYPE, SCALE_DTYPE, 2048, False](
-        ctx, 5, 1.0, 0.0
+    var d = run_case[IN_DTYPE, OUT_DTYPE, SCALE_DTYPE, 2048, 0.0, False](
+        ctx, 5, 1.0
     )
     print(
         "canary (weight_offset 1.0 vs 0.0): mismatches=",

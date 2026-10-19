@@ -21,16 +21,17 @@ Most functionality is architecture-agnostic, with some NVIDIA-specific features 
 The module is designed to work seamlessly across different GPU architectures while providing
 optimal performance through hardware-specific optimizations where applicable."""
 
-from std.math.uutils import ufloordiv
+from std._plugin import CurrentPlugin
 from std.sys import llvm_intrinsic
 from std.sys.info import (
     CompilationTarget,
     _is_sm_9x_or_newer,
-    is_amd_gpu,
-    is_apple_gpu,
     is_gpu,
-    is_nvidia_gpu,
 )
+
+
+comptime _GPUIdPluginHookFnType = def() thin -> Int
+"""Plugin-hook signature for `PluginHooks.gpu_id_fn`."""
 
 
 # ===-----------------------------------------------------------------------===#
@@ -48,14 +49,11 @@ def _verify_xyz[dim: StaticString]():
     ), "the dimension must be x, y, or z"
 
 
-@inline(.always)
-def _get_gcn_idx[offset: Int, dtype: DType]() -> Int:
-    var ptr = llvm_intrinsic[
-        "llvm.amdgcn.implicitarg.ptr",
-        Pointer[Scalar[dtype], MutUntrackedOrigin, address_space=.CONSTANT],
-        has_side_effect=False,
-    ]()
-    return Int(ptr.unsafe_load(offset))
+comptime _NO_GPU_ID_HOOK_NOTE = (
+    "the target's stdlib plugin does not provide `gpu_id_fn`. A GPU target"
+    " built without a plugin, such as one named only by its triple, gets the"
+    " default plugin; use a target from `get_gpu_target()` instead."
+)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -81,36 +79,12 @@ def lane_id() -> Int:
 def _lane_id() -> Int:
     comptime assert is_gpu(), "This function only applies to GPUs."
 
-    comptime if is_nvidia_gpu():
-        var i = llvm_intrinsic[
-            "llvm.nvvm.read.ptx.sreg.laneid",
-            Int32,
-            has_side_effect=False,
-        ]()
-        return Int(i)
-
-    elif is_amd_gpu():
-        comptime none = Int32(-1)
-        comptime zero = Int32(0)
-        var t = llvm_intrinsic[
-            "llvm.amdgcn.mbcnt.lo", Int32, has_side_effect=False
-        ](none, zero)
-        var i = llvm_intrinsic[
-            "llvm.amdgcn.mbcnt.hi", Int32, has_side_effect=False
-        ](none, t)
-        return Int(i)
-
-    elif is_apple_gpu():
-        var i = llvm_intrinsic[
-            "llvm.air.thread_index_in_simdgroup",
-            Int32,
-            has_side_effect=False,
-        ]()
-        return Int(i)
-
+    comptime if case .Some(f) = CurrentPlugin.gpu_id_fn["lane_id", ""]:
+        return f()
     else:
         CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name(),
+            note=_NO_GPU_ID_HOOK_NOTE,
         ]()
 
 
@@ -129,20 +103,6 @@ struct _ThreadIdx(Defaultable, TrivialRegisterPassable):
         return
 
     @inline(.nodebug)
-    @staticmethod
-    def _get_intrinsic_name[dim: StringLiteral]() -> StaticString:
-        comptime if is_nvidia_gpu():
-            return "llvm.nvvm.read.ptx.sreg.tid." + dim
-        elif is_amd_gpu():
-            return "llvm.amdgcn.workitem.id." + dim
-        elif is_apple_gpu():
-            return "llvm.air.thread_position_in_threadgroup." + dim
-        else:
-            CompilationTarget.unsupported_target_error[
-                operation=__get_current_function_name(),
-            ]()
-
-    @inline(.nodebug)
     def __getattr_param__[dim: StringLiteral](self) -> Int:
         """Gets the `x`, `y`, or `z` coordinates of a thread within a block.
 
@@ -150,9 +110,13 @@ struct _ThreadIdx(Defaultable, TrivialRegisterPassable):
             The `x`, `y`, or `z` coordinates of a thread within a block.
         """
         _verify_xyz[dim]()
-        comptime intrinsic_name = Self._get_intrinsic_name[dim]()
-        var i = llvm_intrinsic[intrinsic_name, UInt32, has_side_effect=False]()
-        return Int(i)
+        comptime if case .Some(f) = CurrentPlugin.gpu_id_fn["thread_idx", dim]:
+            return f()
+        else:
+            CompilationTarget.unsupported_target_error[
+                operation=String("thread_idx.", dim),
+                note=_NO_GPU_ID_HOOK_NOTE,
+            ]()
 
 
 comptime thread_idx = _ThreadIdx()
@@ -174,20 +138,6 @@ struct _BlockIdx(Defaultable, TrivialRegisterPassable):
         return
 
     @inline(.nodebug)
-    @staticmethod
-    def _get_intrinsic_name[dim: StringLiteral]() -> StaticString:
-        comptime if is_nvidia_gpu():
-            return "llvm.nvvm.read.ptx.sreg.ctaid." + dim
-        elif is_amd_gpu():
-            return "llvm.amdgcn.workgroup.id." + dim
-        elif is_apple_gpu():
-            return "llvm.air.threadgroup_position_in_grid." + dim
-        else:
-            CompilationTarget.unsupported_target_error[
-                operation=__get_current_function_name(),
-            ]()
-
-    @inline(.nodebug)
     def __getattr_param__[dim: StringLiteral](self) -> Int:
         """Gets the `x`, `y`, or `z` coordinates of a block within a grid.
 
@@ -195,9 +145,13 @@ struct _BlockIdx(Defaultable, TrivialRegisterPassable):
             The `x`, `y`, or `z` coordinates of a block within a grid.
         """
         _verify_xyz[dim]()
-        comptime intrinsic_name = Self._get_intrinsic_name[dim]()
-        var i = llvm_intrinsic[intrinsic_name, UInt32, has_side_effect=False]()
-        return Int(i)
+        comptime if case .Some(f) = CurrentPlugin.gpu_id_fn["block_idx", dim]:
+            return f()
+        else:
+            CompilationTarget.unsupported_target_error[
+                operation=String("block_idx.", dim),
+                note=_NO_GPU_ID_HOOK_NOTE,
+            ]()
 
 
 comptime block_idx = _BlockIdx()
@@ -225,36 +179,12 @@ struct _BlockDim(Defaultable, TrivialRegisterPassable):
         """
         _verify_xyz[dim]()
 
-        comptime if is_nvidia_gpu():
-            comptime intrinsic_name = "llvm.nvvm.read.ptx.sreg.ntid." + dim
-            var i = llvm_intrinsic[
-                intrinsic_name, Int32, has_side_effect=False
-            ]()
-            return Int(i)
-        elif is_apple_gpu():
-            var i = llvm_intrinsic[
-                "llvm.air.threads_per_threadgroup." + dim,
-                Int32,
-                has_side_effect=False,
-            ]()
-            return Int(i)
-        elif is_amd_gpu():
-
-            def _get_offset() -> Int:
-                comptime match dim:
-                    case "x":
-                        return 6
-                    case "y":
-                        return 7
-                    case _:
-                        comptime assert dim == "z"
-                        return 8
-
-            return Int(_get_gcn_idx[_get_offset(), DType.uint16]())
-
+        comptime if case .Some(f) = CurrentPlugin.gpu_id_fn["block_dim", dim]:
+            return f()
         else:
             CompilationTarget.unsupported_target_error[
-                operation=__get_current_function_name(),
+                operation=String("block_dim.", dim),
+                note=_NO_GPU_ID_HOOK_NOTE,
             ]()
 
 
@@ -286,38 +216,12 @@ struct _GridDim(Defaultable, TrivialRegisterPassable):
         """
         _verify_xyz[dim]()
 
-        comptime if is_nvidia_gpu():
-            comptime intrinsic_name = "llvm.nvvm.read.ptx.sreg.nctaid." + dim
-            var i = llvm_intrinsic[
-                intrinsic_name, Int32, has_side_effect=False
-            ]()
-            return Int(i)
-        elif is_amd_gpu():
-
-            def _get_offset() -> Int:
-                comptime match dim:
-                    case "x":
-                        return 0
-                    case "y":
-                        return 1
-                    case _:
-                        comptime assert dim == "z"
-                        return 2
-
-            return Int(_get_gcn_idx[_get_offset(), DType.uint32]())
-        elif is_apple_gpu():
-            comptime intrinsic_name = "llvm.air.threads_per_grid." + dim
-            var gridDim = Int(
-                llvm_intrinsic[intrinsic_name, Int32, has_side_effect=False]()
-            )
-            # Metal passes grid dimension as a gridDim.dim * blockDim.dim.
-            # To make things compatible with NVidia and AMDGPU, divide result
-            # by block_dim.dim
-            var i = ufloordiv(gridDim, block_dim.__getattr_param__[dim]())
-            return Int(i)
+        comptime if case .Some(f) = CurrentPlugin.gpu_id_fn["grid_dim", dim]:
+            return f()
         else:
             CompilationTarget.unsupported_target_error[
-                operation=__get_current_function_name(),
+                operation=String("grid_dim.", dim),
+                note=_NO_GPU_ID_HOOK_NOTE,
             ]()
 
 

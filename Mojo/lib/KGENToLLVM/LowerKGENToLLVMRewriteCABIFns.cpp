@@ -144,7 +144,8 @@ static Type applyCABIReturnCoercion(LLVMFuncOp func, Block *entry,
 
 namespace M::KGEN {
 
-void processCABIFunctionDefinition(LLVMFuncOp func, CABIInfo &abiInfo) {
+void processCABIFunctionDefinition(LLVMFuncOp func, CABIInfo &abiInfo,
+                                   bool isResultSigned) {
   Location loc = func.getLoc();
   MLIRContext *ctx = func.getContext();
   SmallVector<Type> origArgTypes = llvm::to_vector(func.getArgumentTypes());
@@ -152,15 +153,29 @@ void processCABIFunctionDefinition(LLVMFuncOp func, CABIInfo &abiInfo) {
 
   // Classify the whole signature per platform C ABI rules. The arg/return
   // types are already LLVM types here.
-  SignatureClassification sigClass =
-      abiInfo.computeSignatureInfo(origArgTypes, origRetType, loc);
+  SignatureClassification sigClass = abiInfo.computeSignatureInfo(
+      origArgTypes, origRetType, loc, CABIRole::callee(isResultSigned));
   SmallVector<CoercionInfo> &argInfos = sigClass.args;
   CoercionInfo &retInfo = sigClass.ret;
 
+  // A signature that needs no coercion keeps its types, but still needs its
+  // attributes, such as the extension of a narrow integer result.
+  auto applyCABIAttrs = [&] {
+    for (auto [paramIdx, attrs] :
+         llvm::enumerate(sigClass.getParamAttrs(origArgTypes, origRetType))) {
+      for (NamedAttribute attr : attrs)
+        func.setArgAttr(paramIdx, attr.getName(), attr.getValue());
+    }
+    for (NamedAttribute attr : sigClass.getResultAttrs(ctx))
+      func.setResultAttr(0, attr.getName(), attr.getValue());
+  };
+
   bool anyArgCoercion = llvm::any_of(
       argInfos, [](const CoercionInfo &ci) { return !ci.isIdentity(); });
-  if (!anyArgCoercion && retInfo.isIdentity())
+  if (!anyArgCoercion && retInfo.isIdentity()) {
+    applyCABIAttrs();
     return;
+  }
 
   auto ptrType = LLVMPointerType::get(ctx);
   LLVMFunctionType newFnTy = sigClass.getFunctionType(
@@ -187,12 +202,7 @@ void processCABIFunctionDefinition(LLVMFuncOp func, CABIInfo &abiInfo) {
   }
 
   func.setType(newFnTy);
-
-  SmallVector<NamedAttrList> paramAttrs =
-      sigClass.getParamAttrs(origArgTypes, origRetType);
-  for (auto [paramIdx, attrs] : llvm::enumerate(paramAttrs))
-    for (NamedAttribute attr : attrs)
-      func.setArgAttr(paramIdx, attr.getName(), attr.getValue());
+  applyCABIAttrs();
 }
 
 } // namespace M::KGEN

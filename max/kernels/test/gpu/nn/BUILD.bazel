@@ -4,12 +4,21 @@ load("//max/kernels/src:deprecations.bzl", "IGNORED_POINTER_DEPRECATIONS_COPTS")
 package(default_visibility = ["//max:consumers"])
 
 _EXTRA_CONSTRAINTS = {
+    # MXFP4 packing uses SM100 conversion instructions.
+    "test_indexer_k_store.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     "test_mha_decode_register_owners.mojo": ["//:nvidia_gpu"],
     "test_online_softmax_correction.mojo": ["//:nvidia_gpu"],
     "test_mha_p_fragment_scatter_amd.mojo": ["//:amd_gpu"],
     "test_mha_p_fragment_scatter_nvidia.mojo": ["//:nvidia_gpu"],
     "test_online_softmax_register_fragments.mojo": ["//:nvidia_gpu"],
     "test_mha_fa2_register_owners.mojo": ["//:nvidia_gpu"],
+    "test_mha_fa2_pipelined_register_owners.mojo": ["//:nvidia_gpu"],
+    "test_mha_decode_pipelined_register_owners.mojo": ["//:nvidia_gpu"],
+    "test_mla_decode_fa2_register_owners.mojo": ["//:nvidia_gpu"],
+    "test_mla_prefill_fa2_register_owners.mojo": ["//:nvidia_gpu"],
     # KERN-3212
     "test_mla_decode_qkv_fp8.mojo": ["@platforms//:incompatible"],
     "test_conv2d_im2col_apple.mojo": ["//:apple_gpu"],  # Apple M5 im2col conv2d — Metal only
@@ -63,9 +72,10 @@ _EXTRA_CONSTRAINTS = {
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    # NVFP4 quantization uses the SM100 e2m1 convert.
+    # NVFP4 quantization uses the SM100 or CDNA4 e2m1 convert.
     "test_fused_dual_qk_rms_norm_rope_nvfp4.mojo": select({
         "//:b200_gpu": [],
+        "//:mi355_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     # No SM100/B200-specific code; runs on any GPU. Apple is excluded because
@@ -79,6 +89,7 @@ _EXTRA_CONSTRAINTS = {
     # (`.vgpr_spill_count`, `ds_bpermute`, `s_barrier` counts). Nothing in it
     # needs to run on the GPU, but the assertions only mean anything for AMD.
     "test_topk_warp_isa_amd.mojo": ["//:amd_gpu"],
+    "test_cudnn_bindings.mojo": ["//:nvidia_gpu"],
     "test_cudnn_conv.mojo": ["//:nvidia_gpu"],
     "test_miopen_conv.mojo": ["//:amd_gpu"],
     # 4-wave implicit-GEMM conv inherits the matmul's MI355X-only MFMA
@@ -283,6 +294,10 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: MOCO-2397
+    "test_argmax_with_bias.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2397 — same argmax path as test_argmaxmin_gpu.mojo
     "test_argmax_streaming_gpu.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -477,6 +492,11 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
+    # Per-row top-k on the same bitonic kernel, which Apple excludes.
+    "test_topk_per_row.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     "test_scatter_set_constant.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -668,6 +688,10 @@ _FILECHECK_TESTS = [
             "test_mla_prefill_amd_gather_sentinel_guard.mojo",
             "test_mla_prefill_plan_chunk_overflow.mojo",
             "_paged_prefill_test_utils.mojo",
+            # MXFP4 indexer and its selection grader; declared explicitly
+            # below.
+            "_index_select_grade.mojo",
+            "test_mla_index_mxfp4.mojo",
             # SM100 FA4 1Q split-K combine test: fully covered by the explicit
             # b200-gated (mask, depth, P) registrations below. Exclude the default
             # catch-all target, which would otherwise be gated only by //:has_gpu
@@ -1512,7 +1536,7 @@ mojo_test(
 # with a ``KVCacheT`` for K_rope, dispatched to ``mla_sm100_prefill_*``
 # on B200. The existing
 # ``test_mla.mojo``/``test_mla_prefill_*_fp8.mojo`` tests cover only the
-# contiguous K_rope path (``LayoutTensorMHAOperand``) and so do not
+# contiguous K_rope path and so do not
 # exercise the sub-tile TMA loops in the kernel.
 #
 # When ``page_size < BN`` (= 128 for MLA prefill) AND a tile's sub-tile
@@ -1775,3 +1799,54 @@ mojo_test(
         "@mojo//:std",
     ],
 )
+
+# MXFP4 lightning indexer on the SM100 scorer. The f32-fold
+# builds check every score to f32 precision; the default build checks the
+# production bf16 fold. B200 only.
+[
+    mojo_test(
+        name = name + ".mojo.test",
+        size = "large",
+        srcs = [
+            "_index_select_grade.mojo",
+            "test_mla_index_mxfp4.mojo",
+        ],
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS + defines,
+        exec_properties = {
+            "test.resources:gpu-memory": "3",
+        },
+        main = "test_mla_index_mxfp4.mojo",
+        tags = ["gpu"],
+        target_compatible_with = ["//:has_gpu"] + select({
+            "//:b200_gpu": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+        deps = [
+            "//max:internal_utils",
+            "//max:kv_cache",
+            "//max:linalg",
+            "//max:nn",
+            "@mojo//:std",
+        ],
+    )
+    for name, defines in [
+        ("test_mla_index_mxfp4", []),
+        (
+            "test_mla_index_mxfp4_f32_fold",
+            [
+                "-D",
+                "FP8_INDEX_FOLD_DTYPE=float32",
+            ],
+        ),
+        # The token-major Q order, the other scale-factor permutation.
+        (
+            "test_mla_index_mxfp4_token_major",
+            [
+                "-D",
+                "FP8_INDEX_FOLD_DTYPE=float32",
+                "-D",
+                "FP8_INDEX_Q_INTERLEAVE=0",
+            ],
+        ),
+    ]
+]

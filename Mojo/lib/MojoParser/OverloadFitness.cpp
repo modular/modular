@@ -406,12 +406,7 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
 
       if (!isEqualCanon(actual, expected)) {
         DeclResolver::DiagnosticDeclContextChanger x(funcIfDirect);
-        assert(resultType.getDecl(shared) &&
-               "result type should have an associated decl");
-        assert(resultType.getDecl(shared)->getIfOperation() &&
-               "result type decl should have an operation");
-        auto declOp =
-            cast<StructDeclOp>(resultType.getDecl(shared)->getIfOperation());
+        auto declOp = cast<StructASTDecl>(resultType.getDecl(shared))->getOp();
         auto paramType = declOp.getSignature().getInputParamTypes()[paramIdx];
         MojoInflightDiag resultTypeDiag = shared.emitError(callLoc);
         resultTypeDiag << "return type " << resultType << " parameter "

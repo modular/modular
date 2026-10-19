@@ -22,7 +22,8 @@ the unfused form computes the same answer, just with the duplicate load.
 The pass also moves a consumer into its producer's epilogue when the
 producer's result has other readers, which output fusion leaves alone. A
 consumer that reads a strided window of the result runs there only where the
-window selects the element.
+window selects the element. An elementwise producer in that position merges
+with its consumer the same way, which input fusion leaves alone.
 """
 
 from __future__ import annotations
@@ -517,6 +518,228 @@ _DEVICES = [
         ),
     ),
 ]
+
+
+@pytest.mark.parametrize("device", _DEVICES)
+def test_elementwise_result_escapes(
+    session: InferenceSession, device: DeviceRef
+) -> None:
+    """An elementwise result read by one consumer and also returned.
+
+    Input fusion can't take this: duplicating the add into the relu would not
+    free its store, which the graph output still needs. So the pair merges
+    into one kernel that stores the sum and hands the relu the value it just
+    computed.
+    """
+    with Graph(
+        "elementwise_result_escapes",
+        input_types=[_f32(8, 8, device=device), _f32(8, 8, device=device)],
+    ) as graph:
+        a, b = (v.tensor for v in graph.inputs)
+        x = a + b
+        graph.output(x, ops.relu(x))
+
+    a_np = np.random.randn(8, 8).astype(np.float32)
+    b_np = np.random.randn(8, 8).astype(np.float32)
+    out0, out1 = run_and_verify_fusion(
+        session, graph, a_np, b_np, fused=r"mo\.add.*mo\.relu"
+    )
+    np.testing.assert_allclose(out0, a_np + b_np, rtol=1e-5, atol=1e-5)
+    np.testing.assert_allclose(
+        out1, np.maximum(a_np + b_np, 0), rtol=1e-5, atol=1e-5
+    )
+
+
+@pytest.mark.parametrize("device", _DEVICES)
+def test_elementwise_result_escapes_two_consumers(
+    session: InferenceSession, device: DeviceRef
+) -> None:
+    """Two consumers of an escaping elementwise result merge with each other
+    first, then the pair joins the producer: one kernel, three outputs."""
+    with Graph(
+        "elementwise_result_escapes_two_consumers",
+        input_types=[_f32(8, 8, device=device), _f32(8, 8, device=device)],
+    ) as graph:
+        a, b = (v.tensor for v in graph.inputs)
+        x = a + b
+        graph.output(x, ops.relu(x), ops.sin(x))
+
+    a_np = np.random.randn(8, 8).astype(np.float32)
+    b_np = np.random.randn(8, 8).astype(np.float32)
+    out0, out1, out2 = run_and_verify_fusion(
+        session, graph, a_np, b_np, fused=r"mo\.add.*mo\.relu.*mo\.sin"
+    )
+    x_np = a_np + b_np
+    np.testing.assert_allclose(out0, x_np, rtol=1e-5, atol=1e-5)
+    np.testing.assert_allclose(out1, np.maximum(x_np, 0), rtol=1e-5, atol=1e-5)
+    np.testing.assert_allclose(out2, np.sin(x_np), rtol=1e-5, atol=1e-5)
+
+
+@pytest.mark.parametrize("device", _DEVICES)
+def test_elementwise_chain_escapes(
+    session: InferenceSession, device: DeviceRef
+) -> None:
+    """A chain whose every link is also returned merges link by link."""
+    with Graph(
+        "elementwise_chain_escapes",
+        input_types=[_f32(8, 8, device=device) for _ in range(4)],
+    ) as graph:
+        a, b, s, t = (v.tensor for v in graph.inputs)
+        x = a + b
+        y = x * s
+        graph.output(x, y, y * t)
+
+    a_np, b_np, s_np, t_np = (
+        np.random.randn(8, 8).astype(np.float32) for _ in range(4)
+    )
+    out0, out1, out2 = run_and_verify_fusion(
+        session,
+        graph,
+        a_np,
+        b_np,
+        s_np,
+        t_np,
+        fused=r"mo\.add.*mo\.mul.*mo\.mul",
+    )
+    x_np = a_np + b_np
+    np.testing.assert_allclose(out0, x_np, rtol=1e-5, atol=1e-5)
+    np.testing.assert_allclose(out1, x_np * s_np, rtol=1e-5, atol=1e-5)
+    np.testing.assert_allclose(out2, x_np * s_np * t_np, rtol=1e-5, atol=1e-5)
+
+
+@pytest.mark.parametrize("device", _DEVICES)
+@pytest.mark.parametrize(
+    "window",
+    [
+        pytest.param((slice(None), slice(4, None)), id="window"),
+        pytest.param((slice(None), slice(1, None, 2)), id="step"),
+    ],
+)
+def test_elementwise_result_escapes_through_slice(
+    session: InferenceSession,
+    device: DeviceRef,
+    window: tuple[slice, ...],
+) -> None:
+    """A returned elementwise result whose consumer reads a strided window of
+    it: the consumer joins the producer's kernel and runs only where the
+    window selects the element, storing at the window's index."""
+    with Graph(
+        "elementwise_result_escapes_through_slice",
+        input_types=[
+            _f32(4, 8, 16, device=device),
+            _f32(4, 8, 16, device=device),
+        ],
+    ) as graph:
+        a, b = (v.tensor for v in graph.inputs)
+        x = a + b
+        graph.output(x, ops.relu(x[window]))
+
+    a_np = np.random.randn(4, 8, 16).astype(np.float32)
+    b_np = np.random.randn(4, 8, 16).astype(np.float32)
+    out0, out1 = run_and_verify_fusion(
+        session, graph, a_np, b_np, fused=r"mo\.add.*mo\.slice.*mo\.relu"
+    )
+    x_np = a_np + b_np
+    np.testing.assert_allclose(out0, x_np, rtol=1e-5, atol=1e-5)
+    np.testing.assert_allclose(
+        out1, np.maximum(x_np[window], 0), rtol=1e-5, atol=1e-5
+    )
+
+
+@pytest.mark.parametrize("device", _DEVICES)
+def test_elementwise_result_escapes_through_slice_dynamic(
+    session: InferenceSession, device: DeviceRef
+) -> None:
+    """The strided window over a symbolic outer dim: the select reads the
+    runtime shapes the foreach kernel passes it."""
+    sym = TensorType(DType.float32, ["n", 8, 16], device=device)
+    with Graph(
+        "elementwise_result_escapes_through_slice_dynamic",
+        input_types=[sym, sym],
+    ) as graph:
+        a, b = (v.tensor for v in graph.inputs)
+        x = a + b
+        graph.output(x, ops.relu(x[:, 1::2]))
+
+    a_np = np.random.randn(5, 8, 16).astype(np.float32)
+    b_np = np.random.randn(5, 8, 16).astype(np.float32)
+    out0, out1 = run_and_verify_fusion(
+        session, graph, a_np, b_np, fused=r"mo\.add.*mo\.slice.*mo\.relu"
+    )
+    x_np = a_np + b_np
+    np.testing.assert_allclose(out0, x_np, rtol=1e-5, atol=1e-5)
+    np.testing.assert_allclose(
+        out1, np.maximum(x_np[:, 1::2], 0), rtol=1e-5, atol=1e-5
+    )
+
+
+@pytest.mark.parametrize("device", _DEVICES)
+def test_elementwise_result_escapes_through_slice_cast(
+    session: InferenceSession, device: DeviceRef
+) -> None:
+    """A consumer that casts the strided window: the select stores a
+    narrower dtype at the window's index."""
+    with Graph(
+        "elementwise_result_escapes_through_slice_cast",
+        input_types=[
+            _f32(4, 8, 16, device=device),
+            _f32(4, 8, 16, device=device),
+        ],
+    ) as graph:
+        a, b = (v.tensor for v in graph.inputs)
+        x = a + b
+        graph.output(x, ops.cast(x[:, 1::2], DType.float16))
+
+    a_np = np.random.randn(4, 8, 16).astype(np.float32)
+    b_np = np.random.randn(4, 8, 16).astype(np.float32)
+    out0, out1 = run_and_verify_fusion(
+        session, graph, a_np, b_np, fused=r"mo\.add.*mo\.slice.*mo\.cast"
+    )
+    x_np = a_np + b_np
+    np.testing.assert_allclose(out0, x_np, rtol=1e-5, atol=1e-5)
+    np.testing.assert_allclose(
+        out1, x_np[:, 1::2].astype(np.float16), rtol=1e-3, atol=1e-3
+    )
+
+
+@pytest.mark.parametrize("device", _DEVICES)
+def test_matmul_pair_escapes_through_slice(
+    session: InferenceSession, device: DeviceRef
+) -> None:
+    """Two adds of a matmul pair as siblings and a relu of a strided window of
+    one joins them through a select; the whole kernel still moves into the
+    matmul's epilogue, so the matmul's result is never stored."""
+    with Graph(
+        "matmul_pair_escapes_through_slice",
+        input_types=[
+            _f32(8, 8, device=device),
+            _f32(8, 16, device=device),
+            _f32(8, 16, device=device),
+            _f32(8, 16, device=device),
+        ],
+    ) as graph:
+        p, q, b, c = (v.tensor for v in graph.inputs)
+        mm = p @ q
+        x = mm + b
+        graph.output(x, mm + c, ops.relu(x[1::2, :]))
+
+    p_np, q_np = (np.random.randn(8, n).astype(np.float32) for n in (8, 16))
+    b_np, c_np = (np.random.randn(8, 16).astype(np.float32) for _ in range(2))
+    out0, out1, out2 = run_and_verify_fusion(
+        session,
+        graph,
+        p_np,
+        q_np,
+        b_np,
+        c_np,
+        fused=r"mo\.matmul.*mo\.add.*mo\.add.*mo\.slice.*mo\.relu",
+    )
+    mm_np = p_np @ q_np
+    np.testing.assert_allclose(out0, mm_np + b_np, rtol=1e-4, atol=1e-4)
+    np.testing.assert_allclose(out1, mm_np + c_np, rtol=1e-4, atol=1e-4)
+    np.testing.assert_allclose(
+        out2, np.maximum(mm_np + b_np, 0)[1::2, :], rtol=1e-4, atol=1e-4
+    )
 
 
 def test_concat_slice_window(session: InferenceSession) -> None:

@@ -27,17 +27,18 @@ from max.gpu.sync import (
     cp_async_bulk_commit_group,
     cp_async_bulk_wait_group,
     umma_arrive_leader_cta,
-    syncwarp,
 )
 from max.gpu.primitives.cluster import (
     block_rank_in_cluster,
     load_cluster_smem,
 )
 from max.gpu.compute.arch.tcgen05 import (
+    tcgen05_dealloc,
     tcgen05_fence_after,
     tcgen05_fence_before,
     tcgen05_ld,
     tcgen05_load_wait,
+    tcgen05_release_allocation_lock,
     tcgen05_store_wait,
 )
 from max.gpu.primitives.warp import _vote_nvidia_helper
@@ -191,11 +192,12 @@ def fa4_scale_write_output[
             ](o_tmem_arg.tmem_addr + UInt32(j * chunk))
             packed = scale_pack_o_row[output_type, w=chunk](o_vals, inv_row_sum)
         (
-            o_smem_arg
-            + o_smem_chunk_offset[output_type, output_swizzle_mode, BM](
-                Int(local_row), j
+            o_smem_arg.unsafe_offset(
+                o_smem_chunk_offset[output_type, output_swizzle_mode, BM](
+                    Int(local_row), j
+                )
             )
-        ).bitcast[UInt32]().store(packed)
+        ).unsafe_bitcast[UInt32]().store(packed)
 
     @inline(.always)
     def write_blocks[lo: Int, hi: Int]() {imm}:
@@ -396,11 +398,12 @@ def fa4_lse_combine_write[
             own_arr, peer_arr, final_scale_local, final_scale_peer
         )
         (
-            o_smem_arg
-            + o_smem_chunk_offset[output_type, output_swizzle_mode, BM](
-                Int(local_row), j
+            o_smem_arg.unsafe_offset(
+                o_smem_chunk_offset[output_type, output_swizzle_mode, BM](
+                    Int(local_row), j
+                )
             )
-        ).bitcast[UInt32]().store(packed)
+        ).unsafe_bitcast[UInt32]().store(packed)
 
     comptime if cross_wg:
         named_barrier[Int32(2 * WARPGROUP_SIZE)](2)
@@ -546,7 +549,7 @@ def fa4_ws_exchange4[
     ), "fa4_ws_exchange4 slot map needs m_pack * rows == WARPGROUP_SIZE"
 
     # Warpgroup `wg` at parity `p` owns [(wg*2 + p)*WARPGROUP_SIZE, +128).
-    var buf = xchg_smem + (
+    var buf = xchg_smem.unsafe_offset(
         (warp_group_idx * 2 + (exchange_seq & 1)) * UInt32(WARPGROUP_SIZE)
     )
     buf[partition_g * UInt32(rows) + local_row] = partial
@@ -792,9 +795,9 @@ def fa4_ws_intracta_combine[
                 comptime for k in range(stage_K):
                     v[k] = c_frag[sb * stage_K + k]
                 (
-                    stage_smem
-                    + (g * stage_blocks + sblk) * rows * stage_K
-                    + r * stage_K
+                    stage_smem.unsafe_offset(
+                        (g * stage_blocks + sblk) * rows * stage_K
+                    ).unsafe_offset(r * stage_K)
                 ).store(v)
     maxsum_smem[(g * rows + r) * 2] = own_max
     maxsum_smem[(g * rows + r) * 2 + 1] = own_sum
@@ -854,20 +857,22 @@ def fa4_ws_intracta_combine[
                 var acc = mul_ftz(
                     f32x2(scale[0]),
                     (
-                        stage_smem
-                        + (0 * stage_blocks + sblk) * rows * stage_K
-                        + r * stage_K
-                        + 2 * hc
+                        stage_smem.unsafe_offset(
+                            (0 * stage_blocks + sblk) * rows * stage_K
+                        )
+                        .unsafe_offset(r * stage_K)
+                        .unsafe_offset(2 * hc)
                     ).load[width=2](),
                 )
                 comptime for p in range(1, m_pack):
                     acc = fma_ftz(
                         f32x2(scale[p]),
                         (
-                            stage_smem
-                            + (p * stage_blocks + sblk) * rows * stage_K
-                            + r * stage_K
-                            + 2 * hc
+                            stage_smem.unsafe_offset(
+                                (p * stage_blocks + sblk) * rows * stage_K
+                            )
+                            .unsafe_offset(r * stage_K)
+                            .unsafe_offset(2 * hc)
                         ).load[width=2](),
                         acc,
                     )
@@ -990,9 +995,9 @@ def fa4_ws_level1_combine[
                 comptime for k in range(stage_K):
                     v[k] = c_frag[sb * stage_K + k]
                 (
-                    stage_smem
-                    + (g * stage_blocks + sblk) * rows * stage_K
-                    + r * stage_K
+                    stage_smem.unsafe_offset(
+                        (g * stage_blocks + sblk) * rows * stage_K
+                    ).unsafe_offset(r * stage_K)
                 ).store(v)
     maxsum_smem[(g * rows + r) * 2] = own_max
     maxsum_smem[(g * rows + r) * 2 + 1] = own_sum
@@ -1047,20 +1052,22 @@ def fa4_ws_level1_combine[
             var acc = mul_ftz(
                 f32x2(scale[0]),
                 (
-                    stage_smem
-                    + (0 * stage_blocks + sblk) * rows * stage_K
-                    + r * stage_K
-                    + 2 * hc
+                    stage_smem.unsafe_offset(
+                        (0 * stage_blocks + sblk) * rows * stage_K
+                    )
+                    .unsafe_offset(r * stage_K)
+                    .unsafe_offset(2 * hc)
                 ).load[width=2](),
             )
             comptime for p in range(1, m_pack):
                 acc = fma_ftz(
                     f32x2(scale[p]),
                     (
-                        stage_smem
-                        + (p * stage_blocks + sblk) * rows * stage_K
-                        + r * stage_K
-                        + 2 * hc
+                        stage_smem.unsafe_offset(
+                            (p * stage_blocks + sblk) * rows * stage_K
+                        )
+                        .unsafe_offset(r * stage_K)
+                        .unsafe_offset(2 * hc)
                     ).load[width=2](),
                     acc,
                 )
@@ -1140,7 +1147,7 @@ def fa4_ws_level2_reduce_scatter_write[
 
     **Single-warpgroup invocation (`single_wg`).** There is no second partial to
     merge when only WG0 is alive -- `total_iters_combined == 1`, where WG1 has
-    already returned. Reaching the barrier at
+    already returned through `named_barrier[256](2)`. Reaching the barrier at
     (2) below with 128 of its 256 threads gone is a HANG, so that case cannot
     simply call this with a neutral peer. `single_wg=True` drops the scatter,
     the barrier and the gather, leaving `O_final = O_0[band g] * recip(l_0)`.
@@ -1214,7 +1221,11 @@ def fa4_ws_level2_reduce_scatter_write[
                 var v = SIMD[accum_dtype, stage_K]()
                 comptime for k in range(stage_K):
                     v[k] = o_band[lb * stage_K + k]
-                (l2_stage_smem + sblk * rows * stage_K + r * stage_K).store(v)
+                (
+                    l2_stage_smem.unsafe_offset(
+                        sblk * rows * stage_K
+                    ).unsafe_offset(r * stage_K)
+                ).store(v)
             # `(m_1, l_1)` are depth-independent, so only the FIRST tile
             # transports them and later tiles read what it left. Folds to
             # unconditional at the default `depth_base == 0`.
@@ -1276,10 +1287,9 @@ def fa4_ws_level2_reduce_scatter_write[
                     var o1 = f32x2(0)
                     comptime if not single_wg:
                         o1 = (
-                            l2_stage_smem
-                            + sblk * rows * stage_K
-                            + r * stage_K
-                            + 2 * hc
+                            l2_stage_smem.unsafe_offset(sblk * rows * stage_K)
+                            .unsafe_offset(r * stage_K)
+                            .unsafe_offset(2 * hc)
                         ).load[width=2]()
                     comptime obase = lsblk * stage_K + 2 * hc
                     var o0 = f32x2(o_band[obase], o_band[obase + 1])
@@ -1405,7 +1415,11 @@ def fa4_ws_level2_combine_partial[
             var v = SIMD[accum_dtype, stage_K]()
             comptime for k in range(stage_K):
                 v[k] = o_band[lb * stage_K + k]
-            (l2_stage_smem + sblk * rows * stage_K + r * stage_K).store(v)
+            (
+                l2_stage_smem.unsafe_offset(
+                    sblk * rows * stage_K
+                ).unsafe_offset(r * stage_K)
+            ).store(v)
         if band_g == UInt32(0):  # WG1 warp 0's 32 lanes own all 32 rows' (m,l)
             l2_maxsum_smem[r * 2] = own_max
             l2_maxsum_smem[r * 2 + 1] = own_sum
@@ -1438,7 +1452,9 @@ def fa4_ws_level2_combine_partial[
             var sblk = g * own_sblocks + lb  # global stage-block for this band
             comptime for hc in range(2):  # two f32x2 halves per stage-block
                 var o1 = (
-                    l2_stage_smem + sblk * rows * stage_K + r * stage_K + 2 * hc
+                    l2_stage_smem.unsafe_offset(sblk * rows * stage_K)
+                    .unsafe_offset(r * stage_K)
+                    .unsafe_offset(2 * hc)
                 ).load[width=2]()
                 comptime obase = lb * stage_K + 2 * hc
                 var o0 = f32x2(o_band[obase], o_band[obase + 1])
@@ -1572,7 +1588,9 @@ def fa4_ws_splitk_reduce_scatter_write[
         comptime for k in range(stage_K):
             v[k] = o_band_norm[lb * stage_K + k]
         (
-            stage_smem + sblk * UInt32(rows * stage_K) + lrow * UInt32(stage_K)
+            stage_smem.unsafe_offset(
+                sblk * UInt32(rows * stage_K)
+            ).unsafe_offset(lrow * UInt32(stage_K))
         ).store(v)
     if band_g == UInt32(0):
         maxsum_smem[r * 2] = own_max
@@ -1611,7 +1629,7 @@ def fa4_ws_splitk_reduce_scatter_write[
                         comptime for pp in range(P_static - 1):
                             var rr = pp if pp < b_rank else pp + 1
                             var ms = load_cluster_smem[.float32, 2](
-                                maxsum_smem + lrow * 2, UInt32(rr)
+                                maxsum_smem.unsafe_offset(lrow * 2), UInt32(rr)
                             )
                             pmax[pp + 1] = ms[0]
                             psum[pp + 1] = ms[1]
@@ -1651,9 +1669,9 @@ def fa4_ws_splitk_reduce_scatter_write[
                                 var vec = load_cluster_smem[
                                     DType.float32, stage_K
                                 ](
-                                    stage_smem
-                                    + UInt32(sblk * rows * stage_K)
-                                    + lrow * UInt32(stage_K),
+                                    stage_smem.unsafe_offset(
+                                        UInt32(sblk * rows * stage_K)
+                                    ).unsafe_offset(lrow * UInt32(stage_K)),
                                     UInt32(rr),
                                 )
                                 comptime for c in range(stage_K // 2):
@@ -1965,9 +1983,11 @@ def fa4_splitk_stage_partial[
                     # Peer-visible block -> stage_smem (16 B v4 f32, block-major).
                     comptime for sb in range(subblocks):
                         comptime fblk = col // F + sb
-                        (stage_smem + UInt32(fblk * BM * F) + row_F).store(
-                            vblk[sb]
-                        )
+                        (
+                            stage_smem.unsafe_offset(
+                                UInt32(fblk * BM * F)
+                            ).unsafe_offset(row_F)
+                        ).store(vblk[sb])
 
 
 @inline(.always)
@@ -2093,7 +2113,7 @@ def fa4_splitk_combine_write[
     comptime for p in range(P - 1):
         var r = p if p < b else p + 1
         var ms = load_cluster_smem[.float32, 2](
-            maxsum_smem + tid * 2, UInt32(r)
+            maxsum_smem.unsafe_offset(tid * 2), UInt32(r)
         )
         pmax[p + 1] = ms[0]
         psum[p + 1] = ms[1]
@@ -2162,7 +2182,12 @@ def fa4_splitk_combine_write[
                 comptime ocol = iter * o_sw_K + sb * F
                 var vec: SIMD[accum_dtype, F] = load_cluster_smem[
                     DType.float32, F
-                ](stage_smem + UInt32(fblk * BM * F) + row_F, UInt32(r))
+                ](
+                    stage_smem.unsafe_offset(
+                        UInt32(fblk * BM * F)
+                    ).unsafe_offset(row_F),
+                    UInt32(r),
+                )
                 comptime for c in range(F // 2):
                     var acc = SIMD[accum_dtype, 2](
                         o_final[ocol + 2 * c], o_final[ocol + 2 * c + 1]
@@ -2194,7 +2219,7 @@ def fa4_splitk_combine_write[
     comptime o_own_shift = wg_j_offset * (f32_per_out - 1) * BM * o_sw_K
     comptime chunk = 16 // size_of[output_type]()
     comptime chunks_per_blk = o_sw_K // chunk
-    var o_smem_own = o_smem_arg + o_own_shift
+    var o_smem_own = o_smem_arg.unsafe_offset(o_own_shift)
     comptime for iter in range(iters_per_wg):
         comptime j = wg_j_offset + iter
         comptime for c in range(chunks_per_blk):
@@ -2458,6 +2483,15 @@ def fa4_softmax[
     # MLA). A pure-2Q kernel (or one whose mask needs the runtime FULL_MASK
     # slow path, where MLA cannot switch) must leave this False.
     output_nonempty: Bool = False,
+    # The generic MLA-prefill single-O path physically drops the 2nd softmax
+    # warpgroup (launches 3 WGs / 384 threads). When True, WG0 is the ONLY
+    # softmax WG, so the WG0<->WG1 pair rendezvous `named_barrier[2*WG](2)`
+    # before the terminal TMEM dealloc must be skipped (no WG1 arrives ->
+    # otherwise a 256-thread barrier with only 128 arrivals hangs). Default
+    # False keeps the per-token-scale / blockscale siblings (still 2 softmax
+    # WGs even for their single-O configs) and every non-single-O path
+    # byte-identical.
+    single_softmax_wg: Bool = False,
     # Effective cross-stage-P switch, computed once at the kernel level where
     # config, MaskType and the store shape are all visible. Defaults True so
     # the config-level gate alone decides for callers that do not thread it;
@@ -2573,9 +2607,11 @@ def fa4_softmax[
         _is_decoding[MaxSeqLenType](),
     ]
 
+    # `tmem_addr` passed in by register (read once post-barrier in the kernel
+    # prologue); do NOT re-read `smem.tmem_addr_ptr()` here.
     var o_smem = smem.o_smem[output_type]()
-    var o_prod_mbar: MBarType = (
-        mbars.mbar_base + MiscMBarsType.O_producer_offset
+    var o_prod_mbar: MBarType = mbars.mbar_base.unsafe_offset(
+        MiscMBarsType.O_producer_offset
     )
     var s_tmem: UInt32 = tmem_addr + UInt32(config.TMEM_S0)
 
@@ -2671,7 +2707,7 @@ def fa4_softmax[
         )
 
     var scale_log2e: Scalar[accum_dtype] = scale
-    var correction_smem = smem.correction_smem() + tid
+    var correction_smem = smem.correction_smem().unsafe_offset(tid)
 
     comptime if not MaskType.apply_log2e_after_mask:
         scale_log2e *= log2e
@@ -2846,7 +2882,7 @@ def fa4_softmax[
                     # `WSLSEType.dtype` with `accum_dtype`, which the assert at
                     # the top of the function pins to the same f32.
                     var _ws_lse = rebind[
-                        UnsafePointer[Scalar[accum_dtype], MutAnyOrigin]
+                        MutPointer[Scalar[accum_dtype], MutAnyOrigin]
                     ](ws_lse_ptr.value().unsafe_mut_cast[True]())
                     _ws_lse[Int(_off)] = _lse
 
@@ -2890,11 +2926,12 @@ def fa4_softmax[
                 s0[n] = sn[0]
                 s0[n + 1] = sn[1]
 
-    @__parameter
     @inline(.always)
     def load_mask_max_impl[
         *, mask_strategy: MaskStrategy
-    ](kv_row: UInt32) -> StaticTuple[Float32, max_unroll]:
+    ](kv_row: UInt32) {
+        mut inplace_prod, mut k_scale_off, mut s, imm
+    } -> StaticTuple[Float32, max_unroll]:
         comptime if EnableForcedOrdering:
             order_s_wait.unsafe_value()[].wait(order_phase)
         # break up into sets of 32
@@ -2984,7 +3021,7 @@ def fa4_softmax[
     @inline(.always)
     def init_load_mask_max[
         mask_strategy: MaskStrategy
-    ](kv_row: UInt32) -> Float32:
+    ](kv_row: UInt32) {imm} -> Float32:
         return maximum(load_mask_max_impl[mask_strategy=mask_strategy](kv_row))
 
     @inline(.always)
@@ -3337,7 +3374,9 @@ def fa4_softmax[
             # release below lets the MMA overwrite S.
             tcgen05_load_wait()
             store_p_quadrant[BN=config.BN, p_tile_rows=config.BM](
-                smem.p_smem() + warp_group_idx * UInt32(config.BM * config.BN),
+                smem.p_smem().unsafe_offset(
+                    warp_group_idx * UInt32(config.BM * config.BN)
+                ),
                 s,
                 thread_tile_row,
                 partition_g,
@@ -3547,7 +3586,8 @@ def fa4_softmax[
     # partitions empty, never the rank-0 writer; also covers M6 idle CTAs) WG1
     # has zero work and MMA never commits s1, so pipeline_s.wait() below would
     # hang; peel_mask (num_sets==1) would also underflow mask_iters[0]. Skip
-    # everything WG1 would do and exit.
+    # everything WG1 would do and drop to the final cross-WG sync that gates
+    # TMEM dealloc (the dealloc, `warp_idx == 0`, runs at the kernel terminal).
     #
     # single-O (wide-V fallback): the two per-WG O partials do NOT fit in
     # the 512-col TMEM (`2*BN + 2*padded_ov > 512`), so single-O aliases
@@ -3565,7 +3605,7 @@ def fa4_softmax[
         if (
             config.single_o or total_iters_combined <= UInt32(1)
         ) and warp_group_idx == UInt32(1):
-            syncwarp()
+            named_barrier[Int32(2 * WARPGROUP_SIZE)](2)
             return
 
         # Empty partition (total_iters_combined == 0; WG0 only -- WG1 returned
@@ -3593,11 +3633,15 @@ def fa4_softmax[
                     comptime WS_STAGE = config.ws_epilogue_stage_f32()
                     comptime WS_ML = config.ws_epilogue_ml_f32()
                     var ws_f32e = smem.o_smem[.float32]()
-                    var ws_maxsum1e = ws_f32e + (2 * WS_STAGE + WS_ML)
-                    var ws_l2_stagee = ws_f32e + (2 * WS_STAGE + 2 * WS_ML)
+                    var ws_maxsum1e = ws_f32e.unsafe_offset(
+                        2 * WS_STAGE + WS_ML
+                    )
+                    var ws_l2_stagee = ws_f32e.unsafe_offset(
+                        2 * WS_STAGE + 2 * WS_ML
+                    )
                     var ws_o_e = (
-                        ws_f32e + config.ws_epilogue_o_f32_offset()
-                    ).bitcast[Scalar[output_type]]()
+                        ws_f32e.unsafe_offset(config.ws_epilogue_o_f32_offset())
+                    ).unsafe_bitcast[Scalar[output_type]]()
                     var o_band_zero = Array[
                         Float32,
                         config.ov_depth // config.m_pack,
@@ -3630,7 +3674,9 @@ def fa4_softmax[
                     )
                 elif splitk_combine_active:
                     var stage = smem.o_smem[.float32]()
-                    var maxsum = stage + (config.BM * padded_ov_depth)
+                    var maxsum = stage.unsafe_offset(
+                        config.BM * padded_ov_depth
+                    )
                     # Neutral (max,sum): -inf never wins the cluster Gmax, and
                     # sum 0 zeroes this partition's combine weight regardless.
                     maxsum[row * 2] = min_or_neg_inf[.float32]()
@@ -3673,7 +3719,9 @@ def fa4_softmax[
                         head_idx,
                         gmem_row + cta_q_offset,
                     )
-                syncwarp()
+                # Release WG1 (parked on this 2*WG barrier above) before the
+                # kernel terminal cluster_sync + TMEM dealloc.
+                named_barrier[Int32(2 * WARPGROUP_SIZE)](2)
                 return
 
         # Workspace (traditional/unfused) split-K empty partition. The workspace
@@ -3682,7 +3730,9 @@ def fa4_softmax[
         # -- reachable once windowed / chunked masks leave trailing partitions
         # empty) must be handled here, or WG0 hangs on `pipeline_s.wait()` below
         # (no scores were ever produced). Write `lse_p = -inf` (skip the O store;
-        # the separate `fa4_splitk_combine` folds `exp2(lse_p - m*) = 0`).
+        # the separate `fa4_splitk_combine` folds `exp2(lse_p - m*) = 0`), then
+        # rendezvous with WG1 (parked on the 2*WG barrier at its early return for
+        # `total_iters_combined <= 1`) exactly as the T==1 non-empty exit does.
         # `_ws_write_lse(-inf, 0)` -> `log2(0) + (-inf)*scale_log2e = -inf`.
         #
         # This is the ONLY egress that writes LSE without an O store, which is
@@ -3695,12 +3745,27 @@ def fa4_softmax[
                 _ws_write_lse(
                     min_or_neg_inf[accum_dtype](), Scalar[accum_dtype](0)
                 )
-                syncwarp()
+                comptime if not single_softmax_wg:
+                    named_barrier[Int32(2 * WARPGROUP_SIZE)](2)
+                # Free the TMEM this CTA allocated in the prologue. The non-empty
+                # workspace exit deallocs at the end of its store path (which this
+                # early return skips), and the MMA warp likewise returns for
+                # `total_iters == 0` WITHOUT issuing any MMA (`mma_warp.mojo`'s
+                # empty-partition guard), so no TMEM op is in flight -- warp 0
+                # frees it here, mirroring the non-empty exit. Omitting it leaks
+                # the CTA's TMEM (CUDA_ERROR_TENSOR_MEMORY_LEAK).
+                if warp_idx == 0:
+                    tcgen05_release_allocation_lock[Int32(cta_group)]()
+                    tcgen05_dealloc[Int32(cta_group)](
+                        tmem_addr, UInt32(config.sm100_tmem_cols)
+                    )
                 return
     # All-masked row (valid_length 0): no scores produced, so `pipeline_s.wait()`
     # below would hang. Write a deterministic zero output row (the O accumulator
     # was never produced, so `zero_fill` skips the TMEM read), then take WG0's
-    # normal terminal exit.
+    # normal terminal exit -- rendezvous on the 2*WG barrier (unless there is no
+    # second WG) and free the TMEM warp 0 owns on the single-CTA path; a bare
+    # return would leak it and wedge the next launch.
     comptime if config.num_q == 1 and not (config.splitk_partitions > 1):
         if total_iters_combined == UInt32(0):
             fa4_scale_write_output[config, zero_fill=True](
@@ -3717,7 +3782,14 @@ def fa4_softmax[
                 head_idx,
                 gmem_row + cta_q_offset,
             )
-            syncwarp()
+            comptime if not single_softmax_wg:
+                named_barrier[Int32(2 * WARPGROUP_SIZE)](2)
+            comptime if not config.pair_cta and config.splitk_partitions == 1:
+                if warp_idx == 0:
+                    tcgen05_release_allocation_lock[Int32(cta_group)]()
+                    tcgen05_dealloc[Int32(cta_group)](
+                        tmem_addr, UInt32(config.sm100_tmem_cols)
+                    )
             return
 
     pipeline_s.wait()
@@ -3729,9 +3801,8 @@ def fa4_softmax[
         ].cast[accum_dtype]()
 
     var row_max: Float32 = peel_mask[
-        rebind[StaticTuple[MaskStrategy, num_sets]](mask_strategies),
-        init_load_mask_max,
-    ](mask_iters, kv_row)
+        rebind[StaticTuple[MaskStrategy, num_sets]](mask_strategies)
+    ](init_load_mask_max, mask_iters, kv_row)
     var sink_weight: Scalar[accum_dtype]
 
     # Split-K: the sink mass must land in the *cluster-global* sum exactly
@@ -3839,7 +3910,7 @@ def fa4_softmax[
 
     comptime if not SinkType.is_null:
         var sink_weights_ptr = rebind[
-            UnsafePointer[Scalar[qkv_type], ImmutAnyOrigin]
+            ImmPointer[Scalar[qkv_type], ImmutAnyOrigin]
         ](sink_weights.value())
 
         comptime if use_fma:
@@ -3873,11 +3944,14 @@ def fa4_softmax[
     # dataflow is the enforcement: this call consumes the clamped value.
     #
     # A full-warpgroup barrier HERE is safe because every `return` that can
-    # precede it is warpgroup-uniform: the 1Q T<=1 exit returns the whole of
-    # WG1, and the three empty-partition / all-masked exits are gated on
-    # `total_iters_combined`, a per-CTA quantity. A future early return between
-    # `peel_mask` and here must be warpgroup-uniform too, or skip the exchange
-    # for the whole warpgroup.
+    # precede it is warpgroup-uniform: the 1Q T<=1 exit parks the whole of WG1,
+    # and the three empty-partition / all-masked exits are gated on
+    # `total_iters_combined`, a per-CTA quantity (each of those blocks arrives at
+    # a 256-count `named_barrier(2)` before returning, so a per-warp predicate
+    # there would already hang today). This exchange adds NO uniformity
+    # obligation the function did not already carry. A future early return
+    # between `peel_mask` and here WOULD: make it warpgroup-uniform, or skip the
+    # exchange for the whole warpgroup.
     row_max = sk_shared_max(row_max)
 
     # use_fma carries the running max in the negated log2-domain
@@ -4260,7 +4334,9 @@ def fa4_softmax[
                 warp_idx & 3,
                 warp_group_idx,
                 inv_row_sum,
-                o_smem + warp_group_idx * UInt32(HalfBM * padded_ov_depth),
+                o_smem.unsafe_offset(
+                    warp_group_idx * UInt32(HalfBM * padded_ov_depth)
+                ),
                 o_tile,
                 ragged_tma_store,
                 num_output_rows,
@@ -4386,15 +4462,17 @@ def fa4_softmax[
             ), "WS two-level combine staging must fit the dead Q+KV span"
             var ws_f32 = smem.o_smem[.float32]()
             var ws_stage0 = ws_f32
-            var ws_stage1 = ws_stage0 + WS_STAGE
-            var ws_maxsum0 = ws_stage1 + WS_STAGE
-            var ws_maxsum1 = ws_maxsum0 + WS_ML
-            var ws_l2_stage = ws_maxsum1 + WS_ML
-            var ws_l2_maxsum = ws_l2_stage + WS_L2STAGE
+            var ws_stage1 = ws_stage0.unsafe_offset(WS_STAGE)
+            var ws_maxsum0 = ws_stage1.unsafe_offset(WS_STAGE)
+            var ws_maxsum1 = ws_maxsum0.unsafe_offset(WS_ML)
+            var ws_l2_stage = ws_maxsum1.unsafe_offset(WS_ML)
+            var ws_l2_maxsum = ws_l2_stage.unsafe_offset(WS_L2STAGE)
             comptime assert (
                 2 * WS_STAGE + 2 * WS_ML + WS_L2STAGE + WS_L2MS <= WS_O_OFF
             )
-            var ws_o = (ws_f32 + WS_O_OFF).bitcast[Scalar[output_type]]()
+            var ws_o = ws_f32.unsafe_offset(WS_O_OFF).unsafe_bitcast[
+                Scalar[output_type]
+            ]()
 
             var ws_row_sum = row_sum.reduce_add()
 
@@ -4532,7 +4610,9 @@ def fa4_softmax[
                             # so one shared window is a WAR race. Summed over
                             # the tiles this is exactly `WS_L2STAGE` -- the fix
                             # costs no SMEM and no barrier.
-                            ws_l2_stage + t * config.pv_mma_n() * config.BM,
+                            ws_l2_stage.unsafe_offset(
+                                t * config.pv_mma_n() * config.BM
+                            ),
                             ws_l2_maxsum,
                             ws_o,
                         )
@@ -4565,14 +4645,15 @@ def fa4_softmax[
                     _ws_write_lse(sk_m, sk_l)
 
                 if total_iters_combined == UInt32(1):
-                    # WG0 alone: WG1 returned at the num_q==1 early-out, so
-                    # Level 2's 256-count barrier(3) would HANG. `single_wg` drops the
+                    # WG0 alone: WG1 returned at the num_q==1 early-out having
+                    # already taken `named_barrier[256](2)`, so Level 2's
+                    # 256-count barrier(3) would HANG. `single_wg` drops the
                     # whole cross-WG transport rather than feeding it a neutral
                     # peer, which would not fix the barrier count.
                     o_prod_mbar[0].wait(o_phase)
                     tcgen05_fence_after()
                     sk_epilogue[True]()
-                    syncwarp()
+                    named_barrier[Int32(2 * WARPGROUP_SIZE)](2)
                 else:
                     # BOTH waits, for the two distinct reasons the key-split
                     # T>=2 arm documents below. The OWN wait gates this WG's
@@ -4588,7 +4669,15 @@ def fa4_softmax[
                         o_phase ^ (total_iters_combined & UInt32(1))
                     )
                     sk_epilogue[False]()
-                    syncwarp()
+                    named_barrier[Int32(2 * WARPGROUP_SIZE)](4)
+                comptime if (
+                    not config.pair_cta and config.splitk_partitions == 1
+                ):
+                    if warp_idx == 0:
+                        tcgen05_release_allocation_lock[Int32(cta_group)]()
+                        tcgen05_dealloc[Int32(cta_group)](
+                            tmem_addr, UInt32(config.sm100_tmem_cols)
+                        )
                 return
 
             if total_iters_combined == UInt32(1):
@@ -4687,7 +4776,9 @@ def fa4_softmax[
                             gmem_row + cta_q_offset + ws_o_row_off,
                         )
                     _ws_write_lse(m_cta_t1_ws, l_cta_t1_ws)
-                syncwarp()
+                # WG1 already hit `named_barrier[256](2)` and returned; WG0 hits
+                # it here so the pair-WG sync resolves before TMEM dealloc.
+                named_barrier[Int32(2 * WARPGROUP_SIZE)](2)
             else:
                 # T>=2: hierarchical two-level combine (both WGs active). Wait
                 # BOTH o_prod producers. The OWN wait gates this WG's Level-1
@@ -4829,7 +4920,13 @@ def fa4_softmax[
                             gmem_row + cta_q_offset + ws_o_row_off,
                         )
                     _ws_write_lse(m_cta_ws, l_cta_ws)
-                syncwarp()
+                named_barrier[Int32(2 * WARPGROUP_SIZE)](4)
+            comptime if not config.pair_cta and config.splitk_partitions == 1:
+                if warp_idx == 0:
+                    tcgen05_release_allocation_lock[Int32(cta_group)]()
+                    tcgen05_dealloc[Int32(cta_group)](
+                        tmem_addr, UInt32(config.sm100_tmem_cols)
+                    )
             return
 
         if config.single_o or total_iters_combined == UInt32(1):
@@ -4859,7 +4956,7 @@ def fa4_softmax[
                 # partition here carries the data; trailing empty partitions take
                 # the empty-partition path above and combine their bands from it.)
                 var stage = smem.o_smem[.float32]()
-                var maxsum = stage + (config.BM * padded_ov_depth)
+                var maxsum = stage.unsafe_offset(config.BM * padded_ov_depth)
                 # o0 tile typed with `config.BM` exactly — `o_tile`'s
                 # `BM // config.num_q` does not fold to `config.BM` at parse
                 # time, so it can't convert to stage_partial's param type.
@@ -4917,7 +5014,24 @@ def fa4_softmax[
                 # Workspace split-K: emit the fused per-row LSE alongside the
                 # per-partition O (T==1: WG0 owns the full row_max/row_sum).
                 _ws_write_lse(row_max, row_sum_total)
-            syncwarp()
+            # WG1 already participated in `named_barrier[2*WG](2)` and
+            # returned; WG0 must hit it here so the pair-WG sync resolves
+            # before TMEM dealloc. Mirrors the unconditional sync below.
+            # When the generic single-O path drops WG1 entirely
+            # (`single_softmax_wg`), there is no peer WG to rendezvous with, so
+            # this 256-thread barrier would hang with only WG0's 128 arrivals.
+            # The correction / MMA -> dealloc ordering is carried by the
+            # o-producer mbars (unchanged), not this softmax-only barrier.
+            comptime if not single_softmax_wg:
+                named_barrier[Int32(2 * WARPGROUP_SIZE)](2)
+            # Pair-CTA and 1Q split-K defer dealloc to the kernel terminal
+            # (after the cluster_sync); only plain single-CTA deallocs inline.
+            comptime if not config.pair_cta and config.splitk_partitions == 1:
+                if warp_idx == 0:
+                    tcgen05_release_allocation_lock[Int32(cta_group)]()
+                    tcgen05_dealloc[Int32(cta_group)](
+                        tmem_addr, UInt32(config.sm100_tmem_cols)
+                    )
             return
 
         # (WS T>=2 two-level combine handled above and returned; the non-WS
@@ -5060,7 +5174,7 @@ def fa4_softmax[
                 <= type_of(smem).q_bytes + type_of(smem).kv_bytes
             ), "split-K f32 O+(max,sum) staging must fit in the dead Q+KV span"
             var stage = smem.o_smem[.float32]()
-            var maxsum = stage + (config.BM * config.padded_ov_depth)
+            var maxsum = stage.unsafe_offset(config.BM * config.padded_ov_depth)
 
             # --- Publish (max,sum) for both WGs, then stage + reduce-scatter. ---
             tid = warp_group_idx * UInt32(WARPGROUP_SIZE) + row
@@ -5154,4 +5268,14 @@ def fa4_softmax[
                             head_idx,
                             out_row_idx,
                         )
-    syncwarp()
+    named_barrier[Int32(2 * WARPGROUP_SIZE)](4)
+    # Pair-CTA and 1Q split-K defer dealloc to the kernel after cluster_sync so
+    # that no CTA exits while a peer's cluster-scoped access is in flight
+    # (stmatrix for pair-CTA; the DSMEM `(max,sum)` peer reads for split-K).
+    # Only plain single-CTA deallocs inline here.
+    comptime if not config.pair_cta and config.splitk_partitions == 1:
+        if warp_idx == 0:
+            tcgen05_release_allocation_lock[Int32(cta_group)]()
+            tcgen05_dealloc[Int32(cta_group)](
+                tmem_addr, UInt32(config.sm100_tmem_cols)
+            )

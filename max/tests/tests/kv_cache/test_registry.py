@@ -16,8 +16,6 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from types import SimpleNamespace
-from typing import cast
 from unittest.mock import MagicMock, Mock, patch
 
 import pytest
@@ -25,7 +23,6 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.nn.kv_cache import (
-    KVCacheGroupId,
     KVCacheParams,
     KVConnectorType,
     MHAKVCacheParams,
@@ -44,7 +41,6 @@ from max.pipelines.kv_cache import (
     load_kv_manager,
 )
 from max.pipelines.kv_cache.config import KVConnectorConfig
-from max.pipelines.kv_cache.connectors import create_connector
 from max.pipelines.kv_cache.registry import (
     _use_jenga_kv_cache,
     jenga_supports_di,
@@ -568,10 +564,6 @@ def test_tiered_connector_types() -> None:
         KVConnectorType.tiered,
         KVConnectorType.rust_tiered,
     }
-    # Plain strings, as left by structural configs and `model_construct`.
-    assert "rust_tiered" in TIERED_CONNECTOR_TYPES
-    assert "tiered" in TIERED_CONNECTOR_TYPES
-    assert "null" not in TIERED_CONNECTOR_TYPES
 
 
 def test_kv_connector_type_rejects_removed_mojo_tiered() -> None:
@@ -597,18 +589,13 @@ def test_kv_connector_config_typo_error_lists_the_choices() -> None:
         KVConnectorConfig.model_validate({"type": "rust_tierd"})
 
 
-def test_create_connector_rejects_plain_string_mojo_tiered() -> None:
-    """A plain string in ``type`` must not fall through to a NullConnector."""
-    params = SimpleNamespace(
-        kv_connector_config=SimpleNamespace(type="mojo_tiered")
+def test_kv_connector_config_stores_the_enum() -> None:
+    """Plain strings from a config file or the CLI are stored as the enum."""
+    assert (
+        KVConnectorConfig.model_validate({"type": "rust_tiered"}).type
+        is KVConnectorType.rust_tiered
     )
-    with pytest.raises(
-        ValueError, match="'mojo_tiered' KV connector was removed"
-    ):
-        create_connector(
-            leaves={"full": KVCacheGroupId.full()},
-            replica_kv_memory=[],
-            params=cast("KVCacheParams", params),
-            devices=[],
-            device_memory_bytes=0,
-        )
+    assert (
+        KVConnectorConfig.model_validate_json('{"type": "dkv"}').type
+        is KVConnectorType.dkv
+    )

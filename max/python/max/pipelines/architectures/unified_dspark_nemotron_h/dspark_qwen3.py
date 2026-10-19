@@ -71,7 +71,6 @@ from max.nn.kernels import store_v_cache_ragged as _store_v_cache_ragged
 from max.nn.kv_cache import KVCacheParams
 from max.pipelines.architectures.nemotron_h_modulev3.layers.quantized import (
     NVFP4Linear,
-    nvfp4_matmul,
 )
 from max.pipelines.architectures.nemotron_h_modulev3.layers.sharding import (
     shard_axis,
@@ -550,14 +549,7 @@ def markov_bias(head: MarkovHead, previous: Tensor) -> Tensor:
     embedded = F.gather(embed_weight, previous, axis=0)
     w2 = head.markov_w2
     if isinstance(w2, NVFP4Linear):
-        return Tensor.from_graph_value(
-            nvfp4_matmul(
-                TensorValue(embedded),
-                TensorValue(w2.weight.local_shards[0]),
-                TensorValue(w2.weight_scale.local_shards[0]),
-                TensorValue(w2.weight_scale_2.local_shards[0]),
-            )
-        )
+        return Tensor.from_graph_value(w2.matmul_on(TensorValue(embedded), 0))
     return embedded @ w2.weight.local_shards[0].T
 
 

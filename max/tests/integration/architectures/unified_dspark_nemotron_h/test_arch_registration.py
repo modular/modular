@@ -19,6 +19,7 @@ from max.pipelines.architectures.unified_dspark_nemotron_h import (
     UnifiedDSparkNemotronHConfig,
     UnifiedDSparkNemotronHModel,
 )
+from max.pipelines.lib import ModuleV3PipelineModelWithKVCache
 from max.pipelines.lib.arch_lookup import find_architecture
 
 _UNIFIED = "UnifiedDSparkNemotronHForCausalLM_ModuleV3"
@@ -52,3 +53,11 @@ def test_draft_arch_is_registered() -> None:
     arch = PIPELINE_REGISTRY.retrieve_architecture("Qwen3DSparkModel")
     assert arch is not None
     assert "float4_e2m1fnx2" in arch.supported_encodings
+
+
+def test_the_unified_graph_replaces_the_decoder() -> None:
+    # Otherwise the base compiles the plain Nemotron-H decoder.
+    assert (
+        UnifiedDSparkNemotronHModel._load_decoder
+        is not ModuleV3PipelineModelWithKVCache._load_decoder
+    )

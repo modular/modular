@@ -19,9 +19,9 @@
 
 
 def vec_add(
-    a_h: UnsafePointer[Float32, MutUntrackedOrigin],
-    b_h: UnsafePointer[Float32, MutUntrackedOrigin],
-    c_h: UnsafePointer[Float32, MutUntrackedOrigin],
+    a_h: MutPointer[Float32, MutUntrackedOrigin],
+    b_h: MutPointer[Float32, MutUntrackedOrigin],
+    c_h: MutPointer[Float32, MutUntrackedOrigin],
     n: Int,
 ):
     """Compute vector sum C_h = A_h + B_h on the CPU.
@@ -41,7 +41,7 @@ def vec_add(
 
 def main() raises:
     # Memory allocation for arrays A, B, and C
-    var n = 10
+    comptime n = 10
     var a = alloc[Float32](n)
     var b = alloc[Float32](n)
     var c = alloc[Float32](n)

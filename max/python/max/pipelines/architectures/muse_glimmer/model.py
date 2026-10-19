@@ -28,6 +28,7 @@ from max.graph.weights import Weights, WeightsAdapter
 from max.nn.transformer import ReturnLogits
 from max.pipelines.context import ImageMetadata, TextAndVisionContext
 from max.pipelines.lib import (
+    GraphSpec,
     KVCacheConfig,
     ModelInputs,
     ModelOutputs,
@@ -109,7 +110,7 @@ class MuseGlimmerModel(
             max_batch_size=max_batch_size,
             memory_plan=memory_plan,
         )
-        self.vision_model, language_model = self.load_model()
+        self.vision_model, language_model = self._load_towers(session)
         assert isinstance(language_model, CompiledCallable)
         self.language_model = language_model
 
@@ -152,14 +153,10 @@ class MuseGlimmerModel(
         self.config = model_config
         return model_config
 
-    def _compile_vision_model(  # type: ignore[override]
+    def _vision_spec(
         self, model_config: MuseGlimmerConfig, state_dict: dict[str, Any]
-    ) -> Callable[..., Any] | None:
-        """Compiles the vision tower, or returns ``None`` when the checkpoint
-        has none.
-
-        The override widens the base hook's return type, hence the ignore.
-        """
+    ) -> GraphSpec | None:
+        """Builds the vision tower, or returns ``None`` without one."""
         vision_config = model_config.vision_config
         if vision_config is None:
             return None
@@ -176,11 +173,16 @@ class MuseGlimmerModel(
             DeviceRef.from_device(self.devices[0]),
             model_config.dtype,
         )
-        return vision_nn.compile(*input_types, weights=state_dict)
+        return GraphSpec(
+            vision_nn,
+            type(vision_nn).__qualname__,
+            input_types,
+            weights=state_dict,
+        )
 
-    def _compile_language_model(
+    def _language_spec(
         self, model_config: MuseGlimmerConfig, state_dict: dict[str, Any]
-    ) -> Callable[..., Any]:
+    ) -> GraphSpec:
         mesh = DeviceMesh(tuple(self.devices), (len(self.devices),), ("tp",))
         with F.lazy(), default_dtype(model_config.dtype):
             language_nn = MuseGlimmer(model_config, mesh)
@@ -193,7 +195,12 @@ class MuseGlimmerModel(
             # Must match empty_vision_embeddings().
             embedding_dtype=model_config.dtype,
         )
-        return language_nn.compile(*input_types, weights=state_dict)
+        return GraphSpec(
+            language_nn,
+            type(language_nn).__qualname__,
+            input_types,
+            weights=state_dict,
+        )
 
     # --- SupportsVisionEncoding ---
 

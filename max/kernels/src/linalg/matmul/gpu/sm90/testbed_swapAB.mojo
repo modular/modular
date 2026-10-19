@@ -81,9 +81,9 @@ def test_matmul_sm90_swapAB_comparison[
         k: The K dimension (can be static or dynamic).
     """
     comptime transpose_b = True
-    var M = Int(m.value())
-    var N = Int(n.value())
-    var K = Int(k.value())
+    var M = Int(m)
+    var N = Int(n)
+    var K = Int(k)
 
     # Convert SM90 configs to base configs for the kernel
     comptime base_config = config.to_base_config()
@@ -115,13 +115,13 @@ def test_matmul_sm90_swapAB_comparison[
     var c_normal_host_alloc = alloc(
         AllocLayout[Scalar[c_type]](count=c_size)
     ).into_managed()
-    var c_normal_host_ptr: UnsafePointer[
+    var c_normal_host_ptr: MutPointer[
         Scalar[c_type], origin_of(c_normal_host_alloc)
     ] = c_normal_host_alloc.unsafe_ptr()
     var c_swapAB_host_alloc = alloc(
         AllocLayout[Scalar[c_type]](count=c_size)
     ).into_managed()
-    var c_swapAB_host_ptr: UnsafePointer[
+    var c_swapAB_host_ptr: MutPointer[
         Scalar[c_type], origin_of(c_swapAB_host_alloc)
     ] = c_swapAB_host_alloc.unsafe_ptr()
 
@@ -477,9 +477,9 @@ def test_matmul_sm90_swapAB_comparison_v2[
             when `has_compute_fn` is set.
     """
     comptime transpose_b = True
-    var M = Int(m.value())
-    var N = Int(n.value())
-    var K = Int(k.value())
+    var M = Int(m)
+    var N = Int(n)
+    var K = Int(k)
 
     # Build compile-time configs directly using BaseMatmulConfig
     comptime base_config = BaseMatmulConfig[
@@ -533,13 +533,13 @@ def test_matmul_sm90_swapAB_comparison_v2[
     var c_normal_host_alloc = alloc(
         AllocLayout[Scalar[c_type]](count=c_size)
     ).into_managed()
-    var c_normal_host_ptr: UnsafePointer[
+    var c_normal_host_ptr: MutPointer[
         Scalar[c_type], origin_of(c_normal_host_alloc)
     ] = c_normal_host_alloc.unsafe_ptr()
     var c_swapAB_host_alloc = alloc(
         AllocLayout[Scalar[c_type]](count=c_size)
     ).into_managed()
-    var c_swapAB_host_ptr: UnsafePointer[
+    var c_swapAB_host_ptr: MutPointer[
         Scalar[c_type], origin_of(c_swapAB_host_alloc)
     ] = c_swapAB_host_alloc.unsafe_ptr()
 

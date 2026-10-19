@@ -269,11 +269,11 @@ def load_AB[
     var a_scales_smem_tile = a_scales_smem_tiles[stage]
 
     var a_smem_slice = type_of(a_smem_tile)(
-        a_smem_tile.ptr + peer_cta_coord[2] * a_tma_load_size,
+        a_smem_tile.ptr.unsafe_offset(peer_cta_coord[2] * a_tma_load_size),
         a_smem_tile.layout,
     )
     var b_smem_slice = type_of(b_smem_tile)(
-        b_smem_tile.ptr + peer_cta_coord[1] * b_tma_load_size,
+        b_smem_tile.ptr.unsafe_offset(peer_cta_coord[1] * b_tma_load_size),
         b_smem_tile.layout,
     )
     var tma_mbar = load_mma_pipeline.producer_mbar(stage)
@@ -397,12 +397,8 @@ def multi_stage_reg_epilogue[
     var warp_id = get_warp_id()
 
     comptime for stage in range(num_stages):
-        var upper_frag = c_upper_main_tile.load[fragments_per_stage](
-            Coord(stage, 0)
-        )
-        var lower_frag = c_lower_main_tile.load[fragments_per_stage](
-            Coord(stage, 0)
-        )
+        var upper_frag = c_upper_main_tile.load[fragments_per_stage]((stage, 0))
+        var lower_frag = c_lower_main_tile.load[fragments_per_stage]((stage, 0))
 
         # Assume double-buffer for shared memory packing
         var c_smem_tile = c_tiles[stage % 2]
@@ -683,22 +679,20 @@ def promote_accumulators[
         #                                                           next_n(128)
 
         # prefetch b scales
-        b_scale_0 = rebind[Scalar[accum_type]](
-            b_scales[b_scale_idx0, k_iter].cast[accum_type]()
-        )
+        b_scale_0 = b_scales.load[width=1]((b_scale_idx0, k_iter)).cast[
+            accum_type
+        ]()
         # this mean in this block we have two scale_b
         if b_scale_next_n < MMA_N:
-            b_scale_1 = rebind[Scalar[accum_type]](
-                b_scales[b_scale_idx0 + 1, k_iter].cast[accum_type]()
-            )
+            b_scale_1 = b_scales.load[width=1]((b_scale_idx0 + 1, k_iter)).cast[
+                accum_type
+            ]()
         else:
             b_scale_1 = 0.0
 
     else:
         # when MMA_N == BK == 128 we only have one scale_b per block
-        b_scale_0 = rebind[Scalar[accum_type]](
-            b_scales[bn, k_iter].cast[accum_type]()
-        )
+        b_scale_0 = b_scales.load[width=1]((bn, k_iter)).cast[accum_type]()
         b_scale_1 = 0.0
 
     var warp_id = get_warp_id()
@@ -762,16 +756,12 @@ def promote_accumulators[
     var lower_sfa1_smem = Scalar[accum_type]()
 
     comptime if is_lower_frag_required:
-        lower_sfa0_smem = rebind[Scalar[accum_type]](
-            a_scales_smem[
-                0, UInt32(staged_c_row) + top_frag_lower_coord[0]
-            ].cast[accum_type]()
-        )
-        lower_sfa1_smem = rebind[Scalar[accum_type]](
-            a_scales_smem[
-                0, UInt32(staged_c_row) + bottom_frag_lower_coord[0]
-            ].cast[accum_type]()
-        )
+        lower_sfa0_smem = a_scales_smem[
+            0, UInt32(staged_c_row) + top_frag_lower_coord[0]
+        ].cast[accum_type]()
+        lower_sfa1_smem = a_scales_smem[
+            0, UInt32(staged_c_row) + bottom_frag_lower_coord[0]
+        ].cast[accum_type]()
 
     syncwarp()
     if lane_id() < Int(CLUSTER_SIZE):
@@ -842,15 +832,15 @@ def promote_accumulators[
                 var upper_scale = upper_a_scale * b_scale
                 var lower_scale = lower_a_scale * b_scale
 
-                c_upper_main_tile[Coord(stage, offset)] = c_upper_main_tile[
-                    Coord(stage, offset)
+                c_upper_main_tile[stage, offset] = c_upper_main_tile[
+                    stage, offset
                 ] + rebind[Scalar[accum_type]](upper_frag[offset]) * rebind[
                     Scalar[accum_type]
                 ](
                     upper_scale
                 )
-                c_upper_main_tile[Coord(stage, offset + 1)] = c_upper_main_tile[
-                    Coord(stage, offset + 1)
+                c_upper_main_tile[stage, offset + 1] = c_upper_main_tile[
+                    stage, offset + 1
                 ] + rebind[Scalar[accum_type]](upper_frag[offset + 1]) * rebind[
                     Scalar[accum_type]
                 ](
@@ -858,18 +848,16 @@ def promote_accumulators[
                 )
 
                 comptime if is_lower_frag_required:
-                    c_lower_main_tile[Coord(stage, offset)] = c_lower_main_tile[
-                        Coord(stage, offset)
+                    c_lower_main_tile[stage, offset] = c_lower_main_tile[
+                        stage, offset
                     ] + rebind[Scalar[accum_type]](lower_frag[offset]) * rebind[
                         Scalar[accum_type]
                     ](
                         lower_scale
                     )
-                    c_lower_main_tile[
-                        Coord(stage, offset + 1)
-                    ] = c_lower_main_tile[Coord(stage, offset + 1)] + rebind[
-                        Scalar[accum_type]
-                    ](
+                    c_lower_main_tile[stage, offset + 1] = c_lower_main_tile[
+                        stage, offset + 1
+                    ] + rebind[Scalar[accum_type]](
                         lower_frag[offset + 1]
                     ) * rebind[
                         Scalar[accum_type]
@@ -1040,11 +1028,15 @@ def blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
     comptime a_scales_smem_size = a_scales_smem_layout.size() * num_pipeline_stages
 
     var a_smem_base = base_ptr_smem
-    var b_smem_base = (a_smem_base + a_smem_size).bitcast[Scalar[b_type]]()
-    var c_smem_base = (b_smem_base + b_smem_size).bitcast[Scalar[c_type]]()
-    var a_scales_smem_base = (c_smem_base + c_smem_size).bitcast[
-        Scalar[a_scales_type]
+    var b_smem_base = a_smem_base.unsafe_offset(a_smem_size).unsafe_bitcast[
+        Scalar[b_type]
     ]()
+    var c_smem_base = b_smem_base.unsafe_offset(b_smem_size).unsafe_bitcast[
+        Scalar[c_type]
+    ]()
+    var a_scales_smem_base = c_smem_base.unsafe_offset(
+        c_smem_size
+    ).unsafe_bitcast[Scalar[a_scales_type]]()
 
     # TileTensor views of shared memory for both TMA producer and MMA consumer.
     # The size guards make the TileTensor array boundary explicit: pointer
@@ -1088,24 +1080,28 @@ def blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
         num_pipeline_stages,
         128,
     ](a_scales_smem_base)
-    var load_mma_mbar_ptr = (a_scales_smem_base + a_scales_smem_size).bitcast[
-        SharedMemBarrier
-    ]()
+    var load_mma_mbar_ptr = (
+        a_scales_smem_base.unsafe_offset(a_scales_smem_size)
+    ).unsafe_bitcast[SharedMemBarrier]()
 
     # Load warp as producer and mma warp as consumer
     var load_mma_pipeline = ProducerConsumerPipeline[num_pipeline_stages](
         load_mma_mbar_ptr
     )
 
-    var mma_output_mbar_ptr = load_mma_mbar_ptr + 2 * num_pipeline_stages
+    var mma_output_mbar_ptr = load_mma_mbar_ptr.unsafe_offset(
+        2 * num_pipeline_stages
+    )
     var mma_output_pipeline = ProducerConsumerPipeline[
         config.num_accum_pipeline_stages
     ](mma_output_mbar_ptr)
 
-    var clc_full_mbar_ptr = (
-        mma_output_mbar_ptr + 2 * config.num_accum_pipeline_stages
+    var clc_full_mbar_ptr = mma_output_mbar_ptr.unsafe_offset(
+        2 * config.num_accum_pipeline_stages
     )
-    var clc_empty_mbar_ptr = clc_full_mbar_ptr + config.num_clc_pipeline_stages
+    var clc_empty_mbar_ptr = clc_full_mbar_ptr.unsafe_offset(
+        config.num_clc_pipeline_stages
+    )
 
     # Load warp as producer and scheduler warp as consumer.
     # No data dependence. Introduce dependence to prevent CLC goes too ahead.
@@ -1113,22 +1109,26 @@ def blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
     # there will be no guarantee they get balanced number of tiles.
     var load_clc_pipeline = ProducerConsumerPipeline[
         config.num_clc_pipeline_stages
-    ](clc_empty_mbar_ptr + config.num_clc_pipeline_stages)
+    ](clc_empty_mbar_ptr.unsafe_offset(config.num_clc_pipeline_stages))
 
     var clc_response_ptr = (
-        clc_empty_mbar_ptr + 3 * config.num_clc_pipeline_stages
-    ).bitcast[Int128]()
+        clc_empty_mbar_ptr.unsafe_offset(3 * config.num_clc_pipeline_stages)
+    ).unsafe_bitcast[Int128]()
 
     var tmem_dealloc_mbar_ptr = (
-        clc_response_ptr + config.num_clc_pipeline_stages
-    ).bitcast[Int64]()
+        clc_response_ptr.unsafe_offset(config.num_clc_pipeline_stages)
+    ).unsafe_bitcast[Int64]()
 
-    var ptr_tmem_addr = (tmem_dealloc_mbar_ptr + 1).bitcast[UInt32]()
+    var ptr_tmem_addr = tmem_dealloc_mbar_ptr.unsafe_offset(1).unsafe_bitcast[
+        UInt32
+    ]()
 
-    var clc_response = clc_response_ptr.bitcast[UInt128]()
-    var clc_full_mbar = clc_full_mbar_ptr.bitcast[SharedMemBarrier]()
-    var clc_empty_mbar = clc_empty_mbar_ptr.bitcast[SharedMemBarrier]()
-    var tmem_dealloc_mbar = tmem_dealloc_mbar_ptr.bitcast[SharedMemBarrier]()
+    var clc_response = clc_response_ptr.unsafe_bitcast[UInt128]()
+    var clc_full_mbar = clc_full_mbar_ptr.unsafe_bitcast[SharedMemBarrier]()
+    var clc_empty_mbar = clc_empty_mbar_ptr.unsafe_bitcast[SharedMemBarrier]()
+    var tmem_dealloc_mbar = tmem_dealloc_mbar_ptr.unsafe_bitcast[
+        SharedMemBarrier
+    ]()
 
     var warp_id = get_warp_id()
     var elect_one_warp = warp_id == 0

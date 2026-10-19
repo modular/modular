@@ -36,7 +36,7 @@ def test_store_codegen_equivalence() raises:
     def coordinate_kernel(
         output: TileTensor[.int32, type_of(layout_2d), MutAnyOrigin],
     ):
-        output.store(Coord(2, 3), 1234)
+        output.store((2, 3), 1234)
 
     var subscript_asm = String(
         compile_info[
@@ -81,7 +81,7 @@ def test_load_codegen_equivalence() raises:
         input: TileTensor[.int32, type_of(layout_2d), ImmutAnyOrigin],
         output: TileTensor[.int32, type_of(layout_2d), MutAnyOrigin],
     ):
-        var val = input.load(Coord(2, 3))
+        var val = input.load((2, 3))
         output[0, 0] = val
 
     var subscript_asm = String(
@@ -125,7 +125,7 @@ def test_aligned_load_codegen_equivalence() raises:
         input: TileTensor[.int32, type_of(layout_2d), ImmutAnyOrigin],
         output: TileTensor[.int32, type_of(layout_2d), MutAnyOrigin],
     ):
-        var val = input.load[alignment=4](Coord(2, 3))
+        var val = input.load[alignment=4]((2, 3))
         output[0, 0] = val
 
     var subscript_asm = String(

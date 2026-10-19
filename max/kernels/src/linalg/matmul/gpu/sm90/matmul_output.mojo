@@ -29,7 +29,6 @@ from layout import (
     Coord,
     DefaultEngine,
     Idx,
-    Layout,
     TensorLayout,
     TileTensor,
     row_major,
@@ -47,9 +46,6 @@ from ....utils import (
     no_epilogue_fn,
 )
 from std.collections import OptionalReg
-from ....structuring import (
-    RegTile,
-)
 from .tile_writer import (
     TileWriterTMA,
     TileWriterThreadwise,
@@ -247,17 +243,17 @@ struct MatmulTileWriter[
             var col = UInt32(col_coord + col_offset)
 
             if row < max_row and col < max_col:
-                var shared_value = shared_fragment.load(Coord(Idx[i], Idx[0]))
+                var shared_value = shared_fragment.load((Idx[i], Idx[0]))
                 epilogue[
                     dtype=type_of(shared_value).dtype,
                     width=type_of(shared_value).length,
                 ](Coord(Int(row), Int(col)), shared_value)
-                shared_fragment.store(Coord(Idx[i], Idx[0]), shared_value)
+                shared_fragment.store((Idx[i], Idx[0]), shared_value)
 
     @inline(.always)
     def _write_tile_to_gmem[
         accum_type: DType,
-        reg_tile_layout: Layout,
+        reg_tile_layout: TensorLayout,
         EpilogueFnType: ElementwiseEpilogueFn,
         ComputeFnType: ElementwiseComputeFn,
         //,
@@ -267,7 +263,9 @@ struct MatmulTileWriter[
         has_compute_fn: Bool,
     ](
         self,
-        reg_tile: RegTile[accum_type, reg_tile_layout],
+        reg_tile: TileTensor[
+            accum_type, reg_tile_layout, address_space=.LOCAL, ...
+        ],
         epilogue_fn: EpilogueFnType,
         compute_fn: ComputeFnType,
     ):
@@ -336,7 +334,7 @@ struct MatmulTileWriter[
         tma_tile_shape: Coord,
         tma_desc_shape: Coord,
         accum_type: DType,
-        reg_tile_layout: Layout,
+        reg_tile_layout: TensorLayout,
         EpilogueFnType: ElementwiseEpilogueFn,
         ComputeFnType: ElementwiseComputeFn,
         //,
@@ -346,7 +344,9 @@ struct MatmulTileWriter[
     ](
         self,
         tma_op: TMATensorTile[Self.dtype, tma_tile_shape, tma_desc_shape],
-        reg_tile: RegTile[accum_type, reg_tile_layout],
+        reg_tile: TileTensor[
+            accum_type, reg_tile_layout, address_space=.LOCAL, ...
+        ],
         output_tile: TileTensor[mut=True, Self.dtype, ...],
         tile_origin: IndexList[2],
         value_epilogue_fn: EpilogueFnType,
@@ -482,7 +482,7 @@ struct MatmulTileWriter[
                     var tma_writer = TileWriterTMA(Pointer(to=tma_op))
 
                     if self.local_thread_idx < (Self.WG_BN // TMA_BN):
-                        var smem_offset = self.smem_tile._storage + (
+                        var smem_offset = self.smem_tile._storage.unsafe_offset(
                             Self.WG_BM * TMA_BN * self.local_thread_idx
                         )
                         comptime tma_smem_layout = row_major[
@@ -534,7 +534,7 @@ struct MatmulTileWriter[
         tma_tile_shape: Coord,
         tma_desc_shape: Coord,
         accum_type: DType,
-        reg_tile_layout: Layout,
+        reg_tile_layout: TensorLayout,
         EpilogueFnType: ElementwiseEpilogueFn = type_of(no_epilogue_fn),
         ComputeFnType: ElementwiseComputeFn = type_of(no_compute_fn),
         //,
@@ -544,7 +544,9 @@ struct MatmulTileWriter[
     ](
         self,
         tma_op: TMATensorTile[Self.dtype, tma_tile_shape, tma_desc_shape],
-        reg_tile: RegTile[accum_type, reg_tile_layout],
+        reg_tile: TileTensor[
+            accum_type, reg_tile_layout, address_space=.LOCAL, ...
+        ],
         epilogue_fn: EpilogueFnType = no_epilogue_fn,
         compute_fn: ComputeFnType = no_compute_fn,
     ):

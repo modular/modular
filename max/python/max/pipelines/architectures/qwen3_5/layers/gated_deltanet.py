@@ -124,6 +124,11 @@ class GatedDeltaReplayInputs(NamedTuple):
     ran, so a replay of the recurrence reads its rows here instead of running
     the conv again.
     """
+    qkv_window: TensorValue | None = None
+    """``[batch_size * (1 + K), conv_dim]`` float32 copy of ``qkv`` that a
+    verify's conv kernel writes when there are drafts, or ``None`` outside a
+    verify. A conv replay that reads this instead of ``qkv`` lets the next
+    layer reuse ``qkv``'s memory."""
 
 
 def _projection(stack: StackedLinear, name: str) -> Linear:
@@ -555,6 +560,7 @@ class GatedDeltaNet(Module, Shardable):
         rec_slot_uint32 = ops.cast(recurrent_row_id, DType.uint32)
         rec_slot_int32 = ops.cast(recurrent_row_id, DType.int32)
 
+        qkv_window: TensorValue | None = None
         if verify_width is None:
             conv_output_ragged = gated_delta_conv1d_fwd(
                 qkv_input_ragged=qkv_f32,
@@ -564,7 +570,7 @@ class GatedDeltaNet(Module, Shardable):
                 input_row_offsets=offsets_uint32,
             )
         else:
-            conv_output_ragged = gated_delta_conv1d_verify_fwd(
+            conv_output_ragged, qkv_window = gated_delta_conv1d_verify_fwd(
                 qkv_input_ragged=qkv_f32,
                 conv_weight=conv_weight_flat,
                 conv_state=conv_pool,
@@ -583,6 +589,7 @@ class GatedDeltaNet(Module, Shardable):
                     decay=decay,
                     beta=beta,
                     conv_output=conv_output_ragged,
+                    qkv_window=qkv_window,
                 )
             )
 

@@ -28,9 +28,9 @@ comptime IN_TILE_DIM = OUT_TILE_DIM + ((STENCIL_WIDTH - 1) // STENCIL_ORDER)
 
 # ========================== KERNEL CODE (THREAD COARSENING) ==========================
 def stencil_kernel(
-    d_in: UnsafePointer[Float32, ImmutAnyOrigin],
-    d_out: UnsafePointer[Float32, MutAnyOrigin],
-    d_c: UnsafePointer[Float32, ImmutAnyOrigin],  # Stencil coefficients
+    d_in: ImmPointer[Float32, ImmutAnyOrigin],
+    d_out: MutPointer[Float32, MutAnyOrigin],
+    d_c: ImmPointer[Float32, ImmutAnyOrigin],  # Stencil coefficients
     n_dev: Int32,
 ):
     """3D stencil kernel with thread coarsening in z-direction.
@@ -156,10 +156,10 @@ def stencil_kernel(
 
 # ========================== TEST CODE ==========================
 def cpu_3d_stencil(
-    h_in: UnsafePointer[mut=False, Float32, _],
-    h_out: UnsafePointer[mut=True, Float32, _],
+    h_in: ImmPointer[Float32, _],
+    h_out: MutPointer[Float32, _],
     N: Int,
-    coeffs: UnsafePointer[mut=False, Float32, _],
+    coeffs: ImmPointer[Float32, _],
 ):
     """CPU reference implementation of 3D stencil."""
     for i, j, k in product(range(N), range(N), range(N)):

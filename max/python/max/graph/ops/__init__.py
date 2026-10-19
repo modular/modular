@@ -116,7 +116,9 @@ from .reduction import min as _reduce_min
 from .repeat_interleave import repeat_interleave
 from .reshape import reshape
 from .resize import (
+    CoordinateTransformMode,
     InterpolationMode,
+    RoundMode,
     resize,
     resize_bicubic,
     resize_linear,

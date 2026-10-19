@@ -19,6 +19,7 @@ from typing import Any
 
 from max.dtype import DType
 from max.pipelines.lib import (
+    GraphRole,
     ModelInputs,
     ModelOutputs,
     ModuleV3PipelineModelWithKVCache,
@@ -26,15 +27,11 @@ from max.pipelines.lib import (
 
 
 class _Module:
-    def compile(self, *input_types: object, weights: object) -> object:
-        return weights
+    pass
 
 
 class _Model(ModuleV3PipelineModelWithKVCache[Any]):
     configured_from: dict[str, Any]
-
-    def _load_state_dict(self) -> dict[str, Any]:
-        return {"weight": "stored"}
 
     def _create_model_config(self, state_dict: dict[str, Any]) -> Any:
         self.configured_from = dict(state_dict)
@@ -55,10 +52,15 @@ class _Model(ModuleV3PipelineModelWithKVCache[Any]):
         raise NotImplementedError
 
 
-def test_compile_takes_the_weights_the_config_prepared() -> None:
+def test_the_decoder_takes_the_weights_the_config_prepared() -> None:
     model = object.__new__(_Model)
     model._lora_manager = None
     model._batch_processor = None
+    # What `_load_state_dict` keeps for `graph_specs`.
+    model._checkpoint = {"weight": "stored"}
 
-    assert model.load_model() == {"weight": "prepared"}
+    specs = model.graph_specs(model._create_model_config(model._checkpoint))
+
+    assert specs[GraphRole.DECODER].weights == {"weight": "prepared"}
+    assert specs[GraphRole.DECODER].name == "_Module"
     assert model.configured_from == {"weight": "stored"}

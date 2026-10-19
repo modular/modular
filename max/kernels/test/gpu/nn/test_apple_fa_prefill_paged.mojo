@@ -33,10 +33,9 @@ page (`num_keys` not a multiple of `page_size`). Plus ragged (mixed seq lens),
 GQA, NullMask/CausalMask/SlidingWindowCausalMask, fp16/bf16, and depth 64/128.
 """
 
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, default_accelerator
 from std.math import ceildiv, exp, sqrt
 from std.random import seed, shuffle
-from std.sys import default_accelerator
 
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 

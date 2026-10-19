@@ -444,7 +444,7 @@ class TreeDef:
 
         .. code-block:: python
 
-            from max.experimental import tree_utils as tree
+            from max import tree
 
             _, treedef = tree.flatten({"a": 1, "b": [2, 3]}, leaf=int)
             other = {"a": [0], "b": [[], {}]}

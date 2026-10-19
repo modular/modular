@@ -408,6 +408,59 @@ def _encode_with(encoder: ChatEncoder, prompt: str) -> npt.NDArray[np.int64]:
     return np.frombuffer(ids, dtype="<u4").astype(np.int64)
 
 
+def _render_custom_chat_template(
+    delegate: PreTrainedTokenizerBase,
+    chat_template: str,
+    messages: list[dict[str, Any]],
+    tools: list[TextGenerationRequestTool] | None,
+    **chat_template_options: Any,
+) -> str:
+    """Renders messages with a ``--chat-template``.
+
+    Args:
+        delegate: The HuggingFace tokenizer the template renders with.
+        chat_template: The Jinja template.
+        messages: The messages as template-ready dicts.
+        tools: Optional tools available for the model to invoke.
+        **chat_template_options: Options forwarded to the Jinja template.
+
+    Returns:
+        The rendered prompt.
+
+    Raises:
+        ValueError: If the template fails to render, for any reason, so the
+            server answers with a client error.
+    """
+    try:
+        # A ``trust_remote_code`` tokenizer may override
+        # ``apply_chat_template`` to render a format hardcoded in Python,
+        # never reading the ``chat_template`` attribute -- which silently
+        # discards an explicit ``--chat-template``. Render the requested
+        # template through the base implementation so the override is the
+        # format that actually reaches the model.
+        templated_message = PreTrainedTokenizerBase.apply_chat_template(
+            delegate,
+            messages,
+            chat_template=chat_template,
+            tokenize=False,
+            tools=tools,
+            **chat_template_options,
+        )
+    except Exception as e:
+        raise ValueError(
+            f"Failed to apply custom chat template. This may indicate an issue "
+            f"with your custom prompt template. Please check your template syntax "
+            f"and ensure it properly handles the provided messages and tools.\n\n"
+            f"Template variables available:\n"
+            f"- messages: List of conversation messages with 'role' and 'content' fields\n"
+            f"- tools: List of available tools (if provided)\n"
+            f"- add_generation_prompt: Boolean for adding generation prompt\n\n"
+            f"Original error: {type(e).__name__}: {str(e)}"
+        ) from e
+    assert isinstance(templated_message, str)
+    return templated_message
+
+
 def _as_token_id_set(eos_token_id: object) -> set[int]:
     if isinstance(eos_token_id, int):
         return {eos_token_id}
@@ -615,47 +668,20 @@ class TextTokenizer(
 
         flattened = [message.flatten_content() for message in messages]
 
-        try:
-            if self._custom_template_provided:
-                # A ``trust_remote_code`` tokenizer may override
-                # ``apply_chat_template`` to render a format hardcoded in
-                # Python, never reading the ``chat_template`` attribute -- which
-                # silently discards an explicit ``--chat-template``. Render the
-                # requested template through the base implementation so the
-                # override is the format that actually reaches the model.
-                templated_message = PreTrainedTokenizerBase.apply_chat_template(
-                    self.delegate,
-                    flattened,
-                    chat_template=self._chat_template,
-                    tokenize=False,
-                    tools=tools,
-                    **chat_template_options,
-                )
-            else:
-                templated_message = self.delegate.apply_chat_template(
-                    flattened,
-                    tokenize=False,
-                    tools=tools,
-                    **chat_template_options,
-                )
-        except Exception as e:
-            if self._custom_template_provided:
-                # Provide additional context when a custom template is used
-                error_msg = (
-                    f"Failed to apply custom chat template. This may indicate an issue "
-                    f"with your custom prompt template. Please check your template syntax "
-                    f"and ensure it properly handles the provided messages and tools.\n\n"
-                    f"Template variables available:\n"
-                    f"- messages: List of conversation messages with 'role' and 'content' fields\n"
-                    f"- tools: List of available tools (if provided)\n"
-                    f"- add_generation_prompt: Boolean for adding generation prompt\n\n"
-                    f"Original error: {type(e).__name__}: {str(e)}"
-                )
-                raise ValueError(error_msg) from e
-            else:
-                # Re-raise the original error for default templates
-                raise
-
+        if self._chat_template is not None:
+            return _render_custom_chat_template(
+                self.delegate,
+                self._chat_template,
+                flattened,
+                tools,
+                **chat_template_options,
+            )
+        templated_message = self.delegate.apply_chat_template(
+            flattened,
+            tokenize=False,
+            tools=tools,
+            **chat_template_options,
+        )
         assert isinstance(templated_message, str)
         return templated_message
 
@@ -947,6 +973,8 @@ class TextAndVisionTokenizer(
 ):
     """Encapsulates creation of TextAndVisionContext and specific token encode/decode logic."""
 
+    _chat_template: str | None = None
+
     def __init__(
         self,
         model_path: str,
@@ -955,9 +983,11 @@ class TextAndVisionTokenizer(
         revision: str | None = None,
         max_length: int | None = None,
         trust_remote_code: bool = False,
+        chat_template: str | None = None,
         **unused_kwargs,
     ) -> None:
         self.model_path = model_path
+        self._chat_template = chat_template
 
         self.delegate = AutoTokenizer.from_pretrained(
             model_path,
@@ -1018,7 +1048,7 @@ class TextAndVisionTokenizer(
         tools: list[TextGenerationRequestTool] | None = None,
         **chat_template_options: Any,
     ) -> str:
-        """Applies the processor's chat template to the messages.
+        """Applies ``--chat-template``, else the processor's template.
 
         Args:
             messages: List of messages for the chat template.
@@ -1028,13 +1058,25 @@ class TextAndVisionTokenizer(
 
         Returns:
             The templated chat message as a string.
+
+        Raises:
+            ValueError: If a ``--chat-template`` fails to render.
         """
         chat_template_options = {
             "add_generation_prompt": True,
             **chat_template_options,
         }
+        dumped = [msg.model_dump(exclude_none=True) for msg in messages]
+        if self._chat_template is not None:
+            return _render_custom_chat_template(
+                self.delegate,
+                self._chat_template,
+                dumped,
+                tools,
+                **chat_template_options,
+            )
         templated_message = self.processor.apply_chat_template(
-            [msg.model_dump(exclude_none=True) for msg in messages],
+            dumped,
             tokenize=False,
             tools=tools,
             **chat_template_options,
@@ -1247,6 +1289,8 @@ class TextAndVisionTokenizer(
             grammar=grammar,
             grammar_state=grammar_state,
             sampling_params=request.sampling_params,
+            model_name=request.model_name,
+            target_endpoint=request.target_endpoint,
             dkv_cache_hint=encode_dkv_cache_hint(request.dkv_cache_hint),
             images=[
                 ImageMetadata(

@@ -32,13 +32,10 @@ _PATH_SUPPORTING_WORKLOAD_KEYS = (
     "output-lengths",
     "extra-body",
     "agentic-tool-profiles",
+    "response-format",
+    "tools",
 )
 """Workload keys whose value may name a file rather than hold content."""
-
-# TODO: Fold these into _PATH_SUPPORTING_WORKLOAD_KEYS so there
-# is one path-resolution rule.
-_AT_FILE_WORKLOAD_KEYS = ("response-format", "tools")
-"""Workload keys whose ``@<path>`` value names a file to load later."""
 
 _NATIVE_RUNNER = "native"
 
@@ -100,20 +97,18 @@ def load_workload_file(path: Path) -> Mapping[str, object]:
     return dict(block)
 
 
-def _resolve_at_file(value: str, base_dir: Path) -> str:
-    """Rewrites an ``@<path>`` workload value resolved against ``base_dir``.
+def _resolve_workload_path(value: str, base_dir: Path) -> str:
+    """Resolves a relative workload path against ``base_dir``.
 
-    ``@`` names a file for the consuming flag (``--response-format``,
-    ``--tools``) to load, and that flag resolves a relative path against the
-    process CWD -- which is never the workload YAML's directory. Try the
-    YAML's directory first and keep the original value when nothing is there,
-    so absolute paths and paths that resolve from the CWD (repo-root-spelled
-    paths under a workspace-root CWD) keep working.
+    Falls back to the original path when nothing exists in ``base_dir``, so
+    it resolves against the process CWD instead: workloads written outside
+    the repo, such as kimberlite's fitted configs, name repo files by their
+    repo-root path.
     """
-    path = Path(os.path.expandvars(value[1:]))
-    if not path.is_absolute() and (base_dir / path).is_file():
-        return "@" + str(base_dir / path)
-    return value
+    path = Path(os.path.expandvars(value))
+    if path.is_absolute() or not (base_dir / path).exists():
+        return str(path)
+    return str(base_dir / path)
 
 
 def apply_workload(
@@ -140,25 +135,17 @@ def apply_workload(
     # Unvalidated YAML values; the config's validators check them on
     # assignment.
     options: dict[str, Any] = dict(workload)
-    # Resolve relative paths against the YAML's directory.
     for key in _PATH_SUPPORTING_WORKLOAD_KEYS:
         value = options.get(key)
-        # A key may hold the value itself -- a mapping, or inline JSON --
-        # rather than a path to it.
+        # A key may hold the value itself -- a mapping or list, or inline
+        # JSON -- rather than a path to it.
         if (
             not isinstance(value, str)
-            or value.lstrip().startswith("{")
+            or value.lstrip().startswith(("{", "["))
             or is_castable_to_int(value)
         ):
             continue
-        path = Path(os.path.expandvars(value))
-        if not path.is_absolute():
-            path = base_dir / path
-        options[key] = path
-    for key in _AT_FILE_WORKLOAD_KEYS:
-        value = options.get(key)
-        if isinstance(value, str) and value.startswith("@"):
-            options[key] = _resolve_at_file(value, base_dir)
+        options[key] = _resolve_workload_path(value, base_dir)
     # Resolve max_concurrency: CLI > YAML.
     yaml_max_concurrency = options.pop("max-concurrency", None)
     if (

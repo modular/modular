@@ -369,15 +369,19 @@ struct PreShuffledBGroupedGEMM[
                 " a mismatch means fuse_swiglu_mxfp8 did not reach this"
                 " kernel and it would overrun c"
             )
-            var c_ptr = c_tensor.ptr + Int(a_start_row) * Int(C_N)
+            var c_ptr = c_tensor.ptr.unsafe_offset(Int(a_start_row) * Int(C_N))
             comptime A_K_BYTES = a_tensor.static_shape[1]
-            var a_ptr = a_tensor.ptr + Int(a_start_row) * Int(A_K_BYTES)
-            var b_pre_ptr = b_pre_tensor.ptr + Int(expert_id) * Int(N) * Int(
-                K_BYTES
+            var a_ptr = a_tensor.ptr.unsafe_offset(
+                Int(a_start_row) * Int(A_K_BYTES)
             )
-            var sfa_ptr = sfa_tensor.ptr + sfa_start_row * Int(K_SCALES)
-            var sfb_ptr = sfb_tensor.ptr + Int(expert_id) * Int(N) * Int(
-                K_SCALES
+            var b_pre_ptr = b_pre_tensor.ptr.unsafe_offset(
+                Int(expert_id) * Int(N) * Int(K_BYTES)
+            )
+            var sfa_ptr = sfa_tensor.ptr.unsafe_offset(
+                sfa_start_row * Int(K_SCALES)
+            )
+            var sfb_ptr = sfb_tensor.ptr.unsafe_offset(
+                Int(expert_id) * Int(N) * Int(K_SCALES)
             )
 
             # C's V# bound is the real `M` (not `align_up(M, 32)`): the matmul
@@ -576,14 +580,20 @@ struct PreShuffledBGroupedGEMM[
         var sfa_padded_M = align_up(Int(M), 32)
 
         comptime C_N = N // 2 if fuse_swiglu_mxfp8 else N
-        var c_ptr = c_tensor.ptr + Int(a_start_row) * Int(C_N)
+        var c_ptr = c_tensor.ptr.unsafe_offset(Int(a_start_row) * Int(C_N))
         comptime A_K_BYTES = a_tensor.static_shape[1]
-        var a_ptr = a_tensor.ptr + Int(a_start_row) * Int(A_K_BYTES)
-        var b_pre_ptr = b_pre_tensor.ptr + Int(expert_id) * Int(N) * Int(
-            K_BYTES
+        var a_ptr = a_tensor.ptr.unsafe_offset(
+            Int(a_start_row) * Int(A_K_BYTES)
         )
-        var sfa_ptr = sfa_tensor.ptr + sfa_start_row * Int(K_SCALES)
-        var sfb_ptr = sfb_tensor.ptr + Int(expert_id) * Int(N) * Int(K_SCALES)
+        var b_pre_ptr = b_pre_tensor.ptr.unsafe_offset(
+            Int(expert_id) * Int(N) * Int(K_BYTES)
+        )
+        var sfa_ptr = sfa_tensor.ptr.unsafe_offset(
+            sfa_start_row * Int(K_SCALES)
+        )
+        var sfb_ptr = sfb_tensor.ptr.unsafe_offset(
+            Int(expert_id) * Int(N) * Int(K_SCALES)
+        )
 
         var c_tile = TileTensor(c_ptr, row_major(M, Idx[C_N]))
         var a_tile = TileTensor(a_ptr, row_major(M, Idx[A_K_BYTES]))
@@ -688,31 +698,6 @@ struct PreShuffledBGroupedGEMM[
             == 2 else b_pre.static_shape[2]
         )
 
-        var a_i = TileTensor(
-            a.ptr.as_imm().unsafe_origin_cast[ImmutAnyOrigin](),
-            a.layout,
-        )
-        var b_pre_i = TileTensor(
-            b_pre.ptr.as_imm().unsafe_origin_cast[ImmutAnyOrigin](),
-            b_pre.layout,
-        )
-        var a_scales_i = TileTensor(
-            a_scales.ptr.as_imm().unsafe_origin_cast[ImmutAnyOrigin](),
-            a_scales.layout,
-        )
-        var b_scales_i = TileTensor(
-            b_scales.ptr.as_imm().unsafe_origin_cast[ImmutAnyOrigin](),
-            b_scales.layout,
-        )
-        var a_off_i = TileTensor(
-            a_offsets.ptr.as_imm().unsafe_origin_cast[ImmutAnyOrigin](),
-            a_offsets.layout,
-        )
-        var expert_ids_i = TileTensor(
-            expert_ids.ptr.as_imm().unsafe_origin_cast[ImmutAnyOrigin](),
-            expert_ids.layout,
-        )
-
         if max_num_tokens_per_expert == 0:
             return
 
@@ -732,19 +717,19 @@ struct PreShuffledBGroupedGEMM[
                 WN,
                 out_dtype,
                 type_of(c).LayoutType,
-                type_of(a_i).LayoutType,
-                type_of(b_pre_i).LayoutType,
-                type_of(a_scales_i).LayoutType,
-                type_of(b_scales_i).LayoutType,
-                type_of(a_off_i).LayoutType,
-                type_of(expert_ids_i).LayoutType,
+                type_of(a).LayoutType,
+                type_of(b_pre).LayoutType,
+                type_of(a_scales).LayoutType,
+                type_of(b_scales).LayoutType,
+                type_of(a_offsets).LayoutType,
+                type_of(expert_ids).LayoutType,
                 type_of(c).Engine,
-                type_of(a_i).Engine,
-                type_of(b_pre_i).Engine,
-                type_of(a_scales_i).Engine,
-                type_of(b_scales_i).Engine,
-                type_of(a_off_i).Engine,
-                type_of(expert_ids_i).Engine,
+                type_of(a).Engine,
+                type_of(b_pre).Engine,
+                type_of(a_scales).Engine,
+                type_of(b_scales).Engine,
+                type_of(a_offsets).Engine,
+                type_of(expert_ids).Engine,
                 N,
                 K_BYTES,
                 b_cache_policy,
@@ -760,12 +745,12 @@ struct PreShuffledBGroupedGEMM[
             ]
             ctx.enqueue_function[kernel](
                 c,
-                a_i,
-                b_pre_i,
-                a_scales_i,
-                b_scales_i,
-                a_off_i,
-                expert_ids_i,
+                a,
+                b_pre,
+                a_scales,
+                b_scales,
+                a_offsets,
+                expert_ids,
                 Int32(num_active_experts),
                 Int32(max_padded_M),
                 c_scales_ptr,
@@ -781,19 +766,19 @@ struct PreShuffledBGroupedGEMM[
                 WN,
                 out_dtype,
                 type_of(c).LayoutType,
-                type_of(a_i).LayoutType,
-                type_of(b_pre_i).LayoutType,
-                type_of(a_scales_i).LayoutType,
-                type_of(b_scales_i).LayoutType,
-                type_of(a_off_i).LayoutType,
-                type_of(expert_ids_i).LayoutType,
+                type_of(a).LayoutType,
+                type_of(b_pre).LayoutType,
+                type_of(a_scales).LayoutType,
+                type_of(b_scales).LayoutType,
+                type_of(a_offsets).LayoutType,
+                type_of(expert_ids).LayoutType,
                 type_of(c).Engine,
-                type_of(a_i).Engine,
-                type_of(b_pre_i).Engine,
-                type_of(a_scales_i).Engine,
-                type_of(b_scales_i).Engine,
-                type_of(a_off_i).Engine,
-                type_of(expert_ids_i).Engine,
+                type_of(a).Engine,
+                type_of(b_pre).Engine,
+                type_of(a_scales).Engine,
+                type_of(b_scales).Engine,
+                type_of(a_offsets).Engine,
+                type_of(expert_ids).Engine,
                 N,
                 K_BYTES,
                 b_cache_policy,
@@ -819,12 +804,12 @@ struct PreShuffledBGroupedGEMM[
             )
             ctx.enqueue_function[kernel](
                 c,
-                a_i,
-                b_pre_i,
-                a_scales_i,
-                b_scales_i,
-                a_off_i,
-                expert_ids_i,
+                a,
+                b_pre,
+                a_scales,
+                b_scales,
+                a_offsets,
+                expert_ids,
                 Int32(num_active_experts),
                 Int32(max_padded_M),
                 c_scales_ptr,
@@ -997,12 +982,16 @@ def block_scaled_grouped_matmul_amd_kernel[
     # 64-bit offsets, as in `grouped_matmul.mojo`. B counts packed bytes, so it
     # passes Int32 once the expert stack exceeds 2 GiB (Kimi K3 gate/up at 4
     # devices); A and C scale with token rows.
-    var c_ptr = c_tensor.ptr + Int(a_start_row) * Int(N)
+    var c_ptr = c_tensor.ptr.unsafe_offset(Int(a_start_row) * Int(N))
     comptime A_K_BYTES = a_tensor.static_shape[1]
-    var a_ptr = a_tensor.ptr + Int(a_start_row) * Int(A_K_BYTES)
-    var b_ptr = b_tensor.ptr + Int(expert_id) * Int(N) * Int(K_BYTES)
-    var sfa_ptr = sfa_tensor.ptr + Int(a_start_row) * Int(K_SCALES)
-    var sfb_ptr = sfb_tensor.ptr + Int(expert_id) * Int(N) * Int(K_SCALES)
+    var a_ptr = a_tensor.ptr.unsafe_offset(Int(a_start_row) * Int(A_K_BYTES))
+    var b_ptr = b_tensor.ptr.unsafe_offset(
+        Int(expert_id) * Int(N) * Int(K_BYTES)
+    )
+    var sfa_ptr = sfa_tensor.ptr.unsafe_offset(Int(a_start_row) * Int(K_SCALES))
+    var sfb_ptr = sfb_tensor.ptr.unsafe_offset(
+        Int(expert_id) * Int(N) * Int(K_SCALES)
+    )
 
     var c_tile = TileTensor(c_ptr, row_major(M, Idx[N]))
     var a_tile = TileTensor(a_ptr, row_major(M, Idx[A_K_BYTES]))
@@ -1210,29 +1199,13 @@ def _launch_block_scaled_grouped[
         Int(c.dim[0]()), Int(a.dim[0]()), Int(a_scales.dim[0]())
     )
 
-    var a_i = TileTensor(
-        a.ptr.as_imm().unsafe_origin_cast[ImmutAnyOrigin](),
-        a.layout,
-    )
     var b_2d = TileTensor(
         b.ptr.as_imm().unsafe_origin_cast[ImmutAnyOrigin](),
         row_major[num_experts * N, K_BYTES](),
     )
-    var a_scales_i = TileTensor(
-        a_scales.ptr.as_imm().unsafe_origin_cast[ImmutAnyOrigin](),
-        a_scales.layout,
-    )
     var sfb_2d = TileTensor(
         b_scales.ptr.as_imm().unsafe_origin_cast[ImmutAnyOrigin](),
         row_major[num_experts_sf * N_sf, K_SCALES](),
-    )
-    var a_off_i = TileTensor(
-        a_offsets.ptr.as_imm().unsafe_origin_cast[ImmutAnyOrigin](),
-        a_offsets.layout,
-    )
-    var expert_ids_i = TileTensor(
-        expert_ids.ptr.as_imm().unsafe_origin_cast[ImmutAnyOrigin](),
-        expert_ids.layout,
     )
 
     if max_num_tokens_per_expert == 0 or num_active_experts == 0:
@@ -1248,30 +1221,30 @@ def _launch_block_scaled_grouped[
         matrix_format,
         out_dtype,
         type_of(c).LayoutType,
-        type_of(a_i).LayoutType,
+        type_of(a).LayoutType,
         type_of(b_2d).LayoutType,
-        type_of(a_scales_i).LayoutType,
+        type_of(a_scales).LayoutType,
         type_of(sfb_2d).LayoutType,
-        type_of(a_off_i).LayoutType,
-        type_of(expert_ids_i).LayoutType,
+        type_of(a_offsets).LayoutType,
+        type_of(expert_ids).LayoutType,
         type_of(c).Engine,
-        type_of(a_i).Engine,
+        type_of(a).Engine,
         type_of(b_2d).Engine,
-        type_of(a_scales_i).Engine,
+        type_of(a_scales).Engine,
         type_of(sfb_2d).Engine,
-        type_of(a_off_i).Engine,
-        type_of(expert_ids_i).Engine,
+        type_of(a_offsets).Engine,
+        type_of(expert_ids).Engine,
         b_matrix_format,
     ]
 
     ctx.enqueue_function[kernel](
         c,
-        a_i,
+        a,
         b_2d,
-        a_scales_i,
+        a_scales,
         sfb_2d,
-        a_off_i,
-        expert_ids_i,
+        a_offsets,
+        expert_ids,
         Int32(num_active_experts),
         grid_dim=(
             ceildiv(N, BN),

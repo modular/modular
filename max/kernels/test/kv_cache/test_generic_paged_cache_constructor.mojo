@@ -49,7 +49,7 @@ def _graph_input[
 def _view[
     dtype: DType, rank: Int
 ](
-    ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin], shape: IndexList[rank]
+    ptr: MutPointer[Scalar[dtype], MutAnyOrigin], shape: IndexList[rank]
 ) -> TileTensor[
     dtype,
     RowMajorLayout[*DynamicCoord[.int64, rank].element_types],

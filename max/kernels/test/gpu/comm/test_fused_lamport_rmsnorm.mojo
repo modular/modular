@@ -74,13 +74,14 @@ def _neg_zero_bits() -> Scalar[dtype]:
     return bitcast[dtype, 1](UInt16(0x8000))[0]
 
 
-def _run_rms_norm_unfused(
+def _run_rms_norm_unfused[
+    epsilon: Float32
+](
     in_ptr: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
     out_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
     gamma_ptr: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
     M: Int,
     K: Int,
-    epsilon: Float32,
     ctx: DeviceContext,
 ) raises:
     """Per-device RMSNorm reading [M, K] from `in_ptr` and writing [M, K] to
@@ -96,8 +97,7 @@ def _run_rms_norm_unfused(
     @__copy_capture(in_view)
     @__parameter
     def input_fn[width: Int](coords: Coord) -> SIMD[dtype, width]:
-        var idx = in_view.layout(coords)
-        return in_view.raw_load[width=width](idx)
+        return in_view.load[width=width](coords)
 
     @inline(.always)
     @__copy_capture(out_view)
@@ -105,15 +105,16 @@ def _run_rms_norm_unfused(
     def output_fn[
         width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[dtype, width]) -> None:
-        var idx = out_view.layout(coords)
-        out_view.raw_store[width=width, alignment=alignment](idx, val)
+        out_view.store[alignment=alignment](coords, val)
 
     rms_norm_gpu[
         2,  # rank
         input_fn,
         output_fn,
+        epsilon=epsilon,
+        weight_offset=Float32(0),
         multiply_before_cast=True,
-    ](Coord(shape), gamma_view, epsilon, Scalar[dtype](0), ctx)
+    ](Coord(shape), gamma_view, ctx)
 
 
 def rmsnorm_test[
@@ -263,7 +264,7 @@ def rmsnorm_test[
         list_of_ctx[g].synchronize()
 
     for g in range(ngpus):
-        _run_rms_norm_unfused(
+        _run_rms_norm_unfused[EPS](
             rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
                 ar_out[g].unsafe_ptr()
             ),
@@ -275,7 +276,6 @@ def rmsnorm_test[
             ),
             M,
             K,
-            EPS,
             list_of_ctx[g],
         )
     for g in range(ngpus):
@@ -459,7 +459,7 @@ def unsynced_skew_test[
         var in_tensors = Array[_, ngpus](
             fill_with=lambda (g: Int) -> InType: InType(
                 rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
-                    act_big[g].unsafe_ptr() + base
+                    act_big[g].unsafe_ptr().unsafe_offset(base)
                 ),
                 act_layout,
             )
@@ -467,7 +467,7 @@ def unsynced_skew_test[
         var ar_out_tensors = Array[_, ngpus](
             fill_with=lambda (g: Int) -> OutType: OutType(
                 rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](
-                    ar_big[g].unsafe_ptr() + base
+                    ar_big[g].unsafe_ptr().unsafe_offset(base)
                 ),
                 act_layout,
             )
@@ -485,19 +485,18 @@ def unsynced_skew_test[
         # rms_norm_gpu on this slice's AR output per device. Pointer-offset
         # into the big buffer (no DeviceBuffer slice API needed).
         for g in range(ngpus):
-            _run_rms_norm_unfused(
+            _run_rms_norm_unfused[EPS](
                 rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
-                    ar_big[g].unsafe_ptr() + base
+                    ar_big[g].unsafe_ptr().unsafe_offset(base)
                 ),
                 rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](
-                    unfused_big[g].unsafe_ptr() + base
+                    unfused_big[g].unsafe_ptr().unsafe_offset(base)
                 ),
                 rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
                     gamma[g].unsafe_ptr()
                 ),
                 M,
                 K,
-                EPS,
                 list_of_ctx[g],
             )
         for g in range(ngpus):
@@ -510,10 +509,10 @@ def unsynced_skew_test[
             lamport_allreduce_rmsnorm[dtype, ngpus, pdl=False](
                 g,
                 rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
-                    act_big[g].unsafe_ptr() + base
+                    act_big[g].unsafe_ptr().unsafe_offset(base)
                 ),
                 rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](
-                    fused_big[g].unsafe_ptr() + base
+                    fused_big[g].unsafe_ptr().unsafe_offset(base)
                 ),
                 rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
                     gamma[g].unsafe_ptr()

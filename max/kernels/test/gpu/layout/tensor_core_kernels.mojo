@@ -19,7 +19,6 @@ from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from max.gpu import thread_idx
 from layout import (
-    Layout,
     TensorLayout,
     TileTensor,
     row_major,
@@ -28,7 +27,6 @@ from layout import (
 from layout._fillers import arange
 from layout._host_device_tile_tensor import HostDeviceTileTensor
 from layout._utils import load_to_simd
-from layout.layout_tensor import copy_dram_to_sram
 from layout.tensor_core import TensorCore
 
 from std.utils.index import IndexList
@@ -230,6 +228,25 @@ def test_write_res_operand[
         print()
 
 
+@inline(.always)
+def _copy_tile_to_smem[
+    dtype: DType
+](
+    dst: TileTensor[mut=True, dtype, address_space=.SHARED, ...],
+    src: TileTensor[dtype, ...],
+):
+    """Copies a tile into shared memory one scalar per warp lane per step.
+
+    The tiles here can be narrower than the warp in either dimension, so a
+    thread-layout copier would divide to an empty per-lane view.
+    """
+    comptime assert src.rank == src.flat_rank == 2
+    comptime rows = src.static_shape[0]
+    comptime cols = src.static_shape[1]
+    for i in range(Int(thread_idx.x), rows * cols, WARP_SIZE):
+        dst.store((i // cols, i % cols), src[i // cols, i % cols])
+
+
 def mma_load_and_print_operands_kernel_ldmatrix[
     dst_dtype: DType,
     dtype: DType,
@@ -246,14 +263,8 @@ def mma_load_and_print_operands_kernel_ldmatrix[
 
     var b_smem = stack_allocation[dtype, address_space=.SHARED](rhs.layout)
 
-    comptime thread_layout = Layout.row_major(WARP_SIZE // 4, 4)
-    # Preserve the legacy copier's narrow AMD tile coverage.
-    copy_dram_to_sram[thread_layout=thread_layout](
-        a_smem.to_layout_tensor(), lhs.to_layout_tensor()
-    )
-    copy_dram_to_sram[thread_layout=thread_layout](
-        b_smem.to_layout_tensor(), rhs.to_layout_tensor()
-    )
+    _copy_tile_to_smem(a_smem, lhs)
+    _copy_tile_to_smem(b_smem, rhs)
     barrier()
 
     comptime a_simd_width = mma.a_reg_type.length

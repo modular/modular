@@ -710,3 +710,31 @@ def deprecated_dunder_match(value: Int):
     __match value:
     case _:
         pass
+
+
+# Positional initializer-list patterns suggest the subject's field names.
+@fieldwise_init
+struct SourceRange:
+    var start: Int
+    var end: Int
+
+    def __eq__(self, other: Self) -> Bool:
+        return True
+
+
+__enum Token:
+    case eof
+    case source_range(SourceRange)
+
+
+def print_token(tok: Token):
+    # expected-warning @+1 {{'match' is not exhaustive; missing case for 'source_range'}}
+    match tok:
+        # expected-error @+1 {{initializer-list patterns require field names}}
+        case .source_range({0,5}):
+            pass
+        # expected-error @+1 {{initializer-list patterns require field names}}
+        case .source_range({x,y}):
+            pass
+        case .eof:
+            pass

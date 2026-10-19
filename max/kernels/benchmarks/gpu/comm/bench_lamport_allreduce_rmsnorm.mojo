@@ -72,28 +72,29 @@ from std.utils.index import Index
 # Wraps `rms_norm_gpu` with the input/output lambdas it requires so the
 # benchmark closures stay readable.
 # ---------------------------------------------------------------------------
+comptime RMS_NORM_EPSILON = Float32(0.001)
+
+
 def _run_rms_norm[
-    dtype: DType
+    dtype: DType, epsilon: Float32
 ](
     in_ptr: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
     out_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
     gamma_ptr: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
     M: Int,
     K: Int,
-    epsilon: Float32,
     ctx: DeviceContext,
 ) raises:
     var shape = Index(M, K)
     var in_view = TileTensor(in_ptr, row_major(Coord(shape)))
     var out_view = TileTensor(out_ptr, row_major(Coord(shape)))
-    var gamma_view = TileTensor(gamma_ptr, row_major(Coord(Index(K))))
+    var gamma_view = TileTensor(gamma_ptr, row_major(Coord(K)))
 
     @inline(.always)
     @__copy_capture(in_view)
     @__parameter
     def input_fn[width: Int](coords: Coord) -> SIMD[dtype, width]:
-        var idx = in_view.layout(coords)
-        return in_view.raw_load[width=width](idx)
+        return in_view.load[width=width](coords)
 
     @inline(.always)
     @__copy_capture(out_view)
@@ -101,15 +102,16 @@ def _run_rms_norm[
     def output_fn[
         width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[dtype, width]) -> None:
-        var idx = out_view.layout(coords)
-        out_view.raw_store[width=width, alignment=alignment](idx, val)
+        out_view.store[alignment=alignment](coords, val)
 
     rms_norm_gpu[
         2,  # rank
         input_fn,
         output_fn,
+        epsilon=epsilon,
+        weight_offset=Float32(0),
         multiply_before_cast=True,
-    ](Coord(shape), gamma_view, epsilon, Scalar[dtype](0), ctx)
+    ](Coord(shape), gamma_view, ctx)
 
 
 # ---------------------------------------------------------------------------
@@ -169,7 +171,7 @@ def _verify_results[
     )
     allreduce[ngpus=ngpus](v_in_tensors, v_ar_out, rank_sigs_ar, ctx0)
     ctx0.synchronize()
-    _run_rms_norm(
+    _run_rms_norm[dtype, RMS_NORM_EPSILON](
         rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
             v_ar_out_dev.unsafe_ptr()
         ),
@@ -181,7 +183,6 @@ def _verify_results[
         ),
         num_rows,
         num_cols,
-        epsilon.cast[.float32](),
         ctx0,
     )
     ctx0.synchronize()
@@ -333,7 +334,7 @@ def bench_fused_lamport_allreduce_rmsnorm[
         gamma_dev.append(list_of_ctx[i].enqueue_create_buffer[dtype](num_cols))
         list_of_ctx[i].enqueue_copy(gamma_dev[i], gamma_host)
 
-    var epsilon = Scalar[dtype](0.001)
+    var epsilon = RMS_NORM_EPSILON.cast[dtype]()
 
     for i in range(ngpus):
         list_of_ctx[i].synchronize()
@@ -459,7 +460,7 @@ def bench_fused_lamport_allreduce_rmsnorm[
                 rank_sigs_ar,
                 ctx_inner,
             )
-            _run_rms_norm(
+            _run_rms_norm[dtype, RMS_NORM_EPSILON](
                 rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
                     ar_out_ptrs[ctx_idx]
                 ),
@@ -471,7 +472,6 @@ def bench_fused_lamport_allreduce_rmsnorm[
                 ),
                 num_rows,
                 num_cols,
-                epsilon.cast[.float32](),
                 ctx_inner,
             )
 

@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_py_test")
+load("//bazel:api.bzl", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
@@ -39,6 +39,20 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/graph",
         "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/glm5_next",
+    ],
+)
+
+modular_py_test(
+    name = "test_mlp_shard",
+    srcs = ["test_mlp_shard.py"],
+    deps = [
+        requirement("numpy"),
+        requirement("torch"),
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
         "//max/python/max/pipelines/architectures/glm5_next",
     ],
 )

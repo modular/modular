@@ -16,7 +16,8 @@ from __future__ import annotations
 
 import functools
 from collections import OrderedDict
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterable, Sequence
+from pathlib import Path
 from typing import Any
 
 from max import tree
@@ -25,16 +26,21 @@ from max.graph import (
     BufferType,
     BufferValue,
     DeviceRef,
+    Graph,
     ShardingStrategy,
     TensorType,
     TensorValue,
     TensorValueLike,
+    Type,
+    Value,
     ops,
 )
+from max.graph import Module as GraphModule
 from max.graph.quantization import QuantizationEncoding
 from max.nn.comm import Allreduce
 from max.nn.embedding import VocabParallelEmbedding
 from max.nn.kv_cache import (
+    KVCacheInputsPerDevice,
     KVCacheParamInterface,
     PagedCacheValues,
     RecurrentStateInputsPerDevice,
@@ -61,10 +67,15 @@ from max.tree import Tree
 from .layers.attention import Qwen3_5Attention
 from .layers.gated_deltanet import GatedDeltaNet, GatedDeltaReplayInputs
 from .layers.text_rotary import Qwen3_5TextRotaryEmbedding
-from .layers.visual_transformer import VisionTransformer
+from .layers.visual_transformer import Qwen3_5VisionTransformer
 from .model_config import Qwen3_5Config
 from .quantization import storage_dtype
-from .state_cache import GatedDeltaStateAccess, layer_state_access
+from .state_cache import (
+    ATTN_CACHE_KEY,
+    STATE_CACHE_KEY,
+    GatedDeltaStateAccess,
+    layer_state_access,
+)
 
 
 def _shard_mlp_and_norms(
@@ -484,8 +495,8 @@ class Qwen3_5(DistributedLogitsPostprocessMixin, Module):
         self.return_logits = config.return_logits
 
         # Vision encoder (only present in multimodal checkpoints)
-        self.vision_encoder: VisionTransformer | None = (
-            VisionTransformer(config=config.vision_config)
+        self.vision_encoder: Qwen3_5VisionTransformer | None = (
+            Qwen3_5VisionTransformer(config=config.vision_config)
             if config.vision_config is not None
             else None
         )
@@ -733,3 +744,71 @@ class Qwen3_5(DistributedLogitsPostprocessMixin, Module):
     ) -> tuple[TensorType | BufferType, ...]:
         """Get input types for graph construction."""
         return tuple(tree.leaves(self.input_tree(kv_params)))
+
+    def trace(
+        self,
+        *input_types: Type[Any],
+        name: str | None = None,
+        module: GraphModule | None = None,
+        custom_extensions: Iterable[Path] = (),
+        is_device_graph: bool = False,
+    ) -> Graph:
+        """Traces the language graph, whose inputs are the leaves of
+        :meth:`input_tree` for :attr:`kv_params`.
+
+        Adapts the flat graph inputs to :meth:`__call__`: splits the cache
+        into its attention collections and recurrent state, and passes the
+        vision and M-RoPE inputs when the graph takes them.
+
+        Args:
+            *input_types: The graph's input types.
+            name: The name of the graph. Defaults to the class's qualified
+                name.
+            module: The MLIR module to add the graph to. Defaults to a new
+                module.
+            custom_extensions: Paths to custom kernel libraries the graph
+                uses.
+            is_device_graph: Whether to build a device graph.
+
+        Returns:
+            The traced :class:`~max.graph.Graph`.
+        """
+        treedef = tree.flatten(self.input_tree(self.kv_params))[1]
+
+        def forward(*inputs: Value[Any]) -> tuple[TensorValue, ...]:
+            named = tree.unflatten(treedef, iter(inputs))
+            assert isinstance(named, OrderedDict)
+            batch, kv = named["batch"], named["kv"]
+            state = tree.leaves(
+                kv[STATE_CACHE_KEY], leaf=RecurrentStateInputsPerDevice
+            )
+            assert state, (
+                "Qwen3.5 graph requires linear attention layers; the cache"
+                " declared no recurrent state child"
+            )
+            vision = named.get("vision")
+            mrope = named.get("mrope")
+            return self(
+                batch["tokens"].tensor,
+                tree.leaves(kv[ATTN_CACHE_KEY], leaf=KVCacheInputsPerDevice),
+                batch["return_n_logits"].tensor,
+                batch["row_offsets"].tensor,
+                [v.buffer for v in named["signals"]["signal"]],
+                list(state),
+                None
+                if vision is None
+                else [v.tensor for v in vision["image_embeddings"]],
+                None
+                if vision is None
+                else [v.tensor for v in vision["image_token_indices"]],
+                None if mrope is None else mrope["position_ids"].tensor,
+            )
+
+        return Graph(
+            type(self).__qualname__ if name is None else name,
+            forward,
+            input_types=input_types,
+            custom_extensions=list(custom_extensions),
+            module=module,
+            is_device_graph=is_device_graph,
+        )

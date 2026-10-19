@@ -137,9 +137,9 @@ def test_external_constant_mem(ctx: DeviceContext) raises:
         constant_memory=[
             ConstantMemoryMapping(
                 "static_constant",
-                constant_memory_ptr.bitcast[NoneType]().unsafe_origin_cast[
-                    MutUntrackedOrigin
-                ](),
+                constant_memory_ptr.unsafe_bitcast[
+                    NoneType
+                ]().unsafe_origin_cast[MutUntrackedOrigin](),
                 constant_memory.byte_length(),
             )
         ],

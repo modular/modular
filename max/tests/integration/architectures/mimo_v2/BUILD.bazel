@@ -34,7 +34,7 @@ modular_py_test(
 )
 
 # Builds (never compiles) the graph, whose allreduce binds real accelerators.
-# The W4A8 experts run only on SM100.
+# The W4A4 experts run only on SM100.
 modular_py_test(
     name = "mimo_v2_gpu",
     size = "small",
@@ -45,7 +45,10 @@ modular_py_test(
     exec_properties = {
         "test.resources:gpu-memory": "1",
     },
-    gpu_constraints = ["//:b200_gpu"],
+    gpu_constraints = [
+        "//:b200_gpu",
+        "//:has_multi_gpu",
+    ],
     imports = ["."],
     tags = ["gpu"],
     deps = [
@@ -64,7 +67,10 @@ modular_py_library(
     testonly = True,
     srcs = ["tiny_fixture.py"],
     imports = ["."],
-    deps = [requirement("numpy")],
+    deps = [
+        requirement("ml-dtypes"),
+        requirement("numpy"),
+    ],
 )
 
 modular_py_library(
@@ -85,6 +91,7 @@ modular_py_library(
         "//max/python/max/pipelines/modeling",
         requirement("numpy"),
         requirement("transformers"),
+        requirement("ml-dtypes"),
     ],
 )
 
@@ -101,7 +108,7 @@ modular_py_test(
     srcs = ["test_serving_numerics_gpu.py"],
     data = [":tiny_goldens"],
     exec_properties = {
-        "test.resources:gpu-memory": "4",
+        "test.resources:gpu-memory": "3",
     },
     gpu_constraints = [
         "//:b200_gpu",
@@ -124,21 +131,33 @@ modular_py_test(
     ],
 )
 
-# Real-checkpoint validation; needs both MiMo-V2.6-Flash snapshots on disk, so
-# it runs by hand on a host that has them, never in CI.
-modular_py_binary(
-    name = "check_real_checkpoint",
-    testonly = True,
-    srcs = ["check_real_checkpoint.py"],
-    main = "check_real_checkpoint.py",
-    tags = ["manual"],
+# TP4 uses the same goldens and bounds as TP2. The standard remote B200 lane
+# exposes two GPUs, so this target runs explicitly on a four-GPU workspace.
+modular_py_test(
+    name = "mimo_v2_numerics_tp4_gpu",
+    size = "large",
+    srcs = ["test_serving_numerics_gpu.py"],
+    data = [":tiny_goldens"],
+    env = {"MIMO_TEST_TP_DEGREE": "4"},
+    exec_properties = {
+        "test.resources:gpu-memory": "3",
+    },
+    gpu_constraints = [
+        "//:b200_gpu",
+        "//:has_4_gpus",
+    ],
+    imports = ["."],
+    precompile_device_count = 4,
+    precompile_mefs = True,
+    tags = [
+        "gpu",
+        "manual",
+    ],
     deps = [
+        ":mimo_runner",
+        ":tiny_fixture",
         "//max/python/max/driver",
-        "//max/python/max/dtype",
-        "//max/python/max/graph",
-        "//max/python/max/pipelines/architectures/mimo_v2",
         requirement("numpy"),
-        requirement("transformers"),
     ],
 )
 
@@ -155,26 +174,6 @@ modular_py_binary(
         ":mimo_runner",
         requirement("numpy"),
         requirement("safetensors"),
-    ],
-)
-
-# Checks the W4A8 MoE layer (interleave, usage stats, error against an exact
-# host reference) at production width; needs a B200, so it runs by hand.
-modular_py_binary(
-    name = "check_serving_moe",
-    testonly = True,
-    srcs = ["check_serving_moe.py"],
-    main = "check_serving_moe.py",
-    tags = ["manual"],
-    deps = [
-        "//max/python/max/driver",
-        "//max/python/max/dtype",
-        "//max/python/max/engine",
-        "//max/python/max/graph",
-        "//max/python/max/nn",
-        "//max/python/max/pipelines/architectures/mimo_v2",
-        requirement("numpy"),
-        requirement("transformers"),
     ],
 )
 

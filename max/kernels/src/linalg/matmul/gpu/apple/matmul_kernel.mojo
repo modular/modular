@@ -282,7 +282,7 @@ struct Im2colALoader[
     comptime num_n_mmas = Self.num_n
     comptime NUM_ROWS = Self.num_m * 2  # 2 row-halves x num_m M-fragments
 
-    var input_ptr: UnsafePointer[Scalar[Self.dtype], ImmUntrackedOrigin]
+    var input_ptr: ImmPointer[Scalar[Self.dtype], ImmUntrackedOrigin]
     var h_base: Array[Int32, Self.NUM_ROWS]
     var w_base: Array[Int32, Self.NUM_ROWS]
     var batch_base: Array[Int32, Self.NUM_ROWS]
@@ -307,7 +307,7 @@ struct Im2colALoader[
     @inline(.always)
     def __init__(
         out self,
-        input_ptr: UnsafePointer[Scalar[Self.dtype], ImmUntrackedOrigin],
+        input_ptr: ImmPointer[Scalar[Self.dtype], ImmUntrackedOrigin],
         row_base: Int32,
         rb: Int32,
         cb: Int32,
@@ -919,10 +919,12 @@ struct AppleM5MatMul[
         # hot loop -- same hoist as the A slab (see the `run` wrapper docstring).
         # `b_ptr_shifted`/`c_ptr_shifted`: same shift as the A slab in `run`
         # (no-op when `clamp_active` is False).
-        var b_ptr_shifted = b_ptr + Int(col_shift) * (
-            k if Self.transpose_b else 1
+        var b_ptr_shifted = b_ptr.unsafe_offset(
+            Int(col_shift) * (k if Self.transpose_b else 1)
         )
-        var c_ptr_shifted = c_ptr + (Int(row_shift) * n + Int(col_shift))
+        var c_ptr_shifted = c_ptr.unsafe_offset(
+            Int(row_shift) * n + Int(col_shift)
+        )
         var b_mat = TileTensor[linear_idx_type=Self.linear_idx_type](
             b_ptr_shifted, Self._pick_b_mat_layout(k, n)
         )
@@ -937,7 +939,7 @@ struct AppleM5MatMul[
         )
         var accum: Mma.AccumType
         comptime if do_seed:
-            var c_ptr_fp32_seed = rebind[UnsafePointer[Float32, MutAnyOrigin]](
+            var c_ptr_fp32_seed = rebind[MutPointer[Float32, MutAnyOrigin]](
                 c_ptr_shifted
             )
             var c_mat_fp32_seed = TileTensor[
@@ -985,17 +987,15 @@ struct AppleM5MatMul[
                 var y = v_fp32.cast[Self.c_type]()
                 comptime if bounded:
                     if acol + 3 < n:
-                        c_vec.store[alignment=elem_align](
-                            Coord(lrow, lcol // 4), y
-                        )
+                        c_vec.store[alignment=elem_align]((lrow, lcol // 4), y)
                     else:
                         for e in range(min(4, n - acol)):
-                            c_sub.store[width=1, alignment=elem_align](
-                                Coord(lrow, lcol + e),
+                            c_sub.store[alignment=elem_align](
+                                (lrow, lcol + e),
                                 SIMD[Self.c_type, 1](y[e]),
                             )
                 else:
-                    c_vec.store[alignment=elem_align](Coord(lrow, lcol // 4), y)
+                    c_vec.store[alignment=elem_align]((lrow, lcol // 4), y)
 
             comptime for mi in range(Mma.num_m_mmas):
                 comptime for ni in range(Mma.num_n_mmas):
@@ -1044,7 +1044,7 @@ struct AppleM5MatMul[
                                 if row < m:
                                     if acol + 3 < n:
                                         c_vec.store[alignment=elem_align](
-                                            Coord(srow, lcol // 4),
+                                            (srow, lcol // 4),
                                             compute_fn[
                                                 Self.c_type,
                                                 4,
@@ -1053,10 +1053,8 @@ struct AppleM5MatMul[
                                         )
                                     else:
                                         for e in range(min(4, n - acol)):
-                                            c_sub.store[
-                                                width=1, alignment=elem_align
-                                            ](
-                                                Coord(srow, lcol + e),
+                                            c_sub.store[alignment=elem_align](
+                                                (srow, lcol + e),
                                                 compute_fn[
                                                     Self.c_type, 1, alignment=1
                                                 ](
@@ -1066,7 +1064,7 @@ struct AppleM5MatMul[
                                             )
                             else:
                                 c_vec.store[alignment=elem_align](
-                                    Coord(srow, lcol // 4),
+                                    (srow, lcol // 4),
                                     compute_fn[
                                         Self.c_type, 4, alignment=elem_align
                                     ]((row, acol), y),
@@ -1092,7 +1090,7 @@ struct AppleM5MatMul[
         def _fast_path_store[
             bounded: Bool
         ](valid_rows: Int = 0, valid_cols: Int = 0) {imm}:
-            var c_ptr_fp32 = rebind[UnsafePointer[Float32, MutAnyOrigin]](
+            var c_ptr_fp32 = rebind[MutPointer[Float32, MutAnyOrigin]](
                 c_ptr_shifted
             )
             var c_mat_fp32 = TileTensor[linear_idx_type=Self.linear_idx_type](
@@ -1480,7 +1478,7 @@ struct AppleM5MatMul[
         var tile_row0 = align_down(row_base, BM_i32)
         if tile_row0 + BM_i32 > Int32(m):
             var row_shift = (Int32(m) - BM_i32) - tile_row0
-            a_ptr = a_ptr + Int(row_shift) * k
+            a_ptr = a_ptr.unsafe_offset(Int(row_shift) * k)
 
         var a_mat = TileTensor[linear_idx_type=Self.linear_idx_type](
             a_ptr, Layout(Coord(m, k), Coord(k, Idx[1]))
@@ -1731,7 +1729,7 @@ struct AppleM5MatMul[
         a_engine: TensorEngine,
         b_engine: TensorEngine,
     ](
-        partials_ptr: UnsafePointer[Float32, MutAnyOrigin],
+        partials_ptr: MutPointer[Float32, MutAnyOrigin],
         a: TileTensor[Self.in_type, a_layout, ImmutAnyOrigin, Engine=a_engine],
         b: TileTensor[Self.in_type, b_layout, ImmutAnyOrigin, Engine=b_engine],
         log2_grid_m: UInt32,
@@ -1864,7 +1862,8 @@ struct AppleM5MatMul[
                     k_valid=Int(k_valid),
                 )
             var part_sub = TileTensor[linear_idx_type=Self.linear_idx_type](
-                partials_ptr + Int(split_idx) * m * n, row_major(m, n)
+                partials_ptr.unsafe_offset(Int(split_idx) * m * n),
+                row_major(m, n),
             ).tile[SG_M, SG_N](Int(sg_row_idx), Int(sg_col_idx))
             mma_op.store_bounded(
                 accum, part_sub, Int(valid_rows), Int(valid_cols)
@@ -1906,7 +1905,8 @@ struct AppleM5MatMul[
                     k_valid=Int(k_valid),
                 )
             var part_sub = TileTensor[linear_idx_type=Self.linear_idx_type](
-                partials_ptr + Int(split_idx) * m * n, row_major(m, n)
+                partials_ptr.unsafe_offset(Int(split_idx) * m * n),
+                row_major(m, n),
             ).tile[SG_M, SG_N](Int(sg_row_idx), Int(sg_col_idx))
             mma_op.store(accum, part_sub)
 
@@ -1917,7 +1917,7 @@ struct AppleM5MatMul[
         c_engine: TensorEngine,
     ](
         c: TileTensor[Self.c_type, c_layout, MutAnyOrigin, Engine=c_engine],
-        partials_ptr: UnsafePointer[Float32, ImmutAnyOrigin],
+        partials_ptr: ImmPointer[Float32, ImmutAnyOrigin],
         num_splits: Int32,
     ):
         """Sum `num_splits` fp32 partials per output element, cast, store.
@@ -1948,7 +1948,7 @@ struct AppleM5MatMul[
         EpilogueFnType: ElementwiseEpilogueFn,
     ](
         c: TileTensor[Self.c_type, c_layout, MutAnyOrigin, Engine=c_engine],
-        partials_ptr: UnsafePointer[Float32, ImmutAnyOrigin],
+        partials_ptr: ImmPointer[Float32, ImmutAnyOrigin],
         num_splits: Int32,
         epilogue_fn: EpilogueFnType,
     ):
@@ -1980,7 +1980,7 @@ struct AppleM5MatMul[
         ComputeFnType: ElementwiseComputeFn,
     ](
         c: TileTensor[Self.c_type, c_layout, MutAnyOrigin, Engine=c_engine],
-        partials_ptr: UnsafePointer[Float32, ImmutAnyOrigin],
+        partials_ptr: ImmPointer[Float32, ImmutAnyOrigin],
         num_splits: Int32,
         compute_fn: ComputeFnType,
     ):
@@ -2017,7 +2017,7 @@ struct AppleM5MatMul[
         has_compute_fn: Bool,
     ](
         c: TileTensor[Self.c_type, c_layout, MutAnyOrigin, Engine=c_engine],
-        partials_ptr: UnsafePointer[Float32, ImmutAnyOrigin],
+        partials_ptr: ImmPointer[Float32, ImmutAnyOrigin],
         num_splits: Int32,
         epilogue_fn: EpilogueFnType,
         compute_fn: ComputeFnType,

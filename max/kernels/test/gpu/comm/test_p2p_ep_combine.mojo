@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.random import randint, randn, seed
-from std.sys import default_accelerator, size_of
+from std.sys import size_of
 
 from max.algorithm import sync_parallelize
 from max.benchmark import bencher_iter_custom
@@ -27,7 +27,7 @@ from std.benchmark import (
     ThroughputMeasure,
 )
 from comm.sync import enable_p2p
-from max.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext, default_accelerator
 from layout import Coord, TileTensor, Idx
 from layout.tile_layout import row_major
 from shmem.ep_comm import (
@@ -47,7 +47,7 @@ def legalize_topk_ids[
     n_experts: Int, top_k: Int
 ](topk_ids: MutPointer[Int32, MutAnyOrigin], n_tokens: Int):
     for tok_id in range(n_tokens):
-        var topk_ids_for_token = topk_ids + tok_id * top_k
+        var topk_ids_for_token = topk_ids.unsafe_offset(tok_id * top_k)
 
         # The top-k ids for a token should be unique. If not, we will assign a
         # random id to the duplicate id.
@@ -60,7 +60,12 @@ def legalize_topk_ids[
 
         var duplicate_idx = is_duplicate()
         while duplicate_idx != -1:
-            randint(topk_ids_for_token + duplicate_idx, 1, 0, n_experts - 1)
+            randint(
+                topk_ids_for_token.unsafe_offset(duplicate_idx),
+                1,
+                0,
+                n_experts - 1,
+            )
             duplicate_idx = is_duplicate()
 
 
@@ -240,38 +245,38 @@ def test_combine[
 
     for slot_idx in range(n_slots):
         for dev_idx in range(n_ranks):
-            dispatch_recv_bufs_inputs[slot_idx][dev_idx] = (dispatch_recv_bufs_list[dev_idx].unsafe_ptr() + slot_idx * max_recv_num_tokens * msg_bytes).as_unsafe_any_origin()
-            dispatch_recv_count_bufs_inputs[slot_idx][dev_idx] = (dispatch_recv_count_bufs_list[dev_idx].unsafe_ptr() + slot_idx * n_experts).as_unsafe_any_origin()
-            combine_recv_bufs_inputs[slot_idx][dev_idx] = (combine_recv_bufs_list[dev_idx].unsafe_ptr() + slot_idx * n_tokens_per_rank * top_k * combine_msg_bytes).as_unsafe_any_origin()
-            combine_recv_count_bufs_inputs[slot_idx][dev_idx] = (combine_recv_count_bufs_list[dev_idx].unsafe_ptr() + slot_idx * n_experts).as_unsafe_any_origin()
+            dispatch_recv_bufs_inputs[slot_idx][dev_idx] = dispatch_recv_bufs_list[dev_idx].unsafe_ptr().unsafe_offset(slot_idx * max_recv_num_tokens * msg_bytes).as_unsafe_any_origin()
+            dispatch_recv_count_bufs_inputs[slot_idx][dev_idx] = dispatch_recv_count_bufs_list[dev_idx].unsafe_ptr().unsafe_offset(slot_idx * n_experts).as_unsafe_any_origin()
+            combine_recv_bufs_inputs[slot_idx][dev_idx] = combine_recv_bufs_list[dev_idx].unsafe_ptr().unsafe_offset(slot_idx * n_tokens_per_rank * top_k * combine_msg_bytes).as_unsafe_any_origin()
+            combine_recv_count_bufs_inputs[slot_idx][dev_idx] = combine_recv_count_bufs_list[dev_idx].unsafe_ptr().unsafe_offset(slot_idx * n_experts).as_unsafe_any_origin()
 
     # Dispatch helpers
     @inline(.always)
     def get_dispatch_send_buf_ptr(dev_idx: Int, slot_idx: Int, out result: MutPointer[UInt8, MutAnyOrigin]) raises {mut dispatch_send_bufs_list, imm}:
-        result = (dispatch_send_bufs_list[dev_idx].unsafe_ptr() + slot_idx * n_tokens_per_rank * msg_bytes).as_unsafe_any_origin()
+        result = dispatch_send_bufs_list[dev_idx].unsafe_ptr().unsafe_offset(slot_idx * n_tokens_per_rank * msg_bytes).as_unsafe_any_origin()
 
     # Combine helpers
     @inline(.always)
     def get_combine_send_buf_ptr(dev_idx: Int, slot_idx: Int, out result: MutPointer[UInt8, MutAnyOrigin]) raises {mut combine_send_bufs_list, imm}:
-        result = (combine_send_bufs_list[dev_idx].unsafe_ptr() + slot_idx * max_recv_num_tokens * combine_msg_bytes).as_unsafe_any_origin()
+        result = combine_send_bufs_list[dev_idx].unsafe_ptr().unsafe_offset(slot_idx * max_recv_num_tokens * combine_msg_bytes).as_unsafe_any_origin()
 
     @inline(.always)
     def get_combine_recv_buf_ptr(dev_idx: Int, slot_idx: Int, out result: MutPointer[UInt8, MutAnyOrigin]) raises {mut combine_recv_bufs_list, imm}:
-        result = (combine_recv_bufs_list[dev_idx].unsafe_ptr() + slot_idx * n_tokens_per_rank * top_k * combine_msg_bytes).as_unsafe_any_origin()
+        result = combine_recv_bufs_list[dev_idx].unsafe_ptr().unsafe_offset(slot_idx * n_tokens_per_rank * top_k * combine_msg_bytes).as_unsafe_any_origin()
 
     @inline(.always)
     def get_combine_recv_count_ptr(dev_idx: Int, slot_idx: Int, out result: MutPointer[UInt64, MutAnyOrigin]) raises {mut combine_recv_count_bufs_list, imm}:
-        result = (combine_recv_count_bufs_list[dev_idx].unsafe_ptr() + slot_idx * n_experts).as_unsafe_any_origin()
+        result = combine_recv_count_bufs_list[dev_idx].unsafe_ptr().unsafe_offset(slot_idx * n_experts).as_unsafe_any_origin()
 
     @inline(.always)
     def get_atomic_counters(dev_idx: Int, slot_idx: Int, out result: EPLocalSyncCounters[n_experts]) raises {mut atomic_counters_list, imm}:
-        return EPLocalSyncCounters[n_experts](atomic_counters_list[dev_idx].unsafe_ptr() + slot_idx * EPLocalSyncCounters[n_experts].total_size())
+        return EPLocalSyncCounters[n_experts](atomic_counters_list[dev_idx].unsafe_ptr().unsafe_offset(slot_idx * EPLocalSyncCounters[n_experts].total_size()))
 
     comptime get_topk_ids_tensor_result_type = TileTensor[.int32, type_of(topk_ids_layout), ImmutAnyOrigin]
     @inline(.always)
     def get_topk_ids_tensor(dev_idx: Int, slot_idx: Int, out result: get_topk_ids_tensor_result_type) raises {imm}:
         return type_of(result)(
-            ptr=(device_topk_bufs_list[dev_idx].unsafe_ptr() + slot_idx * n_tokens_per_rank * top_k).as_unsafe_any_origin(),
+            ptr=device_topk_bufs_list[dev_idx].unsafe_ptr().unsafe_offset(slot_idx * n_tokens_per_rank * top_k).as_unsafe_any_origin(),
             layout=topk_ids_layout
         )
 
@@ -279,7 +284,7 @@ def test_combine[
     @inline(.always)
     def get_input_tokens_tensor(dev_idx: Int, slot_idx: Int, out result: get_input_tokens_tensor_result_type) raises {imm}:
         return type_of(result)(
-            ptr=(device_input_bufs_list[dev_idx].unsafe_ptr() + slot_idx * n_tokens_per_rank * hidden_size).as_unsafe_any_origin(),
+            ptr=device_input_bufs_list[dev_idx].unsafe_ptr().unsafe_offset(slot_idx * n_tokens_per_rank * hidden_size).as_unsafe_any_origin(),
             layout=input_tokens_layout
         )
 
@@ -287,7 +292,7 @@ def test_combine[
     @inline(.always)
     def get_output_tensor(dev_idx: Int, slot_idx: Int, out result: get_output_tensor_result_type) raises {mut device_output_bufs_list, imm}:
         return type_of(result)(
-            ptr=(device_output_bufs_list[dev_idx].unsafe_ptr() + slot_idx * max_recv_num_tokens * hidden_size).as_unsafe_any_origin(),
+            ptr=device_output_bufs_list[dev_idx].unsafe_ptr().unsafe_offset(slot_idx * max_recv_num_tokens * hidden_size).as_unsafe_any_origin(),
             layout=output_tt_layout
         )
 
@@ -295,7 +300,7 @@ def test_combine[
     @inline(.always)
     def get_row_offsets_tensor(dev_idx: Int, slot_idx: Int, out result: get_row_offsets_tensor_result_type) raises {mut device_row_offsets_bufs_list, imm}:
         return type_of(result)(
-            ptr=(device_row_offsets_bufs_list[dev_idx].unsafe_ptr() + slot_idx * (n_local_experts + 1)).as_unsafe_any_origin(),
+            ptr=device_row_offsets_bufs_list[dev_idx].unsafe_ptr().unsafe_offset(slot_idx * (n_local_experts + 1)).as_unsafe_any_origin(),
             layout=row_offsets_layout
         )
 
@@ -303,7 +308,7 @@ def test_combine[
     @inline(.always)
     def get_expert_ids_tensor(dev_idx: Int, slot_idx: Int, out result: get_expert_ids_tensor_result_type) raises {mut device_expert_ids_bufs_list, imm}:
         return type_of(result)(
-            ptr=(device_expert_ids_bufs_list[dev_idx].unsafe_ptr() + slot_idx * n_local_experts).as_unsafe_any_origin(),
+            ptr=device_expert_ids_bufs_list[dev_idx].unsafe_ptr().unsafe_offset(slot_idx * n_local_experts).as_unsafe_any_origin(),
             layout=expert_ids_layout
         )
 
@@ -311,7 +316,7 @@ def test_combine[
     @inline(.always)
     def get_src_token_info_tensor(dev_idx: Int, slot_idx: Int, out result: get_src_token_info_tensor_result_type) raises {mut device_src_token_info_bufs_list, imm}:
         return type_of(result)(
-            ptr=(device_src_token_info_bufs_list[dev_idx].unsafe_ptr() + slot_idx * max_recv_num_tokens * 2).as_unsafe_any_origin(),
+            ptr=device_src_token_info_bufs_list[dev_idx].unsafe_ptr().unsafe_offset(slot_idx * max_recv_num_tokens * 2).as_unsafe_any_origin(),
             layout=src_token_info_layout
         )
 
@@ -319,7 +324,7 @@ def test_combine[
     @inline(.always)
     def get_output_2_tensor(dev_idx: Int, slot_idx: Int, out result: get_output_2_tensor_result_type) raises {mut device_output_2_bufs_list, imm}:
         return type_of(result)(
-            ptr=(device_output_2_bufs_list[dev_idx].unsafe_ptr() + slot_idx * n_tokens_per_rank * top_k * hidden_size).as_unsafe_any_origin(),
+            ptr=device_output_2_bufs_list[dev_idx].unsafe_ptr().unsafe_offset(slot_idx * n_tokens_per_rank * top_k * hidden_size).as_unsafe_any_origin(),
             layout=output_2_layout
         )
     # fmt: on
@@ -607,25 +612,23 @@ def test_combine[
         # Check results for each slot
         for slot_idx in range(n_slots):
             # Get pointers to this slot's data
-            var slot_output_2 = (
-                host_output_2
-                + slot_idx * n_tokens_per_rank * top_k * hidden_size
+            var slot_output_2 = host_output_2.unsafe_offset(
+                slot_idx * n_tokens_per_rank * top_k * hidden_size
             )
-            var slot_input_tokens = (
-                host_input_tokens_list[dev_idx]
-                + slot_idx * n_tokens_per_rank * hidden_size
-            )
+            var slot_input_tokens = host_input_tokens_list[
+                dev_idx
+            ].unsafe_offset(slot_idx * n_tokens_per_rank * hidden_size)
 
             # The combine kernel should send tokens back to the original rank.
             # Check that the received tokens match the original input tokens.
             for token_idx in range(n_tokens_per_rank):
-                var ref_token = slot_input_tokens + token_idx * hidden_size
+                var ref_token = slot_input_tokens.unsafe_offset(
+                    token_idx * hidden_size
+                )
                 for topk_idx in range(top_k):
-                    var received_token = (
-                        slot_output_2
-                        + token_idx * top_k * hidden_size
-                        + topk_idx * hidden_size
-                    )
+                    var received_token = slot_output_2.unsafe_offset(
+                        token_idx * top_k * hidden_size
+                    ).unsafe_offset(topk_idx * hidden_size)
                     for i in range(hidden_size):
                         assert_equal(
                             received_token[i],

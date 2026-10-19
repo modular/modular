@@ -145,7 +145,7 @@ def _run[
     def func[
         simd_width: Int, alignment: Int = 1
     ](idx0: Coord) {var out_buffer, var in_buffer}:
-        var idx = Int(idx0[0].value())
+        var idx = Int(idx0[0])
         var val = in_buffer.unsafe_ptr().unsafe_load[width=simd_width](idx)
         out_buffer.unsafe_ptr().unsafe_store[width=simd_width](
             idx, math_fn(val)

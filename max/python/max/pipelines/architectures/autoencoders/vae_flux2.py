@@ -752,8 +752,8 @@ def interpolate_2d_nearest(
     return ops.resize_nearest(
         x,
         [n, c, h * scale_factor, w * scale_factor],
-        coordinate_transform_mode=2,
-        round_mode=2,
+        coordinate_transform_mode=ops.CoordinateTransformMode.ASYMMETRIC,
+        round_mode=ops.RoundMode.FLOOR,
     )
 
 

@@ -199,7 +199,7 @@ def construct_target_kv_params(
     kv_cache_config: KVCacheConfig,
     cache_dtype: DType,
 ) -> MultiKVCacheParams:
-    """The target's attention and Mamba state, with a verify scratch leaf."""
+    """The target's attention and Mamba state."""
     assert pipeline_config.speculative is not None
     return NemotronHConfig.construct_kv_params(
         huggingface_config,
@@ -207,7 +207,6 @@ def construct_target_kv_params(
         devices,
         kv_cache_config,
         cache_dtype,
-        verify_scratch=True,
         speculative_method=pipeline_config.speculative.speculative_method,
         num_draft_tokens=pipeline_config.speculative.draft_width,
     )

@@ -16,8 +16,8 @@ from __future__ import annotations
 from typing import Any, Literal
 
 from max.driver import Buffer
-from max.engine import InferenceSession, Model
-from max.graph import Graph
+from max.engine import Model
+from max.pipelines.lib.graph_specs import GraphRole, GraphSpec
 from typing_extensions import override
 
 from ..llama3.model import LlamaModelBase
@@ -58,39 +58,23 @@ class Olmo2Model(LlamaModelBase):
         return model_config
 
     @override
-    def _build_graph_for_compile(
-        self,
-        session: InferenceSession,
-        state_dict: dict[str, Any],
-        model_config: Olmo2Config,
-    ) -> tuple[Graph, dict[str, Any]]:
-        del session
+    def graph_specs(self, model_config: Olmo2Config) -> dict[str, GraphSpec]:
+        """Returns the single-device decoder."""
         if len(self.devices) > 1:
             raise NotImplementedError("Multi-GPU OLMo2 is not implemented yet")
 
         nn_model = Olmo2(model_config)
         graph_inputs = nn_model.input_types(self.kv_params)
-
         nn_model.load_state_dict(
-            state_dict,
+            self.state_dict,
             override_quantization_encoding=True,
             weight_alignment=1,
         )
-        weights_registry = nn_model.state_dict()
-
-        with Graph(
-            "olmo2",
-            input_types=graph_inputs,
-        ) as graph:
-            tokens, input_row_offsets, return_n_logits, *kv_cache_inputs = (
-                graph.inputs
+        return {
+            GraphRole.DECODER: GraphSpec(
+                nn_model,
+                "olmo2",
+                graph_inputs,
+                weights=nn_model.state_dict(),
             )
-            kv_collections = self._unflatten_kv_inputs(kv_cache_inputs)
-            outputs = nn_model(
-                tokens.tensor,
-                kv_collections[0],
-                input_row_offsets=input_row_offsets.tensor,
-                return_n_logits=return_n_logits.tensor,
-            )
-            graph.output(*outputs)
-            return graph, weights_registry
+        }

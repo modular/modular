@@ -23,7 +23,6 @@ from .info import (
     TargetAccelerator,
     TargetAcceleratorType,
     GPUInfo,
-    _empty_target,
     _K,
     _KB,
     NoGPU,
@@ -43,7 +42,7 @@ struct BuiltinTargets(TargetAcceleratorCollection):
         # When no `--target-accelerator` is specified, we still need
         # `default_accelerator()` to resolve to a "dummy" value.
         # TODO(MSTDL-3241): Refactor to avoid needing this dummy value.
-        TargetAccelerator[NoGPU, _empty_target]._with_cli_values[[""]],
+        TargetAccelerator[NoGPU, CompilationTarget._unknown()]._with_cli_values[[""]],
 
         # FIXME: GTX1060 and GTX1080Ti share `sm_61` but have different
         # `sm_count`; target resolution should differentiate them at compile time.
@@ -76,7 +75,7 @@ struct BuiltinTargets(TargetAcceleratorCollection):
         MI300X     ._with_cli_values[["gfx942", "mi300x"]],
         # MI300A shares the gfx942 ISA with MI300X but has fewer CUs and
         # unified host/device memory. Reached via explicit "mi300a" opt-in
-        # (e.g. `GPUInfo.from_name["amdgpu:mi300a"]()`) since gfx942-only
+        # (e.g. `get_gpu_info["amdgpu:mi300a"]()`) since gfx942-only
         # detection cannot distinguish the two parts.
         MI300A     ._with_cli_values[["mi300a"]], # Could also include "gfx942", but `gfx942` resolves to MI300X.
         MI355X     ._with_cli_values[["gfx950", "mi355x"]],

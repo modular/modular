@@ -56,6 +56,7 @@ def bench_1d1d_quantization[
     comptime out_dtype = DType.uint8 if is_fp4 else DType.float8_e4m3fn
     comptime scales_dtype = NVFP4_SF_DTYPE if is_fp4 else MXFP8_SF_DTYPE
     comptime SF_VECTOR_SIZE = NVFP4_SF_VECTOR_SIZE if is_fp4 else MXFP8_SF_VECTOR_SIZE
+    comptime K_tiles = ceildiv(cols, SF_VECTOR_SIZE * SF_ATOM_K)
 
     var in_device = ctx.enqueue_create_buffer[in_dtype](rows * cols)
     var input_tensor = TileTensor(in_device, row_major(rows, Idx[cols]))
@@ -69,7 +70,7 @@ def bench_1d1d_quantization[
 
     var scales_shape = IndexList[5](
         ceildiv(rows, SF_MN_GROUP_SIZE),
-        ceildiv(cols, SF_VECTOR_SIZE * SF_ATOM_K),
+        K_tiles,
         SF_ATOM_M[0],
         SF_ATOM_M[1],
         SF_ATOM_K,
@@ -81,7 +82,7 @@ def bench_1d1d_quantization[
         scales_device,
         row_major(
             ceildiv(rows, SF_MN_GROUP_SIZE),
-            Idx[ceildiv(cols, SF_VECTOR_SIZE * SF_ATOM_K)],
+            Idx[K_tiles],
             Idx[SF_ATOM_M[0]],
             Idx[SF_ATOM_M[1]],
             Idx[SF_ATOM_K],
@@ -125,10 +126,7 @@ def bench_1d1d_quantization[
         BenchMetric.bytes,
         (rows * cols) * size_of[in_dtype]()
         + (rows * cols // (2 if is_fp4 else 1)) * size_of[out_dtype]()
-        + (
-            ceildiv(rows, SF_MN_GROUP_SIZE)
-            * ceildiv(cols, SF_VECTOR_SIZE * SF_ATOM_K)
-        )
+        + (ceildiv(rows, SF_MN_GROUP_SIZE) * K_tiles)
         * (SF_ATOM_M[0] * SF_ATOM_M[1] * SF_ATOM_K)
         * size_of[scales_dtype](),
     )

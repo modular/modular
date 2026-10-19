@@ -19,6 +19,7 @@ modular_py_test(
     gpu_constraints = ["//:has_multi_gpu"],
     tags = ["gpu"],
     deps = [
+        "//max/python/max:_core",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",

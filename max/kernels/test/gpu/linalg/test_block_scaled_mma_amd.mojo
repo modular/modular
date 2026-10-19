@@ -30,7 +30,7 @@ from std.memory import bitcast
 from std.testing import assert_true
 from std.utils import StaticTuple
 
-from layout import Coord, TensorLayout, TileTensor, row_major
+from layout import TensorLayout, TileTensor, row_major
 from linalg.arch.amd.block_scaled_mma import (
     CDNA4F8F6F4MatrixFormat,
     cdna4_block_scaled_mfma,
@@ -91,8 +91,8 @@ def _block_scaled_mma_smoke_kernel[
         one,
     )
 
-    baseline_out.store(Coord(lane, 0), baseline_acc)
-    scaled_out.store(Coord(lane, 0), scaled_acc)
+    baseline_out.store((lane, 0), baseline_acc)
+    scaled_out.store((lane, 0), scaled_acc)
 
 
 @__llvm_metadata(
@@ -144,8 +144,8 @@ def _fp6_padding_kernel[
         one,
     )
 
-    zero_pad_out.store(Coord(lane, 0), zero_pad_acc)
-    one_pad_out.store(Coord(lane, 0), one_pad_acc)
+    zero_pad_out.store((lane, 0), zero_pad_acc)
+    one_pad_out.store((lane, 0), one_pad_acc)
 
 
 def _run_fp6_padding_check[

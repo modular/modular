@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import ConfigDict, Field, model_validator
+from pydantic import ConfigDict, Field, ValidationInfo, model_validator
 
 from .base_model import MAXBaseModel
 
@@ -114,6 +114,16 @@ class ConfigFileModel(MAXBaseModel):
 
     @model_validator(mode="before")
     @classmethod
+    def _load_config_file(
+        cls, data: dict[str, Any], info: ValidationInfo
+    ) -> dict[str, Any]:
+        # Construction already merged the file. Merging it again on assignment
+        # would bring file keys back into dict fields the CLI replaced.
+        if info.field_name is not None:
+            return data
+        return cls.load_config_file(data)
+
+    @classmethod
     def load_config_file(cls, data: dict[str, Any]) -> dict[str, Any]:
         """Load configuration from YAML file if config_file is provided.
 
@@ -154,10 +164,25 @@ class ConfigFileModel(MAXBaseModel):
                     f"Configuration file must contain a mapping at the root, got {type(loaded_data)}"
                 )
 
-            explicit_section_name = data.get("section_name")
-            if explicit_section_name is not None:
-                # Caller explicitly requested a section.
-                section_data = loaded_data.get(explicit_section_name)
+            section_name = data.get("section_name")
+            # Field defaults are not applied yet in a "before" validator. A file
+            # without the class's default section is read as a flat config.
+            if section_name is None:
+                default = cls.model_fields["section_name"].default
+                if default is not None and default in loaded_data:
+                    if dropped := sorted(
+                        k
+                        for k in loaded_data
+                        if k != default and k in cls.model_fields
+                    ):
+                        raise ValueError(
+                            f"Top-level keys {dropped} would be ignored because "
+                            f"section '{default}' is read. Move them into the "
+                            "section."
+                        )
+                    section_name = default
+            if section_name is not None:
+                section_data = loaded_data.get(section_name)
                 if section_data is None:
                     available_sections = [
                         key
@@ -165,12 +190,12 @@ class ConfigFileModel(MAXBaseModel):
                         if isinstance(value, dict)
                     ]
                     raise KeyError(
-                        f"Section '{explicit_section_name}' not found in configuration file. "
+                        f"Section '{section_name}' not found in configuration file. "
                         f"Available sections: {available_sections}."
                     )
                 if not isinstance(section_data, dict):
                     raise TypeError(
-                        f"Section '{explicit_section_name}' must be a mapping, got {type(section_data)}"
+                        f"Section '{section_name}' must be a mapping, got {type(section_data)}"
                     )
                 loaded_data = section_data
 

@@ -12,9 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 """Scores MAX's MiMo-V2 against golden fixtures.
 
-Runs an NVFP4-format checkpoint (the full export, a reduced layer prefix, or
-a ``make_random_fixture.py`` fixture) through the weight adapter and the MAX
-model, teacher-forced on the gold sequences: each batch is prefilled in
+Runs a Xiaomi-format checkpoint (the full checkpoint, a reduced layer prefix,
+or a ``make_random_fixture.py`` fixture) through the weight adapter and the
+MAX model, teacher-forced on the gold sequences: each batch is prefilled in
 chunks through the paged KV cache, and each sequence's last ``--decode``
 tokens go one decode step at a time. Every layer's output and every logit
 row is scored against the gold F32 HuggingFace run:
@@ -30,16 +30,14 @@ row is scored against the gold F32 HuggingFace run:
 ``--isolated`` feeds each layer the gold output of the layer before it, so
 every layer is checked on its own. ``--sabotage`` injects the defects the
 gates must catch, and ``--reference`` scores another reference run instead
-of MAX. The results record the count of expert weights the graph declares.
-It needs the checkpoint, the fixtures and a GPU, so it runs by hand, never
-in CI.
+of MAX. It needs the checkpoint, the fixtures and a GPU, so it runs by hand,
+never in CI.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
-import re
 import time
 from pathlib import Path
 from typing import Any
@@ -321,8 +319,6 @@ def main() -> None:
             group.append((name, seq, meta["prompt_len"], len(meta["ids"])))
         groups.extend([group] if args.batch else [[entry] for entry in group])
     results: dict[str, Any] = {}
-    if runner is not None:
-        results["expert_weights"] = _expert_weights(runner.registry)
     full_length_rows = {}
     for group in groups:
         t0 = time.time()
@@ -475,32 +471,6 @@ def beacon_gate(
         "pass": bool(
             edge <= tolerance["window"] and router <= tolerance["router"]
         ),
-    }
-
-
-_EXPERT_STACK = re.compile(
-    r"layers\.\d+\.mlp\.experts\.(gate_up|down)_proj(_scale)?"
-)
-_PER_EXPERT = re.compile(r"\.experts\.\d+\.")
-
-
-def _expert_weights(registry: dict[str, Any]) -> dict[str, Any]:
-    """The expert weights the graph declares: the stacks, by rank, and any
-    per-expert constant, which there must be none of."""
-    stacks = [name for name in registry if _EXPERT_STACK.fullmatch(name)]
-    return {
-        "stacks": len(stacks),
-        "ranks": {
-            kind: sorted(
-                {
-                    len(registry[name].shape)
-                    for name in stacks
-                    if name.endswith("_scale") == (kind == "scales")
-                }
-            )
-            for kind in ("codes", "scales")
-        },
-        "per_expert": sum(1 for name in registry if _PER_EXPERT.search(name)),
     }
 
 

@@ -348,8 +348,8 @@ struct CallIndirectOpConversion
       Type origRetTy = op.getNumResults() > 0 ? resultType : Type{};
 
       auto prep =
-          cabi.prepareCall(adaptor.getArguments().getTypes(),
-                           adaptor.getArguments(), origRetTy, loc, rewriter);
+          cabi.prepareCall(op.getArguments().getTypes(), adaptor.getArguments(),
+                           origRetTy, loc, rewriter);
       // Insert the indirect call target.
       prep.callArgs.insert(prep.callArgs.begin(), adaptor.getCallee());
 

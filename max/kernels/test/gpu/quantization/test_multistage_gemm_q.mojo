@@ -14,7 +14,7 @@
 from std.math import ceildiv
 from std.math.uutils import udivmod
 from std.random import rand, randint, random_float64
-from std.sys import align_of, argv
+from std.sys import argv
 
 from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
@@ -34,7 +34,6 @@ from layout import (
     row_major,
 )
 from linalg.matmul.gpu import multistage_gemm
-from linalg.utils import elementwise_epilogue_type
 from linalg.utils_gpu import MatmulKernels
 from nn.kv_cache_ragged import _qmatmul_common
 from std.memory.unsafe import bitcast
@@ -102,14 +101,13 @@ def create_ref_b[
     # Unpack quantized weights
     comptime scales_type = DType.bfloat16
     comptime b_type = DType.uint32
-    var b_q = TileTensor(
-        b_packed.ptr.bitcast[Scalar[b_type]](),
-        row_major[N // 64, K * 64 // pack_factor](),
+    var b_q = b_packed.bitcast[b_type]().reshape(
+        row_major[N // 64, K * 64 // pack_factor]()
     )
 
-    var b_scales_ptr = b_packed.ptr + N * K // 2
+    var b_scales_ptr = b_packed.ptr.unsafe_offset(N * K // 2)
     var scales = TileTensor(
-        b_scales_ptr.bitcast[Scalar[scales_type]](),
+        b_scales_ptr.unsafe_bitcast[Scalar[scales_type]](),
         row_major[K // group_size, N](),
     )
 
@@ -163,27 +161,27 @@ def create_ref_b[
         var q_int = vec[i // 2]
 
         var v1 = int4tobf16(q_int, bitcast[.bfloat16, 1](scales_reg_tiles[i]))
-        warp_out_tile.store[2](
-            Coord((i) * 8 + lane_row, 0 * 8 + lane_col * 2),
+        warp_out_tile.store(
+            ((i) * 8 + lane_row, 0 * 8 + lane_col * 2),
             v1.cast[type_b](),
         )
         q_int >>= 4
         var v2 = int4tobf16(q_int, bitcast[.bfloat16, 1](scales_reg_tiles[i]))
-        warp_out_tile.store[2](
-            Coord((i) * 8 + lane_row, 1 * 8 + lane_col * 2),
+        warp_out_tile.store(
+            ((i) * 8 + lane_row, 1 * 8 + lane_col * 2),
             v2.cast[type_b](),
         )
         q_int >>= 4
 
         v1 = int4tobf16(q_int, bitcast[.bfloat16, 1](scales_reg_tiles[i + 1]))
-        warp_out_tile.store[2](
-            Coord((i + 1) * 8 + lane_row, 0 * 8 + lane_col * 2),
+        warp_out_tile.store(
+            ((i + 1) * 8 + lane_row, 0 * 8 + lane_col * 2),
             v1.cast[type_b](),
         )
         q_int >>= 4
         v2 = int4tobf16(q_int, bitcast[.bfloat16, 1](scales_reg_tiles[i + 1]))
-        warp_out_tile.store[2](
-            Coord((i + 1) * 8 + lane_row, 1 * 8 + lane_col * 2),
+        warp_out_tile.store(
+            ((i + 1) * 8 + lane_row, 1 * 8 + lane_col * 2),
             v2.cast[type_b](),
         )
 
@@ -211,18 +209,18 @@ def test_repack_Q4_0_for_sm8x[
 
     def build_b_buffer(N: Int, K: Int, b_ptr: MutPointer[UInt8, _]):
         var k_groups = ceildiv(K, 32)
-        var block_ptr = b_ptr.bitcast[_block_Q4_0]()
+        var block_ptr = b_ptr.unsafe_bitcast[_block_Q4_0]()
 
         for _ in range(N):
             for _ in range(k_groups):
                 block_ptr[].base_scale = random_float16()
                 fill_random(block_ptr[].q_bits)
-                block_ptr += 1
+                block_ptr = block_ptr.unsafe_offset(1)
 
     comptime group_size = 32
     comptime pack_factor = 8
-    var N = Int(n.value())
-    var K = Int(k.value())
+    var N = Int(n)
+    var K = Int(k)
     comptime BN = 128
     comptime BK = 1024
     comptime group_bytes = 2 + (group_size // 2)
@@ -355,9 +353,9 @@ def test_quantized[
     comptime static_K = KType.static_value
     comptime a_type = DType.bfloat16
 
-    var M = Int(m.value())
-    var N = Int(n.value())
-    var K = Int(k.value())
+    var M = Int(m)
+    var N = Int(n)
+    var K = Int(k)
 
     comptime _b_dim0 = NType.static_value
     comptime _b_dim1 = (KType.static_value // group_size) * group_bytes
@@ -374,14 +372,16 @@ def test_quantized[
 
     rand(a_host_ptr.unsafe_ptr(), a_size)
 
-    var b_scales_ptr = (b_host_ptr.unsafe_ptr() + N * K // 2).bitcast[
-        Scalar[a_type]
-    ]()
+    var b_scales_ptr = (
+        b_host_ptr.unsafe_ptr()
+        .unsafe_offset(N * K // 2)
+        .unsafe_bitcast[Scalar[a_type]]()
+    )
     var b_scales_size = (K // group_size) * N
     # elements of b matrix is between [-1, 1]
     rand(b_scales_ptr, b_scales_size, min=0, max=0.125)
     randint(
-        b_host_ptr.unsafe_ptr().bitcast[UInt32](),
+        b_host_ptr.unsafe_ptr().unsafe_bitcast[UInt32](),
         N * (K // pack_factor),
         Int(UInt32.MIN),
         Int(UInt32.MAX),
@@ -465,31 +465,24 @@ def test_quantized[
     comptime if use_ragged_epilogue:
         comptime assert dtype == .uint8
 
-        @__parameter
         @inline(.always)
-        @__copy_capture(c_dev_tt)
         def epilogue_fn[
             value_type: DType,
             width: SIMDLength,
             *,
-            alignment: Int = align_of[SIMD[value_type, width]](),
-        ](idx: Coord, value: SIMD[value_type, width]) capturing -> None:
+            alignment: Int,
+        ](idx: Coord, value: SIMD[value_type, width]) {var c_dev_tt}:
             comptime assert (
                 idx.rank == 2
             ), "the matmul epilogue contract is rank 2"
             c_dev_tt.store[alignment=alignment](idx, value.cast[a_type]())
 
         # The helper supplies a null output view; only the epilogue may write.
-        _qmatmul_common[
-            group_size=group_size,
-            target="gpu",
-            elementwise_lambda_fn=Optional[elementwise_epilogue_type](
-                epilogue_fn
-            ),
-        ](
+        _qmatmul_common[group_size=group_size, target="gpu"](
             a_dev_tt.as_imm(),
             b_dev_tt.bitcast[.uint8]().as_imm(),
             ctx,
+            epilogue_fn,
         )
     elif use_dispatch:
         comptime assert dtype == .uint8

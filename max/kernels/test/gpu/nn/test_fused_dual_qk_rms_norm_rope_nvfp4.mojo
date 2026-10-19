@@ -27,7 +27,6 @@ from std.random import random_float64, random_ui64, seed
 from max.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import (
-    Coord,
     Idx,
     RowMajorLayout,
     TileTensor,
@@ -39,7 +38,6 @@ from nn.kv_cache import (
     fused_dual_qk_rms_norm_rope_ragged_paged,
 )
 from std.testing import assert_equal, assert_true
-from std.utils import Index
 from std.utils.numerics import inf, nan
 
 comptime dtype = DType.bfloat16
@@ -409,7 +407,7 @@ def run_nvfp4_dual[
     ctx.synchronize()
     for i in range(main4_n):
         main4_host[i] = value_poison
-    var sf_host_bytes = sf_host.unsafe_ptr().bitcast[UInt8]()
+    var sf_host_bytes = sf_host.unsafe_ptr().unsafe_bitcast[UInt8]()
     for i in range(sf_n):
         sf_host_bytes[i] = scale_poison
     var main4_dev = ctx.enqueue_create_buffer[.uint8](main4_n)
@@ -537,31 +535,31 @@ def run_nvfp4_dual[
     def q_main_fn[
         width: Int, alignment: Int
     ](token: Int, head: Int, col: Int) {var q_main_tt} -> SIMD[dtype, width]:
-        return q_main_tt.load[width=width](Coord(Index(token, head, col)))
+        return q_main_tt.load[width=width]((token, head, col))
 
     @inline(.always)
     def k_main_fn[
         width: Int, alignment: Int
     ](token: Int, head: Int, col: Int) {var k_main_tt} -> SIMD[dtype, width]:
-        return k_main_tt.load[width=width](Coord(Index(token, head, col)))
+        return k_main_tt.load[width=width]((token, head, col))
 
     @inline(.always)
     def v_main_fn[
         width: Int, alignment: Int
     ](token: Int, head: Int, col: Int) {var v_main_tt} -> SIMD[dtype, width]:
-        return v_main_tt.load[width=width](Coord(Index(token, head, col)))
+        return v_main_tt.load[width=width]((token, head, col))
 
     @inline(.always)
     def q_index_fn[
         width: Int, alignment: Int
     ](token: Int, head: Int, col: Int) {var q_index_tt} -> SIMD[dtype, width]:
-        return q_index_tt.load[width=width](Coord(Index(token, head, col)))
+        return q_index_tt.load[width=width]((token, head, col))
 
     @inline(.always)
     def k_index_fn[
         width: Int, alignment: Int
     ](token: Int, head: Int, col: Int) {var k_index_tt} -> SIMD[dtype, width]:
-        return k_index_tt.load[width=width](Coord(Index(token, head, col)))
+        return k_index_tt.load[width=width]((token, head, col))
 
     var main_epsilon = Float32(1e-6)
     var index_epsilon = Float32(1e-5)
@@ -629,7 +627,7 @@ def run_nvfp4_dual[
     ctx.synchronize()
     for i in range(idx4_n):
         idx4_host[i] = value_poison
-    var idx_sf_host_bytes = idx_sf_host.unsafe_ptr().bitcast[UInt8]()
+    var idx_sf_host_bytes = idx_sf_host.unsafe_ptr().unsafe_bitcast[UInt8]()
     for i in range(idx_sf_n):
         idx_sf_host_bytes[i] = scale_poison
     var idx4_dev = ctx.enqueue_create_buffer[.uint8](idx4_n)
@@ -718,23 +716,23 @@ def run_nvfp4_dual[
     ctx.synchronize()
 
     print("comparing Q (main) and IndexQ")
-    var q8_ref = q_main_ref_out.unsafe_ptr().bitcast[UInt8]()
-    var q8_out = q_main_out.unsafe_ptr().bitcast[UInt8]()
+    var q8_ref = q_main_ref_out.unsafe_ptr().unsafe_bitcast[UInt8]()
+    var q8_out = q_main_out.unsafe_ptr().unsafe_bitcast[UInt8]()
     for i in range(q_main_n):
         assert_equal(q8_out[i], q8_ref[i], "main Q byte")
-    var qi_ref = q_index_ref_out.unsafe_ptr().bitcast[UInt16]()
-    var qi_out = q_index_out.unsafe_ptr().bitcast[UInt16]()
+    var qi_ref = q_index_ref_out.unsafe_ptr().unsafe_bitcast[UInt16]()
+    var qi_out = q_index_out.unsafe_ptr().unsafe_bitcast[UInt16]()
     for i in range(q_index_n):
         assert_equal(qi_out[i], qi_ref[i], "IndexQ bits")
 
     print("comparing IndexK cache")
-    var ik_ref = index_ref_out.unsafe_ptr().bitcast[UInt16]()
-    var ik_out = index_out.unsafe_ptr().bitcast[UInt16]()
+    var ik_ref = index_ref_out.unsafe_ptr().unsafe_bitcast[UInt16]()
+    var ik_out = index_out.unsafe_ptr().unsafe_bitcast[UInt16]()
     for i in range(index_n):
         assert_equal(ik_out[i], ik_ref[i], "IndexK cache bits")
 
     print("comparing NVFP4 K/V against the host quantizer")
-    var sf_bytes = sf_out.unsafe_ptr().bitcast[UInt8]()
+    var sf_bytes = sf_out.unsafe_ptr().unsafe_bitcast[UInt8]()
     var owned_value = List[Bool](length=main4_n, fill=False)
     var owned_scale = List[Bool](length=sf_n, fill=False)
     var row = List[Float32](length=head_dim, fill=0.0)
@@ -855,7 +853,7 @@ def run_nvfp4_dual[
 
     print("comparing NVFP4 IndexK against the host quantizer")
     # The fp8 IndexQ is the bf16 IndexQ through a plain cast.
-    var qi2 = q_index_out2.unsafe_ptr().bitcast[UInt8]()
+    var qi2 = q_index_out2.unsafe_ptr().unsafe_bitcast[UInt8]()
     for i in range(q_index_n):
         assert_equal(
             qi2[i],
@@ -864,7 +862,7 @@ def run_nvfp4_dual[
             ),
             "fp8 IndexQ byte",
         )
-    var idx_sf_bytes = idx_sf_out.unsafe_ptr().bitcast[UInt8]()
+    var idx_sf_bytes = idx_sf_out.unsafe_ptr().unsafe_bitcast[UInt8]()
     var idx_owned_value = List[Bool](length=idx4_n, fill=False)
     var idx_owned_scale = List[Bool](length=idx_sf_n, fill=False)
     for bs in range(batch_size):
@@ -947,7 +945,7 @@ def run_nvfp4_dual_empty(ctx: DeviceContext) raises:
     var index_dev = ctx.enqueue_create_buffer[dtype](index_n)
     main4_dev.enqueue_fill(value_poison)
     var sf_bytes_dev = DeviceBuffer[.uint8](
-        ctx, sf_dev.unsafe_ptr().bitcast[UInt8](), scale_n, owning=False
+        ctx, sf_dev.unsafe_ptr().unsafe_bitcast[UInt8](), scale_n, owning=False
     )
     sf_bytes_dev.enqueue_fill(scale_poison)
     var row_offsets_dev = ctx.enqueue_create_buffer[.uint32](1)
@@ -1008,31 +1006,31 @@ def run_nvfp4_dual_empty(ctx: DeviceContext) raises:
     def f0[
         width: Int, alignment: Int
     ](token: Int, head: Int, col: Int) {var s0} -> SIMD[dtype, width]:
-        return s0.load[width=width](Coord(Index(token, head, col)))
+        return s0.load[width=width]((token, head, col))
 
     @inline(.always)
     def f1[
         width: Int, alignment: Int
     ](token: Int, head: Int, col: Int) {var s1} -> SIMD[dtype, width]:
-        return s1.load[width=width](Coord(Index(token, head, col)))
+        return s1.load[width=width]((token, head, col))
 
     @inline(.always)
     def f2[
         width: Int, alignment: Int
     ](token: Int, head: Int, col: Int) {var s2} -> SIMD[dtype, width]:
-        return s2.load[width=width](Coord(Index(token, head, col)))
+        return s2.load[width=width]((token, head, col))
 
     @inline(.always)
     def f3[
         width: Int, alignment: Int
     ](token: Int, head: Int, col: Int) {var s3} -> SIMD[dtype, width]:
-        return s3.load[width=width](Coord(Index(token, head, col)))
+        return s3.load[width=width]((token, head, col))
 
     @inline(.always)
     def f4[
         width: Int, alignment: Int
     ](token: Int, head: Int, col: Int) {var s4} -> SIMD[dtype, width]:
-        return s4.load[width=width](Coord(Index(token, head, col)))
+        return s4.load[width=width]((token, head, col))
 
     fused_dual_qk_rms_norm_rope_nvfp4_ragged_paged[
         target="gpu", multiply_before_cast=True, interleaved=False

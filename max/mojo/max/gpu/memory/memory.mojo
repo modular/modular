@@ -142,7 +142,7 @@ struct CacheEviction(EnumLike, Equatable, TrivialRegisterPassable):
     ].values
 
     comptime _enum_case_types = TypeList.splat[
-        ParameterList[Self._enum_case_names].size, NoneType
+        ParameterList[Self._enum_case_names].length, NoneType
     ].values
 
     @inline(.always)
@@ -223,7 +223,7 @@ struct Fill(EnumLike, Equatable, TrivialRegisterPassable, Writable):
     ].values
 
     comptime _enum_case_types = TypeList.splat[
-        ParameterList[Self._enum_case_names].size, NoneType
+        ParameterList[Self._enum_case_names].length, NoneType
     ].values
 
     @inline(.always)
@@ -316,7 +316,7 @@ struct Consistency(EnumLike, Equatable, TrivialRegisterPassable, Writable):
     ].values
 
     comptime _enum_case_types = TypeList.splat[
-        ParameterList[Self._enum_case_names].size, NoneType
+        ParameterList[Self._enum_case_names].length, NoneType
     ].values
 
     @inline(.always)
@@ -433,7 +433,7 @@ struct ReduceOp(EnumLike, Equatable, TrivialRegisterPassable, Writable):
     ].values
 
     comptime _enum_case_types = TypeList.splat[
-        ParameterList[Self._enum_case_names].size, NoneType
+        ParameterList[Self._enum_case_names].length, NoneType
     ].values
 
     @inline(.always)

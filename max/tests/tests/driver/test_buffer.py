@@ -923,6 +923,30 @@ def test_view() -> None:
         _ = tensor8.view(DType.int64)
 
 
+def test_view_of_a_rank0_buffer_to_a_same_size_dtype_aliases_its_bits() -> None:
+    signed = np.array([-1, -2, -3], dtype=np.int32)
+    buffer = Buffer.from_numpy(signed.copy())
+    # An indexed element has a nonzero start offset the view must preserve.
+    reinterpreted = buffer[1].view(DType.uint32)
+    assert reinterpreted.shape == ()
+    assert reinterpreted.dtype is DType.uint32
+    assert reinterpreted.item() == signed.view(np.uint32)[1]
+
+    reinterpreted[()] = 2**32 - 7
+    expected = signed.view(np.uint32).copy()
+    expected[1] = 2**32 - 7
+    np.testing.assert_array_equal(buffer.to_numpy(), expected.view(np.int32))
+
+
+@pytest.mark.parametrize("dtype", [DType.int8, DType.int64])
+def test_view_of_a_rank0_buffer_to_a_different_size_dtype_raises(
+    dtype: DType,
+) -> None:
+    scalar = Buffer.scalar(5, DType.int32)
+    with pytest.raises(ValueError, match="rank-0"):
+        scalar.view(dtype)
+
+
 def test_from_dlpack_noncontiguous() -> None:
     array = np.arange(4).reshape(2, 2).transpose(1, 0)
     assert not array.flags.c_contiguous

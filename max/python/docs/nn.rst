@@ -18,6 +18,7 @@ Submodules
    :nosignatures:
 
    max.nn.attention
+   max.nn.comm
    max.nn.kernels
    max.nn.kv_cache
    max.nn.moe
@@ -29,6 +30,7 @@ Submodules
    :hidden:
 
    nn.attention
+   nn.comm
    nn.kernels
    nn.kv_cache
    nn.moe
@@ -46,6 +48,7 @@ Base classes
    Identity
    Layer
    LayerList
+   MissingLayer
    Module
    Sequential
    Shardable
@@ -61,6 +64,7 @@ Linear layers
 
    ColumnParallelLinear
    Embedding
+   FusedMLP
    GPTQLinear
    Linear
    MLP
@@ -113,6 +117,17 @@ Transformer
    ReturnLogits
    Transformer
    TransformerBlock
+   ~max.nn.transformer.DistributedLogitsPostprocessMixin
+   ~max.nn.transformer.LogitsPostprocessMixin
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/function.rst
+
+   ~max.nn.transformer.distributed_logits_postprocess
+   ~max.nn.transformer.forward_sequential_layers
+   ~max.nn.transformer.logits_postprocess
 
 Convolution
 -----------
@@ -141,6 +156,16 @@ Mixture of experts
    MoE
    MoEGate
    MoEQuantized
+
+Parallelism
+-----------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/class.rst
+
+   ~max.nn.parallel.ParallelArrayOps
 
 Sampling
 --------
@@ -178,6 +203,14 @@ Hooks
    :template: autosummary/class.rst
 
    ~max.nn.hooks.PrintHook
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/function.rst
+
+   ~max.nn.layer.add_layer_hook
+   ~max.nn.layer.clear_hooks
 
 Functions
 ---------

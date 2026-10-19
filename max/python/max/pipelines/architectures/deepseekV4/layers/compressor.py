@@ -43,6 +43,8 @@ from __future__ import annotations
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, Weight, ops
+from max.nn.kernels import compress_windows_ragged
+from max.nn.kv_cache import PagedCacheValues
 from max.nn.layer import Module
 from max.nn.linear import Linear
 from max.nn.norm.rms_norm import RMSNorm
@@ -50,7 +52,7 @@ from max.nn.norm.rms_norm import RMSNorm
 from ..model_config import DeepseekV4Config
 from .hadamard import hadamard_rotate
 from .quantization import fp4_qat_quantize, fp8_qat_quantize
-from .ragged import window_coff
+from .ragged import RaggedRows, window_coff
 from .rope import apply_rope_tail
 
 
@@ -95,11 +97,11 @@ class DeepseekV4Compressor(Module):
             shape=(compress_ratio, self.proj_dim),
             device=device,
         )
-        self.wkv = Linear(
-            config.hidden_size, self.proj_dim, DType.float32, device
-        )
-        self.wgate = Linear(
-            config.hidden_size, self.proj_dim, DType.float32, device
+        # ``wkv`` and ``wgate`` stacked by the adapter (``[wkv; wgate]`` along
+        # N): the graph compiler does not merge the two f32 GEMMs itself
+        # (GEX-1978), and each launches only a handful of CTAs.
+        self.wkv_wgate = Linear(
+            config.hidden_size, 2 * self.proj_dim, DType.float32, device
         )
         self.norm = RMSNorm(head_dim, DType.float32, config.rms_norm_eps)
         self.activation_dtype = config.dtype
@@ -111,7 +113,55 @@ class DeepseekV4Compressor(Module):
         here: it depends on the token's slot within its window, which
         :meth:`__call__` knows and the store does not.
         """
-        return self.wkv(x32), self.wgate(x32)
+        out = self.wkv_wgate(x32)
+        width = int(out.shape[-1])
+        return out[..., : self.proj_dim], out[..., self.proj_dim : width]
+
+    def pool_paged(
+        self,
+        kv_proj: TensorValue,
+        score_proj: TensorValue,
+        rows: RaggedRows,
+        window_offsets: TensorValue,
+        freqs_table: TensorValue,
+        state: PagedCacheValues,
+        layer: TensorValue,
+    ) -> TensorValue:
+        """:meth:`__call__` over every window of a ragged batch in one op.
+
+        Positions before each chunk are read from the state leaf in place,
+        so no per-window table is built and the window count stays on the
+        device.
+
+        Args:
+            kv_proj: ``[T, proj_dim]`` the chunk's raw ``wkv`` rows.
+            score_proj: ``[T, proj_dim]`` the chunk's raw ``wgate`` rows.
+            rows: The batch's token bookkeeping.
+            window_offsets: ``[b + 1]`` uint32 window offsets.
+            freqs_table: The layer's full rotary table.
+            state: The stream's state leaf.
+            layer: This layer within the leaf, host uint32.
+
+        Returns:
+            ``[n, head_dim]`` entries, ``n`` a bound on the window count; the
+            rows past ``window_offsets[b]`` are left unwritten
+            (:func:`~max.nn.kernels.compress_windows_ragged`).
+        """
+        return compress_windows_ragged(
+            kv_proj,
+            score_proj,
+            self.ape,
+            # As :class:`RMSNorm` applies it: the weight in the input's dtype.
+            self.norm.weight.cast(self.activation_dtype).to(kv_proj.device),
+            freqs_table,
+            rows.offsets,
+            window_offsets,
+            rows.starts,
+            state,
+            layer,
+            epsilon=self.norm.eps,
+            rotate=self.rotate,
+        )
 
     def __call__(
         self,

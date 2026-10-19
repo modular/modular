@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.gpu.host import DeviceContext
-from layout import Coord, TileTensor, row_major
+from layout import TileTensor, row_major
 from layout._fillers import random
 from nn.moe import moe_finalize
 from std.testing import assert_almost_equal
@@ -80,10 +80,10 @@ def test_moe_finalize[
             var acc = Float32(0)
             for k in range(num_experts_per_token):
                 var row = Int(restore_order_host[t * num_experts_per_token + k])
-                var w = Float32(router_weight_host_2d[Coord(t, k)])
-                acc += Float32(down_host_2d[Coord(row, col)]) * w
+                var w = Float32(router_weight_host_2d[t, k])
+                acc += Float32(down_host_2d[row, col]) * w
             assert_almost_equal(
-                output_2d[Coord(t, col)],
+                output_2d[t, col],
                 acc.cast[out_type](),
                 atol=2e-2,
                 rtol=2e-2,

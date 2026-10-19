@@ -41,7 +41,7 @@ from max.pipelines.context import (
     SamplingParams,
 )
 from max.pipelines.lib import PixelGenerationTokenizer
-from max.pipelines.lib.generate import Batch
+from max.pipelines.lib.generate import GenerateIterator
 from max.pipelines.modeling.types import (
     PipelineTokenizer,
     PixelGenerationInputs,
@@ -192,7 +192,7 @@ def run_model(
             asyncio.run(pipeline.tokenizer.new_context(request))
             for request in batch
         ]
-        with Batch.from_contexts(pipeline, contexts) as generation:
+        with GenerateIterator.from_contexts(pipeline, contexts) as generation:
             while not generation.done:
                 generation.step()
         if print_outputs:

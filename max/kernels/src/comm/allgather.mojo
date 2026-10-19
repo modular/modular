@@ -298,13 +298,13 @@ def _allgather_p2p_kernel[
                 if idx < num_simd_vectors[gpu_idx]:
                     data[gpu_idx] = (
                         src_ptrs_rr[gpu_idx]
-                        .address_space_cast[_target_address_space]()
+                        .unsafe_address_space_cast[_target_address_space]()
                         .load[width=simd_width, alignment=alignment](elem_idx)
                     )
             # Then store each peer's data.
             comptime for gpu_idx in range(ngpus):
                 if idx < num_simd_vectors[gpu_idx]:
-                    out_ptrs_rr[gpu_idx].address_space_cast[
+                    out_ptrs_rr[gpu_idx].unsafe_address_space_cast[
                         _target_address_space
                     ]().store[width=simd_width, alignment=alignment](
                         elem_idx, data[gpu_idx]
@@ -365,9 +365,9 @@ def _allgather_tma_kernel[
     var smem_base = external_memory[
         UInt8, address_space=.SHARED, alignment=128
     ]()
-    var mbar_base = (smem_base + NUM_WARPS * BYTES_PER_COPY).bitcast[
-        SharedMemBarrier
-    ]()
+    var mbar_base = smem_base.unsafe_offset(
+        NUM_WARPS * BYTES_PER_COPY
+    ).unsafe_bitcast[SharedMemBarrier]()
 
     var warp = warp_id()
     var is_leader = elect_one_sync()
@@ -381,14 +381,18 @@ def _allgather_tma_kernel[
     var my_src_idx = warp % ngpus
 
     var src_g = (
-        src_ptrs[my_src_idx].bitcast[UInt8]().address_space_cast[.GLOBAL]()
+        src_ptrs[my_src_idx]
+        .unsafe_bitcast[UInt8]()
+        .unsafe_address_space_cast[.GLOBAL]()
     )
     var dst_g = (
-        outputs[my_src_idx].bitcast[UInt8]().address_space_cast[.GLOBAL]()
+        outputs[my_src_idx]
+        .unsafe_bitcast[UInt8]()
+        .unsafe_address_space_cast[.GLOBAL]()
     )
     var nbytes = Int(lengths[my_src_idx]) * size_of[dtype]()
-    var smem = smem_base + warp * BYTES_PER_COPY
-    var mbar = mbar_base + warp
+    var smem = smem_base.unsafe_offset(warp * BYTES_PER_COPY)
+    var mbar = mbar_base.unsafe_offset(warp)
 
     # Grid-strided chunk distribution across warps handling the same source.
     var warps_per_src_per_block = NUM_WARPS // ngpus
@@ -412,14 +416,17 @@ def _allgather_tma_kernel[
                 # Async NVLink read: global → shared.
                 mbar[].expect_bytes(Int32(copy_bytes))
                 cp_async_bulk_shared_cluster_global(
-                    smem, src_g + offset, Int32(copy_bytes), mbar[].unsafe_ptr()
+                    smem,
+                    src_g.unsafe_offset(offset),
+                    Int32(copy_bytes),
+                    mbar[].unsafe_ptr(),
                 )
                 mbar[].wait(phase=phase)
                 phase ^= 1
 
                 # Async local write: shared → global.
                 cp_async_bulk_global_shared_cta(
-                    dst_g + offset, smem, Int32(copy_bytes)
+                    dst_g.unsafe_offset(offset), smem, Int32(copy_bytes)
                 )
                 cp_async_bulk_commit_group()
                 cp_async_bulk_wait_group[0]()
@@ -553,10 +560,10 @@ def _allgather_relay_kernel[
         var blocks_per_stream = Int(num_direct_blocks) // ngpus
         var stream_block = bid // ngpus
         var src_idx = circular_add[ngpus](group_rank, stream)
-        var src_ptr = src_ptrs[src_idx].address_space_cast[
+        var src_ptr = src_ptrs[src_idx].unsafe_address_space_cast[
             _target_address_space
         ]()
-        var out_ptr = outputs[src_idx].address_space_cast[
+        var out_ptr = outputs[src_idx].unsafe_address_space_cast[
             _target_address_space
         ]()
         # Each shard is split on its own length, so the group may be
@@ -607,7 +614,7 @@ def _allgather_relay_kernel[
         var src_idx = relay_bid % ngpus
         var blocks_per_src = (grid_dim.x - Int(num_direct_blocks)) // ngpus
         var src_block = relay_bid // ngpus
-        var src_ptr = peer_src_ptrs[src_idx].address_space_cast[
+        var src_ptr = peer_src_ptrs[src_idx].unsafe_address_space_cast[
             _target_address_space
         ]()
 
@@ -660,7 +667,7 @@ def _allgather_relay_kernel[
                 var elem_idx = (idx + u * BLOCK_SIZE) * simd_width
                 if idx + u * BLOCK_SIZE < end:
                     comptime for k in range(ngpus - 1):
-                        dst_ptrs[k].address_space_cast[
+                        dst_ptrs[k].unsafe_address_space_cast[
                             _target_address_space
                         ]().store[width=simd_width, alignment=alignment](
                             elem_idx, data[u]

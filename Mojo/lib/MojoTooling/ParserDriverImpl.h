@@ -33,6 +33,10 @@ void resolveForLSP(KGEN::LIT::DeclResolver &resolver, KGEN::LIT::ASTDecl &decl);
 /// pulled in during resolution.
 void resolveSignaturesForLSP(KGEN::LIT::DeclResolver &resolver);
 
+} // namespace M
+
+namespace M::KGEN::LIT {
+
 /// This class represents the internal implementation of the parser driver.
 struct MojoParserContext::Impl {
   Impl(llvm::SourceMgr &sourceMgr, KGEN::LIT::ParserConfig &config);
@@ -45,7 +49,7 @@ struct MojoParserContext::Impl {
   KGEN::LIT::SharedState sharedState;
 
   /// The top level decl for everything being parsed.
-  KGEN::LIT::ASTDecl *topLevelDecl = nullptr;
+  KGEN::LIT::TopLevelModuleASTDecl *topLevelDecl = nullptr;
 
   /// The main module we are parsing into.
   mlir::OwningOpRef<ModuleOp> module;
@@ -105,6 +109,6 @@ struct MojoParserContext::Impl {
   };
   std::unique_ptr<CompletionCache> completionCache;
 };
-} // namespace M
+} // namespace M::KGEN::LIT
 
 #endif // PARSERDRIVERIMPL_H

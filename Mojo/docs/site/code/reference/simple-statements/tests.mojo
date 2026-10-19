@@ -28,7 +28,7 @@
 #     guidance only; both forms compile)
 #   - `x @= m` matmul augmented op (requires a struct with
 #     `__imatmul__`; covered in operators tests)
-from std.testing import assert_equal
+from std.testing import assert_equal, assert_raises
 
 
 # --- Stubs referenced by code examples ---
@@ -174,6 +174,52 @@ def test_tuple_return_unpack() raises:
     var e, f = returns_pair()
     assert_equal(e, 1)
     assert_equal(f, 2)
+
+
+def test_list_destructuring() raises:
+    var values: List = [1, 2, 3, 4]
+    var [first, *middle, last] = values
+    assert_equal(first, 1)
+    assert_equal(len(middle), 2)
+    assert_equal(middle[0], 2)
+    assert_equal(middle[1], 3)
+    assert_equal(last, 4)
+
+
+def test_array_destructuring() raises:
+    # A bare bracket literal is an `Array`, which also supports `*name`.
+    var values = [1, 2, 3, 4, 5]
+    var [first, *rest] = values
+    assert_equal(first, 1)
+    assert_equal(len(rest), 4)
+    assert_equal(rest[0], 2)
+    assert_equal(rest[3], 5)
+
+
+def test_list_destructuring_wrong_length_raises() raises:
+    var values: List = [1, 2, 3, 4]
+    with assert_raises(contains="does not match value length"):
+        var [x, y, z] = values
+        _ = x + y + z
+
+
+def _list_shape(values: List[Int]) -> String:
+    match values:
+        case []:
+            return "empty"
+        case [1, *middle, last]:
+            return String("middle: ", len(middle), " last: ", last)
+        case [first, *rest]:
+            return String("first: ", first, " ", len(rest), " remain")
+        case _:
+            return "unreachable"
+
+
+def test_list_patterns() raises:
+    assert_equal(_list_shape([1, 2, 3, 4]), "middle: 2 last: 4")
+    assert_equal(_list_shape([]), "empty")
+    # Doesn't start with 1, so it falls to the next case.
+    assert_equal(_list_shape([5, 6, 7]), "first: 5 2 remain")
 
 
 # --- Simple swaps ---
@@ -388,6 +434,10 @@ def main() raises:
     test_destructuring_bare()
     test_destructuring_parenthesized()
     test_tuple_return_unpack()
+    test_list_destructuring()
+    test_array_destructuring()
+    test_list_destructuring_wrong_length_raises()
+    test_list_patterns()
     test_simple_swap()
     test_augmented_arithmetic_int()
     test_augmented_float_div()

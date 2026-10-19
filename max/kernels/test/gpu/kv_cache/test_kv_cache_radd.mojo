@@ -116,8 +116,10 @@ def test_kv_cache_radd[
         ctx,
     )
     var a_host = a.host_tensor()
-    for i in range(a_host.num_elements()):
-        a_host.unsafe_ptr().unsafe_store(i, Scalar[dtype](i))
+    comptime a_cols = num_heads * head_dim * 2
+    for row in range(total_slice_length):
+        for col in range(a_cols):
+            a_host[row, col] = Scalar[dtype](row * a_cols + col)
     a.to_device()
 
     var layer_idx = 1

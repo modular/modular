@@ -45,7 +45,7 @@ _PLUGIN_MODULE = "precompile_mefs_plugin"
 
 # What a test that is not precompiled adds to itself, so the `py_test` below
 # has one spelling either way.
-_NOT_PRECOMPILED = struct(args = [], deps = [], data = [], env = {})
+_NOT_PRECOMPILED = struct(args = [], deps = [], data = [], env = {}, tags = [])
 
 # What the test's own environment says about the GPU it expects, which the
 # record action has none of. A non-zero memory-manager size in particular makes
@@ -200,6 +200,7 @@ def _wire_precompile(
                 "PRECOMPILE_MEFS_REPLAY_RLOCATIONS": "$(rlocationpaths :{}.mefs)".format(test_name),
             },
         }),
+        tags = ["precompiled-mefs"],
     )
 
 def modular_py_test(
@@ -441,7 +442,7 @@ def modular_py_test(
                 srcs = test_srcs_with_runner,
                 exec_properties = default_exec_properties | get_resources_exec_properties(test_name, test = True) | exec_properties,
                 target_compatible_with = gpu_constraints + target_compatible_with,
-                tags = tags + get_resources_tags(test_name) + per_test_tags.get(src, []),
+                tags = tags + get_resources_tags(test_name) + per_test_tags.get(src, []) + replay.tags,
                 imports = imports,
                 **kwargs
             )
@@ -498,7 +499,7 @@ def modular_py_test(
             srcs = srcs + ["//bazel/internal:pytest_runner"],
             exec_properties = default_exec_properties | get_resources_exec_properties(name, test = True) | exec_properties,
             target_compatible_with = gpu_constraints + target_compatible_with,
-            tags = tags + get_resources_tags(name),
+            tags = tags + get_resources_tags(name) + replay.tags,
             imports = imports,
             **kwargs
         )

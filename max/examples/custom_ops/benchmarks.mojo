@@ -13,7 +13,7 @@
 
 from std.math import iota
 from std.random import rand
-from std.sys import argv, default_accelerator
+from std.sys import argv
 
 from std.benchmark import (
     Bench,
@@ -22,7 +22,7 @@ from std.benchmark import (
     ThroughputMeasure,
 )
 from std.bit import log2_floor
-from max.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext, default_accelerator
 from kernels.matrix_multiplication import MatrixMultiplication
 from kernels.tensor_core_mma import TensorCoreMMA
 from kernels.top_k import TopK

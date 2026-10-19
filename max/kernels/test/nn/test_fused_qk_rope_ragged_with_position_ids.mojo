@@ -125,9 +125,7 @@ def test_fused_qk_rope[
     var start_positions_dyn = materialize[start_positions]()
     # Initialize KV cache block buffer with golden values.
     var k_cache_input_buffer = k_cache_input[dtype]()
-    var k_cache_input_buffer_ptr: MutPointer[
-        k_cache_input_buffer.T, origin_of(k_cache_input_buffer)
-    ] = k_cache_input_buffer.unsafe_ptr()
+    var k_cache_input_buffer_ptr = k_cache_input_buffer.unsafe_ptr()
     var max_cache_len_in_batch = 0
     for batch_idx in range(batch_size):
         var start_pos = Int(start_positions_dyn[batch_idx])
@@ -135,19 +133,21 @@ def test_fused_qk_rope[
         for seq_idx in range(seq_len):
             var tok_idx = start_pos + seq_idx
             unsafe_memcpy(
-                dest=kv_cache_block.ptr
-                + kv_cache_block.layout(
-                    Coord(
-                        Int(lookup_table[batch_idx, tok_idx // page_size]),
-                        0,
-                        0,
-                        tok_idx % page_size,
-                        0,
-                        0,
+                dest=kv_cache_block.ptr.unsafe_offset(
+                    kv_cache_block.layout(
+                        Coord(
+                            Int(lookup_table[batch_idx, tok_idx // page_size]),
+                            0,
+                            0,
+                            tok_idx % page_size,
+                            0,
+                            0,
+                        )
                     )
                 ),
-                src=k_cache_input_buffer_ptr
-                + ((batch_idx * seq_len + seq_idx) * dim),
+                src=k_cache_input_buffer_ptr.unsafe_offset(
+                    (batch_idx * seq_len + seq_idx) * dim
+                ),
                 count=dim,
             )
         max_cache_len_in_batch = max(max_cache_len_in_batch, start_pos)
@@ -213,11 +213,9 @@ def test_fused_qk_rope[
         Coord(Idx[max_seq_len], Idx[rope_dim]),
         Coord(Idx[head_dim], Idx[1]),
     )
-    var freqs_cis_table_buffer_ptr: MutPointer[
-        freqs_cis_table_buffer.T, origin_of(freqs_cis_table_buffer)
-    ] = freqs_cis_table_buffer.unsafe_ptr()
+    var freqs_cis_table_buffer_ptr = freqs_cis_table_buffer.unsafe_ptr()
     var freqs_cis_table = TileTensor(
-        freqs_cis_table_buffer_ptr + (head_dim - rope_dim),
+        freqs_cis_table_buffer_ptr.unsafe_offset(head_dim - rope_dim),
         freqs_cis_layout,
     )
 
@@ -231,9 +229,7 @@ def test_fused_qk_rope[
     assert (
         len(expected_k_out_buffer) == batch_size * seq_len * dim
     ), "invalid expected k out init"
-    var expected_k_out_buffer_ptr: MutPointer[
-        expected_k_out_buffer.T, origin_of(expected_k_out_buffer)
-    ] = expected_k_out_buffer.unsafe_ptr()
+    var expected_k_out_buffer_ptr = expected_k_out_buffer.unsafe_ptr()
 
     # Create output buffer and TileTensor.
     var q_out_buffer = List[Scalar[dtype]](length=len(q_buffer), fill=0)
@@ -264,16 +260,16 @@ def test_fused_qk_rope[
                 )
                 # Verify unroped region: First (head_dim - rope_dim) elements should remain unchanged
                 assert_almost_equal(
-                    q_out._storage + base_offset,
-                    q._storage + base_offset,
+                    q_out._storage.unsafe_offset(base_offset),
+                    q._storage.unsafe_offset(base_offset),
                     head_dim - rope_dim,
                 )
 
                 # Verify roped region: Last rope_dim elements should match expected output
                 var roped_offset = base_offset + (head_dim - rope_dim)
                 assert_almost_equal(
-                    q_out._storage + roped_offset,
-                    expected_q_out._storage + roped_offset,
+                    q_out._storage.unsafe_offset(roped_offset),
+                    expected_q_out._storage.unsafe_offset(roped_offset),
                     rope_dim,
                 )
 
@@ -283,9 +279,8 @@ def test_fused_qk_rope[
             for head_idx in range(num_heads):
                 # Calculate offsets for current position
                 var tok_idx = Int(start_positions_dyn[batch_idx]) + seq_idx
-                var cache_block_ptr = (
-                    kv_cache_block.ptr
-                    + kv_cache_block.layout(
+                var cache_block_ptr = kv_cache_block.ptr.unsafe_offset(
+                    kv_cache_block.layout(
                         Coord(
                             Int(lookup_table[batch_idx, tok_idx // page_size]),
                             0,
@@ -302,15 +297,17 @@ def test_fused_qk_rope[
                 # Verify unroped region: Should match original input
                 assert_almost_equal(
                     cache_block_ptr,
-                    k_cache_input_buffer_ptr + input_offset,
+                    k_cache_input_buffer_ptr.unsafe_offset(input_offset),
                     head_dim - rope_dim,
                 )
 
                 # Verify roped region: Should match expected output
                 var roped_offset = head_dim - rope_dim
                 assert_almost_equal(
-                    cache_block_ptr + roped_offset,
-                    expected_k_out_buffer_ptr + input_offset + roped_offset,
+                    cache_block_ptr.unsafe_offset(roped_offset),
+                    expected_k_out_buffer_ptr.unsafe_offset(
+                        input_offset
+                    ).unsafe_offset(roped_offset),
                     rope_dim,
                 )
 

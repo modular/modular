@@ -152,6 +152,12 @@ class EPConfig:
     max_replicas: int = 1
     """Largest replica count across all (layer, logical) cells. Also the trailing dim of log2phy."""
 
+    eplb_router_folded: bool = False
+    """When true, the router's expert-indexed weights are stored in physical
+    slot order, so the router emits physical expert ids and dispatch skips
+    the EPLB remap. Only valid for a placement that is a pure permutation
+    (``max_replicas == 1``)."""
+
     eplb_phy2log_plan: Any = None
     """Optional pre-computed EPLB plan (phy2log numpy array, shape
     [num_moe_layers, num_phy]). When non-None, EPBatchManager picks it

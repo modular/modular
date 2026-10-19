@@ -227,13 +227,6 @@ def run_max_indexer(
         ),
     )
 
-    kv_manager = PagedKVCacheManager(
-        params=kv_params,
-        total_num_pages=8,
-        session=session,
-        max_batch_size=128,
-    )
-
     # A NoPE indexer never reads ``freqs_cis``, so the table stays full width
     # and simply goes unused.
     rope = RotaryEmbedding(
@@ -299,7 +292,16 @@ def run_max_indexer(
 
         graph.output(result)
 
+    # Compile before the KV cache manager allocates device memory, so that the
+    # precompile_mefs record run reaches the load on a virtual device.
     compiled = session.load(graph, weights_registry=indexer.state_dict())
+
+    kv_manager = PagedKVCacheManager(
+        params=kv_params,
+        total_num_pages=8,
+        session=session,
+        max_batch_size=128,
+    )
 
     prompt_lens = [seq_len] * batch_size
     batch_contexts = []
@@ -366,10 +368,10 @@ def test_indexer_no_mask(
     rope_dim: int,
 ) -> None:
     total_seq_len = batch_size * seq_len
-    torch_output = run_torch_indexer(x, qr, state_dict, rope_dim=rope_dim)
     max_output = run_max_indexer(
         x, qr, input_row_offsets, state_dict, rope_dim=rope_dim
     )
+    torch_output = run_torch_indexer(x, qr, state_dict, rope_dim=rope_dim)
 
     assert max_output.shape[0] == total_seq_len, (
         f"Expected first dimension {total_seq_len}, got {max_output.shape[0]}"
@@ -410,9 +412,6 @@ def test_indexer_causal_mask(
     rope_dim: int,
 ) -> None:
     total_seq_len = batch_size * seq_len
-    torch_output = run_torch_indexer(
-        x, qr, state_dict, mask=True, rope_dim=rope_dim
-    )
     max_output = run_max_indexer(
         x,
         qr,
@@ -420,6 +419,9 @@ def test_indexer_causal_mask(
         state_dict,
         MHAMaskVariant.CAUSAL_MASK,
         rope_dim=rope_dim,
+    )
+    torch_output = run_torch_indexer(
+        x, qr, state_dict, mask=True, rope_dim=rope_dim
     )
 
     assert max_output.shape[0] == total_seq_len, (

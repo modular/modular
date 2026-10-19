@@ -10,15 +10,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""A tiny random-weight MiMo-V2 checkpoint in the NVFP4 export's format.
+"""A tiny random-weight MiMo-V2 checkpoint in Xiaomi's format.
 
 Four decoder layers: layer 0 is full attention with the dense MLP, layers 1
 and 2 are sliding-window attention with sinks and the MoE, and layer 3 is
 full attention with the MoE. Each head has the real model's shape (Q/K 192,
 V 128, RoPE over the first 64 dims, a 128-key window); the widths are small.
-Dense weights are F32 values that FP8 with 128x128 block scales represents
-exactly, and the experts are NVFP4 codes whose scale pairs are MXFP4 scales,
-so the weight adapter's repacks run as they do on the real export.
+Dense projections are FP8 E4M3 with float32 128x128 block scales, and
+``qkv_proj`` is in Xiaomi's chunk order with each full-attention chunk's
+scales padded to whole blocks, as in the real checkpoint. The experts are
+MXFP4: E2M1 codes with one E8M0 scale per 32 elements.
 
 The weights are scaled so that each sublayer adds a fraction of the residual
 stream: random weights at unit gain amplify rounding until BF16 alone flips
@@ -42,6 +43,7 @@ import struct
 from pathlib import Path
 from typing import Any
 
+import ml_dtypes
 import numpy as np
 
 VOCAB, HIDDEN, HEADS = 256, 256, 16
@@ -51,6 +53,8 @@ DENSE_DIM, MOE_DIM, EXPERTS, TOP_K = 512, 512, 32, 8
 LAYERS = [(0, 0), (1, 1), (1, 1), (0, 1)]
 """(sliding, MoE) per decoder layer."""
 SLIDING_WINDOW = 128
+CHUNKS = FULL_KV_HEADS
+"""``qkv_proj`` chunks, one per full-attention KV head, as in Xiaomi's."""
 
 PROMPTS = {"long": 200, "short": 48}
 """Prompt lengths. From row 128 of the long one on, a sliding layer drops
@@ -114,22 +118,16 @@ def config() -> dict[str, Any]:
         "n_group": 1,
         "topk_group": 1,
         "torch_dtype": "bfloat16",
-        "conversion_metadata": {"qkv_layout": "global_q_k_v"},
         "quantization_config": {
-            "quant_method": "modelopt",
-            "quant_algo": "MIXED_PRECISION",
-            "kv_cache_quant_algo": None,
-            "exclude_modules": [],
-            "quantized_layers": {
-                f"model.layers.{i}.mlp.experts.{e}.{proj}": {
-                    "quant_algo": "W4A16_NVFP4",
-                    "group_size": 16,
-                }
-                for i, (_, moe) in enumerate(LAYERS)
-                if moe
-                for e in range(EXPERTS)
-                for proj in ("gate_proj", "up_proj", "down_proj")
-            },
+            "quant_method": "fp8",
+            "fmt": "e4m3",
+            "activation_scheme": "dynamic",
+            "weight_block_size": [128, 128],
+            "store_dtype": "mxfp4",
+            "mxfp4_block_size": 32,
+            "ignored_layers": [
+                f"model.layers.{i}.self_attn.o_proj" for i in range(len(LAYERS))
+            ],
         },
     }
 
@@ -148,82 +146,108 @@ def _e4m3_values() -> np.ndarray:
 _E4M3 = _e4m3_values()
 
 
-def _fp8_exact(weight: np.ndarray) -> np.ndarray:
-    """Rounds ``[N, K]`` to values FP8 E4M3 with 128x128 block scales holds.
+def fp8_blocks(weight: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Quantizes ``[N, K]`` to E4M3 codes with float32 128x128 block scales.
 
-    Each block's scale is a power of two and its largest element becomes
-    448 times it, so the block's ``amax / 448`` is its scale exactly.
+    Each block's scale is its ``amax / 448``, as in the real checkpoint.
     """
     rows, cols = weight.shape
     tiles = weight.reshape(rows // 128, 128, cols // 128, 128)
-    amax = np.abs(tiles).max(axis=(1, 3), keepdims=True)
-    scale = np.exp2(np.round(np.log2(amax / 448))).astype(np.float32)
-    x = (tiles / amax * 448).astype(np.float32)
-    positive = _E4M3[:127]
-    above = np.clip(np.searchsorted(positive, np.abs(x)), 1, 126)
-    below = above - 1
-    nearest = np.where(
-        positive[above] - np.abs(x) < np.abs(x) - positive[below], above, below
+    scale = (np.abs(tiles).max(axis=(1, 3), keepdims=True) / 448).astype(
+        np.float32
     )
-    # No negative zeros: the adapter's exactness check compares bits.
-    sign = np.where((x < 0) & (nearest > 0), 0x80, 0)
-    codes = (nearest | sign).astype(np.uint8)
-    return (_E4M3[codes] * scale).reshape(rows, cols)
+    x = np.abs(tiles / scale)
+    positive = _E4M3[:127]
+    above = np.clip(np.searchsorted(positive, x), 1, 126)
+    below = above - 1
+    nearest = np.where(positive[above] - x < x - positive[below], above, below)
+    sign = np.where((tiles < 0) & (nearest > 0), 0x80, 0)
+    codes = (nearest | sign).astype(np.uint8).reshape(rows, cols)
+    return codes, scale.reshape(rows // 128, cols // 128)
+
+
+def fp8_decode(codes: np.ndarray, scales: np.ndarray) -> np.ndarray:
+    """Returns the float32 values of ``[N, K]`` codes under block scales."""
+    grid = np.repeat(np.repeat(scales, 128, axis=0), 128, axis=1)
+    return _E4M3[codes] * grid[: codes.shape[0], : codes.shape[1]]
+
+
+def chunked_fp8_blocks(weight: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Quantizes a ``[chunks, rows, K]`` ``qkv_proj`` as Xiaomi stores it.
+
+    Each chunk's scales cover it padded to whole 128-row blocks; the codes
+    hold only its real rows, ``[chunks * rows, K]``.
+    """
+    chunks, rows, cols = weight.shape
+    padded = -(-rows // 128) * 128
+    full = np.zeros((chunks, padded, cols), np.float32)
+    full[:, :rows] = weight
+    codes, scales = fp8_blocks(full.reshape(-1, cols))
+    codes = codes.reshape(chunks, padded, cols)[:, :rows]
+    return codes.reshape(-1, cols), scales
+
+
+def chunked_fp8_decode(
+    codes: np.ndarray, scales: np.ndarray, chunks: int
+) -> np.ndarray:
+    """Returns the ``[chunks, rows, K]`` values of a stored ``qkv_proj``."""
+    rows, cols = codes.shape[0] // chunks, codes.shape[1]
+    padded = -(-rows // 128) * 128
+    full = np.zeros((chunks, padded, cols), np.uint8)
+    full[:, :rows] = codes.reshape(chunks, rows, cols)
+    values = fp8_decode(full.reshape(-1, cols), scales)
+    return values.reshape(chunks, padded, cols)[:, :rows]
 
 
 def _bf16(x: np.ndarray) -> tuple[str, np.ndarray]:
     """``x`` rounded to BF16, nearest even, as raw ``uint16``."""
-    bits = np.ascontiguousarray(x, dtype=np.float32).view(np.uint32)
-    rounded = (bits + 0x7FFF + ((bits >> 16) & 1)) >> 16
-    return "BF16", rounded.astype(np.uint16)
+    rounded = (
+        np.asarray(x, dtype=np.float32)
+        .astype(ml_dtypes.bfloat16)
+        .view(np.uint16)
+    )
+    return "BF16", rounded
 
 
-def _qkv_proj(rng: np.random.Generator, sliding: bool) -> np.ndarray:
-    """An F32 ``qkv_proj`` in the export's global ``[Q; K; V]`` order whose
-    chunk-order blocks, pad rows included, are FP8-exact.
+def qkv_rows(sliding: bool) -> tuple[int, int, int]:
+    """Returns the ``(q, k, v)`` rows of one ``qkv_proj`` chunk."""
+    kv_heads = SLIDING_KV_HEADS if sliding else FULL_KV_HEADS
+    return (
+        HEADS * HEAD_DIM // CHUNKS,
+        kv_heads * HEAD_DIM // CHUNKS,
+        kv_heads * V_HEAD_DIM // CHUNKS,
+    )
+
+
+def _qkv_proj(
+    rng: np.random.Generator, sliding: bool
+) -> tuple[np.ndarray, np.ndarray]:
+    """A ``qkv_proj`` in chunk order: codes and scales as Xiaomi stores them.
 
     A sliding layer's queries add a constant from :data:`CONSTANT_DIM`, and
     its keys the beacon's :data:`BEACON_DIM`, along the same direction in
     each head's unrotated dims, which gives the beacon's key an attention
     logit of about 8 from every query.
     """
-    chunks = FULL_KV_HEADS
-    kv_heads = SLIDING_KV_HEADS if sliding else FULL_KV_HEADS
-    q = HEADS * HEAD_DIM // chunks
-    k = kv_heads * HEAD_DIM // chunks
-    v = kv_heads * V_HEAD_DIM // chunks
-    rows = q + k + v
-    padded = -(-rows // 128) * 128
-    weight = np.zeros((chunks, padded, HIDDEN), np.float32)
-    weight[:, :rows] = rng.normal(0, 0.0625, (chunks, rows, HIDDEN))
+    q, k, v = qkv_rows(sliding)
+    weight = rng.normal(0, 0.0625, (CHUNKS, q + k + v, HIDDEN))
     if sliding:
-        queries = weight[:, :q].reshape(chunks, -1, HEAD_DIM, HIDDEN)
+        queries = weight[:, :q].reshape(CHUNKS, -1, HEAD_DIM, HIDDEN)
         queries[:, :, ROTARY_DIM:, CONSTANT_DIM] = 0.25
-        keys = weight[:, q : q + k].reshape(chunks, -1, HEAD_DIM, HIDDEN)
+        keys = weight[:, q : q + k].reshape(CHUNKS, -1, HEAD_DIM, HIDDEN)
         keys[:, :, ROTARY_DIM:, BEACON_DIM] = 0.22
-    exact = _fp8_exact(weight.reshape(-1, HIDDEN)).reshape(weight.shape)
-    return np.concatenate(
-        [
-            exact[:, :q].reshape(-1, HIDDEN),
-            exact[:, q : q + k].reshape(-1, HIDDEN),
-            exact[:, q + k : rows].reshape(-1, HIDDEN),
-        ]
-    )
+    return chunked_fp8_blocks(weight.astype(np.float32))
 
 
-def _nvfp4_expert(
+def _mxfp4_expert(
     rng: np.random.Generator, rows: int, cols: int
 ) -> dict[str, tuple[str, np.ndarray]]:
-    """Random E2M1 codes with MXFP4 scales of 2^-7 or 2^-6, stored as the
-    export stores them: each E8M0 scale as two E4M3 scales under a global
-    ``weight_scale_2`` of 2^-8."""
+    """Random E2M1 codes with E8M0 scales of 2^-7 or 2^-6."""
     codes = rng.integers(0, 256, (rows, cols // 2), dtype=np.uint8)
     exponents = rng.integers(-7, -5, (rows, cols // 32))
-    e4m3 = ((exponents + 8 + 7) << 3).astype(np.uint8)
     return {
         "weight": ("U8", codes),
-        "weight_scale": ("F8_E4M3", np.repeat(e4m3, 2, axis=-1)),
-        "weight_scale_2": ("F32", np.array([2.0**-8], np.float32)),
+        "weight_scale": ("U8", (exponents + 127).astype(np.uint8)),
     }
 
 
@@ -246,10 +270,9 @@ def tensors() -> Tensors:
         out[p + "post_attention_layernorm.weight"] = _bf16(
             rng.normal(1, 0.1, HIDDEN)
         )
-        out[p + "self_attn.qkv_proj.weight"] = (
-            "F32",
-            _qkv_proj(rng, bool(sliding)),
-        )
+        codes, scales = _qkv_proj(rng, bool(sliding))
+        out[p + "self_attn.qkv_proj.weight"] = ("F8_E4M3", codes)
+        out[p + "self_attn.qkv_proj.weight_scale_inv"] = ("F32", scales)
         out[p + "self_attn.o_proj.weight"] = _bf16(
             rng.normal(0, 0.03, (HIDDEN, HEADS * V_HEAD_DIM))
         )
@@ -263,10 +286,11 @@ def tensors() -> Tensors:
                 ("up_proj", (DENSE_DIM, HIDDEN), 0.0625),
                 ("down_proj", (HIDDEN, DENSE_DIM), 0.02),
             ):
-                out[p + f"mlp.{proj}.weight"] = (
-                    "F32",
-                    _fp8_exact(rng.normal(0, std, shape).astype(np.float32)),
+                codes, scales = fp8_blocks(
+                    rng.normal(0, std, shape).astype(np.float32)
                 )
+                out[p + f"mlp.{proj}.weight"] = ("F8_E4M3", codes)
+                out[p + f"mlp.{proj}.weight_scale_inv"] = ("F32", scales)
             continue
         out[p + "mlp.gate.weight"] = _bf16(
             rng.normal(0, 0.0625, (EXPERTS, HIDDEN))
@@ -282,7 +306,7 @@ def tensors() -> Tensors:
                 ("down_proj", (HIDDEN, MOE_DIM)),
             ):
                 base = f"{p}mlp.experts.{e}.{proj}."
-                for field, value in _nvfp4_expert(rng, n, k).items():
+                for field, value in _mxfp4_expert(rng, n, k).items():
                     out[base + field] = value
     return out
 

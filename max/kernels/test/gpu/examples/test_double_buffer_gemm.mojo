@@ -73,7 +73,7 @@ def sgemm_double_buffer[
 
     comptime num_warps_n = BN // WN
 
-    var tid = Int(thread_idx.x)
+    var tid = thread_idx.x
     var warp_id, lane_id = divmod(tid, WARP_SIZE)
 
     # Coordinates of the current warp.
@@ -150,12 +150,12 @@ def sgemm_double_buffer[
 
     @inline(.always)
     def load_k_tile(k_tile_id: Int, buffer_id: Int) {imm}:
-        var a_gmem_tile = a.tile[BM, BK]((Int(block_idx.y), k_tile_id))
+        var a_gmem_tile = a.tile[BM, BK]((block_idx.y, k_tile_id))
         a_smem_tiles[buffer_id].distribute[thread_storea_smem_layout](
             tid
         ).copy_from_async(a_gmem_tile.distribute[thread_loada_gmem_layout](tid))
 
-        var b_gmem_tile = b.tile[BK, BN]((k_tile_id, Int(block_idx.x)))
+        var b_gmem_tile = b.tile[BK, BN]((k_tile_id, block_idx.x))
         copy_dram_to_sram_async[thread_layout=thread_layout_loadb](
             b_smem_tiles[buffer_id].vectorize[1, simd_size](),
             b_gmem_tile.vectorize[1, simd_size](),
@@ -206,11 +206,10 @@ def sgemm_double_buffer[
     # buffer: lane row `q` takes vectors `q`, `q + warp_dim_y`, ...
     @inline(.always)
     def load_a_frag(smem_id: Int, k: Int, reg_id: Int) {imm}:
-        var a_smem_warp_row = TileTensor(
-            a_smem_tiles[smem_id].ptr.unsafe_offset(
-                k * BM_padded + warp_y * WM
-            ),
-            row_major[WM](),
+        var a_smem_warp_row = (
+            a_smem_tiles[smem_id]
+            .tile[1, WM]((k, warp_y))
+            .reshape(row_major[WM]())
         )
         a_reg[reg_id].vectorize[simd_size]().copy_from(
             a_smem_warp_row.vectorize[simd_size]().distribute[
@@ -222,9 +221,10 @@ def sgemm_double_buffer[
     # `p`.
     @inline(.always)
     def load_b_frag(smem_id: Int, k: Int, reg_id: Int) {imm}:
-        var b_smem_warp_row = TileTensor(
-            b_smem_tiles[smem_id].ptr.unsafe_offset(k * BN + warp_x * WN),
-            row_major[WN](),
+        var b_smem_warp_row = (
+            b_smem_tiles[smem_id]
+            .tile[1, WN]((k, warp_x))
+            .reshape(row_major[WN]())
         )
         b_reg[reg_id].vectorize[simd_size]().copy_from(
             b_smem_warp_row.vectorize[simd_size]().distribute[
@@ -269,9 +269,9 @@ def sgemm_double_buffer[
     # results are organized as simd_size x simd_size blocks: block row
     # `rv` of this lane holds warp rows `simd_size * (lane_q + warp_dim_y *
     # rv)` onwards, and its columns are distributed like the B fragments.
-    var c_gmem_warp_tile = c.tile[BM, BN](
-        (Int(block_idx.y), Int(block_idx.x))
-    ).tile[WM, WN]((warp_y, warp_x))
+    var c_gmem_warp_tile = c.tile[BM, BN]((block_idx.y, block_idx.x)).tile[
+        WM, WN
+    ]((warp_y, warp_x))
 
     comptime for rv in range(TM // simd_size):
         comptime for ii in range(simd_size):

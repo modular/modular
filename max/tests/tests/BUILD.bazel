@@ -18,6 +18,7 @@ modular_py_test(
             "mojo_runtime_foreign_thread_subprocess.py",
             "test_compilation.py",
             "test_compile_pool.py",
+            "test_compiled_callable.py",
             "test_compile_pool_gpu.py",
             "test_dim_substitute.py",
             "test_eager_cold_start_policy.py",
@@ -87,6 +88,32 @@ modular_eager_py_test(
         "//max/python/max/graph",
         "//max/python/max/mlir",
         "//max/python/max/nn",
+        requirement("numpy"),
+    ],
+)
+
+modular_eager_py_test(
+    name = "test_compiled_callable",
+    srcs = [
+        "conftest.py",
+        "test_compiled_callable.py",
+    ],
+    cpu_only = True,
+    env = {"MAX_EAGER_EXECUTOR": "fallback-internal"},
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
+    deps = [
+        "//max/python/max:_mlir_context",
+        "//max/python/max:tree",
+        "//max/python/max/_artifact",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/experimental",
+        "//max/python/max/graph",
+        "//max/python/max/mlir",
         requirement("numpy"),
     ],
 )
@@ -230,6 +257,7 @@ modular_eager_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
+        requirement("ml-dtypes"),
         requirement("numpy"),
     ],
 )

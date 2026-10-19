@@ -59,11 +59,11 @@ def _kernel[
         dtype=.float32, address_space=.LOCAL, alignment=16
     ](row_major[storage_size]()).fill(SENTINEL)
     var previous = TileTensor[address_space=.LOCAL, linear_idx_type=.int32](
-        previous_storage.ptr + GUARD,
+        previous_storage.ptr.unsafe_offset(GUARD),
         MixedLayout(Coord(Idx[N]), Coord(Idx[STRIDE])),
     )
     var next_max = TileTensor[address_space=.LOCAL, linear_idx_type=.int32](
-        next_storage.ptr + GUARD,
+        next_storage.ptr.unsafe_offset(GUARD),
         MixedLayout(Coord(Idx[N]), Coord(Idx[STRIDE])),
     )
     comptime for row in range(N):
@@ -89,7 +89,7 @@ def _check[N: Int, STRIDE: Int, USE_EXP2: Bool](ctx: DeviceContext) raises:
         host[i] = SENTINEL
     ctx.enqueue_copy(device, host)
     var output = TileTensor(
-        device.unsafe_ptr() + GUARD, row_major[THREADS, fields]()
+        device.unsafe_ptr().unsafe_offset(GUARD), row_major[THREADS, fields]()
     ).as_unsafe_any_origin()
     ctx.enqueue_function[
         _kernel[N, STRIDE, USE_EXP2, type_of(output).LayoutType]

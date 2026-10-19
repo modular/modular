@@ -14,11 +14,11 @@
 """Provides low-level FP4 encode/decode utilities and scale-factor helpers."""
 
 from std.sys._assembly import inlined_assembly
-from std.sys import is_nvidia_gpu, bit_width_of, llvm_intrinsic
+from std.sys import is_amd_gpu, is_nvidia_gpu, bit_width_of, llvm_intrinsic
 from std.sys.info import _is_sm_100x_or_newer, _cdna_4_or_newer
 from std.utils.numerics import FPUtils
 from std.memory import bitcast
-from layout import Coord, CoordLike, TileTensor
+from layout import CoordLike, TileTensor
 from layout.tile_layout import TensorLayout
 from std.simd import _convert_f32_to_float8_ue8m0
 from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
@@ -388,27 +388,16 @@ def cast_fp_to_fp4e2m1[
     # (x >= 3.5) & (x <= 5.0)] => 4.0
     # (x > 5.0) => 6.0
 
-    var sign = x.lt(0).select(-1.0, 1.0).cast[dtype]()
+    var sign = x.lt(0).select(SIMD[dtype, width](-1.0), SIMD[dtype, width](1.0))
     var abs_x = abs(x)
-    var result = SIMD[dtype, width]()
-
-    comptime for i in range(width):
-        if abs_x[i] <= 0.25:
-            result[i] = 0.0
-        elif abs_x[i] < 0.75:
-            result[i] = 0.5
-        elif abs_x[i] <= 1.25:
-            result[i] = 1.0
-        elif abs_x[i] < 1.75:
-            result[i] = 1.5
-        elif abs_x[i] <= 2.5:
-            result[i] = 2.0
-        elif abs_x[i] < 3.5:
-            result[i] = 3.0
-        elif abs_x[i] <= 5.0:
-            result[i] = 4.0
-        else:
-            result[i] = 6.0
+    var result = SIMD[dtype, width](6.0)
+    result = abs_x.le(5.0).select[dtype](4.0, result)
+    result = abs_x.lt(3.5).select[dtype](3.0, result)
+    result = abs_x.le(2.5).select[dtype](2.0, result)
+    result = abs_x.lt(1.75).select[dtype](1.5, result)
+    result = abs_x.le(1.25).select[dtype](1.0, result)
+    result = abs_x.lt(0.75).select[dtype](0.5, result)
+    result = abs_x.le(0.25).select[dtype](0.0, result)
     return result * sign
 
 
@@ -478,7 +467,9 @@ def nvfp4_kv_quantize_x8(x: SIMD[.float32, 8], scale: Float32) -> UInt32:
 
     Each value is divided by `scale` (true division), then rounded by the
     hardware convert, which rounds half to even and saturates at 6. A
-    magnitude that rounds to zero is stored as +0, never -0.
+    magnitude that rounds to zero is stored as +0, never -0. On AMD the
+    convert's own scale is 1: it applies only a power-of-two exponent, so the
+    E4M3 scale is divided out first, as on NVIDIA.
 
     Args:
         x: Eight values, element 0 in the lowest nibble of the result.
@@ -488,9 +479,13 @@ def nvfp4_kv_quantize_x8(x: SIMD[.float32, 8], scale: Float32) -> UInt32:
         The eight E2M1 codes packed into one word.
 
     Constraints:
-        Requires NVIDIA GPU with SM100 or newer.
+        Requires NVIDIA GPU with SM100 or newer, or AMD CDNA4 or newer.
     """
-    var packed = cast_fp32_to_fp4e2m1(x / scale)
+    var packed: UInt32
+    comptime if is_amd_gpu():
+        packed = cast_float_to_fp4e2m1_amd(x / scale, Float32(1.0))
+    else:
+        packed = cast_fp32_to_fp4e2m1(x / scale)
     var mag = packed & 0x77777777
     var nonzero = (mag | (mag >> 1) | (mag >> 2)) & 0x11111111
     return mag | (packed & (nonzero << 3))
@@ -612,7 +607,7 @@ def set_scale_factor[
     ), "width must be less than or equal to SF_ATOM_K"
     comptime assert scales_tensor.flat_rank >= 5, "scales_tensor must be 5D"
 
-    scales_tensor.store[width=width](
+    scales_tensor.store(
         (
             row_idx // SF_MN_GROUP_SIZE,
             col_idx // (SF_VECTOR_SIZE * SF_ATOM_K),
@@ -657,13 +652,11 @@ def get_scale_factor[
 
     return rebind[Scalar[scales_dtype]](
         scales_tensor[
-            Coord(
-                row_idx // SF_MN_GROUP_SIZE,
-                col_idx // (SF_VECTOR_SIZE * SF_ATOM_K),
-                row_idx % SF_ATOM_M[0],
-                (row_idx % SF_MN_GROUP_SIZE) // SF_ATOM_M[0],
-                (col_idx // SF_VECTOR_SIZE) % SF_ATOM_K,
-            )
+            row_idx // SF_MN_GROUP_SIZE,
+            col_idx // (SF_VECTOR_SIZE * SF_ATOM_K),
+            row_idx % SF_ATOM_M[0],
+            (row_idx % SF_MN_GROUP_SIZE) // SF_ATOM_M[0],
+            (col_idx // SF_VECTOR_SIZE) % SF_ATOM_K,
         ]
     )
 
@@ -792,15 +785,15 @@ def convert_ref_scales_to_mxfp8_format[
     comptime assert a_scales.flat_rank == 5, "a_scales must be 5D"
     comptime assert b_scales.flat_rank == 5, "b_scales must be 5D"
 
-    var M = Int(m.value())
-    var N = Int(n.value())
-    var K = Int(k.value())
+    var M = Int(m)
+    var N = Int(n)
+    var K = Int(k)
 
     # initialize a_scales_tensor and b_scales_tensor based on reference scales
     for m in range(M):
         for k in range(K):
-            a_scales.store[width=1](
-                Coord(
+            a_scales.store(
+                (
                     m // SF_MN_GROUP_SIZE,
                     k // (SF_VECTOR_SIZE * SF_ATOM_K),
                     m % SF_ATOM_M[0],
@@ -808,14 +801,14 @@ def convert_ref_scales_to_mxfp8_format[
                     k % SF_ATOM_K,
                 ),
                 _convert_f32_to_float8_ue8m0[scales_type](
-                    ref_a_scales.load[width=1](Coord(k // REF_BLOCK_SIZE, m))
+                    ref_a_scales.load((k // REF_BLOCK_SIZE, m))
                 ),
             )
 
     for n in range(N):
         for k in range(K):
-            b_scales.store[width=1](
-                Coord(
+            b_scales.store(
+                (
                     n // SF_MN_GROUP_SIZE,
                     k // (SF_VECTOR_SIZE * SF_ATOM_K),
                     n % SF_ATOM_M[0],
@@ -823,8 +816,8 @@ def convert_ref_scales_to_mxfp8_format[
                     k % SF_ATOM_K,
                 ),
                 _convert_f32_to_float8_ue8m0[scales_type](
-                    ref_b_scales.load[width=1](
-                        Coord(n // REF_BLOCK_SIZE, k // REF_BLOCK_SIZE)
+                    ref_b_scales.load(
+                        (n // REF_BLOCK_SIZE, k // REF_BLOCK_SIZE)
                     )
                 ),
             )

@@ -69,19 +69,16 @@ def run_layer_norm_gpu[
     def input_fn[
         width: Int, alignment: Int
     ](coords: Coord) {var data_buf} -> SIMD[dtype, width]:
-        var idx = data_buf.layout(coords)
-
-        return data_buf.raw_load[
+        return data_buf.load[
             width=width, alignment=alignment * align_of[dtype]()
-        ](idx)
+        ](coords)
 
     @inline(.always)
     def output_fn[
         width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[dtype, width]) {var out_buf}:
-        var idx = out_buf.layout(coords)
-        out_buf.raw_store[width=width, alignment=alignment * align_of[dtype]()](
-            idx, rebind[SIMD[dtype, width]](val)
+        out_buf.store[alignment=alignment * align_of[dtype]()](
+            coords, rebind[SIMD[dtype, width]](val)
         )
 
     layer_norm[dtype, rank, target="gpu"](
@@ -99,7 +96,7 @@ def run_layer_norm_gpu[
 
     for r in range(rows):
         var vec = TileTensor(
-            data_h.unsafe_ptr() + r * cols,
+            data_h.unsafe_ptr().unsafe_offset(r * cols),
             row_major(cols),
         )
         var mean_ref = mean(vec)

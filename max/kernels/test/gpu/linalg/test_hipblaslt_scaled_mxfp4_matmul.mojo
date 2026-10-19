@@ -63,11 +63,11 @@ def block_scaled_matmul_ref[
 
     var k_groups = K // MXFP4_SF_VECTOR_SIZE
 
-    var am_scales_ptr = a_scales_ptr + m * k_groups
-    var bn_scales_ptr = b_scales_ptr + n * k_groups
+    var am_scales_ptr = a_scales_ptr.unsafe_offset(m * k_groups)
+    var bn_scales_ptr = b_scales_ptr.unsafe_offset(n * k_groups)
 
-    var am_ptr = a_ptr + m * (K // 2)
-    var bn_ptr = b_ptr + n * (K // 2)
+    var am_ptr = a_ptr.unsafe_offset(m * (K // 2))
+    var bn_ptr = b_ptr.unsafe_offset(n * (K // 2))
 
     var accum = SIMD[.float32, 2](0)
 
@@ -84,8 +84,8 @@ def block_scaled_matmul_ref[
                     a_data, a_scale
                 ) * cast_fp2em1x2_to_fp32x2[byte_select](b_data, b_scale)
 
-        am_ptr += MXFP4_SF_VECTOR_SIZE // 2
-        bn_ptr += MXFP4_SF_VECTOR_SIZE // 2
+        am_ptr = am_ptr.unsafe_offset(MXFP4_SF_VECTOR_SIZE // 2)
+        bn_ptr = bn_ptr.unsafe_offset(MXFP4_SF_VECTOR_SIZE // 2)
 
     c_ptr[m * N + n] = accum.reduce_add().cast[output_dtype]()
 
@@ -102,9 +102,9 @@ def test_block_scaled_mxfp4_hipblaslt[
         DType.bfloat16,
     ), "Only BF16/FP32 output type are supported for MXFP4."
 
-    var M = Int(m.value())
-    var N = Int(n.value())
-    var K = Int(k.value())
+    var M = Int(m)
+    var N = Int(n)
+    var K = Int(k)
 
     # TODO (KERN-2238): uint8 is a proxy data type for two Float4-E2M1 values for now.
     # Replace this with float4-e2m1fn when GENAI-337 is fixed.

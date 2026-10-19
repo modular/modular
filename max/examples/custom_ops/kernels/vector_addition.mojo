@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# DOC: max/develop/build-custom-ops.mdx
+# DOC: develop/build-custom-ops.mdx
 import extensibility
 
 from max.gpu.host import DeviceContext

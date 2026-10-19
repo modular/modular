@@ -96,16 +96,12 @@ struct _NaiveRMSNormTileAdapter[
 
         var sum_sq = Float32(0)
         for k in range(self.n_dim):
-            var v = self.input.load[width=1](Coord(row, k)).cast[
-                DType.float32
-            ]()
+            var v = self.input.load((row, k)).cast[DType.float32]()
             sum_sq += v * v
         var inv_rms = 1.0 / sqrt(sum_sq / Float32(self.n_dim) + self.epsilon)
 
-        var x_val = self.input.load[width=1](Coord(row, col)).cast[
-            DType.float32
-        ]()
-        var g_val = self.gamma.load[width=1](Coord(col)).cast[.float32]()
+        var x_val = self.input.load((row, col)).cast[DType.float32]()
+        var g_val = self.gamma.load((col,)).cast[.float32]()
         var w_off = self.weight_offset.cast[.float32]()
         var y = (x_val * inv_rms) * (g_val + w_off)
 
@@ -115,12 +111,12 @@ struct _NaiveRMSNormTileAdapter[
             dtype=Self.dtype, address_space=.LOCAL
         ](row_major[1, 1]())
         var dst = TileTensor(
-            dst_local._storage.address_space_cast[
+            dst_local._storage.unsafe_address_space_cast[
                 .GENERIC
             ]().unsafe_origin_cast[MutAnyOrigin](),
             row_major[1, 1](),
         )
-        dst.store[width=1](Coord(0, 0), y.cast[Self.dtype]())
+        dst.store((0, 0), y.cast[Self.dtype]())
 
         var consumer = self.tile_consumer
         consumer(
@@ -154,13 +150,13 @@ struct RMSNormTileSM100:
         dtype: DType,
         rank: Int,
         target: StaticString,
+        epsilon: Float32,
+        weight_offset: Float32,
         multiply_before_cast: Bool = True,
     ](
         output: _FusedOutputTileTensor[dtype=dtype, rank=rank, ...],
         input: InputTensor[dtype=dtype, rank=rank, ...],
         gamma: InputTensor[dtype=dtype, rank=1, ...],
-        epsilon: Float32,
-        weight_offset: Scalar[dtype=dtype],
         ctx: DeviceContext,
     ) capturing raises:
         # The tile programming model (`tile_based_fusion=True`) binds `output`
@@ -198,7 +194,7 @@ struct RMSNormTileSM100:
             gamma.to_tile_tensor(),
             n_dim,
             epsilon,
-            weight_offset,
+            weight_offset.cast[dtype](),
             _tile_store_consumer(output),
         )
         ctx.enqueue_function(

@@ -52,7 +52,7 @@ from comm.device_query import dispatch_select_comm_config
 from comm.relay import RelayTuningConfig
 from comm.sync import enable_p2p
 from internal_utils import arg_parse, human_readable_size
-from layout import TileTensor, row_major
+from layout import TensorLayout, TileTensor, row_major
 from max.algorithm import sync_parallelize
 from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
@@ -105,8 +105,10 @@ def _res_pattern(group_id: Int, j: Int) -> Scalar[accum_type]:
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(256))
 )
-def _check_kernel(
-    out_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
+def _check_kernel[
+    out_layout: TensorLayout
+](
+    output: TileTensor[dtype, out_layout, MutAnyOrigin],
     length: Int32,
     part_start: Int32,
     group_base: Int32,
@@ -130,7 +132,7 @@ def _check_kernel(
                 rounded.cast[accum_type]()
                 + _res_pattern(Int(group_base) // GROUP, Int(part_start) + i)
             ).cast[dtype]()
-        if out_ptr[i] != rounded:
+        if output[i] != rounded:
             first_bad[] = Int32(i) + 1
 
 
@@ -354,8 +356,8 @@ def main() raises:
             var ctx = list_of_ctx[gpu_idx]
             var group_base = ualign_down(gpu_idx, GROUP)
             ctx.enqueue_memset[.int32](flag_bufs[gpu_idx], 0)
-            ctx.enqueue_function[_check_kernel](
-                out_tile(gpu_idx, part).ptr,
+            ctx.enqueue_function[_check_kernel[OutTileType.LayoutType]](
+                out_tile(gpu_idx, part),
                 Int32(part),
                 Int32((gpu_idx - group_base) * part),
                 Int32(group_base),

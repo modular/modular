@@ -1202,6 +1202,8 @@ SmallVector<ParamDeclAttr> FnOp::collectAllParams(bool includeImplOrigins) {
 }
 
 FnTypeGeneratorType FnOp::getFullSignature() {
+  if (TypeAttr resolved = getResolvedFullSignatureAttr())
+    return cast<FnTypeGeneratorType>(resolved.getValue());
   return LIT::getFullSignature((*this)->getParentOp(), getFuncTypeGenerator());
 }
 
@@ -1226,7 +1228,8 @@ void FnOp::build(OpBuilder &builder, OperationState &result, StringAttr name,
         /*defaultFnRef=*/{}, StringAttr(), DocStringAttr(),
         /*deprecationInfo=*/{}, /*unavailableInfo=*/{},
         /*hasStableDecorator=*/none, /*stableSinceVersion=*/{},
-        ArrayAttr::get(ctx, {}), ArrayAttr::get(ctx, {}), Attribute());
+        ArrayAttr::get(ctx, {}), ArrayAttr::get(ctx, {}), Attribute(),
+        /*noDocRequired=*/none, /*resolvedFullSignature=*/TypeAttr());
   result.regions[0]->push_back(new Block());
 }
 

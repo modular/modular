@@ -26,6 +26,7 @@ from max.experimental.nn.common_layers.embedding import VocabParallelEmbedding
 from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
 from max.experimental.nn.common_layers.linear import ColumnParallelLinear
 from max.experimental.nn.common_layers.mesh_axis import DP
+from max.experimental.nn.common_layers.quant_moe import QuantizedMoE
 from max.experimental.nn.common_layers.rotary_embedding import RotaryEmbedding
 from max.experimental.nn.sequential import ModuleList
 from max.experimental.sharding import (
@@ -51,10 +52,9 @@ from ..deepseekV3_modulev3.deepseekV3 import (
     gather_last_tokens,
     split_replicated_batch,
 )
-from ..deepseekV3_modulev3.layers.quant_moe import QuantizedMoE
 from .layers.rms_norm import MultiplyBeforeCastRMSNorm
 from .layers.transformer_block import DeepseekV3_2TransformerBlock
-from .model_config import DeepseekV3_2Config
+from .model_config import DeepseekV3_2Config, indexer_cache_layer_map
 
 
 def mask_padded_tail(
@@ -257,13 +257,32 @@ class DeepseekV3_2TextModel(
         # call sites reuse a body, and the cache key does not otherwise see
         # the difference.
         topk_indices: Tensor | None = None
+        indexer_slots = indexer_cache_layer_map(
+            self.config.indexer_types, len(self.layers)
+        )
+        # Each block hands the next its input norm, fused into its post-MLP
+        # all-gather, as the graph-API model does. Only the embeddings are
+        # normalized here.
+        carry = self.layers[0].carry_next_input_norm
+        norm_h = self.layers[0].input_layernorm(h) if carry else None
+        last = len(self.layers) - 1
         for idx, layer in enumerate(self.layers):
             layer_idx_tensor = F.constant(idx, DType.uint32, device=CPU())
-            call: Callable[..., tuple[Tensor, Tensor]] = layer
+            indexer_slot_tensor = F.constant(
+                indexer_slots[idx], DType.uint32, device=CPU()
+            )
+            call: Callable[..., tuple[Tensor, ...]] = layer
             if isinstance(layer.mlp, QuantizedMoE):
                 group = "shared" if layer.self_attn.skip_topk else "full"
                 call = as_subgraph(layer, name=f"moe_block_{group}")
-            h, topk_indices = call(
+            # A block takes the next block's weight as an argument, since
+            # a shared subgraph resolves only its own weights.
+            next_input_gamma = (
+                self.layers[idx + 1].input_layernorm.weight.cast(h.dtype)
+                if carry and idx < last
+                else None
+            )
+            h, topk_indices, *rest = call(
                 layer_idx_tensor,
                 h,
                 kv_collection,
@@ -274,7 +293,11 @@ class DeepseekV3_2TextModel(
                 comm_buffers,
                 topk_indices,
                 False,
+                indexer_slot_tensor,
+                norm_x=norm_h,
+                next_input_gamma=next_input_gamma,
             )
+            norm_h = rest[0] if rest else None
 
         self._check_output_modes()
         outputs: list[Tensor] = []

@@ -20,7 +20,7 @@ modular_py_test(
     name = "test_kimi_delta_attention",
     srcs = ["test_kimi_delta_attention.py"],
     exec_properties = {
-        "test.resources:gpu-memory": "16",
+        "test.resources:gpu-memory": "3",
     },
     gpu_constraints = ["//:has_gpu"],
     precompile_mefs = True,
@@ -39,6 +39,29 @@ modular_py_test(
         "//max/python/max/graph",
         "//max/python/max/nn",
         "//max/python/max/pipelines/architectures/glm5_next",
+    ],
+)
+
+modular_py_test(
+    name = "test_kda_chunk_prefill",
+    srcs = ["test_kda_chunk_prefill.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    gpu_constraints = ["//:b200_gpu"],
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        requirement("numpy"),
+        requirement("torch"),
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
     ],
 )
 

@@ -15,6 +15,7 @@ from unittest.mock import MagicMock
 
 import pytest
 from max.pipelines.lib import MemoryPlan
+from max.pipelines.speculative import SpeculativeConfig
 from max.serve.scheduler import TokenGenerationSchedulerConfig
 
 
@@ -129,6 +130,43 @@ def test_from_pipeline_config_without_a_memory_plan() -> None:
 
     assert config.max_seq_len is None
     assert config.max_batch_total_tokens is None
+
+
+@pytest.mark.parametrize(
+    ("mixed_batches", "mixed_width", "expected"),
+    [(False, None, 0), (False, 1, 0), (True, None, 3), (True, 1, 1)],
+)
+def test_from_pipeline_config_resolves_the_mixed_verify_width(
+    mixed_batches: bool, mixed_width: int | None, expected: int
+) -> None:
+    """The batch constructor reserves this many tokens per decode row on a
+    mixed step, so it must match what the pipeline verifies."""
+    pipeline_config = MagicMock()
+    pipeline_config.runtime.max_batch_input_tokens = 8192
+    pipeline_config.runtime.enable_chunked_prefill = True
+    pipeline_config.runtime.chunked_prefill_min_chunk_size = 0
+    pipeline_config.runtime.max_request_input_tokens = 0
+    pipeline_config.runtime.enable_in_flight_batching = True
+    pipeline_config.runtime.prefill_coalesce_min_pending = 0
+    pipeline_config.runtime.prefill_coalesce_max_held_steps = 0
+    pipeline_config.runtime.prefill_schedule_interval = 1
+    pipeline_config.runtime.dp_ce_balance_threshold = 0.8
+    pipeline_config.runtime.decode_stall_timeout_s = None
+    pipeline_config.runtime.decode_request_ttl_s = None
+    pipeline_config.runtime.enable_spec_decode_mixed_batches = mixed_batches
+    pipeline_config.model.data_parallel_degree = 1
+    pipeline_config.speculative = SpeculativeConfig(
+        speculative_method="eagle",
+        num_speculative_tokens=3,
+        num_speculative_tokens_mixed_batch=mixed_width,
+    )
+
+    config = TokenGenerationSchedulerConfig.from_pipeline_config(
+        pipeline_config, max_batch_size=1, memory_plan=None
+    )
+
+    assert config.num_speculative_tokens == 3
+    assert config.spec_decode_mixed_verify_width == expected
 
 
 def test_prefill_schedule_interval_must_be_at_least_one() -> None:

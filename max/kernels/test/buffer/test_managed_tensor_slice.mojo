@@ -415,7 +415,7 @@ def _check_value_form_rank1[dtype: DType]() raises:
 
 def test_foreach_value_form_rank1() raises:
     """The value overload resolves and runs over a rank-1 tensor."""
-    _check_value_form_rank1[DType.float32]()
+    _check_value_form_rank1[.float32]()
 
 
 def _check_value_form_rank2[dtype: DType]() raises:
@@ -456,7 +456,7 @@ def _check_value_form_rank2[dtype: DType]() raises:
 
 def test_foreach_value_form_rank2() raises:
     """The value overload handles rank 2, including `Coord` conversion."""
-    _check_value_form_rank2[DType.float32]()
+    _check_value_form_rank2[.float32]()
 
 
 def _check_capture_outer_tensor[dtype: DType]() raises:
@@ -494,7 +494,7 @@ def _check_capture_outer_tensor[dtype: DType]() raises:
 
 def test_foreach_captures_outer_tensor() raises:
     """A captured input tensor, the shape the migrated examples use."""
-    _check_capture_outer_tensor[DType.float32]()
+    _check_capture_outer_tensor[.float32]()
 
 
 def _check_capture_tensor_and_scalar[dtype: DType]() raises:
@@ -526,7 +526,7 @@ def _check_capture_tensor_and_scalar[dtype: DType]() raises:
 
 def test_foreach_captures_tensor_and_scalar() raises:
     """Mixed capture list: an outer tensor alongside an outer scalar."""
-    _check_capture_tensor_and_scalar[DType.float32]()
+    _check_capture_tensor_and_scalar[.float32]()
 
 
 @inline(.never)
@@ -585,7 +585,7 @@ def _check_capture_input_tensor[dtype: DType]() raises:
 
 def test_foreach_captures_input_tensor() raises:
     """A captured `IOSpec.Input` tensor, invariant loads and all."""
-    _check_capture_input_tensor[DType.float32]()
+    _check_capture_input_tensor[.float32]()
 
 
 def _check_simd_width_one[dtype: DType]() raises:
@@ -615,7 +615,7 @@ def _check_simd_width_one[dtype: DType]() raises:
 
 def test_foreach_honors_simd_width() raises:
     """A non-default `simd_width` reaches the body."""
-    _check_simd_width_one[DType.float32]()
+    _check_simd_width_one[.float32]()
 
 
 @fieldwise_init
@@ -679,7 +679,7 @@ def test_foreach_routes_through_fused_store() raises:
     Without this the wrapper could write straight to the tensor and silently
     break output fusion while every other test still passed.
     """
-    _check_fused_store[DType.float32]()
+    _check_fused_store[.float32]()
 
 
 def main() raises:

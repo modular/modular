@@ -1,25 +1,30 @@
 """Generate MEF files from python Graphs."""
 
 load("@cfg_workaround.bzl", "TARGET_CONSTRAINTS")
+load("@mojo//:mojo.bzl", "INTERNAL_KERNEL_MOJOPKGS")
 load(":modular_genrule.bzl", "modular_genrule")
 load(":modular_py_binary.bzl", "modular_py_binary")
 
 # All transitive mojo dependencies of //max:kernels
 MOJO_DEPS = [
     # Internal-only kernel packages. Each is imported by a graph-op
-    # registration in //max:builtin_kernels, so its .mojopkg has to be on the
-    # graph compiler's runtime import path -- otherwise the whole
-    # builtin_kernels package body fails to resolve. This list is flat, not
-    # transitive, so adding a //Kernels/... dep to //max:builtin_kernels
-    # requires adding it here too. The open-source build has none of these
-    # packages; the OSS `mef` wrapper in //oss/modular/bazel:api.bzl rewrites
-    # them to their prebuilt @modular_wheel equivalents.
+    # registration in `INTERNAL_KERNEL_MOJOPKGS`, so its .mojopkg has to be on
+    # the graph compiler's runtime import path -- otherwise that package body
+    # fails to resolve. This list is flat, not transitive, so adding a
+    # //Kernels/... dep there requires adding it here too. The open-source
+    # build has none of these packages; the OSS `mef` wrapper in
+    # //oss/modular/bazel:api.bzl rewrites them to their prebuilt
+    # @modular_wheel equivalents.
     "//Kernels/lib/attn_res",
+    "//Kernels/lib/csa",
+    "//Kernels/lib/engram",
     "//Kernels/lib/kda",
     "//Kernels/lib/matmul_rs",
     "//Kernels/lib/mega_ffn",
+    "//Kernels/lib/mega_mhc",
     "//Kernels/lib/msa",
     "//Kernels/lib/qsa",
+    "//Kernels/lib/topk_coop",
     "//max:algorithm",
     "//max:builtin_kernels",
     "//max:builtin_primitives",
@@ -43,7 +48,7 @@ MOJO_DEPS = [
     "//max:weights_registry",
     "//max:max_mojo",
     "@mojo//:std",
-]
+] + INTERNAL_KERNEL_MOJOPKGS
 
 def mef(name, src, args = [], target_compatible_with = [], mojo_deps = MOJO_DEPS, **kwargs):
     """Generate mef file from a python executable.

@@ -3,16 +3,7 @@ load("//max/kernels/src:deprecations.bzl", "IGNORED_POINTER_DEPRECATIONS_COPTS")
 
 package(default_visibility = ["//max:consumers"])
 
-_EXTRA_COPTS = {
-    "test_layout_tensor_copy.mojo": [
-        "--debug-level",
-        "full",
-    ],
-    "test_layout_tensor_copy_nvidia.mojo": [
-        "--debug-level",
-        "full",
-    ],
-}
+_EXTRA_COPTS = {}
 
 _H100_TESTS = [
     "test_stmatrix.mojo",
@@ -59,7 +50,6 @@ _EXTRA_CONSTRAINTS = {
         "//conditions:default": ["@platforms//:incompatible"],
     }),
 } | {
-    "test_layout_tensor_copy_nvidia.mojo": ["//:nvidia_gpu"],
     # compile_info emits PTX assembly, which is NVIDIA-specific
     "test_tile_tensor_coordinate_codegen.mojo": ["//:nvidia_gpu"],
     "test_ldmatrix.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
@@ -80,7 +70,6 @@ _EXTRA_CONSTRAINTS = {
     }),
     "test_wgmma_e4m3_e5m2_layouts_f16.mojo": ["@platforms//:incompatible"],  # FIXME: KERN-1874
     "test_wgmma_e4m3_e5m2_layouts_f32.mojo": ["@platforms//:incompatible"],  # FIXME: KERN-1874
-    "test_layout_tensor_copy.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: PRDT-506
     "test_tensor_gpu.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: PRDT-506
     "test_matmul.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-2415
     "test_gemm_vectorized_views.mojo": _APPLE_GPU_INCOMPATIBLE,
@@ -90,8 +79,6 @@ _EXTRA_CONSTRAINTS = {
 
 _FILECHECK_TESTS = [
     "test_codegen_to_llvm.mojo",
-    "test_layout_tensor_copy.mojo",
-    "test_layout_tensor_copy_nvidia.mojo",
     "test_tensor_core_amd.mojo",
     "test_tensor_core_apple.mojo",
     "test_apple_mma_8x8.mojo",

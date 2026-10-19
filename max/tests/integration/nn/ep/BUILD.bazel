@@ -6,6 +6,10 @@ package(default_visibility = [
     "//oss/modular/max/tests:__subpackages__",
 ])
 
+_TWO_GPU_TESTS = [
+    "test_ep_moe_eplb.py",
+]
+
 _QUANTIZED_TESTS = [
     "test_ep_dispatch_nvfp4_dyn.py",
     "test_ep_moe_fp4.py",
@@ -72,7 +76,7 @@ modular_py_test(
     size = "large",
     srcs = glob(
         ["test_*.py"],
-        exclude = _QUANTIZED_TESTS + _TRACED_TESTS + _EP8_TESTS + _FUSED_EP2_TESTS + _FUSED_EP4_TESTS,
+        exclude = _QUANTIZED_TESTS + _TRACED_TESTS + _EP8_TESTS + _FUSED_EP2_TESTS + _FUSED_EP4_TESTS + _TWO_GPU_TESTS,
     ) + ["conftest.py"],
     env = _COMMON_ENV,
     exec_properties = {
@@ -265,4 +269,35 @@ modular_py_test(
         "requires-network",
     ],
     deps = _COMMON_DEPS + [":fused_megaffn_gates"],
+)
+
+modular_py_test(
+    name = "ep_eplb_tests",
+    size = "large",
+    srcs = _TWO_GPU_TESTS,
+    env = _COMMON_ENV,
+    # Three compiled two-layer MoE models stay resident per device.
+    exec_properties = {
+        "test.resources:gpu-memory": "24",
+    },
+    gpu_constraints = [
+        "//:has_multi_gpu",
+    ],
+    mojo_deps = [
+        "//max:shmem",
+    ],
+    tags = [
+        "gpu",
+        "requires-network",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/lib",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
 )

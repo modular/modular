@@ -12,30 +12,28 @@
 # ===----------------------------------------------------------------------=== #
 """`mxfp6_block_scaled_matmul_amd` fused-epilogue equivalence, preshuffled-B.
 
-The preshuffled-B struct gained its `elementwise_lambda_fn` with this test.
 The fused QKV ops reach their epilogue through the split-K and default
 launches instead -- nothing sets `preshuffled_b` for them yet -- so this test
 is currently the only exercise of the preshuffled-B epilogue.
 
 Two gates per case, because neither alone is sufficient:
 
-1. The lambda must receive exactly what the direct store would have written.
+1. The epilogue must receive exactly what the direct store would have written.
    Both paths take the same `c_reg` accumulator and the same cast, so the
    comparison is bit-exact, not tolerance-based. A wrong (m, n) mapping lands
    values in the wrong place and shows up here.
-2. With a lambda set, DRAM must be left untouched. The C buffer is filled with
+2. With an epilogue set, DRAM must be left untouched. The C buffer is filled with
    a sentinel beforehand and must still hold it afterwards. Gate 1 alone would
-   pass if the kernel wrote BOTH the lambda destination and C.
+   pass if the kernel wrote BOTH the epilogue destination and C.
 
-Each case runs the gates for the legacy lambda, the epilogue closure, and the
-compute closure (whose output is `c` itself, so only gate 1 applies).
+Each case runs the gates for the epilogue closure and the compute closure
+(whose output is `c` itself, so only gate 1 applies).
 
 Run:
   ./bazelw test //max/kernels/test/gpu/linalg:test_mxfp6_matmul_amd_preb_epilogue.mojo.test
 """
 
 from std.random import random_ui64, seed
-from std.sys import align_of
 from std.testing import assert_equal, assert_true
 
 from max.gpu.host import DeviceContext, HostBuffer
@@ -122,16 +120,16 @@ def _run_case[
         b_pre_d, row_major(Idx[N_static], Idx[K_BYTES])
     )
     var sfa_tt = TileTensor[mut=False](
-        sfa_d.unsafe_ptr().bitcast[Float8_e8m0fnu](),
+        sfa_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
         row_major(M_static, Idx[scale_K]),
     )
     var sfb_pre_tt = TileTensor[mut=False](
-        sfb_pre_d.unsafe_ptr().bitcast[Float8_e8m0fnu](),
+        sfb_pre_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
         row_major(Idx[N_static], Idx[scale_K]),
     )
 
     var sfb_raw_tt = TileTensor[mut=False](
-        sfb_raw_d.unsafe_ptr().bitcast[Float8_e8m0fnu](),
+        sfb_raw_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
         row_major(Idx[N_static], Idx[scale_K]),
     )
     var b_row_tt = TileTensor[mut=False](
@@ -155,24 +153,11 @@ def _run_case[
     )
 
     @inline(.always)
-    @__copy_capture(out_tt)
-    def epilogue_fn[
-        _dtype: DType,
-        width: SIMDLength,
-        *,
-        alignment: Int = align_of[SIMD[_dtype, width]](),
-    ](idx: Coord, val: SIMD[_dtype, width]) capturing -> None:
-        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
-        out_tt.store[width=width, alignment=alignment](
-            idx, rebind[SIMD[DType.float32, width]](val)
-        )
-
-    @inline(.always)
     def store_fn[
         _dtype: DType, width: SIMDLength, *, alignment: Int
     ](idx: Coord, val: SIMD[_dtype, width]) {var out_tt}:
         comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
-        out_tt.store[width=width](idx, rebind[SIMD[DType.float32, width]](val))
+        out_tt.store(idx, rebind[SIMD[DType.float32, width]](val))
 
     var direct_h = ctx.enqueue_create_host_buffer[.float32](M_static * N_static)
     var out_host = ctx.enqueue_create_host_buffer[.float32](M_static * N_static)
@@ -181,44 +166,21 @@ def _run_case[
     )
     ctx.enqueue_copy(direct_h, c_direct_d)
 
-    comptime for use_closure in [False, True]:
-        out_d.enqueue_fill(Float32(0.0))
-        comptime if use_closure:
-            comptime if preshuffled_b:
-                mxfp6_block_scaled_matmul_amd[preshuffled_b=True](
-                    c_sentinel_tt,
-                    a_tt,
-                    b_pre_tt,
-                    sfa_tt,
-                    sfb_pre_tt,
-                    store_fn,
-                    ctx,
-                )
-            else:
-                mxfp6_block_scaled_matmul_amd[preshuffled_b=False](
-                    c_sentinel_tt,
-                    a_tt,
-                    b_row_tt,
-                    sfa_tt,
-                    sfb_raw_tt,
-                    store_fn,
-                    ctx,
-                )
-        else:
-            comptime if preshuffled_b:
-                mxfp6_block_scaled_matmul_amd[
-                    preshuffled_b=True, elementwise_lambda_fn=epilogue_fn
-                ](c_sentinel_tt, a_tt, b_pre_tt, sfa_tt, sfb_pre_tt, ctx)
-            else:
-                mxfp6_block_scaled_matmul_amd[
-                    preshuffled_b=False, elementwise_lambda_fn=epilogue_fn
-                ](c_sentinel_tt, a_tt, b_row_tt, sfa_tt, sfb_raw_tt, ctx)
-        ctx.enqueue_copy(out_host, out_d)
-        ctx.enqueue_copy(sentinel_h, c_sentinel_d)
-        ctx.synchronize()
-        _assert_matches_direct[M_static, N_static](
-            direct_h, out_host, sentinel_h, SENTINEL
+    out_d.enqueue_fill(Float32(0.0))
+    comptime if preshuffled_b:
+        mxfp6_block_scaled_matmul_amd[preshuffled_b=True](
+            c_sentinel_tt, a_tt, b_pre_tt, sfa_tt, sfb_pre_tt, store_fn, ctx
         )
+    else:
+        mxfp6_block_scaled_matmul_amd[preshuffled_b=False](
+            c_sentinel_tt, a_tt, b_row_tt, sfa_tt, sfb_raw_tt, store_fn, ctx
+        )
+    ctx.enqueue_copy(out_host, out_d)
+    ctx.enqueue_copy(sentinel_h, c_sentinel_d)
+    ctx.synchronize()
+    _assert_matches_direct[M_static, N_static](
+        direct_h, out_host, sentinel_h, SENTINEL
+    )
 
     # The compute closure stores into `c` itself, so `out_d` is its `c`.
     @inline(.always)
@@ -248,7 +210,7 @@ def _run_case[
     print(
         "    OK: ",
         M_static * N_static,
-        " elements match for the lambda and both closures; C untouched",
+        " elements match for both closures; C untouched",
     )
 
     _ = a_d^
@@ -286,7 +248,7 @@ def _assert_matches_direct[
                     i % N_static,
                     "] direct=",
                     direct_h[i],
-                    " lambda=",
+                    " epilogue=",
                     out_host[i],
                 )
             mismatches += 1

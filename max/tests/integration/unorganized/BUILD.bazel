@@ -62,7 +62,6 @@ modular_py_test(
     name = "tests-pure-cpu",
     srcs = [
         "conftest.py",
-        "test_bfloat16_utils.py",
         "test_config_vision_budgets.py",
         "test_context.py",
         "test_dtype.py",

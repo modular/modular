@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.collections import List
 from spmv_utils import CSRMatrix, generate_sparse_matrix, spmv_cpu, verify
 from max.gpu import block_idx, thread_idx, block_dim
 from max.gpu.host import DeviceContext
@@ -20,8 +19,8 @@ from std.math import ceildiv
 
 def spmv_csr_kernel(
     csrMatrix: CSRMatrix,
-    x: UnsafePointer[Float32, ImmutAnyOrigin],
-    y: UnsafePointer[Float32, MutAnyOrigin],
+    x: ImmPointer[Float32, ImmutAnyOrigin],
+    y: MutPointer[Float32, MutAnyOrigin],
 ):
     var row = block_idx.x * block_dim.x + thread_idx.x
     if row < csrMatrix.numRows:

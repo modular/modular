@@ -61,9 +61,9 @@ def run_pathological_bscale[
     reports (num_nan, num_inf) in the GEMM output, plus the denormal-column
     finiteness specifically."""
     comptime transpose_b = True
-    var M = Int(m.value())
-    var N = Int(n.value())
-    var K = Int(k.value())
+    var M = Int(m)
+    var N = Int(n)
+    var K = Int(k)
 
     var a_size = M * K
     var b_size = N * K  # transpose_b: b is [N, K]

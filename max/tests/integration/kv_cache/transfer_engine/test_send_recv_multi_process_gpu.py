@@ -84,11 +84,12 @@ def transfer_routine_sender(
         f"[Sender] Transferring {total_bytes / GB:.2f} GB took {ms:.2f} ms ({bw:.2f} GB/s)"
     )
 
-    # Check that the transfer speed is at least 1 GB/s.
-    # Note: this alone does not guarantee CUDA IPC is used — d2h→h2d can also
-    # exceed 1 GB/s. The cuMemcpyDtoDAsync_v2 log assertion in the test
-    # is the authoritative check for transport selection.
-    assert bw > 1.0, f"Transfer speed is too low: {bw:.2f} GB/s"
+    # The TCP fallback measures about 0.2 GB/s; this floor catches it with
+    # headroom for a contended executor, since the test times one cold
+    # transfer. It does not prove CUDA IPC was used: a host-staged path can
+    # clear it too. The cuMemcpyDtoDAsync_v2 log assertion in the test is the
+    # authoritative check for transport selection.
+    assert bw > 0.5, f"Transfer speed is too low: {bw:.2f} GB/s"
 
     # Verify sender buffer is unchanged
     result = blocks.to_numpy()
@@ -154,14 +155,7 @@ def transfer_routine_receiver(
 @pytest.mark.skipif(
     accelerator_api() == "hip", reason="Checks the CUDA IPC transport"
 )
-def test_send_recv_basic(
-    capfd: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # TODO(GEX-4348): VMM-allocated KV buffers are not CUDA-IPC exportable, so
-    # UCX falls back to TCP under the default memory manager. Drop this once
-    # they are.
-    monkeypatch.setenv("MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM", "0")
-
+def test_send_recv_basic(capfd: pytest.CaptureFixture[str]) -> None:
     # Use multiprocessing.Queue for inter-process communication
     ctx = mp.get_context("spawn")
     sender_md_queue: mp.Queue = ctx.Queue()  # type: ignore[type-arg]
@@ -223,6 +217,6 @@ def test_send_recv_basic(
                 print(line)
         print("-" * 80)
 
-    # Verify CUDA IPC transport is selected. The bw > 1 GB/s check alone is
-    # insufficient since d2h->h2d paths can also exceed 1 GB/s.
+    # Verify CUDA IPC transport is selected. The bandwidth floor alone is
+    # insufficient since d2h->h2d paths can also clear it.
     assert "UCX  DEBUG cuMemcpyDtoDAsync_v2" in out

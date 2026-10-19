@@ -58,6 +58,10 @@ archive_override(
         # Also includes a toolchain change which has to be done in lockstep to the current commit
         # That piece can be removed after the 8/5 nightly.
         "//bazel/public-patches:rules_mojo_toolchain.patch",
+        # TODO(SDLC-4732): Upstream this to `rules_mojo`.
+        # Adds `bitcode_libs` to `mojo_library` so a generated `.bc` can be embedded
+        # in a package; `--bitcode-libs` in copts breaks under path mapping.
+        "//bazel/public-patches:rules_mojo_bitcode_libs.patch",
     ],
     strip_prefix = "rules_mojo-47643a3b441c20c3a351b8807e37c547338557c8",
     urls = [

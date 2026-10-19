@@ -19,7 +19,7 @@ from std.collections import Deque
 from std.collections.deque import _DequeIter
 from std.collections.dict import _DictEntryIter, _DictKeyIter, _DictValueIter
 from std.collections.array import _ArrayIter
-from std.hashlib import Hasher
+from std.hash import Hasher
 
 from std.collections.span import Span, _SpanIter
 
@@ -141,7 +141,7 @@ def reversed[
 def reversed[
     K: KeyElement & Copyable,
     V: Copyable,
-    H: Hasher,
+    H: Hasher & Defaultable & Deinitable,
 ](ref value: Dict[K, V, H],) -> _DictKeyIter[K, V, H, origin_of(value), False]:
     """Get a reversed iterator of the input dict.
 
@@ -166,7 +166,7 @@ def reversed[
     //,
     K: KeyElement & Copyable,
     V: Copyable,
-    H: Hasher,
+    H: Hasher & Defaultable & Deinitable,
     dict_origin: Origin[mut=dict_mutability],
 ](ref value: _DictValueIter[K, V, H, dict_origin]) -> _DictValueIter[
     K, V, H, dict_origin, False
@@ -196,7 +196,7 @@ def reversed[
     //,
     K: KeyElement & Copyable,
     V: Copyable,
-    H: Hasher,
+    H: Hasher & Defaultable & Deinitable,
     dict_origin: Origin[mut=dict_mutability],
 ](ref value: _DictEntryIter[K, V, H, dict_origin]) -> _DictEntryIter[
     K, V, H, dict_origin, False

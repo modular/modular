@@ -10,12 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Tests that MiMo-V2's MoE declares the weights its adapter produces.
-
-The layer's behavior (the W4A8 experts, their tensor-parallel scale split,
-and the sigmoid router) is covered by the framework tests in
-``max/tests/tests/nn/test_stacked_moe_w4a8.py``.
-"""
+"""Tests that MiMo-V2's MoE declares the checkpoint's expert tensors."""
 
 from __future__ import annotations
 
@@ -28,24 +23,17 @@ from transformers.configuration_utils import PretrainedConfig
 EXPERTS, HIDDEN, WIDTH = 2, 256, 512
 
 
-def test_serving_declares_only_the_expert_stacks() -> None:
+def test_declares_the_checkpoint_experts() -> None:
     config = PretrainedConfig(
         num_hidden_layers=2,
         moe_layer_freq=[0, 1],
-        n_routed_experts=EXPERTS,
-        conversion_metadata={"qkv_layout": "global_q_k_v"},
         quantization_config={
-            "quant_method": "modelopt",
-            "quant_algo": "MIXED_PRECISION",
-            "kv_cache_quant_algo": None,
-            "quantized_layers": {
-                f"model.layers.1.mlp.experts.{e}.{p}": {
-                    "quant_algo": "W4A16_NVFP4",
-                    "group_size": 16,
-                }
-                for e in range(EXPERTS)
-                for p in ("gate_proj", "up_proj", "down_proj")
-            },
+            "quant_method": "fp8",
+            "fmt": "e4m3",
+            "activation_scheme": "dynamic",
+            "weight_block_size": [128, 128],
+            "store_dtype": "mxfp4",
+            "mxfp4_block_size": 32,
         },
     )
     moe = mimo_v2_moe(
@@ -57,26 +45,24 @@ def test_serving_declares_only_the_expert_stacks() -> None:
         quant_config=parse_quant_scheme(config).experts,
         devices=[DeviceRef.CPU()],
     )
-    weights = moe.raw_state_dict()
 
-    # The scales in the grouped matmul's layout, [E, N/128, K/128, 32, 4, 4].
-    assert {
-        name: (weight.dtype, list(weight.shape))
-        for name, weight in weights.items()
-    } == {
-        "experts.gate_up_proj": (
-            DType.uint8,
-            [EXPERTS, 2 * WIDTH, HIDDEN // 2],
-        ),
-        "experts.gate_up_proj_scale": (
-            DType.float8_e8m0fnu,
-            [EXPERTS, 2 * WIDTH // 128, HIDDEN // 128, 32, 4, 4],
-        ),
-        "experts.down_proj": (DType.uint8, [EXPERTS, HIDDEN, WIDTH // 2]),
-        "experts.down_proj_scale": (
-            DType.float8_e8m0fnu,
-            [EXPERTS, HIDDEN // 128, WIDTH // 128, 32, 4, 4],
-        ),
-        "gate.gate_score.weight": (DType.float32, [EXPERTS, HIDDEN]),
+    expected = {
+        "gate.gate_score.weight": (DType.bfloat16, [EXPERTS, HIDDEN]),
         "gate.e_score_correction_bias": (DType.float32, [EXPERTS]),
     }
+    for e in range(EXPERTS):
+        for proj, (n, k) in (
+            ("gate_proj", (WIDTH, HIDDEN)),
+            ("up_proj", (WIDTH, HIDDEN)),
+            ("down_proj", (HIDDEN, WIDTH)),
+        ):
+            base = f"experts.{e}.{proj}"
+            expected[f"{base}.weight"] = (DType.uint8, [n, k // 2])
+            expected[f"{base}.weight_scale"] = (
+                DType.float8_e8m0fnu,
+                [n, k // 32],
+            )
+    assert {
+        name: (weight.dtype, list(weight.shape))
+        for name, weight in moe.raw_state_dict().items()
+    } == expected

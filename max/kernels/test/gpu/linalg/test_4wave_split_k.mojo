@@ -187,7 +187,7 @@ def test_4wave_split_k_epilogue[
     ](idx: Coord, val: SIMD[_dtype, width]) {var} -> None:
         comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
         comptime assert idx.flat_rank == out_tt.flat_rank
-        out_tt.store[width=width, alignment=alignment](
+        out_tt.store[alignment=alignment](
             idx, rebind[SIMD[out_dtype, width]](val)
         )
 

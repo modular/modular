@@ -58,3 +58,42 @@ struct in6_addr(Copyable):
 
     var s6_addr: Array[UInt8, 16]
     """The address bytes, in network byte order."""
+
+
+trait SockaddrIn(Deinitable, ImplicitlyCopyable):
+    """A platform's C `struct sockaddr_in`."""
+
+    def __init__(out self, *, port: in_port_t, addr: in_addr):
+        ...
+
+    def port(self) -> in_port_t:
+        ...
+
+    def addr(self) -> in_addr:
+        ...
+
+
+trait SockaddrIn6(Deinitable, ImplicitlyCopyable):
+    """A platform's C `struct sockaddr_in6`."""
+
+    def __init__(
+        out self,
+        *,
+        port: in_port_t,
+        var addr: in6_addr,
+        flowinfo: UInt32,
+        scope_id: UInt32,
+    ):
+        ...
+
+    def port(self) -> in_port_t:
+        ...
+
+    def addr(self) -> in6_addr:
+        ...
+
+    def flowinfo(self) -> UInt32:
+        ...
+
+    def scope_id(self) -> UInt32:
+        ...

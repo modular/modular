@@ -21,7 +21,7 @@ comptime INF = Float32.MAX
 # ========================== CPU IMPLEMENTATION ==========================
 
 
-def floyd_warshall_cpu(dist: UnsafePointer[mut=True, Float32, _], V: Int):
+def floyd_warshall_cpu(dist: MutPointer[Float32, _], V: Int):
     """CPU version of Floyd-Warshall algorithm (matches Fig 16.3 pseudo-code).
 
     Args:
@@ -47,7 +47,7 @@ def floyd_warshall_cpu(dist: UnsafePointer[mut=True, Float32, _], V: Int):
                 dist[idx_ij] = new_dist
 
 
-def initialize_dist(dist: UnsafePointer[mut=True, Float32, _], V: Int):
+def initialize_dist(dist: MutPointer[Float32, _], V: Int):
     """Initialize distance matrix to infinity.
 
     Args:
@@ -59,8 +59,8 @@ def initialize_dist(dist: UnsafePointer[mut=True, Float32, _], V: Int):
 
 
 def verify_results(
-    result: UnsafePointer[Float32, _],
-    expected: UnsafePointer[Float32, _],
+    result: Pointer[Float32, _],
+    expected: Pointer[Float32, _],
     V: Int,
 ) -> Bool:
     """Verify Floyd-Warshall results.

@@ -167,6 +167,34 @@ def test_tokens_per_request_histograms() -> None:
     m_output.commit()  # Should not raise
 
 
+@pytest.mark.parametrize(
+    "method", ["input_tokens_per_request", "output_tokens_per_request"]
+)
+@pytest.mark.parametrize(
+    ("turn", "expected_attributes"),
+    [
+        pytest.param(None, {"model": "m"}, id="no_turn"),
+        pytest.param("first", {"model": "m", "turn": "first"}, id="first"),
+        pytest.param("later", {"model": "m", "turn": "later"}, id="later"),
+    ],
+)
+def test_tokens_per_request_carry_the_turn_when_given(
+    method: str,
+    turn: metrics.ConversationTurn | None,
+    expected_attributes: dict[str, str],
+) -> None:
+    client = mock.Mock()
+    async_metrics = metrics._AsyncMetrics()
+    async_metrics.configure(client, extra_attributes={"model": "m"})
+
+    getattr(async_metrics, method)(7, turn)
+
+    measurement = client.send_measurement.call_args.args[0]
+    assert measurement.value == 7
+    assert measurement.attributes == expected_attributes
+    assert async_metrics.extra_attributes == {"model": "m"}
+
+
 def _is_histogram(inst: object) -> bool:
     """True if a SERVE_METRICS instrument is a Histogram.
 

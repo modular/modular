@@ -21,12 +21,14 @@ from layout import (
     Coord,
     Idx,
     RowMajorLayout,
+    TensorEngine,
     TileTensor,
     row_major,
 )
+from layout.tensor_engine import DefaultEngine, DevicePointerEngine
 from linalg.matmul.gpu import matmul_kernel_naive, multistage_gemm
 from linalg.matmul.gpu._multistage_gemm_gpu import multistage_gemm_kernel
-from linalg.utils_gpu import MatmulKernels
+from linalg.utils_gpu import MatmulConfig, MatmulKernels
 
 
 def multistage_gemm_simple[
@@ -37,6 +39,9 @@ def multistage_gemm_simple[
     b_type: DType = .bfloat16,
     c_type: DType = .bfloat16,
     transpose_b: Bool = False,
+    # Defaulted because this helper only compiles the kernel: there is no tile
+    # argument the engine could be inferred from.
+    engine: TensorEngine = DefaultEngine[element_width=1],
 ](ctx: DeviceContext,) raises:
     comptime kernels = MatmulKernels[a_type, b_type, c_type, transpose_b]()
     comptime config = kernels.ampere_128x128_4
@@ -64,6 +69,9 @@ def multistage_gemm_simple[
         c_linear_idx_type=.int64,
         a_linear_idx_type=.int64,
         b_linear_idx_type=.int64,
+        c_engine=engine,
+        a_engine=engine,
+        b_engine=engine,
         config=config,
     ]
 
@@ -74,38 +82,67 @@ def multistage_gemm_simple[
     )
 
 
-def multistage_gemm_fp32_run[
-    M: Int, N: Int, K: Int, *, use_epilogue: Bool = False
+def multistage_gemm_run[
+    M: Int,
+    N: Int,
+    K: Int,
+    *,
+    in_type: DType = .float32,
+    out_type: DType = .float32,
+    use_epilogue: Bool = False,
+    num_k_partitions: Int = 1,
+    runtime_k: Bool = False,
 ](ctx: DeviceContext) raises:
-    """Runs the fp32 multistage GEMM and checks it against the naive kernel.
+    """Runs the multistage GEMM and checks it against the naive kernel.
 
     An fp32 C with odd N has 4-byte-misaligned rows, which the kernel's usual
     8-byte vector store cannot write. The vendor BLAS fallback reaches this
-    kernel with exactly that shape for GPT-2's lm_head (vocab 50257).
+    kernel with exactly that shape for GPT-2's lm_head (vocab 50257). With
+    `num_k_partitions > 1` the split-K path stages the partials in an fp32
+    workspace, so a half-precision C exercises the fp32-output kernel. With
+    `runtime_k` the K extent of A and B is dynamic, as the split-K partitions
+    are, which makes both operand copies masked.
     """
-    comptime dtype = DType.float32
     comptime transpose_b = True
 
-    print("M:", M, "N:", N, "K:", K, "use_epilogue:", use_epilogue)
+    print(
+        "M:",
+        M,
+        "N:",
+        N,
+        "K:",
+        K,
+        in_type,
+        "->",
+        out_type,
+        "use_epilogue:",
+        use_epilogue,
+        "num_k_partitions:",
+        num_k_partitions,
+        "runtime_k:",
+        runtime_k,
+    )
 
     var a_shape = row_major(Idx[M], Idx[K])
     var b_shape = row_major(Idx[N], Idx[K])
+    var a_runtime_shape = row_major(Idx[M], K)
+    var b_runtime_shape = row_major(Idx[N], K)
     var c_shape = row_major(Idx[M], Idx[N])
 
-    var a_host_ptr = ctx.enqueue_create_host_buffer[dtype](M * K)
-    var b_host_ptr = ctx.enqueue_create_host_buffer[dtype](N * K)
-    var c_host_ptr = ctx.enqueue_create_host_buffer[dtype](M * N)
-    var c_host_ref_ptr = ctx.enqueue_create_host_buffer[dtype](M * N)
+    var a_host_ptr = ctx.enqueue_create_host_buffer[in_type](M * K)
+    var b_host_ptr = ctx.enqueue_create_host_buffer[in_type](N * K)
+    var c_host_ptr = ctx.enqueue_create_host_buffer[out_type](M * N)
+    var c_host_ref_ptr = ctx.enqueue_create_host_buffer[out_type](M * N)
 
     var a_host = TileTensor(a_host_ptr, a_shape)
     var b_host = TileTensor(b_host_ptr, b_shape)
     var c_host = TileTensor(c_host_ptr, c_shape)
     var c_host_ref = TileTensor(c_host_ref_ptr, c_shape)
 
-    var a_device = ctx.enqueue_create_buffer[dtype](M * K)
-    var b_device = ctx.enqueue_create_buffer[dtype](N * K)
-    var c_device = ctx.enqueue_create_buffer[dtype](M * N)
-    var c_device_ref = ctx.enqueue_create_buffer[dtype](M * N)
+    var a_device = ctx.enqueue_create_buffer[in_type](M * K)
+    var b_device = ctx.enqueue_create_buffer[in_type](N * K)
+    var c_device = ctx.enqueue_create_buffer[out_type](M * N)
+    var c_device_ref = ctx.enqueue_create_buffer[out_type](M * N)
 
     var a_tensor = TileTensor(a_device, a_shape)
     var b_tensor = TileTensor(b_device, b_shape)
@@ -130,10 +167,35 @@ def multistage_gemm_fp32_run[
 
     # The config the vendor BLAS fallback hardcodes (KERN-1812).
     comptime config = MatmulKernels[
-        dtype, dtype, dtype, transpose_b
+        in_type, in_type, out_type, transpose_b
     ]().ampere_256x64_4
 
-    comptime if use_epilogue:
+    var a_dyn = TileTensor(a_device, a_runtime_shape)
+    var b_dyn = TileTensor(b_device, b_runtime_shape)
+
+    comptime if runtime_k:
+        comptime assert num_k_partitions == 1 and not use_epilogue
+        multistage_gemm[transpose_b=transpose_b, config=config](
+            c_tensor, a_dyn, b_dyn, ctx
+        )
+    elif num_k_partitions > 1:
+        comptime split_config = MatmulConfig[
+            in_type, in_type, out_type, transpose_b
+        ](
+            block_tile_shape=config.block_tile_shape,
+            warp_tile_shape=config.warp_tile_shape,
+            num_pipeline_stages=config.num_pipeline_stages,
+            num_k_partitions=num_k_partitions,
+        )
+        comptime if use_epilogue:
+            multistage_gemm[transpose_b=transpose_b, config=config](
+                c_tensor, a_tensor, b_tensor, split_config, compute_fn, ctx
+            )
+        else:
+            multistage_gemm[transpose_b=transpose_b, config=config](
+                c_tensor, a_tensor, b_tensor, split_config, ctx
+            )
+    elif use_epilogue:
         multistage_gemm[transpose_b=transpose_b, config=config](
             c_tensor, a_tensor, b_tensor, compute_fn, ctx
         )
@@ -146,9 +208,9 @@ def multistage_gemm_fp32_run[
     # the same one the vendor BLAS fallback uses for small K.
     comptime BLOCK_DIM = 16
     comptime naive_kernel = matmul_kernel_naive[
-        dtype,
-        dtype,
-        dtype,
+        out_type,
+        in_type,
+        in_type,
         type_of(c_ref_tensor).LayoutType,
         type_of(a_tensor).LayoutType,
         type_of(b_tensor).LayoutType,
@@ -170,13 +232,24 @@ def multistage_gemm_fp32_run[
     ctx.enqueue_copy(c_host_ref_ptr, c_device_ref)
     ctx.synchronize()
 
-    assert_almost_equal(
-        c_host._storage,
-        c_host_ref._storage,
-        c_host.num_elements(),
-        atol=1e-4,
-        rtol=1e-2,
-    )
+    comptime if out_type.is_float8():
+        # The host has no fp8 arithmetic, so compare in fp32. e4m3 keeps 3
+        # mantissa bits: a one-ulp rounding difference from the naive
+        # kernel's summation order is a 12.5% relative error.
+        var c_f32 = List[Float32](capacity=M * N)
+        var c_ref_f32 = List[Float32](capacity=M * N)
+        for i in range(M * N):
+            c_f32.append(c_host_ptr[i].cast[.float32]())
+            c_ref_f32.append(c_host_ref_ptr[i].cast[.float32]())
+        assert_almost_equal(Span(c_f32), Span(c_ref_f32), atol=1e-2, rtol=0.125)
+    else:
+        assert_almost_equal(
+            c_host._storage,
+            c_host_ref._storage,
+            c_host.num_elements(),
+            atol=1e-4 if out_type == .float32 else 1e-2,
+            rtol=1e-2,
+        )
 
     _ = a_device^
     _ = b_device^
@@ -209,27 +282,83 @@ def main() raises:
             550, 2048, 8, .float32, .float32, .float32, False
         ](ctx)
 
+        # The same kernel instantiated with device-pointer tiles.
+        multistage_gemm_simple[
+            1024,
+            1024,
+            1024,
+            .bfloat16,
+            .bfloat16,
+            .bfloat16,
+            False,
+            engine=DevicePointerEngine[element_width=1],
+        ](ctx)
+
         # fp32 C shapes the vectorized store cannot take: an odd N misaligns
         # every other row, and an N that is not a multiple of the block tile
         # leaves the trailing block running past the last column. NVIDIA-only,
         # since only that path vectorizes C along N.
         comptime if ctx.target.is_nvidia_gpu():
             # Odd N.
-            multistage_gemm_fp32_run[M=20, N=257, K=768](ctx)
-            multistage_gemm_fp32_run[M=20, N=257, K=768, use_epilogue=True](ctx)
-            multistage_gemm_fp32_run[M=20, N=17, K=768](ctx)
+            multistage_gemm_run[M=20, N=257, K=768](ctx)
+            multistage_gemm_run[M=20, N=257, K=768, use_epilogue=True](ctx)
+            multistage_gemm_run[M=20, N=17, K=768](ctx)
             # GPT-2's lm_head, the shape that first hit the fault.
-            multistage_gemm_fp32_run[M=20, N=50257, K=768](ctx)
-            multistage_gemm_fp32_run[M=20, N=50257, K=768, use_epilogue=True](
-                ctx
-            )
+            multistage_gemm_run[M=20, N=50257, K=768](ctx)
+            multistage_gemm_run[M=20, N=50257, K=768, use_epilogue=True](ctx)
             # Even N, partial trailing block.
-            multistage_gemm_fp32_run[M=20, N=48, K=768](ctx)
-            multistage_gemm_fp32_run[M=20, N=306, K=768](ctx)
-            multistage_gemm_fp32_run[M=20, N=50256, K=768](ctx)
-            multistage_gemm_fp32_run[M=20, N=50226, K=768, use_epilogue=True](
-                ctx
-            )
+            multistage_gemm_run[M=20, N=48, K=768](ctx)
+            multistage_gemm_run[M=20, N=306, K=768](ctx)
+            multistage_gemm_run[M=20, N=50256, K=768](ctx)
+            multistage_gemm_run[M=20, N=50226, K=768, use_epilogue=True](ctx)
             # Exact block multiples: the vectorized store path.
-            multistage_gemm_fp32_run[M=20, N=256, K=768](ctx)
-            multistage_gemm_fp32_run[M=20, N=512, K=768, use_epilogue=True](ctx)
+            multistage_gemm_run[M=20, N=256, K=768](ctx)
+            multistage_gemm_run[M=20, N=512, K=768, use_epilogue=True](ctx)
+            # Half-precision inputs: the staged bf16 store, the fp32 store of
+            # bf16 accumulators, dynamic-K operands, and split-K through the
+            # fp32 workspace.
+            multistage_gemm_run[
+                M=130, N=512, K=512, in_type=.bfloat16, out_type=.bfloat16
+            ](ctx)
+            multistage_gemm_run[
+                M=130, N=512, K=512, in_type=.bfloat16, out_type=.float32
+            ](ctx)
+            multistage_gemm_run[M=130, N=512, K=512, runtime_k=True](ctx)
+            multistage_gemm_run[
+                M=130,
+                N=512,
+                K=512,
+                in_type=.bfloat16,
+                out_type=.bfloat16,
+                runtime_k=True,
+            ](ctx)
+            multistage_gemm_run[
+                M=130,
+                N=512,
+                K=512,
+                in_type=.bfloat16,
+                out_type=.float32,
+                runtime_k=True,
+            ](ctx)
+            multistage_gemm_run[
+                M=130,
+                N=512,
+                K=512,
+                in_type=.bfloat16,
+                out_type=.bfloat16,
+                num_k_partitions=2,
+            ](ctx)
+            multistage_gemm_run[M=130, N=512, K=512, num_k_partitions=2](ctx)
+            # A C dtype other than the fp32 accumulator and not half precision
+            # takes the fp32 store branch, which must cast rather than copy.
+            multistage_gemm_run[
+                M=130, N=512, K=512, in_type=.bfloat16, out_type=.float8_e4m3fn
+            ](ctx)
+            multistage_gemm_run[
+                M=130,
+                N=512,
+                K=512,
+                in_type=.bfloat16,
+                out_type=.float8_e4m3fn,
+                num_k_partitions=2,
+            ](ctx)

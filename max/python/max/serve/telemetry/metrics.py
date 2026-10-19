@@ -17,7 +17,7 @@ import abc
 import functools
 import logging
 import time
-from collections.abc import AsyncGenerator, Callable, Iterator
+from collections.abc import AsyncGenerator, Callable, Iterator, Mapping
 from contextlib import (
     AbstractAsyncContextManager,
     AbstractContextManager,
@@ -58,8 +58,8 @@ _meter = get_meter_provider().get_meter("modular")
 
 
 NumberType = float | int
-OtelAttributes = dict[str, str] | None
-# The ``turn`` label on ``maxserve.input_tokens_per_request``.
+OtelAttributes = Mapping[str, str] | None
+# The ``turn`` label on the per-request input and output token histograms.
 ConversationTurn = Literal["first", "later"]
 
 # API_PROXIES the "types" of measurements we make from a meter
@@ -363,7 +363,9 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
     "maxserve.output_tokens_per_request": _meter.create_histogram(
         "maxserve.output_tokens_per_request",
         unit="tokens",
-        description="Distribution of output tokens per request.",
+        description=(
+            "Distribution of output tokens per request. Chat requests carry a `turn` label: `first` when the conversation has no assistant message yet, `later` when it resends earlier turns. Completion requests carry none."
+        ),
     ),  # type: ignore
     "maxserve.dkv.nixl_read_latency": _meter.create_histogram(
         "maxserve.dkv.nixl_read_latency",
@@ -413,8 +415,9 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
     # Cross-node pull. Counters, not gauges: take_metrics clears these every
     # batch, so each publish carries that window's delta. Mach exports the same
     # set under dkv.connector.peer_attach_count, peer_drop_count,
-    # peer_load_count and hint_rejected_count, splitting success from failure
-    # by an outcome tag rather than by metric name.
+    # peer_load_count, peer_transfer_failure_count, peer_metadata_refresh_count
+    # and hint_rejected_count, splitting success from failure by an outcome tag
+    # rather than by metric name.
     "maxserve.dkv.peer_attaches": _meter.create_counter(
         "maxserve.dkv.peer_attaches",
         unit="attaches",
@@ -439,6 +442,21 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
         "maxserve.dkv.peer_load_failures",
         unit="loads",
         description="Hinted peer loads that fell through to the next source or to the co-located dKV. Memo-capped rather than per-request: a failed source suppresses further attempts against the same instance and epoch for a fixed window, so one dead peer charges roughly one failure per window however many requests it affects.",
+    ),  # type: ignore
+    "maxserve.dkv.peer_transfer_failures": _meter.create_counter(
+        "maxserve.dkv.peer_transfer_failures",
+        unit="transfers",
+        description="Hint-routed peer leases whose NIXL read failed to build or post, counted once per peer a round leased from. The failure is the peer's alone: the connector stays healthy, and the peer is skipped for the failure memo window, so later rounds lease from the co-located dKV, and marked stale so its metadata is reloaded. The usual cause is a peer that registered memory after the connector loaded its metadata.",
+    ),  # type: ignore
+    "maxserve.dkv.peer_metadata_refreshes": _meter.create_counter(
+        "maxserve.dkv.peer_metadata_refreshes",
+        unit="refreshes",
+        description="Stale dKV peers whose NIXL metadata the connector reloaded in place, after which the peer is routed to again.",
+    ),  # type: ignore
+    "maxserve.dkv.peer_metadata_refresh_failures": _meter.create_counter(
+        "maxserve.dkv.peer_metadata_refresh_failures",
+        unit="refreshes",
+        description="In-place peer metadata reloads that NIXL refused. Each strands its peer: the connector never routes to or dials it again for the life of the process. Each also counts in maxserve.dkv.peer_attach_failures.",
     ),  # type: ignore
     "maxserve.dkv.hints_rejected": _meter.create_counter(
         "maxserve.dkv.hints_rejected",
@@ -1726,26 +1744,31 @@ class _AsyncMetrics:
             ),
         )
 
+    def _with_turn(self, turn: ConversationTurn | None) -> Mapping[str, str]:
+        """Returns the extra attributes, plus ``turn`` when it is known."""
+        if turn is None:
+            return self.extra_attributes
+        return {**self.extra_attributes, "turn": turn}
+
     def input_tokens_per_request(
         self, value: int, turn: ConversationTurn | None = None
     ) -> None:
-        attributes = self.extra_attributes
-        if turn is not None:
-            attributes = {**attributes, "turn": turn}
         self.client.send_measurement(
             MaxMeasurement(
                 "maxserve.input_tokens_per_request",
                 value,
-                attributes,
+                self._with_turn(turn),
             ),
         )
 
-    def output_tokens_per_request(self, value: int) -> None:
+    def output_tokens_per_request(
+        self, value: int, turn: ConversationTurn | None = None
+    ) -> None:
         self.client.send_measurement(
             MaxMeasurement(
                 "maxserve.output_tokens_per_request",
                 value,
-                self.extra_attributes,
+                self._with_turn(turn),
             ),
         )
 
@@ -1861,6 +1884,33 @@ class _AsyncMetrics:
         self.client.send_measurement(
             MaxMeasurement(
                 "maxserve.dkv.peer_load_failures",
+                value,
+                self.extra_attributes,
+            ),
+        )
+
+    def dkv_peer_transfer_failures(self, value: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.dkv.peer_transfer_failures",
+                value,
+                self.extra_attributes,
+            ),
+        )
+
+    def dkv_peer_metadata_refreshes(self, value: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.dkv.peer_metadata_refreshes",
+                value,
+                self.extra_attributes,
+            ),
+        )
+
+    def dkv_peer_metadata_refresh_failures(self, value: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.dkv.peer_metadata_refresh_failures",
                 value,
                 self.extra_attributes,
             ),

@@ -17,13 +17,14 @@ from __future__ import annotations
 import functools
 import logging
 import math
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, ClassVar, Literal
 
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Graph, ops
+from max.graph import DeviceRef
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn.embedding import Embedding
 from max.nn.linear import MLP, Linear
@@ -35,12 +36,13 @@ from max.nn.rotary_embedding import (
 from max.nn.transformer import ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
-    GraphPipelineModel,
     KVCacheConfig,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
+    PipelineModel,
 )
+from max.pipelines.lib.graph_specs import GraphRole, GraphSpec
 from max.pipelines.lib.memory_estimation import MemoryPlan
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
 from max.pipelines.lib.utils import parse_state_dict_from_weights
@@ -51,8 +53,6 @@ from .layers import (
     Qwen3AttentionNoCache,
     Qwen3EmbeddingTransformer,
     Qwen3EmbeddingTransformerBlock,
-    last_token_pool,
-    normalize_embeddings,
 )
 from .model_config import Qwen3EmbeddingConfig
 
@@ -73,7 +73,9 @@ class Qwen3EmbeddingInputs(ModelInputs):
     """Number of logits to return (kept for interface compatibility)"""
 
 
-class Qwen3EmbeddingModel(GraphPipelineModel[TextContext]):
+class Qwen3EmbeddingModel(
+    PipelineModel[TextContext, Qwen3EmbeddingConfig, Model]
+):
     """Qwen3 embedding pipeline model without KV caching.
 
     This model is optimized for embedding generation with:
@@ -89,9 +91,6 @@ class Qwen3EmbeddingModel(GraphPipelineModel[TextContext]):
     batch_processor_cls: ClassVar[type[Qwen3EmbeddingBatchProcessor]] = (
         Qwen3EmbeddingBatchProcessor
     )
-
-    model: Model
-    """Compiled and initialized model."""
 
     norm_method: Literal["rms_norm", "layer_norm"] = "rms_norm"
     """Normalization method."""
@@ -137,24 +136,34 @@ class Qwen3EmbeddingModel(GraphPipelineModel[TextContext]):
             max_batch_size=max_batch_size,
             memory_plan=memory_plan,
         )
-        self.model = self.load_model(session)
+        self._models = self.load_graphs(session)
+
+    @property
+    def model(self) -> Model:
+        """The compiled and initialized model."""
+        return self._models[GraphRole.ENCODER]
 
     @override
     def _load_state_dict(self) -> dict[str, Any]:
-        return parse_state_dict_from_weights(
-            self.pipeline_config,
-            self.weights,
-            self.adapter,
-            hf_config=self._hf_config_for_weights(),
+        self.state_dict = parse_state_dict_from_weights(
+            self.pipeline_config, self.weights, self.adapter
         )
+        return self.state_dict
 
-    def _build_graph_for_compile(
-        self,
-        session: InferenceSession,
-        state_dict: dict[str, Any],
-        model_config: Any,
-    ) -> tuple[Graph, dict[str, Any]]:
-        del session, model_config
+    @override
+    def _create_model_config(
+        self, state_dict: dict[str, Any]
+    ) -> Qwen3EmbeddingConfig:
+        del state_dict
+        return self.arch_config_as(Qwen3EmbeddingConfig)
+
+    @override
+    def graph_specs(
+        self, model_config: Qwen3EmbeddingConfig
+    ) -> Mapping[str, GraphSpec]:
+        """Returns the embedding graph."""
+        del model_config
+        state_dict = self.state_dict
         dtype = self.dtype
         device_refs = [DeviceRef.from_device(d) for d in self.devices]
 
@@ -276,6 +285,7 @@ class Qwen3EmbeddingModel(GraphPipelineModel[TextContext]):
             rope=rope,
             embedding_multiplier=1.0,
             device=device_refs[0],
+            pool_embeddings=self.pipeline_config.model.pool_embeddings,
         )
 
         # Load weights into model
@@ -288,38 +298,14 @@ class Qwen3EmbeddingModel(GraphPipelineModel[TextContext]):
             ),
         )
 
-        weights_registry = nn_model.state_dict()
-
-        # Build graph
-        graph_inputs = nn_model.input_types()
-
-        with Graph("qwen3_embedding", input_types=graph_inputs) as graph:
-            tokens, input_row_offsets, return_n_logits = graph.inputs
-
-            # Forward pass - returns hidden_states
-            hidden_states = nn_model(
-                tokens.tensor,
-                input_row_offsets.tensor,
-                return_n_logits.tensor,
+        return {
+            GraphRole.ENCODER: GraphSpec(
+                nn_model,
+                "qwen3_embedding",
+                nn_model.input_types(),
+                weights=nn_model.state_dict(),
             )
-
-            if self.pipeline_config.model.pool_embeddings:
-                # Apply last token pooling
-                embeddings = last_token_pool(
-                    hidden_states, input_row_offsets.tensor
-                )
-
-                # Apply L2 normalization
-                embeddings_normalized = normalize_embeddings(embeddings)
-
-                # Output pooled and normalized embeddings [batch_size, hidden_size]
-                graph.output(embeddings_normalized)
-            else:
-                # Return raw hidden states [total_seq_len, hidden_size]
-                hidden_states_f32 = ops.cast(hidden_states, DType.float32)
-                graph.output(hidden_states_f32)
-
-        return graph, weights_registry
+        }
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         """Execute the model.

@@ -191,7 +191,7 @@ def main() raises:
                 idx.rank == 2
             ), "the matmul epilogue contract is rank 2"
             # Cast indices between 0-1 to avoid accuracy issues
-            var col = Int(idx[1].value())
+            var col = Int(idx[1])
             var i = Float32(idx[0].value()) / 277.0
             var j = Float32(col - col % 8) / 2560.0
             return val + i.cast[_dtype]() + 2 * j.cast[_dtype]()

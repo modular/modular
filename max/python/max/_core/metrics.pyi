@@ -13,94 +13,100 @@
 # GENERATED FILE, DO NOT EDIT MANUALLY!
 # ===----------------------------------------------------------------------=== #
 
-"""In-process metrics collection for the Modular runtime."""
+"""Provides in-process metrics collection for the Modular runtime."""
 
 class HistogramSnapshot:
     """
-    Statistics accumulated by a Histogram instrument between collect() calls.
+    Statistics accumulated by a histogram instrument between :func:`collect()` calls.
 
-    All fields reflect data points recorded since the previous collect().
+    All fields reflect data points recorded since the previous
+    :func:`collect()`.
     """
 
     @property
     def count(self) -> int:
-        """Number of data points recorded."""
+        """The number of data points recorded."""
 
     @property
     def sum(self) -> float:
-        """Sum of all recorded values."""
+        """The sum of all recorded values."""
 
     @property
     def min(self) -> float:
-        """Minimum recorded value."""
+        """The minimum recorded value."""
 
     @property
     def max(self) -> float:
-        """Maximum recorded value."""
+        """The maximum recorded value."""
 
 class CounterSample:
     """
-    A single counter reading from a collect() snapshot.
+    A single counter reading from a :func:`collect()` snapshot.
 
     Counter values are cumulative and never reset.
     """
 
     @property
     def name(self) -> str:
-        """Instrument name."""
+        """The instrument name."""
 
     @property
     def value(self) -> int:
-        """Cumulative count."""
+        """The cumulative count."""
 
 class GaugeSample:
     """A single gauge value from an instantaneous read."""
 
     @property
     def name(self) -> str:
-        """Instrument name."""
+        """The instrument name."""
 
     @property
     def value(self) -> int:
-        """Current gauge value."""
+        """The current gauge value."""
 
 class HistogramSample:
     """
-    A single histogram reading from a collect() snapshot.
+    A single histogram reading from a :func:`collect()` snapshot.
 
-    The underlying accumulator is reset on each collect() call, so ``ss``
-    reflects only the interval since the previous collect().
+    The underlying accumulator is reset on each :func:`collect()` call, so
+    :attr:`ss` reflects only the interval since the previous
+    :func:`collect()`.
     """
 
     @property
     def name(self) -> str:
-        """Instrument name."""
+        """The instrument name."""
 
     @property
     def ss(self) -> HistogramSnapshot:
-        """Statistics for this collection interval."""
+        """The statistics for this collection interval."""
 
 class CollatedMetrics:
-    """Snapshot of all registered instruments, returned by collect()."""
+    """
+    A snapshot of all registered instruments, returned by :func:`collect()`.
+    """
 
     @property
     def counters(self) -> list[CounterSample]:
-        """Counter readings, one entry per registered counter."""
+        """The counter readings, one entry per registered counter."""
 
     @property
     def gauges(self) -> list[GaugeSample]:
-        """Gauge readings, one entry per registered gauge."""
+        """The gauge readings, one entry per registered gauge."""
 
     @property
     def histograms(self) -> list[HistogramSample]:
-        """Histogram readings, one entry per registered histogram."""
+        """The histogram readings, one entry per registered histogram."""
 
 def collect() -> CollatedMetrics:
     """
-    Snapshot all registered instruments.
+    Snapshots all registered instruments.
 
-    Returns a :class:`CollatedMetrics` containing the current reading of
-    every counter and gauge, and a reset snapshot of every histogram.
     Histogram accumulators are cleared on each call; counter and gauge
     values are cumulative.
+
+    Returns:
+        A :class:`CollatedMetrics` containing the current reading of every
+        counter and gauge, and a reset snapshot of every histogram.
     """

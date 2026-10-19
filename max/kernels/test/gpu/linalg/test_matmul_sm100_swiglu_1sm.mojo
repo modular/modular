@@ -89,9 +89,9 @@ def test_swiglu[
 ](ctx: DeviceContext, m: MType, n: NType, k: KType) raises:
     comptime dtype = DType.bfloat16
 
-    var M = Int(m.value())
-    var N = Int(n.value())
-    var K = Int(k.value())
+    var M = Int(m)
+    var N = Int(n)
+    var K = Int(k)
     var H = N // 2
 
     print(

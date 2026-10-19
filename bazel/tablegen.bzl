@@ -1,7 +1,6 @@
 """TableGen rules, kept out of api.bzl because loading them fetches LLVM."""
 
-load("@llvm-project//mlir:tblgen.bzl", _gentbl_cc_library = "gentbl_cc_library", _td_library = "td_library")
-load("//bazel/internal:tablegen.bzl", _driver_option_tablegen = "driver_option_tablegen", _gentbl_mlir_dialect = "gentbl_mlir_dialect", _gentbl_modular_passes = "gentbl_modular_passes")  # buildifier: disable=bzl-visibility
+load("//bazel/internal:tablegen.bzl", _driver_option_tablegen = "driver_option_tablegen", _gentbl_cc_library = "gentbl_cc_library", _gentbl_mlir_dialect = "gentbl_mlir_dialect", _gentbl_modular_passes = "gentbl_modular_passes", _td_library = "td_library")  # buildifier: disable=bzl-visibility
 
 def _noop(**_kwargs):
     pass

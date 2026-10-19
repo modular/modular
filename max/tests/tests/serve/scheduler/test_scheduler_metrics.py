@@ -465,7 +465,7 @@ def test_dkv_read_counts_follow_the_console_clause_on_a_write_only_batch() -> (
 
 
 def test_dkv_peer_counters_report_zero_while_a_tier_is_attached() -> None:
-    """An attached tier that pulled from no peer still reports all five zeros.
+    """An attached tier that pulled from no peer still reports all its zeros.
 
     This is the whole point of the counters: a flat zero says no cache hint
     reached the connector, which is a different fault from hints arriving and
@@ -482,9 +482,14 @@ def test_dkv_peer_counters_report_zero_while_a_tier_is_attached() -> None:
     mock_metrics.dkv_peer_loads.assert_called_once_with(0)
     mock_metrics.dkv_peer_load_failures.assert_called_once_with(0)
     mock_metrics.dkv_hints_rejected.assert_called_once_with(0)
+    mock_metrics.dkv_peer_transfer_failures.assert_called_once_with(0)
+    mock_metrics.dkv_peer_metadata_refreshes.assert_called_once_with(0)
+    mock_metrics.dkv_peer_metadata_refresh_failures.assert_called_once_with(0)
 
     extra = metrics.to_log_extra()
     assert extra["dkv_peer_loads"] == 0
+    assert extra["dkv_peer_transfer_failures"] == 0
+    assert extra["dkv_peer_metadata_refresh_failures"] == 0
     assert extra["dkv_hints_rejected"] == 0
 
     # the console line stays quiet, since there is nothing to say about peers
@@ -522,6 +527,9 @@ def test_dkv_peer_counters_carry_their_values_to_every_surface() -> None:
         dkv_peer_loads=3,
         dkv_peer_load_failures=4,
         dkv_hints_rejected=5,
+        dkv_peer_transfer_failures=7,
+        dkv_peer_metadata_refreshes=8,
+        dkv_peer_metadata_refresh_failures=9,
         dkv_hints_rejected_by_reason={"chain_mismatch": 5, "unparseable": 0},
         dkv_rpc_calls={"read_blocks": 3, "heartbeat": 0},
         dkv_rpc_time_ms={"read_blocks": 2.5, "heartbeat": 0.0},
@@ -532,7 +540,8 @@ def test_dkv_peer_counters_carry_their_values_to_every_surface() -> None:
 
     assert (
         "dKV peers: 3 loads (4 failed), 1 attaches (2 failed, 6 dropped), "
-        "5 hints rejected" in metrics.pretty_format()
+        "5 hints rejected, 7 transfers failed, "
+        "8 metadata refreshes (9 failed)" in metrics.pretty_format()
     )
 
     extra = metrics.to_log_extra()
@@ -542,6 +551,9 @@ def test_dkv_peer_counters_carry_their_values_to_every_surface() -> None:
     assert extra["dkv_peer_loads"] == 3
     assert extra["dkv_peer_load_failures"] == 4
     assert extra["dkv_hints_rejected"] == 5
+    assert extra["dkv_peer_transfer_failures"] == 7
+    assert extra["dkv_peer_metadata_refreshes"] == 8
+    assert extra["dkv_peer_metadata_refresh_failures"] == 9
     assert {
         k: v for k, v in extra.items() if "_rpc_" in k or "_lock_" in k
     } == {
@@ -563,6 +575,9 @@ def test_dkv_peer_counters_carry_their_values_to_every_surface() -> None:
     mock_metrics.dkv_peer_loads.assert_called_once_with(3)
     mock_metrics.dkv_peer_load_failures.assert_called_once_with(4)
     mock_metrics.dkv_hints_rejected.assert_called_once_with(5)
+    mock_metrics.dkv_peer_transfer_failures.assert_called_once_with(7)
+    mock_metrics.dkv_peer_metadata_refreshes.assert_called_once_with(8)
+    mock_metrics.dkv_peer_metadata_refresh_failures.assert_called_once_with(9)
     mock_metrics.dkv_hints_rejected_by_reason.assert_called_once_with(
         5, reason="chain_mismatch"
     )
@@ -635,6 +650,21 @@ def test_dkv_peer_clause_appears_on_rejected_hints_alone() -> None:
     )
 
     assert "7 hints rejected" in metrics.pretty_format()
+
+
+def test_dkv_peer_clause_appears_on_peer_transfer_failures_alone() -> None:
+    """A stale peer's failed reads print the clause with nothing else moving.
+
+    The failure no longer degrades the connector, so the line is the only
+    console trace it leaves.
+    """
+    metrics = _make_metrics(
+        dkv_connected_clients=1,
+        dkv_total_clients=1,
+        dkv_peer_transfer_failures=3,
+    )
+
+    assert "3 transfers failed" in metrics.pretty_format()
 
 
 def test_to_log_extra_required_fields() -> None:

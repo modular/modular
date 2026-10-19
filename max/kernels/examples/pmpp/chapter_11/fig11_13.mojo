@@ -52,8 +52,8 @@ def warp_scan(val: Float32) -> Float32:
 
 # ========================== KERNEL CODE ==========================
 def scan_kernel(
-    input: UnsafePointer[Float32, ImmutAnyOrigin],
-    output: UnsafePointer[Float32, MutAnyOrigin],
+    input: ImmPointer[Float32, ImmutAnyOrigin],
+    output: MutPointer[Float32, MutAnyOrigin],
     N: UInt32,
 ):
     """Scan kernel with register tiling and thread coarsening.
@@ -149,8 +149,8 @@ def scan_kernel(
 
 # ========================== TEST CODE ==========================
 def cpu_scan(
-    input: UnsafePointer[mut=False, Float32, _],
-    output: UnsafePointer[mut=True, Float32, _],
+    input: ImmPointer[Float32, _],
+    output: MutPointer[Float32, _],
     N: UInt32,
 ):
     """CPU reference scan implementation.

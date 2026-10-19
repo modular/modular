@@ -23,7 +23,6 @@ from max.gpu.primitives.grid_controls import PDLLevel
 from layout import Idx, TileTensor, row_major
 from std.collections import OptionalReg
 
-from std.utils.index import Index
 
 from internal_utils import Table
 
@@ -45,7 +44,7 @@ def matmul_swiglu_dispatch_sm100[
     a: TileTensor[mut=False, .bfloat16, ...],
     b: TileTensor[mut=False, .bfloat16, ...],
     ctx: DeviceContext,
-    bias_ptr: OptionalReg[UnsafePointer[BFloat16, ImmutAnyOrigin]] = None,
+    bias_ptr: OptionalReg[ImmPointer[BFloat16, ImmutAnyOrigin]] = None,
 ) raises:
     """Dispatch fused GEMM+SwiGLU to SM100 kernel with given config.
 
@@ -72,13 +71,13 @@ def matmul_swiglu_dispatch_sm100[
     """
     # When config.use_bias=False, c_out.ptr is a valid dummy (bias never
     # accessed).
-    var bias_ptr_c = rebind[
-        UnsafePointer[Scalar[config.c_type], ImmutAnyOrigin]
-    ](c_out.ptr)
+    var bias_ptr_c = rebind[ImmPointer[Scalar[config.c_type], ImmutAnyOrigin]](
+        c_out.ptr
+    )
     comptime if config.use_bias:
-        bias_ptr_c = rebind[
-            UnsafePointer[Scalar[config.c_type], ImmutAnyOrigin]
-        ](bias_ptr.value())
+        bias_ptr_c = rebind[ImmPointer[Scalar[config.c_type], ImmutAnyOrigin]](
+            bias_ptr.value()
+        )
     var bias_tile = TileTensor(bias_ptr_c, row_major(Int(b.dim[0]())))
     comptime if config.AB_swapped:
         # Swap inputs so the kernel sees A = W (b) and B = X (a). The
@@ -105,7 +104,7 @@ def matmul_swiglu_dispatch_sm100_bf16[
     a: TileTensor[...],
     b: TileTensor[...],
     ctx: DeviceContext,
-    bias_ptr: OptionalReg[UnsafePointer[BFloat16, ImmutAnyOrigin]] = None,
+    bias_ptr: OptionalReg[ImmPointer[BFloat16, ImmutAnyOrigin]] = None,
 ) raises:
     """Auto-dispatch fused GEMM+SwiGLU on SM100 using shape-based tuning table.
 
@@ -136,7 +135,7 @@ def matmul_swiglu_dispatch_sm100_bf16[
     comptime static_N = b.static_shape[0]
     comptime static_K = b.static_shape[1]
     # When has_bias=False, c_out.ptr is a valid dummy (bias never accessed).
-    var bias_base = rebind[UnsafePointer[BFloat16, ImmutAnyOrigin]](c_out.ptr)
+    var bias_base = rebind[ImmPointer[BFloat16, ImmutAnyOrigin]](c_out.ptr)
     comptime if has_bias:
         bias_base = bias_ptr.value()
     var bias_tile = TileTensor(bias_base, row_major(Idx[static_N]))
@@ -213,8 +212,8 @@ def matmul_swiglu_dispatch_sm100_bf16[
 
     # Last-resort hardcoded config if heuristic set is exhausted (e.g. M > 8192).
     comptime default_config = swiglu_matmul_config[dtype, dtype, dtype, True](
-        mma_shape=Index(256, 224, 16),
-        cluster_shape=Index(2, 1, 1),
+        mma_shape=(256, 224, 16),
+        cluster_shape=(2, 1, 1),
         block_swizzle_size=0,
         cta_group=2,
         AB_swapped=False,

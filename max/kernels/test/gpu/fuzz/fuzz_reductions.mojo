@@ -383,11 +383,10 @@ def _run_shaped[
     def input_fn[
         width: Int, alignment: Int
     ](coords: Coord) {var in_buf} -> SIMD[dtype, width]:
-        var idx = in_buf.layout(coords)
         return rebind[SIMD[dtype, width]](
-            in_buf.raw_load[
-                width=width, alignment=alignment * align_of[rd_type]()
-            ](idx)
+            in_buf.load[width=width, alignment=alignment * align_of[rd_type]()](
+                coords
+            )
         )
 
     @inline(.always)
@@ -399,7 +398,7 @@ def _run_shaped[
         var row = 0
         comptime for i in range(nd):
             if i != dim:
-                row = row * shape[i] + Int(coords[i].value())
+                row = row * shape[i] + Int(coords[i])
         out_ptr.unsafe_store[width=width](
             row, rebind[SIMD[rd_type, width]](val)
         )
@@ -411,7 +410,7 @@ def _run_shaped[
         var row = 0
         comptime for i in range(nd):
             if i != dim:
-                row = row * shape[i] + Int(coords[i].value())
+                row = row * shape[i] + Int(coords[i])
         out_idx_ptr.unsafe_store[width=width](row, val)
 
     var coord = Coord(shape)

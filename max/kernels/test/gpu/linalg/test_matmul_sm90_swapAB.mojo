@@ -360,7 +360,7 @@ def main() raises:
                 idx.rank == 2
             ), "the matmul epilogue contract is rank 2"
             var row = Scalar[_dtype](idx[0].value())
-            var base_col = Int(idx[1].value())
+            var base_col = Int(idx[1])
             var result = val
 
             # Iterate through each element in SIMD vector with correct per-element column

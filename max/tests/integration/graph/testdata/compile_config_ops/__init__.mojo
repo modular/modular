@@ -16,7 +16,7 @@ from std.sys import get_defined_int
 import extensibility
 from max.gpu.host import DeviceContext
 from std.logger import Logger
-from extensibility import foreach, OutputTensor, InputTensor
+from extensibility import foreach, OutputTensor, InputTensor, Tensor
 
 
 from std.utils.coord import Coord
@@ -65,6 +65,6 @@ struct AddOneCustom:
 
 @extensibility.register_shape_function("add_one_custom")
 def add_one_custom_shape(
-    x: InputTensor,
-) raises -> IndexList[x.rank]:
+    x: Some[Tensor],
+) raises -> IndexList[type_of(x).rank]:
     raise "NotImplemented"

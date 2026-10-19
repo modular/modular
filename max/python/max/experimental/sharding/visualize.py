@@ -25,7 +25,7 @@ import html
 import importlib
 import importlib.util
 from collections.abc import Callable, Iterator, Mapping, Sequence
-from typing import Any
+from typing import Protocol, TypeAlias
 
 from max.graph import Dim, StaticDim
 
@@ -36,6 +36,16 @@ from .placements import Partial, Placement, Unknown
 from .types import TensorLayout
 
 __all__ = ["visualize"]
+
+
+class _HasLayout(Protocol):
+    """Anything with a sharded layout, such as a tensor."""
+
+    @property
+    def layout(self) -> TensorLayout: ...
+
+
+_Drawable: TypeAlias = DeviceMesh | TensorLayout | _HasLayout
 
 _COLORS = (
     "#e6c58a",
@@ -70,7 +80,7 @@ def _mark(placements: Sequence[Placement]) -> str:
     return ""
 
 
-def _layout(value: Any) -> TensorLayout:
+def _layout(value: TensorLayout | _HasLayout) -> TensorLayout:
     if isinstance(value, TensorLayout):
         return value
     if isinstance(getattr(value, "layout", None), TensorLayout):
@@ -127,7 +137,7 @@ def _titled(title: str | None, header: str) -> str:
     return f"{title}: {header}" if title else header
 
 
-def _brief(value: Any, title: str) -> str:
+def _brief(value: _Drawable, title: str) -> str:
     """A header short enough for a value drawn beside others."""
     if isinstance(value, DeviceMesh):
         return _titled(title, repr(value))
@@ -161,7 +171,7 @@ def _tree(
             yield from _tree(mesh, members, label, depth + 1, branch)
 
 
-def _tree_lines(value: Any, title: str | None) -> tuple[str, list[str]]:
+def _tree_lines(value: _Drawable, title: str | None) -> tuple[str, list[str]]:
     """The header and one line per node below it."""
     if isinstance(value, DeviceMesh):
         devices = range(value.num_devices)
@@ -189,7 +199,7 @@ def _tree_lines(value: Any, title: str | None) -> tuple[str, list[str]]:
 
 
 def _grid(
-    value: Any,
+    value: _Drawable,
 ) -> tuple[list[list[_Cell]], list[float], list[float]] | None:
     """The cells by row and the relative row and column sizes, or None.
 
@@ -400,7 +410,7 @@ def _show(text: str, html_text: str) -> None:
 
 
 def visualize(
-    value: Any,
+    value: _Drawable | Mapping[str, _Drawable],
     *,
     title: str | None = None,
     blocks: bool = True,
@@ -442,8 +452,8 @@ def visualize(
         visualize({"lhs": lhs, "rhs": rhs, "out": out}, tree=False)
 
     Args:
-        value: A :class:`DeviceMesh`, a :class:`TensorLayout` or a tensor,
-            or a dict of them keyed by title.
+        value: A :class:`DeviceMesh`, a :class:`TensorLayout` or a tensor
+            (anything with a ``layout``), or a dict of them keyed by title.
         title: Text prepended to the header, such as the variable name. For
             a dict, a line above the whole row.
         blocks: Whether to draw the blocks.
@@ -492,14 +502,14 @@ def visualize(
     )
 
 
-def _header_of(value: Any, title: str | None) -> str:
+def _header_of(value: _Drawable, title: str | None) -> str:
     if isinstance(value, DeviceMesh):
         return _titled(title, repr(value))
     return _header(_layout(value), title)
 
 
 def _drawing(
-    value: Any, header: str, blocks: bool, tree: bool, size: float
+    value: _Drawable, header: str, blocks: bool, tree: bool, size: float
 ) -> tuple[list[str], str]:
     """The text lines and the HTML panel of one value under ``header``."""
     _, tree_lines = _tree_lines(value, None)

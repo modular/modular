@@ -270,12 +270,12 @@ def test_mxfp6_grouped_matmul[
             continue
 
         ctx.enqueue_function[_mxfp6_matmul_ref[fmt]](
-            a_dev.unsafe_ptr() + token_start * K_BYTES,
-            b_dev.unsafe_ptr() + expert_id * N * K_BYTES,
-            a_scales_dev.unsafe_ptr() + token_start * scale_K,
-            b_scales_dev.unsafe_ptr() + expert_id * N * scale_K,
-            c_ref_dev.unsafe_ptr() + token_start * N,
-            mag_dev.unsafe_ptr() + token_start * N,
+            a_dev.unsafe_ptr().unsafe_offset(token_start * K_BYTES),
+            b_dev.unsafe_ptr().unsafe_offset(expert_id * N * K_BYTES),
+            a_scales_dev.unsafe_ptr().unsafe_offset(token_start * scale_K),
+            b_scales_dev.unsafe_ptr().unsafe_offset(expert_id * N * scale_K),
+            c_ref_dev.unsafe_ptr().unsafe_offset(token_start * N),
+            mag_dev.unsafe_ptr().unsafe_offset(token_start * N),
             Int32(num_tokens),
             Int32(N),
             Int32(K),

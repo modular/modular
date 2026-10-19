@@ -22,6 +22,7 @@ import asyncio
 import gc
 import weakref
 from collections.abc import Mapping
+from typing import get_origin
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -34,6 +35,9 @@ from max.pipelines import (
     PipelineArgs,
     PipelineConfig,
 )
+from max.pipelines.architectures.llama3_modulev3.model import (
+    Llama3Model as ModuleV3Llama3Model,
+)
 from max.pipelines.lib import (
     OverlapTextGenerationPipeline,
     TextGenerationPipeline,
@@ -41,22 +45,28 @@ from max.pipelines.lib import (
     auto_model,
     generate_local_model_path,
 )
+from max.pipelines.lib.registry import get_pipeline_for_task
 from max.pipelines.modeling.types import PipelineTask
 
 REPO_ID = "modularai/SmolLM-135M-Instruct-FP32"
+EMBEDDINGS_REPO_ID = "sentence-transformers/all-mpnet-base-v2"
 NUM_NEW_TOKENS = 8
 PROMPTS = [[1, 2, 3, 4], [5, 6, 7]]
 MASKS = [[1, 1, 1, 1], [1, 1, 1]]
 TEXT = "The capital of France is"
 
 
-@pytest.fixture(scope="module")
-def model_path() -> str:
+def _local_or_repo(repo_id: str) -> str:
     # A cached snapshot skips the Hub probe, which CI runs without network.
     try:
-        return generate_local_model_path(REPO_ID)
+        return generate_local_model_path(repo_id)
     except FileNotFoundError:
-        return REPO_ID
+        return repo_id
+
+
+@pytest.fixture(scope="module")
+def model_path() -> str:
+    return _local_or_repo(REPO_ID)
 
 
 def _load_cpu(
@@ -66,6 +76,7 @@ def _load_cpu(
         model_path,
         max_batch_size=max_batch_size,
         device_graph_capture=False,
+        prefer_module_v3=False,
         devices="cpu",
         quantization_encoding="float32",
         max_length=512,
@@ -80,6 +91,7 @@ def _load_accelerator(
         model_path,
         max_batch_size=1,
         device_graph_capture=device_graph_capture,
+        prefer_module_v3=False,
         devices="gpu",
         **overrides,
     )
@@ -106,10 +118,12 @@ def test_generate_then_reload_matches(model_path: str) -> None:
         assert _greedy(second) == sequences
 
 
-def test_batch_steps_synchronously_like_generate(model_path: str) -> None:
+def test_generate_iter_steps_synchronously_like_generate(
+    model_path: str,
+) -> None:
     with _load_cpu(model_path, max_batch_size=len(PROMPTS)) as model:
         expected = _greedy(model)
-        with model.batch(
+        with model.generate_iter(
             PROMPTS,
             max_new_tokens=NUM_NEW_TOKENS,
             temperature=0.0,
@@ -225,8 +239,6 @@ def test_debug_defaults_and_overrides(model_path: str) -> None:
         assert config.runtime.enable_chunked_prefill is False
         assert config.model.kv_cache.enable_prefix_caching is False
         assert config.runtime.max_batch_size == 2
-        # CPU never auto-enables overlap, so AutoModel leaves force off.
-        assert config.runtime.force is False
         pipeline = model.pipeline
         assert isinstance(pipeline, TextGenerationPipeline)
         assert pipeline.max_batch_size == 2
@@ -295,28 +307,51 @@ def built_configs(monkeypatch: pytest.MonkeyPatch) -> list[PipelineConfig]:
 
 
 @pytest.mark.parametrize(
-    ("device_graph_capture", "overrides", "expect_force"),
+    ("device_graph_capture", "overrides", "expected_overlap"),
     [
-        (False, {}, True),
-        (False, {"enable_overlap_scheduler": False}, True),
-        (False, {"force": False}, False),
-        (False, {"enable_overlap_scheduler": True}, False),
-        (True, {}, False),
+        (False, {}, False),
+        (False, {"enable_overlap_scheduler": True}, True),
+        (True, {}, True),
     ],
 )
-def test_force_set_only_where_overlap_auto_enables(
+def test_builds_the_config_once(
     model_path: str,
     built_configs: list[PipelineConfig],
+    monkeypatch: pytest.MonkeyPatch,
     device_graph_capture: bool,
     overrides: Mapping[str, object],
-    expect_force: bool,
+    expected_overlap: bool,
 ) -> None:
+    from_args = PipelineConfig.from_args
+    builds: list[PipelineArgs] = []
+
+    def count(args: PipelineArgs) -> PipelineConfig:
+        builds.append(args)
+        return from_args(args)
+
+    monkeypatch.setattr(PipelineConfig, "from_args", count)
     with pytest.raises(_StopBeforeBuild):
         _load_accelerator(model_path, device_graph_capture, **overrides)
     [config] = built_configs
-    assert config.runtime.force is expect_force
-    if expect_force:
-        assert config.runtime.enable_overlap_scheduler is False
+    assert len(builds) == 1
+    assert config.runtime.force is False
+    assert config.runtime.enable_overlap_scheduler is expected_overlap
+
+
+def test_overlap_architecture_gets_a_synchronous_pipeline(
+    model_path: str, built_configs: list[PipelineConfig]
+) -> None:
+    serve_config = PipelineConfig.from_args(
+        PipelineArgs(
+            model_path=model_path, device_specs=[DeviceSpec.accelerator()]
+        )
+    )
+    assert serve_config.runtime.enable_overlap_scheduler is True
+    with pytest.raises(_StopBeforeBuild):
+        _load_accelerator(model_path)
+    [config] = built_configs
+    pipeline_class = get_pipeline_for_task(PipelineTask.TEXT_GENERATION, config)
+    assert get_origin(pipeline_class) is TextGenerationPipeline
 
 
 def test_devices_takes_the_cli_format(
@@ -339,7 +374,35 @@ def test_signature_defaults(
     [config] = built_configs
     assert config.runtime.max_batch_size == 1
     assert config.runtime.device_graph_capture is False
-    assert config.runtime.force is True
+    assert config.runtime.enable_overlap_scheduler is False
+    assert config.runtime.force is False
+    assert config.runtime.prefer_module_v3 is False
+
+
+def test_prefer_module_v3_reaches_the_config(
+    model_path: str, built_configs: list[PipelineConfig]
+) -> None:
+    with pytest.raises(_StopBeforeBuild):
+        AutoModel(model_path, devices="cpu", prefer_module_v3=True)
+    [config] = built_configs
+    assert config.runtime.prefer_module_v3 is True
+
+
+def test_prefer_module_v3_loads_and_generates(model_path: str) -> None:
+    with AutoModel(
+        model_path,
+        devices="cpu",
+        prefer_module_v3=True,
+        quantization_encoding="float32",
+        max_length=512,
+    ) as model:
+        pipeline = model.pipeline
+        assert isinstance(pipeline, TextGenerationPipeline)
+        assert isinstance(pipeline._pipeline_model, ModuleV3Llama3Model)
+        [sequence] = model.generate(
+            PROMPTS[:1], max_new_tokens=NUM_NEW_TOKENS, ignore_eos=True
+        ).sequences
+    assert len(sequence) == len(PROMPTS[0]) + NUM_NEW_TOKENS
 
 
 @pytest.mark.parametrize(
@@ -380,7 +443,7 @@ def llama_arch_required(
     return required
 
 
-def test_force_passes_required_arguments(
+def test_required_arguments_win_over_debug_defaults(
     model_path: str,
     built_configs: list[PipelineConfig],
     llama_arch_required: dict[str, object],
@@ -391,11 +454,10 @@ def test_force_passes_required_arguments(
     with pytest.raises(_StopBeforeBuild):
         _load_accelerator(model_path)
     [config] = built_configs
-    assert config.runtime.force is True
     assert config.model.kv_cache.enable_prefix_caching is True
 
 
-def test_force_skips_required_arguments_that_name_no_field(
+def test_required_arguments_that_name_no_field_are_skipped(
     model_path: str,
     built_configs: list[PipelineConfig],
     llama_arch_required: dict[str, object],
@@ -406,41 +468,21 @@ def test_force_skips_required_arguments_that_name_no_field(
     with pytest.raises(_StopBeforeBuild):
         _load_accelerator(model_path)
     [config] = built_configs
-    assert config.runtime.force is True
     assert config.model.kv_cache.enable_prefix_caching is True
 
 
-def test_force_rejects_overrides_that_contradict_required_arguments(
+def test_required_arguments_win_over_model_override(
     model_path: str,
     built_configs: list[PipelineConfig],
     llama_arch_required: dict[str, object],
 ) -> None:
     llama_arch_required["trust_remote_code"] = True
-    with pytest.raises(ValueError, match="trust_remote_code"):
+    with pytest.raises(_StopBeforeBuild):
         _load_accelerator(
             model_path, model_override=["main.trust_remote_code=false"]
         )
-    assert built_configs == []
-
-
-def test_no_force_where_arch_never_enables_overlap(
-    model_path: str,
-    built_configs: list[PipelineConfig],
-    llama_arch_required: dict[str, object],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    arch = PIPELINE_REGISTRY.retrieve_architecture(
-        "LlamaForCausalLM", task=PipelineTask.TEXT_GENERATION
-    )
-    assert arch is not None
-    monkeypatch.setattr(arch, "supports_overlap_scheduler", False)
-    llama_arch_required["enable_prefix_caching"] = True
-    with pytest.raises(_StopBeforeBuild):
-        _load_accelerator(model_path)
     [config] = built_configs
-    assert config.runtime.force is False
-    assert config.runtime.enable_overlap_scheduler is False
-    assert config.model.kv_cache.enable_prefix_caching is True
+    assert config.model.trust_remote_code is True
 
 
 def _assert_points_to_serve(
@@ -477,6 +519,17 @@ def test_rejects_lora(
         _load_cpu(model_path, enable_lora=True)
     _assert_points_to_serve(error, "LoRA adapters")
     assert " --enable-lora " in str(error.value)
+    assert built_configs == []
+
+
+def test_rejects_an_embeddings_model(
+    built_configs: list[PipelineConfig],
+) -> None:
+    with pytest.raises(ValueError) as error:
+        AutoModel(_local_or_repo(EMBEDDINGS_REPO_ID), devices="cpu")
+    message = str(error.value)
+    assert "AutoModel runs text generation models only" in message
+    assert "MPNetForMaskedLM for embeddings generation" in message
     assert built_configs == []
 
 
@@ -527,7 +580,7 @@ def test_close_shuts_down_once_and_releases(
     with pytest.raises(RuntimeError, match="closed"):
         model.generate(PROMPTS, max_new_tokens=1)
     with pytest.raises(RuntimeError, match="closed"):
-        model.batch(PROMPTS, max_new_tokens=1)
+        model.generate_iter(PROMPTS, max_new_tokens=1)
     assert model.pipeline_config.runtime.max_batch_size == 1
 
 
@@ -565,7 +618,7 @@ def _stub_overlap_pipeline(events: list[str]) -> MagicMock:
     return pipeline
 
 
-def test_generate_and_batch_pass_every_argument(
+def test_generate_and_generate_iter_pass_every_argument(
     model_path: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     pipeline = MagicMock(spec=TextGenerationPipeline)
@@ -576,7 +629,7 @@ def test_generate_and_batch_pass_every_argument(
         calls.append((args, kwargs))
 
     monkeypatch.setattr(auto_model, "generate", record)
-    monkeypatch.setattr(auto_model, "Batch", record)
+    monkeypatch.setattr(auto_model, "GenerateIterator", record)
     with _load_cpu(model_path) as model:
         model.generate(
             PROMPTS,
@@ -596,7 +649,7 @@ def test_generate_and_batch_pass_every_argument(
             output_logits=True,
             output_logprobs=2,
         )
-        model.batch(
+        model.generate_iter(
             PROMPTS,
             MASKS,
             max_new_tokens=3,
@@ -631,6 +684,28 @@ def test_generate_and_batch_pass_every_argument(
         "output_logprobs": 2,
     }
     assert calls == [((pipeline, PROMPTS, MASKS), expected_kwargs)] * 2
+
+
+def test_rejects_a_pipeline_that_does_not_generate_text(
+    model_path: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pipeline_refs: list[weakref.ref[_Cyclic]] = []
+
+    def retrieve(pipeline_config: PipelineConfig) -> tuple[None, _Cyclic]:
+        # A cycle, so only a collection frees it.
+        pipeline = _Cyclic()
+        pipeline_refs.append(weakref.ref(pipeline))
+        return None, pipeline
+
+    monkeypatch.setattr(PIPELINE_REGISTRY, "retrieve", retrieve)
+    with pytest.raises(ValueError) as error:
+        _load_cpu(model_path)
+    assert str(error.value) == (
+        f"AutoModel runs text generation models only, and {model_path} "
+        "loads as _Cyclic."
+    )
+    [pipeline_ref] = pipeline_refs
+    assert pipeline_ref() is None
 
 
 def test_graph_capture_warms_up_once_after_a_synchronous_build(

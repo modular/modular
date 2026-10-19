@@ -136,7 +136,7 @@ struct __EnumStorage[case_types: _MLIR.KGENParamListType[AnyType]](
     ]
 
     @inline(.always)
-    def __init__(out self, *, unsafe_uninitialized: ()):
+    def __init__(out self, *, unsafe_uninitialized: Tuple[]):
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
 
     @inline(.always)

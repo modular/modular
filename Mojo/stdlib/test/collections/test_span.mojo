@@ -22,7 +22,7 @@ from test_utils import (
 )
 from std.memory import MaybeUninit, forget_deinit
 from std.math import iota
-from std.hashlib import Hasher
+from std.hash import Hasher
 
 
 def test_span_list_int() raises:

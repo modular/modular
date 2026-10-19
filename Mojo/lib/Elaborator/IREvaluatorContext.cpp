@@ -57,6 +57,12 @@ SymbolConstantAttr KGEN::extractSymbolConstantAttr(TypedAttr attr) {
   return dyn_cast<SymbolConstantAttr>(attr);
 }
 
+bool KGEN::hasUnresolvedParamValue(SymbolConstantAttr symbol) {
+  return symbol && llvm::any_of(symbol.getParamValues(), [](TypedAttr value) {
+           return isa<UnboundAttr, UnknownAttr>(value);
+         });
+}
+
 ErrorTreeOr<OffloadFunc> KGEN::extractOffloadFunc(CompileOffloadOp op,
                                                   mlir::SymbolTable &symtab) {
   Location loc = op.getLoc();

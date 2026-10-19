@@ -132,13 +132,13 @@ struct qgemm_Q4_0(QuantizedGemm):
     ) -> TileTensor[.uint8, MatrixLayout, MutUntrackedOrigin]:
         var k_groups = ceildiv(K, Self.k_group_size())
         var b_ptr = alloc[UInt8](N * k_groups * size_of[_block_Q4_0]())
-        var block_ptr = b_ptr.bitcast[_block_Q4_0]()
+        var block_ptr = b_ptr.unsafe_bitcast[_block_Q4_0]()
 
         for _n in range(N):
             for _k in range(k_groups):
                 block_ptr[].base_scale = random_float16(max=0.001)
                 fill_random(block_ptr[].q_bits)
-                block_ptr += 1
+                block_ptr = block_ptr.unsafe_offset(1)
 
         return TileTensor(
             b_ptr, row_major(N, k_groups * size_of[_block_Q4_0]())
@@ -167,8 +167,10 @@ struct qgemm_Q4_0(QuantizedGemm):
         n: Int,
         k: Int,
     ) -> Float32:
-        var block_ptr = b.ptr_at_offset(Coord(n, 0)).bitcast[_block_Q4_0]() + (
-            k // Self.k_group_size()
+        var block_ptr = (
+            b.ptr_at_offset(Coord(n, 0))
+            .unsafe_bitcast[_block_Q4_0]()
+            .unsafe_offset(k // Self.k_group_size())
         )
 
         var a_quant_data = Array[Int8, _block_Q4_0.group_size](fill={})
@@ -223,7 +225,7 @@ struct qgemm_Q4_K(QuantizedGemm):
     ) -> TileTensor[.uint8, MatrixLayout, MutUntrackedOrigin]:
         var k_groups = ceildiv(K, Self.k_group_size())
         var b_ptr = alloc[UInt8](N * k_groups * size_of[_block_Q4_K]())
-        var block_ptr = b_ptr.bitcast[_block_Q4_K]()
+        var block_ptr = b_ptr.unsafe_bitcast[_block_Q4_K]()
 
         for _n in range(N):
             for _k in range(k_groups):
@@ -231,7 +233,7 @@ struct qgemm_Q4_K(QuantizedGemm):
                 block_ptr[].base_min = random_float16(min=-0.01, max=0.01)
                 fill_random(block_ptr[].q_scales_and_mins)
                 fill_random(block_ptr[].q_bits)
-                block_ptr += 1
+                block_ptr = block_ptr.unsafe_offset(1)
 
         return TileTensor(
             b_ptr, row_major(N, k_groups * size_of[_block_Q4_K]())
@@ -260,8 +262,10 @@ struct qgemm_Q4_K(QuantizedGemm):
         n: Int,
         k: Int,
     ) -> Float32:
-        var block_ptr = b.ptr_at_offset(Coord(n, 0)).bitcast[_block_Q4_K]() + (
-            k // Self.k_group_size()
+        var block_ptr = (
+            b.ptr_at_offset(Coord(n, 0))
+            .unsafe_bitcast[_block_Q4_K]()
+            .unsafe_offset(k // Self.k_group_size())
         )
 
         var a_quant_data = Array[Int8, _block_QK_K.quantized_k](fill={})
@@ -351,7 +355,7 @@ struct qgemm_Q6_K(QuantizedGemm):
     ) -> TileTensor[.uint8, MatrixLayout, MutUntrackedOrigin]:
         var k_groups = ceildiv(K, Self.k_group_size())
         var b_ptr = alloc[UInt8](N * k_groups * size_of[_block_Q6_K]())
-        var block_ptr = b_ptr.bitcast[_block_Q6_K]()
+        var block_ptr = b_ptr.unsafe_bitcast[_block_Q6_K]()
 
         for _n in range(N):
             for _k in range(k_groups):
@@ -359,7 +363,7 @@ struct qgemm_Q6_K(QuantizedGemm):
                 fill_random(block_ptr[].q_bits_hi)
                 fill_random(block_ptr[].q_scales)
                 block_ptr[].base_scale = random_float16(max=0.001)
-                block_ptr += 1
+                block_ptr = block_ptr.unsafe_offset(1)
 
         return TileTensor(
             b_ptr, row_major(N, k_groups * size_of[_block_Q6_K]())
@@ -388,8 +392,10 @@ struct qgemm_Q6_K(QuantizedGemm):
         n: Int,
         k: Int,
     ) -> Float32:
-        var block_ptr = b.ptr_at_offset(Coord(n, 0)).bitcast[_block_Q6_K]() + (
-            k // Self.k_group_size()
+        var block_ptr = (
+            b.ptr_at_offset(Coord(n, 0))
+            .unsafe_bitcast[_block_Q6_K]()
+            .unsafe_offset(k // Self.k_group_size())
         )
 
         var a_quant_data = Array[Int8, _block_QK_K.quantized_k](fill={})
@@ -471,7 +477,7 @@ def reference_gemm[
             for k in range(0, K, qgemm.k_group_size()):
                 result += qgemm.dot_product(a, b, m, n, k)
 
-            c.store(Coord(m, n), result)
+            c.store((m, n), result)
 
     sync_parallelize(task_func, num_workers)
 
@@ -541,15 +547,15 @@ def test_case[qgemm: QuantizedGemm](M: Int, N: Int, K: Int) raises:
     qgemm.kernel(ctx.a, ctx.b_packed, ctx.c)
 
     var mismatch = False
-    for i in range(ctx.c.num_elements()):
-        if not isclose(ctx.c.ptr[i], ctx.c_golden.ptr[i], atol=1e-4, rtol=1e-4):
-            print(
-                "MISMATCH",
-                divmod(i, N),
-                ctx.c.ptr[i],
-                ctx.c_golden.ptr[i],
-            )
-            mismatch = True
+    for m in range(M):
+        for n in range(N):
+            if not isclose(
+                ctx.c[m, n], ctx.c_golden[m, n], atol=1e-4, rtol=1e-4
+            ):
+                print("MISMATCH", m, n, ctx.c[m, n], ctx.c_golden[m, n])
+                mismatch = True
+                break
+        if mismatch:
             break
     if mismatch:
         raise Error("found mismatch")

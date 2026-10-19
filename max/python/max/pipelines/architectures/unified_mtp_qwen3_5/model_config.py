@@ -28,8 +28,8 @@ from .unified_mtp_qwen3_5 import ring_len_for_config
 class UnifiedMTPQwen3_5Config(Qwen3_5Config):
     """Qwen3.5's config with the vision-cache facts withdrawn.
 
-    The fused MTP graph is text-only -- ``_create_model_config`` drops
-    ``vision_config`` so no encoder is compiled -- while the checkpoint it
+    The fused MTP graph compiles no encoder -- ``_create_model_config`` drops
+    ``vision_config`` -- so MAX serves it text-only, while the checkpoint it
     reads still declares a vision tower. Reporting the base architecture's
     per-entry estimate would make memory planning reserve a slice of the KV
     pool for an encoder cache this graph can never fill.

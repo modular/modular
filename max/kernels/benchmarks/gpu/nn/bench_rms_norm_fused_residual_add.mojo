@@ -60,10 +60,10 @@ def bench_rms_norm_fused_residual_add_gpu[
     )
     var gamma1 = TileTensor(gamma1_d, row_major(Coord(param_shape)))
     var gamma2 = TileTensor(gamma2_d, row_major(Coord(param_shape)))
-    var epsilon1 = Float32(0.001)
-    var epsilon2 = Float32(0.001)
-    var weight_offset1 = Scalar[dtype](0.0)
-    var weight_offset2 = Scalar[dtype](0.0)
+    comptime epsilon1 = Float32(0.001)
+    comptime epsilon2 = Float32(0.001)
+    comptime weight_offset1 = Float32(0.0)
+    comptime weight_offset2 = Float32(0.0)
 
     ctx.enqueue_copy(data_d, data_h)
     ctx.enqueue_copy(residual_d, residual_h)
@@ -101,11 +101,7 @@ def bench_rms_norm_fused_residual_add_gpu[
         mut b: Bencher,
     ) raises {
         var gamma1,
-        var epsilon1,
-        var weight_offset1,
         var gamma2,
-        var epsilon2,
-        var weight_offset2,
         var input_fn,
         var residual_input_fn,
         var output_fn,
@@ -118,6 +114,10 @@ def bench_rms_norm_fused_residual_add_gpu[
                 dtype,
                 rank,
                 target="gpu",
+                epsilon1=epsilon1,
+                weight_offset1=weight_offset1,
+                epsilon2=epsilon2,
+                weight_offset2=weight_offset2,
                 multiply_before_cast=True,
             ](
                 input_fn,
@@ -127,11 +127,7 @@ def bench_rms_norm_fused_residual_add_gpu[
                 Coord(shape),
                 Int(cols),
                 gamma1,
-                epsilon1.cast[dtype](),
-                weight_offset1,
                 gamma2,
-                epsilon2.cast[dtype](),
-                weight_offset2,
                 ctx,
             )
 

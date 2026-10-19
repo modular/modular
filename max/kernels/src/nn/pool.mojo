@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Provides average- and max-pooling kernels with configurable padding, dilation, and stride for CPU and GPU."""
 
+from std.sys import align_of
 from std.sys.info import simd_width_of
 
 from max.algorithm import stencil, stencil_gpu
@@ -329,8 +330,7 @@ def max_pool_cpu[
     ) {
         output, mut
     }:
-        var i = output.layout(Coord(point))
-        output.raw_store(i, val)
+        output.store[alignment=align_of[dtype]()](Coord(point), val)
 
     @inline(.always)
     def dilation_fn(dim: Int) {dilations, mut} -> Int:
@@ -491,9 +491,10 @@ def max_pool_gpu[
     ](point: IndexList[output.rank, ...]) {var input} -> SIMD[
         dtype, simd_width
     ]:
-        var i = input.layout(Coord(point))
         return rebind[SIMD[dtype, simd_width]](
-            input.raw_load[width=simd_width](i)
+            input.load[width=simd_width, alignment=align_of[input.dtype]()](
+                Coord(point)
+            )
         )
 
     @inline(.always)
@@ -519,8 +520,7 @@ def max_pool_gpu[
     ) {
         var output
     }:
-        var i = output.layout(Coord(point))
-        output.raw_store(i, val)
+        output.store[alignment=align_of[dtype]()](Coord(point), val)
 
     @inline(.always)
     def dilation_fn(
@@ -680,9 +680,10 @@ def avg_pool_cpu[
     ](point: IndexList[output.rank, ...]) {var input} -> SIMD[
         dtype, simd_width
     ]:
-        var i = input.layout(Coord(point))
         return rebind[SIMD[dtype, simd_width]](
-            input.raw_load[width=simd_width](i)
+            input.load[width=simd_width, alignment=align_of[input.dtype]()](
+                Coord(point)
+            )
         )
 
     @inline(.always)
@@ -739,10 +740,7 @@ def avg_pool_cpu[
         )
         var res = val / Scalar[dtype](window_h * window_w)
 
-        var coord = Coord(point)
-        var i = output.layout(coord)
-
-        output.raw_store(i, res)
+        output.store[alignment=align_of[dtype]()](Coord(point), res)
 
     @inline(.always)
     def avg_pool_compute_finalize[
@@ -756,8 +754,7 @@ def avg_pool_cpu[
         var pool_window_w,
     }:
         var res = val / Scalar[dtype](pool_window_h * pool_window_w)
-        var i = output.layout(Coord(point))
-        output.raw_store(i, res)
+        output.store[alignment=align_of[dtype]()](Coord(point), res)
 
     def dilation_fn(dim: Int) {dilations, mut} -> Int:
         return Int(dilations[dim])
@@ -973,9 +970,10 @@ def avg_pool_gpu[
     ](point: IndexList[output.rank, ...]) {var input} -> SIMD[
         dtype, simd_width
     ]:
-        var i = input.layout(Coord(point))
         return rebind[SIMD[dtype, simd_width]](
-            input.raw_load[width=simd_width](i)
+            input.load[width=simd_width, alignment=align_of[input.dtype]()](
+                Coord(point)
+            )
         )
 
     @inline(.always)
@@ -1032,8 +1030,7 @@ def avg_pool_gpu[
         )
         var res = val / Scalar[dtype](window_h * window_w)
 
-        var i = output.layout(Coord(point))
-        output.raw_store(i, res)
+        output.store[alignment=align_of[dtype]()](Coord(point), res)
 
     @inline(.always)
     def avg_pool_compute_finalize[
@@ -1048,8 +1045,7 @@ def avg_pool_gpu[
     }:
         var res = val / Scalar[dtype](pool_window_h * pool_window_w)
 
-        var i = output.layout(Coord(point))
-        output.raw_store(i, res)
+        output.store[alignment=align_of[dtype]()](Coord(point), res)
 
     @inline(.always)
     def dilation_fn(

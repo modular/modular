@@ -116,6 +116,8 @@ def test_nightly_8xb200_pinned() -> None:
         "nvidia/GLM-5.2-NVFP4__mtp_tpep",
         "nvidia/Kimi-K2.7-Code-NVFP4",
         "RadixArk/GLM-5.3-NVFP4__mtp_tpep",
+        "tencent/Hy4-preview-FP8",
+        "tencent/Hy4-preview-FP8__mtp",
         "zai-org/GLM-5.3-Flash__tpep",
     }
 
@@ -127,7 +129,27 @@ def test_8xmi355_stays_opt_in() -> None:
     here instead of quietly consuming the runner. Widen the expectation only
     when a model is meant to run on it.
     """
-    for framework in ("max-ci", "max", "vllm", "sglang"):
+    expected = {
+        "max-ci": {
+            "MiniMaxAI/MiniMax-M3-MXFP8",
+            "modularai/MiniMax-M3-MXFP6",
+            "zai-org/GLM-5.3__fp8_tpep_mi355",
+        },
+        "max": {
+            "MiniMaxAI/MiniMax-M3-MXFP8",
+            "modularai/MiniMax-M3-MXFP6",
+            "zai-org/GLM-5.3__fp8_tpep_mi355",
+        },
+        "vllm": {
+            "MiniMaxAI/MiniMax-M3-MXFP8",
+            "modularai/MiniMax-M3-MXFP6",
+        },
+        "sglang": {
+            "MiniMaxAI/MiniMax-M3-MXFP8",
+            "modularai/MiniMax-M3-MXFP6",
+        },
+    }
+    for framework, models in expected.items():
         result = CliRunner().invoke(
             smoke_test_github_matrix.main,
             ["--framework", framework, "--run-on-8xmi355"],
@@ -136,7 +158,4 @@ def test_8xmi355_stays_opt_in() -> None:
         scheduled = {
             job["model"] for job in json.loads(result.output)["include"]
         }
-        assert scheduled == {
-            "MiniMaxAI/MiniMax-M3-MXFP8",
-            "modularai/MiniMax-M3-MXFP6",
-        }, f"{framework} on 8xMI355"
+        assert scheduled == models, f"{framework} on 8xMI355"

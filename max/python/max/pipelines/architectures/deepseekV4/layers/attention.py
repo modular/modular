@@ -70,7 +70,6 @@ from max.dtype import DType
 from max.graph import DeviceRef, ShardingStrategy, TensorValue, Weight, ops
 from max.nn.kernels import latent_sparse_attention_ragged
 from max.nn.layer import Module
-from max.nn.linear import Linear
 from max.nn.norm.rms_norm import RMSNorm
 
 from ..model_config import DeepseekV4Config
@@ -84,7 +83,7 @@ from .cache import (
 from .compressor import DeepseekV4Compressor
 from .csa import CompressedStream, compressed_stream
 from .indexer import DeepseekV4Indexer
-from .quantization import fp8_qat_quantize, linear_for
+from .quantization import dequantize_fp8_blocks, fp8_qat_quantize, linear_for
 from .ragged import RaggedRows
 from .rope import apply_rope_tail, rope_for_layer
 from .sparse_attention import sparse_attention
@@ -174,8 +173,14 @@ class DeepseekV4Attention(Module):
             shape=(self.n_heads,),
             device=device,
         )
-        self.wq_a = linear_for(
-            config, config.hidden_size, config.q_lora_rank, device
+        # ``wq_a`` and ``wkv`` read the same input, so the adapter stacks them
+        # into one projection (``[wq_a; wkv]`` along N): one GEMM, not two.
+        self.q_lora_rank = config.q_lora_rank
+        self.wqa_wkv = linear_for(
+            config,
+            config.hidden_size,
+            config.q_lora_rank + self.head_dim,
+            device,
         )
         self.q_norm = RMSNorm(
             config.q_lora_rank, DType.float32, config.rms_norm_eps
@@ -183,19 +188,13 @@ class DeepseekV4Attention(Module):
         self.wq_b = linear_for(
             config, config.q_lora_rank, self.n_heads * self.head_dim, device
         )
-        self.wkv = linear_for(config, config.hidden_size, self.head_dim, device)
         self.kv_norm = RMSNorm(
             self.head_dim, DType.float32, config.rms_norm_eps
         )
-        # Not ``linear_for``: the checkpoint stores wo_a fp8, but the reference
-        # declares it ``dtype=torch.bfloat16`` and consumes ``.weight`` raw in
-        # the grouped einsum below, so it never runs the fp8 ``linear()`` path
-        # and its activation is never quantized. The weight adapter
-        # host-dequantizes it for that reason.
-        self.wo_a = Linear(
+        self.wo_a = linear_for(
+            config,
             self.n_heads * self.head_dim // self.o_groups,
             self.o_groups * self.o_lora_rank,
-            config.dtype,
             device,
         )
         self.wo_b = linear_for(
@@ -224,7 +223,7 @@ class DeepseekV4Attention(Module):
         The query side is cut along heads: ``wq_b`` and ``attn_sink`` per
         head, ``wo_a`` along its groups (a group is a run of whole heads), and
         ``wo_b`` along its input, so each device's output is a partial sum the
-        block all-reduces. The latent side (``wq_a``, ``q_norm``, ``wkv``,
+        block all-reduces. The latent side (``wqa_wkv``, ``q_norm``,
         ``kv_norm``) is shared by every head and stays whole.
         """
         if self.n_heads % num_devices or self.o_groups % num_devices:
@@ -248,12 +247,10 @@ class DeepseekV4Attention(Module):
         if self.indexer is not None:
             self.indexer.keep_local_heads(num_devices)
 
-    def layer_index(self, device: DeviceRef) -> LayerIndex:
+    def layer_index(self) -> LayerIndex:
         """This layer's place in the leaves, as constants."""
         return LayerIndex.constant(
-            self.swa_layer,
-            self.zone_layer if self.compress_ratio else None,
-            device,
+            self.swa_layer, self.zone_layer if self.compress_ratio else None
         )
 
     def _output_projection(self, o: TensorValue) -> TensorValue:
@@ -262,7 +259,7 @@ class DeepseekV4Attention(Module):
         ``o.view(b, s, n_groups, -1)`` then
         ``einsum("bsgd,grd->bsgr", o, wo_a.view(n_groups, o_lora_rank, -1))``
         then ``wo_b(o.flatten(2))``. ``wo_a`` is used as a raw weight here, not
-        called as a Linear.
+        called as a Linear; an fp8 one is dequantized first.
         """
         b, s = o.shape[0], o.shape[1]
         group_width = self.n_heads * self.head_dim // self.o_groups
@@ -275,9 +272,13 @@ class DeepseekV4Attention(Module):
         grouped = ops.transpose(
             ops.reshape(o, [b * s, self.o_groups, group_width]), 0, 1
         )
+        weight = self.wo_a.weight.to(o.device)
+        if self.wo_a.weight_scale is not None:
+            weight = dequantize_fp8_blocks(
+                weight, self.wo_a.weight_scale, o.dtype
+            )
         wo_a = ops.reshape(
-            self.wo_a.weight,
-            [self.o_groups, self.o_lora_rank, group_width],
+            weight, [self.o_groups, self.o_lora_rank, group_width]
         )
         # [g, b*s, d] @ [g, d, r] -> [g, b*s, r]
         projected = ops.matmul(grouped, ops.transpose(wo_a, -1, -2))
@@ -287,10 +288,16 @@ class DeepseekV4Attention(Module):
         )
         return self.wo_b(flattened)
 
-    def latent(self, x: TensorValue, freqs_cis: TensorValue) -> TensorValue:
-        """The shared KV latent for a chunk: normed, rotated, FP8-simulated."""
+    def project(self, x: TensorValue) -> tuple[TensorValue, TensorValue]:
+        """``(wq_a(x), wkv(x))``, sliced out of the one stacked projection."""
+        out = self.wqa_wkv(x)
+        width = int(out.shape[-1])
+        return out[..., : self.q_lora_rank], out[..., self.q_lora_rank : width]
+
+    def latent(self, kv: TensorValue, freqs_cis: TensorValue) -> TensorValue:
+        """The KV latent from ``wkv(x)``: normed, rotated, FP8-simulated."""
         rd = self.rope_head_dim
-        kv = self.kv_norm(self.wkv(x))
+        kv = self.kv_norm(kv)
         kv = apply_rope_tail(kv, freqs_cis, rd)
         # Positive bounds: see the note in rope.py and ISSUES Issue 34. This
         # exact expression, with ``:-rd``, is what produced a latent rolled by
@@ -350,17 +357,18 @@ class DeepseekV4Attention(Module):
         rd = self.rope_head_dim
         positions = rows.positions
         if index is None:
-            index = self.layer_index(device)
+            index = self.layer_index()
         freqs_table = self.rope.freqs_cis_base()
         freqs_cis = ops.gather(freqs_table, positions, axis=0)
 
         # Query: low-rank, normed, per-head normed again (weightless), rotated.
-        qr = self.q_norm(self.wq_a(x))
+        q_a, kv_a = self.project(x)
+        qr = self.q_norm(q_a)
         q = ops.reshape(self.wq_b(qr), [1, t, self.n_heads, self.head_dim])
         q = weightless_rms_normalize(q, self.eps)
         q = apply_rope_tail(q, freqs_cis, rd)
 
-        kv = self.latent(x, freqs_cis)
+        kv = self.latent(kv_a, freqs_cis)
         if cache is not None:
             cache.swa.store(
                 index.swa,
@@ -531,7 +539,7 @@ class DeepseekV4Attention(Module):
                     kv,
                     ops.reshape(
                         ops.cast(stream.fresh, kv.dtype),
-                        [1, stream.windows.total, head_dim],
+                        [1, stream.fresh.shape[0], head_dim],
                     ),
                 ],
                 axis=1,

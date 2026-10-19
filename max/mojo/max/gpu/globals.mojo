@@ -32,7 +32,7 @@ from std.sys.info import (
     is_nvidia_gpu,
 )
 
-from .host.info import GPUInfo
+from .host.info import get_gpu_info
 
 # ===-----------------------------------------------------------------------===#
 # WARP_SIZE
@@ -70,7 +70,7 @@ def _resolve_warp_size() -> Int:
     elif _accelerator_arch() == "":
         return 0
     else:
-        return GPUInfo.default_accelerator().warp_size
+        return get_gpu_info().warp_size
 
 
 # ===-----------------------------------------------------------------------===#

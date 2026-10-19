@@ -45,7 +45,7 @@ from max.gpu.memory import (
 )
 
 from layout import Coord, Idx, TileTensor, row_major
-from layout.layout_tensor import ThreadScope
+from layout.tile_io import ThreadScope
 from layout.tile_layout import Layout as TileLayout
 from layout.swizzle import Swizzle
 from layout.tile_io import (
@@ -194,7 +194,7 @@ def swizzled_vectorized_sram_to_dram_kernel(
 
     if thread_idx.x == 0:
         for i in range(_V_ROWS * _V_COLS):
-            smem.ptr[swizzle(i)] = src_ptr[i]
+            smem.reshape[_V_ROWS * _V_COLS]()[swizzle(i)] = src_ptr[i]
     barrier()
     copy_sram_to_dram[thread_layout, swizzle=swizzle](
         dst.vectorize[1, _V_WIDTH](), smem.vectorize[1, _V_WIDTH]()
@@ -224,14 +224,15 @@ def swizzled_vectorized_local_to_shared_kernel(
     )
 
     if thread_idx.x == 0:
-        for i in range(_V_ROWS * _V_COLS):
-            smem.ptr[i] = -1.0
+        for row in range(_V_ROWS):
+            for col in range(_V_COLS):
+                smem[row, col] = -1.0
     barrier()
 
-    var row = Int(thread_idx.x) // threads_per_row
-    var col = (Int(thread_idx.x) % threads_per_row) * _V_WIDTH
+    var row = thread_idx.x // threads_per_row
+    var col = (thread_idx.x % threads_per_row) * _V_WIDTH
     for j in range(_V_WIDTH):
-        local.ptr[j] = src_ptr[row * _V_COLS + col + j]
+        local[0, j] = src_ptr[row * _V_COLS + col + j]
     copy_local_to_shared[thread_layout, swizzle=swizzle](
         smem.vectorize[1, _V_WIDTH](), local.vectorize[1, _V_WIDTH]()
     )
@@ -239,7 +240,7 @@ def swizzled_vectorized_local_to_shared_kernel(
 
     if thread_idx.x == 0:
         for i in range(_V_ROWS * _V_COLS):
-            dst_ptr[i] = smem.ptr[swizzle(i)]
+            dst_ptr[i] = smem.reshape[_V_ROWS * _V_COLS]()[swizzle(i)]
 
 
 def async_dram_to_sram_to_dram_kernel(
@@ -360,7 +361,7 @@ def _bounded_local_to_dram_kernel[
     row_stride: Int32,
 ):
     comptime thread_layout = row_major[8, 4]()
-    var worker = Int(thread_idx.x)
+    var worker = thread_idx.x
     var warp = worker // 32
     var lane = worker % 32
     var owner = stack_allocation[.float32, address_space=.LOCAL, alignment=16](
@@ -370,14 +371,14 @@ def _bounded_local_to_dram_kernel[
     owner[ROWS + 1] = Float32(-7001)
     comptime for i in range(ROWS):
         owner[i + 1] = Float32(warp * 100000 + lane * 1000 + i)
-    var local = TileTensor[address_space=.LOCAL](
-        owner.ptr + 1, row_major[ROWS // 4, 4]()
-    )
+    var local = owner.slice[1 : ROWS + 1]().reshape(row_major[ROWS // 4, 4]())
     var layout = TileLayout(
         Coord(Idx[ROWS], Idx[32]), Coord(row_stride, Idx[1])
     )
     var offset = 9 + (warp * (ROWS + 4) + 2) * Int(row_stride) + 32
-    var dst = TileTensor[linear_idx_type=.int32](dst_ptr + offset, layout)
+    var dst = TileTensor[linear_idx_type=.int32](
+        dst_ptr.unsafe_offset(offset), layout
+    )
     var valid_rows = Int(valid0 if warp == 0 else valid1)
     copy_local_to_dram[
         thread_layout, num_threads=NUM_THREADS, thread_scope=SCOPE
@@ -415,10 +416,10 @@ def _check_bounded_local_to_dram[
         host[i] = Float32(-9999)
     for i in range(64 * (ROWS + 2)):
         after_host[i] = Float32(-9999)
-    assert_equal(Int(device.unsafe_ptr() + prefix) % 4, 0)
+    assert_equal(Int(device.unsafe_ptr().unsafe_offset(prefix)) % 4, 0)
     for tile in range(2):
         var offset = prefix + (tile * (ROWS + 4) + 2) * stride + 32
-        assert_equal(Int(device.unsafe_ptr() + offset) % 8, 4)
+        assert_equal(Int(device.unsafe_ptr().unsafe_offset(offset)) % 8, 4)
     ctx.enqueue_copy(device, host)
     ctx.enqueue_copy(after_device, after_host)
     ctx.enqueue_function[

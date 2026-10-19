@@ -57,7 +57,9 @@ def _make_view[
     linear_idx_type=.int64,
 ]:
     var immut_ptr = (
-        ptr.address_space_cast[.GENERIC]().as_imm().as_unsafe_any_origin()
+        ptr.unsafe_address_space_cast[.GENERIC]()
+        .as_imm()
+        .as_unsafe_any_origin()
     )
     comptime ConcLayout = InternalLayout[
         shape_types=ResultLayout._shape_types,

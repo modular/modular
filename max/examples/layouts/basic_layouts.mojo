@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# DOC: max/layout/layouts.mdx
+# DOC: layout/layouts.mdx
 
 from layout import IntTuple, Layout, print_layout
 

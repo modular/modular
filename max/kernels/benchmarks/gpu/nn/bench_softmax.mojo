@@ -51,20 +51,20 @@ def bench_softmax_gpu[
     ctx.enqueue_copy(data_d, data_h)
 
     # The no-lambda `softmax_inline` overload defaults to target="cpu".
-    @__parameter
-    @__copy_capture(data_buf)
-    def input_fn[_simd_width: Int](coords: Coord) -> SIMD[dtype, _simd_width]:
+    def input_fn[
+        _simd_width: Int
+    ](coords: Coord) {var data_buf} -> SIMD[dtype, _simd_width]:
         return data_buf.load[width=_simd_width, alignment=1](coords)
 
     @inline(.always)
-    def kernel_launch(ctx: DeviceContext) raises {mut out_buf, mut data_d, imm}:
+    def kernel_launch(ctx: DeviceContext) raises {mut out_buf, imm}:
         softmax_inline[
             dtype,
             simd_width_of[dtype, target=ctx.target](),
             rank,
-            input_fn,
             target="gpu",
         ](
+            input_fn,
             Coord(shape),
             out_buf,
             rank - 1,

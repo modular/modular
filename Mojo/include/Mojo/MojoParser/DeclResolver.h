@@ -29,7 +29,6 @@
 
 namespace M::KGEN {
 class ParamDeclAttr;
-class ConformanceOp;
 class StructGeneratorOp;
 enum class PassingKind : uint32_t;
 } // namespace M::KGEN
@@ -69,38 +68,28 @@ public:
   //===--------------------------------------------------------------------===//
 
   /// Add a new declaration that needs to be resolved.
-  ASTDecl &addDecl(DeclIRValue irValue, llvm::SMLoc loc, StringAttr baseName,
+  ASTDecl &addDecl(Operation *operation, llvm::SMLoc loc, StringAttr baseName,
                    ASTDecl *parentDecl, LexerCursor cursor,
                    LexerCursor endCursor, ssize_t indentation);
+  IRASTDecl &addDecl(CValue value, llvm::SMLoc loc, StringAttr baseName,
+                     ASTDecl *parentDecl, LexerCursor cursor,
+                     LexerCursor endCursor, ssize_t indentation);
 
   /// Add a declaration that was loaded from bytecode.
   ASTDecl &addBytecodeDecl(Operation *op, StringAttr baseName,
                            ASTDecl *parentDecl, DeclResolvedness resolvedness);
 
   /// Add a declaration that is already fully resolved.
-  ASTDecl &addFullyResolvedDecl(DeclIRValue declVal, StringAttr baseName,
+  ASTDecl &addFullyResolvedDecl(Operation *operation, StringAttr baseName,
                                 llvm::SMLoc loc, ASTDecl *parentDecl);
-  ASTDecl &addFullyResolvedDecl(DeclIRValue declVal, StringRef baseName,
-                                llvm::SMLoc loc, ASTDecl *parentDecl);
+  IRASTDecl &addFullyResolvedDecl(CValue value, StringAttr baseName,
+                                  llvm::SMLoc loc, ASTDecl *parentDecl);
 
   /// Add a declaration that represents an erroneous declaration. The generated
   /// decl is treated as fully resolved, and in an error state. If `unlisted`
   /// is set, the decl is not registered in the parent's name table.
   ASTDecl &addErroneousDecl(StringRef baseName, llvm::SMLoc loc,
                             ASTDecl *parentDecl, bool unlisted = false);
-
-  /// Add a new declaration that needs to be resolved, but don't attach it to
-  /// parent's name table.  It needs to be added later.
-  /// "Unlisted" means it has no parent; it's not in any parent's name table.
-  /// Nothing else can find it, even if you traverse the entire tree.
-  /// Often, this is just the first step before adding it to a parent, but
-  /// sometimes it's not, and it must be found some other way.
-  ASTDecl &createUnlistedDecl(DeclIRValue irValue, llvm::SMLoc loc,
-                              ASTDecl *parentDecl, LexerCursor cursor,
-                              LexerCursor endCursor, ssize_t indentation);
-  ASTDecl &createUnlistedDecl(Operation *decl, llvm::SMLoc loc,
-                              ASTDecl *parentDecl, LexerCursor cursor,
-                              LexerCursor endCursor, ssize_t indentation);
 
   /// Create a witness declaration and install it in the trait's scope.
   WitnessASTDecl &
@@ -114,6 +103,24 @@ public:
 
   /// Remove an unreachable declaration and its owned children.
   void eraseDecl(ASTDecl &decl);
+
+  /// Remove a set of unreachable declarations and their owned children. O(N)
+  /// for an N-decl module, regardless of how many decls are removed.
+  void eraseDecls(llvm::ArrayRef<ASTDecl *> decls);
+
+  /// Replace a resolved declaration with a new declaration for \p value.
+  ///
+  /// Use this when resolving a declaration produces a value with a different
+  /// representation from the declaration's original IR. For example,
+  /// promoting a nested function with bound parameters moves its `FnOp` to a
+  /// new `DefASTDecl`; the source binding must then refer to the bound function
+  /// literal rather than leave a `DefASTDecl` holding a value.
+  ///
+  /// The replacement retains the old declaration's resolution state and every
+  /// name-table entry, including aliases, and takes ownership of any children
+  /// not already transferred elsewhere. The old declaration is retired, so
+  /// callers must not access it afterwards.
+  ASTDecl &replaceDecl(ASTDecl &decl, CValue value);
 
   /// Register a decl's symbol in the MLIR symbol table and declForTypeSymbol
   /// map, without adding it to the parent's declsInScope. This allows the
@@ -166,6 +173,14 @@ public:
                                  bool allowMultipleWithSameName);
 
 private:
+  /// Allocate a declaration without adding it to a parent name table.
+  ASTDecl &createUnlistedDecl(Operation *operation, llvm::SMLoc loc,
+                              ASTDecl *parentDecl, LexerCursor cursor,
+                              LexerCursor endCursor, ssize_t indentation);
+  IRASTDecl &createUnlistedDecl(CValue value, llvm::SMLoc loc,
+                                ASTDecl *parentDecl, LexerCursor cursor,
+                                LexerCursor endCursor, ssize_t indentation);
+
   /// Add a pre-existing set of declarations, which may optionally be imported
   /// from a given module, as children of the specified context, using the
   /// provided alias name (which may differ from that of the decl).
@@ -194,16 +209,9 @@ private:
 public:
   /// Create a resolved ImportOp in \p dest's scope. Only nested ImportOps in
   /// the region gate access to child modules of \p modulePath.
-  ASTDecl &createImportOp(ASTDecl &dest, mlir::OpBuilder &builder,
-                          StringAttr name, ImportPathAttr modulePath,
-                          mlir::Location loc);
-
-  /// Return the absolute module path of a resolved module/package decl
-  /// (e.g. `a.b.c`), derived from its fully-resolved symbol. Used as a
-  /// gate's `modulePath` for imports whose syntactic path is relative
-  /// (`import .foo as z`, `from . import sub`), where there is no absolute name
-  /// to copy from the source. Returns {} if \p moduleDecl has no symbol.
-  ImportPathAttr getAbsoluteModuleName(ASTDecl &moduleDecl);
+  ImportASTDecl &createImportOp(ASTDecl &dest, mlir::OpBuilder &builder,
+                                StringAttr name, ImportPathAttr modulePath,
+                                mlir::Location loc);
 
   /// Import the provided decl from the given module decl, into the provided
   /// destination.
@@ -235,11 +243,6 @@ public:
   LogicalResult resolveBody(ASTDecl &decl, llvm::SMLoc loc) {
     return resolve(decl, DeclResolvedness::body, loc);
   }
-
-  /// For a given package, find the __init__ module, resolve its body, and
-  /// return it. Returns nullptr if the package is not a package or has no
-  /// __init__. Returns failure() if body resolution fails.
-  FailureOr<ASTDecl *> bodyResolvePackageInit(ASTDecl &package, SMLoc loc);
 
   /// Body-resolve the specified declaration and all declarations contained
   /// within it.
@@ -284,9 +287,12 @@ public:
   //===--------------------------------------------------------------------===//
 
   /// Resolve all of the declarations that are defined within or referenced by
-  /// the given container `decl`. If `eraseUnparsedDecls` is true, decls that
-  /// were not referenced at all during parsing are erased.
-  void resolveAllReferencedFrom(ASTDecl &decl, bool eraseUnparsedDecls = true);
+  /// the given container `decl`. Erases any from-import placeholders the
+  /// resolution superseded with a real ImportOp.
+  void resolveAllReferencedFrom(ASTDecl &decl);
+
+  /// Erase placeholder ops for decls left unparsed (never referenced).
+  void eraseUnparsedDecls();
 
   /// Resolve the pending wildcard imports in the scope.
   LogicalResult resolveAllWildcardImports(ASTDecl &scope);
@@ -399,57 +405,27 @@ public:
   };
 
 private:
+  friend class ASTDecl;
+  friend class AliasASTDecl;
+  friend class DefASTDecl;
+  friend class ExtensionASTDecl;
+  friend class StructASTDecl;
+  friend class StructFieldASTDecl;
+  friend class TraitASTDecl;
+  friend class WitnessASTDecl;
+
   /// Iteratively resolve all parsed decls that were referenced outside the
   /// main container (typically stdlib/library declarations). Called by
   /// resolveAllReferencedFrom when no errors have been emitted.
   void resolveReferencedDecls();
 
-  /// The resolveSignature methods are invoked on an operation to parse and type
-  /// check the signature for the operation.  On parse failure, these should
-  /// return a failure, which will cause the driver to mark the decl as invalid
-  /// for further references.
-  LogicalResult resolveSignature(FnOp op, Lexer &lexer, DefASTDecl &decl);
-  ParseResult resolveBody(FnOp op, Lexer &lexer, DefASTDecl &decl);
-  LogicalResult resolveSyntheticBody(FnOp op, DefASTDecl &decl);
-  LogicalResult resolveSyntheticSignature(FnOp op, DefASTDecl &decl);
-  LogicalResult resolveSyntheticSignature(AliasDeclOp op, AliasASTDecl &decl);
-
-  ParseResult resolveBody(LIT::FileModuleOp op, Lexer &lexer, ASTDecl &decl);
-  ParseResult resolveBody(PackageOp op, ASTDecl &decl);
-
-  /// resolveTarget determines whether we also resolve the decl the
-  /// UnresolvedImportOp is referring to.
-  ParseResult resolveSignature(LIT::UnresolvedImportOp op, ASTDecl &decl,
-                               bool resolveTarget = true);
-
-  LogicalResult resolveSignature(StructDeclOp op, Lexer &lexer,
-                                 StructASTDecl &decl);
-  ParseResult resolveBody(StructDeclOp op, Lexer &lexer, StructASTDecl &decl);
-  /// Resolve one case of an enum. `firstByName` maps each case name resolved
-  /// so far to its case; a repeated name is reported and the case removed.
-  LogicalResult
-  resolveEnumCase(ASTDecl &caseDecl,
-                  llvm::SmallDenseMap<StringAttr, ASTDecl *, 8> &firstByName);
-  LogicalResult resolveSignature(EnumCaseOp op, Lexer &lexer, ASTDecl &decl);
-  LogicalResult resolveSignature(StructFieldOp op, Lexer &lexer, ASTDecl &decl);
-  ParseResult resolveBody(StructFieldOp op, Lexer &lexer, ASTDecl &decl);
-  LogicalResult resolveSignature(TraitDeclOp op, Lexer &lexer,
-                                 TraitASTDecl &decl);
-  ParseResult resolveBody(TraitDeclOp op, Lexer &lexer, TraitASTDecl &decl);
-  LogicalResult resolveSignature(AliasDeclOp op, Lexer &lexer,
-                                 AliasASTDecl &decl);
-  ParseResult resolveBody(AliasDeclOp op, Lexer &lexer, AliasASTDecl &decl);
-  LogicalResult resolveSignature(ExtensionDeclOp op, Lexer &lexer,
-                                 ExtensionASTDecl &decl);
-  ParseResult resolveBody(ExtensionDeclOp op, Lexer &lexer,
-                          ExtensionASTDecl &decl);
+  /// Erase from-import placeholders superseded by a real ImportOp. Runs at
+  /// the end of every resolveAllReferencedFrom: the superseding gate is what
+  /// name lookup uses, so the placeholders are dead in every parsing mode.
+  void eraseDeadImportPlaceholders();
 
   ParseResult resolveSignature(TraitType traitType, ASTDecl &decl);
   ParseResult resolveBody(TraitType traitType, ASTDecl &decl);
-  ParseResult resolveSignature(WitnessASTDecl &witness);
-  ParseResult resolveBody(WitnessASTDecl &witness);
-
-  ParseResult resolveBody(ConformanceOp op, ASTDecl &decl);
 
   /// This map tracks the ASTDecl for every MLIR type declaration with a symbol.
   /// This does not include functions, only things that may be referred to by a

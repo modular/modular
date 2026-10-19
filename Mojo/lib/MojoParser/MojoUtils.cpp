@@ -106,8 +106,7 @@ ASTType LIT::getBoundCoroutineType(ASTDecl &declScope, const ExprNode *expr,
   paramBinds.add(expr, PValue(resultType));
   paramBinds.add(expr, origin);
 
-  return specializeStruct(paramBinds,
-                          cast<StructDeclOp>(decl->getIfOperation()), decl);
+  return specializeStruct(paramBinds, cast<StructASTDecl>(decl)->getOp(), decl);
 }
 
 CValue LIT::materializeAsyncCallAsCoroutine(IREmitter &emitter,

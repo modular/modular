@@ -62,7 +62,7 @@ from max.gpu.host import DeviceContext
 from std.math import ceildiv
 import max.gpu.primitives.warp as warp
 
-from layout import Coord, TensorEngine, TileTensor, TensorLayout
+from layout import TensorEngine, TileTensor, TensorLayout
 
 from linalg.fp4_utils import decode_e2m1_to_f16, NVFP4_SF_VECTOR_SIZE
 
@@ -123,7 +123,7 @@ def fp4_gemv_kernel[
     comptime SF = NVFP4_SF_VECTOR_SIZE  # 16 nibbles / scale block
     comptime BYTES = SF // 2  # 8 packed bytes / block
 
-    var n_idx = Int(global_idx.x) // WARP_SIZE
+    var n_idx = global_idx.x // WARP_SIZE
     if n_idx >= n:
         return
     var lid = Int(lane_id())
@@ -138,7 +138,7 @@ def fp4_gemv_kernel[
         var byte0 = blk * BYTES  # first packed byte of this block
         # One coalesced width-8 byte load (adjacent lanes read adjacent runs) --
         # no raw pointer arithmetic (TileTensor width-load).
-        var bytes = packed.load[width=BYTES, alignment=1](Coord(n_idx, byte0))
+        var bytes = packed.load[width=BYTES, alignment=1]((n_idx, byte0))
         # Expand 8 bytes -> 16 E2M1 nibbles: element 2*j = lo nibble (even K),
         # 2*j+1 = hi nibble (odd K). Width-16 uint16 arithmetic: M5-safe.
         var nib = SIMD[.uint16, SF](0)
@@ -155,13 +155,13 @@ def fp4_gemv_kernel[
         # `decode_e2m1_to_f32(nib)` (all 16 E2M1 values are exact in f16->f32),
         # so `* scale_abs` still matches the materialize->dense oracle exactly.
         var w_f32 = decode_e2m1_to_f16(nib).cast[.float32]() * scale_abs
-        var xv = a.load[width=SF](Coord(0, k0)).cast[.float32]()
+        var xv = a.load[width=SF]((0, k0)).cast[.float32]()
         acc[0] += (xv * w_f32).reduce_add()
         blk += WARP_SIZE
 
     var dot = warp.sum(acc)
     if lid == 0:
-        c.store[width=1](Coord(0, n_idx), dot.cast[c_type]())
+        c.store((0, n_idx), dot.cast[c_type]())
 
 
 @inline(.always)

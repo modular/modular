@@ -143,25 +143,35 @@ def bulk_mma_pair_cta_kernel[
     comptime a_smem_bytes = BM * BK * size_of[ab_type]()
     comptime b_smem_bytes = BN * BK * size_of[ab_type]()
 
-    var a_smem = smem.bitcast[Scalar[ab_type]]()
-    var b_smem = (smem + a_smem_bytes).bitcast[Scalar[ab_type]]()
+    var a_smem = smem.unsafe_bitcast[Scalar[ab_type]]()
+    var b_smem = smem.unsafe_offset(a_smem_bytes).unsafe_bitcast[
+        Scalar[ab_type]
+    ]()
 
-    var smem_pool = (smem + a_smem_bytes + b_smem_bytes).bitcast[Int64]()
+    var smem_pool = (
+        smem.unsafe_offset(a_smem_bytes)
+        .unsafe_offset(b_smem_bytes)
+        .unsafe_bitcast[Int64]()
+    )
 
     comptime accum_type = get_accum_type[ab_type]()
 
     # Shared memory pointer to hold tensor memory address
-    var ptr_tmem_addr = (smem_pool.bitcast[Int64]() + 4).bitcast[UInt32]()
+    var ptr_tmem_addr = (
+        smem_pool.unsafe_bitcast[Int64]()
+        .unsafe_offset(4)
+        .unsafe_bitcast[UInt32]()
+    )
 
     comptime c_frag_size = MMA_M * MMA_N // 128 // cta_group
 
     comptime expected_bytes = cta_group * (a_smem_bytes + b_smem_bytes)
 
-    var tma_mbar_ptr = smem_pool.bitcast[Int64]()
-    var mma_mbar_ptr = smem_pool.bitcast[Int64]() + 2
+    var tma_mbar_ptr = smem_pool.unsafe_bitcast[Int64]()
+    var mma_mbar_ptr = smem_pool.unsafe_bitcast[Int64]().unsafe_offset(2)
 
-    var tma_mbar = tma_mbar_ptr.bitcast[SharedMemBarrier]()
-    var mma_mbar = mma_mbar_ptr.bitcast[SharedMemBarrier]()
+    var tma_mbar = tma_mbar_ptr.unsafe_bitcast[SharedMemBarrier]()
+    var mma_mbar = mma_mbar_ptr.unsafe_bitcast[SharedMemBarrier]()
 
     var elect_one_warp = warp_id() == 0
     var elect_one_thread = elect_one_sync_with_mask()
@@ -276,14 +286,14 @@ def bulk_mma_pair_cta_kernel[
             )
 
             var a_smem_slice = TileTensor(
-                a_smem + peer_cta_coord[2] * a_tma_load_size,
+                a_smem.unsafe_offset(peer_cta_coord[2] * a_tma_load_size),
                 row_major[
                     a_tile_shape.element_types[0].static_value,
                     a_tile_shape.element_types[1].static_value,
                 ](),
             )
             var b_smem_slice = TileTensor(
-                b_smem + peer_cta_coord[1] * b_tma_load_size,
+                b_smem.unsafe_offset(peer_cta_coord[1] * b_tma_load_size),
                 row_major[
                     b_tile_shape.element_types[0].static_value,
                     b_tile_shape.element_types[1].static_value,
@@ -446,24 +456,34 @@ def bulk_mma_pair_cta_ts_kernel[
     comptime a_smem_bytes = BM * BK * size_of[ab_type]()
     comptime b_smem_bytes = BN * BK * size_of[ab_type]()
 
-    var a_smem = smem.bitcast[Scalar[ab_type]]()
-    var b_smem = (smem + a_smem_bytes).bitcast[Scalar[ab_type]]()
+    var a_smem = smem.unsafe_bitcast[Scalar[ab_type]]()
+    var b_smem = smem.unsafe_offset(a_smem_bytes).unsafe_bitcast[
+        Scalar[ab_type]
+    ]()
 
-    var smem_pool = (smem + a_smem_bytes + b_smem_bytes).bitcast[Int64]()
+    var smem_pool = (
+        smem.unsafe_offset(a_smem_bytes)
+        .unsafe_offset(b_smem_bytes)
+        .unsafe_bitcast[Int64]()
+    )
 
     comptime accum_type = get_accum_type[ab_type]()
 
-    var ptr_tmem_addr = (smem_pool.bitcast[Int64]() + 4).bitcast[UInt32]()
+    var ptr_tmem_addr = (
+        smem_pool.unsafe_bitcast[Int64]()
+        .unsafe_offset(4)
+        .unsafe_bitcast[UInt32]()
+    )
 
     comptime c_frag_size = MMA_M * MMA_N // 128 // cta_group
 
     comptime expected_bytes = cta_group * (a_smem_bytes + b_smem_bytes)
 
-    var tma_mbar_ptr = smem_pool.bitcast[Int64]()
-    var mma_mbar_ptr = smem_pool.bitcast[Int64]() + 2
+    var tma_mbar_ptr = smem_pool.unsafe_bitcast[Int64]()
+    var mma_mbar_ptr = smem_pool.unsafe_bitcast[Int64]().unsafe_offset(2)
 
-    var tma_mbar = tma_mbar_ptr.bitcast[SharedMemBarrier]()
-    var mma_mbar = mma_mbar_ptr.bitcast[SharedMemBarrier]()
+    var tma_mbar = tma_mbar_ptr.unsafe_bitcast[SharedMemBarrier]()
+    var mma_mbar = mma_mbar_ptr.unsafe_bitcast[SharedMemBarrier]()
 
     var elect_one_warp = warp_id() == 0
     var elect_one_thread = elect_one_sync_with_mask()
@@ -568,14 +588,14 @@ def bulk_mma_pair_cta_ts_kernel[
             )
 
             var a_smem_slice = TileTensor(
-                a_smem + peer_cta_coord[2] * a_tma_load_size,
+                a_smem.unsafe_offset(peer_cta_coord[2] * a_tma_load_size),
                 row_major[
                     a_tile_shape.element_types[0].static_value,
                     a_tile_shape.element_types[1].static_value,
                 ](),
             )
             var b_smem_slice = TileTensor(
-                b_smem + peer_cta_coord[1] * b_tma_load_size,
+                b_smem.unsafe_offset(peer_cta_coord[1] * b_tma_load_size),
                 row_major[
                     b_tile_shape.element_types[0].static_value,
                     b_tile_shape.element_types[1].static_value,

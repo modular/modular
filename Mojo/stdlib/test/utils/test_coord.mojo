@@ -636,9 +636,9 @@ def test_replace_keeps_other_dims_static() raises:
     var c = Coord(ComptimeInt[3](), ComptimeInt[4](), ComptimeInt[5]())
     var moved = c.replace[1](Int64(7))
 
-    assert_equal(Int(moved[0].value()), 3)
-    assert_equal(Int(moved[1].value()), 7)
-    assert_equal(Int(moved[2].value()), 5)
+    assert_equal(Int(moved[0]), 3)
+    assert_equal(Int(moved[1]), 7)
+    assert_equal(Int(moved[2]), 5)
 
     # Only the replaced element gains runtime storage; `make_dynamic` would
     # have made all three dynamic.
@@ -656,27 +656,27 @@ def test_replace_static_element_stays_comptime() raises:
     # The untouched leading dims are still compile-time values.
     comptime assert type_of(idx).element_types[0] == ComptimeInt[8]
     comptime assert type_of(idx).element_types[1] == ComptimeInt[16]
-    assert_equal(Int(idx[2].value()), 64)
+    assert_equal(Int(idx[2]), 64)
 
 
 def test_replace_first_and_last() raises:
     var c = Coord(ComptimeInt[2](), ComptimeInt[3](), ComptimeInt[4]())
 
     var first = c.replace[0](Int32(9))
-    assert_equal(Int(first[0].value()), 9)
-    assert_equal(Int(first[2].value()), 4)
+    assert_equal(Int(first[0]), 9)
+    assert_equal(Int(first[2]), 4)
 
     var last = c.replace[2](Int32(9))
-    assert_equal(Int(last[0].value()), 2)
-    assert_equal(Int(last[2].value()), 9)
+    assert_equal(Int(last[0]), 2)
+    assert_equal(Int(last[2]), 9)
 
 
 def test_replace_on_dynamic_element() raises:
     var c = Coord(Int64(1), Int64(2))
     var r = c.replace[0](Int64(9))
 
-    assert_equal(Int(r[0].value()), 9)
-    assert_equal(Int(r[1].value()), 2)
+    assert_equal(Int(r[0]), 9)
+    assert_equal(Int(r[1]), 2)
 
 
 def test_replace_static_with_static() raises:
@@ -685,13 +685,13 @@ def test_replace_static_with_static() raises:
 
     # Replacing a static with a static keeps the coord zero-sized.
     comptime assert size_of[type_of(r)]() == 0
-    assert_equal(Int(r[1].value()), 9)
+    assert_equal(Int(r[1]), 9)
 
 
 def test_replace_rank_one() raises:
     var c = Coord(ComptimeInt[5]())
     var r = c.replace[0](Int64(11))
-    assert_equal(Int(r[0].value()), 11)
+    assert_equal(Int(r[0]), 11)
 
 
 def test_replace_chains_for_multiple_dims() raises:
@@ -700,10 +700,10 @@ def test_replace_chains_for_multiple_dims() raises:
     )
     var r = c.replace[0](Int64(9)).replace[2](Int64(8))
 
-    assert_equal(Int(r[0].value()), 9)
-    assert_equal(Int(r[1].value()), 3)
-    assert_equal(Int(r[2].value()), 8)
-    assert_equal(Int(r[3].value()), 5)
+    assert_equal(Int(r[0]), 9)
+    assert_equal(Int(r[1]), 3)
+    assert_equal(Int(r[2]), 8)
+    assert_equal(Int(r[3]), 5)
 
     # Chaining costs only the dims actually replaced.
     comptime assert size_of[type_of(r)]() == 2 * size_of[Int64]()
@@ -785,8 +785,8 @@ def test_replace_dynamic_preserves_the_coord_type() raises:
     comptime assert type_of(c) == Before
     comptime assert type_of(c).element_types[0] == ComptimeInt[3]
     comptime assert size_of[type_of(c)]() == size_of[Int64]()
-    assert_equal(Int(c[0].value()), 3)
-    assert_equal(Int(c[1].value()), 7)
+    assert_equal(Int(c[0]), 3)
+    assert_equal(Int(c[1]), 7)
 
 
 def test_replace_dynamic_takes_the_element_dtype() raises:
@@ -798,8 +798,8 @@ def test_replace_dynamic_takes_the_element_dtype() raises:
 
     comptime assert type_of(c).element_types[0] == Int32
     comptime assert type_of(c).element_types[1] == Int64
-    assert_equal(Int(c[0].value()), 5)
-    assert_equal(Int(c[1].value()), 6)
+    assert_equal(Int(c[0]), 5)
+    assert_equal(Int(c[1]), 6)
 
 
 def test_replace_dynamic_int_element_takes_an_int() raises:
@@ -810,7 +810,7 @@ def test_replace_dynamic_int_element_takes_an_int() raises:
 
     c.replace_dynamic[0](i)
 
-    assert_equal(Int(c[0].value()), 5)
+    assert_equal(Int(c[0]), 5)
 
 
 def test_replace_dynamic_repeated_assignment() raises:
@@ -820,8 +820,8 @@ def test_replace_dynamic_repeated_assignment() raises:
     for i in range(5):
         c.replace_dynamic[1](Int64(i))
 
-    assert_equal(Int(c[0].value()), 4)
-    assert_equal(Int(c[1].value()), 4)
+    assert_equal(Int(c[0]), 4)
+    assert_equal(Int(c[1]), 4)
 
 
 def test_replace_dynamic_first_and_last() raises:
@@ -830,9 +830,9 @@ def test_replace_dynamic_first_and_last() raises:
     c.replace_dynamic[0](Int64(9))
     c.replace_dynamic[2](Int64(8))
 
-    assert_equal(Int(c[0].value()), 9)
-    assert_equal(Int(c[1].value()), 3)
-    assert_equal(Int(c[2].value()), 8)
+    assert_equal(Int(c[0]), 9)
+    assert_equal(Int(c[1]), 3)
+    assert_equal(Int(c[2]), 8)
 
 
 def test_replace_dynamic_across_integral_dtypes() raises:
@@ -853,18 +853,18 @@ def test_replace_dynamic_across_integral_dtypes() raises:
     comptime assert type_of(c).element_types[2] == UInt
     comptime assert type_of(c).element_types[3] == UInt64
     comptime assert type_of(c).element_types[4] == Int64
-    assert_equal(Int(c[0].value()), 5)
-    assert_equal(Int(c[1].value()), 6)
-    assert_equal(Int(c[2].value()), 7)
-    assert_equal(Int(c[3].value()), 8)
-    assert_equal(Int(c[4].value()), 9)
+    assert_equal(Int(c[0]), 5)
+    assert_equal(Int(c[1]), 6)
+    assert_equal(Int(c[2]), 7)
+    assert_equal(Int(c[3]), 8)
+    assert_equal(Int(c[4]), 9)
 
 
 def test_replace_dynamic_rank_one() raises:
     var c = Coord(Int64(0))
     c.replace_dynamic[0](Int64(11))
 
-    assert_equal(Int(c[0].value()), 11)
+    assert_equal(Int(c[0]), 11)
 
 
 def main() raises:

@@ -17,6 +17,7 @@ import pytest
 from max.dtype import DType
 from max.graph import DeviceRef, Weight
 from max.nn.layer.layer import Module
+from max.nn.layer.layer_list import LayerList
 
 
 # Dummy module for testing load_state_dict
@@ -103,3 +104,73 @@ def test_load_state_dict_missing_key() -> None:
 
     with pytest.raises(ValueError, match="Missing required weights"):
         module.load_state_dict(state_dict_missing_key)
+
+
+class _Leaf(Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.weight = Weight(
+            "weight", dtype=DType.float32, shape=[2], device=DeviceRef.CPU()
+        )
+
+    def __call__(self, x):  # noqa: ANN001
+        return x
+
+
+class _NameOmittingContainer(Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.inner = _Leaf()
+
+    @property
+    def _omit_module_attr_name(self) -> bool:
+        return True
+
+    def __call__(self, x):  # noqa: ANN001
+        return x
+
+
+class _Tree(Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.layers = LayerList([_Leaf(), _Leaf()])
+        self.flat = _NameOmittingContainer()
+        # Reachable a second time through `alias`; must be visited once.
+        self.alias = self.layers[0]
+
+    def __call__(self, x):  # noqa: ANN001
+        return x
+
+
+def test_named_modules_prefixes() -> None:
+    """Tests that named_modules yields weight prefixes, not display paths."""
+    tree = _Tree()
+    prefix_of = {id(module): prefix for prefix, module in tree.named_modules()}
+
+    assert prefix_of[id(tree)] == ""
+    assert prefix_of[id(tree.layers)] == "layers."
+    assert prefix_of[id(tree.layers[1])] == "layers.1."
+    # A module reachable twice takes the shallower path, as its weight FQNs do.
+    assert prefix_of[id(tree.layers[0])] == "alias."
+    # The name-omitting container shares its parent's prefix, so its child
+    # is `inner.`, not `flat.inner.`.
+    assert prefix_of[id(tree.flat)] == ""
+    assert prefix_of[id(tree.flat.inner)] == "inner."
+
+
+def test_named_modules_visits_each_module_once() -> None:
+    """Tests that a module reachable through two attributes is yielded once."""
+    tree = _Tree()
+    modules = [module for _, module in tree.named_modules()]
+    assert sum(module is tree.layers[0] for module in modules) == 1
+
+
+def test_named_modules_agrees_with_raw_state_dict() -> None:
+    """Tests that prefix + local weight name reproduces every FQN."""
+    tree = _Tree()
+    from_walk = {
+        f"{prefix}{name}"
+        for prefix, module in tree.named_modules()
+        for name in module.layer_weights
+    }
+    assert from_walk == set(tree.raw_state_dict())

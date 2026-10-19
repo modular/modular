@@ -83,8 +83,8 @@ def miopenSetTensorDescriptor(
     desc: TensorDescriptor,
     dtype: DataType,
     num_dims: Int32,
-    dims: UnsafePointer[Int32, ImmutAnyOrigin],
-    strides: UnsafePointer[Int32, ImmutAnyOrigin],
+    dims: ImmPointer[Int32, ImmutAnyOrigin],
+    strides: ImmPointer[Int32, ImmutAnyOrigin],
 ) raises -> Status:
     """Set an N-D tensor descriptor with explicit dimensions and strides.
     Dims are always in NCHW order; strides describe the physical layout."""
@@ -104,8 +104,8 @@ def miopenSetTensorDescriptorV2(
     desc: TensorDescriptor,
     dtype: DataType,
     num_dims: Int32,
-    dims: UnsafePointer[UInt64, ImmutAnyOrigin],
-    strides: UnsafePointer[UInt64, ImmutAnyOrigin],
+    dims: ImmPointer[UInt64, ImmutAnyOrigin],
+    strides: ImmPointer[UInt64, ImmutAnyOrigin],
 ) raises -> Status:
     """Set an N-D tensor descriptor with explicit dimensions and strides.
     Dims are always in NCHW order; strides describe the physical layout."""
@@ -196,9 +196,9 @@ def miopenDestroyConvolutionDescriptor(
 def miopenInitConvolutionNdDescriptor(
     desc: ConvolutionDescriptor,
     spatial_dim: Int32,
-    pad: UnsafePointer[Int32, ImmutAnyOrigin],
-    stride: UnsafePointer[Int32, ImmutAnyOrigin],
-    dilation: UnsafePointer[Int32, ImmutAnyOrigin],
+    pad: ImmPointer[Int32, ImmutAnyOrigin],
+    stride: ImmPointer[Int32, ImmutAnyOrigin],
+    dilation: ImmPointer[Int32, ImmutAnyOrigin],
     mode: ConvolutionMode,
 ) raises -> Status:
     return _get_dylib_function[
@@ -235,7 +235,7 @@ def miopenConvolutionForwardGetWorkSpaceSize(
     x_desc: TensorDescriptor,
     conv_desc: ConvolutionDescriptor,
     y_desc: TensorDescriptor,
-    workspace_size: UnsafePointer[UInt64, MutAnyOrigin],
+    workspace_size: MutPointer[UInt64, MutAnyOrigin],
 ) raises -> Status:
     return _get_dylib_function[
         "miopenConvolutionForwardGetWorkSpaceSize",
@@ -260,8 +260,8 @@ def miopenFindConvolutionForwardAlgorithm(
     y_desc: TensorDescriptor,
     y: OpaquePointer,
     requested_algo_count: Int32,
-    returned_algo_count: UnsafePointer[Int32, MutAnyOrigin],
-    perf_results: UnsafePointer[ConvAlgoPerf, MutAnyOrigin],
+    returned_algo_count: MutPointer[Int32, MutAnyOrigin],
+    perf_results: MutPointer[ConvAlgoPerf, MutAnyOrigin],
     workspace: OpaquePointer,
     workspace_size: UInt64,
     exhaustive_search: Bool,
@@ -304,14 +304,14 @@ def miopenFindConvolutionForwardAlgorithm(
 
 def miopenConvolutionForward(
     handle: Handle,
-    alpha: UnsafePointer[Float32, ImmutAnyOrigin],
+    alpha: ImmPointer[Float32, ImmutAnyOrigin],
     x_desc: TensorDescriptor,
     x: OpaquePointer,
     w_desc: TensorDescriptor,
     w: OpaquePointer,
     conv_desc: ConvolutionDescriptor,
     algo: ConvFwdAlgorithm,
-    beta: UnsafePointer[Float32, ImmutAnyOrigin],
+    beta: ImmPointer[Float32, ImmutAnyOrigin],
     y_desc: TensorDescriptor,
     y: OpaquePointer,
     workspace: OpaquePointer,

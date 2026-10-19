@@ -15,13 +15,13 @@
 from std.os import abort
 from std.sys import size_of
 from std.sys._assembly import inlined_assembly
-from std.sys.info import _has_blackwell_tcgen05
+from std.sys.info import current_accelerator
 
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.compute.mma_operand_descriptor import MMAOperandDescriptor
 
 from std.utils.index import IndexList
-from std.hashlib.hasher import Hasher
+from std.hash.hasher import Hasher
 
 # ===----------------------------------------------------------------------=== #
 # MMA Instruction Descriptor
@@ -77,7 +77,7 @@ struct UMMAKind(
     ].values
 
     comptime _enum_case_types = TypeList.splat[
-        ParameterList[Self._enum_case_names].size, NoneType
+        ParameterList[Self._enum_case_names].length, NoneType
     ].values
 
     @inline(.always)
@@ -1397,7 +1397,7 @@ def mma[
         inst_desc: The descriptor for the MMA instruction.
     """
     comptime assert (
-        _has_blackwell_tcgen05()
+        current_accelerator()._has_blackwell_tcgen05()
     ), "tcgen05.mma not supported on this GPU"
 
     comptime assert c_scale == 0 or c_scale == 1, String(
@@ -1492,7 +1492,7 @@ def mma[
         c_scale: Scale factor for the C matrix, 0 or 1.
     """
     comptime assert (
-        _has_blackwell_tcgen05()
+        current_accelerator()._has_blackwell_tcgen05()
     ), "tcgen05.mma not supported on this GPU"
 
     comptime assert kind in (
@@ -1586,7 +1586,7 @@ def mma[
         c_scale: Scale factor for the C matrix. Any non-zero value is translated to `1`.
     """
     comptime assert (
-        _has_blackwell_tcgen05()
+        current_accelerator()._has_blackwell_tcgen05()
     ), "tcgen05.mma not supported on this GPU"
 
     comptime match cta_group:
@@ -1673,7 +1673,7 @@ def mma[
         c_scale: Scale factor for the C matrix. Any non-zero value is interpreted as `1`.
     """
     comptime assert (
-        _has_blackwell_tcgen05()
+        current_accelerator()._has_blackwell_tcgen05()
     ), "tcgen05.mma not supported on this GPU"
 
     comptime match cta_group:
@@ -1761,7 +1761,7 @@ def mma[
         inst_desc: The descriptor for the MMA instruction.
     """
     comptime assert (
-        _has_blackwell_tcgen05()
+        current_accelerator()._has_blackwell_tcgen05()
     ), "tcgen05.mma not supported on this GPU"
 
     comptime assert c_scale == 0 or c_scale == 1, String(

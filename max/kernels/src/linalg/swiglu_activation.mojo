@@ -14,8 +14,7 @@
 
 Kernels that fuse a gated activation take it as a comptime thin function, so
 each activation compiles to its own specialization. `get_swiglu_activation`
-builds one from a name and its constants; graph ops carry those as strings
-because kernel parameters cannot be floats.
+builds one from a name and its f32 scalar constants.
 """
 
 from std.math import exp, recip, tanh
@@ -173,30 +172,3 @@ def apply_swiglu_activation[
             gate[i].cast[.float32](), up[i].cast[.float32]()
         ).cast[dtype]()
     return out
-
-
-def _try_atof[s: StaticString]() -> Optional[Float32]:
-    try:
-        return Float32(atof(s))
-    except:
-        return None
-
-
-def comptime_atof[s: StaticString]() -> Float32:
-    """Parses a float at compile time.
-
-    Graph ops cannot carry float kernel parameters, so activation constants
-    arrive as strings. Evaluate this at comptime; an unparsable string fails
-    to compile.
-
-    Parameters:
-        s: The decimal string to parse, such as `"1.702"`.
-
-    Returns:
-        The parsed value.
-    """
-    # The assert cannot sit in `_try_atof`'s `except`: a `comptime assert` is
-    # checked on every instantiation, not only on the branch that runs.
-    comptime parsed = _try_atof[s]()
-    comptime assert Bool(parsed), String("not a float: ", s)
-    return parsed.value()

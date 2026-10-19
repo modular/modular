@@ -46,8 +46,8 @@ equivalent guard there would assert different things.
 """
 
 from max.gpu.host.compile import _compile_code
+from max.gpu.host.info import get_gpu_target
 from nn.topk import _topk_stage1, _topk_stage2, _topk_warp
-from std._gpu.host.info import get_gpu_target
 from std.testing import assert_equal, assert_true
 
 comptime GFX950 = get_gpu_target["mi355x"]()

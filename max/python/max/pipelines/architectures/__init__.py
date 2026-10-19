@@ -97,6 +97,7 @@ def register_all_models() -> None:
             "DeepseekV32ForCausalLM", ".deepseekV3_2", "deepseekV3_2_arch"
         ),
         _LazyArch("DeepseekV4ForCausalLM", ".deepseekV4", "deepseekV4_arch"),
+        _LazyArch("DeepseekV41ForCausalLM", ".deepseekV41", "deepseekV41_arch"),
         _LazyArch(
             "DeepseekV32ForCausalLM_ModuleV3",
             ".deepseekV3_2_modulev3",
@@ -216,6 +217,7 @@ def register_all_models() -> None:
             "granite_modulev3_arch",
         ),
         _LazyArch("HYV3ForCausalLM", ".hy_v3", "hy_v3_arch"),
+        _LazyArch("HYV4ForCausalLM_ModuleV3", ".hy_v4", "hy_v4_arch"),
         _LazyArch(
             "Idefics3ForConditionalGeneration", ".idefics3", "idefics3_arch"
         ),
@@ -272,11 +274,6 @@ def register_all_models() -> None:
         ),
         _LazyArch("MambaForCausalLM", ".mamba", "mamba_arch"),
         _LazyArch("MiMoV2ForCausalLM", ".mimo_v2", "mimo_v2_arch"),
-        _LazyArch(
-            "MiMoV2DFlashContextForCausalLM",
-            ".unified_dflash_mimo_v2",
-            "mimo_v2_dflash_context_arch",
-        ),
         _LazyArch("MiniMaxM2ForCausalLM", ".minimax_m2", "minimax_m2_arch"),
         _LazyArch(
             "MiniMaxMusic3ModularPipeline",
@@ -402,6 +399,12 @@ def register_all_models() -> None:
             speculates_on="DeepseekV4ForCausalLM",
         ),
         _LazyArch(
+            "UnifiedDSparkDeepseekV41ForCausalLM",
+            ".unified_dspark_deepseekV41",
+            "unified_dspark_deepseekV41_speculator",
+            speculates_on="DeepseekV41ForCausalLM",
+        ),
+        _LazyArch(
             "UnifiedDSparkGemma4_12BForCausalLM",
             ".unified_dspark_gemma4_12b",
             "unified_dspark_gemma4_12b_arch",
@@ -433,6 +436,11 @@ def register_all_models() -> None:
             "unified_mtp_gemma4_arch",
         ),
         _LazyArch(
+            "UnifiedMTPGemma4ForCausalLM_ModuleV3",
+            ".unified_mtp_gemma4_modulev3",
+            "unified_mtp_gemma4_modulev3_arch",
+        ),
+        _LazyArch(
             "UnifiedMTPGlmMoeDsaForCausalLM",
             ".unified_mtp_glm5_2",
             "unified_mtp_glm5_2_arch",
@@ -441,6 +449,12 @@ def register_all_models() -> None:
             "UnifiedMTPGlmMoeDsaForCausalLM_ModuleV3",
             ".unified_mtp_glm5_2_modulev3",
             "unified_mtp_glm5_2_modulev3_arch",
+        ),
+        _LazyArch(
+            "UnifiedMTPHYV4ForCausalLM",
+            ".unified_mtp_hy_v4",
+            "unified_mtp_hy_v4_speculator",
+            speculates_on="HYV4ForCausalLM",
         ),
         _LazyArch(
             "UnifiedMTPQwen3_5ForConditionalGeneration",

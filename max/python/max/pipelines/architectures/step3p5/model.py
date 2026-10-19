@@ -22,7 +22,6 @@ from max._core.engine import Model
 from max.driver import Buffer, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import Graph
 from max.nn.comm.ep import EPCommInitializer, EPConfig
 from max.nn.comm.ep.ep_config import calculate_ep_max_tokens_per_rank
 from max.nn.comm.ep.ep_manager import EPBatchManager
@@ -30,6 +29,7 @@ from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib.config.model_config import (
     _select_quantization_encoding,
 )
+from max.pipelines.lib.graph_specs import GraphRole, GraphSpec
 from max.pipelines.lib.interfaces import AlwaysSignalBuffersMixin
 from max.pipelines.modeling.config_enums import supported_encoding_dtype
 from max.pipelines.weights.quant import parse_quant_config
@@ -194,13 +194,8 @@ class Step3p5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
         ep_config.node_id = self.ep_comm_initializer.config.node_id
 
     @override
-    def _build_graph_for_compile(
-        self,
-        session: InferenceSession,
-        state_dict: dict[str, Any],
-        model_config: Step3p5Config,
-    ) -> tuple[Graph, dict[str, Any]]:
-        del session
+    def graph_specs(self, model_config: Step3p5Config) -> dict[str, GraphSpec]:
+        """Returns the decoder in the parallelism mode the config selects."""
         ep_config = self._ep_config
         ep_manager: EPBatchManager | None = None
         if ep_config is not None:
@@ -238,65 +233,19 @@ class Step3p5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
         graph_inputs = nn_model.input_types(self.kv_params)
 
         nn_model.load_state_dict(
-            state_dict,
+            self.state_dict,
             override_quantization_encoding=True,
             weight_alignment=1,
             strict=True,
         )
-        weights_registry = nn_model.state_dict()
-
-        num_devices = len(self.devices)
-
-        with Graph("step3p5", input_types=graph_inputs) as graph:
-            inputs_iter = iter(graph.inputs)
-            tokens = next(inputs_iter)
-            input_row_offsets = next(inputs_iter)
-            return_n_logits = next(inputs_iter)
-
-            host_input_row_offsets = None
-            data_parallel_splits = None
-            if self._mode == ParallelismMode.DP_EP:
-                host_input_row_offsets = next(inputs_iter)
-                data_parallel_splits = next(inputs_iter)
-
-            signal_buffers = [
-                next(inputs_iter).buffer for _ in range(num_devices)
-            ]
-
-            kv_input_count = len(self.kv_params.flattened_kv_inputs())
-            kv_cache_inputs = [next(inputs_iter) for _ in range(kv_input_count)]
-            sliding_kv, global_kv = self.kv_params.unflatten_basic_kv_tree(
-                iter(kv_cache_inputs)
+        return {
+            GraphRole.DECODER: GraphSpec(
+                nn_model,
+                "step3p5",
+                graph_inputs,
+                weights=nn_model.state_dict(),
             )
-
-            # Tail of the input list is the EP comm buffers, present for
-            # both TP_EP and DP_EP. Empty in TP_TP.
-            ep_model_inputs = (
-                list(inputs_iter) if ep_manager is not None else None
-            )
-
-            outputs = nn_model(
-                tokens.tensor,
-                sliding_kv,
-                global_kv,
-                return_n_logits.tensor,
-                input_row_offsets.tensor,
-                signal_buffers,
-                host_input_row_offsets=(
-                    host_input_row_offsets.tensor
-                    if host_input_row_offsets is not None
-                    else None
-                ),
-                data_parallel_splits=(
-                    data_parallel_splits.tensor
-                    if data_parallel_splits is not None
-                    else None
-                ),
-                ep_inputs=ep_model_inputs,
-            )
-
-            graph.output(*outputs)
-            return graph, weights_registry
+        }
 
     @override
     def _wire_batch_processor(

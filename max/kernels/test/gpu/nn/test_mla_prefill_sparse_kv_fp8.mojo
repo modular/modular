@@ -33,7 +33,7 @@ Host reference (per query row):
 
 from std.math import ceildiv, exp2, sqrt
 from std.math.constants import log2e
-from std.memory import UnsafePointer, alloc
+from std.memory import alloc
 from std.random import randn
 
 from max.gpu import *
@@ -111,9 +111,9 @@ def _coprime_multiplier(n: Int) -> Int:
 def host_reference[
     q_type: DType,
 ](
-    q_ptr: UnsafePointer[Scalar[q_type], _],
-    kv_sparse_ptr: UnsafePointer[Scalar[q_type], _],
-    output_ptr: UnsafePointer[mut=True, Scalar[q_type], _],
+    q_ptr: Pointer[Scalar[q_type], _],
+    kv_sparse_ptr: Pointer[Scalar[q_type], _],
+    output_ptr: MutPointer[Scalar[q_type], _],
     batch_size: Int,
     seq_len: Int,
     num_heads: Int,
@@ -632,7 +632,7 @@ def run_test_prefill_sparse_fp8[
     # Optional attention sink (one Float32 per query head). Empty -> `None`;
     # non-empty -> device buffer of exactly `num_heads` Float32 (a broken
     # sub-64 padded-row guard reading sink[num_heads..63] is a real OOB).
-    var attn_sink_ptr = Optional[UnsafePointer[Float32, ImmutAnyOrigin]](None)
+    var attn_sink_ptr = Optional[ImmPointer[Float32, ImmutAnyOrigin]](None)
     var sink_len = len(sink_values) if len(sink_values) > 0 else 1
     var sink_device = ctx.enqueue_create_buffer[.float32](sink_len)
     if len(sink_values) > 0:
@@ -642,8 +642,10 @@ def run_test_prefill_sparse_fp8[
         ctx.enqueue_copy(sink_device, sink_host)
         ctx.synchronize()
         sink_host.free()
-        attn_sink_ptr = Optional[UnsafePointer[Float32, ImmutAnyOrigin]](
-            sink_device.unsafe_ptr().bitcast[Float32]().as_unsafe_any_origin()
+        attn_sink_ptr = Optional[ImmPointer[Float32, ImmutAnyOrigin]](
+            sink_device.unsafe_ptr()
+            .unsafe_bitcast[Float32]()
+            .as_unsafe_any_origin()
         )
 
     mla_prefill_sparse_fp8[
@@ -658,7 +660,9 @@ def run_test_prefill_sparse_fp8[
         indices_tt,
         topk_lengths_tt,
         attn_sink_ptr,
-        scales_device.unsafe_ptr().bitcast[Float32]().as_unsafe_any_origin(),
+        scales_device.unsafe_ptr()
+        .unsafe_bitcast[Float32]()
+        .as_unsafe_any_origin(),
         scale,
         Int32(topk),
         ctx,

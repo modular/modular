@@ -24,11 +24,11 @@ from dcs_utils import GridDim, init_atoms, compute_total_energy
 
 
 def cenergy_cpu_optimized(
-    energygrid: UnsafePointer[mut=True, Float32, _],
+    energygrid: MutPointer[Float32, _],
     grid: GridDim,
     gridspacing: Float32,
     z: Float32,
-    atoms: UnsafePointer[mut=False, Float32, _],
+    atoms: ImmPointer[Float32, _],
     numatoms: Int,
 ):
     """Optimized CPU implementation of DCS energy calculation.

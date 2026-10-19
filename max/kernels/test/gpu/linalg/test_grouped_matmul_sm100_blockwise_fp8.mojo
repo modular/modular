@@ -11,8 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.collections import Optional
-from std.sys import align_of
 from std.math import inf
 
 from max.gpu.host import DeviceContext
@@ -30,7 +28,6 @@ from linalg.grouped_matmul_sm100_blockwise_fp8 import (
     grouped_matmul_sm100_blockwise_scaled_fp8_persistent,
 )
 from linalg.matmul.gpu.sm100.config import MatmulConfig
-from linalg.utils import elementwise_epilogue_type
 from std.testing import assert_almost_equal, assert_equal
 
 from std.utils.index import Index, IndexList
@@ -185,22 +182,19 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
         b_scales_device_buffer, b_scales_tt_shape
     )
 
+    comptime assert not (
+        persistent and use_epilogue
+    ), "the persistent kernel has no epilogue"
     var c_tensor = c_device_tt
 
-    @__parameter
     @inline(.always)
-    @__copy_capture(c_tensor)
     def epilogue_fn[
-        _dtype: DType,
-        width: SIMDLength,
-        *,
-        alignment: Int = align_of[SIMD[_dtype, width]](),
-    ](idx: Coord, val: SIMD[_dtype, width]) capturing -> None:
+        _dtype: DType, width: SIMDLength, *, alignment: Int
+    ](idx: Coord, val: SIMD[_dtype, width]) {var c_tensor}:
         comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
         comptime assert c_tensor.flat_rank >= 2
         c_tensor.store[alignment=alignment](
-            idx,
-            rebind[SIMD[c_type, width]](val),
+            idx, rebind[SIMD[c_type, width]](val)
         )
 
     random(a_host)
@@ -252,12 +246,7 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
     )
 
     comptime if persistent:
-        grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
-            config=config,
-            elementwise_lambda_fn=Optional[elementwise_epilogue_type](
-                epilogue_fn
-            ) if use_epilogue else None,
-        ](
+        grouped_matmul_sm100_blockwise_scaled_fp8_persistent[config=config](
             c_device_tt,
             a_device_tt,
             b_device_tt,
@@ -269,13 +258,24 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
             num_active_experts,
             ctx,
         )
+    elif use_epilogue:
+        # `epilogue_fn` owns `c_tensor`, so `c_device_ref_tt` (already
+        # written by the reference) carries the output shape.
+        grouped_matmul_sm100_blockwise_scaled_fp8[config=config](
+            c_device_ref_tt,
+            a_device_tt,
+            b_device_tt,
+            a_scales_device_tt,
+            b_scales_device_tt,
+            a_offsets_device_tt,
+            expert_ids_device_tt,
+            max_num_tokens_by_expert,
+            num_active_experts,
+            epilogue_fn,
+            ctx,
+        )
     else:
-        grouped_matmul_sm100_blockwise_scaled_fp8[
-            config=config,
-            elementwise_lambda_fn=Optional[elementwise_epilogue_type](
-                epilogue_fn
-            ) if use_epilogue else None,
-        ](
+        grouped_matmul_sm100_blockwise_scaled_fp8[config=config](
             c_device_tt,
             a_device_tt,
             b_device_tt,
@@ -341,7 +341,6 @@ def main() raises:
             .bfloat16,
             num_experts=1,
             expert_shape=Index(256, 256),
-            use_epilogue=True,
         ](1, [128], [0], ctx)
 
         # Single expert, last M-tile partial (100 mod 64 != 0).
@@ -430,7 +429,6 @@ def main() raises:
             .bfloat16,
             num_experts=6,
             expert_shape=Index(1280, 1024),
-            use_epilogue=True,
         ](4, [20, 1500, 300, 28], [0, 3, 2, 4], ctx)
 
         test_grouped_matmul_sm100_blockwise_scaled_fp8[
@@ -459,7 +457,6 @@ def main() raises:
             .float32,
             num_experts=6,
             expert_shape=Index(1280, 1024),
-            use_epilogue=True,
         ](4, [20, 1500, 300, 28], [0, 3, 2, 4], ctx)
 
         test_grouped_matmul_sm100_blockwise_scaled_fp8[
@@ -514,6 +511,5 @@ def main() raises:
             .bfloat16,
             num_experts=6,
             expert_shape=Index(1280, 1024),
-            use_epilogue=True,
             scales_type=.bfloat16,
         ](4, [24, 1504, 296, 32], [0, 3, 2, 4], ctx)

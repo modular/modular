@@ -46,25 +46,33 @@ no Sinkhorn step and keeps the checkpoint's flat ``hc_head_*`` names.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections import OrderedDict
+from collections.abc import Callable, Iterable, Sequence
+from pathlib import Path
 from typing import Any
 
 from max.dtype import DType
 from max.graph import (
     BufferValue,
     DeviceRef,
-    Dim,
+    Graph,
     ShardingStrategy,
     TensorValue,
+    Type,
+    Value,
     Weight,
     ops,
 )
+from max.graph import Module as GraphModule
 from max.nn.embedding import Embedding
 from max.nn.hyper_connection import HyperConnection
 from max.nn.layer import LayerList, Module
 from max.nn.linear import Linear
 from max.nn.norm.rms_norm import RMSNorm
 from max.nn.transformer import forward_sequential_layers, logits_postprocess
+from max.pipelines.lib.interfaces.batch_processor import (
+    ragged_kv_symbolic_input_tree,
+)
 from max.tree import Tree
 
 from .layers import (
@@ -110,6 +118,20 @@ def _adopt_shards(
         )
 
 
+def head_logits(head: Linear, x: TensorValue) -> TensorValue:
+    """float32 logits from a GEMM in the head's stored dtype.
+
+    The reference upcasts the bf16 head and runs the GEMM in float32; on the
+    real checkpoint that is a 2 GiB weight read per step on each device. A
+    bf16 GEMM halves it; the logits are rounded to bf16 before the float32
+    cast, which is also what vLLM's bf16 ``ParallelLMHead`` returns. A float32
+    checkpoint keeps the float32 GEMM (both casts are no-ops).
+    """
+    weight = head.weight
+    logits = ops.matmul(ops.cast(x, weight.dtype), ops.transpose(weight, 0, 1))
+    return ops.cast(logits, DType.float32)
+
+
 def _hyper_connection(
     config: DeepseekV4Config, device: DeviceRef
 ) -> HyperConnection:
@@ -139,7 +161,7 @@ def _hc_pre(
     they are read off the state *before* the sublayer, not after it.
     """
     b, s = x.shape[0], x.shape[1]
-    post, comb, y = hc(ops.reshape(x, [-1, hc.hc_mult, hc.hidden_size]))
+    post, comb, y, _ = hc(ops.reshape(x, [-1, hc.hc_mult, hc.hidden_size]))
     return (
         ops.reshape(y, [b, s, hc.hidden_size]),
         ops.reshape(post, [b, s, hc.hc_mult]),
@@ -509,10 +531,7 @@ class DSparkBlock(DeepseekV4Block):
             self.hc_eps,
         )
         vocab = int(head.weight.shape[0])
-        logits = ops.matmul(
-            ops.cast(self.norm(contracted), DType.float32),
-            ops.transpose(ops.cast(head.weight, DType.float32), 0, 1),
-        )
+        logits = head_logits(head, self.norm(contracted))
         batch = anchor_ids.shape[0]
         logits = ops.reshape(
             ops.rebind(ops.reshape(logits, [-1, vocab]), [batch * k, vocab]),
@@ -551,12 +570,9 @@ class _TensorParallelBlock(Module):
         self.blocks = LayerList(list(blocks))
         self.replicas = tuple(blocks)
 
-    def layer_indices(self, xs: Sequence[TensorValue]) -> list[LayerIndex]:
+    def layer_indices(self) -> list[LayerIndex]:
         """Each replica's place in its device's leaves, as constants."""
-        return [
-            block.attn.layer_index(x.device)
-            for block, x in zip(self.replicas, xs, strict=True)
-        ]
+        return [block.attn.layer_index() for block in self.replicas]
 
     def __call__(
         self,
@@ -620,9 +636,9 @@ class DeepseekV4(Module):
             shape=(1,),
             device=device,
         )
-        # float32, as the reference declares it; stored bf16, upcast on load.
+        # Stored dtype, not the reference's float32: see ``head_logits``.
         self.head = Linear(
-            config.hidden_size, config.vocab_size, DType.float32, device
+            config.hidden_size, config.vocab_size, config.dtype, device
         )
         self.mtp = LayerList(
             [
@@ -666,11 +682,8 @@ class DeepseekV4(Module):
         )
 
     def _lm_head(self, x: TensorValue) -> TensorValue:
-        """The reference's head: a float32 matmul."""
-        return ops.matmul(
-            ops.cast(x, DType.float32),
-            ops.transpose(ops.cast(self.head.weight, DType.float32), 0, 1),
-        )
+        """float32 logits off the head (:func:`head_logits`)."""
+        return head_logits(self.head, x)
 
     def trunk(
         self,
@@ -702,7 +715,7 @@ class DeepseekV4(Module):
         ) -> list[Tree[Any]]:
             block = self.layers[layer_idx]
             assert isinstance(block, DeepseekV4Block)
-            index = block.attn.layer_index(hs[0].device)
+            index = block.attn.layer_index()
             return [hs[0], rows, tokens, cache, index]
 
         (h,) = forward_sequential_layers(
@@ -740,8 +753,8 @@ class DeepseekV4(Module):
         Returns:
             ``[batch, seq_len, vocab_size]`` float32 logits, and the
             ``[batch, seq_len, hidden * n_targets]`` trunk state DSpark would
-            read. The logits are float32 because the reference's head is --
-            it stores bf16 and upcasts before the matmul.
+            read. The logits are float32, as the reference's are
+            (:func:`head_logits`).
         """
         batch = int(tokens.shape[0])
         rows = RaggedRows.uniform(
@@ -760,12 +773,107 @@ class DeepseekV4(Module):
             ops.reshape(main_hidden, [batch, seq_len, main_hidden.shape[2]]),
         )
 
+    def input_tree(self) -> OrderedDict[str, object]:
+        """Names the serving graph's inputs; its leaves are its inputs.
+
+        A single device takes no signal buffers.
+        """
+        devices = list(self.config.devices)
+        return ragged_kv_symbolic_input_tree(
+            kv_params=self.config.kv_params,
+            device_refs=devices,
+            include_signal_buffers=len(devices) > 1,
+        )
+
+    def trace(
+        self,
+        *input_types: Type[Any],
+        name: str | None = None,
+        module: GraphModule | None = None,
+        custom_extensions: Iterable[Path] = (),
+        is_device_graph: bool = False,
+    ) -> Graph:
+        """Traces the serving graph, whose inputs are :meth:`input_tree`'s
+        leaves.
+
+        The graph runs :meth:`serve` on a single device and
+        :meth:`serve_tensor_parallel` over :meth:`tensor_parallel_replicas`
+        on several, so a multi-device trace shards this model's weights.
+
+        Args:
+            *input_types: The graph's input types, the leaves of
+                :meth:`input_tree`.
+            name: The name of the graph. Defaults to the class's qualified
+                name.
+            module: The MLIR module to add the graph to. Defaults to a new
+                module.
+            custom_extensions: Paths to custom kernel libraries the graph
+                uses.
+            is_device_graph: Whether to build a device graph.
+
+        Returns:
+            The traced :class:`~max.graph.Graph`.
+        """
+        config = self.config
+        devices = list(config.devices)
+        n_dev = len(devices)
+
+        def forward(
+            tokens: Value[Any],
+            input_row_offsets: Value[Any],
+            return_n_logits: Value[Any],
+            *variadic_args: Value[Any],
+        ) -> tuple[TensorValue, ...]:
+            if n_dev == 1:
+                cache = DeepseekV4Cache.from_groups(
+                    config,
+                    config.kv_params.unflatten_basic_kv_tree(
+                        iter(variadic_args)
+                    ),
+                )
+                return self.serve(
+                    tokens.tensor,
+                    input_row_offsets.tensor,
+                    return_n_logits.tensor,
+                    cache,
+                )
+            signal_buffers = [v.buffer for v in variadic_args[:n_dev]]
+            groups = config.kv_params.unflatten_basic_kv_tree(
+                iter(variadic_args[n_dev:])
+            )
+            caches = [
+                DeepseekV4Cache.from_groups(config, groups, device_idx=i)
+                for i in range(n_dev)
+            ]
+            tokens_per_dev = ops.distributed_broadcast(
+                tokens.tensor, signal_buffers
+            )
+            offsets_per_dev = ops.distributed_broadcast(
+                input_row_offsets.tensor, signal_buffers
+            )
+            return DeepseekV4.serve_tensor_parallel(
+                self.tensor_parallel_replicas(devices),
+                tokens_per_dev,
+                offsets_per_dev,
+                return_n_logits.tensor,
+                caches,
+                signal_buffers,
+            )
+
+        return Graph(
+            type(self).__qualname__ if name is None else name,
+            forward,
+            input_types=input_types,
+            custom_extensions=list(custom_extensions),
+            module=module,
+            is_device_graph=is_device_graph,
+        )
+
     def serve(
         self,
         tokens: TensorValue,
         input_row_offsets: TensorValue,
         return_n_logits: TensorValue,
-        windows: Mapping[int, Dim],
         cache: DeepseekV4Cache,
     ) -> tuple[TensorValue, ...]:
         """The serving graph body: ragged tokens in, the pipeline's logits out.
@@ -774,8 +882,6 @@ class DeepseekV4(Module):
             tokens: ``[T]`` token ids of the whole batch.
             input_row_offsets: ``[batch + 1]`` uint32 row offsets.
             return_n_logits: ``[1]`` int64, trailing logits per request.
-            windows: Per compression ratio, the batch's window count
-                (:func:`~.layers.ragged.window_count`).
             cache: The paged leaves.
 
         Returns:
@@ -784,7 +890,10 @@ class DeepseekV4(Module):
         """
         t = tokens.shape[0]
         rows = RaggedRows.from_offsets(
-            input_row_offsets, t, cache.cache_lengths, windows
+            input_row_offsets,
+            t,
+            cache.cache_lengths,
+            dict.fromkeys(self.config.window_ratios),
         )
         x, _ = self.trunk(ops.reshape(tokens, [1, t]), rows, cache)
         return logits_postprocess(
@@ -845,7 +954,6 @@ class DeepseekV4(Module):
         tokens: Sequence[TensorValue],
         input_row_offsets: Sequence[TensorValue],
         return_n_logits: TensorValue,
-        windows: Mapping[int, Dim],
         caches: Sequence[DeepseekV4Cache],
         signal_buffers: Sequence[BufferValue],
     ) -> tuple[TensorValue, ...]:
@@ -856,6 +964,7 @@ class DeepseekV4(Module):
         """
         lead = replicas[0]
         t = tokens[0].shape[0]
+        windows = dict.fromkeys(lead.config.window_ratios)
         rows = [
             RaggedRows.from_offsets(offsets, t, cache.cache_lengths, windows)
             for offsets, cache in zip(input_row_offsets, caches, strict=True)
@@ -930,7 +1039,7 @@ class DeepseekV4(Module):
                 list(tokens),
                 list(caches),
                 list(signal_buffers),
-                lead.tp_blocks[layer_idx].layer_indices(xs),
+                lead.tp_blocks[layer_idx].layer_indices(),
             ]
 
         hs = forward_sequential_layers(

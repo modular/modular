@@ -121,17 +121,25 @@ MODEL_RECIPES = CaseInsensitiveDict({
     "nvidia/GLM-5.2-NVFP4__mtp_tpep": "max/pipelines/architectures/glm5_1/recipes/glm_5_2_fp8_tp_ep_8x_b200_mtp.yaml",
     "RadixArk/GLM-5.3-NVFP4__mtp_tpep": "max/pipelines/architectures/glm5_1/recipes/glm_5_3_nvfp4_tp_ep_8x_b200.yaml",
     "zai-org/GLM-5.3-Flash__tpep": "max/pipelines/architectures/glm5_next/recipes/glm_5_3_flash_fp8_tp_ep_8x_b200.yaml",
+    "zai-org/GLM-5.3-Flash__tpep_mi355": "max/pipelines/architectures/glm5_next/recipes/glm_5_3_flash_fp8_tp_ep_2x_mi355.yaml",
+    "zai-org/GLM-5.3__fp8_tpep_mi355": "max/pipelines/architectures/glm5_1_modulev3/recipes/glm_5_3_fp8_tp_ep_8x_mi355.yaml",
     "amd/Kimi-K2.7-Code-MXFP4": "max/pipelines/architectures/kimik2_5/recipes/mxfp4_kimi_k2_7_code_8x_mi355.yaml",
     "nvidia/Kimi-K2.7-Code-NVFP4": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_kimi_k2_7_code_eagle_tpep_8x_b200.yaml",
     "nvidia/Kimi-K2.7-Code-NVFP4__modulev3": "max/pipelines/architectures/kimik2_5_modulev3/recipes/nvfp4_kimi_k2_7_code_b200.yaml",
     "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16__modulev3": "max/pipelines/architectures/nemotron_h_modulev3/recipes/lightning_bf16.yaml",
-    "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16__modulev3_dspark": "max/pipelines/architectures/nemotron_h_modulev3/recipes/lightning_bf16_dspark.yaml",
     "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4__modulev3": "max/pipelines/architectures/nemotron_h_modulev3/recipes/lightning_nvfp4.yaml",
+    "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4__modulev3_dspark": "max/pipelines/architectures/nemotron_h_modulev3/recipes/lightning_nvfp4_dspark.yaml",
+    "tencent/Hy4-preview-FP8__mtp": "max/pipelines/architectures/hy_v4/recipes/hy4_preview_fp8_tp_ep_8x_b200.yaml",
     "thinkingmachines/Inkling-Small-NVFP4__mtp": "max/pipelines/architectures/inkling/recipes/inkling_small_nvfp4_mtp.yaml",
     "RadixArk/Qwen3.8-27B-NVFP4__mtp": "max/pipelines/architectures/unified_mtp_qwen3_5/recipes/qwen38_27b_nvfp4_mtp.yaml",
     "RadixArk/Qwen3.8-27B-NVFP4__dflash2": "max/pipelines/architectures/unified_dflash2_qwen3_5/recipes/qwen38_27b_nvfp4_dflash2.yaml",
 })
 # fmt: on
+
+# Aliases whose eval cannot finish inside the runner's 600 s timer.
+# TODO(anand): drop the GLM-5.3 MI355 entry once device graph capture and
+# blockwise-FP8 tuning land (~3 s/question, ~17 min for 320 today).
+SLOW_EVAL_MODELS = frozenset({"zai-org/GLM-5.3__fp8_tpep_mi355"})
 
 
 class RecipeConfig(BaseModel):
@@ -459,6 +467,10 @@ def get_server_cmd(
     # vLLM's KV cache sizing misses Inkling's mamba conv cache and OOMs.
     if "inkling" in model.casefold():
         VLLM += ["--gpu-memory-utilization", "0.8"]
+    # vLLM 0.30's sparse-MLA index group waits on a side stream during
+    # CUDA graph capture and fails Hy4's engine start.
+    if "hy4" in model.casefold():
+        VLLM += ["--enforce-eager"]
     MAX = ["serve", "--pretty-print-config"]
     # A smoke test is where an eager or host-transfer footgun should surface,
     # so validate each request too and not just initialization. max-ci only:
@@ -728,6 +740,8 @@ def smoke_test(
     if output_path is not None:
         result_dir = output_path / safe_model_name(model)
         result_dir.mkdir(parents=True, exist_ok=True)
+
+    disable_timeouts = disable_timeouts or model in SLOW_EVAL_MODELS
 
     hf_model_path, recipe_path = resolve_model_path(model, recipe_path)
     cascade = recipe_path is not None and _load_recipe(recipe_path).cascade

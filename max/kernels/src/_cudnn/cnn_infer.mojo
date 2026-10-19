@@ -38,11 +38,8 @@ from .infer import (
 # ===-----------------------------------------------------------------------===#
 
 comptime CUDA_CUDNN_CNN_INFER_LIBRARY_PATHS: List[Path] = [
-    "libcudnn.so",
     "libcudnn.so.9",
-    "libcudnn.so.8",
     "/usr/lib/x86_64-linux-gnu/libcudnn.so.9",
-    "/usr/lib/x86_64-linux-gnu/libcudnn.so.8",
 ]
 
 
@@ -97,8 +94,8 @@ comptime cudnnFusedOpsConstParamStruct = NoneType
 
 
 def cudnnGetConvolutionMathType(
-    conv_desc: UnsafePointer[cudnnConvolutionStruct, _],
-    math_type: UnsafePointer[cudnnMathType_t, _],
+    conv_desc: Pointer[cudnnConvolutionStruct, _],
+    math_type: Pointer[cudnnMathType_t, _],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetConvolutionMathType",
@@ -110,11 +107,11 @@ def cudnnGetConvolutionMathType(
 
 
 def cudnnIm2Col(
-    handle: UnsafePointer[cudnnContext, _],
-    x_desc: UnsafePointer[cudnnTensorStruct, _],
+    handle: Pointer[cudnnContext, _],
+    x_desc: Pointer[cudnnTensorStruct, _],
     x: OpaquePointer,
-    w_desc: UnsafePointer[cudnnFilterStruct, _],
-    conv_desc: UnsafePointer[cudnnConvolutionStruct, _],
+    w_desc: Pointer[cudnnFilterStruct, _],
+    conv_desc: Pointer[cudnnConvolutionStruct, _],
     col_buffer: OpaquePointer,
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
@@ -131,23 +128,23 @@ def cudnnIm2Col(
 
 
 def cudnnConvolutionBiasActivationForward(
-    handle: UnsafePointer[cudnnContext, _],
+    handle: Pointer[cudnnContext, _],
     alpha1: OpaquePointer,
-    x_desc: UnsafePointer[cudnnTensorStruct, _],
+    x_desc: Pointer[cudnnTensorStruct, _],
     x: OpaquePointer,
-    w_desc: UnsafePointer[cudnnFilterStruct, _],
+    w_desc: Pointer[cudnnFilterStruct, _],
     w: OpaquePointer,
-    conv_desc: UnsafePointer[cudnnConvolutionStruct, _],
+    conv_desc: Pointer[cudnnConvolutionStruct, _],
     algo: cudnnConvolutionFwdAlgo_t,
     work_space: OpaquePointer,
     work_space_size_in_bytes: Int,
     alpha2: OpaquePointer,
-    z_desc: UnsafePointer[cudnnTensorStruct, _],
+    z_desc: Pointer[cudnnTensorStruct, _],
     z: OpaquePointer,
-    bias_desc: UnsafePointer[cudnnTensorStruct, _],
+    bias_desc: Pointer[cudnnTensorStruct, _],
     bias: OpaquePointer,
-    activation_desc: UnsafePointer[cudnnActivationStruct, _],
-    y_desc: UnsafePointer[cudnnTensorStruct, _],
+    activation_desc: Pointer[cudnnActivationStruct, _],
+    y_desc: Pointer[cudnnTensorStruct, _],
     y: OpaquePointer,
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
@@ -205,13 +202,13 @@ struct cudnnConvolutionFwdAlgoPerfStruct(TrivialRegisterPassable):
 
 
 def cudnnSetConvolution2dDescriptor(
-    conv_desc: UnsafePointer[cudnnConvolutionStruct, _],
-    pad_h: Int16,
-    pad_w: Int16,
-    u: Int16,
-    v: Int16,
-    dilation_h: Int16,
-    dilation_w: Int16,
+    conv_desc: Pointer[cudnnConvolutionStruct, _],
+    pad_h: Int32,
+    pad_w: Int32,
+    u: Int32,
+    v: Int32,
+    dilation_h: Int32,
+    dilation_w: Int32,
     mode: cudnnConvolutionMode_t,
     compute_type: cudnnDataType_t,
 ) raises -> cudnnStatus_t:
@@ -251,7 +248,7 @@ def cudnnCreateConvolutionDescriptor(
 
 
 def cudnnSetConvolutionGroupCount(
-    conv_desc: UnsafePointer[cudnnConvolutionStruct, _], group_count: Int16
+    conv_desc: Pointer[cudnnConvolutionStruct, _], group_count: Int32
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnSetConvolutionGroupCount",
@@ -259,7 +256,7 @@ def cudnnSetConvolutionGroupCount(
     ]()(conv_desc, group_count)
 
 
-comptime cudnnFusedOpsVariantParamPack_t = UnsafePointer[
+comptime cudnnFusedOpsVariantParamPack_t = Pointer[
     cudnnFusedOpsVariantParamStruct, _
 ]
 
@@ -277,13 +274,13 @@ struct cudnnConvolutionBwdDataAlgoPerfStruct(TrivialRegisterPassable):
 
 
 def cudnnGetConvolutionForwardWorkspaceSize(
-    handle: UnsafePointer[cudnnContext, _],
-    x_desc: UnsafePointer[cudnnTensorStruct, _],
-    w_desc: UnsafePointer[cudnnFilterStruct, _],
-    conv_desc: UnsafePointer[cudnnConvolutionStruct, _],
-    y_desc: UnsafePointer[cudnnTensorStruct, _],
+    handle: Pointer[cudnnContext, _],
+    x_desc: Pointer[cudnnTensorStruct, _],
+    w_desc: Pointer[cudnnFilterStruct, _],
+    conv_desc: Pointer[cudnnConvolutionStruct, _],
+    y_desc: Pointer[cudnnTensorStruct, _],
     algo: cudnnConvolutionFwdAlgo_t,
-    size_in_bytes: UnsafePointer[Int, _],
+    size_in_bytes: Pointer[Int, _],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetConvolutionForwardWorkspaceSize",
@@ -300,15 +297,15 @@ def cudnnGetConvolutionForwardWorkspaceSize(
 
 
 def cudnnGetConvolution2dDescriptor(
-    conv_desc: UnsafePointer[cudnnConvolutionStruct, _],
-    pad_h: UnsafePointer[Int16, _],
-    pad_w: UnsafePointer[Int16, _],
-    u: UnsafePointer[Int16, _],
-    v: UnsafePointer[Int16, _],
-    dilation_h: UnsafePointer[Int16, _],
-    dilation_w: UnsafePointer[Int16, _],
-    mode: UnsafePointer[cudnnConvolutionMode_t, _],
-    compute_type: UnsafePointer[cudnnDataType_t, _],
+    conv_desc: Pointer[cudnnConvolutionStruct, _],
+    pad_h: Pointer[Int32, _],
+    pad_w: Pointer[Int32, _],
+    u: Pointer[Int32, _],
+    v: Pointer[Int32, _],
+    dilation_h: Pointer[Int32, _],
+    dilation_w: Pointer[Int32, _],
+    mode: Pointer[cudnnConvolutionMode_t, _],
+    compute_type: Pointer[cudnnDataType_t, _],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetConvolution2dDescriptor",
@@ -340,7 +337,7 @@ def cudnnGetConvolution2dDescriptor(
 struct cudnnFusedOpsConstParamLabel_t(
     Equatable, TrivialRegisterPassable, Writable
 ):
-    var _value: Int8
+    var _value: Int32
     comptime CUDNN_PARAM_XDESC = Self(0)
     comptime CUDNN_PARAM_XDATA_PLACEHOLDER = Self(1)
     comptime CUDNN_PARAM_BN_MODE = Self(2)
@@ -382,7 +379,7 @@ struct cudnnFusedOpsConstParamLabel_t(
     comptime CUDNN_PARAM_BN_DBIAS_PLACEHOLDER = Self(38)
 
     def __init__(out self, value: Int):
-        self._value = Int8(value)
+        self._value = Int32(value)
 
     def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -487,7 +484,7 @@ struct cudnnFusedOpsConstParamLabel_t(
 
 
 def cudnnSetConvolutionReorderType(
-    conv_desc: UnsafePointer[cudnnConvolutionStruct, _],
+    conv_desc: Pointer[cudnnConvolutionStruct, _],
     reorder_type: cudnnReorderType_t,
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
@@ -500,12 +497,12 @@ def cudnnSetConvolutionReorderType(
 struct cudnnReorderType_t(
     Equatable, Identifiable, TrivialRegisterPassable, Writable
 ):
-    var _value: Int8
+    var _value: Int32
     comptime CUDNN_DEFAULT_REORDER = Self(0)
     comptime CUDNN_NO_REORDER = Self(1)
 
     def __init__(out self, value: Int):
-        self._value = Int8(value)
+        self._value = Int32(value)
 
     def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -533,13 +530,13 @@ comptime cudnnConvolutionBwdDataAlgoPerf_t = cudnnConvolutionBwdDataAlgoPerfStru
 
 
 def cudnnGetConvolution2dForwardOutputDim(
-    conv_desc: UnsafePointer[cudnnConvolutionStruct, _],
-    input_tensor_desc: UnsafePointer[cudnnTensorStruct, _],
-    filter_desc: UnsafePointer[cudnnFilterStruct, _],
-    n: UnsafePointer[Int16, _],
-    c: UnsafePointer[Int16, _],
-    h: UnsafePointer[Int16, _],
-    w: UnsafePointer[Int16, _],
+    conv_desc: Pointer[cudnnConvolutionStruct, _],
+    input_tensor_desc: Pointer[cudnnTensorStruct, _],
+    filter_desc: Pointer[cudnnFilterStruct, _],
+    n: Pointer[Int32, _],
+    c: Pointer[Int32, _],
+    h: Pointer[Int32, _],
+    w: Pointer[Int32, _],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetConvolution2dForwardOutputDim",
@@ -556,14 +553,14 @@ def cudnnGetConvolution2dForwardOutputDim(
 
 
 def cudnnFindConvolutionForwardAlgorithm(
-    handle: UnsafePointer[cudnnContext, _],
-    x_desc: UnsafePointer[cudnnTensorStruct, _],
-    w_desc: UnsafePointer[cudnnFilterStruct, _],
-    conv_desc: UnsafePointer[cudnnConvolutionStruct, _],
-    y_desc: UnsafePointer[cudnnTensorStruct, _],
-    requested_algo_count: Int16,
-    returned_algo_count: UnsafePointer[Int16, _],
-    perf_results: UnsafePointer[cudnnConvolutionFwdAlgoPerfStruct, _],
+    handle: Pointer[cudnnContext, _],
+    x_desc: Pointer[cudnnTensorStruct, _],
+    w_desc: Pointer[cudnnFilterStruct, _],
+    conv_desc: Pointer[cudnnConvolutionStruct, _],
+    y_desc: Pointer[cudnnTensorStruct, _],
+    requested_algo_count: Int32,
+    returned_algo_count: Pointer[Int32, _],
+    perf_results: Pointer[cudnnConvolutionFwdAlgoPerfStruct, _],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnFindConvolutionForwardAlgorithm",
@@ -589,20 +586,20 @@ def cudnnFindConvolutionForwardAlgorithm(
     )
 
 
-comptime cudnnFusedOpsConstParamPack_t = UnsafePointer[
+comptime cudnnFusedOpsConstParamPack_t = Pointer[
     cudnnFusedOpsConstParamStruct, _
 ]
 
 
 def cudnnGetConvolutionForwardAlgorithm_v7(
-    handle: UnsafePointer[cudnnContext, _],
-    src_desc: UnsafePointer[cudnnTensorStruct, _],
-    filter_desc: UnsafePointer[cudnnFilterStruct, _],
-    conv_desc: UnsafePointer[cudnnConvolutionStruct, _],
-    dest_desc: UnsafePointer[cudnnTensorStruct, _],
-    requested_algo_count: Int16,
-    returned_algo_count: UnsafePointer[Int16, _],
-    perf_results: UnsafePointer[cudnnConvolutionFwdAlgoPerfStruct, _],
+    handle: Pointer[cudnnContext, _],
+    src_desc: Pointer[cudnnTensorStruct, _],
+    filter_desc: Pointer[cudnnFilterStruct, _],
+    conv_desc: Pointer[cudnnConvolutionStruct, _],
+    dest_desc: Pointer[cudnnTensorStruct, _],
+    requested_algo_count: Int32,
+    returned_algo_count: Pointer[Int32, _],
+    perf_results: Pointer[cudnnConvolutionFwdAlgoPerfStruct, _],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetConvolutionForwardAlgorithm_v7",
@@ -632,7 +629,7 @@ def cudnnGetConvolutionForwardAlgorithm_v7(
 struct cudnnFusedOps_t(
     Equatable, Identifiable, TrivialRegisterPassable, Writable
 ):
-    var _value: Int8
+    var _value: Int32
     comptime CUDNN_FUSED_SCALE_BIAS_ACTIVATION_CONV_BNSTATS = Self(0)
     comptime CUDNN_FUSED_SCALE_BIAS_ACTIVATION_WGRAD = Self(1)
     comptime CUDNN_FUSED_BN_FINALIZE_STATISTICS_TRAINING = Self(2)
@@ -642,7 +639,7 @@ struct cudnnFusedOps_t(
     comptime CUDNN_FUSED_DACTIVATION_FORK_DBATCHNORM = Self(6)
 
     def __init__(out self, value: Int):
-        self._value = Int8(value)
+        self._value = Int32(value)
 
     def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -691,7 +688,7 @@ struct cudnnFusedOps_t(
 
 
 def cudnnGetConvolutionBackwardDataAlgorithmMaxCount(
-    handle: UnsafePointer[cudnnContext, _], count: UnsafePointer[Int16, _]
+    handle: Pointer[cudnnContext, _], count: Pointer[Int32, _]
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetConvolutionBackwardDataAlgorithmMaxCount",
@@ -700,7 +697,7 @@ def cudnnGetConvolutionBackwardDataAlgorithmMaxCount(
 
 
 def cudnnDestroyConvolutionDescriptor(
-    conv_desc: UnsafePointer[cudnnConvolutionStruct, _],
+    conv_desc: Pointer[cudnnConvolutionStruct, _],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnDestroyConvolutionDescriptor",
@@ -712,13 +709,13 @@ def cudnnDestroyConvolutionDescriptor(
 struct cudnnFusedOpsPointerPlaceHolder_t(
     Equatable, Identifiable, TrivialRegisterPassable, Writable
 ):
-    var _value: Int8
+    var _value: Int32
     comptime CUDNN_PTR_NULL = Self(0)
     comptime CUDNN_PTR_ELEM_ALIGNED = Self(1)
     comptime CUDNN_PTR_16B_ALIGNED = Self(2)
 
     def __init__(out self, value: Int):
-        self._value = Int8(value)
+        self._value = Int32(value)
 
     def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -744,24 +741,24 @@ struct cudnnFusedOpsPointerPlaceHolder_t(
         return Int(self._value)
 
 
-comptime cudnnFusedOpsPlan_t = UnsafePointer[cudnnFusedOpsPlanStruct, _]
+comptime cudnnFusedOpsPlan_t = Pointer[cudnnFusedOpsPlanStruct, _]
 
-comptime cudnnConvolutionDescriptor_t = UnsafePointer[cudnnConvolutionStruct, _]
+comptime cudnnConvolutionDescriptor_t = Pointer[cudnnConvolutionStruct, _]
 
 
 def cudnnConvolutionForward(
-    handle: UnsafePointer[cudnnContext, _],
+    handle: Pointer[cudnnContext, _],
     alpha: OpaquePointer,
-    x_desc: UnsafePointer[cudnnTensorStruct, _],
+    x_desc: Pointer[cudnnTensorStruct, _],
     x: OpaquePointer,
-    w_desc: UnsafePointer[cudnnFilterStruct, _],
+    w_desc: Pointer[cudnnFilterStruct, _],
     w: OpaquePointer,
-    conv_desc: UnsafePointer[cudnnConvolutionStruct, _],
+    conv_desc: Pointer[cudnnConvolutionStruct, _],
     algo: cudnnConvolutionFwdAlgo_t,
     work_space: OpaquePointer,
     work_space_size_in_bytes: Int,
     beta: OpaquePointer,
-    y_desc: UnsafePointer[cudnnTensorStruct, _],
+    y_desc: Pointer[cudnnTensorStruct, _],
     y: OpaquePointer,
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
@@ -799,8 +796,8 @@ def cudnnConvolutionForward(
 
 
 def cudnnGetConvolutionReorderType(
-    conv_desc: UnsafePointer[cudnnConvolutionStruct, _],
-    reorder_type: UnsafePointer[cudnnReorderType_t, _],
+    conv_desc: Pointer[cudnnConvolutionStruct, _],
+    reorder_type: Pointer[cudnnReorderType_t, _],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetConvolutionReorderType",
@@ -815,7 +812,7 @@ def cudnnGetConvolutionReorderType(
 struct cudnnFusedOpsVariantParamLabel_t(
     Equatable, TrivialRegisterPassable, Writable
 ):
-    var _value: Int8
+    var _value: Int32
     comptime CUDNN_PTR_XDATA = Self(0)
     comptime CUDNN_PTR_BN_EQSCALE = Self(1)
     comptime CUDNN_PTR_BN_EQBIAS = Self(2)
@@ -840,13 +837,13 @@ struct cudnnFusedOpsVariantParamLabel_t(
     comptime CUDNN_PTR_DZDATA = Self(21)
     comptime CUDNN_PTR_BN_DSCALE = Self(22)
     comptime CUDNN_PTR_BN_DBIAS = Self(23)
-    comptime CUDNN_SCALAR_SIZE_T_WORKSPACE_SIZE_IN_BYTES = Self(24)
-    comptime CUDNN_SCALAR_INT64_T_BN_ACCUMULATION_COUNT = Self(25)
-    comptime CUDNN_SCALAR_DOUBLE_BN_EXP_AVG_FACTOR = Self(26)
-    comptime CUDNN_SCALAR_DOUBLE_BN_EPSILON = Self(27)
+    comptime CUDNN_SCALAR_SIZE_T_WORKSPACE_SIZE_IN_BYTES = Self(100)
+    comptime CUDNN_SCALAR_INT64_T_BN_ACCUMULATION_COUNT = Self(101)
+    comptime CUDNN_SCALAR_DOUBLE_BN_EXP_AVG_FACTOR = Self(102)
+    comptime CUDNN_SCALAR_DOUBLE_BN_EPSILON = Self(103)
 
     def __init__(out self, value: Int):
-        self._value = Int8(value)
+        self._value = Int32(value)
 
     def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -927,14 +924,14 @@ struct cudnnFusedOpsVariantParamLabel_t(
 
 
 def cudnnGetConvolutionBackwardDataAlgorithm_v7(
-    handle: UnsafePointer[cudnnContext, _],
-    filter_desc: UnsafePointer[cudnnFilterStruct, _],
-    diff_desc: UnsafePointer[cudnnTensorStruct, _],
-    conv_desc: UnsafePointer[cudnnConvolutionStruct, _],
-    grad_desc: UnsafePointer[cudnnTensorStruct, _],
-    requested_algo_count: Int16,
-    returned_algo_count: UnsafePointer[Int16, _],
-    perf_results: UnsafePointer[cudnnConvolutionBwdDataAlgoPerfStruct, _],
+    handle: Pointer[cudnnContext, _],
+    filter_desc: Pointer[cudnnFilterStruct, _],
+    diff_desc: Pointer[cudnnTensorStruct, _],
+    conv_desc: Pointer[cudnnConvolutionStruct, _],
+    grad_desc: Pointer[cudnnTensorStruct, _],
+    requested_algo_count: Int32,
+    returned_algo_count: Pointer[Int32, _],
+    perf_results: Pointer[cudnnConvolutionBwdDataAlgoPerfStruct, _],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetConvolutionBackwardDataAlgorithm_v7",
@@ -961,8 +958,8 @@ def cudnnGetConvolutionBackwardDataAlgorithm_v7(
 
 
 def cudnnGetConvolutionGroupCount(
-    conv_desc: UnsafePointer[cudnnConvolutionStruct, _],
-    group_count: UnsafePointer[Int16, _],
+    conv_desc: Pointer[cudnnConvolutionStruct, _],
+    group_count: Pointer[Int32, _],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetConvolutionGroupCount",
@@ -971,14 +968,14 @@ def cudnnGetConvolutionGroupCount(
 
 
 def cudnnGetConvolutionNdDescriptor(
-    conv_desc: UnsafePointer[cudnnConvolutionStruct, _],
-    array_length_requested: Int16,
-    array_length: UnsafePointer[Int16, _],
+    conv_desc: Pointer[cudnnConvolutionStruct, _],
+    array_length_requested: Int32,
+    array_length: Pointer[Int32, _],
     pad_a: OpaquePointer,
     stride_a: OpaquePointer,
     dilation_a: OpaquePointer,
-    mode: UnsafePointer[cudnnConvolutionMode_t, _],
-    compute_type: UnsafePointer[cudnnDataType_t, _],
+    mode: Pointer[cudnnConvolutionMode_t, _],
+    compute_type: Pointer[cudnnDataType_t, _],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetConvolutionNdDescriptor",
@@ -1005,13 +1002,13 @@ def cudnnGetConvolutionNdDescriptor(
 
 
 def cudnnGetConvolutionBackwardDataWorkspaceSize(
-    handle: UnsafePointer[cudnnContext, _],
-    w_desc: UnsafePointer[cudnnFilterStruct, _],
-    dy_desc: UnsafePointer[cudnnTensorStruct, _],
-    conv_desc: UnsafePointer[cudnnConvolutionStruct, _],
-    dx_desc: UnsafePointer[cudnnTensorStruct, _],
+    handle: Pointer[cudnnContext, _],
+    w_desc: Pointer[cudnnFilterStruct, _],
+    dy_desc: Pointer[cudnnTensorStruct, _],
+    conv_desc: Pointer[cudnnConvolutionStruct, _],
+    dx_desc: Pointer[cudnnTensorStruct, _],
     algo: cudnnConvolutionBwdDataAlgo_t,
-    size_in_bytes: UnsafePointer[Int, _],
+    size_in_bytes: Pointer[Int, _],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetConvolutionBackwardDataWorkspaceSize",
@@ -1028,12 +1025,12 @@ def cudnnGetConvolutionBackwardDataWorkspaceSize(
 
 
 def cudnnReorderFilterAndBias(
-    handle: UnsafePointer[cudnnContext, _],
-    filter_desc: UnsafePointer[cudnnFilterStruct, _],
+    handle: Pointer[cudnnContext, _],
+    filter_desc: Pointer[cudnnFilterStruct, _],
     reorder_type: cudnnReorderType_t,
     filter_data: OpaquePointer,
     reordered_filter_data: OpaquePointer,
-    reorder_bias: Int16,
+    reorder_bias: Int32,
     bias_data: OpaquePointer,
     reordered_bias_data: OpaquePointer,
 ) raises -> cudnnStatus_t:
@@ -1062,14 +1059,14 @@ def cudnnReorderFilterAndBias(
 
 
 def cudnnFindConvolutionBackwardDataAlgorithm(
-    handle: UnsafePointer[cudnnContext, _],
-    w_desc: UnsafePointer[cudnnFilterStruct, _],
-    dy_desc: UnsafePointer[cudnnTensorStruct, _],
-    conv_desc: UnsafePointer[cudnnConvolutionStruct, _],
-    dx_desc: UnsafePointer[cudnnTensorStruct, _],
-    requested_algo_count: Int16,
-    returned_algo_count: UnsafePointer[Int16, _],
-    perf_results: UnsafePointer[cudnnConvolutionBwdDataAlgoPerfStruct, _],
+    handle: Pointer[cudnnContext, _],
+    w_desc: Pointer[cudnnFilterStruct, _],
+    dy_desc: Pointer[cudnnTensorStruct, _],
+    conv_desc: Pointer[cudnnConvolutionStruct, _],
+    dx_desc: Pointer[cudnnTensorStruct, _],
+    requested_algo_count: Int32,
+    returned_algo_count: Pointer[Int32, _],
+    perf_results: Pointer[cudnnConvolutionBwdDataAlgoPerfStruct, _],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnFindConvolutionBackwardDataAlgorithm",
@@ -1096,18 +1093,18 @@ def cudnnFindConvolutionBackwardDataAlgorithm(
 
 
 def cudnnConvolutionBackwardData(
-    handle: UnsafePointer[cudnnContext, _],
+    handle: Pointer[cudnnContext, _],
     alpha: OpaquePointer,
-    w_desc: UnsafePointer[cudnnFilterStruct, _],
+    w_desc: Pointer[cudnnFilterStruct, _],
     w: OpaquePointer,
-    dy_desc: UnsafePointer[cudnnTensorStruct, _],
+    dy_desc: Pointer[cudnnTensorStruct, _],
     dy: OpaquePointer,
-    conv_desc: UnsafePointer[cudnnConvolutionStruct, _],
+    conv_desc: Pointer[cudnnConvolutionStruct, _],
     algo: cudnnConvolutionBwdDataAlgo_t,
     work_space: OptionalPointer[NoneType, MutAnyOrigin],
     work_space_size_in_bytes: Int,
     beta: OpaquePointer,
-    dx_desc: UnsafePointer[cudnnTensorStruct, _],
+    dx_desc: Pointer[cudnnTensorStruct, _],
     dx: OpaquePointer,
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
@@ -1145,8 +1142,8 @@ def cudnnConvolutionBackwardData(
 
 
 def cudnnSetConvolutionNdDescriptor(
-    conv_desc: UnsafePointer[cudnnConvolutionStruct, _],
-    array_length: Int16,
+    conv_desc: Pointer[cudnnConvolutionStruct, _],
+    array_length: Int32,
     pad_a: OpaquePointer,
     filter_stride_a: OpaquePointer,
     dilation_a: OpaquePointer,
@@ -1182,7 +1179,7 @@ def cudnnCnnInferVersionCheck() raises -> cudnnStatus_t:
 
 
 def cudnnSetConvolutionMathType(
-    conv_desc: UnsafePointer[cudnnConvolutionStruct, _],
+    conv_desc: Pointer[cudnnConvolutionStruct, _],
     math_type: cudnnMathType_t,
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
@@ -1192,17 +1189,17 @@ def cudnnSetConvolutionMathType(
 
 
 def cudnnFindConvolutionBackwardDataAlgorithmEx(
-    handle: UnsafePointer[cudnnContext, _],
-    w_desc: UnsafePointer[cudnnFilterStruct, _],
+    handle: Pointer[cudnnContext, _],
+    w_desc: Pointer[cudnnFilterStruct, _],
     w: OpaquePointer,
-    dy_desc: UnsafePointer[cudnnTensorStruct, _],
+    dy_desc: Pointer[cudnnTensorStruct, _],
     dy: OpaquePointer,
-    conv_desc: UnsafePointer[cudnnConvolutionStruct, _],
-    dx_desc: UnsafePointer[cudnnTensorStruct, _],
+    conv_desc: Pointer[cudnnConvolutionStruct, _],
+    dx_desc: Pointer[cudnnTensorStruct, _],
     dx: OpaquePointer,
-    requested_algo_count: Int16,
-    returned_algo_count: UnsafePointer[Int16, _],
-    perf_results: UnsafePointer[cudnnConvolutionBwdDataAlgoPerfStruct, _],
+    requested_algo_count: Int32,
+    returned_algo_count: Pointer[Int32, _],
+    perf_results: Pointer[cudnnConvolutionBwdDataAlgoPerfStruct, _],
     work_space: OpaquePointer,
     work_space_size_in_bytes: Int,
 ) raises -> cudnnStatus_t:
@@ -1241,17 +1238,17 @@ def cudnnFindConvolutionBackwardDataAlgorithmEx(
 
 
 def cudnnFindConvolutionForwardAlgorithmEx(
-    handle: UnsafePointer[cudnnContext, _],
-    x_desc: UnsafePointer[cudnnTensorStruct, _],
+    handle: Pointer[cudnnContext, _],
+    x_desc: Pointer[cudnnTensorStruct, _],
     x: OpaquePointer,
-    w_desc: UnsafePointer[cudnnFilterStruct, _],
+    w_desc: Pointer[cudnnFilterStruct, _],
     w: OpaquePointer,
-    conv_desc: UnsafePointer[cudnnConvolutionStruct, _],
-    y_desc: UnsafePointer[cudnnTensorStruct, _],
+    conv_desc: Pointer[cudnnConvolutionStruct, _],
+    y_desc: Pointer[cudnnTensorStruct, _],
     y: OpaquePointer,
-    requested_algo_count: Int16,
-    returned_algo_count: UnsafePointer[Int16, _],
-    perf_results: UnsafePointer[cudnnConvolutionFwdAlgoPerfStruct, _],
+    requested_algo_count: Int32,
+    returned_algo_count: Pointer[Int32, _],
+    perf_results: Pointer[cudnnConvolutionFwdAlgoPerfStruct, _],
     work_space: OpaquePointer,
     work_space_size_in_bytes: Int,
 ) raises -> cudnnStatus_t:
@@ -1290,10 +1287,10 @@ def cudnnFindConvolutionForwardAlgorithmEx(
 
 
 def cudnnGetConvolutionNdForwardOutputDim(
-    conv_desc: UnsafePointer[cudnnConvolutionStruct, _],
-    input_tensor_desc: UnsafePointer[cudnnTensorStruct, _],
-    filter_desc: UnsafePointer[cudnnFilterStruct, _],
-    nb_dims: Int16,
+    conv_desc: Pointer[cudnnConvolutionStruct, _],
+    input_tensor_desc: Pointer[cudnnTensorStruct, _],
+    filter_desc: Pointer[cudnnFilterStruct, _],
+    nb_dims: Int32,
     tensor_output_dim_a: OpaquePointer,
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
@@ -1309,7 +1306,7 @@ def cudnnGetConvolutionNdForwardOutputDim(
 
 
 def cudnnGetConvolutionForwardAlgorithmMaxCount(
-    handle: UnsafePointer[cudnnContext, _], count: UnsafePointer[Int16, _]
+    handle: Pointer[cudnnContext, _], count: Pointer[Int32, _]
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetConvolutionForwardAlgorithmMaxCount",
@@ -1321,12 +1318,12 @@ def cudnnGetConvolutionForwardAlgorithmMaxCount(
 struct cudnnConvolutionMode_t(
     Equatable, Identifiable, TrivialRegisterPassable, Writable
 ):
-    var _value: Int8
+    var _value: Int32
     comptime CUDNN_CONVOLUTION = Self(0)
     comptime CUDNN_CROSS_CORRELATION = Self(1)
 
     def __init__(out self, value: Int):
-        self._value = Int8(value)
+        self._value = Int32(value)
 
     def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -1351,20 +1348,20 @@ struct cudnnConvolutionMode_t(
 
 
 def cudnnGetFoldedConvBackwardDataDescriptors(
-    handle: UnsafePointer[cudnnContext, _],
-    filter_desc: UnsafePointer[cudnnFilterStruct, _],
-    diff_desc: UnsafePointer[cudnnTensorStruct, _],
-    conv_desc: UnsafePointer[cudnnConvolutionStruct, _],
-    grad_desc: UnsafePointer[cudnnTensorStruct, _],
+    handle: Pointer[cudnnContext, _],
+    filter_desc: Pointer[cudnnFilterStruct, _],
+    diff_desc: Pointer[cudnnTensorStruct, _],
+    conv_desc: Pointer[cudnnConvolutionStruct, _],
+    grad_desc: Pointer[cudnnTensorStruct, _],
     transform_format: cudnnTensorFormat_t,
-    folded_filter_desc: UnsafePointer[cudnnFilterStruct, _],
-    padded_diff_desc: UnsafePointer[cudnnTensorStruct, _],
-    folded_conv_desc: UnsafePointer[cudnnConvolutionStruct, _],
-    folded_grad_desc: UnsafePointer[cudnnTensorStruct, _],
-    filter_fold_trans_desc: UnsafePointer[cudnnTensorTransformStruct, _],
-    diff_pad_trans_desc: UnsafePointer[cudnnTensorTransformStruct, _],
-    grad_fold_trans_desc: UnsafePointer[cudnnTensorTransformStruct, _],
-    grad_unfold_trans_desc: UnsafePointer[cudnnTensorTransformStruct, _],
+    folded_filter_desc: Pointer[cudnnFilterStruct, _],
+    padded_diff_desc: Pointer[cudnnTensorStruct, _],
+    folded_conv_desc: Pointer[cudnnConvolutionStruct, _],
+    folded_grad_desc: Pointer[cudnnTensorStruct, _],
+    filter_fold_trans_desc: Pointer[cudnnTensorTransformStruct, _],
+    diff_pad_trans_desc: Pointer[cudnnTensorTransformStruct, _],
+    grad_fold_trans_desc: Pointer[cudnnTensorTransformStruct, _],
+    grad_unfold_trans_desc: Pointer[cudnnTensorTransformStruct, _],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetFoldedConvBackwardDataDescriptors",

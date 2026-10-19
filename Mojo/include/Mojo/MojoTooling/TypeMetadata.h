@@ -20,6 +20,7 @@
 
 namespace M {
 namespace KGEN {
+namespace LIT {
 
 //===----------------------------------------------------------------------===//
 // TypeMetadata
@@ -55,6 +56,7 @@ private:
   std::string relativeDocPath; // Relative path for cross-reference links
 };
 
+} // namespace LIT
 } // namespace KGEN
 } // namespace M
 

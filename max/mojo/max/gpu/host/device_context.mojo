@@ -74,9 +74,10 @@ from std.utils import Variant
 from std.utils._serialize import _serialize_elements
 from std.utils.static_tuple import StaticTuple
 
-from std._gpu.host import get_gpu_target
-from .info import _device_type_encoder_target
-from std._gpu.host.info import GPUInfo
+from .info import _device_type_encoder_target, is_cpu
+
+from max.gpu.host.info import get_gpu_target, get_gpu_info
+from max._plugin._overlay import max_default_accelerator
 
 from .compile import (
     _compile_code,
@@ -361,17 +362,6 @@ struct StreamPriorityRange(TrivialRegisterPassable, Writable):
             self.greatest,
             ")",
         )
-
-
-@fieldwise_init
-struct _DeviceBufferMode(TrivialRegisterPassable):
-    var _mode: Int
-
-    comptime _SYNC = _DeviceBufferMode(0)
-    comptime _ASYNC = _DeviceBufferMode(1)
-
-    def __eq__(self, other: Self) -> Bool:
-        return self._mode == other._mode
 
 
 struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
@@ -1506,7 +1496,6 @@ struct DeviceBuffer[dtype: DType](
         out self,
         ctx: DeviceContext,
         size: Int,
-        mode: _DeviceBufferMode,
     ) raises:
         """This init takes in a constructed `DeviceContext` and schedules an
         owned buffer allocation using the stream in the device context.
@@ -1516,31 +1505,23 @@ struct DeviceBuffer[dtype: DType](
         var cpp_handle: _DeviceBufferPtr[mut=True] = {}
         var device_ptr: Optional[Self._DevicePtr] = {}
 
-        # TODO: Remove this if statement.
-        # As of GEX-3005, Driver only supports async allocation. For
-        # sync allocation, we need to explicitly synchronize after this step.
-        # See DeviceContext.create_buffer_sync() for example.
-        if mode == _DeviceBufferMode._ASYNC:
-            # const char *AsyncRT_DeviceContext_createBuffer_async(const DeviceBuffer **result, void **device_ptr, const DeviceContext *ctx, size_t len, size_t elem_size)
-            _checked(
-                external_call[
-                    "AsyncRT_DeviceContext_createBuffer_async",
-                    _CString[],
-                ](
-                    Pointer(to=cpp_handle),
-                    Pointer(to=device_ptr),
-                    ctx._handle,
-                    c_size_t(size),
-                    c_size_t(elem_size),
-                ),
-                location=call_location(),
-            )
-        else:
-            raise Error(
-                "DeviceBuffer.__init__: Unsupported _DeviceBufferMode(",
-                mode._mode,
-                ")",
-            )
+        # Allocation is always stream-ordered: the driver dropped synchronous
+        # allocation (GEX-3005), so `DeviceContext.create_buffer_sync()`
+        # synchronizes afterwards instead.
+        # const char *AsyncRT_DeviceContext_createBuffer_async(const DeviceBuffer **result, void **device_ptr, const DeviceContext *ctx, size_t len, size_t elem_size)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_createBuffer_async",
+                _CString[],
+            ](
+                Pointer(to=cpp_handle),
+                Pointer(to=device_ptr),
+                ctx._handle,
+                c_size_t(size),
+                c_size_t(elem_size),
+            ),
+            location=call_location(),
+        )
 
         self._device_ptr = device_ptr.value()
         self._handle = cpp_handle
@@ -1806,6 +1787,87 @@ struct DeviceBuffer[dtype: DType](
             location=call_location(),
         )
         return DeviceBuffer[view_type](new_handle, new_device_ptr.value())
+
+    def _tensor_map_encode_tiled(
+        self,
+        tensor_map: MutOpaquePointer[_],
+        data_type: Int32,
+        rank: Int32,
+        global_dim: Pointer[mut=False, Int64, _],
+        global_strides: Pointer[mut=False, Int64, _],
+        box_dim: Pointer[mut=False, Int32, _],
+        element_strides: Pointer[mut=False, Int32, _],
+        interleave: Int32,
+        swizzle: Int32,
+        l2_promotion: Int32,
+        oob_fill: Int32,
+    ) raises:
+        """Encodes a tiled TMA descriptor for this buffer via AsyncRT."""
+
+        comptime assert (
+            max_default_accelerator().is_nvidia_gpu()
+        ), "TMA descriptors are only supported on NVIDIA GPUs"
+
+        _checked(
+            external_call["AsyncRT_cuda_tensorMapEncodeTiled", _CString[]](
+                tensor_map,
+                data_type,
+                rank,
+                self._handle,
+                global_dim,
+                global_strides,
+                box_dim,
+                element_strides,
+                interleave,
+                swizzle,
+                l2_promotion,
+                oob_fill,
+            )
+        )
+
+    def _tensor_map_encode_im2col(
+        self,
+        tensor_map: MutOpaquePointer[_],
+        data_type: Int32,
+        rank: Int32,
+        global_dim: Pointer[mut=False, Int64, _],
+        global_strides: Pointer[mut=False, Int64, _],
+        pixel_box_lower_corner: Pointer[mut=False, Int32, _],
+        pixel_box_upper_corner: Pointer[mut=False, Int32, _],
+        channels_per_pixel: Int32,
+        pixels_per_column: Int32,
+        element_strides: Pointer[mut=False, Int32, _],
+        interleave: Int32,
+        swizzle: Int32,
+        l2_promotion: Int32,
+        oob_fill: Int32,
+    ) raises:
+        """Encodes an im2col TMA descriptor for this buffer via AsyncRT. Used by
+        `max.gpu.host._tensormap.create_tensormap_im2col`."""
+
+        comptime assert (
+            max_default_accelerator().is_nvidia_gpu()
+        ), "TMA descriptors are only supported on NVIDIA GPUs"
+
+        _checked(
+            external_call["AsyncRT_cuda_tensorMapEncodeIm2col", _CString[]](
+                tensor_map,
+                data_type,
+                rank,
+                self._handle,
+                global_dim,
+                global_strides,
+                pixel_box_lower_corner,
+                pixel_box_upper_corner,
+                channels_per_pixel,
+                pixels_per_column,
+                element_strides,
+                interleave,
+                swizzle,
+                l2_promotion,
+                oob_fill,
+            )
+        )
 
     def enqueue_copy_to(self, dst: DeviceBuffer[Self.dtype]) raises:
         """Enqueues an asynchronous copy from this buffer to another device buffer.
@@ -3036,13 +3098,50 @@ def _is_path_like(ss: StringSlice) -> Bool:
     return ss.startswith("/") or ss.startswith("~") or ss.startswith("./")
 
 
+comptime _MAX_KERNEL_CAPTURES = 16
+
+
+@inline(.never)
+def _snapshot_capture_sizes(
+    num_captures: Int, capture_sizes: Pointer[UInt64, ImmUntrackedOrigin]
+) raises -> Array[UInt64, _MAX_KERNEL_CAPTURES]:
+    """Copies the compiler's capture sizes into owned storage.
+
+    Shared by every kernel, so the copy loop and its error path are emitted
+    once instead of inlined into each launch site.
+
+    Args:
+        num_captures: The number of values the kernel captures.
+        capture_sizes: The compiler's per-capture byte sizes.
+
+    Returns:
+        The capture sizes, zero past `num_captures`.
+
+    Raises:
+        If the function captures more values than the snapshot holds.
+    """
+    var count = max(0, num_captures)
+    if count > _MAX_KERNEL_CAPTURES:
+        raise Error(
+            "kernel captures ",
+            count,
+            " values; at most ",
+            _MAX_KERNEL_CAPTURES,
+            " are supported",
+        )
+    var sizes = Array[UInt64, _MAX_KERNEL_CAPTURES](fill=0)
+    for i in range(count):
+        sizes[i] = capture_sizes[unsafe_offset=i]
+    return sizes^
+
+
 struct DeviceFunction[
     func_type: TrivialRegisterPassable,
     //,
     func: func_type,
     declared_arg_types: TypeList[Trait=AnyType, ...],
     *,
-    target: CompilationTarget = CompilationTarget.default_accelerator(),
+    target: CompilationTarget = max_default_accelerator(),
     compile_options: StaticString = target.default_compile_options(),
     link_options: StaticString = "",
     _ptxas_info_verbose: Bool = False,
@@ -3085,7 +3184,7 @@ struct DeviceFunction[
         _cross_compilation() and Self.target.is_nvidia_gpu()
     ) else "object"
 
-    comptime _max_captures = 16
+    comptime _max_captures = _MAX_KERNEL_CAPTURES
 
     # ===-------------------------------------------------------------------===#
     # Fields
@@ -3147,36 +3246,6 @@ struct DeviceFunction[
     # ===-------------------------------------------------------------------===#
     # Methods
     # ===-------------------------------------------------------------------===#
-
-    @staticmethod
-    @inline(.always)
-    def _snapshot_capture_sizes(
-        info: CompiledFunctionInfo[Self.func_type, Self.func, Self.target]
-    ) raises -> Array[UInt64, Self._max_captures]:
-        """Copies the compiler's capture sizes into owned storage.
-
-        Args:
-            info: The compilation result whose capture sizes to copy.
-
-        Returns:
-            The capture sizes, zero past `info.num_captures`.
-
-        Raises:
-            If the function captures more values than the snapshot holds.
-        """
-        var num_captures = max(0, info.num_captures)
-        if num_captures > Self._max_captures:
-            raise Error(
-                "kernel captures ",
-                num_captures,
-                " values; at most ",
-                Self._max_captures,
-                " are supported",
-            )
-        var sizes = Array[UInt64, Self._max_captures](fill=0)
-        for i in range(num_captures):
-            sizes[i] = info.capture_sizes[unsafe_offset=i]
-        return sizes^
 
     @inline(.always)
     def _capture_sizes_ptr(self) -> Pointer[UInt64, ImmUntrackedOrigin]:
@@ -3450,12 +3519,8 @@ struct DeviceFunction[
                 .as_unsafe_any_origin()
             )
 
-        @__parameter
-        def _populate_arg_sizes[i: Int]():
-            dense_args_sizes[unsafe_offset=i] = UInt64(size_of[Ts[i]]())
-
         comptime for i in range(num_args):
-            _populate_arg_sizes[i]()
+            dense_args_sizes[unsafe_offset=i] = UInt64(size_of[Ts[i]]())
 
         if case .Some(cluster_dim) = cluster_dim:
             attributes.append(LaunchAttribute.from_cluster_dim(cluster_dim))
@@ -3618,22 +3683,14 @@ struct DeviceFunction[
     @inline(.always)
     @__parameter
     def _call_with_pack_checked[
+        HostArgs: TypeList[Trait=RegisterPassable, ...],
+        //,
         *Ts: DevicePassable,
-        extra_host_count: Int = 0,
     ](
         imm self,
         ctx: Some[_FunctionEnqueuer],
         *args: *Ts,
-        host0: Optional[OpaquePointer[MutAnyOrigin]] = None,
-        host1: Optional[OpaquePointer[MutAnyOrigin]] = None,
-        host2: Optional[OpaquePointer[MutAnyOrigin]] = None,
-        host3: Optional[OpaquePointer[MutAnyOrigin]] = None,
-        host4: Optional[OpaquePointer[MutAnyOrigin]] = None,
-        host0_size: Int = 0,
-        host1_size: Int = 0,
-        host2_size: Int = 0,
-        host3_size: Int = 0,
-        host4_size: Int = 0,
+        host_args: Tuple[*HostArgs] = (),
         grid_dim: Dim,
         block_dim: Dim,
         cluster_dim: OptionalReg[Dim] = None,
@@ -3642,27 +3699,33 @@ struct DeviceFunction[
         var constant_memory: List[ConstantMemoryMapping] = [],
         location: Optional[SourceLocation] = None,
     ) raises:
+        """Encode `DevicePassable` args, then pass `host_args` by host layout.
+
+        Use when the named kernel's trailing parameter is a capturing
+        closure compiled as the host callable. Encoding that closure would
+        rewrite it to a synthesized `device_type` the kernel cannot read.
+        """
+        comptime for idx in range(HostArgs.length):
+            Self._check_trailing_host[HostArgs[idx], Ts.length + idx]()
+
         # We need to keep track of both the number of arguments pushed by the
         # caller and the number of translated arguments expected by the kernel.
         comptime num_encoded = Ts.length
-        comptime num_passed_args = num_encoded + extra_host_count
+        comptime num_passed_args = num_encoded + HostArgs.length
 
         # Validate that all actual arguments do remap to the declared device
         # dtype in the kernel.
         var validated_args = Self._validate_arguments[
-            *Ts, num_args=num_encoded, extra_declared=extra_host_count
+            *Ts, num_args=num_encoded, extra_declared=HostArgs.length
         ]()
+
         var num_translated_args = validated_args[0]
-        if extra_host_count >= 1 and host0:
-            num_translated_args += 1
-        if extra_host_count >= 2 and host1:
-            num_translated_args += 1
-        if extra_host_count >= 3 and host2:
-            num_translated_args += 1
-        if extra_host_count >= 4 and host3:
-            num_translated_args += 1
-        if extra_host_count >= 5 and host4:
-            num_translated_args += 1
+        comptime for i in range(HostArgs.length):
+            comptime size = size_of[HostArgs[i], target=Self.target]()
+            # Skip zero-sized types (ZSTs).
+            comptime if size != 0:
+                num_translated_args += 1
+
         var translated_arg_offsets = validated_args[1].copy()
 
         var num_captures = max(0, self._func_impl.num_captures)
@@ -3738,26 +3801,16 @@ struct DeviceFunction[
 
         comptime if Self.target.is_apple_gpu():
             # `num_passed_args` sizes the offsets array, which covers encoded
-            # args only, so it stays `num_encoded`; `extra_host_count` sizes
+            # args only, so it stays `num_encoded`; `HostArgs.length` sizes
             # the extra per-slot entries the host arguments occupy.
             call_with_pack_checked_metal[
                 Self.func,
                 num_passed_args=num_encoded,
                 num_captures_static=num_captures_static,
-                extra_host_count=extra_host_count,
             ](
                 ctx,
                 *args,
-                host0=host0,
-                host1=host1,
-                host2=host2,
-                host3=host3,
-                host4=host4,
-                host0_size=host0_size,
-                host1_size=host1_size,
-                host2_size=host2_size,
-                host3_size=host3_size,
-                host4_size=host4_size,
+                host_args=host_args,
                 func_handle=self._handle,
                 device_context=self._context.assert_default_target(),
                 capture_sizes=self._capture_sizes_ptr(),
@@ -3809,26 +3862,20 @@ struct DeviceFunction[
                     ] = first_word_addr.as_unsafe_any_origin()
                     translated_arg_idx += 1
 
-            if extra_host_count >= 1:
-                if case .Some(addr) = host0:
-                    dense_args_addrs[unsafe_offset=translated_arg_idx] = addr
-                    translated_arg_idx += 1
-            if extra_host_count >= 2:
-                if case .Some(addr) = host1:
-                    dense_args_addrs[unsafe_offset=translated_arg_idx] = addr
-                    translated_arg_idx += 1
-            if extra_host_count >= 3:
-                if case .Some(addr) = host2:
-                    dense_args_addrs[unsafe_offset=translated_arg_idx] = addr
-                    translated_arg_idx += 1
-            if extra_host_count >= 4:
-                if case .Some(addr) = host3:
-                    dense_args_addrs[unsafe_offset=translated_arg_idx] = addr
-                    translated_arg_idx += 1
-            if extra_host_count >= 5:
-                if case .Some(addr) = host4:
-                    dense_args_addrs[unsafe_offset=translated_arg_idx] = addr
-                    translated_arg_idx += 1
+            comptime for i in range(HostArgs.length):
+                comptime arg_size = size_of[HostArgs[i], target=Self.target]()
+                # Skip zero-sized types (ZSTs).
+                if arg_size == 0:
+                    continue
+
+                var arg_addr = (
+                    Pointer(to=host_args[i])
+                    .unsafe_bitcast[NoneType]()
+                    .unsafe_mut_cast[True]()
+                    .as_unsafe_any_origin()
+                )
+                dense_args_addrs[unsafe_offset=translated_arg_idx] = arg_addr
+                translated_arg_idx += 1
 
             comptime func_name = reflect_fn[Self.func].display_name()
             _enqueue_packed_checked(
@@ -3857,358 +3904,6 @@ struct DeviceFunction[
                     unsafe_owned_ptr=dense_args_addrs
                 ).unsafe_with_layout({count = num_captures + num_passed_args})
             )
-
-    @inline(.always)
-    @__parameter
-    def _call_with_pack_checked[
-        Host: RegisterPassable,
-        *Encoded: DevicePassable,
-    ](
-        imm self,
-        ctx: Some[_FunctionEnqueuer],
-        *encoded_args: *Encoded,
-        host_arg: Host,
-        grid_dim: Dim,
-        block_dim: Dim,
-        cluster_dim: OptionalReg[Dim] = None,
-        shared_mem_bytes: OptionalReg[Int] = None,
-        var attributes: List[LaunchAttribute] = [],
-        var constant_memory: List[ConstantMemoryMapping] = [],
-        location: Optional[SourceLocation] = None,
-    ) raises:
-        """Encode `DevicePassable` args, then pass `host_arg` by host layout.
-
-        Use when the named kernel's trailing parameter is a capturing
-        closure compiled as the host callable. Encoding that closure would
-        rewrite it to a synthesized `device_type` the kernel cannot read.
-        """
-        Self._check_trailing_host[Host, Encoded.length]()
-        var host0 = Optional[OpaquePointer[MutAnyOrigin]](None)
-        comptime if size_of[Host, target=Self.target]() != 0:
-            host0 = Optional(
-                Pointer(to=host_arg)
-                .unsafe_bitcast[NoneType]()
-                .unsafe_mut_cast[True]()
-                .as_unsafe_any_origin()
-            )
-        self._call_with_pack_checked[*Encoded, extra_host_count=1](
-            ctx,
-            *encoded_args,
-            host0=host0,
-            host0_size=size_of[Host, target=Self.target](),
-            grid_dim=grid_dim,
-            block_dim=block_dim,
-            cluster_dim=cluster_dim,
-            shared_mem_bytes=shared_mem_bytes,
-            attributes=attributes^,
-            constant_memory=constant_memory^,
-            location=location,
-        )
-
-    @inline(.always)
-    @__parameter
-    def _call_with_pack_checked[
-        Host0: RegisterPassable,
-        Host1: RegisterPassable,
-        *Encoded: DevicePassable,
-    ](
-        imm self,
-        ctx: Some[_FunctionEnqueuer],
-        *encoded_args: *Encoded,
-        host_arg: Host0,
-        host_arg2: Host1,
-        grid_dim: Dim,
-        block_dim: Dim,
-        cluster_dim: OptionalReg[Dim] = None,
-        shared_mem_bytes: OptionalReg[Int] = None,
-        var attributes: List[LaunchAttribute] = [],
-        var constant_memory: List[ConstantMemoryMapping] = [],
-        location: Optional[SourceLocation] = None,
-    ) raises:
-        """Encode `DevicePassable` args, then pass two host arguments by layout.
-        """
-        Self._check_trailing_host[Host0, Encoded.length]()
-        Self._check_trailing_host[Host1, Encoded.length + 1]()
-        var host0 = Optional[OpaquePointer[MutAnyOrigin]](None)
-        var host1 = Optional[OpaquePointer[MutAnyOrigin]](None)
-        comptime if size_of[Host0, target=Self.target]() != 0:
-            host0 = Optional(
-                Pointer(to=host_arg)
-                .unsafe_bitcast[NoneType]()
-                .unsafe_mut_cast[True]()
-                .as_unsafe_any_origin()
-            )
-        comptime if size_of[Host1, target=Self.target]() != 0:
-            host1 = Optional(
-                Pointer(to=host_arg2)
-                .unsafe_bitcast[NoneType]()
-                .unsafe_mut_cast[True]()
-                .as_unsafe_any_origin()
-            )
-        self._call_with_pack_checked[*Encoded, extra_host_count=2](
-            ctx,
-            *encoded_args,
-            host0=host0,
-            host1=host1,
-            host0_size=size_of[Host0, target=Self.target](),
-            host1_size=size_of[Host1, target=Self.target](),
-            grid_dim=grid_dim,
-            block_dim=block_dim,
-            cluster_dim=cluster_dim,
-            shared_mem_bytes=shared_mem_bytes,
-            attributes=attributes^,
-            constant_memory=constant_memory^,
-            location=location,
-        )
-
-    @inline(.always)
-    @__parameter
-    def _call_with_pack_checked[
-        Host0: RegisterPassable,
-        Host1: RegisterPassable,
-        Host2: RegisterPassable,
-        *Encoded: DevicePassable,
-    ](
-        imm self,
-        ctx: Some[_FunctionEnqueuer],
-        *encoded_args: *Encoded,
-        host_arg: Host0,
-        host_arg2: Host1,
-        host_arg3: Host2,
-        grid_dim: Dim,
-        block_dim: Dim,
-        cluster_dim: OptionalReg[Dim] = None,
-        shared_mem_bytes: OptionalReg[Int] = None,
-        var attributes: List[LaunchAttribute] = [],
-        var constant_memory: List[ConstantMemoryMapping] = [],
-        location: Optional[SourceLocation] = None,
-    ) raises:
-        """Encode `DevicePassable` args, then pass three host arguments by
-        layout.
-        """
-        Self._check_trailing_host[Host0, Encoded.length]()
-        Self._check_trailing_host[Host1, Encoded.length + 1]()
-        Self._check_trailing_host[Host2, Encoded.length + 2]()
-        var host0 = Optional[OpaquePointer[MutAnyOrigin]](None)
-        var host1 = Optional[OpaquePointer[MutAnyOrigin]](None)
-        var host2 = Optional[OpaquePointer[MutAnyOrigin]](None)
-        comptime if size_of[Host0, target=Self.target]() != 0:
-            host0 = Optional(
-                Pointer(to=host_arg)
-                .unsafe_bitcast[NoneType]()
-                .unsafe_mut_cast[True]()
-                .as_unsafe_any_origin()
-            )
-        comptime if size_of[Host1, target=Self.target]() != 0:
-            host1 = Optional(
-                Pointer(to=host_arg2)
-                .unsafe_bitcast[NoneType]()
-                .unsafe_mut_cast[True]()
-                .as_unsafe_any_origin()
-            )
-        comptime if size_of[Host2, target=Self.target]() != 0:
-            host2 = Optional(
-                Pointer(to=host_arg3)
-                .unsafe_bitcast[NoneType]()
-                .unsafe_mut_cast[True]()
-                .as_unsafe_any_origin()
-            )
-        self._call_with_pack_checked[*Encoded, extra_host_count=3](
-            ctx,
-            *encoded_args,
-            host0=host0,
-            host1=host1,
-            host2=host2,
-            host0_size=size_of[Host0, target=Self.target](),
-            host1_size=size_of[Host1, target=Self.target](),
-            host2_size=size_of[Host2, target=Self.target](),
-            grid_dim=grid_dim,
-            block_dim=block_dim,
-            cluster_dim=cluster_dim,
-            shared_mem_bytes=shared_mem_bytes,
-            attributes=attributes^,
-            constant_memory=constant_memory^,
-            location=location,
-        )
-
-    @inline(.always)
-    @__parameter
-    def _call_with_pack_checked[
-        Host0: RegisterPassable,
-        Host1: RegisterPassable,
-        Host2: RegisterPassable,
-        Host3: RegisterPassable,
-        *Encoded: DevicePassable,
-    ](
-        imm self,
-        ctx: Some[_FunctionEnqueuer],
-        *encoded_args: *Encoded,
-        host_arg: Host0,
-        host_arg2: Host1,
-        host_arg3: Host2,
-        host_arg4: Host3,
-        grid_dim: Dim,
-        block_dim: Dim,
-        cluster_dim: OptionalReg[Dim] = None,
-        shared_mem_bytes: OptionalReg[Int] = None,
-        var attributes: List[LaunchAttribute] = [],
-        var constant_memory: List[ConstantMemoryMapping] = [],
-        location: Optional[SourceLocation] = None,
-    ) raises:
-        """Encode `DevicePassable` args, then pass four host arguments by
-        layout.
-        """
-        Self._check_trailing_host[Host0, Encoded.length]()
-        Self._check_trailing_host[Host1, Encoded.length + 1]()
-        Self._check_trailing_host[Host2, Encoded.length + 2]()
-        Self._check_trailing_host[Host3, Encoded.length + 3]()
-        var host0 = Optional[OpaquePointer[MutAnyOrigin]](None)
-        var host1 = Optional[OpaquePointer[MutAnyOrigin]](None)
-        var host2 = Optional[OpaquePointer[MutAnyOrigin]](None)
-        var host3 = Optional[OpaquePointer[MutAnyOrigin]](None)
-        comptime if size_of[Host0, target=Self.target]() != 0:
-            host0 = Optional(
-                Pointer(to=host_arg)
-                .unsafe_bitcast[NoneType]()
-                .unsafe_mut_cast[True]()
-                .as_unsafe_any_origin()
-            )
-        comptime if size_of[Host1, target=Self.target]() != 0:
-            host1 = Optional(
-                Pointer(to=host_arg2)
-                .unsafe_bitcast[NoneType]()
-                .unsafe_mut_cast[True]()
-                .as_unsafe_any_origin()
-            )
-        comptime if size_of[Host2, target=Self.target]() != 0:
-            host2 = Optional(
-                Pointer(to=host_arg3)
-                .unsafe_bitcast[NoneType]()
-                .unsafe_mut_cast[True]()
-                .as_unsafe_any_origin()
-            )
-        comptime if size_of[Host3, target=Self.target]() != 0:
-            host3 = Optional(
-                Pointer(to=host_arg4)
-                .unsafe_bitcast[NoneType]()
-                .unsafe_mut_cast[True]()
-                .as_unsafe_any_origin()
-            )
-        self._call_with_pack_checked[*Encoded, extra_host_count=4](
-            ctx,
-            *encoded_args,
-            host0=host0,
-            host1=host1,
-            host2=host2,
-            host3=host3,
-            host0_size=size_of[Host0, target=Self.target](),
-            host1_size=size_of[Host1, target=Self.target](),
-            host2_size=size_of[Host2, target=Self.target](),
-            host3_size=size_of[Host3, target=Self.target](),
-            grid_dim=grid_dim,
-            block_dim=block_dim,
-            cluster_dim=cluster_dim,
-            shared_mem_bytes=shared_mem_bytes,
-            attributes=attributes^,
-            constant_memory=constant_memory^,
-            location=location,
-        )
-
-    @inline(.always)
-    @__parameter
-    def _call_with_pack_checked[
-        Host0: RegisterPassable,
-        Host1: RegisterPassable,
-        Host2: RegisterPassable,
-        Host3: RegisterPassable,
-        Host4: RegisterPassable,
-        *Encoded: DevicePassable,
-    ](
-        imm self,
-        ctx: Some[_FunctionEnqueuer],
-        *encoded_args: *Encoded,
-        host_arg: Host0,
-        host_arg2: Host1,
-        host_arg3: Host2,
-        host_arg4: Host3,
-        host_arg5: Host4,
-        grid_dim: Dim,
-        block_dim: Dim,
-        cluster_dim: OptionalReg[Dim] = None,
-        shared_mem_bytes: OptionalReg[Int] = None,
-        var attributes: List[LaunchAttribute] = [],
-        var constant_memory: List[ConstantMemoryMapping] = [],
-        location: Optional[SourceLocation] = None,
-    ) raises:
-        """Encode `DevicePassable` args, then pass five host arguments by
-        layout.
-        """
-        Self._check_trailing_host[Host0, Encoded.length]()
-        Self._check_trailing_host[Host1, Encoded.length + 1]()
-        Self._check_trailing_host[Host2, Encoded.length + 2]()
-        Self._check_trailing_host[Host3, Encoded.length + 3]()
-        Self._check_trailing_host[Host4, Encoded.length + 4]()
-        var host0 = Optional[OpaquePointer[MutAnyOrigin]](None)
-        var host1 = Optional[OpaquePointer[MutAnyOrigin]](None)
-        var host2 = Optional[OpaquePointer[MutAnyOrigin]](None)
-        var host3 = Optional[OpaquePointer[MutAnyOrigin]](None)
-        var host4 = Optional[OpaquePointer[MutAnyOrigin]](None)
-        comptime if size_of[Host0, target=Self.target]() != 0:
-            host0 = Optional(
-                Pointer(to=host_arg)
-                .unsafe_bitcast[NoneType]()
-                .unsafe_mut_cast[True]()
-                .as_unsafe_any_origin()
-            )
-        comptime if size_of[Host1, target=Self.target]() != 0:
-            host1 = Optional(
-                Pointer(to=host_arg2)
-                .unsafe_bitcast[NoneType]()
-                .unsafe_mut_cast[True]()
-                .as_unsafe_any_origin()
-            )
-        comptime if size_of[Host2, target=Self.target]() != 0:
-            host2 = Optional(
-                Pointer(to=host_arg3)
-                .unsafe_bitcast[NoneType]()
-                .unsafe_mut_cast[True]()
-                .as_unsafe_any_origin()
-            )
-        comptime if size_of[Host3, target=Self.target]() != 0:
-            host3 = Optional(
-                Pointer(to=host_arg4)
-                .unsafe_bitcast[NoneType]()
-                .unsafe_mut_cast[True]()
-                .as_unsafe_any_origin()
-            )
-        comptime if size_of[Host4, target=Self.target]() != 0:
-            host4 = Optional(
-                Pointer(to=host_arg5)
-                .unsafe_bitcast[NoneType]()
-                .unsafe_mut_cast[True]()
-                .as_unsafe_any_origin()
-            )
-        self._call_with_pack_checked[*Encoded, extra_host_count=5](
-            ctx,
-            *encoded_args,
-            host0=host0,
-            host1=host1,
-            host2=host2,
-            host3=host3,
-            host4=host4,
-            host0_size=size_of[Host0, target=Self.target](),
-            host1_size=size_of[Host1, target=Self.target](),
-            host2_size=size_of[Host2, target=Self.target](),
-            host3_size=size_of[Host3, target=Self.target](),
-            host4_size=size_of[Host4, target=Self.target](),
-            grid_dim=grid_dim,
-            block_dim=block_dim,
-            cluster_dim=cluster_dim,
-            shared_mem_bytes=shared_mem_bytes,
-            attributes=attributes^,
-            constant_memory=constant_memory^,
-            location=location,
-        )
 
     @inline(.always)
     def get_attribute(self, attr: Attribute) raises -> Int:
@@ -4526,9 +4221,9 @@ See `DeviceContextBase` for additional documentation.
 """
 
 
-struct DeviceContextBase[
-    target: CompilationTarget = CompilationTarget.default_accelerator()
-](ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
+struct DeviceContextBase[target: CompilationTarget = max_default_accelerator()](
+    ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer
+):
     """Represents a single stream of execution on a particular accelerator
     (GPU).
 
@@ -4587,7 +4282,7 @@ struct DeviceContextBase[
     comptime CPU = DeviceContextBase[CompilationTarget.current()]
     """DeviceContext type for the current CPU target."""
 
-    comptime default_device_info = GPUInfo.from_target[Self.target]()
+    comptime default_device_info = get_gpu_info[Self.target._arch()]()
     """`GPUInfo` object for the default accelerator."""
 
     # ===-------------------------------------------------------------------===#
@@ -4739,6 +4434,62 @@ struct DeviceContextBase[
     # TODO(MSTDL-3208): Temporary target parameterization helpers
     # ===-------------------------------------------------------------------===#
 
+    # TODO(MSTDL-3265): Remove `target: StaticString` parameters from all
+    #   callers of this method after verifying all callers instead indicate
+    #   target device via `DeviceContext.target`.
+    @inline(.always)
+    def _comptime_assert_matches_target_is_cpu[
+        target_name: StaticString
+    ](self,):
+        comptime assert Self.target.is_cpu() == is_cpu[target_name](), String(
+            "`target` parameter '",
+            target_name,
+            "' does not match the DeviceContext target, which is ",
+            "a CPU" if Self.target.is_cpu() else "not a CPU",
+            " (triple: ",
+            StaticString(Self.target.__triple()),
+            ", arch: ",
+            Self.target._arch(),
+            ")",
+        )
+
+    @inline(.always)
+    def cast_if_cpu[
+        target_str: StaticString
+    ](
+        var self,
+        out result: DeviceContextBase[
+            CompilationTarget[
+                _mlir_value=(
+                    CompilationTarget.current()._mlir_value if target_str
+                    == "cpu" else Self.target._mlir_value
+                )
+            ]()
+        ],
+    ):
+        """Temporary function to cast this DeviceContext to the CPU target if
+        the device label is "cpu".
+
+        Parameters:
+            target_str: The device label to cast to. Typically "cpu" or "gpu".
+
+        Returns:
+            A DeviceContext with a target parameter matching the provided device
+            label.
+        """
+        # Assert that this is only called on `ctx: DeviceContext` concrete /
+        # default accelerator instances for the time being.
+        var _ = self.assert_default_target()
+        comptime if target_str == "cpu":
+            # Defensive sanity check, since we make this assumption in the
+            # result type.
+            comptime assert CompilationTarget.current().is_cpu()
+
+            var self_cpu = self.assert_cpu_target()
+            return rebind_var[type_of(result)](self_cpu^)
+        else:
+            return rebind_var[type_of(result)](self^)
+
     @inline(.always)
     def assert_cpu_target(var self) -> DeviceContext.CPU:
         """Temporary function to assert and cast this DeviceContext to the CPU
@@ -4791,7 +4542,7 @@ struct DeviceContextBase[
             This device context cast to the default target.
         """
         comptime assert Self.target._eq_triple_and_arch[
-            CompilationTarget.default_accelerator()
+            max_default_accelerator()
         ](), String(
             t"using DeviceContext with non-default target is not supported fro"
             t"m: {call_location()}"
@@ -5027,9 +4778,7 @@ struct DeviceContextBase[
         Raises:
             If the operation fails.
         """
-        return DeviceBuffer[dtype](
-            self.assert_default_target(), size, _DeviceBufferMode._ASYNC
-        )
+        return DeviceBuffer[dtype](self.assert_default_target(), size)
 
     def create_buffer_sync[
         dtype: DType
@@ -5048,9 +4797,7 @@ struct DeviceContextBase[
         Raises:
             If the operation fails.
         """
-        var result = DeviceBuffer[dtype](
-            self.assert_default_target(), size, _DeviceBufferMode._ASYNC
-        )
+        var result = DeviceBuffer[dtype](self.assert_default_target(), size)
         self.synchronize()
         return result
 

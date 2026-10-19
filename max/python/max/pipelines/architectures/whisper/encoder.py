@@ -15,7 +15,7 @@ from __future__ import annotations
 import math
 
 from max.dtype import DType
-from max.graph import DeviceRef, TensorValue, ops
+from max.graph import DeviceRef, TensorType, TensorValue, ops
 from max.nn.conv import Conv1D
 from max.nn.embedding import Embedding
 from max.nn.layer import Module
@@ -188,6 +188,16 @@ class WhisperEncoder(Module):
         # TODO: Is LayerNorm here not the same as nn.LayerNorm
         self.norm = LayerNorm(
             huggingface_config.d_model, devices=[device], dtype=dtype, eps=1e-5
+        )
+
+    def input_types(self) -> tuple[TensorType]:
+        """Returns the graph's input types: the audio input features."""
+        return (
+            TensorType(
+                DType.float32,
+                shape=["batch_size", "num_mel_bins", "sequence_length"],
+                device=DeviceRef.CPU(),
+            ),
         )
 
     def __call__(self, input_features: TensorValue) -> tuple[TensorValue, ...]:

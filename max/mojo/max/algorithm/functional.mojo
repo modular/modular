@@ -314,7 +314,9 @@ def _elementwise_impl[
     *,
     target: StaticString = "cpu",
     trace_description: StaticString,
-](func: FuncType, shape: Coord, context: DeviceContext) raises:
+](func: FuncType, shape: Coord, context0: DeviceContext.Generic) raises:
+    var context = context0.cast_if_cpu[target]()
+
     @inline(.always)
     def description_fn() {imm} -> String:
         var shape_str = trace_arg("shape", coord_to_index_list(shape))
@@ -360,7 +362,7 @@ def _elementwise_impl[
             return plugin.elementwise_fn[shape.rank, simd_width](
                 _CoordToIndexListAdapter[shape.rank, FuncType](func),
                 coord_to_index_list(shape),
-                context,
+                context.assert_default_target(),
             )
         elif is_gpu[target]():
             _elementwise_impl_gpu[
@@ -369,7 +371,7 @@ def _elementwise_impl[
             ](
                 func,
                 shape=shape,
-                ctx=context,
+                ctx=context.assert_default_target(),
             )
         else:
             CompilationTarget.unsupported_target_error[

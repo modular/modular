@@ -254,6 +254,9 @@ class BatchMetrics:
     dkv_peers_dropped: int = 0
     dkv_peer_loads: int = 0
     dkv_peer_load_failures: int = 0
+    dkv_peer_transfer_failures: int = 0
+    dkv_peer_metadata_refreshes: int = 0
+    dkv_peer_metadata_refresh_failures: int = 0
     dkv_hints_rejected: int = 0
     dkv_hints_rejected_by_reason: dict[str, int] = field(default_factory=dict)
 
@@ -400,6 +403,9 @@ class BatchMetrics:
         dkv_peers_dropped = 0
         dkv_peer_loads = 0
         dkv_peer_load_failures = 0
+        dkv_peer_transfer_failures = 0
+        dkv_peer_metadata_refreshes = 0
+        dkv_peer_metadata_refresh_failures = 0
         dkv_hints_rejected = 0
         dkv_hints_rejected_by_reason: dict[str, int] = {}
         dkv_rpc_calls: dict[str, int] = {}
@@ -514,6 +520,13 @@ class BatchMetrics:
             dkv_peers_dropped = metrics_agg.dkv_peers_dropped
             dkv_peer_loads = metrics_agg.dkv_peer_loads
             dkv_peer_load_failures = metrics_agg.dkv_peer_load_failures
+            dkv_peer_transfer_failures = metrics_agg.dkv_peer_transfer_failures
+            dkv_peer_metadata_refreshes = (
+                metrics_agg.dkv_peer_metadata_refreshes
+            )
+            dkv_peer_metadata_refresh_failures = (
+                metrics_agg.dkv_peer_metadata_refresh_failures
+            )
             dkv_hints_rejected = metrics_agg.dkv_hints_rejected
             dkv_hints_rejected_by_reason = (
                 metrics_agg.dkv_hints_rejected_by_reason
@@ -647,6 +660,9 @@ class BatchMetrics:
             dkv_peers_dropped=dkv_peers_dropped,
             dkv_peer_loads=dkv_peer_loads,
             dkv_peer_load_failures=dkv_peer_load_failures,
+            dkv_peer_transfer_failures=dkv_peer_transfer_failures,
+            dkv_peer_metadata_refreshes=dkv_peer_metadata_refreshes,
+            dkv_peer_metadata_refresh_failures=dkv_peer_metadata_refresh_failures,
             dkv_hints_rejected=dkv_hints_rejected,
             dkv_hints_rejected_by_reason=dkv_hints_rejected_by_reason,
             dkv_rpc_calls=dkv_rpc_calls,
@@ -799,6 +815,9 @@ class BatchMetrics:
                 self.dkv_peer_attaches,
                 self.dkv_peer_attach_failures,
                 self.dkv_peers_dropped,
+                self.dkv_peer_transfer_failures,
+                self.dkv_peer_metadata_refreshes,
+                self.dkv_peer_metadata_refresh_failures,
             )
         ):
             dkv_peer_str = (
@@ -807,7 +826,10 @@ class BatchMetrics:
                 f"{self.dkv_peer_attaches} attaches "
                 f"({self.dkv_peer_attach_failures} failed, "
                 f"{self.dkv_peers_dropped} dropped), "
-                f"{self.dkv_hints_rejected} hints rejected | "
+                f"{self.dkv_hints_rejected} hints rejected, "
+                f"{self.dkv_peer_transfer_failures} transfers failed, "
+                f"{self.dkv_peer_metadata_refreshes} metadata refreshes "
+                f"({self.dkv_peer_metadata_refresh_failures} failed) | "
             )
 
         vision_str = ""
@@ -1092,6 +1114,15 @@ class BatchMetrics:
             extra["dkv_peers_dropped"] = self.dkv_peers_dropped
             extra["dkv_peer_loads"] = self.dkv_peer_loads
             extra["dkv_peer_load_failures"] = self.dkv_peer_load_failures
+            extra["dkv_peer_transfer_failures"] = (
+                self.dkv_peer_transfer_failures
+            )
+            extra["dkv_peer_metadata_refreshes"] = (
+                self.dkv_peer_metadata_refreshes
+            )
+            extra["dkv_peer_metadata_refresh_failures"] = (
+                self.dkv_peer_metadata_refresh_failures
+            )
             extra["dkv_hints_rejected"] = self.dkv_hints_rejected
             # One scalar key per label that moved, as publish_metrics sends.
             labeled: tuple[tuple[str, Mapping[str, float]], ...] = (
@@ -1270,6 +1301,13 @@ class BatchMetrics:
             METRICS.dkv_peers_dropped(self.dkv_peers_dropped)
             METRICS.dkv_peer_loads(self.dkv_peer_loads)
             METRICS.dkv_peer_load_failures(self.dkv_peer_load_failures)
+            METRICS.dkv_peer_transfer_failures(self.dkv_peer_transfer_failures)
+            METRICS.dkv_peer_metadata_refreshes(
+                self.dkv_peer_metadata_refreshes
+            )
+            METRICS.dkv_peer_metadata_refresh_failures(
+                self.dkv_peer_metadata_refresh_failures
+            )
             METRICS.dkv_hints_rejected(self.dkv_hints_rejected)
             # Labeled counters only move by their increment, so a zero would
             # cost a trip through the telemetry queue and change nothing.

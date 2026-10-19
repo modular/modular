@@ -20,7 +20,6 @@ must match the CPU path, so duplicates cannot make GPU threads race on a slot.
 """
 
 from std.testing import TestSuite, assert_equal
-from std.utils import IndexList
 
 from builtin_kernels.gather_scatter import SqueezeShape, UnsqueezeShape
 from extensibility import IOSpec, ManagedTensorSlice, StaticTensorSpec
@@ -36,21 +35,22 @@ def _invalid_indices(pattern: Int, count: Int, index_rank: Int) -> List[Int]:
     """Returns `count` indices that are duplicated or out of `index_rank`."""
     var indices = List[Int]()
     for k in range(count):
-        if pattern == 0:
-            # All point at dim 0.
-            indices.append(0)
-        elif pattern == 1:
-            # The last dim, spelled positively and negatively.
-            indices.append(index_rank - 1 if k % 2 == 0 else -1)
-        elif pattern == 2:
-            indices.append(index_rank + k)
-        elif pattern == 3:
-            indices.append(-index_rank - 1 - k)
-        else:
-            # One valid index, then far out of range in both directions.
-            indices.append(
-                0 if k == 0 else (1000000 if k % 2 == 1 else -1000000)
-            )
+        match pattern:
+            case 0:
+                # All point at dim 0.
+                indices.append(0)
+            case 1:
+                # The last dim, spelled positively and negatively.
+                indices.append(index_rank - 1 if k % 2 == 0 else -1)
+            case 2:
+                indices.append(index_rank + k)
+            case 3:
+                indices.append(-index_rank - 1 - k)
+            case _:
+                # One valid index, then far out of range in both directions.
+                indices.append(
+                    0 if k == 0 else (1000000 if k % 2 == 1 else -1000000)
+                )
     return indices^
 
 
@@ -81,15 +81,15 @@ def run_case[
     comptime in_spec = StaticTensorSpec[shape_dtype, 1].get_unknown()
     comptime idx_spec = StaticTensorSpec[indices_type, 1].get_unknown()
     var input = ManagedTensorSlice[io_spec=IOSpec.Input, static_spec=in_spec](
-        in_dev.unsafe_ptr(), IndexList[1](rank)
+        in_dev.unsafe_ptr(), (rank,)
     )
     var shape_indices = ManagedTensorSlice[
         io_spec=IOSpec.Input, static_spec=idx_spec
-    ](idx_dev.unsafe_ptr(), IndexList[1](num_indices))
+    ](idx_dev.unsafe_ptr(), (num_indices,))
     # The output starts `PAD` slots into the buffer so a write at a negative
     # position lands on a canary.
     var output = ManagedTensorSlice[io_spec=IOSpec.Output, static_spec=in_spec](
-        out_dev.unsafe_ptr() + PAD, IndexList[1](out_rank)
+        out_dev.unsafe_ptr().unsafe_offset(PAD), (out_rank,)
     )
 
     comptime if squeeze:
@@ -111,13 +111,13 @@ def run_case[
         ref_host[t] = CANARY
     var ref_input = ManagedTensorSlice[
         io_spec=IOSpec.Input, static_spec=in_spec
-    ](in_host.unsafe_ptr(), IndexList[1](rank))
+    ](in_host.unsafe_ptr(), (rank,))
     var ref_indices = ManagedTensorSlice[
         io_spec=IOSpec.Input, static_spec=idx_spec
-    ](idx_host.unsafe_ptr(), IndexList[1](num_indices))
+    ](idx_host.unsafe_ptr(), (num_indices,))
     var ref_output = ManagedTensorSlice[
         io_spec=IOSpec.Output, static_spec=in_spec
-    ](ref_host.unsafe_ptr() + PAD, IndexList[1](out_rank))
+    ](ref_host.unsafe_ptr().unsafe_offset(PAD), (out_rank,))
     comptime if squeeze:
         SqueezeShape.execute[
             target="cpu", dtype=shape_dtype, indices_type=indices_type

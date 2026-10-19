@@ -31,7 +31,7 @@ modular_py_test(
     size = "large",
     srcs = ["test_drafter_gpu.py"],
     exec_properties = {
-        "test.resources:gpu-memory": "4",
+        "test.resources:gpu-memory": "2",
     },
     gpu_constraints = ["//:has_gpu"] + select({
         "//:apple_gpu": ["@platforms//:incompatible"],
@@ -54,6 +54,7 @@ modular_py_test(
         "//max/python/max/pipelines/architectures/dflash_mimo_v2",
         "//max/tests/integration/test_common:simple_kv_cache",
         requirement("numpy"),
+        requirement("ml-dtypes"),
     ],
 )
 

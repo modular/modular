@@ -31,10 +31,10 @@ __extension AttentionRDNA:
     @inline(.always)
     def mha_decode(
         mut self,
-        exp_sum_ptr: UnsafePointer[
+        exp_sum_ptr: MutPointer[
             Scalar[get_accum_type[Self.q_type]()], MutAnyOrigin
         ],
-        qk_max_ptr: UnsafePointer[
+        qk_max_ptr: MutPointer[
             Scalar[get_accum_type[Self.q_type]()], MutAnyOrigin
         ],
         num_partitions: Int,

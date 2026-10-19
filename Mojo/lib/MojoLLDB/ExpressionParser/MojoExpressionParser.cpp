@@ -24,6 +24,7 @@
 #include "Mojo/Compiler/ObjectCompiler.h"
 #include "Mojo/KGENDialect/KGENOps.h"
 #include "Mojo/LITDialect/LITOps.h"
+#include "Mojo/MojoParser/ASTDecl.h"
 #include "Mojo/MojoParser/EntryPoint.h"
 #include "Mojo/MojoTooling/ParserDriver.h"
 #include "Mojo/MojoTooling/PublicASTDecl.h"
@@ -421,7 +422,7 @@ MojoExpressionParser::parse(MojoPersistentExpressionState &state,
 
   // Create a clone of the parser module so that we can compile it without
   // thrashing on the current parser state.
-  auto exprFn = cast<LIT::FnOp>(result.exprFnDecl.getIfOperation());
+  auto exprFn = cast<LIT::DefASTDecl>(*result.exprFnDecl).getOp();
   exprFn.setLinkageNameAttr(
       LinkageNameAttr::get(exprFn->getContext(), exprFnName));
   mlir::IRMapping mapping;

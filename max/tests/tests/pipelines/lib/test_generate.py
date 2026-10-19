@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""``Batch`` bookkeeping over fake pipelines.
+"""``GenerateIterator`` bookkeeping over fake pipelines.
 
 The fakes stand in for a model because everything under test is bookkeeping
 over ``execute``: which rows run each step, when a row's KV cache and
@@ -53,7 +53,7 @@ from max.pipelines.context import (
     TokenBuffer,
 )
 from max.pipelines.lib.config import PipelineConfig
-from max.pipelines.lib.generate import Batch, generate
+from max.pipelines.lib.generate import GenerateIterator, generate
 from max.pipelines.lib.log_probabilities import _MAX_TOP_LOGPROBS
 from max.pipelines.lib.pipeline_args import PipelineArgs
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
@@ -407,7 +407,7 @@ def _assert_nothing_held(pipeline: FakePipeline, num_rows: int) -> None:
 
 def test_finished_rows_leave_the_batch() -> None:
     pipeline = FakePipeline()
-    with Batch(pipeline, _prompts(1, 3), max_new_tokens=5) as batch:
+    with GenerateIterator(pipeline, _prompts(1, 3), max_new_tokens=5) as batch:
         assert batch.synchronous
         steps = []
         while not batch.done:
@@ -442,7 +442,7 @@ def test_sequences_start_with_the_prompt() -> None:
 
 def test_iterating_a_batch_steps_it_to_the_end() -> None:
     pipeline = FakePipeline()
-    with Batch(pipeline, _prompts(1, 3), max_new_tokens=5) as batch:
+    with GenerateIterator(pipeline, _prompts(1, 3), max_new_tokens=5) as batch:
         steps = list(batch)
 
     assert steps == [{0: [EOS], 1: [101]}, {1: [102]}, {1: [EOS]}]
@@ -463,7 +463,7 @@ def test_attention_mask_drops_padding() -> None:
 def test_attention_mask_of_another_shape_raises() -> None:
     pipeline = FakePipeline()
     with pytest.raises(ValueError, match="same shape as input_ids"):
-        Batch(
+        GenerateIterator(
             pipeline,
             _prompts(1, 3),
             attention_mask=[[1, 1, 1], [1, 1]],
@@ -474,7 +474,7 @@ def test_attention_mask_of_another_shape_raises() -> None:
 
 def test_ignore_eos_keeps_every_row_to_max_new_tokens() -> None:
     pipeline = FakePipeline()
-    with Batch(
+    with GenerateIterator(
         pipeline, _prompts(1, 3), max_new_tokens=5, ignore_eos=True
     ) as batch:
         for _ in batch:
@@ -494,7 +494,9 @@ def test_ignore_eos_rejects_a_row_the_plan_would_clamp() -> None:
     with pytest.raises(
         ValueError, match=r"planned max length is 8.*Raise max_length"
     ):
-        Batch(pipeline, _prompts(1), max_new_tokens=6, ignore_eos=True)
+        GenerateIterator(
+            pipeline, _prompts(1), max_new_tokens=6, ignore_eos=True
+        )
     assert pipeline.kv_manager.claimed == {}
 
 
@@ -516,9 +518,9 @@ def test_generation_config_min_new_tokens_over_max_new_tokens_raises() -> None:
         match=r"min_new_tokens=8, .* exceeds max_new_tokens=4.*Raise "
         r"max_new_tokens",
     ):
-        Batch(pipeline, _prompts(NEVER), max_new_tokens=4)
+        GenerateIterator(pipeline, _prompts(NEVER), max_new_tokens=4)
     with pytest.raises(ValueError, match=r"min_new_tokens=6, "):
-        Batch(
+        GenerateIterator(
             FakePipeline(), _prompts(NEVER), max_new_tokens=4, min_new_tokens=6
         )
     assert pipeline.kv_manager.claimed == {}
@@ -526,7 +528,9 @@ def test_generation_config_min_new_tokens_over_max_new_tokens_raises() -> None:
 
 def test_rows_round_robin_across_replicas() -> None:
     pipeline = FakePipeline(max_batch_size=2, data_parallel_degree=2)
-    with Batch(pipeline, _prompts(1, 2, 3, 3), max_new_tokens=5) as batch:
+    with GenerateIterator(
+        pipeline, _prompts(1, 2, 3, 3), max_new_tokens=5
+    ) as batch:
         assert list(pipeline.kv_manager.claimed.values()) == [0, 1, 0, 1]
         while not batch.done:
             batch.step()
@@ -537,7 +541,9 @@ def test_rows_round_robin_across_replicas() -> None:
 
 def test_remove_frees_the_row_and_the_rest_finish() -> None:
     pipeline = FakePipeline()
-    with Batch(pipeline, _prompts(3, 3, 3), max_new_tokens=5) as batch:
+    with GenerateIterator(
+        pipeline, _prompts(3, 3, 3), max_new_tokens=5
+    ) as batch:
         batch.step()
         batch.remove(1)
         assert len(pipeline.released) == 1
@@ -558,7 +564,7 @@ def test_remove_frees_the_row_and_the_rest_finish() -> None:
 
 def test_remove_rejects_an_unknown_row() -> None:
     pipeline = FakePipeline()
-    with Batch(pipeline, _prompts(1), max_new_tokens=5) as batch:
+    with GenerateIterator(pipeline, _prompts(1), max_new_tokens=5) as batch:
         with pytest.raises(IndexError):
             batch.remove(1)
 
@@ -569,7 +575,9 @@ def test_interrupted_run_releases_rows_and_pipeline_is_reusable(
 ) -> None:
     pipeline = FakePipeline()
     with pytest.raises(error):
-        with Batch(pipeline, _prompts(4, 4), max_new_tokens=5) as batch:
+        with GenerateIterator(
+            pipeline, _prompts(4, 4), max_new_tokens=5
+        ) as batch:
             batch.step()
             raise error()
     _assert_nothing_held(pipeline, 2)
@@ -592,13 +600,13 @@ def test_failed_claim_releases_rows_already_claimed() -> None:
     pipeline = FakePipeline()
     pipeline.kv_manager.fail_on_claim = 2
     with pytest.raises(RuntimeError, match="claim failed"):
-        Batch(pipeline, _prompts(1, 1, 1), max_new_tokens=5)
+        GenerateIterator(pipeline, _prompts(1, 1, 1), max_new_tokens=5)
     _assert_nothing_held(pipeline, 2)
 
 
 def test_close_is_idempotent() -> None:
     pipeline = FakePipeline()
-    batch = Batch(pipeline, _prompts(4, 4), max_new_tokens=5)
+    batch = GenerateIterator(pipeline, _prompts(4, 4), max_new_tokens=5)
     batch.close()
     batch.close()
 
@@ -610,7 +618,7 @@ def test_close_is_idempotent() -> None:
 
 def test_closed_batch_drops_its_pipeline() -> None:
     pipeline = FakePipeline()
-    with Batch(pipeline, _prompts(1, 3), max_new_tokens=5) as batch:
+    with GenerateIterator(pipeline, _prompts(1, 3), max_new_tokens=5) as batch:
         batch.step()
     pipeline_ref = weakref.ref(pipeline)
     del pipeline
@@ -624,7 +632,7 @@ def test_closed_batch_drops_its_pipeline() -> None:
 
 def test_close_releases_every_row_when_one_release_fails() -> None:
     pipeline = FakePipeline()
-    batch = Batch(pipeline, _prompts(4, 4, 4), max_new_tokens=5)
+    batch = GenerateIterator(pipeline, _prompts(4, 4, 4), max_new_tokens=5)
     pipeline.fail_next_release = True
     with pytest.raises(RuntimeError, match="release failed"):
         batch.close()
@@ -647,7 +655,7 @@ def test_out_of_vocab_token_raises() -> None:
 def test_max_new_tokens_below_one_raises() -> None:
     pipeline = FakePipeline()
     with pytest.raises(ValueError, match="at least 1, was 0"):
-        Batch(pipeline, _prompts(1), max_new_tokens=0)
+        GenerateIterator(pipeline, _prompts(1), max_new_tokens=0)
     assert pipeline.kv_manager.claimed == {}
 
 
@@ -668,7 +676,7 @@ def test_oversize_batch_raises_before_claiming(
         max_batch_size=max_batch_size, data_parallel_degree=data_parallel_degree
     )
     with pytest.raises(ValueError, match="raise max_batch_size") as error:
-        Batch(pipeline, _prompts(*[1] * num_rows), max_new_tokens=5)
+        GenerateIterator(pipeline, _prompts(*[1] * num_rows), max_new_tokens=5)
     assert str(error.value).splitlines()[0] == (
         "generate() does not support scheduling across batches. "
         f"{num_rows} prompts exceed the pipeline's max batch size of "
@@ -698,7 +706,7 @@ def test_prefill_over_a_replica_token_budget_raises() -> None:
         r"over the pipeline's per-replica prefill budget of 6 tokens"
         r".*raise max_batch_input_tokens or turn chunked prefill off",
     ) as error:
-        Batch(pipeline, _prompts(1, 1, 1, 1, 1), max_new_tokens=5)
+        GenerateIterator(pipeline, _prompts(1, 1, 1, 1, 1), max_new_tokens=5)
     _assert_points_to_serve(
         error,
         "chunked prefill",
@@ -725,7 +733,7 @@ def test_models_that_take_or_make_images_are_not_supported_yet(
     )
     pipeline = FakePipeline()
     with pytest.raises(ValueError, match=message) as error:
-        Batch(pipeline, _prompts(1), max_new_tokens=5)
+        GenerateIterator(pipeline, _prompts(1), max_new_tokens=5)
     assert context_type.__name__ in str(error.value)
     assert "max serve" not in str(error.value)
     assert pipeline.kv_manager.claimed == {}
@@ -733,7 +741,7 @@ def test_models_that_take_or_make_images_are_not_supported_yet(
 
 def test_overlap_results_lag_one_step() -> None:
     pipeline = FakeOverlapPipeline()
-    with Batch(pipeline, _prompts(1, 3), max_new_tokens=5) as batch:
+    with GenerateIterator(pipeline, _prompts(1, 3), max_new_tokens=5) as batch:
         assert not batch.synchronous
         steps = []
         while not batch.done:
@@ -760,7 +768,7 @@ def test_overlap_ignore_eos_takes_one_extra_step() -> None:
 
 def test_overlap_pending_batch_after_close_leaves_next_batch_clean() -> None:
     pipeline = FakeOverlapPipeline()
-    with Batch(pipeline, _prompts(4, 4), max_new_tokens=5) as batch:
+    with GenerateIterator(pipeline, _prompts(4, 4), max_new_tokens=5) as batch:
         batch.step()
         batch.step()
     assert pipeline.has_pending_outputs()
@@ -800,7 +808,7 @@ def test_batch_total_tokens_cap_charges_page_aligned_rows() -> None:
         ValueError,
         match=r"(?s)11 tokens.*caps.*10.*raise max_batch_total_tokens",
     ) as error:
-        Batch(pipeline, _prompts(1, 1, 1), max_new_tokens=5)
+        GenerateIterator(pipeline, _prompts(1, 1, 1), max_new_tokens=5)
     _assert_points_to_serve(
         error, "scheduling across batches", " --max-batch-total-tokens 10"
     )
@@ -816,7 +824,7 @@ def test_batch_total_tokens_cap_is_per_replica() -> None:
     with pytest.raises(
         ValueError, match="scheduling across batches\\. Replica 0's prompts"
     ):
-        Batch(pipeline, _prompts(1, 1, 1, 1, 1), max_new_tokens=5)
+        GenerateIterator(pipeline, _prompts(1, 1, 1, 1, 1), max_new_tokens=5)
 
 
 def test_batch_total_tokens_cap_skips_a_replica_with_no_rows() -> None:
@@ -835,7 +843,7 @@ def test_batch_total_tokens_cap_admits_a_lone_row_under_the_cap() -> None:
     assert output.sequences == [[*prompt, 101]]
 
     with pytest.raises(ValueError, match="11 tokens"):
-        Batch(pipeline, [_prompt_of_length(11)], max_new_tokens=1)
+        GenerateIterator(pipeline, [_prompt_of_length(11)], max_new_tokens=1)
 
 
 def test_speculative_pipeline_runs_but_rejects_per_token_outputs() -> None:
@@ -849,13 +857,19 @@ def test_speculative_pipeline_runs_but_rejects_per_token_outputs() -> None:
     assert _new_tokens(output.sequences) == [[101, EOS]]
 
     with pytest.raises(ValueError, match="ignore_eos cannot keep"):
-        Batch(pipeline, _prompts(1), max_new_tokens=5, ignore_eos=True)
+        GenerateIterator(
+            pipeline, _prompts(1), max_new_tokens=5, ignore_eos=True
+        )
     _assert_nothing_held(pipeline, 1)
 
     with pytest.raises(ValueError, match="speculative decoding"):
-        Batch(pipeline, _prompts(1), max_new_tokens=5, output_logits=True)
+        GenerateIterator(
+            pipeline, _prompts(1), max_new_tokens=5, output_logits=True
+        )
     with pytest.raises(ValueError, match="speculative decoding"):
-        Batch(pipeline, _prompts(1), max_new_tokens=5, output_logprobs=1)
+        GenerateIterator(
+            pipeline, _prompts(1), max_new_tokens=5, output_logprobs=1
+        )
     _assert_nothing_held(pipeline, 1)
 
 
@@ -869,7 +883,7 @@ def test_lora_pipeline_points_to_serve() -> None:
         )
     )
     with pytest.raises(ValueError) as error:
-        Batch(pipeline, _prompts(1), max_new_tokens=5)
+        GenerateIterator(pipeline, _prompts(1), max_new_tokens=5)
     _assert_points_to_serve(
         error,
         "LoRA adapters",
@@ -890,7 +904,7 @@ def test_lora_pipeline_without_static_adapters_points_to_load_endpoint() -> (
 ):
     pipeline = FakePipeline(lora=LoRAConfig(enable_lora=True, lora_paths=[]))
     with pytest.raises(ValueError) as error:
-        Batch(pipeline, _prompts(1), max_new_tokens=5)
+        GenerateIterator(pipeline, _prompts(1), max_new_tokens=5)
     _assert_points_to_serve(
         error,
         "LoRA adapters",
@@ -955,7 +969,7 @@ def test_warmed_up_pipeline_with_data_parallelism_points_to_serve(
         data_parallel_degree=2, device_graph_capture=True
     )
     with pytest.raises(ValueError) as error:
-        Batch(pipeline, _prompts(1, 1), max_new_tokens=5)
+        GenerateIterator(pipeline, _prompts(1, 1), max_new_tokens=5)
     _assert_points_to_serve(
         error,
         "device graph capture with data parallelism",
@@ -975,7 +989,9 @@ def test_data_parallel_without_warmup_runs_eagerly(
     pipeline = FakePipeline(
         max_batch_size=2, data_parallel_degree=2, device_graph_capture=True
     )
-    with Batch(pipeline, _prompts(1, 2, 3, 3), max_new_tokens=5) as batch:
+    with GenerateIterator(
+        pipeline, _prompts(1, 2, 3, 3), max_new_tokens=5
+    ) as batch:
         assert list(pipeline.kv_manager.claimed.values()) == [0, 1, 0, 1]
         while not batch.done:
             batch.step()
@@ -992,7 +1008,7 @@ def test_warmed_up_with_capture_off_in_config_still_checks_dp(
     with pytest.raises(
         ValueError, match="device graph capture with data parallelism"
     ):
-        Batch(pipeline, _prompts(1, 1), max_new_tokens=5)
+        GenerateIterator(pipeline, _prompts(1, 1), max_new_tokens=5)
     assert pipeline.kv_manager.contexts == []
 
     output = generate(FakeWarmedUpPipeline(), _prompts(2), max_new_tokens=5)
@@ -1060,7 +1076,7 @@ def test_serve_command_repeats_the_pipeline_settings(
 ) -> None:
     pipeline = make_pipeline()
     with pytest.raises(ValueError) as error:
-        Batch(pipeline, _prompts(1, 1, 1), max_new_tokens=5)
+        GenerateIterator(pipeline, _prompts(1, 1, 1), max_new_tokens=5)
     _assert_points_to_serve(
         error, "scheduling across batches", f"{flags} --max-batch-size 1"
     )
@@ -1076,7 +1092,7 @@ def test_serve_command_puts_feature_flags_after_pipeline_settings() -> None:
         max_batch_size=1,
     )
     with pytest.raises(ValueError) as error:
-        Batch(pipeline, _prompts(1, 1, 1), max_new_tokens=5)
+        GenerateIterator(pipeline, _prompts(1, 1, 1), max_new_tokens=5)
     assert str(error.value).splitlines()[2] == (
         "  max serve --model-path org/model --devices gpu:0,1"
         " --quantization-encoding float8_e4m3fn --data-parallel-degree 2"
@@ -1105,7 +1121,7 @@ def test_penalties_without_enable_penalties_raise(
         rf"{requested}\..*sampling=SamplingConfig\(enable_penalties=True\)"
         r".*--enable-penalties",
     ) as error:
-        Batch(
+        GenerateIterator(
             pipeline,
             _prompts(1),
             max_new_tokens=5,
@@ -1113,7 +1129,7 @@ def test_penalties_without_enable_penalties_raise(
             frequency_penalty=frequency,
             presence_penalty=presence,
         )
-    # Batch runs penalties on a pipeline that enables them.
+    # GenerateIterator runs penalties on a pipeline that enables them.
     assert "does not support" not in str(error.value)
     assert pipeline.kv_manager.claimed == {}
 
@@ -1130,7 +1146,7 @@ def test_invalid_penalty_reports_the_value_before_enable_penalties(
 ) -> None:
     pipeline = FakePipeline()
     with pytest.raises(ValueError, match=message):
-        Batch(
+        GenerateIterator(
             pipeline,
             _prompts(1),
             max_new_tokens=5,
@@ -1161,7 +1177,7 @@ def test_input_ids_that_are_not_token_lists_raise_type_error(
 ) -> None:
     pipeline = FakePipeline()
     with pytest.raises(TypeError, match=r"Wrap one prompt as \[ids\]"):
-        Batch(pipeline, input_ids, max_new_tokens=5)
+        GenerateIterator(pipeline, input_ids, max_new_tokens=5)
     assert pipeline.kv_manager.claimed == {}
 
 
@@ -1180,7 +1196,7 @@ def test_prompt_at_planned_max_length_raises() -> None:
         match=r"Row 0 needs at least 4 tokens.*planned max length.*"
         r"Raise max_length",
     ):
-        Batch(pipeline, _prompts(NEVER), max_new_tokens=5)
+        GenerateIterator(pipeline, _prompts(NEVER), max_new_tokens=5)
     assert pipeline.kv_manager.claimed == {}
 
 
@@ -1199,7 +1215,7 @@ def test_prompt_over_planned_max_length_raises_before_batch_limits(
         max_batch_total_tokens=max_batch_total_tokens,
     )
     with pytest.raises(ValueError, match="Raise max_length") as error:
-        Batch(pipeline, [_prompt_of_length(9)], max_new_tokens=1)
+        GenerateIterator(pipeline, [_prompt_of_length(9)], max_new_tokens=1)
     assert "max serve" not in str(error.value)
     assert pipeline.kv_manager.claimed == {}
 
@@ -1221,7 +1237,7 @@ def test_generation_config_min_new_tokens_counts_against_max_length() -> None:
     with pytest.raises(
         ValueError, match=r"needs at least 6 tokens.*Raise max_length"
     ):
-        Batch(pipeline, _prompts(NEVER), max_new_tokens=5)
+        GenerateIterator(pipeline, _prompts(NEVER), max_new_tokens=5)
     assert pipeline.kv_manager.claimed == {}
 
 
@@ -1234,7 +1250,7 @@ def test_rows_are_clamped_to_the_planned_max_length() -> None:
     assert context.status == GenerationStatus.MAXIMUM_LENGTH
 
 
-@pytest.mark.parametrize("entry", [Batch, generate])
+@pytest.mark.parametrize("entry", [GenerateIterator, generate])
 def test_sampling_knobs_reach_every_context(
     entry: Callable[..., object],
 ) -> None:
@@ -1253,7 +1269,7 @@ def test_sampling_knobs_reach_every_context(
         min_new_tokens=2,
         stop_token_ids=[42],
     )
-    if isinstance(result, Batch):
+    if isinstance(result, GenerateIterator):
         result.close()
 
     assert len(pipeline.kv_manager.contexts) == 2
@@ -1277,9 +1293,11 @@ def test_unset_sampling_knobs_fall_back_like_serve() -> None:
         ),
         runtime_temperature=0.0,
     )
-    with Batch(pipeline, _prompts(1), max_new_tokens=5):
+    with GenerateIterator(pipeline, _prompts(1), max_new_tokens=5):
         pass
-    with Batch(pipeline, _prompts(1), max_new_tokens=5, temperature=0.3):
+    with GenerateIterator(
+        pipeline, _prompts(1), max_new_tokens=5, temperature=0.3
+    ):
         pass
 
     runtime_default, caller_override = (
@@ -1299,9 +1317,9 @@ def test_unset_top_k_falls_back_to_the_runtime_default() -> None:
         ),
         runtime_top_k=5,
     )
-    with Batch(pipeline, _prompts(1), max_new_tokens=5):
+    with GenerateIterator(pipeline, _prompts(1), max_new_tokens=5):
         pass
-    with Batch(pipeline, _prompts(1), max_new_tokens=5, top_k=20):
+    with GenerateIterator(pipeline, _prompts(1), max_new_tokens=5, top_k=20):
         pass
 
     runtime_default, caller_override = (
@@ -1314,7 +1332,9 @@ def test_unset_top_k_falls_back_to_the_runtime_default() -> None:
 
 def test_each_row_samples_with_its_own_seed() -> None:
     pipeline = FakePipeline()
-    with Batch(pipeline, _prompts(1, 1, 1), max_new_tokens=5, seed=5):
+    with GenerateIterator(
+        pipeline, _prompts(1, 1, 1), max_new_tokens=5, seed=5
+    ):
         pass
 
     seeds = [
@@ -1326,7 +1346,7 @@ def test_each_row_samples_with_its_own_seed() -> None:
 def test_rows_offset_by_their_length_draw_distinct_keys() -> None:
     # 4 + 0 == 3 + 1, so seeds one apart would give both rows one key.
     pipeline = FakePipeline()
-    with Batch(
+    with GenerateIterator(
         pipeline, [_prompt_of_length(4), _prompt_of_length(3)], max_new_tokens=5
     ):
         pass
@@ -1337,9 +1357,9 @@ def test_rows_offset_by_their_length_draw_distinct_keys() -> None:
 
 def test_overlap_pipeline_allows_one_open_batch() -> None:
     pipeline = FakeOverlapPipeline()
-    first = Batch(pipeline, _prompts(2), max_new_tokens=5)
+    first = GenerateIterator(pipeline, _prompts(2), max_new_tokens=5)
     with pytest.raises(RuntimeError, match="already running another batch"):
-        Batch(pipeline, _prompts(2), max_new_tokens=5)
+        GenerateIterator(pipeline, _prompts(2), max_new_tokens=5)
     assert len(pipeline.kv_manager.claimed) == 1
 
     first.close()
@@ -1354,8 +1374,10 @@ def test_synchronous_pipeline_allows_concurrent_batches(
     pipeline_type: type[FakePipeline],
 ) -> None:
     pipeline = pipeline_type()
-    with Batch(pipeline, _prompts(2), max_new_tokens=5) as first:
-        with Batch(pipeline, _prompts(3), max_new_tokens=5) as second:
+    with GenerateIterator(pipeline, _prompts(2), max_new_tokens=5) as first:
+        with GenerateIterator(
+            pipeline, _prompts(3), max_new_tokens=5
+        ) as second:
             assert first.synchronous
             assert second.synchronous
             assert first.step() == {0: [101]}
@@ -1426,7 +1448,7 @@ def test_log_probs_follow_each_rows_tokens() -> None:
 
 def test_ignore_eos_keeps_logits_and_log_probs_past_eos() -> None:
     pipeline = FakePipeline()
-    with Batch(
+    with GenerateIterator(
         pipeline,
         _prompts(1, 3),
         max_new_tokens=5,
@@ -1452,7 +1474,7 @@ def test_ignore_eos_keeps_logits_and_log_probs_past_eos() -> None:
 
 
 def test_removed_row_keeps_logits_and_log_probs_aligned() -> None:
-    with Batch(
+    with GenerateIterator(
         FakePipeline(),
         _prompts(NEVER, NEVER),
         max_new_tokens=5,
@@ -1475,7 +1497,9 @@ def test_logits_need_a_synchronous_pipeline() -> None:
     with pytest.raises(
         ValueError, match="output_logits needs a synchronous pipeline"
     ):
-        Batch(pipeline, _prompts(1), max_new_tokens=5, output_logits=True)
+        GenerateIterator(
+            pipeline, _prompts(1), max_new_tokens=5, output_logits=True
+        )
     assert pipeline.kv_manager.claimed == {}
 
 
@@ -1487,7 +1511,9 @@ def test_log_probs_rejected_on_any_overlap_pipeline(
 ) -> None:
     pipeline = pipeline_type()
     with pytest.raises(ValueError) as error:
-        Batch(pipeline, _prompts(1), max_new_tokens=5, output_logprobs=1)
+        GenerateIterator(
+            pipeline, _prompts(1), max_new_tokens=5, output_logprobs=1
+        )
     message = str(error.value)
     assert "rejects log probabilities even with overlap off" in message
     assert "log_softmax" in message
@@ -1502,7 +1528,7 @@ def test_out_of_range_output_logprobs_raises(output_logprobs: int) -> None:
         ValueError,
         match=rf"in \[0, {_MAX_TOP_LOGPROBS}\], was {output_logprobs}\.",
     ):
-        Batch(
+        GenerateIterator(
             pipeline,
             _prompts(1),
             max_new_tokens=5,
@@ -1512,7 +1538,9 @@ def test_out_of_range_output_logprobs_raises(output_logprobs: int) -> None:
 
 
 def test_unrequested_logits_and_log_probs_raise() -> None:
-    with Batch(FakePipeline(), _prompts(1), max_new_tokens=5) as batch:
+    with GenerateIterator(
+        FakePipeline(), _prompts(1), max_new_tokens=5
+    ) as batch:
         with pytest.raises(RuntimeError, match="output_logits=True"):
             _ = batch.logits
         with pytest.raises(RuntimeError, match="output_logprobs > 0"):
@@ -1585,7 +1613,7 @@ def test_from_contexts_runs_vision_contexts_to_their_own_stops(
         )
         for prompt in _prompts(2, NEVER)
     ]
-    with Batch.from_contexts(pipeline, contexts) as batch:
+    with GenerateIterator.from_contexts(pipeline, contexts) as batch:
         assert pipeline.kv_manager.claimed == {
             context.request_id: 0 for context in contexts
         }
@@ -1619,7 +1647,7 @@ def test_from_contexts_keeps_each_contexts_sampling_params() -> None:
     contexts = _built_contexts(1, 2)
     sampling_params = SamplingParams(seed=123, logits_processors=[processor])
     contexts[1].sampling_params = sampling_params
-    with Batch.from_contexts(pipeline, contexts) as batch:
+    with GenerateIterator.from_contexts(pipeline, contexts) as batch:
         while not batch.done:
             batch.step()
 
@@ -1633,21 +1661,21 @@ def test_from_contexts_keeps_each_contexts_sampling_params() -> None:
 def test_from_contexts_fit_checks_count_context_tokens() -> None:
     pipeline = FakePipeline(max_batch_active_tokens=5)
     with pytest.raises(ValueError, match="prompts total 6 tokens"):
-        Batch.from_contexts(pipeline, _built_contexts(1, 1))
+        GenerateIterator.from_contexts(pipeline, _built_contexts(1, 1))
     assert pipeline.kv_manager.contexts == []
 
 
 def test_from_contexts_oversize_batch_raises_before_claiming() -> None:
     pipeline = FakePipeline(max_batch_size=1)
     with pytest.raises(ValueError, match="never splits"):
-        Batch.from_contexts(pipeline, _built_contexts(1, 1))
+        GenerateIterator.from_contexts(pipeline, _built_contexts(1, 1))
     assert pipeline.kv_manager.contexts == []
 
 
 def test_from_contexts_errors_name_the_caller() -> None:
     pipeline = FakePipeline(max_batch_size=1)
     with pytest.raises(ValueError) as error:
-        Batch.from_contexts(
+        GenerateIterator.from_contexts(
             pipeline, _built_contexts(1, 1), caller="max generate"
         )
     _assert_points_to_serve(
@@ -1663,13 +1691,38 @@ def test_from_contexts_errors_name_the_caller() -> None:
     )
 
 
+def test_batch_and_generate_errors_name_the_caller() -> None:
+    pipeline = FakePipeline(max_batch_size=1)
+    with pytest.raises(ValueError) as error:
+        GenerateIterator(
+            pipeline, _prompts(1, 1), max_new_tokens=5, caller="AutoPipeline"
+        )
+    _assert_points_to_serve(
+        error,
+        "scheduling across batches",
+        " --max-batch-size 1",
+        caller="AutoPipeline",
+    )
+    with pytest.raises(ValueError) as error:
+        generate(
+            pipeline, _prompts(1, 1), max_new_tokens=5, caller="AutoPipeline"
+        )
+    _assert_points_to_serve(
+        error,
+        "scheduling across batches",
+        " --max-batch-size 1",
+        caller="AutoPipeline",
+    )
+    assert pipeline.kv_manager.claimed == {}
+
+
 def test_from_contexts_runs_a_speculative_pipeline() -> None:
     pipeline = FakePipeline(
         speculative=SpeculativeConfig(
             speculative_method="eagle", num_speculative_tokens=3
         ),
     )
-    with Batch.from_contexts(pipeline, _built_contexts(2)) as batch:
+    with GenerateIterator.from_contexts(pipeline, _built_contexts(2)) as batch:
         while not batch.done:
             batch.step()
 
@@ -1681,7 +1734,7 @@ def test_from_contexts_graph_capture_without_warmup_warns(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     pipeline = FakePipeline(device_graph_capture=True)
-    with Batch.from_contexts(pipeline, _built_contexts(2)) as batch:
+    with GenerateIterator.from_contexts(pipeline, _built_contexts(2)) as batch:
         while not batch.done:
             batch.step()
 
@@ -1694,7 +1747,7 @@ def test_graph_capture_without_warmup_warns_once_per_pipeline(
 ) -> None:
     pipeline = FakePipeline(device_graph_capture=True)
     generate(pipeline, _prompts(1), max_new_tokens=5)
-    with Batch.from_contexts(pipeline, _built_contexts(2)) as batch:
+    with GenerateIterator.from_contexts(pipeline, _built_contexts(2)) as batch:
         while not batch.done:
             batch.step()
     assert len(_graph_capture_warnings(caplog)) == 1
@@ -1711,12 +1764,12 @@ def test_from_contexts_warmed_up_with_data_parallelism_points_to_serve() -> (
         data_parallel_degree=2, device_graph_capture=True
     )
     with pytest.raises(ValueError) as error:
-        Batch.from_contexts(pipeline, _built_contexts(1, 1))
+        GenerateIterator.from_contexts(pipeline, _built_contexts(1, 1))
     _assert_points_to_serve(
         error,
         "device graph capture with data parallelism",
         " --data-parallel-degree 2 --device-graph-capture",
-        caller="Batch.from_contexts()",
+        caller="GenerateIterator.from_contexts()",
     )
     assert pipeline.kv_manager.contexts == []
 
@@ -1733,19 +1786,20 @@ def test_from_contexts_rejects_an_inactive_adapter() -> None:
         *_built_contexts(1, model_name="sql"),
     ]
     with pytest.raises(ValueError) as error:
-        Batch.from_contexts(pipeline, contexts)
+        GenerateIterator.from_contexts(pipeline, contexts)
     _assert_points_to_serve(
         error,
         "inactive LoRA adapters",
         " --enable-lora --no-enable-prefix-caching --lora-paths"
         " sql=/adapters/sql --max-lora-rank 16 --max-num-loras 1",
-        caller="Batch.from_contexts()",
+        caller="GenerateIterator.from_contexts()",
     )
     lines = str(error.value).splitlines()
     assert lines[0] == (
-        "Batch.from_contexts() does not support inactive LoRA adapters. Row 1 "
-        'names the adapter "sql", which is loaded but not active, and '
-        "Batch.from_contexts() never activates an adapter."
+        "GenerateIterator.from_contexts() does not support inactive LoRA "
+        'adapters. Row 1 names the adapter "sql", which is loaded but not '
+        "active, and GenerateIterator.from_contexts() never activates an "
+        "adapter."
     )
     assert lines[-1] == (
         "To run it here, activate it first with "
@@ -1766,7 +1820,7 @@ def test_from_contexts_runs_an_active_adapter_and_the_base_model() -> None:
         *_built_contexts(1, model_name="base"),
         *_built_contexts(2, model_name="sql"),
     ]
-    with Batch.from_contexts(pipeline, contexts) as batch:
+    with GenerateIterator.from_contexts(pipeline, contexts) as batch:
         while not batch.done:
             batch.step()
 
@@ -1775,23 +1829,23 @@ def test_from_contexts_runs_an_active_adapter_and_the_base_model() -> None:
 
 def test_from_contexts_shares_the_one_open_batch_limit() -> None:
     pipeline = FakeOverlapPipeline()
-    first = Batch.from_contexts(pipeline, _built_contexts(2))
+    first = GenerateIterator.from_contexts(pipeline, _built_contexts(2))
     with pytest.raises(RuntimeError, match="already running another batch"):
-        Batch(pipeline, _prompts(2), max_new_tokens=5)
+        GenerateIterator(pipeline, _prompts(2), max_new_tokens=5)
     with pytest.raises(RuntimeError, match="already running another batch"):
-        Batch.from_contexts(pipeline, _built_contexts(2))
+        GenerateIterator.from_contexts(pipeline, _built_contexts(2))
     assert len(pipeline.kv_manager.claimed) == 1
 
     first.close()
-    with Batch(pipeline, _prompts(2), max_new_tokens=5):
+    with GenerateIterator(pipeline, _prompts(2), max_new_tokens=5):
         with pytest.raises(RuntimeError, match="already running another batch"):
-            Batch.from_contexts(pipeline, _built_contexts(2))
+            GenerateIterator.from_contexts(pipeline, _built_contexts(2))
 
 
 def test_from_contexts_batch_records_no_logits_or_log_probs() -> None:
     contexts = _built_contexts(1)
     contexts[0].log_probabilities = 1
-    with Batch.from_contexts(FakePipeline(), contexts) as batch:
+    with GenerateIterator.from_contexts(FakePipeline(), contexts) as batch:
         batch.step()
         with pytest.raises(
             RuntimeError, match="from_contexts records no logits"

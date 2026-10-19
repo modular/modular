@@ -158,8 +158,8 @@ def test_write_simd_padded() raises:
 
 def test_hex_digits_to_hex_chars() raises:
     var items: List[Byte] = [0, 0, 0, 0, 0, 0, 0, 0, 0]
-    comptime S = StringSlice[origin_of(items)]
     var ptr = items.unsafe_ptr()
+    comptime S = StringSlice[type_of(ptr).origin]
     ptr.unsafe_store(_hex_digits_to_hex_chars(UInt32(ord("🔥"))))
     assert_equal("0001f525", S(unsafe_from_utf8=Span(unsafe_ptr=ptr, length=8)))
     unsafe_memset_zero(ptr, len(items))

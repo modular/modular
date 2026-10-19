@@ -116,15 +116,17 @@ from max.gpu.primitives.cluster import (
 )
 from max.gpu.compute.arch.tcgen05 import (
     tcgen05_alloc,
+    tcgen05_cp,
     tcgen05_dealloc,
     tcgen05_fence_before,
     tcgen05_load_wait,
     tcgen05_release_allocation_lock,
 )
 from std.bit import next_power_of_two
+from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.math import align_down, align_up, ceildiv, clamp, lcm
 from std.sys import get_defined_dtype, get_defined_int, size_of
-from std.utils.index import IndexList
+from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
 
 from layout import (
@@ -145,9 +147,14 @@ from layout.tma_async import (
     create_tma_tile,
 )
 
-from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from max.gpu.compute.arch.mma_nvidia_sm100 import (
+    MMASmemDescriptor,
+    UMMAInsDescriptor,
+    UMMAKind,
+    mma,
+)
 
-from linalg.arch.sm100.mma import smem_descriptor
+from linalg.arch.sm100.mma import _create_mma_desc_k_major, smem_descriptor
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
     SM100TensorAccumulator,
     TMemTile,
@@ -164,13 +171,33 @@ from kv_cache.types import flat_scale_window, scale_align_elems
 from nn.attention.gpu.nvidia.sm100.attention import SM100_RESERVED_SMEM_BYTES
 
 
+comptime _INDEX_SWIZZLE = TensorMapSwizzle.SWIZZLE_128B
+
+
+def _index_swizzle[dtype: DType, depth: Int]() -> TensorMapSwizzle:
+    """The swizzle spanning one Q/K row: 128 B for FP8, 64 B for MXFP4.
+
+    MXFP4 operands are `uint8` with two E2M1 values a byte, so `depth` counts
+    bytes and a 128-value head row is 64 of them.
+    """
+    comptime row_bytes = depth * size_of[dtype]()
+    comptime assert row_bytes in (
+        64,
+        128,
+    ), "an index row must be 64 or 128 bytes; got " + String(row_bytes)
+    if row_bytes == 64:
+        return TensorMapSwizzle.SWIZZLE_64B
+    return _INDEX_SWIZZLE
+
+
 # Defined locally (not imported from `sparse_index_fp8_sm100`) so that file can
 # route to this one without an import cycle; they must stay type-identical to
 # its aliases or the `rebind` at its call site stops compiling.
-comptime _INDEX_SWIZZLE = TensorMapSwizzle.SWIZZLE_128B
 comptime QTMATileT[
     dtype: DType, MMA_N: Int, depth: Int
-] = SplitLastDimTMATensorTile[dtype, coord[MMA_N, 1, depth], _INDEX_SWIZZLE]
+] = SplitLastDimTMATensorTile[
+    dtype, coord[MMA_N, 1, depth], _index_swizzle[dtype, depth]()
+]
 comptime KTMATileT[dtype: DType, BM_key: Int, depth: Int] = TMATensorTile[
     dtype,
     coord[1, BM_key, 1, depth],
@@ -184,10 +211,195 @@ comptime KSTMATileT[ks_dtype: DType, KS_BOX: Int] = TMATensorTile[
     ks_dtype, coord[1, KS_BOX]
 ]
 # The q-scales of one token block, `[N_TOKENS, num_heads]` f32 token-major, as
-# `q_s` stores them.
+# `q_s` stores them. MXFP4 also stages its packed UE8M0 block scales through
+# this type, one 32-bit word per (token, head), since a TMA copies bytes.
 comptime QSTMATileT[N_TOKENS: Int, num_heads: Int] = TMATensorTile[
     DType.float32, coord[N_TOKENS, num_heads]
 ]
+
+# One UE8M0 scale-factor atom: 128 rows of four 32-element blocks, in the
+# `(row % 32) * 16 + (row // 32) * 4` byte order `tcgen05.cp.32x128b.warpx4`
+# reads. It lands in 4 TMEM columns, which hold all of a 128-value row's scales.
+comptime _SF_ATOM_BYTES = 512
+comptime _SF_ATOM_COLS = 4
+
+
+@inline(.always)
+def _is_mxfp4[dtype: DType]() -> Bool:
+    """Whether Q and K are packed MXFP4, as `uint8` stands in for E2M1."""
+    return dtype == DType.uint8
+
+
+trait IndexerScoreHook(DevicePassable, TrivialRegisterPassable):
+    """Reads or rewrites indexer scores in the scorer's epilogue.
+
+    The scorer hands every score it produces to `score`, as the value it is
+    about to store, so a hook sees exactly what the top-k later reads and adds
+    no pass over the score matrix. The lanes of a warp call `score` together
+    for one score row, lane `l` holding key `lane_keys * j + l` for some `j`,
+    so a hook may combine aligned blocks of up to `lane_keys` keys with warp
+    shuffles.
+    """
+
+    comptime enabled: Bool
+    """Whether the hook runs; `False` compiles every call away."""
+
+    def window(
+        self, ctx: DeviceContext, first_row: Int, rows: Int
+    ) raises -> Self:
+        """Prepares a window of score rows and returns the hook to run on it.
+
+        Args:
+            ctx: Device context; work enqueued here precedes the scorer.
+            first_row: Query token of the window's row 0.
+            rows: Rows in the window.
+
+        Returns:
+            The hook whose row 0 is query token `first_row`.
+        """
+        ...
+
+    def score[
+        dtype: DType, lane_keys: Int
+    ](
+        self,
+        value: Scalar[dtype],
+        row: Int32,
+        key: Int32,
+        key_live: Bool,
+        row_live: Bool,
+    ) -> Scalar[dtype]:
+        """Returns the score to store for `(row, key)`.
+
+        Parameters:
+            dtype: Score element type.
+            lane_keys: Consecutive keys a warp holds, one per lane, starting
+                at a multiple of `lane_keys`.
+
+        Args:
+            value: The score, rounded to `dtype`.
+            row: Window row of the query token.
+            key: Key column.
+            key_live: Whether the key is below the row's bound; only such
+                scores are stored.
+            row_live: Whether the row is in the window; the same on every
+                lane. A dead row must not be read or written.
+
+        Returns:
+            The score to store.
+        """
+        ...
+
+
+struct NoScoreHook(IndexerScoreHook):
+    """Leaves the scores alone."""
+
+    comptime device_type: AnyType = Self
+    """Device-side type; the struct is trivially device-passable."""
+
+    comptime enabled = False
+    """Never runs."""
+
+    def __init__(out self):
+        """Creates the hook."""
+        pass
+
+    def window(
+        self, ctx: DeviceContext, first_row: Int, rows: Int
+    ) raises -> Self:
+        """Returns the hook unchanged.
+
+        Args:
+            ctx: Device context.
+            first_row: Query token of the window's row 0.
+            rows: Rows in the window.
+
+        Returns:
+            This hook.
+        """
+        return self
+
+    @inline(.always)
+    def score[
+        dtype: DType, lane_keys: Int
+    ](
+        self,
+        value: Scalar[dtype],
+        row: Int32,
+        key: Int32,
+        key_live: Bool,
+        row_live: Bool,
+    ) -> Scalar[dtype]:
+        """Returns `value`.
+
+        Parameters:
+            dtype: Score element type.
+            lane_keys: Consecutive keys a warp holds.
+
+        Args:
+            value: The score.
+            row: Window row of the query token.
+            key: Key column.
+            key_live: Whether the key is below the row's bound.
+            row_live: Whether the row is in the window.
+
+        Returns:
+            `value`.
+        """
+        return value
+
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode_fields[Self](self, target)
+
+    @staticmethod
+    def get_type_name() -> String:
+        """Returns the type name for runtime diagnostics.
+
+        Returns:
+            Always `"NoScoreHook"`.
+        """
+        return "NoScoreHook"
+
+
+# Bytes of one row one `KIND_MXF4` MMA contracts: 64 E2M1 values.
+comptime _MXF4_K_BYTES = 32
+
+
+@inline(.always)
+def _sf_atom_desc(
+    atom: Pointer[UInt32, address_space=.SHARED, ...]
+) -> MMASmemDescriptor:
+    """The `tcgen05.cp.32x128b` source of an atom: 32 rows of 16 bytes."""
+    return MMASmemDescriptor.create[8 * 16, 0, TensorMapSwizzle.SWIZZLE_NONE](
+        atom
+    )
+
+
+@inline(.always)
+def _store_sf_atom(
+    atom: MutPointer[UInt32, address_space=.SHARED, ...],
+    words: SIMD[DType.uint32, _SF_ATOM_COLS],
+):
+    """Writes a scale atom from a warp's per-row words, in place.
+
+    Scale tiles arrive one 32-bit word per row (key or B column), and
+    `tcgen05.cp.32x128b.warpx4` reads row `n` at word `(n % 32) * 4 + n // 32`.
+    Lane `l` holds rows `l + 32 i` in `words`, read before any lane writes, so
+    the atom may overwrite its own source. The fence publishes the stores to
+    the copy's async-proxy read.
+
+    Args:
+        atom: The 16-byte-aligned atom, also where the words were read.
+        words: This lane's rows, `l + 32 i` in lane `i`.
+    """
+    syncwarp()
+    (atom.unsafe_offset(Int(lane_id()) * _SF_ATOM_COLS)).unsafe_store[
+        alignment=16
+    ](words)
+    fence_async_view_proxy()
+    syncwarp()
 
 
 def _k_box_rows[BM_key: Int, page_size: Int, pool_row_tokens: Int]() -> Int:
@@ -202,7 +414,7 @@ def _k_box_rows[BM_key: Int, page_size: Int, pool_row_tokens: Int]() -> Int:
 
 
 def _k_tile_fits_pages[
-    BM_key: Int, page_size: Int, pool_row_tokens: Int
+    BM_key: Int, page_size: Int, pool_row_tokens: Int, split_pages: Bool = False
 ]() -> Bool:
     """Whether a `BM_key`-key tile maps onto whole pages of this cache.
 
@@ -210,12 +422,19 @@ def _k_tile_fits_pages[
     `pool_row_tokens == 1` on exactly its old route and bounds a pooled cache's
     k-scale copies (one per `BM_key` token rows) inside a page. A pooled page
     then holds `page_size // pool_row_tokens` keys, so a tile may span several
-    pages, one K copy each; each copy has to start on a 128B-swizzle atom (8
-    rows of the 128-byte K row).
+    pages, one K copy each; each copy has to start on a swizzle atom (8 rows of
+    the K row).
+
+    `split_pages` also admits an unpooled page smaller than a tile, where the
+    k-scale copies shrink to a page too (`_ks_copy_keys`). The FP8 route leaves
+    it off, so its small-page caches stay on the scalar kernel they were
+    validated on; the MXFP4 route needs it for ratio-2 pages of 64 rows.
     """
     if page_size == 0:
         return pool_row_tokens == 1
-    if page_size % BM_key != 0 or page_size % pool_row_tokens != 0:
+    if page_size % pool_row_tokens != 0:
+        return False
+    if page_size % BM_key != 0 and not (split_pages and pool_row_tokens == 1):
         return False
     var keys_per_page = page_size // pool_row_tokens
     if keys_per_page % BM_key == 0:
@@ -466,14 +685,17 @@ def _ctas_per_sm[MMA_N: Int, force: Int = -1]() -> Int:
 # Keys a slot COSTS, padded so every slot base keeps the 128-byte alignment TMA
 # needs of a shared-memory destination.
 @inline(.always)
-def _ks_copy_keys[ks_dtype: DType, BM_key: Int, pool_row_tokens: Int]() -> Int:
+def _ks_copy_keys[
+    ks_dtype: DType, BM_key: Int, pool_row_tokens: Int, k_box_rows: Int = BM_key
+]() -> Int:
     """Keys one k-scale TMA copy covers.
 
     A pooled key's scale sits on each of its `pool_row_tokens` token rows, so a
     copy covering `k` keys stages `k * pool_row_tokens` scales plus one
-    alignment unit, and a TMA box is at most 256 elements on a side.
+    alignment unit, and a TMA box is at most 256 elements on a side. A copy
+    also stays inside one page, as a K copy (`k_box_rows` keys) does.
     """
-    var keys = BM_key
+    var keys = min(BM_key, k_box_rows)
     while keys > 1 and (
         keys * pool_row_tokens + scale_align_elems[ks_dtype]() > 256
     ):
@@ -482,11 +704,13 @@ def _ks_copy_keys[ks_dtype: DType, BM_key: Int, pool_row_tokens: Int]() -> Int:
 
 
 def _ks_copy_stride_elems[
-    ks_dtype: DType, BM_key: Int, pool_row_tokens: Int
+    ks_dtype: DType, BM_key: Int, pool_row_tokens: Int, k_box_rows: Int = BM_key
 ]() -> Int:
     """Scales between consecutive k-scale copies in a slot, 128-byte aligned."""
     comptime esize = size_of[Scalar[ks_dtype]]()
-    comptime keys = _ks_copy_keys[ks_dtype, BM_key, pool_row_tokens]()
+    comptime keys = _ks_copy_keys[
+        ks_dtype, BM_key, pool_row_tokens, k_box_rows
+    ]()
     return (
         align_up(
             flat_scale_window[ks_dtype, keys * pool_row_tokens]() * esize, 128
@@ -496,11 +720,16 @@ def _ks_copy_stride_elems[
 
 
 def _ks_slot_elems[
-    ks_dtype: DType, BM_key: Int, pool_row_tokens: Int = 1
+    ks_dtype: DType,
+    BM_key: Int,
+    pool_row_tokens: Int = 1,
+    k_box_rows: Int = BM_key,
 ]() -> Int:
-    comptime keys = _ks_copy_keys[ks_dtype, BM_key, pool_row_tokens]()
+    comptime keys = _ks_copy_keys[
+        ks_dtype, BM_key, pool_row_tokens, k_box_rows
+    ]()
     return (BM_key // keys) * _ks_copy_stride_elems[
-        ks_dtype, BM_key, pool_row_tokens
+        ks_dtype, BM_key, pool_row_tokens, k_box_rows
     ]()
 
 
@@ -526,6 +755,7 @@ struct IndexPrefillConfig[
     mma_n: Int,
     num_heads: Int,
     pool_row_tokens: Int = 1,
+    k_box_rows: Int = BM_key,
 ](TrivialRegisterPassable):
     """Every derived quantity of one prefill instantiation, in one object.
 
@@ -553,6 +783,8 @@ struct IndexPrefillConfig[
         num_heads: Index heads.
         pool_row_tokens: Token rows one key spans in the cache; sizes the
             k-scale slot, which stages every row of a pooled key's span.
+        k_box_rows: Keys one K copy stages, a page's worth when a page is
+            smaller than a tile; a k-scale copy never spans more.
     """
 
     var ctas_per_sm: Int
@@ -577,7 +809,15 @@ struct IndexPrefillConfig[
     # launcher's grid both read this, so they cannot disagree about which
     # blocks an item covers.
     comptime cta_token_stride = Self.n_tokens
-    comptime tmem_cols = next_power_of_two(_S_TMEM_STAGES * Self.s_cols)
+    # MXFP4's scale factors live in TMEM beside the S^T ring: one A atom per
+    # S^T stage and one B atom per Q slot.
+    comptime sf_cols = (
+        _SF_ATOM_COLS
+        * (_S_TMEM_STAGES + _Q_SLOTS) if _is_mxfp4[Self.dtype]() else 0
+    )
+    comptime tmem_cols = next_power_of_two(
+        _S_TMEM_STAGES * Self.s_cols + Self.sf_cols
+    )
     # Barriers priced by `fixed_smem_bytes`: the S^T pair per stage, `q_full`,
     # `qs_full`, `q_empty` and `qs_ready` per Q slot, and `clc_full` for the CLC
     # response. `qs_ready` is priced even in token-major order, which never
@@ -646,10 +886,12 @@ struct IndexPrefillConfig[
             B200.shared_memory_per_multiprocessor // self.ctas_per_sm
             - SM100_RESERVED_SMEM_BYTES
         )
-        # Per Q slot: the resident Q, its f32 q-scales and its metadata
-        # record. Then the CLC scratch, the fixed barriers and the TMEM pointer.
+        # Per Q slot: the resident Q, its MXFP4 scale-factor atom, its f32
+        # q-scales and its metadata record. Then the CLC scratch, the fixed
+        # barriers and the TMEM pointer.
         self.fixed_smem_bytes = (
             _Q_SLOTS * Self.mma_n * Self.depth * size_of[Scalar[Self.dtype]]()
+            + _Q_SLOTS * (_SF_ATOM_BYTES if _is_mxfp4[Self.dtype]() else 0)
             + _Q_SLOTS * Self.mma_n * size_of[Float32]()
             + _Q_SLOTS * _MD_WORDS * size_of[Int32]()
             + _CLC_SCRATCH_WORDS * size_of[Int32]()
@@ -667,7 +909,12 @@ struct IndexPrefillConfig[
         #
         self.k_stage_bytes = (
             Self.BM_key * Self.depth * size_of[Scalar[Self.dtype]]()
-            + _ks_slot_elems[Self.ks_dtype, Self.BM_key, Self.pool_row_tokens]()
+            + _ks_slot_elems[
+                Self.ks_dtype,
+                Self.BM_key,
+                Self.pool_row_tokens,
+                Self.k_box_rows,
+            ]()
             * size_of[Scalar[Self.ks_dtype]]()
             + Self.stage_mbars * size_of[SharedMemBarrier]()
         )
@@ -890,6 +1137,7 @@ def _decode_item[
 @__llvm_arg_metadata(k_tma, `nvvm.grid_constant`)
 @__llvm_arg_metadata(ks_tma, `nvvm.grid_constant`)
 @__llvm_arg_metadata(qs_tma, `nvvm.grid_constant`)
+@__llvm_arg_metadata(qsf_tma, `nvvm.grid_constant`)
 # Cap the launch register count so the config's thread count fits at its
 # `ctas_per_sm` (maxntid + minctasm), mirroring MSA and FA4: without it the
 # launch requests more than `65536 / nthreads` regs/thread and the warpgroup
@@ -909,6 +1157,7 @@ def _decode_item[
                 N_TOKENS * num_heads,
                 num_heads,
                 pool_row_tokens,
+                k_box_rows,
             ]().nthreads
         )
     )
@@ -926,6 +1175,7 @@ def _decode_item[
             N_TOKENS * num_heads,
             num_heads,
             pool_row_tokens,
+            k_box_rows,
         ]().ctas_per_sm
     )
 )
@@ -950,11 +1200,13 @@ def _fp8_index_score_prefill_kernel_sm100[
     VLEngine: TensorEngine = DefaultEngine[element_width=1],
     QSEngine: TensorEngine = DefaultEngine[element_width=1],
     OutEngine: TensorEngine = DefaultEngine[element_width=1],
+    H: IndexerScoreHook = NoScoreHook,
 ](
     q_tma: QTMATileT[dtype, N_TOKENS * num_heads, depth],
     k_tma: KTMATileT[dtype, k_box_rows, depth],
     ks_tma: KSTMATileT[KSOperand.dtype, ks_box],
     qs_tma: QSTMATileT[N_TOKENS, num_heads],
+    qsf_tma: QSTMATileT[N_TOKENS, num_heads],
     k_operand: KOperand,
     ks_operand: KSOperand,
     valid_length: TileTensor[.uint32, VLLT, ImmutAnyOrigin, Engine=VLEngine],
@@ -965,6 +1217,7 @@ def _fp8_index_score_prefill_kernel_sm100[
     num_key_parts_dev: Int32,
     out_row_begin_dev: Int32,
     out_row_end_dev: Int32,
+    score_hook: H,
 ):
     comptime assert valid_length.flat_rank == 1
     comptime MMA_N = N_TOKENS * num_heads
@@ -981,6 +1234,7 @@ def _fp8_index_score_prefill_kernel_sm100[
         N_TOKENS * num_heads,
         num_heads,
         pool_row_tokens,
+        k_box_rows,
     ]()
     # Two producer warps are the floor: the MMA and TMA roles are separate warps
     # because each spins on its own mbarrier.
@@ -1009,8 +1263,16 @@ def _fp8_index_score_prefill_kernel_sm100[
         DType.bfloat16,
     ), "the epilogue fold must be f32 or bf16; got " + String(FT)
 
-    comptime SW = _INDEX_SWIZZLE
+    comptime SW = _index_swizzle[dtype, depth]()
+    # MXFP4: `depth` counts packed bytes, the K scales are one 32-bit word of
+    # four UE8M0 per key, and both operands' scales feed the MMA instead of the
+    # epilogue, which then folds only the per-head weights in `q_s`.
+    comptime FP4 = _is_mxfp4[dtype]()
     comptime KS_DTYPE = KSOperand.dtype
+    comptime assert not FP4 or size_of[KS_DTYPE]() == 4, (
+        "MXFP4 keys need one 32-bit word of four UE8M0 scales per key; got "
+        + String(KS_DTYPE)
+    )
     comptime KS_ALIGN = scale_align_elems[KS_DTYPE]()
     # A key spans `pool_row_tokens` token rows. K stages one copy per page the
     # tile spans; the scales, one per token row, stage one copy per
@@ -1019,14 +1281,25 @@ def _fp8_index_score_prefill_kernel_sm100[
         k_box_rows == _k_box_rows[BM_key, KOperand.page_size, pool_row_tokens]()
     ), "k_box_rows must be the rows one K TMA copy stages for this cache"
     comptime K_BOX = k_box_rows
-    comptime KS_KEYS = _ks_copy_keys[KS_DTYPE, BM_key, pool_row_tokens]()
+    comptime KS_KEYS = _ks_copy_keys[
+        KS_DTYPE, BM_key, pool_row_tokens, k_box_rows
+    ]()
     comptime KS_COPIES = BM_key // KS_KEYS
     comptime KS_BOX = flat_scale_window[KS_DTYPE, KS_KEYS * pool_row_tokens]()
     comptime assert ks_box == KS_BOX, "ks_box must be one k-scale copy's window"
     comptime KS_STRIDE = _ks_copy_stride_elems[
-        KS_DTYPE, BM_key, pool_row_tokens
+        KS_DTYPE, BM_key, pool_row_tokens, k_box_rows
     ]()
-    comptime KS_SLOT = _ks_slot_elems[KS_DTYPE, BM_key, pool_row_tokens]()
+    comptime KS_SLOT = _ks_slot_elems[
+        KS_DTYPE, BM_key, pool_row_tokens, k_box_rows
+    ]()
+    # The MMA warp transposes a slot's scales into the scale-factor atom in
+    # place, so the atom must fit the slot.
+    comptime assert not FP4 or KS_SLOT * size_of[KS_DTYPE]() >= _SF_ATOM_BYTES
+    comptime assert not FP4 or pool_row_tokens == 1, (
+        "MXFP4 keys are one cache row each; a pooled key spread over its"
+        " tokens' rows has no per-key scale word"
+    )
     comptime assert pool_row_tokens == 1 or (
         KSOperand.page_size > 0
         and KSOperand.page_size % (KS_KEYS * pool_row_tokens) == 0
@@ -1133,6 +1406,13 @@ def _fp8_index_score_prefill_kernel_sm100[
         "the epilogue drains one TMEM lane per thread, so BM_key must equal the"
         " consumer warpgroup size"
     )
+    # Thread `row` holds key `tile * BM_key + row`, so each warp holds
+    # `WARP_SIZE` consecutive keys from a multiple of `WARP_SIZE`: the span the
+    # score hook may combine across lanes.
+    comptime assert BM_key % WARP_SIZE == 0, (
+        "a score hook combines keys across a warp, so a key tile must be whole"
+        " warps"
+    )
     comptime EPI_CHUNK = _EPILOGUE_CHUNK
     comptime assert MMA_N % EPI_CHUNK == 0
     comptime assert EPI_CHUNK <= 64
@@ -1190,19 +1470,37 @@ def _fp8_index_score_prefill_kernel_sm100[
     # next item's Q lands under the current one. The q-scales stay f32: the
     # TMA copies `q_s`'s bytes and cannot narrow, so the hoist into `qs_reg`
     # converts instead.
+    #
+    # MXFP4 adds one scale-factor atom per Q slot between the k_scale ring and
+    # the q-scales: the q block scales land there token-major and the MMA warp
+    # permutes them into the atom in place.
     comptime Q_SLOTS = _Q_SLOTS
+    comptime QSF_WORDS = (_SF_ATOM_BYTES // 4) if FP4 else 0
     var q_smem = smem
-    var k_smem = smem + Q_SLOTS * q_elems
-    var ks_smem = (k_smem + NSTAGE * k_elems).bitcast[Scalar[KS_DTYPE]]()
-    var qs_smem = (ks_smem + NSTAGE * KS_SLOT).bitcast[Float32]()
-    var md_smem = (qs_smem + Q_SLOTS * MMA_N).bitcast[Int32]()
+    var k_smem = smem.unsafe_offset(Q_SLOTS * q_elems)
+    var ks_smem = k_smem.unsafe_offset(NSTAGE * k_elems).unsafe_bitcast[
+        Scalar[KS_DTYPE]
+    ]()
+    var qsf_smem = ks_smem.unsafe_offset(NSTAGE * KS_SLOT).unsafe_bitcast[
+        UInt32
+    ]()
+    var qs_smem = qsf_smem.unsafe_offset(Q_SLOTS * QSF_WORDS).unsafe_bitcast[
+        Float32
+    ]()
+    var md_smem = qs_smem.unsafe_offset(Q_SLOTS * MMA_N).unsafe_bitcast[Int32]()
     # The CLC response, 16-byte aligned because the records before it are
     # 32 bytes each, then the entry steal's outcome.
-    var clc_resp = (md_smem + Q_SLOTS * _MD_WORDS).bitcast[UInt128]()
-    var clc_found = md_smem + Q_SLOTS * _MD_WORDS + _CLC_RESP_WORDS
-    var mbar = (md_smem + Q_SLOTS * _MD_WORDS + _CLC_SCRATCH_WORDS).bitcast[
-        SharedMemBarrier
+    var clc_resp = md_smem.unsafe_offset(Q_SLOTS * _MD_WORDS).unsafe_bitcast[
+        UInt128
     ]()
+    var clc_found = md_smem.unsafe_offset(Q_SLOTS * _MD_WORDS).unsafe_offset(
+        _CLC_RESP_WORDS
+    )
+    var mbar = (
+        md_smem.unsafe_offset(Q_SLOTS * _MD_WORDS).unsafe_offset(
+            _CLC_SCRATCH_WORDS
+        )
+    ).unsafe_bitcast[SharedMemBarrier]()
     # Offsets are named because the lane-parallel init below maps a thread index
     # to an arrival count, which makes them part of the layout contract rather
     # than a one-off pointer bump.
@@ -1229,16 +1527,16 @@ def _fp8_index_score_prefill_kernel_sm100[
         + " vs "
         + String(CFG.n_mbars)
     )
-    var k_full = mbar + K_FULL_OFF
-    var k_empty = mbar + K_EMPTY_OFF
-    var s_full = mbar + S_FULL_OFF
-    var s_empty = mbar + S_EMPTY_OFF
-    var q_full = mbar + Q_FULL_OFF
-    var qs_full = mbar + QS_FULL_OFF
-    var q_empty = mbar + Q_EMPTY_OFF
-    var qs_ready = mbar + QS_READY_OFF
-    var clc_full = mbar + CLC_FULL_OFF
-    var ptr_tmem = (mbar + N_MBAR).bitcast[UInt32]()
+    var k_full = mbar.unsafe_offset(K_FULL_OFF)
+    var k_empty = mbar.unsafe_offset(K_EMPTY_OFF)
+    var s_full = mbar.unsafe_offset(S_FULL_OFF)
+    var s_empty = mbar.unsafe_offset(S_EMPTY_OFF)
+    var q_full = mbar.unsafe_offset(Q_FULL_OFF)
+    var qs_full = mbar.unsafe_offset(QS_FULL_OFF)
+    var q_empty = mbar.unsafe_offset(Q_EMPTY_OFF)
+    var qs_ready = mbar.unsafe_offset(QS_READY_OFF)
+    var clc_full = mbar.unsafe_offset(CLC_FULL_OFF)
+    var ptr_tmem = mbar.unsafe_offset(N_MBAR).unsafe_bitcast[UInt32]()
 
     comptime q_flat_layout = tt_row_major[q_elems]()
     comptime k_flat_layout = tt_row_major[k_elems]()
@@ -1250,8 +1548,9 @@ def _fp8_index_score_prefill_kernel_sm100[
     # warp (one elected arrive) plus every consumer thread that reads a
     # `k_scale` out of that slot. Each thread arrives for itself because
     # `mbarrier.arrive` carries the release that publishes its own `LDS` -- a
-    # batched arrive would not.
-    comptime K_EMPTY_ARRIVES = 1 + _NUM_SOFTMAX_THREADS
+    # batched arrive would not. MXFP4 consumers read no k_scale; the MMA
+    # warp's commit covers its own reads of the slot's scales.
+    comptime K_EMPTY_ARRIVES = 1 + (0 if FP4 else _NUM_SOFTMAX_THREADS)
     # A Q slot is free once the MMA has drained its Q (one commit) and every
     # consumer thread has hoisted its q-scales and read its metadata.
     comptime Q_EMPTY_ARRIVES = 1 + CONS_THREADS
@@ -1303,7 +1602,11 @@ def _fp8_index_score_prefill_kernel_sm100[
     # Residency is NOT decided here: `_ctas_per_sm` decides it and
     # `nvvm.minctasm` stamps it, and the assert only catches the two
     # disagreeing.
-    comptime TMEM_USED_COLS = N_S * S_COLS
+    # MXFP4 scale factors sit above the S^T ring: the A atom of S^T stage `s`
+    # at `SFA_COL + 4 s`, the B atom of Q slot `q` at `SFB_COL + 4 q`.
+    comptime SFA_COL = N_S * S_COLS
+    comptime SFB_COL = SFA_COL + N_S * _SF_ATOM_COLS
+    comptime TMEM_USED_COLS = N_S * S_COLS + CFG.sf_cols
     comptime TMEM_COLS = UInt32(next_power_of_two(TMEM_USED_COLS))
     comptime assert Int(TMEM_COLS) == CFG.tmem_cols, (
         "body TMEM footprint disagrees with the config's `tmem_cols`; got "
@@ -1354,7 +1657,9 @@ def _fp8_index_score_prefill_kernel_sm100[
         var e = elect()
         expect_bytes_pred(clc_full, Int32(size_of[UInt128]()), e)
         if e != 0:
-            clusterlaunchcontrol_try_cancel(clc_resp, clc_full.bitcast[Int64]())
+            clusterlaunchcontrol_try_cancel(
+                clc_resp, clc_full.unsafe_bitcast[Int64]()
+            )
 
     # Waits the cancel in flight and returns the first non-empty item it and
     # any re-issued cancels win, or an empty item once one fails. It returns
@@ -1543,20 +1848,24 @@ def _fp8_index_score_prefill_kernel_sm100[
                 # TMA write, so the load warp fences after its wait (see the refill
                 # loop) -- without it the TMA can land the slot's next tile before
                 # this read returns.
-                var ks = k_state.index()
-                var ks_idx: Int32
-                comptime if pool_row_tokens == 1:
-                    ks_idx = ks_off + row
-                else:
-                    ks_idx = (
-                        row // Int32(KS_KEYS) * Int32(KS_STRIDE)
-                        + ks_off
-                        + row % Int32(KS_KEYS) * Int32(pool_row_tokens)
-                    )
-                var k_scale = ks_smem[
-                    ks * UInt32(KS_SLOT) + UInt32(ks_idx)
-                ].cast[.float32]()
-                _ = k_empty[ks].arrive()
+                # MXFP4 keys carry their scales into the MMA, so there is no
+                # per-key factor here and the slot is the MMA warp's to release.
+                var k_scale: Float32 = 1.0
+                comptime if not FP4:
+                    var ks = k_state.index()
+                    var ks_idx: Int32
+                    comptime if pool_row_tokens == 1 and KS_COPIES == 1:
+                        ks_idx = ks_off + row
+                    else:
+                        ks_idx = (
+                            row // Int32(KS_KEYS) * Int32(KS_STRIDE)
+                            + ks_off
+                            + row % Int32(KS_KEYS) * Int32(pool_row_tokens)
+                        )
+                    k_scale = ks_smem[
+                        ks * UInt32(KS_SLOT) + UInt32(ks_idx)
+                    ].cast[.float32]()
+                    _ = k_empty[ks].arrive()
 
                 # Legacy order: a token owns a CONTIGUOUS column range (`col //
                 # num_heads`), so its sum is final at its last column: store it right
@@ -1678,16 +1987,24 @@ def _fp8_index_score_prefill_kernel_sm100[
                             # (32x32->64) rather than a 64-bit multiply. Do NOT
                             # narrow it.
                             var out_row = out_row0 + tok_local
+                            var key_live = key_local < key_bound
+                            var row_live = tok_local < tok_hi
+                            var value = (k_scale * tok_sum).cast[out_dtype]()
+                            comptime if H.enabled:
+                                value = score_hook.score[lane_keys=WARP_SIZE](
+                                    value,
+                                    out_row,
+                                    key_local,
+                                    key_live,
+                                    row_live,
+                                )
                             store_global_pred(
-                                out_base
-                                + (
+                                out_base.unsafe_offset(
                                     Int(out_row) * Int(max_num_keys)
                                     + Int(key_local)
                                 ),
-                                (k_scale * tok_sum).cast[out_dtype](),
-                                Int32(
-                                    key_local < key_bound and tok_local < tok_hi
-                                ),
+                                value,
+                                Int32(key_live and row_live),
                             )
                         comptime if not Q_INTERLEAVE:
                             acc[0] = SIMD[FT, ACCW](0)
@@ -1727,9 +2044,9 @@ def _fp8_index_score_prefill_kernel_sm100[
                 qs_ready[qslot].wait(q_state.phase())
             else:
                 qs_full[qslot].wait(q_state.phase())
-            var md = (md_smem + qslot * UInt32(_MD_WORDS)).unsafe_load[
-                width=_MD_WORDS, alignment=32
-            ]()
+            var md = md_smem.unsafe_offset(
+                qslot * UInt32(_MD_WORDS)
+            ).unsafe_load[width=_MD_WORDS, alignment=32]()
             n_tiles_local = md[_MD_N_TILES]
             if n_tiles_local == 0:
                 break
@@ -1742,7 +2059,7 @@ def _fp8_index_score_prefill_kernel_sm100[
             ks_off = md[_MD_KS_OFF]
             # Interleaved, the hoist reads the slot already in column order; see
             # the transposer role for why it is permuted in SMEM.
-            var qs_slot = qs_smem + qslot * UInt32(MMA_N)
+            var qs_slot = qs_smem.unsafe_offset(qslot * UInt32(MMA_N))
             if own_xpose:
                 var src = Int(row)
                 var v = Float32(0)
@@ -1826,7 +2143,39 @@ def _fp8_index_score_prefill_kernel_sm100[
                     BK=compute_BK,
                     swizzle_mode=SW,
                     is_k_major=True,
-                ](q_smem + qslot * UInt32(q_elems))
+                ](q_smem.unsafe_offset(qslot * UInt32(q_elems)))
+                comptime if FP4:
+                    # B column `n` is Q row `n`: token `n % T`, head `n // T`
+                    # in interleaved order, token `n // nh`, head `n % nh`
+                    # otherwise. Its scales landed token-major, as `q_sf`
+                    # stores them. The slot's previous B atom was read by the
+                    # MMAs of the item two back, which completed before the
+                    # load warp could refill this slot.
+                    var qsf = qsf_smem.unsafe_offset(qslot * UInt32(QSF_WORDS))
+                    var words = SIMD[DType.uint32, _SF_ATOM_COLS](0)
+                    comptime for i in range(_SF_ATOM_COLS):
+                        comptime if 32 * (i + 1) <= MMA_N:
+                            var n = Int32(lane_id()) + Int32(32 * i)
+                            comptime if Q_INTERLEAVE:
+                                words[i] = qsf[
+                                    (n % Int32(N_TOKENS)) * Int32(num_heads)
+                                    + n // Int32(N_TOKENS)
+                                ]
+                            else:
+                                words[i] = qsf[n]
+                    _store_sf_atom(qsf, words)
+                    if e != 0:
+                        tcgen05_cp[
+                            cta_group=1,
+                            datapaths=32,
+                            bits=128,
+                            multicast="warpx4",
+                        ](
+                            tmem_addr
+                            + UInt32(SFB_COL)
+                            + qslot * UInt32(_SF_ATOM_COLS),
+                            _sf_atom_desc(qsf),
+                        )
                 # Trip count must match the consumer's and the load warp's
                 # exactly: the k/s mbar handshakes and every `PipelineState`
                 # phase stay in lockstep only because all roles walk the same
@@ -1838,28 +2187,107 @@ def _fp8_index_score_prefill_kernel_sm100[
                     # counter IS the tile counter. `sp_state` tracks it and is
                     # re-read and stepped here rather than hoisted.
                     var st = sp_state.index()
+                    comptime if FP4:
+                        # Key `m`'s word sits in copy `m // KS_KEYS` of the slot,
+                        # past that copy's alignment residual. Staged ahead of
+                        # the WAR wait, so it overlaps the consumers.
+                        var ks_atom = ks_smem.unsafe_bitcast[
+                            UInt32
+                        ]().unsafe_offset(s * UInt32(KS_SLOT))
+                        var row_off = md_smem[
+                            qslot * UInt32(_MD_WORDS) + UInt32(_MD_KS_OFF)
+                        ] + Int32(lane_id())
+                        var words = SIMD[DType.uint32, _SF_ATOM_COLS]()
+                        comptime for i in range(_SF_ATOM_COLS):
+                            comptime row0 = 32 * i
+                            words[i] = ks_atom[
+                                Int32(
+                                    row0 // KS_KEYS * KS_STRIDE + row0 % KS_KEYS
+                                )
+                                + row_off
+                            ]
+                        _store_sf_atom(ks_atom, words)
                     # WAR: the consumers must have drained this S stage before the
                     # MMA overwrites it. The first pass over each stage falls through
                     # on the pre-flipped phase (nothing to drain yet); after that
-                    # this is the consumer's `release_stage()`.
+                    # this is the consumer's `release_stage()`. MXFP4's A atom for
+                    # this stage was last read by the MMA two tiles back, which that
+                    # drain also waited out.
                     s_empty[Int(st)].wait(sp_state.phase())
-                    QK.mma(
-                        k + s * UInt32(k_elems),
-                        q0,
-                        tmem_addr + st * UInt32(S_COLS),
-                        c_scale=0,
-                        elect=e,
-                    )
-                    elect_mma_arrive(s_full + Int(st), e)
+                    comptime if FP4:
+                        if e != 0:
+                            var sfa = (
+                                tmem_addr
+                                + UInt32(SFA_COL)
+                                + st * UInt32(_SF_ATOM_COLS)
+                            )
+                            tcgen05_cp[
+                                cta_group=1,
+                                datapaths=32,
+                                bits=128,
+                                multicast="warpx4",
+                            ](
+                                sfa,
+                                _sf_atom_desc(
+                                    ks_smem.unsafe_bitcast[
+                                        UInt32
+                                    ]().unsafe_offset(s * UInt32(KS_SLOT))
+                                ),
+                            )
+                            # Two `KIND_MXF4` MMAs of 64 values (32 bytes)
+                            # contract a 128-value row; each reads two of a
+                            # row's four UE8M0 scales, bytes 0-1 then 2-3
+                            # (`sf_id` 0 and 2).
+                            comptime idesc = UMMAInsDescriptor[
+                                UMMAKind.KIND_MXF4
+                            ].create[
+                                DType.float32,
+                                DType.uint8,
+                                DType.uint8,
+                                DType.float8_e8m0fnu,
+                                Index[dtype=DType.uint32](BM_key, MMA_N),
+                                transpose_b=True,
+                            ]()
+                            var a_desc = _create_mma_desc_k_major[dtype, SW](
+                                k_smem.unsafe_offset(s * UInt32(k_elems))
+                            )
+                            var b_desc = _create_mma_desc_k_major[dtype, SW](
+                                q_smem.unsafe_offset(qslot * UInt32(q_elems))
+                            )
+                            comptime for kk in range(depth // _MXF4_K_BYTES):
+                                mma[1](
+                                    a_desc + kk * _MXF4_K_BYTES,
+                                    b_desc + kk * _MXF4_K_BYTES,
+                                    tmem_addr + st * UInt32(S_COLS),
+                                    UMMAInsDescriptor[
+                                        UMMAKind.KIND_MXF4
+                                    ].update_desc_with_sf_id[UInt32(2 * kk)](
+                                        idesc
+                                    ),
+                                    sfa,
+                                    tmem_addr
+                                    + UInt32(SFB_COL)
+                                    + qslot * UInt32(_SF_ATOM_COLS),
+                                    c_scale=UInt32(kk),
+                                )
+                    else:
+                        QK.mma(
+                            k + s * UInt32(k_elems),
+                            q0,
+                            tmem_addr + st * UInt32(S_COLS),
+                            c_scale=0,
+                            elect=e,
+                        )
+                    elect_mma_arrive(s_full.unsafe_offset(Int(st)), e)
                     sp_state.step()
                     # Release K stage s only after the MMA has drained it
                     # (tcgen05.commit tracks the async MMA); a plain mbar arrive
                     # would let the load warp overwrite K mid-read.
-                    elect_mma_arrive(k_empty + s, e)
+                    elect_mma_arrive(k_empty.unsafe_offset(s), e)
                     kc_state.step()
                 # `tcgen05.commit` tracks every MMA issued before it, so the
                 # slot's Q is drained once this arrives.
-                elect_mma_arrive(q_empty + qslot, e)
+                elect_mma_arrive(q_empty.unsafe_offset(qslot), e)
                 q_state.step()
         elif wid == TMA_WARP:
             warpgroup_reg_dealloc[CFG.reg_producer]()
@@ -1883,7 +2311,9 @@ def _fp8_index_score_prefill_kernel_sm100[
             def issue_k(it: Int32, state: PipelineState[NSTAGE]) {imm}:
                 var s = state.index()
                 var num_rows = num_keys // Int32(kpool)
-                expect_bytes_pred(k_full + s, Int32(k_bytes + ks_bytes), e)
+                expect_bytes_pred(
+                    k_full.unsafe_offset(s), Int32(k_bytes + ks_bytes), e
+                )
                 # One copy per page the tile spans. A copy past this batch's
                 # last key re-reads the last key's page instead of looking up a
                 # page the batch does not own; the store guard drops its scores.
@@ -1904,9 +2334,9 @@ def _fp8_index_score_prefill_kernel_sm100[
                     var k_dst = TileTensor[
                         dtype, type_of(k_box_layout), address_space=.SHARED
                     ](
-                        k_smem
-                        + s * UInt32(k_elems)
-                        + UInt32(c * K_BOX * depth),
+                        k_smem.unsafe_offset(s * UInt32(k_elems)).unsafe_offset(
+                            UInt32(c * K_BOX * depth)
+                        ),
                         k_box_layout,
                     )
                     k_tma.async_copy_4d_elect(
@@ -1946,7 +2376,9 @@ def _fp8_index_score_prefill_kernel_sm100[
                         type_of(ks_flat_layout),
                         address_space=.SHARED,
                     ](
-                        ks_smem + s * UInt32(KS_SLOT) + UInt32(c * KS_STRIDE),
+                        ks_smem.unsafe_offset(
+                            s * UInt32(KS_SLOT)
+                        ).unsafe_offset(UInt32(c * KS_STRIDE)),
                         ks_flat_layout,
                     )
                     ks_tma.async_copy_elect(
@@ -1980,9 +2412,9 @@ def _fp8_index_score_prefill_kernel_sm100[
                 # is a release, so it publishes the record to whoever waits that
                 # barrier.
                 if e != 0:
-                    (md_smem + qslot * UInt32(_MD_WORDS)).unsafe_store[
-                        alignment=32
-                    ](
+                    md_smem.unsafe_offset(
+                        qslot * UInt32(_MD_WORDS)
+                    ).unsafe_store[alignment=32](
                         SIMD[DType.int32, _MD_WORDS](
                             tok0,
                             tok_hi,
@@ -1996,23 +2428,54 @@ def _fp8_index_score_prefill_kernel_sm100[
                     )
                 var tok_row = Int(start_of_seq + tok0)
                 # Q and q-scales on SEPARATE barriers: the MMA needs only Q, and
-                # the consumers only the q-scales.
-                expect_bytes_pred(q_full + qslot, Int32(q_bytes), e)
+                # the consumers only the q-scales. MXFP4's block scales feed the
+                # MMA, so they ride Q's barrier.
+                expect_bytes_pred(
+                    q_full.unsafe_offset(qslot),
+                    Int32(q_bytes + (qs_bytes if FP4 else 0)),
+                    e,
+                )
                 q_tma.async_copy_3d_elect(
                     TileTensor[
                         dtype, type_of(q_flat_layout), address_space=.SHARED
-                    ](q_smem + qslot * UInt32(q_elems), q_flat_layout),
+                    ](
+                        q_smem.unsafe_offset(qslot * UInt32(q_elems)),
+                        q_flat_layout,
+                    ),
                     q_full[qslot],
                     _q_tma_coords[Q_INTERLEAVE, num_heads](tok_row),
                     e,
                 )
-                expect_bytes_pred(qs_full + qslot, Int32(qs_bytes), e)
+                comptime if FP4:
+                    qsf_tma.async_copy_elect(
+                        TileTensor[
+                            DType.float32,
+                            type_of(qs_flat_layout),
+                            address_space=.SHARED,
+                        ](
+                            (
+                                qsf_smem.unsafe_offset(
+                                    qslot * UInt32(QSF_WORDS)
+                                )
+                            ).unsafe_bitcast[Float32](),
+                            qs_flat_layout,
+                        ),
+                        q_full[qslot],
+                        (0, tok_row),
+                        e,
+                    )
+                expect_bytes_pred(
+                    qs_full.unsafe_offset(qslot), Int32(qs_bytes), e
+                )
                 qs_tma.async_copy_elect(
                     TileTensor[
                         DType.float32,
                         type_of(qs_flat_layout),
                         address_space=.SHARED,
-                    ](qs_smem + qslot * UInt32(MMA_N), qs_flat_layout),
+                    ](
+                        qs_smem.unsafe_offset(qslot * UInt32(MMA_N)),
+                        qs_flat_layout,
+                    ),
                     qs_full[qslot],
                     (0, tok_row),
                     e,
@@ -2089,7 +2552,7 @@ def _fp8_index_score_prefill_kernel_sm100[
                     ):
                         _ = qs_ready[qslot].arrive()
                         break
-                    var qs_slot = qs_smem + qslot * UInt32(MMA_N)
+                    var qs_slot = qs_smem.unsafe_offset(qslot * UInt32(MMA_N))
                     var v = SIMD[DType.float32, next_power_of_two(PER_LANE)](0)
                     comptime for i in range(PER_LANE):
                         var src = lane + i * WARP_SIZE
@@ -2183,16 +2646,17 @@ def _create_prefill_q_tma[
     legacy descriptor: the tile type only drives the copy count and offsets,
     and both are one copy at offset 0.
     """
+    comptime SW = _index_swizzle[dtype, depth]()
     comptime if _q_interleave[N_TOKENS]():
         # One SMEM row must be exactly one swizzle atom, or the legacy tile
         # type's padded row would stop matching the descriptor's box.
         comptime assert (
-            depth * size_of[dtype]() == _INDEX_SWIZZLE.bytes()
-        ), "interleaved Q needs depth rows of exactly one 128B swizzle atom"
+            depth * size_of[dtype]() == SW.bytes()
+        ), "interleaved Q needs depth rows of exactly one swizzle atom"
         var q_buf = DeviceBuffer(
-            ctx, q_ptr.address_space_cast[.GENERIC](), 1, owning=False
+            ctx, q_ptr.unsafe_address_space_cast[.GENERIC](), 1, owning=False
         )
-        var desc = create_tma_descriptor[dtype, 3, _INDEX_SWIZZLE](
+        var desc = create_tma_descriptor[dtype, 3, SW](
             q_buf,
             IndexList[3](num_heads, num_q_tokens, depth),
             IndexList[3](depth, num_heads * depth, 1),
@@ -2203,7 +2667,7 @@ def _create_prefill_q_tma[
         res = create_split_tma[
             coord[N_TOKENS * num_heads, 1, depth],
             coord[UNKNOWN_VALUE, 1, depth],
-            _INDEX_SWIZZLE,
+            SW,
         ](ctx, q_ptr, num_q_tokens * num_heads)
 
 
@@ -2240,6 +2704,7 @@ def fp8_index_score_sm100_prefill[
     causal: Int,
     ctx: DeviceContext,
     out_row_begin: Int = 0,
+    q_sf: OptionalPointer[UInt32, ImmutAnyOrigin] = None,
 ) raises:
     """Enqueue the warp-specialized K-streaming prefill scorer into `output`.
 
@@ -2258,6 +2723,89 @@ def fp8_index_score_sm100_prefill[
 
     `out_dtype` is inferred from `output` and may be f32 or bf16; the
     accumulator is f32 either way and only the final store converts.
+
+    MXFP4 (`dtype == uint8`) takes `q_ptr` as `[tokens, num_heads, depth]`
+    packed E2M1 bytes, `q_sf` as their `[tokens, num_heads]` 32-bit words of
+    four UE8M0 block scales, `q_s` as the per-head weights, and K scales of
+    the same four-scale word per key. The score is then
+    `sum_head relu(q . k) * q_s[token, head]`, with no per-key factor.
+    """
+    fp8_index_score_sm100_prefill[
+        dtype,
+        KOperand,
+        KSOperand,
+        num_heads,
+        depth,
+        BM_key,
+        N_TOKENS,
+        _is_cache_length_accurate,
+        kpool,
+        pool_row_tokens,
+        k_box_rows,
+        VLEngine=VLEngine,
+        QSEngine=QSEngine,
+        OutEngine=OutEngine,
+    ](
+        q_ptr,
+        num_q_tokens,
+        k_tma,
+        k_operand,
+        ks_operand,
+        valid_length,
+        q_s,
+        output,
+        batch_size,
+        max_seq_len,
+        max_num_keys,
+        causal,
+        ctx,
+        out_row_begin,
+        q_sf,
+        NoScoreHook(),
+    )
+
+
+def fp8_index_score_sm100_prefill[
+    out_dtype: DType,
+    H: IndexerScoreHook,
+    //,
+    dtype: DType,
+    KOperand: MHAOperand,
+    KSOperand: MHAOperand,
+    num_heads: Int,
+    depth: Int,
+    BM_key: Int,
+    N_TOKENS: Int,
+    _is_cache_length_accurate: Bool,
+    kpool: Int = 1,
+    pool_row_tokens: Int = 1,
+    k_box_rows: Int = BM_key,
+    *,
+    VLEngine: TensorEngine = DefaultEngine[element_width=1],
+    QSEngine: TensorEngine = DefaultEngine[element_width=1],
+    OutEngine: TensorEngine = DefaultEngine[element_width=1],
+](
+    q_ptr: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
+    num_q_tokens: Int,
+    k_tma: KTMATileT[dtype, k_box_rows, depth],
+    k_operand: KOperand,
+    ks_operand: KSOperand,
+    valid_length: TileTensor[mut=False, .uint32, ..., Engine=VLEngine],
+    q_s: TileTensor[mut=False, .float32, ..., Engine=QSEngine],
+    output: TileTensor[out_dtype, ..., Engine=OutEngine],
+    batch_size: Int,
+    max_seq_len: Int,
+    max_num_keys: Int,
+    causal: Int,
+    ctx: DeviceContext,
+    out_row_begin: Int,
+    q_sf: OptionalPointer[UInt32, ImmutAnyOrigin],
+    score_hook: H,
+) raises:
+    """Enqueue the K-streaming prefill scorer into `output` with a score hook.
+
+    `score_hook` runs on every score the epilogue stores. Its rows count from
+    the window's first row, so its row 0 is `output`'s row 0.
     """
     # The window bounds the token blocks any entry can contribute, so a chunked
     # launch does not pay for a grid sized to the whole batch.
@@ -2273,6 +2821,7 @@ def fp8_index_score_sm100_prefill[
         MMA_N,
         num_heads,
         pool_row_tokens,
+        k_box_rows,
     ]()
     comptime CTA_TOKEN_STRIDE = CFG.cta_token_stride
     var token_blocks = ceildiv(min(max_seq_len, out_rows), CTA_TOKEN_STRIDE)
@@ -2319,7 +2868,7 @@ def fp8_index_score_sm100_prefill[
     )
 
     comptime KS_KEYS_E = _ks_copy_keys[
-        KSOperand.dtype, BM_key, pool_row_tokens
+        KSOperand.dtype, BM_key, pool_row_tokens, k_box_rows
     ]()
     comptime KS_BOX_E = flat_scale_window[
         KSOperand.dtype, KS_KEYS_E * pool_row_tokens
@@ -2344,6 +2893,7 @@ def fp8_index_score_sm100_prefill[
         VLEngine=type_of(valid_length.as_imm()).Engine,
         QSEngine=q_s.Engine,
         OutEngine=output.Engine,
+        H=H,
     ]
     # Validate where the config is BUILT, ahead of the derived asserts below --
     # the SMEM check fires on an over-forced ring depth first and reports only a
@@ -2412,11 +2962,24 @@ def fp8_index_score_sm100_prefill[
     # running past the last token is zero-filled, and a token past its entry
     # reads the next entry's scales, which only feed unstored sums.
     var qs_tma = create_tma_tile[N_TOKENS, num_heads](ctx, q_s)
+    # The same box over MXFP4's block-scale words; unread otherwise.
+    var qsf_tma = qs_tma
+    comptime if _is_mxfp4[dtype]():
+        if not q_sf:
+            raise Error("mxfp4 index prefill: q_sf is required")
+        qsf_tma = create_tma_tile[N_TOKENS, num_heads](
+            ctx,
+            TileTensor(
+                q_sf.value().unsafe_bitcast[Float32](),
+                tt_row_major(num_q_tokens, num_heads),
+            ),
+        )
     ctx.enqueue_function[kernel](
         q_tma,
         k_tma,
         ks_tma,
         qs_tma,
+        qsf_tma,
         k_operand,
         ks_operand,
         valid_length.as_imm(),
@@ -2427,6 +2990,7 @@ def fp8_index_score_sm100_prefill[
         Int32(num_key_parts),
         Int32(out_row_begin),
         Int32(out_row_begin + out_rows),
+        score_hook,
         grid_dim=(
             batch_size,
             token_blocks,

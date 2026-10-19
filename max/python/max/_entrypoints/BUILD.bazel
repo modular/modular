@@ -22,7 +22,11 @@ modular_py_library(
         requirement("sentencepiece"),  # Very few select models use this
     ],
     deps = [
+        "//max/python/max:tree",
         "//max/python/max/driver",
+        "//max/python/max/experimental",
+        "//max/python/max/experimental/nn",
+        "//max/python/max/nn",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines:logging_utils",
         "//max/python/max/pipelines/context",
@@ -61,6 +65,8 @@ modular_py_library(
     deps = [
         ":allocator",
         "//max/python/max/_entrypoints",
+        "//max/python/max/_artifact",
+        "//max/python/max/_artifact:export",
         "//max/python/max:_core",
         "//max/python/max:_eager_policy",
         "//max/python/max/engine",
@@ -115,6 +121,8 @@ modular_py_binary(
         ":allocator",
         "//max/python/max:_core",
         "//max/python/max:_eager_policy",
+        "//max/python/max/_artifact",
+        "//max/python/max/_artifact:export",
         "//max/python/max/_interpreter_ops",
         "//max/python/max/benchmark:benchmark_serving_lib",
         "//max/python/max/engine",

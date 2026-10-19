@@ -120,8 +120,8 @@ def fp4_materialize_kernel[
     var N = Int(out_w.dim[0]())
     var K = Int(out_w.dim[1]())
 
-    var n = Int(global_idx.y)
-    var k = Int(global_idx.x)
+    var n = global_idx.y
+    var k = global_idx.x
     if n >= N or k >= K:
         return
 

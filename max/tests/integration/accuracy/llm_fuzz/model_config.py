@@ -105,6 +105,12 @@ class ModelProfile:
 
 
 MODEL_PROFILES: dict[str, ModelProfile] = {
+    "hy_v4": ModelProfile(
+        name="hy_v4",
+        default_port=8800,
+        tags=["model:hy_v4"],
+        description="Hy4 model-specific tests",
+    ),
     "kimi-k2.5": ModelProfile(
         name="kimi-k2.5",
         default_port=8200,
@@ -128,6 +134,12 @@ MODEL_PROFILES: dict[str, ModelProfile] = {
         default_port=8400,
         tags=["model:minimax-m3"],
         description="MiniMax M3 model-specific tests",
+    ),
+    "minimax-m3-mach": ModelProfile(
+        name="minimax-m3-mach",
+        default_port=8091,
+        tags=["model:minimax-m3-mach"],
+        description="MiniMax M3 on Mach: 16 media items and H.264 MP4",
     ),
     "muse_glimmer": ModelProfile(
         name="muse_glimmer",

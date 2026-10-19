@@ -169,7 +169,11 @@ from max.profiler import Tracer, traced
 from ..memory_estimation import MemoryPlan
 from ._label_scoring import BatchLabelScorer
 from .structured_output_overlap import StructuredOutputOverlapState
-from .text_generation import TextGenerationPipelineInterface, load_kv_manager
+from .text_generation import (
+    TextGenerationPipelineInterface,
+    load_kv_manager,
+    load_sampler_graphs,
+)
 from .unified_spec_decode_model import _UnifiedSpecDecodeModelMixin
 from .utils import (
     CommittedSpanSnapshot,
@@ -188,10 +192,10 @@ from max.pipelines.sampling import (
     apply_logits_processors,
     batch_max_k,
     request_row_seed,
-    token_sampler,
 )
 
 from ..graph_capture import ServeGraphCaptureRunner
+from ..graph_specs import GraphRole
 from ..interfaces import (
     ModelInputs,
     ModelOutputs,
@@ -511,6 +515,14 @@ class SpecDecodeState:
 
     has_precomputed_bitmask: bool = False
     """True when a CUDA host callback has computed a bitmask for the next batch."""
+
+    bitmask_callback_enqueued: bool = False
+    """True when this step enqueued the async bitmask callback."""
+
+    prev_step_enqueued_bitmask_callback: bool = False
+    """True when the previous step enqueued the async bitmask callback. Until
+    that step's outputs are synced the callback may still be writing the
+    pinned bitmask, and it will signal the flag."""
 
     overlap_state: StructuredOutputOverlapState | None = None
     """Flag + pinned/device bitmask buffers for constrained-decoding
@@ -1982,32 +1994,24 @@ class OverlapTextGenerationPipeline(
 
         self._sampler_with_bitmask: Model | None = None
         self._sampler_without_bitmask: Model | None = None
+        compiled_modules = dict(self._pipeline_model.compiled_modules)
         if not is_spec_decode:
-            with_bitmask_graph = None
-            with CompilationTimer("sampler") as sampler_timer:
-                if pipeline_config.needs_bitmask_constraints:
-                    with_bitmask_graph = token_sampler(
-                        pipeline_config.sampling,
-                        device=sampler_device_ref,
-                        needs_bitmask_input=True,
-                        custom_extensions=sampler_extensions,
-                        unpadded_vocab_size=self.vocab_size,
-                    )
-                without_bitmask_graph = token_sampler(
-                    pipeline_config.sampling,
-                    device=sampler_device_ref,
-                    needs_bitmask_input=False,
-                    custom_extensions=sampler_extensions,
-                    unpadded_vocab_size=self.vocab_size,
-                )
-                sampler_timer.mark_build_complete()
-                if with_bitmask_graph is not None:
-                    self._sampler_with_bitmask = session.load(
-                        with_bitmask_graph
-                    )
-                self._sampler_without_bitmask = session.load(
-                    without_bitmask_graph
-                )
+            samplers = load_sampler_graphs(
+                session,
+                pipeline_config,
+                sampler_device_ref,
+                self.vocab_size,
+                custom_extensions=sampler_extensions,
+            )
+            bitmask_sampler = samplers.get(GraphRole.SAMPLER_BITMASK)
+            self._sampler_with_bitmask = (
+                bitmask_sampler.engine_model if bitmask_sampler else None
+            )
+            self._sampler_without_bitmask = samplers[
+                GraphRole.SAMPLER
+            ].engine_model
+            compiled_modules |= samplers
+        self.compiled_modules = compiled_modules
 
         # Pre-allocate pinned buffer for D2H token copies only when the
         # bitmask path is wired in. This buffer is used for async token
@@ -3349,7 +3353,25 @@ class OverlapTextGenerationPipeline(
         callback_available = spec_state.has_precomputed_bitmask
         spec_state.has_precomputed_bitmask = False
 
-        if not callback_available:
+        if not callback_available and not any(
+            _is_constrained(ctx) for ctx in context_batch
+        ):
+            # Nothing to constrain: every row allows every token. The previous
+            # step's callback, if one may still be running, gates that step's
+            # graph and signals the flag itself; signalling here could let
+            # that graph read rows the callback has not written yet. Its rows
+            # are all-valid too (this predicate held for its batch, or the
+            # early sync above retired it), so writing -1 under it is benign.
+            prev_batch = self._prev_batch
+            callback_in_flight = (
+                spec_state.prev_step_enqueued_bitmask_callback
+                and prev_batch is not None
+                and not prev_batch._is_processed
+            )
+            overlap_state.prime_all_valid(
+                batch_size, num_positions, signal=not callback_in_flight
+            )
+        elif not callback_available:
             # Cold start: no callback advanced the FSM (prefill->first-decode,
             # or first iter after a non-verify batch). Compute every row
             # synchronously in this batch's order; prime writes rows
@@ -3525,7 +3547,9 @@ class OverlapTextGenerationPipeline(
         Returns early without enqueuing when there is no previous batch, when
         the previous batch did not verify drafts (a prefill / mixed batch has
         no committed tokens to advance through -- its successor cold-starts via
-        prime instead), or when structured output is not configured.
+        prime instead), when no request in either batch is constrained (the
+        successor primes an all-valid bitmask), or when structured output is
+        not configured.
 
         Args:
             curr_context_batch: This iteration's contexts, in logits row order.
@@ -3548,6 +3572,10 @@ class OverlapTextGenerationPipeline(
             or spec_state.persistent_next_draft_tokens_pinned is None
         ):
             return False
+        spec_state.prev_step_enqueued_bitmask_callback = (
+            spec_state.bitmask_callback_enqueued
+        )
+        spec_state.bitmask_callback_enqueued = False
 
         prev_batch = self._prev_batch
         if prev_batch is None or prev_batch.spec_decode is None:
@@ -3600,6 +3628,17 @@ class OverlapTextGenerationPipeline(
             for ctx in curr_context_batch
         )
         if not all_continuing:
+            return False
+
+        # With no grammar in either batch there is no FSM to advance and every
+        # row allows every token, so ``_assign_bitmask_inputs`` primes an
+        # all-valid bitmask on the main thread instead. That keeps the
+        # callback's host node, and the stream stall behind it while the
+        # worker waits for the GIL, out of every unconstrained decode step.
+        if not any(
+            _is_constrained(ctx)
+            for ctx in (*prev_context_batch, *curr_context_batch)
+        ):
             return False
 
         overlap_state = spec_state.overlap_state
@@ -3686,6 +3725,7 @@ class OverlapTextGenerationPipeline(
         # must skip the now-redundant advance.
         prev_batch.spec_decode.fsm_advanced_by_callback = True
         spec_state.has_precomputed_bitmask = True
+        spec_state.bitmask_callback_enqueued = True
         return True
 
     def _d2h_spec_decode_outputs(

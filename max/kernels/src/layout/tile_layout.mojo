@@ -508,10 +508,10 @@ struct Layout[
                 comptime for j in range(sub_rank):
                     var divided = _divide_by_stride[
                         Self.stride_types[i].ParamListType[j]
-                    ](idx, Int(sub_stride[j].value()))
+                    ](idx, Int(sub_stride[j]))
                     var coord_val = _mod_by_shape[
                         Self.shape_types[i].ParamListType[j]
-                    ](divided, Int(sub_shape[j].value()))
+                    ](divided, Int(sub_shape[j]))
                     Pointer(to=sub_result[j]).write(
                         rebind[SubResultType.element_types[j]](
                             Scalar[out_dtype](coord_val)
@@ -522,10 +522,10 @@ struct Layout[
                 )
             else:
                 var divided = _divide_by_stride[Self.stride_types[i]](
-                    idx, Int(stride_t[i].value())
+                    idx, Int(stride_t[i])
                 )
                 var coord_val = _mod_by_shape[Self.shape_types[i]](
-                    divided, Int(shape_t[i].value())
+                    divided, Int(shape_t[i])
                 )
                 Pointer(to=result[i]).write(
                     rebind[ResultType.element_types[i]](
@@ -1035,9 +1035,7 @@ def row_major(var shape: Coord) -> RowMajorLayout[*shape.element_types]:
                 comptime stride_val = StrideType.static_value
                 stride_ptr.write(rebind[StrideType](Idx[stride_val]))
             else:
-                var stride_val = Int(shape[idx + 1].value()) * Int(
-                    strides[idx + 1].value()
-                )
+                var stride_val = Int(shape[idx + 1]) * Int(strides[idx + 1])
                 stride_ptr.write(
                     rebind[StrideType](
                         Scalar[StrideType.DTYPE](
@@ -1091,9 +1089,7 @@ def row_major[
                 comptime stride_val = StrideType.static_value
                 stride_ptr.write(rebind[StrideType](Idx[stride_val]))
             else:
-                var stride_val = Int(elements[idx + 1].value()) * Int(
-                    strides[idx + 1].value()
-                )
+                var stride_val = Int(elements[idx + 1]) * Int(strides[idx + 1])
                 stride_ptr.write(
                     rebind[StrideType](
                         Scalar[StrideType.DTYPE](
@@ -1304,9 +1300,7 @@ def col_major(var shape: Coord) -> ColMajorLayout[shape.element_types]:
                 comptime stride_val = StrideType.static_value
                 stride_ptr.write(rebind[StrideType](Idx[stride_val]))
             else:
-                var stride_val = Int(shape[i - 1].value()) * Int(
-                    strides[i - 1].value()
-                )
+                var stride_val = Int(shape[i - 1]) * Int(strides[i - 1])
                 stride_ptr.write(
                     rebind[StrideType](
                         Scalar[StrideType.DTYPE](
@@ -1445,7 +1439,7 @@ def zipped_divide[
         ):
             outer_shape[i] = rebind[outer_shape.element_types[i]](
                 Scalar[outer_shape.element_types[i].DTYPE](
-                    Int(shape[i].value()) // Int(tile[i].value())
+                    Int(shape[i]) // Int(tile[i])
                 )
             )
 
@@ -1455,7 +1449,7 @@ def zipped_divide[
         ):
             outer_stride[i] = rebind[outer_stride.element_types[i]](
                 Scalar[outer_stride.element_types[i].DTYPE](
-                    Int(inner_stride[i].value()) * Int(tile[i].value())
+                    Int(inner_stride[i]) * Int(tile[i])
                 )
             )
     var out_layout = Layout(
@@ -1753,7 +1747,7 @@ def blocked_product[
             Pointer(to=outer_stride[i]).write(
                 rebind[OuterStrideTypes[i]](
                     Scalar[OuterStrideTypes[i].DTYPE](
-                        Int(tiler.stride_coord()[i].value()) * block_cosize
+                        Int(tiler.stride_coord()[i]) * block_cosize
                     )
                 )
             )
@@ -2009,7 +2003,7 @@ def upcast[
                 rebind[ResultStrideTypes[i]](
                     Scalar[ResultStrideTypes[i].DTYPE](
                         _runtime_shape_div(
-                            Int(layout.stride_coord()[i].value()), factor
+                            Int(layout.stride_coord()[i]), factor
                         )
                     )
                 )
@@ -2023,10 +2017,10 @@ def upcast[
                 rebind[ResultShapeTypes[i]](
                     Scalar[ResultShapeTypes[i].DTYPE](
                         _runtime_shape_div(
-                            Int(layout.shape_coord()[i].value()),
+                            Int(layout.shape_coord()[i]),
                             _runtime_shape_div(
                                 factor,
-                                Int(layout.stride_coord()[i].value()),
+                                Int(layout.stride_coord()[i]),
                             ),
                         )
                     )
@@ -2357,7 +2351,7 @@ def _dim_size[T: CoordLike](dim: T) -> Int:
             result *= _dim_size(t[j])
         return result
     else:
-        return Int(dim.value())
+        return Int(dim)
 
 
 @inline(.never)

@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.collections import List
 from spmv_utils import CSCMatrix, generate_sparse_matrix, spmv_cpu, verify
 from max.gpu import block_idx, thread_idx, block_dim
 from max.gpu.host import DeviceContext
@@ -36,8 +35,8 @@ struct Element(Comparable, ImplicitlyCopyable):
 
 def spmv_csc_kernel(
     cscMatrix: CSCMatrix,
-    x: UnsafePointer[Float32, ImmutAnyOrigin],
-    y: UnsafePointer[Float32, MutAnyOrigin],
+    x: ImmPointer[Float32, ImmutAnyOrigin],
+    y: MutPointer[Float32, MutAnyOrigin],
 ):
     var col = block_idx.x * block_dim.x + thread_idx.x
     if col < cscMatrix.numCols:
@@ -47,7 +46,7 @@ def spmv_csc_kernel(
         for i in range(Int(start), Int(end)):
             var row = cscMatrix.rowIdxs[i]
             var val = cscMatrix.values[i]
-            _ = Atomic.fetch_add(y + Int(row), inValue * val)
+            _ = Atomic.fetch_add(y.unsafe_offset(Int(row)), inValue * val)
 
 
 def main() raises:

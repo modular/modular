@@ -208,7 +208,7 @@ def _allreduce_rmsnorm_fp8_kernel_warp_tiling[
     var gamma_vec = SIMD[accum_type, simd_width](0)
     if is_valid:
         gamma_vec = (
-            gamma.load[width=simd_width, alignment=align](Coord(idx)).cast[
+            gamma.load[width=simd_width, alignment=align]((idx,)).cast[
                 accum_type
             ]()
             + _weight_offset.cast[accum_type]()
@@ -235,7 +235,7 @@ def _allreduce_rmsnorm_fp8_kernel_warp_tiling[
             comptime for gpu_idx in range(ngpus):
                 vec_data += (
                     ptrs[gpu_idx]
-                    .address_space_cast[_target_address_space]()
+                    .unsafe_address_space_cast[_target_address_space]()
                     .load[
                         width=simd_width,
                         alignment=simd_width,
@@ -248,13 +248,11 @@ def _allreduce_rmsnorm_fp8_kernel_warp_tiling[
             comptime if has_residual:
                 vec_data += (
                     residual[]
-                    .load[width=simd_width](Coord(row, idx))
+                    .load[width=simd_width]((row, idx))
                     .cast[accum_type]()
                 )
                 # Write bf16 pre-normalization sum for the residual stream.
-                residual_output[].store[width=simd_width](
-                    Coord(row, idx), vec_data.cast[in_dtype]()
-                )
+                residual_output[].store((row, idx), vec_data.cast[in_dtype]())
 
         # Phase 1: Compute mean-square.
         var thread_m2 = (vec_data**2).reduce_add()
@@ -458,32 +456,35 @@ def _allreduce_rmsnorm_fp8_kernel_2stage[
     # +1 advances the Signal pointer by sizeof(Signal) bytes, stepping
     # past the Signal header to reach the scratch region of the buffer.
     var scratch_fp8 = (
-        rank_sigs[_my_rank].address_space_cast[.GENERIC]() + 1
-    ).bitcast[Scalar[out_dtype]]()
-    var scratch_scale = (scratch_fp8 + fp8_per_rank).bitcast[
+        rank_sigs[_my_rank]
+        .unsafe_address_space_cast[.GENERIC]()
+        .unsafe_offset(1)
+    ).unsafe_bitcast[Scalar[out_dtype]]()
+    var scratch_scale = scratch_fp8.unsafe_offset(fp8_per_rank).unsafe_bitcast[
         Scalar[scales_dtype]
     ]()
-    var scratch_residual = (scratch_scale + scale_pad_elements).bitcast[
-        Scalar[in_dtype]
-    ]()
+    var scratch_residual = scratch_scale.unsafe_offset(
+        scale_pad_elements
+    ).unsafe_bitcast[Scalar[in_dtype]]()
 
     # P2P scratch pointers for all GPUs (for reads in Stage 2).
     # +1 advances by sizeof(Signal) bytes (see local scratch note above).
     comptime Fp8PtrType = MutPointer[Scalar[out_dtype], MutAnyOrigin]
     var fp8_ptrs = Array[_, ngpus](
         fill_with_unrolled=lambda [i: Int]() -> Fp8PtrType: (
-            rank_sigs[i].address_space_cast[.GENERIC]() + 1
-        ).bitcast[Scalar[out_dtype]]()
+            rank_sigs[i].unsafe_address_space_cast[.GENERIC]().unsafe_offset(1)
+        ).unsafe_bitcast[Scalar[out_dtype]]()
     )
 
     comptime ScalePtrType = MutPointer[Scalar[scales_dtype], MutAnyOrigin]
     var scale_ptrs = Array[_, ngpus](
         fill_with_unrolled=lambda [i: Int]() -> ScalePtrType: (
-            (rank_sigs[i].address_space_cast[.GENERIC]() + 1).bitcast[
-                Scalar[out_dtype]
-            ]()
-            + fp8_per_rank
-        ).bitcast[Scalar[scales_dtype]]()
+            rank_sigs[i]
+            .unsafe_address_space_cast[.GENERIC]()
+            .unsafe_offset(1)
+            .unsafe_bitcast[Scalar[out_dtype]]()
+            .unsafe_offset(fp8_per_rank)
+        ).unsafe_bitcast[Scalar[scales_dtype]]()
     )
     var residual_ptrs = Array[
         MutPointer[Scalar[in_dtype], MutAnyOrigin], ngpus
@@ -491,9 +492,9 @@ def _allreduce_rmsnorm_fp8_kernel_2stage[
 
     comptime if has_residual:
         comptime for i in range(ngpus):
-            residual_ptrs[i] = (scale_ptrs[i] + scale_pad_elements).bitcast[
-                Scalar[in_dtype]
-            ]()
+            residual_ptrs[i] = (
+                scale_ptrs[i].unsafe_offset(scale_pad_elements)
+            ).unsafe_bitcast[Scalar[in_dtype]]()
 
     # Round-robin P2P input pointers for NVLink load-balancing.
     comptime PtrType = ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]
@@ -508,7 +509,7 @@ def _allreduce_rmsnorm_fp8_kernel_2stage[
     var gamma_vec = SIMD[accum_type, simd_width](0)
     if is_valid:
         gamma_vec = (
-            gamma.load[width=simd_width, alignment=align](Coord(col_idx)).cast[
+            gamma.load[width=simd_width, alignment=align]((col_idx,)).cast[
                 accum_type
             ]()
             + _weight_offset.cast[accum_type]()
@@ -533,7 +534,7 @@ def _allreduce_rmsnorm_fp8_kernel_2stage[
                 comptime for gpu_idx in range(ngpus):
                     accum += (
                         ptrs[gpu_idx]
-                        .address_space_cast[_target_address_space]()
+                        .unsafe_address_space_cast[_target_address_space]()
                         .load[
                             width=simd_width,
                             alignment=simd_width,
@@ -546,11 +547,11 @@ def _allreduce_rmsnorm_fp8_kernel_2stage[
                 comptime if has_residual:
                     accum += (
                         residual[]
-                        .load[width=simd_width](Coord(row, col_idx))
+                        .load[width=simd_width]((row, col_idx))
                         .cast[accum_type]()
                     )
                     var local_elem = local_row * _cols + col_idx
-                    scratch_residual.address_space_cast[
+                    scratch_residual.unsafe_address_space_cast[
                         _target_address_space
                     ]().store[width=simd_width, alignment=simd_width](
                         local_elem, accum.cast[in_dtype]()
@@ -586,7 +587,7 @@ def _allreduce_rmsnorm_fp8_kernel_2stage[
 
                 # Write scale to local scratch.
                 if tid == 0:
-                    scratch_scale.address_space_cast[
+                    scratch_scale.unsafe_address_space_cast[
                         _target_address_space
                     ]().store(local_row, scale_factor)
 
@@ -596,7 +597,7 @@ def _allreduce_rmsnorm_fp8_kernel_2stage[
                         normalized, scale_factor_recip
                     )
                     var local_elem = local_row * _cols + col_idx
-                    scratch_fp8.address_space_cast[
+                    scratch_fp8.unsafe_address_space_cast[
                         _target_address_space
                     ]().store[width=simd_width, alignment=simd_width](
                         local_elem, output_fp8
@@ -606,7 +607,7 @@ def _allreduce_rmsnorm_fp8_kernel_2stage[
                 # local scratch. No scale is computed or written.
                 if is_valid:
                     var local_elem = local_row * _cols + col_idx
-                    scratch_fp8.address_space_cast[
+                    scratch_fp8.unsafe_address_space_cast[
                         _target_address_space
                     ]().store[width=simd_width, alignment=simd_width](
                         local_elem, normalized.cast[out_dtype]()
@@ -636,7 +637,7 @@ def _allreduce_rmsnorm_fp8_kernel_2stage[
             if is_valid:
                 var out_val = (
                     fp8_ptrs[gpu]
-                    .address_space_cast[_target_address_space]()
+                    .unsafe_address_space_cast[_target_address_space]()
                     .load[
                         width=simd_width,
                         alignment=simd_width,
@@ -650,7 +651,7 @@ def _allreduce_rmsnorm_fp8_kernel_2stage[
                 if tid == 0:
                     scale_buffer[row] = (
                         scale_ptrs[gpu]
-                        .address_space_cast[_target_address_space]()
+                        .unsafe_address_space_cast[_target_address_space]()
                         .load[invariant=True](local_row)
                     )
 
@@ -659,16 +660,14 @@ def _allreduce_rmsnorm_fp8_kernel_2stage[
                 if is_valid:
                     var bf16_val = (
                         residual_ptrs[gpu]
-                        .address_space_cast[_target_address_space]()
+                        .unsafe_address_space_cast[_target_address_space]()
                         .load[
                             width=simd_width,
                             alignment=simd_width,
                             invariant=True,
                         ](local_elem)
                     )
-                    residual_output[].store[width=simd_width](
-                        Coord(row, col_idx), bf16_val
-                    )
+                    residual_output[].store((row, col_idx), bf16_val)
 
     # No end barrier. Every block waited at the mid barrier for its peer
     # blocks to finish Stage 1, so all P2P reads of the inputs are done by
@@ -728,14 +727,14 @@ def _allreduce_rmsnorm_fp8_launch[
     var grid_dim = min(rows, max_blocks)
     var block_dim = threads_per_block
 
-    # Provide evidence that flat_rank >= 2 for output.store(Coord(..., ...)).
+    # Provide evidence that flat_rank >= 2 for output.store((..., ...)).
     comptime assert output.flat_rank >= 2
 
     @inline(.always)
     def output_fn[
         width: SIMDLength
     ](row: Int, col: Int, val: SIMD[out_dtype, width]) {var output}:
-        output.store[width=width](Coord(row, col), val)
+        output.store((row, col), val)
 
     comptime kernel = _allreduce_rmsnorm_fp8_kernel_warp_tiling[
         mut=gamma.mut,
@@ -886,14 +885,14 @@ def _allreduce_rmsnorm_fp8_launch_2stage[
             + " B) for SIMD residual stores"
         )
 
-    # Provide evidence that flat_rank >= 2 for output.store(Coord(..., ...)).
+    # Provide evidence that flat_rank >= 2 for output.store((..., ...)).
     comptime assert output.flat_rank >= 2
 
     @inline(.always)
     def output_fn[
         width: SIMDLength
     ](row: Int, col: Int, val: SIMD[out_dtype, width]) {var output}:
-        output.store[width=width](Coord(row, col), val)
+        output.store((row, col), val)
 
     comptime kernel = _allreduce_rmsnorm_fp8_kernel_2stage[
         mut=gamma.mut,
@@ -969,17 +968,19 @@ def _launch_split_allreduce_rmsnorm_fp8[
         )
     )
 
-    var _cols = cols
+    var residual_2d = residual.reshape(row_major(rows, cols))
+    var residual_output_2d = residual_output.reshape(row_major(rows, cols))
 
     # Define input_fn for RMSNorm (reads from residual_output after allreduce).
-    @__copy_capture(residual_output, _cols)
+    @__copy_capture(residual_output_2d)
     @inline(.always)
     @__parameter
     def input_fn[
         width: Int, _rank: Int
     ](idx: IndexList[_rank]) -> SIMD[in_dtype, width]:
-        var li = idx[0] * _cols + idx[1]
-        return residual_output.raw_load[width=width, alignment=width](li)
+        return residual_output_2d.load[width=width, alignment=width](
+            (idx[0], idx[1])
+        )
 
     var shape = IndexList[2](rows, cols)
     var scale_output_2d = TileTensor(
@@ -1004,7 +1005,7 @@ def _launch_split_allreduce_rmsnorm_fp8[
     )
 
     # Step 1: Allreduce with add epilogue → residual_output.
-    @__copy_capture(residual, residual_output, _cols)
+    @__copy_capture(residual_2d, residual_output_2d)
     @inline(.always)
     @__parameter
     def add_epilogue[
@@ -1014,19 +1015,16 @@ def _launch_split_allreduce_rmsnorm_fp8[
         _alignment: Int,
     ](coords: Coord, val: SIMD[_dtype, length=_width]) -> None:
         var il = coord_to_index_list(coords)
-        var flat_idx = il[0] * _cols + il[1]
-        var res = residual.raw_load[width=_width, alignment=_alignment](
-            flat_idx
-        )
+        var rc = Coord(il[0], il[1])
+        var res = residual_2d.load[width=_width, alignment=_alignment](rc)
         # Add in f32 for precision parity with the fused kernel,
         # which accumulates allreduce + residual in f32 before casting.
         var sum_f32 = (
             val.cast[.float32]()
             + rebind[SIMD[_dtype, _width]](res).cast[.float32]()
         )
-        residual_output.raw_store[width=_width, alignment=_alignment](
-            flat_idx,
-            rebind[SIMD[in_dtype, _width]](sum_f32.cast[_dtype]()),
+        residual_output_2d.store[alignment=_alignment](
+            rc, rebind[SIMD[in_dtype, _width]](sum_f32.cast[_dtype]())
         )
 
     allreduce[ngpus=ngpus, output_lambda=add_epilogue](

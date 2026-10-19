@@ -1034,18 +1034,35 @@ SymbolConstantAttr FuncLiteralTypeGeneratorType::getSymbolConstantAttr() {
   auto sig = GeneratorType::get(getInputParamTypes(), directSymbol.getType(),
                                 getParamListAttrs());
 
-  // The parameter values might have dependent type, erase the ref too in the
-  // create a evaluator to erase the dependencies too.
+  // An input parameter type may contain an expression dependent on an earlier
+  // parameter. Those dependencies are erased to `#kgen.unknown` rather than
+  // `#kgen.unbound` to appease the verifier which may fail compilation if the
+  // expression contains a symbol use that the verifier expects to be fully
+  // bound.
+  ParameterEvaluator typeEvaluator(ArrayRef<TypedAttr>{});
   ParameterEvaluator evaluator(ArrayRef<TypedAttr>{});
-  for (auto unboundType : getInputParamTypes()) {
-    // There could be a dependent input parameter type, erase the unknown ref.
-    auto unbound = UnboundAttr::get(evaluator.replace(unboundType));
-    evaluator.appendIndexBinding(unbound);
+  for (auto inputType : getInputParamTypes()) {
+    Type type = typeEvaluator.replace(inputType);
+    auto paramType = dyn_cast<ParameterTypeInterface>(type);
+    if (!paramType || paramType.supportsUnknownValue())
+      typeEvaluator.appendIndexBinding(UnknownAttr::get(type));
+    else
+      typeEvaluator.appendIndexBinding(UnboundAttr::get(type));
+    evaluator.appendIndexBinding(UnboundAttr::get(type));
   }
 
+  // A direct reference to a slot takes the slot's erased type from above.
+  // Replacing it through `evaluator` would also rewrite the reference's own
+  // type with `#kgen.unbound` bindings, which turns an applied subexpression
+  // such as `bind_params(*(0,2), *(0,0), *(0,1))` into an unapplied one.
   SmallVector<TypedAttr> paramValues;
-  for (auto paramValue : directSymbol.getParamValues())
-    paramValues.push_back(evaluator.replace(paramValue));
+  for (auto paramValue : directSymbol.getParamValues()) {
+    auto indexRef = dyn_cast<ParamIndexRefAttr>(paramValue);
+    if (indexRef && indexRef.getDepth() == 0)
+      paramValues.push_back(evaluator.getIndexBindings()[indexRef.getIndex()]);
+    else
+      paramValues.push_back(evaluator.replace(paramValue));
+  }
 
   return SymbolConstantAttr::get(directSymbol.getSymbol(),
                                  cast<FuncTypeGeneratorType>(sig), paramValues);

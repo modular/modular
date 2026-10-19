@@ -41,7 +41,6 @@ from nn.topk_bitonic import _elems_per_16b
 from std.math import align_up, ceildiv, clamp, log
 from std.sys import size_of
 from std.random import rand, random_ui64
-from std.sys.info import _has_blackwell_tcgen05
 from layout import (
     Idx,
     TensorLayout,
@@ -708,7 +707,7 @@ def test_mla_index_fp8_paged_variable_lengths[
     comptime if check_scores or check_selection:
         # tcgen05-only, so B200 only; on H100 this case still ran the scalar
         # fallback + the index checks above.
-        comptime if _has_blackwell_tcgen05():
+        comptime if ctx.target._has_blackwell_tcgen05():
             var sc_size = total_seq_len * total_num_keys_max
             var sc_buf = ctx.enqueue_create_buffer[.float32](sc_size)
             sc_buf.enqueue_fill(-Float32.MAX)
@@ -1187,9 +1186,7 @@ def test_mla_index_frozen_metadata_equivalence[
 
     # One shared LUT, wide enough for the frozen metadata; the reference run only
     # dereferences the real-page prefix. Tail slots point at block 0.
-    var real_pages_per_seq = (max_cache_len + max_seq_len + page_size - 1) // (
-        page_size
-    )
+    var real_pages_per_seq = ceildiv(max_cache_len + max_seq_len, page_size)
     var lut_pages_per_seq = (
         frozen_cache_len + max_seq_len + page_size - 1
     ) // page_size
@@ -1488,9 +1485,7 @@ def test_mla_index_chunked_equivalence[
     )
     comptime num_layers = 1
 
-    var pages_per_seq = (max_cache_len + max_seq_len + page_size - 1) // (
-        page_size
-    )
+    var pages_per_seq = ceildiv(max_cache_len + max_seq_len, page_size)
     var num_blocks = batch_size * pages_per_seq + 1
 
     var q_size = total_seq_len * num_heads * depth
@@ -1903,7 +1898,7 @@ def main() raises:
         # counts (< 16) exist only on the tensor-core path — the scalar
         # fallback's [16, 8] copier thread layout silently stages nothing
         # below 16 heads — so these are compile-gated to Blackwell. =====
-        comptime if _has_blackwell_tcgen05():
+        comptime if ctx.target._has_blackwell_tcgen05():
             print("\n--- SM100 tensor-core scorer (num_heads=8, depth=128) ---")
 
             # Dense NULL + strict_complete across the 16-token tile boundary
@@ -2163,6 +2158,53 @@ def main() raises:
             ctx=ctx,
         )
 
+        # The V4.1 indexer's top_k=512 at decode, 32 rows and up -- the shapes
+        # the cooperative pick (registered privately, on SM100 builds)
+        # targets. This build runs them through the default bitonic select.
+        # Some rows hold fewer keys than top_k.
+        comptime if ctx.target._has_blackwell_tcgen05():
+            var short_lens = List[Int]()
+            var deep_lens = List[Int]()
+            var ones = List[Int]()
+            for i in range(32):
+                short_lens.append(300 if i % 7 == 3 else 4095 - 13 * i)
+                deep_lens.append(20000 - 11 * i)
+                ones.append(1)
+            test_mla_index_fp8_paged_variable_lengths[
+                num_heads=32,
+                depth=128,
+                page_size=128,
+                top_k=512,
+                mask_name=MaskName.NULL.name,
+                check_selection=True,
+            ](
+                seq_lens=ones,
+                cache_lens=short_lens,
+                ctx=ctx,
+            )
+            test_mla_index_fp8_paged_variable_lengths[
+                num_heads=32,
+                depth=128,
+                page_size=128,
+                top_k=512,
+                mask_name=MaskName.NULL.name,
+            ](
+                seq_lens=ones,
+                cache_lens=deep_lens,
+                ctx=ctx,
+            )
+            test_mla_index_fp8_paged_variable_lengths[
+                num_heads=32,
+                depth=128,
+                page_size=128,
+                top_k=512,
+                mask_name=MaskName.CAUSAL.name,
+            ](
+                seq_lens=[4, 4, 4, 4, 4, 4, 4, 4],
+                cache_lens=[12000, 9000, 400, 12000, 7000, 12000, 3000, 11000],
+                ctx=ctx,
+            )
+
         # Causal over a split key range. `check_scores` cannot cover this: it
         # scores through `_score_paged_sm100`, which passes causal=False.
         test_mla_index_fp8_paged_variable_lengths[
@@ -2197,7 +2239,7 @@ def main() raises:
         # ===== GLM 32 heads sharded over 8 ranks (num_heads=4, depth=128):
         # N_TOKENS = 32. The scalar fallback tiles heads by 8, so this count
         # only compiles where the SM100 tensor-core path is taken. =====
-        comptime if _has_blackwell_tcgen05():
+        comptime if ctx.target._has_blackwell_tcgen05():
             print("\n--- SM100 tensor-core scorer (num_heads=4, depth=128) ---")
 
             test_mla_index_fp8_paged_variable_lengths[
@@ -2464,7 +2506,7 @@ def main() raises:
 
         # GLM 5.2 TP8 decode geometry (4 local heads) with the frozen stride;
         # Blackwell-only, as the scalar fallback does not compile at 4 heads.
-        comptime if _has_blackwell_tcgen05():
+        comptime if ctx.target._has_blackwell_tcgen05():
             test_mla_index_fp8_paged_variable_lengths[
                 num_heads=4,
                 depth=128,
@@ -2553,7 +2595,7 @@ def main() raises:
         # ===== Chunked score matrix (SM100 only -- the scalar fallback and
         # its mask pass do not take a row window, so there the op is always one
         # chunk and these cases would compare a run against itself) =====
-        comptime if _has_blackwell_tcgen05():
+        comptime if ctx.target._has_blackwell_tcgen05():
             print("\n--- chunked score-matrix equivalence tests ---")
 
             # K-streaming prefill route (token_tiles = 20 >= 16), chunk
@@ -2769,7 +2811,7 @@ def main() raises:
         # A cache row is one pooled key per `kpool` tokens, so each token's
         # candidate count is its visible-token count floored by `kpool`.
         # kpool > 1 requires a tensor-core scorer: SM100 or gfx950.
-        comptime if _has_blackwell_tcgen05() or _has_gfx950_accelerator():
+        comptime if ctx.target._has_blackwell_tcgen05() or _has_gfx950_accelerator():
             print("\n--- pooled candidates (kpool=4) ---")
 
             # GLM indexer geometry. `nh=32` routes to the warp-specialized

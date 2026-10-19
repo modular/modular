@@ -16,11 +16,30 @@
 from __future__ import annotations
 
 import functools
-from collections.abc import Sequence
+from collections import OrderedDict
+from collections.abc import Iterable, Sequence
+from pathlib import Path
+from typing import Any
 
+from max import tree
 from max.dtype import DType
-from max.graph import BufferValue, ShardingStrategy, TensorValue, ops
-from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams, PagedCacheValues
+from max.graph import (
+    BufferValue,
+    DeviceRef,
+    Graph,
+    ShardingStrategy,
+    TensorValue,
+    Type,
+    Value,
+    ops,
+)
+from max.graph import Module as GraphModule
+from max.nn.kv_cache import (
+    KVCacheParamInterface,
+    KVCacheParams,
+    MultiKVCacheParams,
+    PagedCacheValues,
+)
 from max.nn.layer import LayerList, MissingLayer, Module
 from max.nn.linear import MLP, ColumnParallelLinear, FusedMLP
 from max.nn.moe import GatedActivation, MoE, MoEQuantized
@@ -31,6 +50,11 @@ from max.nn.transformer.distributed_transformer import (
 )
 from max.pipelines.architectures.gemma3.layers.scaled_word_embedding import (
     ScaledWordEmbedding,
+)
+from max.pipelines.lib.interfaces.batch_processor import (
+    ragged_batch_inputs,
+    signal_inputs,
+    vision_merge_inputs,
 )
 from max.pipelines.lib.vlm_utils import merge_multimodal_embeddings
 
@@ -43,6 +67,38 @@ from .model_config import Gemma4ForConditionalGenerationConfig
 from .weight_adapters import gemma4_uses_fused_projections
 
 
+def language_input_tree(
+    devices: Sequence[DeviceRef],
+    dtype: DType,
+    hidden_size: int,
+    kv_params: KVCacheParamInterface,
+) -> OrderedDict[str, object]:
+    """Names the language graph's inputs; its leaves are its inputs.
+
+    Image embeddings are always inputs: a text-only batch feeds zero rows.
+
+    Args:
+        devices: The devices the graph runs on.
+        dtype: The dtype of the image embeddings.
+        hidden_size: The width of each image embedding row.
+        kv_params: The KV cache parameters.
+
+    Returns:
+        The input types under ``batch``, ``vision``, ``signals`` and ``kv``,
+        in graph order.
+    """
+    return OrderedDict(
+        batch=ragged_batch_inputs(
+            devices[0], ("tokens", "return_n_logits", "row_offsets")
+        ),
+        vision=vision_merge_inputs(
+            devices, dtype, hidden_size, rows_dim="num_image_tokens"
+        ),
+        signals=signal_inputs(list(devices)),
+        kv=kv_params.get_symbolic_inputs(),
+    )
+
+
 class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
     """The Gemma 4 language model."""
 
@@ -50,14 +106,15 @@ class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
         super().__init__()
         text_config = config.text_config
         self.devices = config.devices
+        self._embedding_dtype = config.unquantized_dtype
         # The decoder layers this instance builds, all of them unless it is a
         # pipeline stage. self.layers holds a MissingLayer at every other
         # position, so weight names and layer indices stay global.
         self.layer_ids = config.layer_ids or range(
             text_config.num_hidden_layers
         )
-        holds_first = self.layer_ids.start == 0
-        holds_last = self.layer_ids.stop == text_config.num_hidden_layers
+        self.holds_first = self.layer_ids.start == 0
+        self.holds_last = self.layer_ids.stop == text_config.num_hidden_layers
 
         # Build per-layer-type rotary embeddings.
         # sliding_attention uses default rope, full_attention uses proportional.
@@ -95,7 +152,7 @@ class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
         # predicate keeps layer selection and adapter key fusion in lockstep.
         use_fused_projections = gemma4_uses_fused_projections(config)
 
-        if holds_first or (holds_last and config.tie_word_embeddings):
+        if self.holds_first or (self.holds_last and config.tie_word_embeddings):
             self.embed_tokens = ScaledWordEmbedding(
                 text_config.vocab_size,
                 text_config.hidden_size,
@@ -104,7 +161,7 @@ class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
                 embed_scale=text_config.hidden_size**0.5,
             )
 
-        if holds_last:
+        if self.holds_last:
             self.norm = Gemma4RMSNorm(
                 text_config.hidden_size,
                 unquantized_dtype,
@@ -285,6 +342,89 @@ class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
         # (-cap, cap), keeping them finite under float16.
         self.logit_softcapping = text_config.final_logit_softcapping
 
+    def input_tree(self) -> OrderedDict[str, object]:
+        """Names the language graph's inputs; see :func:`language_input_tree`."""
+        return language_input_tree(
+            self.devices, self._embedding_dtype, self.dim, self.kv_params
+        )
+
+    def trace(
+        self,
+        *input_types: Type[Any],
+        name: str | None = None,
+        module: GraphModule | None = None,
+        custom_extensions: Iterable[Path] = (),
+        is_device_graph: bool = False,
+    ) -> Graph:
+        """Traces the language graph, whose inputs are :meth:`input_tree`'s
+        leaves, then on a pipeline stage after the first the hidden states
+        per device the previous stage returned.
+
+        Adapts the flat graph inputs to :meth:`__call__`: stages the row
+        offsets on every device and splits the KV cache into its sliding and
+        global collections.
+
+        Args:
+            *input_types: The graph's input types, the leaves of
+                :meth:`input_tree`.
+            name: The name of the graph. Defaults to the class's qualified
+                name.
+            module: The MLIR module to add the graph to. Defaults to a new
+                module.
+            custom_extensions: Paths to custom kernel libraries the graph
+                uses.
+            is_device_graph: Whether to build a device graph.
+
+        Returns:
+            The traced :class:`~max.graph.Graph`.
+        """
+        # The KV cache comes last, and unflattens through the KV params.
+        head = OrderedDict(
+            (key, types)
+            for key, types in self.input_tree().items()
+            if key != "kv"
+        )
+        head_treedef = tree.flatten(head)[1]
+
+        def forward(*inputs: Value[Any]) -> tuple[TensorValue, ...]:
+            remaining = iter(inputs)
+            named = tree.unflatten(head_treedef, remaining, exact=False)
+            assert isinstance(named, OrderedDict)
+            batch, vision = named["batch"], named["vision"]
+            signal_buffers = [v.buffer for v in named["signals"]["signal"]]
+            sliding_kv, global_kv = self.kv_params.unflatten_basic_kv_tree(
+                remaining
+            )
+            return self(
+                tokens=batch["tokens"].tensor,
+                signal_buffers=signal_buffers,
+                sliding_kv_collections=sliding_kv,
+                global_kv_collections=global_kv,
+                return_n_logits=batch["return_n_logits"].tensor,
+                # Staged once on the first device. A collective rather than
+                # a transfer per device: those sync across streams, which
+                # breaks graph capture.
+                input_row_offsets=ops.distributed_broadcast(
+                    batch["row_offsets"].tensor, signal_buffers
+                ),
+                image_embeddings=[v.tensor for v in vision["image_embeddings"]],
+                image_token_indices=[
+                    v.tensor for v in vision["image_token_indices"]
+                ],
+                boundary_inputs=(
+                    None if self.holds_first else [v.tensor for v in remaining]
+                ),
+            )
+
+        return Graph(
+            type(self).__qualname__ if name is None else name,
+            forward,
+            input_types=input_types,
+            custom_extensions=list(custom_extensions),
+            module=module,
+            is_device_graph=is_device_graph,
+        )
+
     def __call__(
         self,
         tokens: TensorValue,
@@ -295,25 +435,42 @@ class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
         input_row_offsets: Sequence[TensorValue],
         image_embeddings: Sequence[TensorValue],
         image_token_indices: Sequence[TensorValue],
+        *,
+        boundary_inputs: Sequence[TensorValue] | None = None,
         **kwargs: object,
     ) -> tuple[TensorValue, ...]:
+        """Runs this model's decoder layers.
+
+        A pipeline stage after the first starts from ``boundary_inputs``,
+        the hidden states per device the previous stage returned, and
+        ignores the tokens and image inputs. A stage before the last returns
+        its hidden states per device instead of logits.
+        """
         kv_collections_by_type = {
             "sliding_attention": sliding_kv_collections,
             "full_attention": global_kv_collections,
         }
 
-        h = self.embed_tokens(tokens, signal_buffers)
-
-        h = [
-            merge_multimodal_embeddings(
-                inputs_embeds=h_device,
-                multimodal_embeddings=img_embed,
-                image_token_indices=img_tok_indices,
+        if self.holds_first:
+            h = [
+                merge_multimodal_embeddings(
+                    inputs_embeds=h_device,
+                    multimodal_embeddings=img_embed,
+                    image_token_indices=img_tok_indices,
+                )
+                for h_device, img_embed, img_tok_indices in zip(
+                    self.embed_tokens(tokens, signal_buffers),
+                    image_embeddings,
+                    image_token_indices,
+                    strict=True,
+                )
+            ]
+        else:
+            assert boundary_inputs is not None, (
+                "A pipeline stage after the first takes the previous stage's"
+                " hidden states."
             )
-            for h_device, img_embed, img_tok_indices in zip(
-                h, image_embeddings, image_token_indices, strict=True
-            )
-        ]
+            h = list(boundary_inputs)
 
         capture_layer_set: set[int] | None = None
         capture_hidden_states: list[list[TensorValue]] | None = None
@@ -345,6 +502,8 @@ class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
             ):
                 capture_hidden_states.append(list(h))
 
+        if not self.holds_last:
+            return tuple(h)
         return self._postprocess_logits(
             h,
             input_row_offsets,

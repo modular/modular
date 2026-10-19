@@ -23,11 +23,11 @@ import torch
 from max import driver
 from max.driver import Accelerator, LaunchTraceEntry, accelerator_count
 from max.dtype import DType
-from max.experimental.tensor import Tensor
-from max.pipelines.architectures.deepseekV3_modulev3.layers import quant_ops
-from max.pipelines.architectures.deepseekV3_modulev3.layers.quant_tensor import (
+from max.experimental.nn.common_layers import quant_ops
+from max.experimental.nn.common_layers.quant_tensor import (
     FP8BlockTensor,
 )
+from max.experimental.tensor import Tensor
 
 _MOE_DIM = 512
 _GROUP = 128
@@ -69,7 +69,7 @@ def test_grouped_silu_fp8_is_one_bounded_kernel(live_rows: int) -> None:
         for e in entries
         if e.kind == LaunchTraceEntry.OperationKind.KERNEL_LAUNCH
     ]
-    assert sum("fp8_quantization" in name for name in kernels) == 1, kernels
+    assert sum("fp8_quantize_" in name for name in kernels) == 1, kernels
     assert not any("silu" in name.lower() for name in kernels), kernels
 
     codes = torch.from_dlpack(result.data.cast(DType.float32)).cpu()

@@ -38,6 +38,7 @@ Buffers
    Buffer
    DLPackArray
    HostHazardError
+   SymmetricPool
    Usage
 
 Buffer operations
@@ -49,7 +50,20 @@ Buffer operations
    :template: autosummary/function.rst
 
    batch_inplace_copy
+   copy_pinned_to_destinations
    load_max_buffer
+
+bfloat16 interop
+----------------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/function.rst
+
+   bfloat16_as_uint16_to_float32
+   float32_array_to_buffer
+   float32_to_bfloat16_as_uint16
 
 Device discovery
 ----------------

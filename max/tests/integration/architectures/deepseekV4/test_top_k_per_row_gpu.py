@@ -14,11 +14,18 @@
 
 The DeepSeek-V4 indexer's shape: 2048 candidates, 512 kept, a masked tail of
 ``-inf`` past each row's live candidates, and a pick count per row equal to
-that live count. Each row must reproduce the first ``k[r]`` picks of the full
-top-k bit for bit, ties included, and pad the rest with ``(-inf, -1)``.
+that live count. Each row's values must match the first ``k[r]`` values of
+the full top-k bit for bit, and the rest must be ``(-inf, -1)``. Equal scores
+may come out in any order, so columns are only checked to be unique and to
+index the value in their slot.
+
+The top-k does not accept NaN, so the indexer masks it before selecting. The
+last test checks a NaN score neither gets picked nor displaces a real one.
 """
 
 from __future__ import annotations
+
+from unittest.mock import Mock
 
 import numpy as np
 import pytest
@@ -27,6 +34,9 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.nn.kernels import top_k_per_row
+from max.pipelines.architectures.deepseekV4.layers.indexer import (
+    DeepseekV4Indexer,
+)
 from numpy.typing import NDArray
 
 N = 2048
@@ -93,13 +103,69 @@ def test_matches_full_top_k_prefix(
     outs = model.execute(
         Buffer.from_numpy(x).to(device), Buffer.from_numpy(k).to(device)
     )
-    full_vals, full_idxs, vals, idxs = (o.to(CPU()).to_numpy() for o in outs)
+    full_vals, _, vals, idxs = (o.to(CPU()).to_numpy() for o in outs)
 
     for r in range(rows):
         kr = int(k[r])
         np.testing.assert_array_equal(
             vals[r, :kr].view(np.uint32), full_vals[r, :kr].view(np.uint32)
         )
-        np.testing.assert_array_equal(idxs[r, :kr], full_idxs[r, :kr])
+        cols = idxs[r, :kr]
+        assert np.all((cols >= 0) & (cols < N)), r
+        assert len(np.unique(cols)) == kr, r
+        np.testing.assert_array_equal(
+            x[r, cols].view(np.uint32), vals[r, :kr].view(np.uint32)
+        )
         assert np.all(vals[r, kr:] == -np.inf), r
         assert np.all(idxs[r, kr:] == -1), r
+
+
+@pytest.fixture(scope="module", params=_devices())
+def indexer_select(request: pytest.FixtureRequest) -> tuple[Device, Model]:
+    device: Device = CPU() if request.param == "cpu" else Accelerator()
+    ref = DeviceRef.from_device(device)
+    graph = Graph(
+        "indexer_select",
+        input_types=[
+            TensorType(DType.float32, ["rows", N], ref),
+            TensorType(DType.bool, ["rows", N], ref),
+        ],
+    )
+    with graph:
+        score, valid = (v.tensor for v in graph.inputs)
+        # select only reads index_topk from the layer.
+        layer = Mock(spec=DeepseekV4Indexer)
+        layer.index_topk = MAX_K
+        graph.output(DeepseekV4Indexer.select(layer, score, valid))
+    session = InferenceSession(devices=[device])
+    return device, session.load(graph)
+
+
+def test_indexer_select_skips_nan(
+    indexer_select: tuple[Device, Model],
+) -> None:
+    device, model = indexer_select
+    rng = np.random.default_rng(0)
+    rows = 4
+    x = rng.normal(0.0, 1.0, (rows, N)).astype(np.float32)
+    bits = x.view(np.uint32)
+    # Positive quiet NaN ranks above +inf by bit pattern, and all ones is
+    # what the block-wide top-k pads with.
+    bits[:, 0::7] = 0x7FC00000
+    bits[:, 3::11] = 0xFFFFFFFF
+    valid = np.ones((rows, N), dtype=bool)
+    valid[1, N // 4 :] = False
+    valid[2, 600:] = False
+
+    outs = model.execute(
+        Buffer.from_numpy(x).to(device), Buffer.from_numpy(valid).to(device)
+    )
+    idxs = outs[0].to(CPU()).to_numpy()
+
+    masked = np.where(valid & ~np.isnan(x), x, -np.inf)
+    for r in range(rows):
+        picks = min(int(valid[r].sum()), MAX_K)
+        finite = int(np.isfinite(masked[r]).sum())
+        expected = np.argsort(-masked[r], kind="stable")[: min(picks, finite)]
+        got = idxs[r][idxs[r] >= 0]
+        assert sorted(got.tolist()) == sorted(expected.tolist()), r

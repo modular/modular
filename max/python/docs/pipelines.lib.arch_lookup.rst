@@ -16,7 +16,9 @@ max.pipelines.lib.arch_lookup
    :toctree: generated
    :template: autosummary/class.rst
 
+   PipelineModelType
    Speculator
+   SupportedArchitecture
 
 .. autosummary::
    :nosignatures:

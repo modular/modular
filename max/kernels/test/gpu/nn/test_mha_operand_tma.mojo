@@ -93,7 +93,7 @@ def mha_operand_tma_copy_kernel[
     # Calculate col coordinates
     # Declare row coordinates
 
-    comptime tile_m = Int(tile_shape.element_types[0].static_value.value())
+    comptime tile_m = Int(tile_shape.element_types[0].static_value)
     comptime elements = _idx_product[tile_shape]()
     comptime swizzle_granularity = swizzle_mode.bytes() // size_of[kv_t.dtype]()
     # Loop over columns to copy full head size

@@ -33,12 +33,24 @@ from std.ffi import (
 )
 
 from std.collections import Span
+from std.memory import MaybeUninit
+from std.os import abort
+from std.utils._nicheable import UnsafeSingleNicheable
 
 
-struct RawFileDescriptor(TrivialRegisterPassable, Writer):
-    """File descriptor of a file."""
+struct RawFileDescriptor(
+    TrivialRegisterPassable, UnsafeSingleNicheable, Writer
+):
+    """File descriptor of a file.
 
-    var value: c_int
+    A file descriptor is always a non-negative integer, so `-1` is never a
+    valid descriptor. `RawFileDescriptor` exposes `-1` as its niche, which
+    makes `Optional[RawFileDescriptor]` the same size as
+    `RawFileDescriptor`; use `Optional[RawFileDescriptor]` (not a `-1`
+    value) to represent an absent descriptor.
+    """
+
+    var _value: c_int
     """The underlying value of the file descriptor."""
 
     def __init__(out self, value: c_int = 1):
@@ -46,8 +58,33 @@ struct RawFileDescriptor(TrivialRegisterPassable, Writer):
 
         Args:
             value: The file identifier (Default 1 = stdout).
+
+        Constraints:
+            `value` must be non-negative. File descriptors are never
+            negative, and `-1` is the type's niche value, so a negative
+            `value` aborts at runtime. Use `Optional[RawFileDescriptor]` to
+            represent an absent descriptor.
         """
-        self.value = value
+        if value < 0:
+            abort(
+                "invalid file descriptor: file descriptors are non-negative;"
+                " use Optional[RawFileDescriptor] to represent an absent"
+                " descriptor"
+            )
+        self._value = value
+
+    @doc_hidden
+    def __init__(out self, *, unsafe_unchecked_value: c_int):
+        """Constructs the file descriptor without validating the value.
+
+        The standard streams are built with this at compile time. The checked
+        constructor reports through `print`, which reaches `stdout`, so
+        building `stdout` through the checked constructor would recurse.
+
+        Args:
+            unsafe_unchecked_value: The file identifier, assumed non-negative.
+        """
+        self._value = unsafe_unchecked_value
 
     def __init__(out self, f: FileHandle):
         """Constructs the file descriptor from a file handle.
@@ -55,7 +92,25 @@ struct RawFileDescriptor(TrivialRegisterPassable, Writer):
         Args:
             f: The file handle.
         """
-        self.value = c_int(f._get_raw_fd())
+        self._value = c_int(f._get_raw_fd())
+
+    # ===------------------------------------------------------------------===#
+    # UnsafeSingleNicheable
+    # ===------------------------------------------------------------------===#
+
+    comptime _InvalidFd: c_int = -1
+
+    @staticmethod
+    @inline(.always)
+    @doc_hidden
+    def write_niche(memory: MutPointer[MaybeUninit[Self], _]):
+        memory.unsafe_bitcast[c_int]().write(Self._InvalidFd)
+
+    @staticmethod
+    @inline(.always)
+    @doc_hidden
+    def isa_niche(memory: ImmPointer[MaybeUninit[Self], _]) -> Bool:
+        return memory.unsafe_bitcast[c_int]()[] == Self._InvalidFd
 
     @inline(.always)
     def write_bytes(mut self, bytes: Span[Byte, _]):
@@ -65,19 +120,11 @@ struct RawFileDescriptor(TrivialRegisterPassable, Writer):
         Args:
             bytes: The byte span to write to this file.
         """
-        var written: c_ssize_t
-        if __is_run_in_comptime_interpreter:
-            written = external_call["write", c_ssize_t](
-                self.value.__mlir_index__(),
-                bytes.unsafe_ptr(),
-                len(bytes).__mlir_index__(),
-            )
-        else:
-            written = external_call["write", c_ssize_t](
-                self.value,
-                bytes.unsafe_ptr(),
-                len(bytes).__mlir_index__(),
-            )
+        var written = external_call["write", c_ssize_t](
+            self._value,
+            bytes.unsafe_ptr(),
+            len(bytes).__mlir_index__(),
+        )
         assert written == len(bytes), "expected amount of bytes not written"
 
     def write_string(mut self, string: StringSlice):
@@ -116,7 +163,7 @@ struct RawFileDescriptor(TrivialRegisterPassable, Writer):
             CompilationTarget.is_macos() or CompilationTarget.is_linux()
         ), "`read_bytes()` is not yet implemented for unknown platform."
         var read = external_call["read", c_ssize_t](
-            self.value, buffer.unsafe_ptr(), len(buffer)
+            self._value, buffer.unsafe_ptr(), len(buffer)
         )
         if read < 0:
             raise Error("Failed to read bytes.")
@@ -146,7 +193,7 @@ struct RawFileDescriptor(TrivialRegisterPassable, Writer):
 
         comptime if is_gpu():
             return False
-        return external_call["isatty", c_int](self.value) != 0
+        return external_call["isatty", c_int](self._value) != 0
 
     def fchdir(self) raises:
         """Changes the current working directory to the one
@@ -156,7 +203,7 @@ struct RawFileDescriptor(TrivialRegisterPassable, Writer):
             If the operations fails. In particular if the fd is
             not a directory.
         """
-        var result = external_call["fchdir", c_int](self.value)
+        var result = external_call["fchdir", c_int](self._value)
         if result < 0:
             var err = get_errno()
             raise Error("fchdir failed err: ", String(err))

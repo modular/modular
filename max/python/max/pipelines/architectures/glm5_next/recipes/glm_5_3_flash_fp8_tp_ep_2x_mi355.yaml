@@ -1,0 +1,37 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+# 2x MI355 recipe for GLM-5.3-Flash, text-only.
+#
+# Same layout as the 8x B200 recipe at two ranks: TP2 attention, EP2 MoE.
+#   Weights: 306 GB / 2 = ~153 GB per GPU, out of 288 GiB.
+#   The KDA state is ~146 MiB per sequence regardless of context, and the
+#     4-stream residual makes activations 4x a single-stream model's, so the
+#     batch and context are kept small until the smoke test passes.
+# The KV cache stays BF16: the checkpoint ships `kv_b_proj` unquantized, so
+# there are no absorbed scales for an FP8 latent cache.
+model:
+  model_path: zai-org/GLM-5.3-Flash
+  device_specs: [0, 1]
+  data_parallel_degree: 1
+  max_length: 16384
+  kv_cache:
+    device_memory_utilization: 0.78
+    enable_prefix_caching: false  # prefix-cache determinism unverified on MI355
+
+runtime:
+  ep_size: 2
+  max_batch_input_tokens: 8192
+  max_batch_size: 8
+
+sampling:
+  enable_structured_output: true

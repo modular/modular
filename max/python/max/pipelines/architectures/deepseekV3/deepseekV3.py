@@ -17,7 +17,8 @@ from __future__ import annotations
 import enum
 import functools
 from collections import OrderedDict
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterable, Sequence
+from pathlib import Path
 from typing import Any
 
 from max import tree
@@ -27,12 +28,15 @@ from max.graph import (
     BufferType,
     BufferValue,
     DeviceRef,
+    Graph,
     ShardingStrategy,
     TensorType,
     TensorValue,
+    Type,
     Value,
     ops,
 )
+from max.graph import Module as GraphModule
 from max.nn.attention.multi_latent_attention import (
     DataParallelLatentAttentionWithRope,
     MLAPrefillMetadata,
@@ -45,7 +49,11 @@ from max.nn.attention.multi_latent_attention_fp8 import (
 from max.nn.comm.ep import EPBatchManager, EPConfig
 from max.nn.data_parallelism import split_batch_replicated
 from max.nn.embedding import VocabParallelEmbedding
-from max.nn.kv_cache import KVCacheParamInterface, PagedCacheValues
+from max.nn.kv_cache import (
+    KVCacheInputsPerDevice,
+    KVCacheParamInterface,
+    PagedCacheValues,
+)
 from max.nn.layer import LayerList, Module
 from max.nn.linear import MLP, ColumnParallelLinear
 from max.nn.moe import MoE, MoEQuantized
@@ -355,9 +363,14 @@ class DeepseekV3DecoderLayer(Module):
         nvfp4_enabled = (
             config.quant_config is not None and config.quant_config.is_nvfp4
         )
-        use_fp8_mla = (
-            config.quant_config is not None and not config.quant_config.is_fp4
-        )
+        attn_quant_config = config.attn_quant_config
+        if (
+            attn_quant_config is None
+            and config.quant_config is not None
+            and not config.quant_config.is_fp4
+        ):
+            attn_quant_config = config.quant_config
+        use_fp8_mla = attn_quant_config is not None
 
         if (
             nvfp4_enabled
@@ -379,7 +392,7 @@ class DeepseekV3DecoderLayer(Module):
                 # handled by the EP MoE, so skip the attention all-reduce.
                 mla_kwargs["skip_allreduce"] = True
                 if use_fp8_mla:
-                    mla_kwargs["quant_config"] = config.quant_config
+                    mla_kwargs["quant_config"] = attn_quant_config
                     mla_cls = TensorParallelLatentAttentionWithRopeFp8
                 else:
                     mla_kwargs["dtype"] = DType.bfloat16
@@ -387,14 +400,14 @@ class DeepseekV3DecoderLayer(Module):
             case ParallelismMode.TP_TP:
                 mla_kwargs["skip_allreduce"] = False
                 if use_fp8_mla:
-                    mla_kwargs["quant_config"] = config.quant_config
+                    mla_kwargs["quant_config"] = attn_quant_config
                     mla_cls = TensorParallelLatentAttentionWithRopeFp8
                 else:
                     mla_kwargs["dtype"] = DType.bfloat16
                     mla_cls = TensorParallelLatentAttentionWithRope
             case ParallelismMode.DP_EP:
                 if use_fp8_mla:
-                    mla_kwargs["quant_config"] = config.quant_config
+                    mla_kwargs["quant_config"] = attn_quant_config
                     mla_cls = DataParallelLatentAttentionWithRopeFp8
                 else:
                     mla_kwargs["dtype"] = DType.bfloat16
@@ -1035,3 +1048,76 @@ class DeepseekV3(Module):
         kv_params: KVCacheParamInterface,
     ) -> tuple[TensorType | BufferType, ...]:
         return tuple(tree.leaves(self.input_tree(kv_params)))
+
+    def trace(
+        self,
+        *input_types: Type[Any],
+        name: str | None = None,
+        module: GraphModule | None = None,
+        custom_extensions: Iterable[Path] = (),
+        is_device_graph: bool = False,
+    ) -> Graph:
+        """Traces the graph, whose inputs are the leaves of
+        :meth:`input_tree` for the config's KV cache parameters.
+
+        Adapts the flat graph inputs to :meth:`__call__`: splits off the
+        signal buffers, unflattens the KV cache, and stages the row offsets
+        on every device. The EP inputs, and the EPLB counters when profiling,
+        pass through as the trailing inputs.
+
+        Args:
+            *input_types: The graph's input types.
+            name: The name of the graph. Defaults to the class's qualified
+                name.
+            module: The MLIR module to add the graph to. Defaults to a new
+                module.
+            custom_extensions: Paths to custom kernel libraries the graph
+                uses.
+            is_device_graph: Whether to build a device graph.
+
+        Returns:
+            The traced :class:`~max.graph.Graph`.
+        """
+        n_devices = len(self.config.devices)
+
+        def forward(
+            tokens: Value[Any],
+            row_offsets: Value[Any],
+            host_row_offsets: Value[Any],
+            return_n_logits: Value[Any],
+            data_parallel_splits: Value[Any],
+            *variadic_args: Value[Any],
+        ) -> tuple[TensorValue, ...]:
+            remaining = iter(variadic_args)
+            signal_buffers = [next(remaining).buffer for _ in range(n_devices)]
+            kv_collections = tree.leaves(
+                self.config.kv_params.unflatten_kv_inputs(remaining),
+                leaf=KVCacheInputsPerDevice,
+            )
+            batch_context_lengths = [
+                next(remaining).tensor for _ in range(n_devices)
+            ]
+            return self(
+                tokens.tensor,
+                signal_buffers,
+                kv_collections,
+                return_n_logits.tensor,
+                list(
+                    ops.distributed_broadcast(
+                        row_offsets.tensor, signal_buffers
+                    )
+                ),
+                host_row_offsets.tensor,
+                data_parallel_splits.tensor,
+                batch_context_lengths,
+                list(remaining),
+            )
+
+        return Graph(
+            type(self).__qualname__ if name is None else name,
+            forward,
+            input_types=input_types,
+            custom_extensions=list(custom_extensions),
+            module=module,
+            is_device_graph=is_device_graph,
+        )

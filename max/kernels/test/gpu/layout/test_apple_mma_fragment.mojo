@@ -150,12 +150,12 @@ def fragment_load_kernel(
     var rb = UInt16(((Int(lid) & 7) >> 1) + ((Int(lid) & 16) >> 2))
     var cb = UInt16(((Int(lid) & 1) << 2) + (Int(lid) & 8))
 
-    var row_stride = Int(tile.layout.stride[0]().value())
+    var row_stride = Int(tile.dynamic_stride(0))
     var offset_lo = Int(rb) * row_stride + Int(cb)
     var offset_hi = offset_lo + 8 * row_stride
 
-    var lo = (tile._storage + offset_lo).load[width=4]()
-    var hi = (tile._storage + offset_hi).load[width=4]()
+    var lo = tile._storage.unsafe_offset(offset_lo).load[width=4]()
+    var hi = tile._storage.unsafe_offset(offset_hi).load[width=4]()
     var frag = lo.join(hi)
 
     # Write 8 elements to output at offset tid * 8

@@ -25,7 +25,7 @@ modular_py_test(
         "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/pipelines/architectures/deepseekV3_modulev3",
+        "//max/python/max/experimental/nn",
         requirement("torch"),
     ],
 )
@@ -39,6 +39,9 @@ modular_py_test(
         "test_weight_adapter.py",
     ],
     imports = ["."],
+    per_test_tags = {
+        "test_deepseekv3_memory_estimation.py": ["skip-external-ci"],
+    },
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",

@@ -43,6 +43,11 @@ from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithStoredKVParams,
     ArchConfigWithVisionCache,
 )
+from max.pipelines.lib.pipeline_parallel import (
+    ArchConfigWithPartitionSpec,
+    PartitionSpec,
+    stage_layers,
+)
 from max.pipelines.modeling.config_enums import (
     SupportedEncoding,
     supported_encoding_dtype,
@@ -210,10 +215,26 @@ class Gemma4TextConfig(Gemma3Config):
 
         Gemma 4 HF text configs list attention type per layer and may use a
         wider full-attention head (``global_head_dim``,
-        ``num_global_key_value_heads``) than the sliding-window leaf.
+        ``num_global_key_value_heads``) than the sliding-window leaf. A
+        pipeline stage caches only its own layers.
+
+        Raises:
+            ValueError: If a pipeline stage lacks a sliding or a full
+                attention layer.
         """
+        layer_types = list(huggingface_config.layer_types)
+        layers = stage_layers(pipeline_config, len(layer_types))
+        layer_types = layer_types[layers.start : layers.stop]
+        if (
+            pipeline_config.model.pipeline_stage is not None
+            and len(set(layer_types)) < 2
+        ):
+            raise ValueError(
+                f"Gemma4 layers {layers.start} to {layers.stop - 1} need both"
+                " sliding and full attention to run as a pipeline stage."
+            )
         return hybrid_swa_full_kv_params(
-            layer_types=huggingface_config.layer_types,
+            layer_types=layer_types,
             sliding_window=huggingface_config.sliding_window,
             pipeline_config=pipeline_config,
             devices=devices,
@@ -469,7 +490,9 @@ class Gemma4VisionConfig:
 
 @dataclass(kw_only=True)
 class Gemma4ForConditionalGenerationConfig(
-    ArchConfigWithKVCache, ArchConfigWithVisionCache
+    ArchConfigWithKVCache,
+    ArchConfigWithVisionCache,
+    ArchConfigWithPartitionSpec,
 ):
     """Base configuration for Gemma 4 multimodal models.
 
@@ -527,6 +550,21 @@ class Gemma4ForConditionalGenerationConfig(
     def get_max_seq_len(self) -> int:
         """Returns the maximum sequence length from the embedded text config."""
         return self.text_config.get_max_seq_len()
+
+    @classmethod
+    def construct_partition_spec(
+        cls, huggingface_config: AutoConfig
+    ) -> PartitionSpec:
+        """Returns where the decoder, nested under ``text_config``, may be
+        cut.
+
+        Every stage needs both a sliding and a full attention layer, which
+        depends on both of its ends rather than on one cut, so building a
+        stage checks it.
+        """
+        return PartitionSpec(
+            num_layers=int(huggingface_config.text_config.num_hidden_layers)
+        )
 
     @staticmethod
     def construct_kv_params(
@@ -639,12 +677,16 @@ class Gemma4ForConditionalGenerationConfig(
         if hf_vision_config is None:
             raise ValueError("vision_config not found in huggingface_config")
         vision_config: Gemma4VisionConfig | None
+        staged = pipeline_config.model.pipeline_stage is not None
         if getattr(huggingface_config, "model_type", None) == "gemma4_unified":
             # These checkpoints (e.g. google/gemma-4-12B-it) carry a
             # lightweight vision_embedder with a different schema that is not
             # implemented yet; serve text-only. Keyed on model_type so a
             # genuinely malformed full-vision config fails loudly below
             # instead of silently degrading to text-only.
+            vision_config = None
+        elif staged:
+            # A pipeline stage serves text only.
             vision_config = None
         else:
             vision_config = Gemma4VisionConfig.initialize_from_config(
@@ -680,6 +722,11 @@ class Gemma4ForConditionalGenerationConfig(
                 huggingface_config, "video_token_id", 262_144
             ),
             quantization_encoding=quantization_encoding,
+            layer_ids=stage_layers(
+                pipeline_config, int(hf_text_config.num_hidden_layers)
+            )
+            if staged
+            else None,
         )
 
     def finalize(

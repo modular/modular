@@ -525,6 +525,40 @@ struct DeviceGraphCache(Movable):
         return slots^
 
 
+@doc_hidden
+struct DeviceGraphInputKind(Equatable, TrivialRegisterPassable):
+    """How a tensor participates as a device graph input.
+
+    The kind decides two things at once: what `DeviceGraphInput.allocate_stable`
+    hands the build closure to record against, and what `write_graph_key`
+    contributes to the graph cache key.
+
+    - `data`: a device tensor the graph reads. Copied into a graph-owned
+      stable location at each replay; keyed on shape and dtype.
+    - `mutable`: a buffer the graph writes in place (a KV cache). Recorded at
+      its live address with no copy; keyed on shape, dtype and address, so a
+      moved buffer rebuilds instead of replaying a stale address.
+    - `host`: a host-resident tensor whose values recorded ops read at enqueue
+      time. Copied into a host-pool stable location; keyed on its full
+      contents, so changed bytes re-record.
+    - `shape_only`: a tensor the graph reads only for its shape, typically a
+      peer device's tensor whose dimensions size this device's work. Recorded
+      at its live address with no copy, and keyed on shape and dtype alone:
+      the graph baked nothing but the shape, so a same-shape tensor at any
+      address replays correctly.
+    """
+
+    var value: Int
+
+    comptime data = DeviceGraphInputKind(0)
+    comptime mutable = DeviceGraphInputKind(1)
+    comptime host = DeviceGraphInputKind(2)
+    comptime shape_only = DeviceGraphInputKind(3)
+
+    def __init__(out self, value: Int):
+        self.value = value
+
+
 trait DeviceGraphInput(ImplicitlyCopyable):
     """A device graph input that contributes to the graph's cache key."""
 

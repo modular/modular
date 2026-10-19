@@ -57,7 +57,7 @@ from nn.kv_cache import (
     fused_qk_rms_norm_ragged_paged,
     fused_qk_rms_norm_rope_ragged_paged,
 )
-from std.utils import Index, IndexList
+from std.utils import IndexList
 
 
 def _bench_name[
@@ -339,7 +339,7 @@ def bench_fused_qk_rms_norm_rope[
             ](token: Int, head: Int, col: Int) {var q_src} -> SIMD[
                 dtype, width
             ]:
-                return q_src.load[width=width](Coord(Index(token, head, col)))
+                return q_src.load[width=width]((token, head, col))
 
             fused_qk_rms_norm_rope_ragged_paged[
                 target="gpu",

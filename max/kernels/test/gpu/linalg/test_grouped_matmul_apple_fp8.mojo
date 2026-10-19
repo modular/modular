@@ -215,7 +215,7 @@ def _run_case[
         # dispatch reports.
         var out = val.cast[.float32]() * 2 + 1
         c_epi_ptr.unsafe_store[width=width](
-            Int(idx[0].value()) * N + Int(idx[1].value()), out.cast[out_type]()
+            Int(idx[0]) * N + Int(idx[1]), out.cast[out_type]()
         )
 
     grouped_matmul[has_epilogue_fn=True](

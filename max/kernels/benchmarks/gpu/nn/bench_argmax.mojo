@@ -103,7 +103,7 @@ def bench_argmax[
         def output_fn[
             width: SIMDLength
         ](coords: Coord, val: SIMD[.int64, width]) {var out_tensor}:
-            out_tensor.store[width=Int(width)](coords, val.cast[out_idx_type]())
+            out_tensor.store(coords, val.cast[out_idx_type]())
 
         reduce_argmax[dtype, target="gpu", reduce_dim=1](
             input_fn, output_fn, in_shape, ctx

@@ -58,9 +58,9 @@ def max4(a: Int, b: Int, c: Int, d: Int) -> Int:
 
 
 def sw_kernel_square(
-    sw: UnsafePointer[Int32, MutAnyOrigin],
-    rea: UnsafePointer[UInt8, ImmutAnyOrigin],
-    ref_seq: UnsafePointer[UInt8, ImmutAnyOrigin],
+    sw: MutPointer[Int32, MutAnyOrigin],
+    rea: ImmPointer[UInt8, ImmutAnyOrigin],
+    ref_seq: ImmPointer[UInt8, ImmutAnyOrigin],
     L_dev: Int32,
     d_dev: Int32,
     tile_width_dev: Int32,
@@ -111,21 +111,21 @@ def sw_kernel_square(
                 if r_tile == 0:
                     n = sw[(r - 1) * L + q]
                 else:
-                    n = Int32(swTile[(r_tile - 1) * tile_width + q_tile])
+                    n = swTile[(r_tile - 1) * tile_width + q_tile]
 
                 # load_w - load value from west (previous column)
                 var w: Int32
                 if q_tile == 0:
                     w = sw[r * L + (q - 1)]
                 else:
-                    w = Int32(swTile[r_tile * tile_width + (q_tile - 1)])
+                    w = swTile[r_tile * tile_width + (q_tile - 1)]
 
                 # load_nw - load value from northwest (diagonal)
                 var nw: Int32
                 if r_tile == 0 or q_tile == 0:
                     nw = sw[(r - 1) * L + (q - 1)]
                 else:
-                    nw = Int32(swTile[(r_tile - 1) * tile_width + (q_tile - 1)])
+                    nw = swTile[(r_tile - 1) * tile_width + (q_tile - 1)]
 
                 # Similarity score
                 var subs_val: Int
@@ -150,7 +150,7 @@ def sw_kernel_square(
             var r = tile_width * tile_row + row + 1
             var q = tile_width * tile_col + thread_idx.x + 1
             if r < L and q < L:
-                sw[r * L + q] = Int32(swTile[row * tile_width + thread_idx.x])
+                sw[r * L + q] = swTile[row * tile_width + thread_idx.x]
 
 
 # ========================== CPU REFERENCE ==========================
@@ -179,9 +179,9 @@ def max4_host(a: Int, b: Int, c: Int, d: Int) -> Int:
 
 
 def cpu_smith_waterman(
-    sw: UnsafePointer[mut=True, Int32, _],
-    rea: UnsafePointer[UInt8, _],
-    ref_seq: UnsafePointer[UInt8, _],
+    sw: MutPointer[Int32, _],
+    rea: Pointer[UInt8, _],
+    ref_seq: Pointer[UInt8, _],
     L: Int,
 ):
     """CPU version of Smith-Waterman algorithm for verification.
@@ -221,7 +221,7 @@ def cpu_smith_waterman(
 
 
 def generate_random_sequence(
-    seq: UnsafePointer[mut=True, UInt8, _],
+    seq: MutPointer[UInt8, _],
     length: Int,
     mut seed: UInt32,
 ) -> UInt32:
@@ -240,19 +240,20 @@ def generate_random_sequence(
         seed = seed * 1664525 + 1013904223
         var base_idx = seed % 4
         # 'A' = 65, 'C' = 67, 'G' = 71, 'T' = 84
-        if base_idx == 0:
-            seq[i] = 65  # 'A'
-        elif base_idx == 1:
-            seq[i] = 67  # 'C'
-        elif base_idx == 2:
-            seq[i] = 71  # 'G'
-        else:
-            seq[i] = 84  # 'T'
+        match base_idx:
+            case 0:
+                seq[i] = 65  # 'A'
+            case 1:
+                seq[i] = 67  # 'C'
+            case 2:
+                seq[i] = 71  # 'G'
+            case _:
+                seq[i] = 84  # 'T'
     return seed
 
 
 def print_matrix(
-    matrix: UnsafePointer[Int32, _], rows: Int, cols: Int, title: String
+    matrix: Pointer[Int32, _], rows: Int, cols: Int, title: String
 ):
     """Print scoring matrix (partial for large matrices).
 
@@ -275,21 +276,13 @@ def print_matrix(
         print(row_str)
     if rows > 20 or cols > 20:
         print(
-            "... (showing "
-            + String(print_rows)
-            + "x"
-            + String(print_cols)
-            + " of "
-            + String(rows)
-            + "x"
-            + String(cols)
-            + " matrix)"
+            t"... (showing {print_rows}x{print_cols} of {rows}x{cols} matrix)"
         )
     print("")
 
 
 def print_sequence(
-    seq: UnsafePointer[UInt8, _], length: Int, max_chars: Int
+    seq: Pointer[UInt8, _], length: Int, max_chars: Int
 ) -> String:
     """Convert sequence to string for display.
 

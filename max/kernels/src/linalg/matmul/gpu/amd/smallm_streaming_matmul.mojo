@@ -19,16 +19,18 @@ else. Each 16-column tile of C is owned by one block; its warps split K and
 run mfma 16x16x32 bf16 with the B fragment loaded straight from global memory.
 
 B must be preshuffled into the fragment-major layout produced by
-``smallm_preshuffle_b`` (run once at weight-load time): a plain 16B load per
-lane then lands a full warp instruction on 1KB of contiguous memory. Reading a
-row-major B here is silently wrong — the layout is private to this pair, so
-the op must be invoked explicitly, never via generic matmul dispatch.
+``smallm_preshuffle_b`` (the graph op builds it once, at model init): a plain
+16B load per lane then lands a full warp instruction on 1KB of contiguous
+memory. Reading a row-major B here is silently wrong — the layout is private
+to this pair, so the op must be invoked explicitly, never via generic matmul
+dispatch.
 
 A stays row-major ``[m, k]`` (contiguous, row stride == K) and is small enough
 to be L2-resident. C is ``[m, n]``.
 """
 
 from std.math import ceildiv
+from std.sys import align_of
 from max.gpu import (
     WARP_SIZE,
     block_idx,
@@ -43,7 +45,7 @@ from max.gpu.compute.mma import mma
 from max.gpu.host import DeviceContext
 from max.gpu.sync import barrier
 
-from layout import TensorLayout, TensorEngine, TileTensor
+from layout import Coord, TensorLayout, TensorEngine, TileTensor, row_major
 
 comptime _MFMA_K = 32
 comptime _TILE_N = 16
@@ -56,8 +58,8 @@ def _smallm_preshuffle_b_kernel[
     k_static: Int,
     warps_per_block: Int,
 ](
-    dst: UnsafePointer[Scalar[b_type], MutAnyOrigin],
-    src: UnsafePointer[Scalar[b_type], ImmutAnyOrigin],
+    dst: MutPointer[Scalar[b_type], MutAnyOrigin],
+    src: ImmPointer[Scalar[b_type], ImmutAnyOrigin],
     n: Int32,
 ):
     """Permutes a row-major ``[n, k]`` weight into fragment-major order.
@@ -102,7 +104,7 @@ def _smallm_shuffle_a_kernel[
     warps_per_block: Int,
     m_tiles: Int,
 ](
-    dst: UnsafePointer[Scalar[a_type], MutAnyOrigin],
+    dst: MutPointer[Scalar[a_type], MutAnyOrigin],
     a: TileTensor[a_type, a_layout, ImmutAnyOrigin, Engine=a_engine],
     m: Int32,
 ):
@@ -139,7 +141,13 @@ def _smallm_shuffle_a_kernel[
         + l * 8
     )
     var src_row = min(row, Int(m) - 1)
-    dst.store(dst_off, a.ptr.load[width=8](src_row * k_static + k))
+    var a_flat = a.reshape(row_major(Int(m) * k_static))
+    dst.store(
+        dst_off,
+        a_flat.load[width=8, alignment=align_of[a_type](), invariant=False](
+            Coord(src_row * k_static + k)
+        ),
+    )
 
 
 @__name(
@@ -159,8 +167,8 @@ def _gemm_smallm_streaming_kernel[
     col_tiles: Int = 1,
 ](
     c: TileTensor[c_type, c_layout, MutAnyOrigin, Engine=c_engine],  # m * n
-    a_shuffled: UnsafePointer[Scalar[a_type], ImmutAnyOrigin],
-    b_shuffled: UnsafePointer[Scalar[b_type], ImmutAnyOrigin],
+    a_shuffled: ImmPointer[Scalar[a_type], ImmutAnyOrigin],
+    b_shuffled: ImmPointer[Scalar[b_type], ImmutAnyOrigin],
     m: Int32,
     n: Int32,
 ):
@@ -201,7 +209,9 @@ def _gemm_smallm_streaming_kernel[
     # k-group l//16 (4 groups of 8 contiguous k). Fragment-major operands make
     # each fragment a single 16B load at a lane-linear offset.
     var frag_row = lane % _TILE_N
-    var a_base = a_shuffled + warp_in_block * region + lane * 8
+    var a_base = a_shuffled.unsafe_offset(warp_in_block * region).unsafe_offset(
+        lane * 8
+    )
 
     # A loads once per block, amortized over the column loop below.
     var a_frags = Array[SIMD[a_type, 8], iters if a_in_regs else 1](fill=0)
@@ -226,11 +236,9 @@ def _gemm_smallm_streaming_kernel[
     var n_tiles = ceildiv(_n, _TILE_N)
     comptime if a_in_regs:
         for ct in range(block_idx.x, n_tiles, grid_dim.x):
-            var b_ptr = (
-                b_shuffled
-                + (ct * warps_per_block + warp_in_block) * region
-                + lane * 8
-            )
+            var b_ptr = b_shuffled.unsafe_offset(
+                (ct * warps_per_block + warp_in_block) * region
+            ).unsafe_offset(lane * 8)
             var acc = Array[SIMD[.float32, 4], m_tiles](fill=0)
 
             # Depth-2 B pipeline: the next chunk's load issues before this
@@ -359,12 +367,14 @@ def smallm_preshuffle_b[
     k_static: Int,
     warps_per_block: Int = 8,
 ](
-    dst: UnsafePointer[Scalar[b_type], MutAnyOrigin],
-    src: UnsafePointer[Scalar[b_type], ImmutAnyOrigin],
+    dst: MutPointer[Scalar[b_type], MutAnyOrigin],
+    src: ImmPointer[Scalar[b_type], ImmutAnyOrigin],
     n: Int,
     ctx: DeviceContext,
 ) raises:
-    """Launches the one-shot weight preshuffle (run at weight-load time).
+    """Launches the one-shot weight preshuffle that defines the B layout.
+
+    The graph op builds the same bytes with ``preshuffle_block_scaled_b``.
 
     Constraints:
         ``n % 16 == 0`` and ``k_static % (warps_per_block * 32) == 0``; both
@@ -399,8 +409,8 @@ def smallm_streaming_matmul[
 ](
     c: TileTensor[c_type, c_layout, MutAnyOrigin, Engine=c_engine],
     a: TileTensor[a_type, a_layout, ImmutAnyOrigin, Engine=a_engine],
-    b_shuffled: UnsafePointer[Scalar[b_type], ImmutAnyOrigin],
-    a_scratch: UnsafePointer[Scalar[a_type], MutAnyOrigin],
+    b_shuffled: ImmPointer[Scalar[b_type], ImmutAnyOrigin],
+    a_scratch: MutPointer[Scalar[a_type], MutAnyOrigin],
     m: Int,
     n: Int,
     ctx: DeviceContext,
@@ -452,7 +462,7 @@ def smallm_streaming_matmul[
             a_in_regs=a_in_regs,
             col_tiles=col_tiles,
         ]
-        var a_src = UnsafePointer[Scalar[a_type], ImmutAnyOrigin](
+        var a_src = ImmPointer[Scalar[a_type], ImmutAnyOrigin](
             unsafe_from_address=Int(a_scratch)
         )
         ctx.enqueue_function[kernel](

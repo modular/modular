@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.memory import UnsafePointer
 from std.math import align_down, align_up, ceildiv, clamp, rsqrt
 from std.math.uutils import umod, ufloordiv, uceildiv
 from std.sys.info import align_of, simd_width_of, size_of
@@ -354,7 +353,9 @@ def _rms_norm_warp_tiling_subkernel[
     return norm_val
 
 
-@__name(t"rms_norm_gpu_warp_tiling_128_{dtype}_{multiply_before_cast}")
+@__name(
+    t"rms_norm_gpu_warp_tiling_128_{dtype}_{epsilon}_{weight_offset}_{multiply_before_cast}"
+)
 def rms_norm_gpu_warp_tiling_128[
     mut: Bool,
     LayoutType: TensorLayout,
@@ -370,12 +371,12 @@ def rms_norm_gpu_warp_tiling_128[
     output_fn: def[width: SIMDLength, alignment: Int](
         row: Int, col: Int, val: SIMD[dtype, width]
     ) capturing -> None,
+    epsilon: Float32,
+    weight_offset: Float32,
     multiply_before_cast: Bool,
     pdl_level: PDLLevel = PDLLevel.ON,
 ](
     gamma: TileTensor[dtype, LayoutType, origin, Engine=Engine],
-    epsilon: Float32,
-    weight_offset: Float32,
     num_rows: Int32,
     num_cols: Int32,
 ):
@@ -387,7 +388,7 @@ def rms_norm_gpu_warp_tiling_128[
     comptime align = align_of[SIMD[dtype, simd_width]]()
     comptime accum_type = get_accum_type[dtype]()
 
-    var weight_offset_accum = weight_offset.cast[accum_type]()
+    var weight_offset_accum = comptime (weight_offset.cast[accum_type]())
 
     var vec_data = SIMD[accum_type, simd_width](0)
     var tid = thread_idx.x
@@ -405,9 +406,7 @@ def rms_norm_gpu_warp_tiling_128[
         if row < _num_rows and idx < _num_cols:
             vec_data = input_fn[simd_width](row, idx).cast[accum_type]()
             # Prefetch gamma before reduction to overlap load with compute.
-            gamma_val = gamma.load[width=simd_width, alignment=align](
-                Coord(idx)
-            )
+            gamma_val = gamma.load[width=simd_width, alignment=align]((idx,))
 
         var norm_val = _rms_norm_warp_tiling_subkernel[
             warps_per_block, multiply_before_cast, rows_per_warp=2
@@ -437,7 +436,7 @@ def rms_norm_gpu_warp_tiling_128[
 #     from L2 and normalize. Handles ragged tails and wider rows. `chunks` is
 #     unused (pass any value, e.g. 1).
 @__name(
-    t"rms_norm_gpu_warp_per_row_{dtype}_{single_pass}_{chunks}_{multiply_before_cast}"
+    t"rms_norm_gpu_warp_per_row_{dtype}_{single_pass}_{chunks}_{epsilon}_{weight_offset}_{multiply_before_cast}"
 )
 def rms_norm_gpu_warp_per_row[
     mut: Bool,
@@ -456,12 +455,12 @@ def rms_norm_gpu_warp_per_row[
     output_fn: def[width: SIMDLength, alignment: Int](
         row: Int, col: Int, val: SIMD[dtype, width]
     ) capturing -> None,
+    epsilon: Float32,
+    weight_offset: Float32,
     multiply_before_cast: Bool,
     pdl_level: PDLLevel = PDLLevel.ON,
 ](
     gamma: TileTensor[dtype, LayoutType, origin, Engine=Engine],
-    epsilon: Float32,
-    weight_offset: Float32,
     num_rows: Int32,
     num_cols: Int32,
 ):
@@ -473,8 +472,8 @@ def rms_norm_gpu_warp_per_row[
     comptime align = align_of[SIMD[dtype, simd_width]]()
     comptime accum_type = get_accum_type[dtype]()
 
-    var eps_accum = epsilon.cast[accum_type]()
-    var weight_offset_accum = weight_offset.cast[accum_type]()
+    var eps_accum = comptime (epsilon.cast[accum_type]())
+    var weight_offset_accum = comptime (weight_offset.cast[accum_type]())
 
     var tid = thread_idx.x
     var warp_in_block = ufloordiv(tid, WARP_SIZE)
@@ -512,7 +511,7 @@ def rms_norm_gpu_warp_per_row[
                     var col = Int(lane) * simd_width + c * stride
                     var gamma_val = gamma.load[
                         width=simd_width, alignment=align
-                    ](Coord(col))
+                    ]((col,))
                     var norm_val: SIMD[dtype, simd_width]
                     comptime if multiply_before_cast:
                         var gamma_accum = (
@@ -523,7 +522,7 @@ def rms_norm_gpu_warp_per_row[
                         ).cast[dtype]()
                     else:
                         norm_val = (vec_data[c] * norm_factor).cast[dtype]() * (
-                            gamma_val + weight_offset.cast[dtype]()
+                            gamma_val + comptime (weight_offset.cast[dtype]())
                         )
                     output_fn[simd_width, align](row, col, norm_val)
     else:
@@ -550,7 +549,7 @@ def rms_norm_gpu_warp_per_row[
                     var v = input_fn[simd_width](row, col).cast[accum_type]()
                     var gamma_val = gamma.load[
                         width=simd_width, alignment=align
-                    ](Coord(col))
+                    ]((col,))
                     var norm_val: SIMD[dtype, simd_width]
                     comptime if multiply_before_cast:
                         var gamma_accum = (
@@ -559,7 +558,7 @@ def rms_norm_gpu_warp_per_row[
                         norm_val = (v * norm_factor * gamma_accum).cast[dtype]()
                     else:
                         norm_val = (v * norm_factor).cast[dtype]() * (
-                            gamma_val + weight_offset.cast[dtype]()
+                            gamma_val + comptime (weight_offset.cast[dtype]())
                         )
                     output_fn[simd_width, align](row, col, norm_val)
                     col += stride
@@ -629,7 +628,7 @@ struct _RowSpec[element_types: TypeList[Trait=CoordLike, ...]](
 #      (the ISETP/SEL bloat) are dropped at comptime. A guarded variant
 #      (`exact_fit=False`) handles ragged tails.
 @__name(
-    t"rms_norm_gpu_warp_tiling_{dtype}_{chunks_per_thread}_{exact_fit}_{multiply_before_cast}"
+    t"rms_norm_gpu_warp_tiling_{dtype}_{chunks_per_thread}_{exact_fit}_{epsilon}_{weight_offset}_{multiply_before_cast}"
 )
 def rms_norm_gpu_warp_tiling[
     mut: Bool,
@@ -648,13 +647,13 @@ def rms_norm_gpu_warp_tiling[
     output_fn: def[width: SIMDLength, alignment: Int](
         Coord, SIMD[dtype, width]
     ) capturing -> None,
+    epsilon: Float32,
+    weight_offset: Float32,
     multiply_before_cast: Bool,
     pdl_level: PDLLevel = PDLLevel.ON,
 ](
     row_spec: _RowSpec[shape_types],
     gamma: TileTensor[dtype, LayoutType, origin, Engine=Engine],
-    epsilon: Float32,
-    weight_offset: Float32,
 ):
     comptime assert (
         shape_types.length == rank
@@ -666,8 +665,8 @@ def rms_norm_gpu_warp_tiling[
     comptime align = align_of[SIMD[dtype, simd_width]]()
     comptime accum_type = get_accum_type[dtype]()
 
-    var eps_accum = epsilon.cast[accum_type]()
-    var weight_offset_accum = weight_offset.cast[accum_type]()
+    var eps_accum = comptime (epsilon.cast[accum_type]())
+    var weight_offset_accum = comptime (weight_offset.cast[accum_type]())
 
     var tid = thread_idx.x
     var row = block_idx.x
@@ -696,7 +695,7 @@ def rms_norm_gpu_warp_tiling[
                     accum_type
                 ]()
                 gamma_val[c] = gamma.load[width=simd_width, alignment=align](
-                    Coord(col)
+                    (col,)
                 )
                 thread_m2 += (vec_data[c] ** 2).reduce_add()
             else:
@@ -707,7 +706,7 @@ def rms_norm_gpu_warp_tiling[
                     ]()
                     gamma_val[c] = gamma.load[
                         width=simd_width, alignment=align
-                    ](Coord(col))
+                    ]((col,))
                     thread_m2 += (vec_data[c] ** 2).reduce_add()
 
         var row_m2 = block_reduce[max_warps_per_block=max_warps_per_block](
@@ -731,7 +730,7 @@ def rms_norm_gpu_warp_tiling[
                     ]()
                 else:
                     return (vec_data[c] * norm_factor).cast[dtype]() * (
-                        gamma_val[c] + weight_offset.cast[dtype]()
+                        gamma_val[c] + comptime (weight_offset.cast[dtype]())
                     )
 
             comptime if exact_fit:
@@ -796,7 +795,7 @@ def _rms_norm_gpu_block_subkernel[
             var vec_data = input_fn[simd_width](row, offset).cast[accum_type]()
             var norm_val: SIMD[dtype, simd_width]
             var gamma_val = gamma.load[width=simd_width, alignment=align](
-                Coord(offset)
+                (offset,)
             )
 
             if multiply_before_cast:
@@ -812,7 +811,9 @@ def _rms_norm_gpu_block_subkernel[
             output_fn[simd_width, align](row, offset, norm_val)
 
 
-@__name(t"rms_norm_gpu_block_{dtype}_{multiply_before_cast}")
+@__name(
+    t"rms_norm_gpu_block_{dtype}_{epsilon}_{weight_offset}_{multiply_before_cast}"
+)
 def rms_norm_gpu_block[
     mut: Bool,
     LayoutType: TensorLayout,
@@ -828,12 +829,12 @@ def rms_norm_gpu_block[
     output_fn: def[width: SIMDLength, alignment: Int](
         row: Int, col: Int, val: SIMD[dtype, width]
     ) capturing -> None,
+    epsilon: Float32,
+    weight_offset: Float32,
     multiply_before_cast: Bool,
     pdl_level: PDLLevel = PDLLevel.ON,
 ](
     gamma: TileTensor[dtype, LayoutType, origin, Engine=Engine],
-    epsilon: Float32,
-    weight_offset: Float32,
     num_cols: Int32,
 ):
     var _num_cols = Int(num_cols)
@@ -859,7 +860,7 @@ def rms_norm_gpu_block[
             unified_output_fn,
             gamma,
             epsilon,
-            weight_offset.cast[dtype](),
+            comptime (weight_offset.cast[dtype]()),
             _num_cols,
         )
 
@@ -872,13 +873,13 @@ def rms_norm_gpu[
     output_fn: def[width: SIMDLength, alignment: Int](
         Coord, SIMD[dtype, width]
     ) capturing -> None,
+    epsilon: Float32,
+    weight_offset: Float32,
     multiply_before_cast: Bool,
     pdl_level: PDLLevel = PDLLevel.OVERLAP_AT_BEGINNING,
 ](
     shape: Coord,
     gamma: TileTensor[mut=False, dtype, ...],
-    epsilon: Float32,
-    weight_offset: Scalar[dtype],
     ctx: DeviceContext,
 ) raises:
     # `shape` arrives as a `Coord`, with statically-known outer dims encoded in
@@ -1054,14 +1055,14 @@ def rms_norm_gpu[
                 exact_fit,
                 input_fn,
                 output_fn,
+                epsilon=epsilon,
+                weight_offset=weight_offset,
                 multiply_before_cast=multiply_before_cast,
                 pdl_level=pdl_level,
             ]
             ctx.enqueue_function[kernel](
                 _RowSpec[type_of(shape).element_types](shape, Int32(cols)),
                 gamma,
-                epsilon.cast[.float32](),
-                weight_offset.cast[.float32](),
                 grid_dim=rows,
                 block_dim=threads_per_block,
                 attributes=pdl_launch_attributes(pdl_level),
@@ -1094,13 +1095,13 @@ def rms_norm_gpu[
                 warps_per_block,
                 input_fn_2d,
                 output_fn_2d,
+                epsilon=epsilon,
+                weight_offset=weight_offset,
                 multiply_before_cast=multiply_before_cast,
                 pdl_level=pdl_level,
             ]
             ctx.enqueue_function[kernel](
                 gamma,
-                epsilon.cast[.float32](),
-                weight_offset.cast[.float32](),
                 Int32(rows),
                 Int32(cols),
                 grid_dim=grid_dim,
@@ -1143,13 +1144,13 @@ def rms_norm_gpu[
                             cc,
                             input_fn_2d,
                             output_fn_2d,
+                            epsilon=epsilon,
+                            weight_offset=weight_offset,
                             multiply_before_cast=multiply_before_cast,
                             pdl_level=pdl_level,
                         ]
                         ctx.enqueue_function[kernel](
                             gamma,
-                            epsilon.cast[.float32](),
-                            weight_offset.cast[.float32](),
                             Int32(rows),
                             Int32(cols),
                             grid_dim=grid_dim,
@@ -1168,13 +1169,13 @@ def rms_norm_gpu[
                     1,
                     input_fn_2d,
                     output_fn_2d,
+                    epsilon=epsilon,
+                    weight_offset=weight_offset,
                     multiply_before_cast=multiply_before_cast,
                     pdl_level=pdl_level,
                 ]
                 ctx.enqueue_function[kernel](
                     gamma,
-                    epsilon.cast[.float32](),
-                    weight_offset.cast[.float32](),
                     Int32(rows),
                     Int32(cols),
                     grid_dim=grid_dim,
@@ -1228,13 +1229,13 @@ def rms_norm_gpu[
                 max_warps_per_block,
                 input_fn_2d,
                 output_fn_2d,
+                epsilon=epsilon,
+                weight_offset=weight_offset,
                 multiply_before_cast=multiply_before_cast,
                 pdl_level=pdl_level,
             ]
             ctx.enqueue_function[kernel](
                 gamma,
-                epsilon.cast[.float32](),
-                weight_offset.cast[.float32](),
                 Int32(cols),
                 grid_dim=grid_dim,
                 block_dim=block_dim,
@@ -1250,13 +1251,13 @@ def rms_norm_gpu[
             max_warps_per_block,
             input_fn_2d,
             output_fn_2d,
+            epsilon=epsilon,
+            weight_offset=weight_offset,
             multiply_before_cast=multiply_before_cast,
             pdl_level=pdl_level,
         ]
         ctx.enqueue_function[kernel](
             gamma,
-            epsilon.cast[.float32](),
-            weight_offset.cast[.float32](),
             Int32(cols),
             grid_dim=grid_dim,
             block_dim=block_dim,
@@ -1279,13 +1280,13 @@ def rms_norm_cpu[
         Int, Int, SIMD[dtype, width]
     ) -> None,
     //,
+    epsilon: Float32,
+    weight_offset: Float32,
     multiply_before_cast: Bool,
 ](
     input_fn: InputFnType,
     output_fn: OutputFnType,
     gamma: TileTensor[mut=False, dtype, ...],
-    epsilon: Float32,
-    weight_offset: Scalar[dtype],
     out_shape: Coord,
 ):
     comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
@@ -1294,8 +1295,8 @@ def rms_norm_cpu[
 
     comptime simd_width = simd_width_of[dtype]()
 
-    var num_rows = Int(out_shape[0].value())
-    var num_cols = Int(out_shape[1].value())
+    var num_rows = Int(out_shape[0])
+    var num_cols = Int(out_shape[1])
 
     var simd_loop_end = align_down(num_cols, simd_width)
     comptime intermediate_type = get_accum_type[dtype]()
@@ -1314,27 +1315,29 @@ def rms_norm_cpu[
             sum_val += input_fn[1](row, col).cast[intermediate_type]() ** 2
 
         var mean_val = _sum_to_mean(sum_val, num_cols)
-        var norm_factor = rsqrt(mean_val + epsilon.cast[intermediate_type]())
+        var norm_factor = rsqrt(
+            mean_val + comptime (epsilon.cast[intermediate_type]())
+        )
 
         def _normalize[
             simd_width: Int
-        ](col: Int) {gamma, weight_offset, imm input_fn, imm output_fn, mut}:
+        ](col: Int) {gamma, imm input_fn, imm output_fn, mut}:
             var input_val = input_fn[simd_width](row, col).cast[
                 intermediate_type
             ]()
-            var gamma_val = gamma.load[width=simd_width, alignment=1](
-                Coord(col)
-            )
+            var gamma_val = gamma.load[width=simd_width, alignment=1]((col,))
             var norm_val: SIMD[dtype, simd_width]
 
             if multiply_before_cast:
-                var gamma_offset = gamma_val + weight_offset.cast[dtype]()
+                var gamma_offset = gamma_val + comptime (
+                    weight_offset.cast[dtype]()
+                )
                 norm_val = (input_val * norm_factor).cast[
                     dtype
                 ]() * gamma_offset
             else:
                 norm_val = (input_val * norm_factor).cast[dtype]() * (
-                    gamma_val + weight_offset.cast[dtype]()
+                    gamma_val + comptime (weight_offset.cast[dtype]())
                 )
 
             output_fn[simd_width, 1](row, col, norm_val)
@@ -1349,20 +1352,20 @@ def rms_norm_cpu[
         Coord, SIMD[dtype, width]
     ) -> None,
     //,
+    epsilon: Float32,
+    weight_offset: Float32,
     multiply_before_cast: Bool,
 ](
     input_fn: InputFnType,
     output_fn: OutputFnType,
     shape: Coord,
     gamma: TileTensor[mut=False, dtype, ...],
-    epsilon: Float32,
-    weight_offset: Scalar[dtype],
     ctx: Optional[DeviceContext.CPU] = None,
 ):
     comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
     comptime rank = shape.rank
 
-    var last_dim = Int(shape[rank - 1].value())
+    var last_dim = Int(shape[rank - 1])
     var prod_all_but_last_dim = Int(shape.product()) // last_dim
 
     var num_workers = min(parallelism_level(ctx), prod_all_but_last_dim)
@@ -1370,14 +1373,7 @@ def rms_norm_cpu[
 
     def task_func(
         thread_id: Int,
-    ) {
-        var chunk_size,
-        var prod_all_but_last_dim,
-        var last_dim,
-        var epsilon,
-        var weight_offset,
-        imm,
-    }:
+    ) {var chunk_size, var prod_all_but_last_dim, var last_dim, imm,}:
         var num_rows = min(
             chunk_size, prod_all_but_last_dim - thread_id * chunk_size
         )
@@ -1407,12 +1403,14 @@ def rms_norm_cpu[
             indices[rank - 1] = col
             return input_fn[simd_width](Coord(indices))
 
-        rms_norm_cpu[multiply_before_cast=multiply_before_cast](
+        rms_norm_cpu[
+            epsilon=epsilon,
+            weight_offset=weight_offset,
+            multiply_before_cast=multiply_before_cast,
+        ](
             input_fn_2d,
             output_fn_2d,
             gamma,
-            epsilon,
-            weight_offset,
             out_shape=Coord(num_rows, last_dim),
         )
 
@@ -1426,12 +1424,12 @@ def rms_norm_cpu[
     output_fn: def[width: SIMDLength, alignment: Int](
         Coord, SIMD[dtype, width]
     ) capturing -> None,
+    epsilon: Float32,
+    weight_offset: Float32,
     multiply_before_cast: Bool,
 ](
     shape: Coord,
     gamma: TileTensor[mut=False, dtype, ...],
-    epsilon: Float32,
-    weight_offset: Scalar[dtype],
     ctx: Optional[DeviceContext.CPU] = None,
 ):
     @inline(.always)
@@ -1444,13 +1442,15 @@ def rms_norm_cpu[
     ](coords: Coord, val: SIMD[dtype, width]):
         output_fn[width, alignment](coords, val)
 
-    rms_norm_cpu[multiply_before_cast=multiply_before_cast](
+    rms_norm_cpu[
+        epsilon=epsilon,
+        weight_offset=weight_offset,
+        multiply_before_cast=multiply_before_cast,
+    ](
         input_fn_value,
         output_fn_value,
         shape,
         gamma,
-        epsilon,
-        weight_offset,
         ctx,
     )
 
@@ -1482,25 +1482,25 @@ def _rms_norm_impl[
         Coord, SIMD[dtype, width]
     ) capturing -> None,
     /,
+    epsilon: Float32,
+    weight_offset: Float32,
     target: StaticString = "cpu",
     multiply_before_cast: Bool = True,
 ](
     shape: Coord,
     gamma: TileTensor[mut=False, dtype, ...],
-    epsilon: Float32,
-    weight_offset: Scalar[dtype],
     ctx: DeviceContext,
 ) raises:
     comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
     comptime assert shape.rank == rank, "shape.rank must be the same as rank"
 
-    var reduce_dim_size = Int(shape[rank - 1].value())
+    var reduce_dim_size = Int(shape[rank - 1])
 
     # Note: we only support reduction along the last dimension
-    if Int(gamma.layout.shape[0]().value()) != reduce_dim_size:
+    if Int(gamma.dim[0]()) != reduce_dim_size:
         raise Error(
             "Gamma size "
-            + String(gamma.layout.shape[0]().value())
+            + String(gamma.dim[0]())
             + " does not match dimension of reduction "
             + String(reduce_dim_size)
             + "."
@@ -1519,12 +1519,12 @@ def _rms_norm_impl[
         rms_norm_cpu[
             input_fn_target,
             output_fn,
+            epsilon=epsilon,
+            weight_offset=weight_offset,
             multiply_before_cast=multiply_before_cast,
         ](
             shape,
             gamma,
-            epsilon,
-            weight_offset,
             Optional(ctx.assert_cpu_target()),
         )
     elif is_gpu[target]():
@@ -1532,12 +1532,12 @@ def _rms_norm_impl[
             rank,
             input_fn_target,
             output_fn,
+            epsilon=epsilon,
+            weight_offset=weight_offset,
             multiply_before_cast=multiply_before_cast,
         ](
             shape,
             gamma,
-            epsilon,
-            weight_offset,
             ctx,
         )
     else:
@@ -1643,34 +1643,32 @@ def apply_qk_rms_norm_gpu_block[
 
     with PDL():
         # rsqrt of the (already cross-rank reduced) per-row mean of squares.
-        var rs = rsqrt(
-            qk_var.load[width=1](Coord(Index(Int(row), block_idx.y))) + epsilon
-        )
+        var rs = rsqrt(qk_var.load[width=1]((row, block_idx.y)) + epsilon)
 
         # Each block owns a single (row, operand); threads grid-stride the cols.
         for x in range(ceildiv(ceildiv(num_cols, simd_width), block_dim.x)):
             var offset = x * block_dim.x * simd_width + tid * simd_width
             if offset < num_cols:
                 if is_k:
-                    var xf = k.load[width=simd_width](
-                        Coord(Index(Int(row), offset))
-                    ).cast[.float32]()
+                    var xf = k.load[width=simd_width]((row, offset)).cast[
+                        .float32
+                    ]()
                     var g = gamma_k.load[width=simd_width, alignment=align](
-                        Coord(offset)
+                        (offset,)
                     )
-                    k_out.store[width=simd_width](
-                        Coord(Index(Int(row), offset)),
+                    k_out.store(
+                        (Int(row), offset),
                         ((xf * rs) * g).cast[out_dtype](),
                     )
                 else:
-                    var xf = q.load[width=simd_width](
-                        Coord(Index(Int(row), offset))
-                    ).cast[.float32]()
+                    var xf = q.load[width=simd_width]((row, offset)).cast[
+                        .float32
+                    ]()
                     var g = gamma_q.load[width=simd_width, alignment=align](
-                        Coord(offset)
+                        (offset,)
                     )
-                    q_out.store[width=simd_width](
-                        Coord(Index(Int(row), offset)),
+                    q_out.store(
+                        (Int(row), offset),
                         ((xf * rs) * g).cast[out_dtype](),
                     )
 
@@ -1833,29 +1831,48 @@ def apply_qk_rms_norm_cpu[
     q_cols: Int,
     k_cols: Int,
 ):
-    """Naive CPU reference path (also used as a correctness oracle)."""
+    """Applies Q/K RMS normalization across independent CPU SIMD lanes."""
     comptime assert q.flat_rank == 2, "q must have rank 2"
     comptime assert k.flat_rank == 2, "k must have rank 2"
+    comptime assert q_out.flat_rank == 2, "q_out must have rank 2"
+    comptime assert k_out.flat_rank == 2, "k_out must have rank 2"
+    comptime assert gamma_q.flat_rank == 1, "gamma_q must have rank 1"
+    comptime assert gamma_k.flat_rank == 1, "gamma_k must have rank 1"
+    comptime simd_width = simd_width_of[DType.float32]()
+    var contiguous_q = (
+        q.layout.stride_coord().flatten()[1].value() == 1
+        and gamma_q.layout.stride_coord().flatten()[0].value() == 1
+        and q_out.layout.stride_coord().flatten()[1].value() == 1
+    )
+    var contiguous_k = (
+        k.layout.stride_coord().flatten()[1].value() == 1
+        and gamma_k.layout.stride_coord().flatten()[0].value() == 1
+        and k_out.layout.stride_coord().flatten()[1].value() == 1
+    )
     for r in range(rows):
-        var rs_q = rsqrt(qk_var.load[width=1](Coord(Index(r, 0))) + epsilon)
-        for c in range(q_cols):
-            var xf = q.load[width=1](Coord(Index(r, c)))[0].cast[
-                DType.float32
-            ]()
-            var g = gamma_q.load[width=1](Coord(c))
-            q_out.store[width=1](
-                Coord(Index(r, c)), ((xf * rs_q) * g).cast[out_dtype]()
-            )
+        var rs_q = rsqrt(qk_var.load[width=1]((r, 0)) + epsilon)
 
-        var rs_k = rsqrt(qk_var.load[width=1](Coord(Index(r, 1))) + epsilon)
-        for c in range(k_cols):
-            var xf = k.load[width=1](Coord(Index(r, c)))[0].cast[
-                DType.float32
-            ]()
-            var g = gamma_k.load[width=1](Coord(c))
-            k_out.store[width=1](
-                Coord(Index(r, c)), ((xf * rs_k) * g).cast[out_dtype]()
-            )
+        def normalize_q[width: Int](c: Int) {q, gamma_q, q_out, rs_q, r}:
+            var xf = q.load[width=width]((r, c)).cast[.float32]()
+            var g = gamma_q.load[width=width]((c,))
+            q_out.store((r, c), ((xf * rs_q) * g).cast[out_dtype]())
+
+        if contiguous_q:
+            vectorize[simd_width](q_cols, normalize_q)
+        else:
+            vectorize[1](q_cols, normalize_q)
+
+        var rs_k = rsqrt(qk_var.load[width=1]((r, 1)) + epsilon)
+
+        def normalize_k[width: Int](c: Int) {k, gamma_k, k_out, rs_k, r}:
+            var xf = k.load[width=width]((r, c)).cast[.float32]()
+            var g = gamma_k.load[width=width]((c,))
+            k_out.store((r, c), ((xf * rs_k) * g).cast[out_dtype]())
+
+        if contiguous_k:
+            vectorize[simd_width](k_cols, normalize_k)
+        else:
+            vectorize[1](k_cols, normalize_k)
 
 
 def apply_qk_rms_norm[
@@ -2073,22 +2090,17 @@ def group_norm_gpu_warp_tiling[
         if idx + simd_width <= group_size:
             var g = umod(row, _num_groups)
             var c_base = g * _channels_per_group
-            var norm_val = SIMD[accum_type, simd_width]()
-            for i in range(simd_width):
-                var offset = (idx + i) // _spatial
-                var c = c_base + offset
-                var gamma_val = gamma_fn[1](Coord(c))
-                var beta_val = beta_fn[1](Coord(c))
-                norm_val[i] = (
-                    vec_data[i] - row_mean
-                ) * norm_factor * gamma_val.cast[accum_type]() + beta_val.cast[
-                    accum_type
-                ]()
+            var gamma_vec = SIMD[accum_type, simd_width]()
+            var beta_vec = SIMD[accum_type, simd_width]()
+            comptime for i in range(simd_width):
+                var c = c_base + (idx + i) // _spatial
+                gamma_vec[i] = gamma_fn[1](Coord(c))[0].cast[accum_type]()
+                beta_vec[i] = beta_fn[1](Coord(c))[0].cast[accum_type]()
+            var norm_val = (
+                vec_data - row_mean
+            ) * norm_factor * gamma_vec + beta_vec
 
-            var output_idx = output.layout(Coord(row, idx))
-            output.raw_store[alignment=align](
-                output_idx, norm_val.cast[dtype]()
-            )
+            output.store[alignment=align]((row, idx), norm_val.cast[dtype]())
 
 
 @__name(t"group_norm_gpu_block_{dtype}")
@@ -2176,23 +2188,18 @@ def group_norm_gpu_block[
                 var g = umod(row, _num_groups)
                 var c_base = g * _channels_per_group
 
-                var norm_val = SIMD[accum_type, simd_width]()
-                for i in range(simd_width):
-                    var offset_c = (offset + i) // _spatial
-                    var c = c_base + offset_c
-                    var gamma_val = gamma_fn[1](Coord(c))
-                    var beta_val = beta_fn[1](Coord(c))
-                    norm_val[i] = (
-                        vec_data[i] - row_mean
-                    ) * norm_factor * gamma_val.cast[
-                        accum_type
-                    ]() + beta_val.cast[
-                        accum_type
-                    ]()
+                var gamma_vec = SIMD[accum_type, simd_width]()
+                var beta_vec = SIMD[accum_type, simd_width]()
+                comptime for i in range(simd_width):
+                    var c = c_base + (offset + i) // _spatial
+                    gamma_vec[i] = gamma_fn[1](Coord(c))[0].cast[accum_type]()
+                    beta_vec[i] = beta_fn[1](Coord(c))[0].cast[accum_type]()
+                var norm_val = (
+                    vec_data - row_mean
+                ) * norm_factor * gamma_vec + beta_vec
 
-                var output_row_offset = output.layout(Coord(row, offset))
-                output.raw_store[alignment=align](
-                    output_row_offset, norm_val.cast[dtype]()
+                output.store[alignment=align](
+                    (row, offset), norm_val.cast[dtype]()
                 )
 
 
@@ -2273,9 +2280,9 @@ def group_norm_gpu_multi_block_stats[
         # Thread 0 writes partial stats to the global stats buffer.
         if tid == 0:
             var base_idx = block_id * 3
-            stats.store(Coord(base_idx), row_mean)
-            stats.store(Coord(base_idx + 1), row_m2)
-            stats.store(Coord(base_idx + 2), row_count)
+            stats.store((base_idx,), row_mean)
+            stats.store((base_idx + 1,), row_m2)
+            stats.store((base_idx + 2,), row_count)
 
 
 @__name(t"group_norm_gpu_multi_block_norm_{dtype}")
@@ -2348,9 +2355,9 @@ def group_norm_gpu_multi_block_norm[
         for s in range(_num_splits):
             var base_idx = stats_row_base + s * 3
             welford_combine(
-                stats.load[width=1](Coord(base_idx)),
-                stats.load[width=1](Coord(base_idx + 1)),
-                stats.load[width=1](Coord(base_idx + 2)),
+                stats[base_idx],
+                stats[base_idx + 1],
+                stats[base_idx + 2],
                 row_mean,
                 row_m2,
                 row_count,
@@ -2371,7 +2378,7 @@ def group_norm_gpu_multi_block_norm[
                     accum_type
                 ]()
 
-                var norm_val = SIMD[accum_type, simd_width]()
+                var norm_val: SIMD[accum_type, simd_width]
 
                 # Vectorized gamma/beta: when all SIMD elements share the
                 # same channel (common case for large _spatial dims), load
@@ -2387,21 +2394,20 @@ def group_norm_gpu_multi_block_norm[
                         vec_data - row_mean
                     ) * norm_factor * gamma_val + beta_val
                 else:
-                    for i in range(simd_width):
+                    var gamma_vec = SIMD[accum_type, simd_width]()
+                    var beta_vec = SIMD[accum_type, simd_width]()
+                    comptime for i in range(simd_width):
                         var c = c_base + (offset + i) // _spatial
-                        var gamma_val = gamma_fn[1](Coord(c))
-                        var beta_val = beta_fn[1](Coord(c))
-                        norm_val[i] = (
-                            vec_data[i] - row_mean
-                        ) * norm_factor * gamma_val.cast[
-                            accum_type
-                        ]() + beta_val.cast[
+                        gamma_vec[i] = gamma_fn[1](Coord(c))[0].cast[
                             accum_type
                         ]()
+                        beta_vec[i] = beta_fn[1](Coord(c))[0].cast[accum_type]()
+                    norm_val = (
+                        vec_data - row_mean
+                    ) * norm_factor * gamma_vec + beta_vec
 
-                var output_row_offset = output.layout(Coord(row, offset))
-                output.raw_store[alignment=align](
-                    output_row_offset, norm_val.cast[dtype]()
+                output.store[alignment=align](
+                    (row, offset), norm_val.cast[dtype]()
                 )
 
 
@@ -2432,15 +2438,15 @@ def group_norm_gpu[
     comptime accum_type = get_accum_type[dtype]()
     comptime assert shape.rank == rank, "shape.rank must be the same as rank"
 
-    var N = Int(shape[0].value())
-    var C = Int(shape[1].value())
+    var N = Int(shape[0])
+    var C = Int(shape[1])
 
     var spatial = Int(shape.product()) // (N * C)
 
     # The device closure reads only the innermost dim; a typed `Coord` capture
     # fails the launch (CUDA_ERROR_INVALID_VALUE), so unwrap it here and let the
     # closure capture plain `Int`s.
-    var last_dim = Int(shape[rank - 1].value())
+    var last_dim = Int(shape[rank - 1])
     var channels_per_group = C // num_groups
 
     var output_rs = group_norm_reshape[dtype, rank](
@@ -2771,8 +2777,8 @@ def group_norm_cpu[
     comptime accum_type = get_accum_type[dtype]()
     comptime assert shape.rank == rank, "shape.rank must be the same as rank"
 
-    var N = Int(shape[0].value())
-    var C = Int(shape[1].value())
+    var N = Int(shape[0])
+    var C = Int(shape[1])
     var spatial = Int(shape.product()) // (N * C)
     var channels_per_group = C // num_groups
     var group_size = channels_per_group * spatial
@@ -2809,7 +2815,7 @@ def group_norm_cpu[
             ]:
                 var c_offset, s = divmod(col, spatial)
                 comptime if rank == 4:
-                    var h, w = divmod(s, Int(shape[3].value()))
+                    var h, w = divmod(s, Int(shape[3]))
                     return rebind[DynamicCoord[.int64, rank]](
                         Coord(
                             Int64(n),
@@ -2882,7 +2888,7 @@ def group_norm[
 
     var num_groups: Int = Int(groups[0])
 
-    var C = Int(shape[1].value())
+    var C = Int(shape[1])
     if C % num_groups != 0:
         raise Error(
             "Invalid num_groups: channels (C = {C}) must be divisible by"
@@ -3029,12 +3035,12 @@ struct _RMSNormQuantizeFp8GroupKernel[
         comptime align = align_of[SIMD[Self.in_dtype, Self.simd_width]]()
 
         var input_fn = self.input_fn
-        var output = TileTensor(self.output.ptr, self.output.layout)
-        var scales = TileTensor(self.scales.ptr, self.scales.layout)
-        var gamma = TileTensor(self.gamma.ptr, self.gamma.layout)
+        var output = self.output
+        var scales = self.scales
+        var gamma = self.gamma
 
-        var tid = Int(thread_idx.x)
-        var row = Int(block_idx.x)
+        var tid = thread_idx.x
+        var row = block_idx.x
         var col = tid * Self.simd_width
         var group_idx = tid // Self.lanes_per_group
         var lane_in_group = tid % Self.lanes_per_group
@@ -3050,7 +3056,7 @@ struct _RMSNormQuantizeFp8GroupKernel[
                 ssq / Scalar[accum](Self.num_cols) + self.epsilon.cast[accum]()
             )
             var gamma_val = gamma.load[width=Self.simd_width, alignment=align](
-                Coord(col)
+                (col,)
             )
             # The pair quantizes the bf16 row `rms_norm` wrote, so round the
             # normalized value to `in_dtype` exactly where `rms_norm` does.

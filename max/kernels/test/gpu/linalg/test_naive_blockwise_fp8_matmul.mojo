@@ -35,9 +35,9 @@ def test_naive_blockwise_fp8_matmul[
     comptime BLOCK_SCALE_N = block_scales_sizes[1]
     comptime BLOCK_SCALE_K = block_scales_sizes[2]
 
-    var M = Int(m.value())
-    var N = Int(n.value())
-    var K = Int(k.value())
+    var M = Int(m)
+    var N = Int(n)
+    var K = Int(k)
 
     print(
         "== test_naive_blockwise_fp8_matmul",
@@ -118,16 +118,14 @@ def test_naive_blockwise_fp8_matmul[
             var res: Float32 = 0.0
             for _k in range(K):
                 var a_scale = a_scale_host[
-                    Coord(_k // BLOCK_SCALE_K, _m // BLOCK_SCALE_M)
+                    _k // BLOCK_SCALE_K, _m // BLOCK_SCALE_M
                 ]
                 var b_scale = b_scale_host[
-                    Coord(_n // BLOCK_SCALE_N, _k // BLOCK_SCALE_K)
+                    _n // BLOCK_SCALE_N, _k // BLOCK_SCALE_K
                 ] if transpose_b else b_scale_host[
-                    Coord(_k // BLOCK_SCALE_K, _n // BLOCK_SCALE_N)
+                    _k // BLOCK_SCALE_K, _n // BLOCK_SCALE_N
                 ]
-                var b_elem = b_host[Coord(_n, _k)] if transpose_b else b_host[
-                    Coord(_k, _n)
-                ]
+                var b_elem = b_host[_n, _k] if transpose_b else b_host[_k, _n]
                 res += (
                     a_host[_m, _k].cast[.float32]()
                     * b_elem.cast[.float32]()

@@ -120,10 +120,8 @@ def execute_ragged_flash_attention[
     for bs in range(batch_size):
         var unpadded_seq_len = valid_lengths_list[bs]
         var ragged_start_idx = Int(input_row_offsets[bs])
-        var padded_ptr = q_padded.ptr + q_padded.layout(Coord(bs, 0, 0, 0))
-        var ragged_ptr = q_ragged.ptr + q_ragged.layout(
-            Coord(ragged_start_idx, 0, 0)
-        )
+        var padded_ptr = q_padded.ptr_at_offset(Coord(bs, 0, 0, 0))
+        var ragged_ptr = q_ragged.ptr_at_offset(Coord(ragged_start_idx, 0, 0))
         unsafe_memcpy(
             dest=padded_ptr,
             src=ragged_ptr,

@@ -380,14 +380,16 @@ def _naive_matmul_kernel[
 
             comptime if transpose_b:
                 for i in range(k):
-                    accum += rebind[Scalar[s_type]](
-                        a[global_row, i].cast[s_type]()
-                    ) * rebind[Scalar[s_type]](b[global_col, i].cast[s_type]())
+                    accum += (
+                        a.load[width=1]((global_row, i)).cast[s_type]()
+                        * b.load[width=1]((global_col, i)).cast[s_type]()
+                    )
             else:
                 for i in range(k):
-                    accum += rebind[Scalar[s_type]](
-                        a[global_row, i].cast[s_type]()
-                    ) * rebind[Scalar[s_type]](b[i, global_col].cast[s_type]())
+                    accum += (
+                        a.load[width=1]((global_row, i)).cast[s_type]()
+                        * b.load[width=1]((i, global_col)).cast[s_type]()
+                    )
 
             comptime if has_epilogue_fn:
                 epilogue_fn[c_type, 1, alignment=1](
@@ -415,7 +417,7 @@ def _load_tile_to_smem[
     SMEM_STRIDE: Int,
     NUM_THREADS: Int,
 ](
-    smem: UnsafePointer[mut=True, Scalar[dtype], _, address_space=.SHARED],
+    smem: MutPointer[Scalar[dtype], _, address_space=.SHARED],
     tile: TileTensor[dtype, tile_layout, ImmutAnyOrigin, Engine=tile_engine],
     block_row_offset: Int,
     k_offset: Int,
@@ -485,7 +487,7 @@ def _load_tile_to_smem[
 
             # B is (K, N): load transposed into shared memory as (N, K)
             if global_col < max_k and global_row < max_rows:
-                val = rebind[Scalar[dtype]](tile[global_col, global_row])
+                val = tile.load[width=1]((global_col, global_row))
 
             smem[row * SMEM_STRIDE + col] = val
 
@@ -521,10 +523,11 @@ def _load_tile_regs[
         var vec_idx = i * NUM_THREADS + tid
         if vec_idx < total_vectors:
             var elem_idx = vec_idx * VECTOR_WIDTH
-            var global_row = block_row_offset + elem_idx // BLOCK_K
+            var row, col = divmod(elem_idx, BLOCK_K)
+            var global_row = block_row_offset + row
             if global_row < max_rows:
                 regs[i] = tile.load_linear[width=VECTOR_WIDTH](
-                    IndexList[2](global_row, k_offset + elem_idx % BLOCK_K)
+                    IndexList[2](global_row, k_offset + col)
                 )
     return regs^
 
@@ -539,7 +542,7 @@ def _store_tile_regs[
     VECS_PER_THREAD: Int,
     VECTOR_WIDTH: Int,
 ](
-    smem: UnsafePointer[mut=True, Scalar[dtype], _, address_space=.SHARED],
+    smem: MutPointer[Scalar[dtype], _, address_space=.SHARED],
     regs: Array[SIMD[dtype, VECTOR_WIDTH], VECS_PER_THREAD],
     tid: Int,
 ):
@@ -563,8 +566,8 @@ def _compute_ktile[
     WARP_TILE_M: Int,
     WARP_TILE_N: Int,
 ](
-    a_smem: UnsafePointer[mut=True, Scalar[a_type], _, address_space=.SHARED],
-    b_smem: UnsafePointer[mut=True, Scalar[b_type], _, address_space=.SHARED],
+    a_smem: MutPointer[Scalar[a_type], _, address_space=.SHARED],
+    b_smem: MutPointer[Scalar[b_type], _, address_space=.SHARED],
     mut c_accum: Array[SIMD[s_type, CD_FRAG_SIZE], WARP_TILE_M * WARP_TILE_N],
     warp_m: Int,
     warp_n: Int,

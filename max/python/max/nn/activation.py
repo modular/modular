@@ -13,8 +13,6 @@
 
 """Activation function utilities."""
 
-from __future__ import annotations
-
 from collections.abc import Callable
 from dataclasses import dataclass
 from functools import partial
@@ -107,12 +105,8 @@ class GatedActivation:
                 " fused_activation, alpha, and limit at their defaults"
             )
 
-    def kernel_parameters(self) -> dict[str, str]:
+    def kernel_parameters(self) -> dict[str, float | str]:
         """Returns ``fused_activation`` encoded as kernel parameters.
-
-        Kernel parameters cannot be floats, so the constants ride as strings.
-        ``repr`` round-trips the double, so the kernel's compile-time parse
-        rounds to the same float32 a constant would.
 
         Raises:
             ValueError: If ``gated_activation_fn`` is set; a kernel can only
@@ -125,6 +119,6 @@ class GatedActivation:
             )
         return {
             "activation": self.fused_activation,
-            "swiglu_alpha": repr(float(self.alpha)),
-            "swiglu_limit": repr(float(self.limit)),
+            "swiglu_alpha": float(self.alpha),
+            "swiglu_limit": float(self.limit),
         }

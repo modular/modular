@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Provides Ampere (SM80) matmul dispatch table lookup and config creation."""
 
-from std.hashlib import default_comp_time_hasher
+from std.hash import default_comp_time_hasher
 
 
 from ....utils_gpu import MatmulConfig

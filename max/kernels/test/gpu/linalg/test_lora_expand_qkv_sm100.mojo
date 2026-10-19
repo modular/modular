@@ -132,11 +132,11 @@ def test[
         row_major(M, Idx[R]),
     )
     var p_plane_k = TileTensor(
-        p_dev_buffer.unsafe_ptr() + M * R,
+        p_dev_buffer.unsafe_ptr().unsafe_offset(M * R),
         row_major(M, Idx[R]),
     )
     var p_plane_v = TileTensor(
-        p_dev_buffer.unsafe_ptr() + 2 * M * R,
+        p_dev_buffer.unsafe_ptr().unsafe_offset(2 * M * R),
         row_major(M, Idx[R]),
     )
 

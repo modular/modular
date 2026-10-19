@@ -77,6 +77,8 @@ def fa4_correction[
         _ = mbars.combined_p_o_consumer(0)[].arrive()
         _ = mbars.combined_p_o_consumer(1)[].arrive()
 
+    # `tmem_addr` passed in by register (read once post-barrier in the kernel
+    # prologue); do NOT re-read `smem.tmem_addr_ptr()` here.
     var o0_tmem = TmemAddress(tmem_addr + UInt32(config.TMEM_O0))
     var o1_tmem = TmemAddress(tmem_addr + UInt32(config.TMEM_O1))
     var correction_smem_arg = smem.correction_smem()
@@ -206,9 +208,9 @@ def fa4_correction[
         var o0_tmem_so = TmemAddress(tmem_addr + UInt32(config.TMEM_O0))
         var pipeline_c0_so = mbars.consumer_c0()
         var pipeline_o_so = mbars.consumer_o0()
-        var correction_smem_so = correction_smem_arg + UInt32(
-            thread_idx.x
-        ) % UInt32(WARPGROUP_SIZE)
+        var correction_smem_so = correction_smem_arg.unsafe_offset(
+            UInt32(thread_idx.x) % UInt32(WARPGROUP_SIZE)
+        )
 
         var t_left_so: UInt32 = (
             mask.total_iters[BM_mask, BN, page_size](
@@ -281,10 +283,12 @@ def fa4_correction[
     var iter_count: UInt32 = c1_iters
     var extra_c0_iters: UInt32 = c0_iters - c1_iters
 
-    var correction_smem_0 = correction_smem_arg + UInt32(thread_idx.x) % UInt32(
-        WARPGROUP_SIZE
+    var correction_smem_0 = correction_smem_arg.unsafe_offset(
+        UInt32(thread_idx.x) % UInt32(WARPGROUP_SIZE)
     )
-    var correction_smem_1 = correction_smem_0 + UInt32(WARPGROUP_SIZE)
+    var correction_smem_1 = correction_smem_0.unsafe_offset(
+        UInt32(WARPGROUP_SIZE)
+    )
 
     # The per-(c0 or c1) correction step. Inlined twice per outer iter
     # of the main loop (i=0 then i=1) for the WG0+WG1-paired tail, and

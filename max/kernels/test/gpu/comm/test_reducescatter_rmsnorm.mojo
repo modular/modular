@@ -96,8 +96,9 @@ def _run_case[
         axis_size=num_rows, unit_numel=num_cols, threads_per_gpu=0
     )
     var length = num_rows * num_cols
-    var epsilon = Float32(1e-6)
-    var weight_offset = Scalar[in_dtype](0.0)
+    comptime epsilon = Float32(1e-6)
+    comptime weight_offset_f32 = Float32(0.0)
+    var weight_offset = weight_offset_f32.cast[in_dtype]()
 
     # Per-GPU inputs, per-device gamma, signals, and three output shards.
     var in_dev = List[DeviceBuffer[in_dtype]](capacity=ngpus)
@@ -182,6 +183,19 @@ def _run_case[
         )
     )
 
+    # The two-launch fallback below runs inside the group. Its rms_norm kernel
+    # is specialized on epsilon and weight_offset, so load it on every device
+    # first: a first-use module load inside the group stalls one rank while its
+    # peer waits at the reduce-scatter barrier.
+    comptime if use_dispatch:
+        for i in range(ngpus):
+            if config.rank_units(i) > 0:
+                _rms_norm_shard[in_dtype, num_cols, epsilon, weight_offset_f32](
+                    1, sum_shard[i], normed[i], gamma_dev[i], list_of_ctx[i]
+                )
+        for i in range(ngpus):
+            list_of_ctx[i].synchronize()
+
     # --- Run the fused kernel (or the auto dispatch) on every rank. ---
     group_start()
     for i in range(ngpus):
@@ -221,13 +235,11 @@ def _run_case[
                 reducescatter[dtype=in_dtype, ngpus=ngpus, axis=0](
                     in_bufs, world_sum, rank_sigs, list_of_ctx[i], my_rank=i
                 )
-                _rms_norm_shard[in_dtype, num_cols](
+                _rms_norm_shard[in_dtype, num_cols, epsilon, weight_offset_f32](
                     config.rank_units(i),
                     sum_shard[i],
                     normed[i],
                     gamma_dev[i],
-                    epsilon,
-                    weight_offset,
                     list_of_ctx[i],
                 )
 
@@ -463,13 +475,13 @@ def _run_case[
 def _rms_norm_shard[
     in_dtype: DType,
     num_cols: Int,
+    epsilon: Float32,
+    weight_offset: Float32,
 ](
     rows: Int,
     src: DeviceBuffer[in_dtype],
     dst: DeviceBuffer[in_dtype],
     gamma: DeviceBuffer[in_dtype],
-    epsilon: Float32,
-    weight_offset: Scalar[in_dtype],
     ctx: DeviceContext,
 ) raises:
     """Standalone `rms_norm_gpu` on one `[rows, num_cols]` shard, M3-config
@@ -503,7 +515,7 @@ def _rms_norm_shard[
     @__copy_capture(src_view)
     @__parameter
     def input_fn[width: Int](coords: Coord) -> SIMD[in_dtype, width]:
-        return src_view.raw_load[width=width](src_view.layout(coords))
+        return src_view.load[width=width](coords)
 
     @inline(.always)
     @__copy_capture(dst_view)
@@ -511,13 +523,16 @@ def _rms_norm_shard[
     def output_fn[
         width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[in_dtype, width]) -> None:
-        dst_view.raw_store[width=width, alignment=alignment](
-            dst_view.layout(coords), val
-        )
+        dst_view.store[alignment=alignment](coords, val)
 
-    rms_norm_gpu[2, input_fn, output_fn, multiply_before_cast=True](
-        Coord(Index(rows, num_cols)), gamma_view, epsilon, weight_offset, ctx
-    )
+    rms_norm_gpu[
+        2,
+        input_fn,
+        output_fn,
+        epsilon=epsilon,
+        weight_offset=weight_offset,
+        multiply_before_cast=True,
+    ](Coord(Index(rows, num_cols)), gamma_view, ctx)
 
 
 def _run_prod_oracle_case[
@@ -560,9 +575,10 @@ def _run_prod_oracle_case[
         axis_size=num_rows, unit_numel=num_cols, threads_per_gpu=0
     )
     var length = num_rows * num_cols
-    var epsilon = Float32(1e-6)
+    comptime epsilon = Float32(1e-6)
     # M3 post-attention layernorm is Gemma-style: weight_offset=1.0, mbc=True.
-    var weight_offset = Scalar[in_dtype](1.0)
+    comptime weight_offset_f32 = Float32(1.0)
+    var weight_offset = weight_offset_f32.cast[in_dtype]()
 
     var in_dev = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var host_bufs = List[List[Scalar[in_dtype]]](capacity=ngpus)
@@ -692,13 +708,11 @@ def _run_prod_oracle_case[
                     group_size=group_size,
                     axis=0,
                 ](world_bufs, world_sum, rank_sigs, list_of_ctx[i], my_rank=i)
-                _rms_norm_shard[in_dtype, num_cols](
+                _rms_norm_shard[in_dtype, num_cols, epsilon, weight_offset_f32](
                     config.rank_units(local),
                     sum_shard[i],
                     normed[i],
                     gamma_dev[i],
-                    epsilon,
-                    weight_offset,
                     list_of_ctx[i],
                 )
 
@@ -766,13 +780,11 @@ def _run_prod_oracle_case[
         var local_rows = config.rank_units(i % group_size)
         if local_rows == 0:
             continue
-        _rms_norm_shard[in_dtype, num_cols](
+        _rms_norm_shard[in_dtype, num_cols, epsilon, weight_offset_f32](
             local_rows,
             rs_ref[i],
             prod[i],
             gamma_dev[i],
-            epsilon,
-            weight_offset,
             list_of_ctx[i],
         )
     for i in range(ngpus):
@@ -945,8 +957,9 @@ def _run_residual_case[
         axis_size=num_rows, unit_numel=num_cols, threads_per_gpu=0
     )
     var length = num_rows * num_cols
-    var epsilon = Float32(1e-6)
-    var weight_offset = Scalar[in_dtype](1.0)
+    comptime epsilon = Float32(1e-6)
+    comptime weight_offset_f32 = Float32(1.0)
+    var weight_offset = weight_offset_f32.cast[in_dtype]()
 
     var in_dev = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var pre_dev = List[DeviceBuffer[in_dtype]](capacity=ngpus)
@@ -1407,8 +1420,9 @@ def _run_interleaved_barrier_case[
         axis_size=num_rows, unit_numel=num_cols, threads_per_gpu=0
     )
     var length = num_rows * num_cols
-    var epsilon = Float32(1e-6)
-    var weight_offset = Scalar[in_dtype](1.0)
+    comptime epsilon = Float32(1e-6)
+    comptime weight_offset_f32 = Float32(1.0)
+    var weight_offset = weight_offset_f32.cast[in_dtype]()
 
     var in_dev = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var host_bufs = List[List[Scalar[in_dtype]]](capacity=ngpus)
@@ -1650,8 +1664,9 @@ def _run_rank_validation_case[
     var config = ReduceScatterConfig[in_dtype, group_size](
         axis_size=num_rows, unit_numel=num_cols, threads_per_gpu=0
     )
-    var epsilon = Float32(1e-6)
-    var weight_offset = Scalar[in_dtype](1.0)
+    comptime epsilon = Float32(1e-6)
+    comptime weight_offset_f32 = Float32(1.0)
+    var weight_offset = weight_offset_f32.cast[in_dtype]()
     var length = num_rows * num_cols
     # Allocate for the largest shard so a deliberately mis-sized VIEW below
     # still points at real memory (nothing launches -- the raises fire first).

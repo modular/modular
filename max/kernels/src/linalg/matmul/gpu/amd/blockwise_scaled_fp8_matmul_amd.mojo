@@ -50,7 +50,7 @@ the correctness-critical part is authored once, not copied.
 """
 
 from std.math import ceildiv
-from std.sys import simd_width_of, size_of
+from std.sys import align_of, simd_width_of, size_of
 
 from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
@@ -62,7 +62,7 @@ from max.gpu import (
 from max.gpu.host import DeviceContext
 from max.gpu.sync import barrier
 
-from layout import Idx, TensorEngine, TensorLayout, TileTensor
+from layout import Coord, Idx, TensorEngine, TensorLayout, TileTensor
 from layout.swizzle import Swizzle
 from layout.tile_layout import row_major
 from layout.tile_tensor import stack_allocation
@@ -222,7 +222,6 @@ def blockwise_scaled_fp8_matmul_amd_tile[
     comptime num_m_mmas = WM // MMA_M
     comptime num_n_mmas = WN // MMA_N
     comptime c_frag_size = MMA_M * MMA_N // WARP_SIZE
-    comptime num_c_regs = num_m_mmas * num_n_mmas * c_frag_size
     comptime num_threads = num_warps_m * num_warps_n * WARP_SIZE
 
     # DRAM->reg->LDS tiling keys off the host SIMD width (like `AMDMatmul`),
@@ -312,8 +311,9 @@ def blockwise_scaled_fp8_matmul_amd_tile[
     var promoted = stack_allocation[accum_type, address_space=.LOCAL](
         row_major[num_m_mmas, num_n_mmas * c_frag_size]()
     )
-    comptime for i in range(num_c_regs):
-        promoted.raw_store(i, Scalar[accum_type](0))
+    comptime for i in range(num_m_mmas):
+        comptime for j in range(num_n_mmas * c_frag_size):
+            promoted[i, j] = 0
 
     # Per-lane output fragment coordinates (constant across slabs).
     var lane = Int(lane_id())
@@ -355,11 +355,11 @@ def blockwise_scaled_fp8_matmul_amd_tile[
                 if kb == NUM_SLABS - 1:
                     comptime n_oob = k_tile_size - c_valid
                     var a_tail = TileTensor(
-                        a_smem.ptr + kt_partial * BM * k_tile_size,
+                        a_smem.ptr.unsafe_offset(kt_partial * BM * k_tile_size),
                         row_major[BM, k_tile_size](),
                     )
                     var b_tail = TileTensor(
-                        b_smem.ptr + kt_partial * BN * k_tile_size,
+                        b_smem.ptr.unsafe_offset(kt_partial * BN * k_tile_size),
                         row_major[BN, k_tile_size](),
                     )
                     var tid = Int(warp_id()) * WARP_SIZE + Int(lane_id())
@@ -379,11 +379,11 @@ def blockwise_scaled_fp8_matmul_amd_tile[
 
         comptime for k in range(num_k_tiles):
             var a_blk = TileTensor(
-                a_smem.ptr + k * BM * k_tile_size,
+                a_smem.ptr.unsafe_offset(k * BM * k_tile_size),
                 row_major[BM, k_tile_size](),
             )
             var b_blk = TileTensor(
-                b_smem.ptr + k * BN * k_tile_size,
+                b_smem.ptr.unsafe_offset(k * BN * k_tile_size),
                 row_major[BN, k_tile_size](),
             )
             mma_op.load_frag[k](
@@ -398,8 +398,9 @@ def blockwise_scaled_fp8_matmul_amd_tile[
             if k < TAIL_K_TILES or kb < NUM_SLABS - 1:
                 var k_blk = kb * num_k_tiles + k
 
-                comptime for i in range(num_c_regs):
-                    blk_acc.raw_store(i, Scalar[accum_type](0))
+                comptime for i in range(num_m_mmas):
+                    comptime for j in range(num_n_mmas * c_frag_size):
+                        blk_acc[i, j] = 0
                 mma_op.mma[k]()
 
                 # fp32 per-block promotion: `a_scale[k_blk, m]` one scalar per row,
@@ -423,14 +424,16 @@ def blockwise_scaled_fp8_matmul_amd_tile[
                         ).cast[accum_type]()
                         var scale = a_s * b_s
 
-                        comptime off = (
-                            m_mma * num_n_mmas * c_frag_size
-                            + n_mma * c_frag_size
-                        )
-                        var blk_v = blk_acc.raw_load[width=c_frag_size](off)
-                        var prom_v = promoted.raw_load[width=c_frag_size](off)
-                        promoted.raw_store[width=c_frag_size](
-                            off, prom_v + blk_v * scale
+                        comptime align = align_of[accum_type]()
+                        var frag = Coord(m_mma, n_mma * c_frag_size)
+                        var blk_v = blk_acc.load[
+                            width=c_frag_size, alignment=align
+                        ](frag)
+                        var prom_v = promoted.load[
+                            width=c_frag_size, alignment=align
+                        ](frag)
+                        promoted.store[alignment=align](
+                            frag, prom_v + blk_v * scale
                         )
 
     # Output store with per-element OOB masking. Split-K rows live at
@@ -443,10 +446,9 @@ def blockwise_scaled_fp8_matmul_amd_tile[
         if m < M:
             comptime for n_mma in range(num_n_mmas):
                 var n0 = warp_tile_n + n_mma * MMA_N + lane_group * c_frag_size
-                comptime off = (
-                    m_mma * num_n_mmas * c_frag_size + n_mma * c_frag_size
-                )
-                var v = promoted.raw_load[width=c_frag_size](off).cast[c_type]()
+                var v = promoted.load[
+                    width=c_frag_size, alignment=align_of[accum_type]()
+                ](Coord(m_mma, n_mma * c_frag_size)).cast[c_type]()
                 comptime for e in range(c_frag_size):
                     var col = n0 + e
                     if col < N:
@@ -546,7 +548,7 @@ def blockwise_scaled_fp8_matmul_amd_kernel[
     """
     # K-band id from grid.z, split mode only: `num_splits == 1` must not read
     # block_idx.z (this kernel may run as a device fn under a different grid.z).
-    var split_id = Int(block_idx.z) if num_splits > 1 else 0
+    var split_id = block_idx.z if num_splits > 1 else 0
     # `c` is the stacked (num_splits*M, N) workspace when splitting, so the
     # true row count comes from `a`.
     var M = Int(a.dim[0]())
@@ -584,8 +586,8 @@ def blockwise_scaled_fp8_matmul_amd_kernel[
         b,
         a_scales,
         b_scales,
-        Int(block_idx.y),
-        Int(block_idx.x),
+        block_idx.y,
+        block_idx.x,
         0,
         M,
         split_id,
@@ -726,10 +728,15 @@ def _launch_blockwise_split_k[
     comptime block_dim_x: Int = 256
     var total_elems = M * N
     var num_blocks = ceildiv(total_elems, block_dim_x)
-    comptime reduce_kernel = _split_k_reduce_kernel[num_splits, c_type]
+    comptime reduce_kernel = _split_k_reduce_kernel[
+        num_splits,
+        c_type,
+        type_of(c).LayoutType,
+        type_of(c).Engine,
+    ]
     ctx.enqueue_function[reduce_kernel](
         workspace.scratch.unsafe_ptr(),
-        c.ptr,
+        c,
         Int32(total_elems),
         Int32(elems_per_split),
         Int32(N),

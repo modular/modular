@@ -25,6 +25,7 @@ from max.graph import (
 )
 from typing_extensions import Self
 
+from .._identity import IdentityMap
 from ..activation import GatedActivation
 from ..comm.ep import EPBatchManager
 from ..comm.ep.ep_kernels import fused_silu
@@ -262,7 +263,11 @@ class MoE(Module, Shardable):
     """The sharding strategy for the module."""
 
     experts: LayerList
-    """The list of experts."""
+    """The physical expert slots, one per ``num_experts``.
+
+    Without an EPLB placement slot ``i`` holds logical expert ``i``. With one,
+    :func:`~max.nn.moe.eplb.apply_eplb_placement` decides which logical
+    expert's checkpoint weights each slot loads."""
 
     _all_experts: list[Layer]
     """The list of all experts when using expert parallel strategy."""
@@ -280,7 +285,7 @@ class MoE(Module, Shardable):
         self,
         devices: list[DeviceRef],
         hidden_dim: int,
-        num_experts: int,  # phycial id
+        num_experts: int,
         num_experts_per_token: int,
         moe_dim: int,
         num_logical_experts: int | None = None,
@@ -375,10 +380,83 @@ class MoE(Module, Shardable):
                 devices=self.devices,
                 quant_config=self.quant_config,
             )
-            for _ in range(self.num_logical_experts)
+            for _ in range(self.num_experts)
         ]
 
         self.experts = LayerList(self._all_experts)
+
+    def eplb_weight_sources(self, phy2log: Sequence[int]) -> dict[str, str]:
+        """Maps each physical-slot weight to the logical expert weight it loads.
+
+        Args:
+            phy2log: The logical expert id of every physical slot in this
+                layer.
+
+        Returns:
+            A map from destination FQN to source FQN, both relative to this
+            module.
+
+        Raises:
+            ValueError: If ``phy2log`` does not cover every slot, or this MoE
+                does not keep one module per expert.
+        """
+        if len(self.experts) != self.num_experts:
+            raise ValueError(
+                f"{type(self).__name__} keeps {len(self.experts)} expert "
+                f"modules for {self.num_experts} experts; EPLB placement needs "
+                "one module per physical slot"
+            )
+        if len(phy2log) != self.num_experts:
+            raise ValueError(
+                f"EPLB placement row has {len(phy2log)} slots, expected "
+                f"{self.num_experts}"
+            )
+        prefix_of = IdentityMap[Module, str]()
+        for prefix, module in self.named_modules():
+            prefix_of[module] = prefix
+
+        sources: dict[str, str] = {}
+        for phy, log in enumerate(phy2log):
+            if not 0 <= log < self.num_logical_experts:
+                raise ValueError(
+                    f"EPLB placement maps slot {phy} to logical expert {log}, "
+                    f"outside [0, {self.num_logical_experts})"
+                )
+            dst = self.experts[phy]
+            src = self.experts[log]
+            assert isinstance(dst, Module) and isinstance(src, Module)
+            for name in dst.raw_state_dict():
+                sources[f"{prefix_of[dst]}{name}"] = f"{prefix_of[src]}{name}"
+        return sources
+
+    def eplb_router_weights(self) -> list[str] | None:
+        """Returns the router weights whose leading axis indexes experts.
+
+        Reordering these rows by a permutation placement makes the router
+        emit physical ids directly. Returns ``None`` when that is unsafe: the
+        router selects within expert groups, which a permutation can break,
+        or some router weight has an expert-sized dimension off axis 0, so a
+        row reorder would miss it.
+
+        Returns:
+            FQNs relative to this module, or ``None``.
+        """
+        if getattr(self.gate, "n_group", 1) != 1:
+            return None
+        num_experts = self.num_logical_experts
+        gate_prefix = next(
+            prefix
+            for prefix, module in self.named_modules()
+            if module is self.gate
+        )
+        names: list[str] = []
+        for name, weight in self.gate.raw_state_dict().items():
+            dims = list(weight.shape.static_dims)
+            if dims and dims[0] == num_experts:
+                names.append(f"{gate_prefix}{name}")
+            elif num_experts in dims:
+                return None
+        return names
 
     @property
     def ep_batch_manager(self) -> EPBatchManager:
@@ -533,15 +611,7 @@ class MoE(Module, Shardable):
 
                 experts_list: list[MLP] = []
                 for _ in range(self.num_local_experts):
-                    plan = self.ep_batch_manager._eplb_phy2log
-                    if plan is not None:
-                        assert self.layer_idx is not None, (
-                            "MoE.layer_idx must be set when EPLB is enabled"
-                        )
-                        log_id = int(plan[self.layer_idx, expert_idx])
-                    else:
-                        log_id = expert_idx
-                    curr_expert = self.experts[log_id]
+                    curr_expert = self.experts[expert_idx]
                     assert isinstance(curr_expert, MLP)
                     experts_list.append(curr_expert.shard([device])[0])
                     expert_idx += 1

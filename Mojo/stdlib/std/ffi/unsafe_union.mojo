@@ -158,7 +158,7 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
 
-    def __init__(out self, *, unsafe_uninitialized: ()):
+    def __init__(out self, *, unsafe_uninitialized: Tuple[]):
         """Unsafely create an uninitialized `UnsafeUnion`.
 
         The storage contains garbage data. You must call `unsafe_set` before

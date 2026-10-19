@@ -1197,6 +1197,20 @@ def stochastic_acceptance_sampler(
 
     is_greedy_row = temperature < _GREEDY_TEMPERATURE_EPS
 
+    # On GPU the argmax-proposal verdict samples greedy rows with top_k == 1,
+    # which the fused sampling kernel answers with the row's first argmax (the
+    # token ``ops.argmax`` picks: lowest index on ties, NaN never wins) and
+    # without running its sampling search. Its verdict and bonus for those
+    # rows already are the greedy ones, so no separate full-row argmax runs.
+    # Sampled rows keep their own ``top_k`` and draw exactly as before.
+    greedy_in_kernel = draft_proposal == "argmax" and device != DeviceRef.CPU()
+    if greedy_in_kernel:
+        top_k = ops.where(
+            is_greedy_row,
+            ops.constant(1, top_k.dtype, device=top_k.device),
+            top_k,
+        )
+
     temperature = ops.max(temperature, 1e-6)
 
     target_logits_3d = _reshape_target_logits(target_logits)
@@ -1271,17 +1285,22 @@ def stochastic_acceptance_sampler(
             )
         )
 
-    all_target_argmax = ops.squeeze(
-        ops.argmax(target_logits_3d, axis=-1), axis=-1
-    )
-    target_argmax_draft = ops.rebind(
-        all_target_argmax[:, :-1], [Dim("batch_size"), Dim("num_steps")]
-    )
-    bonus_argmax = all_target_argmax[:, -1:]
-    rejected_greedy = ops.not_equal(
-        token_indices, target_argmax_draft.cast(token_indices.dtype)
-    )
-    recovered_greedy = target_argmax_draft.cast(recovered_strict.dtype)
+    bonus_argmax: TensorValue | None = None
+    if greedy_in_kernel:
+        rejected_greedy = rejected_strict
+        recovered_greedy = recovered_strict
+    else:
+        all_target_argmax = ops.squeeze(
+            ops.argmax(target_logits_3d, axis=-1), axis=-1
+        )
+        target_argmax_draft = ops.rebind(
+            all_target_argmax[:, :-1], [Dim("batch_size"), Dim("num_steps")]
+        )
+        bonus_argmax = all_target_argmax[:, -1:]
+        rejected_greedy = ops.not_equal(
+            token_indices, target_argmax_draft.cast(token_indices.dtype)
+        )
+        recovered_greedy = target_argmax_draft.cast(recovered_strict.dtype)
 
     use_relaxed = (
         in_thinking_phase is not None
@@ -1315,14 +1334,17 @@ def stochastic_acceptance_sampler(
         rejected = rejected_strict
         recovered_token_ids = recovered_strict
 
-    is_greedy_bk = ops.broadcast_to(
-        ops.unsqueeze(is_greedy_row, axis=-1),
-        shape=[Dim("batch_size"), Dim("num_steps")],
-    )
-    rejected = ops.where(is_greedy_bk, rejected_greedy, rejected)
-    recovered_token_ids = ops.where(
-        is_greedy_bk, recovered_greedy, recovered_token_ids
-    )
+    # With the greedy verdict from the kernel, only relaxed thinking rows can
+    # differ from it.
+    if not greedy_in_kernel or use_relaxed:
+        is_greedy_bk = ops.broadcast_to(
+            ops.unsqueeze(is_greedy_row, axis=-1),
+            shape=[Dim("batch_size"), Dim("num_steps")],
+        )
+        rejected = ops.where(is_greedy_bk, rejected_greedy, rejected)
+        recovered_token_ids = ops.where(
+            is_greedy_bk, recovered_greedy, recovered_token_ids
+        )
 
     if draft_proposal == "sampled":
         # Commit the draft token where accepted so ``recovered`` is the
@@ -1362,16 +1384,17 @@ def stochastic_acceptance_sampler(
             min_top_p=min_top_p,
             seed=seed_per_batch,
         ).tensor
-    is_greedy_b = ops.broadcast_to(
-        ops.unsqueeze(is_greedy_row, axis=-1), shape=[Dim("batch_size"), 1]
-    )
-    bonus_token_tensor = ops.where(
-        is_greedy_b,
-        ops.rebind(bonus_argmax, [Dim("batch_size"), 1]).cast(
-            bonus_token_tensor.dtype
-        ),
-        bonus_token_tensor,
-    )
+    if bonus_argmax is not None:
+        is_greedy_b = ops.broadcast_to(
+            ops.unsqueeze(is_greedy_row, axis=-1), shape=[Dim("batch_size"), 1]
+        )
+        bonus_token_tensor = ops.where(
+            is_greedy_b,
+            ops.rebind(bonus_argmax, [Dim("batch_size"), 1]).cast(
+                bonus_token_tensor.dtype
+            ),
+            bonus_token_tensor,
+        )
 
     return first_rejected_idx, recovered_token_ids, bonus_token_tensor
 

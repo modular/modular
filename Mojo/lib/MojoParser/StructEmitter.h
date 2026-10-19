@@ -25,6 +25,7 @@
 
 namespace M::KGEN::LIT {
 
+class AliasASTDecl;
 class DefASTDecl;
 class StructASTDecl;
 
@@ -136,7 +137,7 @@ public:
       bool synthetic = true);
 
   /// Synthesize an unresolved alias into the struct with the specified name .
-  ASTDecl *synthesizeUnresolvedAlias(StringRef name);
+  AliasASTDecl *synthesizeUnresolvedAlias(StringRef name);
 
   /// Synthesize the members of an `__enum` from the `lit.enum.case` ops in its
   /// body: the `EnumLike` case lists, the storage field, a `comptime` member
@@ -150,16 +151,17 @@ public:
                                          ParamListAttr caseNames,
                                          ParamListAttr caseTypes);
   /// Synthesize the static method that constructs case `caseName` of an
-  /// `__enum` from its `payload` types.
+  /// `__enum` from its `payload` types, documented by the case's `docString`.
   LogicalResult synthesizeEnumCaseConstructor(StringRef caseName,
                                               ArrayRef<Type> payload,
-                                              SMLoc caseLoc);
+                                              SMLoc caseLoc,
+                                              DocStringAttr docString);
   /// Populate the body of a case constructor synthesized by
   /// `synthesizeEnumCaseConstructor`.
-  LogicalResult populateEnumCaseConstructor(ASTDecl &fnDecl);
+  LogicalResult populateEnumCaseConstructor(DefASTDecl &fnDecl);
   /// Compute the value of `aliasDecl`, the `comptime` member that
   /// `synthesizeEnumMembers` declared for a case without a payload.
-  LogicalResult resolveEnumCaseAlias(ASTDecl &aliasDecl);
+  LogicalResult resolveEnumCaseAlias(AliasASTDecl &aliasDecl);
   TypedAttr populateSpecialFnIsTrivial(SpecialFunctionKind kind);
 
   /// Like synthesizeMethodInStruct but accepts higher-level signature

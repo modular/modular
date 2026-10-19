@@ -20,7 +20,7 @@ comptime tN = 4
 
 @inline(.always)
 def writeTile(
-    c: UnsafePointer[Float32, MutAnyOrigin],
+    c: MutPointer[Float32, MutAnyOrigin],
     ldc: Int,
     maxRow: Int,
     maxCol: Int,

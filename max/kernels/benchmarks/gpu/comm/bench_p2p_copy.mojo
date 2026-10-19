@@ -70,14 +70,15 @@ comptime _target_address_space = (
 
 
 def _mode_name[direction: Int]() -> String:
-    comptime if direction == 0:
-        return "unidir-push"
-    elif direction == 1:
-        return "unidir-pull"
-    elif direction == 2:
-        return "bidir-push"
-    else:
-        return "bidir-pull"
+    comptime match direction:
+        case 0:
+            return "unidir-push"
+        case 1:
+            return "unidir-pull"
+        case 2:
+            return "bidir-push"
+        case _:
+            return "bidir-pull"
 
 
 @__llvm_metadata(
@@ -99,10 +100,10 @@ def p2p_copy_kernel[
 
     for idx in range(global_tid, num_vectors, stride):
         var elem_idx = idx * width
-        var data = src.address_space_cast[_target_address_space]().load[
+        var data = src.unsafe_address_space_cast[_target_address_space]().load[
             width=width, alignment=vec_align
         ](elem_idx)
-        dst.address_space_cast[_target_address_space]().store[
+        dst.unsafe_address_space_cast[_target_address_space]().store[
             width=width, alignment=vec_align
         ](elem_idx, data)
 

@@ -99,7 +99,7 @@ TEST(CompilerCachesTest, OtherThreadSeesChanges) {
 // Every key maps to one value, so any hit must be that value whichever thread
 // inserted it first.
 TEST(CompilerCachesTest, ConcurrentInsertAndLookup) {
-  CanonicalCache<const void *> cache;
+  ShardedCache<const void *> cache;
   constexpr unsigned numThreads = 8;
   constexpr uintptr_t keysPerThread = 50000;
   constexpr uintptr_t stride = 10000;

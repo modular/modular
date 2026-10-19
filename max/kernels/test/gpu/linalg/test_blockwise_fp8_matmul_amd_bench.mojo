@@ -60,9 +60,9 @@ def bench_shape[
     comptime warmup = 5
     comptime batches = 5
 
-    var M = Int(m.value())
-    var N = Int(n.value())
-    var K = Int(k.value())
+    var M = Int(m)
+    var N = Int(n)
+    var K = Int(k)
 
     var a_size = M * K
     var b_size = N * K

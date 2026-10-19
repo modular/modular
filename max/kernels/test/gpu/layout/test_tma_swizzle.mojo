@@ -48,8 +48,8 @@ def tma_swizzle_load_kernel[
     dst: TileTensor[dtype, type_of(layout), MutAnyOrigin],
     tma_tile: TMATensorTile[dtype, tile_shape, desc_shape],
 ):
-    comptime tileM = Int(tile_shape.element_types[0].static_value.value())
-    comptime tileN = Int(tile_shape.element_types[1].static_value.value())
+    comptime tileM = Int(tile_shape.element_types[0].static_value)
+    comptime tileN = Int(tile_shape.element_types[1].static_value)
     comptime expected_bytes = _idx_product[tile_shape]() * size_of[dtype]()
 
     comptime __tile_layout = row_major[tileM, tileN]()
@@ -93,10 +93,10 @@ def test_tma_swizzle[
         shape == tile_shape
     ), "Only support same shape and tile shape."
 
-    comptime shapeM = Int(shape[0].value())
-    comptime shapeN = Int(shape[1].value())
-    comptime tileM = Int(tile_shape.element_types[0].static_value.value())
-    comptime tileN = Int(tile_shape.element_types[1].static_value.value())
+    comptime shapeM = Int(shape[0])
+    comptime shapeN = Int(shape[1])
+    comptime tileM = Int(tile_shape.element_types[0].static_value)
+    comptime tileN = Int(tile_shape.element_types[1].static_value)
     comptime layout = row_major[shapeM, shapeN]()
     var src = HostDeviceTileTensor[dtype](layout, ctx)
     var dst = HostDeviceTileTensor[dtype](layout, ctx)
@@ -128,10 +128,10 @@ def test_tma_swizzle[
 
     # Descriptor tile is the copy per tma instruction. One load could have multiple tma copies.
     comptime descM = Int(
-        type_of(tma_tensor).desc_shape.element_types[0].static_value.value()
+        type_of(tma_tensor).desc_shape.element_types[0].static_value
     )
     comptime descN = Int(
-        type_of(tma_tensor).desc_shape.element_types[1].static_value.value()
+        type_of(tma_tensor).desc_shape.element_types[1].static_value
     )
     comptime desc_tile_size = descM * descN
     comptime __desc_layout = row_major[descM, descN]()

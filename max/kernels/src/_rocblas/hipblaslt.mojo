@@ -271,7 +271,7 @@ def _get_dylib_function[
 
 
 def hipblasLtCreate(
-    light_handle: UnsafePointer[hipblasLtHandle_t, _],
+    light_handle: Pointer[hipblasLtHandle_t, _],
 ) raises -> Status:
     return _get_dylib_function[
         "hipblasLtCreate",
@@ -286,7 +286,7 @@ def hipblasLtDestroy(light_handle: hipblasLtHandle_t) raises -> Status:
 
 
 def hipblasLtMatmulDescCreate(
-    matmul_desc: UnsafePointer[hipblasLtMatmulDesc_t, _],
+    matmul_desc: Pointer[hipblasLtMatmulDesc_t, _],
     compute_type: hipblasComputeType_t,
     scale_type: hipDataType_t,
 ) raises -> Status:
@@ -326,7 +326,7 @@ def hipblasLtMatmulDescDestroy(
 
 
 def hipblasLtMatrixLayoutCreate(
-    mat_layout: UnsafePointer[hipblasLtMatrixLayout_t, _],
+    mat_layout: Pointer[hipblasLtMatrixLayout_t, _],
     type: hipDataType_t,
     rows: UInt64,
     cols: UInt64,
@@ -371,7 +371,7 @@ def hipblasLtMatrixLayoutDestroy(
 
 
 def hipblasLtMatmulPreferenceCreate(
-    pref: UnsafePointer[hipblasLtMatmulPreference_t, _],
+    pref: Pointer[hipblasLtMatmulPreference_t, _],
 ) raises -> Status:
     return _get_dylib_function[
         "hipblasLtMatmulPreferenceCreate",
@@ -388,8 +388,8 @@ def hipblasLtMatmulAlgoGetHeuristic(
     _ddesc: hipblasLtMatrixLayout_t,
     preference: hipblasLtMatmulPreference_t,
     requested_algo_count: Int,
-    heuristic_results_array: UnsafePointer[hipblasLtMatmulHeuristicResult_t, _],
-    return_algo_count: UnsafePointer[Int, _],
+    heuristic_results_array: Pointer[hipblasLtMatmulHeuristicResult_t, _],
+    return_algo_count: Pointer[Int, _],
 ) raises -> Status:
     return _get_dylib_function[
         "hipblasLtMatmulAlgoGetHeuristic",
@@ -441,7 +441,7 @@ def hipblasLtMatmul(
     _cdesc: hipblasLtMatrixLayout_t,
     _d: OptionalPointer[NoneType, _],
     _ddesc: hipblasLtMatrixLayout_t,
-    algo: UnsafePointer[hipblasLtMatmulAlgo_t, _],
+    algo: Pointer[hipblasLtMatmulAlgo_t, _],
     workspace: OpaquePointer[_],
     workspace_size_in_bytes: Int,
     stream: hipStream_t,

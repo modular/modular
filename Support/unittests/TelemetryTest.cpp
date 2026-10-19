@@ -15,6 +15,8 @@
 #include "Support/Configuration.h"
 #include "Support/FileSystemExtras.h"
 #include "Support/Telemetry/Logs.h"
+#include "opentelemetry/exporters/otlp/otlp_http_log_record_exporter_options.h"
+#include "opentelemetry/exporters/otlp/otlp_http_metric_exporter_options.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/MemoryBuffer.h"
 
@@ -24,6 +26,7 @@
 #include <fstream>
 #include <mutex>
 #include <thread>
+#include <utility>
 
 #include <stdlib.h>
 
@@ -1039,6 +1042,33 @@ TEST(Telemetry, ModularEmployee) {
 TEST(Telemetry, OtlpRequestTimeout) {
   EXPECT_GT(kOtlpRequestTimeout.count(), 0);
   EXPECT_LE(kOtlpRequestTimeout.count(), 30000);
+}
+
+TEST(Telemetry, IsModularEndpoint) {
+  EXPECT_TRUE(isModularEndpoint("https://telemetry.modular.com:443"));
+  EXPECT_FALSE(isModularEndpoint("https://notmodular.com"));
+  EXPECT_TRUE(isModularEndpoint("https://u:t@telemetry.modular.com.:443"));
+  EXPECT_FALSE(isModularEndpoint("https://modular.com?@collector.example"));
+  EXPECT_TRUE(isModularEndpoint("https://collector.example#@modular.com"));
+  EXPECT_TRUE(isModularEndpoint("https://a@[b:c]@modular.com"));
+  EXPECT_FALSE(isModularEndpoint("https://modular.com:t@collector.example"));
+  EXPECT_TRUE(isModularEndpoint("https://telemetry.modular.com?x"));
+}
+
+TEST(Telemetry, OtlpHeadersDroppedForModular) {
+  EnvGuard generic("OTEL_EXPORTER_OTLP_HEADERS", "a=1");
+  EnvGuard metrics("OTEL_EXPORTER_OTLP_METRICS_HEADERS", "m=2");
+  EnvGuard logs("OTEL_EXPORTER_OTLP_LOGS_HEADERS", "l=3");
+  for (auto [endpoint, expected] :
+       {std::pair<StringRef, size_t>{"https://modular.com", 0},
+        std::pair<StringRef, size_t>{"https://collector.example", 2}}) {
+    opentelemetry::exporter::otlp::OtlpHttpMetricExporterOptions metricOptions;
+    dropHeadersForModular(metricOptions, endpoint);
+    EXPECT_EQ(metricOptions.http_headers.size(), expected) << endpoint.str();
+    opentelemetry::exporter::otlp::OtlpHttpLogRecordExporterOptions logOptions;
+    dropHeadersForModular(logOptions, endpoint);
+    EXPECT_EQ(logOptions.http_headers.size(), expected) << endpoint.str();
+  }
 }
 
 /// Verify that warnOnExportFailure emits a one-time warning to stderr with

@@ -36,6 +36,7 @@ from layout import (
     coord_to_index_list,
     row_major,
 )
+from nn.activations import relu
 from nn.normalization import rms_norm_quantize_dynamic_scaled_fp8
 from .rowwise_normalization import rms_norm_fused_quantize_dynamic_scaled_fp8
 from std.utils.coord import ComptimeInt
@@ -47,6 +48,7 @@ from linalg.fp8_quantization import (
 from linalg.block_scaled_quantization import (
     quantize_dynamic_block_scaled,
     grouped_quantize_dynamic_scaled_fp4_async,
+    grouped_quantize_nvfp4_row_amax,
     block_scales_interleave,
     quantize_dynamic_block_scaled_mxfp4,
 )
@@ -101,7 +103,6 @@ from std.logger import Logger
 comptime logger = Logger()
 
 from std.utils import IndexList
-from std.utils.index import Index
 
 # ===-----------------------------------------------------------------------===#
 from .kernels import *
@@ -121,13 +122,13 @@ struct RMSNormFusedQuantizeDynamicScaledFP8:
         scale_dtype: DType,
         rank: Int,
         target: StaticString,
+        epsilon: Float32,
+        weight_offset: Float32,
     ](
         output: OutputTensor[dtype=output_dtype, rank=rank, ...],
         scales: OutputTensor[dtype=scale_dtype, rank=rank, ...],
         input: FusedInputTensor[dtype=input_dtype, rank=rank, ...],
         gamma: InputTensor[dtype=input_dtype, rank=1, ...],
-        epsilon: Float32,
-        weight_offset: Scalar[dtype=input_dtype],
         scale_ub: Float32,
         ctx: DeviceContext,
     ) capturing raises:
@@ -157,7 +158,7 @@ struct RMSNormFusedQuantizeDynamicScaledFP8:
         def output_fn[
             width: SIMDLength, alignment: Int
         ](coords: Coord, val: SIMD[output_dtype, width]) {var out_t}:
-            out_t.store[width=width, alignment=alignment](coords, val)
+            out_t.store[alignment=alignment](coords, val)
 
         @inline(.always)
         def scale_fn(
@@ -165,7 +166,7 @@ struct RMSNormFusedQuantizeDynamicScaledFP8:
         ) {var scale_t, var in_shape}:
             var row = 0
             comptime for i in range(rank - 1):
-                row = row * in_shape[i] + Int(coords[i].value())
+                row = row * in_shape[i] + Int(coords[i])
             scale_t.store_linear[width=1, alignment=1](IndexList[1](row), val)
 
         # Static row width (when known) enables the register-cached row path.
@@ -182,7 +183,7 @@ struct RMSNormFusedQuantizeDynamicScaledFP8:
                 ComptimeInt[cols](),
                 gamma.to_tile_tensor[.int64](),
                 epsilon.cast[input_dtype](),
-                weight_offset,
+                weight_offset.cast[input_dtype](),
                 scale_ub,
                 ctx,
             )
@@ -194,10 +195,10 @@ struct RMSNormFusedQuantizeDynamicScaledFP8:
                 output_fn,
                 scale_fn,
                 input.shape_coord(),
-                Int(Int(input.shape()[rank - 1])),
+                Int(input.shape()[rank - 1]),
                 gamma.to_tile_tensor[.int64](),
                 epsilon.cast[input_dtype](),
-                weight_offset,
+                weight_offset.cast[input_dtype](),
                 scale_ub,
                 ctx,
             )
@@ -206,13 +207,9 @@ struct RMSNormFusedQuantizeDynamicScaledFP8:
 @extensibility.register_shape_function(
     "mo.composite.rms_norm_fused_quantize_dynamic_scaled_fp8"
 )
-def composite_rms_norm_fused_quantize_dynamic_scaled_fp8_shape[
-    input_dtype: DType,
-](
+def composite_rms_norm_fused_quantize_dynamic_scaled_fp8_shape(
     input: Some[Tensor],
     gamma: Some[Tensor],
-    epsilon: Float32,
-    weight_offset: Scalar[dtype=input_dtype],
     scale_ub: Float32,
 ) -> IndexList[type_of(input).rank]:
     """Computes the output shapes for the fused RMS norm and dynamic scaled FP8 quantization op.
@@ -221,9 +218,6 @@ def composite_rms_norm_fused_quantize_dynamic_scaled_fp8_shape[
         type_of(gamma).dtype == type_of(input).dtype
     ), "gamma dtype must match input dtype"
     comptime assert type_of(gamma).rank == 1, "gamma must be rank 1"
-    comptime assert (
-        input_dtype == type_of(input).dtype
-    ), "weight_offset dtype must match input dtype"
     return rebind[IndexList[type_of(input).rank]](
         coord_to_index_list(input.shape().tuple())
     )
@@ -268,7 +262,7 @@ struct RMSNormQuantizeDynamicScaledFloat8:
             width: Int, alignment: Int
         ](row: Int, col: Int) {var input} -> SIMD[input_type, width]:
             return input._lambda_load[width=width, element_alignment=alignment](
-                Index(row, col)
+                (row, col)
             )
 
         rms_norm_quantize_dynamic_scaled_fp8[
@@ -893,7 +887,7 @@ struct QMatmulGPURepackGPTQ_b4_g128_desc_act:
         gpu_qint4_repack_GPTQ[128, target](
             b.to_tile_tensor(),
             b_packed.to_tile_tensor(),
-            TileTensor(permutation.ptr, row_major(Int(permutation.dim[0]())))
+            permutation.reshape(row_major(Int(permutation.dim[0]())))
             .as_imm()
             .as_unsafe_any_origin(),
             ctx=ctx,
@@ -1048,6 +1042,129 @@ struct Struct_grouped_quantize_dynamic_block_scaled_with_row_indices:
             scales_offsets.to_tile_tensor[.int64](),
             expert_ids.to_tile_tensor[.int64](),
             sf_tensor.to_tile_tensor[.int64](),
+            context,
+            row_indices.to_tile_tensor[.int64]()
+            .as_unsafe_any_origin()
+            .as_imm(),
+        )
+
+
+@extensibility.register("mo.grouped.quantize.nvfp4.row_scaled")
+struct Struct_grouped_quantize_nvfp4_row_scaled:
+    """Registers the `mo.grouped.quantize.nvfp4.row_scaled` graph op with the graph compiler.
+
+    Quantizes grouped BF16 rows to NVFP4 with a global scale per row, taken
+    from the row's amax inside the kernel, and returns the scales for the
+    grouped matmul's `a_row_scales`. The result is bit-identical to the
+    chain of a row amax, two BF16 roundings and
+    `mo.grouped.quantize.dynamic.block.scaled` with a tensor-wise scale of 1.
+    `apply_relu2` quantizes `relu(x) * relu(x)` in place of `x`, with
+    `relu` from `nn.activations`.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        out_dtype: DType,
+        scales_type: DType,
+        in_dtype: DType,
+        //,
+        scales_rank: Int,
+        apply_relu2: Int,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=out_dtype, rank=2, ...],
+        scales: OutputTensor[dtype=scales_type, rank=scales_rank, ...],
+        row_scales: OutputTensor[dtype=.bfloat16, rank=1, ...],
+        input: InputTensor[dtype=in_dtype, rank=2, ...],
+        row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+        scales_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+        context: DeviceContext,
+    ) raises:
+        comptime assert is_gpu[
+            target
+        ](), "grouped quantize nvfp4 row scaled only supports GPUs"
+
+        @__parameter
+        @inline(.always)
+        def input_fn[
+            dtype: DType, width: SIMDLength
+        ](v: SIMD[dtype, width]) capturing -> SIMD[dtype, width]:
+            comptime if apply_relu2 != 0:
+                var r = relu(v)
+                return r * r
+            else:
+                return v
+
+        grouped_quantize_nvfp4_row_amax[input_fn=input_fn](
+            output.to_tile_tensor[.int64](),
+            scales.to_tile_tensor[.int64](),
+            row_scales.to_tile_tensor[.int64](),
+            input.to_tile_tensor[.int64](),
+            row_offsets.to_tile_tensor[.int64](),
+            scales_offsets.to_tile_tensor[.int64](),
+            context,
+        )
+
+
+@extensibility.register("mo.grouped.quantize.nvfp4.row_scaled.with_row_indices")
+struct Struct_grouped_quantize_nvfp4_row_scaled_with_row_indices:
+    """Registers the `mo.grouped.quantize.nvfp4.row_scaled.with_row_indices` graph op with the graph compiler.
+
+    The row-gather variant of `mo.grouped.quantize.nvfp4.row_scaled`: output
+    row `i` quantizes input row `row_indices[i] // row_index_divisor`, with
+    that row's own scale. A separate op carries the extra operand because
+    graph ops have no optional inputs.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        out_dtype: DType,
+        scales_type: DType,
+        in_dtype: DType,
+        row_indices_dtype: DType,
+        //,
+        scales_rank: Int,
+        apply_relu2: Int,
+        row_index_divisor: Int,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=out_dtype, rank=2, ...],
+        scales: OutputTensor[dtype=scales_type, rank=scales_rank, ...],
+        row_scales: OutputTensor[dtype=.bfloat16, rank=1, ...],
+        input: InputTensor[dtype=in_dtype, rank=2, ...],
+        row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+        scales_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+        row_indices: InputTensor[dtype=row_indices_dtype, rank=1, ...],
+        context: DeviceContext,
+    ) raises:
+        comptime assert is_gpu[
+            target
+        ](), "grouped quantize nvfp4 row scaled only supports GPUs"
+
+        @__parameter
+        @inline(.always)
+        def input_fn[
+            dtype: DType, width: SIMDLength
+        ](v: SIMD[dtype, width]) capturing -> SIMD[dtype, width]:
+            comptime if apply_relu2 != 0:
+                var r = relu(v)
+                return r * r
+            else:
+                return v
+
+        grouped_quantize_nvfp4_row_amax[
+            input_fn=input_fn,
+            row_indices_dtype=row_indices_dtype,
+            row_index_divisor=row_index_divisor,
+        ](
+            output.to_tile_tensor[.int64](),
+            scales.to_tile_tensor[.int64](),
+            row_scales.to_tile_tensor[.int64](),
+            input.to_tile_tensor[.int64](),
+            row_offsets.to_tile_tensor[.int64](),
+            scales_offsets.to_tile_tensor[.int64](),
             context,
             row_indices.to_tile_tensor[.int64]()
             .as_unsafe_any_origin()
@@ -1316,10 +1433,10 @@ struct Struct_block_scaled_preshuffle_scale_4d_per_expert:
         var raw_e8 = input.to_tile_tensor[.int64]()
         var dst_e8 = output.to_tile_tensor[.int64]()
         var raw_tt = TileTensor[mut=False](
-            raw_e8._storage.bitcast[UInt8](), raw_e8.layout
+            raw_e8._storage.unsafe_bitcast[UInt8](), raw_e8.layout
         )
         var dst_tt = TileTensor[mut=True](
-            dst_e8._storage.bitcast[UInt8](), dst_e8.layout
+            dst_e8._storage.unsafe_bitcast[UInt8](), dst_e8.layout
         )
         var a_off_tt = expert_start_indices.to_tile_tensor[.int64]()
         comptime K_SCALES = type_of(raw_tt).static_shape[1]
@@ -1468,7 +1585,7 @@ struct QuantizeTensorDynamicScaledFloat8:
             width: Int, alignment: Int
         ](row: Int, col: Int) {var input} -> SIMD[input_type, width]:
             return input._lambda_load[width=width, element_alignment=alignment](
-                Index(row, col)
+                (row, col)
             )
 
         quantize_tensor_dynamic_scaled_fp8[
@@ -1499,7 +1616,7 @@ struct QuantizeDynamicScaledFloat8:
         //,
         group_size_or_per_token: Int,
         target: StaticString,
-        amax_floor: StaticString = "0",
+        amax_floor: Float32 = 0,
     ](
         output: OutputTensor[dtype=output_type, rank=2, ...],
         scales: OutputTensor[dtype=scales_type, rank=2, ...],
@@ -1509,17 +1626,14 @@ struct QuantizeDynamicScaledFloat8:
     ) raises:
         comptime assert is_gpu[target](), "only valid on GPUs"
 
-        # `ops.custom`'s extensibility bridge only accepts bool/int/str/DType
-        # parameters (no float), so `amax_floor` -- a host-known constant at
-        # every call site -- arrives string-encoded; `atof` is prelude.
-        var amax_floor_f32 = Float32(atof(amax_floor))
+        # The `0` default leaves the dynamic-scale floor unset.
 
         @inline(.always)
         def input_fn[
             width: Int, alignment: Int
         ](row: Int, col: Int) {var input} -> SIMD[input_type, width]:
             return input._lambda_load[width=width, element_alignment=alignment](
-                Index(row, col)
+                (row, col)
             )
 
         quantize_dynamic_scaled_fp8[
@@ -1533,7 +1647,7 @@ struct QuantizeDynamicScaledFloat8:
             scale_ub,
             ctx,
             num_rows=input.dim_size(0),
-            amax_floor=amax_floor_f32,
+            amax_floor=amax_floor,
         )
 
 
@@ -1552,7 +1666,6 @@ struct QuantizeDynamicScaledFloat8RowBounded:
     op by its two-operand signature.
     """
 
-    @__parameter
     @inline(.always)
     @staticmethod
     def execute[
@@ -1577,7 +1690,7 @@ struct QuantizeDynamicScaledFloat8RowBounded:
             width: Int, alignment: Int
         ](row: Int, col: Int) {var input} -> SIMD[input_type, width]:
             return input._lambda_load[width=width, element_alignment=alignment](
-                Index(row, col)
+                (row, col)
             )
 
         # `row_offsets` is the grouped-matmul prefix sum, so its last entry is

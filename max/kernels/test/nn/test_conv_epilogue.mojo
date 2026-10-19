@@ -13,7 +13,7 @@
 
 from std.math import isclose
 from std.random import rand
-from std.sys.info import simd_width_of
+from std.sys.info import align_of, simd_width_of
 
 from std.algorithm.functional import vectorize
 from layout import Coord, TileTensor, row_major
@@ -66,15 +66,16 @@ def test[
     var pad_h = IndexList[2](0)
     var pad_w = IndexList[2](0)
 
-    comptime if rank == 1:
-        pad_w = Index(pad[0], pad[1])
-    elif rank == 2:
-        pad_h = Index(pad[0], pad[1])
-        pad_w = Index(pad[2], pad[3])
-    elif rank == 3:
-        pad_d = Index(pad[0], pad[1])
-        pad_h = Index(pad[2], pad[3])
-        pad_w = Index(pad[4], pad[5])
+    comptime match rank:
+        case 1:
+            pad_w = Index(pad[0], pad[1])
+        case 2:
+            pad_h = Index(pad[0], pad[1])
+            pad_w = Index(pad[2], pad[3])
+        case 3:
+            pad_d = Index(pad[0], pad[1])
+            pad_h = Index(pad[2], pad[3])
+            pad_w = Index(pad[4], pad[5])
 
     var conv_shape = ConvShape[rank](
         n=N,
@@ -177,17 +178,18 @@ def test[
     var output_image_size = output_dims.flattened_length()
     for n in range(N):
         for i in range(output_image_size):
-            var output_ref_ptr = output_ref.ptr + F * (
-                i + output_image_size * n
-            )
+            var row_offset = F * (i + output_image_size * n)
 
             @inline(.always)
             def body0[width: Int](offset: Int) {var}:
-                output_ref_ptr.store(
-                    offset,
+                var coord = output_ref.layout.idx2crd(row_offset + offset)
+                output_ref.store[alignment=align_of[dtype]()](
+                    coord,
                     10.0
                     * (
-                        output_ref_ptr.load[width=width](offset)
+                        output_ref.load[
+                            width=width, alignment=align_of[dtype]()
+                        ](coord)
                         + bias_ptr.load[width=width](offset)
                     ),
                 )
@@ -196,11 +198,10 @@ def test[
 
     # Test epilogue
     @inline(.always)
-    @__parameter
-    def epilogue(coords: Coord, f_size: Int):
+    def epilogue(coords: Coord, f_size: Int) {imm}:
         @inline(.always)
         def body1[width: Int](idx: Int) {imm}:
-            var f = Int(coords[rank + 1].value()) + idx
+            var f = Int(coords[rank + 1]) + idx
             var curr_coords = coords
             curr_coords.replace_dynamic[rank + 1](f)
 
@@ -222,8 +223,15 @@ def test[
             dtype,
             True,
             conv_attr,
+            True,
+            type_of(epilogue),
+        ].run(
+            output,
+            input.as_imm(),
+            packed_filter.as_imm(),
+            conv_shape,
             epilogue,
-        ].run(output, input.as_imm(), packed_filter.as_imm(), conv_shape)
+        )
     else:
         ConvDirectNHWC[
             input.LayoutType,
@@ -234,14 +242,17 @@ def test[
             dtype,
             False,
             conv_attr,
-            epilogue,
-        ].run(output, input.as_imm(), filter.as_imm(), conv_shape)
+            True,
+            type_of(epilogue),
+        ].run(output, input.as_imm(), filter.as_imm(), conv_shape, epilogue)
 
     # Check results, return on the first failed comparison.
+    var output_flat = output.reshape(row_major(output_size))
+    var output_ref_flat = output_ref.reshape(row_major(output_size))
     for i in range(output_size):
         if not isclose(
-            output_ref.ptr[i],
-            output.ptr[i],
+            output_ref_flat[i],
+            output_flat[i],
             atol=1e-4,  # absolute error tolerance
             rtol=1e-4,  # relative error tolerance
         ):
@@ -250,8 +261,8 @@ def test[
             print("filter packed", filter_packed)
             print("num groups", num_groups)
             print("flat output index:", i)
-            print("Golden value: ", output_ref.ptr[i])
-            print("Actual value: ", output.ptr[i])
+            print("Golden value: ", output_ref_flat[i])
+            print("Actual value: ", output_flat[i])
             bias_ptr.free()
             return
 

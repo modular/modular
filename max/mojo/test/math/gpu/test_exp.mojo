@@ -42,7 +42,7 @@ def run_elementwise[
     def func[
         simd_width: Int, alignment: Int = 1
     ](idx0: Coord) {var out_buffer, var in_buffer}:
-        var idx = Int(idx0[0].value())
+        var idx = Int(idx0[0])
 
         out_buffer.unsafe_ptr().unsafe_store[width=simd_width](
             idx, exp(in_buffer.unsafe_ptr().unsafe_load[width=simd_width](idx))

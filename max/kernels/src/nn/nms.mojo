@@ -17,7 +17,6 @@ from std.math import iota
 from std.memory import unsafe_stack_allocation
 
 from layout import (
-    Coord,
     DefaultEngine,
     Idx,
     ImmTileTensor,
@@ -300,19 +299,19 @@ def non_max_suppression[
     comptime assert boxes.rank == 3, "boxes must be of rank 3"
     comptime assert scores.rank == 3, "scores must be of rank 3"
 
-    var batch_size = Int(boxes.layout.shape[0]().value())
-    var num_boxes = Int(boxes.layout.shape[1]().value())
-    var num_classes = Int(scores.layout.shape[1]().value())
+    var batch_size = Int(boxes.dim[0]())
+    var num_boxes = Int(boxes.dim[1]())
+    var num_classes = Int(scores.dim[1]())
 
-    assert Int(boxes.layout.shape[2]().value()) == 4, (
+    assert Int(boxes.dim[2]()) == 4, (
         "boxes must be specified with the 2D coords representing the"
         " diagonal corners"
     )
-    assert Int(boxes.layout.shape[0]().value()) == Int(
-        scores.layout.shape[0]().value()
+    assert Int(boxes.dim[0]()) == Int(
+        scores.dim[0]()
     ), "dim 0 of boxes and scores must be equal"
-    assert Int(boxes.layout.shape[1]().value()) == Int(
-        scores.layout.shape[2]().value()
+    assert Int(boxes.dim[1]()) == Int(
+        scores.dim[2]()
     ), "boxes and scores must contain the same number of boxes"
 
     if max_output_boxes_per_class == 0:
@@ -324,19 +323,18 @@ def non_max_suppression[
 
     for b in range(batch_size):
         for c in range(num_classes):
-            # Entries of per_class_scores_ptr are set to neginf when they no longer
+            # Entries of the per-class scores are set to neginf when they no longer
             # correspond to an eligible box
             # this happens when:
             #   1. Score does not meet score threshold (filtered out initially)
             #   2. IoU with an already-selected boc is above IOU threshold (suppressed)
-            var offset = scores.layout(Coord(b, c, Idx[0]))
-            var per_class_scores_ptr = scores.ptr + offset
-
             # Filter boxes by score threshold
             # This reduces the number of boxes to sort and process
             var num_boxes_remaining = 0
             for i in range(num_boxes):
-                var score = per_class_scores_ptr.load(i)
+                var score = rebind[Scalar[dtype]](
+                    scores.load[invariant=False]((b, c, i))
+                )
                 if score > score_threshold.cast[dtype]():
                     per_class_scores[i] = score
                     num_boxes_remaining += 1
@@ -402,12 +400,10 @@ def non_max_suppression[
                 #   2. The end contains suppressed boxes with score=-inf (order doesn't matter)
                 # Note: Use num_boxes_curr_pred (not num_boxes_remaining) because it
                 # represents the count before we marked boxes as suppressed above
-                var box_idxs_ptr: UnsafePointer[
-                    box_idxs.T, origin_of(box_idxs)
-                ] = box_idxs.unsafe_ptr()
+                var box_idxs_ptr = box_idxs.unsafe_ptr()
                 sort(
-                    Span[box_idxs.T, origin_of(box_idxs)](
-                        unsafe_ptr=box_idxs_ptr + pred_idx,
+                    Span(
+                        unsafe_ptr=box_idxs_ptr.unsafe_offset(pred_idx),
                         length=num_boxes_curr_pred,
                     ),
                     _greater_than,
@@ -535,16 +531,15 @@ def _nms_greedy_kernel[
         sh_row[0] = 0
 
     var pair = 0
-    while pair < Int(scores_arg.layout.shape[0]().value()) * n_classes:
+    while pair < Int(scores_arg.dim[0]()) * n_classes:
         var b, c = divmod(pair, n_classes)
 
         # Load, filter, and pad the current pair's candidates.
         var i = tid
-        var scores_base = scores_arg.ptr + scores_arg.layout(
-            Coord(Int32(b), Int32(c), Idx[0])
-        )
         while i < n:
-            var score = scores_base.unsafe_load(i)
+            var score = rebind[Scalar[dtype]](
+                scores_arg.load((Int32(b), Int32(c), i))
+            )
             if score > score_threshold.cast[dtype]():
                 # Eligible: keep the real score so the sort's total order
                 # matches the CPU path.
@@ -647,43 +642,48 @@ def _nms_greedy_kernel[
                 # agree; the clamp guards against future drift so this
                 # can never write past the allocation.
                 var row = sh_row[0]
-                var out_rows = Int64(output_arg.layout.shape[0]().value())
+                var out_rows = Int64(output_arg.dim[0]())
                 if row < out_rows:
-                    output_arg.ptr.unsafe_store(
-                        output_arg.layout(Coord(row, Idx[0])),
-                        Int64(b),
-                    )
-                    output_arg.ptr.unsafe_store(
-                        output_arg.layout(Coord(row, Idx[0])) + 1,
-                        Int64(c),
-                    )
-                    output_arg.ptr.unsafe_store(
-                        output_arg.layout(Coord(row, Idx[0])) + 2,
-                        Int64(winner),
-                    )
+                    output_arg.store((row, Idx[0]), Int64(b))
+                    output_arg.store((row, Idx[1]), Int64(c))
+                    output_arg.store((row, Idx[2]), Int64(winner))
                 sh_row[0] = row + 1
 
             # Suppress remaining candidates that overlap the winner.
-            var w_base = boxes_arg.layout(Coord(Int32(b), winner, Idx[0]))
-            var w_y1 = boxes_arg.ptr.unsafe_load(w_base)
-            var w_x1 = boxes_arg.ptr.unsafe_load(w_base + 1)
-            var w_y2 = boxes_arg.ptr.unsafe_load(w_base + 2)
-            var w_x2 = boxes_arg.ptr.unsafe_load(w_base + 3)
+            var w_y1 = rebind[Scalar[dtype]](
+                boxes_arg.load((Int32(b), winner, Idx[0]))
+            )
+            var w_x1 = rebind[Scalar[dtype]](
+                boxes_arg.load((Int32(b), winner, Idx[1]))
+            )
+            var w_y2 = rebind[Scalar[dtype]](
+                boxes_arg.load((Int32(b), winner, Idx[2]))
+            )
+            var w_x2 = rebind[Scalar[dtype]](
+                boxes_arg.load((Int32(b), winner, Idx[3]))
+            )
             i = tid
             while i < n:
                 if sh_alive[i]:
                     var cand = sh_index[i]
-                    var c_base = boxes_arg.layout(Coord(Int32(b), cand, Idx[0]))
                     if (
                         _iou_pair[dtype](
                             w_y1,
                             w_x1,
                             w_y2,
                             w_x2,
-                            boxes_arg.ptr.unsafe_load(c_base),
-                            boxes_arg.ptr.unsafe_load(c_base + 1),
-                            boxes_arg.ptr.unsafe_load(c_base + 2),
-                            boxes_arg.ptr.unsafe_load(c_base + 3),
+                            rebind[Scalar[dtype]](
+                                boxes_arg.load((Int32(b), cand, Idx[0]))
+                            ),
+                            rebind[Scalar[dtype]](
+                                boxes_arg.load((Int32(b), cand, Idx[1]))
+                            ),
+                            rebind[Scalar[dtype]](
+                                boxes_arg.load((Int32(b), cand, Idx[2]))
+                            ),
+                            rebind[Scalar[dtype]](
+                                boxes_arg.load((Int32(b), cand, Idx[3]))
+                            ),
                         )
                         > iou_threshold.cast[dtype]()
                     ):
@@ -704,11 +704,11 @@ def non_max_suppression_gpu[
     ScoresEngine: TensorEngine = DefaultEngine[element_width=1],
     OutputEngine: TensorEngine = DefaultEngine[element_width=1],
 ](
-    boxes: TileTensor[
-        mut=True, dtype, BoxesLayout, MutAnyOrigin, Engine=BoxesEngine
+    boxes: ImmTileTensor[
+        dtype, BoxesLayout, ImmutAnyOrigin, Engine=BoxesEngine
     ],
-    scores: TileTensor[
-        mut=True, dtype, ScoresLayout, MutAnyOrigin, Engine=ScoresEngine
+    scores: ImmTileTensor[
+        dtype, ScoresLayout, ImmutAnyOrigin, Engine=ScoresEngine
     ],
     output: TileTensor[
         mut=True, .int64, OutputLayout, MutAnyOrigin, Engine=OutputEngine
@@ -753,9 +753,9 @@ def non_max_suppression_gpu[
     comptime assert scores.flat_rank == 3, "scores must be rank 3"
     comptime assert output.flat_rank == 2, "output must be rank 2"
 
-    var batch = Int(boxes.layout.shape[0]().value())
-    var num_boxes = Int(boxes.layout.shape[1]().value())
-    var num_classes = Int(scores.layout.shape[1]().value())
+    var batch = Int(boxes.dim[0]())
+    var num_boxes = Int(boxes.dim[1]())
+    var num_classes = Int(scores.dim[1]())
 
     # The kernel takes Int32 pair coordinates and extents; dimensions
     # beyond Int32 cannot be handled without wrapping (and would need
@@ -773,15 +773,15 @@ def non_max_suppression_gpu[
 
     # Same invariants the CPU kernel asserts; the verifier does not
     # enforce shape consistency between boxes and scores.
-    assert Int(boxes.layout.shape[2]().value()) == 4, (
+    assert Int(boxes.dim[2]()) == 4, (
         "boxes must be specified with the 2D coords representing the"
         " diagonal corners"
     )
-    assert Int(boxes.layout.shape[0]().value()) == Int(
-        scores.layout.shape[0]().value()
+    assert Int(boxes.dim[0]()) == Int(
+        scores.dim[0]()
     ), "dim 0 of boxes and scores must be equal"
     assert num_boxes == Int(
-        scores.layout.shape[2]().value()
+        scores.dim[2]()
     ), "boxes and scores must contain the same number of boxes"
 
     if num_boxes > _NMS_MAX_LOCAL:
@@ -808,8 +808,8 @@ def non_max_suppression_gpu[
         OutputEngine=OutputEngine,
     ]
     ctx.enqueue_function[kernel](
-        boxes.as_imm(),
-        scores.as_imm(),
+        boxes,
+        scores,
         output,
         Int32(num_boxes),
         Int32(num_classes),
@@ -831,11 +831,11 @@ def non_max_suppression[
     ScoresEngine: TensorEngine = DefaultEngine[element_width=1],
     OutputEngine: TensorEngine = DefaultEngine[element_width=1],
 ](
-    boxes: TileTensor[
-        mut=True, dtype, BoxesLayout, MutAnyOrigin, Engine=BoxesEngine
+    boxes: ImmTileTensor[
+        dtype, BoxesLayout, ImmutAnyOrigin, Engine=BoxesEngine
     ],
-    scores: TileTensor[
-        mut=True, dtype, ScoresLayout, MutAnyOrigin, Engine=ScoresEngine
+    scores: ImmTileTensor[
+        dtype, ScoresLayout, ImmutAnyOrigin, Engine=ScoresEngine
     ],
     output: TileTensor[
         mut=True, .int64, OutputLayout, MutAnyOrigin, Engine=OutputEngine
@@ -878,7 +878,7 @@ def non_max_suppression[
     comptime assert scores.flat_rank == 3, "scores must be rank 3"
     comptime assert output.flat_rank == 2, "output must be rank 2"
 
-    var num_boxes = Int(boxes.layout.shape[1]().value())
+    var num_boxes = Int(boxes.dim[1]())
 
     comptime if is_cpu[target]():
         # Host tensors: run the CPU kernel directly, no copies.
@@ -959,11 +959,11 @@ def _nms_host_fallback[
     ScoresEngine: TensorEngine = DefaultEngine[element_width=1],
     OutputEngine: TensorEngine = DefaultEngine[element_width=1],
 ](
-    boxes: TileTensor[
-        mut=True, dtype, BoxesLayout, MutAnyOrigin, Engine=BoxesEngine
+    boxes: ImmTileTensor[
+        dtype, BoxesLayout, ImmutAnyOrigin, Engine=BoxesEngine
     ],
-    scores: TileTensor[
-        mut=True, dtype, ScoresLayout, MutAnyOrigin, Engine=ScoresEngine
+    scores: ImmTileTensor[
+        dtype, ScoresLayout, ImmutAnyOrigin, Engine=ScoresEngine
     ],
     output: TileTensor[
         mut=True, .int64, OutputLayout, MutAnyOrigin, Engine=OutputEngine
@@ -975,9 +975,9 @@ def _nms_host_fallback[
     num_boxes: Int,
 ) raises:
     """Host NMS fallback: device -> host copies, CPU kernel, copy back."""
-    var batch = Int(boxes.layout.shape[0]().value())
-    var n_classes = Int(scores.layout.shape[1]().value())
-    var out_rows = Int(output.layout.shape[0]().value())
+    var batch = Int(boxes.dim[0]())
+    var n_classes = Int(scores.dim[1]())
+    var out_rows = Int(output.dim[0]())
     var n_boxes_total = batch * num_boxes * 4
     var n_scores_total = batch * n_classes * num_boxes
     var n_out_total = out_rows * 3

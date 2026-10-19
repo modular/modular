@@ -35,12 +35,13 @@ var filled = Array[Int, 5](fill=42)
 
 from std.math import max, min, align_down
 import std.memory
+from std.builtin.builtin_slice import ContiguousSlice
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.builtin.rebind import downcast
-from std.collections import check_bounds
+from std.collections import check_bounds, check_slice_bounds
 import std.format._utils as fmt
 from std.reflection import reflect
-from std.hashlib.hasher import Hasher
+from std.hash.hasher import Hasher
 from std.sys import size_of
 from std.memory import (
     MaybeUninit,
@@ -719,6 +720,35 @@ struct Array[T: AnyType, length: Int](
         """
         check_bounds(idx, len(self))
         return self._unchecked_get(idx)
+
+    @inline(.always)
+    def __getitem__(
+        ref self, slc: ContiguousSlice, /
+    ) -> Span[Self.T, origin_of(self)]:
+        """Gets a span over the elements at the specified slice positions.
+
+        Aborts if `slc`'s start or end index is out of bounds (valid range is
+        `0` to `len(self)`, inclusive).
+
+        Args:
+            slc: The slice specifying the range of elements.
+
+        Returns:
+            A span over the specified slice of the array.
+
+        Examples:
+
+        ```mojo
+        var arr = [1, 2, 3, 4]
+        var middle = arr[1:3]
+        print(middle[0], middle[1])  # Prints 2 3
+        ```
+        """
+        var start, end = check_slice_bounds(slc, len(self))
+        return {
+            unsafe_ptr = self.unsafe_ptr().unsafe_offset(start),
+            length = end - start,
+        }
 
     @stable(since="1.0")
     @inline(.always)

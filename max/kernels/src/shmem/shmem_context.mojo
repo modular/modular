@@ -23,7 +23,7 @@ from max.algorithm import parallelize
 from std.collections.optional import OptionalReg
 from std.os import abort
 from std.builtin.device_passable import DevicePassable
-from std.sys import CompilationTarget, argv, default_accelerator
+from std.sys import CompilationTarget, argv
 
 from max.gpu.host import (
     ConstantMemoryMapping,
@@ -34,6 +34,7 @@ from max.gpu.host import (
     Dim,
     FuncAttribute,
     LaunchAttribute,
+    default_accelerator,
 )
 from max.gpu.host.device_context import _DumpPath
 from max.gpu.host.launch_attribute import (

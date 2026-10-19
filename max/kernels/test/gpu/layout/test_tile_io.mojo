@@ -14,9 +14,8 @@
 
 Each kernel moves a source tile through one or more intermediate address
 spaces (SHARED, LOCAL) and back out to a destination DRAM tile, using
-only `TileTensor` and the concrete `TileCopier` structs (no
-`LayoutTensor`). The host verifies that the
-destination tile matches the source.
+only `TileTensor` and the concrete `TileCopier` structs. The host
+verifies that the destination tile matches the source.
 
 Coverage:
 
@@ -44,6 +43,11 @@ Coverage:
   GENERIC (smoke-tests the masked write path of
   GenericToSharedAsyncTileCopier; runtime-shape zero-fill verification
   is a follow-up — see the kernel's docstring).
+- GENERIC -> SHARED -> GENERIC with `masked=True` on the SHARED -> GENERIC
+  copy and an explicit runtime valid-row bound (`copy_bounded` and the
+  `copy_sram_to_dram` wrapper): rows past the bound must stay untouched.
+  Covered for bf16 -> bf16 (plain and swizzled), fp32 -> bf16 and
+  fp32 -> fp16 (downcast), with bounds of 0, 1, 3, 5 and 8 rows.
 """
 
 from max.gpu.sync import barrier
@@ -63,6 +67,7 @@ from layout.tile_io import (
     LocalToSharedTileCopier,
     SharedToGenericTileCopier,
     SharedToLocalTileCopier,
+    copy_sram_to_dram,
 )
 from layout.tile_tensor import stack_allocation
 
@@ -440,6 +445,107 @@ def swizzled_async_generic_to_shared_to_generic_kernel(
     SharedToGenericTileCopier[thread_layout, swizzle=swizzle]().copy(dst, smem)
 
 
+comptime _MASK_ROWS = 8
+comptime _MASK_COLS = 32
+comptime _MASK_VEC = 8
+comptime _MASK_SENTINEL = 7
+
+
+def masked_shared_to_generic_kernel[
+    src_dtype: DType, dst_dtype: DType, swizzled: Bool
+](
+    src_ptr: MutPointer[Scalar[src_dtype], MutAnyOrigin],
+    dst_ptr: MutPointer[Scalar[dst_dtype], MutAnyOrigin],
+    valid_rows: Int32,
+):
+    """Roundtrip GENERIC -> SHARED -> masked GENERIC with a runtime row count.
+
+    The destination tile is statically shaped and the runtime `valid_rows` is
+    passed as the bound, so the masked
+    `SharedToGenericTileCopier` must leave every row at or past it untouched.
+    When `src_dtype` is FP32 and `dst_dtype` is BF16 the copy also downcasts.
+    """
+    comptime thread_layout = row_major(Idx[4], Idx[2])
+    comptime swizzle = make_swizzle[
+        num_rows=_MASK_ROWS, row_size=_MASK_COLS, access_size=_MASK_VEC
+    ]()
+
+    var src = TileTensor(src_ptr, row_major[_MASK_ROWS, _MASK_COLS]())
+    var dst = TileTensor(dst_ptr, row_major[_MASK_ROWS, _MASK_COLS]())
+    var smem = stack_allocation[dtype=src_dtype, address_space=.SHARED](
+        row_major[_MASK_ROWS, _MASK_COLS]()
+    )
+
+    comptime if swizzled:
+        # The async copier is the swizzled writer exercised against
+        # `SharedToGenericTileCopier` elsewhere in this file.
+        GenericToSharedAsyncTileCopier[thread_layout, swizzle=swizzle]().copy(
+            smem.vectorize[1, _MASK_VEC](), src.vectorize[1, _MASK_VEC]()
+        )
+        async_copy_commit_group()
+        async_copy_wait_all()
+        barrier()
+        SharedToGenericTileCopier[
+            thread_layout, swizzle=swizzle, masked=True
+        ]().copy_bounded(
+            dst.vectorize[1, _MASK_VEC](),
+            smem.vectorize[1, _MASK_VEC](),
+            Int(valid_rows),
+        )
+    else:
+        GenericToSharedTileCopier[thread_layout]().copy(
+            smem.vectorize[1, _MASK_VEC](), src.vectorize[1, _MASK_VEC]()
+        )
+        barrier()
+        copy_sram_to_dram[thread_layout, masked=True](
+            dst.vectorize[1, _MASK_VEC](),
+            smem.vectorize[1, _MASK_VEC](),
+            Int(valid_rows),
+        )
+
+
+def _run_masked[
+    src_dtype: DType, dst_dtype: DType, swizzled: Bool
+](valid_rows: Int, ctx: DeviceContext) raises:
+    comptime count = _MASK_ROWS * _MASK_COLS
+    print("== masked", src_dtype, "->", dst_dtype, swizzled, valid_rows)
+
+    var src_host = ctx.enqueue_create_host_buffer[src_dtype](count)
+    for i in range(count):
+        src_host[i] = Scalar[src_dtype](i % 64 + 1)
+
+    var src_dev = ctx.enqueue_create_buffer[src_dtype](count)
+    var dst_dev = ctx.enqueue_create_buffer[dst_dtype](count)
+    ctx.enqueue_copy(src_dev, src_host)
+    dst_dev.enqueue_fill(Scalar[dst_dtype](_MASK_SENTINEL))
+
+    ctx.enqueue_function[
+        masked_shared_to_generic_kernel[src_dtype, dst_dtype, swizzled]
+    ](src_dev, dst_dev, Int32(valid_rows), grid_dim=(1), block_dim=(8))
+
+    var dst_host = ctx.enqueue_create_host_buffer[dst_dtype](count)
+    ctx.enqueue_copy(dst_host, dst_dev)
+    ctx.synchronize()
+
+    for r in range(_MASK_ROWS):
+        for c in range(_MASK_COLS):
+            var i = r * _MASK_COLS + c
+            var expected = Scalar[dst_dtype](_MASK_SENTINEL)
+            if r < valid_rows:
+                expected = src_host[i].cast[dst_dtype]()
+            assert_equal(dst_host[i], expected)
+
+
+def test_masked_shared_to_generic(ctx: DeviceContext) raises:
+    # The swizzled writer (`cp.async`) caps vectors at 16 bytes, so the
+    # swizzled case covers only bf16; the downcast is covered unswizzled.
+    for rows in [0, 1, 3, 5, 8]:
+        _run_masked[.bfloat16, .bfloat16, False](rows, ctx)
+        _run_masked[.float32, .bfloat16, False](rows, ctx)
+        _run_masked[.float32, .float16, False](rows, ctx)
+        _run_masked[.bfloat16, .bfloat16, True](rows, ctx)
+
+
 def _run_roundtrip[
     kernel_fn: def(
         MutPointer[Float32, MutAnyOrigin],
@@ -609,3 +715,4 @@ def main() raises:
         test_masked_async_generic_to_shared_to_generic(ctx)
         test_access_size_swizzled_vectorized_async(ctx)
         test_access_size_swizzled_vectorized_async_bf16(ctx)
+        test_masked_shared_to_generic(ctx)

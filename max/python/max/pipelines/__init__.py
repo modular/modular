@@ -28,6 +28,7 @@ from max.pipelines.weights.hf_utils import download_weight_files
 from .architectures import register_all_models
 from .diffusion.pipeline import PixelGenerationPipeline
 from .lib.auto_model import AutoModel, AutoTokenizer
+from .lib.auto_pipeline import AutoPipeline
 from .lib.config import (
     KVCacheConfig,
     LoRAConfig,
@@ -81,6 +82,7 @@ __all__ = [
     "ADAPTER_CONFIG_FILE",
     "PIPELINE_REGISTRY",
     "AutoModel",
+    "AutoPipeline",
     "AutoTokenizer",
     "EagerUsageValidator",
     "EagerValidatorMode",

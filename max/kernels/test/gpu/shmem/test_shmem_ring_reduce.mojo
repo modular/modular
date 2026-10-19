@@ -67,9 +67,9 @@ def ring_reduce(
     if elems_per_block * (block_idx + 1) > nreduce:
         return
 
-    var src = src_ptr + block_idx * elems_per_block
-    var dst = dst_ptr + block_idx * elems_per_block
-    var signal = signal_ptr + block_idx
+    var src = src_ptr.unsafe_offset(block_idx * elems_per_block)
+    var dst = dst_ptr.unsafe_offset(block_idx * elems_per_block)
+    var signal = signal_ptr.unsafe_offset(block_idx)
 
     var chunk_elems = chunk_size // size_of[DType.int32]()
     var num_chunks = elems_per_block // chunk_elems
@@ -99,11 +99,11 @@ def ring_reduce(
                 SHMEM_SIGNAL_ADD,
                 peer,
             )
-        src += chunk_elems
-        dst += chunk_elems
+        src = src.unsafe_offset(chunk_elems)
+        dst = dst.unsafe_offset(chunk_elems)
 
     # Broadcast phase - final result flows back through ring
-    dst -= num_chunks * chunk_elems
+    dst = dst.unsafe_offset(-(num_chunks * chunk_elems))
     if thread_id == 0:
         for chunk in range(num_chunks):
             if mype < npes - 1:
@@ -116,7 +116,7 @@ def ring_reduce(
                 shmem_put_signal_nbi(
                     dst, dst, chunk_elems, signal, 1, SHMEM_SIGNAL_ADD, peer
                 )
-            dst += chunk_elems
+            dst = dst.unsafe_offset(chunk_elems)
         signal[0] = 0
 
 

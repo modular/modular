@@ -48,9 +48,10 @@ from std.collections.string.string import (
     _calc_initial_buffer_size_int64,
     _calc_initial_buffer_size,
 )
-from std.hashlib.hasher import Hasher
+from std.hash.hasher import Hasher
 from std.math import Ceilable, CeilDivable, Floorable, Truncable
 from std.math.math import _call_ptx_intrinsic, trunc
+from std._plugin import CurrentPlugin
 from std.sys import (
     CompilationTarget,
     Endian,
@@ -58,7 +59,6 @@ from std.sys import (
     align_of,
     bit_width_of,
     is_amd_gpu,
-    is_apple_gpu,
     is_gpu,
     is_nvidia_gpu,
     llvm_intrinsic,
@@ -303,14 +303,13 @@ def _has_native_f8_support() -> Bool:
     return _is_sm_9x_or_newer() or is_nvidia_gpu["sm_89"]() or is_amd_gpu()
 
 
-# Apple's Metal AIR backend has no `llvm.vector.splice` lowering;
-# `SIMD.{rotate,shift}_{left,right}` use `shufflevector` masks instead.
+# Shuffle masks for `SIMD.{rotate,shift}_{left,right}` on backends that do
+# not lower `llvm.vector.splice`.
 
 
 @inline(.nodebug)
-def _apple_rotate_mask[size: Int, shift: Int]() -> IndexList[size]:
-    """Mask for `SIMD.rotate_left[shift]()` on Apple GPU; any sign of `shift`.
-    """
+def _rotate_mask[size: Int, shift: Int]() -> IndexList[size]:
+    """Mask for `SIMD.rotate_left[shift]()`; any sign of `shift`."""
     var res = IndexList[size]()
     comptime for i in range(size):
         res[i] = (i + shift + size) % size
@@ -318,8 +317,8 @@ def _apple_rotate_mask[size: Int, shift: Int]() -> IndexList[size]:
 
 
 @inline(.nodebug)
-def _apple_shift_mask[size: Int, shift: Int]() -> IndexList[size]:
-    """Mask for `SIMD.shift_{left,right}[shift]()` on Apple GPU.
+def _shift_mask[size: Int, shift: Int]() -> IndexList[size]:
+    """Mask for `SIMD.shift_{left,right}[shift]()`.
 
     Sign of `shift` selects direction (positive=left, negative=right);
     out-of-range lanes index `other`, which callers pass as zero.
@@ -414,7 +413,7 @@ struct FastMathFlag(EnumLike, Equatable, ImplicitlyCopyable, RegisterPassable):
     ].values
 
     comptime _enum_case_types = TypeList.splat[
-        ParameterList[Self._enum_case_names].size, NoneType
+        ParameterList[Self._enum_case_names].length, NoneType
     ].values
 
     @inline(.always)
@@ -2735,7 +2734,7 @@ struct SIMD[dtype: DType, length: SIMDLength](
         """
 
         comptime assert (
-            output_size == mask.size
+            output_size == mask.length
         ), "size of the mask must match the output SIMD size"
 
         # FIXME: Support parameters on initializers better, removing __init__.
@@ -2954,7 +2953,7 @@ struct SIMD[dtype: DType, length: SIMDLength](
         if __is_run_in_comptime_interpreter:
             return slice_body()
 
-        comptime if is_apple_gpu():
+        comptime if not CurrentPlugin.lowers_subvector_intrinsics:
             return slice_body()
 
         return llvm_intrinsic[
@@ -2993,6 +2992,16 @@ struct SIMD[dtype: DType, length: SIMDLength](
                 input_width == 1
             ), "the input width must be 1 if the size is 1"
             return value[0]
+
+        # `llvm.vector.insert` needs a vector as its subvector operand, but a
+        # width-1 `SIMD` lowers to a scalar.
+        comptime if (
+            input_width == 1 or not CurrentPlugin.lowers_subvector_intrinsics
+        ):
+            var result = self
+            comptime for i in range(input_width):
+                result[offset + i] = value[i]
+            return result
 
         return llvm_intrinsic[
             "llvm.vector.insert", Self, has_side_effect=False
@@ -3475,8 +3484,8 @@ struct SIMD[dtype: DType, length: SIMDLength](
             comptime assert shift == 0, "for scalars the shift must be 0"
             return self
 
-        comptime if is_apple_gpu():
-            return self.shuffle[mask=_apple_rotate_mask[Self.length, shift]()]()
+        comptime if not CurrentPlugin.lowers_subvector_intrinsics:
+            return self.shuffle[mask=_rotate_mask[Self.length, shift]()]()
 
         comptime if shift >= 0:
             return llvm_intrinsic[
@@ -3544,10 +3553,8 @@ struct SIMD[dtype: DType, length: SIMDLength](
         elif shift == Self.length:
             return 0
 
-        comptime if is_apple_gpu():
-            return self.shuffle[mask=_apple_shift_mask[Self.length, shift]()](
-                Self()
-            )
+        comptime if not CurrentPlugin.lowers_subvector_intrinsics:
+            return self.shuffle[mask=_shift_mask[Self.length, shift]()](Self())
 
         return llvm_intrinsic[
             "llvm.vector.splice.left", Self, has_side_effect=False
@@ -3583,10 +3590,8 @@ struct SIMD[dtype: DType, length: SIMDLength](
         elif shift == Self.length:
             return 0
 
-        comptime if is_apple_gpu():
-            return self.shuffle[mask=_apple_shift_mask[Self.length, -shift]()](
-                Self()
-            )
+        comptime if not CurrentPlugin.lowers_subvector_intrinsics:
+            return self.shuffle[mask=_shift_mask[Self.length, -shift]()](Self())
 
         return llvm_intrinsic[
             "llvm.vector.splice.right", Self, has_side_effect=False
@@ -3750,22 +3755,13 @@ def _pow[
     """
 
     comptime if exp.dtype.is_floating_point() and base.dtype == exp.dtype:
-        comptime if is_apple_gpu():
-            # AIR has no bf16 overload of `air.pow`; Metal rejects it, so
-            # evaluate in f32 and narrow the result back.
-            comptime if base.dtype == .bfloat16:
-                return _pow(base.cast[.float32](), exp.cast[.float32]()).cast[
-                    base.dtype
-                ]()
-            return llvm_intrinsic[
-                "llvm.air.pow",
-                type_of(base),
-                type_of(base),
-                type_of(exp),
-                has_side_effect=False,
-            ](base, exp)
-        else:
+        if __is_run_in_comptime_interpreter:
             return _powf(base, exp)
+
+        comptime hook = CurrentPlugin.binary_math_fn[.pow, base.dtype, width]
+        comptime if hook:
+            return comptime (hook.value())(base, rebind[type_of(base)](exp))
+        return _powf(base, exp)
     elif exp.dtype.is_integral():
         # Common cases
         if all(exp.eq(2)):

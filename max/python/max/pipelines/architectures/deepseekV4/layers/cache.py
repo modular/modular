@@ -92,11 +92,9 @@ def row_offsets(
 class LayerIndex:
     """Where one block's rows live in the leaves, as graph values.
 
-    The kernels take a layer as a uint32 host scalar; the open-state gather
-    indexes the block buffer on the device, so the zone layer also comes as
-    an int32 device scalar. A block called directly builds these as
-    constants. A subgraph shared by several blocks takes them as inputs
-    instead, so one body serves every layer of its group.
+    The kernels take a layer as a uint32 host scalar. A block called directly
+    builds these as constants. A subgraph shared by several blocks takes them
+    as inputs instead, so one body serves every layer of its group.
     """
 
     swa: TensorValue
@@ -104,13 +102,9 @@ class LayerIndex:
     zone: TensorValue | None = None
     """The compressed and state leaves' layer, host uint32; ``None`` on a
     window-only layer."""
-    zone_rows: TensorValue | None = None
-    """``zone`` as an int32 scalar on the block's device."""
 
     @classmethod
-    def constant(
-        cls, swa: int, zone: int | None, device: DeviceRef
-    ) -> LayerIndex:
+    def constant(cls, swa: int, zone: int | None) -> LayerIndex:
         """The index of a block whose layers are fixed at graph build."""
 
         def host(layer: int) -> TensorValue:
@@ -118,9 +112,7 @@ class LayerIndex:
 
         if zone is None:
             return cls(swa=host(swa))
-        return cls(
-            swa=host(swa), zone=host(zone), zone_rows=scalar(zone, device)
-        )
+        return cls(swa=host(swa), zone=host(zone))
 
 
 @dataclass
@@ -146,38 +138,27 @@ class CacheLeaf:
         return ops.cast(self.values.cache_lengths, DType.int32)
 
     def gather(
-        self,
-        layer: int | TensorValue,
-        kv_idx: int,
-        slots: TensorValue,
-        lut_rows: TensorValue | None = None,
+        self, layer: int, kv_idx: int, slots: TensorValue
     ) -> TensorValue:
-        """Rows at ``slots`` (``[rows, n]`` int32) -> ``[rows, n, head_dim]``.
+        """Rows at ``slots`` (``[batch, n]`` int32) -> ``[batch, n, head_dim]``.
 
-        ``lut_rows`` (``[rows]`` int32) names the request each row of
-        ``slots`` addresses; without it the rows are the batch itself. Every
-        slot must be non-negative and inside that request's allocated pages;
-        callers clamp dead slots onto a live one and mask them out afterwards.
-        Heads are always 1 on these leaves. A tensor ``layer`` is an int32
-        scalar on the slots' device (:attr:`LayerIndex.zone_rows`).
+        Row ``i`` of ``slots`` addresses request ``i``. Every slot must be
+        non-negative and inside that request's allocated pages; callers clamp
+        dead slots onto a live one and mask them out afterwards. Heads are
+        always 1 on these leaves.
         """
         blocks = ops.buffer_load(self.values.kv_blocks)
         b, n = slots.shape[0], slots.shape[1]
         page_col = slots // self.slots_per_page
         in_page = slots - page_col * self.slots_per_page
         lut = ops.cast(self.values.lookup_table, DType.int32)
-        if lut_rows is not None:
-            lut = ops.gather(lut, lut_rows, axis=0)
-        else:
-            # ``gather_nd`` wants the batch dims to match exactly, and the
-            # table's is symbolic.
-            lut = ops.rebind(lut, [b, lut.shape[1]])
+        # ``gather_nd`` wants the batch dims to match exactly, and the
+        # table's is symbolic.
+        lut = ops.rebind(lut, [b, lut.shape[1]])
         pages = ops.gather_nd(lut, ops.unsqueeze(page_col, -1), batch_dims=1)
 
-        def const(v: int | TensorValue) -> TensorValue:
-            if not isinstance(v, TensorValue):
-                v = scalar(v, slots.device)
-            return ops.broadcast_to(v, [b, n])
+        def const(v: int) -> TensorValue:
+            return ops.broadcast_to(scalar(v, slots.device), [b, n])
 
         idx = ops.stack(
             [pages, const(kv_idx), const(layer), in_page, const(0)], axis=-1

@@ -15,36 +15,30 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
 from max import tree
 from max.driver import Buffer, Device, DeviceSpec
-from max.dtype import DType
 from max.engine.api import InferenceSession, Model
-from max.graph import BufferType, DeviceRef, Graph, TensorType, Value
 from max.graph.weights import SafetensorWeights, Weights, WeightsAdapter
-from max.nn.comm import Signals
-from max.nn.kv_cache import (
-    KVCacheInputsPerDevice,
-    KVCacheParamInterface,
-    PagedCacheValues,
-)
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import TextContext
-from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import (
     BatchProcessor,
+    CompilationTimer,
     GraphPipelineModelWithKVCache,
+    GraphRole,
+    GraphSpec,
     KVCacheConfig,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
+    compile_and_init_graphs,
 )
-from max.pipelines.lib.config.model_config import _select_quantization_encoding
 from max.pipelines.lib.log_probabilities import LogProbabilitiesMixin
 from max.pipelines.lib.memory_estimation import MemoryPlan
+from max.profiler import traced
 from typing_extensions import override
 
 from .batch_processor import DeepseekV2BatchProcessor
@@ -82,7 +76,8 @@ class DeepseekV2Model(
         DeepseekV2BatchProcessor
     )
 
-    model: Model
+    _models: dict[str, Model]
+    _weights_dict: dict[str, Any]
 
     def __init__(
         self,
@@ -114,7 +109,12 @@ class DeepseekV2Model(
             memory_plan=memory_plan,
         )
 
-        self.model = self.load_model(session)
+        self._models = self.load_graphs(session)
+
+    @property
+    def model(self) -> Model:
+        """The compiled decoder graph."""
+        return self._models[GraphRole.DECODER]
 
     def execute(
         self,
@@ -147,62 +147,6 @@ class DeepseekV2Model(
                 logits=model_outputs[0],
             )
 
-    def graph_inputs(self) -> tuple[TensorType | BufferType, ...]:
-        # Generate DeviceRef
-        device_ref = DeviceRef.from_device(self.devices[0])
-
-        # Construct general input types
-        return_n_logits_type = TensorType(
-            DType.int64, shape=["return_n_logits"], device=device_ref
-        )
-
-        tokens_type = TensorType(
-            DType.int64, shape=["total_seq_len"], device=device_ref
-        )
-        input_row_offsets_type = TensorType(
-            DType.uint32, shape=["input_row_offsets_len"], device=device_ref
-        )
-
-        if len(self.devices) > 1:
-            signals = Signals(
-                devices=(DeviceRef(d.label, d.id) for d in self.devices)
-            )
-            return (
-                tokens_type,
-                input_row_offsets_type,
-                return_n_logits_type,
-                *signals.input_types(),
-                *self.kv_params.flattened_kv_inputs(),
-            )
-        else:
-            return (
-                tokens_type,
-                input_row_offsets_type,
-                return_n_logits_type,
-                *self.kv_params.flattened_kv_inputs(),
-            )
-
-    def _unflatten_kv_inputs(
-        self,
-        kv_inputs_flat: Sequence[Value[Any]],
-        kv_params: KVCacheParamInterface | None = None,
-    ) -> list[PagedCacheValues]:
-        kv_params = kv_params or self.get_kv_params(
-            huggingface_config=self.huggingface_config,
-            pipeline_config=self.pipeline_config,
-            devices=[DeviceRef.from_device(d) for d in self.devices],
-            kv_cache_config=self.kv_cache_config,
-            cache_dtype=cache_dtype_for_encoding(
-                _select_quantization_encoding(
-                    self.pipeline_config.model,
-                    DeepseekV2Config.DEFAULT_ENCODING,
-                ),
-                self.pipeline_config.model.kv_cache.kv_cache_format,
-            ),
-        )
-        symbolic_inputs = kv_params.unflatten_kv_inputs(iter(kv_inputs_flat))
-        return tree.leaves(symbolic_inputs, leaf=KVCacheInputsPerDevice)
-
     @override
     def _load_state_dict(self) -> dict[str, Any]:
         if not isinstance(self.weights, SafetensorWeights):
@@ -224,79 +168,58 @@ class DeepseekV2Model(
         return model_config
 
     @override
-    def _build_graph_for_compile(
-        self,
-        session: InferenceSession,
-        state_dict: dict[str, Any],
-        model_config: Any,
-    ) -> tuple[Graph, dict[str, Any]]:
-        del session
+    def graph_specs(self, model_config: Any) -> dict[str, GraphSpec]:
+        """Returns the decoder graph, tensor parallel across several
+        devices."""
         assert isinstance(model_config, DeepseekV2Config)
-        graph_inputs = self.graph_inputs()
+        nn_model: DeepseekV2 | DistributedDeepseekV2
         if len(self.devices) > 1:
-            return self._build_tensor_parallel_graph_for_compile(
-                state_dict, model_config, graph_inputs
+            nn_model = DistributedDeepseekV2(model_config)
+            nn_model.load_state_dict(
+                self._weights_dict, weight_alignment=1, strict=False
             )
-        return self._build_single_device_graph_for_compile(
-            state_dict, model_config, graph_inputs
-        )
-
-    def _build_tensor_parallel_graph_for_compile(
-        self,
-        state_dict: dict[str, Any],
-        model_config: Any,
-        graph_inputs: tuple[TensorType | BufferType, ...],
-    ) -> tuple[Graph, dict[str, Any]]:
-        assert isinstance(model_config, DeepseekV2Config)
-        nn_model = DistributedDeepseekV2(model_config)
-        nn_model.load_state_dict(state_dict, weight_alignment=1, strict=False)
-        weights_registry = nn_model.state_dict()
-
-        with Graph("deepseekV2", input_types=[*graph_inputs]) as graph:
-            tokens, input_row_offsets, return_n_logits, *variadic_args = (
-                graph.inputs
+        else:
+            nn_model = DeepseekV2(model_config)
+            nn_model.load_state_dict(self._weights_dict, weight_alignment=1)
+        return {
+            GraphRole.DECODER: GraphSpec(
+                nn_model,
+                "deepseekV2",
+                nn_model.input_types(),
+                weights=nn_model.state_dict(),
             )
+        }
 
-            signal_buffers = [
-                v.buffer for v in variadic_args[: len(self.devices)]
-            ]
+    @override
+    @traced
+    def load_graphs(self, session: InferenceSession) -> dict[str, Model]:
+        """Compiles and initializes the graphs :meth:`graph_specs` returns.
 
-            kv_caches_per_dev = self._unflatten_kv_inputs(
-                variadic_args[len(self.devices) :]
-            )
+        Sets up the distributed runtime with :meth:`_init_distributed_runtime`
+        first, since the graphs it builds depend on it, and keeps any graph
+        it registers in :attr:`compiled_modules` too.
 
-            outputs = nn_model(
-                tokens.tensor,
-                signal_buffers,
-                kv_caches_per_dev,
-                return_n_logits.tensor,
-                input_row_offsets.tensor,
-            )
+        Args:
+            session: The session that compiles and initializes the graphs.
 
-            graph.output(*outputs)
-            return graph, weights_registry
-
-    def _build_single_device_graph_for_compile(
-        self,
-        state_dict: dict[str, Any],
-        model_config: Any,
-        graph_inputs: tuple[TensorType | BufferType, ...],
-    ) -> tuple[Graph, dict[str, Any]]:
-        assert isinstance(model_config, DeepseekV2Config)
-        nn_model = DeepseekV2(model_config)
-        nn_model.load_state_dict(state_dict, weight_alignment=1)
-        weights_registry = nn_model.state_dict()
-
-        with Graph("deepseekV2", input_types=[*graph_inputs]) as graph:
-            tokens, input_row_offsets, return_n_logits, *kv_cache_inputs = (
-                graph.inputs
-            )
-            kv_collections = self._unflatten_kv_inputs(kv_cache_inputs)
-            outputs = nn_model(
-                tokens.tensor,
-                kv_collections[0],
-                return_n_logits.tensor,
-                input_row_offsets.tensor,
-            )
-            graph.output(*outputs)
-            return graph, weights_registry
+        Returns:
+            The initialized models, keyed by role.
+        """
+        self._weights_dict = self._load_state_dict()
+        model_config = self._create_model_config(self._weights_dict)
+        self._init_distributed_runtime(session, model_config)
+        with CompilationTimer("model") as timer:
+            specs = self.graph_specs(model_config)
+            timer.mark_build_complete()
+            # `_init_distributed_runtime` may have registered a graph already.
+            self.compiled_modules = {
+                **self.compiled_modules,
+                **compile_and_init_graphs(session, specs),
+            }
+        models = {
+            role: self.compiled_modules[role].engine_model for role in specs
+        }
+        self._weights_dict = {}
+        self._maybe_release_host_weights(*models.values())
+        self._bind_ep_comm_initializer()
+        return models

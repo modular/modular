@@ -74,16 +74,10 @@ static bool hasStableDecorator(ASTDecl &decl) {
 /// Walks the full ancestor chain so that e.g. code in `std::builtin::int`
 /// finds the `std` package.  Returns nullptr if no opted-in package is found.
 static PackageOp findOptedInPackage(ASTDecl &decl) {
-  ASTDecl *cur = decl.getNearestDeclOfType<PackageOp>();
-  while (cur) {
-    if (auto *op = cur->getIfOperation())
-      if (auto pkgOp = dyn_cast<PackageOp>(op))
-        if (isPackageOptedIntoStabilityMarkers(pkgOp.getSymName()))
-          return pkgOp;
-    cur = cur->getParentDecl();
-    if (cur)
-      cur = cur->getNearestDeclOfType<PackageOp>();
-  }
+  for (ASTDecl *cur = &decl; cur; cur = cur->getParentDecl())
+    if (auto *packageDecl = dyn_cast<PackageASTDecl>(cur))
+      if (isPackageOptedIntoStabilityMarkers(packageDecl->getOp().getSymName()))
+        return packageDecl->getOp();
   return {};
 }
 
@@ -216,7 +210,7 @@ void M::KGEN::LIT::checkUnavailableAndError(ASTDecl &decl, SMLoc useLoc,
 /// - Any other decl (top-level function, alias, etc.) → &decl itself
 static ASTDecl *getCanonicalOwnerTypeDecl(ASTDecl &decl, SharedState &shared) {
   // Direct struct/trait reference.
-  if (isa_and_nonnull<StructDeclOp, TraitDeclOp>(decl.getIfOperation()))
+  if (isa<TypeASTDecl>(decl))
     return &decl;
 
   ASTDecl *parent = decl.getParentDecl();
@@ -224,12 +218,12 @@ static ASTDecl *getCanonicalOwnerTypeDecl(ASTDecl &decl, SharedState &shared) {
     return &decl;
 
   // Method/alias inside a struct or trait.
-  if (isa_and_nonnull<StructDeclOp, TraitDeclOp>(parent->getIfOperation()))
+  if (isa<TypeASTDecl>(parent))
     return parent;
 
   // Method/alias inside an extension: navigate to the extended struct.
-  if (auto extOp = dyn_cast_or_null<ExtensionDeclOp>(parent->getIfOperation()))
-    if (auto targetRef = extOp.getTargetStruct())
+  if (auto *extensionDecl = dyn_cast<ExtensionASTDecl>(parent))
+    if (auto targetRef = extensionDecl->getOp().getTargetStruct())
       return &shared.getDeclResolver().getDeclForTypeSymbol(*targetRef);
 
   // For top-level functions and other cases, check the decl itself.
@@ -282,7 +276,7 @@ void M::KGEN::LIT::checkStableTraitMemberImplementation(
     return; // All good - stable implementation.
 
   if (auto *fnDecl = dyn_cast<DefASTDecl>(&structMemberDecl)) {
-    if (fnDecl->getOp() && fnDecl->getOp().isSynthetic())
+    if (fnDecl->getOp().isSynthetic())
       return;
   }
   // Determine member kind from the trait member's operation type.
@@ -381,13 +375,13 @@ bool M::KGEN::LIT::checkStableMemberInUnstableParent(ASTDecl &memberDecl,
     return false;
 
   // Determine if parent is a struct or trait for the error message.
-  if (isa<StructDeclOp>(parent->getIfOperation())) {
+  if (isa<StructASTDecl>(parent)) {
     shared.emitWarning(
         decoratorLoc,
         "@stable member cannot be declared in an unstable struct");
     return true;
   }
-  if (isa<TraitDeclOp>(parent->getIfOperation())) {
+  if (isa<TraitASTDecl>(parent)) {
     shared.emitWarning(
         decoratorLoc, "@stable member cannot be declared in an unstable trait");
     return true;

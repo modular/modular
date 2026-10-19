@@ -59,9 +59,10 @@ MojoParserContext::Impl::Impl(llvm::SourceMgr &sourceMgr, ParserConfig &config)
     : sharedState(sourceMgr, config), replLocMapper(sourceMgr) {
   // Create the top-level outer decl, which will contain all things we parse.
   module = ModuleOp::create(UnknownLoc::get(sharedState.getContext()));
-  topLevelDecl = &sharedState.declResolver->addDecl(
-      *module, SMLoc(), StringAttr(), /*parentDecl=*/nullptr, LexerCursor(),
-      LexerCursor(), /*indentation=*/-1);
+  topLevelDecl = &cast<TopLevelModuleASTDecl>(sharedState.declResolver->addDecl(
+      module->getOperation(), SMLoc(), StringAttr(),
+      /*parentDecl=*/nullptr, LexerCursor(), LexerCursor(),
+      /*indentation=*/-1));
   sharedState.initialize(*topLevelDecl);
 }
 
@@ -78,9 +79,7 @@ MojoParserContext::~MojoParserContext() {
   (void)impl->sharedState.finalizeImportedBytecodeModules();
 }
 
-ModuleOp MojoParserContext::getModule() {
-  return cast<ModuleOp>(impl->topLevelDecl->getIfOperation());
-}
+ModuleOp MojoParserContext::getModule() { return impl->topLevelDecl->getOp(); }
 
 llvm::SourceMgr &MojoParserContext::getSourceMgr() {
   return impl->sharedState.getSourceMgr();
@@ -103,25 +102,21 @@ const KGEN::CompilationOptions &MojoParserContext::getCompilationOptions() {
   return impl->sharedState.options;
 }
 
-MojoASTDeclRef MojoParserContext::getDecl(MojoASTTypeRef type) {
-  return type.getDecl(impl->sharedState);
+ASTDecl *MojoParserContext::getTraitDecl(KGEN::TraitSymbolAttr traitSymbol) {
+  return &impl->sharedState.declResolver->getDeclForTypeSymbol(
+      traitSymbol.getSymbol());
 }
 
-MojoASTDeclRef
-MojoParserContext::getTraitDecl(KGEN::TraitSymbolAttr traitSymbol) {
-  return MojoASTDeclRef(&impl->sharedState.declResolver->getDeclForTypeSymbol(
-      traitSymbol.getSymbol()));
-}
-
-MojoASTTypeRef MojoParserContext::concretizeType(MojoASTTypeRef base,
-                                                 ArrayRef<TypedAttr> params,
-                                                 MojoASTTypeRef type) {
+ASTType MojoParserContext::concretizeType(ASTType base,
+                                          ArrayRef<TypedAttr> params,
+                                          ASTType type) {
   KGEN::ParameterEvaluator evaluator(
-      cast<StructDeclOp>(base.getDecl(getSharedState()).decl->getIfOperation())
+      cast<StructASTDecl>(base.getDecl(getSharedState()))
+          ->getOp()
           .getInputParams(),
       params);
 
-  return evaluator.replace(evaluator.getReboundType(type.getMLIRType()));
+  return ASTType(evaluator.replace(evaluator.getReboundType(type.mlirType)));
 }
 
 //===----------------------------------------------------------------------===//
@@ -160,7 +155,7 @@ static ASTDecl *buildNestedModuleDecl(std::filesystem::path filepath,
   }
 
   // Create the package using the outermost name.
-  ASTDecl &packageDecl = sharedState.createPackage(
+  PackageASTDecl &packageDecl = sharedState.createPackage(
       filepath.string(), getNameForSourcePackage(filepath));
 
   // Import the file from within the package.
@@ -169,8 +164,7 @@ static ASTDecl *buildNestedModuleDecl(std::filesystem::path filepath,
   path.relativeLevel = 1;
   for (const std::string &name : packageNames)
     path.components.push_back(name);
-  return &sharedState.importModule(
-      path, cast<PackageOp>(packageDecl.getIfOperation()), SMLoc());
+  return &sharedState.importModule(path, packageDecl.getOp(), SMLoc());
 }
 
 /// Create an ASTDecl for the given file module.
@@ -230,8 +224,8 @@ static ASTDecl *buildModuleOrPackageDecl(const std::filesystem::path &path,
   return buildPackageDecl(path, sharedState);
 }
 
-MojoASTDeclRef MojoParserContext::parseFile(unsigned fileId,
-                                            bool eraseUnparsedDecls) {
+ASTDecl *MojoParserContext::parseFile(unsigned fileId,
+                                      bool eraseUnparsedDecls) {
   llvm::SourceMgr &sourceMgr = getSourceMgr();
 
   const llvm::MemoryBuffer *sourceBuf = sourceMgr.getMemoryBuffer(fileId);
@@ -239,10 +233,11 @@ MojoASTDeclRef MojoParserContext::parseFile(unsigned fileId,
   std::filesystem::path filepath(filepathStr.str());
 
   ASTDecl *moduleDecl = buildModuleDecl(filepath, sourceBuf, impl->sharedState);
-  impl->sharedState.declResolver->resolveAllReferencedFrom(*moduleDecl,
-                                                           eraseUnparsedDecls);
+  impl->sharedState.declResolver->resolveAllReferencedFrom(*moduleDecl);
+  if (eraseUnparsedDecls)
+    impl->sharedState.declResolver->eraseUnparsedDecls();
 
-  return MojoASTDeclRef(moduleDecl);
+  return moduleDecl;
 }
 
 /// Resolves an unparsed decl enough for the language server to operate. We
@@ -278,7 +273,7 @@ void M::resolveForLSP(DeclResolver &resolver, ASTDecl &decl) {
   }
 }
 
-MojoASTDeclRef MojoParserContext::parseFileForLSP(unsigned fileId) {
+ASTDecl *MojoParserContext::parseFileForLSP(unsigned fileId) {
   llvm::SourceMgr &sourceMgr = getSourceMgr();
 
   const llvm::MemoryBuffer *sourceBuf = sourceMgr.getMemoryBuffer(fileId);
@@ -289,7 +284,7 @@ MojoASTDeclRef MojoParserContext::parseFileForLSP(unsigned fileId) {
   resolveForLSP(*impl->sharedState.declResolver, *moduleDecl);
   resolveSignaturesForLSP(*impl->sharedState.declResolver);
 
-  return MojoASTDeclRef(moduleDecl);
+  return moduleDecl;
 }
 
 void M::resolveSignaturesForLSP(DeclResolver &resolver) {
@@ -309,9 +304,10 @@ void M::resolveSignaturesForLSP(DeclResolver &resolver) {
     // Wildcard imports cannot be skipped: they may contribute new names to the
     // scope's overload sets, and those names must be visible before any
     // subsequent signature resolution inspects the scope.
-    if (parsedDecl->resolvedness == DeclResolvedness::unparsed &&
-        isa_and_nonnull<LIT::UnresolvedImportOp>(parsedDecl->getIfOperation()))
-      continue;
+    if (parsedDecl->resolvedness == DeclResolvedness::unparsed)
+      if (auto *importDecl = dyn_cast<LIT::ImportASTDecl>(parsedDecl))
+        if (importDecl->isUnresolved())
+          continue;
 
     if (parsedDecl->isLoadedFromBytecode()) {
       // For function ops, resolveSignature suffices for LSP. FnOp bodies are
@@ -328,7 +324,7 @@ void M::resolveSignaturesForLSP(DeclResolver &resolver) {
       // only resolution leaves the body empty. resolveBody materializes the
       // body from bytecode, satisfying the invariant and making the op's
       // members visible to LSP queries.
-      if (isa_and_nonnull<LIT::FnOp>(parsedDecl->getIfOperation()))
+      if (isa_and_nonnull<DefASTDecl>(parsedDecl))
         (void)resolver.resolveSignature(*parsedDecl, parsedDecl->getLoc());
       else
         (void)resolver.resolveBody(*parsedDecl, parsedDecl->getLoc());
@@ -342,8 +338,7 @@ void MojoParserContext::ensureSignaturesResolved() {
   resolveSignaturesForLSP(*impl->sharedState.declResolver);
 }
 
-MojoASTDeclRef
-MojoParserContext::parsePackage(const std::filesystem::path &path) {
+ASTDecl *MojoParserContext::parsePackage(const std::filesystem::path &path) {
   // Check that the path is actually a package.
   if (!(Filesystem::isMojoSourcePackagePath(path) ||
         Filesystem::isMojoBinaryPackagePath(path)))
@@ -351,17 +346,18 @@ MojoParserContext::parsePackage(const std::filesystem::path &path) {
   return parseFileOrPackage(path);
 }
 
-MojoASTDeclRef
+ASTDecl *
 MojoParserContext::parseFileOrPackage(const std::filesystem::path &path) {
   ASTDecl *moduleDecl = buildModuleOrPackageDecl(path, impl->sharedState);
   if (!moduleDecl)
     return nullptr;
   impl->sharedState.declResolver->resolveAllReferencedFrom(*moduleDecl);
+  impl->sharedState.declResolver->eraseUnparsedDecls();
 
-  return MojoASTDeclRef(moduleDecl);
+  return moduleDecl;
 }
 
-MojoASTDeclRef MojoParserContext::parseFileOrPackageNonRecursive(
+ASTDecl *MojoParserContext::parseFileOrPackageNonRecursive(
     const std::filesystem::path &path) {
   ASTDecl *moduleDecl = buildModuleOrPackageDecl(path, impl->sharedState);
   if (!moduleDecl)
@@ -369,17 +365,17 @@ MojoASTDeclRef MojoParserContext::parseFileOrPackageNonRecursive(
 
   // Resolve just the top-level decl.
   (void)impl->sharedState.declResolver->resolveBody(*moduleDecl, SMLoc());
-  return MojoASTDeclRef(moduleDecl);
+  return moduleDecl;
 }
 
-MojoASTDeclRef MojoParserContext::parseIsolatedFileOrPackage(
+ASTDecl *MojoParserContext::parseIsolatedFileOrPackage(
     const std::filesystem::path &path) {
   ASTDecl *moduleDecl = buildModuleOrPackageDecl(path, impl->sharedState);
   if (!moduleDecl) {
     return nullptr;
   }
 
-  bool isPackage = isa<PackageOp>(moduleDecl->getIfOperation());
+  bool isPackage = isa<PackageASTDecl>(moduleDecl);
 
   std::deque<ASTDecl *> worklist({moduleDecl});
   while (!worklist.empty()) {
@@ -387,11 +383,11 @@ MojoASTDeclRef MojoParserContext::parseIsolatedFileOrPackage(
     worklist.pop_back();
 
     if (isPackage) {
-      if (auto parent = decl->getNearestDeclOfType<PackageOp>();
+      if (auto parent = decl->getNearestDeclOfType<PackageASTDecl>();
           parent != moduleDecl)
         continue;
     } else {
-      if (auto parent = decl->getNearestDeclOfType<FileModuleOp>();
+      if (auto parent = decl->getNearestDeclOfType<FileModuleASTDecl>();
           parent != moduleDecl) {
         continue;
       }
@@ -407,7 +403,7 @@ MojoASTDeclRef MojoParserContext::parseIsolatedFileOrPackage(
     }
   }
 
-  return MojoASTDeclRef(moduleDecl);
+  return moduleDecl;
 }
 
 bool MojoParserContext::wasErrorEmitted() const {

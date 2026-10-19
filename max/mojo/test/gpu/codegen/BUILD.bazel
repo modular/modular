@@ -1,0 +1,27 @@
+load("//bazel:api.bzl", "mojo_test")
+
+package(default_visibility = ["//max:consumers"])
+
+# Codegen budgets have to read the assembly a release build emits, so this test
+# opts out of the debug info and the assertions that land instructions in the
+# loops it measures.
+mojo_test(
+    name = "test_range_codegen.mojo.test",
+    srcs = ["test_range_codegen.mojo"],
+    enable_assertions = False,
+    target_compatible_with = select({
+        # OSS repo: Only works with the prebuilt toolchain,
+        # since it uses GPU compiler backends.
+        "//:use_prebuilt_mojo_toolchain_disabled": ["@platforms//:incompatible"],
+        # 25 `compile_info[...]` calls, every one of them retargeting to NVPTX or
+        # AMDGPU. Under asan on aarch64 the comptime compiler invocations blow past
+        # the remote-executor timeout, the same way `test_compile_atomic.mojo` does.
+        # Tracked in MOCO-3794.
+        "//:asan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max:max_mojo",
+        "@mojo//:std",
+    ],
+)

@@ -593,7 +593,6 @@ class VisionEncoderCache(Generic[VLMContextType]):
         self._request_refs: defaultdict[RequestID, set[int]] = defaultdict(set)
 
         self._empty_indices_cache: list[Buffer] | None = None
-        self._scatter_buffers: dict[int, list[Buffer]] = {}
 
         self._pool: _VisionBlockPool | None = None
         if plan is not None:
@@ -1313,11 +1312,13 @@ class VisionEncoderCache(Generic[VLMContextType]):
     ) -> list[Buffer]:
         """Copy merge indices to each device.
 
-        Allocates a fresh pinned host buffer every call and never reuses it
-        across calls: under the overlap scheduler a reused pinned buffer would
-        be clobbered by the next step's host write while the current step's
-        asynchronous H2D copy is still reading it. The per-device destination
-        buffers are cached by index count and reused (never pinned).
+        Allocates fresh buffers every call and never reuses them across calls:
+        under the overlap scheduler a reused pinned buffer would be clobbered by
+        the next step's host write while the current step's asynchronous H2D
+        copy is still reading it. The per-device destinations are freed with
+        the step's inputs rather than cached by index count: the count varies
+        from batch to batch, so such a cache keeps a buffer on every device for
+        each count ever seen, and each one pins a whole memory-manager page.
         """
         dev = devices[0]
         n = len(scatter_np)
@@ -1325,13 +1326,9 @@ class VisionEncoderCache(Generic[VLMContextType]):
             Usage.DEFAULT if dev.is_host else Usage.STAGING | Usage.UNTRACKED
         )
         host = Buffer(dtype=DType.int32, shape=(n,), device=dev, usage=usage)
-
-        device_bufs = self._scatter_buffers.get(n)
-        if device_bufs is None:
-            device_bufs = [
-                Buffer(shape=(n,), dtype=DType.int32, device=d) for d in devices
-            ]
-            self._scatter_buffers[n] = device_bufs
+        device_bufs = [
+            Buffer(shape=(n,), dtype=DType.int32, device=d) for d in devices
+        ]
 
         host.to_numpy()[:] = scatter_np.astype(np.int32)
         copy_pinned_to_destinations(host, device_bufs)

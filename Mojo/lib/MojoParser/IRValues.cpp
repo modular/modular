@@ -656,12 +656,14 @@ CValue InitializerUValue::emitAsCValue(IREmitter &emitter, ExprDest &dest) {
 
   // Otherwise, handle defaulting.
   switch (syntax) {
-  case Syntax::kSliceLiteral:
-    // TODO: This could get more aggressive, looking through implicit
-    // conversions etc.
-    emitter.emitError(get().callExpr->getLoc(),
-                      "cannot emit slice expression without a contextual type");
-    return {};
+  case Syntax::kSliceLiteral: {
+    ASTType defaultType = getDefaultType(emitter.shared);
+    if (!defaultType)
+      return {};
+    CallOperands operands =
+        getOperandsForInferredType(defaultType, std::move(dest), emitter);
+    return emitter.emitConstructorCall(defaultType, std::move(operands));
+  }
   case Syntax::kListLiteral: {
     if (get().empty()) {
       emitter.emitError(get().callExpr->getLoc(),

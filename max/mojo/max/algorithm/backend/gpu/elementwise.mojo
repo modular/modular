@@ -43,7 +43,6 @@ from std.math.uutils import ufloordiv, uceildiv, udivmod
 from std.memory import unsafe_stack_allocation
 from std.sys._assembly import inlined_assembly
 from std.sys.defines import get_defined_bool, get_defined_int
-from std.sys.info import _has_sm_100x_or_newer
 from std.utils.coord import Coord, CoordLike, coord_to_index_list
 from std.utils.index import IndexList
 from std.utils.static_tuple import StaticTuple
@@ -641,9 +640,9 @@ struct _DualGridStrideKernel[
                         )
                         comptime if Self.handle_uneven_simd:
                             if Int(
-                                start_indices_0[Self.rank - 1].value()
+                                start_indices_0[Self.rank - 1]
                             ) + Self.simd_width > Int(
-                                self.shape_0[Self.rank - 1].value()
+                                self.shape_0[Self.rank - 1]
                             ):
                                 self.func_0[1](Coord(start_indices_0))
                                 var si = start_indices_0
@@ -669,9 +668,9 @@ struct _DualGridStrideKernel[
                         )
                         comptime if Self.handle_uneven_simd:
                             if Int(
-                                start_indices_1[Self.rank - 1].value()
+                                start_indices_1[Self.rank - 1]
                             ) + Self.simd_width > Int(
-                                self.shape_1[Self.rank - 1].value()
+                                self.shape_1[Self.rank - 1]
                             ):
                                 self.func_1[1](Coord(start_indices_1))
                                 var si = start_indices_1
@@ -786,8 +785,8 @@ def _dual_elementwise_impl_gpu_grid_stride[
     )
 
     var any_unaligned = (
-        Int(shape_0[rank - 1].value()) % simd_width != 0
-        or Int(shape_1[rank - 1].value()) % simd_width != 0
+        Int(shape_0[rank - 1]) % simd_width != 0
+        or Int(shape_1[rank - 1]) % simd_width != 0
     )
 
     @inline(.always)
@@ -887,9 +886,7 @@ def _elementwise_impl_gpu[
     comptime clc_min_packed_per_row = get_defined_int[
         "MOJO_ELEMENTWISE_CLC_MIN_PACKED_PER_ROW", 9
     ]()
-    var packed_elems_per_row = ufloordiv(
-        Int(shape[rank - 1].value()), simd_width
-    )
+    var packed_elems_per_row = ufloordiv(Int(shape[rank - 1]), simd_width)
     var shape_idx = coord_to_index_list(shape)
 
     var length = Int(shape.product())
@@ -902,7 +899,7 @@ def _elementwise_impl_gpu[
     # accelerator-arch predicate is only evaluated when work-stealing is
     # actually enabled. This avoids per-instantiation comptime cost in the
     # common case where `_USE_CLC_WORK_STEALING` is off.
-    comptime if _USE_CLC_WORK_STEALING and _has_sm_100x_or_newer():
+    comptime if _USE_CLC_WORK_STEALING and ctx.target._is_sm_100x_or_newer():
         var num_packed = ufloordiv(length, simd_width)
         var num_tiles = uceildiv(num_packed, block_size * elems_per_thread)
 

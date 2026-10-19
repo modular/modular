@@ -103,8 +103,8 @@ def test_dynamic_scaled_fp8_quant[
 
     var shape = row_major(m, n)
     var scales_shape = row_major(Idx[num_groups], m)
-    var total_size = Int(m.value()) * Int(n.value())
-    var scales_size = num_groups * Int(m.value())
+    var total_size = Int(m) * Int(n)
+    var scales_size = num_groups * Int(m)
 
     var in_host_ptr = alloc[Scalar[in_dtype]](total_size)
     var out_host_ptr = alloc[Scalar[out_dtype]](total_size)
@@ -121,7 +121,7 @@ def test_dynamic_scaled_fp8_quant[
     random(in_host, -1.0, 1.0)
     # Only row 0 holds the tensor max, so every block has to see row 0's max.
     # It sits in the last group, so a reduction that reads only group 0 fails.
-    in_host_ptr[Int(n.value()) - 1] = 2
+    in_host_ptr[Int(n) - 1] = 2
 
     ctx.enqueue_copy(in_device, in_host_ptr)
 
@@ -159,8 +159,8 @@ def test_dynamic_scaled_fp8_quant[
     comptime assert scales_host.flat_rank == 2
 
     var max_scale = Scalar[scales_dtype](0)
-    for i in range(Int(m.value())):
-        for j in range(Int(n.value())):
+    for i in range(Int(m)):
+        for j in range(Int(n)):
             max_scale = max(
                 max_scale,
                 abs(in_host[i, j].cast[scales_dtype]()),
@@ -175,15 +175,15 @@ def test_dynamic_scaled_fp8_quant[
     var scale_factor_recip = 1.0 / scale_factor.cast[accum_dtype]()
 
     for g in range(num_groups):
-        for i in range(Int(m.value())):
+        for i in range(Int(m)):
             assert_equal(
                 scales_host[g, i].cast[.float32](),
                 scale_factor.cast[.float32](),
                 msg="At scales[" + String(g) + ", " + String(i) + "]",
             )
 
-    for i in range(Int(m.value())):
-        for j in range(Int(n.value())):
+    for i in range(Int(m)):
+        for j in range(Int(n)):
             var in_val = in_host[i, j]
             var out_val = out_host[i, j]
             assert_equal(
@@ -212,8 +212,8 @@ def test_dynamic_fp8_quant[
 
     var shape = row_major(m, n)
     var scales_shape = row_major(Idx[NType.static_value // group_size], m)
-    var total_size = Int(m.value()) * Int(n.value())
-    var scales_size = (Int(n.value()) // group_size) * Int(m.value())
+    var total_size = Int(m) * Int(n)
+    var scales_size = (Int(n) // group_size) * Int(m)
 
     var in_host_ptr = alloc[Scalar[in_dtype]](total_size)
     var out_host_ptr = alloc[Scalar[out_dtype]](total_size)
@@ -260,8 +260,8 @@ def test_dynamic_fp8_quant[
 
     comptime assert in_host.flat_rank == 2
     comptime assert scales_host.flat_rank == 2
-    for i in range(Int(m.value())):
-        for group_idx in range(Int(n.value()) // group_size):
+    for i in range(Int(m)):
+        for group_idx in range(Int(n) // group_size):
             var group_max = Scalar[in_dtype](0)
             for j in range(group_size):
                 group_max = max(
@@ -332,9 +332,9 @@ def test_dynamic_fp8_quant_amax_floor[
 
     var shape = row_major(m, n)
     var scales_shape = row_major(Idx[NType.static_value // group_size], m)
-    var total_size = Int(m.value()) * Int(n.value())
-    var scales_size = (Int(n.value()) // group_size) * Int(m.value())
-    var num_groups = Int(n.value()) // group_size
+    var total_size = Int(m) * Int(n)
+    var scales_size = (Int(n) // group_size) * Int(m)
+    var num_groups = Int(n) // group_size
 
     var in_host_ptr = alloc[Scalar[in_dtype]](total_size)
     var out_host_ptr = alloc[Scalar[out_dtype]](total_size)
@@ -342,12 +342,12 @@ def test_dynamic_fp8_quant_amax_floor[
     var scales_host_ptr = alloc[Scalar[scales_dtype]](scales_size)
     var base_scales_host_ptr = alloc[Scalar[scales_dtype]](scales_size)
 
-    for i in range(Int(m.value())):
+    for i in range(Int(m)):
         for g in range(num_groups):
             var magnitude = below_floor if g % 2 == 0 else above_floor
             for j in range(group_size):
                 var col = g * group_size + j
-                in_host_ptr[i * Int(n.value()) + col] = (
+                in_host_ptr[i * Int(n) + col] = (
                     -magnitude if j % 3 == 0 else magnitude
                 )
 
@@ -411,7 +411,7 @@ def test_dynamic_fp8_quant_amax_floor[
     var scales_host = TileTensor(scales_host_ptr, scales_shape)
     var base_scales_host = TileTensor(base_scales_host_ptr, scales_shape)
 
-    for i in range(Int(m.value())):
+    for i in range(Int(m)):
         for group_idx in range(num_groups):
             var group_max = Scalar[accum_dtype](0)
             for j in range(group_size):
@@ -484,10 +484,8 @@ def test_batched_dynamic_fp8_quant[
 
     var shape = row_major(bs, m, k)
     var scales_shape = row_major(bs, Idx[KType.static_value // group_size], m)
-    var total_size = Int(bs.value()) * Int(m.value()) * Int(k.value())
-    var scales_size = (
-        Int(bs.value()) * (Int(k.value()) // group_size) * Int(m.value())
-    )
+    var total_size = Int(bs) * Int(m) * Int(k)
+    var scales_size = Int(bs) * (Int(k) // group_size) * Int(m)
 
     var in_host_ptr = alloc[Scalar[in_dtype]](total_size)
     var out_host_ptr = alloc[Scalar[out_dtype]](total_size)
@@ -527,8 +525,8 @@ def test_batched_dynamic_fp8_quant[
         scales_tensor,
         1200.0,
         ctx,
-        num_rows=Int(m.value()),
-        batch_size=Int(bs.value()),
+        num_rows=Int(m),
+        batch_size=Int(bs),
     )
 
     ctx.enqueue_copy(out_host_ptr, out_device)
@@ -537,9 +535,9 @@ def test_batched_dynamic_fp8_quant[
 
     comptime assert in_host.flat_rank == 3
     comptime assert scales_host.flat_rank == 3
-    for batch_idx in range(Int(bs.value())):
-        for i in range(Int(m.value())):
-            for group_idx in range(Int(k.value()) // group_size):
+    for batch_idx in range(Int(bs)):
+        for i in range(Int(m)):
+            for group_idx in range(Int(k) // group_size):
                 var group_max = Scalar[in_dtype](0)
                 for j in range(group_size):
                     group_max = max(
@@ -601,8 +599,8 @@ def test_dynamic_fp8_quant_row_bounded[
     """
     comptime group_size: Int = NType.static_value if group_size_or_per_token == -1 else group_size_or_per_token
 
-    var rows = Int(m.value())
-    var cols = Int(n.value())
+    var rows = Int(m)
+    var cols = Int(n)
     var num_groups = cols // group_size
     var shape = row_major(m, n)
     var scales_shape = row_major(Idx[NType.static_value // group_size], m)
@@ -768,8 +766,8 @@ def test_dynamic_fp8_quant_near_zero[
     """
     var shape = row_major(m, n)
     var scales_shape = row_major(Idx[NType.static_value // group_size], m)
-    var total_size = Int(m.value()) * Int(n.value())
-    var scales_size = (Int(n.value()) // group_size) * Int(m.value())
+    var total_size = Int(m) * Int(n)
+    var scales_size = (Int(n) // group_size) * Int(m)
 
     var in_host_ptr = alloc[Scalar[in_dtype]](total_size)
     var out_host_ptr = alloc[Scalar[out_dtype]](total_size)
@@ -780,11 +778,9 @@ def test_dynamic_fp8_quant_near_zero[
     # and each group has an exactly-zero element (the 0*Inf lane).
     for i in range(total_size):
         in_host_ptr[i] = Scalar[in_dtype](1e-38)
-    for i in range(Int(m.value())):
-        for g in range(Int(n.value()) // group_size):
-            in_host_ptr[i * Int(n.value()) + g * group_size] = Scalar[in_dtype](
-                0
-            )
+    for i in range(Int(m)):
+        for g in range(Int(n) // group_size):
+            in_host_ptr[i * Int(n) + g * group_size] = Scalar[in_dtype](0)
 
     var in_device = ctx.enqueue_create_buffer[in_dtype](total_size)
     var out_device = ctx.enqueue_create_buffer[out_dtype](total_size)
@@ -860,8 +856,8 @@ def test_dynamic_tensor_fp8_quant_near_zero[
     """
     var shape = row_major(m, n)
     var scales_shape = row_major(Idx[NType.static_value // group_size], m)
-    var total_size = Int(m.value()) * Int(n.value())
-    var scales_size = (Int(n.value()) // group_size) * Int(m.value())
+    var total_size = Int(m) * Int(n)
+    var scales_size = (Int(n) // group_size) * Int(m)
 
     var in_host_ptr = alloc[Scalar[in_dtype]](total_size)
     var out_host_ptr = alloc[Scalar[out_dtype]](total_size)
@@ -872,11 +868,9 @@ def test_dynamic_tensor_fp8_quant_near_zero[
     # path reduces all group maxes to one tensor-wide denormal scale.
     for i in range(total_size):
         in_host_ptr[i] = Scalar[in_dtype](1e-38)
-    for i in range(Int(m.value())):
-        for g in range(Int(n.value()) // group_size):
-            in_host_ptr[i * Int(n.value()) + g * group_size] = Scalar[in_dtype](
-                0
-            )
+    for i in range(Int(m)):
+        for g in range(Int(n) // group_size):
+            in_host_ptr[i * Int(n) + g * group_size] = Scalar[in_dtype](0)
 
     var in_device = ctx.enqueue_create_buffer[in_dtype](total_size)
     var out_device = ctx.enqueue_create_buffer[out_dtype](total_size)

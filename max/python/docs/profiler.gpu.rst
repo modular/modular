@@ -21,6 +21,7 @@ Monitoring
 
    GPUDiagContext
    BackgroundRecorder
+   GpuStatsRecorder
 
 Stats
 -----

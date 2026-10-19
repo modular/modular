@@ -17,7 +17,8 @@
 #include "gtest/gtest.h"
 
 using namespace M;
-using namespace M::KGEN::TypeExtractionUtils;
+using namespace M::KGEN;
+using namespace M::KGEN::LIT;
 
 /// Test fixture for TypeExtractionUtils and TypeMetadata functionality.
 class TypeExtractionUtilsTest : public ::testing::Test {
@@ -250,8 +251,8 @@ TEST_F(TypeExtractionUtilsTest, ExtractLibraryInfo_EmptyType) {
 /// Should include both type and path information in JSON output.
 TEST_F(TypeExtractionUtilsTest, TypeMetadata_ToJSON) {
   // Test TypeMetadata JSON serialization
-  M::KGEN::TypeMetadata metadata("List[Int]", "std.collections",
-                                 "/std/collections/List");
+  TypeMetadata metadata("List[Int]", "std.collections",
+                        "/std/collections/List");
 
   auto json = metadata.toJSON();
 
@@ -271,7 +272,7 @@ TEST_F(TypeExtractionUtilsTest, TypeMetadata_ToJSON) {
 /// Should omit path field when empty (not include empty string).
 TEST_F(TypeExtractionUtilsTest, TypeMetadata_EmptyPath) {
   // Test with empty path (should not include path in JSON)
-  M::KGEN::TypeMetadata metadata("SomeType", "", "");
+  TypeMetadata metadata("SomeType", "", "");
 
   auto json = metadata.toJSON();
 

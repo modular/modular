@@ -17,13 +17,139 @@ from max.gpu import block_dim, lane_id, thread_idx
 from max.gpu.memory import CacheEviction, Fill
 from std.math.uutils import umod
 from std.sys import align_of
+from std.os import abort
 
 from layout import Coord, Idx
-from .layout_tensor import ThreadScope
 from .swizzle import Swizzle
-from .tile_layout import Layout
+from .tile_layout import Layout, row_major
 from .tile_tensor import TileTensor
 from .tensor_engine import DefaultEngine
+
+
+struct ThreadScope(EnumLike, TrivialRegisterPassable, Writable):
+    """Represents the scope of thread operations in GPU programming.
+
+    This struct defines the scope at which thread operations are performed,
+    particularly for operations like tensor distribution and synchronization.
+    It provides two main scopes: `BLOCK` and `WARP`, which correspond to
+    different levels of thread grouping in GPU programming models.
+
+    Example:
+
+    ```mojo
+    from layout.tile_io import copy_dram_to_sram, ThreadScope
+
+    # Distribute tensor at block level (all threads in block participate)
+    copy_dram_to_sram[layout, thread_scope=ThreadScope.BLOCK](dst, src)
+
+    # Distribute tensor at warp level (only threads in same warp participate)
+    copy_dram_to_sram[layout, thread_scope=ThreadScope.WARP](dst, src)
+    ```
+
+    Performance:
+
+    - WARP scope operations typically have lower synchronization overhead
+        than BLOCK scope operations.
+    - BLOCK scope operations allow coordination across all threads in a block,
+        which is necessary for certain algorithms.
+    - The choice of scope can significantly impact performance and correctness
+        of parallel algorithms.
+
+    Notes:
+
+    - The appropriate scope depends on the specific algorithm and hardware.
+    - WARP scope operations may be more efficient for operations that only
+        require coordination within a warp.
+    - BLOCK scope operations are necessary when threads from different warps
+        need to coordinate.
+    - The actual size of a warp or block is hardware-dependent.
+    """
+
+    var _value: Int32
+    """The internal integer value representing the thread scope."""
+
+    comptime BLOCK = Self(0)
+    """Represents operations at the thread block level, where all threads in a
+    block participate."""
+
+    comptime WARP = Self(1)
+    """Represents operations at the warp level, where only threads within the
+    same warp participate."""
+
+    comptime _enum_case_names = ParameterList.of[
+        "BLOCK".value,
+        "WARP".value,
+    ].values
+
+    comptime _enum_case_types = TypeList.splat[
+        ParameterList[Self._enum_case_names].length, NoneType
+    ].values
+
+    @inline(.always)
+    def _get_enum_discriminant(self) -> Int:
+        return Int(self._value)
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        comptime assert False, "ThreadScope has no payload"
+
+    def __init__(out self, value: Int):
+        """Initialize a `ThreadScope` with the given integer value.
+
+        Args:
+            value: An integer representing the thread scope (0 for `BLOCK`,
+                1 for `WARP`).
+        """
+        self._value = Int32(value)
+
+    def __eq__(self, other: Self) -> Bool:
+        """Compare two `ThreadScope` objects for equality.
+
+        Args:
+            other: Another `ThreadScope` object to compare with.
+
+        Returns:
+            True if the thread scopes are equal, False otherwise.
+        """
+        return self._value == other._value
+
+    def __ne__(self, other: Self) -> Bool:
+        """Compare two `ThreadScope` objects for inequality.
+
+        Args:
+            other: Another `ThreadScope` object to compare with.
+
+        Returns:
+            True if the thread scopes are not equal, False otherwise.
+        """
+        return not (self == other)
+
+    def write_to(self, mut writer: Some[Writer]):
+        """Write the `ThreadScope` as a human-readable string representation.
+
+        Args:
+            writer: The writer to write the string representation to.
+
+        Aborts:
+            If the thread scope has an invalid value.
+        """
+        if self == Self.BLOCK:
+            return writer.write("BLOCK")
+        if self == Self.WARP:
+            return writer.write("WARP")
+        abort("invalid ThreadScope entry")
+
+    def __int__(self) -> Int:
+        """Convert the `ThreadScope` to an integer value.
+
+        Returns:
+            The integer value of the thread scope (0 for BLOCK, 1 for WARP).
+        """
+        return Int(self._value)
 
 
 @inline(.nodebug)
@@ -35,9 +161,8 @@ def _get_worker_idx[thread_scope: ThreadScope]() -> Int:
     the (up to 3D) thread block. For `WARP` scope, returns the lane ID
     within the warp.
 
-    Duplicated from `layout_tensor._get_worker_idx` to avoid a cross-module
-    import; the BLOCK path unconditionally uses the 3D formula, since for
-    1D/2D launches `thread_idx.z == 0` and `block_dim.y/z == 1` and the
+    The BLOCK path unconditionally uses the 3D formula, since for 1D/2D
+    launches `thread_idx.z == 0` and `block_dim.y/z == 1` and the
     extra terms fold away at compile time.
 
     Parameters:
@@ -192,6 +317,7 @@ struct SharedToGenericTileCopier[
     *,
     swizzle: Optional[Swizzle] = None,
     num_threads: Int = thread_layout.size(),
+    masked: Bool = False,
 ](ImplicitlyCopyable, Movable, TileCopier):
     """A `TileCopier` that moves a tile from shared memory into generic memory.
 
@@ -205,6 +331,11 @@ struct SharedToGenericTileCopier[
         swizzle: Swizzle the shared-memory tile was populated with.
         num_threads: Total number of threads in the thread block. Threads
             beyond `thread_layout.size()` do not participate.
+        masked: When `True`, vectors whose destination offset falls at or past
+            `valid_rows * row_stride` are not stored, so the valid row count
+            may be smaller than the source tile. Defaults to `False`, which
+            keeps the unmasked behavior. Independently of `masked`, the
+            source may be FP32 with an FP16 or BF16 destination.
     """
 
     comptime src_address_space = AddressSpace.SHARED
@@ -220,19 +351,46 @@ struct SharedToGenericTileCopier[
     ):
         """Copies `src` in shared memory into `dst` in generic memory.
 
-        The non-swizzled path uses `TileTensor.copy`, which widens to SIMD
-        stores when the layouts permit. The swizzled path walks per-thread
-        elements explicitly and applies the swizzle to the source fragment
-        offsets.
-
-        Masked bounds checking, fp32 -> half precision downcast, and
-        `binary_op` fusion are not supported.
+        When `masked` is set, the valid-row bound is `dst.dim[0]()`. For a
+        destination whose row dim is static (e.g. a `.tile[...]` sub-view),
+        use `copy_bounded` with an explicit runtime row count instead.
 
         Args:
             dst: Destination tile in generic memory.
             src: Source tile in shared memory.
         """
-        comptime assert dst.dtype == src.dtype, "src and dst dtype must match."
+        self.copy_bounded(dst, src, None)
+
+    @inline(.nodebug)
+    def copy_bounded(
+        self,
+        dst: TileTensor[mut=True, address_space=Self.dst_address_space, ...],
+        src: TileTensor[address_space=Self.src_address_space, ...],
+        dst_num_valid_rows: OptionalReg[Int],
+    ):
+        """Copies `src` in shared memory into `dst` in generic memory with an
+        optional explicit valid-row bound.
+
+        The non-swizzled, same-dtype, unmasked path uses `TileTensor.copy`,
+        which widens to SIMD stores when the layouts permit. Otherwise the
+        copy walks per-thread vectors explicitly, applying the swizzle to the
+        source offsets, an FP32 to FP16/BF16 downcast, and (when `masked`)
+        a per-vector bound check mirroring the legacy `copy_sram_to_dram`.
+        `binary_op` fusion is not supported.
+
+        Args:
+            dst: Destination tile in generic memory.
+            src: Source tile in shared memory.
+            dst_num_valid_rows: Valid-row count for the masked bound. When
+                `None`, `dst.dim[0]()` is used. Only consulted when `masked`
+                is `True`. It overrides `dst.dim[0]()` so the destination can
+                keep a static shape (and therefore the same thread
+                distribution as the source) while the row count is dynamic.
+        """
+        comptime assert dst.dtype == src.dtype or (
+            src.dtype == .float32
+            and (dst.dtype == .float16 or dst.dtype == .bfloat16)
+        ), "Only matching dtypes or FP32 to FP16/BF16 are supported."
         comptime assert src.element_size == dst.element_size
 
         comptime num_busy_threads = Self.thread_layout.size()
@@ -245,40 +403,118 @@ struct SharedToGenericTileCopier[
         var src_fragments = src.distribute[Self.thread_layout](worker_idx)
         var dst_fragments = dst.distribute[Self.thread_layout](worker_idx)
 
-        comptime if case .Some(swizzle_fn) = Self.swizzle:
+        comptime if Self.masked or src.dtype != dst.dtype:
             comptime simd_size = src.element_size
             comptime src_align = align_of[SIMD[src.dtype, simd_size]]()
             comptime dst_align = align_of[SIMD[dst.dtype, simd_size]]()
+            comptime num_stores_per_thread = (
+                src_fragments.LayoutType.static_product
+            )
 
             var src_frag_offset = Scalar[src.linear_idx_type](
                 src_fragments._distance(src)
             )
-            comptime num_stores_per_thread = (
-                src_fragments.LayoutType.static_product
+            # Bound on the fragment-relative destination offset: the absolute
+            # end of the valid rows minus the fragment's offset in `dst`.
+            var dst_idx_bound = Scalar[dst.linear_idx_type]()
+            comptime if Self.masked:
+                var dst_num_rows = dst_num_valid_rows.or_else(Int(dst.dim[0]()))
+                dst_idx_bound = Scalar[dst.linear_idx_type](
+                    dst_num_rows * Int(dst.dynamic_stride(0))
+                ) - Scalar[dst.linear_idx_type](dst_fragments._distance(dst))
+
+            var src_flat = src.reshape(
+                row_major(Int(src.layout(src.layout.product() - 1)) + 1)
+            )
+            var dst_frag_flat = dst_fragments.reshape(
+                row_major(
+                    Int(
+                        dst_fragments.layout(dst_fragments.layout.product() - 1)
+                    )
+                    + 1
+                )
             )
 
             comptime for i in range(num_stores_per_thread):
                 var src_idx = src_fragments.layout[
                     linear_idx_type=src.linear_idx_type
                 ](Idx[i])
-                var dst_idx = dst_fragments.layout(Idx[i])
-                var src_idx_base = umod(
-                    src_idx,
-                    Scalar[src.linear_idx_type](swizzle_fn.size()),
-                )
-                var src_idx_diff = src_idx - src_idx_base
-                var swizzled_idx = swizzle_fn(
-                    src_frag_offset + src_idx_base
-                ) + Scalar[src.linear_idx_type](src_idx_diff)
+                var dst_idx = dst_fragments.layout[
+                    linear_idx_type=dst.linear_idx_type
+                ](Idx[i])
 
-                var src_vec = src.raw_load[
-                    width=simd_size, alignment=src_align
-                ](swizzled_idx).cast[dst.dtype]()
-                dst_fragments.raw_store[alignment=dst_align](dst_idx, src_vec)
+                comptime if case .Some(swizzle_fn) = Self.swizzle:
+                    var src_idx_base = umod(
+                        src_idx,
+                        Scalar[src.linear_idx_type](swizzle_fn.size()),
+                    )
+                    var src_idx_diff = src_idx - src_idx_base
+                    src_idx = swizzle_fn(
+                        src_frag_offset + src_idx_base
+                    ) + Scalar[src.linear_idx_type](src_idx_diff)
+                else:
+                    src_idx = src_frag_offset + src_idx
+
+                var in_bounds = True
+                comptime if Self.masked:
+                    in_bounds = dst_idx < dst_idx_bound
+                if in_bounds:
+                    var src_vec = src_flat.load[alignment=src_align](
+                        Coord(src_idx)
+                    ).cast[dst.dtype]()
+                    dst_frag_flat.store[alignment=dst_align](
+                        Coord(dst_idx), src_vec
+                    )
         else:
-            dst_fragments.copy_from(
-                src_fragments.bitcast[dst_fragments.dtype]()
-            )
+            comptime if case .Some(swizzle_fn) = Self.swizzle:
+                comptime simd_size = src.element_size
+                comptime src_align = align_of[SIMD[src.dtype, simd_size]]()
+                comptime dst_align = align_of[SIMD[dst.dtype, simd_size]]()
+
+                var src_frag_offset = Scalar[src.linear_idx_type](
+                    src_fragments._distance(src)
+                )
+                comptime num_stores_per_thread = (
+                    src_fragments.LayoutType.static_product
+                )
+                var src_flat = src.reshape(
+                    row_major(Int(src.layout(src.layout.product() - 1)) + 1)
+                )
+                var dst_frag_flat = dst_fragments.reshape(
+                    row_major(
+                        Int(
+                            dst_fragments.layout(
+                                dst_fragments.layout.product() - 1
+                            )
+                        )
+                        + 1
+                    )
+                )
+
+                comptime for i in range(num_stores_per_thread):
+                    var src_idx = src_fragments.layout[
+                        linear_idx_type=src.linear_idx_type
+                    ](Idx[i])
+                    var dst_idx = dst_fragments.layout(Idx[i])
+                    var src_idx_base = umod(
+                        src_idx,
+                        Scalar[src.linear_idx_type](swizzle_fn.size()),
+                    )
+                    var src_idx_diff = src_idx - src_idx_base
+                    var swizzled_idx = swizzle_fn(
+                        src_frag_offset + src_idx_base
+                    ) + Scalar[src.linear_idx_type](src_idx_diff)
+
+                    var src_vec = src_flat.load[alignment=src_align](
+                        Coord(swizzled_idx)
+                    ).cast[dst.dtype]()
+                    dst_frag_flat.store[alignment=dst_align](
+                        Coord(dst_idx), src_vec
+                    )
+            else:
+                dst_fragments.copy_from(
+                    src_fragments.bitcast[dst_fragments.dtype]()
+                )
 
 
 @fieldwise_init
@@ -506,8 +742,11 @@ struct LocalToSharedTileCopier[
             )
             comptime num_vecs = src.LayoutType.static_product
 
+            var dst_flat = dst.reshape(
+                row_major(Int(dst.layout(dst.layout.product() - 1)) + 1)
+            )
+
             comptime for i in range(num_vecs):
-                var src_idx = src.layout(Idx[i])
                 var dst_idx = dst_fragments.layout[
                     linear_idx_type=dst.linear_idx_type
                 ](Idx[i])
@@ -519,10 +758,12 @@ struct LocalToSharedTileCopier[
                 var swizzled_idx = swizzle_fn(
                     dst_frag_offset + dst_idx_base
                 ) + Scalar[dst.linear_idx_type](dst_idx_diff)
-                var src_vec = src.raw_load[
-                    width=simd_size, alignment=src_align
-                ](src_idx).cast[dst.dtype]()
-                dst.raw_store[alignment=dst_align](swizzled_idx, src_vec)
+                var src_vec = src.load[alignment=src_align]((Idx[i],)).cast[
+                    dst.dtype
+                ]()
+                dst_flat.store[alignment=dst_align](
+                    Coord(swizzled_idx), src_vec
+                )
         else:
             comptime if src.dtype == dst.dtype:
                 dst_fragments.copy_from(src.bitcast[dst_fragments.dtype]())
@@ -650,10 +891,10 @@ struct GenericToSharedAsyncTileCopier[
             # it is `src.dim[0]()` (legacy behavior). A caller may override it
             # with an explicit runtime value when `src`'s own dim0 is static
             # (e.g. a `.tile[...]` sub-view, which does not runtime-clip dim0
-            # the way the legacy `LayoutTensor` iterator did).
+            # the way the legacy iterator did).
             var src_num_rows = src_num_valid_rows.or_else(Int(src.dim[0]()))
             src_idx_bound = Scalar[idx_type](
-                src_num_rows * Int(src.LayoutType.static_stride[0])
+                src_num_rows * Int(src.dynamic_stride(0))
             ) - Scalar[idx_type](src_fragments._distance(src))
 
         # When swizzling, `copy_from_async` computes the destination address in
@@ -745,15 +986,16 @@ def copy_sram_to_dram[
     *,
     swizzle: Optional[Swizzle] = None,
     num_threads: Int = thread_layout.size(),
+    masked: Bool = False,
 ](
     dst: TileTensor[mut=True, address_space=.GENERIC, ...],
     src: TileTensor[address_space=.SHARED, ...],
+    dst_num_valid_rows: OptionalReg[Int] = None,
 ):
     """Synchronously copies a tile from SRAM (shared memory) to DRAM (generic).
 
-    Delegates to `SharedToGenericTileCopier`. The `binary_op` fusion and
-    fp32 -> half-precision downcast paths of the legacy free function are not
-    supported here.
+    Delegates to `SharedToGenericTileCopier`. The `binary_op` fusion path of
+    the legacy free function is not supported here.
 
     Parameters:
         thread_layout: Layout describing how threads are organized over the
@@ -762,16 +1004,24 @@ def copy_sram_to_dram[
             the swizzle used when the tile was written.
         num_threads: Total number of threads in the thread block. Threads
             beyond `thread_layout.size()` do not participate.
+        masked: When `True`, vectors past `valid_rows * row_stride` are not
+            stored, where `valid_rows` is `dst_num_valid_rows` or, when that
+            is `None`, `dst.dim[0]()`. An FP32 source may be downcast to an
+            FP16 or BF16 destination regardless of `masked`.
 
     Args:
         dst: Destination tile in generic memory.
         src: Source tile in shared memory.
+        dst_num_valid_rows: Explicit valid-row count for the masked bound;
+            lets `dst` keep a static shape (and thus the same thread
+            distribution as `src`) with a runtime row count.
     """
     SharedToGenericTileCopier[
         thread_layout,
         swizzle=swizzle,
         num_threads=num_threads,
-    ]().copy(dst, src)
+        masked=masked,
+    ]().copy_bounded(dst, src, dst_num_valid_rows)
 
 
 @inline(.nodebug)
@@ -867,7 +1117,7 @@ def copy_local_to_dram[
     comptime assert src.LayoutType.static_product == (
         rows * cols // thread_layout.size()
     )
-    debug_assert(Int(dst.layout.stride[0]().value()) >= 2 * cols)
+    debug_assert(Int(dst.dynamic_stride(0)) >= 2 * cols)
 
     var row_bound = min(rows, max(0, valid_rows))
     if row_bound == 0:

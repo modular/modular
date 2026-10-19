@@ -212,6 +212,10 @@ public:
   /// resolved by the parser.
   virtual void onVariableDecl(ASTDecl *decl, llvm::SMLoc identifierLoc);
 
+  /// Notify the listener that a declaration has been replaced with a
+  /// declaration that represents the same source binding.
+  virtual void onDeclReplaced(ASTDecl *oldDecl, ASTDecl *newDecl);
+
   /// Notify the listener that a new reference has been resolved by the parser,
   /// i.e. its declarations are known.
   virtual void onRef(ArrayRef<ASTDecl *> decls, StringRef spelling,

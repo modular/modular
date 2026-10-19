@@ -505,7 +505,7 @@ def _ep2_fused_config(**override: Any) -> EPConfig:
 
 
 def _fused_moe_plans(
-    cases: list[dict[str, bool | int | str | DType]],
+    cases: list[dict[str, bool | int | float | str | DType]],
 ) -> list[tuple[int, int, str]]:
     """The backend's plan answer for each parameter set, all from one host
     graph: every new plan graph is a compile."""

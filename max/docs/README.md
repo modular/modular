@@ -1,11 +1,30 @@
 # MAX documentation
 
-This documentation is for you if you've cloned this repo and are developing in
-the MAX framework. For example, if you're extending an existing model
-architectures, contributing new models, benchmarking, profiling, and debugging
-inside the MAX framework, then read on.
+This directory contains the bulk of documentation about MAX, both for
+developers using MAX from the `max` package and for developers building with
+and contributing to the MAX framework through this repo.
 
-## Table of contents
+## Public website docs
+
+Although the website frontend isn't included in this repo, you can find all
+the Markdown (MDX) files here:
+
+- [site/](/max/docs/site): Source documentation files for
+  [max.modular.com](https://max.modular.com).
+
+## Framework developer docs
+
+The rest of the docs in this directory are for you if you've cloned this repo
+and are developing in the MAX framework. For example, if you're extending an
+existing model architectures, contributing new models, benchmarking, profiling,
+and debugging inside the MAX framework, then check out the following:
+
+- [contributing/](contributing/README.md)—**MAX contributor handbook**: Which
+areas of MAX accept contributions, how to get a change reviewed and merged,
+and what we expect from contributors.
+
+- [design-docs/](/max/docs/design-docs)—**Design docs**: Engineering docs that
+  describe how core Modular technologies work.
 
 - [development.md](development.md)—**MAX framework developer guide**: The
 getting started guide for development in the MAX framework codebase,
@@ -40,10 +59,7 @@ analysis.
 
 ## Other docs
 
-- [`/max/docs/design-docs`](/max/docs/design-docs): Engineering docs that
-  describe how core Modular technologies work.
 - [`/Mojo/docs/stdlib`](/Mojo/docs/stdlib): Docs for
   developers working in the Mojo standard library.
 - [`/Mojo/docs`](/Mojo/docs): Source docs for
   mojolang.org/docs.
-- [max.modular.com](https://max.modular.com): All other developer docs.

@@ -34,6 +34,8 @@ from max.gpu.host.launch_attribute import (
 )
 from std._gpu.host.info import TargetAccelerator
 
+from max._plugin._overlay import TARGETS
+
 from ..host.info import H100
 
 comptime _SUPPORT_PDL_LAUNCH = _support_pdl_launch()
@@ -51,7 +53,7 @@ def _support_pdl_launch() -> Bool:
         True if PDL is supported and enabled, False otherwise.
     """
 
-    comptime default = TargetAccelerator.default_accelerator()
+    comptime default = TargetAccelerator.default_accelerator[TARGETS]()
 
     comptime if (
         default.target.is_nvidia_gpu()

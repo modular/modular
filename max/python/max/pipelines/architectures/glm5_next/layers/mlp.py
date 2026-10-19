@@ -34,7 +34,7 @@ other clamped-SwiGLU paths in MAX compute something else:
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from typing import Any
 
 from max import tree
@@ -90,6 +90,40 @@ class Glm5NextMLP(MLP):
         up_out = self.up_proj(x).cast(DType.float32)
         hidden = clamped_swiglu(gate_out, up_out, self.swiglu_limit)
         return self.down_proj(hidden.cast(x.dtype))
+
+    def shard(self, devices: Iterable[DeviceRef]) -> Sequence[Glm5NextMLP]:
+        """Creates :class:`Glm5NextMLP` shards across multiple devices.
+
+        :meth:`MLP.shard` builds stock :class:`MLP` shards, which activate
+        before clamping and skip the float32 accumulation. The model only runs
+        the dense MLP and the shared expert through their shards, so every
+        shard has to keep this class's ``__call__``.
+
+        Args:
+            devices: Iterable of devices to place the shards on.
+
+        Returns:
+            Sharded :class:`Glm5NextMLP` instances, one per device.
+        """
+        shards = []
+        for base in super().shard(devices):
+            shard = Glm5NextMLP(
+                dtype=self.gate_proj.weight.dtype,
+                quantization_encoding=self.quantization_encoding,
+                hidden_dim=self.hidden_dim,
+                feed_forward_length=self.feed_forward_length,
+                devices=base.devices,
+                has_bias=self.gate_proj.bias is not None,
+                quant_config=self.quant_config,
+                swiglu_limit=self.swiglu_limit,
+                is_sharding=True,
+            )
+            shard.gate_proj = base.gate_proj
+            shard.down_proj = base.down_proj
+            shard.up_proj = base.up_proj
+            shard._parent_layer = self
+            shards.append(shard)
+        return shards
 
 
 class Glm5NextMoE(DeepseekV3_2MoE):

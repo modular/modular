@@ -720,7 +720,8 @@ static ElaboratorCompileOffloadRetType compileOffloads(
 
       // Override the target.
       eraseTargetInfo(*module);
-      setTargetInfo(*module, target);
+      setTargetInfo(*module, offloadInfo.slicedTarget ? offloadInfo.slicedTarget
+                                                      : target);
       SymbolTable slicedSymtab(*module);
 
       // Collect SymbolConstantAttr names to rename.

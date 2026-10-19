@@ -139,18 +139,14 @@ ParamBindings ParamBindings::getForDeclaredType(ASTDecl &declScope,
   // TypeSignatureType, as the latter won't contain the full defaults list if
   // any have been bound already (when `type` is partially specified).
   ASTDecl *decl = type.getDecl(declScope.getShared());
-  if (decl) {
-    if (auto structDecl =
-            dyn_cast_or_null<StructDeclOp>(decl->getIfOperation())) {
-      llvm::append_range(
-          paramBindings.ctadPogs,
-          structDecl.getSignature().getParamListAttrs().getPogs());
-    }
-  }
+  if (auto *structDecl = dyn_cast_if_present<StructASTDecl>(decl))
+    llvm::append_range(
+        paramBindings.ctadPogs,
+        structDecl->getOp().getSignature().getParamListAttrs().getPogs());
 
   auto traitSelfName = StringAttr::get(decl->getContext(), "_Self");
   // When binding a trait function, add the self type bindings.
-  if (decl && isa_and_nonnull<TraitDeclOp>(decl->getIfOperation())) {
+  if (isa_and_nonnull<TraitASTDecl>(decl)) {
     auto typeAttr = PValue(type).get();
 
     // The source value be something of trait type like Movable, or it may be
@@ -244,8 +240,7 @@ static bool isReferenceFromOwnFnBody(ASTDecl &fnDecl, ASTDecl &useScope) {
 TypedAttr LIT::getBoundConstAttrForFn(ASTDecl &fnDecl, SharedState &shared,
                                       const VerifiedParamBindings &verified,
                                       ASTDecl &useScope, SMLoc useLoc) {
-  if (auto *defDecl = dyn_cast<DefASTDecl>(&fnDecl);
-      defDecl && defDecl->getOp()) {
+  if (auto *defDecl = dyn_cast<DefASTDecl>(&fnDecl); defDecl) {
     FnOp funcOp = defDecl->getOp();
     if (isReferenceFromOwnFnBody(fnDecl, useScope)) {
       StringRef name = funcOp.getDeclName().getValue();

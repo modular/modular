@@ -87,7 +87,8 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
             hidden_size: The dimension of the hidden states.
             kv_params: KV Cache Params, including the number of kv heads, the
                 head dim, and data type.
-            dtype: DType of the weights, currently only bfloat16 is supported.
+            quant_config: FP8 scaling of the projections: DeepSeek's block
+                scales, or per-row weight scales with per-token activations.
             devices: Device to place the weights and run the computation. If
                 multiple are provided, the first device is used.
             linear_cls: Linear class to use for the outputs dense layer.
@@ -116,12 +117,17 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
             raise ValueError(
                 f"Invalid graph_mode '{_role}'. Use 'prefill', 'decode', or 'auto'."
             )
-        if (
-            not quant_config.weight_scale.is_block
-            or not quant_config.input_scale.is_block
+        self._block_scaled = (
+            quant_config.weight_scale.is_block
+            and quant_config.input_scale.is_block
+        )
+        if not self._block_scaled and not (
+            quant_config.weight_scale.is_rowwise
+            and quant_config.input_scale.is_colwise
         ):
             raise ValueError(
-                "Weight scale and input scale must be block-wise for LatentAttentionWithRopeFp8"
+                "LatentAttentionWithRopeFp8 needs block-wise weight and input"
+                " scales, or rowwise weight scales with per-token input scales"
             )
 
         self.graph_mode = _role
@@ -150,22 +156,21 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
         )
         self.scale = self.rope.compute_scale(self._scale)
         self.devices = devices or [DeviceRef.CPU()]
-        assert quant_config.weight_scale.block_size is not None
-        assert quant_config.input_scale.block_size is not None
-        self.weight_block_size = quant_config.weight_scale.block_size
-        input_k_block = quant_config.input_scale.block_size[1]
+        if self._block_scaled:
+            assert quant_config.weight_scale.block_size is not None
+            self.weight_block_size = quant_config.weight_scale.block_size
 
-        # Granularity at which every per-head K-chunk fits in a single
-        # on-disk scale block. Equals `weight_block_size[0]` when the
-        # per-head row count is a multiple of it; otherwise the GCD of
-        # the residue and the block (e.g. 64 when (Dn + Dv) % 128 != 0).
-        block_m = int(self.weight_block_size[0])
-        per_head = self.qk_nope_head_dim + self.v_head_dim
-        residue = per_head % block_m
-        if residue == 0 and self.qk_nope_head_dim % block_m == 0:
-            self._b_scale_granularity = block_m
-        else:
-            self._b_scale_granularity = math.gcd(residue, block_m)
+            # Granularity at which every per-head K-chunk fits in a single
+            # on-disk scale block. Equals `weight_block_size[0]` when the
+            # per-head row count is a multiple of it; otherwise the GCD of
+            # the residue and the block (e.g. 64 when (Dn + Dv) % 128 != 0).
+            block_m = int(self.weight_block_size[0])
+            per_head = self.qk_nope_head_dim + self.v_head_dim
+            residue = per_head % block_m
+            if residue == 0 and self.qk_nope_head_dim % block_m == 0:
+                self._b_scale_granularity = block_m
+            else:
+                self._b_scale_granularity = math.gcd(residue, block_m)
 
         proj_dtype = DType.float8_e4m3fn
         self.q_a_proj = Weight(
@@ -177,16 +182,7 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
         self.q_a_proj_scale = Weight(
             name="q_a_proj.weight_scale",
             dtype=quant_config.weight_scale.dtype,
-            shape=(
-                ceildiv(
-                    int(self.q_a_proj.shape[0]),
-                    quant_config.weight_scale.block_size[0],
-                ),
-                ceildiv(
-                    int(self.q_a_proj.shape[1]),
-                    input_k_block,
-                ),
-            ),
+            shape=self._scale_shape(self.q_a_proj),
             device=self.devices[0],
         )
 
@@ -206,16 +202,7 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
         self.q_b_proj_scale = Weight(
             name="q_b_proj.weight_scale",
             dtype=quant_config.weight_scale.dtype,
-            shape=(
-                ceildiv(
-                    int(self.q_b_proj.shape[0]),
-                    quant_config.weight_scale.block_size[0],
-                ),
-                ceildiv(
-                    int(self.q_b_proj.shape[1]),
-                    input_k_block,
-                ),
-            ),
+            shape=self._scale_shape(self.q_b_proj),
             device=self.devices[0],
         )
 
@@ -235,16 +222,7 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
         self.kv_a_proj_with_mqa_scale = Weight(
             name="kv_a_proj_with_mqa.weight_scale",
             dtype=quant_config.weight_scale.dtype,
-            shape=(
-                ceildiv(
-                    int(self.kv_a_proj_with_mqa.shape[0]),
-                    self.weight_block_size[0],
-                ),
-                ceildiv(
-                    int(self.kv_a_proj_with_mqa.shape[1]),
-                    input_k_block,
-                ),
-            ),
+            shape=self._scale_shape(self.kv_a_proj_with_mqa),
             device=self.devices[0],
         )
 
@@ -271,16 +249,7 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
             Weight(
                 name="kv_b_proj.weight_scale",
                 dtype=quant_config.weight_scale.dtype,
-                shape=(
-                    ceildiv(
-                        int(self.kv_b_proj.shape[0]),
-                        self.weight_block_size[0],
-                    ),
-                    ceildiv(
-                        int(self.kv_b_proj.shape[1]),
-                        input_k_block,
-                    ),
-                ),
+                shape=self._scale_shape(self.kv_b_proj),
                 device=self.devices[0],
             )
             if self._kv_b_proj_quantized
@@ -297,6 +266,18 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
             dtype=proj_dtype,
             device=self.devices[0],
             quant_config=o_proj_quant_config,
+        )
+
+    def _scale_shape(self, weight: Weight) -> tuple[int, int]:
+        """Returns the shape of ``weight``'s scale: one per block or per row."""
+        rows, cols = (int(dim) for dim in weight.shape)
+        if not self._block_scaled:
+            return (rows, 1)
+        input_block_size = self.quant_config.input_scale.block_size
+        assert input_block_size is not None
+        return (
+            ceildiv(rows, int(self.weight_block_size[0])),
+            ceildiv(cols, input_block_size[1]),
         )
 
     def create_mla_prefill_metadata(
@@ -355,8 +336,8 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
             #
             # The per-head row layout of q_b_proj / kv_b_proj is preserved
             # because n_heads is divisible by num_devices, so an even rowwise
-            # split lands on head boundaries. Each FP8 block-wise scale is
-            # sharded along the same axis as its weight.
+            # split lands on head boundaries. Each FP8 scale is sharded along
+            # the same axis as its weight, except o_proj's per-row scale.
             self._sharding_strategy = strategy
 
             if self.n_heads % strategy.num_devices != 0:
@@ -402,8 +383,8 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
                 )
 
             # o_proj contracts the per-head value dim back to hidden: shard the
-            # input columns (row-parallel). The Linear handles its block-wise
-            # weight scale, which is sharded along the same (K) axis.
+            # input columns (row-parallel). The Linear shards a block-wise
+            # weight scale along the same (K) axis and replicates a per-row one.
             self.o_proj.sharding_strategy = ShardingStrategy.columnwise(n)
         elif strategy.is_replicate:
             # Data parallelism: replicate the entire module's weights to each device.
@@ -642,7 +623,15 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
     @property
     def _kv_b_proj_weight(self) -> TensorValue:
         """Returns `kv_b_proj` reshaped for per-head projection slicing."""
-        kv_b_proj_weight: TensorValue = self.kv_b_proj.transpose(0, 1)
+        kv_b_proj: TensorValue = self.kv_b_proj
+        if self.kv_b_proj_scale is not None and not self._block_scaled:
+            # Per-row scales lie on the decode K-up matmul's reduction axis,
+            # which the MLA kernels cannot scale, so they absorb bf16.
+            kv_b_proj = ops.cast(
+                ops.cast(kv_b_proj, DType.float32) * self.kv_b_proj_scale,
+                DType.bfloat16,
+            )
+        kv_b_proj_weight = kv_b_proj.transpose(0, 1)
         kv_b_proj_weight = kv_b_proj_weight.reshape(
             (self.kv_lora_rank, self.n_heads, -1)
         )
@@ -661,9 +650,10 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
         so the kernel — called with `n/k_scale_granularity = g` —
         sees a matching block count along the on-disk K axis.
 
-        Returns a `[H, n_chunks, n_cols_kernel]` tensor.
+        Returns a `[H, n_chunks, n_cols_kernel]` tensor, or `None` when the
+        absorbed weights are unquantized.
         """
-        if self.kv_b_proj_scale is None:
+        if self.kv_b_proj_scale is None or not self._block_scaled:
             return None
         g = self._b_scale_granularity
         block_m = int(self.weight_block_size[0])
@@ -752,12 +742,13 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
             .permute([1, 2, 0])
             .reshape((-1, self.kv_lora_rank))
         )
-        block_k_kernel = self._b_scale_granularity
         gathered = self._gather_per_head_scale(
             start_row_offset=0, n_rows=self.qk_nope_head_dim
         )
         w_k_scale = (
-            gathered.reshape((-1, self.kv_lora_rank // block_k_kernel))
+            gathered.reshape(
+                (-1, self.kv_lora_rank // self._b_scale_granularity)
+            )
             if gathered is not None
             else None
         )
@@ -788,17 +779,20 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
             "mask_variant": MHAMaskVariant.CAUSAL_MASK,
             "scale": self.scale,
             "v_head_dim": self.v_head_dim,
-            "quant_config": self.quant_config,
-            # When the per-head row count straddles the on-disk block,
-            # the kernel must use the finer granularity at which every
-            # per-head K-chunk fits in a single on-disk scale block
-            # instead of the on-disk `weight_scale.block_size`.
-            "scale_granularity_override": self._b_scale_granularity,
         }
 
         w_k, w_k_scale = self.w_k
         w_uk, w_uk_scale = self.w_uk
         w_uv, w_uv_scale = self.w_uv
+        if w_uv_scale is not None:
+            attn_kwargs["quant_config"] = self.quant_config
+            # When the per-head row count straddles the on-disk block,
+            # the kernel must use the finer granularity at which every
+            # per-head K-chunk fits in a single on-disk scale block
+            # instead of the on-disk `weight_scale.block_size`.
+            attn_kwargs["scale_granularity_override"] = (
+                self._b_scale_granularity
+            )
         if self.graph_mode in ["prefill", "auto"]:
             if _mla_prefill_metadata is None:
                 mla_prefill_metadata = self.create_mla_prefill_metadata(

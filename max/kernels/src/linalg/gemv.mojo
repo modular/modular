@@ -13,7 +13,6 @@
 
 """Provides general matrix-vector (GEMV) and general vector-matrix (GEVM) kernels for CPU and GPU."""
 
-from std.collections import Optional
 from std.math import align_down, align_up, ceildiv
 from std.math.uutils import ufloordiv
 from std.sys import is_amd_gpu, llvm_intrinsic, simd_width_of
@@ -77,7 +76,6 @@ from .utils import (
     ElementwiseComputeFn,
     ElementwiseEpilogueFn,
     GemmShape,
-    elementwise_epilogue_type,
     no_compute_fn,
     no_epilogue_fn,
 )
@@ -178,9 +176,9 @@ def gemv_kernel[
     accum_type: DType = get_accum_type[c_type](),
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    c: UnsafePointer[Scalar[c_type], AnyOrigin[mut=True]],
-    a: UnsafePointer[Scalar[a_type], ImmUnsafeAnyOrigin],
-    b: UnsafePointer[Scalar[b_type], ImmUnsafeAnyOrigin],
+    c: MutPointer[Scalar[c_type], AnyOrigin[mut=True]],
+    a: ImmPointer[Scalar[a_type], ImmUnsafeAnyOrigin],
+    b: ImmPointer[Scalar[b_type], ImmUnsafeAnyOrigin],
     m: Int32,
     n: Int32,
     k: Int32,
@@ -205,9 +203,9 @@ def gemv_kernel_epilogue_fn[
     accum_type: DType = get_accum_type[c_type](),
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    c: UnsafePointer[Scalar[c_type], AnyOrigin[mut=True]],
-    a: UnsafePointer[Scalar[a_type], ImmUnsafeAnyOrigin],
-    b: UnsafePointer[Scalar[b_type], ImmUnsafeAnyOrigin],
+    c: MutPointer[Scalar[c_type], AnyOrigin[mut=True]],
+    a: ImmPointer[Scalar[a_type], ImmUnsafeAnyOrigin],
+    b: ImmPointer[Scalar[b_type], ImmUnsafeAnyOrigin],
     m: Int32,
     n: Int32,
     k: Int32,
@@ -233,9 +231,9 @@ def gemv_kernel_compute_fn[
     accum_type: DType = get_accum_type[c_type](),
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    c: UnsafePointer[Scalar[c_type], AnyOrigin[mut=True]],
-    a: UnsafePointer[Scalar[a_type], ImmUnsafeAnyOrigin],
-    b: UnsafePointer[Scalar[b_type], ImmUnsafeAnyOrigin],
+    c: MutPointer[Scalar[c_type], AnyOrigin[mut=True]],
+    a: ImmPointer[Scalar[a_type], ImmUnsafeAnyOrigin],
+    b: ImmPointer[Scalar[b_type], ImmUnsafeAnyOrigin],
     m: Int32,
     n: Int32,
     k: Int32,
@@ -265,9 +263,9 @@ def _gemv_kernel_impl[
     accum_type: DType,
     pdl_level: PDLLevel,
 ](
-    c: UnsafePointer[Scalar[c_type], AnyOrigin[mut=True]],
-    a: UnsafePointer[Scalar[a_type], ImmUnsafeAnyOrigin],
-    b: UnsafePointer[Scalar[b_type], ImmUnsafeAnyOrigin],
+    c: MutPointer[Scalar[c_type], AnyOrigin[mut=True]],
+    a: ImmPointer[Scalar[a_type], ImmUnsafeAnyOrigin],
+    b: ImmPointer[Scalar[b_type], ImmUnsafeAnyOrigin],
     m: Int32,
     n: Int32,
     k: Int32,
@@ -1247,12 +1245,12 @@ def _gemv_split_k_impl[
             comptime if is_amd_gpu():
                 var b_vec = weight_tile.load[
                     simd_width, non_temporal=weight_non_temporal
-                ](Coord(i, thread_idx.x * simd_width))
-                tile_w.store(Coord(i, Idx[0]), b_vec)
+                ]((i, thread_idx.x * simd_width))
+                tile_w.store((i, Idx[0]), b_vec)
             else:
                 var vec_weight_tile = weight_tile.vectorize[1, simd_width]()
                 var b_vec = vec_weight_tile[i, thread_idx.x]
-                tile_w.store(Coord(i, Idx[0]), b_vec)
+                tile_w.store((i, Idx[0]), b_vec)
 
         # Load activations and accumulate dot products.
         comptime for i in range(tile_m):
@@ -1270,7 +1268,7 @@ def _gemv_split_k_impl[
                 var weight_native = rebind[SIMD[b_type, simd_width]](
                     tile_w.vectorize[1, simd_width]()[j, 0]
                 )
-                var local_accum = rebind[Scalar[accum_type]](acc[i, j])
+                var local_accum = acc[i, j]
                 local_accum = _dot_accum(act_native, weight_native, local_accum)
                 acc[i, j] = local_accum
 
@@ -1495,9 +1493,9 @@ def gevm_kernel[
     accum_type: DType = get_accum_type[c_type](),
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    c: UnsafePointer[Scalar[c_type], AnyOrigin[mut=True]],
-    a: UnsafePointer[Scalar[a_type], ImmUnsafeAnyOrigin],
-    b: UnsafePointer[Scalar[b_type], ImmUnsafeAnyOrigin],
+    c: MutPointer[Scalar[c_type], AnyOrigin[mut=True]],
+    a: ImmPointer[Scalar[a_type], ImmUnsafeAnyOrigin],
+    b: ImmPointer[Scalar[b_type], ImmUnsafeAnyOrigin],
     m: Int32,
     n: Int32,
     k: Int32,
@@ -1525,9 +1523,9 @@ def gevm_kernel_epilogue_fn[
     accum_type: DType = get_accum_type[c_type](),
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    c: UnsafePointer[Scalar[c_type], AnyOrigin[mut=True]],
-    a: UnsafePointer[Scalar[a_type], ImmUnsafeAnyOrigin],
-    b: UnsafePointer[Scalar[b_type], ImmUnsafeAnyOrigin],
+    c: MutPointer[Scalar[c_type], AnyOrigin[mut=True]],
+    a: ImmPointer[Scalar[a_type], ImmUnsafeAnyOrigin],
+    b: ImmPointer[Scalar[b_type], ImmUnsafeAnyOrigin],
     m: Int32,
     n: Int32,
     k: Int32,
@@ -1556,9 +1554,9 @@ def gevm_kernel_compute_fn[
     accum_type: DType = get_accum_type[c_type](),
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    c: UnsafePointer[Scalar[c_type], AnyOrigin[mut=True]],
-    a: UnsafePointer[Scalar[a_type], ImmUnsafeAnyOrigin],
-    b: UnsafePointer[Scalar[b_type], ImmUnsafeAnyOrigin],
+    c: MutPointer[Scalar[c_type], AnyOrigin[mut=True]],
+    a: ImmPointer[Scalar[a_type], ImmUnsafeAnyOrigin],
+    b: ImmPointer[Scalar[b_type], ImmUnsafeAnyOrigin],
     m: Int32,
     n: Int32,
     k: Int32,
@@ -1588,9 +1586,9 @@ def _gevm_kernel_impl[
     accum_type: DType,
     pdl_level: PDLLevel,
 ](
-    c: UnsafePointer[Scalar[c_type], AnyOrigin[mut=True]],
-    a: UnsafePointer[Scalar[a_type], ImmUnsafeAnyOrigin],
-    b: UnsafePointer[Scalar[b_type], ImmUnsafeAnyOrigin],
+    c: MutPointer[Scalar[c_type], AnyOrigin[mut=True]],
+    a: ImmPointer[Scalar[a_type], ImmUnsafeAnyOrigin],
+    b: ImmPointer[Scalar[b_type], ImmUnsafeAnyOrigin],
     m: Int32,
     n: Int32,
     k: Int32,
@@ -2967,7 +2965,6 @@ def _gemv_gpu_impl[
 @inline(.always)
 def gemv[
     parallelize: Bool,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c_buf: TileTensor[mut=True, ...],
     a_buf: TileTensor[mut=False, ...],
@@ -2980,13 +2977,33 @@ def gemv[
 
     Parameters:
         parallelize: When True, the reduction runs in parallel across output rows.
-        elementwise_lambda_fn: Optional epilogue applied to each output element.
 
     Args:
         c_buf: Output TileTensor of length M.
         a_buf: Input matrix TileTensor of shape (M, K).
         b_buf: Input vector TileTensor of length K.
     """
+    _gemv_cpu[
+        parallelize=parallelize, has_epilogue_fn=False, has_compute_fn=False
+    ](c_buf, a_buf, b_buf, no_epilogue_fn, no_compute_fn)
+
+
+@inline(.always)
+def _gemv_cpu[
+    EpilogueFnType: ElementwiseEpilogueFn,
+    ComputeFnType: ElementwiseComputeFn,
+    //,
+    *,
+    parallelize: Bool,
+    has_epilogue_fn: Bool,
+    has_compute_fn: Bool,
+](
+    c_buf: TileTensor[mut=True, ...],
+    a_buf: TileTensor[mut=False, ...],
+    b_buf: TileTensor[mut=False, ...],
+    epilogue_fn: EpilogueFnType,
+    compute_fn: ComputeFnType,
+) raises:
     comptime c_type = c_buf.dtype
     comptime simd_width = simd_width_of[c_type]()
 
@@ -3006,13 +3023,21 @@ def gemv[
     def output_fn[
         out_type: DType, width: SIMDLength
     ](idx: Coord, value: SIMD[out_type, width]):
-        comptime if case .Some(func) = elementwise_lambda_fn:
-            var m = Int(idx[0].value())
+        comptime if has_epilogue_fn:
+            var m = Int(idx[0])
 
             comptime for i in range(width):
-                func[out_type, 1]((m + i, 0), value[i])
+                epilogue_fn[out_type, 1, alignment=1]((m + i, 0), value[i])
+        elif has_compute_fn:
+            var m = Int(idx[0])
+
+            comptime for i in range(width):
+                var out = compute_fn[out_type, 1, alignment=1](
+                    (m + i, 0), value[i]
+                )
+                c_buf.store((m + i,), out.cast[c_type]())
         else:
-            c_buf.store[width=width]((idx[0],), value.cast[c_type]())
+            c_buf.store((idx[0],), value.cast[c_type]())
 
     @inline(.always)
     def reduce_impl[
@@ -3036,29 +3061,35 @@ def naive_gemv(
     a_buf: TileTensor[mut=False, ...],
     b_buf: TileTensor[mut=False, ...],
 ):
-    """Computes a reference matrix-vector product C = A * b using a scalar nested loop.
+    """Computes a reference matrix-vector product C = A * b.
 
-    Iterates over K then M, accumulating each A[m, k] * b[k] into c[m]. Intended for
+    Computes each C[m] as a SIMD dot product of row m of A with b. Intended for
     correctness testing rather than performance-critical paths.
 
     Args:
-        c_buf: Output TileTensor of length M, zero-filled on entry.
+        c_buf: Output TileTensor of length M.
         a_buf: Input matrix TileTensor of shape (M, K).
         b_buf: Input vector TileTensor of length K.
     """
     comptime c_type = c_buf.dtype
+    comptime width = simd_width_of[c_type]()
     var M = Int(a_buf.dim[0]())
     var K = Int(a_buf.dim[1]())
-    var c_ptr = c_buf.ptr
-    var a_ptr = a_buf.ptr
-    var b_ptr = b_buf.ptr
+    var vector_end = align_down(K, width)
 
-    _ = c_buf.fill(0)
-    for k in range(K):
-        var b_val = b_ptr[k].cast[c_type]()
-        for m in range(M):
-            var a_val = a_ptr[m * K + k].cast[c_type]()
-            c_ptr[m] += a_val * b_val
+    for m in range(M):
+        var acc = SIMD[c_type, width](0)
+        for k in range(0, vector_end, width):
+            var a_vec = a_buf.load[width=width]((m, k))
+            var b_vec = b_buf.load[width=width]((k,))
+            acc += a_vec.cast[c_type]() * b_vec.cast[c_type]()
+        var dot = acc.reduce_add()
+        for k in range(vector_end, K):
+            dot += (
+                a_buf.load[width=1]((m, k)).cast[c_type]()
+                * b_buf.load[width=1]((k,)).cast[c_type]()
+            )
+        c_buf.store((m,), dot)
 
 
 struct _MmaCpAsyncGmemLoaderA[
@@ -3163,7 +3194,7 @@ struct _MmaCpAsyncGmemLoaderA[
                     1 + next_stage * 2
                 ][].try_wait(next_phase)
 
-            var gmem_base = self.act.ptr.address_space_cast[.GLOBAL]()
+            var gmem_base = self.act.ptr.unsafe_address_space_cast[.GLOBAL]()
             var smem_tile_ptr = self.smem_a[self.stage].ptr
             comptime for v in range(Self.vec_per_iter):
                 var linear = (
@@ -3177,8 +3208,8 @@ struct _MmaCpAsyncGmemLoaderA[
                         Index(self.batch_idx, self.cta_m + m_idx, gmem_k)
                     )
                     async_copy[16, bypass_L1_16B=True, l2_prefetch=128](
-                        gmem_base + Int(offset),
-                        smem_tile_ptr + self.smem_offsets[v],
+                        gmem_base.unsafe_offset(Int(offset)),
+                        smem_tile_ptr.unsafe_offset(self.smem_offsets[v]),
                     )
                 else:
                     # The grid covers ceildiv(gemm_m, tile_m) * tile_m rows;
@@ -3190,7 +3221,7 @@ struct _MmaCpAsyncGmemLoaderA[
                         fill=Scalar[Self.a_type](0),
                     ](
                         gmem_base,
-                        smem_tile_ptr + self.smem_offsets[v],
+                        smem_tile_ptr.unsafe_offset(self.smem_offsets[v]),
                         src_size=0,
                     )
 
@@ -3303,7 +3334,7 @@ struct _MmaCpAsyncGmemLoaderB[
                     1 + next_stage * 2
                 ][].try_wait(next_phase)
 
-            var gmem_base = self.weight.ptr.address_space_cast[.GLOBAL]()
+            var gmem_base = self.weight.ptr.unsafe_address_space_cast[.GLOBAL]()
             var smem_tile_ptr = self.smem_b[self.stage].ptr
             comptime for v in range(Self.vec_per_iter):
                 var linear = (
@@ -3317,8 +3348,8 @@ struct _MmaCpAsyncGmemLoaderB[
                         Index(self.batch_idx, self.cta_n + n_idx, gmem_k)
                     )
                     async_copy[16, bypass_L1_16B=True, l2_prefetch=128](
-                        gmem_base + Int(offset),
-                        smem_tile_ptr + self.smem_offsets[v],
+                        gmem_base.unsafe_offset(Int(offset)),
+                        smem_tile_ptr.unsafe_offset(self.smem_offsets[v]),
                     )
                 else:
                     async_copy[
@@ -3327,7 +3358,7 @@ struct _MmaCpAsyncGmemLoaderB[
                         fill=Scalar[Self.b_type](0),
                     ](
                         gmem_base,
-                        smem_tile_ptr + self.smem_offsets[v],
+                        smem_tile_ptr.unsafe_offset(self.smem_offsets[v]),
                         src_size=0,
                     )
 
@@ -3370,7 +3401,7 @@ struct _MmaCpAsyncMmaComputer[
     var smem_a: Self.SmemTilesA
     var smem_b: Self.SmemTilesB
     var smem_barrier: Self.Barriers
-    var out_ptr: UnsafePointer[Scalar[Self.c_type], Self.out_origin]
+    var out_ptr: MutPointer[Scalar[Self.c_type], Self.out_origin]
     var compute_warp: Int
     var lane_idx: Int
     var warp_k_off: Int
@@ -3387,7 +3418,7 @@ struct _MmaCpAsyncMmaComputer[
         smem_a: Self.SmemTilesA,
         smem_b: Self.SmemTilesB,
         smem_barrier: Self.Barriers,
-        out_ptr: UnsafePointer[Scalar[Self.c_type], Self.out_origin],
+        out_ptr: MutPointer[Scalar[Self.c_type], Self.out_origin],
         compute_warp: Int,
         lane_idx: Int,
         warp_k_off: Int,
@@ -3424,8 +3455,9 @@ struct _MmaCpAsyncMmaComputer[
                 var a_m_idx = self.lane_idx % 16
                 var a_k_base = k_in_tile + (self.lane_idx // 16) * 8
                 var a_reg = ld_matrix[8](
-                    a_tile_ptr
-                    + Self.swizzle_a(a_m_idx * Self.tile_k + a_k_base)
+                    a_tile_ptr.unsafe_offset(
+                        Self.swizzle_a(a_m_idx * Self.tile_k + a_k_base)
+                    )
                 )
 
                 # ld_matrix for B (8x16 bf16 block).
@@ -3434,8 +3466,9 @@ struct _MmaCpAsyncMmaComputer[
                 if b_k_base >= Self.tile_k:
                     b_k_base = k_in_tile
                 var b_reg_full = ld_matrix[8](
-                    b_tile_ptr
-                    + Self.swizzle_b(b_n_idx * Self.tile_k + b_k_base)
+                    b_tile_ptr.unsafe_offset(
+                        Self.swizzle_b(b_n_idx * Self.tile_k + b_k_base)
+                    )
                 )
                 var b_reg = SIMD[Self.b_type, 4](
                     b_reg_full[0], b_reg_full[1], b_reg_full[2], b_reg_full[3]
@@ -3480,7 +3513,7 @@ struct _MmaCpAsyncMmaComputer[
             compute_fn: Maps each output index and value to the value to
                 store. Ignored unless `has_compute_fn`.
         """
-        var smem_epi = self.smem_a.ptr.bitcast[Scalar[Self.accum_type]]()
+        var smem_epi = self.smem_a.ptr.unsafe_bitcast[Scalar[Self.accum_type]]()
         var base_off = self.compute_warp * Self.tile_m * Self.tile_n
         var m0 = self.lane_idx // 4
         var n0 = (self.lane_idx % 4) * 2
@@ -3866,7 +3899,7 @@ def _gemm_mma_cpasync_kernel_impl[
     var cta_n = tile_n * block_idx.y
     var batch_idx = block_idx.z
 
-    var out_ptr = output.ptr + batch_idx * _gemm_m * _gemm_n
+    var out_ptr = output.ptr.unsafe_offset(batch_idx * _gemm_m * _gemm_n)
 
     # K-loop parameters.
     var k_iters = _gemm_k // tile_k
@@ -3885,7 +3918,7 @@ def _gemm_mma_cpasync_kernel_impl[
         UInt8,
         address_space=.SHARED,
         alignment=128,
-    ]().bitcast[SmemType]()[]
+    ]().unsafe_bitcast[SmemType]()[]
     var smem_a = smem.a_tiles()
     var smem_b = smem.b_tiles()
     var smem_barrier = smem.barriers()

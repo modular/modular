@@ -35,7 +35,7 @@ def test_llm_fuzz_matrix_schedule_all() -> None:
     "pipeline",
     [
         "minimax/MiniMax-M3-MXFP8-ep-tp",
-        "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4",
+        "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4__dspark-tp2",
     ],
 )
 def test_llm_fuzz_matrix_dispatch_specific(pipeline: str) -> None:

@@ -152,8 +152,7 @@ def test_attention_splits_heads(
             assert _shape(r.wo_b.weight) == (out, inp // _N_DEV)
             assert _shape(r.attn_sink) == (_HEADS // _N_DEV,)
             # The latent side is shared by every head.
-            assert _shape(r.wq_a.weight) == _shape(s.wq_a.weight)
-            assert _shape(r.wkv.weight) == _shape(s.wkv.weight)
+            assert _shape(r.wqa_wkv.weight) == _shape(s.wqa_wkv.weight)
             assert r.wq_b.weight.device == DeviceRef.GPU(rank)
 
 
@@ -195,7 +194,7 @@ def test_routed_experts_split_whole_experts(
                     part = _shape(getattr(getattr(r, proj), name))
                     assert part == (full[0] // _N_DEV, *full[1:])
             # The shared expert and the gate are replicated.
-            for name in ("w1", "w2", "w3"):
+            for name in ("w13", "w2"):
                 assert _shape(
                     getattr(rep.ffn.shared_experts, name).weight
                 ) == _shape(getattr(src.ffn.shared_experts, name).weight)
@@ -207,14 +206,13 @@ def test_fp8_linears_keep_their_class(
     source, replicas = models
     for replica in replicas:
         for src, rep in zip(_blocks(source), _blocks(replica), strict=True):
-            for name in ("wq_a", "wq_b", "wkv", "wo_b"):
+            # ``wo_a`` is stored fp8 too and dequantized in the graph.
+            for name in ("wqa_wkv", "wq_b", "wo_a", "wo_b"):
                 assert isinstance(getattr(src.attn, name), DeepseekV4Fp8Linear)
                 assert isinstance(getattr(rep.attn, name), DeepseekV4Fp8Linear)
                 assert getattr(rep.attn, name).weight.dtype == (
                     DType.float8_e4m3fn
                 )
-            # ``wo_a`` is bf16 in the reference and host-dequantized.
-            assert type(rep.attn.wo_a) is Linear
 
 
 @pytest.mark.parametrize("quantized", [True, False])
@@ -227,11 +225,7 @@ def test_expert_projection_formats(quantized: bool) -> None:
         native_routed_experts=False,
     )
     moe = DeepseekV4MoE(config, 0, DeviceRef.CPU())
-    shared = (
-        moe.shared_experts.w1,
-        moe.shared_experts.w2,
-        moe.shared_experts.w3,
-    )
+    shared = (moe.shared_experts.w13, moe.shared_experts.w2)
     for linear in shared:
         assert type(linear) is (DeepseekV4Fp8Linear if quantized else Linear)
     assert isinstance(moe.experts, LayerList)

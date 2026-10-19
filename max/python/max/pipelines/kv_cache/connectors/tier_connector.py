@@ -70,7 +70,7 @@ from max.nn.kv_cache import (
     KVCacheParamInterface,
     KVConnectorType,
 )
-from max.nn.kv_cache.cache_params import HostStagingAlloc, connector_type
+from max.nn.kv_cache.cache_params import HostStagingAlloc
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.kv_cache.paged_kv_cache.jenga_block_pool import (
     compute_jenga_ratios,
@@ -403,13 +403,16 @@ class _TierTransfer:
 
 def _compact_unevictable_allowed(
     path: str = "/proc/sys/vm/compact_unevictable_allowed",
-) -> bool | None:
-    """Whether kernel compaction may migrate mlocked pages, if readable."""
+) -> bool:
+    """Whether the sysctl reads as letting compaction migrate mlocked pages.
+
+    False when it reads 0 or can't be read.
+    """
     try:
         with open(path) as f:
             return f.read().strip() != "0"
     except OSError:
-        return None
+        return False
 
 
 def _alloc_chunked_staging_region(
@@ -592,7 +595,7 @@ class TierConnector(KVConnector):
         _validate_leaves(leaves)
         leaf0 = next(iter(leaves.keys()))
         cfg = params.kv_connector_config
-        connector = connector_type(cfg)
+        connector = cfg.type
         # Resolve the extension before anything is checked or acquired, so a
         # build without it fails before the offload directory is taken.
         native_class = _native_connector_class()
@@ -643,7 +646,7 @@ class TierConnector(KVConnector):
                     "host_staging_alloc='registered'; driver-allocated "
                     "staging memory is already owned by the driver."
                 )
-            if _compact_unevictable_allowed() is True:
+            if _compact_unevictable_allowed():
                 logger.warning(
                     "host_staging_mlock locks the staging pages, but with "
                     "vm.compact_unevictable_allowed=1 (the kernel default) "

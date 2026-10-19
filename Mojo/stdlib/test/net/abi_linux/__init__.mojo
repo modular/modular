@@ -15,6 +15,8 @@
 from test_utils.cabi_check import AbiConstant, AbiTypedef, AbiTypedefLike
 
 from std.net._sys.linux import (
+    AF_INET,
+    AF_INET6,
     MSG_CMSG_CLOEXEC,
     MSG_ERRQUEUE,
     MSG_MORE,
@@ -30,6 +32,7 @@ from std.net._sys.linux import (
     sockaddr_in6,
     sockaddr_storage,
     sockaddr_un,
+    socklen_t,
 )
 
 comptime CABI_INCLUDES: List[StaticString] = [
@@ -52,10 +55,13 @@ comptime CABI_STRUCTS = TypeList.of[
 comptime CABI_TYPEDEFS = TypeList.of[
     Trait=AbiTypedefLike,
     AbiTypedef["sa_family_t", sa_family_t],
+    AbiTypedef["socklen_t", socklen_t],
 ]()
 """The type aliases to check."""
 
 comptime CABI_CONSTANTS = [
+    AbiConstant("AF_INET", AF_INET),
+    AbiConstant("AF_INET6", AF_INET6),
     AbiConstant("SOCK_NONBLOCK", SOCK_NONBLOCK),
     AbiConstant("SOCK_CLOEXEC", SOCK_CLOEXEC),
     AbiConstant("SO_PROTOCOL", SO_PROTOCOL),

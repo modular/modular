@@ -43,7 +43,6 @@ trace plumbing at all.
 """
 
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
-from std.memory import UnsafePointer
 from std.sys import llvm_intrinsic
 from std.sys.info import is_nvidia_gpu
 from std.time import global_perf_counter_ns
@@ -62,7 +61,7 @@ trait TraceBuf(DevicePassable, TrivialRegisterPassable):
         """
         ...
 
-    def base_ptr(self) -> UnsafePointer[UInt64, MutUntrackedOrigin]:
+    def base_ptr(self) -> MutPointer[UInt64, MutUntrackedOrigin]:
         """Base pointer of the underlying slot buffer.
 
         For handing the buffer to code that cannot accept a `TraceBuf` --
@@ -98,9 +97,9 @@ struct NullTrace(TraceBuf):
     """Device-side type alias. `NullTrace` is trivially device-passable."""
 
     @inline(.always)
-    def base_ptr(self) -> UnsafePointer[UInt64, MutUntrackedOrigin]:
+    def base_ptr(self) -> MutPointer[UInt64, MutUntrackedOrigin]:
         """Returns a dangling pointer; there is no buffer."""
-        return UnsafePointer[UInt64, MutUntrackedOrigin].unsafe_dangling()
+        return MutPointer[UInt64, MutUntrackedOrigin].unsafe_dangling()
 
     @inline(.always)
     def __init__(out self):
@@ -154,18 +153,18 @@ struct GmemTrace(TraceBuf):
     comptime device_type: AnyType = Self
     """Device-side type alias. `GmemTrace` is trivially device-passable."""
 
-    var ptr: UnsafePointer[UInt64, MutUntrackedOrigin]
+    var ptr: MutPointer[UInt64, MutUntrackedOrigin]
     """Device pointer to a `u64` buffer sized for the caller's
     `num_blocks * events_per_block` slot count, zero-initialized on
     first use."""
 
     @inline(.always)
-    def base_ptr(self) -> UnsafePointer[UInt64, MutUntrackedOrigin]:
+    def base_ptr(self) -> MutPointer[UInt64, MutUntrackedOrigin]:
         """Returns the device buffer's base pointer."""
         return self.ptr
 
     @inline(.always)
-    def __init__(out self, ptr: UnsafePointer[UInt64, MutUntrackedOrigin]):
+    def __init__(out self, ptr: MutPointer[UInt64, MutUntrackedOrigin]):
         """Wraps a device pointer as a trace buffer.
 
         Args:

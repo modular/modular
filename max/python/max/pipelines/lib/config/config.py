@@ -336,7 +336,8 @@ def _resolve_overlap_and_device_graph_capture(
     """Returns the resolved (device_graph_capture, enable_overlap_scheduler).
 
     Device graph capture requires the overlap scheduler, so the two
-    resolve together. ``--force`` skips the auto-enables and the
+    resolve together. An explicit ``enable_overlap_scheduler=False`` keeps
+    both auto-enables off. ``--force`` skips the auto-enables and the
     overlap-compatibility validation, matching its meaning everywhere
     else in construction.
     """
@@ -353,6 +354,7 @@ def _resolve_overlap_and_device_graph_capture(
     if not runtime.force:
         if (
             device_graph_capture is None
+            and runtime.enable_overlap_scheduler is not False
             and arch is not None
             and arch.supports_device_graph_capture
             and accelerator_api() in ("cuda", "hip")
@@ -374,27 +376,32 @@ def _resolve_overlap_and_device_graph_capture(
 
     enable_overlap_scheduler = runtime.enable_overlap_scheduler
     if device_graph_capture:
-        if not enable_overlap_scheduler:
+        if enable_overlap_scheduler is False:
+            logger.warning(
+                "Device graph capture needs the overlap scheduler, so it "
+                "overrides --no-enable-overlap-scheduler."
+            )
+        elif enable_overlap_scheduler is None:
             logger.info("Enabling overlap scheduling for device graph capture.")
         enable_overlap_scheduler = True
 
     if runtime.force:
-        return device_graph_capture, enable_overlap_scheduler
+        return device_graph_capture, bool(enable_overlap_scheduler)
 
     # Automatically enable overlap scheduling for architectures that declare
     # support. New architectures opt out by setting ``supports_overlap_scheduler=False``.
-    if not enable_overlap_scheduler:
-        if (
+    if enable_overlap_scheduler is None:
+        enable_overlap_scheduler = (
             arch is not None
             and arch.supports_overlap_scheduler
             and _is_eligible_for_overlap_serve_optimizations(
                 sampling, lora, model, arch
             )
-        ):
-            enable_overlap_scheduler = True
+        )
+        if enable_overlap_scheduler:
             logger.info(
                 f"Automatically enabling overlap scheduling for {arch.name}. "
-                "You can manually disable this by setting --no-enable-overlap-scheduler --force."
+                "You can manually disable this by setting --no-enable-overlap-scheduler."
             )
 
     # Raise errors when we detect features that are not compatible with the overlap scheduler.
@@ -1734,11 +1741,16 @@ class PipelineConfig(ConfigFileModel):
             runtime, sampling = _resolved_runtime_and_sampling(
                 runtime, sampling, lora, models["main"], arch
             )
-        elif runtime.device_graph_capture is None:
+        elif (
+            runtime.device_graph_capture is None
+            or runtime.enable_overlap_scheduler is None
+        ):
             # Overlap/DGC resolution is arch-gated; configs without a
-            # registered architecture still end with a concrete bool.
+            # registered architecture still end with concrete bools.
             runtime = _construct_from_user_fields(
-                runtime, device_graph_capture=False
+                runtime,
+                device_graph_capture=bool(runtime.device_graph_capture),
+                enable_overlap_scheduler=bool(runtime.enable_overlap_scheduler),
             )
 
         config = cls(

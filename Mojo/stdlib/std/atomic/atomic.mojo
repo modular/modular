@@ -22,7 +22,7 @@ from std.atomic import Atomic
 from std.collections.string.string_span import _get_kgen_string
 from std.memory._poison import _check_not_poison
 from std.os import abort
-from std.sys.info import is_nvidia_gpu, is_apple_gpu
+from std._plugin import CurrentPlugin
 
 from std.builtin.dtype import _integral_type_of, _unsigned_integral_type_of
 from std.memory import bitcast
@@ -31,7 +31,7 @@ from std.memory import bitcast
 # Ordering
 # ===-----------------------------------------------------------------------===#
 
-comptime _DEFAULT_ARITHMETIC_ORDERING = Ordering.RELAXED if is_apple_gpu() else Ordering.SEQUENTIAL
+comptime _DEFAULT_ARITHMETIC_ORDERING = CurrentPlugin.default_atomic_ordering
 comptime _DEFAULT_COMPARISON_ORDERING = _DEFAULT_ARITHMETIC_ORDERING
 comptime _DEFAULT_MEMORY_ORDERING = Ordering.SEQUENTIAL
 
@@ -852,7 +852,9 @@ def _max_impl[
     scope: StaticString,
     ordering: Ordering,
 ](ptr: MutPointer[Scalar[dtype], ...], rhs: Scalar[dtype]):
-    comptime if is_nvidia_gpu() and dtype.is_floating_point():
+    comptime if (
+        CurrentPlugin.atomic_float_minmax_via_int and dtype.is_floating_point()
+    ):
         comptime integral_type = _integral_type_of[dtype]()
         comptime unsigned_integral_type = _unsigned_integral_type_of[dtype]()
         if rhs >= 0:
@@ -878,7 +880,9 @@ def _min_impl[
     scope: StaticString,
     ordering: Ordering,
 ](ptr: MutPointer[Scalar[dtype], ...], rhs: Scalar[dtype]):
-    comptime if is_nvidia_gpu() and dtype.is_floating_point():
+    comptime if (
+        CurrentPlugin.atomic_float_minmax_via_int and dtype.is_floating_point()
+    ):
         comptime integral_type = _integral_type_of[dtype]()
         comptime unsigned_integral_type = _unsigned_integral_type_of[dtype]()
         if rhs >= 0:

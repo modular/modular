@@ -607,7 +607,7 @@ struct TileScheduler[
 
         self.full_mbar[consumer_state.index()].wait(consumer_state.phase())
         var work_tile = self.work_info_from_clc_response(
-            self.clc_response + consumer_state.index()
+            self.clc_response.unsafe_offset(consumer_state.index())
         )
         # Only cta 0 in a cluster is used for scheduling.
         self.empty_mbar[consumer_state.index()].arrive_cluster(0)
@@ -734,8 +734,10 @@ struct TileScheduler[
 
         if elect_one_sync():
             clusterlaunchcontrol_try_cancel[multicast=multicast](
-                self.clc_response + clc_state.index(),
-                (self.full_mbar + clc_state.index()).bitcast[Int64](),
+                self.clc_response.unsafe_offset(clc_state.index()),
+                self.full_mbar.unsafe_offset(clc_state.index()).unsafe_bitcast[
+                    Int64
+                ](),
             )
 
         return clc_state.next()

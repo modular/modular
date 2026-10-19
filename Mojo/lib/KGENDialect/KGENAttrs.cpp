@@ -5510,7 +5510,7 @@ class Canonicalizer : public ParameterReplacer<Canonicalizer> {
     // Walking is repeated for the same value many times; cache across calls.
     using Base =
         std::conditional_t<std::is_base_of_v<Type, T>, Type, Attribute>;
-    CanonicalCache<const void *> *cache = getCache(value.getContext());
+    ShardedCache<const void *> *cache = getCache(value.getContext());
     if (cache) {
       if (const void *hit = cache->lookup(value.getAsOpaquePointer()))
         return Base::getFromOpaquePointer(hit);
@@ -5540,7 +5540,7 @@ class Canonicalizer : public ParameterReplacer<Canonicalizer> {
     return result;
   }
 
-  static CanonicalCache<const void *> *getCache(MLIRContext *context) {
+  static ShardedCache<const void *> *getCache(MLIRContext *context) {
     CompilerCaches *caches = CompilerCaches::get(context);
     return caches ? &caches->canonical : nullptr;
   }

@@ -24,8 +24,8 @@ comptime BLOCK_DIM = 256
 
 # ========================== KERNEL CODE ==========================
 def convergent_sum_reduction_kernel(
-    input: UnsafePointer[Float32, MutAnyOrigin],
-    output: UnsafePointer[Float32, MutAnyOrigin],
+    input: MutPointer[Float32, MutAnyOrigin],
+    output: MutPointer[Float32, MutAnyOrigin],
 ):
     """Convergent sum reduction with less control divergence (loop unrolled).
 
@@ -33,15 +33,15 @@ def convergent_sum_reduction_kernel(
         input: Input array (in global memory, modified in-place).
         output: Output scalar for the sum result.
     """
-    var i = UInt32(thread_idx.x)
+    var i = thread_idx.x
 
     # Unrolled reduction: strides 256, 128, 64, 32, 16, 8, 4, 2, 1
     comptime NUM_ITERATIONS = log2_floor(BLOCK_DIM) + 1
 
     comptime for s in range(NUM_ITERATIONS):
         comptime stride = BLOCK_DIM >> s
-        if UInt32(thread_idx.x) < UInt32(stride):
-            input[Int(i)] += input[Int(i + UInt32(stride))]
+        if thread_idx.x < stride:
+            input[i] += input[i + stride]
         barrier()
 
     if thread_idx.x == 0:
@@ -50,8 +50,8 @@ def convergent_sum_reduction_kernel(
 
 # ========================== TEST CODE ==========================
 def cpu_sum(
-    input: UnsafePointer[mut=False, Float32, _],
-    output: UnsafePointer[mut=True, Float32, _],
+    input: ImmPointer[Float32, _],
+    output: MutPointer[Float32, _],
     N: Int,
 ):
     """CPU reference sum implementation.

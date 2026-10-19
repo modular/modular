@@ -274,6 +274,8 @@ modular_py_binary(
         "//max:nn",
         "//max:quantization",
         "//max:shmem",
+        "//max/kernels/src/state_space",
+        "//max/kernels/test/common/ssd_scan_test_utils",
         "@mojo//:std",
     ],
     tags = ["no-pydeps"],  # TODO: Fix and re-enable
@@ -385,7 +387,9 @@ modular_py_test(
     size = "large",
     srcs = glob(
         ["tests/*.py"],
-        exclude = ["tests/test_tuning_codegen.py"],
+        exclude = [
+            "tests/test_tuning_codegen.py",
+        ],
     ),
     data = glob(["tests/*.csv"]) + [
         "sample.mojo",

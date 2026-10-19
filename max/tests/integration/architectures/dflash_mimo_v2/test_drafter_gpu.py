@@ -24,6 +24,7 @@ from __future__ import annotations
 import dataclasses
 import math
 
+import ml_dtypes
 import numpy as np
 import pytest
 from max import tree
@@ -64,12 +65,11 @@ ANCHOR = 1100
 
 def _bf16(x: np.ndarray) -> np.ndarray:
     """Rounds float32 to the nearest bfloat16 and returns its bits."""
-    bits = np.ascontiguousarray(x, np.float32).view(np.uint32)
-    return ((bits + 0x7FFF + ((bits >> 16) & 1)) >> 16).astype(np.uint16)
+    return np.asarray(x, np.float32).astype(ml_dtypes.bfloat16).view(np.uint16)
 
 
 def _f32(bits: np.ndarray) -> np.ndarray:
-    return (bits.astype(np.uint32) << 16).view(np.float32)
+    return bits.view(ml_dtypes.bfloat16).astype(np.float32)
 
 
 def _round(x: np.ndarray) -> np.ndarray:

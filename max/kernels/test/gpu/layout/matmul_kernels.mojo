@@ -35,7 +35,6 @@ from max.gpu.sync import barrier
 from max.gpu.host import DeviceBuffer, DeviceContext
 from max.gpu.memory import async_copy_wait_all
 from layout import Layout
-from layout.layout_tensor import copy_dram_to_sram_async
 from layout.math import outer_product_acc
 from layout.tensor_core import TensorCore
 
@@ -236,15 +235,7 @@ def run_gemm_kernel_1[
     time_kernel(m, run_func, ctx, M * N * K, "naive")
 
     # Do one iteration for verification
-    ctx.enqueue_memset(
-        DeviceBuffer[dtype](
-            ctx,
-            rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](c.ptr),
-            M * N,
-            owning=False,
-        ),
-        0,
-    )
+    ctx.enqueue_memset(c.to_device_buffer(ctx), 0)
     ctx.enqueue_function[func](
         a.as_imm().as_unsafe_any_origin(),
         b.as_imm().as_unsafe_any_origin(),
@@ -356,15 +347,7 @@ def run_gemm_kernel_2[
     time_kernel(m, run_func, ctx, M * N * K, "mem_coalesce")
 
     # Do one iteration for verification
-    ctx.enqueue_memset(
-        DeviceBuffer[dtype](
-            ctx,
-            rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](c.ptr),
-            M * N,
-            owning=False,
-        ),
-        0,
-    )
+    ctx.enqueue_memset(c.to_device_buffer(ctx), 0)
     ctx.enqueue_function[kernel](
         a.as_imm().as_unsafe_any_origin(),
         b.as_imm().as_unsafe_any_origin(),
@@ -511,15 +494,7 @@ def run_gemm_kernel_3[
     time_kernel(m, run_func, ctx, M * N * K, "shared_mem")
 
     # Do one iteration for verification
-    ctx.enqueue_memset(
-        DeviceBuffer[dtype](
-            ctx,
-            rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](c.ptr),
-            M * N,
-            owning=False,
-        ),
-        0,
-    )
+    ctx.enqueue_memset(c.to_device_buffer(ctx), 0)
     ctx.enqueue_function[kernel](
         a.as_imm().as_unsafe_any_origin(),
         b.as_imm().as_unsafe_any_origin(),
@@ -684,15 +659,7 @@ def run_gemm_kernel_4[
     time_kernel(m, run_func, ctx, M * N * K, "1d_blocktiling")
 
     # Do one iteration for verification
-    ctx.enqueue_memset(
-        DeviceBuffer[dtype](
-            ctx,
-            rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](c.ptr),
-            M * N,
-            owning=False,
-        ),
-        0,
-    )
+    ctx.enqueue_memset(c.to_device_buffer(ctx), 0)
     ctx.enqueue_function[kernel](
         a.as_imm().as_unsafe_any_origin(),
         b.as_imm().as_unsafe_any_origin(),
@@ -863,15 +830,7 @@ def run_gemm_kernel_5[
 
     time_kernel(m, run_func, ctx, M * N * K, "2d_blocktiling")
     # Do one iteration for verification
-    ctx.enqueue_memset(
-        DeviceBuffer[dtype](
-            ctx,
-            rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](c.ptr),
-            M * N,
-            owning=False,
-        ),
-        0,
-    )
+    ctx.enqueue_memset(c.to_device_buffer(ctx), 0)
     ctx.enqueue_function[kernel](
         a.as_imm().as_unsafe_any_origin(),
         b.as_imm().as_unsafe_any_origin(),
@@ -973,20 +932,17 @@ def gemm_kernel_6[
 
     # Iterate over the tiles of A and B in the K dimension.
     for block in range(ntiles):
-        comptime load_a_layout = Layout.row_major(NUM_THREADS // BK, BK)
-        comptime load_b_layout = Layout.row_major(BK, NUM_THREADS // BK)
+        comptime load_a_layout = row_major[NUM_THREADS // BK, BK]()
+        comptime load_b_layout = row_major[BK, NUM_THREADS // BK]()
         var a_tile = a.tile[BM, BK](Coord(block_idx.y, block))
         var b_tile = b.tile[BK, BN](Coord(block, block_idx.x))
 
-        # Keep the strided A-vector geometry at the legacy copy boundary;
-        # native vectorization represents only contiguous scalar lanes.
-        copy_dram_to_sram_async[thread_layout=load_a_layout](
-            a_smem.to_layout_tensor().vectorize[simd_width, 1](),
-            a_tile.to_layout_tensor().vectorize[simd_width, 1](),
-        )
-        copy_dram_to_sram_async[thread_layout=load_b_layout](
-            b_smem.to_layout_tensor().vectorize[1, simd_width](),
-            b_tile.to_layout_tensor().vectorize[1, simd_width](),
+        # A lands transposed in column-major shared memory, so it is copied
+        # one scalar per thread; native vectors only cover contiguous lanes.
+        copy_tiles_async[thread_layout=load_a_layout](a_smem, a_tile)
+        copy_tiles_async[thread_layout=load_b_layout](
+            b_smem.vectorize[1, simd_width](),
+            b_tile.vectorize[1, simd_width](),
         )
 
         async_copy_wait_all()
@@ -1058,15 +1014,7 @@ def run_gemm_kernel_6[
 
     time_kernel(m, run_func, ctx, M * N * K, "vectorized_mem_access")
     # Do one iteration for verification
-    ctx.enqueue_memset(
-        DeviceBuffer[dtype](
-            ctx,
-            rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](c.ptr),
-            M * N,
-            owning=False,
-        ),
-        0,
-    )
+    ctx.enqueue_memset(c.to_device_buffer(ctx), 0)
     ctx.enqueue_function[kernel](
         a.as_imm().as_unsafe_any_origin(),
         b.as_imm().as_unsafe_any_origin(),
@@ -1176,13 +1124,11 @@ def matmul_kernel_tc[
         var B_dram_tile = B.tile[BK, BN](Coord(k_i, block_idx.x))
 
         # Load tiles of A and B into shared memory asynchronously
-        copy_dram_to_sram_async[thread_layout=Layout.row_major(4, 8)](
-            A_sram_tile.to_layout_tensor().vectorize[1, 4](),
-            A_dram_tile.to_layout_tensor().vectorize[1, 4](),
+        copy_tiles_async[thread_layout=row_major[4, 8]()](
+            A_sram_tile.vectorize[1, 4](), A_dram_tile.vectorize[1, 4]()
         )
-        copy_dram_to_sram_async[thread_layout=Layout.row_major(4, 8)](
-            B_sram_tile.to_layout_tensor().vectorize[1, 4](),
-            B_dram_tile.to_layout_tensor().vectorize[1, 4](),
+        copy_tiles_async[thread_layout=row_major[4, 8]()](
+            B_sram_tile.vectorize[1, 4](), B_dram_tile.vectorize[1, 4]()
         )
 
         async_copy_wait_all()  # Wait for async copies to complete
@@ -1207,28 +1153,18 @@ def matmul_kernel_tc[
                         Coord(mma_k, mma_n)
                     )
 
-                    # Keep the existing hardware fragment representation at
-                    # the MMA boundary while surrounding views stay native.
-                    var a_reg = mma_op.load_a(A_mma_tile.to_layout_tensor())
-                    var b_reg = mma_op.load_b(B_mma_tile.to_layout_tensor())
+                    var a_reg = mma_op.load_a(A_mma_tile)
+                    var b_reg = mma_op.load_b(B_mma_tile)
 
                     # Perform MMA operation and accumulate the result
-                    var d_reg_m_n = mma_op.mma_op(
-                        a_reg,
-                        b_reg,
-                        c_reg_m_n.to_layout_tensor(),
-                    )
+                    var d_reg_m_n = mma_op.mma_op(a_reg, b_reg, c_reg_m_n)
 
                     # Store the accumulated result back to the register tile
-                    # Legacy MMA results promise only scalar stack alignment.
-                    var d_native = TileTensor[
-                        C.dtype, address_space=d_reg_m_n.address_space
-                    ](d_reg_m_n.ptr, row_major[1, 4]())
-                    var d_reg = d_native.load[
-                        width=4, alignment=align_of[C.dtype]()
-                    ]((0, 0))
                     c_reg_m_n.store[alignment=align_of[C.dtype]()](
-                        (0, 0), d_reg
+                        (0, 0),
+                        d_reg_m_n.load[width=4, alignment=align_of[C.dtype]()](
+                            (0, 0)
+                        ),
                     )
 
     # Write the final accumulated results to the output matrix
@@ -1293,15 +1229,7 @@ def run_gemm_kernel_tc[
 
     time_kernel(m, run_func, ctx, M * N * K, "tensor_core")
     # Do one iteration for verification
-    ctx.enqueue_memset(
-        DeviceBuffer[dtype](
-            ctx,
-            rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](c.ptr),
-            M * N,
-            owning=False,
-        ),
-        0,
-    )
+    ctx.enqueue_memset(c.to_device_buffer(ctx), 0)
     ctx.enqueue_function[kernel](
         a.as_imm().as_unsafe_any_origin(),
         b.as_imm().as_unsafe_any_origin(),

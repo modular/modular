@@ -35,10 +35,9 @@ combine.
 """
 
 from std.collections import OptionalReg
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, default_accelerator
 from std.math import exp
 from std.random import seed
-from std.sys import default_accelerator
 
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,

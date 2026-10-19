@@ -207,7 +207,9 @@ def _run_fusion_check[
 
     var fused_host = ctx.enqueue_create_host_buffer[.uint8](slot_bytes)
     var raw_h = ctx.enqueue_create_host_buffer[.uint8](total_tokens * scale_K)
-    ctx.enqueue_copy(fused_host, fused_scales_d.unsafe_ptr().bitcast[UInt8]())
+    ctx.enqueue_copy(
+        fused_host, fused_scales_d.unsafe_ptr().unsafe_bitcast[UInt8]()
+    )
     ctx.synchronize()
 
     # ---- Recover row-major [tokens, scale_K] scales (R) from S. ----
@@ -423,9 +425,7 @@ def _run_activation_probe[
         var r = m - Int(a_off_h[e])
         for h in range(hidden_size):
             var gate = input_h[m * input_dim + h].cast[.float32]()
-            var up = input_h[m * input_dim + h + hidden_size].cast[
-                DType.float32
-            ]()
+            var up = input_h[m * input_dim + h + hidden_size].cast[.float32]()
             var expected: Float32
             comptime if clamp_activation:
                 var g_c = min(gate, limit)
@@ -444,7 +444,7 @@ def _run_activation_probe[
                 Shuffler[1].scale_4d_slot_byte_off[K_SCALES=scale_K](
                     e, r, h // MXFP4_SF_VECTOR_SIZE, max_padded_M
                 )
-            ].cast[DType.float32]()
+            ].cast[.float32]()
             var dequant = fp4 * s
 
             var err = abs(dequant - expected)

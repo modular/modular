@@ -20,8 +20,6 @@ as stored, quantized ones included. What differs is:
   table and its mask slots with that row, so the table is dropped after
   checking it matches the target's everywhere else, and the row is kept as
   ``mask_embedding``.
-- Each NVFP4 module's block scales are laid out for the block-scaled matmul.
-- Under tensor parallelism, the layout splits those scales per device.
 """
 
 from __future__ import annotations
@@ -34,7 +32,6 @@ from max.dtype import DType
 from max.graph import Shape
 from max.graph.weights import WeightData
 
-from ..nemotron_h_modulev3.weight_adapters import prepare_nvfp4_module
 from .dspark_qwen3 import DSparkQwen3DraftConfig, draft_nvfp4_modules
 
 __all__ = [
@@ -176,15 +173,13 @@ def convert_draft_state_dict(
     state_dict: Mapping[str, WeightData],
     config: DSparkQwen3DraftConfig,
     *,
-    num_devices: int,
     target_embedding: WeightData | None = None,
 ) -> dict[str, WeightData]:
-    """Returns the draft tensors its module reads, laid out for the kernels.
+    """Returns the draft tensors its module reads.
 
     Args:
         state_dict: The draft checkpoint's tensors.
         config: The parsed draft config.
-        num_devices: The tensor-parallel degree.
         target_embedding: The target's embedding table, which the draft's
             must equal bar the mask token's row.
 
@@ -211,8 +206,6 @@ def convert_draft_state_dict(
             "The DSpark draft checkpoint does not match its module. Missing:"
             f" {sorted(missing)[:5]}; unexpected: {sorted(extra)[:5]}."
         )
-    for module, parallelism in draft_nvfp4_modules(config).items():
-        prepare_nvfp4_module(weights, module, parallelism, num_devices)
     return weights
 
 

@@ -142,7 +142,7 @@ def test_rope_ragged[
     def output_fn[
         width: SIMDLength, alignment: Int
     ](idx: Coord, val: SIMD[dtype, width]) {var q_out_tensor} -> None:
-        q_out_tensor.store[width=width](idx, val)
+        q_out_tensor.store(idx, val)
 
     rope_ragged[
         dtype,
@@ -281,7 +281,7 @@ def test_rope_ragged_non_interleaved[
         width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[dtype, width]) {var q_out_tensor} -> None:
         comptime assert coords.rank == 3, "the rope output contract is rank 3"
-        q_out_tensor.store[width=width](coords, val)
+        q_out_tensor.store(coords, val)
 
     rope_ragged[
         dtype,
@@ -422,13 +422,13 @@ def test_rope_ragged_rope_first[
     def full_output_fn[
         width: SIMDLength, alignment: Int
     ](idx: Coord, val: SIMD[dtype, width]) {var full_out_tensor} -> None:
-        full_out_tensor.store[width=width](idx, val)
+        full_out_tensor.store(idx, val)
 
     @inline(.always)
     def prefix_output_fn[
         width: SIMDLength, alignment: Int
     ](idx: Coord, val: SIMD[dtype, width]) {var prefix_out_tensor} -> None:
-        prefix_out_tensor.store[width=width](idx, val)
+        prefix_out_tensor.store(idx, val)
 
     rope_ragged[
         dtype,

@@ -15,20 +15,23 @@
 
 from __future__ import annotations
 
+import re
 from unittest.mock import MagicMock
 
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.tensor import Tensor, default_dtype
-from max.nn.quant_config import QuantConfig
-from max.pipelines.architectures.deepseekV3_modulev3.layers.quant_linear import (
+from max.experimental.nn.common_layers.quant_linear import (
     QuantizedLinear,
     QuantizedMLP,
 )
-from max.pipelines.architectures.deepseekV3_modulev3.layers.quant_tensor import (
+from max.experimental.nn.common_layers.quant_tensor import (
     FP8BlockTensor,
     NVFP4Tensor,
+    NVFP4TensorQuantizer,
 )
+from max.experimental.tensor import Tensor, default_dtype
+from max.graph import Graph
+from max.nn.quant_config import QuantConfig
 
 # Dimensions are multiples of the 128x128 weight block so the FP8 scale grid
 # divides evenly and stays easy to reason about.
@@ -259,6 +262,97 @@ def test_linear_nvfp4_forward(
 
     assert list(out.shape) == [_SEQ_LEN, _FFN_DIM]
     assert out.dtype == DType.bfloat16
+
+
+def test_linear_nvfp4_fake_quant_parameters(
+    mock_accelerator: MagicMock, nvfp4_fake_quant_config: QuantConfig
+) -> None:
+    """Fake-quant keeps the bf16 weight as the only weight parameter."""
+    device = mock_accelerator()
+    with F.lazy(), default_dtype(DType.bfloat16):
+        layer = QuantizedLinear(
+            _HIDDEN_DIM, _FFN_DIM, quant_config=nvfp4_fake_quant_config
+        ).to(device)
+
+        assert isinstance(layer.weight, NVFP4TensorQuantizer)
+        assert list(layer.weight.shape) == [_FFN_DIM, _HIDDEN_DIM]
+        assert layer.weight._tensor.dtype == DType.bfloat16
+        assert {name for name, _ in layer.parameters} == {"weight", "bias"}
+
+
+def test_linear_nvfp4_fake_quant_forward(
+    mock_accelerator: MagicMock,
+    nvfp4_fake_quant_config: QuantConfig,
+    sm100_arch: None,
+) -> None:
+    """On-the-fly NVFP4 quantization still returns a bf16 ``[S, out]`` activation."""
+    device = mock_accelerator()
+    with F.lazy(), default_dtype(DType.bfloat16):
+        layer = QuantizedLinear(
+            _HIDDEN_DIM, _FFN_DIM, quant_config=nvfp4_fake_quant_config
+        ).to(device)
+        x = Tensor.zeros(
+            [_SEQ_LEN, _HIDDEN_DIM], dtype=DType.bfloat16, device=device
+        )
+        out = layer(x)
+
+    assert list(out.shape) == [_SEQ_LEN, _FFN_DIM]
+    assert out.dtype == DType.bfloat16
+
+
+def _custom_signatures(ir: str, symbol: str) -> list[tuple[str, str]]:
+    """Input and output type lists for each ``mo.custom`` of ``symbol``."""
+    pattern = re.compile(
+        rf'symbol = "{re.escape(symbol)}".*?: \(([^)]*)\) -> (\([^)]*\)|\S+)'
+    )
+    return pattern.findall(ir)
+
+
+def test_linear_nvfp4_fake_quant_forward_uses_packed_weight(
+    mock_accelerator: MagicMock,
+    nvfp4_fake_quant_config: QuantConfig,
+    sm100_arch: None,
+) -> None:
+    """Forward multiplies the packed NVFP4 weight and its scales.
+
+    The stored parameter stays bf16. It is an input of the weight quantize
+    op, and the matmul consumes that op's uint8 data plus the float8 scales.
+    """
+    device = mock_accelerator()
+    with F.lazy(), default_dtype(DType.bfloat16):
+        layer = QuantizedLinear(
+            _HIDDEN_DIM, _FFN_DIM, quant_config=nvfp4_fake_quant_config
+        ).to(device)
+        x = Tensor.zeros(
+            [_SEQ_LEN, _HIDDEN_DIM], dtype=DType.bfloat16, device=device
+        )
+        out = layer(x)
+        ir = str(Graph.current._mlir_op)
+
+    assert list(out.shape) == [_SEQ_LEN, _FFN_DIM]
+    assert out.dtype == DType.bfloat16
+    assert "rmo.matmul" not in ir
+
+    bf16_weight = f"!mo.tensor<[{_FFN_DIM}, {_HIDDEN_DIM}], bf16"
+    packed_weight = f"!mo.tensor<[{_FFN_DIM}, {_HIDDEN_DIM // 2}], ui8"
+    (matmul_inputs,) = _custom_signatures(ir, "mo.matmul.dynamic.block.scaled")
+    matmul_operands, _ = matmul_inputs
+    assert packed_weight in matmul_operands
+    assert bf16_weight not in matmul_operands
+    assert matmul_operands.count("f8e4m3fn") == 2
+
+    weight_quant = [
+        (inputs, outputs)
+        for inputs, outputs in _custom_signatures(
+            ir, "mo.quantize.dynamic.block.scaled"
+        )
+        if bf16_weight in inputs
+    ]
+    assert len(weight_quant) == 1
+    quant_inputs, quant_outputs = weight_quant[0]
+    assert packed_weight in quant_outputs
+    assert "f8e4m3fn" in quant_outputs
+    assert bf16_weight in quant_inputs
 
 
 def test_mlp_nvfp4_parameters(

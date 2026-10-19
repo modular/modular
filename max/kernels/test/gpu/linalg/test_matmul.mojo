@@ -14,7 +14,6 @@
 # to build this file if running into linking issues with large PTX kernels.
 
 from std.sys import (
-    align_of,
     bit_width_of,
     simd_width_of,
     size_of,
@@ -177,42 +176,23 @@ def test[
     ctx.enqueue_copy(c_device_buffer, c_host_ptr)
     ctx.enqueue_copy(c_device_ref_buffer, c_host_ref_ptr)
 
-    @__parameter
-    @inline(.always)
-    @__copy_capture(c_device, m, n)
-    def epilogue_fn[
-        _dtype: DType,
-        width: SIMDLength,
-        *,
-        alignment: Int = align_of[SIMD[_dtype, width]](),
-    ](idx: Coord, val: SIMD[_dtype, width]) capturing -> None:
-        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
-        var update_val: SIMD[_dtype, width] = val
-
-        comptime if case .Some(func) = lambda_fn:
-            var il = rebind[IndexList[2]](coord_to_index_list(idx))
-            update_val = func(il, (m, n), update_val)
-        c_device.store[alignment=alignment * size_of[dtype]()](
-            idx, rebind[SIMD[dtype, width]](update_val)
-        )
-
     comptime if case .Some(func) = lambda_fn:
+
+        def compute_fn[
+            _dtype: DType, width: SIMDLength, *, alignment: Int
+        ](idx: Coord, val: SIMD[_dtype, width]) {var m, var n} -> SIMD[
+            _dtype, width
+        ]:
+            comptime assert (
+                idx.rank == 2
+            ), "the matmul epilogue contract is rank 2"
+            return func(
+                IndexList[2](Int(idx[0]), Int(idx[1])),
+                (m, n),
+                val,
+            )
+
         comptime if case .Some(cfg) = config:
-
-            def compute_fn[
-                _dtype: DType, width: SIMDLength, *, alignment: Int
-            ](idx: Coord, val: SIMD[_dtype, width]) {var m, var n} -> SIMD[
-                _dtype, width
-            ]:
-                comptime assert (
-                    idx.rank == 2
-                ), "the matmul epilogue contract is rank 2"
-                return func(
-                    IndexList[2](Int(idx[0].value()), Int(idx[1].value())),
-                    (m, n),
-                    val,
-                )
-
             multistage_gemm[
                 transpose_b=transpose_b,
                 config=cfg,
@@ -227,11 +207,11 @@ def test[
             _matmul_gpu[
                 use_tensor_core=True,
                 transpose_b=transpose_b,
-                elementwise_lambda_fn=epilogue_fn,
             ](
                 c_device,
                 a_device,
                 b_device,
+                compute_fn,
                 ctx,
             )
     else:

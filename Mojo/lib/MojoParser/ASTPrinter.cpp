@@ -108,10 +108,7 @@ static void removeImplicitCtorCall(TypedAttr &value, SharedState *shared) {
 
   if (shared) {
     DefASTDecl *decl = shared->getDeclResolver().getDeclForFuncSymbol(nameAttr);
-    if (!decl)
-      return;
-    auto calleeFn = decl->getOp();
-    if (!calleeFn.isImplicitConversion())
+    if (!decl || !decl->getOp().isImplicitConversion())
       return; // If it's not an implicit conversion, don't remove it.
   }
 
@@ -571,8 +568,7 @@ static void prettyPrintParamName(ParamDeclRefAttr declRef, SharedState &shared,
   }
 
   // If this is a function, it may be an auto-param for an argument type.
-  if (auto *defDecl = dyn_cast<DefASTDecl>(curDecl);
-      defDecl && defDecl->getOp()) {
+  if (auto *defDecl = dyn_cast<DefASTDecl>(curDecl); defDecl) {
     auto fnDecl = defDecl->getOp();
     auto fnSig = fnDecl.getFuncTypeGenerator();
     for (auto [idx, argType] :
@@ -626,17 +622,16 @@ static ParamDeclRefAttr findDeclRefForIndexRef(ParamIndexRefAttr idxRef,
   // Find the named param decl from the param list and print a reference
   // to it instead.
   for (; ctxDecl; ctxDecl = ctxDecl->getParentDecl()) {
-    if (auto op = ctxDecl->getIfOperation()) {
-      if (auto fn = dyn_cast<LIT::FnOp>(op)) {
-        auto paramDecls = fn.collectAllParams(/*implicitOrigins*/ false);
+    if (auto *defDecl = dyn_cast<DefASTDecl>(ctxDecl)) {
+      LIT::FnOp fn = defDecl->getOp();
+      auto paramDecls = fn.collectAllParams(/*implicitOrigins*/ false);
+      if (idxRef.getIndex() < paramDecls.size())
+        return ParamDeclRefAttr::get(paramDecls[idxRef.getIndex()]);
+
+      if (auto declIntf = dyn_cast<DeclInterface>(fn.getOperation())) {
+        ArrayRef<ParamDeclAttr> paramDecls = declIntf.getInputParams();
         if (idxRef.getIndex() < paramDecls.size())
           return ParamDeclRefAttr::get(paramDecls[idxRef.getIndex()]);
-
-        if (auto declIntf = dyn_cast<DeclInterface>(op)) {
-          ArrayRef<ParamDeclAttr> paramDecls = declIntf.getInputParams();
-          if (idxRef.getIndex() < paramDecls.size())
-            return ParamDeclRefAttr::get(paramDecls[idxRef.getIndex()]);
-        }
       }
     }
   }
@@ -658,14 +653,13 @@ findArgNameForImplicitOriginRef(ImplicitOriginRefAttr originRef,
   // Find the named param decl from the param list and print a reference
   // to it instead.
   for (; ctxDecl; ctxDecl = ctxDecl->getParentDecl()) {
-    if (auto op = ctxDecl->getIfOperation()) {
-      if (auto fn = dyn_cast<LIT::FnOp>(op)) {
-        for (auto [idx, argType] :
-             llvm::enumerate(fn.getFuncTypeGenerator().getArguments())) {
-          if (auto refType = dyn_cast<RefType>(argType))
-            if (refType.getOrigin() == originRef)
-              return fn.getFuncTypeGenerator().getArgName(idx);
-        }
+    if (auto *defDecl = dyn_cast<DefASTDecl>(ctxDecl)) {
+      LIT::FnOp fn = defDecl->getOp();
+      for (auto [idx, argType] :
+           llvm::enumerate(fn.getFuncTypeGenerator().getArguments())) {
+        if (auto refType = dyn_cast<RefType>(argType))
+          if (refType.getOrigin() == originRef)
+            return fn.getFuncTypeGenerator().getArgName(idx);
       }
     }
   }
@@ -1742,9 +1736,9 @@ void ASTType::print(raw_ostream &os, ASTTypePrinterContext ctx) const {
                            ASTDecl *typeDecl) {
     // Handle special cases that should be aliased.
     // FIXME(MOCO-367): maintain "typedef" sugar in the type system.
-    if (typeDecl &&
-        isa_and_nonnull<LIT::StructDeclOp>(typeDecl->getIfOperation())) {
-      auto structDecl = cast<LIT::StructDeclOp>(typeDecl->getIfOperation());
+    if (auto *structASTDecl =
+            dyn_cast_if_present<LIT::StructASTDecl>(typeDecl)) {
+      LIT::StructDeclOp structDecl = structASTDecl->getOp();
       if (params.size() == 2 && structDecl.getDeclName().strref() == "Origin") {
         // Check to see if we have a Bool with a known constant parameter.
         //   #lit.struct<{value: i1 = 1}>
@@ -1824,7 +1818,8 @@ void ASTType::print(raw_ostream &os, ASTTypePrinterContext ctx) const {
     // Print any type parameters if we can find the struct.
     PogListAttr paramInfo;
     if (typeDecl) {
-      paramInfo = cast<StructDeclOp>(typeDecl->getIfOperation())
+      paramInfo = cast<StructASTDecl>(typeDecl)
+                      ->getOp()
                       .getSignature()
                       .getParamListAttrs();
     }

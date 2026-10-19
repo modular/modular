@@ -38,7 +38,6 @@ from kv_cache.types import KVCacheStaticParams
 from linalg.mx_format import MXFormat
 from layout import (
     Layout,
-    RuntimeLayout,
     TileTensor,
     RowMajorLayout,
     UNKNOWN_VALUE,
@@ -84,7 +83,12 @@ from nn.attention.gpu.mla_graph import (
     mla_prefill_decode_graph_fp8,
     mla_prefill_decode_graph_bf16,
 )
-from nn.attention.gpu.mla_index_fp8 import mla_indexer_ragged_float8_paged
+from nn.attention.gpu.mla_index_fp8 import (
+    BlockSplitTopk,
+    IndexerTopk,
+    mla_indexer_ragged_float8_paged,
+)
+from nn.attention.compress_windows import compress_windows_ragged_paged
 from nn.attention.indexer_score import indexer_score_ragged_paged
 from nn.attention.latent_sparse_attention import (
     latent_sparse_attention_ragged_paged,
@@ -106,7 +110,6 @@ from extensibility import (
 from extensibility import (
     _MutableInputTensor as MutableInputTensor,
 )
-from std.memory import UnsafePointer
 from std.logger import Logger
 
 comptime logger = Logger()
@@ -519,6 +522,7 @@ struct MLAKPoolRingClose:
 @inline(.always)
 def _mla_indexer_ragged_float8_paged_execute[
     R: SparseIndexRemap,
+    Topk: IndexerTopk = BlockSplitTopk,
     //,
     *,
     num_heads: Int,
@@ -546,7 +550,11 @@ def _mla_indexer_ragged_float8_paged_execute[
     remap: R,
     ctx: DeviceContext,
 ) raises:
-    """Shared body of the indexer ops; `remap` is the optional second output."""
+    """Shared body of the indexer ops.
+
+    `remap` is the optional second output; `Topk` is the top-k dispatch,
+    which the op's registration picks.
+    """
     # Extract cache parameters from block shapes
     comptime page_size = Int(k_blocks.static_spec.shape_tuple[3])
     comptime head_dim = Int(k_blocks.static_spec.shape_tuple[5])
@@ -586,6 +594,7 @@ def _mla_indexer_ragged_float8_paged_execute[
         mask_str,
         kpool=kpool,
         write_logical=write_logical,
+        Topk=Topk,
     ](
         output_indices.to_tile_tensor[.int64](),
         q.to_tile_tensor[.int64](),
@@ -2499,7 +2508,7 @@ struct Struct_fused_qk_rope_ragged_paged[interleaved: Bool]:
     ) raises:
         # Dummy position_ids - won't be used since has_position_ids=False
         var dummy_position_ids = DynamicTensor[dtype=DType.uint32, rank=2, ...](
-            UnsafePointer[UInt32, MutAnyOrigin].unsafe_dangling(),
+            MutPointer[UInt32, MutAnyOrigin].unsafe_dangling(),
             IndexList[2](0),
         )
         var kv_collection = generic_get_paged_cache(
@@ -3149,11 +3158,10 @@ struct Struct_mla_prefill_graph_paged:
             target
         ](), "mo.mla.graph.prefill.paged.fp8 is only supported on GPU"
 
-        @__parameter
         @inline(.always)
         def kv_input_fn[
             width: Int
-        ](coords: IndexList[2]) -> SIMD[.bfloat16, width]:
+        ](coords: IndexList[2]) {var kv} -> SIMD[.bfloat16, width]:
             return kv._lambda_load[width=width, element_alignment=width](coords)
 
         mla_prefill_branch_fp8[
@@ -3161,7 +3169,6 @@ struct Struct_mla_prefill_graph_paged:
             n_scale_granularity=n_scale_granularity,
             k_scale_granularity=k_scale_granularity,
             mask_str=mask_str,
-            kv_input_fn=kv_input_fn,
             target=target,
         ](
             output.to_tile_tensor[.int64](),
@@ -3180,6 +3187,7 @@ struct Struct_mla_prefill_graph_paged:
             w_k_scale.to_tile_tensor[.int64](),
             w_uv.to_tile_tensor[.int64](),
             w_uv_scale.to_tile_tensor[.int64](),
+            kv_input_fn,
             context,
         )
 
@@ -3297,11 +3305,10 @@ struct Struct_mla_decode_graph_paged_fp8:
             target
         ](), "mo.mla.graph.decode.paged.fp8 is only supported on GPU"
 
-        @__parameter
         @inline(.always)
         def kv_input_fn[
             width: Int
-        ](coords: IndexList[2]) -> SIMD[.bfloat16, width]:
+        ](coords: IndexList[2]) {var kv} -> SIMD[.bfloat16, width]:
             return kv._lambda_load[width=width, element_alignment=width](coords)
 
         var num_partitions_proj = Int(num_partitions_scalar.unsafe_ptr()[0])
@@ -3315,7 +3322,6 @@ struct Struct_mla_decode_graph_paged_fp8:
                 n_scale_granularity=n_scale_granularity,
                 k_scale_granularity=k_scale_granularity,
                 mask_str=mask_str,
-                kv_input_fn=kv_input_fn,
                 target=target,
             ](
                 output.to_tile_tensor[.int64](),
@@ -3332,6 +3338,7 @@ struct Struct_mla_decode_graph_paged_fp8:
                 w_uv.to_tile_tensor[.int64](),
                 w_uv_scale.to_tile_tensor[.int64](),
                 scalar_args.to_tile_tensor[.int64](),
+                kv_input_fn,
                 context,
                 num_partitions_in=num_partitions_proj,
             )
@@ -3343,7 +3350,7 @@ def _sparse_indices_ptr[
 ](
     sparse_indices: InputTensor[dtype=.int32, rank=2, ...],
     num_tokens: Int,
-) raises -> UnsafePointer[Int32, MutAnyOrigin]:
+) raises -> MutPointer[Int32, MutAnyOrigin]:
     """Returns the sparse indices after checking their shape.
 
     The kernels index the buffer flat, `row * indices_stride + slot`, one row
@@ -3370,12 +3377,12 @@ def _sparse_gather_indices[
     kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
     kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
     ctx: DeviceContext,
-) raises -> UnsafePointer[Int32, MutAnyOrigin]:
+) raises -> MutPointer[Int32, MutAnyOrigin]:
     """Remaps the logical `sparse_indices` to physical rows in `scratch`.
 
     The caller keeps `scratch` alive until its kernels are enqueued.
     """
-    var buf = ctx.enqueue_create_buffer[DType.int32](sparse_indices.size())
+    var buf = ctx.enqueue_create_buffer[.int32](sparse_indices.size())
     var ptr = buf.unsafe_ptr().unsafe_origin_cast[MutAnyOrigin]()
     paged_sparse_kv_index_remap[target, page_size, indices_stride, cache_dtype](
         ptr,
@@ -3404,7 +3411,7 @@ def _sparse_decode_indices[
     kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
     num_tokens: Int,
     ctx: DeviceContext,
-) raises -> UnsafePointer[Int32, MutAnyOrigin]:
+) raises -> MutPointer[Int32, MutAnyOrigin]:
     """Returns the sparse indices the decode branch reads.
 
     The AMD sparse MLA arm gathers paged physical rows, so logical indices are
@@ -3451,7 +3458,7 @@ def _sparse_prefill_indices[
     kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
     max_seq_len: Int,
     ctx: DeviceContext,
-) raises -> OptionalReg[UnsafePointer[Int32, MutAnyOrigin]]:
+) raises -> OptionalReg[MutPointer[Int32, MutAnyOrigin]]:
     """Returns the remapped rows for the prefill branch of a prefill+decode op.
 
     Without the indexer's physical rows only the prefill branch needs a remap;
@@ -3564,11 +3571,10 @@ struct Struct_mla_decode_graph_paged_fp8_sparse:
             " needs logical sparse_indices"
         )
 
-        @__parameter
         @inline(.always)
         def kv_input_fn[
             width: Int
-        ](coords: IndexList[2]) -> SIMD[.bfloat16, width]:
+        ](coords: IndexList[2]) {var kv} -> SIMD[.bfloat16, width]:
             return kv._lambda_load[width=width, element_alignment=width](coords)
 
         var topk_lengths_ptr = maybe_null_pointer[has_topk_lengths](
@@ -3583,9 +3589,7 @@ struct Struct_mla_decode_graph_paged_fp8_sparse:
         # needs each slot's logical key position for causality. With one query
         # position per sequence, the shared list is just a reused row, which
         # `selection_lag` bounds, and the fold does not launch.
-        var logical_indices_ptr = OptionalReg[
-            UnsafePointer[Int32, MutAnyOrigin]
-        ]()
+        var logical_indices_ptr = OptionalReg[MutPointer[Int32, MutAnyOrigin]]()
         comptime if index_share:
             if max_prompt_length.unsafe_ptr()[0] > 1:
                 logical_indices_ptr = (
@@ -3607,7 +3611,6 @@ struct Struct_mla_decode_graph_paged_fp8_sparse:
                 n_scale_granularity=n_scale_granularity,
                 k_scale_granularity=k_scale_granularity,
                 mask_str=mask_str,
-                kv_input_fn=kv_input_fn,
                 target=target,
                 sparse_mla=True,
                 fold_shared_index=index_share,
@@ -3633,6 +3636,7 @@ struct Struct_mla_decode_graph_paged_fp8_sparse:
                 w_uv.to_tile_tensor[.int64](),
                 w_uv_scale.to_tile_tensor[.int64](),
                 scalar_args.to_tile_tensor[.int64](),
+                kv_input_fn,
                 context,
                 gather_indices,
                 indices_stride,
@@ -3697,16 +3701,14 @@ struct Struct_mla_prefill_graph_bf16_paged:
             target
         ](), "mo.mla.graph.prefill.paged is only supported on GPU"
 
-        @__parameter
         @inline(.always)
         def kv_input_fn[
             width: Int
-        ](coords: IndexList[2]) -> SIMD[.bfloat16, width]:
+        ](coords: IndexList[2]) {var kv} -> SIMD[.bfloat16, width]:
             return kv._lambda_load[width=width, element_alignment=width](coords)
 
         mla_prefill_branch_bf16[
             mask_str=mask_str,
-            kv_input_fn=kv_input_fn,
             target=target,
         ](
             output.to_tile_tensor[.int64](),
@@ -3723,6 +3725,7 @@ struct Struct_mla_prefill_graph_bf16_paged:
             Int(buffer_length),
             w_k.to_tile_tensor[.int64](),
             w_uv.to_tile_tensor[.int64](),
+            kv_input_fn,
             context,
         )
 
@@ -3776,11 +3779,10 @@ struct Struct_mla_decode_graph_bf16_paged:
             target
         ](), "mo.mla.graph.decode.paged is only supported on GPU"
 
-        @__parameter
         @inline(.always)
         def kv_input_fn[
             width: Int
-        ](coords: IndexList[2]) -> SIMD[.bfloat16, width]:
+        ](coords: IndexList[2]) {var kv} -> SIMD[.bfloat16, width]:
             return kv._lambda_load[width=width, element_alignment=width](coords)
 
         var num_partitions_proj = Int(num_partitions_scalar.unsafe_ptr()[0])
@@ -3791,7 +3793,6 @@ struct Struct_mla_decode_graph_bf16_paged:
         ):
             mla_decode_branch_bf16[
                 mask_str=mask_str,
-                kv_input_fn=kv_input_fn,
                 target=target,
             ](
                 output.to_tile_tensor[.int64](),
@@ -3806,6 +3807,7 @@ struct Struct_mla_decode_graph_bf16_paged:
                 w_uk.to_tile_tensor[.int64](),
                 w_uv.to_tile_tensor[.int64](),
                 scalar_args.to_tile_tensor[.int64](),
+                kv_input_fn,
                 context,
                 num_partitions_in=num_partitions_proj,
             )
@@ -3880,11 +3882,10 @@ struct Struct_mla_decode_graph_bf16_paged_sparse:
             target
         ](), "mo.mla.graph.decode.paged.sparse is only supported on GPU"
 
-        @__parameter
         @inline(.always)
         def kv_input_fn[
             width: Int
-        ](coords: IndexList[2]) -> SIMD[.bfloat16, width]:
+        ](coords: IndexList[2]) {var kv} -> SIMD[.bfloat16, width]:
             return kv._lambda_load[width=width, element_alignment=width](coords)
 
         var topk_lengths_ptr = maybe_null_pointer[has_topk_lengths](
@@ -3918,7 +3919,6 @@ struct Struct_mla_decode_graph_bf16_paged_sparse:
             )
             mla_decode_branch_bf16[
                 mask_str=mask_str,
-                kv_input_fn=kv_input_fn,
                 target=target,
                 sparse_mla=True,
                 physical_indices=_sparse_decode_physical[physical_indices](),
@@ -3940,6 +3940,7 @@ struct Struct_mla_decode_graph_bf16_paged_sparse:
                 w_uk.to_tile_tensor[.int64](),
                 w_uv.to_tile_tensor[.int64](),
                 scalar_args.to_tile_tensor[.int64](),
+                kv_input_fn,
                 context,
                 gather_indices,
                 indices_stride,
@@ -4013,11 +4014,10 @@ struct Struct_mla_prefill_graph_decode_paged_fp8:
             target
         ](), "mo.mla.graph.prefill.decode.paged.fp8 is only supported on GPU"
 
-        @__parameter
         @inline(.always)
         def kv_input_fn[
             width: Int
-        ](coords: IndexList[2]) -> SIMD[.bfloat16, width]:
+        ](coords: IndexList[2]) {var kv} -> SIMD[.bfloat16, width]:
             return kv._lambda_load[width=width, element_alignment=width](coords)
 
         var num_partitions_proj = Int(num_partitions_scalar.unsafe_ptr()[0])
@@ -4031,7 +4031,6 @@ struct Struct_mla_prefill_graph_decode_paged_fp8:
                 n_scale_granularity=n_scale_granularity,
                 k_scale_granularity=k_scale_granularity,
                 mask_str=mask_str,
-                kv_input_fn=kv_input_fn,
                 target=target,
             ](
                 output.to_tile_tensor[.int64](),
@@ -4054,6 +4053,7 @@ struct Struct_mla_prefill_graph_decode_paged_fp8:
                 w_uv.to_tile_tensor[.int64](),
                 w_uv_scale.to_tile_tensor[.int64](),
                 scalar_args.to_tile_tensor[.int64](),
+                kv_input_fn,
                 context,
                 num_partitions_in=num_partitions_proj,
             )
@@ -4146,11 +4146,10 @@ struct Struct_mla_prefill_graph_decode_paged_fp8_sparse:
             " on GPU"
         )
 
-        @__parameter
         @inline(.always)
         def kv_input_fn[
             width: Int
-        ](coords: IndexList[2]) -> SIMD[.bfloat16, width]:
+        ](coords: IndexList[2]) {var kv} -> SIMD[.bfloat16, width]:
             return kv._lambda_load[width=width, element_alignment=width](coords)
 
         comptime mla_page_size = Int(kv_blocks.static_spec.shape_tuple[3])
@@ -4192,7 +4191,6 @@ struct Struct_mla_prefill_graph_decode_paged_fp8_sparse:
                 n_scale_granularity=n_scale_granularity,
                 k_scale_granularity=k_scale_granularity,
                 mask_str=mask_str,
-                kv_input_fn=kv_input_fn,
                 target=target,
                 sparse_mla=True,
                 sparse_indices_stride=indices_stride,
@@ -4226,6 +4224,7 @@ struct Struct_mla_prefill_graph_decode_paged_fp8_sparse:
                 w_uv.to_tile_tensor[.int64](),
                 w_uv_scale.to_tile_tensor[.int64](),
                 scalar_args.to_tile_tensor[.int64](),
+                kv_input_fn,
                 context,
                 decode_indices,
                 indices_stride,
@@ -4291,7 +4290,7 @@ struct Struct_mla_prefill_sparse_paged:
 
         var num_indices_sparse = sparse_indices.size()
 
-        var attn_sink_ptr = UnsafePointer[Float32, origin=ImmutAnyOrigin](
+        var attn_sink_ptr = ImmPointer[Float32, origin=ImmutAnyOrigin](
             attn_sink.unsafe_ptr()
         )
 
@@ -4323,13 +4322,13 @@ struct Struct_mla_prefill_sparse_paged:
             # which has the same bit pattern as `UInt32(0xFFFFFFFF)`; the
             # producer in the kernel reads them as int32 and rejects the
             # negative ones (cf. the `idx >= 0` check in the gather4 path),
-            # so reinterpreting the bits via `bitcast` is sound.
+            # so reinterpreting the bits via `unsafe_bitcast` is sound.
             var indices_tt = TileTensor(
-                gather_indices.bitcast[UInt32](),
+                gather_indices.unsafe_bitcast[UInt32](),
                 row_major(num_indices_sparse),
             )
             var topk_lengths_tt = TileTensor(
-                topk_lengths.unsafe_ptr().bitcast[UInt32](),
+                topk_lengths.unsafe_ptr().unsafe_bitcast[UInt32](),
                 row_major(Int(topk_lengths.dim_size(0))),
             )
 
@@ -4401,11 +4400,11 @@ struct Struct_mla_prefill_sparse_paged_fp8:
 
         var num_indices_sparse = sparse_indices.size()
 
-        var attn_sink_ptr = UnsafePointer[Float32, origin=ImmutAnyOrigin](
+        var attn_sink_ptr = ImmPointer[Float32, origin=ImmutAnyOrigin](
             attn_sink.unsafe_ptr()
         )
 
-        var scales_ptr = UnsafePointer[Float32, ImmutAnyOrigin](
+        var scales_ptr = ImmPointer[Float32, ImmutAnyOrigin](
             kv_scales.unsafe_ptr()
         )
 
@@ -4431,11 +4430,11 @@ struct Struct_mla_prefill_sparse_paged_fp8:
             )
 
             var indices_tt = TileTensor(
-                gather_indices.bitcast[UInt32](),
+                gather_indices.unsafe_bitcast[UInt32](),
                 row_major(num_indices_sparse),
             )
             var topk_lengths_tt = TileTensor(
-                topk_lengths.unsafe_ptr().bitcast[UInt32](),
+                topk_lengths.unsafe_ptr().unsafe_bitcast[UInt32](),
                 row_major(Int(topk_lengths.dim_size(0))),
             )
 
@@ -4512,11 +4511,10 @@ struct Struct_mla_prefill_graph_decode_bf16_paged:
             target
         ](), "mo.mla.graph.prefill.decode.paged is only supported on GPU"
 
-        @__parameter
         @inline(.always)
         def kv_input_fn[
             width: Int
-        ](coords: IndexList[2]) -> SIMD[.bfloat16, width]:
+        ](coords: IndexList[2]) {var kv} -> SIMD[.bfloat16, width]:
             return kv._lambda_load[width=width, element_alignment=width](coords)
 
         var num_partitions_proj = Int(num_partitions_scalar.unsafe_ptr()[0])
@@ -4527,7 +4525,6 @@ struct Struct_mla_prefill_graph_decode_bf16_paged:
         ):
             mla_prefill_decode_graph_bf16[
                 mask_str=mask_str,
-                kv_input_fn=kv_input_fn,
                 target=target,
             ](
                 output.to_tile_tensor[.int64](),
@@ -4547,6 +4544,7 @@ struct Struct_mla_prefill_graph_decode_bf16_paged:
                 w_uk.to_tile_tensor[.int64](),
                 w_uv.to_tile_tensor[.int64](),
                 scalar_args.to_tile_tensor[.int64](),
+                kv_input_fn,
                 context,
                 num_partitions_in=num_partitions_proj,
             )
@@ -4623,11 +4621,10 @@ struct Struct_mla_prefill_graph_decode_paged_sparse:
             target
         ](), "mo.mla.graph.prefill.decode.paged.sparse is only supported on GPU"
 
-        @__parameter
         @inline(.always)
         def kv_input_fn[
             width: Int
-        ](coords: IndexList[2]) -> SIMD[.bfloat16, width]:
+        ](coords: IndexList[2]) {var kv} -> SIMD[.bfloat16, width]:
             return kv._lambda_load[width=width, element_alignment=width](coords)
 
         comptime mla_page_size = Int(kv_blocks.static_spec.shape_tuple[3])
@@ -4682,7 +4679,6 @@ struct Struct_mla_prefill_graph_decode_paged_sparse:
             var num_partitions_proj = Int(num_partitions_scalar.unsafe_ptr()[0])
             mla_prefill_decode_graph_bf16[
                 mask_str=mask_str,
-                kv_input_fn=kv_input_fn,
                 target=target,
                 sparse_mla=True,
                 sparse_indices_stride=indices_stride,
@@ -4710,6 +4706,7 @@ struct Struct_mla_prefill_graph_decode_paged_sparse:
                 w_uk.to_tile_tensor[.int64](),
                 w_uv.to_tile_tensor[.int64](),
                 scalar_args.to_tile_tensor[.int64](),
+                kv_input_fn,
                 context,
                 decode_indices,
                 indices_stride,
@@ -4780,11 +4777,10 @@ struct Struct_mla_prefill_graph_decode_bf16_paged_quantized:
             " on GPU"
         )
 
-        @__parameter
         @inline(.always)
         def kv_input_fn[
             width: Int
-        ](coords: IndexList[2]) -> SIMD[.bfloat16, width]:
+        ](coords: IndexList[2]) {var kv} -> SIMD[.bfloat16, width]:
             return kv._lambda_load[width=width, element_alignment=width](coords)
 
         var num_partitions_proj = Int(num_partitions_scalar.unsafe_ptr()[0])
@@ -4795,7 +4791,6 @@ struct Struct_mla_prefill_graph_decode_bf16_paged_quantized:
         ):
             mla_prefill_decode_graph_bf16[
                 mask_str=mask_str,
-                kv_input_fn=kv_input_fn,
                 target=target,
             ](
                 output.to_tile_tensor[.int64](),
@@ -4815,6 +4810,7 @@ struct Struct_mla_prefill_graph_decode_bf16_paged_quantized:
                 w_uk.to_tile_tensor[.int64](),
                 w_uv.to_tile_tensor[.int64](),
                 scalar_args.to_tile_tensor[.int64](),
+                kv_input_fn,
                 context,
                 num_partitions_in=num_partitions_proj,
             )
@@ -5009,5 +5005,65 @@ struct Struct_indexer_score_ragged_paged:
             base.to_tile_tensor(),
             cutoff.to_tile_tensor(),
             collection.get_key_cache(Int(layer)),
+            context,
+        )
+
+
+@extensibility.register("mo.compress_windows.ragged.paged")
+struct Struct_compress_windows_ragged_paged:
+    """Registers the `mo.compress_windows.ragged.paged` graph op with the graph compiler.
+
+    DeepSeek-V4's compressor over the windows of a ragged chunk, reading the
+    positions before the chunk from a paged state leaf. See
+    `nn.attention.compress_windows`.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        dtype: DType,
+        //,
+        rotate: Bool,
+    ](
+        output: OutputTensor[dtype=dtype, rank=2, ...],
+        kv: InputTensor[dtype=.float32, rank=2, ...],
+        score: InputTensor[dtype=.float32, rank=2, ...],
+        ape: InputTensor[dtype=.float32, rank=2, ...],
+        norm_weight: InputTensor[dtype=dtype, rank=1, ...],
+        freqs: InputTensor[dtype=.float32, rank=3, ...],
+        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+        window_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+        starts: InputTensor[dtype=.int32, rank=1, ...],
+        kv_blocks: MutableInputTensor[dtype=.float32, rank=6, ...],
+        page_stride: InputTensor[dtype=.int64, rank=1, ...],
+        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
+        max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
+        layer: UInt32,
+        epsilon: Float32,
+        context: DeviceContext,
+    ) raises:
+        var collection = generic_get_paged_cache(
+            kv_blocks,
+            page_stride,
+            cache_lengths,
+            kv_lookup_table,
+            max_prompt_length,
+            max_cache_length,
+        )
+        compress_windows_ragged_paged[rotate=rotate](
+            output.to_tile_tensor(),
+            kv.to_tile_tensor(),
+            score.to_tile_tensor(),
+            ape.to_tile_tensor(),
+            norm_weight.to_tile_tensor(),
+            freqs.to_tile_tensor(),
+            input_row_offsets.to_tile_tensor(),
+            window_offsets.to_tile_tensor(),
+            starts.to_tile_tensor(),
+            collection.get_key_cache(Int(layer)),
+            collection.get_value_cache(Int(layer)),
+            epsilon,
             context,
         )

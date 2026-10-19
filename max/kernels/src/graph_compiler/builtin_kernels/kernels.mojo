@@ -19,6 +19,7 @@
 
 from std.collections import OptionalReg
 from std.math import align_up, ceildiv, iota
+from std.os import getenv
 from std.random import seed
 from std.sys.info import size_of
 import extensibility
@@ -50,7 +51,6 @@ from layout import (
     DefaultEngine,
     IntTuple,
     RowMajorLayout,
-    RuntimeLayout,
     TensorEngine,
     TensorLayout,
     TileTensor,
@@ -76,6 +76,7 @@ from nn.kv_cache import (
     print_kv_cache_paged_generic_cpu,
     print_kv_cache_paged_generic_gpu,
 )
+from nn.chunked_qkv_rope_store import chunked_qkv_rope_store_paged_ragged
 from nn.rope_split_store import (
     rope_split_store_paged_ragged,
     rope_split_store_paged_ragged_with_position_ids,
@@ -93,6 +94,7 @@ from nn.mhc import hyper_connection_gates
 from nn.moe import (
     eplb_remap,
     moe_create_indices,
+    moe_create_indices_with_slots,
     moe_finalize,
     router_group_limited,
     sigmoid_gemv_single_group_router,
@@ -116,6 +118,7 @@ from nn.sampling import (
 from nn.split import split
 from nn.topk import fused_token_sampling_cpu as _fused_token_sampling_cpu
 from nn.topk import fused_token_sampling_gpu as _fused_token_sampling_gpu
+from nn.argmaxmin_gpu import argmax_with_bias_gpu
 from nn.topk import gumbel_sampling_fused_gpu
 from nn.sampling import topk_topp_masked_probs, topk_topp_sampling_from_prob
 from nn.toppminp import min_p_sampling as min_p_sampling_cpu
@@ -133,6 +136,10 @@ from state_space.gated_delta import (
 from state_space.gated_group_rmsnorm import (
     gated_group_rmsnorm_cpu,
     gated_group_rmsnorm_gpu,
+)
+from state_space.mamba2_ssd_chunked import (
+    mamba2_ssd_chunked_fwd_inplace_gpu,
+    use_chunked_ssd,
 )
 from state_space.mamba2_ssd_scan import (
     mamba2_ssd_chunk_scan_varlen_fwd_inplace_cpu,
@@ -169,7 +176,7 @@ from extensibility import (
 from extensibility import (
     _MutableInputVariadicTensors as MutableInputVariadicTensors,
 )
-from std.memory import UnsafePointer, unsafe_memcpy
+from std.memory import unsafe_memcpy
 from std.time import sleep
 from std.logger import Logger
 
@@ -627,8 +634,8 @@ struct NonMaximumSuppression:
         var score_threshold_float = score_threshold
 
         non_max_suppression[target=target,](
-            boxes.to_tile_tensor[.int64](),
-            scores.to_tile_tensor[.int64](),
+            boxes.to_tile_tensor[.int64]().as_imm(),
+            scores.to_tile_tensor[.int64]().as_imm(),
             output.to_tile_tensor[.int64](),
             max_output_boxes_int,
             iou_threshold_float,
@@ -914,7 +921,7 @@ def random_normal_shape[
     var shape_tt = shape.to_tile_tensor()
     var unrolled_shape = IndexList[output_rank]()
     for i in range(output_rank):
-        unrolled_shape[i] = Int(shape_tt.load[1](Coord(i)))
+        unrolled_shape[i] = Int(shape_tt[i])
 
     return unrolled_shape
 
@@ -991,7 +998,7 @@ def random_uniform_shape[
 
     var unrolled_shape = IndexList[output_rank]()
     for i in range(output_rank):
-        unrolled_shape[i] = Int(shape_tt.load[1](Coord(i)))
+        unrolled_shape[i] = Int(shape_tt[i])
 
     return unrolled_shape
 
@@ -1213,12 +1220,12 @@ def fold_kernel_shape[
     var output_size_tt = output_size.to_tile_tensor()
     var kernel_size_tt = kernel_size.to_tile_tensor()
     var output_size_tuple = Index(
-        Int(output_size_tt.load[1](Coord(0))),
-        Int(output_size_tt.load[1](Coord(1))),
+        Int(output_size_tt[0]),
+        Int(output_size_tt[1]),
     )
     var kernel_size_tuple = Index(
-        Int(kernel_size_tt.load[1](Coord(0))),
-        Int(kernel_size_tt.load[1](Coord(1))),
+        Int(kernel_size_tt[0]),
+        Int(kernel_size_tt[1]),
     )
     return fold_shape(
         input.to_tile_tensor(),
@@ -1435,6 +1442,70 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api_bias[
         bias.to_tile_tensor[.int64](),
         ctx,
     )
+
+
+@extensibility.register("mo.chunked_qkv_rope_store.ragged.paged")
+struct Struct_chunked_qkv_rope_store_ragged_paged[
+    qk_head_dim: Int, v_head_dim: Int
+]:
+    """Registers chunked QKV unpacking, partial NeoX RoPE, and paged stores.
+
+    The execute method receives value_scale as a CPU Float32 operand and
+    applies it to V before rounding to BF16.
+
+    Parameters:
+        qk_head_dim: Unpadded query and key head width.
+        v_head_dim: Unpadded value head width.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        cache_dtype: DType,
+        //,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=.bfloat16, rank=3, ...],
+        qkv: InputTensor[dtype=.bfloat16, rank=3, ...],
+        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+        freqs_cis: InputTensor[dtype=.bfloat16, rank=2, ...],
+        kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
+        page_stride: InputTensor[dtype=.int64, rank=1, ...],
+        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
+        max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
+        layer_idx: UInt32,
+        value_scale: Float32,
+        ctx: DeviceContext,
+    ) raises:
+        comptime assert is_gpu[
+            target
+        ](), "chunked QKV preparation requires a GPU"
+        comptime assert (
+            cache_dtype == DType.bfloat16
+        ), "kv_blocks must be a rank-6 BF16 cache"
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            page_stride,
+            cache_lengths,
+            kv_lookup_table,
+            max_prompt_length,
+            max_cache_length,
+        )
+        return chunked_qkv_rope_store_paged_ragged[
+            qk_head_dim=Self.qk_head_dim,
+            v_head_dim=Self.v_head_dim,
+        ](
+            qkv.to_tile_tensor[.int64](),
+            input_row_offsets.to_tile_tensor[.int64](),
+            freqs_cis.to_tile_tensor[.int64](),
+            kv_collection,
+            layer_idx,
+            output.to_tile_tensor[.int64](),
+            value_scale,
+            ctx,
+        )
 
 
 @extensibility.register("mo.rope_split_store.ragged.paged")
@@ -2089,11 +2160,10 @@ struct Struct_moe_router_group_limited:
         routed_scaling_factor: Float32,
         context: DeviceContext,
     ) raises:
-        @__parameter
         @inline(.always)
         def scores_input_fn[
             width: Int
-        ](coords: Coord) -> SIMD[scores_type, width]:
+        ](coords: Coord) {var expert_scores} -> SIMD[scores_type, width]:
             comptime assert (
                 coords.rank == 2
             ), "the expert-scores lambda contract is rank 2"
@@ -2106,11 +2176,11 @@ struct Struct_moe_router_group_limited:
             topk_group,
             norm_weights,
             target=target,
-            scores_input_fn=scores_input_fn,
         ](
             expert_indices.to_tile_tensor[.int64](),
             expert_weights.to_tile_tensor[.int64](),
             expert_scores.runtime_layout(),
+            scores_input_fn,
             expert_bias.to_tile_tensor[.int64]().as_imm(),
             routed_scaling_factor,
             context,
@@ -2148,6 +2218,51 @@ struct Struct_moe_create_indices_with_scales_offset:
         )
 
 
+@extensibility.register("mo.moe.create.indices.with.slots")
+struct Struct_moe_create_indices_with_slots:
+    """Registers the `mo.moe.create.indices.with.slots` graph op with the graph compiler.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        slot_stride: Int,
+        expert_offset: Int,
+        local_experts: Int,
+        target: StaticString,
+    ](
+        token_expert_order: OutputTensor[dtype=.uint32, rank=1, ...],
+        expert_start_indices: OutputTensor[dtype=.uint32, rank=1, ...],
+        restore_token_order: OutputTensor[dtype=.int32, rank=1, ...],
+        expert_ids: OutputTensor[dtype=.int32, rank=1, ...],
+        expert_usage_stats: OutputTensor[dtype=.uint32, rank=1, ...],
+        scales_offset: OutputTensor[dtype=.uint32, rank=1, ...],
+        slot_token: OutputTensor[dtype=.int32, rank=1, ...],
+        slot_weight: OutputTensor[dtype=.float32, rank=1, ...],
+        scale_slot: OutputTensor[dtype=.int32, rank=1, ...],
+        topk_ids: InputTensor[dtype=.int32, rank=1, ...],
+        slot_weights: InputTensor[dtype=.float32, rank=1, ...],
+        context: DeviceContext,
+    ) raises:
+        moe_create_indices_with_slots[slot_stride, target=target](
+            token_expert_order.to_tile_tensor[.int64](),
+            expert_start_indices.to_tile_tensor[.int64](),
+            restore_token_order.to_tile_tensor[.int64](),
+            expert_ids.to_tile_tensor[.int64](),
+            expert_usage_stats.to_tile_tensor[.int64](),
+            scales_offset._ptr.as_unsafe_any_origin(),
+            slot_token._ptr.as_unsafe_any_origin(),
+            slot_weight._ptr.as_unsafe_any_origin(),
+            scale_slot._ptr.as_unsafe_any_origin(),
+            scale_slot.dim_size(0),
+            topk_ids.to_tile_tensor[.int64](),
+            slot_weights._ptr.as_unsafe_any_origin(),
+            expert_offset,
+            local_experts,
+            context,
+        )
+
+
 @extensibility.register("mo.moe.single.group.router.eplb")
 struct Struct_moe_single_group_router_eplb:
     """Registers the `mo.moe.single.group.router.eplb` graph op with the graph compiler.
@@ -2178,11 +2293,10 @@ struct Struct_moe_single_group_router_eplb:
         routed_scaling_factor: Float32,
         context: DeviceContext,
     ) raises:
-        @__parameter
         @inline(.always)
         def scores_input_fn[
             width: Int
-        ](coords: Coord) -> SIMD[scores_type, width]:
+        ](coords: Coord) {var expert_scores} -> SIMD[scores_type, width]:
             comptime assert (
                 coords.rank == 2
             ), "the expert-scores lambda contract is rank 2"
@@ -2196,12 +2310,12 @@ struct Struct_moe_single_group_router_eplb:
             max_replicas=max_replicas,
             hash_decorrelate=hash_decorrelate,
             target=target,
-            scores_input_fn=scores_input_fn,
         ](
             expert_indices.to_tile_tensor[.int64](),
             expert_indices_log.to_tile_tensor[.int64](),
             expert_weights.to_tile_tensor[.int64](),
             expert_scores.runtime_layout(),
+            scores_input_fn,
             expert_bias.to_tile_tensor[.int64]().as_imm(),
             logcnt.to_tile_tensor[.int64]().as_imm(),
             log2phy.to_tile_tensor[.int64]().as_imm(),
@@ -2234,11 +2348,10 @@ struct Struct_moe_single_group_router:
         routed_scaling_factor: Float32,
         context: DeviceContext,
     ) raises:
-        @__parameter
         @inline(.always)
         def scores_input_fn[
             width: Int
-        ](coords: Coord) -> SIMD[scores_type, width]:
+        ](coords: Coord) {var expert_scores} -> SIMD[scores_type, width]:
             comptime assert (
                 coords.rank == 2
             ), "the expert-scores lambda contract is rank 2"
@@ -2249,11 +2362,11 @@ struct Struct_moe_single_group_router:
             n_experts_per_tok,
             norm_weights=norm_weights,
             target=target,
-            scores_input_fn=scores_input_fn,
         ](
             expert_indices.to_tile_tensor[.int64](),
             expert_weights.to_tile_tensor[.int64](),
             expert_scores.runtime_layout(),
+            scores_input_fn,
             expert_bias.to_tile_tensor[.int64]().as_imm(),
             routed_scaling_factor,
             context,
@@ -2858,6 +2971,40 @@ struct Struct_gumbel_argmax_from_probs:
         )
 
 
+@extensibility.register("sampler.argmax_with_bias")
+struct Struct_argmax_with_bias:
+    """Registers the `sampler.argmax_with_bias` graph op.
+
+    Takes, per row, the argmax of `logits[:, position, :] + bias`, with both
+    inputs upcast and added in float32 in registers: the same index as an
+    argmax of the materialized float32 sum. The DSpark Markov head runs it
+    once per draft position and reads the draft logits in place.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        dtype: DType,
+        bias_dtype: DType,
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        out_tokens: OutputTensor[dtype=.int64, rank=1, ...],
+        position: Scalar,
+        logits: InputTensor[dtype=dtype, rank=3, ...],
+        bias: InputTensor[dtype=bias_dtype, rank=2, ...],
+        ctx: DeviceContext,
+    ) raises:
+        comptime assert is_gpu[target](), "sampler.argmax_with_bias is GPU-only"
+        argmax_with_bias_gpu(
+            ctx,
+            logits.to_tile_tensor[.int64](),
+            bias.to_tile_tensor[.int64](),
+            Int(position),
+            out_tokens.to_tile_tensor[.int64](),
+        )
+
+
 @extensibility.register("sampler.keyed_uniform")
 struct Struct_keyed_uniform:
     """Registers the `sampler.keyed_uniform` graph op.
@@ -3252,6 +3399,8 @@ struct BundledAllReduceAddRMSNormQuantFP8:
         rank: Int,
         target: StaticString,
         _trace_name: StaticString,
+        epsilon: Float32,
+        weight_offset: Float32,
     ](
         output: OutputTensor[dtype=output_type, rank=rank, ...],
         out_scale: OutputTensor[dtype=scales_type, rank=rank, ...],
@@ -3262,8 +3411,6 @@ struct BundledAllReduceAddRMSNormQuantFP8:
         ],
         residual: InputTensor[dtype=dtype, rank=rank, ...],
         gamma: InputTensor[dtype=dtype, rank=1, ...],
-        epsilon: InputTensor[dtype=DType.float32, ...],
-        weight_offset: InputTensor[dtype=dtype, ...],
         scale_ub: InputTensor[dtype=DType.float32, ...],
         ctx: DeviceContext,
     ) capturing raises:
@@ -3282,6 +3429,8 @@ struct BundledAllReduceAddRMSNormQuantFP8:
             rank: Number of dimensions in the input and output tensors.
             target: Target device identifier for code generation.
             _trace_name: Trace name used for profiling and debugging.
+            epsilon: RMSNorm epsilon scalar.
+            weight_offset: RMSNorm weight offset scalar.
 
         Args:
             output: FP8 quantized output tensor for THIS GPU.
@@ -3291,8 +3440,6 @@ struct BundledAllReduceAddRMSNormQuantFP8:
             signal_buffers: Signal buffers for ALL participating GPUs.
             residual: Residual tensor for THIS GPU.
             gamma: RMSNorm weight for THIS GPU.
-            epsilon: RMSNorm epsilon scalar (host).
-            weight_offset: RMSNorm weight offset scalar (host).
             scale_ub: Quantization scale upper bound scalar (host).
             ctx: Device context for THIS GPU.
         """
@@ -3336,7 +3483,11 @@ struct BundledAllReduceAddRMSNormQuantFP8:
         var rank_sigs = Array[_, num_devices](
             fill_with_unrolled=lambda [i: Int]() -> Pointer[
                 Signal, MutAnyOrigin
-            ]: (signal_buffers[i]._ptr.bitcast[Signal]().as_unsafe_any_origin())
+            ]: (
+                signal_buffers[i]
+                ._ptr.unsafe_bitcast[Signal]()
+                .as_unsafe_any_origin()
+            )
         )
 
         comptime for i in range(num_devices):
@@ -3350,8 +3501,8 @@ struct BundledAllReduceAddRMSNormQuantFP8:
             output.to_tile_tensor[.int64](),
             out_residual.to_tile_tensor[.int64](),
             gamma.to_tile_tensor[.int64](),
-            epsilon.unsafe_ptr()[],
-            weight_offset.unsafe_ptr()[],
+            epsilon,
+            weight_offset.cast[dtype](),
             scale_ub.unsafe_ptr()[],
             out_scale.to_tile_tensor[.int64](),
             rank_sigs,
@@ -3592,6 +3743,37 @@ struct GatedDeltaConv1dFwd[write_state: Bool = True]:
         input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
         ctx: DeviceContext,
     ) capturing raises:
+        Self.launch[work_dtype, state_dtype, target, capture_input=False](
+            conv_output_ragged,
+            qkv_input_ragged,
+            conv_weight,
+            conv_state,
+            slot_idx,
+            input_row_offsets,
+            conv_output_ragged,
+            ctx,
+        )
+
+    @staticmethod
+    def launch[
+        work_dtype: DType,
+        state_dtype: DType,
+        target: StaticString,
+        capture_input: Bool,
+    ](
+        conv_output_ragged: OutputTensor[dtype=work_dtype, rank=2, ...],
+        qkv_input_ragged: InputTensor[dtype=work_dtype, rank=2, ...],
+        conv_weight: InputTensor[dtype=work_dtype, rank=2, ...],
+        conv_state: MutableInputTensor[dtype=state_dtype, rank=3, ...],
+        slot_idx: InputTensor[dtype=.uint32, rank=1, ...],
+        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+        qkv_window: OutputTensor[dtype=work_dtype, rank=2, ...],
+        ctx: DeviceContext,
+    ) capturing raises:
+        """Launches the conv, also copying its input to `qkv_window` when
+        `capture_input`. `qkv_window` then has the output's shape and is
+        otherwise never touched.
+        """
         # Number of threads per block along the conv_dim axis.
         comptime CONV1D_BLOCK_DIM: Int = 128
 
@@ -3643,6 +3825,7 @@ struct GatedDeltaConv1dFwd[write_state: Bool = True]:
         var input_row_offsets_tt = input_row_offsets.to_tile_tensor[
             DType.int64
         ]()
+        var qkv_window_tt = qkv_window.to_tile_tensor[.int64]()
 
         comptime assert is_gpu[
             target
@@ -3696,6 +3879,8 @@ struct GatedDeltaConv1dFwd[write_state: Bool = True]:
                     input_row_offsets_tt.LayoutType,
                     conv_output_ragged_tt.LayoutType,
                     qkv_input_ragged_tt.Engine,
+                    capture_input,
+                    qkv_window_tt.LayoutType,
                 ]
             ](
                 Int32(batch_size),
@@ -3708,6 +3893,7 @@ struct GatedDeltaConv1dFwd[write_state: Bool = True]:
                 slot_idx_tt,
                 input_row_offsets_tt,
                 conv_output_ragged_tt,
+                qkv_window_tt,
                 grid_dim=(grid_dim_tokens, grid_dim_channels),
                 block_dim=(CONV1D_BLOCK_DIM,),
             )
@@ -3780,11 +3966,17 @@ struct GatedDeltaConv1dVerifyFwd[rollback: Bool]:
     `K > 0` the forward launch raises unless every row is one token and its
     `K` drafts.
 
+    The forward launch at `K > 0` also copies its input to `qkv_window`,
+    which the rollback replays from; with every row one token and its
+    drafts, the copy is the whole input. Every other launch leaves
+    `qkv_window` unwritten.
+
     Parameters:
         rollback: Whether this is the rollback's launch.
 
     Tensor Shapes:
         As `gated_delta_conv1d_fwd`, plus
+        - qkv_window         : [batch_size * (K + 1), conv_dim]       (OUT)
         - verify_width       : [K]                                   int64
     """
 
@@ -3795,6 +3987,7 @@ struct GatedDeltaConv1dVerifyFwd[rollback: Bool]:
         target: StaticString,
     ](
         conv_output_ragged: OutputTensor[dtype=work_dtype, rank=2, ...],
+        qkv_window: OutputTensor[dtype=work_dtype, rank=2, ...],
         qkv_input_ragged: InputTensor[dtype=work_dtype, rank=2, ...],
         conv_weight: InputTensor[dtype=work_dtype, rank=2, ...],
         conv_state: MutableInputTensor[dtype=state_dtype, rank=3, ...],
@@ -3839,8 +4032,8 @@ struct GatedDeltaConv1dVerifyFwd[rollback: Bool]:
                 ctx,
             )
         else:
-            GatedDeltaConv1dFwd[write_state=False].execute[
-                work_dtype, state_dtype, target
+            GatedDeltaConv1dFwd[write_state=False].launch[
+                work_dtype, state_dtype, target, capture_input=True
             ](
                 conv_output_ragged,
                 qkv_input_ragged,
@@ -3848,39 +4041,9 @@ struct GatedDeltaConv1dVerifyFwd[rollback: Bool]:
                 conv_state,
                 slot_idx,
                 input_row_offsets,
+                qkv_window,
                 ctx,
             )
-
-
-@extensibility.register_shape_function("gated_delta_conv1d_verify_fwd")
-def gated_delta_conv1d_verify_fwd_shape(
-    qkv_input_ragged: Some[Tensor],
-    conv_weight: Some[Tensor],
-    conv_state: Some[Tensor],
-    slot_idx: Some[Tensor],
-    input_row_offsets: Some[Tensor],
-    verify_width: Some[Tensor],
-) -> IndexList[2]:
-    """Computes the output shape for `gated_delta_conv1d_verify_fwd`.
-
-    Args:
-        qkv_input_ragged: Ragged QKV input, `[total_seq_len, conv_dim]`.
-        conv_weight: Convolution filter, `[conv_dim, kernel_size]`.
-        conv_state: Conv-state pool, `[max_slots, conv_dim, kernel_size-1]`.
-        slot_idx: Pool row per batch item, `[batch_size]`.
-        input_row_offsets: Ragged offsets, `[batch_size + 1]`.
-        verify_width: `[K]`, read for its shape only.
-    """
-    comptime assert (
-        type_of(verify_width).rank == 1
-    ), "verify_width must be rank 1"
-    return gated_delta_conv1d_fwd_shape(
-        qkv_input_ragged,
-        conv_weight,
-        conv_state,
-        slot_idx,
-        input_row_offsets,
-    )
 
 
 @fieldwise_init
@@ -4531,6 +4694,21 @@ struct GatedDeltaStateFold:
             )
 
 
+def _ssd_chunked_min_tokens() -> Int:
+    """Returns the prefill token count from which the chunked SSD scan runs.
+
+    `MODULAR_SSD_CHUNKED_MIN_TOKENS` overrides the default of 512 tokens; a
+    huge value pins the serial scan.
+    """
+    var v = getenv("MODULAR_SSD_CHUNKED_MIN_TOKENS")
+    if v.byte_length() > 0:
+        try:
+            return Int(v)
+        except:
+            pass
+    return 512
+
+
 @extensibility.register("mamba2_ssd_chunk_scan_varlen_fwd_inplace")
 struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
     """Varlen Mamba-2 SSD chunked scan with an in-place SSM state pool.
@@ -4543,7 +4721,11 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
     Each sequence starts from `ssm_pool[cache_indices[b]]` when
     `has_initial_state[b]` is set, and its final state is written back to the
     same slot, so the graph never round-trips the pool. The kernel math lives
-    in `state_space.mamba2_ssd_scan`.
+    in `state_space.mamba2_ssd_scan` (token-serial scan, used for decode,
+    verify and short launches) and `state_space.mamba2_ssd_chunked` (chunked
+    state-space-duality scan on tensor cores). On NVIDIA GPUs with bf16 and
+    dstate 128, a launch with at least 512 tokens and an average sequence of at
+    least 128 tokens takes the chunked path.
 
     Parameters:
         dt_softplus: If True (default), apply softplus to `dt + dt_bias`.
@@ -4563,6 +4745,9 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
         - has_initial_state: (batch,) bool optional/empty
         - cache_indices: (batch,) or (1, batch) uint32, slot indices into
           ssm_pool
+        - update_state: (batch,) bool optional/empty. A clear flag leaves
+          that sequence's `ssm_pool` slot untouched (a read-only scan);
+          empty writes every sequence's final state.
     """
 
     @staticmethod
@@ -4584,6 +4769,7 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
         query_start_loc: InputTensor[dtype=.int32, rank=1, ...],
         has_initial_state: InputTensor[dtype=.bool, rank=1, ...],
         cache_indices: FusedInputTensor[dtype=.uint32, ...],
+        update_state: InputTensor[dtype=.bool, rank=1, ...],
         ctx: DeviceContext,
     ) capturing raises:
         comptime if cache_indices.rank == 2:
@@ -4618,6 +4804,7 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
         var ssm_pool_tt = ssm_pool.to_tile_tensor()
         var query_start_loc_tt = query_start_loc.to_tile_tensor()
         var has_initial_state_tt = has_initial_state.to_tile_tensor()
+        var update_state_tt = update_state.to_tile_tensor()
 
         # x, dt, B, C and the slot indices are fused inputs: a slice feeding
         # one is folded into its loads instead of being copied.
@@ -4672,6 +4859,7 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
                     ssm_pool_tt,
                     query_start_loc_tt,
                     has_initial_state_tt,
+                    update_state_tt,
                     x_fn,
                     dt_fn,
                     b_fn,
@@ -4695,6 +4883,7 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
                     ssm_pool_tt.LayoutType,
                     query_start_loc_tt.LayoutType,
                     has_initial_state_tt.LayoutType,
+                    update_state_tt.LayoutType,
                     y_tt.Engine,
                     type_of(x_fn),
                     type_of(dt_fn),
@@ -4712,6 +4901,7 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
                     ssm_pool_tt,
                     query_start_loc_tt,
                     has_initial_state_tt,
+                    update_state_tt,
                     host_arg=x_fn,
                     host_arg2=dt_fn,
                     host_arg3=b_fn,
@@ -4721,18 +4911,61 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
                     block_dim=(BLOCK_SIZE, 1, 1),
                 )
             else:
-                # DSTATE_SPLIT threads cooperate on each channel, CH_PER_BLOCK
-                # channels per 128-thread block. Decode-shape sweep on B200
+                # DSTATE_SPLIT threads cooperate on each channel, and each
+                # thread carries CH_PER_THREAD channels so every B/C vector it
+                # reads feeds several channels. Decode-shape sweep on B200
                 # (bf16, dstate=128), us per launch at batch 1: split1=46.8,
-                # split4=22.5, split8=16.6; split8 also wins at batch 16 and
-                # 32. On MI355X split8 is within 20% of the best split for
-                # batch-64 decode and 8 x 512 prefill.
-                comptime DSTATE_SPLIT = 8
-                comptime CH_PER_BLOCK = 128 // DSTATE_SPLIT
+                # split4=22.5, split8=16.6. For dstate 128 on B200, split 16
+                # with 4 channels per thread cut the batch-64 speculative
+                # verify (8 rows per sequence) from 68.6 to 44.0 us and the
+                # replay (5 rows) from 56.4 to 42.0 us. On MI355X split8 is
+                # within 20% of the best split for batch-64 decode and
+                # 8 x 512 prefill; the wider tile is not tuned there.
+                comptime WIDE = DSTATE == 128 and ctx.target.is_nvidia_gpu()
+                comptime DSTATE_SPLIT = 16 if WIDE else 8
+                comptime CH_PER_THREAD = 4 if WIDE else 1
+                comptime ROWS = 128 // DSTATE_SPLIT
+                comptime CH_PER_BLOCK = ROWS * CH_PER_THREAD
                 # The staged long-sequence path costs decode registers and
                 # shared memory, so only a launch with a multi-token sequence
                 # uses it.
                 var has_prefill = x.dim_size(0) > batch
+                # A long prefill takes the chunked algorithm, which turns the
+                # token-serial recurrence into matmuls; see
+                # `state_space.mamba2_ssd_chunked`.
+                comptime if (
+                    DSTATE == 128
+                    and dtype == .bfloat16
+                    and ctx.target._is_sm_8x_or_newer()
+                ):
+                    if use_chunked_ssd(
+                        x.dim_size(0),
+                        batch,
+                        head_dim,
+                        _ssd_chunked_min_tokens(),
+                    ):
+                        mamba2_ssd_chunked_fwd_inplace_gpu[
+                            DSTATE, dt_softplus=Self.dt_softplus
+                        ](
+                            ctx,
+                            x.dim_size(0),
+                            batch,
+                            ngroups,
+                            A_tt,
+                            D_tt,
+                            dt_bias_tt,
+                            y_tt,
+                            ssm_pool_tt,
+                            query_start_loc_tt,
+                            has_initial_state_tt,
+                            update_state_tt,
+                            x_fn,
+                            dt_fn,
+                            b_fn,
+                            c_fn,
+                            slot_fn,
+                        )
+                        return
                 comptime for mode in range(2):
                     comptime prefill = mode == 1
                     comptime kernel = mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split[
@@ -4747,6 +4980,7 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
                         ssm_pool_tt.LayoutType,
                         query_start_loc_tt.LayoutType,
                         has_initial_state_tt.LayoutType,
+                        update_state_tt.LayoutType,
                         y_tt.Engine,
                         type_of(x_fn),
                         type_of(dt_fn),
@@ -4755,6 +4989,7 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
                         type_of(slot_fn),
                         Self.dt_softplus,
                         prefill,
+                        CH_PER_THREAD=CH_PER_THREAD,
                     ]
                     if has_prefill == prefill:
                         ctx.enqueue_function[kernel](
@@ -4766,6 +5001,7 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
                             ssm_pool_tt,
                             query_start_loc_tt,
                             has_initial_state_tt,
+                            update_state_tt,
                             host_arg=x_fn,
                             host_arg2=dt_fn,
                             host_arg3=b_fn,
@@ -4776,7 +5012,7 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
                                 nheads,
                                 batch,
                             ),
-                            block_dim=(DSTATE_SPLIT, CH_PER_BLOCK, 1),
+                            block_dim=(DSTATE_SPLIT, ROWS, 1),
                         )
 
         var dstate = B.dim_size(2)
@@ -4812,6 +5048,7 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_shape(
     query_start_loc: Some[Tensor],
     has_initial_state: Some[Tensor],
     cache_indices: Some[Tensor],
+    update_state: Some[Tensor],
 ) -> IndexList[3]:
     """Computes the output shape for the `mamba2_ssd_chunk_scan_varlen_fwd_inplace` graph op.
 
@@ -4842,6 +5079,9 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_shape(
         cache_indices: Per-sequence slot indices of shape
             `(batch,)` or `(1, batch)` in `uint32` selecting where in
             `ssm_pool` the final states are written.
+        update_state: Per-sequence flag of shape `(batch,)` in `bool`
+            selecting whether the final state is written back; may be empty
+            to write every sequence's.
     """
     comptime assert type_of(x).rank == 3, "x must be rank 3"
     comptime assert type_of(dt).rank == 2, "dt must be rank 2"
@@ -4869,6 +5109,12 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_shape(
     comptime assert (
         type_of(cache_indices).dtype == .uint32
     ), "cache_indices dtype must be uint32"
+    comptime assert (
+        type_of(update_state).rank == 1
+    ), "update_state must be rank 1"
+    comptime assert (
+        type_of(update_state).dtype == .bool
+    ), "update_state dtype must be bool"
     comptime assert (
         type_of(dt).dtype == type_of(x).dtype
         and type_of(A).dtype == type_of(x).dtype
@@ -4914,6 +5160,8 @@ struct CausalConv1DVarlenFwd[
         - cache_indices: (batch,) or (1, batch) - Indices into conv_states
           (optional)
         - has_initial_state: (batch,) - Whether to use initial state (optional)
+        - update_state: (batch,) - Whether to write the new window back to
+          `conv_states` (optional; empty writes every sequence's)
         - conv_states: (batch, dim, width - 1) - Conv states (optional, in/out)
     """
 
@@ -4932,6 +5180,7 @@ struct CausalConv1DVarlenFwd[
         query_start_loc: InputTensor[dtype=.int32, rank=1, ...],
         cache_indices: FusedInputTensor[dtype=.uint32, ...],
         has_initial_state: InputTensor[dtype=.bool, rank=1, ...],
+        update_state: InputTensor[dtype=.bool, rank=1, ...],
         ctx: DeviceContext,
     ) capturing raises:
         comptime if cache_indices.rank == 2:
@@ -4948,6 +5197,7 @@ struct CausalConv1DVarlenFwd[
         var bias_tt = bias.to_tile_tensor()
         var query_start_loc_tt = query_start_loc.to_tile_tensor()
         var has_initial_state_tt = has_initial_state.to_tile_tensor()
+        var update_state_tt = update_state.to_tile_tensor()
         var conv_states_tt = conv_states.to_tile_tensor()
 
         # x and the slot indices are fused inputs: a slice feeding one is
@@ -4997,6 +5247,7 @@ struct CausalConv1DVarlenFwd[
                 bias_tt,
                 query_start_loc_tt,
                 has_initial_state_tt,
+                update_state_tt,
                 conv_states_tt,
                 output_tt,
                 x_fn,
@@ -5020,6 +5271,7 @@ struct CausalConv1DVarlenFwd[
                     bias_tt,
                     query_start_loc_tt,
                     has_initial_state_tt,
+                    update_state_tt,
                     conv_states_tt,
                     output_tt,
                     0,
@@ -5059,6 +5311,7 @@ def causal_conv1d_varlen_fwd_shape(
     query_start_loc: Some[Tensor],
     cache_indices: Some[Tensor],
     has_initial_state: Some[Tensor],
+    update_state: Some[Tensor],
 ) -> IndexList[2]:
     """Computes the output shape for the `causal_conv1d_varlen_fwd` graph op.
 
@@ -5074,6 +5327,8 @@ def causal_conv1d_varlen_fwd_shape(
         cache_indices: Indices into the conv_states pool with shape (batch,).
         has_initial_state: Whether each sequence has an initial state with
             shape (batch,).
+        update_state: Whether each sequence writes its new window back to
+            `conv_states`, shape (batch,); may be empty to write all.
     """
     comptime assert type_of(x).rank == 2, "x must be rank 2"
     comptime assert type_of(weight).rank == 2, "weight must be rank 2"
@@ -5101,6 +5356,12 @@ def causal_conv1d_varlen_fwd_shape(
     comptime assert (
         type_of(has_initial_state).dtype == .bool
     ), "has_initial_state dtype must be bool"
+    comptime assert (
+        type_of(update_state).rank == 1
+    ), "update_state must be rank 1"
+    comptime assert (
+        type_of(update_state).dtype == .bool
+    ), "update_state dtype must be bool"
     return rebind[IndexList[2]](coord_to_index_list(x.shape().tuple()))
 
 
