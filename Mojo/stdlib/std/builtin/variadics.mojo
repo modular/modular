@@ -1694,7 +1694,7 @@ def _call_with_dynamic_pack_pointers[
     RaiseType: AnyType,
     MakeElemPtr: def[idx: Int]() -> Pointer[Args[idx], MutUnsafeAnyOrigin],
     //,
-    user_func: def(* args: * Args) thin raises RaiseType -> RetType,
+    user_func: def(*args: *Args) thin raises RaiseType -> RetType,
 ](make_elem_ptr: MakeElemPtr) raises RaiseType -> RetType:
     """Call `user_func` using a `VariadicPack` whose elements are initialized
     by per-index calls to `make_elem_ptr`.

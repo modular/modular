@@ -36,9 +36,9 @@ def takes_one_with_kwargs(arg: Memory, var **kwargs: Int):
 
 def main():
     var f1: def(Memory) thin = takes_one
-    var f2: def(* args: * TypeList.splat[1, Memory]()) thin = takes_one
+    var f2: def(*args: *TypeList.splat[1, Memory]()) thin = takes_one
     var f3: def(
-        * args: * TypeList.splat[1, Memory](), var ** kwargs: Int
+        *args: *TypeList.splat[1, Memory](), var **kwargs: Int
     ) thin = takes_one_with_kwargs
 
     # CHECK: yes

@@ -1557,7 +1557,7 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
     def add_function[
         declared_arg_types: TypeList[Trait=AnyType, ...],
         //,
-        func: def(* args: * declared_arg_types) thin -> None,
+        func: def(*args: *declared_arg_types) thin -> None,
         *actual_arg_types: DevicePassable,
         link_options: StaticString = "",
         dump_asm: _DumpPath = False,

@@ -289,7 +289,7 @@ __extension DeviceContextBase:
     def enqueue_function[
         declared_arg_types: TypeList[Trait=AnyType, ...],
         //,
-        func: def(* args: * declared_arg_types) thin -> None,
+        func: def(*args: *declared_arg_types) thin -> None,
         *actual_arg_types: DevicePassable,
         link_options: StaticString = "",
         dump_asm: _DumpPath = False,
@@ -408,7 +408,7 @@ __extension DeviceContextBase:
     def enqueue_function[
         declared_arg_types: TypeList[Trait=AnyType, ...],
         //,
-        func: def(* args: * declared_arg_types) capturing -> None,
+        func: def(*args: *declared_arg_types) capturing -> None,
         Host: Deinitable & ImplicitlyCopyable & RegisterPassable,
         *encoded_types: DevicePassable,
         link_options: StaticString = "",
@@ -506,7 +506,7 @@ __extension DeviceContextBase:
     def enqueue_function[
         declared_arg_types: TypeList[Trait=AnyType, ...],
         //,
-        func: def(* args: * declared_arg_types) capturing -> None,
+        func: def(*args: *declared_arg_types) capturing -> None,
         Host0: Deinitable & ImplicitlyCopyable & RegisterPassable,
         Host1: Deinitable & ImplicitlyCopyable & RegisterPassable,
         *encoded_types: DevicePassable,
@@ -608,7 +608,7 @@ __extension DeviceContextBase:
     def enqueue_function[
         declared_arg_types: TypeList[Trait=AnyType, ...],
         //,
-        func: def(* args: * declared_arg_types) capturing -> None,
+        func: def(*args: *declared_arg_types) capturing -> None,
         Host0: Deinitable & ImplicitlyCopyable & RegisterPassable,
         Host1: Deinitable & ImplicitlyCopyable & RegisterPassable,
         Host2: Deinitable & ImplicitlyCopyable & RegisterPassable,
@@ -714,7 +714,7 @@ __extension DeviceContextBase:
     def enqueue_function[
         declared_arg_types: TypeList[Trait=AnyType, ...],
         //,
-        func: def(* args: * declared_arg_types) capturing -> None,
+        func: def(*args: *declared_arg_types) capturing -> None,
         Host0: Deinitable & ImplicitlyCopyable & RegisterPassable,
         Host1: Deinitable & ImplicitlyCopyable & RegisterPassable,
         Host2: Deinitable & ImplicitlyCopyable & RegisterPassable,
@@ -824,7 +824,7 @@ __extension DeviceContextBase:
     def enqueue_function[
         declared_arg_types: TypeList[Trait=AnyType, ...],
         //,
-        func: def(* args: * declared_arg_types) capturing -> None,
+        func: def(*args: *declared_arg_types) capturing -> None,
         Host0: Deinitable & ImplicitlyCopyable & RegisterPassable,
         Host1: Deinitable & ImplicitlyCopyable & RegisterPassable,
         Host2: Deinitable & ImplicitlyCopyable & RegisterPassable,

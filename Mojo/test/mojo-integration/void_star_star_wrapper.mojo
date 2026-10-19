@@ -32,7 +32,7 @@ struct KernelFunction[
     declared_arg_types: TypeList[Trait=AnyType, ...],
     declared_ret_type: RegisterPassable,
     //,
-    func: def(* args: * declared_arg_types) thin -> declared_ret_type,
+    func: def(*args: *declared_arg_types) thin -> declared_ret_type,
 ]:
     pass
 
