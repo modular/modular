@@ -120,12 +120,8 @@ def test_mixed_complex_24byte():
 # CHECK: mixed_complex_24byte: 11 11.5 21.5 31
 
 
-# ============================================================================
-# 12-byte mixed with an array (Int32 + Array[Float32, 2])
-# C struct: {int32_t i; float v[2];} = 12 bytes
-# On ARM64: non-HFA, IntegerPair (two GPRs)
-# On x86-64 SysV: eightbyte 0 (i, v[0]) INTEGER, eightbyte 1 (v[1]) SSE
-# ============================================================================
+# {Int32, Array[Float32, 2]} (12 bytes): on x86-64, eightbyte 0 (i, v[0]) is
+# INTEGER and eightbyte 1 (v[1]) is SSE; on ARM64, two GPRs.
 @fieldwise_init
 struct MixedIntFloatArray12(Copyable):
     var i: Int32
