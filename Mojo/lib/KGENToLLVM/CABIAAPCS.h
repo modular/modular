@@ -27,7 +27,8 @@ namespace M::KGEN {
 /// - Structs ≤8 bytes (all-integer): coerce to i8/i16/i32/i64
 /// - Structs 9-16 bytes: split into two registers (X0-X1)
 /// - Structs >16 bytes: pass by pointer (indirect)
-/// - HFA (Homogeneous Float Aggregate): up to 4 float/vector fields in V0-V3
+/// - HFA/HVA (homogeneous float or short-vector aggregate): up to 4 members
+///   in V0-V3
 /// - **Darwin vs Linux difference for variadic HFA:**
 ///   Darwin (macOS/iOS): va_list is flat (GP/stack only); HFA variadic args
 ///   must be coerced to integer so va_arg reads from GP save area.
@@ -70,9 +71,9 @@ private:
   // Phase 3: HFA classification (TODO - future work)
   //===--------------------------------------------------------------------===//
 
-  // HFA (Homogeneous Float Aggregate) detection
-  // - All fields are float32, float64, or float16
-  // - Up to 4 fields total
+  // HFA/HVA detection is CabiUtils::isHomogeneousAggregate:
+  // - Up to 4 members of one float or 64/128-bit vector type, counted after
+  //   flattening nested structs and arrays
   // - Passed in V0-V3 (SIMD registers)
   //
   // Phase 3 methods (not yet implemented):

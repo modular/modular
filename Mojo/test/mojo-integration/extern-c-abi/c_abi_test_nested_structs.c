@@ -36,3 +36,33 @@ struct Outer c_func_nested_float_12byte(struct Outer s) {
   s.z += 1.0f;
   return s;
 }
+
+// 24-byte struct: two nested structs of three floats each. Six floats once
+// flattened, over the AAPCS64 HFA limit of four, so every target passes it by
+// pointer and returns it through the hidden result pointer.
+struct Vec3 {
+  float x;
+  float y;
+  float z;
+};
+
+struct Box {
+  struct Vec3 min;
+  struct Vec3 max;
+};
+
+struct Box c_func_nested_float_24byte(struct Box s) {
+  s.min.x += 1.0f;
+  s.min.y += 1.0f;
+  s.min.z += 1.0f;
+  s.max.x += 1.0f;
+  s.max.y += 1.0f;
+  s.max.z += 1.0f;
+  return s;
+}
+
+// Calls back into Mojo with a Box built in C.
+float c_call_nested_float_24byte(float (*fn)(struct Box)) {
+  struct Box s = {{1.0f, 2.0f, 3.0f}, {4.0f, 5.0f, 6.0f}};
+  return fn(s);
+}

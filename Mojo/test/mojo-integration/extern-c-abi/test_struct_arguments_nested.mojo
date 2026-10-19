@@ -44,5 +44,65 @@ def test_nested_float_12byte():
 # CHECK: nested_float_12byte: 2.0 3.0 4.0
 
 
+# ============================================================================
+# Nested float struct: Box { Vec3 {f32, f32, f32}, Vec3 {f32, f32, f32} }
+# (24 bytes)
+# ABI (ARM64): not an HFA. Two top-level fields, but six floats once flattened,
+#              and the HFA limit of four counts flattened members. Passed by
+#              pointer, returned through x8.
+# ABI (x86-64): MEMORY class (>16 bytes).
+# ============================================================================
+@fieldwise_init
+struct Vec3(TrivialRegisterPassable):
+    var x: Float32
+    var y: Float32
+    var z: Float32
+
+
+@fieldwise_init
+struct Box(TrivialRegisterPassable):
+    var min: Vec3
+    var max: Vec3
+
+
+def test_nested_float_24byte():
+    var s = Box(Vec3(1.0, 2.0, 3.0), Vec3(4.0, 5.0, 6.0))
+    var result = external_call["c_func_nested_float_24byte", Box](s)
+    print(
+        "nested_float_24byte:",
+        result.min.x,
+        result.min.y,
+        result.min.z,
+        result.max.x,
+        result.max.y,
+        result.max.z,
+    )
+
+
+# CHECK: nested_float_24byte: 2.0 3.0 4.0 5.0 6.0 7.0
+
+
+def weigh_box(b: Box) abi("C") -> Float32:
+    return (
+        b.min.x
+        + 10 * b.min.y
+        + 100 * b.min.z
+        + 1000 * b.max.x
+        + 10000 * b.max.y
+        + 100000 * b.max.z
+    )
+
+
+def test_nested_float_24byte_callback():
+    # C builds the Box and passes it to an abi("C") Mojo function.
+    var result = external_call["c_call_nested_float_24byte", Float32](weigh_box)
+    print("nested_float_24byte_callback:", result)
+
+
+# CHECK: nested_float_24byte_callback: 654321.0
+
+
 def main():
     test_nested_float_12byte()
+    test_nested_float_24byte()
+    test_nested_float_24byte_callback()

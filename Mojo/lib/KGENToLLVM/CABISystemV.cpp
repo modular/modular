@@ -81,10 +81,11 @@ CoercionInfo SystemVABIInfo::classifyStructType(mlir::Type type,
                    : CoercionInfo::indirectArgument(/*useByval=*/true);
   }
 
-  // 1-8 byte structs: all-float → SSE registers, otherwise → integer registers
+  // 1-8 byte structs: all-float (floats, float arrays, 8-byte vectors) → SSE
+  // registers, otherwise → integer registers.
   // Per System V ABI: mixed int/float eightbytes use integer classification.
   if (size <= 8) {
-    if (CabiUtils::isAllFloatStruct(structType)) {
+    if (CabiUtils::isHomogeneousAggregate(structType)) {
       return classifySmallSSEStruct(size);
     }
     return CabiUtils::classifySmallIntegerStruct(size, ctx);

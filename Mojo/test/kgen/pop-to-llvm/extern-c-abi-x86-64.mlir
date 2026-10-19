@@ -40,6 +40,8 @@
 //   E2  arg_double_struct         {f64}       → f64
 //   E3  arg_two_floats            {f32,f32}   → f64  (fits one SSE register)
 //   E4  arg_int_wins_float        {i32,f32}   → i64  (INTEGER overrides SSE)
+//   E5  arg_float_array_struct    {{[2 x f32]}} → f64  (array of floats)
+//   E6  arg_small_vectors_struct  {vector<2xf16>,vector<2xf16>} → i64  (4-byte vectors)
 //
 // Group B — 9–16 byte struct args: two-register classification
 //   B1  arg_int_pair_12          {i32,i32,i32}        → (i64, i32)  IntegerPair
@@ -237,6 +239,35 @@ llvm.func @arg_int_wins_float(%arg0: !llvm.struct<(i32, f32)>) {
   llvm.return
 }
 // CHECK: llvm.func @c_e4(i64)
+}
+
+// -----
+
+// E5: {{[2 x f32]}} (8 bytes) → SSE → f64.
+// A Mojo `Array[Float32, 2]` field.
+// The array's elements are floats, so the eightbyte is SSE, as in clang.
+module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @arg_float_array_struct
+llvm.func @arg_float_array_struct(%arg0: !llvm.struct<(struct<(array<2 x f32>)>)>) {
+  // CHECK: llvm.call @c_e5(%{{.*}}) : (f64) -> ()
+  pop.external_call @c_e5(%arg0) : (!llvm.struct<(struct<(array<2 x f32>)>)>) -> ()
+  llvm.return
+}
+// CHECK: llvm.func @c_e5(f64)
+}
+
+// -----
+
+// E6: {vector<2 x f16>, vector<2 x f16>} (8 bytes) → INTEGER → i64.
+// clang classifies a vector of 4 bytes or less as INTEGER, like gcc.
+module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @arg_small_vectors_struct
+llvm.func @arg_small_vectors_struct(%arg0: !llvm.struct<(vector<2 x f16>, vector<2 x f16>)>) {
+  // CHECK: llvm.call @c_e6(%{{.*}}) : (i64) -> ()
+  pop.external_call @c_e6(%arg0) : (!llvm.struct<(vector<2 x f16>, vector<2 x f16>)>) -> ()
+  llvm.return
+}
+// CHECK: llvm.func @c_e6(i64)
 }
 
 //===----------------------------------------------------------------------===//
@@ -585,15 +616,16 @@ llvm.func @arg_attrs_sret(%arg0: i32) {
 //
 // In the MLIR assembly context, vector<N x f32> inside !llvm.struct<(...)> is
 // parsed as mlir::VectorType (MLIR built-in), which IS handled by the existing
-// dyn_cast<mlir::VectorType> check in isAllFloatStruct and classifyEightbyte.
+// dyn_cast<mlir::VectorType> check in isHomogeneousAggregate and
+// classifyEightbyte.
 // These tests verify that vector fields remain correctly classified as SSE.
 //===----------------------------------------------------------------------===//
 
 // -----
 
 // F1: {vector<2 x f32>} (8 bytes, all-float via VectorType) → SSE → f64.
-// The vector field is recognized by isAllFloatStruct (VectorType with float
-// elements); 8-byte all-float struct → f64 (SSE). Regression guard.
+// The vector field is recognized by isHomogeneousAggregate (a 64-bit
+// VectorType); 8-byte all-float struct → f64 (SSE). Regression guard.
 module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_vec2xf32_struct
 llvm.func @arg_vec2xf32_struct(%arg0: !llvm.struct<(vector<2 x f32>)>) {
@@ -623,15 +655,15 @@ llvm.func @arg_vec2xf32_and_f64(%arg0: !llvm.struct<(vector<2 x f32>, f64)>) {
 //===----------------------------------------------------------------------===//
 // Group N: Nested struct fields (LLVMStructType)
 //
-// isAllFloatStruct and classifyEightbyte now recurse into nested LLVMStructType
-// fields, so float nested structs receive correct SSE classification.
+// isHomogeneousAggregate and classifyEightbyte now recurse into nested
+// LLVMStructType fields, so float nested structs receive correct SSE classification.
 // N1-N3: nested float structs → SSE. N4-N5: integer regression guards.
 //===----------------------------------------------------------------------===//
 
 // -----
 
-// N1: {struct<(f32)>} (4 bytes) — CORRECT: isAllFloatStruct now recurses into
-// nested LLVMStructType fields. Inner struct<(f32)> is all-float → outer is
+// N1: {struct<(f32)>} (4 bytes) — CORRECT: isHomogeneousAggregate now recurses
+// into nested LLVMStructType fields. Inner struct<(f32)> is all-float → outer is
 // all-float → 4-byte SSE struct → f32.
 module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_nested_float_4
@@ -645,8 +677,8 @@ llvm.func @arg_nested_float_4(%arg0: !llvm.struct<(!llvm.struct<(f32)>)>) {
 
 // -----
 
-// N2: {struct<(f32,f32)>} (8 bytes) — CORRECT: isAllFloatStruct recurses into
-// nested struct<(f32,f32)> → all-float → 8-byte SSE struct → f64.
+// N2: {struct<(f32,f32)>} (8 bytes) — CORRECT: isHomogeneousAggregate recurses
+// into nested struct<(f32,f32)> → all-float → 8-byte SSE struct → f64.
 module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_nested_float_8
 llvm.func @arg_nested_float_8(%arg0: !llvm.struct<(!llvm.struct<(f32, f32)>)>) {
@@ -677,8 +709,8 @@ llvm.func @arg_nested_float_and_f64(%arg0: !llvm.struct<(!llvm.struct<(f32, f32)
 // -----
 
 // N4: {struct<(i32,i32)>} (8 bytes) — CORRECT: nested struct with integer fields.
-// isAllFloatStruct correctly returns false (not all float). classifyEightbyte:
-// the LLVMStructType field defaults to INTEGER, which is correct here.
+// isHomogeneousAggregate correctly returns false (not all float).
+// classifyEightbyte: the LLVMStructType field defaults to INTEGER, which is correct here.
 // Regression guard: integer nested structs must remain i64.
 module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_nested_int_8

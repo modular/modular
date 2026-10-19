@@ -46,7 +46,8 @@ CoercionInfo AAPCSABIInfo::classifyArgumentType(mlir::Type type,
     return isDarwin ? CabiUtils::classifyExtendedScalar(type) : CoercionInfo{};
   }
 
-  // HFA (Homogeneous Float Aggregate) classification:
+  // HFA/HVA (Homogeneous Floating-point / Short-Vector Aggregate)
+  // classification:
   //
   // Fixed args: always identity — HFA passes in SIMD registers (V0–V3).
   //
@@ -60,7 +61,7 @@ CoercionInfo AAPCSABIInfo::classifyArgumentType(mlir::Type type,
   //
   // Reference implementation: clang/lib/CodeGen/Targets/AArch64.cpp,
   //   EmitDarwinVAArg() vs EmitAAPCSVAArg().
-  if (CabiUtils::isAllFloatStruct(structType) &&
+  if (CabiUtils::isHomogeneousAggregate(structType) &&
       (!isVariadicArg || !isDarwin)) {
     return CoercionInfo{}; // Identity: defer to standard lowering (SIMD)
   }
@@ -75,8 +76,9 @@ CoercionInfo AAPCSABIInfo::classifyArgumentType(mlir::Type type,
 
   // ARM64 AAPCS: Non-HFA structs are always passed in GPRs (integer
   // registers), regardless of whether fields are int, float, or mixed.
-  // HFA structs (all-float, same type, ≤4 fields) use SIMD registers,
-  // but those are handled above by the isAllFloatStruct early return.
+  // HFA/HVA structs (≤4 members of one float or vector type) use SIMD
+  // registers, but those are handled above by the isHomogeneousAggregate early
+  // return.
 
   // RULE 2: 1-8 byte non-HFA structs → coerce to iN
   if (size <= 8) {
@@ -101,8 +103,8 @@ CoercionInfo AAPCSABIInfo::classifyReturnType(mlir::Type type,
     return isDarwin ? CabiUtils::classifyExtendedScalar(type) : CoercionInfo{};
   }
 
-  // All-float structs require HFA classification (not yet implemented).
-  if (CabiUtils::isAllFloatStruct(structType)) {
+  // HFA/HVA structs are returned in SIMD registers.
+  if (CabiUtils::isHomogeneousAggregate(structType)) {
     return CoercionInfo{}; // Identity: defer to standard lowering
   }
 
@@ -155,7 +157,7 @@ CoercionInfo AAPCSABIInfo::classifyTwoRegisterStruct(int64_t size,
 
 // TODO: Implement HFA (Homogeneous Float Aggregate) detection and
 // classification HFA rules:
-// - All fields must be the same float type (f16, f32, or f64)
-// - Maximum 4 fields
+// - Up to 4 members of one float or 64/128-bit vector type, counted after
+//   flattening (detection: CabiUtils::isHomogeneousAggregate)
 // - Passed in V0-V3 (SIMD registers)
 // - Example: struct { float x, y, z; } is HFA with 3 fields

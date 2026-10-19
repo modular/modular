@@ -37,5 +37,45 @@ def test_vec_8byte():
 # CHECK: vec_8byte: 2.0 3.0
 
 
+# ============================================================================
+# Integer vector pair: { SIMD[DType.int32, 4], SIMD[DType.int32, 4] } (32 bytes)
+# Correct ABI (arm64):  HVA of two 128-bit vectors → q0-q1. An HVA is tested on
+#                       the vector size, not the element type.
+# Correct ABI (x86-64): MEMORY class (>16 bytes).
+# ============================================================================
+@fieldwise_init
+struct IntVectorPair(TrivialRegisterPassable):
+    var a: SIMD[.int32, 4]
+    var b: SIMD[.int32, 4]
+
+
+def test_int_vec_pair_32byte():
+    var s = IntVectorPair(
+        SIMD[.int32, 4](1, 2, 3, 4), SIMD[.int32, 4](5, 6, 7, 8)
+    )
+    var result = external_call["c_func_int_vec_pair_32byte", IntVectorPair](s)
+    print("int_vec_pair_32byte:", result.a, result.b)
+
+
+# CHECK: int_vec_pair_32byte: [2, 3, 4, 5] [6, 7, 8, 9]
+
+
+def weigh_int_vec_pair(s: IntVectorPair) abi("C") -> Int32:
+    return s.a[0] + 10 * s.a[3] + 100 * s.b[0] + 1000 * s.b[3]
+
+
+def test_int_vec_pair_32byte_callback():
+    # C builds the pair and passes it to an abi("C") Mojo function.
+    var result = external_call["c_call_int_vec_pair_32byte", Int32](
+        weigh_int_vec_pair
+    )
+    print("int_vec_pair_32byte_callback:", result)
+
+
+# CHECK: int_vec_pair_32byte_callback: 8541
+
+
 def main():
     test_vec_8byte()
+    test_int_vec_pair_32byte()
+    test_int_vec_pair_32byte_callback()

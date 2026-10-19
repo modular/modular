@@ -28,7 +28,7 @@
 // lowering step in isolation.
 //
 // KEY DIFFERENCES FROM x86-64:
-//   1. HFA (Homogeneous Float Aggregate): all-float structs with ≤4 fields
+//   1. HFA (Homogeneous Float Aggregate): all-float structs with ≤4 members
 //      pass via SIMD registers (V0–V3) as identity — no coercion.
 //   2. Two-register structs always use IntegerPair (i64, iN) regardless of
 //      field types. There is no SSEPair or Mixed class on ARM64.
@@ -52,13 +52,19 @@
 //   A3  arg_3byte_int_struct      {i8,i8,i8} → i32
 //   A4  arg_8byte_int_struct      {i32,i32}  → i64
 //
-// Group F — HFA (Homogeneous Float Aggregate): identity for fixed args
+// Group F — HFA / HVA (homogeneous aggregates): identity for fixed args
 //   F1  arg_hfa_2xf32             {f32,f32}             → identity (SIMD)
 //   F2  arg_hfa_4xf32             {f32,f32,f32,f32}     → identity (max HFA)
 //   F3  arg_hfa_2xf64             {f64,f64}             → identity (SIMD)
-//   F4  arg_not_hfa_5xf32         {f32,f32,f32,f32,f32} → indirect (>16 AND >4 fields)
+//   F4  arg_not_hfa_5xf32         {f32,f32,f32,f32,f32} → indirect (>16 AND >4 members)
 //   F5  arg_not_hfa_mixed         {f32,i32}             → integer coercion (not all-float)
 //   F6  ret_hfa                   return {f32,f32}       → identity (HFA return)
+//   F7  arg_not_hfa_nested_6xf32  {{f32×3},{f32×3}}     → indirect (6 members)
+//   F8  ret_not_hfa_nested_6xf32  return {{f32×3},{f32×3}} → sret (6 members)
+//   F9  arg_hfa_array_3xf32       {{[3 x f32]}}         → identity (3 members)
+//   F10 arg_hva_2xv4i32           {vector<4xi32>,vector<4xi32>} → identity (HVA)
+//   F11 ret_hva_v2f64_v4f32       return {vector<2xf64>,vector<4xf32>} → identity (HVA)
+//   F12 arg_not_hva_2xv2f16       {vector<2xf16>,vector<2xf16>} → i64 (32-bit vectors)
 //
 // Group B — 9–16 byte struct args: IntegerPair (always i64+iN on ARM64)
 //   B1  arg_int_pair_12           {i32,i32,i32}          → (i64, i32)
@@ -148,19 +154,21 @@ llvm.func @arg_8byte_int_struct(%arg0: !llvm.struct<(i32, i32)>) {
 }
 
 //===----------------------------------------------------------------------===//
-// Group F: HFA (Homogeneous Float Aggregate)
+// Group F: HFA / HVA (Homogeneous Floating-point / Short-Vector Aggregate)
 //
-// AAPCS rule: an all-float struct with ≤4 fields of the same float type is an
-// HFA and uses SIMD registers (V0–V3). The lowering treats HFA args as
-// identity (no coercion), deferring register assignment to LLVM's backend.
+// AAPCS rule: a struct with 1-4 members of one floating-point or short-vector
+// type is an HFA or HVA and uses SIMD registers (V0–V3). The lowering treats
+// them as identity (no coercion), deferring register assignment to LLVM's
+// backend.
 //
 // The identity classification means the LLVM call passes the struct type
 // directly, identical to the DefaultCABIInfo (no-triple) behavior.
 //
-// HFA detection (isAllFloatStruct):
-//   - All fields must be the same float type (f16, f32, or f64)
-//   - At most 4 fields (5+ is not HFA)
-//   - Mixed int+float or heterogeneous float types → not HFA
+// HFA/HVA detection (isHomogeneousAggregate, following clang):
+//   - Members are counted after flattening nested structs and arrays; at most 4
+//   - Members are floats, or 64- or 128-bit vectors of any element type, all
+//     of one size and kind: f16 and bf16 match, f32 and vector<2 x f16> do not
+//   - Any other member (integer, pointer, padding) → not HFA
 //
 // Variadic HFA args are explicitly NOT treated as HFA (see Group G).
 //===----------------------------------------------------------------------===//
@@ -182,7 +190,7 @@ llvm.func @arg_hfa_2xf32(%arg0: !llvm.struct<(f32, f32)>) {
 // -----
 
 // F2: {f32, f32, f32, f32} (16 bytes, all-float, 4 fields) → HFA → identity.
-// 4 is the maximum field count for HFA.
+// 4 is the maximum member count for HFA.
 module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_hfa_4xf32
 llvm.func @arg_hfa_4xf32(%arg0: !llvm.struct<(f32, f32, f32, f32)>) {
@@ -208,8 +216,8 @@ llvm.func @arg_hfa_2xf64(%arg0: !llvm.struct<(f64, f64)>) {
 
 // -----
 
-// F4: {f32 × 5} (20 bytes) → NOT HFA (5 fields exceeds the 4-field limit) AND
-// size >16 bytes → indirect. The isAllFloatStruct check rejects 5-field
+// F4: {f32 × 5} (20 bytes) → NOT HFA (5 members exceeds the limit of 4) AND
+// size >16 bytes → indirect. isHomogeneousAggregate rejects 5-member
 // structs, so the struct falls through to size classification (>16 → indirect).
 module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_not_hfa_5xf32
@@ -223,8 +231,8 @@ llvm.func @arg_not_hfa_5xf32(%arg0: !llvm.struct<(f32, f32, f32, f32, f32)>) {
 // -----
 
 // F5: {f32, i32} (8 bytes) → NOT HFA (mixed int+float) → integer coercion → i64.
-// isAllFloatStruct returns false for mixed types, so the struct is classified
-// as a non-HFA integer struct.
+// isHomogeneousAggregate returns false for mixed types, so the struct is
+// classified as a non-HFA integer struct.
 module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_not_hfa_mixed
 llvm.func @arg_not_hfa_mixed(%arg0: !llvm.struct<(f32, i32)>) {
@@ -249,6 +257,91 @@ llvm.func @ret_hfa() {
   llvm.return
 }
 // CHECK: llvm.func @c_f6() -> !llvm.struct<(f32, f32)>
+}
+
+// -----
+
+// F7: {{f32 × 3}, {f32 × 3}} (24 bytes) → NOT HFA → indirect.
+// AAPCS64 counts HFA members after flattening nested structs: two top-level
+// fields, but six f32 members, over the limit of four.
+module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @arg_not_hfa_nested_6xf32
+llvm.func @arg_not_hfa_nested_6xf32(%arg0: !llvm.struct<(struct<(f32, f32, f32)>, struct<(f32, f32, f32)>)>) {
+  // CHECK: llvm.call @c_f7(%{{.*}}) : (!llvm.ptr) -> ()
+  pop.external_call @c_f7(%arg0) : (!llvm.struct<(struct<(f32, f32, f32)>, struct<(f32, f32, f32)>)>) -> ()
+  llvm.return
+}
+// CHECK: llvm.func @c_f7(!llvm.ptr)
+}
+
+// -----
+
+// F8: return {{f32 × 3}, {f32 × 3}} (24 bytes) → NOT HFA → sret.
+module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @ret_not_hfa_nested_6xf32
+llvm.func @ret_not_hfa_nested_6xf32() {
+  // CHECK: llvm.call @c_f8(%{{.*}}) : (!llvm.ptr {llvm.sret = !llvm.struct<(struct<(f32, f32, f32)>, struct<(f32, f32, f32)>)>}) -> ()
+  %r = pop.external_call @c_f8() : () -> !llvm.struct<(struct<(f32, f32, f32)>, struct<(f32, f32, f32)>)>
+  llvm.return
+}
+// CHECK: llvm.func @c_f8(!llvm.ptr {llvm.sret = !llvm.struct<(struct<(f32, f32, f32)>, struct<(f32, f32, f32)>)>})
+}
+
+// -----
+
+// F9: {{[3 x f32]}} (12 bytes) → HFA → identity.
+// A Mojo `Array[Float32, 3]` field. An array member counts as its elements:
+// three f32 members.
+module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @arg_hfa_array_3xf32
+llvm.func @arg_hfa_array_3xf32(%arg0: !llvm.struct<(struct<(array<3 x f32>)>)>) {
+  // CHECK: llvm.call @c_f9(%{{.*}}) : (!llvm.struct<(struct<(array<3 x f32>)>)>) -> ()
+  pop.external_call @c_f9(%arg0) : (!llvm.struct<(struct<(array<3 x f32>)>)>) -> ()
+  llvm.return
+}
+// CHECK: llvm.func @c_f9(!llvm.struct<(struct<(array<3 x f32>)>)>)
+}
+
+// -----
+
+// F10: {vector<4 x i32>, vector<4 x i32>} (32 bytes) → HVA → identity.
+// Short vectors are compared by size (64 or 128 bits), not element type.
+module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @arg_hva_2xv4i32
+llvm.func @arg_hva_2xv4i32(%arg0: !llvm.struct<(vector<4xi32>, vector<4xi32>)>) {
+  // CHECK: llvm.call @c_f10(%{{.*}}) : (!llvm.struct<(vector<4xi32>, vector<4xi32>)>) -> ()
+  pop.external_call @c_f10(%arg0) : (!llvm.struct<(vector<4xi32>, vector<4xi32>)>) -> ()
+  llvm.return
+}
+// CHECK: llvm.func @c_f10(!llvm.struct<(vector<4xi32>, vector<4xi32>)>)
+}
+
+// -----
+
+// F11: return {vector<2 x f64>, vector<4 x f32>} (32 bytes) → HVA → identity.
+// Two 128-bit vectors: the element types do not matter.
+module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @ret_hva_v2f64_v4f32
+llvm.func @ret_hva_v2f64_v4f32() {
+  // CHECK: llvm.call @c_f11() : () -> !llvm.struct<(vector<2xf64>, vector<4xf32>)>
+  %r = pop.external_call @c_f11() : () -> !llvm.struct<(vector<2xf64>, vector<4xf32>)>
+  llvm.return
+}
+// CHECK: llvm.func @c_f11() -> !llvm.struct<(vector<2xf64>, vector<4xf32>)>
+}
+
+// -----
+
+// F12: {vector<2 x f16>, vector<2 x f16>} (8 bytes) → NOT HVA → i64.
+// A 32-bit vector is not a short-vector type, so it is no HFA/HVA member.
+module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @arg_not_hva_2xv2f16
+llvm.func @arg_not_hva_2xv2f16(%arg0: !llvm.struct<(vector<2xf16>, vector<2xf16>)>) {
+  // CHECK: llvm.call @c_f12(%{{.*}}) : (i64) -> ()
+  pop.external_call @c_f12(%arg0) : (!llvm.struct<(vector<2xf16>, vector<2xf16>)>) -> ()
+  llvm.return
+}
+// CHECK: llvm.func @c_f12(i64)
 }
 
 //===----------------------------------------------------------------------===//

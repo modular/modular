@@ -250,50 +250,69 @@ int64_t CabiUtils::getStructSize(mlir::LLVM::LLVMStructType type,
   return dataLayout.getTypeStoreSize(type);
 }
 
-/// Recursively determine the canonical leaf float bit width for a struct.
+namespace {
+/// The base type of a homogeneous aggregate. As in clang, members have the same
+/// base type when they agree in size and kind (float or vector): f16 matches
+/// bf16, and <4 x i32> matches <2 x f64>.
+struct HomogeneousBase {
+  unsigned bitWidth;
+  bool isVector;
+};
+} // namespace
+
+/// Check if `type` is an AAPCS64 homogeneous aggregate (HFA or HVA), or a
+/// member of one, following clang's ABIInfo::isHomogeneousAggregate and the
+/// AArch64 hooks. Members are floats or 64- or 128-bit vectors, counted after
+/// flattening structs and arrays. Sets `base` to the base type and `members`
+/// to the member count of `type`.
 ///
-/// Traverses all fields (recursing into nested LLVMStructType fields) and
-/// returns the bit width if every leaf field is the same float type.
-/// Returns 0 if any non-float field is found, the struct is empty, or
-/// float types are mixed (e.g., f32 and f64 together).
-static unsigned getLeafFloatBitWidth(mlir::LLVM::LLVMStructType type) {
-  std::optional<unsigned> canonicalBitWidth;
-  for (mlir::Type fieldType : type.getBody()) {
-    unsigned fieldBitWidth = 0;
-    if (auto floatType = dyn_cast<mlir::FloatType>(fieldType)) {
-      fieldBitWidth = floatType.getWidth();
-    } else if (auto vecType = dyn_cast<mlir::VectorType>(fieldType)) {
-      if (auto floatElem = dyn_cast<mlir::FloatType>(vecType.getElementType()))
-        fieldBitWidth = floatElem.getWidth();
-      else
-        return 0; // Non-float vector element
-    } else if (auto nestedStruct =
-                   dyn_cast<mlir::LLVM::LLVMStructType>(fieldType)) {
-      fieldBitWidth = getLeafFloatBitWidth(nestedStruct);
-      if (fieldBitWidth == 0)
-        return 0; // Nested struct contains non-float or mixed floats
-    } else {
-      return 0; // Non-float field (integer, pointer, etc.)
+/// clang also rejects aggregates with padding. Mojo gives padding its own byte
+/// array field, which already fails the member test.
+static bool getHomogeneousAggregate(mlir::Type type,
+                                    std::optional<HomogeneousBase> &base,
+                                    uint64_t &members) {
+  if (auto arrayType = dyn_cast<mlir::LLVM::LLVMArrayType>(type)) {
+    if (arrayType.getNumElements() == 0 ||
+        !getHomogeneousAggregate(arrayType.getElementType(), base, members))
+      return false;
+    members *= arrayType.getNumElements();
+  } else if (auto structType = dyn_cast<mlir::LLVM::LLVMStructType>(type)) {
+    members = 0;
+    for (mlir::Type fieldType : structType.getBody()) {
+      uint64_t fieldMembers;
+      if (!getHomogeneousAggregate(fieldType, base, fieldMembers))
+        return false;
+      members += fieldMembers;
     }
-    if (!canonicalBitWidth)
-      canonicalBitWidth = fieldBitWidth;
-    else if (*canonicalBitWidth != fieldBitWidth)
-      return 0; // Heterogeneous: mixed float types (e.g., f32 + f64)
+  } else {
+    HomogeneousBase memberBase;
+    if (auto floatType = dyn_cast<mlir::FloatType>(type)) {
+      memberBase = {floatType.getWidth(), false};
+    } else if (auto vecType = dyn_cast<mlir::VectorType>(type)) {
+      // A short vector is 64 or 128 bits, whatever its element type.
+      unsigned bitWidth =
+          vecType.getNumElements() * vecType.getElementTypeBitWidth();
+      if (vecType.isScalable() || (bitWidth != 64 && bitWidth != 128))
+        return false;
+      memberBase = {bitWidth, true};
+    } else {
+      return false; // Integer, pointer, etc.
+    }
+    if (!base)
+      base = memberBase;
+    else if (base->bitWidth != memberBase.bitWidth ||
+             base->isVector != memberBase.isVector)
+      return false;
+    members = 1;
   }
-  return canonicalBitWidth.value_or(0);
+  // At most 4 members.
+  return members > 0 && members <= 4;
 }
 
-bool CabiUtils::isAllFloatStruct(mlir::LLVM::LLVMStructType type) {
-  auto fields = type.getBody();
-  if (fields.empty())
-    return false;
-
-  // ARM64 AAPCS HFA (Homogeneous Floating-point Aggregate) limit: at most 4
-  // top-level fields. Note: this checks top-level fields, not leaf float count.
-  if (fields.size() > 4)
-    return false;
-
-  return getLeafFloatBitWidth(type) != 0;
+bool CabiUtils::isHomogeneousAggregate(mlir::LLVM::LLVMStructType type) {
+  std::optional<HomogeneousBase> base;
+  uint64_t members;
+  return getHomogeneousAggregate(type, base, members);
 }
 
 mlir::IntegerType CabiUtils::getIntegerTypeForSize(int64_t size,

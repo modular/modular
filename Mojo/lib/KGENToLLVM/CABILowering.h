@@ -310,9 +310,12 @@ namespace CabiUtils {
 int64_t getStructSize(mlir::LLVM::LLVMStructType type,
                       const LLVMDataLayout &dataLayout);
 
-/// Check if an LLVM struct contains only float/double types.
-/// Used for ARM64 HFA (Homogeneous Float Aggregate) detection.
-bool isAllFloatStruct(mlir::LLVM::LLVMStructType type);
+/// Check if an LLVM struct is an AAPCS64 homogeneous aggregate: 1 to 4 members
+/// of one floating-point or short-vector (64- or 128-bit) base type, counted
+/// after flattening nested structs and arrays. Follows clang.
+/// Used for ARM64 HFA/HVA detection, and on x86-64 for structs of 8 bytes or
+/// less, where it means all SSE.
+bool isHomogeneousAggregate(mlir::LLVM::LLVMStructType type);
 
 /// Get the integer type for a given byte size: 1→i8, 2→i16, ≤4→i32, ≤8→i64.
 mlir::IntegerType getIntegerTypeForSize(int64_t size, mlir::MLIRContext *ctx);
