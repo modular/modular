@@ -722,7 +722,7 @@ struct String(
                 dealloc(
                     ThinAllocation(unsafe_owned_ptr=ptr).unsafe_with_layout(
                         Layout[Byte](
-                            count=self.capacity_bytes() + Self.REF_COUNT_SIZE
+                            length=self.capacity_bytes() + Self.REF_COUNT_SIZE
                         )
                     )
                 )
@@ -731,7 +731,7 @@ struct String(
     def _alloc(capacity: Int) -> Pointer[Byte, MutUntrackedOrigin]:
         """Allocate space for a new out-of-line string buffer."""
         var ptr = alloc(
-            Layout[Byte](count=capacity + Self.REF_COUNT_SIZE)
+            Layout[Byte](length=capacity + Self.REF_COUNT_SIZE)
         ).unsafe_leak()
 
         # Initialize the Atomic refcount into the header.

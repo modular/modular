@@ -19,6 +19,7 @@ from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from layout import TileTensor, row_major
 from std.memory import unsafe_stack_allocation
+from std.memory.alloc import unsafe_alloc
 from std.testing import assert_false
 
 
@@ -126,9 +127,9 @@ def matmul_sram(
         barrier()
 
         for k in range(tile_size):
-            result += a_shared.load(localRow * tile_size + k) * b_shared.load(
-                k * tile_size + localCol
-            )
+            result += a_shared.unsafe_load(
+                localRow * tile_size + k
+            ) * b_shared.unsafe_load(k * tile_size + localCol)
 
         barrier()
 
@@ -148,11 +149,11 @@ def run_matmul(ctx: DeviceContext) raises:
     comptime N = 502
     comptime K = 511
 
-    var a_host_ptr = alloc[Float32](M * K)
+    var a_host_ptr = unsafe_alloc[Float32](M * K)
     var a_host = TileTensor(a_host_ptr, row_major[M, K]())
-    var b_host_ptr = alloc[Float32](K * N)
+    var b_host_ptr = unsafe_alloc[Float32](K * N)
     var b_host = TileTensor(b_host_ptr, row_major[K, N]())
-    var c_host_ptr = alloc[Float32](M * N)
+    var c_host_ptr = unsafe_alloc[Float32](M * N)
     var c_host = TileTensor(c_host_ptr, row_major[M, N]())
 
     _ = a_host.fill(Float32(1))

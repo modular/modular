@@ -21,8 +21,8 @@ tied to ``model.decoder.embed_tokens``.
 MoE experts are stored per expert (``experts.J.{gate,up,down}_proj``), each as
 an NVFP4 quadruplet: packed ``weight`` (u8), ``weight_scale`` (fp8-e4m3 group
 scales), ``weight_scale_2`` and ``input_scale`` (fp32) — exactly the per-expert
-fields ``max.nn.moe.MoEQuantized`` reads, so unlike the gemma4 donor adapter no
-stacked-tensor splitting is needed.
+fields ``max.nn.moe.MoEQuantized`` reads. The BF16 checkpoint stores them
+stacked, as the gemma4 donor's ``Gemma4MoE`` reads them.
 
 Both the encoder and decoder MAX graphs load from the same converted dict;
 shared FQNs in the combined weights registry give weight sharing for free.
@@ -36,7 +36,6 @@ import math
 import numpy as np
 from max.driver import Buffer
 from max.dtype import DType
-from max.graph.type import Shape
 from max.graph.weights import WeightData, Weights
 from max.pipelines.lib import PipelineConfig
 from transformers import AutoConfig
@@ -100,41 +99,6 @@ def convert_safetensor_language_state_dict(
         for before, after in _LANGUAGE_SAFETENSOR_MAP.items():
             max_name = max_name.replace(before, after)
         data = value.data()
-
-        # The BF16 base checkpoint (google/diffusiongemma-26B-A4B-it) stores
-        # experts stacked as [num_experts, 2*moe_dim, hidden] /
-        # [num_experts, hidden, moe_dim] parameters; split per expert like
-        # the gemma4 donor adapter. The NVFP4 checkpoint is already
-        # per-expert and never hits these branches.
-        if max_name.endswith("moe_block.experts.gate_up_proj"):
-            prefix = max_name.split("moe_block.experts.")[0]
-            buf = Buffer.from_dlpack(data.data)
-            half = buf.shape[1] // 2
-            expert_shape = [half, buf.shape[2]]
-            for j in range(buf.shape[0]):
-                for proj, s in [
-                    ("gate_proj", slice(None, half)),
-                    ("up_proj", slice(half, None)),
-                ]:
-                    name = f"{prefix}moe_block.experts.{j}.{proj}.weight"
-                    proj_buf = buf[j : j + 1, s, :].view(
-                        data.dtype, expert_shape
-                    )
-                    new_state_dict[name] = WeightData(
-                        proj_buf, name, data.dtype, Shape(expert_shape)
-                    )
-            continue
-        if max_name.endswith("moe_block.experts.down_proj"):
-            prefix = max_name.split("moe_block.experts.")[0]
-            buf = Buffer.from_dlpack(data.data)
-            expert_shape = list(buf.shape[1:])
-            for j in range(buf.shape[0]):
-                name = f"{prefix}moe_block.experts.{j}.down_proj.weight"
-                expert_buf = buf[j : j + 1, :, :].view(data.dtype, expert_shape)
-                new_state_dict[name] = WeightData(
-                    expert_buf, name, data.dtype, Shape(expert_shape)
-                )
-            continue
 
         new_state_dict[max_name] = data
 

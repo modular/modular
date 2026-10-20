@@ -493,7 +493,7 @@ def ssd_state_passing[
 
 @always_inline
 def _ld2(ptr: Pointer[Scalar[.bfloat16], ...], off: Int) -> SIMD[.bfloat16, 2]:
-    return ptr.load[width=2, alignment=4](off)
+    return ptr.unsafe_load[width=2, alignment=4](off)
 
 
 @always_inline
@@ -1018,7 +1018,7 @@ def mamba2_ssd_chunked_fwd_inplace_gpu[
         info,
         cs,
         delta,
-        host_arg=dt_fn,
+        host_args=(dt_fn,),
         grid_dim=(slots, nheads, 1),
         block_dim=(CHUNK, 1, 1),
     )
@@ -1040,8 +1040,7 @@ def mamba2_ssd_chunked_fwd_inplace_gpu[
         cs,
         delta,
         states,
-        host_arg=x_fn,
-        host_arg2=b_fn,
+        host_args=(x_fn, b_fn),
         grid_dim=(slots, nheads, head_dim // TILE),
         block_dim=(OUT_THREADS, 1, 1),
     )
@@ -1069,7 +1068,7 @@ def mamba2_ssd_chunked_fwd_inplace_gpu[
         ssm_pool,
         has_initial_state,
         update_state,
-        host_arg=slot_fn,
+        host_args=(slot_fn,),
         grid_dim=(
             ceildiv(head_dim * DSTATE // F32_VEC, NUM_THREADS),
             nheads,
@@ -1114,8 +1113,7 @@ def mamba2_ssd_chunked_fwd_inplace_gpu[
                 Int32(ngroups),
                 info.as_imm(),
                 cb,
-                host_arg=b_fn,
-                host_arg2=c_fn,
+                host_args=(b_fn, c_fn),
                 grid_dim=(slots, ngroups, CHUNK // TILE),
                 block_dim=(OUT_THREADS, 1, 1),
             )
@@ -1131,9 +1129,7 @@ def mamba2_ssd_chunked_fwd_inplace_gpu[
                 delta,
                 states,
                 cb.as_imm(),
-                host_arg=x_fn,
-                host_arg2=b_fn,
-                host_arg3=c_fn,
+                host_args=(x_fn, b_fn, c_fn),
                 grid_dim=(slots, nheads, (CHUNK // TILE) * (head_dim // TILE)),
                 block_dim=(OUT_THREADS, 1, 1),
             )
@@ -1150,9 +1146,7 @@ def mamba2_ssd_chunked_fwd_inplace_gpu[
             delta,
             states,
             cs.as_imm(),
-            host_arg=x_fn,
-            host_arg2=b_fn,
-            host_arg3=c_fn,
+            host_args=(x_fn, b_fn, c_fn),
             grid_dim=(slots, nheads, (CHUNK // TILE) * (head_dim // TILE)),
             block_dim=(OUT_THREADS, 1, 1),
         )

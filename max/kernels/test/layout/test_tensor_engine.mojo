@@ -28,10 +28,12 @@ def test_unsafe_ptr_load_store_scalar() raises:
     var buf = Array[Float32, 4](fill=0.0)
     var storage = buf.unsafe_ptr()
 
-    DefaultEngine[element_width=1].unsafe_ptr(storage).store(Float32(3.5))
+    DefaultEngine[element_width=1].unsafe_ptr(storage).unsafe_store(
+        Float32(3.5)
+    )
 
     assert_equal(
-        DefaultEngine[element_width=1].unsafe_ptr(storage).load(),
+        DefaultEngine[element_width=1].unsafe_ptr(storage).unsafe_load(),
         Float32(3.5),
     )
     assert_equal(buf[0], Float32(3.5))
@@ -42,10 +44,12 @@ def test_unsafe_ptr_load_store_simd() raises:
     var storage = buf.unsafe_ptr()
 
     var value = SIMD[.float32, 4](1.0, 2.0, 3.0, 4.0)
-    DefaultEngine[element_width=1].unsafe_ptr(storage).store(value)
+    DefaultEngine[element_width=1].unsafe_ptr(storage).unsafe_store(value)
 
     assert_equal(
-        DefaultEngine[element_width=1].unsafe_ptr(storage).load[width=4](),
+        DefaultEngine[element_width=1]
+        .unsafe_ptr(storage)
+        .unsafe_load[width=4](),
         value,
     )
 
@@ -55,10 +59,12 @@ def test_unsafe_ptr_load_store_non_float_dtype() raises:
     var storage = buf.unsafe_ptr()
 
     var value = SIMD[.int32, 4](-1, 2, -3, 4)
-    DefaultEngine[element_width=1].unsafe_ptr(storage).store(value)
+    DefaultEngine[element_width=1].unsafe_ptr(storage).unsafe_store(value)
 
     assert_equal(
-        DefaultEngine[element_width=1].unsafe_ptr(storage).load[width=4](),
+        DefaultEngine[element_width=1]
+        .unsafe_ptr(storage)
+        .unsafe_load[width=4](),
         value,
     )
 
@@ -71,7 +77,7 @@ def test_offset() raises:
     var offset_storage = DefaultEngine[element_width=1].offset(
         storage, Coord(Int(2))
     )
-    DefaultEngine[element_width=1].unsafe_ptr(offset_storage).store(
+    DefaultEngine[element_width=1].unsafe_ptr(offset_storage).unsafe_store(
         Float32(9.0)
     )
 
@@ -81,7 +87,7 @@ def test_offset() raises:
     assert_equal(buf[3], Float32(0.0))
     # ...and the offset handle reads the same value back.
     assert_equal(
-        DefaultEngine[element_width=1].unsafe_ptr(offset_storage).load(),
+        DefaultEngine[element_width=1].unsafe_ptr(offset_storage).unsafe_load(),
         Float32(9.0),
     )
 
@@ -91,14 +97,16 @@ def test_unsafe_ptr_offset_load_store() raises:
     var storage = buf.unsafe_ptr()
 
     # Write at element 3 via the offset-taking pointer store.
-    DefaultEngine[element_width=1].unsafe_ptr(storage).store(3, Float32(7.0))
+    DefaultEngine[element_width=1].unsafe_ptr(storage).unsafe_store(
+        3, Float32(7.0)
+    )
 
     # The write landed at element 3, leaving the rest zeroed.
     assert_equal(buf[3], Float32(7.0))
     assert_equal(buf[0], Float32(0.0))
     # The offset-taking load reads the same element back.
     assert_equal(
-        DefaultEngine[element_width=1].unsafe_ptr(storage).load(3),
+        DefaultEngine[element_width=1].unsafe_ptr(storage).unsafe_load(3),
         Float32(7.0),
     )
 
@@ -126,14 +134,14 @@ def test_unsafe_cast() raises:
 def test_unsafe_ptr() raises:
     var buf = Array[Float32, 4](fill=0.0)
     var storage: MutPointer[Float32, origin_of(buf)] = buf.unsafe_ptr()
-    storage.store(SIMD[.float32, 4](1.0, 2.0, 3.0, 4.0))
+    storage.unsafe_store(SIMD[.float32, 4](1.0, 2.0, 3.0, 4.0))
 
     # `unsafe_ptr` yields the scalar base pointer of the storage. It lands at
     # the same address as an independent bitcast and reads the same elements.
     var raw = DefaultEngine[element_width=1].unsafe_ptr(storage)
     var expected = storage.unsafe_bitcast[Float32]()
     assert_equal(Int(raw), Int(expected))
-    assert_equal(raw.load[width=4](), expected.load[width=4]())
+    assert_equal(raw.unsafe_load[width=4](), expected.unsafe_load[width=4]())
 
 
 def test_unsafe_ptr_vectorized() raises:

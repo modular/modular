@@ -1038,7 +1038,8 @@ struct BlockScaledMatmulAMD[
         """Same as `run` without split-K, storing the output through
         `epilogue_fn`.
 
-        Launch with `host_arg=epilogue_fn`. Requires `MMA_M == 16`.
+        Launch with `host_args=(epilogue_fn,)`.
+        Requires `MMA_M == 16`.
 
         Parameters:
             out_dtype: Element type of the output tensor `c`.
@@ -1103,7 +1104,8 @@ struct BlockScaledMatmulAMD[
         """Same as `run` without split-K, storing `compute_fn(idx, value)`
         into `c`.
 
-        Launch with `host_arg=compute_fn`. Requires `MMA_M == 16`.
+        Launch with `host_args=(compute_fn,)`.
+        Requires `MMA_M == 16`.
 
         Parameters:
             out_dtype: Element type of the output tensor `c`.
@@ -1959,7 +1961,7 @@ def _launch_block_scaled_impl[
             b,
             a_scales,
             b_scales,
-            host_arg=epilogue_fn,
+            host_args=(epilogue_fn,),
             grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
             block_dim=Kernel.num_threads,
         )
@@ -1984,7 +1986,7 @@ def _launch_block_scaled_impl[
             b,
             a_scales,
             b_scales,
-            host_arg=compute_fn,
+            host_args=(compute_fn,),
             grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
             block_dim=Kernel.num_threads,
         )
@@ -2190,7 +2192,7 @@ def _launch_block_scaled_split_k_impl[
             Int32(total_elems),
             Int32(elems_per_split),
             Int32(N),
-            host_arg=epilogue_fn,
+            host_args=(epilogue_fn,),
             grid_dim=num_blocks,
             block_dim=block_dim_x,
         )
@@ -2208,7 +2210,7 @@ def _launch_block_scaled_split_k_impl[
             Int32(total_elems),
             Int32(elems_per_split),
             Int32(N),
-            host_arg=compute_fn,
+            host_args=(compute_fn,),
             grid_dim=num_blocks,
             block_dim=block_dim_x,
         )
@@ -3010,7 +3012,7 @@ def _preb_grid_kernel_epilogue_fn[
     epilogue_fn: EpilogueFnType,
 ):
     """`_preb_grid_kernel`, storing through `epilogue_fn`. Launch with
-    `host_arg=epilogue_fn`."""
+    `host_args=(epilogue_fn,)`."""
     BlockScaledMatmulAMD_PreB[
         BM=BM,
         BN=BN,
@@ -3085,7 +3087,7 @@ def _preb_grid_kernel_compute_fn[
     compute_fn: ComputeFnType,
 ):
     """`_preb_grid_kernel`, storing `compute_fn(idx, value)`. Launch with
-    `host_arg=compute_fn`."""
+    `host_args=(compute_fn,)`."""
     BlockScaledMatmulAMD_PreB[
         BM=BM,
         BN=BN,
@@ -3306,7 +3308,7 @@ def _launch_block_scaled_preb_impl[
             b_pre,
             a_scales_pre_view,
             b_scales_pre,
-            host_arg=epilogue_fn,
+            host_args=(epilogue_fn,),
             grid_dim=(N // BN, ceildiv(M, BM)),
             block_dim=BlockScaledMatmulAMD_PreB[
                 BM=BM,
@@ -3344,7 +3346,7 @@ def _launch_block_scaled_preb_impl[
             b_pre,
             a_scales_pre_view,
             b_scales_pre,
-            host_arg=compute_fn,
+            host_args=(compute_fn,),
             grid_dim=(N // BN, ceildiv(M, BM)),
             block_dim=BlockScaledMatmulAMD_PreB[
                 BM=BM,

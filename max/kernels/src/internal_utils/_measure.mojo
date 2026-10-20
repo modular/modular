@@ -63,11 +63,11 @@ def kl_div[
     def kl_div_elementwise[
         simd_width: Int, alignment: Int = 1
     ](idx: Coord) {var}:
-        output.store(
+        output.unsafe_store(
             idx[0].value(),
             kl_div(
-                x.load[width=simd_width](idx[0].value()),
-                y.load[width=simd_width](idx[0].value()),
+                x.unsafe_load[width=simd_width](idx[0].value()),
+                y.unsafe_load[width=simd_width](idx[0].value()),
             ),
         )
 
@@ -88,8 +88,8 @@ def kl_div[
     var accum_scalar = Scalar[out_type](0)
 
     def kl_div_elementwise[simd_width: Int](idx: Int) {x, y, mut}:
-        var xi = x.load[width=simd_width](idx).cast[out_type]()
-        var yi = y.load[width=simd_width](idx).cast[out_type]()
+        var xi = x.unsafe_load[width=simd_width](idx).cast[out_type]()
+        var yi = y.unsafe_load[width=simd_width](idx).cast[out_type]()
         var kl = kl_div(xi, yi)
 
         # TODO: should use VDPBF16PS when applicable
@@ -162,13 +162,15 @@ def correlation[
 
     def accumulate[weighted: Bool]() {u, v, len, mut}:
         def apply_wfn[simd_width: Int](idx: Int) {u, v, mut}:
-            var ui = u.load[width=simd_width](idx).cast[out_type]() - umu
-            var vi = v.load[width=simd_width](idx).cast[out_type]() - vmu
+            var ui = u.unsafe_load[width=simd_width](idx).cast[out_type]() - umu
+            var vi = v.unsafe_load[width=simd_width](idx).cast[out_type]() - vmu
             var uw = ui
             var vw = vi
 
             comptime if weighted:
-                var wi = w_val.load[width=simd_width](idx).cast[out_type]()
+                var wi = w_val.unsafe_load[width=simd_width](idx).cast[
+                    out_type
+                ]()
                 uw *= wi
                 vw *= wi
 
@@ -295,10 +297,10 @@ def _sqrt[
     ctx: DeviceContext,
 ) raises:
     def apply_fn[simd_width: Int, alignment: Int = 1](idx: Coord) {var}:
-        output.store(
+        output.unsafe_store(
             idx[0].value(),
             rebind[SIMD[dtype, simd_width]](
-                sqrt(x.load[width=simd_width](idx[0].value()))
+                sqrt(x.unsafe_load[width=simd_width](idx[0].value()))
             ),
         )
 
@@ -315,11 +317,11 @@ def _mul[
     ctx: DeviceContext,
 ) raises:
     def apply_fn[simd_width: Int, alignment: Int = 1](idx: Coord) {var}:
-        output.store(
+        output.unsafe_store(
             idx[0].value(),
             rebind[SIMD[dtype, simd_width]](
-                x.load[width=simd_width](idx[0].value())
-                * y.load[width=simd_width](idx[0].value())
+                x.unsafe_load[width=simd_width](idx[0].value())
+                * y.unsafe_load[width=simd_width](idx[0].value())
             ),
         )
 
@@ -336,10 +338,10 @@ def _div[
     ctx: DeviceContext,
 ) raises:
     def apply_fn[simd_width: Int, alignment: Int = 1](idx: Coord) {var}:
-        output.store(
+        output.unsafe_store(
             idx[0].value(),
             rebind[SIMD[dtype, simd_width]](
-                x.load[width=simd_width](idx[0].value())
+                x.unsafe_load[width=simd_width](idx[0].value())
             )
             / c,
         )
@@ -373,8 +375,8 @@ def _dot[
     var accum_scalar = Scalar[out_type](0)
 
     def apply_fn[simd_width: Int](idx: Int) {x, y, mut}:
-        var xi = x.load[width=simd_width](idx).cast[out_type]()
-        var yi = y.load[width=simd_width](idx).cast[out_type]()
+        var xi = x.unsafe_load[width=simd_width](idx).cast[out_type]()
+        var yi = y.unsafe_load[width=simd_width](idx).cast[out_type]()
 
         # TODO: should use VDPBF16PS when applicable
         # (i.e., host has avx512_bf16, type = bf16, out_type = float32)

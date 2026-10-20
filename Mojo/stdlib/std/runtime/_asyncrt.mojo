@@ -401,12 +401,12 @@ struct RaisingTask[type: Movable, origins: OriginSet](
 
         if has_error:
             var err = self._error_alloc.unsafe_ptr().unsafe_take_pointee()
-            dealloc(self._error_alloc^.unsafe_with_layout({count = 1}))
-            dealloc(self._result_alloc^.unsafe_with_layout({count = 1}))
+            dealloc(self._error_alloc^.unsafe_with_layout({length = 1}))
+            dealloc(self._result_alloc^.unsafe_with_layout({length = 1}))
             raise err^
         result = self._result_alloc.unsafe_ptr().unsafe_take_pointee()
-        dealloc(self._error_alloc^.unsafe_with_layout({count = 1}))
-        dealloc(self._result_alloc^.unsafe_with_layout({count = 1}))
+        dealloc(self._error_alloc^.unsafe_with_layout({length = 1}))
+        dealloc(self._result_alloc^.unsafe_with_layout({length = 1}))
 
     @inline(.always)
     def __await__(deinit self, out result: Self.type) raises:

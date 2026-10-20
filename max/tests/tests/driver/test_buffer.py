@@ -28,6 +28,7 @@ from max.driver import (
     CPU,
     Accelerator,
     Buffer,
+    DeviceQueue,
     Usage,
     accelerator_count,
     batch_inplace_copy,
@@ -1502,3 +1503,42 @@ def test_inplace_copy_from_still_copies_an_offset_view() -> None:
     backing[:2].inplace_copy_from(backing[2:])
 
     np.testing.assert_array_equal(backing.to_numpy(), [2, 3, 2, 3])
+
+
+def test_to_cpu_needs_no_after() -> None:
+    buf = Buffer(DType.int32, (8,), device=CPU())
+    assert buf.to(CPU()) is buf
+    assert buf.to([CPU()])[0] is buf
+
+
+def test_to_cpu_from_another_cpu_queue_requires_after() -> None:
+    cpu = CPU()
+    side = DeviceQueue(cpu)
+    if side == cpu.default_queue:
+        pytest.skip("this device context's CPU queues compare equal")
+    on_side = Buffer(DType.int32, (8,), stream=side)
+    with pytest.raises(ValueError, match="after"):
+        on_side.to(cpu)
+    with pytest.raises(ValueError, match="after"):
+        on_side.to([cpu])
+
+
+def test_to_cpu_from_another_cpu_queue_is_an_ordered_view() -> None:
+    cpu = CPU()
+    side = DeviceQueue(cpu)
+    n = 1 << 20
+    on_side = Buffer(DType.int32, (n,), stream=side)
+    # TODO(DRIV-554): Inline `ones` and `twos` once CPU queue copies keep their
+    # source alive; today a temporary source is freed mid-copy.
+    ones = Buffer.from_numpy(np.full(n, 1, np.int32))
+    on_side.inplace_copy_from(ones)
+
+    view = on_side.to(cpu, after=side.record_event())
+    assert view._data_ptr() == on_side._data_ptr()
+    assert view.stream == cpu.default_queue
+    assert (view.to_numpy() == 1).all()
+
+    twos = Buffer.from_numpy(np.full(n, 2, np.int32))
+    view.inplace_copy_from(twos)
+    cpu.default_queue.synchronize()
+    assert (on_side.to_numpy() == 2).all()

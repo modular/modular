@@ -217,6 +217,7 @@ sh_binary(
     testonly = True,
     srcs = ["run_exacto_gpqa_local.sh"],
     data = [
+        "exacto_gpqa_smoke.py",
         "exacto_gpqa_task.py",
         "exacto_streaming.py",
         ":exacto_gpqa_openrouter",
@@ -262,6 +263,30 @@ modular_py_test(
     deps = [
         ":exacto_gpqa_openrouter",
     ],
+)
+
+modular_py_binary(
+    name = "exacto_gpqa_answer_audit",
+    testonly = True,
+    srcs = ["exacto_gpqa_answer_audit.py"],
+    imports = ["."],
+    main = "exacto_gpqa_answer_audit.py",
+)
+
+modular_py_test(
+    name = "test_exacto_gpqa_answer_audit",
+    size = "small",
+    srcs = ["test_exacto_gpqa_answer_audit.py"],
+    deps = [":exacto_gpqa_answer_audit"],
+)
+
+# Runs the smoke CLI with synthetic Inspect/task boundaries; no harness venv,
+# dataset download, or model requests.
+modular_py_test(
+    name = "test_exacto_gpqa_smoke",
+    size = "small",
+    srcs = ["test_exacto_gpqa_smoke.py"],
+    data = [":exacto_gpqa_local"],
 )
 
 modular_py_test(
@@ -318,6 +343,8 @@ modular_py_test(
     srcs = ["test_eval_common.py"],
     deps = [
         ":eval_common",
+        requirement("httpx"),
+        requirement("openai"),
     ],
 )
 

@@ -53,7 +53,7 @@ from datasets import load_dataset
 from eval_common import (
     ChatClient,
     GenParams,
-    build_chat_kwargs,
+    chat_completion,
     dump_config,
     exact_match_score,
     expand_repeats,
@@ -188,9 +188,7 @@ def infer(
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": prompt},
     ]
-    resp = client.chat.completions.create(
-        **build_chat_kwargs(model, messages, params)
-    )
+    resp = chat_completion(client, model, messages, params)
     choice = resp.choices[0]
     # Count only the model-under-test's answer call; the judge call is NOT
     # counted toward output-token stats.
@@ -219,7 +217,7 @@ def infer(
         "missing_docs": missing,
         "finish_reason": choice.finish_reason,
         "completion_tokens": answer_tokens,
-        **response_fields(choice.message),
+        **response_fields(choice),
     }
 
 

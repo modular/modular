@@ -597,7 +597,7 @@ def _swiglu_epilogue_gmem[
                     and h_row_top < H_bound
                 ):
                     var sig_u0 = recip(Float32(1.0) + exp(-gate_u0))
-                    c_gmem_ptr.store(
+                    c_gmem_ptr.unsafe_store(
                         Int(m_col_a) * Int(c_gmem_stride) + Int(h_row_top),
                         (gate_u0 * sig_u0 * up_u0).cast[c_type](),
                     )
@@ -607,7 +607,7 @@ def _swiglu_epilogue_gmem[
                     and h_row_top < H_bound
                 ):
                     var sig_u1 = recip(Float32(1.0) + exp(-gate_u1))
-                    c_gmem_ptr.store(
+                    c_gmem_ptr.unsafe_store(
                         Int(m_col_b) * Int(c_gmem_stride) + Int(h_row_top),
                         (gate_u1 * sig_u1 * up_u1).cast[c_type](),
                     )
@@ -643,7 +643,7 @@ def _swiglu_epilogue_gmem[
                     and h_row_bu < H_bound
                 ):
                     var sig_u2 = recip(Float32(1.0) + exp(-gate_u2))
-                    c_gmem_ptr.store(
+                    c_gmem_ptr.unsafe_store(
                         Int(m_col_a) * Int(c_gmem_stride) + Int(h_row_bu),
                         (gate_u2 * sig_u2 * up_u2).cast[c_type](),
                     )
@@ -653,7 +653,7 @@ def _swiglu_epilogue_gmem[
                     and h_row_bu < H_bound
                 ):
                     var sig_u3 = recip(Float32(1.0) + exp(-gate_u3))
-                    c_gmem_ptr.store(
+                    c_gmem_ptr.unsafe_store(
                         Int(m_col_b) * Int(c_gmem_stride) + Int(h_row_bu),
                         (gate_u3 * sig_u3 * up_u3).cast[c_type](),
                     )
@@ -694,7 +694,7 @@ def _swiglu_epilogue_gmem[
                         and h_row_tl < H_bound
                     ):
                         var sig_l0 = recip(Float32(1.0) + exp(-gate_l0))
-                        c_gmem_ptr.store(
+                        c_gmem_ptr.unsafe_store(
                             Int(m_col_a) * Int(c_gmem_stride) + Int(h_row_tl),
                             (gate_l0 * sig_l0 * up_l0).cast[c_type](),
                         )
@@ -704,7 +704,7 @@ def _swiglu_epilogue_gmem[
                         and h_row_tl < H_bound
                     ):
                         var sig_l1 = recip(Float32(1.0) + exp(-gate_l1))
-                        c_gmem_ptr.store(
+                        c_gmem_ptr.unsafe_store(
                             Int(m_col_b) * Int(c_gmem_stride) + Int(h_row_tl),
                             (gate_l1 * sig_l1 * up_l1).cast[c_type](),
                         )
@@ -741,7 +741,7 @@ def _swiglu_epilogue_gmem[
                         and h_row_bl < H_bound
                     ):
                         var sig_l2 = recip(Float32(1.0) + exp(-gate_l2))
-                        c_gmem_ptr.store(
+                        c_gmem_ptr.unsafe_store(
                             Int(m_col_a) * Int(c_gmem_stride) + Int(h_row_bl),
                             (gate_l2 * sig_l2 * up_l2).cast[c_type](),
                         )
@@ -751,7 +751,7 @@ def _swiglu_epilogue_gmem[
                         and h_row_bl < H_bound
                     ):
                         var sig_l3 = recip(Float32(1.0) + exp(-gate_l3))
-                        c_gmem_ptr.store(
+                        c_gmem_ptr.unsafe_store(
                             Int(m_col_b) * Int(c_gmem_stride) + Int(h_row_bl),
                             (gate_l3 * sig_l3 * up_l3).cast[c_type](),
                         )
@@ -787,14 +787,14 @@ def _swiglu_epilogue_gmem[
 
                 if grow_tu < M_bound and gcol_tu < H_bound:
                     var sig_tu = recip(Float32(1.0) + exp(-gate_tu))
-                    c_gmem_ptr.store(
+                    c_gmem_ptr.unsafe_store(
                         Int(grow_tu) * Int(c_gmem_stride) + Int(gcol_tu),
                         (gate_tu * sig_tu * up_tu).cast[c_type](),
                     )
 
                 if grow_bu < M_bound and gcol_bu < H_bound:
                     var sig_bu = recip(Float32(1.0) + exp(-gate_bu))
-                    c_gmem_ptr.store(
+                    c_gmem_ptr.unsafe_store(
                         Int(grow_bu) * Int(c_gmem_stride) + Int(gcol_bu),
                         (gate_bu * sig_bu * up_bu).cast[c_type](),
                     )
@@ -835,14 +835,14 @@ def _swiglu_epilogue_gmem[
 
                     if grow_tl < M_bound and gcol_tl < H_bound:
                         var sig_tl = recip(Float32(1.0) + exp(-gate_tl))
-                        c_gmem_ptr.store(
+                        c_gmem_ptr.unsafe_store(
                             Int(grow_tl) * Int(c_gmem_stride) + Int(gcol_tl),
                             (gate_tl * sig_tl * up_tl).cast[c_type](),
                         )
 
                     if grow_bl < M_bound and gcol_bl < H_bound:
                         var sig_bl = recip(Float32(1.0) + exp(-gate_bl))
-                        c_gmem_ptr.store(
+                        c_gmem_ptr.unsafe_store(
                             Int(grow_bl) * Int(c_gmem_stride) + Int(gcol_bl),
                             (gate_bl * sig_bl * up_bl).cast[c_type](),
                         )
@@ -1010,7 +1010,7 @@ def _swiglu_epilogue_smem_tma[
                         up_ua += Float32(bias_smem_ptr[Int(h_row_top) * 2 + 1])
                 var sig_ua = recip(Float32(1.0) + exp(-gate_ua))
                 if lane_row_is_even:
-                    pair_base.store(
+                    pair_base.unsafe_store(
                         Int(m_col_a) * c_out_smem_inner + Int(h_row_top),
                         (gate_ua * sig_ua * up_ua).cast[c_type](),
                     )
@@ -1029,7 +1029,7 @@ def _swiglu_epilogue_smem_tma[
                         up_ub += Float32(bias_smem_ptr[Int(h_row_top) * 2 + 1])
                 var sig_ub = recip(Float32(1.0) + exp(-gate_ub))
                 if lane_row_is_even:
-                    pair_base.store(
+                    pair_base.unsafe_store(
                         Int(m_col_b) * c_out_smem_inner + Int(h_row_top),
                         (gate_ub * sig_ub * up_ub).cast[c_type](),
                     )
@@ -1050,7 +1050,7 @@ def _swiglu_epilogue_smem_tma[
                         up_uc += Float32(bias_smem_ptr[Int(h_row_top) * 2 + 9])
                 var sig_uc = recip(Float32(1.0) + exp(-gate_uc))
                 if lane_row_is_even:
-                    pair_base.store(
+                    pair_base.unsafe_store(
                         Int(m_col_a) * c_out_smem_inner + Int(h_row_top + 4),
                         (gate_uc * sig_uc * up_uc).cast[c_type](),
                     )
@@ -1071,7 +1071,7 @@ def _swiglu_epilogue_smem_tma[
                         up_ud += Float32(bias_smem_ptr[Int(h_row_top) * 2 + 9])
                 var sig_ud = recip(Float32(1.0) + exp(-gate_ud))
                 if lane_row_is_even:
-                    pair_base.store(
+                    pair_base.unsafe_store(
                         Int(m_col_b) * c_out_smem_inner + Int(h_row_top + 4),
                         (gate_ud * sig_ud * up_ud).cast[c_type](),
                     )
@@ -1095,7 +1095,7 @@ def _swiglu_epilogue_smem_tma[
                             )
                     var sig_la = recip(Float32(1.0) + exp(-gate_la))
                     if lane_row_is_even:
-                        pair_base.store(
+                        pair_base.unsafe_store(
                             Int(m_col_a) * c_out_smem_inner
                             + Int(h_row_top + 8),
                             (gate_la * sig_la * up_la).cast[c_type](),
@@ -1119,7 +1119,7 @@ def _swiglu_epilogue_smem_tma[
                             )
                     var sig_lb = recip(Float32(1.0) + exp(-gate_lb))
                     if lane_row_is_even:
-                        pair_base.store(
+                        pair_base.unsafe_store(
                             Int(m_col_b) * c_out_smem_inner
                             + Int(h_row_top + 8),
                             (gate_lb * sig_lb * up_lb).cast[c_type](),
@@ -1143,7 +1143,7 @@ def _swiglu_epilogue_smem_tma[
                             )
                     var sig_lc = recip(Float32(1.0) + exp(-gate_lc))
                     if lane_row_is_even:
-                        pair_base.store(
+                        pair_base.unsafe_store(
                             Int(m_col_a) * c_out_smem_inner
                             + Int(h_row_top + 12),
                             (gate_lc * sig_lc * up_lc).cast[c_type](),
@@ -1167,7 +1167,7 @@ def _swiglu_epilogue_smem_tma[
                             )
                     var sig_ld = recip(Float32(1.0) + exp(-gate_ld))
                     if lane_row_is_even:
-                        pair_base.store(
+                        pair_base.unsafe_store(
                             Int(m_col_b) * c_out_smem_inner
                             + Int(h_row_top + 12),
                             (gate_ld * sig_ld * up_ld).cast[c_type](),
@@ -1185,7 +1185,7 @@ def _swiglu_epilogue_smem_tma[
                 var sig_tu = recip(Float32(1.0) + exp(-gate_tu))
                 var row_tu = smem_row_base + frag_coords.top_upper[0]
                 var col_tu = (frag_coords.top_upper[1] + UInt32(inc)) >> 1
-                buf_base.store(
+                buf_base.unsafe_store(
                     Int(row_tu) * HalfN + Int(col_tu),
                     (gate_tu * sig_tu * up_tu).cast[c_type](),
                 )
@@ -1202,7 +1202,7 @@ def _swiglu_epilogue_smem_tma[
                 var sig_bu = recip(Float32(1.0) + exp(-gate_bu))
                 var row_bu = smem_row_base + frag_coords.bottom_upper[0]
                 var col_bu = (frag_coords.bottom_upper[1] + UInt32(inc)) >> 1
-                buf_base.store(
+                buf_base.unsafe_store(
                     Int(row_bu) * HalfN + Int(col_bu),
                     (gate_bu * sig_bu * up_bu).cast[c_type](),
                 )
@@ -1220,7 +1220,7 @@ def _swiglu_epilogue_smem_tma[
                     var sig_tl = recip(Float32(1.0) + exp(-gate_tl))
                     var row_tl = smem_row_base + frag_coords.top_lower[0]
                     var col_tl = (frag_coords.top_lower[1] + UInt32(inc)) >> 1
-                    buf_base.store(
+                    buf_base.unsafe_store(
                         Int(row_tl) * HalfN + Int(col_tl),
                         (gate_tl * sig_tl * up_tl).cast[c_type](),
                     )
@@ -1239,7 +1239,7 @@ def _swiglu_epilogue_smem_tma[
                     var col_bl = (
                         frag_coords.bottom_lower[1] + UInt32(inc)
                     ) >> 1
-                    buf_base.store(
+                    buf_base.unsafe_store(
                         Int(row_bl) * HalfN + Int(col_bl),
                         (gate_bl * sig_bl * up_bl).cast[c_type](),
                     )

@@ -19,7 +19,10 @@
 #include "Mojo/LITDialect/LITUtils.h"
 #include "Mojo/MojoParser/ASTDecl.h"
 #include "Mojo/MojoParser/ASTType.h"
+#include "Mojo/MojoParser/DeclResolver.h"
 #include "Mojo/MojoParser/DeclSignaturePrinter.h"
+#include "Mojo/MojoParser/DocString.h"
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/raw_ostream.h"
@@ -35,8 +38,60 @@ std::string ParameterInfo::getMarkdownDocString() const {
   return description.empty() ? std::string() : description + "\n";
 }
 
-std::string ArgumentInfo::getMarkdownDocString() const {
+static std::string getArgumentDescription(ASTDecl &argumentDecl) {
+  ASTDecl *functionDecl = &argumentDecl;
+  if (!isa<DefASTDecl>(functionDecl))
+    functionDecl = functionDecl->getParentDecl();
+  if (!functionDecl)
+    return {};
+
+  if (auto *function = dyn_cast<DefASTDecl>(functionDecl)) {
+    if (std::optional<SymbolRefAttr> defaultFn =
+            function->getOp().getDefaultFnRef()) {
+      if (ASTDecl *defaultImpl =
+              functionDecl->getShared().resolveAndGetFuncDecl(
+                  *defaultFn, functionDecl->getLoc()))
+        functionDecl = defaultImpl;
+    }
+  }
+
+  StringRef declName = argumentDecl.getName().value_or(StringRef{});
+  std::optional<DocString> docString = functionDecl->getParsedDocString();
+  if (!docString)
+    return {};
+
+  ArrayRef<StringRef> lines = docString->getDescription();
+  std::string argsSectionHeader = (Twine(DocString::kSectionArgs) + ":").str();
+  for (size_t line = 0; line < lines.size(); ++line) {
+    if (lines[line] != argsSectionHeader)
+      continue;
+
+    for (++line; line < lines.size() && !lines[line].empty();) {
+      auto [documentedName, description] = lines[line].split(':');
+      documentedName = documentedName.trim();
+      description = description.trim();
+      size_t indentation = lines[line].size() - lines[line].ltrim().size();
+
+      std::string fullDescription(description);
+      while (++line < lines.size() &&
+             lines[line].size() - lines[line].ltrim().size() > indentation)
+        fullDescription +=
+            (Twine("\n") + lines[line].drop_front(indentation).rtrim()).str();
+
+      if (documentedName == declName)
+        return fullDescription;
+    }
+  }
+  return {};
+}
+
+std::string ArgumentInfo::getMarkdownDocString(ASTDecl &decl) {
+  std::string description = getArgumentDescription(decl);
   return description.empty() ? std::string() : description + "\n";
+}
+
+std::string ArgumentInfo::getMarkdownDocString() const {
+  return getMarkdownDocString(getDecl());
 }
 
 //===----------------------------------------------------------------------===//
@@ -78,16 +133,89 @@ ParameterEvaluator populateParameterInfos(
   return evaluator;
 }
 
-void populateArgumentInfos(ASTDecl &decl, FnTypeGeneratorType signature,
-                           ArrayRef<Type> userArgTypes,
-                           std::optional<ASTType> selfType,
-                           ParameterEvaluator &evaluator,
-                           llvm::function_ref<bool()> hasSelfResultFn,
-                           SmallVectorImpl<ArgumentInfo> &args) {
+ParameterEvaluator
+populateParameterInfos(FnSignatureASTDecl &decl,
+                       SmallVectorImpl<ParameterInfo> &params,
+                       std::optional<ASTType> selfType) {
+  FnTypeGeneratorType signature = decl.getSignature();
+  if (!signature)
+    return {};
+  ParameterEvaluator evaluator = populateParameterInfos(
+      static_cast<ASTDecl &>(decl), signature.getInputParamTypes(),
+      signature.getParamListAttrs(), params, selfType);
+
+  DenseMap<StringRef, ASTDecl *> declsByName;
+  for (ASTDecl *paramDecl : decl.getParamDecls()) {
+    if (auto name = paramDecl->getName())
+      declsByName.try_emplace(*name, paramDecl);
+  }
+  for (ParameterInfo &parameter : params) {
+    if (auto it = declsByName.find(parameter.getName());
+        it != declsByName.end())
+      parameter.setDecl(*it->second);
+  }
+  return evaluator;
+}
+
+/// Convert a signature argument index to an index in the user-visible argument
+/// list, omitting compiler-synthesized ABI arguments.
+static std::optional<size_t>
+getDocumentedArgumentIndex(FnTypeGeneratorType signature,
+                           size_t signatureArgIndex) {
+  if (!signature || signature.getNumArguments() <= signatureArgIndex)
+    return std::nullopt;
+
+  size_t documentedArgIndex = 0;
+  for (size_t index = 0; index <= signatureArgIndex; ++index) {
+    ArgConvention convention = signature.getArgConventions()[index];
+    bool isDocumented = convention != ArgConvention::ByRefError &&
+                        !(convention == ArgConvention::ByRefResult &&
+                          signature.getArgName(index) == "__result__");
+    if (index == signatureArgIndex)
+      return isDocumented ? std::optional<size_t>(documentedArgIndex)
+                          : std::nullopt;
+    if (isDocumented)
+      ++documentedArgIndex;
+  }
+  llvm_unreachable("signature argument index was range checked");
+}
+
+static ssize_t getArgumentNumber(const ASTDecl &decl) {
+  if (auto *varDecl = dyn_cast<VarASTDecl>(&decl))
+    return varDecl->getArgNumber();
+  if (auto *irDecl = dyn_cast<IRASTDecl>(&decl))
+    return irDecl->getArgNumber();
+  return -1;
+}
+
+static std::optional<ASTType> getSelfType(FnSignatureASTDecl &decl) {
+  auto *defDecl = dyn_cast<DefASTDecl>(&decl);
+  if (!defDecl)
+    return std::nullopt;
+  if (auto *structDecl = dyn_cast<StructASTDecl>(defDecl->getParentDecl()))
+    return structDecl->getSelfType();
+  return std::nullopt;
+}
+
+SmallVector<ArgumentInfo, 2> getArgumentInfos(FnSignatureASTDecl &decl,
+                                              ParameterEvaluator &evaluator,
+                                              std::optional<ASTType> selfType) {
+  FnTypeGeneratorType signature = decl.getSignature();
+  if (!signature)
+    return {};
+  ArrayRef<Type> userArgTypes = signature.getArguments();
+  bool hasSelfResult = false;
+  if (auto *defDecl = dyn_cast<DefASTDecl>(&decl)) {
+    FnOp fnOp = defDecl->getOp();
+    userArgTypes = fnOp.getArgumentTypes();
+    hasSelfResult = fnOp.getSpecialFunctionInfo().hasSelfResult();
+  }
+
   auto &shared = decl.getShared();
   ArrayRef<PogMetadataAttr> argPogs = signature.getArgListAttrs().getPogs();
   ArrayRef<Type> sigTypes = signature.getArguments();
   ArrayRef<ArgConvention> argConventions = signature.getArgConventions();
+  SmallVector<ArgumentInfo, 2> args;
 
   for (auto [argIdx, userType, sigType, conventionX, pogAttr] :
        llvm::enumerate(userArgTypes, sigTypes, argConventions, argPogs)) {
@@ -141,7 +269,7 @@ void populateArgumentInfos(ASTDecl &decl, FnTypeGeneratorType signature,
 
     bool isSelf = false;
     if (selfType) {
-      if (hasSelfResultFn && hasSelfResultFn())
+      if (hasSelfResult)
         isSelf = declConvention == ArgumentConvention::kOut;
       else
         // TODO: this is wrong for static methods, but matches the historical
@@ -168,6 +296,48 @@ void populateArgumentInfos(ASTDecl &decl, FnTypeGeneratorType signature,
     info.isSelf = isSelf;
     args.push_back(std::move(info));
   }
+
+  for (ASTDecl *argDecl : decl.getArgDecls()) {
+    ssize_t argNumber = getArgumentNumber(*argDecl);
+    if (argNumber < 0)
+      continue;
+    if (std::optional<size_t> documentedArgIndex =
+            getDocumentedArgumentIndex(signature, argNumber);
+        documentedArgIndex && *documentedArgIndex < args.size())
+      args[*documentedArgIndex].setDecl(*argDecl);
+  }
+  return args;
+}
+
+SmallVector<ArgumentInfo, 2> getArgumentInfos(FnSignatureASTDecl &decl) {
+  DeclResolver::DiagnosticDeclContextChanger scope(&decl);
+  std::optional<ASTType> selfType = getSelfType(decl);
+  SmallVector<ParameterInfo, 2> parameters;
+  ParameterEvaluator evaluator =
+      populateParameterInfos(decl, parameters, selfType);
+  return getArgumentInfos(decl, evaluator, selfType);
+}
+
+std::optional<ArgumentInfo> getArgumentInfo(ASTDecl &decl) {
+  ssize_t argNumber = getArgumentNumber(decl);
+  if (argNumber < 0)
+    return std::nullopt;
+
+  auto *parentFunction =
+      dyn_cast_or_null<FnSignatureASTDecl>(decl.getParentDecl());
+  if (!parentFunction)
+    return std::nullopt;
+  std::optional<size_t> documentedArgNumber = getDocumentedArgumentIndex(
+      parentFunction->getSignature(), static_cast<size_t>(argNumber));
+  if (!documentedArgNumber)
+    return std::nullopt;
+
+  SmallVector<ArgumentInfo, 2> arguments = getArgumentInfos(*parentFunction);
+  if (arguments.size() <= *documentedArgNumber)
+    return std::nullopt;
+  ArgumentInfo result = arguments[*documentedArgNumber];
+  result.setDecl(decl);
+  return result;
 }
 
 //===----------------------------------------------------------------------===//

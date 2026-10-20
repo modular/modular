@@ -117,7 +117,7 @@ struct SeqInfo(TrivialRegisterPassable):
             var ptr = rebind[ImmPointer[UInt32, ImmutAnyOrigin]](
                 valid_length.value()
             )
-            var seq = ptr.load[width=2](batch_idx)
+            var seq = ptr.unsafe_load[width=2](batch_idx)
             var start_of_seq = warp.broadcast(seq[0])
             var end_of_seq = warp.broadcast(seq[1])
             var seq_len = end_of_seq - start_of_seq
@@ -951,7 +951,9 @@ struct QueuedTileScheduler[
                     if not state.is_valid(idx):
                         comptime if sync == MHASchedulerSynchronization.NONE:
                             state.idx = idx
-                            state.sidx_ptr.store(offset=pipeline_idx, val=idx)
+                            state.sidx_ptr.unsafe_store(
+                                offset=pipeline_idx, val=idx
+                            )
                             return None
 
                         else:
@@ -964,7 +966,7 @@ struct QueuedTileScheduler[
                         if seq_info.is_valid():
                             comptime if sync == MHASchedulerSynchronization.NONE:
                                 state.idx = idx
-                                state.sidx_ptr.store(
+                                state.sidx_ptr.unsafe_store(
                                     offset=pipeline_idx, val=idx
                                 )
                                 # tma with producer doesn't need to sync
@@ -972,7 +974,7 @@ struct QueuedTileScheduler[
                             else:
                                 break
 
-                state.sidx_ptr.store(offset=pipeline_idx, val=idx)
+                state.sidx_ptr.unsafe_store(offset=pipeline_idx, val=idx)
 
             # producer needs to sync before loading
             comptime if sync == MHASchedulerSynchronization.PRODUCER:
@@ -982,7 +984,7 @@ struct QueuedTileScheduler[
             barrier()
 
         # when !ALL, consumers rely on `async_copy_arrive`
-        state.idx = warp.broadcast(state.sidx_ptr.load(pipeline_idx))
+        state.idx = warp.broadcast(state.sidx_ptr.unsafe_load(pipeline_idx))
         if not state.is_valid():
             return None
         return ts.unsafe_seq_info[
@@ -1017,7 +1019,7 @@ struct QueuedTileScheduler[
         )
 
         if thread_idx.x == 0:
-            state.sidx_ptr.store(state.idx)
+            state.sidx_ptr.unsafe_store(state.idx)
         return state
 
     @inline(.always)

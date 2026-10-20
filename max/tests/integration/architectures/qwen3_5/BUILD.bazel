@@ -5,6 +5,7 @@ load(
     "modular_py_test",
     "requirement",
 )
+load("//bazel:config.bzl", "REQUIRES_INTERNAL_KERNELS")
 
 package(default_visibility = [
     "//:__pkg__",
@@ -322,6 +323,8 @@ modular_py_test(
     name = "test_gdn_prefill_routing",
     srcs = ["test_gdn_prefill_routing.py"],
     tags = ["skip-external-ci"],
+    # Needs kda_chunk (checks prefill routes to it), registered only by the closed-source kernels.
+    target_compatible_with = REQUIRES_INTERNAL_KERNELS,
     deps = [
         "//max/python/max/dtype",
         "//max/python/max/graph",

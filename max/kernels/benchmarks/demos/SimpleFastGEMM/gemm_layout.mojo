@@ -185,19 +185,19 @@ def main() raises:
     print(t"{M}x{N}x{K}")
 
     var a_alloc = alloc(
-        AllocLayout[Float32, alignment=.of_bytes[alignment]()](count=M * K)
+        AllocLayout[Float32, alignment=.of_bytes[alignment]()](length=M * K)
     ).into_managed()
     var b_alloc = alloc(
-        AllocLayout[Float32, alignment=.of_bytes[alignment]()](count=K * N)
+        AllocLayout[Float32, alignment=.of_bytes[alignment]()](length=K * N)
     ).into_managed()
     var b_packed_alloc = alloc(
-        AllocLayout[Float32, alignment=.of_bytes[alignment]()](count=K * N)
+        AllocLayout[Float32, alignment=.of_bytes[alignment]()](length=K * N)
     ).into_managed()
     var c_alloc = alloc(
-        AllocLayout[Float32, alignment=.of_bytes[alignment]()](count=M * N)
+        AllocLayout[Float32, alignment=.of_bytes[alignment]()](length=M * N)
     ).into_managed()
     var c2_alloc = alloc(
-        AllocLayout[Float32, alignment=.of_bytes[alignment]()](count=M * N)
+        AllocLayout[Float32, alignment=.of_bytes[alignment]()](length=M * N)
     ).into_managed()
 
     var a = TileTensor(a_alloc.unsafe_ptr(), row_major[M, K]())

@@ -43,7 +43,7 @@ struct HostDeviceTileTensor[dtype: DType, LayoutType: TensorLayout](Movable):
             layout: The layout of the tensor.
         """
         self._layout = layout
-        self._host = alloc(Layout[Scalar[Self.dtype]](count=_cosize(layout)))
+        self._host = alloc(Layout[Scalar[Self.dtype]](length=_cosize(layout)))
         self._device = None
         self._ctx = None
 
@@ -57,7 +57,7 @@ struct HostDeviceTileTensor[dtype: DType, LayoutType: TensorLayout](Movable):
         var size = _cosize(layout)
         var device = ctx.enqueue_create_buffer[Self.dtype](size)
         self._layout = layout
-        self._host = alloc(Layout[Scalar[Self.dtype]](count=size))
+        self._host = alloc(Layout[Scalar[Self.dtype]](length=size))
         self._device = device
         self._ctx = ctx
 

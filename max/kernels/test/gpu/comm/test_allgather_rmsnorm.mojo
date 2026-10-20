@@ -116,27 +116,23 @@ def _rms_norm_full[
     )
 
     @inline(.always)
-    @__copy_capture(src_view)
-    @__parameter
-    def input_fn[width: Int](coords: Coord) -> SIMD[in_dtype, width]:
+    def input_fn[
+        width: Int
+    ](coords: Coord) {var src_view} -> SIMD[in_dtype, width]:
         return src_view.load[width=width](coords)
 
     @inline(.always)
-    @__copy_capture(dst_view)
-    @__parameter
     def output_fn[
         width: SIMDLength, alignment: Int
-    ](coords: Coord, val: SIMD[in_dtype, width]) -> None:
+    ](coords: Coord, val: SIMD[in_dtype, width]) {var dst_view} -> None:
         dst_view.store[alignment=alignment](coords, val)
 
     rms_norm_gpu[
         2,
-        input_fn,
-        output_fn,
         epsilon=epsilon,
         weight_offset=weight_offset,
         multiply_before_cast=True,
-    ](Coord(Index(rows, num_cols)), gamma_view, ctx)
+    ](input_fn, output_fn, Coord(Index(rows, num_cols)), gamma_view, ctx)
 
 
 def _run_case[
@@ -1364,14 +1360,14 @@ def _run_asymmetric_fuse_gate_case[
                     list_of_ctx[i], quant_view, scale_view, normed_view
                 )
 
-        # `@__copy_capture` is mandatory: without it these reach the device as
-        # host-stack pointers and the stores land out of bounds.
-        @__copy_capture(quant_view, scale_view)
-        @__parameter
+        # The `{var}` copies are mandatory: captured by reference, these reach
+        # the device as host-stack pointers and the stores land out of bounds.
         @inline(.always)
         def mx_epilogue[
             width: Int
-        ](row: Int, col: Int, val: SIMD[in_dtype, width]):
+        ](row: Int, col: Int, val: SIMD[in_dtype, width]) {
+            var quant_view, var scale_view
+        }:
             var quantized: SIMD[.float8_e4m3fn, width]
             var e8m0: Float8_e8m0fnu
             # The block max is a cross-lane reduction: lanes past `num_cols`
@@ -1387,10 +1383,7 @@ def _run_asymmetric_fuse_gate_case[
                     scale_view.store((row, col // MXFP8_SF_VECTOR_SIZE), e8m0)
 
         comptime if quant:
-            _dispatch_ag_norm_quant[
-                quant_epilogue=mx_epilogue,
-                group_size=group_size,
-            ](
+            _dispatch_ag_norm_quant[group_size=group_size](
                 world_shards,
                 normed_view,
                 sum_view,
@@ -1399,6 +1392,7 @@ def _run_asymmetric_fuse_gate_case[
                 weight_offset,
                 rank_sigs,
                 list_of_ctx[i],
+                mx_epilogue,
                 two_launch,
                 my_rank=i,
             )

@@ -328,7 +328,7 @@ def gated_group_rmsnorm_gpu[
                 Int32(n_rows),
                 Int32(num_groups),
                 eps,
-                host_arg=gate_fn,
+                host_args=(gate_fn,),
                 grid_dim=ceildiv(total_warps * WARP_SIZE, VEC_BLK),
                 block_dim=VEC_BLK,
             )
@@ -356,7 +356,7 @@ def gated_group_rmsnorm_gpu[
         Int32(num_groups),
         Int32(group_size),
         eps,
-        host_arg=gate_fn,
+        host_args=(gate_fn,),
         grid_dim=grid,
         block_dim=BLK,
     )

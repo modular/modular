@@ -119,6 +119,7 @@ Run via:
 
 from std.math import ceildiv, isfinite
 from std.memory import alloc, bitcast
+from std.memory.alloc import unsafe_alloc
 from std.random import randn, seed
 from std.sys import size_of
 
@@ -626,7 +627,7 @@ def fill_random_fp8[dtype: DType](span: MutSpan[Scalar[dtype], _]):
     """Generates random FP8 values via float32 RNG -> cast (matches the
     model smoke test)."""
     var n = len(span)
-    var f32_buf = alloc[Float32](n)
+    var f32_buf = unsafe_alloc[Float32](n)
     randn[.float32](f32_buf, n)
     for i in range(n):
         var v = f32_buf[i] * 0.5
@@ -635,7 +636,7 @@ def fill_random_fp8[dtype: DType](span: MutSpan[Scalar[dtype], _]):
         if v < -2.0:
             v = -2.0
         span[i] = Scalar[dtype](v)
-    f32_buf.free()
+    f32_buf.unsafe_free()
 
 
 def dequant_fp8_to_bf16[
@@ -697,6 +698,9 @@ def _ss_naive_ref[
         type_of(b_tt).LayoutType,
         NAIVE_BLOCK_DIM,
         transpose_b=True,
+        c_engine=type_of(c_ref_tt).Engine,
+        a_engine=type_of(a_tt).Engine,
+        b_engine=type_of(b_tt).Engine,
     ]
 
     ctx.enqueue_function[gemm_naive](
@@ -820,8 +824,8 @@ def test_ss_partial(ctx: DeviceContext) raises:
     # BF16 dequantized copies for the naive reference (full K=576).
     var a_ref_dev = ctx.enqueue_create_buffer[REF_TYPE](QK_M * QK_K)
     var b_ref_dev = ctx.enqueue_create_buffer[REF_TYPE](QK_N * QK_K)
-    var a_ref_host = alloc[Scalar[REF_TYPE]](QK_M * QK_K)
-    var b_ref_host = alloc[Scalar[REF_TYPE]](QK_N * QK_K)
+    var a_ref_host = unsafe_alloc[Scalar[REF_TYPE]](QK_M * QK_K)
+    var b_ref_host = unsafe_alloc[Scalar[REF_TYPE]](QK_N * QK_K)
     dequant_fp8_to_bf16[FP8_TYPE, REF_TYPE](
         a_host.as_span(), a_ref_host, QK_M * QK_K
     )
@@ -840,7 +844,7 @@ def test_ss_partial(ctx: DeviceContext) raises:
 
     # Reference for K=576 (variants 1, 2, 4).
     var c_ref_full_dev = _ss_naive_ref[QK_K](ctx, a_ref_dev, b_ref_dev)
-    var c_ref_full = alloc[Float32](QK_M * QK_N)
+    var c_ref_full = unsafe_alloc[Float32](QK_M * QK_N)
     ctx.enqueue_copy(c_ref_full, c_ref_full_dev)
     ctx.synchronize()
 
@@ -1043,9 +1047,9 @@ def test_ss_partial(ctx: DeviceContext) raises:
         require_finite=False,
     )
 
-    a_ref_host.free()
-    b_ref_host.free()
-    c_ref_full.free()
+    a_ref_host.unsafe_free()
+    b_ref_host.unsafe_free()
+    c_ref_full.unsafe_free()
     _ = a_ref_dev
     _ = b_ref_dev
     _ = c_ref_full_dev
@@ -1090,8 +1094,8 @@ def test_ss_partial(ctx: DeviceContext) raises:
     # (We still allocate full-width buffers to keep the row stride = QK_K.)
     var a_nan_ref_dev = ctx.enqueue_create_buffer[REF_TYPE](QK_M * QK_K)
     var b_nan_ref_dev = ctx.enqueue_create_buffer[REF_TYPE](QK_N * QK_K)
-    var a_nan_ref_host = alloc[Scalar[REF_TYPE]](QK_M * QK_K)
-    var b_nan_ref_host = alloc[Scalar[REF_TYPE]](QK_N * QK_K)
+    var a_nan_ref_host = unsafe_alloc[Scalar[REF_TYPE]](QK_M * QK_K)
+    var b_nan_ref_host = unsafe_alloc[Scalar[REF_TYPE]](QK_N * QK_K)
     # Dequant the full buffer is unsafe (tail is NaN); zero the tail in the
     # reference instead so a stray read can't poison the host ref either.
     for r in range(QK_M):
@@ -1119,7 +1123,7 @@ def test_ss_partial(ctx: DeviceContext) raises:
     var c_ref_v_dev = _ss_naive_ref[QK_VALID_K](
         ctx, a_nan_ref_dev, b_nan_ref_dev
     )
-    var c_ref_v = alloc[Float32](QK_M * QK_N)
+    var c_ref_v = unsafe_alloc[Float32](QK_M * QK_N)
     ctx.enqueue_copy(c_ref_v, c_ref_v_dev)
     ctx.synchronize()
 
@@ -1230,9 +1234,9 @@ def test_ss_partial(ctx: DeviceContext) raises:
         " / v8 struct-partial-NaN / v9 struct-partial-3stage-NaN)"
     )
 
-    a_nan_ref_host.free()
-    b_nan_ref_host.free()
-    c_ref_v.free()
+    a_nan_ref_host.unsafe_free()
+    b_nan_ref_host.unsafe_free()
+    c_ref_v.unsafe_free()
     _ = a_nan_ref_dev
     _ = b_nan_ref_dev
     _ = c_ref_v_dev
@@ -1482,8 +1486,8 @@ def test_ss_nonws_partial(ctx: DeviceContext) raises:
 
     var a_ref_dev = ctx.enqueue_create_buffer[REF_TYPE](NW_M * QK_K)
     var b_ref_dev = ctx.enqueue_create_buffer[REF_TYPE](QK_N * QK_K)
-    var a_ref_host = alloc[Scalar[REF_TYPE]](NW_M * QK_K)
-    var b_ref_host = alloc[Scalar[REF_TYPE]](QK_N * QK_K)
+    var a_ref_host = unsafe_alloc[Scalar[REF_TYPE]](NW_M * QK_K)
+    var b_ref_host = unsafe_alloc[Scalar[REF_TYPE]](QK_N * QK_K)
     dequant_fp8_to_bf16[FP8_TYPE, REF_TYPE](
         a_host.as_span(), a_ref_host, NW_M * QK_K
     )
@@ -1501,7 +1505,7 @@ def test_ss_nonws_partial(ctx: DeviceContext) raises:
     ](ctx, b_inp.device_tensor())
 
     var c_ref_full_dev = _ss_naive_ref[QK_K, M=NW_M](ctx, a_ref_dev, b_ref_dev)
-    var c_ref_full = alloc[Float32](NW_M * QK_N)
+    var c_ref_full = unsafe_alloc[Float32](NW_M * QK_N)
     ctx.enqueue_copy(c_ref_full, c_ref_full_dev)
     ctx.synchronize()
 
@@ -1599,9 +1603,9 @@ def test_ss_nonws_partial(ctx: DeviceContext) raises:
         require_finite=False,
     )
 
-    a_ref_host.free()
-    b_ref_host.free()
-    c_ref_full.free()
+    a_ref_host.unsafe_free()
+    b_ref_host.unsafe_free()
+    c_ref_full.unsafe_free()
     _ = a_ref_dev
     _ = b_ref_dev
     _ = c_ref_full_dev
@@ -1637,8 +1641,8 @@ def test_ss_nonws_partial(ctx: DeviceContext) raises:
 
     var a_nan_ref_dev = ctx.enqueue_create_buffer[REF_TYPE](NW_M * QK_K)
     var b_nan_ref_dev = ctx.enqueue_create_buffer[REF_TYPE](QK_N * QK_K)
-    var a_nan_ref_host = alloc[Scalar[REF_TYPE]](NW_M * QK_K)
-    var b_nan_ref_host = alloc[Scalar[REF_TYPE]](QK_N * QK_K)
+    var a_nan_ref_host = unsafe_alloc[Scalar[REF_TYPE]](NW_M * QK_K)
+    var b_nan_ref_host = unsafe_alloc[Scalar[REF_TYPE]](QK_N * QK_K)
     for r in range(NW_M):
         for c in range(QK_K):
             var v = a_nan_host[r, c].cast[
@@ -1664,7 +1668,7 @@ def test_ss_nonws_partial(ctx: DeviceContext) raises:
     var c_ref_v_dev = _ss_naive_ref[QK_VALID_K, M=NW_M](
         ctx, a_nan_ref_dev, b_nan_ref_dev
     )
-    var c_ref_v = alloc[Float32](NW_M * QK_N)
+    var c_ref_v = unsafe_alloc[Float32](NW_M * QK_N)
     ctx.enqueue_copy(c_ref_v, c_ref_v_dev)
     ctx.synchronize()
 
@@ -1773,9 +1777,9 @@ def test_ss_nonws_partial(ctx: DeviceContext) raises:
         " / v5 struct-NaN / v6 struct-3stage-NaN)"
     )
 
-    a_nan_ref_host.free()
-    b_nan_ref_host.free()
-    c_ref_v.free()
+    a_nan_ref_host.unsafe_free()
+    b_nan_ref_host.unsafe_free()
+    c_ref_v.unsafe_free()
     _ = a_nan_ref_dev
     _ = b_nan_ref_dev
     _ = c_ref_v_dev
@@ -2193,6 +2197,9 @@ def test_ts_partial(ctx: DeviceContext) raises:
         type_of(b_tt).LayoutType,
         NAIVE_BLOCK_DIM,
         transpose_b=True,
+        c_engine=type_of(c_ref_tt).Engine,
+        a_engine=type_of(a_tt).Engine,
+        b_engine=type_of(b_tt).Engine,
     ]
     ctx.enqueue_function[gemm_naive](
         c_ref_tt,

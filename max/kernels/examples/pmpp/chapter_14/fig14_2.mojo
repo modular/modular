@@ -16,6 +16,7 @@
 from max.gpu import block_idx, thread_idx
 from max.gpu.host import DeviceContext
 from std.math import ceildiv
+from std.memory.alloc import unsafe_alloc
 from std.random import random_ui64
 
 
@@ -99,8 +100,8 @@ def main() raises:
     var N = 10000
 
     # Allocate host memory
-    var h_data = alloc[UInt32](N)
-    var h_ref = alloc[UInt32](N)
+    var h_data = unsafe_alloc[UInt32](N)
+    var h_ref = unsafe_alloc[UInt32](N)
 
     # Initialize with random data
     print("Initializing array with", N, "random elements")
@@ -145,7 +146,7 @@ def main() raises:
     # Odd-even sort main loop
     var iteration = 0
     var max_iterations = N
-    var h_hasChanged = alloc[UInt32](1)
+    var h_hasChanged = unsafe_alloc[UInt32](1)
 
     while iteration < max_iterations:
         # Reset hasChanged flag
@@ -229,6 +230,6 @@ def main() raises:
         print("ERROR: Found", errors, "mismatches between GPU and CPU")
 
     # Cleanup
-    h_data.free()
-    h_ref.free()
-    h_hasChanged.free()
+    h_data.unsafe_free()
+    h_ref.unsafe_free()
+    h_hasChanged.unsafe_free()

@@ -1,3 +1,179 @@
+diff --git a/cpp/earley_parser.cc b/cpp/earley_parser.cc
+--- a/cpp/earley_parser.cc
++++ b/cpp/earley_parser.cc
+@@ -25,6 +25,36 @@ using GrammarExprType = Grammar::Impl::GrammarExprType;
+ 
+ using GrammarExpr = Grammar::Impl::GrammarExpr;
+ 
++namespace {
++bool HasRuleFsm(const Grammar& grammar, int32_t rule_id) {
++  return rule_id >= 0 && rule_id < grammar->NumRules() &&
++         static_cast<size_t>(rule_id) < grammar->per_rule_fsms.size() &&
++         grammar->per_rule_fsms[rule_id].has_value();
++}
++
++// Lookahead states use expression positions; ordinary states use FSM positions.
++bool HasStatePosition(const Grammar& grammar, const ParserState& state, bool allow_end) {
++  if (state.element_id < 0 || state.sub_element_id < 0 || state.repeat_count < 0) return false;
++  if (state.rule_id != -1) {
++    return HasRuleFsm(grammar, state.rule_id) &&
++           state.element_id < grammar->per_rule_fsms[state.rule_id]->GetFsm().NumStates();
++  }
++  if (state.sequence_id < 0 || state.sequence_id >= grammar->NumGrammarExprs()) return false;
++  const auto sequence = grammar->GetGrammarExpr(state.sequence_id);
++  if (sequence.type != GrammarExprType::kSequence &&
++      sequence.type != GrammarExprType::kEmptyStr) return false;
++  if (state.element_id == sequence.size()) return allow_end;
++  if (state.element_id > sequence.size()) return false;
++  const auto element_id = sequence[state.element_id];
++  if (element_id < 0 || element_id >= grammar->NumGrammarExprs()) return false;
++  const auto element = grammar->GetGrammarExpr(element_id);
++  if (element.type == GrammarExprType::kByteString) {
++    return state.sub_element_id < element.size();
++  }
++  return state.sub_element_id <= 3;
++}
++}  // namespace
++
+ bool EarleyParser::IsCompleted() const { return is_completed_.back(); }
+ 
+ void EarleyParser::PopLastStates(int32_t cnt) {
+@@ -40,6 +70,10 @@ void EarleyParser::PopLastStates(int32_t cnt) {
+ }
+ 
+ void EarleyParser::Complete(const ParserState& state, bool debug_print) {
++  if (!HasStatePosition(grammar_, state, true)) return;
++  if (state.rule_start_pos != ParserState::kNoPrevInputPos &&
++      (state.rule_start_pos < 0 ||
++       static_cast<size_t>(state.rule_start_pos) >= rule_id_to_completable_states_.size())) return;
+   // Check if a rule is completed.
+   if (state.rule_start_pos == ParserState::kNoPrevInputPos) {
+     // assert: if a root rule can achieve here, then it must be completed.
+@@ -49,7 +83,7 @@ void EarleyParser::Complete(const ParserState& state, bool debug_print) {
+     tmp_accept_stop_token_ = true;
+     return;
+   }
+-  if (debug_print) {
++  if (debug_print && state.rule_id >= 0) {
+     XGRAMMAR_LOG(INFO) << "The rule " << state.rule_id << ": "
+                        << grammar_->GetRule(state.rule_id).name
+                        << " is completed, trying to complete its parent states.";
+@@ -61,6 +95,7 @@ void EarleyParser::Complete(const ParserState& state, bool debug_print) {
+     if (ref_id != state.rule_id) {
+       continue;
+     }
++    if (!HasStatePosition(grammar_, parent_state, false)) continue;
+     XGRAMMAR_DCHECK(
+         parent_state.rule_id == -1 || grammar_->per_rule_fsms[parent_state.rule_id].has_value()
+     );
+@@ -150,6 +185,7 @@ void EarleyParser::Complete(const ParserState& state, bool debug_print) {
+ std::pair</* scanable */ bool, /* completable */ bool> EarleyParser::Predict(
+     const ParserState& state, bool debug_print
+ ) {
++  if (!HasStatePosition(grammar_, state, true)) return {false, false};
+   // Check if the rule has a corresponding FSM.
+   if (state.rule_id != -1) {
+     XGRAMMAR_DCHECK(grammar_->per_rule_fsms[state.rule_id].has_value());
+@@ -214,6 +250,7 @@ std::pair</* scanable */ bool, /* completable */ bool> EarleyParser::Predict(
+ }
+ 
+ void EarleyParser::Scan(const ParserState& state, const uint8_t ch) {
++  if (!HasStatePosition(grammar_, state, false)) return;
+   XGRAMMAR_DCHECK(state.rule_id == -1 || grammar_->per_rule_fsms[state.rule_id].has_value());
+   if (state.rule_id == -1) {
+     const auto& cur_rule = grammar_->GetGrammarExpr(state.sequence_id);
+@@ -370,6 +407,12 @@ bool EarleyParser::ExpandAndEnqueueUnexpandedState(const ParserState& state) {
+   if (state.sequence_id != ParserState::kUnexpandedRuleStartSequenceId) {
+     return false;
+   }
++  // Lookahead states have no rule; never use them to index the rule tables.
++  if (state.rule_id < 0 || state.rule_id >= grammar_->NumRules() ||
++      static_cast<size_t>(state.rule_id) >= grammar_->per_rule_fsms.size()) {
++    return false;
++  }
++  if (!HasRuleFsm(grammar_, state.rule_id)) return false;
+   auto cur_rule_id = state.rule_id;
+   auto cur_rule_body_id = grammar_->GetRule(cur_rule_id).body_expr_id;
+   XGRAMMAR_DCHECK(state.rule_id != -1 && grammar_->per_rule_fsms[state.rule_id].has_value());
+@@ -389,6 +432,11 @@ void EarleyParser::ExpandNextRuleRefElement(
+     const GrammarExpr* sub_grammar_expr,
+     bool debug_print
+ ) {
++  if (state.rule_id != -1 || !HasStatePosition(grammar_, state, false) ||
++      sub_grammar_expr == nullptr || sub_grammar_expr->size() == 0) return;
++  if (state.rule_start_pos != ParserState::kNoPrevInputPos &&
++      (state.rule_start_pos < 0 ||
++       static_cast<size_t>(state.rule_start_pos) >= rule_id_to_completable_states_.size())) return;
+   // Path A. The rule has a corresponding FSM.
+   XGRAMMAR_DCHECK(!(state.rule_id != -1 && grammar_->per_rule_fsms[state.rule_id].has_value()));
+   XGRAMMAR_DCHECK(grammar_expr.type == GrammarExprType::kSequence);
+@@ -397,8 +445,9 @@ void EarleyParser::ExpandNextRuleRefElement(
+       sub_grammar_expr->type == GrammarExprType::kRepeat
+   );
+   auto ref_rule_id = (*sub_grammar_expr)[0];
++  if (!HasRuleFsm(grammar_, ref_rule_id)) return;
+ 
+-  if (debug_print) {
++  if (debug_print && state.rule_id >= 0) {
+     XGRAMMAR_LOG(INFO) << "The rule " << state.rule_id << ": "
+                        << grammar_->GetRule(state.rule_id).name << " predict the new rule "
+                        << ref_rule_id << ": " << grammar_->GetRule(ref_rule_id).name << ".";
+@@ -472,6 +521,10 @@ void EarleyParser::ExpandNextRuleRefElement(
+ }
+ 
+ void EarleyParser::ExpandNextRuleRefElementOnFSM(const ParserState& state, bool debug_print) {
++  if (state.rule_start_pos != ParserState::kNoPrevInputPos &&
++      (state.rule_start_pos < 0 ||
++       static_cast<size_t>(state.rule_start_pos) >= rule_id_to_completable_states_.size())) return;
++  if (state.rule_id == -1 || !HasStatePosition(grammar_, state, false)) return;
+   XGRAMMAR_DCHECK(state.rule_id != -1 && grammar_->per_rule_fsms[state.rule_id].has_value());
+   const auto& fsm = grammar_->per_rule_fsms[state.rule_id].value();
+ 
+@@ -505,6 +558,7 @@ void EarleyParser::ExpandNextRuleRefElementOnFSM(const ParserState& state, bool
+     } else {
+       continue;
+     }
++    if (!HasRuleFsm(grammar_, ref_rule_id)) continue;
+     bool right_recursion_to_root = false;
+     if (debug_print) {
+       XGRAMMAR_LOG(INFO) << "The rule " << state.rule_id << ": "
+@@ -601,6 +655,7 @@ void EarleyParser::ExpandNextRuleRefElementOnFSM(const ParserState& state, bool
+ void EarleyParser::AdvanceByteString(
+     const ParserState& state, const uint8_t ch, const GrammarExpr& sub_rule
+ ) {
++  if (state.sub_element_id < 0 || state.sub_element_id >= sub_rule.size()) return;
+   XGRAMMAR_DCHECK(sub_rule.type == GrammarExprType::kByteString);
+   XGRAMMAR_DCHECK(sub_rule.size() > state.sub_element_id);
+   if (static_cast<uint8_t>(sub_rule[state.sub_element_id]) == ch) {
+@@ -881,6 +936,7 @@ void EarleyParser::AdvanceCharacterClassStar(
+ }
+ 
+ void EarleyParser::AdvanceFsm(const ParserState& state, const uint8_t ch) {
++  if (state.rule_id == -1 || !HasStatePosition(grammar_, state, false)) return;
+   XGRAMMAR_DCHECK(state.rule_id != -1 && grammar_->per_rule_fsms[state.rule_id].has_value());
+   const auto& current_fsm = grammar_->per_rule_fsms[state.rule_id].value();
+   for (const auto& edge : current_fsm.GetFsm().GetFsm().GetEdges(state.element_id)) {
+@@ -900,6 +956,7 @@ void EarleyParser::AdvanceFsm(const ParserState& state, const uint8_t ch) {
+ }
+ 
+ void EarleyParser::ScanAtomicToken(const ParserState& state, int32_t token_id) {
++  if (!HasStatePosition(grammar_, state, false)) return;
+   if (state.rule_id == -1) return;
+   XGRAMMAR_DCHECK(grammar_->per_rule_fsms[state.rule_id].has_value());
+   const auto& current_fsm = grammar_->per_rule_fsms[state.rule_id].value();
+diff --git a/cpp/earley_parser.h b/cpp/earley_parser.h
+--- a/cpp/earley_parser.h
++++ b/cpp/earley_parser.h
+@@ -62,7 +62,8 @@ struct ParserState {
+    * \brief A sequence_id value of kUnexpandedRuleStartSequenceId means a rule hasn't been
+    * expanded.
+    */
+-  static constexpr int32_t kUnexpandedRuleStartSequenceId = 128000;
++  // Expression ids are nonnegative; -1 is reserved for invalid states.
++  static constexpr int32_t kUnexpandedRuleStartSequenceId = -2;
+ 
+   /*!
+    * \brief A parent_id value of kNoParent means this ParserState is the root of the parsing stack.
 diff --git a/cpp/fsm.cc b/cpp/fsm.cc
 --- a/cpp/fsm.cc
 +++ b/cpp/fsm.cc
@@ -564,7 +740,21 @@ diff --git a/cpp/grammar_builder.cc b/cpp/grammar_builder.cc
 diff --git a/cpp/grammar_compiler.cc b/cpp/grammar_compiler.cc
 --- a/cpp/grammar_compiler.cc
 +++ b/cpp/grammar_compiler.cc
-@@ -433,7 +433,9 @@ std::pair<bool, std::bitset<256>> GrammarMatcherForTokenMaskCache::GetSpeculativ
+@@ -8,9 +8,13 @@
+ #include <algorithm>
+ #include <bitset>
+ #include <cctype>
++#include <charconv>
+ #include <cstddef>
+ #include <cstdint>
++#include <cstdlib>
++#include <cstring>
+ #include <optional>
++#include <stdexcept>
+ #include <string>
+ #include <unordered_map>
+ #include <utility>
+@@ -433,7 +437,9 @@ std::pair<bool, std::bitset<256>> GrammarMatcherForTokenMaskCache::GetSpeculativ
    // If the initial rule is a tag dispatch, we will check if it can achieve its initial state.
    const auto& rule = grammar_->GetRule(init_rule_id_);
    const auto& rule_body = grammar_->GetGrammarExpr(rule.body_expr_id);
@@ -575,7 +765,7 @@ diff --git a/cpp/grammar_compiler.cc b/cpp/grammar_compiler.cc
      std::bitset<256> speculative_mask;
      XGRAMMAR_DCHECK(grammar_->per_rule_fsms[init_rule_id_].has_value());
      const auto& fsm = grammar_->per_rule_fsms[init_rule_id_].value();
-@@ -522,13 +524,11 @@ bool GrammarMatcherForTokenMaskCache::GetTokenMaskWithFirstCharacterCheck(
+@@ -522,13 +528,11 @@ bool GrammarMatcherForTokenMaskCache::GetTokenMaskWithFirstCharacterCheck(
    int prev_matched_size = 0;
    int last_rejected_range = 0;
    const bool& is_exact_lookahead = grammar_->GetRule(init_rule_id_).is_exact_lookahead;
@@ -593,7 +783,7 @@ diff --git a/cpp/grammar_compiler.cc b/cpp/grammar_compiler.cc
    }
  
    const std::string* prev_token = nullptr;
-@@ -1013,7 +1013,9 @@ class GrammarCompilerSub {
+@@ -1013,7 +1017,9 @@ class GrammarCompilerSub {
        std::optional<std::pair<std::string, std::string>> separators,
        bool strict_mode,
        std::optional<int> max_whitespace_cnt,
@@ -604,7 +794,44 @@ diff --git a/cpp/grammar_compiler.cc b/cpp/grammar_compiler.cc
    );
  
    CompiledGrammar CompileRegex(const std::string& regex);
-@@ -1143,7 +1145,9 @@ CompiledGrammar GrammarCompilerSub::CompileJSONSchema(
+@@ -1046,10 +1052,36 @@ class GrammarCompilerSub {
+   std::optional<RuleLevelCache> rule_level_cache_;
+ };
+ 
++namespace {
++// A schema's compiled expression count determines how much work the adaptive
++// token-mask-cache precompute below does per rule; an unbounded schema can
++// spend unbounded compile-thread-pool CPU on a single request. Checked right
++// after optimization, where the final count is known, before that work runs.
++size_t MaxGrammarExpressions() {
++  const char* value = std::getenv("FORMATSPEC_XGRAMMAR_MAX_EXPRESSIONS");
++  if (value == nullptr) {
++    return 100000;
++  }
++  size_t limit = 0;
++  const char* end = value + std::strlen(value);
++  const auto result = std::from_chars(value, end, limit);
++  if (result.ec != std::errc() || result.ptr != end || limit == 0) {
++    throw std::runtime_error("FORMATSPEC_XGRAMMAR_MAX_EXPRESSIONS must be a positive integer");
++  }
++  return limit;
++}
++}  // namespace
++
+ CompiledGrammar GrammarCompilerSub::MultiThreadCompileGrammar(Grammar grammar_unoptimized) {
+   auto compiled_grammar_impl = std::make_shared<CompiledGrammar::Impl>();
+   compiled_grammar_impl->grammar = GrammarOptimizer::Apply(grammar_unoptimized);
+   compiled_grammar_impl->tokenizer_info = tokenizer_info_;
++  const size_t max_expressions = MaxGrammarExpressions();
++  if (static_cast<size_t>(compiled_grammar_impl->grammar->NumGrammarExprs()) > max_expressions) {
++    throw std::runtime_error(
++        "xgrammar expression count exceeds compile limit of " + std::to_string(max_expressions)
++    );
++  }
+   if (tokenizer_info_.GetVocabSize() == 0) {
+     return CompiledGrammar(compiled_grammar_impl);
+   }
+@@ -1143,7 +1175,9 @@ CompiledGrammar GrammarCompilerSub::CompileJSONSchema(
      std::optional<std::pair<std::string, std::string>> separators,
      bool strict_mode,
      std::optional<int> max_whitespace_cnt,
@@ -615,7 +842,7 @@ diff --git a/cpp/grammar_compiler.cc b/cpp/grammar_compiler.cc
  ) {
    return MultiThreadCompileGrammar(Grammar::FromJSONSchema(
        schema,
-@@ -1153,7 +1157,9 @@ CompiledGrammar GrammarCompilerSub::CompileJSONSchema(
+@@ -1153,7 +1187,9 @@ CompiledGrammar GrammarCompilerSub::CompileJSONSchema(
        strict_mode,
        max_whitespace_cnt,
        /*print_converted_ebnf=*/false,
@@ -626,7 +853,7 @@ diff --git a/cpp/grammar_compiler.cc b/cpp/grammar_compiler.cc
    ));
  }
  
-@@ -1195,6 +1201,10 @@ void GrammarCompilerSub::TagDispatchOptimization(
+@@ -1195,6 +1231,10 @@ void GrammarCompilerSub::TagDispatchOptimization(
      XGRAMMAR_DCHECK(rule_body.type == GrammarExprType::kTagDispatch);
      Grammar::Impl::TagDispatch tag_dispatch =
          compiled_grammar_impl->GetGrammar()->GetTagDispatch(rule.body_expr_id);
@@ -637,7 +864,7 @@ diff --git a/cpp/grammar_compiler.cc b/cpp/grammar_compiler.cc
      const auto& sorted_decoded_vocab = tokenizer_info_.GetSortedDecodedVocab();
      DynamicBitset definite_accepted_tokens_since_second_char(sorted_decoded_vocab.size());
      for (int j = 0; j < static_cast<int32_t>(sorted_decoded_vocab.size()); j++) {
-@@ -1246,6 +1256,8 @@ class GrammarCompilerCacheKeys {
+@@ -1246,6 +1286,8 @@ class GrammarCompilerCacheKeys {
      bool strict_mode;
      std::optional<int> max_whitespace_cnt;
      bool any_order;
@@ -646,7 +873,7 @@ diff --git a/cpp/grammar_compiler.cc b/cpp/grammar_compiler.cc
  
      XGRAMMAR_EQUAL_BY_MEMBERS(
          SchemaKey,
-@@ -1255,7 +1267,9 @@ class GrammarCompilerCacheKeys {
+@@ -1255,7 +1297,9 @@ class GrammarCompilerCacheKeys {
          &SchemaKey::separators,
          &SchemaKey::strict_mode,
          &SchemaKey::max_whitespace_cnt,
@@ -657,7 +884,7 @@ diff --git a/cpp/grammar_compiler.cc b/cpp/grammar_compiler.cc
      );
    };
  
-@@ -1296,7 +1310,9 @@ XGRAMMAR_HASH_BY_MEMBERS(
+@@ -1296,7 +1340,9 @@ XGRAMMAR_HASH_BY_MEMBERS(
      &xgrammar::GrammarCompilerCacheKeys::SchemaKey::separators,
      &xgrammar::GrammarCompilerCacheKeys::SchemaKey::strict_mode,
      &xgrammar::GrammarCompilerCacheKeys::SchemaKey::max_whitespace_cnt,
@@ -668,7 +895,7 @@ diff --git a/cpp/grammar_compiler.cc b/cpp/grammar_compiler.cc
  );
  
  XGRAMMAR_HASH_BY_MEMBERS(
-@@ -1362,7 +1378,9 @@ class GrammarCompiler::Impl {
+@@ -1362,7 +1408,9 @@ class GrammarCompiler::Impl {
        std::optional<std::pair<std::string, std::string>> separators,
        bool strict_mode,
        std::optional<int> max_whitespace_cnt,
@@ -679,7 +906,7 @@ diff --git a/cpp/grammar_compiler.cc b/cpp/grammar_compiler.cc
    );
  
    CompiledGrammar CompileStructuralTag(const std::string& structural_tag_json);
-@@ -1421,10 +1439,18 @@ CompiledGrammar GrammarCompiler::Impl::Compute(const UnionKey& key) {
+@@ -1421,10 +1469,18 @@ CompiledGrammar GrammarCompiler::Impl::Compute(const UnionKey& key) {
            const auto& [ebnf_str, root_rule_name] = key;
            return this->no_cache_compiler_.CompileGrammar(ebnf_str, root_rule_name);
          } else if constexpr (std::is_same_v<KeyType, SchemaKey>) {
@@ -700,7 +927,7 @@ diff --git a/cpp/grammar_compiler.cc b/cpp/grammar_compiler.cc
            );
          } else if constexpr (std::is_same_v<KeyType, StructuralTagKey>) {
            const auto& [structural_tag_json] = key;
-@@ -1456,15 +1482,33 @@ CompiledGrammar GrammarCompiler::Impl::CompileJSONSchema(
+@@ -1456,15 +1512,33 @@ CompiledGrammar GrammarCompiler::Impl::CompileJSONSchema(
      std::optional<std::pair<std::string, std::string>> separators,
      bool strict_mode,
      std::optional<int> max_whitespace_cnt,
@@ -737,7 +964,7 @@ diff --git a/cpp/grammar_compiler.cc b/cpp/grammar_compiler.cc
    });
  }
  
-@@ -1537,10 +1581,20 @@ CompiledGrammar GrammarCompiler::CompileJSONSchema(
+@@ -1537,10 +1611,20 @@ CompiledGrammar GrammarCompiler::CompileJSONSchema(
      std::optional<std::pair<std::string, std::string>> separators,
      bool strict_mode,
      std::optional<int> max_whitespace_cnt,

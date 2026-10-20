@@ -465,13 +465,34 @@ impl TieredConnector {
             return Ok(TransferResult::complete(self.num_leaves));
         }
 
+        // The disk-write lane can have evicted a disk hit since `plan_load`
+        // checked it. Pinning keeps its slot from being reused before the read
+        // lands. It runs before the host allocations below so that a refusal
+        // has evicted nothing from the host cache, and only the host hits
+        // `plan_load` touched need unpinning.
+        let disk_hashes: Vec<LeafHash> = hits
+            .iter()
+            .filter(|hit| hit.is_disk)
+            .map(|hit| hit.hash)
+            .collect();
+        let Some(disk_pins) = self.disk.pin_reads(&disk_hashes) else {
+            for hit in hits.iter().filter(|hit| !hit.is_disk) {
+                self.pool.free_block(hit.hash.leaf_idx, hit.host_bid);
+            }
+            return Err(crate::error::ConnectorError::TransferFailed(
+                "load asked for a disk block that was evicted while it was planned".to_owned(),
+            ));
+        };
+
         // Allocate before submitting anything: the pool runs full by design and
         // a pinned block can't be evicted, so running out here only means
         // in-flight transfers have it saturated. Nothing is on a lane yet, so
         // give the load up whole rather than truncate the hit prefix.
         if !reserve_disk_promotions(&mut self.pool, &mut hits) {
+            self.disk.release_pins(&disk_pins);
             return Ok(TransferResult::complete(self.num_leaves));
         }
+        let mut disk_pins = disk_pins.into_iter();
 
         let h2d_bytes: u64 = hits
             .iter()
@@ -536,6 +557,9 @@ impl TieredConnector {
 
             if hit.is_disk {
                 // disk-read lane: read into the host block, then chain the H2D.
+                let pin = disk_pins
+                    .next()
+                    .expect("one disk pin per disk hit, in hit order");
                 let disk = Arc::clone(&self.disk);
                 let events = Arc::clone(&self.host_block_events);
                 self.disk_read_lane.submit(
@@ -545,7 +569,7 @@ impl TieredConnector {
                         metrics
                             .disk_read_bytes
                             .fetch_add(leaf_bytes, Ordering::AcqRel);
-                        Box::new(disk.read_block_async(hash, host_ptr)) as Box<dyn Pollable>
+                        Box::new(disk.read_block_async(pin, host_ptr)) as Box<dyn Pollable>
                     }),
                     Box::new(move || {
                         // The read filled the dest, so it is publishable now; the

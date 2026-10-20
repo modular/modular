@@ -312,24 +312,15 @@ static LogicalResult signatureResolveDefaultTraitFnStubs(
 
     PogListAttr traitPogs = traitFn.getFuncTypeGenerator().getParamListAttrs();
     for (auto traitPog : traitPogs.getPogs()) {
-      ArrayRef<ASTDecl *> ref =
-          structDecl.lookupInCurrentScope(traitPog.getName());
-
-      // There could at most be one parameter with the same name in the struct.
-      if (ref.empty() || ref.size() != 1)
+      if (!structDecl.getParamByName(traitPog.getName()))
         continue;
 
-      if (isa_and_nonnull<ParamDeclRefAttr>(
-              ref.front()->getIfIRValue().getIfPValue().get())) {
-        auto diag =
-            shared.emitError(structDecl.getLoc())
-            << "name conflict between parameter " << traitPog.getName()
-            << " in the default trait method and a parameter in the struct";
-
-        diag.attachNote(*traitFnDecl) << "trait method declared here";
-
-        return failure();
-      }
+      auto diag = shared.emitError(structDecl.getLoc())
+                  << "name conflict between parameter " << traitPog.getName()
+                  << " in the default trait method and a parameter in the "
+                     "struct";
+      diag.attachNote(*traitFnDecl) << "trait method declared here";
+      return failure();
     }
 
     FnOp newFn = structEmitter.synthesizeDefaultTraitMethodWrapper(

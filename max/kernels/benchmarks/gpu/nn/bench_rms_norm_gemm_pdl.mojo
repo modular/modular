@@ -200,14 +200,6 @@ def bench_rms_norm_gemm_pdl[
     comptime NormShapeType = type_of(norm_shape)
 
     @inline(.always)
-    @__copy_capture(a_normed)
-    @__parameter
-    def output_fn[
-        width: SIMDLength, alignment: Int
-    ](coords: Coord, val: SIMD[dtype, width]) -> None:
-        a_normed.store[alignment=alignment](coords, val)
-
-    @inline(.always)
     def run_pair[
         norm_pdl: PDLLevel,
         gemm_pdl: PDLLevel,
@@ -225,21 +217,25 @@ def bench_rms_norm_gemm_pdl[
         norm_shape: NormShapeType,
     ) raises {}:
         @inline(.always)
-        @__copy_capture(a_raw)
-        @__parameter
-        def input_fn[width: Int](coords: Coord) -> SIMD[dtype, width]:
+        def input_fn[
+            width: Int
+        ](coords: Coord) {var a_raw} -> SIMD[dtype, width]:
             return a_raw.load[width=width](coords)
+
+        @inline(.always)
+        def output_fn[
+            width: SIMDLength, alignment: Int
+        ](coords: Coord, val: SIMD[dtype, width]) {var a_normed} -> None:
+            a_normed.store[alignment=alignment](coords, val)
 
         comptime if not gemm_only:
             rms_norm_gpu[
                 2,
-                input_fn,
-                output_fn,
                 epsilon=epsilon,
                 weight_offset=weight_offset,
                 multiply_before_cast=True,
                 pdl_level=norm_pdl,
-            ](Coord(norm_shape), gamma, ctx_inner)
+            ](input_fn, output_fn, Coord(norm_shape), gamma, ctx_inner)
 
         comptime if not norm_only:
             comptime gemm_config = (

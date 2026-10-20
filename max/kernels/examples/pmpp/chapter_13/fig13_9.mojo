@@ -16,6 +16,7 @@
 from max.gpu import block_idx, thread_idx
 from max.gpu.host import DeviceContext
 from std.math import ceildiv, min, max
+from std.memory.alloc import unsafe_alloc
 
 
 def co_rank(
@@ -189,10 +190,10 @@ def main() raises:
     var total = m + n
 
     # Allocate host memory
-    var h_A = alloc[Int32](m)
-    var h_B = alloc[Int32](n)
-    var h_C = alloc[Int32](total)
-    var h_ref = alloc[Int32](total)
+    var h_A = unsafe_alloc[Int32](m)
+    var h_B = unsafe_alloc[Int32](n)
+    var h_C = unsafe_alloc[Int32](total)
+    var h_ref = unsafe_alloc[Int32](total)
 
     # Initialize sorted arrays
     for i in range(m):
@@ -268,10 +269,10 @@ def main() raises:
             errors += 1
 
     # Free memory
-    h_A.free()
-    h_B.free()
-    h_C.free()
-    h_ref.free()
+    h_A.unsafe_free()
+    h_B.unsafe_free()
+    h_C.unsafe_free()
+    h_ref.unsafe_free()
 
     if errors == 0:
         print("SUCCESS: All values match!")

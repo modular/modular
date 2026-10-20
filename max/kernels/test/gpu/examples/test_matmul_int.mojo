@@ -21,6 +21,7 @@ from std.memory import (
     unsafe_memset_zero,
     unsafe_stack_allocation,
 )
+from std.memory.alloc import unsafe_alloc
 from layout import TileTensor, row_major
 
 comptime TILE_SZ_A = 128
@@ -98,7 +99,7 @@ def matmul(
     # Store the values into the output matrix.
     for out_idx in range(TILE_SZ_B):
         if row < m and col + out_idx < n:
-            c[row, col + out_idx] = c_reg.load(out_idx)
+            c[row, col + out_idx] = c_reg.unsafe_load(out_idx)
 
 
 def run_matmul(ctx: DeviceContext) raises:
@@ -108,9 +109,9 @@ def run_matmul(ctx: DeviceContext) raises:
     comptime n = 512
     comptime k = 512
 
-    var a_host_ptr = alloc[Int](m * k)
-    var b_host_ptr = alloc[Int](k * n)
-    var c_host_ptr = alloc[Int](m * n)
+    var a_host_ptr = unsafe_alloc[Int](m * k)
+    var b_host_ptr = unsafe_alloc[Int](k * n)
+    var c_host_ptr = unsafe_alloc[Int](m * n)
 
     var a_host = TileTensor(a_host_ptr, row_major[m, k]())
     var b_host = TileTensor(b_host_ptr, row_major[k, n]())

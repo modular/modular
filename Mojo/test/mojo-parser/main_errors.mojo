@@ -80,3 +80,12 @@ def main() raises ErrorCode:
 # expected-error @below {{'main()' can only raise 'Error'; remove the explicit error type}}
 def main() raises Int:
     raise 1
+
+
+# // -----
+
+
+def outer():
+    # expected-error @below {{'main()' must be declared at module scope}}
+    def main():
+        pass

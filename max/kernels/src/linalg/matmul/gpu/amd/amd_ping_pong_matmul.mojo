@@ -351,7 +351,7 @@ struct AMDPingPongMatmul[
     ):
         """Same as `run`, storing the output through `epilogue_fn`.
 
-        Launch with `host_arg=epilogue_fn`.
+        Launch with `host_args=(epilogue_fn,)`.
 
         Parameters:
             a_layout: Memory layout of the `a` input tile (inferred).
@@ -398,7 +398,7 @@ struct AMDPingPongMatmul[
     ):
         """Same as `run`, storing `compute_fn(idx, value)` into `c`.
 
-        Launch with `host_arg=compute_fn`.
+        Launch with `host_args=(compute_fn,)`.
 
         Parameters:
             a_layout: Memory layout of the `a` input tile (inferred).

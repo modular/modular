@@ -390,12 +390,12 @@ struct SwissTable[
             next_power_of_two(ceildiv(capacity * 8, 7)), INITIAL_CAPACITY
         )
         self._ctrl = alloc(
-            Layout[UInt8](count=self._capacity + GROUP_WIDTH)
+            Layout[UInt8](length=self._capacity + GROUP_WIDTH)
         ).unsafe_leak()
         unsafe_memset(self._ctrl, CTRL_EMPTY, self._capacity + GROUP_WIDTH)
         self._slots = alloc(
             Layout[SwissTableEntry[Self.K, Self.V, Self.H]](
-                count=self._capacity
+                length=self._capacity
             )
         ).unsafe_leak()
         self._len = 0
@@ -418,7 +418,7 @@ struct SwissTable[
         self._growth_left = copy._growth_left
 
         self._ctrl = alloc(
-            Layout[UInt8](count=self._capacity + GROUP_WIDTH)
+            Layout[UInt8](length=self._capacity + GROUP_WIDTH)
         ).unsafe_leak()
         unsafe_memcpy(
             dest=self._ctrl,
@@ -428,7 +428,7 @@ struct SwissTable[
 
         self._slots = alloc(
             Layout[SwissTableEntry[Self.K, Self.V, Self.H]](
-                count=self._capacity
+                length=self._capacity
             )
         ).unsafe_leak()
         for i in range(self._capacity):
@@ -473,12 +473,12 @@ struct SwissTable[
         if self._capacity > 0:
             dealloc(
                 ThinAllocation(unsafe_owned_ptr=self._ctrl).unsafe_with_layout(
-                    {count = self._capacity + GROUP_WIDTH}
+                    {length = self._capacity + GROUP_WIDTH}
                 )
             )
             dealloc(
                 ThinAllocation(unsafe_owned_ptr=self._slots).unsafe_with_layout(
-                    {count = self._capacity}
+                    {length = self._capacity}
                 )
             )
 
@@ -773,11 +773,11 @@ struct SwissTable[
         var old_capacity = self._capacity
 
         self._ctrl = alloc(
-            Layout[UInt8](count=new_capacity + GROUP_WIDTH)
+            Layout[UInt8](length=new_capacity + GROUP_WIDTH)
         ).unsafe_leak()
         unsafe_memset(self._ctrl, CTRL_EMPTY, new_capacity + GROUP_WIDTH)
         self._slots = alloc(
-            Layout[SwissTableEntry[Self.K, Self.V, Self.H]](count=new_capacity)
+            Layout[SwissTableEntry[Self.K, Self.V, Self.H]](length=new_capacity)
         ).unsafe_leak()
         self._capacity = new_capacity
         self._growth_left = new_capacity * 7 // 8 - self._len
@@ -796,12 +796,12 @@ struct SwissTable[
         if old_capacity > 0:
             dealloc(
                 ThinAllocation(unsafe_owned_ptr=old_ctrl).unsafe_with_layout(
-                    {count = old_capacity + GROUP_WIDTH}
+                    {length = old_capacity + GROUP_WIDTH}
                 )
             )
             dealloc(
                 ThinAllocation(unsafe_owned_ptr=old_slots).unsafe_with_layout(
-                    {count = old_capacity}
+                    {length = old_capacity}
                 )
             )
 
@@ -837,7 +837,7 @@ struct SwissTable[
         )
 
         # Step 3: Relocate entries.
-        var slot_map_alloc = alloc(Layout[Int32](count=self._capacity))
+        var slot_map_alloc = alloc(Layout[Int32](length=self._capacity))
         _ = slot_map_alloc.storage().unsafe_init_with(
             lambda (i: Int) -> Int32: Int32(i)
         )

@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# The corrected launches for `footgun.mojo` (via `host_arg=`).
+# The corrected launches for `footgun.mojo` (via `host_args=`).
 # See max/docs/internal/max-serve/device-passable-closures.md.
 
 from extensibility import InputFusion, InputTensor, StaticTensorSpec
@@ -43,7 +43,7 @@ struct AffineRead(InputFusion):
 
 
 # The only kernel. `CbType` is deliberately not `DevicePassable`: this kernel is
-# compiled over the host callable, and `host_arg=` delivers exactly that.
+# compiled over the host callable, and `host_args=` delivers exactly that.
 def read_host_closure[
     CbType: ImplicitlyCopyable & RegisterPassable & def(Int) -> Float32
 ](dst: MutPointer[Float32, MutAnyOrigin], n: Int32, cb: CbType):
@@ -81,7 +81,11 @@ def corrected_not_rewrite_when_should(ctx: DeviceContext) raises:
         return tile[i][0]
 
     ctx.enqueue_function[read_host_closure[type_of(read_fn)]](
-        out, Int32(N), host_arg=read_fn, grid_dim=1, block_dim=N
+        out,
+        Int32(N),
+        host_args=(read_fn,),
+        grid_dim=1,
+        block_dim=N,
     )
     check("not_rewrite_when_should", out)
     _ = src_buf
@@ -102,7 +106,11 @@ def corrected_rewrite_when_should_not(ctx: DeviceContext) raises:
     # No encoding, so `in_fusion` survives and the kernel reads the host layout
     # it was compiled against.
     ctx.enqueue_function[read_host_closure[type_of(read_fn)]](
-        out, Int32(N), host_arg=read_fn, grid_dim=1, block_dim=N
+        out,
+        Int32(N),
+        host_args=(read_fn,),
+        grid_dim=1,
+        block_dim=N,
     )
     check("rewrite_when_should_not", out)
     _ = src_buf

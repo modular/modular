@@ -1148,7 +1148,7 @@ def _softmax_gpu[
                 ]
                 ctx.enqueue_function[warp_kernel](
                     output,
-                    host_arg=input_fn_wrapper,
+                    host_args=(input_fn_wrapper,),
                     grid_dim=warp_num_blocks,
                     block_dim=WARP_BLOCK_SIZE,
                     attributes=pdl_launch_attributes(PDLLevel.ON),
@@ -1228,7 +1228,7 @@ def _softmax_gpu[
                             Int32(num_splits),
                             partial_max,
                             partial_sum,
-                            host_arg=input_fn_wrapper,
+                            host_args=(input_fn_wrapper,),
                             grid_dim=num_pairs,
                             block_dim=BLOCK_SIZE,
                         )
@@ -1252,7 +1252,7 @@ def _softmax_gpu[
                             Int32(num_splits),
                             partial_max,
                             partial_sum,
-                            host_arg=input_fn_wrapper,
+                            host_args=(input_fn_wrapper,),
                             grid_dim=num_pairs,
                             block_dim=BLOCK_SIZE,
                         )
@@ -1276,7 +1276,7 @@ def _softmax_gpu[
                         output,
                         Float32(1),
                         null_temp_arr,
-                        host_arg=input_fn_wrapper,
+                        host_args=(input_fn_wrapper,),
                         grid_dim=num_blocks,
                         block_dim=BLOCK_SIZE,
                         attributes=pdl_launch_attributes(PDLLevel.ON),
@@ -1312,7 +1312,7 @@ def _softmax_gpu[
             shape_il,
             output,
             sink_weights.unsafe_value(),
-            host_arg=input_fn_wrapper,
+            host_args=(input_fn_wrapper,),
             grid_dim=num_blocks,
             block_dim=BLOCK_SIZE,
             attributes=pdl_launch_attributes(PDLLevel.ON),
@@ -1845,7 +1845,7 @@ def softmax_with_temperature[
         output,
         temperature.cast[.float32](),
         temperature_arr,
-        host_arg=input_load_fn,
+        host_args=(input_load_fn,),
         grid_dim=num_blocks,
         block_dim=BLOCK_SIZE,
         attributes=pdl_launch_attributes(PDLLevel.ON),

@@ -11,21 +11,61 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 //
-// The description of an importable thing found on disk.
+// The description of an import: the path an import asks for, and the
+// importable things found on disk.
 //
 //===----------------------------------------------------------------------===//
 
 #ifndef KGEN_MOJOPARSER_MODULESPEC_H
 #define KGEN_MOJOPARSER_MODULESPEC_H
 
+#include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringRef.h"
 
 #include <filesystem>
+#include <initializer_list>
 #include <optional>
 #include <string>
 #include <vector>
 
+namespace mlir {
+class MLIRContext;
+} // namespace mlir
+
 namespace M::KGEN::LIT {
+
+class ImportPathAttr;
+
+/// A parsed import path: module-path components plus the number of leading
+/// dots of a relative import (0 for an absolute import).
+struct ImportPath {
+  ImportPath() = default;
+  ImportPath(std::initializer_list<llvm::StringRef> components,
+             unsigned relativeLevel = 0)
+      : components(components), relativeLevel(relativeLevel) {}
+  ImportPath(llvm::ArrayRef<llvm::StringRef> components,
+             unsigned relativeLevel = 0)
+      : components(components.begin(), components.end()),
+        relativeLevel(relativeLevel) {}
+
+  /// Render the path as a Mojo ASTDecl name: the joined dotted-string form
+  /// used for decl and import-op names. It is ambiguous for components that
+  /// themselves contain periods (e.g. escaped identifiers) and is not a
+  /// source-faithful rendering for diagnostics.
+  std::string toDottedString() const {
+    return std::string(relativeLevel, '.') + llvm::join(components, ".");
+  }
+
+  /// Convert to/from the unambiguous `#lit.import_path` attribute form,
+  /// which import ops should prefer over the dotted-string forms above.
+  ImportPathAttr toAttr(mlir::MLIRContext *ctx) const;
+  static ImportPath fromAttr(ImportPathAttr attr);
+
+  llvm::SmallVector<llvm::StringRef, 4> components;
+  unsigned relativeLevel = 0;
+};
 
 /// One importable thing found on disk: what it is called, where it is, and what
 /// kind of thing it is. This is the result of resolution, not a record of

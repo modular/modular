@@ -4,6 +4,11 @@ load("//max/kernels/src:deprecations.bzl", "IGNORED_POINTER_DEPRECATIONS_COPTS")
 package(default_visibility = ["//max:consumers"])
 
 _EXTRA_CONSTRAINTS = {
+    # The MXFP4 indexer's windowed kept-block score hooks; SM100 scorer only.
+    "test_mla_index_windowed_keep.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     # MXFP4 packing uses SM100 conversion instructions.
     "test_indexer_k_store.mojo": select({
         "//:b200_gpu": [],
@@ -532,6 +537,7 @@ _EXTRA_CONSTRAINTS = {
 }
 
 _EXTRA_DEPS = {
+    "test_mla_index_windowed_keep.mojo": ["//max:kv_cache"],
     "attention/test_mha_sm100_depth512_sink.mojo": ["//max:kv_cache"],
     "test_mla_layout_g_mma_smoke.mojo": ["//max:max_mojo"],
     "test_mma_ws_ts.mojo": ["//max:max_mojo"],
@@ -566,13 +572,13 @@ _GPU_MEMORY = {
     "attention/test_mha_sm100_qkv_fp8_d512_prefill.mojo": "3",
     "attention/test_mha_sm100_ws_bm32.mojo": "3",
     "probe_block_scan_metal.mojo": "4",
-    "test_amd_4wave_conv3d.mojo": "4",
-    "test_amd_4wave_conv_miopen.mojo": "4",
-    "test_amd_4wave_conv_residual.mojo": "4",
-    "test_amd_4wave_conv_rt_hw.mojo": "4",
+    "test_amd_4wave_conv3d.mojo": "2",
+    "test_amd_4wave_conv_miopen.mojo": "2",
+    "test_amd_4wave_conv_residual.mojo": "2",
+    "test_amd_4wave_conv_rt_hw.mojo": "2",
     "test_apple_fa_prefill.mojo": "4",
     "test_apple_fa_softmax_unit.mojo": "4",
-    "test_attention_fp8_tail_stress_amd.mojo": "4",
+    "test_attention_fp8_tail_stress_amd.mojo": "2",
     "test_causal_padding_mask.mojo": "4",
     "test_conv2d_im2col_apple.mojo": "4",
     "test_cudnn_conv.mojo": "2",
@@ -584,11 +590,11 @@ _GPU_MEMORY = {
     "test_index_fp8.mojo": "3",
     "test_index_fp8_sm100_kscale_war.mojo": "3",
     "test_mha_chunked_mask.mojo": "4",
-    "test_mha_gemma4_global_decode_amd.mojo": "4",
+    "test_mha_gemma4_global_decode_amd.mojo": "2",
     "test_mha_mask.mojo": "4",
     "test_mha_operand_tma.mojo": "3",
-    "test_mha_p_fragment_scatter_amd.mojo": "4",
-    "test_miopen_conv.mojo": "4",
+    "test_mha_p_fragment_scatter_amd.mojo": "2",
+    "test_miopen_conv.mojo": "2",
     "test_mla.mojo": "4",
     "test_mla_decode_blockwise_fp8.mojo": "3",
     "test_mla_decode_config_stages.mojo": "4",
@@ -1303,7 +1309,7 @@ mojo_test(
             "DTYPE=" + dtype,
         ],
         exec_properties = {
-            "test.resources:gpu-memory": "3",
+            "test.resources:gpu-memory": "2",
         },
         tags = ["gpu"],
         target_compatible_with = [
@@ -1435,7 +1441,7 @@ _MHA_CAUSAL_MASK_AMD_DTYPES = {
         srcs = ["test_mha_causal_mask_amd.mojo"],
         copts = IGNORED_POINTER_DEPRECATIONS_COPTS + copts,
         exec_properties = {
-            "test.resources:gpu-memory": "3",
+            "test.resources:gpu-memory": "2",
         },
         tags = ["gpu"],
         target_compatible_with = [
@@ -1515,7 +1521,7 @@ mojo_test(
         "page_size=128",
     ],
     exec_properties = {
-        "test.resources:gpu-memory": "6",
+        "test.resources:gpu-memory": "4",
     },
     tags = ["gpu"],
     target_compatible_with = ["//:has_gpu"] + select({
@@ -1669,7 +1675,7 @@ _MLA_PREFILL_PAGED_AMD_PAGE_SIZES = [
             "page_size={}".format(page_size),
         ],
         exec_properties = {
-            "test.resources:gpu-memory": "4",
+            "test.resources:gpu-memory": "3",
         },
         main = "test_mla_prefill_amd_cached_prefix.mojo",
         tags = ["gpu"],

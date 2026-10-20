@@ -62,7 +62,7 @@ comptime _WIDTH_MASK_SHUFFLE_UP = 0
 # Common function type for binary SIMD reduction operations (add, max, min).
 comptime _ReduceFn = def[dtype: DType, width: SIMDLength](
     SIMD[dtype, width], SIMD[dtype, width]
-) capturing -> SIMD[dtype, width]
+) thin -> SIMD[dtype, width]
 
 comptime _reduce_fn_signature = def[dtype: DType, width: SIMDLength](
     SIMD[dtype, width], SIMD[dtype, width]

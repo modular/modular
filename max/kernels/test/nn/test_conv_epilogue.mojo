@@ -16,6 +16,7 @@ from std.random import rand
 from std.sys.info import align_of, simd_width_of
 
 from std.algorithm.functional import vectorize
+from std.memory.alloc import unsafe_alloc
 from layout import Coord, TileTensor, row_major
 from nn.conv.conv import (
     ConvDirectNHWC,
@@ -108,7 +109,7 @@ def test[
 
     # Kept as raw alloc because it's captured by closure bodies, which
     # require ImplicitlyCopyable.
-    var bias_ptr = alloc[Scalar[dtype]](F)
+    var bias_ptr = unsafe_alloc[Scalar[dtype]](F)
     rand(bias_ptr, F)
 
     # Find the tile size used in packing.
@@ -190,7 +191,7 @@ def test[
                         output_ref.load[
                             width=width, alignment=align_of[dtype]()
                         ](coord)
-                        + bias_ptr.load[width=width](offset)
+                        + bias_ptr.unsafe_load[width=width](offset)
                     ),
                 )
 
@@ -208,7 +209,7 @@ def test[
             var vec = output.load[width=width](curr_coords)
 
             output.store(
-                curr_coords, 10.0 * (vec + bias_ptr.load[width=width](f))
+                curr_coords, 10.0 * (vec + bias_ptr.unsafe_load[width=width](f))
             )
 
         vectorize[simd_size](f_size, body1)
@@ -263,12 +264,12 @@ def test[
             print("flat output index:", i)
             print("Golden value: ", output_ref_flat[i])
             print("Actual value: ", output_flat[i])
-            bias_ptr.free()
+            bias_ptr.unsafe_free()
             return
 
     # CHECK: Succeed
     print("Succeed")
-    bias_ptr.free()
+    bias_ptr.unsafe_free()
     _ = output_ref_ptr^
     _ = output_ptr^
     _ = packed_filter_ptr^

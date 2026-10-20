@@ -416,6 +416,10 @@ class ServeGraphCaptureRunner:
                     outputs = _release_graph_capture_outputs_to_borrowed(
                         outputs
                     )
+                    # The raw capture result still owns the outputs, and with
+                    # them this graph's working memory; free it before the
+                    # next capture so that capture can reuse the block.
+                    del output_buffers
                     self.graph_entries[graph_key] = (input_buffers, outputs)
 
         self._recorded_cache_lengths = sorted(recorded_lengths)

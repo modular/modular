@@ -91,9 +91,11 @@ def _vectorized_copy_row[
         def _copy_aligned[n: Int](blk: Int) {input_ptr, output_ptr, mut}:
             for j in range(n):
                 var off = my_start + (blk + j) * stride
-                output_ptr.store[width=simd_width, alignment=alignment](
+                output_ptr.unsafe_store[width=simd_width, alignment=alignment](
                     off,
-                    input_ptr.load[width=simd_width, alignment=alignment](off),
+                    input_ptr.unsafe_load[
+                        width=simd_width, alignment=alignment
+                    ](off),
                 )
 
         vectorize[simd_width](num_blocks, _copy_aligned)
@@ -102,7 +104,9 @@ def _vectorized_copy_row[
         def _copy[n: Int](blk: Int) {input_ptr, output_ptr, mut}:
             for j in range(n):
                 var off = my_start + (blk + j) * stride
-                output_ptr.store(off, input_ptr.load[width=simd_width](off))
+                output_ptr.unsafe_store(
+                    off, input_ptr.unsafe_load[width=simd_width](off)
+                )
 
         vectorize[simd_width](num_blocks, _copy)
 

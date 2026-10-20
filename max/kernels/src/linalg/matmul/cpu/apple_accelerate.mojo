@@ -325,7 +325,7 @@ def apple_gemv[
     comptime if b_packed == False and not transpose_b:
         var transposed_b_shape = Index(Int(b.dim[1]()), Int(b.dim[0]()))
         transposed_b_alloc = alloc[Scalar[b.dtype]](
-            {count = b.num_elements()}
+            {length = b.num_elements()}
         ).into_managed()
         transposed_b = TileTensor(
             transposed_b_alloc.unsafe_value()

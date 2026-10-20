@@ -326,7 +326,7 @@ def mla_combine_kernel[
     var datas = Array[_, elems_per_thread](
         fill_with_unrolled=lambda [i: Int]() -> SIMD[
             output_type, vec_size
-        ]: oaccum_base.load[width=vec_size](
+        ]: oaccum_base.unsafe_load[width=vec_size](
             head_dim_offset + lane_idx * vec_size + i * (WARP_SIZE * vec_size)
         )
     )
@@ -447,7 +447,7 @@ def mla_combine_kernel[
                     + lane_idx * vec_size
                     + i * (WARP_SIZE * vec_size)
                 )
-                datas[i] = oaccum_base.load[width=vec_size](next_offset)
+                datas[i] = oaccum_base.unsafe_load[width=vec_size](next_offset)
 
     # =========================================================================
     # Step 4: Write final result to output (convert to output_type)
@@ -479,7 +479,7 @@ def mla_combine_kernel[
         )
         # Convert float32 result back to output_type (bf16) and store
         var out_data = result[i].cast[output_type]()
-        out_ptr.store(offset, out_data)
+        out_ptr.unsafe_store(offset, out_data)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -786,7 +786,7 @@ def mla_combine_kernel_split_parallel[
                 + lane_idx * vec_size
                 + i * (WARP_SIZE * vec_size)
             )
-            var data_f32 = oaccum_base.load[width=vec_size](offset).cast[
+            var data_f32 = oaccum_base.unsafe_load[width=vec_size](offset).cast[
                 DType.float32
             ]()
             result[i] = rescale * result[i] + split_l * data_f32
@@ -802,7 +802,7 @@ def mla_combine_kernel_split_parallel[
 
     comptime for i in range(elems_per_thread):
         var elem_offset = lane_idx * vec_size + i * (WARP_SIZE * vec_size)
-        smem_result.store(smem_warp_base + elem_offset, result[i])
+        smem_result.unsafe_store(smem_warp_base + elem_offset, result[i])
 
     if lane_idx == 0:
         smem_m[warp_idx] = warp_m
@@ -852,16 +852,16 @@ def mla_combine_kernel_split_parallel[
                 var elem_offset = lane_idx * vec_size + i * (
                     WARP_SIZE * vec_size
                 )
-                var my_data = smem_result.load[width=vec_size](
+                var my_data = smem_result.unsafe_load[width=vec_size](
                     smem_my_base + elem_offset
                 )
-                var partner_data = smem_result.load[width=vec_size](
+                var partner_data = smem_result.unsafe_load[width=vec_size](
                     smem_partner_base + elem_offset
                 )
                 var merged = (
                     my_rescale * my_data + partner_rescale * partner_data
                 )
-                smem_result.store(smem_my_base + elem_offset, merged)
+                smem_result.unsafe_store(smem_my_base + elem_offset, merged)
 
             # Update merged (m, l).
             if lane_idx == 0:
@@ -925,9 +925,9 @@ def mla_combine_kernel_split_parallel[
 
         comptime for i in range(elems_per_thread):
             var elem_offset = lane_idx * vec_size + i * (WARP_SIZE * vec_size)
-            var data = smem_result.load[width=vec_size](elem_offset)
+            var data = smem_result.unsafe_load[width=vec_size](elem_offset)
             var out_data = (inv_l * data).cast[output_type]()
-            out_ptr.store(elem_offset, out_data)
+            out_ptr.unsafe_store(elem_offset, out_data)
 
 
 # ===----------------------------------------------------------------------=== #

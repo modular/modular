@@ -44,22 +44,22 @@ struct Matrix[rows: Int, cols: Int]:
     # Initialize zeroeing all values
     def __init__(out self):
         self.data = alloc[Scalar[dtype]](
-            {count = Self.rows * Self.cols}
+            {length = Self.rows * Self.cols}
         ).into_thin()
         unsafe_memset_zero(self.data.unsafe_ptr(), Self.rows * Self.cols)
 
     # Initialize taking a pointer, don't set any elements
     def __init__(out self, var data: Allocation[Scalar[dtype]]):
-        assert data.layout().count() == Self.rows * Self.cols
+        assert len(data) == Self.rows * Self.cols
         self.data = data^.into_thin()
 
     def __deinit__(deinit self):
-        dealloc(self.data^.unsafe_with_layout({count = Self.rows * Self.cols}))
+        dealloc(self.data^.unsafe_with_layout({length = Self.rows * Self.cols}))
 
     ## Initialize with random values
     @staticmethod
     def rand() -> Self:
-        var data = alloc[Scalar[dtype]]({count = Self.rows * Self.cols})
+        var data = alloc[Scalar[dtype]]({length = Self.rows * Self.cols})
         rand(data.unsafe_span())
         return Self(data^)
 

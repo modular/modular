@@ -25,6 +25,7 @@ from max.gpu.sync import (
     mbarrier_try_wait_parity_shared,
 )
 from std.memory import unsafe_stack_allocation
+from std.memory.alloc import unsafe_alloc
 
 from std.utils.index import Index
 
@@ -75,7 +76,7 @@ def kernel_copy_async_tma(descriptor: TMADescriptor):
 # CHECK-DAG: (1, 1) : 36 37 38 39; 44 45 46 47; 52 53 54 55; 60 61 62 63
 def test_tma_tile_copy(ctx: DeviceContext) raises:
     print("== test_tma_tile_copy")
-    var gmem_host = alloc[Float32](8 * 8)
+    var gmem_host = unsafe_alloc[Float32](8 * 8)
     for i in range(64):
         gmem_host[i] = Float32(i)
 
@@ -91,7 +92,7 @@ def test_tma_tile_copy(ctx: DeviceContext) raises:
         descriptor, grid_dim=(2, 2), block_dim=(1)
     )
     ctx.synchronize()
-    gmem_host.free()
+    gmem_host.unsafe_free()
 
 
 def main() raises:

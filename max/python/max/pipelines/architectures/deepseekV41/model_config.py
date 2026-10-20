@@ -65,12 +65,13 @@ def _env_switch(name: str) -> bool:
 
 
 def woa_mxfp8_enabled() -> bool:
-    """Whether the trunk's ``attn.wo_a`` runs as an MXFP8 grouped matmul.
+    """Whether ``attn.wo_a`` runs as an MXFP8 grouped matmul.
 
-    On (default): the FP8 weight and E8M0 block scale load as-is and the
-    input is quantized to MXFP8. Off (``MAX_DSV41_WOA_MXFP8=0``): the weight
-    is dequantized to bf16 on the host. DSpark's ``mtp.*`` stages always use
-    bf16.
+    Covers the trunk and DSpark's ``mtp.*`` stages. On (default): the FP8
+    weight loads as-is, its E8M0 block scale is row-expanded and
+    tile-interleaved on the host, and the input is quantized to MXFP8. Off
+    (``MAX_DSV41_WOA_MXFP8=0``): the weight is dequantized to bf16 on the
+    host.
     """
     return _env_switch(WOA_MXFP8_ENV)
 

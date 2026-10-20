@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv
+from std.memory.alloc import unsafe_alloc
 from std.random import randn, seed, random_float64
 
 from max.gpu import WARP_SIZE
@@ -45,10 +46,10 @@ def run_matvec[
     print("dtypes: A=", a_type, " B=", b_type, " C=", c_type)
 
     var iterations = 100
-    var a_host = alloc[Scalar[a_type]](M * K)
-    var b_host = alloc[Scalar[b_type]](K * N)
-    var c_host = alloc[Scalar[c_type]](M * N)
-    var c_host_blas = alloc[Scalar[accum_type]](M * N)
+    var a_host = unsafe_alloc[Scalar[a_type]](M * K)
+    var b_host = unsafe_alloc[Scalar[b_type]](K * N)
+    var c_host = unsafe_alloc[Scalar[c_type]](M * N)
+    var c_host_blas = unsafe_alloc[Scalar[accum_type]](M * N)
 
     # using large inputs for FP8 ctype will cause saturation and cause all output values to be FP8 max value which can cause false positives.
     for i in range(M * K):
@@ -163,8 +164,8 @@ def run_matvec[
     print()
 
     # Compare results - convert both to float32 for comparison
-    var c_host_f32 = alloc[Float32](M * N)
-    var c_host_blas_f32 = alloc[Float32](M * N)
+    var c_host_f32 = unsafe_alloc[Float32](M * N)
+    var c_host_blas_f32 = unsafe_alloc[Float32](M * N)
 
     for i in range(M * N):
         c_host_f32[i] = c_host[i].cast[.float32]()
@@ -188,13 +189,13 @@ def run_matvec_with_epilogue_fn(
     comptime seed_val = 42
 
     var iterations = 100
-    var a_host = alloc[Float32](M * K)
-    var b_host = alloc[Float32](K * N)
+    var a_host = unsafe_alloc[Float32](M * K)
+    var b_host = unsafe_alloc[Float32](K * N)
 
     seed(seed_val)
 
-    var c_host = alloc[Float32](M * N)
-    var c_host_naive = alloc[Float32](M * N)
+    var c_host = unsafe_alloc[Float32](M * N)
+    var c_host_naive = unsafe_alloc[Float32](M * N)
 
     randn(a_host, M * K)
     randn(b_host, K * N)
@@ -236,7 +237,7 @@ def run_matvec_with_epilogue_fn(
             Int32(M),
             Int32(N),
             Int32(K),
-            host_arg=compute_fn,
+            host_args=(compute_fn,),
             grid_dim=ceildiv(M, WARPS_PER_BLOCK),
             block_dim=WARP_SIZE * WARPS_PER_BLOCK,
         )
@@ -257,7 +258,7 @@ def run_matvec_with_epilogue_fn(
             Int32(M),
             Int32(N),
             Int32(K),
-            host_arg=compute_fn,
+            host_args=(compute_fn,),
             grid_dim=ceildiv(N, WARP_SIZE),
             block_dim=WARP_SIZE * WARPS_PER_BLOCK,
         )
@@ -319,7 +320,7 @@ def run_matvec_with_epilogue_fn(
             Int32(M),
             Int32(N),
             Int32(K),
-            host_arg=compute_fn,
+            host_args=(compute_fn,),
             grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM)),
             block_dim=(BLOCK_DIM, BLOCK_DIM),
         )
@@ -370,8 +371,8 @@ def run_split_k_gemm[
 
     seed(seed_val)
 
-    var a_host = alloc[Scalar[a_type]](M * K)
-    var w_host = alloc[Scalar[b_type]](N * K)
+    var a_host = unsafe_alloc[Scalar[a_type]](M * K)
+    var w_host = unsafe_alloc[Scalar[b_type]](N * K)
     comptime if a_type == .float32:
         randn(a_host, M * K)
     else:
@@ -385,8 +386,8 @@ def run_split_k_gemm[
 
     var row_stride = N + row_pad
     var c_elems = M * row_stride
-    var c_host = alloc[Float32](c_elems)
-    var c_expected = alloc[Float32](c_elems)
+    var c_host = unsafe_alloc[Float32](c_elems)
+    var c_expected = unsafe_alloc[Float32](c_elems)
     for i in range(c_elems):
         c_host[i] = 0
         c_expected[i] = 0
@@ -441,7 +442,7 @@ def run_split_k_gemm[
             Int32(M),
             Int32(N),
             Int32(K),
-            host_arg=compute_fn,
+            host_args=(compute_fn,),
             grid_dim=(ceildiv(M, tile_m), ceildiv(N, tile_n)),
             block_dim=num_threads,
         )

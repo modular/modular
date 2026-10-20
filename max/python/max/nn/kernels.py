@@ -296,6 +296,7 @@ def fused_chunked_qkv_rope_store_ragged(
     num_q_heads: int,
     qk_head_dim: int,
     v_head_dim: int,
+    chunk_padding: int = 0,
 ) -> TensorValue:
     """Prepares chunked QKV projections and appends to a paged KV cache.
 
@@ -314,6 +315,7 @@ def fused_chunked_qkv_rope_store_ragged(
         num_q_heads: Total query heads across all input chunks.
         qk_head_dim: Unpadded query/key head width.
         v_head_dim: Unpadded value head width.
+        chunk_padding: Trailing projection rows to ignore per chunk, aligned to 8.
 
     Returns:
         Padded rotated queries, ``[tokens, num_q_heads, cache_head_width]``.
@@ -371,6 +373,11 @@ def fused_chunked_qkv_rope_store_ragged(
     expected_width = (
         num_q_heads * qk_head_dim + kv_heads * (qk_head_dim + v_head_dim)
     ) // chunks
+    if chunk_padding < 0 or chunk_padding % 8:
+        raise ValueError(
+            "chunk padding must be nonnegative and aligned to 8 elements"
+        )
+    expected_width += chunk_padding
     if chunk_width != expected_width:
         raise ValueError(
             f"chunk width must be {expected_width}, got {chunk_width}"
@@ -419,7 +426,11 @@ def fused_chunked_qkv_rope_store_ragged(
                 device=qkv.device,
             )
         ],
-        parameters={"qk_head_dim": qk_head_dim, "v_head_dim": v_head_dim},
+        parameters={
+            "qk_head_dim": qk_head_dim,
+            "v_head_dim": v_head_dim,
+            "chunk_padding": chunk_padding,
+        },
     )[0].tensor
 
 

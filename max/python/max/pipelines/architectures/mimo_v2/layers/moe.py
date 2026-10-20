@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""MiMo-V2 routed experts: MXFP4 weights, run W4A4."""
+"""MiMo-V2 routed experts with MXFP8 activations on NVIDIA GPUs."""
 
 from __future__ import annotations
 
@@ -18,7 +18,12 @@ import functools
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
-from max.nn.moe import MoEQuantized, SigmoidTopKRouter
+from max.nn.moe import (
+    MoEQuantized,
+    NvMxf4f8Strategy,
+    QuantStrategy,
+    SigmoidTopKRouter,
+)
 from max.nn.quant_config import QuantConfig
 
 
@@ -37,6 +42,18 @@ class MiMoV2Router(SigmoidTopKRouter):
         return hidden @ ops.transpose(weight, -1, -2)
 
 
+class MiMoV2MoE(MoEQuantized):
+    """Keeps routed-expert activations at MXFP8 precision on NVIDIA GPUs."""
+
+    def _strategy(self) -> QuantStrategy:
+        strategy = super()._strategy()
+        if isinstance(strategy, NvMxf4f8Strategy) and strategy.config.is_mxfp4:
+            # MXFP4 inputs give about 5x the expert error of MXFP8 against a
+            # float32 reference (test_expert_precision_gpu.py).
+            return NvMxf4f8Strategy(strategy.config, DType.float8_e4m3fn)
+        return strategy
+
+
 def mimo_v2_moe(
     *,
     hidden_dim: int,
@@ -51,10 +68,10 @@ def mimo_v2_moe(
 
     The correction bias steers selection only; the combine weights are the
     unbiased sigmoid scores renormalized over the top k, accumulated with the
-    expert outputs in float32. The experts run W4A4: each projection's input
-    is quantized to MXFP4 per expert at runtime.
+    expert outputs in float32. On NVIDIA, the experts run W4A8: each
+    projection's input is quantized to MXFP8 per expert at runtime.
     """
-    return MoEQuantized(
+    return MiMoV2MoE(
         devices=devices,
         hidden_dim=hidden_dim,
         num_experts=num_experts,

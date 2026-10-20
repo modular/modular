@@ -19,6 +19,7 @@ from std.math import ceildiv
 from max.gpu import block_idx, thread_idx
 from max.gpu.host import DeviceContext
 from std.itertools import product
+from std.memory.alloc import unsafe_alloc
 
 # ========================== KERNEL CODE ==========================
 
@@ -201,9 +202,9 @@ def main() raises:
     var c6 = Float32(1.0)
 
     # Allocate host memory
-    var h_in = alloc[Float32](total_elements)
-    var h_out = alloc[Float32](total_elements)
-    var h_ref = alloc[Float32](total_elements)
+    var h_in = unsafe_alloc[Float32](total_elements)
+    var h_out = unsafe_alloc[Float32](total_elements)
+    var h_ref = unsafe_alloc[Float32](total_elements)
 
     # Initialize input with random values
     for i in range(total_elements):
@@ -251,6 +252,6 @@ def main() raises:
         print("SUCCESS: All values match!")
 
     # Cleanup
-    h_in.free()
-    h_out.free()
-    h_ref.free()
+    h_in.unsafe_free()
+    h_out.unsafe_free()
+    h_ref.unsafe_free()

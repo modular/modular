@@ -509,10 +509,10 @@ struct Struct_ep_dispatch_async_block_scaled_nv:
         var input_scales_tensor = input_scales.to_tile_tensor[.int64]()
         comptime assert input_scales_tensor.flat_rank == 1
 
-        @__parameter
         @inline(.always)
-        @__copy_capture(input_scales_tensor)
-        def input_scales_fn[dtype: DType](expert_id: Int) -> Scalar[dtype]:
+        def input_scales_fn[
+            dtype: DType
+        ](expert_id: Int) {var input_scales_tensor} -> Scalar[dtype]:
             # Currently only use one global input scale for all experts
             return input_scales_tensor[0].cast[dtype]()
 
@@ -531,7 +531,6 @@ struct Struct_ep_dispatch_async_block_scaled_nv:
             n_gpus_per_node,
             n_nodes,
             target,
-            input_scales_wrapper=input_scales_fn,
         ](
             atomic_counters.to_tile_tensor[.int64](),
             input_tokens.to_tile_tensor[.int64]().as_imm(),
@@ -540,6 +539,7 @@ struct Struct_ep_dispatch_async_block_scaled_nv:
             recv_ptrs.to_tile_tensor[.int64](),
             recv_count_ptrs.to_tile_tensor[.int64](),
             context,
+            input_scales_fn,
         )
 
 
@@ -1212,10 +1212,10 @@ struct Struct_ep_dispatch_block_scaled_nv:
         var input_scales_tensor = input_scales.to_tile_tensor[.int64]()
         comptime assert input_scales_tensor.flat_rank == 1
 
-        @__parameter
         @inline(.always)
-        @__copy_capture(input_scales_tensor)
-        def input_scales_fn[dtype: DType](expert_id: Int) -> Scalar[dtype]:
+        def input_scales_fn[
+            dtype: DType
+        ](expert_id: Int) {var input_scales_tensor} -> Scalar[dtype]:
             # Currently only use one global input scale for all experts
             return input_scales_tensor[0].cast[dtype]()
 
@@ -1233,7 +1233,6 @@ struct Struct_ep_dispatch_block_scaled_nv:
             n_nodes,
             fused_shared_expert,
             target,
-            input_scales_wrapper=input_scales_fn,
             skip_a2a=skip_a2a,
             allreduce_world_size=allreduce_world_size,
         ](
@@ -1248,6 +1247,7 @@ struct Struct_ep_dispatch_block_scaled_nv:
             recv_ptrs.to_tile_tensor[.int64](),
             recv_count_ptrs.to_tile_tensor[.int64](),
             context,
+            input_scales_fn,
         )
 
 
@@ -1535,7 +1535,7 @@ struct DistributedEPDispatchBlockScaledNV:
             dtype=DType.int32, rank=1, ...
         ],
         dev_ctxs: DeviceContextArray,
-    ) capturing raises:
+    ) raises:
         """Multi-device fused Expert Parallelism NVFP4 dispatch.
 
         Launches the EP dispatch kernel on all devices simultaneously via
@@ -1621,10 +1621,10 @@ struct DistributedEPDispatchBlockScaledNV:
             var in_scales = input_scales[index].to_tile_tensor[.int64]()
             comptime assert in_scales.flat_rank == 1
 
-            @__parameter
             @inline(.always)
-            @__copy_capture(in_scales)
-            def input_scales_fn[dtype: DType](expert_id: Int) -> Scalar[dtype]:
+            def input_scales_fn[
+                dtype: DType
+            ](expert_id: Int) {var in_scales} -> Scalar[dtype]:
                 return in_scales[0].cast[dtype]()
 
             var format_handler = NVBlockScaledTokenFormat[hidden_size, top_k](
@@ -1641,7 +1641,6 @@ struct DistributedEPDispatchBlockScaledNV:
                 n_nodes,
                 fused_shared_expert,
                 target,
-                input_scales_wrapper=input_scales_fn,
             ](
                 format_handler,
                 row_offsets[index].to_tile_tensor[.int64](),
@@ -1654,6 +1653,7 @@ struct DistributedEPDispatchBlockScaledNV:
                 recv_ptrs[index].to_tile_tensor[.int64](),
                 recv_count_ptrs[index].to_tile_tensor[.int64](),
                 gpu_ctxs[index],
+                input_scales_fn,
             )
 
         _launch_device_collective[num_devices](launch_dispatch, gpu_ctxs.copy())
@@ -1704,7 +1704,7 @@ struct DistributedEPDispatchBlockScaledNVDynGlobalScales:
             dtype=DType.int32, rank=1, ...
         ],
         dev_ctxs: DeviceContextArray,
-    ) capturing raises:
+    ) raises:
         """Multi-device fused Expert Parallelism NVFP4 dispatch with dynamic
         global scales.
 
@@ -1864,7 +1864,7 @@ struct DistributedEPDispatchMXFP4:
             dtype=DType.int32, rank=1, ...
         ],
         dev_ctxs: DeviceContextArray,
-    ) capturing raises:
+    ) raises:
         """Multi-device fused Expert Parallelism MXFP4 dispatch.
 
         Launches the EP dispatch kernel on all devices simultaneously via
@@ -2019,7 +2019,7 @@ struct DistributedEPDispatch:
             dtype=DType.int32, rank=1, ...
         ],
         dev_ctxs: DeviceContextArray,
-    ) capturing raises:
+    ) raises:
         """Multi-device fused Expert Parallelism BF16 dispatch.
 
         Parameters:
@@ -2147,7 +2147,7 @@ struct DistributedEPDispatchFP8:
             dtype=DType.int32, rank=1, ...
         ],
         dev_ctxs: DeviceContextArray,
-    ) capturing raises:
+    ) raises:
         """Multi-device fused Expert Parallelism FP8 dispatch.
 
         Launches the EP dispatch kernel on all devices simultaneously via
@@ -2288,7 +2288,7 @@ struct DistributedEPCombine:
             dtype=DType.int32, rank=1, ...
         ],
         dev_ctxs: DeviceContextArray,
-    ) capturing raises:
+    ) raises:
         """Multi-device fused Expert Parallelism combine with output fusion.
 
         Parameters:
@@ -2348,17 +2348,20 @@ struct DistributedEPCombine:
             ), "EP combine: output tokens shape doesn't match hidden size."
             var rw_tensor = router_weights[index].to_tile_tensor[.int64]()
 
-            @__parameter
             @inline(.always)
-            @__copy_capture(rw_tensor)
             def router_weights_fn[
                 width: Int
-            ](token_idx: Int, topk_id: Int) -> SIMD[.float32, width]:
+            ](token_idx: Int, topk_id: Int) {var rw_tensor} -> SIMD[
+                .float32, width
+            ]:
                 return rw_tensor.load[width=width]((token_idx, topk_id)).cast[
                     DType.float32
                 ]()
 
-            @__parameter
+            # Stores into this device's fused output. It runs on the device, so
+            # it copies the tensor.
+            var out_tensor = output_tokens[index]
+
             @inline(.always)
             def output_fn[
                 dtype: DType,
@@ -2366,8 +2369,10 @@ struct DistributedEPCombine:
                 width: SIMDLength,
                 *,
                 alignment: Int = 1,
-            ](coords: IndexList[rank], val: SIMD[dtype, width]):
-                output_tokens[index]._fused_store[
+            ](coords: IndexList[rank], val: SIMD[dtype, width]) {
+                var out_tensor
+            }:
+                out_tensor._fused_store[
                     width=width, element_alignment=alignment
                 ](
                     coords,
@@ -2382,8 +2387,6 @@ struct DistributedEPCombine:
                 n_gpus_per_node,
                 n_nodes,
                 target,
-                output_fn,
-                router_weights_wrapper=router_weights_fn,
                 fused_shared_expert=fused_shared_expert,
             ](
                 output_tokens[index].dim_size[0](),
@@ -2394,6 +2397,8 @@ struct DistributedEPCombine:
                 recv_ptrs[index].to_tile_tensor[.int64](),
                 recv_count_ptrs[index].to_tile_tensor[.int64](),
                 gpu_ctxs[index],
+                output_fn,
+                router_weights_fn,
             )
 
         _launch_device_collective[num_devices](launch_combine, gpu_ctxs.copy())
@@ -2547,17 +2552,16 @@ struct Struct_ep_combine_wait:
         comptime assert router_weights_tensor.flat_rank == 2
         comptime assert router_weights_tensor.flat_rank >= 2
 
-        @__parameter
         @inline(.always)
-        @__copy_capture(router_weights_tensor)
         def router_weights_fn[
             width: Int
-        ](token_idx: Int, topk_id: Int) -> SIMD[.float32, width]:
+        ](token_idx: Int, topk_id: Int) {var router_weights_tensor} -> SIMD[
+            .float32, width
+        ]:
             return router_weights_tensor.load[width=width](
                 (token_idx, topk_id)
             ).cast[.float32]()
 
-        @__parameter
         @inline(.always)
         def output_fn[
             dtype: DType,
@@ -2565,7 +2569,7 @@ struct Struct_ep_combine_wait:
             width: SIMDLength,
             *,
             alignment: Int = 1,
-        ](coords: IndexList[rank], val: SIMD[dtype, width]):
+        ](coords: IndexList[rank], val: SIMD[dtype, width]) {var output_tokens}:
             output_tokens._fused_store[
                 width=width, element_alignment=alignment
             ](
@@ -2582,14 +2586,14 @@ struct Struct_ep_combine_wait:
             n_gpus_per_node,
             n_nodes,
             target,
-            output_fn,
-            router_weights_wrapper=router_weights_fn,
         ](
             output_tokens.dim_size[0](),
             atomic_counters.to_tile_tensor[.int64](),
             recv_ptrs.to_tile_tensor[.int64](),
             recv_count_ptrs.to_tile_tensor[.int64](),
             context,
+            output_fn,
+            router_weights_fn,
         )
 
 
@@ -2685,17 +2689,16 @@ struct Struct_ep_combine:
         comptime assert router_weights_tensor.flat_rank == 2
         comptime assert router_weights_tensor.flat_rank >= 2
 
-        @__parameter
         @inline(.always)
-        @__copy_capture(router_weights_tensor)
         def router_weights_fn[
             width: Int
-        ](token_idx: Int, topk_id: Int) -> SIMD[.float32, width]:
+        ](token_idx: Int, topk_id: Int) {var router_weights_tensor} -> SIMD[
+            .float32, width
+        ]:
             return router_weights_tensor.load[width=width](
                 (token_idx, topk_id)
             ).cast[.float32]()
 
-        @__parameter
         @inline(.always)
         def output_fn[
             dtype: DType,
@@ -2703,7 +2706,7 @@ struct Struct_ep_combine:
             width: SIMDLength,
             *,
             alignment: Int = 1,
-        ](coords: IndexList[rank], val: SIMD[dtype, width]):
+        ](coords: IndexList[rank], val: SIMD[dtype, width]) {var output_tokens}:
             output_tokens._fused_store[
                 width=width, element_alignment=alignment
             ](
@@ -2719,8 +2722,6 @@ struct Struct_ep_combine:
             n_gpus_per_node,
             n_nodes,
             target,
-            output_fn,
-            router_weights_wrapper=router_weights_fn,
             fused_shared_expert=fused_shared_expert,
             skip_a2a=skip_a2a,
         ](
@@ -2732,6 +2733,8 @@ struct Struct_ep_combine:
             recv_ptrs.to_tile_tensor[.int64](),
             recv_count_ptrs.to_tile_tensor[.int64](),
             context,
+            output_fn,
+            router_weights_fn,
         )
 
 
@@ -2834,17 +2837,16 @@ struct Struct_ep_combine_skip_a2a:
         comptime assert router_weights_tensor.flat_rank == 2
         comptime assert router_weights_tensor.flat_rank >= 2
 
-        @__parameter
         @inline(.always)
-        @__copy_capture(router_weights_tensor)
         def router_weights_fn[
             width: Int
-        ](token_idx: Int, topk_id: Int) -> SIMD[.float32, width]:
+        ](token_idx: Int, topk_id: Int) {var router_weights_tensor} -> SIMD[
+            .float32, width
+        ]:
             return router_weights_tensor.load[width=width](
                 (token_idx, topk_id)
             ).cast[.float32]()
 
-        @__parameter
         @inline(.always)
         def output_fn[
             dtype: DType,
@@ -2852,7 +2854,7 @@ struct Struct_ep_combine_skip_a2a:
             width: SIMDLength,
             *,
             alignment: Int = 1,
-        ](coords: IndexList[rank], val: SIMD[dtype, width]):
+        ](coords: IndexList[rank], val: SIMD[dtype, width]) {var output_tokens}:
             output_tokens._fused_store[
                 width=width, element_alignment=alignment
             ](
@@ -2868,8 +2870,6 @@ struct Struct_ep_combine_skip_a2a:
             n_gpus_per_node,
             n_nodes,
             target,
-            output_fn,
-            router_weights_wrapper=router_weights_fn,
             fused_shared_expert=fused_shared_expert,
             skip_a2a=skip_a2a,
             allreduce_world_size=allreduce_world_size,
@@ -2882,6 +2882,8 @@ struct Struct_ep_combine_skip_a2a:
             recv_ptrs.to_tile_tensor[.int64](),
             recv_count_ptrs.to_tile_tensor[.int64](),
             context,
+            output_fn,
+            router_weights_fn,
             topk_ids._ptr.as_imm().unsafe_origin_cast[ImmUntrackedOrigin](),
         )
 
@@ -3307,6 +3309,12 @@ struct Struct_ep_fused_silu_nvfp4:
             hw_info.max_thread_block_size,
             hw_info.sm_count,
             activation=act,
+            OutputEngine=output_tensor.Engine,
+            ScalesEngine=scales_tensor.Engine,
+            InputEngine=input_tensor.Engine,
+            RowOffsetsEngine=row_offsets_tensor.Engine,
+            ScalesOffsetsEngine=scales_offsets_tensor.Engine,
+            InputScalesEngine=input_scales_tensor.Engine,
         ]
 
         @inline(.always)

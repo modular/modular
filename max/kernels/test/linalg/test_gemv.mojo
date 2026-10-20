@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import isclose
+from std.memory.alloc import unsafe_alloc
 from std.random import rand
 from std.sys import simd_width_of, size_of
 
@@ -42,16 +43,16 @@ def test_gemv() raises:
     comptime m = 4096
     comptime k = 11008
 
-    var lhs_storage = alloc[Scalar[type],](m * k, alignment=alignment)
+    var lhs_storage = unsafe_alloc[Scalar[type],](m * k, alignment=alignment)
     var lhs = TileTensor(lhs_storage.as_unsafe_any_origin(), row_major[m, k]())
 
-    var rhs_storage = alloc[Scalar[type],](k, alignment=alignment)
+    var rhs_storage = unsafe_alloc[Scalar[type],](k, alignment=alignment)
     var rhs = TileTensor(rhs_storage.as_unsafe_any_origin(), row_major[k]())
 
-    var out_storage = alloc[Scalar[type],](m, alignment=alignment)
+    var out_storage = unsafe_alloc[Scalar[type],](m, alignment=alignment)
     var out = TileTensor(out_storage.as_unsafe_any_origin(), row_major[m]())
 
-    var ref_out_storage = alloc[Scalar[type]](m, alignment=alignment)
+    var ref_out_storage = unsafe_alloc[Scalar[type]](m, alignment=alignment)
     var ref_out = TileTensor(
         ref_out_storage.as_unsafe_any_origin(), row_major[m]()
     )
@@ -161,10 +162,10 @@ def test_gemv() raises:
     matmul_perf.print()
     print("Matmul GEMV GFLOP/s", 1e-9 * ((2 * m * k) / matmul_perf.mean()))
 
-    lhs_storage.free()
-    rhs_storage.free()
-    out_storage.free()
-    ref_out_storage.free()
+    lhs_storage.unsafe_free()
+    rhs_storage.unsafe_free()
+    out_storage.unsafe_free()
+    ref_out_storage.unsafe_free()
 
 
 def main() raises:

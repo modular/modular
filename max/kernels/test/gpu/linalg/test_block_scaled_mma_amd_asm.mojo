@@ -56,15 +56,15 @@ def _single_mfma_kernel[
     comptime fragment_width = matrix_format.simd_width()
     var lane = Int(lane_id())
 
-    var a_frag = a_in.load[width=fragment_width](lane * fragment_width)
-    var b_frag = b_in.load[width=fragment_width](lane * fragment_width)
+    var a_frag = a_in.unsafe_load[width=fragment_width](lane * fragment_width)
+    var b_frag = b_in.unsafe_load[width=fragment_width](lane * fragment_width)
     var acc = SIMD[.float32, accum_width](0.0)
 
     cdna4_block_scaled_mfma[0, 0, matrix_format, matrix_format](
         acc, a_frag, b_frag, scales[0], scales[1]
     )
 
-    dst.store(lane * accum_width, acc)
+    dst.unsafe_store(lane * accum_width, acc)
 
 
 def _directive_value(asm: String, directive: String) raises -> Int:

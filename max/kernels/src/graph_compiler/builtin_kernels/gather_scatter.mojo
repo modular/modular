@@ -409,7 +409,7 @@ struct SqueezeShape:
         input_shape: InputTensor[dtype=dtype, rank=1, ...],
         remove_indices: InputTensor[dtype=indices_type, rank=1, ...],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         """Removes the dimensions at `remove_indices` from `input_shape`.
 
         Raises:
@@ -484,7 +484,7 @@ struct UnsqueezeShape:
         input_shape: InputTensor[dtype=dtype, rank=1, ...],
         padding_indices: InputTensor[dtype=indices_type, rank=1, ...],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         """Inserts size-1 dimensions into `input_shape` at `padding_indices`.
 
         Raises:
@@ -1829,7 +1829,7 @@ struct MutableStore(ElementwiseUnaryOp):
         buffer: MutableInputTensor,
         tensor: FusedInputTensor,
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         # TODO: Remove the execute method (GEX-2453).
         raise Error("exec should never be called !")
 
@@ -1916,7 +1916,7 @@ struct Gather:
         input: FusedInputTensor[dtype=output.dtype, ...],
         indices: FusedInputTensor,
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         @inline(.always)
         def input_fn[
             width: Int, element_alignment: Int
@@ -2073,7 +2073,7 @@ struct Concat:
         output: FusedOutputTensor[dtype=dtype, rank=rank, ...],
         inputs: FusedInputVariadicTensors[dtype=dtype, rank=rank, ...],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         var input_shapes = StaticTuple[IndexList[rank], inputs.size]()
 
         check_axis_in_range[axis, output.rank]()
@@ -2307,7 +2307,7 @@ struct AdvancedIndexingGetItem:
             ...,
         ],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         comptime assert (
             output_rank == input_rank + index_rank - num_index_tensors
         )
@@ -2408,7 +2408,7 @@ struct AdvancedIndexingSetItemInplace:
             ...,
         ],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         @inline(.always)
         def updates_tensor_fn[
             dtype: DType, width: Int
@@ -2468,7 +2468,7 @@ struct AdvancedIndexingSetItem:
             ...,
         ],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         """Implement basic numpy-style advanced indexing with assignment but returns a copy.
         """
 

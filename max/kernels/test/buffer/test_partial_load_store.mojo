@@ -46,7 +46,7 @@ def test_partial_load_store() raises:
         4,
         partial_load_data,  # idx  # lbound  # rbound
     )
-    var partial_store_data = write_ptr.unsafe_offset(2).load[width=4]()
+    var partial_store_data = write_ptr.unsafe_offset(2).unsafe_load[width=4]()
     # CHECK: [0, 3, 99, 0]
     print(partial_store_data)
 
@@ -71,7 +71,7 @@ def test_partial_load_store() raises:
         3,  # rbound
         nd_partial_load_data,  # value
     )
-    var nd_partial_store_data = write_ptr.unsafe_offset(3 * width).load[
+    var nd_partial_store_data = write_ptr.unsafe_offset(3 * width).unsafe_load[
         width=4
     ]()
 

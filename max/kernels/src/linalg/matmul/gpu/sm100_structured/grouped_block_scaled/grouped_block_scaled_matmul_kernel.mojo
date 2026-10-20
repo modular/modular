@@ -693,7 +693,7 @@ struct GroupedBlockScaledMatmulKernel[
             `run_2sm`.
         has_compute_fn: Whether `compute_fn` maps the accumulated results
             before they are stored (defaults to False). Launch with
-            `host_arg=compute_fn`.
+            `host_args=(compute_fn,)`.
         group_ptr_engine: Engine of the per-group pointer tiles.
         problem_sizes_engine: Engine of the problem-sizes tile.
     """

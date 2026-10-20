@@ -34,7 +34,7 @@ struct Graph(Movable):
 
 
 def node() -> Pointer[Node, MutUntrackedOrigin]:
-    return alloc(Layout[Node](count=1)).unsafe_leak()
+    return alloc(Layout[Node](length=1)).unsafe_leak()
 
 
 # The graph has to arrive as an argument to a comptime call: that is what

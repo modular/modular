@@ -24,6 +24,7 @@ from layout import (
 )
 from layout.tensor_engine import TensorEngine
 from std.memory import alloc, bitcast
+from std.memory.alloc import unsafe_alloc
 from std.random import rand
 from nn.activations import silu
 from state_space.varlen_causal_conv1d import (
@@ -1466,36 +1467,36 @@ def run_varlen_states_padded(
     var x_strides = (x_row, 1)
     var states_strides = (dim * s_row, s_row, 1)
 
-    var x_h = alloc[Scalar[dtype]](total * x_row)
+    var x_h = unsafe_alloc[Scalar[dtype]](total * x_row)
     rand(x_h, total * x_row)
-    var cu_h = alloc[Int32](batch + 1)
-    cu_h.store(0, Int32(0))
+    var cu_h = unsafe_alloc[Int32](batch + 1)
+    cu_h.unsafe_store(0, Int32(0))
     var cum = 0
     for i in range(batch):
         cum += seq_lengths[i]
-        cu_h.store(i + 1, Int32(cum))
+        cu_h.unsafe_store(i + 1, Int32(cum))
 
     # Expected: the last state_len tokens of each sequence, zero-padded in
     # front, as states[b, d, s].
-    var expected = alloc[Scalar[dtype]](states_size)
+    var expected = unsafe_alloc[Scalar[dtype]](states_size)
     for i in range(states_size):
-        expected.store(i, Scalar[dtype](0))
+        expected.unsafe_store(i, Scalar[dtype](0))
     for b in range(batch):
-        var end = Int(cu_h.load(b + 1))
-        var first = max(Int(cu_h.load(b)), end - state_len)
+        var end = Int(cu_h.unsafe_load(b + 1))
+        var first = max(Int(cu_h.unsafe_load(b)), end - state_len)
         for t in range(first, end):
             for d in range(dim):
-                expected.store(
+                expected.unsafe_store(
                     b * dim * s_row + d * s_row + (state_len - end + t),
-                    x_h.load(t * x_row + d),
+                    x_h.unsafe_load(t * x_row + d),
                 )
 
     var cu_tt = TileTensor(cu_h, row_major(batch + 1))
     var x_tt = TileTensor(x_h, MixedLayout((total, dim), x_strides))
 
-    var cpu_h = alloc[Scalar[dtype]](states_size)
+    var cpu_h = unsafe_alloc[Scalar[dtype]](states_size)
     for i in range(states_size):
-        cpu_h.store(i, Scalar[dtype](0))
+        cpu_h.unsafe_store(i, Scalar[dtype](0))
     var cpu_tt = TileTensor(
         cpu_h, MixedLayout((batch, dim, state_len), states_strides)
     )
@@ -1543,7 +1544,7 @@ def run_varlen_states_padded(
         grid_dim=(ceildiv(dim, BLOCK_N), ceildiv(state_len, BLOCK_M), batch),
         block_dim=(BLOCK_N, BLOCK_M),
     )
-    var gpu_h = alloc[Scalar[dtype]](states_size)
+    var gpu_h = unsafe_alloc[Scalar[dtype]](states_size)
     ctx.enqueue_copy(gpu_h, s_d)
     ctx.synchronize()
 
@@ -1551,14 +1552,14 @@ def run_varlen_states_padded(
         for d in range(dim):
             for s in range(state_len):
                 var off = b * dim * s_row + d * s_row + s
-                assert_equal(cpu_h.load(off), expected.load(off))
-                assert_equal(gpu_h.load(off), expected.load(off))
+                assert_equal(cpu_h.unsafe_load(off), expected.unsafe_load(off))
+                assert_equal(gpu_h.unsafe_load(off), expected.unsafe_load(off))
 
-    x_h.free()
-    cu_h.free()
-    expected.free()
-    cpu_h.free()
-    gpu_h.free()
+    x_h.unsafe_free()
+    cu_h.unsafe_free()
+    expected.unsafe_free()
+    cpu_h.unsafe_free()
+    gpu_h.unsafe_free()
 
 
 def _nvidia_f32_silu_bits_kernel[
@@ -1591,23 +1592,23 @@ def test_nvidia_f32_silu_bit_exact() raises:
     f32 `exp` overflows near 88.72, so -89 is past that threshold.
     """
     comptime n = 16
-    var vals_h = alloc[Scalar[.float32]](n)
-    vals_h.store(0, Scalar[.float32](-80))
-    vals_h.store(1, Scalar[.float32](-40))
-    vals_h.store(2, Scalar[.float32](0))
-    vals_h.store(3, Scalar[.float32](80))
-    vals_h.store(4, Scalar[.float32](79.5))
-    vals_h.store(5, Scalar[.float32](-79.5))
-    vals_h.store(6, Scalar[.float32](1))
-    vals_h.store(7, Scalar[.float32](-1))
-    vals_h.store(8, Scalar[.float32](-88))
-    vals_h.store(9, Scalar[.float32](-89))
-    vals_h.store(10, Scalar[.float32](-100))
-    vals_h.store(11, Scalar[.float32](50))
-    vals_h.store(12, bitcast[.float32](UInt32(0x7FC00000)))
-    vals_h.store(13, bitcast[.float32](UInt32(0x7F800000)))
-    vals_h.store(14, bitcast[.float32](UInt32(0xFF800000)))
-    vals_h.store(15, Scalar[.float32](-1e20))
+    var vals_h = unsafe_alloc[Scalar[.float32]](n)
+    vals_h.unsafe_store(0, Scalar[.float32](-80))
+    vals_h.unsafe_store(1, Scalar[.float32](-40))
+    vals_h.unsafe_store(2, Scalar[.float32](0))
+    vals_h.unsafe_store(3, Scalar[.float32](80))
+    vals_h.unsafe_store(4, Scalar[.float32](79.5))
+    vals_h.unsafe_store(5, Scalar[.float32](-79.5))
+    vals_h.unsafe_store(6, Scalar[.float32](1))
+    vals_h.unsafe_store(7, Scalar[.float32](-1))
+    vals_h.unsafe_store(8, Scalar[.float32](-88))
+    vals_h.unsafe_store(9, Scalar[.float32](-89))
+    vals_h.unsafe_store(10, Scalar[.float32](-100))
+    vals_h.unsafe_store(11, Scalar[.float32](50))
+    vals_h.unsafe_store(12, bitcast[.float32](UInt32(0x7FC00000)))
+    vals_h.unsafe_store(13, bitcast[.float32](UInt32(0x7F800000)))
+    vals_h.unsafe_store(14, bitcast[.float32](UInt32(0xFF800000)))
+    vals_h.unsafe_store(15, Scalar[.float32](-1e20))
 
     with DeviceContext() as ctx:
         var vals_d = ctx.enqueue_create_buffer[.float32](n)
@@ -1625,16 +1626,16 @@ def test_nvidia_f32_silu_bit_exact() raises:
                 vals_tt.Engine,
             ]
         ](vals_tt, got_tt, ref_tt, grid_dim=4, block_dim=1)
-        var got_h = alloc[Scalar[.float32]](n)
-        var ref_h = alloc[Scalar[.float32]](n)
+        var got_h = unsafe_alloc[Scalar[.float32]](n)
+        var ref_h = unsafe_alloc[Scalar[.float32]](n)
         ctx.enqueue_copy(got_h, got_d)
         ctx.enqueue_copy(ref_h, ref_d)
         ctx.synchronize()
 
         for i in range(n):
-            var v = vals_h.load(i)
-            var got = got_h.load(i)
-            var exact = ref_h.load(i)
+            var v = vals_h.unsafe_load(i)
+            var got = got_h.unsafe_load(i)
+            var exact = ref_h.unsafe_load(i)
             if isnan(v):
                 assert_true(isnan(got) and isnan(exact))
             elif isinf(v) and v > 0:
@@ -1651,9 +1652,9 @@ def test_nvidia_f32_silu_bit_exact() raises:
             else:
                 assert_true(not isnan(got) and not isinf(got))
                 assert_true(not isnan(exact) and not isinf(exact))
-        got_h.free()
-        ref_h.free()
-    vals_h.free()
+        got_h.unsafe_free()
+        ref_h.unsafe_free()
+    vals_h.unsafe_free()
 
 
 def test_varlen_states_padded() raises:

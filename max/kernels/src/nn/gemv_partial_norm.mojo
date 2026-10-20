@@ -626,33 +626,29 @@ def _gemv_partial_norm_unfused_with_scratch[
     _matmul_gpu[transpose_b=transpose_b](y, act, weight, ctx)
 
     @inline(.always)
-    @__copy_capture(y)
-    @__parameter
-    def input_fn[width: Int](coords: Coord) -> SIMD[c_type, width]:
+    def input_fn[width: Int](coords: Coord) {var y} -> SIMD[c_type, width]:
         return y.load[width=width, alignment=align_of[c_type]()](coords)
 
     @inline(.always)
-    @__copy_capture(normed_output)
-    @__parameter
     def output_fn[
         width: SIMDLength, alignment: Int
-    ](coords: Coord, val: SIMD[c_type, width]) -> None:
+    ](coords: Coord, val: SIMD[c_type, width]) {var normed_output} -> None:
         normed_output.store[alignment=alignment](coords, val)
 
-    var gamma_c = rebind[TileTensor[c_type, gamma.LayoutType, gamma.origin]](
-        gamma
-    )
+    var gamma_c = rebind[
+        TileTensor[c_type, gamma.LayoutType, gamma.origin, Engine=gamma.Engine]
+    ](gamma)
     # `rms_norm_gpu` migrated to a `Coord` shape boundary (softmax PR #88203);
     # `[M, N_normed]` is built at runtime so an all-dynamic `Coord` is passed.
     rms_norm_gpu[
         2,
-        input_fn,
-        output_fn,
         epsilon=eps,
         weight_offset=Float32(0.0),
         multiply_before_cast=True,
         pdl_level=pdl_level,
     ](
+        input_fn,
+        output_fn,
         Coord(m, n_normed),
         gamma_c,
         ctx,

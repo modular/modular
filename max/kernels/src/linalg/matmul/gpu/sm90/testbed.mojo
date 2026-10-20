@@ -121,19 +121,19 @@ def test_matmul_sm90[
 
     # Host allocations
     var a_host_alloc = alloc(
-        AllocLayout[Scalar[a_type]](count=a_size)
+        AllocLayout[Scalar[a_type]](length=a_size)
     ).into_managed()
     var a_host = a_host_alloc.unsafe_ptr()
     var b_host_alloc = alloc(
-        AllocLayout[Scalar[b_type]](count=b_size)
+        AllocLayout[Scalar[b_type]](length=b_size)
     ).into_managed()
     var b_host = b_host_alloc.unsafe_ptr()
     var c_host_alloc = alloc(
-        AllocLayout[Scalar[c_type]](count=c_size)
+        AllocLayout[Scalar[c_type]](length=c_size)
     ).into_managed()
     var c_host = c_host_alloc.unsafe_ptr()
     var c_host_ref_alloc = alloc(
-        AllocLayout[Scalar[c_type]](count=c_size)
+        AllocLayout[Scalar[c_type]](length=c_size)
     ).into_managed()
     var c_host_ref: MutPointer[
         Scalar[c_type], origin_of(c_host_ref_alloc)

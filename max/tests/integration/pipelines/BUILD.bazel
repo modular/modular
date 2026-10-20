@@ -315,6 +315,8 @@ modular_py_test(
     ],
 )
 
+# Guards the shared graph-capture warmup in max/pipelines/lib/graph_capture.py:
+# each capture's outputs are freed before the next capture runs.
 modular_py_test(
     name = "test_device_graph_capture_release",
     size = "medium",

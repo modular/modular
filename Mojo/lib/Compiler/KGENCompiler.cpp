@@ -386,6 +386,11 @@ static ErrorOr<CompiledStandaloneKernel> compileStandaloneKernel(
   });
   for (TypedAttr attr : symbol.getParamValues())
     walker.walk(attr);
+  // No parameter reaches a struct that only `opaque_plugin` references.
+  // `bundleCompileOffloadOp` rewrote them to generator references,
+  // which the walker exports.
+  if (TypedAttr plugin = target.getOpaquePlugin())
+    walker.walk(plugin);
 
   IRMapping mapping;
   OwningOpRef<ModuleOp> module = produceStandaloneModule(
@@ -676,6 +681,8 @@ static ElaboratorCompileOffloadRetType compileOffloads(
             .split(perKernelOptions, /*Separator=*/",",
                    /*MaxSplit=*/-1, /*KeepEmpty=*/false);
 
+        TargetInfoAttr kernelTarget =
+            offloadInfo.slicedTarget ? offloadInfo.slicedTarget : target;
         for (auto &[op, symbols] : offloadInfo.symbols) {
           auto func = cast<GeneratorOp>(op);
           for (auto &[symbol, kernelInfo] : symbols) {
@@ -684,10 +691,10 @@ static ElaboratorCompileOffloadRetType compileOffloads(
             SmallVector<EmitAs> emissionKinds(kernelInfo.emissionKinds.begin(),
                                               kernelInfo.emissionKinds.end());
             ErrorOr<OffloadCompilationResult> kernelOr =
-                compileElaboratorKernel(func, symbol, kernelInfo.name, symtab,
-                                        target, emissionKinds, perKernelOptions,
-                                        compilationOptions, elabOptions,
-                                        kernelNameCounts, offloadPendingWrites);
+                compileElaboratorKernel(
+                    func, symbol, kernelInfo.name, symtab, kernelTarget,
+                    emissionKinds, perKernelOptions, compilationOptions,
+                    elabOptions, kernelNameCounts, offloadPendingWrites);
             if (kernelOr.isError())
               return kernelOr.takeError();
             targetResult.insert({kernelInfo.kernelId, kernelOr.takeValue()});

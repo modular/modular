@@ -601,7 +601,9 @@ def _matmul_cpu_impl[
             # value implicitly.
             a_packed_alloc^.deinit_with(_dealloc_packed)
             a_packed_alloc = alloc(
-                AllocLayout[Scalar[a.dtype], alignment=alignment](count=mh * kh)
+                AllocLayout[Scalar[a.dtype], alignment=alignment](
+                    length=mh * kh
+                )
             )
 
         @inline(.always)
@@ -926,7 +928,7 @@ def _matmul_cpu_dispatch[
         ]()
         var scratch_alloc = alloc(
             AllocLayout[Scalar[scratch_type], alignment=scratch_align](
-                count=scratch_m * scratch_n
+                length=scratch_m * scratch_n
             )
         ).into_managed()
         var scratch_ptr: MutPointer[

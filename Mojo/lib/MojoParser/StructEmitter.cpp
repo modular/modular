@@ -219,6 +219,7 @@ std::pair<FnOp, DefASTDecl *> FunctionEmitter::synthesizeFunction(
   auto &funcDecl = cast<DefASTDecl>(shared.declResolver->addFullyResolvedDecl(
       funcOp.getOperation(), StringAttr::get(shared.getContext(), name), loc,
       &parent));
+  funcDecl.createIRSignatureDecls(*shared.declResolver);
 
   // Synthesized functions skip DeclResolution's insertKnownAssumptions, so
   // inject the fn's where-clause constraints as known assumptions here,
@@ -326,6 +327,9 @@ FnOp StructEmitter::synthesizeDefaultTraitMethodWrapper(
   // Attach the new operation to the provided declaration.
   existingDecl.setOp(funcOp);
   existingDecl.resolvedness = DeclResolvedness::signature;
+  if (existingDecl.getParamDecls().empty() &&
+      existingDecl.getArgDecls().empty())
+    existingDecl.createIRSignatureDecls(*shared.declResolver);
 
   [[maybe_unused]] Operation *existing =
       shared.declResolver->finalizeFuncSignature(funcOp, existingDecl);

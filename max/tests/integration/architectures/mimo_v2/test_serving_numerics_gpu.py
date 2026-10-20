@@ -40,12 +40,14 @@ MEAN_KL, MAX_KL, TOP1 = 4e-3, 2.5e-2, 0.92
 """Bounds on KL(HF || MAX) over the whole vocabulary, and on top-1
 agreement, over every row of both prompts.
 
-A correct run on two B200s gives a mean KL of 1.4e-3, a maximum of 6.6e-3
-and top-1 agreement of 0.952. The goldens decode the same quantized weights
-in float32, while MAX also quantizes the GEMM inputs: FP8 for the dense
-projections and MXFP4 for the experts. The random logits are flat (a mean
-top probability of 0.12), so near-ties cost top-1. The bounds sit at 2.8x
-and 3.8x the clean KL and three points of top-1 below it. Each of these
+The original MXFP4-activation run on two B200s gave mean KL 1.4e-3,
+maximum KL 6.6e-3 and top-1 agreement 0.952. With MXFP8 expert inputs, mean
+KL is 1.09e-3, maximum KL 6.6e-3 and top-1 agreement 0.972. These measurements
+are TP2 eager with unfused QKV preparation. The goldens
+decode the same quantized weights in float32; GEMM inputs are FP8 for the
+dense projections and MXFP8 for the experts. The random logits are flat
+(a mean top probability of 0.12), so near-ties cost top-1. The bounds pass
+both runs; test_expert_precision_gpu.py pins the expert precision. Each of these
 defects exceeds a bound by at least 6x: no sinks (mean 2.6e-2), a 129-key
 window (row 148, 3.5e-1), RoPE over the whole head (mean 1.85e-1) and
 interleaved RoPE (mean 2.9e-2)."""
@@ -66,7 +68,7 @@ def _kl(
 @pytest.fixture(scope="module")
 def logits_by_mode(
     tmp_path_factory: pytest.TempPathFactory,
-) -> dict[tuple[bool, bool], list[npt.NDArray[np.float32]]]:
+) -> dict[tuple[bool, bool, bool], list[npt.NDArray[np.float32]]]:
     checkpoint = tiny_fixture.tensors()
     goldens = np.load(GOLDENS)
     assert str(goldens["digest"]) == tiny_fixture.digest(checkpoint), (
@@ -83,15 +85,21 @@ def logits_by_mode(
         np.array(ids, np.int64) for ids in tiny_fixture.prompts().values()
     ]
     results = {}
-    for fused in (False, True):
+    for sliding, full in (
+        (False, False),
+        (True, False),
+        (False, True),
+        (True, True),
+    ):
         model = Runner(
             path,
             num_devices=num_devices,
             max_seq_len=256,
             kv_cache_bytes=256 * 1024**2,
-            fused_sliding_qkv=fused,
+            fused_sliding_qkv=sliding,
+            fused_full_qkv=full,
         )
-        assert (model.fused_qkv_count > 0) == fused
+        assert (model.fused_qkv_count > 0) == (sliding or full)
         for captured in (False, True):
             outputs = model.teacher_forced(
                 prompts, CHUNK, DECODE, device_graph_capture=captured
@@ -116,16 +124,23 @@ def logits_by_mode(
             for output, _ in outputs:
                 assert output is not None
                 logits.append(output)
-            results[fused, captured] = logits
+            results[sliding, full, captured] = logits
         del model
     return results
 
 
-@pytest.mark.parametrize("fused", [False, True], ids=["unfused", "fused"])
+@pytest.mark.parametrize(
+    ("sliding", "full"),
+    [(False, False), (True, False), (False, True), (True, True)],
+    ids=["unfused", "sliding", "full", "combined"],
+)
 @pytest.mark.parametrize("captured", [False, True], ids=["eager", "capture"])
 def test_serving_logits_match_hf(
-    logits_by_mode: dict[tuple[bool, bool], list[npt.NDArray[np.float32]]],
-    fused: bool,
+    logits_by_mode: dict[
+        tuple[bool, bool, bool], list[npt.NDArray[np.float32]]
+    ],
+    sliding: bool,
+    full: bool,
     captured: bool,
 ) -> None:
     goldens = np.load(GOLDENS)
@@ -133,7 +148,7 @@ def test_serving_logits_match_hf(
         os.environ.get("MIMO_TEST_TP_DEGREE", str(min(2, accelerator_count())))
     )
     prompts = tiny_fixture.prompts()
-    outputs = logits_by_mode[fused, captured]
+    outputs = logits_by_mode[sliding, full, captured]
     kl, top1 = {}, {}
     for name, logits in zip(prompts, outputs, strict=True):
         assert logits is not None
@@ -154,14 +169,23 @@ def test_serving_logits_match_hf(
     assert agree >= TOP1, summary
 
 
+@pytest.mark.parametrize(
+    ("sliding", "full"),
+    [(True, False), (False, True), (True, True)],
+    ids=["sliding", "full", "combined"],
+)
 @pytest.mark.parametrize("captured", [False, True], ids=["eager", "capture"])
 def test_fused_logits_match_unfused(
-    logits_by_mode: dict[tuple[bool, bool], list[npt.NDArray[np.float32]]],
+    sliding: bool,
+    full: bool,
+    logits_by_mode: dict[
+        tuple[bool, bool, bool], list[npt.NDArray[np.float32]]
+    ],
     captured: bool,
 ) -> None:
     for unfused, fused in zip(
-        logits_by_mode[False, captured],
-        logits_by_mode[True, captured],
+        logits_by_mode[False, False, captured],
+        logits_by_mode[sliding, full, captured],
         strict=True,
     ):
         np.testing.assert_array_equal(fused, unfused)

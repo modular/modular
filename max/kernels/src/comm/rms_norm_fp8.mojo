@@ -78,13 +78,14 @@ def rms_norm_fused_fp8[
     out_dtype: DType,
     scales_dtype: DType,
     rank: Int,
-    input_fn: def[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
-        in_dtype, width
-    ],
+    InputFnType: ImplicitlyCopyable
+    & RegisterPassable
+    & def[width: Int, rank: Int](IndexList[rank]) -> SIMD[in_dtype, width],
     /,
     target: StaticString = "gpu",
     compile_only: Bool = False,
 ](
+    input_fn: InputFnType,
     shape: IndexList[rank],
     output: TileTensor[mut=True, out_dtype, ...],
     gamma: TileTensor[in_dtype, ...],
@@ -106,13 +107,15 @@ def rms_norm_fused_fp8[
         scales_dtype: Data type for scale factors (bfloat16, float16, or
             float32).
         rank: Tensor rank.
-        input_fn: Function to load input values.
+        InputFnType: The type of `input_fn` (inferred).
         target: Target device ("gpu" or "cpu").
         compile_only: If True, only compiles the kernel without executing it.
             Used to pre-compile kernels and avoid JIT compilation deadlocks
             in multi-GPU contexts.
 
     Args:
+        input_fn: Function to load input values. It runs on the device, so
+            it must copy what it captures.
         shape: Input tensor shape.
         output: Output TileTensor to write FP8 quantized values.
         gamma: RMSNorm scale parameter (rank 1).
@@ -158,9 +161,9 @@ def rms_norm_fused_fp8[
                 out_dtype,
                 scales_dtype,
                 rank,
-                input_fn,
                 compile_only=compile_only,
             ](
+                input_fn,
                 shape,
                 output,
                 gamma,
@@ -180,11 +183,12 @@ def _rms_norm_fused_fp8_gpu[
     out_dtype: DType,
     scales_dtype: DType,
     rank: Int,
-    input_fn: def[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
-        in_dtype, width
-    ],
+    InputFnType: ImplicitlyCopyable
+    & RegisterPassable
+    & def[width: Int, rank: Int](IndexList[rank]) -> SIMD[in_dtype, width],
     compile_only: Bool = False,
 ](
+    input_fn: InputFnType,
     shape: IndexList[rank],
     output: TileTensor[mut=True, out_dtype, ...],
     gamma: TileTensor[in_dtype, ...],
@@ -210,7 +214,9 @@ def _rms_norm_fused_fp8_gpu[
     @inline(.always)
     def input_fn_2d[
         simd_width: Int
-    ](row: Int, col: Int) {var shape} -> SIMD[in_dtype, simd_width]:
+    ](row: Int, col: Int) {var shape, var input_fn} -> SIMD[
+        in_dtype, simd_width
+    ]:
         var indices = _get_start_indices_of_nth_subvolume(row, shape)
         indices[rank - 1] = col
         return input_fn[simd_width, rank](indices.canonicalize())
@@ -576,8 +582,7 @@ def _rms_norm_fused_fp8_gpu_launch[
                 weight_offset.cast[.float32](),
                 Int32(cols),
                 Float32(scale_ub),
-                host_arg=input_fn,
-                host_arg2=output_fn,
+                host_args=(input_fn, output_fn),
                 grid_dim=grid_dim,
                 block_dim=block_dim,
                 attributes=pdl_launch_attributes(),
@@ -609,8 +614,7 @@ def _rms_norm_fused_fp8_gpu_launch[
                 weight_offset.cast[.float32](),
                 Int32(cols),
                 Float32(scale_ub),
-                host_arg=input_fn,
-                host_arg2=output_fn,
+                host_args=(input_fn, output_fn),
                 grid_dim=grid_dim,
                 block_dim=block_dim,
                 attributes=pdl_launch_attributes(),

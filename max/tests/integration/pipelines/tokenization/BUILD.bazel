@@ -156,6 +156,35 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_vision_tokenizer_token_ids",
+    size = "medium",
+    srcs = [
+        "test_vision_tokenizer_token_ids.py",
+    ],
+    env_inherit = ["HF_TOKEN"],
+    ignore_extra_deps = [
+        # Runtime deps of the Hugging Face processors.
+        requirement("jinja2"),
+        requirement("torchvision"),
+    ],
+    tags = [
+        "no-sandbox",
+        "requires-network",
+    ],
+    deps = [
+        "//max/python/max/pipelines/architectures/qwen2_5vl",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
+        requirement("jinja2"),
+        requirement("numpy"),
+        requirement("pytest-asyncio"),
+        requirement("torchvision"),
+        requirement("transformers"),
+    ],
+)
+
+modular_py_test(
     name = "test_tiktoken_structured_output_compatibility",
     size = "medium",
     srcs = [

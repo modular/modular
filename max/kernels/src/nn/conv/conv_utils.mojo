@@ -67,16 +67,6 @@ struct NoConvEpilogue(
         pass
 
 
-comptime elementwise_simd_epilogue_type = def[
-    dtype: DType, width: SIMDLength, alignment: Int = 1
-](Coord, SIMD[dtype, width]) capturing -> None
-"""Fused elementwise epilogue for convolution: `(coord, value) -> None`.
-
-The coordinate is rank-N in the output's own space (NHWC / NDHWC), unlike
-`linalg.utils.ElementwiseEpilogueFn`, which is always rank 2. The `Coord`
-carries its own rank.
-"""
-
 comptime _conv_simd_epilogue_fn_signature = def[
     dtype: DType, width: SIMDLength, alignment: Int = 1
 ](Coord, SIMD[dtype, width]) -> None
@@ -84,12 +74,70 @@ comptime _conv_simd_epilogue_fn_signature = def[
 comptime ConvSimdEpilogueFn = (
     ImplicitlyCopyable & RegisterPassable & _conv_simd_epilogue_fn_signature
 )
-"""Value-taking counterpart of `elementwise_simd_epilogue_type`.
+"""Fused elementwise store epilogue for convolution: `(coord, value) -> None`.
 
-A unified closure passed as a runtime value carries the origins of its
-captures, so the buffers it writes stay alive until the convolution that calls
-it returns.
+The coordinate is rank-N in the output's own space (NHWC / NDHWC), unlike
+`linalg.utils.ElementwiseEpilogueFn`, which is always rank 2. The `Coord`
+carries its own rank. The closure stores the value itself, so it must not
+capture the output tensor passed alongside it; use `ConvSimdComputeFn` there.
 """
+
+
+@inline(.always)
+def _no_conv_simd_epilogue_body[
+    dtype: DType, width: SIMDLength, alignment: Int = 1
+](coords: Coord, val: SIMD[dtype, width]):
+    pass
+
+
+@inline(.always)
+def _as_conv_simd_epilogue_fn[
+    EpilogueFnType: ConvSimdEpilogueFn
+](epilogue_fn: EpilogueFnType) -> EpilogueFnType:
+    return epilogue_fn
+
+
+comptime no_conv_simd_epilogue_fn = _as_conv_simd_epilogue_fn(
+    _no_conv_simd_epilogue_body
+)
+"""Stands in for a `ConvSimdEpilogueFn` argument on code paths that store the
+output directly."""
+
+
+comptime _conv_simd_compute_fn_signature = def[
+    dtype: DType, width: SIMDLength, alignment: Int = 1
+](Coord, SIMD[dtype, width]) -> SIMD[dtype, width]
+
+comptime ConvSimdComputeFn = (
+    ImplicitlyCopyable & RegisterPassable & _conv_simd_compute_fn_signature
+)
+"""Fused convolution compute epilogue: `(coords, value) -> value`.
+
+The coordinates are rank-N in the output's own space (NHWC or NDHWC). The
+kernel stores the returned value into its output, so the closure never
+captures the output and can travel next to it.
+"""
+
+
+@inline(.always)
+def _identity_conv_simd_compute_body[
+    dtype: DType, width: SIMDLength, alignment: Int = 1
+](coords: Coord, val: SIMD[dtype, width]) -> SIMD[dtype, width]:
+    return val
+
+
+@inline(.always)
+def _as_conv_simd_compute_fn[
+    ComputeFnType: ConvSimdComputeFn
+](compute_fn: ComputeFnType) -> ComputeFnType:
+    return compute_fn
+
+
+comptime no_conv_simd_compute_fn = _as_conv_simd_compute_fn(
+    _identity_conv_simd_compute_body
+)
+"""Stands in for a `ConvSimdComputeFn` argument on code paths that apply no
+compute epilogue."""
 
 
 # ===----------------------------------------------------------------------=== #

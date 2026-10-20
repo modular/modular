@@ -36,21 +36,22 @@ includes several subpackages for interacting with GPUs, with the
 used APIs. The APIs that you use inside kernel functions—such as the thread and
 block indices—come from the [`max.gpu`](/api/mojo/max/gpu/) package itself. The
 Mojo standard library's [`sys`](https://mojolang.org/docs/std/sys/info/) package
-contains a few basic introspection functions for determining whether a system
-has a supported GPU:
+provides the
+[`has_accelerator()`](https://mojolang.org/docs/std/sys/info/has_accelerator/)
+function, which returns `True` if the host system has an accelerator and
+`False` otherwise. It's useful for conditional compilation or execution
+depending on whether a supported GPU is available.
 
-- [`has_accelerator()`](https://mojolang.org/docs/std/sys/info/has_accelerator/):
-  Returns `True` if the host system has an accelerator and `False` otherwise.
-- [`has_amd_gpu_accelerator()`](https://mojolang.org/docs/std/sys/info/has_amd_gpu_accelerator/):
-  Returns `True` if the host system has an AMD GPU and `False` otherwise.
-- [`has_apple_gpu_accelerator()`](https://mojolang.org/docs/std/sys/info/has_apple_gpu_accelerator/):
-  Returns `True` if the host system has an Apple silicon GPU and `False`
-  otherwise.
-- [`has_nvidia_gpu_accelerator()`](https://mojolang.org/docs/std/sys/info/has_nvidia_gpu_accelerator/):
-  Returns `True` if the host system has an NVIDIA GPU and `False` otherwise.
-
-These functions are useful for conditional compilation or execution depending on
-whether a supported GPU is available.
+To branch on the *kind* of accelerator, use the
+[`CompilationTarget`](https://mojolang.org/docs/std/sys/info/CompilationTarget/)
+predicates on the device context's target, which are evaluated at compile time
+for the kernel's target: `ctx.target.is_nvidia_gpu()`,
+`ctx.target.is_amd_gpu()`, and `ctx.target.is_apple_gpu()`. For example,
+`comptime if not ctx.target.is_apple_gpu():` guards code that Apple GPUs don't
+support. Don't call the `std.sys.info` predicates from host code to decide what
+the device supports. On the host, those checks describe the CPU and always
+return `False` for a GPU, so a fast path guarded that way is silently compiled
+out.
 
 ```mojo title="detect_gpu.mojo"
 from std.sys import has_accelerator

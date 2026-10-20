@@ -320,6 +320,12 @@ class TokenGenerationScheduler(Scheduler):
             else None,
             overlap_active=is_overlap_active,
             completed_batch_stats=completed_batch_stats,
+            # Under overlap, a completed batch is the previous pass's.
+            batch_id=(
+                self._batch_counter - (2 if completed_batch_stats else 1)
+                if self._tracing
+                else None
+            ),
         )
 
         for cancelled_id in get_cancelled_reqs(self.cancel_queue):

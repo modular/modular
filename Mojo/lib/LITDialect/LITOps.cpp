@@ -2077,6 +2077,19 @@ LogicalResult RefFromKgenPtrOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
+// MemcpyOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult MemcpyOp::verify() {
+  Type srcElementType = getSrc().getType().getElementType();
+  Type dstElementType = getDst().getType().getElementType();
+  if (!isEqualCanon(srcElementType, dstElementType))
+    return emitOpError("source and destination element types must match, got ")
+           << srcElementType << " and " << dstElementType;
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // TraitDeclOp
 //===----------------------------------------------------------------------===//
 

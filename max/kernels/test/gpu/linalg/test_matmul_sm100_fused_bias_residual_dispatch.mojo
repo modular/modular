@@ -32,6 +32,7 @@
 
 from max.gpu.host import DeviceContext, DeviceBuffer
 from std.memory import alloc
+from std.memory.alloc import unsafe_alloc
 from internal_utils import assert_almost_equal
 from std.random import rand
 from layout import (
@@ -154,11 +155,11 @@ def run_case[
     var c_size = M * N
     var resid_size = N if epilogue_is_1d else (M * N)
 
-    var a_host_ptr = alloc[Scalar[a_type]](a_size)
-    var b_host_ptr = alloc[Scalar[b_type]](b_size)
-    var c_host_ptr = alloc[Scalar[c_type]](c_size)
-    var c_ref_host_ptr = alloc[Scalar[c_type]](c_size)
-    var resid_host_ptr = alloc[Scalar[c_type]](resid_size)
+    var a_host_ptr = unsafe_alloc[Scalar[a_type]](a_size)
+    var b_host_ptr = unsafe_alloc[Scalar[b_type]](b_size)
+    var c_host_ptr = unsafe_alloc[Scalar[c_type]](c_size)
+    var c_ref_host_ptr = unsafe_alloc[Scalar[c_type]](c_size)
+    var resid_host_ptr = unsafe_alloc[Scalar[c_type]](resid_size)
 
     var a_dev = ctx.enqueue_create_buffer[a_type](a_size)
     var b_dev = ctx.enqueue_create_buffer[b_type](b_size)
@@ -281,11 +282,11 @@ def run_case[
         rtol,
     )
 
-    a_host_ptr.free()
-    b_host_ptr.free()
-    c_host_ptr.free()
-    c_ref_host_ptr.free()
-    resid_host_ptr.free()
+    a_host_ptr.unsafe_free()
+    b_host_ptr.unsafe_free()
+    c_host_ptr.unsafe_free()
+    c_ref_host_ptr.unsafe_free()
+    resid_host_ptr.unsafe_free()
     _ = a_dev^
     _ = b_dev^
     _ = c_dev^

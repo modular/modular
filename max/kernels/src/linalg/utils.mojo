@@ -157,7 +157,7 @@ is genuinely rank-N (concat, conv, allreduce, the reduction generators) use
 their own aliases and do not share this one.
 
 The closure stores the output itself, so a kernel that receives one writes
-nothing to its output argument. Pass it to a named kernel with `host_arg=`.
+nothing to its output argument. Pass it to a named kernel with `host_args=`.
 """
 
 
@@ -175,7 +175,7 @@ def _as_epilogue_fn[
     """Binds a parametric function to its `ElementwiseEpilogueFn` closure type.
 
     A bare parametric function only converts where a function-type bound gives
-    it context, so neither `type_of` nor a `host_arg` slot accepts it directly.
+    it context, so neither `type_of` nor a `host_args` slot accepts it directly.
 
     Parameters:
         EpilogueFnType: Type of the epilogue function (inferred).
@@ -1250,7 +1250,7 @@ def packA_i8mm[
                 var t0 = a_rows.load[
                     width=8, alignment=align_of[a_type](), invariant=False
                 ](Coord(j + idx, l))
-                a_packed_ptr.store(kh * j + 2 * l + 8 * idx, t0)
+                a_packed_ptr.unsafe_store(kh * j + 2 * l + 8 * idx, t0)
 
         comptime for idx in range(nrow):
             var t0 = partial_simd_load[8](

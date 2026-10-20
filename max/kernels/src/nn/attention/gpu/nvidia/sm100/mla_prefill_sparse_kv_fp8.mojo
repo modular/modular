@@ -503,18 +503,18 @@ struct MLAPrefillSparseFP8[
                 pb0 = hmul2_bf16x8_by_scalar[bf16_type](pb0, s0_u32)
                 pa1 = hmul2_bf16x8_by_scalar[bf16_type](pa1, s1_u32)
                 pb1 = hmul2_bf16x8_by_scalar[bf16_type](pb1, s1_u32)
-            p0a_all.ptr.store(c * 4, pa0)
-            p0b_all.ptr.store(c * 4, pb0)
-            p1a_all.ptr.store(c * 4, pa1)
-            p1b_all.ptr.store(c * 4, pb1)
+            p0a_all.ptr.unsafe_store(c * 4, pa0)
+            p0b_all.ptr.unsafe_store(c * 4, pb0)
+            p1a_all.ptr.unsafe_store(c * 4, pa1)
+            p1b_all.ptr.unsafe_store(c * 4, pb1)
 
         named_barrier[Int32(WARPGROUP_SIZE)](3)
 
         comptime for c in range(COLS_PER_GROUP):
-            var pa0 = p0a_all.ptr.load[width=4](c * 4)
-            var pb0 = p0b_all.ptr.load[width=4](c * 4)
-            var pa1 = p1a_all.ptr.load[width=4](c * 4)
-            var pb1 = p1b_all.ptr.load[width=4](c * 4)
+            var pa0 = p0a_all.ptr.unsafe_load[width=4](c * 4)
+            var pb0 = p0b_all.ptr.unsafe_load[width=4](c * 4)
+            var pa1 = p1a_all.ptr.unsafe_load[width=4](c * 4)
+            var pb1 = p1b_all.ptr.unsafe_load[width=4](c * 4)
             var dst_block = k_smem_bf16_ptr.unsafe_offset(c * BLOCK_ELEMS)
             st_shared_v4_b32_at_bf16_elem_off[out_dtype=bf16_type](
                 dst_block, sw0_a, pa0
@@ -790,8 +790,8 @@ struct MLAPrefillSparseFP8[
                         pb = hmul2_bf16x8_by_scalar[bf16_type](pb, s_u32)
 
                     comptime slot = (r * COLS_PER_GROUP + c) * 4
-                    pa_all.ptr.store(slot, pa)
-                    pb_all.ptr.store(slot, pb)
+                    pa_all.ptr.unsafe_store(slot, pa)
+                    pb_all.ptr.unsafe_store(slot, pb)
 
             named_barrier[Int32(WARPGROUP_SIZE)](4)
 
@@ -803,8 +803,8 @@ struct MLAPrefillSparseFP8[
                 )
                 comptime for c in range(COLS_PER_GROUP):
                     comptime slot = (r * COLS_PER_GROUP + c) * 4
-                    var pa = pa_all.ptr.load[width=4](slot)
-                    var pb = pb_all.ptr.load[width=4](slot)
+                    var pa = pa_all.ptr.unsafe_load[width=4](slot)
+                    var pb = pb_all.ptr.unsafe_load[width=4](slot)
                     var dst = v_smem_bf16_ptr.unsafe_offset(
                         kh * KH_ELEMS
                     ).unsafe_offset(c * CG_ELEMS)
@@ -1381,7 +1381,9 @@ struct MLAPrefillSparseFP8[
                             smem_offset * (1 - pad_row)
                             + (Self.SMemType.O_SIZE - 2) * pad_row
                         )
-                        (o_ptr.unsafe_offset(store_off)).store[width=2](v)
+                        (o_ptr.unsafe_offset(store_off)).unsafe_store[width=2](
+                            v
+                        )
 
             named_barrier[Int32(WARPGROUP_SIZE)](Int32(0))
             if warp_idx == 0:

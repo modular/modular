@@ -516,8 +516,8 @@ def _multi_gpu_barrier[
             ):
                 pass
         else:
-            peer_counter_ptr.store[volatile=True](val)
-            while self_counter_ptr.load[volatile=True]() != val:
+            peer_counter_ptr.unsafe_store[volatile=True](val)
+            while self_counter_ptr.unsafe_load[volatile=True]() != val:
                 pass
 
     comptime if is_start or need_fence:

@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv, align_up
+from std.memory.alloc import unsafe_alloc
 from std.random import random_ui64
 from max.gpu.host import DeviceContext
 from internal_utils import assert_almost_equal
@@ -114,8 +115,8 @@ def test_scaled_mxfp8_cublaslt[
 
     var a_host_ptr = ctx.enqueue_create_host_buffer[input_type](a_size)
     var b_host_ptr = ctx.enqueue_create_host_buffer[input_type](b_size)
-    var c_host_ptr = alloc[Scalar[output_type]](c_size)
-    var c_host_ref_ptr = alloc[Scalar[output_type]](c_size)
+    var c_host_ptr = unsafe_alloc[Scalar[output_type]](c_size)
+    var c_host_ref_ptr = unsafe_alloc[Scalar[output_type]](c_size)
 
     var a_device = ctx.enqueue_create_buffer[input_type](a_size)
     var b_device = ctx.enqueue_create_buffer[input_type](b_size)

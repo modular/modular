@@ -18,6 +18,7 @@ from max.driver import (
     CPU,
     Accelerator,
     Buffer,
+    DeviceQueue,
     Usage,
     accelerator_api,
     batch_inplace_copy,
@@ -293,6 +294,20 @@ def test_pinned_concatenate() -> None:
     )
 
     assert np.array_equal(pinned.to_numpy(), expected)
+
+
+def test_to_device_from_another_queue_requires_after() -> None:
+    gpu = Accelerator()
+    side = DeviceQueue(gpu)
+    on_side = Buffer(DType.int32, (4,), stream=side)
+    with pytest.raises(ValueError, match="after"):
+        on_side.to(gpu)
+    with pytest.raises(ValueError, match="after"):
+        on_side.to([gpu])
+
+    view = on_side.to(gpu, after=side.record_event())
+    assert view.stream == gpu.default_queue
+    assert view._data_ptr() == on_side._data_ptr()
 
 
 def test_batch_inplace_copy_same_device_parity() -> None:

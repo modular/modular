@@ -38,6 +38,7 @@ from max.pipelines.speculative.utils import (
     _SpeculativeDecodingMetrics,
 )
 from max.serve.queue import MAXPullQueue, drain_queue
+from max.serve.telemetry.common import _batch_id_ctx
 from max.serve.telemetry.metrics import METRICS
 from max.support.human_readable_formatter import (
     to_human_readable_bytes,
@@ -1427,6 +1428,7 @@ class SchedulerLogger:
         batch_video_metrics: VideoEncoderMetrics | None = None,
         overlap_active: bool = False,
         completed_batch_stats: CompletedBatchStats | None = None,
+        batch_id: int | None = None,
     ) -> None:
         """Periodically logs batch-level metrics to console.
 
@@ -1456,6 +1458,7 @@ class SchedulerLogger:
                 and termination telemetry and to render the log line's
                 ``Completed`` clause. ``None`` when no batch completed this
                 iteration or overlap is inactive.
+            batch_id: The ID of the pass the line reports, or None.
 
         Returns:
             None
@@ -1498,6 +1501,14 @@ class SchedulerLogger:
         if self.log_interval_s < time_since_last_log:
             # Reset the time of the last log.
             self.time_of_last_log = now
+            if batch_id is not None:
+                # Not ``extra``: the OTLP log handler exports extras.
+                batch_id_token = _batch_id_ctx.set(batch_id)
+                logger.info(
+                    metrics.pretty_format(), extra=metrics.to_log_extra()
+                )
+                _batch_id_ctx.reset(batch_id_token)
+                return
             logger.info(metrics.pretty_format(), extra=metrics.to_log_extra())
 
 

@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import isclose, isnan
+from std.memory.alloc import unsafe_alloc
 from std.utils.numerics import min_or_neg_inf
 from std.random import rand, random_float64, seed
 from std.sys import simd_width_of
@@ -122,9 +123,9 @@ def test_gpu_softmax_half[test_type: DType](ctx: DeviceContext) raises:
     var shape = IndexList[rank](3, 5, 515)
     var length = shape.flattened_length()
 
-    var in_host_ref_ptr = alloc[Scalar[ref_type]](length)
+    var in_host_ref_ptr = unsafe_alloc[Scalar[ref_type]](length)
     var in_device_ref_ptr = ctx.enqueue_create_buffer[ref_type](length)
-    var in_host_test_ptr = alloc[Scalar[test_type]](length)
+    var in_host_test_ptr = unsafe_alloc[Scalar[test_type]](length)
     var in_device_test_ptr = ctx.enqueue_create_buffer[test_type](length)
     var in_device_ref = TileTensor(
         in_device_ref_ptr.unsafe_ptr(), row_major(Coord(shape))
@@ -133,9 +134,9 @@ def test_gpu_softmax_half[test_type: DType](ctx: DeviceContext) raises:
         in_device_test_ptr.unsafe_ptr(), row_major(Coord(shape))
     )
 
-    var out_host_ref_ptr = alloc[Scalar[ref_type]](length)
+    var out_host_ref_ptr = unsafe_alloc[Scalar[ref_type]](length)
     var out_device_ref_ptr = ctx.enqueue_create_buffer[ref_type](length)
-    var out_host_test_ptr = alloc[Scalar[test_type]](length)
+    var out_host_test_ptr = unsafe_alloc[Scalar[test_type]](length)
     var out_device_test_ptr = ctx.enqueue_create_buffer[test_type](length)
 
     # first fill BF16 pointer with random values, then cast to FP32 to
@@ -219,16 +220,16 @@ def test_gpu_softmax_warp_short_axis[
     var length = shape.flattened_length()
     var num_rows = length // row_size
 
-    var in_host_test_ptr = alloc[Scalar[test_type]](length)
+    var in_host_test_ptr = unsafe_alloc[Scalar[test_type]](length)
     var in_device_test_ptr = ctx.enqueue_create_buffer[test_type](length)
     var in_host_test = TileTensor(in_host_test_ptr, row_major(Coord(shape)))
     var in_device_test = TileTensor(
         in_device_test_ptr.unsafe_ptr(), row_major(Coord(shape))
     )
 
-    var out_host_test_ptr = alloc[Scalar[test_type]](length)
+    var out_host_test_ptr = unsafe_alloc[Scalar[test_type]](length)
     var out_device_test_ptr = ctx.enqueue_create_buffer[test_type](length)
-    var out_ref_ptr = alloc[Scalar[ref_type]](length)
+    var out_ref_ptr = unsafe_alloc[Scalar[ref_type]](length)
 
     for i in range(length):
         in_host_test_ptr[i] = (
@@ -286,9 +287,9 @@ def test_gpu_softmax_warp_short_axis[
             s += out_host_test_ptr[r * row_size + j].cast[ref_type]()
         assert_almost_equal(s, Scalar[ref_type](1), atol=1e-2)
 
-    in_host_test_ptr.free()
-    out_host_test_ptr.free()
-    out_ref_ptr.free()
+    in_host_test_ptr.unsafe_free()
+    out_host_test_ptr.unsafe_free()
+    out_ref_ptr.unsafe_free()
     _ = in_device_test_ptr
     _ = out_device_test_ptr
 
@@ -424,7 +425,7 @@ def test_gpu_softmax_masked_split[test_type: DType](ctx: DeviceContext) raises:
     var num_rows = length // row_size
 
     var neg_inf = min_or_neg_inf[test_type]()
-    var in_host_ptr = alloc[Scalar[test_type]](length)
+    var in_host_ptr = unsafe_alloc[Scalar[test_type]](length)
     var in_device_ptr = ctx.enqueue_create_buffer[test_type](length)
     var in_host = TileTensor(in_host_ptr, row_major(Coord(shape)))
     var in_device = TileTensor(
@@ -448,9 +449,9 @@ def test_gpu_softmax_masked_split[test_type: DType](ctx: DeviceContext) raises:
 
     ctx.enqueue_copy(in_device_ptr, in_host_ptr)
 
-    var out_host_ptr = alloc[Scalar[test_type]](length)
+    var out_host_ptr = unsafe_alloc[Scalar[test_type]](length)
     var out_device_ptr = ctx.enqueue_create_buffer[test_type](length)
-    var out_ref_ptr = alloc[Scalar[ref_type]](length)
+    var out_ref_ptr = unsafe_alloc[Scalar[ref_type]](length)
 
     def input_fn_device[
         _simd_width: Int
@@ -503,9 +504,9 @@ def test_gpu_softmax_masked_split[test_type: DType](ctx: DeviceContext) raises:
             s += out_host_ptr[r * row_size + j].cast[ref_type]()
         assert_almost_equal(s, Scalar[ref_type](1), atol=1e-2)
 
-    in_host_ptr.free()
-    out_host_ptr.free()
-    out_ref_ptr.free()
+    in_host_ptr.unsafe_free()
+    out_host_ptr.unsafe_free()
+    out_ref_ptr.unsafe_free()
     _ = in_device_ptr
     _ = out_device_ptr
     _ = in_device

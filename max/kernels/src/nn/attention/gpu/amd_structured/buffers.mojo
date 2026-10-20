@@ -605,12 +605,12 @@ struct PRegisterBuffer[
                     block_base.unsafe_offset(m_off).unsafe_offset(
                         Int(lid) * Self.output_frag_size
                     )
-                ).load[width=Self.output_frag_size]()
+                ).unsafe_load[width=Self.output_frag_size]()
                 var hi = (
                     block_base.unsafe_offset(m_off)
                     .unsafe_offset(warp_stride)
                     .unsafe_offset(Int(lid) * Self.output_frag_size)
-                ).load[width=Self.output_frag_size]()
+                ).unsafe_load[width=Self.output_frag_size]()
                 var joined = lo.join(hi)
                 result_vec[m_mma, 0] = rebind[type_of(result_vec[m_mma, 0])](
                     joined
@@ -655,7 +655,7 @@ struct PRegisterBuffer[
                     var swizzled_group = swizzle(group_idx)
                     var data = smem_base.unsafe_offset(
                         swizzled_group * simd_w
-                    ).load[width=simd_w]()
+                    ).unsafe_load[width=simd_w]()
                     result_vec[m, 0] = rebind[type_of(result_vec[m, 0])](data)
                 else:
                     var joined = lo_dist[0, 0].join(hi_dist[0, 0])
@@ -929,7 +929,7 @@ struct PRegisterBuffer[
             var block_base = smem_base.unsafe_offset(byte_offset)
             var elem_off = mma_tile_off + lane_off_in_mma
             var swizzled = swizzle(elem_off // frag_w) * frag_w
-            (block_base.unsafe_offset(swizzled)).store(reg_val)
+            (block_base.unsafe_offset(swizzled)).unsafe_store(reg_val)
         else:
             dst_frag.store[alignment=align_of[Self.dtype]()](
                 Coord(Idx[0], Idx[0], Idx[0]), reg_val
@@ -1008,7 +1008,9 @@ struct PRegisterBuffer[
                     # Reg layout is m_mma INNER (matches `mma`'s c_idx).
                     comptime reg_idx = n_mma * Self.num_m_mmas + m_mma
                     var p_reg_ptr = p_reg_vec.tile[1, 1](reg_idx, 0).ptr
-                    var loaded = p_reg_ptr.load[width=Self.output_frag_size]()
+                    var loaded = p_reg_ptr.unsafe_load[
+                        width=Self.output_frag_size
+                    ]()
                     var reg16: SIMD[Self.dtype, Self.output_frag_size]
                     comptime if Self.raw_fp8_cast and Self.dtype.is_float8():
                         # Raw cvt path: softmax output is bounded in (0, 1],
@@ -1027,7 +1029,7 @@ struct PRegisterBuffer[
                         block_base.unsafe_offset(warp_off).unsafe_offset(
                             Int(lid) * Self.output_frag_size
                         )
-                    ).store(reg16)
+                    ).unsafe_store(reg16)
             return
 
         comptime if Self.WN < Self.BK:
@@ -1075,7 +1077,9 @@ struct PRegisterBuffer[
                             + c * frag_w
                             + n_mma * (simd_w // Self.num_n_mmas)
                         )
-                        (block_base.unsafe_offset(elem_off)).store(reg_val)
+                        (block_base.unsafe_offset(elem_off)).unsafe_store(
+                            reg_val
+                        )
             else:
                 comptime for m_mma in range(Self.num_m_mmas):
                     comptime for n_mma in range(Self.num_n_mmas):
@@ -1130,7 +1134,7 @@ struct PRegisterBuffer[
                         var swizzled_group = Self.p_swizzle.value()(group_idx)
                         (
                             block_base.unsafe_offset(swizzled_group * group_w)
-                        ).store[width=group_w](joined)
+                        ).unsafe_store[width=group_w](joined)
             else:
                 comptime for i in range(Self.WN // Self.BK):
                     var block_idx_ = Int(i) + warp_col * (Self.WN // Self.BK)

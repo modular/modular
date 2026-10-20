@@ -249,19 +249,23 @@ struct FromImportDecorators {
   bool docInline = false;
 };
 
+static OpBuilder getScopeEndBuilder(ASTDecl &decl) {
+  if (auto *functionDecl = dyn_cast<DefASTDecl>(&decl))
+    return OpBuilder::atBlockEnd(functionDecl->getOp().getBody());
+  return cast<OpASTDecl>(decl).getDeclEndBuilder();
+}
+
 struct StmtParser : public ParserBase {
   StmtParser(Lexer &lexer, ASTDecl &curDeclScope)
       : ParserBase(curDeclScope.getShared(), lexer), parentDecl(curDeclScope),
-        curDeclScope(&curDeclScope),
-        builder(cast<OpASTDecl>(curDeclScope).getDeclEndBuilder()) {
+        curDeclScope(&curDeclScope), builder(getScopeEndBuilder(curDeclScope)) {
     initializeBuilderForFunctions(curDeclScope, builder);
   }
   StmtParser(Lexer &lexer, IREmitter &emitter)
       : ParserBase(emitter.shared, lexer), parentDecl(emitter.getDeclScope()),
         curDeclScope(&emitter.getDeclScope()),
-        builder(emitter.builder
-                    ? emitter.builder.value()
-                    : cast<OpASTDecl>(curDeclScope)->getDeclEndBuilder()) {
+        builder(emitter.builder ? emitter.builder.value()
+                                : getScopeEndBuilder(*curDeclScope)) {
     if (!emitter.builder)
       initializeBuilderForFunctions(emitter.getDeclScope(), builder);
   }
@@ -3326,19 +3330,20 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
   //     with EXPRESSION as TARGET:
   //       SUITE
   // Into:
-  //     contextMgr = EXPRESSION
+  //     ref/var contextMgr = EXPRESSION
   //     TARGET = contextMgr.__enter__()
+  //     exc = False
   //     try {
   //       SUITE
   //     } except(errorVal : Error) {
-  //       hlcf.if (contextMgr.__exit__(errorVal)) {
-  //         hlcf.yield
+  //       exc = True
+  //       excValue = errorVal^
+  //     } finally {
+  //       if exc {
+  //         if not contextMgr.__exit__(excValue) { raise excValue^ }
   //       } else {
-  //         raise errorVal
+  //         contextMgr.__exit__()
   //       }
-  //       try.yield
-  //     } else {
-  //       contextMgr.__exit__()
   //     }
   // We elide the try and except logic when in a context that doesn't support
   // raising an error (like a non-raising fn).
@@ -3348,13 +3353,36 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
   if (parseExpression(contextExp))
     return failure();
 
-  // Emit the context manager expression into a var with an inferred type.
-  VarDeclOp contextMgrDecl = getEmitter().emitVarDecl(
-      "$CONTEXTMGR", UnresolvedType::get(getContext()),
-      shared.translateLocation(contextExp->getLoc()), VarDeclKind::Synthesized);
-  ExprDest contextMgrDest(contextMgrDecl, EC_WithContextMgr);
-  if (!getEmitter().emitExpr(contextExp, contextMgrDest))
+  // For an RValue we want to create a new variable, otherwise we want to
+  // reuse the original borrowed variable instead of creating new bindings.
+  CValue contextCVal =
+      getEmitter().emitExprCValue(contextExp, EC_WithContextMgr);
+  if (!contextCVal)
     return failure();
+
+  ASTType contextRVType = contextCVal.getRValueType();
+
+  VarDeclOp contextMgrDecl;
+  if (!contextCVal.isMValue() || contextCVal.getIfRValue()) {
+    MRValue owned =
+        getEmitter().emitMRValue({contextCVal, contextExp}, EC_WithContextMgr);
+    if (!owned)
+      return failure();
+
+    contextMgrDecl = owned.getDefiningOp<VarDeclOp>();
+    if (!contextMgrDecl || !contextMgrDecl.isSynthetic()) {
+      contextMgrDecl = getEmitter().emitVarDecl(
+          "$CONTEXTMGR", contextRVType,
+          shared.translateLocation(contextExp->getLoc()),
+          VarDeclKind::Synthesized);
+      ExprDest contextMgrDest(MLValue(contextMgrDecl), EC_WithContextMgr);
+      if (!getEmitter().emitRValue({owned, contextExp}, contextMgrDest))
+        return failure();
+    }
+  }
+
+  AnyValue contextVal = contextMgrDecl ? AnyValue(MLValue(contextMgrDecl))
+                                       : AnyValue(contextCVal);
 
   // Determine if the context manager has an __exit__ method.  If not, that is
   // fine, we silently just don't call it.  This mode of supporting context
@@ -3372,7 +3400,6 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
   // The latter works because of Mojo's strong early-destruction guarantees and
   // lack of frame-objects-capturing-variables problems, but the former is more
   // familiar to Pythonistas.
-  ASTType contextRVType = MLValue(contextMgrDecl).getRValueType();
   bool hasExitMethod =
       shared.typeHasMember(contextRVType, "__exit__", contextExp->getLoc());
 
@@ -3388,12 +3415,6 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
     if (parseExpression(targetExpr, curIndent, Precedence::kVarRefPat))
       return failure();
   }
-
-  // We are about to generate the call to __enter__ but need to decide how to
-  // pass the context expression, either as an LValue referring to the bound
-  // variable, or as a transferred RValue if it takes it owned (enabling some
-  // advanced use cases with unique context managers).
-  AnyValue contextVal = MLValue(contextMgrDecl);
 
   // If there is an explicit target specified, use it.
   ExprDest enterDest(EC_WithContextMgr);
@@ -3413,22 +3434,21 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
   auto enterEmitter = getEmitter();
   if (PValue enterMethod = OverloadSet::lookupAndResolve(
           contextRVType, "__enter__", enterOperands, enterEmitter)) {
-    // If there is no exit method, we can pass the argument as an RValue so the
-    // enter method can consume the value... unless __enter__ takes self 'mut'.
+    // If the with statement owns the context manager and there is no exit
+    // method, we can pass the argument as an RValue so the enter method can
+    // consume the value... unless __enter__ takes self 'mut'.
     auto sig = FnOrFnLiteralTypeGeneratorType::tryGet(enterMethod.getType());
     if (sig.has_value() && !sig->getArgConventions().empty()) {
       auto firstArgConvention = sig->getArgConventions()[0];
-      if (firstArgConvention != ArgConvention::Mut && !hasExitMethod)
-        contextVal = MRValue(contextMgrDecl);
+      assert(firstArgConvention != ArgConvention::OwnedReg &&
+             "not used by the mojo parser");
+      bool ownedSelf = firstArgConvention == ArgConvention::OwnedMem ||
+                       firstArgConvention == ArgConvention::DeinitMem;
 
       // One error that people hit is defining a context manager with both an
       // owned enter method and an exit method.  This will generate a terrible
       // error message in CheckLifetimes, so cut that off here.
-      assert(firstArgConvention != ArgConvention::OwnedReg &&
-             "not used by the mojo parser");
-      if ((firstArgConvention == ArgConvention::OwnedMem ||
-           firstArgConvention == ArgConvention::DeinitMem) &&
-          hasExitMethod) {
+      if (ownedSelf && hasExitMethod) {
         auto diag =
             emitError(contextExp->getLoc(), "context manager of type ")
             << contextRVType
@@ -3439,11 +3459,12 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
         if (ASTDecl *contextDecl = contextRVType.getDecl(shared))
           diag.attachNote(contextDecl->getLoc())
               << contextRVType << " declared here";
-
-        // Make the emission work even if the type isn't copyable.
-        contextVal = MRValue(contextMgrDecl);
       }
-      enterOperands[0].ir = contextVal;
+
+      if (contextMgrDecl &&
+          (ownedSelf ||
+           (firstArgConvention != ArgConvention::Mut && !hasExitMethod)))
+        enterOperands[0].ir = MRValue(contextMgrDecl);
     }
   }
 
@@ -3476,27 +3497,33 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
   builder.createBlock(&tryOp.getTryRegion());
 
   // Check to see if we have to emit a conditional finally because there is an
-  // __exit__ method that accepts an error.  PEP343 states that the general
-  // 'with' statement corresponds to:
+  // __exit__ method that accepts an error.  We emit:
   //
-  //   contextMgr = EXPRESSION
+  //   ref/var contextMgr = EXPRESSION
   //   TARGET = contextMgr.__enter__()
-  //   exc = True
+  //   exc = False
+  //   var excValue: ErrorType
   //   try:
   //     try:
   //       SUITE
   //     except e:
-  //       exc = False
-  //       if not contextMgr.__exit__(e):
-  //         raise e
+  //       exc = True
+  //       excValue = e^
   //   finally:
   //     if exc:
+  //       if not contextMgr.__exit__(excValue):
+  //         raise excValue^
+  //     else:
   //       contextMgr.__exit__()
-  // If the context manager has no __exit__ taking an error, then we know the
-  // exit is unconditional.
+  //
+  // Unlike PEP343, both __exit__ calls are in the finally region so that
+  // __exit__ may take 'var self'.  If the context manager has no __exit__
+  // taking an error, then we know the exit is unconditional.
   Value excVar;
+  VarDeclOp excValueDecl;
   TryOp nestedTryOp;
   VarDeclOp nestedErrDecl;
+  PValue conditionalExit;
   if (inExceptRegion && hasExitMethod) {
     CallOperands exitCallOperands(CallSyntax::kMethodCall, contextExp,
                                   EC_WithExitResult);
@@ -3510,25 +3537,10 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
     exitCallOperands.add({PValue(UnknownAttr::get(wildcardType)), contextExp});
 
     IREmitter exitEmitter = getEmitter();
-    PValue conditionalExit = OverloadSet::lookupAndResolve(
+    conditionalExit = OverloadSet::lookupAndResolve(
         contextRVType, "__exit__", exitCallOperands, exitEmitter);
 
     if (conditionalExit) {
-      // Insert the flag ahead of our try and initialize it to 'True'.
-      OpBuilder::InsertPoint ip = builder.saveInsertionPoint();
-      builder.setInsertionPoint(tryOp);
-
-      auto boolType = SIMDType::getScalarBoolType(builder.getContext());
-      excVar = getEmitter().emitVarDecl("__with_exc__", boolType, loc,
-                                        VarDeclKind::Synthesized);
-      RefStoreOp::create(
-          builder, loc,
-          ParamConstantOp::create(
-              builder, loc,
-              SIMDAttr::getScalarBool(builder.getContext(), true)),
-          excVar);
-      builder.restoreInsertionPoint(ip);
-
       // If the __exit__ method accepts a concrete error type, impose that on
       // the error VarDecl so that throws within the region will conform to it.
       // If it is something generic, then allow the try to resolve it, and the
@@ -3544,6 +3556,26 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
       // to the wildcard type.  Just leave it as Unresolved if so.
       if (!sugarIsa<NameLookupArgWildcardType>(argType))
         errorType = argType;
+
+      // Insert the flag and the caught error stash ahead of our try.
+      OpBuilder::InsertPoint ip = builder.saveInsertionPoint();
+      builder.setInsertionPoint(tryOp);
+
+      auto boolType = SIMDType::getScalarBoolType(builder.getContext());
+      excVar = getEmitter().emitVarDecl("__with_exc__", boolType, loc,
+                                        VarDeclKind::Synthesized);
+
+      auto falseValue = SIMDAttr::getScalarBool(builder.getContext(), false);
+      auto falseParam = ParamConstantOp::create(builder, loc, falseValue);
+      RefStoreOp::create(builder, loc, falseParam, excVar);
+
+      // The finally region is cloned onto every exit of the try, so we must
+      // manually mark the error value initialized/consumed for CheckLifetimes
+      // not to error.
+      excValueDecl = getEmitter().emitVarDecl("__with_exc_value__", errorType,
+                                              loc, VarDeclKind::Synthesized);
+      OwnershipMarkInitializedOp::create(builder, loc, excValueDecl);
+      builder.restoreInsertionPoint(ip);
 
       // Generate the nested try. Stub the 'else' and 'finally' regions.
       nestedErrDecl = getEmitter().emitVarDecl("__inner_error__", errorType,
@@ -3595,6 +3627,9 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
             shared.lookupBuiltinType("Error", getParentDecl(), smLoc))
       errorVarDecl.changeElementType(errorType);
   }
+  if (excValueDecl &&
+      isa<UnresolvedType>(excValueDecl.getType().getElementType()))
+    excValueDecl.changeElementType(nestedErrDecl.getType().getElementType());
 
   // This emits the call to the 'contextMgr.__exit__()' methods on the
   // context managers in the normal path.  If the type has no __exit__ method,
@@ -3605,6 +3640,21 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
   //     SUITE
   //   finally:
   //     lit.ownership.use(TARGET)
+  //
+  // Each __exit__ call is the last use of the context manager on its path.  The
+  // exit method may take any of "ref", "mut", or "var".  If it is "var", we
+  // pass in an RValue for it so it can consume the context manager.
+  auto getExitSelf = [&](PValue exitMethod) -> AnyValue {
+    if (!contextMgrDecl || !exitMethod)
+      return contextVal;
+    auto signature =
+        FnOrFnLiteralTypeGeneratorType::tryGet(exitMethod.getType());
+    if (signature.has_value() && !signature->getArgConventions().empty() &&
+        signature->getArgConventions()[0] != ArgConvention::Mut)
+      return MRValue(contextMgrDecl);
+    return contextVal;
+  };
+
   auto emitNormalExitLogic = [&]() {
     // If the target value has no __exit__ method, we need it to be
     // live all the way across the suite, so add an extra use so it isn't
@@ -3619,31 +3669,17 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
       return;
     }
 
-    // The normal exit logic could be the last use of the context manager.  The
-    // exit method may take any of "ref", "mut", or "var".  If it is "var", we
-    // pass in an RValue for it so it can consume the context manager.
-    AnyValue contextVal = MLValue(contextMgrDecl);
     auto exitEmitter = getEmitter();
     CallOperands operands(CallSyntax::kMethodCall, contextExp,
                           EC_WithExitResult);
     operands.addSelf({contextVal, contextExp});
-    if (PValue exitMethod = OverloadSet::lookupAndResolve(
-            contextRVType, "__exit__", operands, exitEmitter)) {
-      // Pass the argument as an RValue so the exit method can consume the
-      // value... unless it takes self 'mut'.
-      auto signature =
-          FnOrFnLiteralTypeGeneratorType::tryGet(exitMethod.getType());
-      if (signature.has_value() && !signature->getArgConventions().empty())
-        if (signature->getArgConventions()[0] != ArgConvention::Mut) {
-          contextVal = MRValue(contextMgrDecl);
-        }
-    }
+    AnyValue exitSelf = getExitSelf(OverloadSet::lookupAndResolve(
+        contextRVType, "__exit__", operands, exitEmitter));
 
     // Ok, emit the call the __exit__.
     (void)getEmitter().emitNamedMethodCall(
-        "__exit__",
-        CallOperands(CallSyntax::kMethodCall, contextExp, EC_WithExitResult,
-                     {{contextVal, contextExp}}));
+        "__exit__", CallOperands(CallSyntax::kMethodCall, contextExp,
+                                 EC_WithExitResult, {{exitSelf, contextExp}}));
   };
 
   // If the body of this try can throw, then the "except" block in it needs to
@@ -3680,7 +3716,7 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
 
   // If we're in a non-raising region (or have no __exit__ method), then we have
   // a simple pattern to emit:
-  //   contextMgr = EXPRESSION
+  //   ref/var contextMgr = EXPRESSION
   //   TARGET = contextMgr.__enter__()
   //   try:
   //     SUITE
@@ -3695,33 +3731,42 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
   }
 
   // Handle the case when we have a nested try due to an __exit__ method that
-  // takes an error.
+  // takes an error.  Its except region only records the error, the __exit__
+  // calls happen in the finally region:
+  //  except(%__inner_error__ : Error) {
+  //    __with_exc__ = True
+  //    __with_exc_value__ = %__inner_error__^
+  //  }
   if (nestedTryOp) {
-    // Set up the except region for the nested try.  Pseudo code:
-    //  except(%__inner_error__ : Error) {
-    //    %stop_rethrow = contextMgr.__exit__(%__inner_error__);
-    //    hlcf.if %stop_rethrow {
-    //      hlcf.yield
-    //    } else {
-    //      raise %inner_error
-    //    }
     builder.createBlock(&nestedTryOp.getExceptRegion());
 
-    // Set the flag to 'False'.
     RefStoreOp::create(
         builder, loc,
         ParamConstantOp::create(
-            builder, loc, SIMDAttr::getScalarBool(builder.getContext(), false)),
+            builder, loc, SIMDAttr::getScalarBool(builder.getContext(), true)),
         excVar);
 
-    // Pass the error value to the __exit__ method.
+    // Drop the placeholder initialization before moving the real error in.
+    OwnershipMarkConsumedOp::create(builder, loc, excValueDecl);
+    ExprDest stashDest(MLValue(excValueDecl), EC_RaiseValue);
+    getEmitter().emitResult(MRValue(nestedErrDecl), contextExp, stashDest);
+    TryYieldOp::create(builder, loc);
+  }
+
+  // Now that we have seen the body of the try, we can have inferred the thrown
+  // type, so we can emit the rethrow logic in except {}
+  emitExceptBody();
+
+  // Emit the call to __exit__ that takes the stashed error, re-raising the
+  // error if it returns false.
+  auto emitErrorExitLogic = [&]() {
     // TODO: this isn't using the same convention that Python does.  We support
     // overloading though and this is going to be way better for anything real
     // that wants to implement this. We can support both styles when we need to.
     CallOperands exitOperandList(CallSyntax::kMethodCall, contextExp,
                                  EC_WithExitResult,
-                                 {{MLValue(contextMgrDecl), contextExp},
-                                  {MBValue(nestedErrDecl), contextExp}});
+                                 {{getExitSelf(conditionalExit), contextExp},
+                                  {MBValue(excValueDecl), contextExp}});
     auto emitter = getEmitter();
     CValue exitResult =
         emitter.emitNamedMethodCall("__exit__", std::move(exitOperandList));
@@ -3729,10 +3774,10 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
         emitter.emitScalarBool({exitResult, contextExp}, EC_WithExitResult);
     SRValue exitI1Val =
         emitter.emitSRValue({exitI1RVal, contextExp}, EC_WithExitResult);
+    // On failure a diagnostic was emitted; keep the IR well formed.
     if (!exitI1Val)
-      // Fail, but non-fatal so return success to keep parsing.
-      return success();
-    // If __exit__ returns false, then re-raise the error.
+      return;
+
     HLCF::IfOp stopRethrowIf = HLCF::IfOp::create(
         *emitter.builder, loc, TypeRange{}, exitI1Val,
         [&]() -> LogicalResult {
@@ -3744,25 +3789,21 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
           // On false, we re-raise the error. Sync the statement builder so
           // getEmitter() emits into this else region.
           builder = *emitter.builder;
-          ExprDest dest(MLValue(errDecl), EC_RaiseValue);
+          MLValue raiseSlot = getEmitter().findNearestErrorSlot();
+          ExprDest dest(raiseSlot, EC_RaiseValue);
           // If the error type is unresolved, resolve it to whatever we
           // propagate.
-          if (isa<UnresolvedType>(errDecl.getType().getElementType()))
-            dest = ExprDest(errDecl, EC_RaiseValue);
-          getEmitter().emitResult(MRValue(nestedErrDecl), contextExp, dest);
+          if (isa<UnresolvedType>(raiseSlot.getRValueType()))
+            dest = ExprDest(cast<VarDeclOp>(raiseSlot.getDefiningOp()),
+                            EC_RaiseValue);
+          getEmitter().emitResult(MRValue(excValueDecl), contextExp, dest);
           LIT::RaiseOp::create(builder, loc);
           HLCF::YieldOp::create(builder, loc);
           return success();
         });
-    if (!stopRethrowIf)
-      return success();
-    builder.setInsertionPointAfter(stopRethrowIf);
-    TryYieldOp::create(builder, loc);
-  }
-
-  // Now that we have seen the body of the try, we can have inferred the thrown
-  // type, so we can emit the rethrow logic in except {}
-  emitExceptBody();
+    if (stopRethrowIf)
+      builder.setInsertionPointAfter(stopRethrowIf);
+  };
 
   // Emit the conditional call to __exit__.
   builder.createBlock(&tryOp.getFinallyRegion());
@@ -3772,20 +3813,22 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
       return success();
     }
 
-    // Only call the no-error __exit__ when the suite completed without an
-    // exception (exc flag still true).
     Value excFlag = RefLoadOp::create(builder, loc, excVar);
     auto emitter = getEmitter();
     HLCF::IfOp excIf = HLCF::IfOp::create(
         *emitter.builder, loc, TypeRange{}, excFlag,
         [&]() -> LogicalResult {
           builder = *emitter.builder;
-          emitNormalExitLogic();
+          emitErrorExitLogic();
           HLCF::YieldOp::create(builder, loc);
           return success();
         },
         [&]() -> LogicalResult {
-          HLCF::YieldOp::create(*emitter.builder, loc);
+          builder = *emitter.builder;
+          // No error was stashed on this path, drop the placeholder.
+          OwnershipMarkConsumedOp::create(builder, loc, excValueDecl);
+          emitNormalExitLogic();
+          HLCF::YieldOp::create(builder, loc);
           return success();
         });
     if (!excIf)

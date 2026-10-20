@@ -202,7 +202,7 @@ def _reducescatter_rmsnorm_kernel[
                 accum += (
                     ptrs[gpu_idx]
                     .unsafe_address_space_cast[_target_address_space]()
-                    .load[
+                    .unsafe_load[
                         width=simd_width,
                         alignment=align,
                         invariant=True,

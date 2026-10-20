@@ -1196,7 +1196,7 @@ def multi_stage_store_C[
                     else:
                         c_ptr.unsafe_offset(Int(n) * cN).unsafe_offset(
                             Int(m)
-                        ).store[alignment=alignment](val_vec)
+                        ).unsafe_store[alignment=alignment](val_vec)
 
         comptime if stage > 0 or stage == num_stages - 1:
             # Guard the tma read from shared memory is done.
@@ -1279,7 +1279,7 @@ def zero_output[
                     ),
                     zero_vec,
                 )
-            (ptr.unsafe_offset(thread_idx.x * simd_size)).store[
+            (ptr.unsafe_offset(thread_idx.x * simd_size)).unsafe_store[
                 alignment=alignment
             ](val)
             ptr = ptr.unsafe_offset(c_stride)
@@ -1480,11 +1480,11 @@ def blackwell_tma_umma_warp_specialized_kernel[
         EpilogueFnType: Type of `epilogue_fn`.
         has_epilogue_fn: Whether `epilogue_fn` stores C in place of the TMA
             store (defaults to False). Launch with
-            `host_arg=epilogue_fn`.
+            `epilogue_fn` as the first `host_args` element.
         ComputeFnType: Type of `compute_fn`.
         has_compute_fn: Whether `compute_fn` maps C in registers ahead of
             the TMA store (defaults to False). Launch with
-            `host_arg2=compute_fn`.
+            `compute_fn` as the second `host_args` element.
         a_plane_splits: Per-plane split sizes for fused LoRA QKV A-plane row
             offsetting; `(0, 0)` disables it (defaults to `(0, 0)`).
         transpose_c: Whether to transpose the C output tile in shared memory
@@ -2393,8 +2393,7 @@ def _grouped_matmul_sm100_persistent[
         mnk,
         a_gmem,
         b_gmem,
-        host_arg=epilogue_fn,
-        host_arg2=compute_fn,
+        host_args=(epilogue_fn, compute_fn),
         grid_dim=grid_dim,
         # 1 TMA, 1 MMA, 4 EPILOGUE warps
         block_dim=(32 * 6),

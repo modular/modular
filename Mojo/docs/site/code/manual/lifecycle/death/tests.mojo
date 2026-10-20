@@ -348,7 +348,7 @@ struct Owner(Movable):
     var storage: Allocation[Int64]
 
     def __init__(out self):
-        self.storage = alloc(Layout[Int64](count=1))
+        self.storage = alloc(Layout[Int64](length=1))
         self.storage.unsafe_span().fill(7)
 
     def __deinit__(deinit self):

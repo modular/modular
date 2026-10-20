@@ -6,6 +6,7 @@ load(
     "modular_py_test",
     "requirement",
 )
+load("//bazel:config.bzl", "REQUIRES_INTERNAL_KERNELS")
 
 package(default_visibility = [
     "//:__pkg__",
@@ -51,6 +52,8 @@ modular_py_test(
     name = "test_memory_planner",
     srcs = ["test_memory_planner.py"],
     tags = ["skip-external-ci"],
+    # Needs mega_ffn.ep_fused_plan (fused EP MoE), registered only by the closed-source kernels.
+    target_compatible_with = REQUIRES_INTERNAL_KERNELS,
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",

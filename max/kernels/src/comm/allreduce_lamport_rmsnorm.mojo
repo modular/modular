@@ -117,10 +117,12 @@ def _allreduce_lamport_rmsnorm_kernel[
 
     # Generation geometry (read the device-resident counter once per call).
     var state = rank_sigs[my_rank][].lamport_state_ptr()
-    var flag = Int(state.load[width=1, volatile=True](Lamport.STATE_FLAG))
+    var flag = Int(
+        state.unsafe_load[width=1, volatile=True](Lamport.STATE_FLAG)
+    )
     # Previous call's written extent in dtype-independent 16-byte packs.
     var clear_packs = Int(
-        state.load[width=1, volatile=True](Lamport.STATE_PREV_PACKS)
+        state.unsafe_load[width=1, volatile=True](Lamport.STATE_PREV_PACKS)
     )
     comptime gen_stride_packs = ngpus * Lamport.MAX_PACKS
     var data_gen_off = LamportGeneration.data_index(flag) * gen_stride_packs
@@ -129,7 +131,7 @@ def _allreduce_lamport_rmsnorm_kernel[
     # Preload this thread's gamma columns once (reused across all rows).
     var gamma_vec = SIMD[accum_type, atomic_width](0)
     if is_valid:
-        gamma_vec = gamma.load[width=atomic_width, alignment=alignment](
+        gamma_vec = gamma.unsafe_load[width=atomic_width, alignment=alignment](
             col
         ).cast[accum_type]()
 
@@ -142,7 +144,7 @@ def _allreduce_lamport_rmsnorm_kernel[
             # (a) Local input pack -> producer-sanitize; kept in-register as the
             # reduction seed, so this rank only touches the ngpus-1 remote slots.
             var local = remove_neg_zero[dtype, atomic_width](
-                src.load[width=atomic_width, alignment=alignment](base)
+                src.unsafe_load[width=atomic_width, alignment=alignment](base)
             )
 
             # (b) Push the sanitized pack into each PEER's slot (skip self).
@@ -150,7 +152,7 @@ def _allreduce_lamport_rmsnorm_kernel[
                 data_gen_off + my_rank * Lamport.MAX_PACKS + global_pack
             )
             comptime for i in range(1, ngpus):
-                peer_regions[i].store[
+                peer_regions[i].unsafe_store[
                     width=atomic_width, alignment=alignment, volatile=True
                 ](push_off * atomic_width, local)
 
@@ -167,7 +169,7 @@ def _allreduce_lamport_rmsnorm_kernel[
                     var slot_off = (
                         data_gen_off + peer * Lamport.MAX_PACKS + global_pack
                     )
-                    var p = my_region.load[
+                    var p = my_region.unsafe_load[
                         width=atomic_width, alignment=alignment, volatile=True
                     ](slot_off * atomic_width)
                     peer_packs[i] = p
@@ -189,7 +191,7 @@ def _allreduce_lamport_rmsnorm_kernel[
         )
         if is_valid:
             var normalized = (accum * norm) * gamma_vec
-            result.store[width=atomic_width, alignment=alignment](
+            result.unsafe_store[width=atomic_width, alignment=alignment](
                 base, normalized.cast[dtype]()
             )
 
@@ -201,7 +203,7 @@ def _allreduce_lamport_rmsnorm_kernel[
                 var clr_off = (
                     clear_gen_off + peer * Lamport.MAX_PACKS + global_pack
                 )
-                my_region.store[
+                my_region.unsafe_store[
                     width=atomic_width, alignment=alignment, volatile=True
                 ](clr_off * atomic_width, sentinel)
 
@@ -225,7 +227,7 @@ def _allreduce_lamport_rmsnorm_kernel[
         comptime for i in range(1, ngpus):
             var peer = circular_add[ngpus](my_rank, i)
             var clr_off = clear_gen_off + peer * Lamport.MAX_PACKS + cp
-            my_region.store[
+            my_region.unsafe_store[
                 width=atomic_width, alignment=alignment, volatile=True
             ](clr_off * atomic_width, sentinel)
 
@@ -237,15 +239,15 @@ def _allreduce_lamport_rmsnorm_kernel[
             state.unsafe_offset(Lamport.STATE_ARRIVAL), UInt32(1)
         )
         if Int(arrived) == grid_dim.x - 1:
-            state.unsafe_offset(Lamport.STATE_FLAG).store[volatile=True](
+            state.unsafe_offset(Lamport.STATE_FLAG).unsafe_store[volatile=True](
                 UInt32(LamportGeneration.advance(flag))
             )
-            (state.unsafe_offset(Lamport.STATE_PREV_PACKS)).store[
+            (state.unsafe_offset(Lamport.STATE_PREV_PACKS)).unsafe_store[
                 volatile=True
             ](UInt32(cur_packs))
-            (state.unsafe_offset(Lamport.STATE_ARRIVAL)).store[volatile=True](
-                UInt32(0)
-            )
+            (state.unsafe_offset(Lamport.STATE_ARRIVAL)).unsafe_store[
+                volatile=True
+            ](UInt32(0))
 
 
 def lamport_allreduce_rmsnorm[

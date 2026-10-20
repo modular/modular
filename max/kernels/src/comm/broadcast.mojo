@@ -353,10 +353,14 @@ def broadcast_pull_2stage_kernel[
         ):
             var data = root_input_ptr.unsafe_address_space_cast[
                 _target_address_space
-            ]().load[width=simd_width, alignment=alignment, invariant=True](idx)
-            my_payload.unsafe_address_space_cast[_target_address_space]().store[
-                alignment=alignment
-            ](idx - my_chunk_start, data)
+            ]().unsafe_load[
+                width=simd_width, alignment=alignment, invariant=True
+            ](
+                idx
+            )
+            my_payload.unsafe_address_space_cast[
+                _target_address_space
+            ]().unsafe_store[alignment=alignment](idx - my_chunk_start, data)
             result_tt.store[alignment=alignment]((idx,), data)
 
         # Handle tail elements (spread across threads)
@@ -364,10 +368,10 @@ def broadcast_pull_2stage_kernel[
         if tail_idx < my_chunk_end:
             var data = root_input_ptr.unsafe_address_space_cast[
                 _target_address_space
-            ]().load[width=1, invariant=True](tail_idx)
-            my_payload.unsafe_address_space_cast[_target_address_space]().store(
-                tail_idx - my_chunk_start, data
-            )
+            ]().unsafe_load[width=1, invariant=True](tail_idx)
+            my_payload.unsafe_address_space_cast[
+                _target_address_space
+            ]().unsafe_store(tail_idx - my_chunk_start, data)
             result_tt.store((tail_idx,), data)
 
         # Barrier with memory fence to ensure scatter is complete
@@ -407,7 +411,9 @@ def broadcast_pull_2stage_kernel[
                     if idx < chunk_size:
                         var data = src_payload.unsafe_address_space_cast[
                             _target_address_space
-                        ]().load[width=simd_width, alignment=alignment](idx)
+                        ]().unsafe_load[width=simd_width, alignment=alignment](
+                            idx
+                        )
                         # Write to final position in result
                         result_tt.store[alignment=alignment](
                             (chunk_start + idx,), data
@@ -425,7 +431,7 @@ def broadcast_pull_2stage_kernel[
                 for i in range(last_aligned_size, last_chunk_size):
                     var data = last_payload.unsafe_address_space_cast[
                         _target_address_space
-                    ]().load(i)
+                    ]().unsafe_load(i)
                     result_tt.store((last_chunk_start + i,), data)
 
         # Root: copy all elements from input to result (after Stage 2)
@@ -440,7 +446,9 @@ def broadcast_pull_2stage_kernel[
                 var elem_idx = idx * simd_width
                 var data = root_input_ptr.unsafe_address_space_cast[
                     _target_address_space
-                ]().load[width=simd_width, alignment=alignment, invariant=True](
+                ]().unsafe_load[
+                    width=simd_width, alignment=alignment, invariant=True
+                ](
                     elem_idx
                 )
                 result_tt.store[alignment=alignment]((elem_idx,), data)
@@ -450,7 +458,7 @@ def broadcast_pull_2stage_kernel[
             if root_tail_idx < _num_elements:
                 var data = root_input_ptr.unsafe_address_space_cast[
                     _target_address_space
-                ]().load[width=1, invariant=True](root_tail_idx)
+                ]().unsafe_load[width=1, invariant=True](root_tail_idx)
                 result_tt.store((root_tail_idx,), data)
 
         # Final barrier to ensure all GPUs complete before returning

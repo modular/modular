@@ -82,9 +82,9 @@ def _kpad_filter_frsc[
     var f = tid // _K_padded
     var k = tid - f * _K_padded
     if k >= _K_real:
-        dst_ptr.store(tid, Scalar[dtype](0))
+        dst_ptr.unsafe_store(tid, Scalar[dtype](0))
         return
-    dst_ptr.store(
+    dst_ptr.unsafe_store(
         tid,
         rebind[Scalar[dtype]](src.reshape(row_major(_F, _K_real)).load((f, k))),
     )

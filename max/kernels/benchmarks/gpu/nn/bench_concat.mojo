@@ -260,7 +260,7 @@ def bench_concat_inner_most_single_dim[
                 ctx.enqueue_function[kernel](
                     output.as_unsafe_any_origin(),
                     inputs,
-                    host_arg=_no_epilogue,
+                    host_args=(_no_epilogue,),
                     grid_dim=(ceildiv(n_rows, B_SIZE)),
                     block_dim=(B_SIZE),
                 )
@@ -302,7 +302,7 @@ def bench_concat_inner_most_single_dim[
                 ctx.enqueue_function[kernel](
                     output.as_unsafe_any_origin(),
                     inputs,
-                    host_arg=_no_epilogue,
+                    host_args=(_no_epilogue,),
                     grid_dim=(ceildiv(n_rows, B_SIZE)),
                     block_dim=(B_SIZE),
                 )

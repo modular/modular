@@ -41,7 +41,7 @@ from max.nn.kv_cache import (
     PagedCacheValues,
 )
 from max.nn.layer import LayerList, MissingLayer, Module
-from max.nn.linear import MLP, ColumnParallelLinear, FusedMLP
+from max.nn.linear import MLP, ColumnParallelLinear
 from max.nn.moe import GatedActivation, MoE, MoEQuantized
 from max.nn.rotary_embedding import Llama3RotaryEmbedding
 from max.nn.transformer import ReturnHiddenStates
@@ -60,11 +60,10 @@ from max.pipelines.lib.vlm_utils import merge_multimodal_embeddings
 
 from .layers.attention import Gemma4Attention
 from .layers.decoder_layer import Gemma4TextDecoderLayer
-from .layers.moe import Gemma4MoEGate
+from .layers.moe import Gemma4MoE, Gemma4MoEGate
 from .layers.rms_norm import Gemma4RMSNorm
 from .layers.rotary_embedding import ProportionalRotaryEmbedding
 from .model_config import Gemma4ForConditionalGenerationConfig
-from .weight_adapters import gemma4_uses_fused_projections
 
 
 def language_input_tree(
@@ -144,13 +143,6 @@ class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
         quant_config = text_config.quant_config
         if quant_config and quant_config.embedding_output_dtype:
             embedding_output_dtype = quant_config.embedding_output_dtype
-
-        # DISTINF-194: load projections pre-fused (single-device, bf16 only).
-        # The weight adapter concatenates the checkpoint projections; the graph
-        # consumes one constant, avoiding the in-graph concat that init would
-        # otherwise materialize as a second on-device weight copy. The shared
-        # predicate keeps layer selection and adapter key fusion in lockstep.
-        use_fused_projections = gemma4_uses_fused_projections(config)
 
         if self.holds_first or (self.holds_last and config.tie_word_embeddings):
             self.embed_tokens = ScaledWordEmbedding(
@@ -244,7 +236,7 @@ class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
                         quant_config=quant_config,
                     )
                 else:
-                    moe_block = MoE(
+                    moe_block = Gemma4MoE(
                         devices=config.devices,
                         hidden_dim=text_config.hidden_size,
                         num_experts=text_config.num_experts,
@@ -279,17 +271,8 @@ class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
                     quant_config=None
                     if (is_nvfp4 and not attn_quantized)
                     else quant_config,
-                    fused_qkv=use_fused_projections,
                 ),
-                mlp=FusedMLP(
-                    dtype=config.dtype,
-                    hidden_dim=text_config.hidden_size,
-                    feed_forward_length=text_config.intermediate_size,
-                    devices=config.devices,
-                    activation_function=text_config.hidden_activation,
-                )
-                if use_fused_projections
-                else MLP(
+                mlp=MLP(
                     dtype=unquantized_dtype if moe_nvfp4 else config.dtype,
                     quantization_encoding=None,
                     hidden_dim=text_config.hidden_size,

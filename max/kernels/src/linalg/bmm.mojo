@@ -429,7 +429,7 @@ def _batched_matmul_cpu_impl[
             comptime if use_i8mm:
                 var a_packed_alloc = alloc(
                     AllocLayout[Scalar[a_type], alignment=alignment](
-                        count=mh * kh
+                        length=mh * kh
                     )
                 )
                 var a_packed = TileTensor(
@@ -529,10 +529,11 @@ def naive_batched_matmul_kernel[
         c_buff_nd_shape: Shape of the original output tensor before collapsing
             to 3D, used to un-collapse batch coordinates for the epilogue.
         epilogue_fn: Stores each output element at its coordinate in the
-            original output rank. Launch with `host_arg=epilogue_fn`.
+            original output rank. Launch with `epilogue_fn` as the first
+            `host_args` element.
         compute_fn: Maps each output element, at its coordinate in the
             original output rank, to the value to store. Launch with
-            `host_arg2=compute_fn`.
+            `compute_fn` as the second `host_args` element.
     """
     comptime assert (
         c_tensor.rank == 3 and a_tensor.rank == 3 and b_tensor.rank == 3
@@ -641,10 +642,11 @@ def batched_matmul_kernel_gpu[
         c_buff_nd_shape: Shape of the original output tensor before collapsing
             to 3D, used to un-collapse batch coordinates for the epilogue.
         epilogue_fn: Stores each output element at its coordinate in the
-            original output rank. Launch with `host_arg=epilogue_fn`.
+            original output rank. Launch with `epilogue_fn` as the first
+            `host_args` element.
         compute_fn: Maps each output element, at its coordinate in the
             original output rank, to the value to store. Launch with
-            `host_arg2=compute_fn`.
+            `compute_fn` as the second `host_args` element.
     """
     var batch_idx = block_idx.z
     comptime assert a_tensor.flat_rank == 3 and b_tensor.flat_rank == 3
@@ -1062,8 +1064,7 @@ def _batched_matmul_gpu_impl[
             a_tensor_reshaped.as_imm(),
             b_tensor_reshaped.as_imm(),
             c_shape,
-            host_arg=epilogue_fn,
-            host_arg2=compute_fn,
+            host_args=(epilogue_fn, compute_fn),
             grid_dim=(grid_dim[0], grid_dim[1], batch_size),
             block_dim=kernels.ampere_128x128_4.block_dim(),
             shared_mem_bytes=kernels.ampere_128x128_4.shared_mem_usage(),
@@ -1105,8 +1106,7 @@ def _batched_matmul_gpu_impl[
                 a_tensor_reshaped.as_imm(),
                 b_tensor_reshaped.as_imm(),
                 c_shape,
-                host_arg=epilogue_fn,
-                host_arg2=compute_fn,
+                host_args=(epilogue_fn, compute_fn),
                 grid_dim=(
                     ceildiv(n, block_n),
                     ceildiv(m, block_m),
@@ -1145,8 +1145,7 @@ def _batched_matmul_gpu_impl[
             a_tensor_reshaped.as_imm(),
             b_tensor_reshaped.as_imm(),
             c_shape,
-            host_arg=epilogue_fn,
-            host_arg2=compute_fn,
+            host_args=(epilogue_fn, compute_fn),
             grid_dim=(
                 ceildiv(n, BLOCK_DIM),
                 ceildiv(m, BLOCK_DIM),
@@ -1853,7 +1852,7 @@ def _bmm_sm100_blockwise_scaled_fp8_impl[
         a_scales_tma_op,
         b_scales_,
         Int32(ceildiv(K, BK)),
-        host_arg=epilogue_fn,
+        host_args=(epilogue_fn,),
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM), batch_size),
         block_dim=(block_dim),
         shared_mem_bytes=smem_use,

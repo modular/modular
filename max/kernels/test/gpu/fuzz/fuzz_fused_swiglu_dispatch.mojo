@@ -324,6 +324,11 @@ def run_one_case(
         hw_info.max_thread_block_size,
         hw_info.sm_count,
         activation=ACTIVATION,
+        OutputEngine=type_of(o_ref_tt).Engine,
+        ScalesEngine=type_of(s_ref_tt).Engine,
+        InputEngine=type_of(c_ref_immut).Engine,
+        RowOffsetsEngine=type_of(a_off_immut).Engine,
+        ScalesOffsetsEngine=type_of(a_sc_off_immut).Engine,
     ]
     ctx.enqueue_function[ref_epilogue](
         o_ref_tt,

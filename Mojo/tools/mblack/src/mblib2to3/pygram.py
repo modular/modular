@@ -156,6 +156,7 @@ class _python_symbols(Symbols):
     tname_star: int
     trailer: int
     try_stmt: int
+    typeconv: int
     typedargslist: int
     varargslist: int
     var_stmt: int

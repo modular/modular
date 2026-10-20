@@ -30,7 +30,7 @@ from nn.fused_qk_rope import get_safetensors_idx, rope_value
 # which must be disjoint from the cache planes and projection inputs.
 @__unsafe_nested_origins_read_only
 def chunked_qkv_rope_store_kernel[
-    qk_head_dim: Int, v_head_dim: Int
+    qk_head_dim: Int, v_head_dim: Int, chunk_padding: Int = 0
 ](
     qkv: TileTensor[mut=False, .bfloat16, ...],
     row_offsets: TileTensor[mut=False, .uint32, ...],
@@ -47,6 +47,7 @@ def chunked_qkv_rope_store_kernel[
     Parameters:
         qk_head_dim: Unpadded Q/K head width.
         v_head_dim: Unpadded V head width.
+        chunk_padding: Trailing projection rows to ignore in each chunk.
 
     Args:
         qkv: BF16 projection [tokens, chunks, chunk_width].
@@ -118,7 +119,10 @@ def chunked_qkv_rope_store_kernel[
     comptime k_rows = kv_heads_per_chunk * qk_head_dim
     comptime v_rows = kv_heads_per_chunk * v_head_dim
     comptime assert (
-        Int(qkv.static_shape[2]) == q_rows + k_rows + v_rows
+        chunk_padding >= 0 and chunk_padding % 8 == 0
+    ), "QKV chunk padding must be nonnegative and aligned to 8 elements"
+    comptime assert (
+        Int(qkv.static_shape[2]) == q_rows + k_rows + v_rows + chunk_padding
     ), "Invalid QKV chunk width"
     comptime assert (
         Int(q_output.static_shape[2]) == head_size
@@ -232,7 +236,7 @@ def chunked_qkv_rope_store_kernel[
 
 
 def chunked_qkv_rope_store_paged_ragged[
-    qk_head_dim: Int, v_head_dim: Int
+    qk_head_dim: Int, v_head_dim: Int, chunk_padding: Int = 0
 ](
     qkv: TileTensor[mut=False, .bfloat16, ...],
     row_offsets: TileTensor[mut=False, .uint32, ...],
@@ -250,6 +254,7 @@ def chunked_qkv_rope_store_paged_ragged[
     Parameters:
         qk_head_dim: Unpadded query/key width.
         v_head_dim: Unpadded value width.
+        chunk_padding: Trailing projection rows to ignore in each chunk.
 
     Args:
         qkv: BF16 chunked projection [tokens, chunks, chunk_width].
@@ -307,7 +312,7 @@ def chunked_qkv_rope_store_paged_ragged[
         var q_output,
         var value_scale,
     }:
-        chunked_qkv_rope_store_kernel[qk_head_dim, v_head_dim](
+        chunked_qkv_rope_store_kernel[qk_head_dim, v_head_dim, chunk_padding](
             qkv,
             row_offsets,
             freqs,

@@ -739,14 +739,15 @@ private:
   /// If the parent decl is null, then the Mojo parser's top decl will be used.
   ///
   /// Return the decl of the funcction.
-  LIT::OpASTDecl *getOrCreateFunctionDecl(StringRef functionName,
-                                          LIT::OpASTDecl *parentDecl = nullptr);
+  LIT::DefASTDecl *
+  getOrCreateFunctionDecl(StringRef functionName,
+                          LIT::OpASTDecl *parentDecl = nullptr);
 
   /// Traverse each decl of the `SourceName` and create it unless it's been
   /// created already.
   ///
   /// Return the leaf decl.
-  LIT::OpASTDecl *
+  LIT::ASTDecl *
   createDeclsFromSourceNameRecursive(M::DebugInfo::SourceNameAttr sourceName);
 
   //===--------------------------------------------------------------------===//

@@ -93,12 +93,12 @@ def run_elementwise[
 
     var in_host_alloc = alloc(
         Layout[Scalar[dtype], alignment=.of_bytes[align]()](
-            count=cb_in.alloc_size()
+            length=cb_in.alloc_size()
         )
     ).into_managed()
     var out_host_alloc = alloc(
         Layout[Scalar[dtype], alignment=.of_bytes[align]()](
-            count=cb_out.alloc_size()
+            length=cb_out.alloc_size()
         )
     ).into_managed()
 

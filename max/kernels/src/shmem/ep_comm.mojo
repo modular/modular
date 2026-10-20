@@ -96,6 +96,7 @@ from layout import (
     coord,
     Idx,
     DefaultEngine,
+    TensorEngine,
     TensorLayout,
     TileTensor,
     row_major,
@@ -124,18 +125,101 @@ from structured_kernels.trace_buf import (
     ring_emit,
 )
 
-comptime ep_combine_store_type = def[
+comptime _ep_combine_store_sig = def[
     dtype: DType, rank: Int, width: SIMDLength, *, alignment: Int = 1
-](IndexList[rank], SIMD[dtype, width]) capturing -> None
+](IndexList[rank], SIMD[dtype, width]) -> None
 
-comptime router_weights_wrapper_type = def[width: Int](
+comptime EPCombineStoreFn = (
+    ImplicitlyCopyable & RegisterPassable & _ep_combine_store_sig
+)
+"""Combine output store: `(coords, value) -> None`.
+
+Kernels receive it as a trailing host-layout argument (`host_args`), so it
+runs on the device and must copy (`{var}`) what it captures.
+"""
+
+comptime _router_weights_sig = def[width: Int](
     token_idx: Int, topk_id: Int
-) capturing -> SIMD[.float32, width]
+) -> SIMD[.float32, width]
+
+comptime RouterWeightsFn = (
+    ImplicitlyCopyable & RegisterPassable & _router_weights_sig
+)
+"""Router weight of a `(token, top-k slot)` pair for the combine reduction.
+
+Kernels receive it as a trailing host-layout argument (`host_args`), so it
+runs on the device and must copy (`{var}`) what it captures.
+"""
+
+comptime _input_scales_sig = def[dtype: DType](Int) -> Scalar[dtype]
+
+comptime InputScalesFn = (
+    ImplicitlyCopyable & RegisterPassable & _input_scales_sig
+)
+"""Dispatch input scale of an expert: `(expert_id) -> scale`.
+
+Kernels receive it as a trailing host-layout argument (`host_args`), so it
+runs on the device and must copy (`{var}`) what it captures.
+"""
 
 
-comptime input_scales_wrapper_type = def[dtype: DType](
-    Int,
-) capturing -> Scalar[dtype]
+@inline(.always)
+def _unit_input_scale[dtype: DType](expert_id: Int) -> Scalar[dtype]:
+    return Scalar[dtype](1)
+
+
+@inline(.always)
+def _unit_router_weight[
+    width: Int
+](token_idx: Int, topk_id: Int) -> SIMD[.float32, width]:
+    return SIMD[.float32, width](1)
+
+
+@inline(.always)
+def _as_input_scales_fn[
+    InputScalesFnType: InputScalesFn
+](input_scales_fn: InputScalesFnType) -> InputScalesFnType:
+    """Binds a parametric function to its `InputScalesFn` closure type.
+
+    A bare parametric function only converts where a function-type bound gives
+    it context, so neither `type_of` nor a `host_args` slot accepts it
+    directly.
+
+    Parameters:
+        InputScalesFnType: Type of the input scales function (inferred).
+
+    Args:
+        input_scales_fn: The input scales function to bind.
+
+    Returns:
+        `input_scales_fn` as a value of its closure type.
+    """
+    return input_scales_fn
+
+
+@inline(.always)
+def _as_router_weights_fn[
+    RouterWeightsFnType: RouterWeightsFn
+](router_weights_fn: RouterWeightsFnType) -> RouterWeightsFnType:
+    """Binds a parametric function to its `RouterWeightsFn` closure type.
+
+    Parameters:
+        RouterWeightsFnType: Type of the router weights function (inferred).
+
+    Args:
+        router_weights_fn: The router weights function to bind.
+
+    Returns:
+        `router_weights_fn` as a value of its closure type.
+    """
+    return router_weights_fn
+
+
+comptime EP_NO_INPUT_SCALES = _as_input_scales_fn(_unit_input_scale)
+"""Stands in for `input_scales_fn` when a dispatch has no input scales."""
+
+comptime EP_NO_ROUTER_WEIGHTS = _as_router_weights_fn(_unit_router_weight)
+"""Stands in for `router_weights_fn` when a combine has no router weights."""
 
 comptime EP_DATA_READY_FLAG = 1 << 10
 
@@ -218,13 +302,13 @@ def _acquire_wait[
     Returns:
         The value that ended the wait.
     """
-    var observed = ptr.load[volatile=True]()
+    var observed = ptr.unsafe_load[volatile=True]()
     comptime if wait_while_equal:
         while observed == sentinel:
-            observed = ptr.load[volatile=True]()
+            observed = ptr.unsafe_load[volatile=True]()
     else:
         while observed != sentinel:
-            observed = ptr.load[volatile=True]()
+            observed = ptr.unsafe_load[volatile=True]()
     fence[ordering=Ordering.ACQUIRE, scope=scope]()
     return observed
 
@@ -299,7 +383,7 @@ def block_memcpy[
             num_bytes % store_width == 0
         ), "num_bytes must be a multiple of the 16-byte store width"
         for i in range(thread_idx, num_bytes // store_width, block_size):
-            var data = src_p.load[
+            var data = src_p.unsafe_load[
                 width=store_width,
                 alignment=store_width,
                 invariant=src_invariant,
@@ -318,9 +402,9 @@ def block_memcpy[
         comptime n_vec = num_bytes // simd_width
         comptime if unroll == 1:
             for i in range(thread_idx, n_vec, block_size):
-                dst_p.store[alignment=simd_width](
+                dst_p.unsafe_store[alignment=simd_width](
                     i * simd_width,
-                    src_p.load[
+                    src_p.unsafe_load[
                         width=simd_width,
                         alignment=simd_width,
                         invariant=src_invariant,
@@ -332,7 +416,7 @@ def block_memcpy[
                 comptime for k in range(unroll):
                     var i = base + k * block_size
                     if i < n_vec:
-                        vals[k] = src_p.load[
+                        vals[k] = src_p.unsafe_load[
                             width=simd_width,
                             alignment=simd_width,
                             invariant=src_invariant,
@@ -340,7 +424,7 @@ def block_memcpy[
                 comptime for k in range(unroll):
                     var i = base + k * block_size
                     if i < n_vec:
-                        dst_p.store[alignment=simd_width](
+                        dst_p.unsafe_store[alignment=simd_width](
                             i * simd_width, vals[k]
                         )
 
@@ -1008,15 +1092,18 @@ struct BF16TokenFormat[
         )
 
     @inline(.always)
-    def __init__(
+    def __init__[
+        OutputEngine: TensorEngine, //
+    ](
         out self,
         output_tokens: TileTensor[
-            .bfloat16, Self.output_layout, Engine=DefaultEngine[], ...
+            .bfloat16, Self.output_layout, Engine=OutputEngine, ...
         ],
     ):
+        # The field is raw-pointer addressed, so the owning handle stops here.
         self.output_tokens = {
             MutPointer[BFloat16, MutUntrackedOrigin](
-                unsafe_from_address=Int(output_tokens._storage)
+                unsafe_from_address=Int(output_tokens.ptr)
             ),
             output_tokens.layout,
         }
@@ -1065,7 +1152,7 @@ struct BF16TokenFormat[
             self.output_tokens.store(
                 (token_index, i * bf16_width),
                 bitcast[.bfloat16, bf16_width](
-                    buf_p.load[
+                    buf_p.unsafe_load[
                         width=byte_width,
                         invariant=True,
                         alignment=Self.alignment,
@@ -1165,13 +1252,13 @@ struct BlockwiseFP8TokenFormat[
     ):
         self.output_tokens = {
             MutPointer[Scalar[Self.fp8_dtype], MutUntrackedOrigin](
-                unsafe_from_address=Int(output_tokens._storage)
+                unsafe_from_address=Int(output_tokens.ptr)
             ),
             output_tokens.layout,
         }
         self.output_scales = {
             MutPointer[Scalar[Self.scales_dtype], MutUntrackedOrigin](
-                unsafe_from_address=Int(output_scales._storage)
+                unsafe_from_address=Int(output_scales.ptr)
             ),
             output_scales.layout,
         }
@@ -1258,7 +1345,7 @@ struct BlockwiseFP8TokenFormat[
         for i in range(
             thread_idx.x - thread_base, Self.hid_dim // src_width, block_size
         ):
-            var loaded_vec = src_p.load[
+            var loaded_vec = src_p.unsafe_load[
                 width=src_width, alignment=Self.alignment, invariant=True
             ](i * src_width).cast[Self.scales_dtype]()
             var thread_max = abs(loaded_vec).reduce_max()
@@ -1269,7 +1356,7 @@ struct BlockwiseFP8TokenFormat[
             var output_vec = loaded_vec / scale_factor
             output_vec = output_vec.clamp(-fp8_max_t, fp8_max_t)
 
-            buf_p.store[alignment=byte_width](
+            buf_p.unsafe_store[alignment=byte_width](
                 i * byte_width,
                 bitcast[.uint8, byte_width](output_vec.cast[Self.fp8_dtype]()),
             )
@@ -1278,7 +1365,7 @@ struct BlockwiseFP8TokenFormat[
             comptime scale_bytes = size_of[Self.scales_dtype]()
             if umod(lane_id(), n_threads_per_group) == 0:
                 var scale_idx = ufloordiv(i * src_width, Self.group_size)
-                buf_p.store[alignment=scale_bytes](
+                buf_p.unsafe_store[alignment=scale_bytes](
                     Self.scales_offset() + scale_idx * scale_bytes,
                     bitcast[.uint8, scale_bytes](scale_factor),
                 )
@@ -1302,7 +1389,7 @@ struct BlockwiseFP8TokenFormat[
             self.output_tokens.store(
                 (token_index, i * fp8_width),
                 bitcast[Self.fp8_dtype, fp8_width](
-                    buf_p.load[
+                    buf_p.unsafe_load[
                         width=fp8_width,
                         invariant=True,
                         alignment=Self.alignment,
@@ -1321,7 +1408,7 @@ struct BlockwiseFP8TokenFormat[
             self.output_scales.store(
                 (i, token_index),
                 bitcast[Self.scales_dtype, 1](
-                    buf_p.load[
+                    buf_p.unsafe_load[
                         width=scale_bytes,
                         invariant=True,
                         alignment=scale_bytes,
@@ -1557,13 +1644,13 @@ struct NVBlockScaledTokenFormat[
         """
         self.output_tokens = {
             MutPointer[Scalar[Self.quant_dtype], MutUntrackedOrigin](
-                unsafe_from_address=Int(output_tokens._storage)
+                unsafe_from_address=Int(output_tokens.ptr)
             ),
             output_tokens.layout,
         }
         self.output_scales_offset = {
             MutPointer[UInt32, MutUntrackedOrigin](
-                unsafe_from_address=Int(output_scales_offset._storage)
+                unsafe_from_address=Int(output_scales_offset.ptr)
             ),
             output_scales_offset.layout,
         }
@@ -1761,7 +1848,7 @@ struct NVBlockScaledTokenFormat[
             )
             var thread_max = Float32(0)
             for i in range(thread_idx.x, n_items, block_size):
-                var item = src_p.load[
+                var item = src_p.unsafe_load[
                     width=src_width, alignment=Self.alignment, invariant=True
                 ](Int(i) * src_width)
                 thread_max = max(
@@ -1783,7 +1870,7 @@ struct NVBlockScaledTokenFormat[
                 ).cast[DType.bfloat16]()
             if thread_idx.x == 0:
                 comptime scale_bytes = size_of[BFloat16]()
-                buf_p.store[alignment=scale_bytes](
+                buf_p.unsafe_store[alignment=scale_bytes](
                     Self.global_scale_offset(),
                     bitcast[DType.uint8, scale_bytes](inv_global_scale),
                 )
@@ -1874,8 +1961,8 @@ struct NVBlockScaledTokenFormat[
                     comptime assert (
                         SF_ATOM_K == 4
                     ), "sf_vec4 assumes a 4-byte SF atom"
-                    dst.store[width=4, alignment=4](
-                        d, src.load[width=4, alignment=4](o)
+                    dst.unsafe_store[width=4, alignment=4](
+                        d, src.unsafe_load[width=4, alignment=4](o)
                     )
                 else:
                     comptime for j in range(SF_ATOM_K):
@@ -1941,12 +2028,12 @@ struct NVBlockScaledTokenFormat[
                 size_of[Self.scales_dtype]() == 1
             ), "ep_prequantized assumes 1-byte canonical scales (E8M0)"
             comptime scale_bytes_pq = size_of[Self.scales_dtype]()
-            var q_vec = src_p.load[
+            var q_vec = src_p.unsafe_load[
                 width=src_width, alignment=Self.alignment, invariant=True
             ](i * src_width)
             # Same address, same alignment clamp as the quantized store below,
             # so the payload bytes land byte-for-byte where R0_FULL puts them.
-            buf_p.store[
+            buf_p.unsafe_store[
                 alignment=src_width if src_width
                 < Self.alignment else Self.alignment
             ](i * src_width, bitcast[DType.uint8, src_width](q_vec))
@@ -1962,16 +2049,16 @@ struct NVBlockScaledTokenFormat[
                 # this consumer agree BY CONSTRUCTION rather than by matching
                 # arithmetic, and stay in agreement if the alignment padding of
                 # either region ever changes.
-                var s_vec = src_p.load[width=scale_bytes_pq, invariant=True](
-                    Self.scales_offset() + sidx_pq * scale_bytes_pq
-                )
-                buf_p.store[alignment=scale_bytes_pq](
+                var s_vec = src_p.unsafe_load[
+                    width=scale_bytes_pq, invariant=True
+                ](Self.scales_offset() + sidx_pq * scale_bytes_pq)
+                buf_p.unsafe_store[alignment=scale_bytes_pq](
                     Self.scales_offset() + sidx_pq * scale_bytes_pq,
                     bitcast[DType.uint8, scale_bytes_pq](s_vec),
                 )
             return
 
-        var loaded_vec = src_p.load[
+        var loaded_vec = src_p.unsafe_load[
             width=src_width, alignment=Self.alignment, invariant=True
         ](i * src_width)
 
@@ -2005,7 +2092,7 @@ struct NVBlockScaledTokenFormat[
         # write back the scale factor
         comptime scale_bytes = size_of[Self.scales_dtype]()
         if i % NUM_THREADS_PER_SF == 0:
-            buf_p.store[alignment=scale_bytes](
+            buf_p.unsafe_store[alignment=scale_bytes](
                 Self.scales_offset()
                 + ufloordiv(i, NUM_THREADS_PER_SF) * scale_bytes,
                 bitcast[DType.uint8, scale_bytes](fp8_scale_factor),
@@ -2021,7 +2108,7 @@ struct NVBlockScaledTokenFormat[
             # are bit-identical; it only makes width 32 legal, where
             # src_width=32 would otherwise assert 32-byte alignment on a
             # 16-byte-aligned allocation.
-            buf_p.store[
+            buf_p.unsafe_store[
                 alignment=src_width if src_width
                 < Self.alignment else Self.alignment
             ](
@@ -2032,7 +2119,7 @@ struct NVBlockScaledTokenFormat[
             var output_vector = bitcast[Self.quant_dtype, byte_width](
                 cast_fp32_to_fp4e2m1(input_f32)
             )
-            buf_p.store[alignment=byte_width](
+            buf_p.unsafe_store[alignment=byte_width](
                 i * byte_width,
                 bitcast[DType.uint8, byte_width](output_vector),
             )
@@ -2154,7 +2241,7 @@ struct NVBlockScaledTokenFormat[
             var _i = i + lane_in_sub_warp
             var scales_simd = SIMD[Self.scales_dtype, SF_ATOM_K](0.0)
             if case .Some(scales_ptr) = scales_gmem_ptr:
-                scales_simd = scales_ptr.load[
+                scales_simd = scales_ptr.unsafe_load[
                     width=SF_ATOM_K, invariant=True, alignment=SF_ATOM_K
                 ](_i * SF_ATOM_K)
 
@@ -2254,7 +2341,7 @@ struct NVBlockScaledTokenFormat[
                         self.output_rowwise_scales[output_pos] = bitcast[
                             DType.bfloat16, 1
                         ](
-                            token_ptr.load[
+                            token_ptr.unsafe_load[
                                 width=scale_bytes, alignment=scale_bytes
                             ](Self.global_scale_offset())
                         )
@@ -2372,13 +2459,13 @@ struct MXTokenFormat[
     ):
         self.output_tokens = {
             MutPointer[Scalar[Self.quant_dtype], MutUntrackedOrigin](
-                unsafe_from_address=Int(output_tokens._storage)
+                unsafe_from_address=Int(output_tokens.ptr)
             ),
             output_tokens.layout,
         }
         self.output_scales = {
             MutPointer[Scalar[Self.scales_dtype], MutUntrackedOrigin](
-                unsafe_from_address=Int(output_scales._storage)
+                unsafe_from_address=Int(output_scales.ptr)
             ),
             output_scales.layout,
         }
@@ -2441,7 +2528,7 @@ struct MXTokenFormat[
         ), "hid_dim must be divisible by the MXFP6 block size"
 
         for b in range(thread_idx.x, Self.hid_dim // blk, block_size):
-            var data = src_p.load[
+            var data = src_p.unsafe_load[
                 width=blk, alignment=Self.alignment, invariant=True
             ](b * blk).cast[.float32]()
 
@@ -2468,12 +2555,12 @@ struct MXTokenFormat[
                     )
 
             comptime for chunk in range(bytes_per_blk // 8):
-                buf_p.store[alignment=8](
+                buf_p.unsafe_store[alignment=8](
                     b * bytes_per_blk + chunk * 8,
                     packed.slice[8, offset=chunk * 8](),
                 )
 
-            buf_p.store[alignment=scale_bytes](
+            buf_p.unsafe_store[alignment=scale_bytes](
                 Self.scales_offset() + b * scale_bytes,
                 bitcast[.uint8, scale_bytes](
                     rebind[Scalar[Self.scales_dtype]](e8m0_scale)
@@ -2504,7 +2591,7 @@ struct MXTokenFormat[
                 Self.hid_dim // src_width,
                 block_size,
             ):
-                var loaded_vec = src_p.load[
+                var loaded_vec = src_p.unsafe_load[
                     width=src_width, alignment=Self.alignment, invariant=True
                 ](i * src_width).cast[.float32]()
 
@@ -2535,7 +2622,7 @@ struct MXTokenFormat[
                 # write back the scale factor
                 comptime scale_bytes = size_of[Self.scales_dtype]()
                 if i % NUM_THREADS_PER_SF == 0:
-                    buf_p.store[alignment=scale_bytes](
+                    buf_p.unsafe_store[alignment=scale_bytes](
                         Self.scales_offset()
                         + i // NUM_THREADS_PER_SF * scale_bytes,
                         bitcast[.uint8, scale_bytes](fp8_scale_factor),
@@ -2549,7 +2636,7 @@ struct MXTokenFormat[
                         0.0
                     ) if block_is_dead else loaded_vec
                     var fp8_vec = (data * scale_f32).cast[Self.quant_dtype]()
-                    buf_p.store[alignment=byte_width](
+                    buf_p.unsafe_store[alignment=byte_width](
                         i * byte_width,
                         bitcast[.uint8, byte_width](fp8_vec),
                     )
@@ -2560,7 +2647,7 @@ struct MXTokenFormat[
                             scale_f32,
                         )
                     )
-                    buf_p.store[alignment=byte_width](
+                    buf_p.unsafe_store[alignment=byte_width](
                         i * byte_width,
                         bitcast[.uint8, byte_width](output_vector),
                     )
@@ -2589,7 +2676,7 @@ struct MXTokenFormat[
             self.output_tokens.store(
                 (token_index, i * fp4_width),
                 bitcast[Self.quant_dtype, fp4_width](
-                    buf_p.load[
+                    buf_p.unsafe_load[
                         width=fp4_width,
                         invariant=True,
                         alignment=Self.alignment,
@@ -2621,7 +2708,7 @@ struct MXTokenFormat[
             ),
         )
         for i in range(lane_id(), Self.hid_dim // Self.group_size, WARP_SIZE):
-            var byte = buf_p.load[
+            var byte = buf_p.unsafe_load[
                 width=scale_bytes,
                 invariant=True,
                 alignment=scale_bytes,
@@ -3203,9 +3290,11 @@ struct EPDispatchKernel[
     @staticmethod
     @inline(.always)
     def monitor_and_signal_completion[
+        TopkIdsEngine: TensorEngine,
+        //,
         comm_warp_base: Int = 0,
     ](
-        topk_ids: TileTensor[mut=False, .int32, Engine=DefaultEngine[], ...],
+        topk_ids: TileTensor[mut=False, .int32, Engine=TopkIdsEngine, ...],
         recv_count_ptrs: Array[
             MutPointer[UInt64, MutUntrackedOrigin], Self.p2p_world_size
         ],
@@ -3304,18 +3393,21 @@ struct EPDispatchKernel[
     @staticmethod
     @inline(.always)
     def copy_and_send_tokens[
+        InputTokensEngine: TensorEngine,
+        TopkIdsEngine: TensorEngine,
         input_type: DType,
+        InputScalesFnType: InputScalesFn,
         //,
-        input_scales_wrapper: Optional[input_scales_wrapper_type] = None,
+        has_input_scales: Bool = False,
         comm_thread_base: Int = 0,
         n_comm_threads: Int = Self.num_threads,
         comm_barrier_id: Int = -1,
         TraceT: DispatchTraceSink = NullDispatchTrace,
     ](
         input_tokens: TileTensor[
-            mut=False, input_type, Engine=DefaultEngine[], ...
+            mut=False, input_type, Engine=InputTokensEngine, ...
         ],
-        topk_ids: TileTensor[mut=False, .int32, Engine=DefaultEngine[], ...],
+        topk_ids: TileTensor[mut=False, .int32, Engine=TopkIdsEngine, ...],
         send_buf_p: MutPointer[UInt8, MutUntrackedOrigin],
         recv_buf_ptrs: Array[
             MutPointer[UInt8, MutUntrackedOrigin], Self.p2p_world_size
@@ -3325,6 +3417,7 @@ struct EPDispatchKernel[
         my_rank: Int32,
         sm_id: Int,
         n_active_send_sms: Int,
+        input_scales_fn: InputScalesFnType,
         # Source-local block-base mailbox: [0, n_experts) bases,
         # [n_experts, 2*n_experts) generation tags. Inert when defaulted.
         prod_gen_p: MutPointer[Int32, MutUntrackedOrigin] = MutPointer[
@@ -3341,8 +3434,9 @@ struct EPDispatchKernel[
 
         Parameters:
             input_type: `DType` of the input token elements (inferred).
-            input_scales_wrapper: Optional wrapper supplying the input's
-                block scaling factors; `None` for an unquantized input.
+            InputScalesFnType: The type of `input_scales_fn` (inferred).
+            has_input_scales: Whether `input_scales_fn` supplies the input's
+                scale; `False` for an unquantized input (unit scale).
             comm_thread_base: Absolute ``thread_idx.x`` of the first thread in
                 the comm thread-class (0 in the standalone kernels, the FFN
                 thread count inside the fused megakernel). Comm-local indices
@@ -3369,6 +3463,8 @@ struct EPDispatchKernel[
                 SM mapping inside a fused persistent kernel.
             n_active_send_sms: Count of send communication SMs
                 (``grid_dim.x - n_signal_sms`` in the standalone kernels).
+            input_scales_fn: Supplies the input's scale, called only when
+                `has_input_scales`.
             prod_gen_p: Source-local block-base mailbox. Entries
                 `[0, n_experts)` hold the reserved base for each expert and
                 `[n_experts, 2 * n_experts)` hold the matching generation
@@ -3397,8 +3493,8 @@ struct EPDispatchKernel[
 
         var input_scale = Float32(1.0)
 
-        comptime if case .Some(input_scale_fn) = input_scales_wrapper:
-            input_scale = input_scale_fn[.float32](0)
+        comptime if has_input_scales:
+            input_scale = input_scales_fn[.float32](0)
 
         var n_active_async_comm_sms = n_active_send_sms
         # Dispatch-phase trace state (comptime-dead unless `TraceT.enabled`).
@@ -3455,7 +3551,7 @@ struct EPDispatchKernel[
                 # token's top-k id.
                 # Cast the expert ID to a 16-bit integer to save space.
                 var top_k_idx = rebind[Int32](topk_ids[token_idx, tid])
-                curr_send_buf_ptr.store[
+                curr_send_buf_ptr.unsafe_store[
                     width=size_of[UInt16](),
                     alignment=align_of[DType.uint16](),
                 ](
@@ -3466,7 +3562,7 @@ struct EPDispatchKernel[
 
                 # Store the source token index in current token's message.
                 if tid == 0:
-                    curr_send_buf_ptr.store[
+                    curr_send_buf_ptr.unsafe_store[
                         width=size_of[Int32](),
                         alignment=align_of[DType.int32](),
                     ](
@@ -3813,18 +3909,23 @@ struct EPDispatchKernel[
                     Int(active_upto)
                     + Int(tiles_upto) * (n_comm_sms - n_active) // total_tiles
                 )
-            atomic_counter.store(Self.sm_schedule_offset + tid, bound)
+            atomic_counter.unsafe_store(Self.sm_schedule_offset + tid, bound)
 
     @staticmethod
     @inline(.always)
     def wait_for_arrivals_and_compute_offsets[
+        RowOffsetsEngine: TensorEngine,
+        ExpertIdsEngine: TensorEngine,
+        //,
         comm_thread_base: Int = 0,
         n_comm_threads: Int = Self.num_threads,
         comm_barrier_id: Int = -1,
     ](
         format_handler: Self.token_fmt_type,
-        row_offsets: TileTensor[mut=True, .uint32, Engine=DefaultEngine[], ...],
-        expert_ids: TileTensor[mut=True, .int32, Engine=DefaultEngine[], ...],
+        row_offsets: TileTensor[
+            mut=True, .uint32, Engine=RowOffsetsEngine, ...
+        ],
+        expert_ids: TileTensor[mut=True, .int32, Engine=ExpertIdsEngine, ...],
         recv_count_p: MutPointer[UInt64, MutUntrackedOrigin],
         atomic_counter: MutPointer[Int32, MutUntrackedOrigin],
         my_rank: Int32,
@@ -3917,7 +4018,7 @@ struct EPDispatchKernel[
         # Some token format handlers may require padding the expert offsets to
         # satisfy the grouped matmul alignment requirement.
         comptime n_groups = Self.n_local_experts + shared_expert_offset
-        format_handler.pad_expert_offsets[n_groups](row_offsets._storage)
+        format_handler.pad_expert_offsets[n_groups](row_offsets.ptr)
 
         # Write out data needed for other SMs to copy the tokens to the output
         # tensor.
@@ -3935,7 +4036,7 @@ struct EPDispatchKernel[
             var within_expert_prefix = (
                 prefix_sum_arr[tid] - raw_expert_start_offset
             )
-            atomic_counter.store(
+            atomic_counter.unsafe_store(
                 Self.rank_prefix_offset + tid, Int32(within_expert_prefix)
             )
 
@@ -3946,7 +4047,9 @@ struct EPDispatchKernel[
 
         # Region C: initialize per-expert work-claiming counters to 0.
         if tid < Self.n_local_experts:
-            atomic_counter.store(Self.work_counter_offset + tid, Int32(0))
+            atomic_counter.unsafe_store(
+                Self.work_counter_offset + tid, Int32(0)
+            )
 
         Self._comm_barrier[n_comm_threads, comm_barrier_id]()
         # Round-robin is already optimal when no expert could outrun its own
@@ -3960,7 +4063,9 @@ struct EPDispatchKernel[
         )
         if worst_case_tiles <= n_active_offset_sms // Self.n_local_experts:
             if tid < Self.n_local_experts:
-                atomic_counter.store(Self.sm_schedule_offset + tid, Int32(-1))
+                atomic_counter.unsafe_store(
+                    Self.sm_schedule_offset + tid, Int32(-1)
+                )
         else:
             Self._publish_sm_schedule[
                 comm_thread_base, n_comm_threads, comm_barrier_id
@@ -3973,7 +4078,7 @@ struct EPDispatchKernel[
             # Use the runtime active comm-SM count so the cleanup-counter
             # countdown matches the actual launched grid (decode-fast-path
             # launches grid_dim < n_sms).
-            atomic_counter.store(
+            atomic_counter.unsafe_store(
                 Self.cleanup_counter_offset,
                 Int32(n_active_offset_sms),
             )
@@ -4004,7 +4109,7 @@ struct EPDispatchKernel[
             # Region A: combine_async-compatible per-expert-rank data.
             # Stores (flag + cumulative_end, per_pair_token_count) so that
             # combine_async can derive token_start and token_end.
-            atomic_counter.store(
+            atomic_counter.unsafe_store(
                 tid * 2,
                 Int32(
                     EP_DATA_READY_FLAG
@@ -4019,14 +4124,17 @@ struct EPDispatchKernel[
                 )
             else:
                 pair_token_count = prefix_sum_arr[tid] - prefix_sum_arr[tid - 1]
-            atomic_counter.store(tid * 2 + 1, Int32(pair_token_count))
+            atomic_counter.unsafe_store(tid * 2 + 1, Int32(pair_token_count))
 
             # Reset the receive count buffer.
-            recv_count_p.store(tid, UInt64.MAX_FINITE)
+            recv_count_p.unsafe_store(tid, UInt64.MAX_FINITE)
 
     @staticmethod
     @inline(.always)
     def copy_received_tokens_to_output[
+        RowOffsetsEngine: TensorEngine,
+        SrcInfoEngine: TensorEngine,
+        //,
         comm_thread_base: Int = 0,
         n_comm_threads: Int = Self.num_threads,
         comm_barrier_id: Int = -1,
@@ -4056,8 +4164,10 @@ struct EPDispatchKernel[
         TraceBufT: TraceBuf = NullTrace,
     ](
         format_handler: Self.token_fmt_type,
-        row_offsets: TileTensor[mut=True, .uint32, Engine=DefaultEngine[], ...],
-        src_info: TileTensor[mut=True, .int32, Engine=DefaultEngine[], ...],
+        row_offsets: TileTensor[
+            mut=True, .uint32, Engine=RowOffsetsEngine, ...
+        ],
+        src_info: TileTensor[mut=True, .int32, Engine=SrcInfoEngine, ...],
         recv_buf_p: MutPointer[UInt8, MutUntrackedOrigin],
         atomic_counter: MutPointer[Int32, MutUntrackedOrigin],
         my_rank: Int32,
@@ -4281,7 +4391,7 @@ struct EPDispatchKernel[
                 """
                 if lane_id() < Self.top_k:
                     var src_topk_idx = bitcast[.uint16, 1](
-                        token_ptr.load[
+                        token_ptr.unsafe_load[
                             width=size_of[UInt16](),
                             alignment=size_of[UInt16](),
                         ](
@@ -4290,7 +4400,7 @@ struct EPDispatchKernel[
                         )
                     )
                     var src_idx = bitcast[.int32, 1](
-                        token_ptr.load[
+                        token_ptr.unsafe_load[
                             width=size_of[Int32](),
                             alignment=size_of[Int32](),
                         ](Self.token_fmt_type.src_info_offset())
@@ -4396,7 +4506,7 @@ struct EPDispatchKernel[
                 Int32(-1),
             )
             if count == 1:
-                atomic_counter.store(Self.ready_flag_offset, Int32(0))
+                atomic_counter.unsafe_store(Self.ready_flag_offset, Int32(0))
 
     @staticmethod
     @inline(.always)
@@ -4452,8 +4562,8 @@ struct EPDispatchKernel[
                 ordering=Ordering.RELAXED
             ](fused_se_counter.unsafe_offset(1), 1)
             if started == Int32(n_sms_for_shared) - 1:
-                fused_se_counter.store(Int32(0))
-                fused_se_counter.store(1, Int32(0))
+                fused_se_counter.unsafe_store(Int32(0))
+                fused_se_counter.unsafe_store(1, Int32(0))
         barrier()
 
         for tile_id in range(sm_id, n_tiles, n_sms_for_shared):
@@ -4506,7 +4616,8 @@ def dispatch_async_kernel[
     max_tokens_per_rank: Int,
     p2p_world_size: Int,
     token_fmt_type: TokenFormat,
-    input_scales_wrapper: Optional[input_scales_wrapper_type] = None,
+    InputScalesFnType: InputScalesFn,
+    has_input_scales: Bool = False,
     use_shmem: Bool = True,
 ](
     input_tokens: TileTensor[
@@ -4520,6 +4631,7 @@ def dispatch_async_kernel[
     ],
     ep_counters: EPLocalSyncCounters[n_experts],
     my_rank: Int32,
+    input_scales_fn: InputScalesFnType,
 ):
     """
     Dispatch tokens to experts on remote ranks based on the top-k expert IDs.
@@ -4539,7 +4651,8 @@ def dispatch_async_kernel[
         p2p_world_size: Size of a High-speed GPU interconnect group.
         token_fmt_type: Type conforming to TokenFormat trait that defines the
             token encoding scheme.
-        input_scales_wrapper: The wrapper for the input scales.
+        InputScalesFnType: The type of `input_scales_fn`.
+        has_input_scales: Whether `input_scales_fn` supplies the input scale.
         use_shmem: Whether to use the SHMEM API for the communication.
 
     Args:
@@ -4558,6 +4671,7 @@ def dispatch_async_kernel[
             `shmem_alloc` if `use_shmem` is True.
         ep_counters: EP atomic counters for kernel synchronization.
         my_rank: The rank of the current device.
+        input_scales_fn: Input scale supplier, passed by host layout.
     """
 
     comptime dispatch_impl = EPDispatchKernel[
@@ -4595,7 +4709,7 @@ def dispatch_async_kernel[
 
     # All the other SMs are used for sending the tokens to the experts.
     else:
-        dispatch_impl.copy_and_send_tokens[input_scales_wrapper](
+        dispatch_impl.copy_and_send_tokens[has_input_scales](
             input_tokens,
             topk_ids,
             send_buf_p,
@@ -4605,6 +4719,7 @@ def dispatch_async_kernel[
             my_rank,
             block_idx.x,
             grid_dim.x - dispatch_impl.n_signal_sms,
+            input_scales_fn,
         )
 
 
@@ -4625,7 +4740,6 @@ def dispatch_wait_kernel[
     n_ranks: Int,
     max_tokens_per_rank: Int,
     token_fmt_type: TokenFormat,
-    input_scales_wrapper: Optional[input_scales_wrapper_type] = None,
 ](
     format_handler: token_fmt_type,
     row_offsets: TileTensor[.uint32, row_offsets_layout, MutUntrackedOrigin],
@@ -4656,7 +4770,6 @@ def dispatch_wait_kernel[
         max_tokens_per_rank: The maximum number of tokens per rank.
         token_fmt_type: Type conforming to TokenFormat trait that defines the
             token encoding scheme.
-        input_scales_wrapper: The wrapper for the input scales.
 
     Args:
         format_handler: Instance of token_fmt_type that performs token decoding
@@ -4852,6 +4965,8 @@ struct EPCombineKernel[
     @inline(.always)
     def send_tokens_back[
         input_type: DType,
+        InputTokensEngine: TensorEngine,
+        SrcInfoEngine: TensorEngine,
         //,
         # Combine-seam gate: when True, each per-(expert, rank) block
         # acquire-spins `ffn_done_ptr[local_expert_id]` for the producer's
@@ -4885,8 +5000,8 @@ struct EPCombineKernel[
         warp_base: Int = 0,
         comm_barrier_id: Int = -1,
     ](
-        input_tokens: TileTensor[input_type, Engine=DefaultEngine[], ...],
-        src_info: TileTensor[.int32, Engine=DefaultEngine[], ...],
+        input_tokens: TileTensor[input_type, Engine=InputTokensEngine, ...],
+        src_info: TileTensor[.int32, Engine=SrcInfoEngine, ...],
         send_buf_p: MutPointer[UInt8, MutUntrackedOrigin],
         recv_buf_ptrs: Array[
             MutPointer[UInt8, MutUntrackedOrigin], Self.p2p_world_size
@@ -4964,7 +5079,7 @@ struct EPCombineKernel[
             # there are enough of them. `dispatch_wait` left a cumulative count
             # in the last pair.
             run_legacy = (
-                Int(atomic_counter.load(2 * (Self.n_experts - 1)))
+                Int(atomic_counter.unsafe_load(2 * (Self.n_experts - 1)))
                 - EP_DATA_READY_FLAG
             ) < 4 * Self.n_experts
             if not run_legacy:
@@ -5004,7 +5119,7 @@ struct EPCombineKernel[
                         Int(tid), Self.n_local_experts
                     )
                     var t_pair = t_expert * Self.n_ranks + t_rank
-                    var tec = atomic_counter.load[
+                    var tec = atomic_counter.unsafe_load[
                         width=2, alignment=align_of[SIMD[.int32, 2]]()
                     ](2 * t_pair)
                     # Clamp: a corrupt count would otherwise size the unit
@@ -5066,7 +5181,7 @@ struct EPCombineKernel[
                 var n_pend = 0
 
                 @inline(.always)
-                def flush_pending() capturing -> None:
+                def flush_pending() {mut n_pend, imm} -> None:
                     if n_pend == 0:
                         return
                     # Publish this warp's copies before anyone counts them.
@@ -5094,7 +5209,7 @@ struct EPCombineKernel[
                                     ordering=Ordering.ACQUIRE,
                                     scope=DEVICE_SCOPE,
                                 ]()
-                                atomic_counter.store(
+                                atomic_counter.unsafe_store(
                                     Self.pair_done_offset + pr, Int32(0)
                                 )
                                 var e_l, d_r = divmod(pr, Self.n_ranks)
@@ -5189,7 +5304,7 @@ struct EPCombineKernel[
                 # and end are stored in the atomic counter by the
                 # `dispatch_wait_kernel`.
                 comptime DATA_READY_FLAG = 1024
-                var token_end_count = atomic_counter.load[
+                var token_end_count = atomic_counter.unsafe_load[
                     width=2,
                     alignment=align_of[SIMD[.int32, 2]](),
                     invariant=True,
@@ -5383,7 +5498,7 @@ struct EPCombineKernel[
                         )
 
                         comptime if not Self.use_balanced_send:
-                            atomic_counter.store[
+                            atomic_counter.unsafe_store[
                                 width=2, alignment=align_of[SIMD[.int32, 2]]()
                             ](expert_rank_offset * 2, 0)
 
@@ -5409,9 +5524,9 @@ struct EPCombineKernel[
         _scoped_barrier[Self.num_threads, comm_barrier_id]()
         if smem_done[0] == Int32(1):
             if tid == 0:
-                atomic_counter.store(Self.blocks_done_offset, Int32(0))
+                atomic_counter.unsafe_store(Self.blocks_done_offset, Int32(0))
             if Int(tid) < Self.n_experts:
-                atomic_counter.store[
+                atomic_counter.unsafe_store[
                     width=2, alignment=align_of[SIMD[.int32, 2]]()
                 ](2 * Int(tid), SIMD[.int32, 2](0, 0))
 
@@ -5469,9 +5584,15 @@ struct EPCombineKernel[
     @staticmethod
     @inline(.always)
     def reduce_and_copy_to_output[
+        StoreFnType: EPCombineStoreFn,
+        RouterWeightsFnType: RouterWeightsFn,
+        //,
         output_type: DType,
-        store_fn: ep_combine_store_type,
-        router_weights_wrapper: Optional[router_weights_wrapper_type] = None,
+        has_router_weights: Bool,
+        *,
+        # The output goes through `store_fn`, so there is no output tile to
+        # infer the engine from.
+        OutputTokensEngine: TensorEngine = DefaultEngine[element_width=1],
     ](
         num_tokens: Int,
         recv_buf_p: MutPointer[UInt8, MutUntrackedOrigin],
@@ -5479,6 +5600,8 @@ struct EPCombineKernel[
         my_rank: Int32,
         reduce_sm_id: Int,
         n_active_reduce_sms: Int,
+        store_fn: StoreFnType,
+        router_weights_fn: RouterWeightsFnType,
         topk_ids_p: Optional[ImmPointer[Int32, ImmUntrackedOrigin]] = None,
     ) -> None:
         """Communication SM logic for combine_wait_kernel.
@@ -5487,13 +5610,12 @@ struct EPCombineKernel[
         applying router weights and reduction across top-k experts.
 
         Parameters:
+            StoreFnType: The type of `store_fn` (inferred).
+            RouterWeightsFnType: The type of `router_weights_fn` (inferred).
             output_type: The type of the output tokens.
-            store_fn: Stores one output vector. Called with
-                `(token_idx, elem)` when `router_weights_wrapper` is set, and
-                with `(token_idx, topk_idx, elem)` otherwise.
-            router_weights_wrapper: The wrapper for the router weights. If
-                provided, the routed experts' outputs for a token are weighted
-                and summed.
+            has_router_weights: Whether the routed experts' outputs for a
+                token are weighted by `router_weights_fn` and summed.
+            OutputTokensEngine: Storage engine backing the output tokens tile.
 
         Args:
             num_tokens: The number of output tokens.
@@ -5505,6 +5627,11 @@ struct EPCombineKernel[
                 different SM mapping inside a fused persistent kernel.
             n_active_reduce_sms: Count of reduce communication SMs
                 (``grid_dim.x - n_wait_sms`` in the standalone kernels).
+            store_fn: Stores one output vector. Called with
+                `(token_idx, elem)` when `has_router_weights`, and with
+                `(token_idx, topk_idx, elem)` otherwise.
+            router_weights_fn: The router weights, called only when
+                `has_router_weights`.
             topk_ids_p: Pointer to the top-k IDs for each token, only required
                 if skip_a2a is True.
         """
@@ -5531,7 +5658,7 @@ struct EPCombineKernel[
             )
 
             # Reset the atomic counter for the next round.
-            atomic_counter.store(sm_id, 0)
+            atomic_counter.unsafe_store(sm_id, 0)
         barrier()
 
         comptime n_chunk_elems = WARP_SIZE * dst_simd_width
@@ -5562,7 +5689,7 @@ struct EPCombineKernel[
             comptime for topk_idx in range(Self.top_k):
                 comptime if Self.skip_a2a:
                     var topk_ids_ptr = topk_ids_p.unsafe_value()
-                    var expert_id = topk_ids_ptr.load(
+                    var expert_id = topk_ids_ptr.unsafe_load(
                         token_idx * Self.top_k + topk_idx
                     )
 
@@ -5582,7 +5709,7 @@ struct EPCombineKernel[
                 )
                 # recv_buf is fresh peer data each round: not invariant.
                 var recv_chunk = bitcast[output_type, dst_simd_width](
-                    recv_buf_ptr.load[
+                    recv_buf_ptr.unsafe_load[
                         width=byte_simd_width,
                         alignment=_align,
                     ](
@@ -5590,8 +5717,8 @@ struct EPCombineKernel[
                     )
                 )
 
-                comptime if case .Some(weights_fn) = router_weights_wrapper:
-                    var weight = weights_fn[1](token_idx, topk_idx)
+                comptime if has_router_weights:
+                    var weight = router_weights_fn[1](token_idx, topk_idx)
                     accum += weight * recv_chunk.cast[.float32]()
 
                 else:
@@ -5604,7 +5731,7 @@ struct EPCombineKernel[
                         Index(token_idx, topk_idx, elem_offset), recv_chunk
                     )
 
-            comptime if router_weights_wrapper:
+            comptime if has_router_weights:
                 store_fn[alignment=store_align](
                     Index(
                         token_idx,
@@ -5634,11 +5761,21 @@ def combine_async_kernel[
     max_tokens_per_rank: Int,
     p2p_world_size: Int,
     use_shmem: Bool = True,
+    *,
+    # Callers bind this kernel before the call, so there is no tile argument
+    # to infer the engines from.
+    InputTokensEngine: TensorEngine = DefaultEngine[element_width=1],
+    SrcInfoEngine: TensorEngine = DefaultEngine[element_width=1],
 ](
     input_tokens: TileTensor[
-        input_type, input_tokens_layout, ImmUntrackedOrigin
+        input_type,
+        input_tokens_layout,
+        ImmUntrackedOrigin,
+        Engine=InputTokensEngine,
     ],
-    src_info: TileTensor[.int32, src_info_layout, ImmUntrackedOrigin],
+    src_info: TileTensor[
+        .int32, src_info_layout, ImmUntrackedOrigin, Engine=SrcInfoEngine
+    ],
     send_buf_p: MutPointer[UInt8, MutUntrackedOrigin],
     recv_buf_ptrs: Array[MutPointer[UInt8, MutUntrackedOrigin], p2p_world_size],
     recv_count_ptrs: Array[
@@ -5667,6 +5804,8 @@ def combine_async_kernel[
         max_tokens_per_rank: The maximum number of tokens per rank.
         p2p_world_size: Size of a High-speed GPU interconnect group.
         use_shmem: Whether to use the SHMEM API for the communication.
+        InputTokensEngine: Storage engine backing the `input_tokens` tile.
+        SrcInfoEngine: Storage engine backing the `src_info` tile.
 
     Args:
         input_tokens: The tokens to be sent back to the original rank.
@@ -5733,14 +5872,17 @@ def combine_wait_kernel[
     n_ranks: Int,
     msg_bytes: Int,
     max_tokens_per_rank: Int,
-    store_fn: ep_combine_store_type,
-    router_weights_wrapper: Optional[router_weights_wrapper_type] = None,
+    StoreFnType: EPCombineStoreFn,
+    RouterWeightsFnType: RouterWeightsFn,
+    has_router_weights: Bool,
 ](
     num_tokens: Int32,
     recv_buf_p: MutPointer[UInt8, MutUntrackedOrigin],
     recv_count_p: MutPointer[UInt64, MutUntrackedOrigin],
     ep_counters: EPLocalSyncCounters[n_experts],
     my_rank: Int32,
+    store_fn: StoreFnType,
+    router_weights_fn: RouterWeightsFnType,
 ):
     """
     This kernel is called after the `combine_kernel` to complete the
@@ -5757,11 +5899,10 @@ def combine_wait_kernel[
         n_ranks: The number of ranks.
         msg_bytes: The number of bytes in the message for each token.
         max_tokens_per_rank: The maximum number of tokens per rank.
-        store_fn: Stores the output tokens. Called with
-            `(token_idx, elem)` when `router_weights_wrapper` is set, and
-            with `(token_idx, topk_idx, elem)` otherwise.
-        router_weights_wrapper: The wrapper for the router weights. If provided,
-            all routed experts' outputs for a token will be weighted and summed.
+        StoreFnType: The type of `store_fn`.
+        RouterWeightsFnType: The type of `router_weights_fn`.
+        has_router_weights: Whether all routed experts' outputs for a token
+            are weighted by `router_weights_fn` and summed.
 
     Args:
         num_tokens: The number of output tokens.
@@ -5773,6 +5914,11 @@ def combine_wait_kernel[
             buffer is of shape `(n_local_experts, n_ranks)`.
         ep_counters: EP atomic counters for kernel synchronization.
         my_rank: The rank of the current device.
+        store_fn: Stores the output tokens, passed by host layout. Called with
+            `(token_idx, elem)` when `has_router_weights`, and with
+            `(token_idx, topk_idx, elem)` otherwise.
+        router_weights_fn: The router weights, passed by host layout and
+            called only when `has_router_weights`.
     """
 
     comptime combine_impl = EPCombineKernel[
@@ -5801,17 +5947,15 @@ def combine_wait_kernel[
 
     # All the other SMs are used for copying the tokens to the output tensor.
     else:
-        combine_impl.reduce_and_copy_to_output[
-            output_type,
-            store_fn,
-            router_weights_wrapper,
-        ](
+        combine_impl.reduce_and_copy_to_output[output_type, has_router_weights](
             Int(num_tokens),
             recv_buf_p,
             atomic_counter,
             my_rank,
             block_idx.x,
             grid_dim.x - combine_impl.n_wait_sms,
+            store_fn,
+            router_weights_fn,
         )
 
 
@@ -5841,20 +5985,40 @@ def dispatch_kernel[
     max_tokens_per_rank: Int,
     p2p_world_size: Int,
     token_fmt_type: TokenFormat,
+    InputScalesFnType: InputScalesFn,
     fused_shared_expert: Bool = False,
-    input_scales_wrapper: Optional[input_scales_wrapper_type] = None,
+    has_input_scales: Bool = False,
     skip_a2a: Bool = False,
     use_shmem: Bool = True,
     allreduce_world_size: Int = 1,
+    *,
+    # Callers bind this kernel before the call, so there is no tile argument
+    # to infer the engines from.
+    InputTokensEngine: TensorEngine = DefaultEngine[element_width=1],
+    TopkIdsEngine: TensorEngine = DefaultEngine[element_width=1],
+    RowOffsetsEngine: TensorEngine = DefaultEngine[element_width=1],
+    ExpertIdsEngine: TensorEngine = DefaultEngine[element_width=1],
+    SrcInfoEngine: TensorEngine = DefaultEngine[element_width=1],
 ](
     input_tokens: TileTensor[
-        input_type, input_tokens_layout, ImmUntrackedOrigin
+        input_type,
+        input_tokens_layout,
+        ImmUntrackedOrigin,
+        Engine=InputTokensEngine,
     ],
-    topk_ids: TileTensor[.int32, topk_ids_layout, ImmUntrackedOrigin],
+    topk_ids: TileTensor[
+        .int32, topk_ids_layout, ImmUntrackedOrigin, Engine=TopkIdsEngine
+    ],
     format_handler: token_fmt_type,
-    row_offsets: TileTensor[.uint32, row_offsets_layout, MutUntrackedOrigin],
-    expert_ids: TileTensor[.int32, expert_ids_layout, MutUntrackedOrigin],
-    src_info: TileTensor[.int32, src_info_layout, MutUntrackedOrigin],
+    row_offsets: TileTensor[
+        .uint32, row_offsets_layout, MutUntrackedOrigin, Engine=RowOffsetsEngine
+    ],
+    expert_ids: TileTensor[
+        .int32, expert_ids_layout, MutUntrackedOrigin, Engine=ExpertIdsEngine
+    ],
+    src_info: TileTensor[
+        .int32, src_info_layout, MutUntrackedOrigin, Engine=SrcInfoEngine
+    ],
     send_buf_p: MutPointer[UInt8, MutUntrackedOrigin],
     recv_buf_ptrs: Array[MutPointer[UInt8, MutUntrackedOrigin], p2p_world_size],
     recv_count_ptrs: Array[
@@ -5862,6 +6026,7 @@ def dispatch_kernel[
     ],
     ep_counters: EPLocalSyncCounters[n_experts],
     my_rank: Int32,
+    input_scales_fn: InputScalesFnType,
 ):
     """
     Fused dispatch kernel that combines dispatch_async and dispatch_wait
@@ -5886,16 +6051,22 @@ def dispatch_kernel[
         p2p_world_size: Size of a High-speed GPU interconnect group.
         token_fmt_type: Type conforming to TokenFormat trait that defines the
             token encoding scheme.
+        InputScalesFnType: The type of `input_scales_fn`.
         fused_shared_expert: Whether to pack the shared expert inputs with the
             routed experts' inputs. When enabled, input_tokens is used as the
             shared expert inputs.
-        input_scales_wrapper: The wrapper for the input scales.
+        has_input_scales: Whether `input_scales_fn` supplies the input scale.
         skip_a2a: Whether to skip the A2A communication. If true, we will only
             send tokens within the current device.
         use_shmem: Whether to use the SHMEM API for the communication.
         allreduce_world_size: The world size of the allreduce operation. Only
             needed for skip_a2a. Used to calculate the workload distribution for
             the shared expert (if has one).
+        InputTokensEngine: Storage engine backing the `input_tokens` tile.
+        TopkIdsEngine: Storage engine backing the `topk_ids` tile.
+        RowOffsetsEngine: Storage engine backing the `row_offsets` tile.
+        ExpertIdsEngine: Storage engine backing the `expert_ids` tile.
+        SrcInfoEngine: Storage engine backing the `src_info` tile.
 
     Args:
         input_tokens: The input tokens to be dispatched. Also used as shared
@@ -5918,6 +6089,7 @@ def dispatch_kernel[
             each device in the p2p world.
         ep_counters: EP atomic counters for kernel synchronization.
         my_rank: The rank of the current device.
+        input_scales_fn: Input scale supplier, passed by host layout.
     """
 
     comptime dispatch_impl = EPDispatchKernel[
@@ -5967,7 +6139,7 @@ def dispatch_kernel[
                 block_idx.x,
             )
         else:
-            dispatch_impl.copy_and_send_tokens[input_scales_wrapper](
+            dispatch_impl.copy_and_send_tokens[has_input_scales](
                 input_tokens,
                 topk_ids,
                 send_buf_p,
@@ -5977,6 +6149,7 @@ def dispatch_kernel[
                 my_rank,
                 block_idx.x,
                 grid_dim.x - dispatch_impl.n_signal_sms,
+                input_scales_fn,
             )
             comptime if fused_shared_expert:
                 # This RELEASE ensures that all previous writes to the send
@@ -6066,17 +6239,28 @@ def combine_kernel[
     msg_bytes: Int,
     max_tokens_per_rank: Int,
     p2p_world_size: Int,
-    store_fn: ep_combine_store_type,
-    router_weights_wrapper: Optional[router_weights_wrapper_type] = None,
+    StoreFnType: EPCombineStoreFn,
+    RouterWeightsFnType: RouterWeightsFn,
+    has_router_weights: Bool,
     fused_shared_expert: Bool = False,
     skip_a2a: Bool = False,
     use_shmem: Bool = True,
     allreduce_world_size: Int = 1,
+    *,
+    # Callers bind this kernel before the call, so there is no tile argument
+    # to infer the engines from.
+    InputTokensEngine: TensorEngine = DefaultEngine[element_width=1],
+    SrcInfoEngine: TensorEngine = DefaultEngine[element_width=1],
 ](
     input_tokens: TileTensor[
-        input_type, input_tokens_layout, ImmUntrackedOrigin
+        input_type,
+        input_tokens_layout,
+        ImmUntrackedOrigin,
+        Engine=InputTokensEngine,
     ],
-    src_info: TileTensor[.int32, src_info_layout, ImmUntrackedOrigin],
+    src_info: TileTensor[
+        .int32, src_info_layout, ImmUntrackedOrigin, Engine=SrcInfoEngine
+    ],
     num_tokens: Int32,
     send_buf_p: MutPointer[UInt8, MutUntrackedOrigin],
     recv_buf_ptrs: Array[MutPointer[UInt8, MutUntrackedOrigin], p2p_world_size],
@@ -6086,6 +6270,8 @@ def combine_kernel[
     ep_counters: EPLocalSyncCounters[n_experts],
     topk_ids_p: Optional[ImmPointer[Int32, ImmUntrackedOrigin]],
     my_rank: Int32,
+    store_fn: StoreFnType,
+    router_weights_fn: RouterWeightsFnType,
 ):
     """
     Fused combine kernel that combines combine_async and combine_wait
@@ -6097,7 +6283,7 @@ def combine_kernel[
 
     For fused_shared_expert mode, the shared expert outputs are added to the
     reduced routed expert outputs before `store_fn` is called. This requires
-    router_weights_wrapper to be provided (output must be reduced).
+    `has_router_weights` (output must be reduced).
 
     Parameters:
         input_type: The type of the input/output tokens.
@@ -6111,20 +6297,21 @@ def combine_kernel[
         msg_bytes: The number of bytes per token message.
         max_tokens_per_rank: The maximum number of tokens per rank.
         p2p_world_size: Size of a High-speed GPU interconnect group.
-        store_fn: Stores the combined output tokens. Called with
-            `(token_idx, elem)` when `router_weights_wrapper` is set, and
-            with `(token_idx, topk_idx, elem)` otherwise.
-        router_weights_wrapper: The wrapper for the router weights. If provided,
-            all routed experts' outputs for a token will be weighted and summed.
-            REQUIRED when fused_shared_expert is True.
+        StoreFnType: The type of `store_fn`.
+        RouterWeightsFnType: The type of `router_weights_fn`.
+        has_router_weights: Whether all routed experts' outputs for a token
+            are weighted by `router_weights_fn` and summed. REQUIRED when
+            fused_shared_expert is True.
         fused_shared_expert: Whether to add the shared expert's output to the
-            combined output. Requires router_weights_wrapper to be provided.
+            combined output. Requires `has_router_weights`.
         skip_a2a: Whether to skip the A2A communication. If true, we will only
             send tokens within the current device.
         use_shmem: Whether to use the SHMEM API for the communication.
         allreduce_world_size: The world size of the allreduce operation. Only
             needed for skip_a2a. Used to calculate the workload distribution for
             the shared expert (if has one).
+        InputTokensEngine: Storage engine backing the `input_tokens` tile.
+        SrcInfoEngine: Storage engine backing the `src_info` tile.
     Args:
         input_tokens: The tokens to be sent back to the original rank.
         src_info: The source token info tensor.
@@ -6142,13 +6329,18 @@ def combine_kernel[
         topk_ids_p: Pointer to the top-k IDs for each token, only required if
             skip_a2a is True.
         my_rank: The rank of the current device.
+        store_fn: Stores the combined output tokens, passed by host layout.
+            Called with `(token_idx, elem)` when `has_router_weights`, and
+            with `(token_idx, topk_idx, elem)` otherwise.
+        router_weights_fn: The router weights, passed by host layout and
+            called only when `has_router_weights`.
 
     """
 
     comptime if fused_shared_expert:
-        comptime assert router_weights_wrapper, (
+        comptime assert has_router_weights, (
             "EP combine_kernel: fused_shared_expert requires "
-            "router_weights_wrapper to be provided. Cannot add shared expert "
+            "has_router_weights. Cannot add shared expert "
             "output to non-reduced routed expert outputs."
         )
     comptime _allreduce_world_size = UInt32(allreduce_world_size)
@@ -6204,16 +6396,13 @@ def combine_kernel[
                 ), "input_tokens expects rank >= 2"
 
                 @inline(.always)
-                @__parameter
                 def add_shared_expert_output[
                     dtype: DType,
                     rank: Int,
                     width: SIMDLength,
                     *,
                     alignment: Int = 1,
-                ](
-                    idx: IndexList[rank], combined_val: SIMD[dtype, width]
-                ) capturing:
+                ](idx: IndexList[rank], combined_val: SIMD[dtype, width]) {var}:
                     comptime assert rank == 2, "expects a reduced output"
                     var shared_expert_val = SIMD[dtype, width]()
 
@@ -6250,9 +6439,7 @@ def combine_kernel[
                     )
 
                 combine_impl.reduce_and_copy_to_output[
-                    input_type,
-                    add_shared_expert_output,
-                    router_weights_wrapper,
+                    input_type, has_router_weights
                 ](
                     Int(num_tokens),
                     recv_buf_ptrs[my_p2p_rank],
@@ -6260,14 +6447,14 @@ def combine_kernel[
                     my_rank,
                     block_idx.x,
                     grid_dim.x - combine_impl.n_wait_sms,
+                    add_shared_expert_output,
+                    router_weights_fn,
                     topk_ids_p,
                 )
 
             else:
                 combine_impl.reduce_and_copy_to_output[
-                    input_type,
-                    store_fn,
-                    router_weights_wrapper,
+                    input_type, has_router_weights
                 ](
                     Int(num_tokens),
                     recv_buf_ptrs[my_p2p_rank],
@@ -6275,6 +6462,8 @@ def combine_kernel[
                     my_rank,
                     block_idx.x,
                     grid_dim.x - combine_impl.n_wait_sms,
+                    store_fn,
+                    router_weights_fn,
                     topk_ids_p,
                 )
 
@@ -6413,15 +6602,40 @@ def fused_silu_nvfp4_kernel[
     num_threads: Int,
     num_sms: Int,
     activation: swiglu_activation_type = swiglu[0.0],
+    *,
+    # Callers bind this kernel before the call, so there is no tile argument
+    # to infer the engines from.
+    OutputEngine: TensorEngine = DefaultEngine[element_width=1],
+    ScalesEngine: TensorEngine = DefaultEngine[element_width=1],
+    InputEngine: TensorEngine = DefaultEngine[element_width=1],
+    RowOffsetsEngine: TensorEngine = DefaultEngine[element_width=1],
+    ScalesOffsetsEngine: TensorEngine = DefaultEngine[element_width=1],
+    InputScalesEngine: TensorEngine = DefaultEngine[element_width=1],
 ](
-    output_tensor: TileTensor[fp4_dtype, output_layout, MutUntrackedOrigin],
-    scales_tensor: TileTensor[scales_dtype, scales_layout, MutUntrackedOrigin],
-    input_tensor: TileTensor[input_dtype, input_layout, ImmUntrackedOrigin],
-    row_offsets: TileTensor[.uint32, offsets_layout, ImmUntrackedOrigin],
-    scales_offsets: TileTensor[
-        .uint32, scales_offsets_layout, ImmUntrackedOrigin
+    output_tensor: TileTensor[
+        fp4_dtype, output_layout, MutUntrackedOrigin, Engine=OutputEngine
     ],
-    input_scales: TileTensor[.float32, input_scales_layout, ImmUntrackedOrigin],
+    scales_tensor: TileTensor[
+        scales_dtype, scales_layout, MutUntrackedOrigin, Engine=ScalesEngine
+    ],
+    input_tensor: TileTensor[
+        input_dtype, input_layout, ImmUntrackedOrigin, Engine=InputEngine
+    ],
+    row_offsets: TileTensor[
+        .uint32, offsets_layout, ImmUntrackedOrigin, Engine=RowOffsetsEngine
+    ],
+    scales_offsets: TileTensor[
+        .uint32,
+        scales_offsets_layout,
+        ImmUntrackedOrigin,
+        Engine=ScalesOffsetsEngine,
+    ],
+    input_scales: TileTensor[
+        .float32,
+        input_scales_layout,
+        ImmUntrackedOrigin,
+        Engine=InputScalesEngine,
+    ],
 ):
     """
     This kernel performs the gated activation for all the MLPs in the EP MoE
@@ -6597,15 +6811,40 @@ def fused_silu_nvfp4_interleaved_kernel[
     num_threads: Int,
     num_sms: Int,
     activation: swiglu_activation_type = swiglu[0.0],
+    *,
+    # Callers bind this kernel before the call, so there is no tile argument
+    # to infer the engines from.
+    OutputEngine: TensorEngine = DefaultEngine[element_width=1],
+    ScalesEngine: TensorEngine = DefaultEngine[element_width=1],
+    InputEngine: TensorEngine = DefaultEngine[element_width=1],
+    RowOffsetsEngine: TensorEngine = DefaultEngine[element_width=1],
+    ScalesOffsetsEngine: TensorEngine = DefaultEngine[element_width=1],
+    InputScalesEngine: TensorEngine = DefaultEngine[element_width=1],
 ](
-    output_tensor: TileTensor[fp4_dtype, output_layout, MutUntrackedOrigin],
-    scales_tensor: TileTensor[scales_dtype, scales_layout, MutUntrackedOrigin],
-    input_tensor: TileTensor[input_dtype, input_layout, ImmUntrackedOrigin],
-    row_offsets: TileTensor[.uint32, offsets_layout, ImmUntrackedOrigin],
-    scales_offsets: TileTensor[
-        .uint32, scales_offsets_layout, ImmUntrackedOrigin
+    output_tensor: TileTensor[
+        fp4_dtype, output_layout, MutUntrackedOrigin, Engine=OutputEngine
     ],
-    input_scales: TileTensor[.float32, input_scales_layout, ImmUntrackedOrigin],
+    scales_tensor: TileTensor[
+        scales_dtype, scales_layout, MutUntrackedOrigin, Engine=ScalesEngine
+    ],
+    input_tensor: TileTensor[
+        input_dtype, input_layout, ImmUntrackedOrigin, Engine=InputEngine
+    ],
+    row_offsets: TileTensor[
+        .uint32, offsets_layout, ImmUntrackedOrigin, Engine=RowOffsetsEngine
+    ],
+    scales_offsets: TileTensor[
+        .uint32,
+        scales_offsets_layout,
+        ImmUntrackedOrigin,
+        Engine=ScalesOffsetsEngine,
+    ],
+    input_scales: TileTensor[
+        .float32,
+        input_scales_layout,
+        ImmUntrackedOrigin,
+        Engine=InputScalesEngine,
+    ],
 ):
     """SwiGLU + NVFP4 quantization for interleaved gate/up layout.
 
@@ -6965,13 +7204,32 @@ def fused_silu_mxfp8_interleaved_kernel[
     num_threads: Int,
     num_sms: Int,
     activation: swiglu_activation_type = swiglu[0.0],
+    *,
+    # Callers bind this kernel before the call, so there is no tile argument
+    # to infer the engines from.
+    OutputEngine: TensorEngine = DefaultEngine[element_width=1],
+    ScalesEngine: TensorEngine = DefaultEngine[element_width=1],
+    InputEngine: TensorEngine = DefaultEngine[element_width=1],
+    RowOffsetsEngine: TensorEngine = DefaultEngine[element_width=1],
+    ScalesOffsetsEngine: TensorEngine = DefaultEngine[element_width=1],
 ](
-    output_tensor: TileTensor[fp8_dtype, output_layout, MutUntrackedOrigin],
-    scales_tensor: TileTensor[scales_dtype, scales_layout, MutUntrackedOrigin],
-    input_tensor: TileTensor[input_dtype, input_layout, ImmUntrackedOrigin],
-    row_offsets: TileTensor[.uint32, offsets_layout, ImmUntrackedOrigin],
+    output_tensor: TileTensor[
+        fp8_dtype, output_layout, MutUntrackedOrigin, Engine=OutputEngine
+    ],
+    scales_tensor: TileTensor[
+        scales_dtype, scales_layout, MutUntrackedOrigin, Engine=ScalesEngine
+    ],
+    input_tensor: TileTensor[
+        input_dtype, input_layout, ImmUntrackedOrigin, Engine=InputEngine
+    ],
+    row_offsets: TileTensor[
+        .uint32, offsets_layout, ImmUntrackedOrigin, Engine=RowOffsetsEngine
+    ],
     scales_offsets: TileTensor[
-        .uint32, scales_offsets_layout, ImmUntrackedOrigin
+        .uint32,
+        scales_offsets_layout,
+        ImmUntrackedOrigin,
+        Engine=ScalesOffsetsEngine,
     ],
 ):
     """SwiGLU + MXFP8 quantization for interleaved gate/up layout.

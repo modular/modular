@@ -161,7 +161,7 @@ def call_with_pack_metal[
     var dense_args_is_device_ptr: Pointer[Bool, MutUntrackedOrigin]
     if num_captures > num_captures_static:
         dense_args_is_device_ptr = alloc(
-            Layout[Bool](count=num_captures + num_args)
+            Layout[Bool](length=num_captures + num_args)
         ).unsafe_leak()
         for i in range(num_captures + num_args):
             dense_args_is_device_ptr[unsafe_offset=i] = False
@@ -203,7 +203,7 @@ def call_with_pack_metal[
         dealloc(
             ThinAllocation(
                 unsafe_owned_ptr=dense_args_is_device_ptr
-            ).unsafe_with_layout({count = num_captures + num_args})
+            ).unsafe_with_layout({length = num_captures + num_args})
         )
 
 
@@ -292,12 +292,12 @@ def call_with_pack_checked_metal[
     if num_captures > num_captures_static:
         dense_args_sizes = alloc(
             Layout[UInt64](
-                count=num_captures + num_passed_args + extra_host_count
+                length=num_captures + num_passed_args + extra_host_count
             )
         ).unsafe_leak()
         dense_args_is_device_ptr = alloc(
             Layout[Bool](
-                count=num_captures + num_passed_args + extra_host_count
+                length=num_captures + num_passed_args + extra_host_count
             )
         ).unsafe_leak()
         for i in range(num_captures + num_passed_args + extra_host_count):
@@ -428,13 +428,13 @@ def call_with_pack_checked_metal[
             ThinAllocation(
                 unsafe_owned_ptr=dense_args_sizes
             ).unsafe_with_layout(
-                {count = num_captures + num_passed_args + extra_host_count}
+                {length = num_captures + num_passed_args + extra_host_count}
             )
         )
         dealloc(
             ThinAllocation(
                 unsafe_owned_ptr=dense_args_is_device_ptr
             ).unsafe_with_layout(
-                {count = num_captures + num_passed_args + extra_host_count}
+                {length = num_captures + num_passed_args + extra_host_count}
             )
         )

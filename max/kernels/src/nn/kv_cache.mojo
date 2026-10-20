@@ -343,7 +343,7 @@ def _matmul_common[
 
     comptime if is_cpu[target]():
         var c_alloc = alloc(
-            AllocLayout[Scalar[dtype]](count=BS * SEQ_LEN * N)
+            AllocLayout[Scalar[dtype]](length=BS * SEQ_LEN * N)
         ).into_managed()
         var c_ptr: MutPointer[
             Scalar[dtype], origin_of(c_alloc)
@@ -1288,7 +1288,7 @@ def fused_qk_rms_norm_rope_ragged_paged[
             input_row_offsets,
             Int32(q_num_heads),
             Int32(cols),
-            host_arg=q_input_fn,
+            host_args=(q_input_fn,),
             grid_dim=rows,
             block_dim=block_dim_value,
         )
@@ -1754,8 +1754,7 @@ def fused_dual_qk_rms_norm_rope_ragged_paged[
             Int32(q_main_num_heads),
             Int32(q_index_num_heads),
             Int32(cols),
-            host_arg=main_q_input_fn,
-            host_arg2=index_q_input_fn,
+            host_args=(main_q_input_fn, index_q_input_fn),
             grid_dim=rows,
             block_dim=block_dim_value,
         )
@@ -2520,11 +2519,13 @@ def fused_dual_qk_rms_norm_rope_nvfp4_ragged_paged[
             input_row_offsets,
             Int32(q_main_num_heads),
             Int32(q_index_num_heads),
-            host_arg=q_main_input_fn,
-            host_arg2=k_main_input_fn,
-            host_arg3=v_main_input_fn,
-            host_arg4=q_index_input_fn,
-            host_arg5=k_index_input_fn,
+            host_args=(
+                q_main_input_fn,
+                k_main_input_fn,
+                v_main_input_fn,
+                q_index_input_fn,
+                k_index_input_fn,
+            ),
             grid_dim=rows,
             block_dim=WARP_SIZE * warps_per_block,
         )
@@ -2603,11 +2604,9 @@ def rms_norm_kv_cache_ragged_paged[
         shape[1] = rms_norm_cols
 
     @inline(.always)
-    @__parameter
-    @__copy_capture(k_cache, input_row_offsets)
     def key_cache_input_fn[
         width: Int, alignment: Int
-    ](idx: Coord) -> SIMD[dtype, width]:
+    ](idx: Coord) {var k_cache, var input_row_offsets} -> SIMD[dtype, width]:
         comptime assert (
             idx.rank == rank
         ), "rms_norm_key_cache input lambda index should have rank " + String(
@@ -2639,11 +2638,11 @@ def rms_norm_kv_cache_ragged_paged[
         ).cast[dtype]()
 
     @inline(.always)
-    @__parameter
-    @__copy_capture(k_cache)
     def key_cache_output_fn[
         width: SIMDLength, alignment: Int
-    ](idx: Coord, val: SIMD[dtype, width]) -> None:
+    ](idx: Coord, val: SIMD[dtype, width]) {
+        var k_cache, var input_row_offsets
+    } -> None:
         comptime assert (
             idx.rank == rank
         ), "rms_norm_key_cache output lambda index should have rank " + String(
@@ -2684,13 +2683,13 @@ def rms_norm_kv_cache_ragged_paged[
         _rms_norm_impl[
             dtype,
             rank,
-            key_cache_input_fn,
-            key_cache_output_fn,
             target=target,
             epsilon=epsilon,
             weight_offset=weight_offset,
             multiply_before_cast=multiply_before_cast,
         ](
+            key_cache_input_fn,
+            key_cache_output_fn,
             Coord(shape),
             gamma,
             context,
@@ -2751,11 +2750,9 @@ def rms_norm_value_cache_ragged_paged[
         shape[1] = rms_norm_cols
 
     @inline(.always)
-    @__parameter
-    @__copy_capture(v_cache, input_row_offsets)
     def value_cache_input_fn[
         width: Int, alignment: Int
-    ](idx: Coord) -> SIMD[dtype, width]:
+    ](idx: Coord) {var v_cache, var input_row_offsets} -> SIMD[dtype, width]:
         comptime assert idx.rank == rank, (
             "rms_norm_value_cache input lambda index should have rank "
             + String(rank)
@@ -2786,11 +2783,11 @@ def rms_norm_value_cache_ragged_paged[
         ).cast[dtype]()
 
     @inline(.always)
-    @__parameter
-    @__copy_capture(v_cache)
     def value_cache_output_fn[
         width: SIMDLength, alignment: Int
-    ](idx: Coord, val: SIMD[dtype, width]) -> None:
+    ](idx: Coord, val: SIMD[dtype, width]) {
+        var v_cache, var input_row_offsets
+    } -> None:
         comptime assert idx.rank == rank, (
             "rms_norm_value_cache output lambda index should have rank "
             + String(rank)
@@ -2830,13 +2827,13 @@ def rms_norm_value_cache_ragged_paged[
         _rms_norm_impl[
             dtype,
             rank,
-            value_cache_input_fn,
-            value_cache_output_fn,
             target=target,
             epsilon=epsilon,
             weight_offset=weight_offset,
             multiply_before_cast=multiply_before_cast,
         ](
+            value_cache_input_fn,
+            value_cache_output_fn,
             Coord(shape),
             gamma,
             context,
@@ -2964,7 +2961,7 @@ def print_kv_cache_paged_generic_gpu[
 
     var n_blocks = kv_collection.blocks.num_elements()
     var blocks_alloc = alloc(
-        AllocLayout[Scalar[dtype]](count=n_blocks)
+        AllocLayout[Scalar[dtype]](length=n_blocks)
     ).into_managed()
     var blocks_ptr: MutPointer[
         Scalar[dtype], origin_of(blocks_alloc)
@@ -2979,7 +2976,7 @@ def print_kv_cache_paged_generic_gpu[
 
     var n_cache_lengths = kv_collection.cache_lengths.num_elements()
     var cache_lengths_alloc = alloc(
-        AllocLayout[UInt32](count=n_cache_lengths)
+        AllocLayout[UInt32](length=n_cache_lengths)
     ).into_managed()
     var cache_lengths_ptr: MutPointer[
         UInt32, origin_of(cache_lengths_alloc)
@@ -2997,7 +2994,7 @@ def print_kv_cache_paged_generic_gpu[
 
     var n_lookup_table = kv_collection.lookup_table.num_elements()
     var lookup_table_alloc = alloc(
-        AllocLayout[UInt32](count=n_lookup_table)
+        AllocLayout[UInt32](length=n_lookup_table)
     ).into_managed()
     var lookup_table_ptr: MutPointer[
         UInt32, origin_of(lookup_table_alloc)
@@ -3035,7 +3032,7 @@ def print_kv_cache_paged_generic_gpu[
         kv_collection.max_cache_length,
     )
     var valid_lengths_host_alloc = alloc(
-        AllocLayout[UInt32](count=valid_lengths.num_elements())
+        AllocLayout[UInt32](length=valid_lengths.num_elements())
     ).into_managed()
     var valid_lengths_host_ptr: MutPointer[
         UInt32, origin_of(valid_lengths_host_alloc)

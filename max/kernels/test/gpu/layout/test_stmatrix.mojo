@@ -23,6 +23,7 @@ from layout import TileTensor, row_major
 from layout.tensor_core import get_fragment_size, get_mma_shape
 from linalg.matmul.gpu import matmul_kernel_naive
 from std.memory import unsafe_stack_allocation
+from std.memory.alloc import unsafe_alloc
 from std.testing import assert_almost_equal
 
 from std.utils.numerics import get_accum_type
@@ -182,10 +183,10 @@ def check_stmatrix_gen[
     comptime N = mma_shape[1]
     comptime K = mma_shape[2]
 
-    var a_host = alloc[Scalar[input_type]](M * K)
-    var b_host = alloc[Scalar[input_type]](K * N)
-    var c_host = alloc[Scalar[output_type]](M * N)
-    var c_host_ref = alloc[Scalar[output_type]](M * N)
+    var a_host = unsafe_alloc[Scalar[input_type]](M * K)
+    var b_host = unsafe_alloc[Scalar[input_type]](K * N)
+    var c_host = unsafe_alloc[Scalar[output_type]](M * N)
+    var c_host_ref = unsafe_alloc[Scalar[output_type]](M * N)
 
     for i in range(M * K):
         a_host[i] = Scalar[input_type](i)
@@ -265,8 +266,8 @@ def check_stmatrix_gen[
     ctx.synchronize()
 
     for i in range(M * N):
-        var out_val = c_host.load(i)
-        var out_ref = c_host_ref.load(i)
+        var out_val = c_host.unsafe_load(i)
+        var out_ref = c_host_ref.unsafe_load(i)
         assert_almost_equal(out_val, out_ref)
 
     _ = a_device
@@ -285,10 +286,10 @@ def check_stmatrix(
 ) raises:
     print("== test stmatrix instruction")
 
-    var a_host = alloc[Float32](M * K)
-    var b_host = alloc[Float32](K * N)
-    var c_host = alloc[Float32](M * N)
-    var c_host_ref = alloc[Float32](M * N)
+    var a_host = unsafe_alloc[Float32](M * K)
+    var b_host = unsafe_alloc[Float32](K * N)
+    var c_host = unsafe_alloc[Float32](M * N)
+    var c_host_ref = unsafe_alloc[Float32](M * N)
 
     for i in range(M * K):
         var val = random_si64(rand_min, rand_max)

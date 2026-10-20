@@ -400,8 +400,7 @@ def amd_4wave_conv[
                 source_ptr,
                 Int32(source_row_stride),
                 beta,
-                host_arg=epilogue_fn,
-                host_arg2=compute_fn,
+                host_args=(epilogue_fn, compute_fn),
                 grid_dim=(num_blocks_n * num_blocks_m,),
                 block_dim=config.num_threads(),
             )
@@ -413,8 +412,7 @@ def amd_4wave_conv[
                 source_ptr,
                 Int32(source_row_stride),
                 beta,
-                host_arg=epilogue_fn,
-                host_arg2=compute_fn,
+                host_args=(epilogue_fn, compute_fn),
                 grid_dim=(num_blocks_n * num_blocks_m,),
                 block_dim=config.num_threads(),
             )

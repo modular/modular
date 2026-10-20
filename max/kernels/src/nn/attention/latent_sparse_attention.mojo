@@ -284,8 +284,8 @@ def _latent_sparse_attention_cpu[
 ):
     """Scalar reference path; the same math as the GPU kernel, one key at a time.
     """
-    var acc_alloc = alloc(AllocLayout[Float32](count=head_dim))
-    var qh_alloc = alloc(AllocLayout[Float32](count=head_dim))
+    var acc_alloc = alloc(AllocLayout[Float32](length=head_dim))
+    var qh_alloc = alloc(AllocLayout[Float32](length=head_dim))
     var acc = rebind[Pointer[Float32, MutAnyOrigin]](acc_alloc.unsafe_ptr())
     var qh = rebind[Pointer[Float32, MutAnyOrigin]](qh_alloc.unsafe_ptr())
     for t in range(num_rows):

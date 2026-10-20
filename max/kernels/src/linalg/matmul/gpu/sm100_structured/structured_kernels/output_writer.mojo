@@ -1859,7 +1859,7 @@ struct TileWriter[
                             p3_unswiz.ptr.unsafe_offset(
                                 p3_n_idx * UInt32(Self.stage_contiguous_size)
                             ).unsafe_offset(p3_local_col)
-                        ).store[alignment=p3_smem_alignment](p3_val_vec)
+                        ).unsafe_store[alignment=p3_smem_alignment](p3_val_vec)
 
                     WarpGroupBarrier[Self.num_output_warps * WARP_SIZE].sync()
 
@@ -1873,7 +1873,7 @@ struct TileWriter[
                     var p3_rank_hi = Array[Int32, P3_MAX_RANKS](fill=0)
                     for rk in range(p3_cfg.n_ranks):
                         var p3_cnt_off = Int(p3_expert_id) * p3_cfg.n_ranks + rk
-                        var p3_packed = p3_cfg.atomic_counter.load[
+                        var p3_packed = p3_cfg.atomic_counter.unsafe_load[
                             width=2,
                             alignment=align_of[SIMD[.int32, 2]](),
                         ](2 * p3_cnt_off)
@@ -1952,7 +1952,7 @@ struct TileWriter[
                                 var p3_dst_p2p_rank = (
                                     p3_dst_rank % p3_cfg.p2p_world_size
                                 )
-                                var p3_st = p3_cfg.src_info_ptr.load[
+                                var p3_st = p3_cfg.src_info_ptr.unsafe_load[
                                     width=2,
                                     alignment=align_of[SIMD[.int32, 2]](),
                                 ](p3_abs_row * 2)
@@ -2372,7 +2372,7 @@ struct TileWriter[
                         var src_ptr = c_smem_split._storage.unsafe_offset(
                             swizzle(linear_idx)
                         )
-                        var src = src_ptr.load[
+                        var src = src_ptr.unsafe_load[
                             width=simd_size, alignment=alignment
                         ]()
                         c_tensor.store[alignment=alignment](
@@ -2383,7 +2383,7 @@ struct TileWriter[
                         var src_ptr = c_smem_split._storage.unsafe_offset(
                             linear_idx
                         )
-                        var src = src_ptr.load[
+                        var src = src_ptr.unsafe_load[
                             width=simd_size, alignment=alignment
                         ]()
                         c_tensor.store[alignment=alignment](
@@ -2454,7 +2454,7 @@ struct TileWriter[
                 continue
             var src_idx = UInt32(simd_size) * tidx
             var c_smem_idx = swizzle(src_idx)
-            var val_vec = c_smem_ptr.unsafe_offset(c_smem_idx).load[
+            var val_vec = c_smem_ptr.unsafe_offset(c_smem_idx).unsafe_load[
                 width=simd_size,
                 alignment=smem_alignment,
             ]()
@@ -3219,7 +3219,7 @@ struct TileWriter[
                     var n_col = local_col + top_u[1] + UInt32(inc)
                     var bias = (
                         (epilogue_tile._storage.unsafe_offset(Int(n_col)))
-                        .load[width=2]()
+                        .unsafe_load[width=2]()
                         .cast[Self.epilogue_dtype]()
                     )
                     upper_frag_casted[frag_offset] += bias[0]
@@ -3252,7 +3252,7 @@ struct TileWriter[
                         var n_col_l = local_col + top_l[1] + UInt32(inc)
                         var bias = (
                             (epilogue_tile._storage.unsafe_offset(Int(n_col_l)))
-                            .load[width=2]()
+                            .unsafe_load[width=2]()
                             .cast[Self.epilogue_dtype]()
                         )
                         lower_frag_casted[frag_offset] += bias[0]

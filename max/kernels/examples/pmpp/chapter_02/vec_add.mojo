@@ -15,6 +15,7 @@
 # This is the complete implementation combining all the concepts from Chapter 2
 
 from std.math import ceildiv
+from std.memory.alloc import unsafe_alloc
 from max.gpu import global_idx
 from max.gpu.host import DeviceContext
 
@@ -97,10 +98,10 @@ def main() raises:
     comptime n = 512
 
     # Allocate host memory
-    var a = alloc[Float32](n)
-    var b = alloc[Float32](n)
-    var c = alloc[Float32](n)
-    var c_ref = alloc[Float32](n)
+    var a = unsafe_alloc[Float32](n)
+    var b = unsafe_alloc[Float32](n)
+    var c = unsafe_alloc[Float32](n)
+    var c_ref = unsafe_alloc[Float32](n)
 
     # Initialize input arrays
     for i in range(n):
@@ -124,7 +125,7 @@ def main() raises:
     print("Success")
 
     # Clean up
-    a.free()
-    b.free()
-    c.free()
-    c_ref.free()
+    a.unsafe_free()
+    b.unsafe_free()
+    c.unsafe_free()
+    c_ref.unsafe_free()

@@ -139,7 +139,7 @@ def _check_verification_result[
     )
 
     var result_host_alloc = alloc[Float32](
-        {count = NUM_BLOCKS * 5}
+        {length = NUM_BLOCKS * 5}
     ).into_managed()
     var result_host = result_host_alloc.unsafe_ptr()
     ctx.enqueue_copy(result_host, result_device)
@@ -403,11 +403,11 @@ def bench_matmul_1d_tma_epilogue[
         # Add 1D bias to reference output (broadcast across M rows).
         comptime if variant != "plain":
             var bias_host_alloc = alloc[Scalar[dtype]](
-                {count = N}
+                {length = N}
             ).into_managed()
             var bias_host = bias_host_alloc.unsafe_ptr()
             var c_ref_host_alloc = alloc[Scalar[dtype]](
-                {count = c_size}
+                {length = c_size}
             ).into_managed()
             var c_ref_host = c_ref_host_alloc.unsafe_ptr()
             ctx.enqueue_copy(bias_host, bias_ver_dev)

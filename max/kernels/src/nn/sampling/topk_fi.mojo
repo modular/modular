@@ -845,10 +845,10 @@ def TopKSamplingFromProbKernel[
         var generator = Random(seed=rng_seed, offset=UInt64(bx) + rng_offset)
         var k = _top_k_val
         if case .Some(top_k_arr) = top_k_arr:
-            k = Int(top_k_arr.load(bx))
+            k = Int(top_k_arr.unsafe_load(bx))
         var row_idx = bx
         if case .Some(indices) = indices:
-            row_idx = Int(indices.load(bx))
+            row_idx = Int(indices.unsafe_load(bx))
 
         var probs_row = probs.tile(Coord(Idx[1], _d), Coord(row_idx, 0))
 
@@ -1987,7 +1987,7 @@ def TopKTopPSamplingFromProbKernel[
 
     var row_idx = bx
     if case .Some(indices) = indices:
-        row_idx = Int(indices.load(bx))
+        row_idx = Int(indices.unsafe_load(bx))
 
     with PDL():
         var seed_val = UInt64(0)
@@ -2001,7 +2001,7 @@ def TopKTopPSamplingFromProbKernel[
 
         var k = _top_k_val
         if case .Some(top_k_arr) = top_k_arr:
-            k = Int(top_k_arr.load(row_idx))
+            k = Int(top_k_arr.unsafe_load(row_idx))
         if k == -1:
             k = _top_k_val
         if k <= 0 or k > _d:
@@ -3430,7 +3430,7 @@ def TopKTopPMaskedProbsKernel[
 
     var k = Int(top_k_val)
     if case .Some(top_k_arr) = top_k_arr:
-        k = Int(top_k_arr.load(bx))
+        k = Int(top_k_arr.unsafe_load(bx))
     if k <= 0 or k > _d:
         k = _d
 

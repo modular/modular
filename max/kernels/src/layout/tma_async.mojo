@@ -2332,10 +2332,12 @@ struct TMATensorTile[
         comptime descriptor_bytes = 128
 
         comptime for src_idx in range(descriptor_bytes // simd_width):
-            var src_vec = (src_desc).load[
+            var src_vec = (src_desc).unsafe_load[
                 width=simd_width, alignment=src_align
             ](src_idx * simd_width)
-            dst_desc.store[alignment=dst_align](src_idx * simd_width, src_vec)
+            dst_desc.unsafe_store[alignment=dst_align](
+                src_idx * simd_width, src_vec
+            )
 
     @inline(.always)
     def replace_tensormap_global_address_in_gmem[

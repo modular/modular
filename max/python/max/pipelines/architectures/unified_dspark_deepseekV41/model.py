@@ -19,7 +19,15 @@ from typing import Any, ClassVar
 
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef, Graph, TensorType, TensorValue
+from max.graph import (
+    BufferType,
+    BufferValue,
+    DeviceRef,
+    Graph,
+    TensorType,
+    TensorValue,
+    ops,
+)
 from max.nn.kv_cache import MultiKVCacheParams
 from max.nn.transformer import ReturnLogits
 from max.pipelines.lib import ModelInputs
@@ -48,7 +56,91 @@ from .batch_processor import (
 from .spec_adapters import ENGRAM_LOOKBACK, WINDOW_LEAF
 from .unified_dspark_deepseekV41 import UnifiedDSparkDeepseekV41
 
-__all__ = ["UnifiedDSparkDeepseekV41Model", "driver_outputs"]
+__all__ = [
+    "UnifiedDSparkDeepseekV41Model",
+    "driver_outputs",
+    "read_engram_lookback",
+    "record_engram_lookback",
+]
+
+
+def read_engram_lookback(
+    host_lookback: TensorValue, source: TensorValue, history: BufferValue
+) -> TensorValue:
+    """Returns the lookback window of each row, from the host or the history.
+
+    Args:
+        host_lookback: ``[batch, depth]`` window the host built from the
+            request's ``processed_length``.
+        source: ``[batch]`` int64, the row of ``history`` to read, or -1 for
+            the host window.
+        history: ``[rows, depth]`` windows the previous step recorded.
+    """
+    device = host_lookback.device
+    zero = ops.constant(0, DType.int64, device=device)
+    recorded = ops.gather(
+        ops.buffer_load(history), ops.max(source, zero), axis=0
+    )
+    return ops.where(ops.unsqueeze(source >= zero, -1), recorded, host_lookback)
+
+
+def record_engram_lookback(
+    history: BufferValue,
+    lookback: TensorValue,
+    tokens: TensorValue,
+    input_row_offsets: TensorValue,
+    draft_tokens: TensorValue,
+    num_accepted: TensorValue,
+) -> None:
+    """Stores each row's lookback window for the step after this one.
+
+    The next step starts after the row's chunk and its accepted drafts, so
+    its window ends with those tokens, then this step's window.
+
+    Args:
+        history: ``[rows, depth]`` buffer; row ``i`` receives batch row
+            ``i``'s window.
+        lookback: ``[batch, depth]`` this step's window; column ``j`` is the
+            token ``j + 1`` positions before the chunk.
+        tokens: ``[total_seq_len]`` ragged chunk tokens.
+        input_row_offsets: ``[batch + 1]`` offsets of the chunks.
+        draft_tokens: ``[batch, num_drafts]`` drafts this step verified.
+        num_accepted: ``[batch]`` drafts accepted per row.
+    """
+    device = lookback.device
+    batch, depth = lookback.shape[0], int(lookback.shape[1])
+    i = ops.range(0, depth, 1, depth, dtype=DType.int64, device=device)
+    starts = input_row_offsets[:-1].cast(DType.int64).rebind([batch])
+    lengths = input_row_offsets[1:].cast(DType.int64).rebind([batch]) - starts
+    # The last `depth` tokens up to the chunk's end, oldest first: chunk
+    # position `lengths - depth + i`, or this step's window before it.
+    position = ops.unsqueeze(lengths, -1) - depth + i
+    zero = ops.constant(0, DType.int64, device=device)
+    from_chunk = ops.gather(
+        tokens, ops.unsqueeze(starts, -1) + ops.max(position, zero), axis=0
+    )
+    from_window = ops.gather_nd(
+        lookback,
+        ops.unsqueeze(ops.max(-1 - position, zero), -1),
+        batch_dims=1,
+    )
+    ordered = ops.concat(
+        [
+            ops.where(position >= zero, from_chunk, from_window),
+            draft_tokens.rebind([batch, draft_tokens.shape[1]]),
+        ],
+        axis=1,
+    )
+    # Newest first, ending with the last accepted draft.
+    newest = ops.unsqueeze(
+        num_accepted.cast(DType.int64).rebind([batch]), -1
+    ) + (depth - 1 - i)
+    window = ops.gather_nd(ordered, ops.unsqueeze(newest, -1), batch_dims=1)
+    rows = ops.shape_to_tensor([batch]).reshape([])
+    first = ops.constant(0, DType.int64, DeviceRef.CPU())
+    ops.buffer_store_slice(
+        history, window, [(slice(first, rows), batch), slice(None)]
+    )
 
 
 def driver_outputs(
@@ -57,6 +149,7 @@ def driver_outputs(
     specs: Sequence[V41KVLeafSpec],
     *,
     has_engram: bool,
+    has_engram_history: bool = False,
 ) -> tuple[TensorValue, ...]:
     """Runs one speculative decoding step over the decoded graph inputs.
 
@@ -64,9 +157,20 @@ def driver_outputs(
     drafter's cache; every other KV cache passes through unchanged. With
     ``has_engram``, the first model-specific graph input is the Engram
     lookback window, which is handed to the target model through ``extra``.
+    With ``has_engram_history`` too, the next two are the per-row source
+    and the history buffer of :func:`read_engram_lookback`, and the step
+    records its successor's windows there.
     """
+    lookback: TensorValue | None = None
+    if has_engram:
+        lookback = inputs.trailing[0].tensor
+        if has_engram_history:
+            history = inputs.trailing[2].buffer
+            lookback = read_engram_lookback(
+                lookback, inputs.trailing[1].tensor, history
+            )
     window = inputs.kv(WINDOW_LEAF)
-    return driver(
+    outputs = driver(
         tokens=inputs.tokens,
         input_row_offsets=inputs.input_row_offsets,
         draft_tokens=inputs.draft_tokens,
@@ -95,10 +199,18 @@ def driver_outputs(
         ep_inputs=inputs.ep_inputs or None,
         vision_embeddings=inputs.vision_embeddings,
         vision_scatter_indices=inputs.vision_scatter_indices,
-        extra=(
-            {ENGRAM_LOOKBACK: inputs.trailing[0].tensor} if has_engram else {}
-        ),
+        extra={ENGRAM_LOOKBACK: lookback} if lookback is not None else {},
     )
+    if lookback is not None and has_engram_history:
+        record_engram_lookback(
+            history,
+            lookback,
+            inputs.tokens,
+            inputs.input_row_offsets,
+            inputs.draft_tokens,
+            outputs[0],
+        )
+    return outputs
 
 
 class UnifiedDSparkDeepseekV41Model(
@@ -155,16 +267,23 @@ class UnifiedDSparkDeepseekV41Model(
         engram_input_types, engram_token_map = self._prepare_engram(
             state_dict, model_config
         )
-        lookback_types = (
+        depth = model_config.engram_max_ngram_size - 1
+        device0 = self.device_refs[0]
+        lookback_types: list[TensorType | BufferType] = (
             [
                 TensorType(
                     DType.int64,
-                    shape=[
-                        "engram_lookback_batch",
-                        model_config.engram_max_ngram_size - 1,
-                    ],
-                    device=self.device_refs[0],
-                )
+                    shape=["engram_lookback_batch", depth],
+                    device=device0,
+                ),
+                TensorType(
+                    DType.int64, shape=["engram_lookback_batch"], device=device0
+                ),
+                BufferType(
+                    DType.int64,
+                    shape=["engram_history_rows", depth],
+                    device=device0,
+                ),
             ]
             if engram_layer_ids
             else []
@@ -246,6 +365,7 @@ class UnifiedDSparkDeepseekV41Model(
                 driver.decode_inputs(graph.inputs, self.kv_params),
                 specs,
                 has_engram=bool(engram_layer_ids),
+                has_engram_history=bool(engram_layer_ids),
             )
             graph.output(*outputs)
         if expert_uploads:

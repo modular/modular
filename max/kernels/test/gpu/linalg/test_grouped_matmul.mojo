@@ -220,7 +220,9 @@ def test[
                 .unsafe_offset(i * N)
                 .unsafe_offset(new_k)
             )
-            ptr.store[width=width, alignment=alignment](val.cast[out_type]())
+            ptr.unsafe_store[width=width, alignment=alignment](
+                val.cast[out_type]()
+            )
 
         grouped_matmul[has_epilogue_fn=True](
             c_dev,
@@ -254,7 +256,7 @@ def test[
                 .unsafe_offset(row * N)
                 .unsafe_offset(col)
             )
-            ptr.store[width=width, alignment=alignment](
+            ptr.unsafe_store[width=width, alignment=alignment](
                 new_val.cast[out_type]()
             )
 

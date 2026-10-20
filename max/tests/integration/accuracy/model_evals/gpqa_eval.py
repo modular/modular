@@ -51,7 +51,7 @@ from eval_common import (
     DEFAULT_SYSTEM_PROMPT,
     ChatClient,
     GenParams,
-    build_chat_kwargs,
+    chat_completion,
     dump_config,
     exact_match_score,
     expand_repeats,
@@ -146,9 +146,7 @@ def infer(
     )
     prompt = f"{GPQA_INSTRUCTION}\n\n{question}\n\n{options_str}"
     messages = build_messages(prompt, root_preamble, system_prompt)
-    resp = client.chat.completions.create(
-        **build_chat_kwargs(model, messages, params)
-    )
+    resp = chat_completion(client, model, messages, params)
     choice = resp.choices[0]
     correct, predicted = grade(choice.message.content, correct_letter)
     return {
@@ -162,7 +160,7 @@ def infer(
         "completion_tokens": (
             resp.usage.completion_tokens if resp.usage else 0
         ),
-        **response_fields(choice.message),
+        **response_fields(choice),
     }
 
 

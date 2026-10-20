@@ -22,6 +22,7 @@ from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from std.itertools import product
 from std.memory import unsafe_stack_allocation
+from std.memory.alloc import unsafe_alloc
 
 # ========================== KERNEL CODE ==========================
 
@@ -209,10 +210,10 @@ def main() raises:
     var filter_elements = filter_width * filter_width
 
     # Allocate host memory
-    var h_in = alloc[Float32](in_elements)
-    var h_filter = alloc[Float32](filter_elements)
-    var h_out = alloc[Float32](in_elements)
-    var h_ref = alloc[Float32](in_elements)
+    var h_in = unsafe_alloc[Float32](in_elements)
+    var h_filter = unsafe_alloc[Float32](filter_elements)
+    var h_out = unsafe_alloc[Float32](in_elements)
+    var h_ref = unsafe_alloc[Float32](in_elements)
 
     # Initialize input and filter with random values
     for i in range(in_elements):
@@ -255,7 +256,7 @@ def main() raises:
         print("SUCCESS: All values match!")
 
     # Cleanup
-    h_in.free()
-    h_filter.free()
-    h_out.free()
-    h_ref.free()
+    h_in.unsafe_free()
+    h_filter.unsafe_free()
+    h_out.unsafe_free()
+    h_ref.unsafe_free()

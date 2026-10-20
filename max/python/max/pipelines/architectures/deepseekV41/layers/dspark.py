@@ -53,7 +53,12 @@ from ...deepseekV4.layers.sparse_attention import (
     sparse_attention as gathered_sparse_attention,
 )
 from ..layer_resolver import LayerInfo
-from ..model_config import DeepseekV41Config
+from ..model_config import DeepseekV41Config, woa_mxfp8_enabled
+from .attention import (
+    bf16_grouped_projection,
+    mxfp8_grouped_projection,
+    wo_a_linear,
+)
 from .query import DeepseekV41Query
 from .ragged import V41RaggedRows as RaggedRows
 from .rope import rope_for_layer
@@ -387,12 +392,12 @@ def grouped_output_projection(
     num_heads: int,
     head_dim: int,
     o_groups: int,
-    o_lora_rank: int,
 ) -> TensorValue:
     """Projects ``[t, num_heads, head_dim]`` attention output to ``hidden``.
 
     Applies inverse RoPE at the query positions, then ``wo_a`` block-diagonal
-    over ``o_groups``, then ``wo_b``.
+    over ``o_groups`` (MXFP8 when it carries a ``weight_scale``, else bf16),
+    then ``wo_b``.
     """
     t = out.shape[0]
     out = ops.reshape(
@@ -402,16 +407,15 @@ def grouped_output_projection(
             int(freqs_cis.shape[-2]) * 2,
             inverse=True,
         ),
-        [t, num_heads, head_dim],
+        [t, num_heads * head_dim],
     )
-    group_width = num_heads * head_dim // o_groups
-    grouped = ops.transpose(ops.reshape(out, [t, o_groups, group_width]), 0, 1)
-    wo_a_weight = ops.reshape(wo_a.weight, [o_groups, o_lora_rank, group_width])
-    projected = ops.matmul(grouped, ops.transpose(wo_a_weight, -1, -2))
-    flattened = ops.reshape(
-        ops.transpose(projected, 0, 1), [t, o_groups * o_lora_rank]
-    )
-    return wo_b(flattened)
+    if wo_a.weight_scale is not None:
+        return wo_b(
+            mxfp8_grouped_projection(
+                out, wo_a.weight, wo_a.weight_scale, o_groups
+            )
+        )
+    return wo_b(bf16_grouped_projection(out, wo_a.weight, o_groups))
 
 
 class DeepseekV41DSparkAttention(Module):
@@ -467,12 +471,11 @@ class DeepseekV41DSparkAttention(Module):
             shape=(self.num_heads,),
             device=device,
         )
-        # Host-dequantized bf16: used as a raw weight in an einsum.
-        self.wo_a = Linear(
+        self.wo_a = wo_a_linear(
             self.num_heads * self.head_dim // self.o_groups,
             self.o_groups * self.o_lora_rank,
-            DType.bfloat16,
             device,
+            mxfp8=woa_mxfp8_enabled(),
         )
         self.wo_b = Linear(
             in_dim=self.o_groups * self.o_lora_rank,
@@ -672,6 +675,5 @@ class DeepseekV41DSparkAttention(Module):
             num_heads=heads,
             head_dim=d,
             o_groups=self.o_groups,
-            o_lora_rank=self.o_lora_rank,
         )
         return ops.reshape(projected, [1, t, hidden])

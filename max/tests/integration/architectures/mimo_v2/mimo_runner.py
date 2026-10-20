@@ -119,6 +119,7 @@ class Runner:
         sabotage: str | None = None,
         kv_cache_bytes: int = 16 * 1024**3,
         fused_sliding_qkv: bool = False,
+        fused_full_qkv: bool = False,
     ) -> None:
         """Adapts the checkpoint, then compiles and loads the model.
 
@@ -131,6 +132,7 @@ class Runner:
             sabotage: One of :data:`SABOTAGES` to build in, or ``None``.
             kv_cache_bytes: The paged KV cache's size per device.
             fused_sliding_qkv: Whether sliding layers use fused QKV preparation.
+            fused_full_qkv: Whether full layers use fused QKV preparation.
         """
         self.capture_steps = 0
         self.replay_steps = 0
@@ -154,6 +156,7 @@ class Runner:
             max_seq_len=max_seq_len,
         )
         config.fused_sliding_qkv = fused_sliding_qkv
+        config.fused_full_qkv = fused_full_qkv
         config.return_logits = ReturnLogits.ALL
         config.return_hidden_states = ReturnHiddenStates.SELECTED_LAYERS
         config.target_layer_ids = list(range(self.hf.num_hidden_layers))

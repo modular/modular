@@ -127,9 +127,9 @@ def _load_im2col_a_tile[
                     var base_idx = (
                         batch * HWC_in + h_src * WC_in + w_src * C_in + c
                     )
-                    vec = input_ptr.load[width=VECTOR_WIDTH](base_idx)
+                    vec = input_ptr.unsafe_load[width=VECTOR_WIDTH](base_idx)
 
-            smem.store(row * SMEM_STRIDE + col, vec)
+            smem.unsafe_store(row * SMEM_STRIDE + col, vec)
 
 
 # =========================================================================
@@ -174,9 +174,9 @@ def _load_b_tile_to_smem[
                 var vec = tile.load_linear[width=VECTOR_WIDTH](
                     IndexList[2](global_row, k_offset + col)
                 )
-                smem.store(row * SMEM_STRIDE + col, vec)
+                smem.unsafe_store(row * SMEM_STRIDE + col, vec)
             else:
-                smem.store(
+                smem.unsafe_store(
                     row * SMEM_STRIDE + col,
                     SIMD[dtype, VECTOR_WIDTH](0),
                 )
@@ -414,7 +414,7 @@ def conv2d_kernel_rdna[
                     warp_m * WARP_TILE_M * MMA_M + wm * MMA_M + effective_lane
                 )
                 comptime k_base = k_inner * MMA_K
-                a_frag[wm] = a_cur.load[width=AB_FRAG_SIZE](
+                a_frag[wm] = a_cur.unsafe_load[width=AB_FRAG_SIZE](
                     a_row * SMEM_STRIDE + k_base
                 )
 
@@ -426,7 +426,7 @@ def conv2d_kernel_rdna[
                     warp_n * WARP_TILE_N * MMA_N + wn * MMA_N + effective_lane
                 )
                 comptime k_base = k_inner * MMA_K
-                b_frag[wn] = b_cur.load[width=AB_FRAG_SIZE](
+                b_frag[wn] = b_cur.unsafe_load[width=AB_FRAG_SIZE](
                     b_row * SMEM_STRIDE + k_base
                 )
 

@@ -4150,9 +4150,13 @@ def _narrow_f32_to_bf16_bits[
     """Rounds float32 to bfloat16 (nearest even) from the bits, keeping
     subnormal results that a flush-to-zero `cast` would drop. NaN stays NaN."""
     var b = x.to_bits()
-    var rounded = (b + 0x7FFF + ((b >> 16) & 1)) >> 16
-    var r = isnan(x).select((b >> 16) | 0x40, rounded)
-    return SIMD[DType.bfloat16, width](from_bits=r.cast[DType.uint16]())
+    var rounded = ((b + 0x7FFF + ((b >> 16) & 1)) >> 16).cast[DType.uint16]()
+    var quiet_nan = ((b >> 16) | 0x40).cast[DType.uint16]()
+    # Narrow before selecting: selecting between the 32-bit values and then
+    # truncating drops the `>> 16` on Metal and yields garbage bits.
+    return SIMD[DType.bfloat16, width](
+        from_bits=isnan(x).select(quiet_nan, rounded)
+    )
 
 
 # Fraction bits of 2/pi, 64 per word, after one zero word so that a window may

@@ -58,7 +58,7 @@ def test_enum_sizes() raises:
 def test_perf_struct_layout() raises:
     # Write a record at the offsets of the C struct and read it back.
     assert_equal(size_of[cudnnConvolutionFwdAlgoPerf_t](), 48)
-    var raw_alloc = alloc[UInt8]({count = 48}).into_managed()
+    var raw_alloc = alloc[UInt8]({length = 48}).into_managed()
     var raw = raw_alloc.unsafe_ptr()
     for i in range(48):
         raw.unsafe_offset(i)[] = 0
@@ -137,9 +137,9 @@ def test_algo_count_out_param() raises:
 
         comptime max_algos = 8
         var perf_alloc = alloc[cudnnConvolutionFwdAlgoPerf_t](
-            {count = max_algos}
+            {length = max_algos}
         ).into_managed()
-        var counts_alloc = alloc[Int32]({count = 2}).into_managed()
+        var counts_alloc = alloc[Int32]({length = 2}).into_managed()
         var counts = counts_alloc.unsafe_ptr()
         counts[] = 0
         counts.unsafe_offset(1)[] = guard

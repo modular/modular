@@ -40,6 +40,13 @@ def time_sleep_kernel_with_buffer(
 ) -> float:
     model = build_sleep_graph(device=device)
 
+    # The first run loads the GPU kernel, which can take seconds.
+    # Run once with zero sleep so the timed run only measures the sleep.
+    warmup_buffer = Buffer(shape=[1], dtype=DType.float64)
+    warmup_buffer[0] = 0.0
+    model.execute(warmup_buffer)
+    device.synchronize()
+
     t0 = time.time()
     model.execute(seconds_buffer)
     device.synchronize()

@@ -238,6 +238,9 @@ def main() raises:
         test_index_fp8[num_heads=64, depth=64](2, 32, 64, ctx)
         test_index_fp8[num_heads=64, depth=64](3, 5, 33, ctx)
         test_index_fp8[num_heads=128, depth=64](2, 16, 32, ctx)
+        # A gfx950 key-tile DMA pass is 1 KiB, so depth=384 (no whole keys per
+        # pass) must leave the MFMA scorer for the scalar kernel.
+        test_index_fp8[num_heads=32, depth=384](2, 64, 200, ctx)
 
         # num_heads=32 (GLM 5.x replicated indexer): N_TOKENS=4 boundary. The
         # scalar fallback also supports 32, so these run on every target.

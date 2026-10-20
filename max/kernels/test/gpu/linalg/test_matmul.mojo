@@ -35,12 +35,9 @@ from std.utils.index import Index
 
 comptime epilogue_func_type = def[
     dtype: DType, width: SIMDLength, *, alignment: Int = 1
-](IndexList[2], IndexList[2], SIMD[dtype, width]) capturing -> SIMD[
-    dtype, width
-]
+](IndexList[2], IndexList[2], SIMD[dtype, width]) thin -> SIMD[dtype, width]
 
 
-@__parameter
 @inline(.always)
 def epilogue_test_fn[
     dtype: DType, width: SIMDLength, *, alignment: Int = 1

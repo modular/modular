@@ -12,10 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 """Tests for the Gemma4 ModuleV3 graph-time QKV weight fusion.
 
-The graph arch pre-fuses Q/K/V in the checkpoint adapter
-(``fuse_gemma4_projection_weights``); the ModuleV3 arch keeps the native
-per-projection weights and fuses at graph-build time via the
-``Gemma4Attention.wqkv`` property. These tests pin the same contract:
+The ModuleV3 arch keeps the native per-projection weights and fuses at
+graph-build time via the ``Gemma4Attention.wqkv`` property. These tests pin
+the contract:
 
 - sliding layers fuse ``[q_proj | k_proj | v_proj]`` by row-concat;
 - global k==v layers register no ``v_proj`` and fuse ``[q_proj | k_proj]``;

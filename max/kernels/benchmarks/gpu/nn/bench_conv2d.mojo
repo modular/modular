@@ -502,7 +502,6 @@ def bench_conv2d[
             dtype,
             dtype,
             block_size,
-            None,
             input_tt.Engine,
             filter_rscf_tt.Engine,
             output_tt.Engine,

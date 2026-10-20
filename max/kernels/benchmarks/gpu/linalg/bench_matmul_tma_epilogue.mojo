@@ -151,7 +151,7 @@ def _check_verification_result[
     )
 
     var result_host_alloc = alloc[Float32](
-        {count = NUM_BLOCKS * 5}
+        {length = NUM_BLOCKS * 5}
     ).into_managed()
     var result_host = result_host_alloc.unsafe_ptr()
     ctx.enqueue_copy(result_host, result_device)
@@ -426,11 +426,11 @@ def bench_matmul_tma_epilogue[
         comptime if variant != "plain":
             # Add epilogue tensor to reference output on the host.
             var epilogue_host_alloc = alloc[Scalar[dtype]](
-                {count = c_size}
+                {length = c_size}
             ).into_managed()
             var epilogue_host = epilogue_host_alloc.unsafe_ptr()
             var c_ref_host_alloc = alloc[Scalar[dtype]](
-                {count = c_size}
+                {length = c_size}
             ).into_managed()
             var c_ref_host = c_ref_host_alloc.unsafe_ptr()
             ctx.enqueue_copy(epilogue_host, epilogue_ver_dev)

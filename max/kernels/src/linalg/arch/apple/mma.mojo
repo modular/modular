@@ -720,7 +720,7 @@ struct MmaOpApple[
                 var w_in = w_base[ri] + s
                 if h_in >= 0 and h_in < conv.H and w_in >= 0 and w_in < conv.W:
                     var in_idx = batch_base[ri] + h_in * wc + w_in * conv.C + c0
-                    var v = input_ptr.unsafe_offset(Int(in_idx)).load[
+                    var v = input_ptr.unsafe_offset(Int(in_idx)).unsafe_load[
                         width=8, alignment=in_align
                     ]()
                     comptime for i in range(4):

@@ -24,6 +24,7 @@
 
 from std.math import ceildiv
 from std.memory import alloc
+from std.memory.alloc import unsafe_alloc
 from std.random import rand, random_ui64, seed
 from std.sys import size_of
 from std.sys.defines import get_defined_int
@@ -205,20 +206,20 @@ def run_one_case(
     var bc_row = NGROUPS * DSTATE + pad
     var dt_row = nheads + pad
 
-    var x_h = alloc[Scalar[dtype]](total * x_row)
-    var dt_h = alloc[Scalar[dtype]](total * dt_row)
-    var A_h = alloc[Scalar[dtype]](nheads)
-    var B_h = alloc[Scalar[dtype]](total * bc_row)
-    var C_h = alloc[Scalar[dtype]](total * bc_row)
-    var D_h = alloc[Scalar[dtype]](nheads)
-    var dt_bias_h = alloc[Scalar[dtype]](nheads)
-    var his_h = alloc[Scalar[.bool]](batch)
-    var qsl_h = alloc[Int32](batch + 1)
-    var slot_h = alloc[UInt32](batch)
-    var pool_h = alloc[Float32](pool_slots * head_row)
-    var pool_ref_h = alloc[Float32](pool_slots * head_row)
-    var y_ref_h = alloc[Scalar[dtype]](total * nheads * head_dim)
-    var y_gpu_h = alloc[Scalar[dtype]](total * nheads * head_dim)
+    var x_h = unsafe_alloc[Scalar[dtype]](total * x_row)
+    var dt_h = unsafe_alloc[Scalar[dtype]](total * dt_row)
+    var A_h = unsafe_alloc[Scalar[dtype]](nheads)
+    var B_h = unsafe_alloc[Scalar[dtype]](total * bc_row)
+    var C_h = unsafe_alloc[Scalar[dtype]](total * bc_row)
+    var D_h = unsafe_alloc[Scalar[dtype]](nheads)
+    var dt_bias_h = unsafe_alloc[Scalar[dtype]](nheads)
+    var his_h = unsafe_alloc[Scalar[.bool]](batch)
+    var qsl_h = unsafe_alloc[Int32](batch + 1)
+    var slot_h = unsafe_alloc[UInt32](batch)
+    var pool_h = unsafe_alloc[Float32](pool_slots * head_row)
+    var pool_ref_h = unsafe_alloc[Float32](pool_slots * head_row)
+    var y_ref_h = unsafe_alloc[Scalar[dtype]](total * nheads * head_dim)
+    var y_gpu_h = unsafe_alloc[Scalar[dtype]](total * nheads * head_dim)
 
     rand(x_h, total * x_row)
     rand(dt_h, total * dt_row)
@@ -229,21 +230,23 @@ def run_one_case(
     rand(dt_bias_h, nheads)
     rand(pool_h, pool_slots * head_row)
     for i in range(nheads):
-        A_h.store(i, Scalar[dtype](Float32(A_h.load(i)) * -1.0 - 0.1))
+        A_h.unsafe_store(
+            i, Scalar[dtype](Float32(A_h.unsafe_load(i)) * -1.0 - 0.1)
+        )
     for i in range(total * dt_row):
-        dt_h.store(i, Scalar[dtype](Float32(dt_h.load(i)) - 0.5))
+        dt_h.unsafe_store(i, Scalar[dtype](Float32(dt_h.unsafe_load(i)) - 0.5))
     for i in range(pool_slots * head_row):
-        pool_ref_h.store(i, pool_h.load(i))
+        pool_ref_h.unsafe_store(i, pool_h.unsafe_load(i))
     var cum = 0
-    qsl_h.store(0, Int32(0))
+    qsl_h.unsafe_store(0, Int32(0))
     for b in range(batch):
         cum += lens[b]
-        qsl_h.store(b + 1, Int32(cum))
-        slot_h.store(b, UInt32(slots[b]))
+        qsl_h.unsafe_store(b + 1, Int32(cum))
+        slot_h.unsafe_store(b, UInt32(slots[b]))
         var has_init = spec.init_mode == 1 or (
             spec.init_mode == 2 and random_ui64(0, 1) == 1
         )
-        his_h.store(b, Scalar[.bool](has_init))
+        his_h.unsafe_store(b, Scalar[.bool](has_init))
 
     # Mode 0 passes an empty has_initial_state tensor, which the kernels read
     # as "no sequence has an initial state".
@@ -353,11 +356,7 @@ def run_one_case(
         qsl_g,
         his_g,
         us_g,
-        host_arg=x_fn,
-        host_arg2=dt_fn,
-        host_arg3=b_fn,
-        host_arg4=c_fn,
-        host_arg5=slot_fn,
+        host_args=(x_fn, dt_fn, b_fn, c_fn, slot_fn),
         grid_dim=(ceildiv(head_dim, CH_PER_BLOCK), nheads, batch),
         block_dim=(DSTATE_SPLIT, CH_PER_BLOCK, 1),
     )
@@ -419,20 +418,20 @@ def run_one_case(
         ):
             raise Error("mamba2_ssd_scan state pool mismatch")
 
-    x_h.free()
-    dt_h.free()
-    A_h.free()
-    B_h.free()
-    C_h.free()
-    D_h.free()
-    dt_bias_h.free()
-    his_h.free()
-    qsl_h.free()
-    slot_h.free()
-    pool_h.free()
-    pool_ref_h.free()
-    y_ref_h.free()
-    y_gpu_h.free()
+    x_h.unsafe_free()
+    dt_h.unsafe_free()
+    A_h.unsafe_free()
+    B_h.unsafe_free()
+    C_h.unsafe_free()
+    D_h.unsafe_free()
+    dt_bias_h.unsafe_free()
+    his_h.unsafe_free()
+    qsl_h.unsafe_free()
+    slot_h.unsafe_free()
+    pool_h.unsafe_free()
+    pool_ref_h.unsafe_free()
+    y_ref_h.unsafe_free()
+    y_gpu_h.unsafe_free()
     _ = x_d
     _ = dt_d
     _ = A_d

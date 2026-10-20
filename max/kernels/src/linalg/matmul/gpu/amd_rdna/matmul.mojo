@@ -462,9 +462,9 @@ def _load_tile_to_smem[
                     var vec = tile.load_linear[width=VECTOR_WIDTH](
                         IndexList[2](global_row, k_offset + col)
                     )
-                    smem.store(row * SMEM_STRIDE + col, vec)
+                    smem.unsafe_store(row * SMEM_STRIDE + col, vec)
                 else:
-                    smem.store(
+                    smem.unsafe_store(
                         row * SMEM_STRIDE + col,
                         SIMD[dtype, VECTOR_WIDTH](0),
                     )
@@ -553,7 +553,7 @@ def _store_tile_regs[
         if vec_idx < total_vectors:
             var elem_idx = vec_idx * VECTOR_WIDTH
             var row = elem_idx // BLOCK_K
-            smem.store(row * SMEM_STRIDE + elem_idx % BLOCK_K, regs[i])
+            smem.unsafe_store(row * SMEM_STRIDE + elem_idx % BLOCK_K, regs[i])
 
 
 @inline(.always)
@@ -587,7 +587,7 @@ def _compute_ktile[
                 warp_m * WARP_TILE_M * MMA_M + wm * MMA_M + effective_lane
             )
             comptime k_base = k_inner * MMA_K
-            a_frag[wm] = a_smem.load[width=AB_FRAG_SIZE](
+            a_frag[wm] = a_smem.unsafe_load[width=AB_FRAG_SIZE](
                 a_row * SMEM_STRIDE + k_base
             )
         var b_frag = Array[SIMD[b_type, AB_FRAG_SIZE], WARP_TILE_N](
@@ -598,7 +598,7 @@ def _compute_ktile[
                 warp_n * WARP_TILE_N * MMA_N + wn * MMA_N + effective_lane
             )
             comptime k_base = k_inner * MMA_K
-            b_frag[wn] = b_smem.load[width=AB_FRAG_SIZE](
+            b_frag[wn] = b_smem.unsafe_load[width=AB_FRAG_SIZE](
                 b_row * SMEM_STRIDE + k_base
             )
         comptime for wm in range(WARP_TILE_M):

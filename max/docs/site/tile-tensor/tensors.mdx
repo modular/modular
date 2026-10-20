@@ -293,7 +293,7 @@ comptime rows = 1024
 comptime columns = 1024
 comptime buf_size = rows * columns
 comptime layout = row_major[rows, columns]()
-var allocation = alloc[Float32]({count = buf_size})
+var allocation = alloc[Float32]({length = buf_size})
 var ptr = allocation.unsafe_ptr()
 unsafe_memset(ptr, 0, buf_size)
 var tensor = TileTensor(ptr, layout)

@@ -17,6 +17,7 @@ from max.gpu.host import DeviceContext
 from std.random import random_float64
 from std.math import abs
 from std.bit import log2_floor
+from std.memory.alloc import unsafe_alloc
 
 # ========================== CONFIGURATION ==========================
 comptime BLOCK_DIM = 256
@@ -72,9 +73,9 @@ def main() raises:
     comptime N = BLOCK_DIM * 2
 
     # Host memory allocation
-    var h_input = alloc[Float32](N)
-    var h_output = alloc[Float32](1)
-    var h_ref = alloc[Float32](1)
+    var h_input = unsafe_alloc[Float32](N)
+    var h_output = unsafe_alloc[Float32](1)
+    var h_ref = unsafe_alloc[Float32](1)
 
     # Initialize input with random values
     for i in range(N):
@@ -129,6 +130,6 @@ def main() raises:
         print("SUCCESS: CPU=", h_ref[0], ", GPU=", h_output[0], "match!")
 
     # Cleanup
-    h_input.free()
-    h_output.free()
-    h_ref.free()
+    h_input.unsafe_free()
+    h_output.unsafe_free()
+    h_ref.unsafe_free()

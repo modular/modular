@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import align_up
+from std.memory.alloc import unsafe_alloc
 from std.sys import align_of
 
 from layout import TileTensor
@@ -149,14 +150,14 @@ def test_micro_kernel[
 
     comptime alignment = align_of[SIMD[c_type, config.simd_size]]()
 
-    var a_ptr = alloc[Scalar[a_type],](m * k, alignment=alignment)
-    var b_packed_ptr = alloc[Scalar[b_type]](
+    var a_ptr = unsafe_alloc[Scalar[a_type],](m * k, alignment=alignment)
+    var b_packed_ptr = unsafe_alloc[Scalar[b_type]](
         (np // config.kernel_cols)
         * (kh // factor)
         * (factor * config.kernel_cols),
         alignment=alignment,
     )
-    var c_ptr = alloc[Scalar[c_type],](m * n, alignment=alignment)
+    var c_ptr = unsafe_alloc[Scalar[c_type],](m * n, alignment=alignment)
     var a = TileTensor(a_ptr, row_major(m, k))
     var b_packed = TileTensor(
         b_packed_ptr,
@@ -175,9 +176,9 @@ def test_micro_kernel[
     matmul_inner_loop[config](c, a, b_packed, m, n, k)
 
     assert_equal(Int(c_ptr[0]), k)
-    a_ptr.free()
-    b_packed_ptr.free()
-    c_ptr.free()
+    a_ptr.unsafe_free()
+    b_packed_ptr.unsafe_free()
+    c_ptr.unsafe_free()
 
 
 @export

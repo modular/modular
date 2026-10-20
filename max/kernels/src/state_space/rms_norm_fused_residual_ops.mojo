@@ -76,7 +76,7 @@ struct RMSNormFusedResidual:
         dropout_p: Scalar[dtype=dtype],
         seed: Scalar[dtype=DType.uint64],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         # Validate shapes
         if output.shape() != input.shape():
             raise Error("Input and output buffers are not same shape")

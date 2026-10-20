@@ -15,6 +15,7 @@ from max.gpu import block_idx, thread_idx
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from std.memory import unsafe_stack_allocation
+from std.memory.alloc import unsafe_alloc
 
 from std.math import abs
 
@@ -89,9 +90,9 @@ def main() raises:
     comptime dtype = DType.float32
 
     # Allocate host memory
-    var h_input = alloc[Float32](N)
-    var h_output = alloc[Float32](N)
-    var h_ref = alloc[Float32](N)
+    var h_input = unsafe_alloc[Float32](N)
+    var h_output = unsafe_alloc[Float32](N)
+    var h_ref = unsafe_alloc[Float32](N)
 
     # Initialize input
     for i in range(N):
@@ -143,9 +144,9 @@ def main() raises:
             errors += 1
 
     # Cleanup
-    h_input.free()
-    h_output.free()
-    h_ref.free()
+    h_input.unsafe_free()
+    h_output.unsafe_free()
+    h_ref.unsafe_free()
 
     if errors == 0:
         print("SUCCESS: All values match!")

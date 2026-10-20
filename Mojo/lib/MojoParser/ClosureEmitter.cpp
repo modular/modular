@@ -1111,7 +1111,8 @@ ClosureEmitter::PromotedClosure ClosureEmitter::promoteClosure(
           continue;
         if (auto irDecl = dyn_cast<IRASTDecl>(child);
             irDecl && irDecl->getArgNumber() >= 0)
-          irDecl->setArgOrParamNumber(irDecl->getArgNumber() + 1);
+          irDecl->setArgOrParamNumber(irDecl->getArgNumber() + 1,
+                                      /*isParameter=*/false);
         if (auto varDecl = dyn_cast<VarASTDecl>(child);
             varDecl && varDecl->isArgument())
           varDecl->setArgNumber(varDecl->getArgNumber() + 1);
@@ -1170,6 +1171,8 @@ ClosureEmitter::PromotedClosure ClosureEmitter::promoteClosure(
   // Transfer child decls from the original to the promoted decl. Since the op
   // was moved (not cloned), all mlir::Value pointers are still valid.
   decl.takeDecls(nestedFnDecl);
+  decl.setParamDecls(nestedFnDecl.getParamDecls());
+  decl.setArgDecls(nestedFnDecl.getArgDecls());
   // Register the lifted function to the symbol table.
   [[maybe_unused]] Operation *existing =
       shared.declResolver->finalizeFuncSignature(function, decl);

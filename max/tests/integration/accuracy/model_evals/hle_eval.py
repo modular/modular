@@ -49,7 +49,7 @@ from eval_common import (
     ChatClient,
     GenParams,
     append_github_env,
-    build_chat_kwargs,
+    chat_completion,
     dump_config,
     dump_jsonl,
     dump_score,
@@ -119,9 +119,7 @@ def infer(
     question = sample["question"]
     reference = sample["answer"].strip()
     messages = build_messages(question, root_preamble, system_prompt)
-    resp = client.chat.completions.create(
-        **build_chat_kwargs(model, messages, params)
-    )
+    resp = chat_completion(client, model, messages, params)
     prediction = strip_think(resp.choices[0].message.content)
     correct = self_judge(
         client,
@@ -149,7 +147,7 @@ def infer(
             if resp.usage and resp.usage.completion_tokens_details
             else None
         ),
-        **response_fields(resp.choices[0].message),
+        **response_fields(resp.choices[0]),
     }
 
 

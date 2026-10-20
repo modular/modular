@@ -61,11 +61,7 @@ from ..gemma4.batch_vision_inputs import (
 from ..gemma4.context import Gemma4Context
 from ..gemma4.model_config import Gemma4ForConditionalGenerationConfig
 from ..gemma4.vision_model.vision_model import Gemma4VisionModel
-from ..gemma4.weight_adapters import (
-    convert_safetensor_vision_state_dict,
-    fuse_gemma4_projection_weights,
-    gemma4_uses_fused_projections,
-)
+from ..gemma4.weight_adapters import convert_safetensor_vision_state_dict
 from ..gemma4_assistant.gemma4_assistant import Gemma4Assistant
 from ..gemma4_assistant.model_config import Gemma4AssistantConfig
 from .batch_processor import UnifiedMTPGemma4BatchProcessor
@@ -241,14 +237,6 @@ class UnifiedMTPGemma4Model(
         self.config = config
 
         self._target_state_dict = state_dict
-        # DISTINF-194: pre-fuse the target's gate/up and qkv/qk projections
-        # when configured (before target.*/draft.* prefixing below), so the
-        # fused keys match the target submodel's FusedMLP / stacked qkv
-        # layers. The draft submodel is not fused.
-        if gemma4_uses_fused_projections(config):
-            self._target_state_dict = fuse_gemma4_projection_weights(
-                self._target_state_dict
-            )
 
         assert self.pipeline_config.draft_model is not None
         draft_hf_config = self.pipeline_config.draft_model.huggingface_config

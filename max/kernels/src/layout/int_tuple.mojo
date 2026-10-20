@@ -88,7 +88,7 @@ struct IntArray(ImplicitlyCopyable, RegisterPassable):
             size: Number of integers to allocate space for. Defaults to 0.
         """
         if size > 0:
-            self._data = alloc(AllocLayout[Int](count=size)).unsafe_leak()
+            self._data = alloc(AllocLayout[Int](length=size)).unsafe_leak()
         else:
             self._data = {}
         self._size = size
@@ -105,7 +105,7 @@ struct IntArray(ImplicitlyCopyable, RegisterPassable):
         self._size = copy._size
         if copy.owning():
             var size = copy.size()
-            self._data = alloc(AllocLayout[Int](count=size)).unsafe_leak()
+            self._data = alloc(AllocLayout[Int](length=size)).unsafe_leak()
             self.copy_from(0, copy, size)
         else:
             self._data = copy._data
@@ -121,7 +121,7 @@ struct IntArray(ImplicitlyCopyable, RegisterPassable):
             dealloc(
                 ThinAllocation(
                     unsafe_owned_ptr=self._data.unsafe_value()
-                ).unsafe_with_layout(AllocLayout[Int](count=self.size()))
+                ).unsafe_with_layout(AllocLayout[Int](length=self.size()))
             )
 
     @inline(.nodebug)

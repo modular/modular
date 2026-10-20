@@ -149,6 +149,7 @@ _FILECHECK_EXTRA_DEPS = {
             "test_tile_layout_device_launch.mojo",
             # Blackwell-only `TmemEngine` probe; dedicated target below.
             "test_tmem_engine.mojo",
+            "test_tensor_engine_plugin_gpu.mojo",
         ],
     )
 ]
@@ -171,10 +172,10 @@ mojo_test(
     ],
 )
 
-# `DevicePointerEngine` and `Layout` launch probes. They only import `layout`
-# and `std`, so they get dedicated targets with minimal dependencies rather
-# than the heavy `nn`/`linalg`/`kv_cache` set the glob above attaches to every
-# other test.
+# Engine and `Layout` launch probes (`DevicePointerEngine`, the
+# `layout._plugin` hook). They only import `layout` and `std`, so they get
+# dedicated targets with minimal dependencies rather than the heavy
+# `nn`/`linalg`/`kv_cache` set the glob above attaches to every other test.
 [
     mojo_test(
         name = src + ".test",
@@ -192,6 +193,7 @@ mojo_test(
         "test_device_pointer_tile_storage_kernel.mojo",
         "test_optional_device_pointer_tile.mojo",
         "test_tile_layout_device_launch.mojo",
+        "test_tensor_engine_plugin_gpu.mojo",
     ]
 ]
 

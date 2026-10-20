@@ -30,8 +30,8 @@ comptime _COUNT = _PAGE_BYTES // size_of[Float32]()
 def test_wrap_host_memory_round_trip() raises:
     var ctx = create_test_device_context()
 
-    var src_alloc = alloc(_PageLayout(count=_COUNT)).into_managed()
-    var dst_alloc = alloc(_PageLayout(count=_COUNT)).into_managed()
+    var src_alloc = alloc(_PageLayout(length=_COUNT)).into_managed()
+    var dst_alloc = alloc(_PageLayout(length=_COUNT)).into_managed()
     var src = src_alloc.unsafe_ptr()
     var dst = dst_alloc.unsafe_ptr()
 
@@ -69,7 +69,7 @@ def test_wrap_host_memory_round_trip() raises:
 def test_wrap_host_memory_leaves_pages_to_caller() raises:
     var ctx = create_test_device_context()
 
-    var allocation = alloc(_PageLayout(count=_COUNT)).into_managed()
+    var allocation = alloc(_PageLayout(length=_COUNT)).into_managed()
     var ptr = allocation.unsafe_ptr()
     for i in range(_COUNT):
         ptr.unsafe_offset(i).unsafe_store(Float32(i))
@@ -110,7 +110,7 @@ def test_wrap_host_memory_feeds_kernel_via_device_pointer() raises:
     var ctx = create_test_device_context()
 
     comptime block_dim = 32
-    var out_alloc = alloc(_PageLayout(count=_COUNT)).into_managed()
+    var out_alloc = alloc(_PageLayout(length=_COUNT)).into_managed()
     var out_ptr = out_alloc.unsafe_ptr()
     for i in range(_COUNT):
         out_ptr.unsafe_offset(i).unsafe_store(Float32(0))
