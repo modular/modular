@@ -98,7 +98,7 @@ struct ArgMax:
         output: FusedOutputTensor[rank=rank, ...],
         input: FusedInputTensor[rank=rank, ...],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         """Executes the `mo.reduce.arg_max` graph op.
 
         Parameters:
@@ -158,7 +158,7 @@ struct ArgMin:
         output: FusedOutputTensor[rank=rank, ...],
         input: FusedInputTensor[rank=rank, ...],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         """Executes the `mo.reduce.arg_min` graph op.
 
         Parameters:
@@ -259,7 +259,7 @@ struct Mean:
         output: FusedOutputTensor,
         input: FusedInputTensor[dtype=output.dtype, rank=output.rank, ...],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         """Executes the `mo.reduce.mean` graph op.
 
         Parameters:
@@ -336,7 +336,7 @@ struct RowMeanOfSquares:
         output: OutputTensor[rank=2, ...],
         input: FusedInputTensor[rank=2, ...],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         """Executes the `mo.reduce.row_mean_of_squares` graph op.
 
         Parameters:
@@ -356,9 +356,11 @@ struct RowMeanOfSquares:
 
         @inline(.always)
         def input_fn[
-            width: Int
+            width: Int, alignment: Int
         ](coords: Coord) {var input} -> SIMD[input.dtype, width]:
-            return input._lambda_load[width=width](coords)
+            return input._lambda_load[width=width, element_alignment=alignment](
+                coords
+            )
 
         @inline(.always)
         def output_fn[
@@ -410,7 +412,7 @@ struct RowMeanOfSquaresQK:
         q: InputTensor[rank=2, ...],
         k: InputTensor[rank=2, ...],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         """Executes the `mo.reduce.row_mean_of_squares_qk` graph op.
 
         Parameters:
@@ -500,7 +502,7 @@ struct ApplyQKRMSNorm:
         gamma_k: InputTensor[dtype=.float32, rank=1, ...],
         epsilon: Float32,
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         """Executes the `mo.norm.apply_qk_rms_norm` graph op.
 
         Parameters:
@@ -572,7 +574,7 @@ struct ReduceAdd:
         output: FusedOutputTensor,
         input: FusedInputTensor[dtype=output.dtype, rank=output.rank, ...],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         """Executes the `mo.reduce.add` graph op.
 
         Parameters:
@@ -645,7 +647,7 @@ struct ReduceMul:
         output: FusedOutputTensor,
         input: FusedInputTensor[dtype=output.dtype, rank=output.rank, ...],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         """Executes the `mo.reduce.mul` graph op.
 
         Parameters:
@@ -719,7 +721,7 @@ struct ReduceMax:
         output: FusedOutputTensor,
         input: FusedInputTensor[dtype=output.dtype, rank=output.rank, ...],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         """Executes the `mo.reduce.max` graph op.
 
         Parameters:
@@ -792,7 +794,7 @@ struct ReduceMin:
         output: FusedOutputTensor,
         input: FusedInputTensor[dtype=output.dtype, rank=output.rank, ...],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         """Executes the `mo.reduce.min` graph op.
 
         Parameters:
@@ -868,7 +870,7 @@ struct LayerNorm:
         beta: InputTensor[dtype=dtype, rank=1, ...],
         epsilon: Float32,
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         """Executes the `mo.reduce.layer_norm` graph op.
 
         Parameters:
@@ -992,7 +994,7 @@ struct ReduceRMSNorm:
         input: FusedInputTensor[dtype=dtype, rank=rank, ...],
         gamma: InputTensor[dtype=dtype, rank=1, ...],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         """Executes the `mo.reduce.rms_norm` graph op.
 
         Parameters:
@@ -1122,7 +1124,7 @@ struct ReduceRMSNormRoPE:
         cos_vals: FusedInputTensor[dtype=cos_sin_dtype, rank=rank, ...],
         sin_vals: FusedInputTensor[dtype=cos_sin_dtype, rank=rank, ...],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         if output.shape() != input.shape():
             raise Error("Input and output buffers are not same shape")
 
@@ -1272,7 +1274,7 @@ struct LayerNormRopeRagged:
         start_pos: InputTensor[dtype=.uint32, rank=1, ...],
         freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         if output.shape() != input.shape():
             raise Error("Input and output buffers are not same shape")
         if Int(gamma.shape()[0]) != Int(input.shape()[rank - 1]):
@@ -1411,7 +1413,7 @@ struct ReduceGroupNorm:
         epsilon: Float32,
         num_groups: Int32,
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         """Executes the `mo.reduce.group_norm` graph op.
 
         Parameters:
@@ -1604,7 +1606,7 @@ struct ReduceRMSNormFusedResidualAdd:
         gamma1: InputTensor[dtype=dtype, rank=1, ...],
         gamma2: InputTensor[dtype=dtype, rank=1, ...],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         """Executes the `mo.composite.rms_norm_fused_residual_add` graph op.
 
         Parameters:
@@ -1637,17 +1639,19 @@ struct ReduceRMSNormFusedResidualAdd:
 
         @inline(.always)
         def input_fn[
-            width: Int
+            width: Int, alignment: Int
         ](coords: Coord) {var input} -> SIMD[dtype, width]:
-            return input._lambda_load[width=width, element_alignment=width](
+            return input._lambda_load[width=width, element_alignment=alignment](
                 coords
             )
 
         @inline(.always)
         def residual_input_fn[
-            width: Int
+            width: Int, alignment: Int
         ](coords: Coord) {var residual_input} -> SIMD[dtype, width]:
-            return residual_input._lambda_load[width=width](coords)
+            return residual_input._lambda_load[
+                width=width, element_alignment=alignment
+            ](coords)
 
         @inline(.always)
         def output_fn[
@@ -1786,7 +1790,7 @@ struct RMSNormResidualAdd:
         residual_input: FusedInputTensor[dtype=dtype, rank=rank, ...],
         gamma: InputTensor[dtype=dtype, rank=1, ...],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         if output.shape() != input.shape():
             raise Error("Input and output buffers are not same shape")
 
@@ -2182,7 +2186,7 @@ struct Softmax:
         output: OutputTensor,
         input: FusedInputTensor[dtype=output.dtype, rank=output.rank, ...],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         """Executes the `mo.reduce.softmax` graph op.
 
         Parameters:
@@ -2246,7 +2250,7 @@ struct LogSoftmax:
         output: OutputTensor,
         input: FusedInputTensor[dtype=output.dtype, rank=output.rank, ...],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         """Executes the `mo.reduce.logsoftmax` graph op.
 
         Parameters:

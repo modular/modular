@@ -236,6 +236,7 @@ public:
   // These are the results of type checking 'params' in typeCheck.
   /// One ParamDeclAttr for each parameter being declared.
   SmallVector<ParamDeclAttr> paramDeclAttrs;
+  SmallVector<ASTDecl *> paramASTDecls;
   SmallVector<StringAttr> names;
   SmallVector<PassingKind> passingKinds;
   SmallVector<VariadicKind> variadicKinds;
@@ -319,8 +320,8 @@ public:
   /// Emit the argument types, default values, and result type and determine
   /// the argument conventions.
   ///
-  /// 'fnDecl' will be null when this is a function type, which doesn't have a
-  /// declaration.
+  /// 'fnDecl' will be null when this is a function type, whose declarations
+  /// are owned by `paramList.declScope`.
   TypeCheckedFnSignature(TypeCheckedParamList &paramList,
                          ParsedArgumentList &argList,
                          const ExprNode *originExpr, DefASTDecl *fnDecl,
@@ -347,6 +348,8 @@ public:
   /// This is the type checked argument types with argument conventions and
   /// origins applied, e.g. "!lit.ref<String>" or "!kgen.param_list<Int>"
   SmallVector<Type> fullArgTypes;
+  /// Argument declarations created while type-checking a function signature.
+  SmallVector<ASTDecl *> argASTDecls;
   SmallVector<ParamDeclAttr> implicitOriginDecls;
 
   /// This is the result type + variant for throwing functions.  This is what

@@ -1206,6 +1206,15 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
     """The stable address slots this graph may reference by index; installed
     by `DeviceGraph.create_collective()` before the build callback runs."""
 
+    var _pinned_allocations: List[AnyAsyncValueRef]
+    """One owning reference per `create_buffer` allocation, held for the whole
+    build and dropped at `instantiate()`.
+
+    This is to prevent Mojo's ASAP finalization from freeing memory early.
+    This is a temporary measure until the graph compiler generated code threads
+    lifetimes through all the APIs properly, after which memory will be kept
+    live for all users."""
+
     var _recording_ctx: DeviceContext
     """The one recording context this builder hands out. The emitted kernel
     wrappers request a context per kernel, but builds are sequential and only
@@ -1223,6 +1232,7 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
         self._implicit_deps = []
         self._region_floor = None
         self._stable = []
+        self._pinned_allocations = []
 
         # The sentinel seed is never read: `recording_context()` reseats the
         # chain root before every hand-out.
@@ -1557,7 +1567,7 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
     def add_function[
         declared_arg_types: TypeList[Trait=AnyType, ...],
         //,
-        func: def(* args: * declared_arg_types) thin -> None,
+        func: def(*args: *declared_arg_types) thin -> None,
         *actual_arg_types: DevicePassable,
         link_options: StaticString = "",
         dump_asm: _DumpPath = False,
@@ -2431,12 +2441,20 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
     @inline(.never)
     def create_buffer[
         dtype: DType
-    ](self, size: Int, is_host: Bool, out result: DeviceBuffer[dtype]) raises:
+    ](
+        mut self, size: Int, is_host: Bool, out result: DeviceBuffer[dtype]
+    ) raises:
         """Allocates a buffer for use in the current device graph.
 
         Device graph allocations have lifetimes tied to the device graph that
         creates this. All allocations created for a device graph should go
         through this method rather than `DeviceContext.enqueue_create_buffer`.
+
+        The builder pins an owning reference to the allocation (see
+        `_pinned_allocations`) so it survives until `instantiate()` even after
+        the returned handle is freed mid-build; recorded nodes bake in its
+        address, so the block must not return to the pool before the graph is
+        built.
 
         Parameters:
             dtype: The element type of the resulting buffer.
@@ -2475,10 +2493,16 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
 
         result = {cpp_handle, device_ptr.value()}
 
+        # Retain a second owning reference to the block for the build's lifetime,
+        # dropped in `instantiate()`.
+        self._pinned_allocations.append(AnyAsyncValueRef(storage_buf=result))
+
     @inline(.never)
     def create_input_buffer[
         dtype: DType
-    ](self, size: Int, is_host: Bool, out result: DeviceBuffer[dtype]) raises:
+    ](
+        mut self, size: Int, is_host: Bool, out result: DeviceBuffer[dtype]
+    ) raises:
         """Allocates a buffer and registers it as a stable graph input.
 
         Allocation and registration are one step so a `DeviceGraphInput` cannot

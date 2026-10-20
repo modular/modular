@@ -159,10 +159,17 @@ static void augmentDeclsWithDocumentation(ArrayRef<StringRef> lines,
       fullArgDescOS << "\n" << lines[line].drop_front(indent).rtrim();
 
     // If it's a known entry, process it, otherwise skip it.
-    if (auto it = declMap.find(argName); it != declMap.end()) {
+    if (auto it = declMap.find(argName); it != declMap.end())
       it->getSecond()->setDescription(fullArgDesc);
-    }
   }
+}
+
+/// Skip a structured documentation section whose entries are computed on
+/// demand instead of being retained in the current rendering data.
+static void skipDocumentationSection(ArrayRef<StringRef> lines, size_t &line,
+                                     size_t lineEnd) {
+  for (++line; line < lineEnd && !lines[line].empty(); ++line)
+    ;
 }
 
 // Generate a string attribute from the given paragraph form:
@@ -323,6 +330,35 @@ extractChildDecls(const ASTDecl &decl,
   return children;
 }
 
+template <typename OpType>
+static SmallVector<DefASTDecl *, 2>
+extractChildFunctions(const ASTDecl &decl,
+                      function_ref<bool(OpType, StringRef)> shouldHideFn = {}) {
+  DenseSet<Operation *> seenOps;
+  SmallVector<DefASTDecl *, 2> children;
+  for (const auto &[name, decls] : decl.getDeclsInScope()) {
+    if (decls.empty() || !decls.front() ||
+        !isa_and_nonnull<OpType>(decls.front()->getIfOperation()))
+      continue;
+    for (ASTDecl *child : decls) {
+      OpType childOp = dyn_cast_or_null<OpType>(child->getIfOperation());
+      if (!childOp || shouldHideDeclInDocGen(*child, name) ||
+          (shouldHideFn && shouldHideFn(childOp, name)) ||
+          (child->getParentDecl() != &decl && !decl.isDocInlineName(name)) ||
+          !seenOps.insert(childOp).second)
+        continue;
+      if (childOp.isSynthetic() && !childOp.getDocStringAttr())
+        continue;
+      children.push_back(cast<DefASTDecl>(child));
+    }
+  }
+  llvm::stable_sort(children, [](DefASTDecl *lhs, DefASTDecl *rhs) {
+    return compareDeclNames(lhs->getName().value_or(StringRef{}),
+                            rhs->getName().value_or(StringRef{}));
+  });
+  return children;
+}
+
 template <typename JSONSerializableItems>
 static llvm::json::Array toJSONArray(MojoParserContext &ctx,
                                      const JSONSerializableItems &items) {
@@ -366,8 +402,10 @@ static void dumpMarkdownDeclListSection(llvm::raw_ostream &os,
                                         const PublicDeclList &decls) {
   bool isFirst = true;
   for (const auto &decl : decls) {
-    if (decl.getDescription().empty())
+    std::string documentation = decl.getMarkdownDocString();
+    if (documentation.empty())
       continue;
+    StringRef description = StringRef(documentation).drop_back();
 
     if (isFirst) {
       isFirst = false;
@@ -377,8 +415,7 @@ static void dumpMarkdownDeclListSection(llvm::raw_ostream &os,
       /// This is a special separator for unbulleted lists.
       os << "\\\n";
     }
-    os << kMarkdownIndent << decl.getName() << ": " << decl.getDescription()
-       << "\n";
+    os << kMarkdownIndent << decl.getName() << ": " << description << "\n";
   }
 }
 
@@ -404,6 +441,29 @@ static ParameterEvaluator populatePublicParameterInfos(
   SmallVector<ParameterInfo, 2> infos;
   ParameterEvaluator evaluator = populateParameterInfos(
       parentDecl, paramTypes, paramListAttr, infos, selfType);
+
+  if (!bodyConstraintAttrs.empty() && bodyConstraints) {
+    *bodyConstraints = mergeConformsToConstraints(bodyConstraintAttrs,
+                                                  &evaluator, shared, infos);
+  }
+
+  parameters.reserve(parameters.size() + infos.size());
+  llvm::append_range(parameters, std::move(infos));
+  return evaluator;
+}
+
+static ParameterEvaluator
+populatePublicParameterInfos(FnSignatureASTDecl &parentDecl,
+                             SmallVectorImpl<ParameterInfo> &parameters,
+                             std::optional<ASTType> selfType = std::nullopt,
+                             ArrayRef<ConstraintAttr> bodyConstraintAttrs = {},
+                             std::string *bodyConstraints = nullptr) {
+  DeclResolver::DiagnosticDeclContextChanger scope(&parentDecl);
+  auto &shared = parentDecl.getShared();
+
+  SmallVector<ParameterInfo, 2> infos;
+  ParameterEvaluator evaluator =
+      populateParameterInfos(parentDecl, infos, selfType);
 
   if (!bodyConstraintAttrs.empty() && bodyConstraints) {
     *bodyConstraints = mergeConformsToConstraints(bodyConstraintAttrs,
@@ -451,18 +511,6 @@ static std::string getAliasMarkdownDocString(AliasASTDecl &decl);
 // PublicDecl
 //===----------------------------------------------------------------------===//
 
-/// Return the signature type contained by a declaration, if any.
-static FnTypeGeneratorType getSignatureFromDecl(ASTDecl *decl) {
-  if (!decl)
-    return nullptr;
-  if (auto defDecl = dyn_cast<DefASTDecl>(decl))
-    if (auto func = defDecl->getOp())
-      return func.getFuncTypeGenerator();
-  if (auto typeValue = decl->getIfTypeValue())
-    return dyn_cast_or_null<FnTypeGeneratorType>(typeValue);
-  return nullptr;
-}
-
 /// Return the rendered parameter information corresponding to `decl`, if its
 /// parent includes the parameter in its public signature.
 static std::optional<ParameterInfo> getParameterInfo(ASTDecl &decl) {
@@ -481,11 +529,15 @@ static std::optional<ParameterInfo> getParameterInfo(ASTDecl &decl) {
     return result;
   }
 
-  auto parent = llvm::unique_dyn_cast_or_null<PublicFunctionDecl>(
-      getPublicDecl(decl.getParentDecl()));
-  if (!parent || parent->getParameters().size() <= paramNumber)
+  auto *parentFunction =
+      dyn_cast_or_null<FnSignatureASTDecl>(decl.getParentDecl());
+  if (!parentFunction || !parentFunction->getSignature())
     return std::nullopt;
-  ParameterInfo result = parent->getParameters()[paramNumber];
+  SmallVector<ParameterInfo, kTypicalParameterCount> parameters =
+      getFunctionParameters(*parentFunction);
+  if (parameters.size() <= paramNumber)
+    return std::nullopt;
+  ParameterInfo result = parameters[paramNumber];
   result.setDecl(decl);
   return result;
 }
@@ -512,8 +564,6 @@ std::unique_ptr<PublicDecl> M::KGEN::LIT::getPublicDecl(ASTDecl *decl) {
       return std::unique_ptr<PublicDecl>(
           new PublicDecl(PublicDeclKind::DK_PublicAliasDecl, *decl,
                          decl->getName().value_or(StringRef())));
-    if (isa<FnOp>(declOp))
-      return std::unique_ptr<PublicFunctionDecl>(new PublicFunctionDecl(decl));
     if (isa<FileModuleOp, ImportOp>(declOp))
       return std::unique_ptr<PublicDecl>(
           new PublicDecl(PublicDeclKind::DK_PublicModuleDecl, *decl,
@@ -535,10 +585,6 @@ std::unique_ptr<PublicDecl> M::KGEN::LIT::getPublicDecl(ASTDecl *decl) {
           new PublicDecl(PublicDeclKind::DK_PublicTraitDecl, *decl,
                          decl->getName().value_or(StringRef())));
   }
-
-  if (auto signature = getSignatureFromDecl(decl))
-    return std::unique_ptr<PublicFunctionDecl>(
-        new PublicFunctionDecl(decl, signature));
 
   if (auto irDecl = dyn_cast<IRASTDecl>(decl);
       irDecl && irDecl->getArgNumber() >= 0)
@@ -565,8 +611,6 @@ M::KGEN::LIT::getApproximatePublicDeclKind(ASTDecl *decl) {
   if (Operation *declOp = decl->getIfOperation()) {
     if (isa<AliasDeclOp>(declOp))
       return PublicDeclKind::DK_PublicAliasDecl;
-    if (isa<FnOp>(declOp))
-      return PublicFunctionDecl::getKindStatic();
     if (isa<FileModuleOp, ImportOp>(declOp))
       return PublicDeclKind::DK_PublicModuleDecl;
     if (isa<StructDeclOp>(declOp))
@@ -579,8 +623,6 @@ M::KGEN::LIT::getApproximatePublicDeclKind(ASTDecl *decl) {
       return PublicDeclKind::DK_PublicTraitDecl;
   }
 
-  if (getSignatureFromDecl(decl))
-    return PublicFunctionDecl::getKindStatic();
   if (auto irDecl = dyn_cast<IRASTDecl>(decl)) {
     if (irDecl->getArgNumber() >= 0)
       return PublicDeclKind::DK_PublicArgumentDecl;
@@ -598,8 +640,6 @@ StringRef PublicDecl::getKindAsString(PublicDeclKind kind) {
     return "alias";
   case PublicDeclKind::DK_PublicArgumentDecl:
     return "argument";
-  case PublicDeclKind::DK_PublicFunctionDecl:
-    return "function";
   case PublicDeclKind::DK_PublicModuleDecl:
     return "module";
   case PublicDeclKind::DK_PublicPackageDecl:
@@ -628,7 +668,9 @@ std::string PublicDecl::getDeclarationSnippet(MojoParserContext &ctx) const {
   case PublicDeclKind::DK_PublicAliasDecl:
     return getAliasDeclarationSnippet(cast<AliasASTDecl>(getDecl()), ctx);
   case PublicDeclKind::DK_PublicArgumentDecl:
-    return getArgumentDeclarationSnippet(ArgumentInfo(getDecl()), ctx);
+    if (auto argument = getArgumentInfo(getDecl()))
+      return getArgumentDeclarationSnippet(*argument, ctx);
+    return {};
   case PublicDeclKind::DK_PublicParameterDecl:
     return getParameterDeclarationSnippet(ParameterInfo(getDecl()), ctx);
   case PublicDeclKind::DK_PublicStructDecl:
@@ -712,65 +754,18 @@ static llvm::json::Object serializeParameterInfo(const ParameterInfo &info,
   return object;
 }
 
-/// Convert a signature argument index to its index in the documented argument
-/// list, omitting compiler-synthesized ABI arguments.
-static std::optional<size_t>
-getDocumentedArgumentIndex(FnTypeGeneratorType signature,
-                           size_t signatureArgIndex) {
-  if (!signature || signature.getNumArguments() <= signatureArgIndex)
-    return std::nullopt;
-
-  size_t documentedArgIndex = 0;
-  for (size_t index = 0; index <= signatureArgIndex; ++index) {
-    ArgConvention convention = signature.getArgConventions()[index];
-    bool isDocumented = convention != ArgConvention::ByRefError &&
-                        !(convention == ArgConvention::ByRefResult &&
-                          signature.getArgName(index) == "__result__");
-    if (index == signatureArgIndex)
-      return isDocumented ? std::optional<size_t>(documentedArgIndex)
-                          : std::nullopt;
-    if (isDocumented)
-      ++documentedArgIndex;
-  }
-  llvm_unreachable("signature argument index was range checked");
-}
-
-ArgumentInfo::ArgumentInfo(ASTDecl &decl) {
-  setDecl(decl);
-  ssize_t argNumber = -1;
-  if (auto varDecl = dyn_cast<VarASTDecl>(&decl))
-    argNumber = varDecl->getArgNumber();
-  else if (auto irDecl = dyn_cast<IRASTDecl>(&decl))
-    argNumber = irDecl->getArgNumber();
-
-  if (argNumber < 0)
-    return;
-
-  std::optional<size_t> documentedArgNumber =
-      getDocumentedArgumentIndex(getSignatureFromDecl(decl.getParentDecl()),
-                                 static_cast<size_t>(argNumber));
-  if (!documentedArgNumber)
-    return;
-
-  auto functionView = llvm::unique_dyn_cast_or_null<PublicFunctionDecl>(
-      getPublicDecl(decl.getParentDecl()));
-  if (!functionView ||
-      functionView->getArguments().size() <= *documentedArgNumber)
-    return;
-
-  *this = functionView->getArgument(*documentedArgNumber);
-  setDecl(decl);
-}
-
 static llvm::json::Object serializeArgumentInfo(const ArgumentInfo &info,
                                                 MojoParserContext &ctx) {
   ASTDecl &decl = info.getDecl();
+  std::string description = info.getMarkdownDocString();
+  if (!description.empty())
+    description.pop_back();
   TypeMetadata typeMetadata =
       extractLibraryInfo(info.type, &decl, &decl.getShared());
   SmallVector<std::string> traitNames = parseCompoundTraitType(info.type);
 
   llvm::json::Object object{
-      {"description", info.description},
+      {"description", std::move(description)},
       {"convention", getConventionString(info.convention)},
       {"kind", "argument"},
       {"name", prependVariadicIdentifiers(info.name, info.variadicKind).str()},
@@ -963,10 +958,34 @@ std::string M::KGEN::LIT::getToolingAliasValue(AliasASTDecl &decl) {
 }
 
 //===----------------------------------------------------------------------===//
-// PublicFunctionDecl
+// Function documentation
 //===----------------------------------------------------------------------===//
 
-void PublicFunctionDecl::augmentWithDocumentation(ArrayRef<StringRef> desc) {
+struct FunctionDocumentation {
+  explicit FunctionDocumentation(DefASTDecl &decl) : decl(decl) {}
+
+  DefASTDecl &decl;
+  SmallVector<ParameterInfo, kTypicalParameterCount> parameters;
+  std::string fnConstraints;
+  std::optional<std::string> returnType;
+  StringRef deprecated;
+  std::string constraints;
+  std::string description;
+  std::string raisesDoc;
+  std::string returnsDoc;
+  std::string summary;
+  StableInfo stableInfo;
+  bool isAsync = false;
+  bool isImplicitConversion = false;
+  bool isMethod = false;
+  bool isStatic = false;
+  bool raises = false;
+  bool isInit = false;
+  bool hasDefaultImplementation = false;
+};
+
+static void augmentFunctionDocumentation(FunctionDocumentation &documentation,
+                                         ArrayRef<StringRef> desc) {
   // Process the lines of the description, looking for markers.
   SmallVector<std::string> pureDescriptionLines;
   std::string argsSectionHeader = (Twine(DocString::kSectionArgs) + ":").str();
@@ -981,17 +1000,18 @@ void PublicFunctionDecl::augmentWithDocumentation(ArrayRef<StringRef> desc) {
 
   for (size_t line = 0, lineEnd = desc.size(); line < lineEnd; ++line) {
     if (desc[line] == argsSectionHeader) {
-      augmentDeclsWithDocumentation(desc, line, lineEnd, args);
+      skipDocumentationSection(desc, line, lineEnd);
     } else if (desc[line] == paramsSectionHeader) {
-      augmentDeclsWithDocumentation(desc, line, lineEnd, parameters);
+      augmentDeclsWithDocumentation(desc, line, lineEnd,
+                                    documentation.parameters);
     } else if (desc[line] == returnsSectionHeader) {
-      if (returnType)
-        returnsDoc = parseDocStringSection(desc, line, lineEnd);
+      if (documentation.returnType)
+        documentation.returnsDoc = parseDocStringSection(desc, line, lineEnd);
     } else if (desc[line] == constraintsSectionHeader) {
-      constraints = parseDocStringSection(desc, line, lineEnd);
+      documentation.constraints = parseDocStringSection(desc, line, lineEnd);
     } else if (desc[line] == raisesSectionHeader) {
-      if (raises())
-        raisesDoc = parseDocStringSection(desc, line, lineEnd);
+      if (documentation.raises)
+        documentation.raisesDoc = parseDocStringSection(desc, line, lineEnd);
     } else {
       // If this line is an ad-hoc section heading, process it to ensure
       // that it doesn't have any unexpected indentation. Otherwise, just
@@ -1004,182 +1024,8 @@ void PublicFunctionDecl::augmentWithDocumentation(ArrayRef<StringRef> desc) {
   for (const auto &descLine : pureDescriptionLines) {
     pureDescriptionLinesRef.push_back(StringRef(descLine));
   }
-  description = DocString::formatDescription(pureDescriptionLinesRef);
-}
-
-std::string
-PublicFunctionDecl::getDeclarationSnippet(MojoParserContext &ctx) const {
-  return getDeclarationSnippet(ctx, /*parameterOffsets=*/nullptr,
-                               /*argumentOffsets=*/nullptr);
-}
-
-std::string PublicFunctionDecl::getDeclarationSnippet(
-    MojoParserContext &ctx,
-    SmallVectorImpl<std::pair<unsigned, unsigned>> *parameterOffsets,
-    SmallVectorImpl<std::pair<unsigned, unsigned>> *argumentOffsets) const {
-  std::string snippet;
-  llvm::raw_string_ostream os(snippet);
-  if (isAsync())
-    os << "__async ";
-
-  unsigned returnOffset = 0;
-  std::string signature =
-      getSignature(ctx, parameterOffsets, argumentOffsets, &returnOffset);
-  StringRef resultLessSignature(signature.data(), returnOffset);
-
-  // Adjust the signature offsets.
-  size_t signatureStart = os.str().size();
-  auto adjustOffsets = [&](auto *v) {
-    for (auto &offset : *v) {
-      offset.first += signatureStart;
-      offset.second += signatureStart;
-    }
-  };
-  if (parameterOffsets)
-    adjustOffsets(parameterOffsets);
-  if (argumentOffsets)
-    adjustOffsets(argumentOffsets);
-
-  // Emit the signature.
-  os << resultLessSignature;
-
-  if (raises())
-    os << " raises";
-
-  os << StringRef(signature).drop_front(returnOffset);
-  return snippet;
-}
-
-std::string PublicFunctionDecl::getMarkdownDocString() const {
-  std::string markdown;
-  llvm::raw_string_ostream os(markdown);
-
-  dumpMarkdownDocumentationHeader(os, summary);
-  dumpMarkdownDeclListSection(os, DocString::kSectionParameters, parameters);
-  dumpMarkdownDeclListSection(os, DocString::kSectionArgs, args);
-  dumpMarkdownTextSection(os, DocString::kSectionReturns, returnsDoc);
-  dumpMarkdownTextSection(os, DocString::kSectionConstraints, constraints);
-  dumpMarkdownTextSection(os, DocString::kSectionRaises, raisesDoc);
-  dumpMarkdownDocumentationDescription(os, description);
-
-  return markdown;
-}
-
-std::string PublicFunctionDecl::getSignature(
-    MojoParserContext &ctx,
-    SmallVectorImpl<std::pair<unsigned, unsigned>> *parameterOffsets,
-    SmallVectorImpl<std::pair<unsigned, unsigned>> *argumentOffsets,
-    unsigned *returnOffset) const {
-  // Common path: delegate to the canonical op-driven printer in MojoParser.
-  // This is the same code the compiler calls when synthesizing declarations
-  // for diagnostics that have no source location.
-  ASTDecl &decl = getDecl();
-  if (auto *fnDecl = dyn_cast<DefASTDecl>(&decl)) {
-    std::string out;
-    llvm::raw_string_ostream os(out);
-    SignatureOffsets so;
-    so.parameters = parameterOffsets;
-    so.arguments = argumentOffsets;
-    so.returnTypeStart = returnOffset;
-    printFunctionSignature(*fnDecl, os, so);
-    return out;
-  }
-
-  // Fallback path: this declaration has a derived signature without a backing
-  // `FnOp`. Copy the cached parameter/arg infos into the shared renderer.
-  SmallVector<ParameterInfo, kTypicalParameterCount> paramInfos;
-  paramInfos.reserve(parameters.size());
-  for (const auto &p : parameters)
-    paramInfos.push_back(p);
-
-  SmallVector<ArgumentInfo, kTypicalArgumentCount> argInfos;
-  argInfos.reserve(args.size());
-  for (const auto &a : args)
-    argInfos.push_back(a);
-
-  // `returnType` is already gated on `!hasOutArgument` at construction time:
-  // `initFromSignature` only populates it when the function has no out-arg
-  // result, so passing it through unconditionally is safe.
-  std::string out;
-  llvm::raw_string_ostream os(out);
-  SignatureOffsets so;
-  so.parameters = parameterOffsets;
-  so.arguments = argumentOffsets;
-  so.returnTypeStart = returnOffset;
-  printFunctionSignatureFromInfos(
-      getName().split('(').first, argInfos, paramInfos,
-      returnType.value_or(std::string{}), fnConstraints, isInit, isMethodFlag,
-      ctx.getSharedState(), os, so);
-  return out;
-}
-
-llvm::json::Object PublicFunctionDecl::toJSON(MojoParserContext &ctx) const {
-  llvm::json::Array arguments;
-  for (const ArgumentInfo &argument : args)
-    arguments.push_back(serializeArgumentInfo(argument, ctx));
-  llvm::json::Array parameterInfos;
-  for (const ParameterInfo &parameter : parameters)
-    parameterInfos.push_back(serializeParameterInfo(parameter, ctx));
-
-  llvm::json::Object result{
-      {"args", std::move(arguments)},
-      {"async", isAsync()},
-      {"constraints", constraints},
-      {"deprecated", deprecated},
-      {"description", description},
-      {"hasDefaultImplementation", hasDefaultImplementation()},
-      {"isStatic", isStatic()},
-      {"isImplicitConversion", isImplicitConversion()},
-      {"kind", getKindAsString()},
-      {"name", getName().str()},
-      {"parameters", std::move(parameterInfos)},
-      {"raises", raises()},
-      {"raisesDoc", raisesDoc},
-      {"signature", getSignature(ctx)},
-      {"isStable", stableInfo.isStable},
-      {"isStabilityTracked", stableInfo.isStabilityTracked},
-      {"sinceVersion", stableInfo.sinceVersion},
-      {"summary", summary},
-  };
-
-  // Create unified "returns" object with type, path, and doc
-  if (returnType && !returnType->empty()) {
-    TypeMetadata metadata =
-        extractLibraryInfo(*returnType, &getDecl(), &ctx.getSharedState());
-
-    llvm::json::Object returnObj = metadata.toJSON();
-    if (!returnsDoc.empty()) {
-      returnObj["doc"] = returnsDoc;
-    }
-
-    result["returns"] = std::move(returnObj);
-  }
-
-  return result;
-}
-
-PublicFunctionDecl::PublicFunctionDecl(ASTDecl *decl)
-    : PublicDecl(PublicDeclKind::DK_PublicFunctionDecl, *decl,
-                 decl->getName().value_or(StringRef{})),
-      deprecated(decl->getDeprecationWarning().value_or(StringRef{})) {
-  auto funcOp = cast<DefASTDecl>(decl)->getOp();
-  isStaticFlag = funcOp.getIsStatic();
-  isImplicitConversionFlag = funcOp.isImplicitConversion();
-  isMethodFlag = !isStaticFlag && isa<StructDeclOp>(funcOp->getParentOp());
-  isInit = funcOp.getSpecialFunctionInfo().isInitializer();
-  isDefaultImplFlag = funcOp.isDefaultedTraitFn();
-  stableInfo = computeStableInfo(funcOp);
-
-  initFromSignature(decl, funcOp.getFuncTypeGenerator(),
-                    funcOp.getArgumentTypes(), funcOp.getUserResultType());
-}
-
-PublicFunctionDecl::PublicFunctionDecl(ASTDecl *decl,
-                                       FnTypeGeneratorType signature)
-    : PublicDecl(PublicDeclKind::DK_PublicFunctionDecl, *decl,
-                 /*name=*/StringRef()) {
-  initFromSignature(decl, signature, signature.getArguments(),
-                    signature.getUserResultType());
+  documentation.description =
+      DocString::formatDescription(pureDescriptionLinesRef);
 }
 
 /// Return the decl for the trait default that `decl` inherits, or `decl` itself
@@ -1201,44 +1047,36 @@ static ASTDecl *findDefaultImplDecl(SharedState &shared, ASTDecl *decl) {
   return defaultImpl ? defaultImpl : decl;
 }
 
-void PublicFunctionDecl::initFromSignature(ASTDecl *decl,
-                                           FnTypeGeneratorType signature,
-                                           ArrayRef<Type> userArgTypes,
-                                           Type userResultType) {
-  DeclResolver::DiagnosticDeclContextChanger declScopeChanger(decl);
-  auto &shared = decl->getShared();
-  raisesFlag = signature.isThrows();
-  isAsyncFlag = signature.isAsync();
+static FunctionDocumentation getFunctionDocumentation(DefASTDecl &decl) {
+  FunctionDocumentation documentation(decl);
+  FnOp funcOp = decl.getOp();
+  FnTypeGeneratorType signature = funcOp.getFuncTypeGenerator();
+  DeclResolver::DiagnosticDeclContextChanger declScopeChanger(&decl);
+  auto &shared = decl.getShared();
+  documentation.deprecated = decl.getDeprecationWarning().value_or(StringRef{});
+  documentation.raises = signature.isThrows();
+  documentation.isAsync = signature.isAsync();
+  Type userResultType = funcOp.getUserResultType();
+  documentation.isStatic = funcOp.getIsStatic();
+  documentation.isImplicitConversion = funcOp.isImplicitConversion();
+  documentation.isMethod =
+      !documentation.isStatic && isa<StructDeclOp>(funcOp->getParentOp());
+  documentation.isInit = funcOp.getSpecialFunctionInfo().isInitializer();
+  documentation.hasDefaultImplementation = funcOp.isDefaultedTraitFn();
+  documentation.stableInfo = computeStableInfo(funcOp);
 
   // If this is a method, grab the expected "Self" type.
   std::optional<ASTType> selfType;
-  if (isa<StructASTDecl>(decl->getParentDecl()))
-    selfType = cast<StructASTDecl>(decl->getParentDecl())->getSelfType();
+  if (isa<StructASTDecl>(decl.getParentDecl()))
+    selfType = cast<StructASTDecl>(decl.getParentDecl())->getSelfType();
 
   // Populate parameter infos (with per-param `conforms_to` merging applied
   // internally), then fold in function-level constraints. After this block
   // each `ParameterInfo` carries the final user-facing type string.
   ParameterEvaluator evaluator = populatePublicParameterInfos(
-      signature.getInputParamTypes(), signature.getParamListAttrs(), parameters,
-      *decl, selfType, signature.getParamListAttrs().getBodyConstraints(),
-      &fnConstraints);
-
-  // Populate argument infos.
-  SmallVector<ArgumentInfo, kTypicalArgumentCount> argInfos;
-  populateArgumentInfos(
-      *decl, signature, userArgTypes, selfType, evaluator,
-      [&]() -> bool {
-        if (auto *fnDecl = dyn_cast<DefASTDecl>(decl))
-          if (auto fnOp = fnDecl->getOp())
-            return fnOp.getSpecialFunctionInfo().hasSelfResult();
-        return false;
-      },
-      argInfos);
-  args.reserve(argInfos.size());
-  for (auto &info : argInfos) {
-    info.setDecl(*decl);
-    args.push_back(std::move(info));
-  }
+      decl, documentation.parameters, selfType,
+      signature.getParamListAttrs().getBodyConstraints(),
+      &documentation.fnConstraints);
 
   // Grab the result type, if it's non-none.
   ASTType resultType = signature.getUserResultType();
@@ -1257,15 +1095,146 @@ void PublicFunctionDecl::initFromSignature(ASTDecl *decl,
     Type reboundUserResultType = evaluator.getReboundType(userResultType);
     str += generateTypeString(shared, reboundUserResultType, VariadicKind::None,
                               selfType, convention);
-    returnType = str;
+    documentation.returnType = str;
   }
 
   // An inherited default is a copy that cannot carry a doc string of its own,
   // so its documentation comes from the trait method that declares it.
-  if (auto docStr = findDefaultImplDecl(shared, decl)->getParsedDocString()) {
-    summary = docStr->getSummary();
-    augmentWithDocumentation(docStr->getDescription());
+  if (auto docStr = findDefaultImplDecl(shared, &decl)->getParsedDocString()) {
+    documentation.summary = docStr->getSummary();
+    augmentFunctionDocumentation(documentation, docStr->getDescription());
   }
+  return documentation;
+}
+
+SmallVector<ParameterInfo, kTypicalParameterCount>
+M::KGEN::LIT::getFunctionParameters(FnSignatureASTDecl &decl) {
+  if (auto *defDecl = dyn_cast<DefASTDecl>(&decl))
+    return getFunctionDocumentation(*defDecl).parameters;
+  SmallVector<ParameterInfo, kTypicalParameterCount> parameters;
+  populatePublicParameterInfos(decl, parameters);
+  return parameters;
+}
+
+std::string M::KGEN::LIT::getFunctionSignature(
+    DefASTDecl &decl, MojoParserContext &ctx,
+    SmallVectorImpl<std::pair<unsigned, unsigned>> *parameterOffsets,
+    SmallVectorImpl<std::pair<unsigned, unsigned>> *argumentOffsets,
+    unsigned *returnOffset) {
+  std::string signature;
+  llvm::raw_string_ostream os(signature);
+  SignatureOffsets offsets;
+  offsets.parameters = parameterOffsets;
+  offsets.arguments = argumentOffsets;
+  offsets.returnTypeStart = returnOffset;
+  printFunctionSignature(decl, os, offsets);
+  return signature;
+}
+
+std::string M::KGEN::LIT::getFunctionDeclarationSnippet(
+    DefASTDecl &decl, MojoParserContext &ctx,
+    SmallVectorImpl<std::pair<unsigned, unsigned>> *parameterOffsets,
+    SmallVectorImpl<std::pair<unsigned, unsigned>> *argumentOffsets) {
+  std::string snippet;
+  llvm::raw_string_ostream os(snippet);
+  FnTypeGeneratorType functionType = decl.getSignature();
+  if (functionType.isAsync())
+    os << "__async ";
+  unsigned returnOffset = 0;
+  std::string signature = getFunctionSignature(decl, ctx, parameterOffsets,
+                                               argumentOffsets, &returnOffset);
+  size_t signatureStart = os.str().size();
+  auto adjustOffsets = [&](auto *offsets) {
+    for (auto &offset : *offsets) {
+      offset.first += signatureStart;
+      offset.second += signatureStart;
+    }
+  };
+  if (parameterOffsets)
+    adjustOffsets(parameterOffsets);
+  if (argumentOffsets)
+    adjustOffsets(argumentOffsets);
+  os << StringRef(signature).take_front(returnOffset);
+  if (functionType.isThrows())
+    os << " raises";
+  os << StringRef(signature).drop_front(returnOffset);
+  return snippet;
+}
+
+std::string M::KGEN::LIT::getFunctionMarkdownDocString(DefASTDecl &decl) {
+  FunctionDocumentation documentation = getFunctionDocumentation(decl);
+  SmallVector<ArgumentInfo, kTypicalArgumentCount> arguments =
+      getArgumentInfos(decl);
+  std::string markdown;
+  llvm::raw_string_ostream os(markdown);
+  dumpMarkdownDocumentationHeader(os, documentation.summary);
+  dumpMarkdownDeclListSection(os, DocString::kSectionParameters,
+                              documentation.parameters);
+  dumpMarkdownDeclListSection(os, DocString::kSectionArgs, arguments);
+  dumpMarkdownTextSection(os, DocString::kSectionReturns,
+                          documentation.returnsDoc);
+  dumpMarkdownTextSection(os, DocString::kSectionConstraints,
+                          documentation.constraints);
+  dumpMarkdownTextSection(os, DocString::kSectionRaises,
+                          documentation.raisesDoc);
+  dumpMarkdownDocumentationDescription(os, documentation.description);
+  return markdown;
+}
+
+std::string
+M::KGEN::LIT::getFunctionFullMarkdownString(DefASTDecl &decl,
+                                            MojoParserContext &ctx) {
+  std::string markdown;
+  llvm::raw_string_ostream os(markdown);
+  os << formatv("### function `{0}`\n", decl.getName().value_or(StringRef{}));
+  if (std::string docString = getFunctionMarkdownDocString(decl);
+      !docString.empty())
+    os << "\n---\n\n###\n" << docString;
+  os << "\n---\n\n###\n```mojo\n"
+     << getFunctionDeclarationSnippet(decl, ctx) << "\n```";
+  return markdown;
+}
+
+llvm::json::Object M::KGEN::LIT::serializeFunctionDecl(DefASTDecl &decl,
+                                                       MojoParserContext &ctx) {
+  FunctionDocumentation documentation = getFunctionDocumentation(decl);
+  SmallVector<ArgumentInfo, kTypicalArgumentCount> argumentsInfo =
+      getArgumentInfos(decl);
+  llvm::json::Array arguments;
+  for (const ArgumentInfo &argument : argumentsInfo)
+    arguments.push_back(serializeArgumentInfo(argument, ctx));
+  llvm::json::Array parameters;
+  for (const ParameterInfo &parameter : documentation.parameters)
+    parameters.push_back(serializeParameterInfo(parameter, ctx));
+  llvm::json::Object result{
+      {"args", std::move(arguments)},
+      {"async", documentation.isAsync},
+      {"constraints", documentation.constraints},
+      {"deprecated", documentation.deprecated},
+      {"description", documentation.description},
+      {"hasDefaultImplementation", documentation.hasDefaultImplementation},
+      {"isStatic", documentation.isStatic},
+      {"isImplicitConversion", documentation.isImplicitConversion},
+      {"kind", "function"},
+      {"name", decl.getName().value_or(StringRef{}).str()},
+      {"parameters", std::move(parameters)},
+      {"raises", documentation.raises},
+      {"raisesDoc", documentation.raisesDoc},
+      {"signature", getFunctionSignature(decl, ctx)},
+      {"isStable", documentation.stableInfo.isStable},
+      {"isStabilityTracked", documentation.stableInfo.isStabilityTracked},
+      {"sinceVersion", documentation.stableInfo.sinceVersion},
+      {"summary", documentation.summary},
+  };
+  if (documentation.returnType && !documentation.returnType->empty()) {
+    TypeMetadata metadata = extractLibraryInfo(*documentation.returnType, &decl,
+                                               &ctx.getSharedState());
+    llvm::json::Object returnObject = metadata.toJSON();
+    if (!documentation.returnsDoc.empty())
+      returnObject["doc"] = documentation.returnsDoc;
+    result["returns"] = std::move(returnObject);
+  }
+  return result;
 }
 
 //===----------------------------------------------------------------------===//
@@ -1274,23 +1243,27 @@ void PublicFunctionDecl::initFromSignature(ASTDecl *decl,
 
 SmallVector<FunctionDeclOverloadSet, 2>
 FunctionDeclOverloadSet::fromSortedFunctions(
-    SmallVector<PublicFunctionDecl, 2> &&functions) {
+    SmallVector<DefASTDecl *, 2> &&functions) {
   SmallVector<FunctionDeclOverloadSet, 2> overloads;
-  for (auto &function : functions) {
-    if (overloads.empty() ||
-        overloads.back().getBaseName() != function.getName())
-      overloads.emplace_back(FunctionDeclOverloadSet(function.getName()));
+  for (DefASTDecl *function : functions) {
+    if (overloads.empty() || overloads.back().getBaseName() !=
+                                 function->getName().value_or(StringRef{}))
+      overloads.emplace_back(
+          FunctionDeclOverloadSet(function->getName().value_or(StringRef{})));
 
-    overloads.back().append(std::move(function));
+    overloads.back().append(function);
   }
   return overloads;
 }
 
 llvm::json::Object
 FunctionDeclOverloadSet::toJSON(MojoParserContext &ctx) const {
+  llvm::json::Array overloads;
+  for (DefASTDecl *function : functions)
+    overloads.push_back(serializeFunctionDecl(*function, ctx));
   return llvm::json::Object{{"kind", "function"},
                             {"name", baseName},
-                            {"overloads", toJSONArray(ctx, functions)}};
+                            {"overloads", std::move(overloads)}};
 }
 
 //===----------------------------------------------------------------------===//
@@ -1459,7 +1432,7 @@ static llvm::json::Object serializeTraitDecl(TraitASTDecl &decl,
 
   auto aliases = extractChildDecls<PublicDecl, AliasDeclOp>(decl);
   auto functionOverloads = FunctionDeclOverloadSet::fromSortedFunctions(
-      extractChildDecls<PublicFunctionDecl, FnOp>(decl, shouldHideFn));
+      extractChildFunctions<FnOp>(decl, shouldHideFn));
 
   // Collect parent traits with type metadata. A trait's own conformance list
   // cannot carry a `where` clause, so there are no conditions to report.
@@ -1537,6 +1510,11 @@ static StructDocumentation getStructDocumentation(StructASTDecl &decl) {
       signature.getInputParamTypes(), paramListAttr, documentation.parameters,
       decl, /*selfType=*/std::nullopt, paramListAttr.getBodyConstraints(),
       /*bodyConstraints=*/nullptr);
+  ArrayRef<ASTDecl *> paramDecls = decl.getParamDecls();
+  for (auto [index, info] : llvm::enumerate(documentation.parameters)) {
+    assert(index < paramDecls.size() && "invalid index");
+    info.setDecl(*paramDecls[index]);
+  }
   collectConformanceConditions(structOp.getCanonicalTrait(), evaluator, shared,
                                documentation.conformanceConditions);
 
@@ -1618,7 +1596,7 @@ static llvm::json::Object serializeStructDecl(StructASTDecl &decl,
   auto aliases = extractChildDecls<PublicDecl, AliasDeclOp>(decl);
   auto fields = extractChildDecls<PublicDecl, StructFieldOp>(decl);
   auto functionOverloads = FunctionDeclOverloadSet::fromSortedFunctions(
-      extractChildDecls<PublicFunctionDecl, FnOp>(decl));
+      extractChildFunctions<FnOp>(decl));
 
   llvm::json::Array parentTraitsWithMetadata = collectParentTraitsWithMetadata(
       ctx, &decl, decl.getOp().getCanonicalTrait(),
@@ -1657,7 +1635,7 @@ static llvm::json::Object serializeModuleDecl(ASTDecl &decl,
   auto structs = extractChildDecls<PublicDecl, StructDeclOp>(decl);
   auto traits = extractChildDecls<PublicDecl, TraitDeclOp>(decl);
   auto functionOverloads = FunctionDeclOverloadSet::fromSortedFunctions(
-      extractChildDecls<PublicFunctionDecl, FnOp>(decl));
+      extractChildFunctions<FnOp>(decl));
 
   return llvm::json::Object{{"aliases", toJSONArray(ctx, aliases)},
                             {"description", decl.getDocumentationDescription()},
@@ -1713,7 +1691,9 @@ static llvm::json::Array serializePublicDecls(MojoParserContext &ctx,
                                               ArrayRef<ASTDecl *> decls) {
   llvm::json::Array result;
   for (ASTDecl *decl : decls)
-    if (std::unique_ptr<PublicDecl> publicDecl = getPublicDecl(decl))
+    if (auto *function = dyn_cast<DefASTDecl>(decl))
+      result.push_back(serializeFunctionDecl(*function, ctx));
+    else if (std::unique_ptr<PublicDecl> publicDecl = getPublicDecl(decl))
       result.push_back(publicDecl->toJSON(ctx));
   return result;
 }
@@ -1763,7 +1743,9 @@ llvm::json::Object PublicDecl::toJSON(MojoParserContext &ctx) const {
   case PublicDeclKind::DK_PublicAliasDecl:
     return serializeAliasDecl(cast<AliasASTDecl>(getDecl()), ctx);
   case PublicDeclKind::DK_PublicArgumentDecl:
-    return serializeArgumentInfo(ArgumentInfo(getDecl()), ctx);
+    if (auto argument = getArgumentInfo(getDecl()))
+      return serializeArgumentInfo(*argument, ctx);
+    return {};
   case PublicDeclKind::DK_PublicParameterDecl:
     return serializeParameterInfo(ParameterInfo(getDecl()), ctx);
   case PublicDeclKind::DK_PublicStructDecl:
@@ -1778,8 +1760,6 @@ llvm::json::Object PublicDecl::toJSON(MojoParserContext &ctx) const {
     return serializeModuleDecl(getDecl(), ctx);
   case PublicDeclKind::DK_PublicPackageDecl:
     return serializePackageDecl(cast<PackageASTDecl>(getDecl()), ctx);
-  default:
-    break;
   }
   llvm_unreachable("generic PublicDecl has no renderer");
 }
@@ -1792,8 +1772,7 @@ std::string PublicDecl::getMarkdownDocString() const {
   case PublicDeclKind::DK_PublicAliasDecl:
     return getAliasMarkdownDocString(cast<AliasASTDecl>(getDecl()));
   case PublicDeclKind::DK_PublicArgumentDecl:
-    dumpMarkdownDocumentationHeader(os, ArgumentInfo(decl).description);
-    return markdown;
+    return ArgumentInfo::getMarkdownDocString(decl);
   case PublicDeclKind::DK_PublicParameterDecl:
     return ParameterInfo(decl).getMarkdownDocString();
   case PublicDeclKind::DK_PublicStructDecl:

@@ -97,7 +97,9 @@ def _build(
     *,
     query_heads: int = 8,
     fused_sliding_qkv: bool = False,
+    fused_full_qkv: bool = False,
     kv_dtype: DType = DType.bfloat16,
+    full_kv_dtype: DType = DType.bfloat16,
 ) -> Graph:
     """Builds the graph over ``num_devices`` GPUs."""
     hf = _config()
@@ -116,7 +118,7 @@ def _build(
                 window_size=hf.sliding_window,
             ),
             FULL: MHAKVCacheParams(
-                dtype=DType.bfloat16,
+                dtype=full_kv_dtype,
                 n_kv_heads=hf.num_key_value_heads,
                 head_dim=attention_head_dim(hf),
                 num_layers=groups.count(FULL),
@@ -128,6 +130,7 @@ def _build(
         hf, devices=devices, kv_params=kv_params, max_seq_len=4096
     )
     config.fused_sliding_qkv = fused_sliding_qkv
+    config.fused_full_qkv = fused_full_qkv
     model = MiMoV2(config)
     # Names every weight by its path, as loading a checkpoint does.
     model.state_dict()
@@ -196,3 +199,35 @@ def test_sliding_qkv_fusion_is_opt_in(query_heads: int) -> None:
 def test_enabled_sliding_qkv_rejects_ineligible_cache() -> None:
     with pytest.raises(ValueError, match=r"rank-6 BF16 cache.*float32"):
         _build(2, fused_sliding_qkv=True, kv_dtype=DType.float32)
+
+
+@pytest.mark.skipif(accelerator_count() < 2, reason="needs 2 GPUs")
+@pytest.mark.parametrize("query_heads", [8, 16, 64])
+@pytest.mark.parametrize("sliding", [False, True])
+def test_full_qkv_fusion_is_independent(
+    query_heads: int, sliding: bool
+) -> None:
+    default = _build(2, query_heads=query_heads)
+    fused = _build(
+        2,
+        query_heads=query_heads,
+        fused_sliding_qkv=sliding,
+        fused_full_qkv=True,
+    )
+    ir = fused.module.mlir_module.asm()
+    assert ir.count("mo.chunked_qkv_rope_store.ragged.paged") == (
+        6 if sliding else 4
+    )
+    assert ir.count("mo.fused_qk_rope.ragged.paged") == (0 if sliding else 2)
+    assert [str(value.type) for value in default.inputs] == [
+        str(value.type) for value in fused.inputs
+    ]
+    assert [str(value) for value in default.output_types] == [
+        str(value) for value in fused.output_types
+    ]
+
+
+@pytest.mark.skipif(accelerator_count() < 2, reason="needs 2 GPUs")
+def test_enabled_full_qkv_rejects_ineligible_cache() -> None:
+    with pytest.raises(ValueError, match=r"rank-6 BF16 cache.*float32"):
+        _build(2, fused_full_qkv=True, full_kv_dtype=DType.float32)

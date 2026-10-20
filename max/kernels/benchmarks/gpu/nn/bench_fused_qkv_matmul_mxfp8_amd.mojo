@@ -512,7 +512,7 @@ def bench_shape[
                 _any(kv_out_ptr)
                 .unsafe_offset(Int(idx[0]) * kv_dim)
                 .unsafe_offset(Int(idx[2]))
-                .load[width=width]()
+                .unsafe_load[width=width]()
             )
 
         @inline(.always)
@@ -524,7 +524,7 @@ def bench_shape[
                 .unsafe_offset(total_seq * kv_dim)
                 .unsafe_offset(Int(idx[0]) * kv_dim)
                 .unsafe_offset(Int(idx[2]))
-            ).load[width=width]()
+            ).unsafe_load[width=width]()
 
         @inline(.always)
         def ik_in[
@@ -535,7 +535,7 @@ def bench_shape[
                 .unsafe_offset(2 * total_seq * kv_dim)
                 .unsafe_offset(Int(idx[0]) * ik_dim)
                 .unsafe_offset(Int(idx[2]))
-            ).load[width=width]()
+            ).unsafe_load[width=width]()
 
         kv_cache_store_ragged[target="gpu"](
             main_collection.get_key_cache(layer_idx),

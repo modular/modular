@@ -75,7 +75,9 @@ def run_reduce[
 
     # Allocate & initialize host data
     var expected_vals_alloc = alloc(
-        AllocLayout[Scalar[dtype], alignment=.of_bytes[align]()](count=out_size)
+        AllocLayout[Scalar[dtype], alignment=.of_bytes[align]()](
+            length=out_size
+        )
     ).into_managed()
     var expected_vals = expected_vals_alloc.unsafe_ptr()
 

@@ -139,7 +139,7 @@ struct MatmulFusedPartialRMSNorm:
         weight: InputTensor[dtype=dtype, rank=2, ...],
         gamma: InputTensor[dtype=dtype, rank=1, ...],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         """Execute fused GEMV + partial RMS norm.
 
         Calls `gemv_and_partial_norm` from `nn.gemv_partial_norm` which
@@ -232,7 +232,7 @@ struct MatmulCPU:
         a: InputTensor[rank=2, ...],
         b: InputTensor[rank=2, ...],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         comptime assert not (packed_b and transpose_b), (
             "transpose_b and b_packed cannot both be true because"
             " pre-packing transposes B"
@@ -295,7 +295,7 @@ struct MatmulGPU:
         a: InputTensor[rank=2, ...],
         b: InputTensor[rank=2, ...],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         comptime assert not packed_b, "packed B is only supported on CPU"
 
         @inline(.always)
@@ -382,7 +382,7 @@ struct BatchMatmulCPU:
         a: InputTensor[rank=rank, ...],
         b: InputTensor[rank=rank, ...],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         @inline(.always)
         def output_fn[
             _type: DType, _width: SIMDLength, *, alignment: Int
@@ -437,7 +437,7 @@ struct BatchMatmulGPU:
         a: InputTensor[rank=rank, ...],
         b: InputTensor[rank=rank, ...],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         @inline(.always)
         def output_fn[
             _type: DType, _width: SIMDLength, *, alignment: Int
@@ -515,7 +515,7 @@ struct FusedMatmulAdd:
         b: InputTensor[rank=2, ...],
         residual: InputTensor[dtype=c.dtype, ...],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         comptime assert (
             residual.rank == 1 or residual.rank == 2
         ), "residual must be rank 1 (bias) or rank 2"
@@ -562,7 +562,7 @@ struct LinalgBandPart:
         num_upper: InputTensor[dtype=int_type, rank=1, ...],
         exclude: InputTensor[rank=1, ...],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         @inline(.always)
         def input_fn[
             width: Int

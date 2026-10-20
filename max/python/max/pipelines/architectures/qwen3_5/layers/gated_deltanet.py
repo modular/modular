@@ -78,6 +78,7 @@ from max.nn.state_space import (
     gated_delta_recurrence_fwd,
     gated_delta_recurrence_verify_ring_fwd,
     kda_chunk,
+    kda_chunk_is_registered,
     kda_chunk_supports_head_dims,
 )
 
@@ -684,7 +685,8 @@ class GatedDeltaNet(Module, Shardable):
         # decision has to happen here rather than inside the launcher. The
         # fused prefill kernel also issues tcgen05 MMAs and 1D TMA copies, so
         # it only instantiates on SM100+; older NVIDIA GPUs (e.g. A10G, sm_86)
-        # take the sequential recurrence for prefill.
+        # take the sequential recurrence for prefill, as do builds without the
+        # closed-source kernel packages, where kda_chunk isn't registered.
         # TODO(KERN-3635): drop this gate once kda_chunk compiles below SM100.
         chunk_servable = (
             accelerator_api() == "cuda"
@@ -692,6 +694,7 @@ class GatedDeltaNet(Module, Shardable):
             and kda_chunk_supports_head_dims(
                 self.key_head_dim, self.value_head_dim
             )
+            and kda_chunk_is_registered()
         )
         output_types = [
             TensorType(DType.float32, [x.shape[0], self.value_dim], device)

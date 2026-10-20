@@ -326,7 +326,7 @@ struct Pointer[
     ```mojo
     from std.memory.alloc import alloc, dealloc, Layout
 
-    var allocation = alloc(Layout[Float32](count=4))
+    var allocation = alloc(Layout[Float32](length=4))
     var ptr = allocation.unsafe_ptr()
     for i in range(4):
         ptr.unsafe_store(i, Float32(i))
@@ -340,7 +340,7 @@ struct Pointer[
     ```mojo
     from std.memory.alloc import alloc, dealloc, Layout
 
-    var allocation = alloc(Layout[Int32](count=8))
+    var allocation = alloc(Layout[Int32](length=8))
     var ptr = allocation.unsafe_ptr()
     var vec = SIMD[.int32, 4](1, 2, 3, 4)
     ptr.unsafe_store(0, vec)
@@ -354,7 +354,7 @@ struct Pointer[
     ```mojo
     from std.memory.alloc import alloc, dealloc, Layout
 
-    var allocation = alloc(Layout[Int32](count=3))
+    var allocation = alloc(Layout[Int32](length=3))
     var ptr = allocation.unsafe_ptr()
     ptr.unsafe_offset(0)[] = 10  # offset by 0, then dereference to write
     ptr.unsafe_offset(1)[] = 20  # offset by 1, then dereference to write
@@ -840,7 +840,7 @@ struct Pointer[
         ```mojo
         from std.memory.alloc import alloc, dealloc, Layout
 
-        var allocation = alloc(Layout[Int32](count=4))
+        var allocation = alloc(Layout[Int32](length=4))
         var ptr = allocation.unsafe_ptr()
         var end = ptr.unsafe_offset(3)
         print(end - ptr)  # => 3
@@ -1221,7 +1221,7 @@ struct Pointer[
         ```mojo
         from std.memory.alloc import alloc, dealloc, Layout
 
-        var allocation = alloc(Layout[Int32](count=4))
+        var allocation = alloc(Layout[Int32](length=4))
         var ptr = allocation.unsafe_ptr()
         var end = ptr.unsafe_offset(3)
         print(end.offset_from(ptr))  # => 3
@@ -1386,7 +1386,7 @@ struct Pointer[
         ```mojo
         from std.memory.alloc import alloc, dealloc, Layout
 
-        var allocation = alloc(Layout[Int32](count=8))
+        var allocation = alloc(Layout[Int32](length=8))
         var p = allocation.unsafe_ptr()
         p.unsafe_store(0, SIMD[.int32, 4](1, 2, 3, 4))
         var v = p.unsafe_load[width=4]()
@@ -1753,7 +1753,7 @@ struct Pointer[
         ```mojo
         from std.memory.alloc import alloc, dealloc, Layout
 
-        var allocation = alloc(Layout[Float32](count=4))
+        var allocation = alloc(Layout[Float32](length=4))
         var p = allocation.unsafe_ptr()
         var vec = SIMD[.float32, 4](1.0, 2.0, 3.0, 4.0)
         p.unsafe_store(vec)

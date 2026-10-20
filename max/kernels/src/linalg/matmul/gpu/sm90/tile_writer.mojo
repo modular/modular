@@ -407,7 +407,7 @@ trait RegTileWriter(TrivialRegisterPassable):
         self,
         c_reg_tile: TileTensor[address_space=.LOCAL, ...],
         coords: Tuple[Int, Int],
-    ) capturing -> None:
+    ) -> None:
         """Write a register tile to memory.
 
         Args:
@@ -576,7 +576,7 @@ struct FragmentToSMemWriter[
         self,
         c_reg_tile: TileTensor[address_space=.LOCAL, ...],
         coords: Tuple[Int, Int],
-    ) capturing -> None:
+    ) -> None:
         """Write accumulator tile from registers to shared memory.
 
         Args:
@@ -767,7 +767,7 @@ struct RegisterToGMemWriter[
         self,
         c_reg_tile: TileTensor[address_space=.LOCAL, ...],
         coords: Tuple[Int, Int],
-    ) capturing -> None:
+    ) -> None:
         """Write a single MMA tile from registers to global memory.
 
         Args:
@@ -934,7 +934,7 @@ struct RegisterToGMemWriter[
         n: Int,
         value_epilogue_fn: EpilogueFnType,
         value_compute_fn: ComputeFnType,
-    ) capturing:
+    ):
         """Apply epilogue or compute_lambda and store result."""
         comptime value_alignment = 2
 

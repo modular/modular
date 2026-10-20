@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import exp, isclose
+from std.memory.alloc import unsafe_alloc
 from std.random import rand, seed
 
 from layout import (
@@ -432,7 +433,7 @@ def build_ndbuffer[
     ],
     MutUntrackedOrigin,
 ]:
-    var ptr = alloc[Scalar[dtype]](shape.flattened_length())
+    var ptr = unsafe_alloc[Scalar[dtype]](shape.flattened_length())
     rand(ptr, shape.flattened_length())
     comptime ShapeTypes = _IntTupleToCoordLike[
         .int64, Layout.row_major(static_shape).shape
@@ -517,12 +518,12 @@ def test_case[
 
     verify_output(output, ref_output, cfg)
 
-    q.ptr.free()
-    k.ptr.free()
-    v.ptr.free()
-    mask.ptr.free()
-    output.ptr.free()
-    ref_output.ptr.free()
+    q.ptr.unsafe_free()
+    k.ptr.unsafe_free()
+    v.ptr.unsafe_free()
+    mask.ptr.unsafe_free()
+    output.ptr.unsafe_free()
+    ref_output.ptr.unsafe_free()
 
 
 def test_flash_attention[dtype: DType]() raises:
@@ -712,12 +713,12 @@ def test_case_split_kv[
 
     verify_output(output, ref_output, cfg)
 
-    q.ptr.free()
-    k.ptr.free()
-    v.ptr.free()
-    mask.ptr.free()
-    output.ptr.free()
-    ref_output.ptr.free()
+    q.ptr.unsafe_free()
+    k.ptr.unsafe_free()
+    v.ptr.unsafe_free()
+    mask.ptr.unsafe_free()
+    output.ptr.unsafe_free()
+    ref_output.ptr.unsafe_free()
 
 
 def test_flash_attention_split_kv[dtype: DType]() raises:
@@ -956,15 +957,15 @@ def test_flash_attention_with_sinks[dtype: DType]() raises:
     )
 
     # Free memory
-    q.ptr.free()
-    k.ptr.free()
-    v.ptr.free()
-    mask.ptr.free()
-    sink_weights.ptr.free()
-    output_no_sinks.ptr.free()
-    ref_output_no_sinks.ptr.free()
-    output_with_sinks.ptr.free()
-    ref_output_with_sinks.ptr.free()
+    q.ptr.unsafe_free()
+    k.ptr.unsafe_free()
+    v.ptr.unsafe_free()
+    mask.ptr.unsafe_free()
+    sink_weights.ptr.unsafe_free()
+    output_no_sinks.ptr.unsafe_free()
+    ref_output_no_sinks.ptr.unsafe_free()
+    output_with_sinks.ptr.unsafe_free()
+    ref_output_with_sinks.ptr.unsafe_free()
 
 
 def main() raises:

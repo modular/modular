@@ -48,7 +48,7 @@ from eval_common import (
     ChatClient,
     GenParams,
     append_github_env,
-    build_chat_kwargs,
+    chat_completion,
     dump_config,
     dump_jsonl,
     dump_score,
@@ -174,10 +174,8 @@ def infer(
     prompt_index, sample = item
     question = sample["question"]
     reference = sample["answer"]
-    resp = client.chat.completions.create(
-        **build_chat_kwargs(
-            model, [{"role": "user", "content": question}], params
-        )
+    resp = chat_completion(
+        client, model, [{"role": "user", "content": question}], params
     )
     # Count only the model-under-test's answer-generation call; the judge call
     # is NOT counted toward output-token stats.
@@ -199,7 +197,7 @@ def infer(
         "verdict": parse_verdict(raw_verdict),
         "finish_reason": resp.choices[0].finish_reason,
         "completion_tokens": answer_tokens,
-        **response_fields(resp.choices[0].message),
+        **response_fields(resp.choices[0]),
     }
 
 

@@ -251,8 +251,7 @@ def grouped_matmul_sm90[
         a_offsets,
         expert_ids,
         c.as_unsafe_any_origin(),
-        host_arg=epilogue_fn,
-        host_arg2=compute_fn,
+        host_args=(epilogue_fn, compute_fn),
         grid_dim=(
             ceildiv(N, BN),
             ceildiv(max_num_tokens_per_expert, BM),

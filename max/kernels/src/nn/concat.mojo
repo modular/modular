@@ -79,7 +79,7 @@ def _as_epilogue_fn[
     """Binds a parametric function to its `ElementwiseEpilogueFn` closure type.
 
     A bare parametric function only converts where a function-type bound gives
-    it context, so neither `type_of` nor a `host_arg` slot accepts it directly.
+    it context, so neither `type_of` nor a `host_args` slot accepts it directly.
 
     Parameters:
         EpilogueFnType: Type of the epilogue function (inferred).
@@ -1182,7 +1182,7 @@ def _concat_gpu[
             return ctx.enqueue_function[kernel](
                 output,
                 inputs,
-                host_arg=epilogue_fn,
+                host_args=(epilogue_fn,),
                 grid_dim=(ceildiv(inputs[0].num_elements(), block_size),),
                 block_dim=(block_size),
             )
@@ -1422,10 +1422,7 @@ def _fused_dual_concat_gpu[
         output_layout_0,
         input_shapes_1,
         output_layout_1,
-        host_arg=input_fn_0,
-        host_arg2=output_0_fn,
-        host_arg3=input_fn_1,
-        host_arg4=output_1_fn,
+        host_args=(input_fn_0, output_0_fn, input_fn_1, output_1_fn),
         grid_dim=(ceildiv(max_elems, block_size)),
         block_dim=block_size,
     )
@@ -1729,8 +1726,7 @@ def _fused_concat_gpu[
             return ctx.enqueue_function[kernel](
                 input_shapes,
                 output_layout,
-                host_arg=input_fn,
-                host_arg2=output_0_fn,
+                host_args=(input_fn, output_0_fn),
                 grid_dim=(
                     ceildiv(
                         product(input_shapes[0], input_shapes[0].size),

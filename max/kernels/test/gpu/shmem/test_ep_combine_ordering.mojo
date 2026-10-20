@@ -27,6 +27,7 @@ MI355X (gfx950) only.
 """
 
 from std.atomic import Atomic, Ordering, fence
+from std.memory.alloc import unsafe_alloc
 from max.gpu import WARP_SIZE, block_dim, block_idx, thread_idx
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
@@ -77,7 +78,7 @@ def ordering_guard_kernel(
             scratch[c] = seed
 
         if tid == 0:
-            while flags.load[volatile=True](c) != DATA_READY:
+            while flags.unsafe_load[volatile=True](c) != DATA_READY:
                 pass
             fence[ordering=Ordering.ACQUIRE, scope=DEVICE_SCOPE]()
         barrier()
@@ -93,7 +94,7 @@ def main() raises:
     var flags = ctx.enqueue_create_buffer[.int32](N_CONSUMERS)
     var output = ctx.enqueue_create_buffer[.float32](total_elems)
     var scratch = ctx.enqueue_create_buffer[.float32](N_CONSUMERS)
-    var host_output = alloc[Float32](total_elems)
+    var host_output = unsafe_alloc[Float32](total_elems)
 
     var stale: Int = 0
     for _it in range(N_ITERS):
@@ -121,7 +122,7 @@ def main() raises:
                 if isnan(got) or got != Float32(c):
                     stale += 1
 
-    host_output.free()
+    host_output.unsafe_free()
 
     assert_equal(
         stale,

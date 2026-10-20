@@ -79,11 +79,11 @@ def bench_unary[
 ](mut m: Bench, size: Int, op_name: String) raises:
     comptime alignment = Alignment.of_bytes[64]()
     var input_ptr_alloc = alloc(
-        AllocLayout[Scalar[dtype], alignment=alignment](count=size)
+        AllocLayout[Scalar[dtype], alignment=alignment](length=size)
     ).into_managed()
     var input_ptr = input_ptr_alloc.unsafe_ptr()
     var output_ptr_alloc = alloc(
-        AllocLayout[Scalar[dtype], alignment=alignment](count=size)
+        AllocLayout[Scalar[dtype], alignment=alignment](length=size)
     ).into_managed()
     var output_ptr = output_ptr_alloc.unsafe_ptr()
 

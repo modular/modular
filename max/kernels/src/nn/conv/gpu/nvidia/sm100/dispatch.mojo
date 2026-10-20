@@ -27,7 +27,12 @@ from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import TensorEngine, TensorLayout, TileTensor, row_major
 from std.utils.index import IndexList
-from linalg.utils import ElementwiseEpilogueFn, no_epilogue_fn
+from linalg.utils import (
+    ElementwiseComputeFn,
+    ElementwiseEpilogueFn,
+    no_compute_fn,
+    no_epilogue_fn,
+)
 
 
 # =========================================================================
@@ -61,7 +66,7 @@ def _transpose_rscf_to_krsc[
     var r: Int
     r, rem = divmod(rem, _S * _C)
     var s, c = divmod(rem, _C)
-    dst_ptr.store(tid, src.load((r, s, c, k))[0])
+    dst_ptr.unsafe_store(tid, src.load((r, s, c, k))[0])
 
 
 @__name(t"transpose_fcrs_to_krsc_{dtype}")
@@ -90,7 +95,7 @@ def _transpose_fcrs_to_krsc[
     var r: Int
     r, rem = divmod(rem, _S * _C)
     var s, c = divmod(rem, _C)
-    dst_ptr.store(tid, src.load((k, c, r, s))[0])
+    dst_ptr.unsafe_store(tid, src.load((k, c, r, s))[0])
 
 
 # =========================================================================
@@ -130,10 +135,12 @@ def dispatch_sm100_conv2d[
     filter_type: DType,
     output_type: DType,
     EpilogueFnType: ElementwiseEpilogueFn = type_of(no_epilogue_fn),
+    ComputeFnType: ElementwiseComputeFn = type_of(no_compute_fn),
     //,
     filter_is_fcrs: Bool = False,
     has_residual: Bool = False,
     has_epilogue_fn: Bool = False,
+    has_compute_fn: Bool = False,
 ](
     input: TileTensor[mut=True, input_type, address_space=.GENERIC, ...],
     filter: TileTensor[filter_type, ...],
@@ -145,6 +152,7 @@ def dispatch_sm100_conv2d[
     ] = None,
     beta: Float32 = 0.0,
     epilogue_fn: EpilogueFnType = no_epilogue_fn,
+    compute_fn: ComputeFnType = no_compute_fn,
 ) raises:
     """Dispatch to SM100 structured conv2d with filter transpose.
 
@@ -156,9 +164,12 @@ def dispatch_sm100_conv2d[
         filter_type: Data type of the filter weights tensor.
         output_type: Data type of the output tensor.
         EpilogueFnType: Type of `epilogue_fn` (inferred).
+        ComputeFnType: Type of `compute_fn` (inferred).
         filter_is_fcrs: If True, filter is FCRS layout; otherwise RSCF.
         has_residual: If True, fuse residual add D = Conv(A,B) + beta*C.
         has_epilogue_fn: Whether `epilogue_fn` stores the output.
+        has_compute_fn: Whether the kernel stores `compute_fn` of each
+            output value; not supported with `has_residual`.
 
     Args:
         input: Input activation tensor in NHWC layout.
@@ -172,6 +183,9 @@ def dispatch_sm100_conv2d[
         epilogue_fn: Elementwise epilogue that stores each output value,
             with coordinates in the [M, N] GEMM view of the output; ignored
             unless `has_epilogue_fn` is True.
+        compute_fn: Elementwise transform of each output value, with
+            coordinates in the [M, N] GEMM view of the output; ignored
+            unless `has_compute_fn` is True.
 
     Raises:
         Error if kernel launch fails.
@@ -179,6 +193,12 @@ def dispatch_sm100_conv2d[
     comptime assert input.flat_rank == 4, "input must be rank 4 (NHWC)"
     comptime assert filter.flat_rank == 4, "filter must be rank 4"
     comptime assert output.flat_rank == 4, "output must be rank 4 (NHWC)"
+    comptime assert not (
+        has_epilogue_fn and has_compute_fn
+    ), "a store epilogue excludes the compute epilogue"
+    comptime assert not (
+        has_residual and has_compute_fn
+    ), "the residual kernel has no compute epilogue"
 
     comptime if input_type == .bfloat16:
         from .conv2d import conv2d_fprop, conv2d_fprop_with_residual
@@ -315,6 +335,10 @@ def dispatch_sm100_conv2d[
             elif has_epilogue_fn:
                 conv2d_fprop[config=config](
                     out_tt, act_tt, filter_tt, problem, epilogue_fn, ctx
+                )
+            elif has_compute_fn:
+                conv2d_fprop[config=config](
+                    out_tt, act_tt, filter_tt, problem, compute_fn, ctx
                 )
             else:
                 conv2d_fprop[config=config](

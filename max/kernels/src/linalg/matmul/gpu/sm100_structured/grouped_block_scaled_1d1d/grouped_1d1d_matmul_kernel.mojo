@@ -533,13 +533,15 @@ struct RealSwiGLUOutput[
     @inline(.always)
     def store_packed_byte(self, m: Int, byte_pos: Int, val: UInt8):
         # c_packed shape (M_total, c_packed_row_stride), row-major.
-        self.c_packed_ptr.store(m * Self.c_packed_row_stride + byte_pos, val)
+        self.c_packed_ptr.unsafe_store(
+            m * Self.c_packed_row_stride + byte_pos, val
+        )
 
     @inline(.always)
     def store_packed_word(self, m: Int, byte_pos: Int, val: UInt32):
         # Caller guarantees `byte_pos` and `c_packed_row_stride` are
         # multiples of 4 so PTX lowers to one ST.GLOBAL.B32.
-        self.c_packed_ptr.unsafe_bitcast[UInt32]().store(
+        self.c_packed_ptr.unsafe_bitcast[UInt32]().unsafe_store(
             (m * Self.c_packed_row_stride + byte_pos) // 4, val
         )
 
@@ -564,7 +566,7 @@ struct RealSwiGLUOutput[
         var linear_idx = (
             ((i0 * Self.sf_dim1 + i1) * dim2 + i2) * dim3 + i3
         ) * dim4 + i4
-        self.c_swiglu_scales_ptr.store(linear_idx, sf)
+        self.c_swiglu_scales_ptr.unsafe_store(linear_idx, sf)
 
     @inline(.always)
     def input_scale(self, active_expert_idx: Int) -> Float32:
@@ -604,7 +606,7 @@ struct RealSwiGLUOutput[
                 ((i0 * Self.sf_dim1 + i1) * SF_ATOM_M[0] + i2) * SF_ATOM_M[1]
                 + i3
             ) * SF_ATOM_K
-            ptr_u32.store(byte_idx // 4, UInt32(0))
+            ptr_u32.unsafe_store(byte_idx // 4, UInt32(0))
 
     def _to_device_type(
         self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
@@ -4020,8 +4022,8 @@ struct Grouped1D1DMatmulKernel[
             pair_fp32: SIMD[Self.accum_type, 2],
         ) {imm}:
             var pair_bf = pair_fp32.cast[.bfloat16]()
-            smem_bf16_ptr.store(Int(SWIZZLE_BF(smem_idx_a)), pair_bf[0])
-            smem_bf16_ptr.store(Int(SWIZZLE_BF(smem_idx_b)), pair_bf[1])
+            smem_bf16_ptr.unsafe_store(Int(SWIZZLE_BF(smem_idx_a)), pair_bf[0])
+            smem_bf16_ptr.unsafe_store(Int(SWIZZLE_BF(smem_idx_b)), pair_bf[1])
 
         comptime for loop_stage in range(num_stages):
             # Element `2 * r + j` scales the fragment pair `(4 * r + j,
@@ -4166,7 +4168,7 @@ struct Grouped1D1DMatmulKernel[
                 var smem_base = UInt32(token_idx) * UInt32(BM) + UInt32(k_raw)
                 var pair_bf = SIMD[.bfloat16, 2 * src_width]()
                 comptime for li in range(n_loads):
-                    var chunk = smem_bf16_ptr.load[width=BF16_LOAD_W](
+                    var chunk = smem_bf16_ptr.unsafe_load[width=BF16_LOAD_W](
                         Int(SWIZZLE_BF(smem_base + UInt32(li * BF16_LOAD_W)))
                     )
                     comptime for ci in range(BF16_LOAD_W):

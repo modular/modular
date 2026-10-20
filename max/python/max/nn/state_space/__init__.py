@@ -30,6 +30,7 @@ from .gated_delta import (
 from .gated_group_rmsnorm import gated_group_rmsnorm
 from .kimi_delta import (
     kda_chunk,
+    kda_chunk_is_registered,
     kda_chunk_supports_head_dims,
     kda_decode,
 )
@@ -46,6 +47,7 @@ __all__ = [
     "gated_delta_state_fold",
     "gated_group_rmsnorm",
     "kda_chunk",
+    "kda_chunk_is_registered",
     "kda_chunk_supports_head_dims",
     "kda_decode",
     "mamba2_ssd_chunk_scan_varlen_fwd_inplace",

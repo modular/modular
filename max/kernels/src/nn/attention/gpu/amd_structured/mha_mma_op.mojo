@@ -1037,7 +1037,9 @@ struct MhaMmaOp[T: DType, config: MhaConfigV2]:
                         var sub_id = sub_row * _subtiles_per_row + sub_col
                         var slot_row = sub_id * _V_SUB_ROWS_ + row_in_sub
                         var byte_offset = slot_row * _V_SUB_COLS_ + col_in_sub
-                        vals[f] = v_base.unsafe_offset(byte_offset).load()
+                        vals[f] = v_base.unsafe_offset(
+                            byte_offset
+                        ).unsafe_load()
                     dst_v[i, j, 0] = rebind[dst_v.ElementType](vals)
 
     # MMA dispatch — MFMA over RegTile, named by attention semantic.

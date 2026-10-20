@@ -34,7 +34,12 @@ from layout import Coord, TensorEngine, TensorLayout, TileTensor, row_major
 from linalg.matmul.gpu import _matmul_gpu
 from linalg.matmul.gpu.apple import ConvIm2colParams, enqueue_apple_conv2d
 from std.utils.index import IndexList
-from nn.conv.conv_utils import elementwise_simd_epilogue_type
+from nn.conv.conv_utils import (
+    ConvSimdComputeFn,
+    ConvSimdEpilogueFn,
+    no_conv_simd_compute_fn,
+    no_conv_simd_epilogue_fn,
+)
 
 
 # =========================================================================
@@ -120,7 +125,7 @@ def _im2col_nhwc_kernel[
         if 0 <= h_in < _H and 0 <= w_in < _W:
             val = input.load((batch, h_in, w_in, c))[0]
 
-        output_ptr.store(row_base + k, val)
+        output_ptr.unsafe_store(row_base + k, val)
         k += block_dim.x
 
 
@@ -162,7 +167,7 @@ def _transpose_filter_to_nk[
         val = src.load((f, c, r, s))[0]
     else:
         val = src.load((r, s, c, f))[0]
-    dst_ptr.store(tid, val)
+    dst_ptr.unsafe_store(tid, val)
 
 
 # =========================================================================
@@ -177,10 +182,13 @@ def dispatch_im2col_matmul_conv2d[
     input_type: DType,
     filter_type: DType,
     output_type: DType,
+    EpilogueFnType: ConvSimdEpilogueFn = type_of(no_conv_simd_epilogue_fn),
+    ComputeFnType: ConvSimdComputeFn = type_of(no_conv_simd_compute_fn),
     //,
     filter_is_fcrs: Bool = False,
-    maybe_epilogue_func: Optional[elementwise_simd_epilogue_type] = None,
+    has_epilogue_fn: Bool = False,
     m_tile_byte_budget: Int = _DEFAULT_M_TILE_BYTE_BUDGET,
+    has_compute_fn: Bool = False,
 ](
     input: TileTensor[input_type, ...],
     filter: TileTensor[filter_type, ...],
@@ -190,6 +198,8 @@ def dispatch_im2col_matmul_conv2d[
     symmetric_padding: IndexList[2],
     num_groups: Int,
     ctx: DeviceContext,
+    epilogue_fn: EpilogueFnType = no_conv_simd_epilogue_fn,
+    compute_fn: ComputeFnType = no_conv_simd_compute_fn,
 ) raises -> Bool:
     """Try to dispatch a 2-D conv as explicit im2col + generic matmul.
 
@@ -205,14 +215,17 @@ def dispatch_im2col_matmul_conv2d[
             (inferred).
         filter_type: Element `DType` of the filter tensor (inferred).
         output_type: Element `DType` of the output tensor (inferred).
+        EpilogueFnType: Type of `epilogue_fn` (inferred).
+        ComputeFnType: Type of `compute_fn` (inferred).
         filter_is_fcrs: True if the filter is laid out as
             `[F, C, R, S]`; False for `[R, S, C, F]` (defaults to `False`).
-        maybe_epilogue_func: Optional SIMD elementwise epilogue applied to
-            each output element in 4D `(batch, h, w, channel)` coordinates
-            (defaults to `None`).
+        has_epilogue_fn: True when `epilogue_fn` stores the output instead
+            of the matmul (defaults to `False`).
         m_tile_byte_budget: Byte budget cap for the im2col `[M, K]` scratch
             tile used to chunk the M axis (defaults to
             `_DEFAULT_M_TILE_BYTE_BUDGET`).
+        has_compute_fn: True when the matmul stores `compute_fn` of each
+            output value (defaults to `False`).
 
     Args:
         input: 4D NHWC input activation tensor of shape
@@ -228,10 +241,19 @@ def dispatch_im2col_matmul_conv2d[
         num_groups: Group count; must be `1` to dispatch.
         ctx: Device context used to enqueue kernels and allocate scratch
             buffers.
+        epilogue_fn: SIMD elementwise epilogue applied to each output
+            element in 4D `(batch, h, w, channel)` coordinates; used only
+            when `has_epilogue_fn` is true.
+        compute_fn: SIMD elementwise transform of each output element in
+            4D `(batch, h, w, channel)` coordinates; used only when
+            `has_compute_fn` is true.
     """
     comptime assert input.flat_rank == 4, "input must be rank 4 (NHWC)"
     comptime assert filter.flat_rank == 4, "filter must be rank 4"
     comptime assert output.flat_rank == 4, "output must be rank 4 (NHWC)"
+    comptime assert not (
+        has_epilogue_fn and has_compute_fn
+    ), "a store epilogue excludes the compute epilogue"
 
     comptime if input_type != .bfloat16:
         return False
@@ -380,7 +402,7 @@ def dispatch_im2col_matmul_conv2d[
         var c_engine = output._offset_storage(m_offset * N)
         var c_tt = TileTensor(c_engine, row_major(m_count, N))
 
-        comptime if case .Some(epilogue_4d) = maybe_epilogue_func:
+        comptime if has_epilogue_fn:
 
             @inline(.always)
             def _gemm_epilogue[
@@ -389,7 +411,7 @@ def dispatch_im2col_matmul_conv2d[
                 *,
                 alignment: Int,
             ](coords_2d: Coord, val: SIMD[_dtype, _width]) {
-                var HW_out, var _W_out, var m_offset
+                var HW_out, var _W_out, var m_offset, var epilogue_fn
             }:
                 comptime assert (
                     coords_2d.rank == 2
@@ -398,13 +420,41 @@ def dispatch_im2col_matmul_conv2d[
                 var n_idx = Int(coords_2d[1])
                 var batch_idx, sp = divmod(full_m, HW_out)
                 var h_idx, w_idx = divmod(sp, _W_out)
-                epilogue_4d(
+                epilogue_fn(
                     (batch_idx, h_idx, w_idx, n_idx),
                     rebind[SIMD[output_type, _width]](val),
                 )
 
             _matmul_gpu[use_tensor_core=True, transpose_b=True](
                 c_tt, a_tt.as_imm(), b_tt.as_imm(), _gemm_epilogue, ctx
+            )
+        elif has_compute_fn:
+
+            @inline(.always)
+            def _gemm_compute[
+                _dtype: DType,
+                _width: SIMDLength,
+                *,
+                alignment: Int,
+            ](coords_2d: Coord, val: SIMD[_dtype, _width]) {
+                var HW_out, var _W_out, var m_offset, var compute_fn
+            } -> SIMD[_dtype, _width]:
+                comptime assert (
+                    coords_2d.rank == 2
+                ), "the matmul epilogue contract is rank 2"
+                var full_m = m_offset + Int(coords_2d[0])
+                var n_idx = Int(coords_2d[1])
+                var batch_idx, sp = divmod(full_m, HW_out)
+                var h_idx, w_idx = divmod(sp, _W_out)
+                return rebind[SIMD[_dtype, _width]](
+                    compute_fn(
+                        (batch_idx, h_idx, w_idx, n_idx),
+                        rebind[SIMD[output_type, _width]](val),
+                    )
+                )
+
+            _matmul_gpu[use_tensor_core=True, transpose_b=True](
+                c_tt, a_tt.as_imm(), b_tt.as_imm(), _gemm_compute, ctx
             )
         else:
             _matmul_gpu[
@@ -426,9 +476,12 @@ def dispatch_fused_im2col_conv2d_apple[
     input_type: DType,
     filter_type: DType,
     output_type: DType,
+    EpilogueFnType: ConvSimdEpilogueFn = type_of(no_conv_simd_epilogue_fn),
+    ComputeFnType: ConvSimdComputeFn = type_of(no_conv_simd_compute_fn),
     //,
     filter_is_fcrs: Bool = False,
-    maybe_epilogue_func: Optional[elementwise_simd_epilogue_type] = None,
+    has_epilogue_fn: Bool = False,
+    has_compute_fn: Bool = False,
 ](
     input: TileTensor[input_type, ...],
     filter: TileTensor[filter_type, ...],
@@ -438,6 +491,8 @@ def dispatch_fused_im2col_conv2d_apple[
     symmetric_padding: IndexList[2],
     num_groups: Int,
     ctx: DeviceContext,
+    epilogue_fn: EpilogueFnType = no_conv_simd_epilogue_fn,
+    compute_fn: ComputeFnType = no_conv_simd_compute_fn,
 ) raises -> Bool:
     """Apple M5 fused online-im2col conv2d (no `[M, K]` scratch materialised).
 
@@ -463,11 +518,14 @@ def dispatch_fused_im2col_conv2d_apple[
             (inferred).
         filter_type: Element `DType` of the filter tensor (inferred).
         output_type: Element `DType` of the output tensor (inferred).
+        EpilogueFnType: Type of `epilogue_fn` (inferred).
+        ComputeFnType: Type of `compute_fn` (inferred).
         filter_is_fcrs: True if the filter is laid out as
             `[F, C, R, S]`; False for `[R, S, C, F]` (defaults to `False`).
-        maybe_epilogue_func: Optional SIMD elementwise epilogue applied to
-            each output element in 4D `(batch, h, w, channel)` coordinates
-            (defaults to `None`).
+        has_epilogue_fn: True when `epilogue_fn` stores the output instead
+            of the GEMM (defaults to `False`).
+        has_compute_fn: True when the GEMM stores `compute_fn` of each
+            output value (defaults to `False`).
 
     Args:
         input: 4D NHWC input activation tensor of shape
@@ -483,10 +541,19 @@ def dispatch_fused_im2col_conv2d_apple[
         num_groups: Group count; must be `1` to dispatch.
         ctx: Device context used to enqueue kernels and allocate scratch
             buffers.
+        epilogue_fn: SIMD elementwise epilogue applied to each output
+            element in 4D `(batch, h, w, channel)` coordinates; used only
+            when `has_epilogue_fn` is true.
+        compute_fn: SIMD elementwise transform of each output element in
+            4D `(batch, h, w, channel)` coordinates; used only when
+            `has_compute_fn` is true.
     """
     comptime assert input.flat_rank == 4, "input must be rank 4 (NHWC)"
     comptime assert filter.flat_rank == 4, "filter must be rank 4"
     comptime assert output.flat_rank == 4, "output must be rank 4 (NHWC)"
+    comptime assert not (
+        has_epilogue_fn and has_compute_fn
+    ), "a store epilogue excludes the compute epilogue"
 
     comptime if input_type != .bfloat16:
         return False
@@ -605,7 +672,7 @@ def dispatch_fused_im2col_conv2d_apple[
         stride_w=Int32(stride[1]),
     )
 
-    comptime if case .Some(epilogue_4d) = maybe_epilogue_func:
+    comptime if has_epilogue_fn:
         var HW_out = _H_out * _W_out
 
         @inline(.always)
@@ -614,7 +681,9 @@ def dispatch_fused_im2col_conv2d_apple[
             _width: SIMDLength,
             *,
             alignment: Int,
-        ](coords_2d: Coord, val: SIMD[_dtype, _width]) {var HW_out, var _W_out}:
+        ](coords_2d: Coord, val: SIMD[_dtype, _width]) {
+            var HW_out, var _W_out, var epilogue_fn
+        }:
             comptime assert (
                 coords_2d.rank == 2
             ), "the matmul epilogue contract is rank 2"
@@ -622,7 +691,7 @@ def dispatch_fused_im2col_conv2d_apple[
             var n_idx = Int(coords_2d[1])
             var batch_idx, sp = divmod(full_m, HW_out)
             var h_idx, w_idx = divmod(sp, _W_out)
-            epilogue_4d(
+            epilogue_fn(
                 (batch_idx, h_idx, w_idx, n_idx),
                 rebind[SIMD[output_type, _width]](val),
             )
@@ -632,6 +701,37 @@ def dispatch_fused_im2col_conv2d_apple[
             c_type=output_type,
             has_epilogue_fn=True,
         ](c_tt, input, filter_nk, conv, ctx, _gemm_epilogue)
+    elif has_compute_fn:
+        var HW_out = _H_out * _W_out
+
+        @inline(.always)
+        def _gemm_compute[
+            _dtype: DType,
+            _width: SIMDLength,
+            *,
+            alignment: Int,
+        ](coords_2d: Coord, val: SIMD[_dtype, _width]) {
+            var HW_out, var _W_out, var compute_fn
+        } -> SIMD[_dtype, _width]:
+            comptime assert (
+                coords_2d.rank == 2
+            ), "the matmul epilogue contract is rank 2"
+            var full_m = Int(coords_2d[0])
+            var n_idx = Int(coords_2d[1])
+            var batch_idx, sp = divmod(full_m, HW_out)
+            var h_idx, w_idx = divmod(sp, _W_out)
+            return rebind[SIMD[_dtype, _width]](
+                compute_fn(
+                    (batch_idx, h_idx, w_idx, n_idx),
+                    rebind[SIMD[output_type, _width]](val),
+                )
+            )
+
+        enqueue_apple_conv2d[
+            in_type=input_type,
+            c_type=output_type,
+            has_compute_fn=True,
+        ](c_tt, input, filter_nk, conv, ctx, compute_fn=_gemm_compute)
     else:
         enqueue_apple_conv2d[
             in_type=input_type,

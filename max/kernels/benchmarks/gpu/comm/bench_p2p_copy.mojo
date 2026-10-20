@@ -100,10 +100,10 @@ def p2p_copy_kernel[
 
     for idx in range(global_tid, num_vectors, stride):
         var elem_idx = idx * width
-        var data = src.unsafe_address_space_cast[_target_address_space]().load[
-            width=width, alignment=vec_align
-        ](elem_idx)
-        dst.unsafe_address_space_cast[_target_address_space]().store[
+        var data = src.unsafe_address_space_cast[
+            _target_address_space
+        ]().unsafe_load[width=width, alignment=vec_align](elem_idx)
+        dst.unsafe_address_space_cast[_target_address_space]().unsafe_store[
             width=width, alignment=vec_align
         ](elem_idx, data)
 
@@ -270,10 +270,10 @@ def bench_p2p[
 
         # Verify: copy back to host and check
         var host0_alloc = alloc[Scalar[dtype]](
-            {count = num_elements}
+            {length = num_elements}
         ).into_managed()
         var host1_alloc = alloc[Scalar[dtype]](
-            {count = num_elements}
+            {length = num_elements}
         ).into_managed()
         ctx0.enqueue_copy(host0_alloc.unsafe_span(), buf0_write)
         ctx1.enqueue_copy(host1_alloc.unsafe_span(), buf1_write)
@@ -302,7 +302,7 @@ def bench_p2p[
             )
             ctx0.synchronize()
             var host_alloc = alloc[Scalar[dtype]](
-                {count = num_elements}
+                {length = num_elements}
             ).into_managed()
             ctx1.enqueue_copy(host_alloc.unsafe_span(), buf1_write)
             ctx1.synchronize()
@@ -321,7 +321,7 @@ def bench_p2p[
             )
             ctx0.synchronize()
             var host_alloc = alloc[Scalar[dtype]](
-                {count = num_elements}
+                {length = num_elements}
             ).into_managed()
             ctx0.enqueue_copy(host_alloc.unsafe_span(), buf0_write)
             ctx0.synchronize()

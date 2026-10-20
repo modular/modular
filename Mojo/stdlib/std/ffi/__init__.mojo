@@ -260,7 +260,7 @@ struct _DLCallable[
         # cannot be directly reinterpreted as a function-pointer value
         # (`.unsafe_bitcast` only changes the pointee type).
         var typed_fn = Pointer(to=self._opaque).unsafe_bitcast[
-            def(* a: * T) thin abi("C") -> Self.return_type
+            def(*a: *T) thin abi("C") -> Self.return_type
         ]()[]
         # The `_lib` field's origin parameter keeps `OwnedDLHandle` borrowed
         # for the lifetime of `self`, which spans this entire method — so
@@ -884,7 +884,7 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
         # `_DLCallable.__call__`. The call is synchronous, so the handle stays
         # alive across it without a borrow.
         return self._get_function[
-            name, def(* a: * T) thin abi("C") -> return_type
+            name, def(*a: *T) thin abi("C") -> return_type
         ]()(*args)
 
 
@@ -1069,7 +1069,7 @@ struct _Global[
                     unsafe_owned_ptr=opaque_ptr.unsafe_bitcast[
                         Self.StorageType
                     ]()
-                ).unsafe_with_layout({count = 1})
+                ).unsafe_with_layout({length = 1})
             )
 
     @staticmethod

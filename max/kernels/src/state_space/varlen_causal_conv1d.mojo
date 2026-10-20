@@ -1226,8 +1226,7 @@ def causal_conv1d_varlen_fwd_gpu[
             update_state,
             conv_states,
             output,
-            host_arg=x_fn,
-            host_arg2=slot_fn,
+            host_args=(x_fn, slot_fn),
             grid_dim=(
                 ceildiv(dim, _FWD_BLOCK_DIM * VEC),
                 batch if SEQ_PER_ROW else ceildiv(total_seqlen, _FWD_TILE_SEQ)

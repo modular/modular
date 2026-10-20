@@ -1109,9 +1109,9 @@ def _sfb_cpasync_produce_tile[
                                 ).unsafe_address_space_cast[.SHARED](),
                             )
                         else:
-                            sfb_smem_tile_ptr.unsafe_offset(smem_offset).store(
-                                SIMD[sfb_dtype, SF_ATOM_K]()
-                            )
+                            sfb_smem_tile_ptr.unsafe_offset(
+                                smem_offset
+                            ).unsafe_store(SIMD[sfb_dtype, SF_ATOM_K]())
 
         # async_copy_arrive + mbar.arrive for each active position.
         # Multi-pass: same thread may arrive multiple times for MMA_N > 32.
@@ -1256,7 +1256,7 @@ def _sfb_cpasync_produce_tile_warpwide[
                         ).unsafe_address_space_cast[.SHARED](),
                     )
                 else:
-                    sfb_smem_tile_ptr.unsafe_offset(smem_offset).store(
+                    sfb_smem_tile_ptr.unsafe_offset(smem_offset).unsafe_store(
                         SIMD[sfb_dtype, SF_ATOM_K]()
                     )
 
@@ -2497,8 +2497,7 @@ def _create_tma_and_launch[
         Int32(_sfb_n_stride_val),
         Int32(_sfb_k_tiles),
         Int32(N_maybe_swapped),
-        host_arg=epilogue_fn,
-        host_arg2=compute_fn,
+        host_args=(epilogue_fn, compute_fn),
         grid_dim=grid_dim,
         # 1 TMA, 1 SFB_LOAD, 1 MMA, 1 Scheduler, 4 EPILOGUE (+1 SFB_READY for 2CTA)
         block_dim=(

@@ -77,29 +77,25 @@ def run_rms_norm_gpu[
     ctx.enqueue_copy(gamma_d, gamma_h)
 
     @inline(.always)
-    @__copy_capture(data_buf)
-    @__parameter
-    def input_fn[width: Int](coords: Coord) -> SIMD[dtype, width]:
+    def input_fn[
+        width: Int
+    ](coords: Coord) {var data_buf} -> SIMD[dtype, width]:
         return data_buf.load[width=width](coords)
 
     @inline(.always)
-    @__copy_capture(data_buf)
-    @__parameter
     def identity_output_fn[
         width: SIMDLength, alignment: Int
-    ](coords: Coord, val: SIMD[dtype, width]) -> None:
+    ](coords: Coord, val: SIMD[dtype, width]) {var data_buf} -> None:
         data_buf.store[alignment=alignment](coords, val)
 
     # `rms_norm_gpu` migrated to a `Coord` shape boundary (softmax PR #88203);
     # `rank` is now an explicit parameter (no longer inferred from `shape`).
     rms_norm_gpu[
         rank,
-        input_fn,
-        identity_output_fn,
         epsilon=epsilon,
         weight_offset=weight_offset,
         multiply_before_cast=multiply_before_cast,
-    ](Coord(shape), gamma, ctx)
+    ](input_fn, identity_output_fn, Coord(shape), gamma, ctx)
     ctx.enqueue_copy(res, data_d)
     ctx.synchronize()
 
@@ -161,27 +157,23 @@ def run_rms_norm_gpu_static_dims[
     ctx.enqueue_copy(gamma_d, gamma_h)
 
     @inline(.always)
-    @__copy_capture(data_buf)
-    @__parameter
-    def input_fn[width: Int](coords: Coord) -> SIMD[dtype, width]:
+    def input_fn[
+        width: Int
+    ](coords: Coord) {var data_buf} -> SIMD[dtype, width]:
         return data_buf.load[width=width](coords)
 
     @inline(.always)
-    @__copy_capture(data_buf)
-    @__parameter
     def identity_output_fn[
         width: SIMDLength, alignment: Int
-    ](coords: Coord, val: SIMD[dtype, width]) -> None:
+    ](coords: Coord, val: SIMD[dtype, width]) {var data_buf} -> None:
         data_buf.store[alignment=alignment](coords, val)
 
     rms_norm_gpu[
         rank,
-        input_fn,
-        identity_output_fn,
         epsilon=epsilon,
         weight_offset=weight_offset,
         multiply_before_cast=multiply_before_cast,
-    ](shape, gamma, ctx)
+    ](input_fn, identity_output_fn, shape, gamma, ctx)
     ctx.enqueue_copy(res, data_d)
     ctx.synchronize()
 
@@ -227,27 +219,23 @@ def run_rms_norm_gpu_zero_rows[dtype: DType](ctx: DeviceContext) raises:
     var gamma = TileTensor(gamma_d, row_major(Coord(Index(cols))))
 
     @inline(.always)
-    @__copy_capture(data_buf)
-    @__parameter
-    def input_fn[width: Int](coords: Coord) -> SIMD[dtype, width]:
+    def input_fn[
+        width: Int
+    ](coords: Coord) {var data_buf} -> SIMD[dtype, width]:
         return data_buf.load[width=width](coords)
 
     @inline(.always)
-    @__copy_capture(data_buf)
-    @__parameter
     def identity_output_fn[
         width: SIMDLength, alignment: Int
-    ](coords: Coord, val: SIMD[dtype, width]) -> None:
+    ](coords: Coord, val: SIMD[dtype, width]) {var data_buf} -> None:
         data_buf.store[alignment=alignment](coords, val)
 
     rms_norm_gpu[
         2,
-        input_fn,
-        identity_output_fn,
         epsilon=Float32(0.001),
         weight_offset=Float32(0.0),
         multiply_before_cast=True,
-    ](Coord(Index(0, cols)), gamma, ctx)
+    ](input_fn, identity_output_fn, Coord(Index(0, cols)), gamma, ctx)
     var res = ctx.enqueue_create_host_buffer[dtype](cols)
     ctx.enqueue_copy(res, data_d)
     ctx.synchronize()

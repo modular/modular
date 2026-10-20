@@ -1174,7 +1174,7 @@ struct NoMaskFlashAttentionCPU:
         v: FusedInputTensor[dtype=dtype, rank=rank, ...],
         scale: Scalar[dtype=DType.float32],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         comptime assert is_cpu[target](), "only valid on CPUs"
 
         @inline(.always)
@@ -1233,7 +1233,7 @@ struct WithMaskFlashAttentionSplitKVCPU:
         mask: FusedInputTensor[dtype=dtype, ...],
         scale: Scalar[dtype=DType.float32],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         comptime assert is_cpu[target](), "only valid on CPUs"
 
         @inline(.always)
@@ -1356,7 +1356,7 @@ struct WithMaskFlashAttentionCPU:
         mask: FusedInputTensor[dtype=dtype, ...],
         scale: Scalar[dtype=DType.float32],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         comptime assert is_cpu[target](), "only valid on CPUs"
 
         @inline(.always)

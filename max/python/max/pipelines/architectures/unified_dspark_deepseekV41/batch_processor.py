@@ -14,7 +14,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Hashable, Sequence
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -25,6 +25,7 @@ from max.nn.kv_cache import KVCacheInputs
 from max.pipelines.context import TextContext
 from max.pipelines.lib import UnifiedSpecDecodeInputs
 from max.pipelines.lib.interfaces.batch_processor import (
+    BatchProcessorRuntime,
     UnifiedSpecDecodeBatchProcessor,
 )
 from max.pipelines.lib.utils import compute_data_parallel_splits
@@ -58,9 +59,9 @@ class UnifiedDSparkDeepseekV41Inputs(UnifiedSpecDecodeInputs):
     under data parallelism the replica splits; the signal buffers (only with
     more than one device); the KV cache buffers; under data parallelism each
     device's context length and the expert-parallel buffers; the
-    speculative-decoding inputs; the Engram
-    lookback window and pinned Engram tables (only when the model has
-    Engram); and last, a placeholder buffer whose length sets
+    speculative-decoding inputs; the Engram lookback window, its per-row
+    source, the lookback history and the pinned Engram tables (only when the
+    model has Engram); and last, a placeholder buffer whose length sets
     :data:`MERGED_ROWS_DIM`.
     """
 
@@ -88,6 +89,18 @@ class UnifiedDSparkDeepseekV41Inputs(UnifiedSpecDecodeInputs):
 
     Each request's raw token ids just before its chunk, on device 0.
     """
+    engram_lookback_source: Buffer | None = None
+    """``[batch]`` int64 row of :attr:`engram_lookback_history` to read.
+
+    -1 reads :attr:`engram_lookback_ids` instead.
+    """
+    engram_lookback_history: Buffer | None = None
+    """``[rows, max_ngram_size - 1]`` device-0 windows the previous step
+    recorded for this one, one row per row of the previous batch.
+
+    Rows follow the replica-major batch, as the lookback window does, so
+    one buffer serves every data-parallel replica.
+    """
     engram_host_buffers: Sequence[Buffer] = ()
     """The pinned host Engram tables, the graph's last inputs but one.
 
@@ -95,13 +108,27 @@ class UnifiedDSparkDeepseekV41Inputs(UnifiedSpecDecodeInputs):
     graph capture needs.
     """
 
+    def __copy__(self) -> UnifiedDSparkDeepseekV41Inputs:
+        # Debug replay verification runs the graph eagerly on a shallow copy
+        # just before the replay; sharing the history would hand the replay
+        # the windows the eager run recorded.
+        new = object.__new__(type(self))
+        new.__dict__.update(self.__dict__)
+        if self.engram_lookback_history is not None:
+            new.engram_lookback_history = self.engram_lookback_history.copy()
+        return new
+
     @property
     def buffers(self) -> tuple[Buffer, ...]:
         assert self.kv_cache_inputs is not None
-        lookback = (
-            (self.engram_lookback_ids,)
-            if self.engram_lookback_ids is not None
-            else ()
+        lookback = tuple(
+            buffer
+            for buffer in (
+                self.engram_lookback_ids,
+                self.engram_lookback_source,
+                self.engram_lookback_history,
+            )
+            if buffer is not None
         )
         host_offsets: tuple[Buffer, ...] = ()
         splits: tuple[Buffer, ...] = ()
@@ -149,6 +176,13 @@ class UnifiedDSparkDeepseekV41BatchProcessor(
 
     _ep_buffers: tuple[Buffer, ...] = ()
 
+    def __init__(
+        self, config: DeepseekV41Config, runtime: BatchProcessorRuntime
+    ) -> None:
+        super().__init__(config, runtime)
+        self._prev_rows: dict[Hashable, int] = {}
+        self._engram_history: Buffer | None = None
+
     def bind_ep_buffers(self, buffers: Sequence[Buffer]) -> None:
         """Binds the expert-parallel buffers created at model load."""
         self._ep_buffers = tuple(buffers)
@@ -184,17 +218,40 @@ class UnifiedDSparkDeepseekV41BatchProcessor(
                 )
                 for batch in replica_batches
             ]
-        if self.config.engram_layer_ids:
-            # The verification pass's chunk starts at each request's
-            # processed length, the same cache length the graph gets: the
-            # drafts it verifies follow the chunk, so the lookback is
-            # unchanged.
-            contexts = [ctx for batch in replica_batches for ctx in batch]
-            inputs.engram_lookback_ids = Buffer.from_numpy(
-                engram_lookback_ids_for_contexts(
-                    contexts, self.config.engram_max_ngram_size - 1
-                )
-            ).to(self.runtime.devices[0])
+        if not self.config.engram_layer_ids:
+            return inputs
+        contexts = [ctx for batch in replica_batches for ctx in batch]
+        depth = self.config.engram_max_ngram_size - 1
+        device0 = self.runtime.devices[0]
+        if self._engram_history is None:
+            self._engram_history = Buffer.zeros(
+                (self.runtime.max_global_batch_size, depth),
+                DType.int64,
+                device=device0,
+            )
+        if len(contexts) > self._engram_history.shape[0]:
+            raise ValueError(
+                f"{len(contexts)} requests exceed the "
+                f"{self._engram_history.shape[0]}-row Engram lookback history"
+            )
+        # A request whose previous step is still in flight starts after
+        # that step's accepted drafts, which only the device knows; the
+        # graph reads the window that step recorded. The predicate is the
+        # one the overlap pipeline realizes the cache lengths with.
+        source = Buffer(shape=(len(contexts),), dtype=DType.int64)
+        source.to_numpy()[:] = [
+            self._prev_rows.get(ctx.request_id, -1)
+            if ctx.spec_decoding_state.maybe_accepted_draft_tokens
+            and ctx.tokens.generated_length
+            else -1
+            for ctx in contexts
+        ]
+        self._prev_rows = {ctx.request_id: i for i, ctx in enumerate(contexts)}
+        inputs.engram_lookback_ids = Buffer.from_numpy(
+            engram_lookback_ids_for_contexts(contexts, depth)
+        ).to(device0)
+        inputs.engram_lookback_source = source.to(device0)
+        inputs.engram_lookback_history = self._engram_history
         return inputs
 
     def _make_inputs(

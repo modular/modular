@@ -181,10 +181,10 @@ def bench_rms_norm_gpu[
     ctx.enqueue_copy(gamma_d, gamma_h)
 
     # `rms_norm_gpu` migrated to a `Coord` shape boundary (softmax PR #88203).
-    @__copy_capture(data_buf)
     @inline(.always)
-    @__parameter
-    def input_fn[width: Int](coords: Coord) -> SIMD[dtype, width]:
+    def input_fn[
+        width: Int
+    ](coords: Coord) {var data_buf} -> SIMD[dtype, width]:
         # Match the MOGG lambda contract (reductions.mojo passes
         # `element_alignment=width` to `_lambda_load`): vector loads are
         # aligned to the full SIMD width.
@@ -193,23 +193,19 @@ def bench_rms_norm_gpu[
         ](coords)
 
     @inline(.always)
-    @__copy_capture(data_buf)
-    @__parameter
     def identity_output_fn[
         width: SIMDLength, alignment: Int
-    ](coords: Coord, val: SIMD[dtype, width]) -> None:
+    ](coords: Coord, val: SIMD[dtype, width]) {var data_buf} -> None:
         data_buf.store[alignment=alignment](coords, val)
 
     @inline(.always)
-    def kernel_launch(ctx: DeviceContext) raises {mut data_d, imm}:
+    def kernel_launch(ctx: DeviceContext) raises {imm}:
         rms_norm_gpu[
             rank,
-            input_fn,
-            identity_output_fn,
             epsilon=epsilon,
             weight_offset=weight_offset,
             multiply_before_cast=True,
-        ](Coord(shape), gamma, ctx)
+        ](input_fn, identity_output_fn, Coord(shape), gamma, ctx)
 
     @inline(.always)
     def bench_fn(mut b: Bencher) raises {imm}:

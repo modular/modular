@@ -105,7 +105,8 @@ class _PackedExpertWeightNvFp4(_PackedExpertWeight):
     - ``weight_scale``: ``[E, N, K/16]`` float8_e4m3fn.
     - ``weight_scale_2``: ``[E]`` float32, a dequant multiplier (not
       inverted).
-    - ``input_scale``: ``[E]`` float32 static activation scale (inverted by
+    - ``input_scale``: ``[E]`` float32 static activation scale, the layer's
+      max over experts in every entry (inverted by
       ``DeepseekV41NvFp4RoutedExperts._activation_scales``).
 
     Skips ``_PackedExpertWeight.__init__``, whose ``K % 128`` check is
@@ -248,11 +249,10 @@ class DeepseekV41NvFp4RoutedExperts(DeepseekV4RoutedExperts):
     def _activation_scales(
         proj: _PackedExpertWeightNvFp4, device: DeviceRef
     ) -> tuple[TensorValue, TensorValue]:
-        """A projection's per-expert static activation scales.
+        """A projection's static activation scales, one per expert.
 
-        Under expert-parallel dispatch the checkpoint loader gives every
-        expert the gate/up projection's largest ``input_scale``, as the
-        dispatch quantizes all rows against one scale.
+        The weight adapter stores the layer's max over experts for every
+        expert, so all experts' rows are quantized against one scale.
 
         Returns:
             ``(sf_tensor, input_scale)``, both ``[n_experts]`` float32 for this
@@ -420,7 +420,7 @@ class DeepseekV41NvFp4RoutedExperts(DeepseekV4RoutedExperts):
 
         Computes the base class's clamped SwiGLU (``min(gate, limit)``,
         ``clamp(up, -limit, limit)``) and quantizes each expert's rows against
-        that expert's ``input_scale`` (group ``g`` is local expert ``g``).
+        its entry of ``input_scale`` (group ``g`` is local expert ``g``).
         Runs the unfused chain instead when :func:`_use_fused_silu_quant` is
         false (``MAX_DSV41_FUSED_SILU_QUANT=0`` or more local experts than SMs).
 

@@ -280,50 +280,17 @@ struct BoolPair:
     var b: Bool
 
 
-struct OpenColor(ImplicitlyCopyable, EnumLike):
-    comptime _enum_case_names = ParameterList.of[
-        "red".value, "green".value
-    ].values
-    comptime _enum_case_types = TypeList.of[
-        Trait=AnyType, NoneType, NoneType
-    ].values
+__enum OpenColor(ImplicitlyCopyable):
+    case red
+    case green
     comptime _enum_is_exhaustive = False
 
-    def __init__(out self):
-        pass
-
-    def _get_enum_discriminant(self) -> Int:
-        return 0
-
-    def _unsafe_get_enum_payload[
-        id: Int
-    ](ref self) -> ref[self] TypeList[Self._enum_case_types]()[id]:
-        while True:
-            pass
-
-
-struct ParametricExhaustivityColor[
+__enum ParametricExhaustivityColor[
     is_exhaustive: Bool
-](ImplicitlyCopyable, EnumLike):
-    comptime _enum_case_names = ParameterList.of[
-        "red".value, "green".value
-    ].values
-    comptime _enum_case_types = TypeList.of[
-        Trait=AnyType, NoneType, NoneType
-    ].values
+](ImplicitlyCopyable):
+    case red
+    case green
     comptime _enum_is_exhaustive = Self.is_exhaustive
-
-    def __init__(out self):
-        pass
-
-    def _get_enum_discriminant(self) -> Int:
-        return 0
-
-    def _unsafe_get_enum_payload[
-        id: Int
-    ](ref self) -> ref[self] TypeList[Self._enum_case_types]()[id]:
-        while True:
-            pass
 
 
 def match_open_enum_duplicate(color: OpenColor):

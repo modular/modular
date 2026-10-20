@@ -73,7 +73,7 @@ struct CausalConv1D[activation: StaticString]:
         weight: InputTensor[dtype=dtype, rank=2, ...],
         bias: InputTensor[dtype=dtype, rank=1, ...],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         if rank != 3:
             raise Error("Input tensor must be rank 3 (batch, channels, seqlen)")
         if output.shape() != input.shape():
@@ -355,7 +355,7 @@ struct CausalConv1DUpdate[activation: StaticString]:
         weight: InputTensor[dtype=dtype, rank=2, ...],
         bias: InputTensor[dtype=dtype, rank=1, ...],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         if rank != 3:
             raise Error("Input tensor must be rank 3 (batch, channels, seqlen)")
         if output.shape() != input.shape():

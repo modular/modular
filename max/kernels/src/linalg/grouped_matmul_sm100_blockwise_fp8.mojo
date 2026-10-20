@@ -839,7 +839,7 @@ def _grouped_matmul_sm100_blockwise_scaled_fp8_impl[
         a_scales.as_unsafe_any_origin(),
         b_scales.as_unsafe_any_origin(),
         Int32(ceildiv(K, BK)),
-        host_arg=epilogue_fn,
+        host_args=(epilogue_fn,),
         grid_dim=(
             ceildiv(N, BN),
             ceildiv(max_num_tokens_per_expert, BM),

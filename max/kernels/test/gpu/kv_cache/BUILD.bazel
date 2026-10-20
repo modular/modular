@@ -6,7 +6,7 @@ package(default_visibility = ["//max:consumers"])
 _GPU_MEMORY = {
     "test_batch_kv_cache_flash_attention.mojo": "2",
     "test_batch_kv_cache_flash_attention_causal_mask.mojo": "2",
-    "test_fused_qkv_index_matmul_scale_mxfp6.mojo": "5",
+    "test_fused_qkv_index_matmul_scale_mxfp6.mojo": "3",
     "test_kv_cache_2m_iadd.mojo": "3",
     "test_kv_cache_matmul.mojo": "4",
     "test_kv_cache_radd.mojo": "3",
@@ -157,7 +157,7 @@ _RAGGED_CAUSAL_MASK_DTYPES = [
             "FOLD_FP8=True",
         ],
         ["//:amd_gpu"],
-        "5",
+        "2",
     ),
 ]
 
@@ -258,7 +258,7 @@ _RAGGED_CAUSAL_MASK_DTYPES = [
 _PAGED_FA_GPU_MEMORY = {
     ("16", "256"): "6",
     ("16", "512"): "6",
-    ("256", "80"): "6",
+    ("256", "80"): "2",
     ("64", "256"): "6",
     ("64", "512"): "6",
 }

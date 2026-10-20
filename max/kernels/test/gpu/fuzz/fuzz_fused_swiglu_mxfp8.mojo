@@ -229,6 +229,11 @@ def run_one_case(
         activation=get_swiglu_activation[
             "swigluoai" if CLAMP else "silu", ALPHA, LIMIT if CLAMP else 0.0
         ],
+        OutputEngine=type_of(out_tt).Engine,
+        ScalesEngine=type_of(scales_tt).Engine,
+        InputEngine=type_of(in_immut).Engine,
+        RowOffsetsEngine=type_of(row_off_immut).Engine,
+        ScalesOffsetsEngine=type_of(sc_off_immut).Engine,
     ]
     ctx.enqueue_function[kernel](
         out_tt,

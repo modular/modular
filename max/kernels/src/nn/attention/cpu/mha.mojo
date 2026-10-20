@@ -127,14 +127,14 @@ struct _Matmul[dtype: DType, simd_width: Int]:
             var a_tile = Array[_, tile_m](
                 fill_with=lambda (m: Int) -> SIMD[
                     Self.dtype, lane_count
-                ]: ak_ptr.load[width=lane_count](m * a_stride)
+                ]: ak_ptr.unsafe_load[width=lane_count](m * a_stride)
             )
 
             ak_ptr = ak_ptr.unsafe_offset(lane_count)
 
             comptime for k in range(lane_count):
                 comptime for n in range(tile_n):
-                    var b_data = bk_ptr.load[width=Self.simd_width](
+                    var b_data = bk_ptr.unsafe_load[width=Self.simd_width](
                         n * Self.simd_width
                     )
 
@@ -173,12 +173,12 @@ struct _Matmul[dtype: DType, simd_width: Int]:
 
             comptime for k in range(unroll_factor):
                 comptime for n in range(tile_n):
-                    b_tile[n] = bk_ptr.load[width=Self.simd_width](
+                    b_tile[n] = bk_ptr.unsafe_load[width=Self.simd_width](
                         n * Self.simd_width
                     )
 
                 comptime for m in range(tile_m):
-                    var a_data = ak_ptr.load(m * a_stride)
+                    var a_data = ak_ptr.unsafe_load(m * a_stride)
 
                     comptime for n in range(tile_n):
                         c_tile.fma(m, n, a_data, b_tile[n])
@@ -296,7 +296,7 @@ struct _Matmul[dtype: DType, simd_width: Int]:
                     var val = transpose_buffer.load_linear[
                         width=transpose_width
                     ](Index(i, 0))
-                    packed_ptr.store((k + i) * aligned_n + n, val)
+                    packed_ptr.unsafe_store((k + i) * aligned_n + n, val)
 
             else:
                 # Fallback to strided loads and stores of the tensors.
@@ -308,7 +308,7 @@ struct _Matmul[dtype: DType, simd_width: Int]:
                     var val = input_b_fn[simd_width=tile_k](n + nn, k)
 
                     comptime for kk in range(tile_k):
-                        packed_ptr.store(
+                        packed_ptr.unsafe_store(
                             (k + kk) * aligned_n + (n + nn), val[kk]
                         )
 
@@ -341,7 +341,7 @@ struct _Matmul[dtype: DType, simd_width: Int]:
             @inline(.always)
             def packed_copy[_simd_width: Int](idx: Int) {var _k, imm}:
                 var val = input_b_fn[_simd_width](idx, _k)
-                output_ptr.store(idx, val)
+                output_ptr.unsafe_store(idx, val)
 
             tile[Self._matmul_config.pack_sizes](0, N, packed_copy)
 
@@ -375,7 +375,7 @@ struct _Matmul[dtype: DType, simd_width: Int]:
                 mut accum: Array[SIMD[Self.dtype, _simd_width], tile_n],
             ) {imm}:
                 for _k in range(start, end, _simd_width):
-                    var a_data = a_ptr.load[width=_simd_width](_k)
+                    var a_data = a_ptr.unsafe_load[width=_simd_width](_k)
 
                     comptime for nn in range(tile_n):
                         var b_data = input_b_fn[_simd_width](n + nn, _k)
@@ -412,7 +412,7 @@ struct _Matmul[dtype: DType, simd_width: Int]:
             do_reduce(simd_loop_end, K, scalar_accum)
 
             comptime for nn in range(tile_n):
-                cn_ptr.store(nn, scalar_accum[nn])
+                cn_ptr.unsafe_store(nn, scalar_accum[nn])
 
             cn_ptr = cn_ptr.unsafe_offset(tile_n)
 
@@ -444,9 +444,9 @@ struct _Matmul[dtype: DType, simd_width: Int]:
                 accum = b_data.fma(a_ptr[k], accum)
 
             if accumulate:
-                accum += cn_ptr.load[width=_simd_width]()
+                accum += cn_ptr.unsafe_load[width=_simd_width]()
 
-            cn_ptr.store(accum)
+            cn_ptr.unsafe_store(accum)
             cn_ptr = cn_ptr.unsafe_offset(_simd_width)
 
         tile[Self._matmul_config.gemv_sizes](0, N, process_cols)
@@ -607,7 +607,7 @@ struct _FlashAttention[
             def pass1_input_gen_fn[
                 _dtype: DType, _simd_width: Int
             ](idx: Int) {imm} -> SIMD[_dtype, _simd_width]:
-                var val = qk_row_ptr.load[width=_simd_width](idx)
+                var val = qk_row_ptr.unsafe_load[width=_simd_width](idx)
                 return mask_fn(m, idx, val * scale.cast[Self.dtype]()).cast[
                     _dtype
                 ]()
@@ -640,7 +640,7 @@ struct _FlashAttention[
             def pass2_input_gen_fn[
                 _dtype: DType, _simd_width: Int
             ](idx: Int) {imm} -> SIMD[_dtype, _simd_width]:
-                var val = qk_row_ptr.load[width=_simd_width](idx)
+                var val = qk_row_ptr.unsafe_load[width=_simd_width](idx)
                 return rebind[SIMD[_dtype, _simd_width]](exp(val - max_val))
 
             # Update the row with the exponential of each value and accumulate
@@ -671,8 +671,8 @@ struct _FlashAttention[
             def do_correction[
                 _simd_width: Int
             ](idx: Int) {o_row_ptr, fixup_val, mut}:
-                var val = o_row_ptr.load[width=_simd_width](idx)
-                o_row_ptr.store(idx, val * fixup_val)
+                var val = o_row_ptr.unsafe_load[width=_simd_width](idx)
+                o_row_ptr.unsafe_store(idx, val * fixup_val)
 
             vectorize[Self.simd_width, unroll_factor=2](count_n, do_correction)
 
@@ -787,7 +787,7 @@ struct _FlashAttention[
             if max_seq_len != 1:
                 packed_alloc = alloc(
                     AllocLayout[Scalar[Self.dtype], alignment=packed_alignment](
-                        count=packed_size
+                        length=packed_size
                     )
                 ).into_managed()
                 packed_ptr = packed_alloc.unsafe_value().unsafe_ptr()
@@ -950,8 +950,8 @@ struct _FlashAttention[
                     def do_final[
                         _simd_width: Int
                     ](idx: Int) {oz_ptr, o_ptr, reciprocal, mut}:
-                        var v = oz_ptr.load[width=_simd_width](idx)
-                        o_ptr.store(idx, v * reciprocal)
+                        var v = oz_ptr.unsafe_load[width=_simd_width](idx)
+                        o_ptr.unsafe_store(idx, v * reciprocal)
 
                     vectorize[Self.simd_width, unroll_factor=4](
                         count_n, do_final

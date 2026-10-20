@@ -87,7 +87,7 @@ struct CausalConv1DVarlenUpdate[activation: StaticString]:
         cache_seqlens: InputTensor[dtype=.int32, rank=1, ...],
         conv_state_indices: InputTensor[dtype=.int32, rank=1, ...],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         var batch = x.dim_size(0)
         var dim = x.dim_size(1)
         var seqlen = x.dim_size(2)
@@ -429,7 +429,7 @@ struct CausalConv1DVarlenStates:
         x: InputTensor[dtype=dtype, rank=2, ...],
         cu_seqlens: InputTensor[dtype=.int32, rank=1, ...],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         var total_tokens = x.dim_size(0)
         var dim = x.dim_size(1)
         var batch = cu_seqlens.dim_size(0) - 1

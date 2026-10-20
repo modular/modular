@@ -567,7 +567,7 @@ struct _FusedResidualBlockKernel[
                         align_of[SIMD[Self.dtype, Self.simd_width]](),
                     ](row, idx, residual_add_val)
 
-                    shared_mem.store[
+                    shared_mem.unsafe_store[
                         width=Self.simd_width,
                         alignment=align_of[SIMD[Self.dtype, Self.simd_width]](),
                     ](idx, residual_add_val)
@@ -578,7 +578,7 @@ struct _FusedResidualBlockKernel[
             def shared_mem_input_fn[
                 width: Int
             ](row: Int, col: Int) {var shared_mem} -> SIMD[Self.dtype, width]:
-                return shared_mem.load[width=width](col)
+                return shared_mem.unsafe_load[width=width](col)
 
             _rms_norm_gpu_block_subkernel[
                 Self.simd_width,

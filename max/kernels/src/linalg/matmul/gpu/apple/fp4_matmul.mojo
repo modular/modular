@@ -780,8 +780,7 @@ def _enqueue_apple_fp4_materialize_dense[
             Int32(m),
             Int32(n),
             Int32(k),
-            host_arg=no_epilogue_fn,
-            host_arg2=no_compute_fn,
+            host_args=(no_epilogue_fn, no_compute_fn),
             grid_dim=(ceildiv(n, 64), ceildiv(m, 64)),
             block_dim=(4 * WARP_SIZE,),
         )

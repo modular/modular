@@ -135,11 +135,11 @@ def verify_matmul[
     # Initialize matmul operands
     comptime if not init_on_gpu:
         var a_host_ptr_alloc = alloc[Scalar[a_type]](
-            {count = a_size}
+            {length = a_size}
         ).into_managed()
         var a_host_ptr = a_host_ptr_alloc.unsafe_ptr()
         var b_host_ptr_alloc = alloc[Scalar[a_type]](
-            {count = b_size}
+            {length = b_size}
         ).into_managed()
         var b_host_ptr = b_host_ptr_alloc.unsafe_ptr()
         var a_host = TileTensor(a_host_ptr, row_major(a_shape))
@@ -218,7 +218,7 @@ def verify_matmul[
 
     # Copy back only NUM_BLOCKS * 5 Float32 values
     var result_host_alloc = alloc[Float32](
-        {count = NUM_BLOCKS * 5}
+        {length = NUM_BLOCKS * 5}
     ).into_managed()
     var result_host = result_host_alloc.unsafe_ptr()
     ctx.enqueue_copy(result_host, result_device)
@@ -358,11 +358,11 @@ def bench_matmul[
 
     comptime if not init_on_gpu:
         var a_host_ptr_alloc = alloc[Scalar[a_type]](
-            {count = cb_a.alloc_size()}
+            {length = cb_a.alloc_size()}
         ).into_managed()
         var a_host_ptr = a_host_ptr_alloc.unsafe_ptr()
         var b_host_ptr_alloc = alloc[Scalar[a_type]](
-            {count = cb_b.alloc_size()}
+            {length = cb_b.alloc_size()}
         ).into_managed()
         var b_host_ptr = b_host_ptr_alloc.unsafe_ptr()
         var a_host = TileTensor(a_host_ptr, row_major(cb_a.alloc_size()))

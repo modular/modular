@@ -350,7 +350,7 @@ def grouped_matmul_amd_kernel_launcher[
         var col = Int(idx[1])
         var row_idx = Coord(Int(a_start_row) + row, col)
         comptime if has_compute_fn:
-            c_ptr.unsafe_offset(row * N).unsafe_offset(col).store[
+            c_ptr.unsafe_offset(row * N).unsafe_offset(col).unsafe_store[
                 alignment=alignment
             ](
                 rebind[SIMD[c_type, width]](
@@ -652,8 +652,7 @@ def grouped_matmul_amd[
             a_offsets,
             expert_ids,
             Int32(num_active_experts),
-            host_arg=epilogue_fn,
-            host_arg2=compute_fn,
+            host_args=(epilogue_fn, compute_fn),
             grid_dim=(ceildiv(N, config.block_tile_shape[1]), grid_y, 1),
             block_dim=(block_dim),
         )
@@ -1184,8 +1183,7 @@ def naive_grouped_matmul[
         b.as_imm(),
         a_offsets,
         expert_ids,
-        host_arg=epilogue_fn,
-        host_arg2=compute_fn,
+        host_args=(epilogue_fn, compute_fn),
         grid_dim=(
             ceildiv(Int(c.dim[1]()), 32),
             ceildiv(max_num_tokens_per_expert, 16),

@@ -51,7 +51,7 @@ def test_simd_reduction(ctx: DeviceContext) raises:
         output: MutPointer[Int, MutAnyOrigin],
         input: ImmPointer[Int, ImmutAnyOrigin],
     ):
-        output[global_idx.x] = input.load[width=simd_width](
+        output[global_idx.x] = input.unsafe_load[width=simd_width](
             simd_width * global_idx.x
         ).reduce_add()
 

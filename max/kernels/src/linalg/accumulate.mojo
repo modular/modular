@@ -97,7 +97,7 @@ struct _Accumulator[
 
     @inline(.always)
     def __getitem__(self, m: Int, n: Int) -> SIMD[Self.dtype, Self.simd_width]:
-        return self._storage.load[width=Self.simd_width](
+        return self._storage.unsafe_load[width=Self.simd_width](
             self._storage_index(m, n)
         )
 
@@ -105,19 +105,19 @@ struct _Accumulator[
     def __setitem__(
         mut self, m: Int, n: Int, value: SIMD[Self.dtype, Self.simd_width]
     ):
-        self._storage.store(self._storage_index(m, n), value)
+        self._storage.unsafe_store(self._storage_index(m, n), value)
 
     @inline(.always)
     def _partial_set[
         partial_width: SIMDLength
     ](mut self, offset: Int, value: SIMD[Self.dtype, partial_width]):
-        self._storage.store(offset, value)
+        self._storage.unsafe_store(offset, value)
 
     @inline(.always)
     def _partial_get[
         partial_width: Int
     ](mut self, idx: Int) -> SIMD[Self.dtype, partial_width]:
-        return self._storage.load[width=partial_width](idx)
+        return self._storage.unsafe_load[width=partial_width](idx)
 
     # In c+=(a*b), each of a, b, and c can have different dtypes.
     @inline(.always)
@@ -172,7 +172,7 @@ struct _Accumulator[
             m: Int, n: Int, ptr: MutPointer[Scalar[Self.dtype], MutAnyOrigin]
         ) {mut self}:
             # TODO: Ideally `ptr` should be immutable, but origins aren't inferring correctly.
-            self[m, n] = ptr.load[width=Self.simd_width]()
+            self[m, n] = ptr.unsafe_load[width=Self.simd_width]()
 
         Self._transfer(do_transfer, base_ptr, stride)
 
@@ -258,10 +258,10 @@ struct _Accumulator[
         def body(row: Int, col: Int) {mut self, imm}:
             comptime if is_load:
                 comptime if CompilationTarget.has_neon():
-                    var data = row_ptrs[row].load[width=column_step](col)
+                    var data = row_ptrs[row].unsafe_load[width=column_step](col)
                     self._partial_set(row * Self.tile_columns + col, data)
                 else:
-                    var data = row_ptrs[0].load[width=column_step](
+                    var data = row_ptrs[0].unsafe_load[width=column_step](
                         stride * row + col
                     )
                     self._partial_set(row * Self.tile_columns + col, data)
@@ -271,9 +271,11 @@ struct _Accumulator[
                 )
 
                 comptime if CompilationTarget.has_neon():
-                    row_ptrs[row].unsafe_mut_cast[True]().store(col, data)
+                    row_ptrs[row].unsafe_mut_cast[True]().unsafe_store(
+                        col, data
+                    )
                 else:
-                    row_ptrs[0].unsafe_mut_cast[True]().store(
+                    row_ptrs[0].unsafe_mut_cast[True]().unsafe_store(
                         stride * row + col, data
                     )
 
@@ -396,7 +398,7 @@ struct _Accumulator[
         def do_transfer(
             m: Int, n: Int, ptr: MutPointer[Scalar[Self.dtype], MutAnyOrigin]
         ) {mut self}:
-            ptr.store(self[m, n])
+            ptr.unsafe_store(self[m, n])
 
         Self._transfer(do_transfer, base_ptr, stride)
 
@@ -860,7 +862,9 @@ struct _Accumulator[
 
             # Load vectors of size num_lanes from input.
             comptime for i in range(Self.row_start, Self.row_stop):
-                a_vecs[i] = a.load[width=num_lanes](offset + i * a_stride)
+                a_vecs[i] = a.unsafe_load[width=num_lanes](
+                    offset + i * a_stride
+                )
 
             var b_ptr = b.unsafe_offset(offset * b_stride)
 
@@ -919,7 +923,7 @@ struct _Accumulator[
             # Load vectors of size num_lanes from input.
             comptime for i in range(Self.row_start, Self.row_stop):
                 var a_idx = Int(a_base_offsets[i]) + a_offset + offset
-                a_vecs[i] = a.load[width=num_lanes](a_idx)
+                a_vecs[i] = a.unsafe_load[width=num_lanes](a_idx)
 
             var b_ptr = b.unsafe_offset(offset * b_stride)
 
@@ -970,7 +974,7 @@ def _simd_load_maybe_partial[
             ptr.unsafe_offset(offset), 0, partial_load_size.value(), 0
         )
     else:
-        return ptr.load[width=simd_width](offset)
+        return ptr.unsafe_load[width=simd_width](offset)
 
 
 @inline(.always)
@@ -993,4 +997,4 @@ def _simd_store_maybe_partial[
             ptr.unsafe_offset(offset), 0, partial_store_size.value(), vec
         )
     else:
-        return ptr.store(offset, vec)
+        return ptr.unsafe_store(offset, vec)

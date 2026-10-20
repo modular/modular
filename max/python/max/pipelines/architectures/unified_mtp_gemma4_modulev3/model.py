@@ -28,8 +28,7 @@ from max.experimental.tensor import default_device, default_dtype
 from max.graph import DeviceRef, TensorType
 from max.graph.weights import WeightData
 from max.nn.comm import Signals
-from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
-from max.nn.transformer import ReturnLogits
+from max.nn.kv_cache import KVCacheParams
 from max.pipelines.architectures.gemma4.batch_vision_inputs import (
     VisionRawInputs,
     create_empty_embeddings,
@@ -80,50 +79,6 @@ class UnifiedMTPGemma4ModuleV3Model(UnifiedMTPGemma4Model):
         if len(self.devices) <= 1:
             return []
         return Signals.allocate(self.devices)
-
-    @override
-    def _create_model_config(
-        self, state_dict: dict[str, Any]
-    ) -> Gemma4ForConditionalGenerationConfig:
-        # The V2 body, minus the `fuse_gemma4_projection_weights` block:
-        # this ModuleV3 target fuses qkv/gate-up in-graph (like the
-        # ModuleV3 Gemma4 arch), so the checkpoint's projections stay
-        # unfused.
-        config = Gemma4ForConditionalGenerationConfig.initialize(
-            self.pipeline_config, max_seq_len=self.max_seq_len
-        )
-        config.finalize(
-            huggingface_config=self.huggingface_config,
-            state_dict=state_dict,
-            return_logits=ReturnLogits.VARIABLE,
-        )
-        self.config = config
-
-        self._target_state_dict = state_dict
-
-        assert self.pipeline_config.draft_model is not None
-        draft_hf_config = self.pipeline_config.draft_model.huggingface_config
-        assert draft_hf_config is not None
-        self._draft_config = self._create_draft_config(
-            draft_hf_config, config.devices
-        )
-
-        assert isinstance(self.kv_params, MultiKVCacheParams)
-        self._target_sliding_kv_params = self.kv_params.children[
-            "sliding_attention"
-        ]
-        self._target_global_kv_params = self.kv_params.children[
-            "full_attention"
-        ]
-        self._target_layer_types = config.text_config.layer_types
-
-        # The draft is Q-only cross-attention into the target's KV caches
-        # (no K/V projections), so it allocates no cache of its own. None
-        # signals SpecDecodeState to skip the draft manager and the graph
-        # to declare no draft KV inputs.
-        self._draft_kv_params = None
-
-        return config
 
     # TODO(kathywu): Return ModuleV3 graph specs once
     # GraphSpec takes ModuleV3 modules, instead of compiling here.

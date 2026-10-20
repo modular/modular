@@ -448,7 +448,7 @@ def _conv2d_fprop_impl[
 
     # Launch kernel with im2col TMA
     comptime if has_compute_fn:
-        # `host_arg` copies the closure at host layout: the kernel is
+        # `host_args` copies the closure at host layout: the kernel is
         # compiled against `ComputeFnType` itself, not a device encoding.
         comptime kernel = conv_kernel.run_with_compute_fn[ComputeFnType]
         ctx.enqueue_function[kernel](
@@ -457,7 +457,7 @@ def _conv2d_fprop_impl[
             out_tma_op,
             cluster_dim,
             mnk,
-            host_arg=compute_fn,
+            host_args=(compute_fn,),
             grid_dim=grid_dim,
             block_dim=(conv_kernel.NUM_THREADS),
             shared_mem_bytes=smem_size,
@@ -473,7 +473,7 @@ def _conv2d_fprop_impl[
             out_tma_op,
             cluster_dim,
             mnk,
-            host_arg=epilogue_fn,
+            host_args=(epilogue_fn,),
             grid_dim=grid_dim,
             block_dim=(conv_kernel.NUM_THREADS),
             shared_mem_bytes=smem_size,
@@ -746,7 +746,7 @@ def conv2d_fprop_with_residual[
             cluster_dim,
             mnk,
             beta,
-            host_arg=epilogue_fn,
+            host_args=(epilogue_fn,),
             grid_dim=grid_dim,
             block_dim=(conv_kernel.NUM_THREADS),
             shared_mem_bytes=smem_size,

@@ -68,6 +68,12 @@
 #                       smoke run. A limited run's denominator differs from the
 #                       published one, so it is reported PARTIAL and never
 #                       "passes".
+#   --smoke            Fixed 32-question subset, one pass, 32768 output tokens
+#                       per question and a 900-second generation budget. Writes
+#                       smoke-summary.json with unfinished questions included
+#                       in the denominator; not a full GPQA score. Defaults to
+#                       8 connections. Cannot combine with sampling, epoch,
+#                       limit, reference-range, or streaming overrides.
 #   --max-connections N  Concurrent requests (default: 32).
 #   --temperature F    Override sampling temperature. Defaults to unset, which
 #                       leaves the harness's 0.5 in place — changing it breaks
@@ -143,7 +149,7 @@ api_key="${EXACTO_API_KEY:-${OPENAI_API_KEY:-}}"
 model=""
 epochs=10
 limit=""
-max_connections=32
+max_connections=""
 temperature=""
 reasoning_effort="$EXPECTED_REASONING_EFFORT"
 reference_range=""
@@ -152,29 +158,46 @@ serve_config=""
 out_dir="/tmp/exacto-gpqa-results"
 refresh=0
 stream=1
+smoke=0
+smoke_conflicts=()
 
-usage() { sed -n '15,114p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '/^# GPQA-Diamond/,/^set -euo/{ /^set -euo/d; s/^# \{0,1\}//; p; }' "${BASH_SOURCE[0]}"; }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --url) url="$2"; shift 2 ;;
     --api-key) api_key="$2"; shift 2 ;;
     --model) model="$2"; shift 2 ;;
-    --epochs) epochs="$2"; shift 2 ;;
-    --limit) limit="$2"; shift 2 ;;
+    --epochs) smoke_conflicts+=("$1"); epochs="$2"; shift 2 ;;
+    --limit) smoke_conflicts+=("$1"); limit="$2"; shift 2 ;;
+    --smoke) smoke=1; shift ;;
     --max-connections) max_connections="$2"; shift 2 ;;
-    --temperature) temperature="$2"; shift 2 ;;
-    --reasoning-effort) reasoning_effort="$2"; shift 2 ;;
-    --reference-range) reference_range="$2"; shift 2 ;;
-    --reference-source) reference_source="$2"; shift 2 ;;
+    --temperature) smoke_conflicts+=("$1"); temperature="$2"; shift 2 ;;
+    --reasoning-effort) smoke_conflicts+=("$1"); reasoning_effort="$2"; shift 2 ;;
+    --reference-range) smoke_conflicts+=("$1"); reference_range="$2"; shift 2 ;;
+    --reference-source) smoke_conflicts+=("$1"); reference_source="$2"; shift 2 ;;
     --serve-config) serve_config="$2"; shift 2 ;;
     --out-dir) out_dir="$2"; shift 2 ;;
     --refresh) refresh=1; shift ;;
-    --no-stream) stream=0; shift ;;
+    --no-stream) smoke_conflicts+=("$1"); stream=0; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "error: unknown option: $1" >&2; echo "try --help" >&2; exit 1 ;;
   esac
 done
+
+if [[ "$smoke" == 1 && ${#smoke_conflicts[@]} -gt 0 ]]; then
+  echo "ERROR: --smoke cannot combine with ${smoke_conflicts[*]}" >&2
+  exit 1
+fi
+if [[ "$smoke" == 1 ]]; then
+  max_connections="${max_connections:-8}"
+  if [[ -e "$out_dir" ]]; then
+    echo "ERROR: --smoke requires a fresh --out-dir: $out_dir" >&2
+    exit 1
+  fi
+else
+  max_connections="${max_connections:-32}"
+fi
 
 # External endpoints are usually quoted with /v1 already attached, while the
 # harness appends its own; normalize so either form works.
@@ -368,6 +391,16 @@ MSG
 ensure_venv
 detect_model
 preflight_endpoint
+
+if [[ "$smoke" == 1 ]]; then
+  SMOKE="$(find_module exacto_gpqa_smoke.py)"
+  env -u PYTHONPATH -u PYTHONHOME LOCAL_API_KEY="${api_key:-dummy}" \
+    "$VENV/bin/python" "$SMOKE" --url "$url" --model "$model" \
+    --output "$out_dir" --max-connections "$max_connections"
+  capture_endpoint_meta "$out_dir/endpoint.json"
+  echo "[exacto] bounded smoke results: $out_dir/smoke-summary.json"
+  exit 0
+fi
 
 mkdir -p "$out_dir"
 # Clear the log dir first: reusing an --out-dir would otherwise leave a previous

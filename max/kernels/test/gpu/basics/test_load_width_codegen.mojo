@@ -21,8 +21,8 @@ def kernel(
     src: ImmPointer[Float32, ImmutAnyOrigin],
     dst: MutPointer[Float32, MutAnyOrigin],
 ):
-    var v = src.load[width=8, alignment=32]()
-    dst.store[width=8, alignment=32](v)
+    var v = src.unsafe_load[width=8, alignment=32]()
+    dst.unsafe_store[width=8, alignment=32](v)
 
 
 def test_kernel_load_32B_width[target: CompilationTarget]() raises:

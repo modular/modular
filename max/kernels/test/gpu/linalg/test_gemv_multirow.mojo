@@ -139,7 +139,7 @@ def test_matches_one_row_kernel[
             Int32(N),
             Int32(1),
             Int32(K),
-            host_arg=bias_epilogue,
+            host_args=(bias_epilogue,),
             grid_dim=ceildiv(N, one_row_block_dim // WARP_SIZE),
             block_dim=one_row_block_dim,
         )
@@ -195,7 +195,7 @@ def test_matches_one_row_kernel[
             Int32(N),
             Int32(1),
             Int32(K),
-            host_arg=bias_epilogue,
+            host_args=(bias_epilogue,),
             grid_dim=ceildiv(N, rows_per_warp * warps_per_block),
             block_dim=WARP_SIZE * warps_per_block,
         )

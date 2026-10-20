@@ -28,6 +28,7 @@ from max.pipelines.architectures.deepseekV41.layers.moe import (
     DeepseekV41SharedExpert,
 )
 from max.pipelines.architectures.deepseekV41.weight_adapters import (
+    as_uint8,
     convert_weight_data,
     rewire_trunk_state_dict,
     with_dtype,
@@ -194,8 +195,9 @@ def test_shared_expert_tensors_load_strict() -> None:
     assert tuple(weight_scale.shape) == (2 * _SE_INTER, _SE_HIDDEN // 32)
 
 
-# Real per-group shapes are [8 * 1024, 4096]; small here, same structure.
-_WOA_GROUPS, _WOA_RANK, _WOA_WIDTH = 4, 64, 128
+# Real per-group shapes are [8 * 1024, 4096]; small here, same structure
+# (both still whole 128 x 128 scale tiles).
+_WOA_GROUPS, _WOA_RANK, _WOA_WIDTH = 4, 128, 128
 
 
 def _woa_checkpoint(prefix: str) -> dict[str, WeightData]:
@@ -205,7 +207,7 @@ def _woa_checkpoint(prefix: str) -> dict[str, WeightData]:
     distinct byte per block.
     """
     n, k = _WOA_GROUPS * _WOA_RANK, _WOA_WIDTH
-    scale = (np.arange((n // 32) * (k // 32)) % 8 + 120).astype(np.uint8)
+    scale = (np.arange((n // 32) * (k // 32)) + 64).astype(np.uint8)
     return {
         f"{prefix}.attn.wo_a.weight": with_dtype(
             np.full((n, k), 0x38, np.uint8), DType.float8_e4m3fn, "w"
@@ -251,3 +253,24 @@ def test_woa_converted_tensors_strict_load_and_shard(woa_mxfp8: bool) -> None:
             ] * 2
         else:
             assert linear.weight_scale is None
+
+
+def test_woa_mxfp8_scale_is_tile_interleaved() -> None:
+    """The MXFP8 ``wo_a`` scale is row-expanded, then tile-interleaved.
+
+    Row-expanded entry ``[r, c]`` (the compact block ``[r // 32, c]``) must
+    land at ``[r // 128, c // 4, r % 32, (r % 128) // 32, c % 4]``, the
+    layout the block-scaled grouped matmul reads.
+    """
+    checkpoint = _woa_checkpoint("layers.3")
+    compact = as_uint8(checkpoint["layers.3.attn.wo_a.scale"].data)
+    out = convert_weight_data(checkpoint, woa_mxfp8=True)
+    scale = out["layers.3.attn.wo_a.weight_scale"]
+    assert scale.dtype == DType.float8_e8m0fnu
+    n, cols = _WOA_GROUPS * _WOA_RANK, _WOA_WIDTH // 32
+    tiled = as_uint8(scale.data).reshape(n // 128, cols // 4, 32, 4, 4)
+    r, c = np.meshgrid(np.arange(n), np.arange(cols), indexing="ij")
+    np.testing.assert_array_equal(
+        tiled[r // 128, c // 4, r % 32, (r % 128) // 32, c % 4],
+        compact[r // 32, c],
+    )

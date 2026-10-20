@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Config for MiMo-V2.6-Flash (``MiMoV2ForCausalLM``).
 
-The model runs FP8 W8A8 dense linears and W4A4 MXFP4 experts, with Q/K (192)
+The model runs FP8 W8A8 dense linears and W4A8 MXFP4 experts, with Q/K (192)
 and V (128) zero-padded to a 256-wide KV cache for the fast attention kernels.
 """
 
@@ -124,7 +124,7 @@ def attention_head_dim(huggingface_config: AutoConfig) -> int:
 def validate_devices(device_specs: Sequence[DeviceSpec]) -> None:
     """Raises unless every device is an NVIDIA SM100 (B200-class) GPU.
 
-    The W4A4 experts' grouped MXFP4 quantize and matmul are SM100 kernels;
+    The W4A8 experts' grouped MXFP8 quantize and MXFP4 matmul are SM100 kernels;
     elsewhere the graph fails late, with an error that does not name the
     cause.
 
@@ -139,7 +139,7 @@ def validate_devices(device_specs: Sequence[DeviceSpec]) -> None:
         if not arch.startswith("sm_10"):
             raise ValueError(
                 "MiMo-V2 runs only on NVIDIA SM100 (B200-class) GPUs, whose "
-                f"kernels its W4A4 experts use; {device.label}:{device.id} "
+                f"kernels its W4A8 experts use; {device.label}:{device.id} "
                 f"is {arch!r}."
             )
 
@@ -243,6 +243,9 @@ class MiMoV2Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
     """Whether sliding-window layers prepare Q, K and V with the fused
     chunked QKV op instead of separate cache stores and RoPE. Experimental
     and off by default."""
+    fused_full_qkv: bool = False
+    """Whether full-attention layers use fused chunked QKV preparation.
+    Experimental and off by default, independently of sliding fusion."""
     use_subgraphs: bool = True
     """Whether the MoE layers of each attention type share one compiled
     subgraph."""

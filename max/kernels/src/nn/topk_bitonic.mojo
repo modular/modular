@@ -278,7 +278,7 @@ def _load4_scores[
     var off = base + col0
     if local0 + _PTOPK_ITEMS <= count and (off & (_PTOPK_ITEMS - 1)) == 0:
         var v = _widen_scores[in_dtype, _PTOPK_ITEMS](
-            in_scores.load[width=_PTOPK_ITEMS, alignment=v4_align](off)
+            in_scores.unsafe_load[width=_PTOPK_ITEMS, alignment=v4_align](off)
         )
         var idx = SIMD[.int32, _PTOPK_ITEMS](Int32(col0)) + SIMD[
             DType.int32, _PTOPK_ITEMS
@@ -315,13 +315,13 @@ def _halfclean4[
     4), so both champion and scratch reads are single `LDS.128`s.
     """
     var e0 = tid * _PTOPK_ITEMS
-    var cv = champ_v.load[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](e0)
-    var ci = champ_i.load[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](e0)
+    var cv = champ_v.unsafe_load[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](e0)
+    var ci = champ_i.unsafe_load[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](e0)
     var rbase = _TILE - _PTOPK_ITEMS - e0
-    var bv = scratch_v.load[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
+    var bv = scratch_v.unsafe_load[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
         rbase
     ).reversed()
-    var bi = scratch_i.load[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
+    var bi = scratch_i.unsafe_load[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
         rbase
     ).reversed()
     var take = bv.gt(cv)  # element-wise mask; `>` is scalar-only on SIMD
@@ -854,10 +854,10 @@ def _streaming_topk_kernel[
     var e3 = tid * 4 + 3
 
     var neg_inf = min_or_neg_inf[.float32]()
-    champ_v.store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
+    champ_v.unsafe_store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
         e0, SIMD[.float32, _PTOPK_ITEMS](neg_inf)
     )
-    champ_i.store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
+    champ_i.unsafe_store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
         e0, SIMD[.int32, _PTOPK_ITEMS](Int32(-1))
     )
     barrier()
@@ -892,10 +892,10 @@ def _streaming_topk_kernel[
         # final swizzled reads alias the canonical write indices (WAR hazard).
         barrier()
 
-        scratch_v.store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
+        scratch_v.unsafe_store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
             e0, SIMD[.float32, _PTOPK_ITEMS](v0, v1, v2, v3)
         )
-        scratch_i.store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
+        scratch_i.unsafe_store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
             e0, SIMD[.int32, _PTOPK_ITEMS](i0, i1, i2, i3)
         )
         barrier()
@@ -922,16 +922,16 @@ def _streaming_topk_kernel[
             v0, v1, v2, v3, i0, i1, i2, i3, scratch_v, scratch_i, tid
         )
 
-        champ_v.store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
+        champ_v.unsafe_store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
             e0, SIMD[.float32, _PTOPK_ITEMS](v0, v1, v2, v3)
         )
-        champ_i.store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
+        champ_i.unsafe_store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
             e0, SIMD[.int32, _PTOPK_ITEMS](i0, i1, i2, i3)
         )
         barrier()
 
     var base = token * _K
-    var out_i = champ_i.load[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](e0)
+    var out_i = champ_i.unsafe_load[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](e0)
     if e0 < _K:
         out_idxs[base + e0] = out_i[0]
     if e1 < _K:
@@ -1338,7 +1338,7 @@ def _load_scan_group[
     comptime bits_dtype = _score_bits[in_dtype]()
     if local0 + scan_items <= count and (off & (step - 1)) == 0:
         return bitcast[bits_dtype, scan_items](
-            in_scores.load[width=scan_items, alignment=_V4_ALIGN](off)
+            in_scores.unsafe_load[width=scan_items, alignment=_V4_ALIGN](off)
         )
 
     var v = _score_pad[in_dtype, scan_items]()
@@ -1376,7 +1376,7 @@ def _phi4[
     var v = _score_pad[in_dtype, _PTOPK_ITEMS]()
     if local0 + _PTOPK_ITEMS <= count and (off & (_PTOPK_ITEMS - 1)) == 0:
         v = bitcast[bits_dtype, _PTOPK_ITEMS](
-            in_scores.load[width=_PTOPK_ITEMS, alignment=v4_align](off)
+            in_scores.unsafe_load[width=_PTOPK_ITEMS, alignment=v4_align](off)
         )
     elif local0 < count:
         comptime for j in range(_PTOPK_ITEMS):
@@ -3494,10 +3494,10 @@ def _split_partial_kernel[
     var e3 = tid * 4 + 3
 
     var neg_inf = min_or_neg_inf[.float32]()
-    champ_v.store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
+    champ_v.unsafe_store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
         e0, SIMD[.float32, _PTOPK_ITEMS](neg_inf)
     )
-    champ_i.store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
+    champ_i.unsafe_store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
         e0, SIMD[.int32, _PTOPK_ITEMS](Int32(-1))
     )
     barrier()
@@ -3540,10 +3540,10 @@ def _split_partial_kernel[
         # swizzled reads alias the canonical write indices (WAR hazard).
         barrier()
 
-        scratch_v.store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
+        scratch_v.unsafe_store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
             e0, SIMD[.float32, _PTOPK_ITEMS](v0, v1, v2, v3)
         )
-        scratch_i.store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
+        scratch_i.unsafe_store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
             e0, SIMD[.int32, _PTOPK_ITEMS](i0, i1, i2, i3)
         )
         barrier()
@@ -3563,22 +3563,22 @@ def _split_partial_kernel[
             v0, v1, v2, v3, i0, i1, i2, i3, scratch_v, scratch_i, tid
         )
 
-        champ_v.store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
+        champ_v.unsafe_store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
             e0, SIMD[.float32, _PTOPK_ITEMS](v0, v1, v2, v3)
         )
-        champ_i.store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
+        champ_i.unsafe_store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
             e0, SIMD[.int32, _PTOPK_ITEMS](i0, i1, i2, i3)
         )
         barrier()
 
     var out_base = (row * S + slce) * _TILE
-    part_v.store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
+    part_v.unsafe_store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
         out_base + e0,
-        champ_v.load[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](e0),
+        champ_v.unsafe_load[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](e0),
     )
-    part_i.store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
+    part_i.unsafe_store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
         out_base + e0,
-        champ_i.load[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](e0),
+        champ_i.unsafe_load[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](e0),
     )
 
 
@@ -3647,11 +3647,13 @@ def _reduce_partials_kernel(
 
     # Seed the champion with the group's first partial.
     var base0 = (row * count_in + first) * _TILE
-    champ_v.store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
-        e0, in_v.load[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](base0 + e0)
+    champ_v.unsafe_store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
+        e0,
+        in_v.unsafe_load[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](base0 + e0),
     )
-    champ_i.store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
-        e0, in_i.load[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](base0 + e0)
+    champ_i.unsafe_store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
+        e0,
+        in_i.unsafe_load[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](base0 + e0),
     )
     barrier()
 
@@ -3669,11 +3671,13 @@ def _reduce_partials_kernel(
 
     for s in range(1, n_parts):
         var bs = (row * count_in + first + s) * _TILE
-        scratch_v.store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
-            e0, in_v.load[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](bs + e0)
+        scratch_v.unsafe_store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
+            e0,
+            in_v.unsafe_load[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](bs + e0),
         )
-        scratch_i.store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
-            e0, in_i.load[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](bs + e0)
+        scratch_i.unsafe_store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
+            e0,
+            in_i.unsafe_load[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](bs + e0),
         )
         barrier()
 
@@ -3693,22 +3697,22 @@ def _reduce_partials_kernel(
             v0, v1, v2, v3, i0, i1, i2, i3, scratch_v, scratch_i, tid
         )
 
-        champ_v.store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
+        champ_v.unsafe_store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
             e0, SIMD[.float32, _PTOPK_ITEMS](v0, v1, v2, v3)
         )
-        champ_i.store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
+        champ_i.unsafe_store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
             e0, SIMD[.int32, _PTOPK_ITEMS](i0, i1, i2, i3)
         )
         barrier()
 
     var out_base = (row * count_out + grp) * _TILE
-    out_v.store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
+    out_v.unsafe_store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
         out_base + e0,
-        champ_v.load[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](e0),
+        champ_v.unsafe_load[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](e0),
     )
-    out_i.store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
+    out_i.unsafe_store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
         out_base + e0,
-        champ_i.load[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](e0),
+        champ_i.unsafe_load[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](e0),
     )
 
 
@@ -3769,11 +3773,13 @@ def _merge_partials_kernel(
 
     # Seed the champion with partial 0.
     var base0 = (row * count) * _TILE
-    champ_v.store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
-        e0, part_v.load[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](base0 + e0)
+    champ_v.unsafe_store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
+        e0,
+        part_v.unsafe_load[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](base0 + e0),
     )
-    champ_i.store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
-        e0, part_i.load[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](base0 + e0)
+    champ_i.unsafe_store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
+        e0,
+        part_i.unsafe_load[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](base0 + e0),
     )
     barrier()
 
@@ -3791,11 +3797,17 @@ def _merge_partials_kernel(
 
     for s in range(1, count):
         var bs = (row * count + s) * _TILE
-        scratch_v.store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
-            e0, part_v.load[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](bs + e0)
+        scratch_v.unsafe_store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
+            e0,
+            part_v.unsafe_load[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
+                bs + e0
+            ),
         )
-        scratch_i.store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
-            e0, part_i.load[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](bs + e0)
+        scratch_i.unsafe_store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
+            e0,
+            part_i.unsafe_load[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
+                bs + e0
+            ),
         )
         barrier()
 
@@ -3815,17 +3827,17 @@ def _merge_partials_kernel(
             v0, v1, v2, v3, i0, i1, i2, i3, scratch_v, scratch_i, tid
         )
 
-        champ_v.store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
+        champ_v.unsafe_store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
             e0, SIMD[.float32, _PTOPK_ITEMS](v0, v1, v2, v3)
         )
-        champ_i.store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
+        champ_i.unsafe_store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
             e0, SIMD[.int32, _PTOPK_ITEMS](i0, i1, i2, i3)
         )
         barrier()
 
     var _K = Int(K)
     var base = row * _K
-    var out_i = champ_i.load[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](e0)
+    var out_i = champ_i.unsafe_load[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](e0)
     if e0 < _K:
         out_idxs[base + e0] = out_i[0]
     if e1 < _K:

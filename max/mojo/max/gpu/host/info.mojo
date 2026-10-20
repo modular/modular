@@ -125,27 +125,42 @@ from max._plugin._overlay import TARGETS
 # Accelerator target lookup
 # ===----------------------------------------------------------------------=== #
 
-
 # TODO(MOLIB-127): Move this out of the `max.gpu` module and somewhere more
 #   general. This is not limited to GPUs only.
-def default_accelerator() -> type_of(get_gpu_target()):
-    """Get the default accelerator target.
+comptime default_accelerator = get_gpu_target[_accelerator_arch()]
+"""Get the default accelerator target.
 
-    The default accelerator is determined automatically by the compiler, but
-    may be overridden by the `--target-accelerator` command line flag.
+The default accelerator is determined automatically by the compiler, but
+may be overridden by the `--target-accelerator` command line flag.
 
-    This function will always return the same value, whether called in host or
-    accelerator offload (`compile_info`) compilation context.
+This function will always return the same value, whether called in host or
+accelerator offload (`compile_info`) compilation context.
 
-    Constraints:
-        An accelerator target must be configured.
+Constraints:
+    An accelerator target must be configured.
+
+Returns:
+    A value representing the current accelerator target.
+"""
+
+
+def get_gpu_target[
+    # TODO: Ideally this is an Optional[StaticString] but blocked by MOCO-1039
+    target_arch: StaticString = _accelerator_arch(),
+]() -> CompilationTarget[_mlir_value=_gpu_mlir_target[target_arch]()]:
+    """Gets the GPU target information for the specified architecture.
+
+    Parameters:
+        target_arch: GPU architecture name (defaults to current accelerator architecture).
 
     Returns:
-        A value representing the current accelerator target.
+        Target type information for the specified GPU architecture.
     """
     comptime current = CompilationTarget.current()
 
-    comptime accelerator = get_gpu_target()
+    comptime _default_accelerator = CompilationTarget[
+        _mlir_value=_gpu_mlir_target[_accelerator_arch()]()
+    ]()
 
     # Note:
     #   Defensively assert that there aren't multiple different accelerator
@@ -155,16 +170,20 @@ def default_accelerator() -> type_of(get_gpu_target()):
     #   without hard-coding targets, using the `--target-accelerator`.
     comptime if current.is_accelerator():
         # This function is being called from non-host code.
-        comptime assert current._eq_triple_and_arch[accelerator](), String(
-            __get_current_function_name(),
-            "() called while compiling for accelerator target '",
+        comptime assert current._eq_triple_and_arch[
+            _default_accelerator
+        ](), String(
+            (
+                "default_accelerator() called while compiling for accelerator"
+                " target '"
+            ),
             StaticString(current.__triple()),
             "' (arch: '",
             StaticString(current.__arch()),
             "'), which is not the default accelerator '",
-            StaticString(accelerator.__triple()),
+            StaticString(_default_accelerator.__triple()),
             "' (arch: '",
-            StaticString(accelerator.__arch()),
+            StaticString(_default_accelerator.__arch()),
             (
                 "'). This divergence could mean subtle behavior differences"
                 " between host and accelerator code. The default accelerator"
@@ -178,35 +197,6 @@ def default_accelerator() -> type_of(get_gpu_target()):
             ),
         )
 
-    return {}
-
-
-@always_inline("builtin")
-def foldable_default_accelerator() -> type_of(get_gpu_target()):
-    """Get the default accelerator target. Suitable for use in parameter types
-    that must be parser foldable.
-
-    See `default_accelerator()` for more information.
-
-    Returns:
-        The default accelerator target.
-    """
-    return {}
-
-
-@always_inline("builtin")
-def get_gpu_target[
-    # TODO: Ideally this is an Optional[StaticString] but blocked by MOCO-1039
-    target_arch: StaticString = _accelerator_arch(),
-]() -> CompilationTarget[_mlir_value=_gpu_mlir_target[target_arch]()]:
-    """Gets the GPU target information for the specified architecture.
-
-    Parameters:
-        target_arch: GPU architecture name (defaults to current accelerator architecture).
-
-    Returns:
-        Target type information for the specified GPU architecture.
-    """
     return {}
 
 

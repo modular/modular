@@ -107,11 +107,6 @@ def _get_run_name[
     )
 
 
-comptime epilogue_func_type = def[
-    dtype: DType, width: SIMDLength, *, alignment: Int = 1
-](SIMD[dtype, width]) capturing -> SIMD[dtype, width]
-
-
 @inline(.always)
 def test_epilogue[
     dtype: DType

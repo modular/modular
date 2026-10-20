@@ -19,6 +19,7 @@ from std.math import ceildiv
 from max.gpu import global_idx
 from max.gpu.host import DeviceContext
 from std.itertools import product
+from std.memory.alloc import unsafe_alloc
 
 # ========================== KERNEL CODE ==========================
 
@@ -216,9 +217,9 @@ def main() raises:
     print("Grayscale output size:", gray_size, "bytes")
 
     # Allocate host memory
-    var h_rgb_input = alloc[UInt8](rgb_size)
-    var h_gray_output_gpu = alloc[UInt8](gray_size)
-    var h_gray_output_cpu = alloc[UInt8](gray_size)
+    var h_rgb_input = unsafe_alloc[UInt8](rgb_size)
+    var h_gray_output_gpu = unsafe_alloc[UInt8](gray_size)
+    var h_gray_output_cpu = unsafe_alloc[UInt8](gray_size)
 
     # Initialize test image
     initialize_image(h_rgb_input, width, height)
@@ -242,9 +243,9 @@ def main() raises:
         print("✗ FAILED: GPU results do not match CPU results!")
 
     # Cleanup
-    h_rgb_input.free()
-    h_gray_output_gpu.free()
-    h_gray_output_cpu.free()
+    h_rgb_input.unsafe_free()
+    h_gray_output_gpu.unsafe_free()
+    h_gray_output_cpu.unsafe_free()
 
     print("\n===========================================")
     if success:

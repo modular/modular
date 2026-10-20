@@ -598,7 +598,7 @@ def _copy_frag_to_smem_nvidia[
                 comptime align = align_of[
                     SIMD[p_smem_iter.dtype, frag_simd_width]
                 ]()
-                tile_BMxBK.ptr.store[alignment=align](offset_BMxBK, vec)
+                tile_BMxBK.ptr.unsafe_store[alignment=align](offset_BMxBK, vec)
 
 
 @inline(.always)
@@ -679,7 +679,7 @@ def _copy_frag_to_smem_amd[
                 var tile_BMxBK = p_smem_iter.next_unsafe(
                     Int((offset_BMxBN % OffsetType(BN)) // OffsetType(BK))
                 )[]
-                tile_BMxBK.ptr.store(offset_BMxBK, vec)
+                tile_BMxBK.ptr.unsafe_store(offset_BMxBK, vec)
 
 
 @inline(.always)

@@ -2433,7 +2433,7 @@ def _matmul_common[
     comptime N = weight.static_shape[0]
 
     var c_alloc_layout = AllocLayout[Scalar[output_dtype]](
-        count=TOTAL_SEQ_LEN * N
+        length=TOTAL_SEQ_LEN * N
     )
     var c_ptr: Optional[
         MutPointer[Scalar[output_dtype], MutUntrackedOrigin]
@@ -3601,7 +3601,7 @@ def _qmatmul_gguf_quantized_alloc_output[
     # CPU matmul needs workspace even when an epilogue writes the output.
     # Managed so the workspace is also released when the matmul raises.
     var c_alloc = alloc(
-        AllocLayout[Float32](count=TOTAL_SEQ_LEN * N)
+        AllocLayout[Float32](length=TOTAL_SEQ_LEN * N)
     ).into_managed()
 
     var c_nd = TileTensor(

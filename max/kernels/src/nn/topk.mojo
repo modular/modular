@@ -551,7 +551,7 @@ def fused_token_sampling_cpu[
         var out_vals_shape = coord_to_index_list(input.layout.shape_coord())
         out_vals_shape[input.rank - 1] = bound_max_k
         var out_vals_alloc = alloc(
-            AllocLayout[Scalar[dtype]](count=out_vals_shape.flattened_length())
+            AllocLayout[Scalar[dtype]](length=out_vals_shape.flattened_length())
         ).into_managed()
         var out_vals_ptr: MutPointer[
             Scalar[dtype], origin_of(out_vals_alloc)
@@ -709,7 +709,7 @@ def _top_k_sampling[
     var reshaped_out_vals = reshape(out_vals, internal_out_shape)
 
     var out_idxs_tmp_alloc = alloc(
-        AllocLayout[Int64](count=out_vals.num_elements())
+        AllocLayout[Int64](length=out_vals.num_elements())
     )
     var out_idxs_tmp_ptr: MutPointer[
         Int64, origin_of(out_idxs_tmp_alloc._alloc)
@@ -749,7 +749,7 @@ def _top_k_sampling[
         # Calculate softmax normalization
         var max_val = reshaped_out_vals[batch, 0][0]
         var sum_exp = Scalar[dtype](0)
-        var exp_vals = alloc(AllocLayout[Scalar[dtype]](count=k_val))
+        var exp_vals = alloc(AllocLayout[Scalar[dtype]](length=k_val))
         var exp_vals_ptr: MutPointer[
             Scalar[dtype], origin_of(exp_vals._alloc)
         ] = exp_vals.unsafe_ptr()

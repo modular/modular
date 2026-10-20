@@ -38,6 +38,7 @@ from max.gpu.sync import (
     mbarrier_try_wait_parity_shared,
 )
 from std.memory import unsafe_stack_allocation
+from std.memory.alloc import unsafe_alloc
 from std.testing import assert_almost_equal
 
 from std.utils.index import Index, IndexList
@@ -159,7 +160,7 @@ def tma_reduction_kernel[
     var vec_data = SIMD[accum_type, simd_width](0)
     var idx = thread_idx.x * simd_width
     if idx < cols:
-        vec_data = shmem.load[width=simd_width](idx).cast[accum_type]()
+        vec_data = shmem.unsafe_load[width=simd_width](idx).cast[accum_type]()
     var local_sum = vec_data.reduce_add()
 
     # Block reduction of local sums.
@@ -178,7 +179,7 @@ def test_tma_block_reduce[
     comptime max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
     comptime accum_type = get_accum_type[dtype]()
 
-    var h_data = alloc[Scalar[dtype]](n)
+    var h_data = unsafe_alloc[Scalar[dtype]](n)
     var expected_sum = Scalar[accum_type](0)
     rand[dtype](h_data, n)
     for i in range(n):
@@ -193,7 +194,7 @@ def test_tma_block_reduce[
         WARP_SIZE * max_warps_per_block,
     )
 
-    var result_host = alloc[Scalar[accum_type]](grid_dim)
+    var result_host = unsafe_alloc[Scalar[accum_type]](grid_dim)
     var d_out = ctx.enqueue_create_buffer[accum_type](grid_dim)
     ctx.enqueue_memset(d_out, 0)
 
@@ -291,8 +292,8 @@ def test_tma_block_reduce[
         atol=1e-2,
     )
 
-    h_data.free()
-    result_host.free()
+    h_data.unsafe_free()
+    result_host.unsafe_free()
     _ = d_data
     _ = d_out
 

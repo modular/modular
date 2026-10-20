@@ -40,12 +40,14 @@ from max.pipelines.architectures.deepseekV41.weight_adapters import (
 from transformers.configuration_utils import PretrainedConfig
 
 HIDDEN = 128
-HEADS = 2
+# ``wo_a`` loads as MXFP8 with tile-interleaved scales, which need whole
+# 128-row, 128-column groups: HEADS * HEAD_DIM / O_GROUPS and O_LORA.
+HEADS = 4
 HEAD_DIM = 64
 ROPE_DIM = 32
 Q_LORA = 64
 O_GROUPS = 2
-O_LORA = 32
+O_LORA = 128
 INTER = 128
 EXPERTS = 4
 TOPK = 2
@@ -238,3 +240,17 @@ def test_dspark_tensors_strict_load_into_the_drafter() -> None:
         assert tuple(int(d) for d in data.shape) == tuple(
             int(d) for d in weight.shape
         ), name
+
+
+def test_dspark_wo_a_loads_as_mxfp8() -> None:
+    """DSpark ``wo_a`` keeps its e4m3 weight and a tile-interleaved scale."""
+    converted = _convert()
+    for stage in range(STAGES):
+        base = f"dspark.stages.{stage}.attn.wo_a"
+        assert converted[f"{base}.weight"].dtype == DType.float8_e4m3fn
+        scale = converted[f"{base}.weight_scale"]
+        assert scale.dtype == DType.float8_e8m0fnu
+        assert tuple(int(d) for d in scale.shape) == (
+            O_GROUPS * O_LORA,
+            HEADS * HEAD_DIM // O_GROUPS // 32,
+        )

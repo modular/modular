@@ -78,14 +78,14 @@ def _spin_until_released(flag: MutPointer[Int32, MutAnyOrigin]):
     is why the small barrier kernels never reproduced this.
     """
     var start = global_perf_counter_ns()
-    while flag.load[volatile=True]() == 0:
+    while flag.unsafe_load[volatile=True]() == 0:
         if global_perf_counter_ns() - start > UInt64(SPIN_TIMEOUT_NS):
             return
 
 
 def _release(flag: MutPointer[Int32, MutAnyOrigin]):
     """Peer arrival: releases device 0's spin over P2P."""
-    flag.store[volatile=True](Int32(1))
+    flag.unsafe_store[volatile=True](Int32(1))
 
 
 def _unrelated():

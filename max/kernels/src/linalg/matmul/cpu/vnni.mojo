@@ -167,12 +167,12 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel, Movable):
                         a_ptr.unsafe_offset(idx0 * a_ptr_stride)
                     )
                     .unsafe_bitcast[Scalar[c_type]]()
-                    .load()
+                    .unsafe_load()
                 )
 
                 comptime alignment = align_of[SIMD[c_type, simd_size]]()
                 var c_val = c_local[idx0, idx1]
-                var b_val = b_ptr.unsafe_offset(idx1 * simd_size).load[
+                var b_val = b_ptr.unsafe_offset(idx1 * simd_size).unsafe_load[
                     width=simd_size, alignment=alignment
                 ]()
 

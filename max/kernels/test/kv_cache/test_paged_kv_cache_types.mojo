@@ -27,6 +27,7 @@ from layout import (
     row_major,
 )
 from std.memory import alloc
+from std.memory.alloc import unsafe_alloc
 from std.sys import size_of
 from std.testing import assert_true
 
@@ -99,7 +100,9 @@ def do_test[
 
     comptime if scale_dtype == DType.float8_e4m3fn:
         # Use the same shape as the blocks.
-        var scales_ptr = alloc[Scalar[scales_dtype]](shape.flattened_length())
+        var scales_ptr = unsafe_alloc[Scalar[scales_dtype]](
+            shape.flattened_length()
+        )
         scales = rebind[Collection.scales_tt_type](
             TileTensor(scales_ptr, row_major(shape.flattened_length()))
             .reshape(
@@ -400,7 +403,7 @@ def test_scales_resolve_through_their_own_lookup_table() raises:
     ).reshape(Coord(Int64(batch_size)))
 
     # Values resolve through block 0.
-    var lookup_table_ptr = alloc[UInt32](batch_size)
+    var lookup_table_ptr = unsafe_alloc[UInt32](batch_size)
     lookup_table_ptr[0] = UInt32(0)
     var lookup_table = (
         TileTensor(lookup_table_ptr, row_major(batch_size))
@@ -411,7 +414,7 @@ def test_scales_resolve_through_their_own_lookup_table() raises:
 
     # Scales resolve through block 2 -- distinct from what lookup_table
     # points at, and only reachable through scales_lookup_table.
-    var scales_lookup_table_ptr = alloc[UInt32](batch_size)
+    var scales_lookup_table_ptr = unsafe_alloc[UInt32](batch_size)
     scales_lookup_table_ptr[0] = UInt32(2)
     var scales_lookup_table_opt: OptionalReg[
         Collection.CacheType.lookup_table_tt_type
@@ -425,7 +428,7 @@ def test_scales_resolve_through_their_own_lookup_table() raises:
     comptime scales_shape = IndexList[6](
         num_scale_blocks, 2, 1, page_size, kv_params_small.num_heads, 1
     )
-    var scales_ptr = alloc[Float32](scales_shape.flattened_length())
+    var scales_ptr = unsafe_alloc[Float32](scales_shape.flattened_length())
     var scales = rebind[Collection.scales_tt_type](
         TileTensor(scales_ptr, row_major(scales_shape.flattened_length()))
         .reshape(

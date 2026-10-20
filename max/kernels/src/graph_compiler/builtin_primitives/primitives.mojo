@@ -766,7 +766,7 @@ def mgp_buffer_alloc(
 @inline(.never)
 def mgp_device_graph_alloc[
     is_host: Bool
-](byte_size: Int, builder: DeviceGraphBuilder) raises -> OwnedByteBuffer:
+](byte_size: Int, mut builder: DeviceGraphBuilder) raises -> OwnedByteBuffer:
     return {builder.create_buffer[.int8](byte_size, is_host=is_host)}
 
 
@@ -2959,35 +2959,40 @@ def foreach_fusion_tile[
 def foreach_out_func[
     dtype: DType,
     rank: Int,
+    OutFuncType: ImplicitlyCopyable
+    & RegisterPassable
+    & def[width: Int](IndexList[rank]) -> None,
     //,
-    func: def[width: Int](IndexList[rank]) capturing -> SIMD[dtype, width],
-    out_func: def[width: Int](IndexList[rank]) capturing[_] -> None,
     *,
     target: StaticString = "cpu",
     simd_width: Int = get_kernel_simd_width[dtype, target](),
     _trace_name: StaticString = "mogg.for_each",
 ](
+    var out_func: OutFuncType,
     tensor: ManagedTensorSlice[dtype=dtype, rank=rank, ...],
     ctx: DeviceContext,
 ) raises:
-    """Apply the function `func` to each element of the tensor slice.
+    """Apply `out_func` to each index of the tensor slice.
 
     Parameters:
         dtype: The data type of the elements in the tensor slice.
         rank: The rank of the tensor slice.
-        func: The function to apply to each element of the tensor slice.
-        out_func: The function to apply on each output element.
+        OutFuncType: The type of the per-index closure.
         target: Indicates the type of the target device (e.g. "cpu", "gpu").
         simd_width: The SIMD width for the target (usually leave this as its default value).
         _trace_name: Name of the executed operation displayed in the trace_description.
 
     Args:
-        tensor: The input tensor slice which the consumed values.
+        out_func: The closure to apply on each output index; it does its own
+            load and store.
+        tensor: The tensor slice whose shape is the iteration domain.
         ctx: The call context (forward this from the custom operation).
     """
 
     @inline(.always)
-    def out_func_shim[_width: Int, _alignment: Int = 1](index: Coord) {var}:
+    def out_func_shim[
+        _width: Int, _alignment: Int = 1
+    ](index: Coord) {var out_func^}:
         var idx = rebind[IndexList[rank]](coord_to_index_list(index))
         out_func[_width](idx)
 

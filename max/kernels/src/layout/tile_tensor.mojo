@@ -968,7 +968,7 @@ struct TileTensor[
     ](self, offset: Some[Indexer]) -> SIMD[Self.dtype, width]:
         """Loads `width` elements at `offset` through the engine's raw
         pointer."""
-        return self.ptr.load[
+        return self.ptr.unsafe_load[
             width=width,
             alignment=alignment,
             invariant=invariant,
@@ -984,7 +984,7 @@ struct TileTensor[
         # `where Self.mut` does not narrow `Self.origin`'s mutability
         # parameter to `True`, so cast to the mutable pointer type `store`
         # requires.
-        self.ptr.unsafe_mut_cast[True]().store[
+        self.ptr.unsafe_mut_cast[True]().unsafe_store[
             alignment=alignment, non_temporal=non_temporal
         ](offset, value)
 

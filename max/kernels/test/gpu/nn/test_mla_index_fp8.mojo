@@ -36,7 +36,7 @@ from nn.attention.mha_operand import (
     KVCacheScalesMHAOperand,
 )
 from nn.attention.mha_mask import MaskName
-from nn.index_fp8 import _has_gfx950_accelerator
+from nn.index_fp8 import _has_gfx950_accelerator, fp8_index_score_amd
 from nn.topk_bitonic import _elems_per_16b
 from std.math import align_up, ceildiv, clamp, log
 from std.sys import size_of
@@ -111,6 +111,88 @@ def _score_paged_sm100[
     )
 
 
+def _score_paged_amd[
+    output_layout: TensorLayout,
+    q_layout: TensorLayout,
+    qs_layout: TensorLayout,
+    iro_layout: TensorLayout,
+    //,
+    num_heads: Int,
+    depth: Int,
+    kpool: Int,
+    pool_row_tokens: Int,
+    causal: Bool,
+    KCollectionT: KVCollectionT,
+](
+    output: MutTileTensor[.float32, output_layout, _],
+    q: ImmTileTensor[.float8_e4m3fn, q_layout, _],
+    q_s: ImmTileTensor[.float32, qs_layout, _],
+    input_row_offsets: ImmTileTensor[.uint32, iro_layout, _],
+    k_collection: KCollectionT,
+    batch_size: Int,
+    max_seq_len: Int,
+    max_num_keys: Int,
+    ctx: DeviceContext,
+    chunk_begin: Int,
+) raises:
+    # A function for the same exclusivity reason as `_score_paged_sm100`.
+    var k_cache = k_collection.get_key_cache(0)
+    var k_op = KVCacheMHAOperand(k_cache)
+    var ks_op = KVCacheScalesMHAOperand(k_cache)
+    fp8_index_score_amd[
+        DType.float8_e4m3fn,
+        type_of(k_op),
+        type_of(ks_op),
+        num_heads,
+        depth,
+        _is_cache_length_accurate=False,
+        causal=causal,
+        kpool=kpool,
+        pool_row_tokens=pool_row_tokens,
+    ](
+        output,
+        q,
+        q_s,
+        k_op,
+        ks_op,
+        input_row_offsets,
+        batch_size,
+        max_seq_len,
+        max_num_keys,
+        ctx,
+        chunk_begin,
+    )
+
+
+def _host_index_score[
+    num_heads: Int, depth: Int
+](
+    q: TileTensor[DType.float8_e4m3fn, ...],
+    q_s: TileTensor[DType.float32, ...],
+    token: Int,
+    k: TileTensor[DType.float8_e4m3fn, ...],
+    k_row: Int,
+) -> Float32:
+    """Returns `sum_h relu(q[token, h] . k[k_row]) * q_s[token, h]` in f32.
+
+    `q` is `[tokens * num_heads, depth]`, `q_s` is `[tokens * num_heads]` and
+    `k` is `[rows, depth]`. Vectorized because the deep-cache score checks
+    take billions of multiply-adds.
+    """
+    comptime width = 16
+    var score = Float32(0)
+    for h in range(num_heads):
+        var q_row = token * num_heads + h
+        var dot = SIMD[DType.float32, width](0)
+        for d in range(0, depth, width):
+            dot += (
+                q.load[width=width]((q_row, d)).cast[DType.float32]()
+                * k.load[width=width]((k_row, d)).cast[DType.float32]()
+            )
+        score += max(dot.reduce_add(), 0) * q_s[q_row][0]
+    return score
+
+
 def test_mla_index_fp8_paged_variable_lengths[
     num_heads: Int,
     depth: Int,
@@ -122,6 +204,7 @@ def test_mla_index_fp8_paged_variable_lengths[
     check_selection: Bool = False,
     exp_score_tail: Bool = False,
     kpool: Int = 1,
+    pool_row_tokens: Int = 1,
     num_layers: Int = 1,
     layer_idx: Int = 0,
     check_remap: Bool = False,
@@ -132,6 +215,7 @@ def test_mla_index_fp8_paged_variable_lengths[
     ctx: DeviceContext,
     metadata_cache_len: Int = 0,
     scores_budget_bytes: Int = _SCORES_BUDGET_BYTES,
+    score_window_rows: Int = 0,
 ) raises:
     """Test mla_indexer_ragged_float8_paged with variable-length sequences.
 
@@ -151,12 +235,14 @@ def test_mla_index_fp8_paged_variable_lengths[
             catches the topk_gpu out_vals/out_idxs row-stride desync bug,
             where higher query rows collapsed to all -1 (see the regression
             cases in main()).
-        check_scores: When True (B200 only, NULL mask), run the SM100 tensor-core
+        check_scores: When True (B200 or gfx950), run the target's tensor-core
             scorer on the paged KV cache and compare every (token, key) logit
             against a host reference computed over the paged layout. A wrong
             paged TMA row mapping (page_size / LUT) reads the wrong K rows, so
             this catches it -- coverage the index-only checks and
-            `test_index_fp8` (page_size == 0) never exercise.
+            `test_index_fp8` (page_size == 0) never exercise. B200 requires the
+            NULL mask. On gfx950 the mask and `kpool` apply, and every column
+            past a row's candidates must keep the buffer's fill.
         check_selection: When True (B200 only, NULL mask), additionally grade
             `output_indices` against an exact host top-k over the same f32
             reference. A logit tolerance cannot answer whether the bf16 fold
@@ -173,6 +259,10 @@ def test_mla_index_fp8_paged_variable_lengths[
         kpool: Tokens per pooled cache row. With `kpool > 1` the cache rows are
             pooled keys, so the indexer selects pool ids and each token's
             candidate count is its visible-token count floored by `kpool`.
+        pool_row_tokens: Cache rows a pooled key spans. 1 holds one
+            `depth`-wide row per pool; `kpool` lays the cache out as
+            GLM-5.3-Flash does, one `depth / kpool`-wide row per token with
+            each pool's scale replicated on its rows.
         num_layers: Layers the cache's parent tensor holds. The scale pool's
             block stride is `num_layers * page_size`, so at one layer it
             equals `page_size` and the flat scale descriptor degenerates to
@@ -199,6 +289,9 @@ def test_mla_index_fp8_paged_variable_lengths[
             the real maximum. Incompatible with `check_scores`.
         scores_budget_bytes: Forwarded to the op; a small value scores the
             batch in several row windows.
+        score_window_rows: When nonzero, the gfx950 `check_scores` arm scores
+            the batch in windows of this many rows, each launch writing rows
+            from `chunk_begin` on.
     """
     comptime use_causal_mask = mask_name != MaskName.NULL.name
     var batch_size = len(seq_lens)
@@ -256,9 +349,10 @@ def test_mla_index_fp8_paged_variable_lengths[
             not use_causal_mask
         ), "check_selection's host reference is NULL-mask only"
 
+    comptime assert pool_row_tokens == 1 or pool_row_tokens == kpool
     comptime kv_params = KVCacheStaticParams(
         num_heads=1,  # MLA uses single head for K
-        head_size=depth,
+        head_size=depth // pool_row_tokens,
         is_mla=True,
     )
 
@@ -332,6 +426,11 @@ def test_mla_index_fp8_paged_variable_lengths[
     )
     with ks_block_device.map_to_host() as ks_block_host:
         rand(ks_block_host.as_span())
+        comptime if pool_row_tokens > 1:
+            # Page size is a multiple of `pool_row_tokens`, so the flat index
+            # shares each token row's position within its pool.
+            for i in range(ks_shape.flattened_length()):
+                ks_block_host[i] = ks_block_host[i - i % pool_row_tokens]
 
     comptime if exp_score_tail:
         # `rand` gives U[0,1), and a score is (relu-summed heads) x this scale,
@@ -708,6 +807,9 @@ def test_mla_index_fp8_paged_variable_lengths[
         # tcgen05-only, so B200 only; on H100 this case still ran the scalar
         # fallback + the index checks above.
         comptime if ctx.target._has_blackwell_tcgen05():
+            comptime assert (
+                pool_row_tokens == 1
+            ), "the SM100 host reference reads depth-wide rows"
             var sc_size = total_seq_len * total_num_keys_max
             var sc_buf = ctx.enqueue_create_buffer[.float32](sc_size)
             sc_buf.enqueue_fill(-Float32.MAX)
@@ -864,6 +966,118 @@ def test_mla_index_fp8_paged_variable_lengths[
                     exp_score_tail,
                     max_rel,
                 )
+
+    comptime if check_scores and _has_gfx950_accelerator():
+        comptime assert num_layers == 1, "the host reference reads layer 0"
+        comptime fill = -Float32.MAX
+        # Columns past the widest row's candidates: a store that misses the
+        # row stride or runs past the key bound lands where the fill must stay.
+        var stride = total_num_keys_max // kpool + 3
+        var amd_buf = ctx.enqueue_create_buffer[.float32](
+            total_seq_len * stride
+        )
+        amd_buf.enqueue_fill(fill)
+        var window = (
+            score_window_rows if score_window_rows > 0 else total_seq_len
+        )
+        for begin in range(0, total_seq_len, window):
+            _score_paged_amd[
+                num_heads,
+                depth,
+                kpool,
+                pool_row_tokens,
+                use_causal_mask,
+                type_of(k_collection),
+            ](
+                TileTensor(
+                    amd_buf.unsafe_ptr().unsafe_offset(begin * stride),
+                    row_major(min(window, total_seq_len - begin), stride),
+                ),
+                q_tile.as_imm(),
+                qs_tile.as_imm(),
+                input_row_offsets_tile.as_imm(),
+                k_collection,
+                batch_size,
+                max_seq_len,
+                stride,
+                ctx,
+                begin,
+            )
+        var amd_host = ctx.enqueue_create_host_buffer[.float32](
+            total_seq_len * stride
+        )
+        ctx.enqueue_copy(amd_host, amd_buf)
+        ctx.synchronize()
+
+        var q_rows = TileTensor(
+            q_ptr, row_major(total_seq_len * num_heads, depth)
+        )
+        var qs_rows = TileTensor(qs_ptr, row_major(total_seq_len * num_heads))
+        var amd_rel = Float32(0)
+        with k_block_device.map_to_host() as k_host:
+            with ks_block_device.map_to_host() as ks_host:
+                with k_lut_device.map_to_host() as lut_host:
+                    # A pool's rows are adjacent in its page, so its key is
+                    # one `depth`-wide row of this view.
+                    var k_rows = TileTensor(
+                        k_host,
+                        row_major(
+                            num_blocks * page_size // pool_row_tokens, depth
+                        ),
+                    )
+                    var g = 0
+                    for b in range(batch_size):
+                        for t in range(seq_lens[b]):
+                            var visible = cache_lens[b] + seq_lens[b]
+                            comptime if use_causal_mask:
+                                visible = cache_lens[b] + t + 1
+                            var candidates = visible // kpool
+                            for key in range(stride):
+                                var got = amd_host[g * stride + key]
+                                if key >= candidates:
+                                    assert_true(
+                                        got == fill,
+                                        String(
+                                            "gfx950 wrote row ", g, " key ", key
+                                        ),
+                                    )
+                                    continue
+                                var page, off = divmod(
+                                    key * pool_row_tokens, page_size
+                                )
+                                var row = (
+                                    Int(lut_host[b * pages_per_seq + page])
+                                    * page_size
+                                    + off
+                                )
+                                var want = (
+                                    _host_index_score[num_heads, depth](
+                                        q_rows,
+                                        qs_rows,
+                                        g,
+                                        k_rows,
+                                        row // pool_row_tokens,
+                                    )
+                                    * ks_host[row]
+                                )
+                                assert_almost_equal(
+                                    got,
+                                    want,
+                                    atol=1e-2,
+                                    rtol=1e-3,
+                                    msg=String(
+                                        "gfx950 scores, row ", g, " key ", key
+                                    ),
+                                )
+                                if abs(want) > 1e-6:
+                                    amd_rel = max(
+                                        amd_rel, abs(got - want) / abs(want)
+                                    )
+                            g += 1
+        print(
+            "    gfx950 scores vs host f32 reference: max_rel=", amd_rel, sep=""
+        )
+        _ = amd_buf
 
     print("  Test passed!")
 
@@ -1378,6 +1592,7 @@ def test_mla_index_chunked_equivalence[
     top_k: Int,
     mask_name: StaticString,
     scores_dtype: DType = DType.float32,
+    kpool: Int = 1,
 ](
     seq_lens: List[Int],
     cache_lens: List[Int],
@@ -1394,27 +1609,30 @@ def test_mla_index_chunked_equivalence[
     row keeps the scores and live-key bound it had.
 
     Compared per token: the count of valid (non -1) slots and the SET of selected
-    indices. Order is not compared, for the reason
-    `test_mla_index_frozen_metadata_equivalence` gives.
+    indices. On gfx950 the ordered top-k indices are compared too.
 
     The chunk count is ASSERTED, not assumed. `budget_bytes` interacts with
     `max_num_keys`, so a budget that happens to admit every row would leave this
     test passing while exercising nothing -- the failure mode a chunking test is
     least able to notice.
     """
-    # Same trap from the other side, and the one that actually bit: only the
-    # SM100 scorers take a row window, so a shape that routes to the scalar
+    # Only the SM100 and gfx950 scorers take a row window, so a scalar
     # fallback runs as one chunk however small the budget is, and every
     # assertion below then compares an unchunked run against itself. `page_size`
     # is the clause that is easy to get wrong -- 64 is a legal paged size the
     # rest of this file uses everywhere, and it fails `% _BM_KEY`. Mirrors
-    # `use_sm100_scorer` in `mla_index_fp8.mojo`.
+    # `use_sm100_scorer` and `use_amd_scorer` in `mla_index_fp8.mojo`.
     comptime assert (
         depth == 128
         and num_heads in (64, 32, 8, 4)
         and (page_size == 0 or page_size % _BM_KEY == 0)
+    ) or (
+        _has_gfx950_accelerator()
+        and num_heads % 32 == 0
+        and depth % 64 == 0
+        and page_size % kpool == 0
     ), (
-        "chunking is SM100-only: this shape routes to the scalar scorer, which"
+        "this shape routes to the scalar scorer, which"
         " takes no row window, so the comparison would be vacuous"
     )
 
@@ -1434,7 +1652,8 @@ def test_mla_index_chunked_equivalence[
     # may admit every row at bf16; that is what the `num_chunks >= 2` assert
     # below catches.
     var max_num_keys = align_up(
-        max_cache_len + max_seq_len, _elems_per_16b[scores_dtype]()
+        (max_cache_len + max_seq_len) // kpool,
+        _elems_per_16b[scores_dtype](),
     )
     var rows_per_chunk = clamp(
         budget_bytes // (max_num_keys * size_of[scores_dtype]()),
@@ -1626,6 +1845,7 @@ def test_mla_index_chunked_equivalence[
         top_k,
         mask_name,
         scores_dtype,
+        kpool=kpool,
     ](
         o_ref_tile,
         q_tile,
@@ -1648,6 +1868,7 @@ def test_mla_index_chunked_equivalence[
         top_k,
         mask_name,
         scores_dtype,
+        kpool=kpool,
     ](
         o_chunked_tile,
         q_tile,
@@ -1671,6 +1892,12 @@ def test_mla_index_chunked_equivalence[
     _assert_same_selection(
         o_ref_host, o_chunked_host, total_seq_len, top_k, "chunking"
     )
+    comptime if _has_gfx950_accelerator():
+        for i in range(total_output_size):
+            assert_true(
+                o_ref_host[i] == o_chunked_host[i],
+                String("chunking changed top-k index at offset ", i),
+            )
 
     print("  Test passed!")
 
@@ -2592,9 +2819,283 @@ def main() raises:
             ctx=ctx,
         )
 
-        # ===== Chunked score matrix (SM100 only -- the scalar fallback and
-        # its mask pass do not take a row window, so there the op is always one
-        # chunk and these cases would compare a run against itself) =====
+        # ===== gfx950 score check: causal key bound, pooled keys and row
+        # windows, each logit against the host reference and every column past
+        # a row's candidates left at the fill =====
+        comptime if _has_gfx950_accelerator():
+            print("\n--- gfx950 paged scorer: scores vs host reference ---")
+            test_mla_index_fp8_paged_variable_lengths[
+                num_heads=32,
+                depth=128,
+                page_size=128,
+                top_k=64,
+                mask_name=MaskName.CAUSAL.name,
+                check_scores=True,
+            ](
+                seq_lens=[17, 9],
+                cache_lens=[383, 259],
+                ctx=ctx,
+            )
+            test_mla_index_fp8_paged_variable_lengths[
+                num_heads=32,
+                depth=128,
+                page_size=128,
+                top_k=64,
+                mask_name=MaskName.CAUSAL.name,
+                check_scores=True,
+                kpool=4,
+            ](
+                seq_lens=[19, 7],
+                cache_lens=[521, 259],
+                ctx=ctx,
+            )
+            # A long request beside one with an empty cache.
+            test_mla_index_fp8_paged_variable_lengths[
+                num_heads=32,
+                depth=128,
+                page_size=128,
+                top_k=64,
+                mask_name=MaskName.CAUSAL.name,
+                check_scores=True,
+            ](
+                seq_lens=[257, 130],
+                cache_lens=[1000, 0],
+                ctx=ctx,
+            )
+            # One row whose keys run past 2^16.
+            test_mla_index_fp8_paged_variable_lengths[
+                num_heads=32,
+                depth=128,
+                page_size=128,
+                top_k=64,
+                mask_name=MaskName.CAUSAL.name,
+                check_scores=True,
+            ](
+                seq_lens=[1],
+                cache_lens=[65537],
+                ctx=ctx,
+            )
+            # Windows that start and end mid-request, and windows of
+            # single-token requests on either side of the 64- and 128-key
+            # edges.
+            test_mla_index_fp8_paged_variable_lengths[
+                num_heads=32,
+                depth=128,
+                page_size=128,
+                top_k=64,
+                mask_name=MaskName.CAUSAL.name,
+                check_scores=True,
+            ](
+                seq_lens=[1, 3, 63, 65, 127],
+                cache_lens=[0, 1, 0, 64, 2],
+                ctx=ctx,
+                score_window_rows=3,
+            )
+            test_mla_index_fp8_paged_variable_lengths[
+                num_heads=32,
+                depth=128,
+                page_size=128,
+                top_k=64,
+                mask_name=MaskName.CAUSAL.name,
+                check_scores=True,
+            ](
+                seq_lens=[129],
+                cache_lens=[0],
+                ctx=ctx,
+                score_window_rows=65,
+            )
+            test_mla_index_fp8_paged_variable_lengths[
+                num_heads=32,
+                depth=128,
+                page_size=128,
+                top_k=64,
+                mask_name=MaskName.CAUSAL.name,
+                check_scores=True,
+            ](
+                seq_lens=[1, 1, 1, 1, 1],
+                cache_lens=[63, 64, 127, 128, 129],
+                ctx=ctx,
+                score_window_rows=2,
+            )
+            test_mla_index_fp8_paged_variable_lengths[
+                num_heads=32,
+                depth=128,
+                page_size=128,
+                top_k=64,
+                mask_name=MaskName.NULL.name,
+                check_scores=True,
+            ](
+                seq_lens=[3, 1],
+                cache_lens=[65, 127],
+                ctx=ctx,
+                score_window_rows=1,
+            )
+            # Past 8192 keys a row's keys split across CTAs: empty requests
+            # beside a row that ends on 65536 keys, and windows that cut
+            # split rows.
+            test_mla_index_fp8_paged_variable_lengths[
+                num_heads=32,
+                depth=128,
+                page_size=128,
+                top_k=64,
+                mask_name=MaskName.CAUSAL.name,
+                check_scores=True,
+            ](
+                seq_lens=[1, 1, 1, 1, 1, 3],
+                cache_lens=[0, 0, 0, 0, 0, 65533],
+                ctx=ctx,
+            )
+            # More requests than one wave scans at a time: the scorer finds a
+            # row group's request 64 requests per step, carrying the count
+            # across steps, and a row window restarts that count mid-batch.
+            var many_seq_lens = List[Int]()
+            var many_cache_lens = List[Int]()
+            for i in range(130):
+                many_seq_lens.append(2 if i % 3 == 0 else 1)
+                many_cache_lens.append(0 if i % 5 == 0 else (i * 37) % 900)
+            for window_rows in range(0, 100, 50):
+                test_mla_index_fp8_paged_variable_lengths[
+                    num_heads=32,
+                    depth=128,
+                    page_size=128,
+                    top_k=64,
+                    mask_name=MaskName.CAUSAL.name,
+                    check_scores=True,
+                ](
+                    seq_lens=many_seq_lens.copy(),
+                    cache_lens=many_cache_lens.copy(),
+                    ctx=ctx,
+                    score_window_rows=window_rows,
+                )
+            test_mla_index_fp8_paged_variable_lengths[
+                num_heads=32,
+                depth=128,
+                page_size=128,
+                top_k=64,
+                mask_name=MaskName.CAUSAL.name,
+                check_scores=True,
+            ](
+                seq_lens=[3, 1],
+                cache_lens=[16382, 32768],
+                ctx=ctx,
+                score_window_rows=3,
+            )
+            test_mla_index_fp8_paged_variable_lengths[
+                num_heads=32,
+                depth=128,
+                page_size=128,
+                top_k=64,
+                mask_name=MaskName.CAUSAL.name,
+                check_scores=True,
+            ](
+                seq_lens=[1, 3],
+                cache_lens=[0, 32768],
+                ctx=ctx,
+                score_window_rows=2,
+            )
+            test_mla_index_fp8_paged_variable_lengths[
+                num_heads=32,
+                depth=128,
+                page_size=128,
+                top_k=64,
+                mask_name=MaskName.CAUSAL.name,
+                check_scores=True,
+            ](
+                seq_lens=[129, 1],
+                cache_lens=[8320, 0],
+                ctx=ctx,
+                score_window_rows=128,
+            )
+            test_mla_index_fp8_paged_variable_lengths[
+                num_heads=32,
+                depth=128,
+                page_size=128,
+                top_k=64,
+                mask_name=MaskName.CAUSAL.name,
+                check_scores=True,
+                kpool=4,
+            ](
+                seq_lens=[3, 5, 1],
+                cache_lens=[509, 511, 1023],
+                ctx=ctx,
+                score_window_rows=2,
+            )
+            test_mla_index_fp8_paged_variable_lengths[
+                num_heads=32,
+                depth=128,
+                page_size=128,
+                top_k=64,
+                mask_name=MaskName.CAUSAL.name,
+                check_scores=True,
+                kpool=4,
+            ](
+                seq_lens=[1, 5],
+                cache_lens=[0, 511],
+                ctx=ctx,
+                score_window_rows=3,
+            )
+            # GLM-5.3-Flash's layout: each pool's key spreads over its tokens'
+            # 32-wide rows, so the scorer stages the Q tail through LDS.
+            test_mla_index_fp8_paged_variable_lengths[
+                num_heads=32,
+                depth=128,
+                page_size=128,
+                top_k=64,
+                mask_name=MaskName.CAUSAL.name,
+                check_scores=True,
+                kpool=4,
+                pool_row_tokens=4,
+            ](
+                seq_lens=[19, 7, 1],
+                cache_lens=[521, 259, 1023],
+                ctx=ctx,
+            )
+            test_mla_index_fp8_paged_variable_lengths[
+                num_heads=32,
+                depth=128,
+                page_size=512,
+                top_k=64,
+                mask_name=MaskName.CAUSAL.name,
+                check_scores=True,
+                kpool=4,
+                pool_row_tokens=4,
+            ](
+                seq_lens=[3, 5, 1],
+                cache_lens=[509, 2047, 0],
+                ctx=ctx,
+                score_window_rows=2,
+            )
+
+        # ===== Chunked score matrix (SM100 and gfx950 -- the scalar fallback
+        # and its mask pass do not take a row window, so there the op is always
+        # one chunk and these cases would compare a run against itself) =====
+        comptime if _has_gfx950_accelerator():
+            test_mla_index_chunked_equivalence[
+                num_heads=32,
+                depth=128,
+                page_size=128,
+                top_k=32,
+                mask_name=MaskName.CAUSAL.name,
+            ](
+                seq_lens=[40, 33, 24, 17],
+                cache_lens=[128, 192, 256, 320],
+                ctx=ctx,
+                budget_bytes=23040,
+            )
+            test_mla_index_chunked_equivalence[
+                num_heads=32,
+                depth=128,
+                page_size=128,
+                top_k=32,
+                mask_name=MaskName.CAUSAL.name,
+                kpool=4,
+            ](
+                seq_lens=[40, 33, 24, 17],
+                cache_lens=[128, 192, 256, 320],
+                ctx=ctx,
+                budget_bytes=5760,
+            )
+
         comptime if ctx.target._has_blackwell_tcgen05():
             print("\n--- chunked score-matrix equivalence tests ---")
 

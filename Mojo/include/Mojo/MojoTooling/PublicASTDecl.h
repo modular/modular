@@ -40,6 +40,8 @@ namespace M::KGEN::LIT {
 
 class ASTDecl;
 class AliasASTDecl;
+class DefASTDecl;
+class FnSignatureASTDecl;
 class MojoParserContext;
 class PackageASTDecl;
 class SharedState;
@@ -107,7 +109,6 @@ struct StableInfo {
 enum class PublicDeclKind {
   DK_PublicAliasDecl,
   DK_PublicArgumentDecl,
-  DK_PublicFunctionDecl,
   DK_PublicModuleDecl,
   DK_PublicPackageDecl,
   DK_PublicParameterDecl,
@@ -167,147 +168,23 @@ private:
   StringRef name;
 };
 
-/// Decl for functions of any kind, including closures, instance methods, fn
-/// functions, def functions, etc.
-class PublicFunctionDecl : public PublicDecl {
-public:
-  /// Return true if this is an async function.
-  bool isAsync() const { return isAsyncFlag; }
-
-  /// Return true if this is an __init__ function decorated with the @implicit
-  /// decorator
-  bool isImplicitConversion() const { return isImplicitConversionFlag; }
-
-  /// Return true if this is a static struct method, i.e., marked with @static.
-  bool isStatic() const { return isStaticFlag; }
-
-  /// Return true if this is a non-static struct method.
-  bool isMethod() const { return isMethodFlag; }
-
-  /// Return true if this trait method has a default implementation.
-  bool hasDefaultImplementation() const { return isDefaultImplFlag; }
-
-  /// Return the list of arguments of this function.
-  ArrayRef<KGEN::ArgumentInfo> getArguments() const { return args; }
-  const KGEN::ArgumentInfo &getArgument(size_t i) const { return args[i]; }
-
-  std::string getDeclarationSnippet(MojoParserContext &ctx) const override;
-
-  /// Get the declaration snippet for the function. The positions of parameters
-  /// and arguments within the printed signature may be extracted via the
-  /// optional `parameterOffsets` and `argumentOffsets`. nullptr should be
-  /// provided if collecting the offsets isn't desired.
-  std::string getDeclarationSnippet(
-      MojoParserContext &ctx,
-      SmallVectorImpl<std::pair<unsigned, unsigned>> *parameterOffsets,
-      SmallVectorImpl<std::pair<unsigned, unsigned>> *argumentOffsets =
-          nullptr) const;
-
-  /// Get the description of this decl extracted from its docstring. It might be
-  /// empty.
-  StringRef getDescription() const { return description; }
-
-  std::string getMarkdownDocString() const override;
-
-  /// Return the parameters of this function.
-  ArrayRef<KGEN::ParameterInfo> getParameters() const { return parameters; }
-
-  // TODO: always return the type, including None. The doc and snippet
-  // generation will need to be updated accordingly.
-  /// Return the type of this function if it is not None.
-  std::optional<StringRef> getReturnType() const { return returnType; }
-
-  /// Generate a string for the signature of this function, given its
-  /// components. The positions of parameters, arguments, and the return type
-  /// within the printed signature may be extracted via the optionally null
-  /// `parameterOffsets`, `argumentOffsets`, and `returnOffset` parameters.
-  std::string getSignature(
-      MojoParserContext &ctx,
-      SmallVectorImpl<std::pair<unsigned, unsigned>> *parameterOffsets =
-          nullptr,
-      SmallVectorImpl<std::pair<unsigned, unsigned>> *argumentOffsets = nullptr,
-      unsigned *returnOffset = nullptr) const;
-
-  /// Return true if this function raises.
-  bool raises() const { return raisesFlag; }
-
-  /// The output of the generation is defined in the following schema:
-  ///
-  /// {
-  ///   "kind": "function",
-  ///   "name": string,
-  ///   "args": ArgumentInfo[],
-  ///   "constraints": string,
-  ///   "description": string,
-  ///   "hasDefaultImplementation": boolean,
-  ///   "isImplicitConversion", boolean,
-  ///   "isStatic": boolean,
-  ///   "parameters": ParameterInfo[],
-  ///   "raises": boolean,
-  ///   "raisesDoc": string,
-  ///   "returns": {"type": string, "path": string?, "doc": string?},
-  ///   "signature": string, // E.g., "baz() -> Int"
-  ///   "summary": string
-  /// }
-  llvm::json::Object toJSON(MojoParserContext &ctx) const override;
-
-  static PublicDeclKind getKindStatic() {
-    return PublicDeclKind::DK_PublicFunctionDecl;
-  }
-
-public:
-  //===----------------------------------------------------------------------===//
-  // LLVM RTTI Support
-  //===----------------------------------------------------------------------===//
-
-  static bool classof(const PublicDecl *decl) {
-    return decl->getKind() == getKindStatic();
-  }
-
-private:
-  friend std::unique_ptr<PublicDecl> getPublicDecl(ASTDecl *decl);
-
-  PublicFunctionDecl(ASTDecl *decl);
-  PublicFunctionDecl(ASTDecl *decl, FnTypeGeneratorType signature);
-
-  /// Initialize the function decl with the given signature.
-  void initFromSignature(ASTDecl *decl, FnTypeGeneratorType signature,
-                         ArrayRef<Type> userArgTypes, Type userResultType);
-
-  /// Augment this function decl with docstring documentation, as well as its
-  /// parameters and args.
-  void augmentWithDocumentation(ArrayRef<StringRef> description);
-
-  SmallVector<KGEN::ArgumentInfo, kTypicalArgumentCount> args;
-  SmallVector<KGEN::ParameterInfo, kTypicalParameterCount> parameters;
-  std::string fnConstraints;
-  std::optional<std::string> returnType;
-
-  //===----------------------------------------------------------------------===//
-  // Effects and modifiers
-  //===----------------------------------------------------------------------===//
-
-  bool isAsyncFlag = false;
-  bool isImplicitConversionFlag = false;
-  bool isMethodFlag = false;
-  bool isStaticFlag = false;
-  bool raisesFlag = false;
-  StableInfo stableInfo;
-  bool isInit = false; // Is init or moveinit or copyinit.
-  bool isDefaultImplFlag =
-      false; // True if trait method has default implementation.
-
-  //===----------------------------------------------------------------------===//
-  // Parsed DocString
-  //===----------------------------------------------------------------------===//
-
-  StringRef deprecated;
-  std::string constraints;
-  std::string description;
-  std::string raisesDoc;
-  std::string returnsDoc;
-  std::string summary;
-};
+/// Function tooling helpers operate on function signatures.
+SmallVector<KGEN::ParameterInfo, kTypicalParameterCount>
+getFunctionParameters(FnSignatureASTDecl &decl);
+std::string getFunctionDeclarationSnippet(
+    DefASTDecl &decl, MojoParserContext &ctx,
+    SmallVectorImpl<std::pair<unsigned, unsigned>> *parameterOffsets = nullptr,
+    SmallVectorImpl<std::pair<unsigned, unsigned>> *argumentOffsets = nullptr);
+std::string getFunctionSignature(
+    DefASTDecl &decl, MojoParserContext &ctx,
+    SmallVectorImpl<std::pair<unsigned, unsigned>> *parameterOffsets = nullptr,
+    SmallVectorImpl<std::pair<unsigned, unsigned>> *argumentOffsets = nullptr,
+    unsigned *returnOffset = nullptr);
+std::string getFunctionMarkdownDocString(DefASTDecl &decl);
+std::string getFunctionFullMarkdownString(DefASTDecl &decl,
+                                          MojoParserContext &ctx);
+llvm::json::Object serializeFunctionDecl(DefASTDecl &decl,
+                                         MojoParserContext &ctx);
 
 /// A collection of overloaded functions in the same scope.
 class FunctionDeclOverloadSet {
@@ -315,32 +192,30 @@ public:
   /// Create a list of function overload sets by grouping the given functions by
   /// their name. It's assumed that the input list is sorted by name.
   static SmallVector<FunctionDeclOverloadSet, 2>
-  fromSortedFunctions(SmallVector<PublicFunctionDecl, 2> &&functions);
+  fromSortedFunctions(SmallVector<DefASTDecl *, 2> &&functions);
 
   /// Get the common name of the functions in this overload set.
   StringRef getBaseName() const { return baseName; }
 
   /// Get the functions in this overload set.
-  ArrayRef<PublicFunctionDecl> getFunctions() const { return functions; }
+  ArrayRef<DefASTDecl *> getFunctions() const { return functions; }
 
   /// The output of the generation is defined in the following schema:
   ///
   /// {
   ///   "kind": "function",
   ///   "name": string,
-  ///   "overloads": PublicFunctionDecl[]
+  ///   "overloads": function declarations
   /// }
   llvm::json::Object toJSON(MojoParserContext &ctx) const;
 
 private:
   FunctionDeclOverloadSet(StringRef baseName) : baseName(baseName) {}
 
-  void append(PublicFunctionDecl function) {
-    functions.push_back(std::move(function));
-  }
+  void append(DefASTDecl *function) { functions.push_back(function); }
 
   std::string baseName;
-  SmallVector<PublicFunctionDecl, 2> functions;
+  SmallVector<DefASTDecl *, 2> functions;
 };
 
 } // namespace M::KGEN::LIT
@@ -350,7 +225,6 @@ using KGEN::LIT::ConformanceConditionMap;
 using KGEN::LIT::FunctionDeclOverloadSet;
 using KGEN::LIT::PublicDecl;
 using KGEN::LIT::PublicDeclKind;
-using KGEN::LIT::PublicFunctionDecl;
 using KGEN::LIT::StableInfo;
 } // namespace M
 

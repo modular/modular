@@ -3983,8 +3983,10 @@ def mla_prefill_single_batch[
     ]()
 
     comptime for i in range(0, WM, 2):
-        rowmax.store(i, SIMD[accum_type, 2](min_or_neg_inf[accum_type]()))
-        rowsum.store(i, SIMD[accum_type, 2](0))
+        rowmax.unsafe_store(
+            i, SIMD[accum_type, 2](min_or_neg_inf[accum_type]())
+        )
+        rowsum.unsafe_store(i, SIMD[accum_type, 2](0))
 
     # Shared memory for P = Q * K^t
     # This overlaps key tile but are used at the same time i.e. no race condition.

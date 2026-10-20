@@ -195,6 +195,7 @@ class MiMoV2(DistributedLogitsPostprocessMixin, Module):
                 quant_config=config.quant.dense,
                 devices=config.devices,
                 fused_sliding_qkv=config.fused_sliding_qkv,
+                fused_full_qkv=config.fused_full_qkv,
             )
             self.kv_layer_indices.append(group_layer_counts[group])
             group_layer_counts[group] += 1

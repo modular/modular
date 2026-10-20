@@ -193,14 +193,16 @@ struct CoopRow[group_size: Int](TrivialRegisterPassable):
         self._phase ^= 1
 
         if tx == 0:
-            slots.store(slot_base + self.rank * COOP_SLOT_FLOATS, vals)
+            slots.unsafe_store(slot_base + self.rank * COOP_SLOT_FLOATS, vals)
 
         self._arrive_and_wait(workspace)
 
         if tx < Self.group_size:
-            table.store(
+            table.unsafe_store(
                 tx * width,
-                slots.load[width=width](slot_base + tx * COOP_SLOT_FLOATS),
+                slots.unsafe_load[width=width](
+                    slot_base + tx * COOP_SLOT_FLOATS
+                ),
             )
         barrier()
 
@@ -219,7 +221,7 @@ struct CoopRow[group_size: Int](TrivialRegisterPassable):
         result.
         """
         self.gather[width](workspace, table, vals)
-        var acc = table.load[width=width](0)
+        var acc = table.unsafe_load[width=width](0)
         comptime for r in range(1, Self.group_size):
-            acc = combine_fn(acc, table.load[width=width](r * width))
+            acc = combine_fn(acc, table.unsafe_load[width=width](r * width))
         return acc

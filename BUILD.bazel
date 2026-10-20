@@ -129,6 +129,22 @@ config_setting(
     tags = [ALLOW_UNUSED_TAG],
 )
 
+# True when MAX is built from the open-source tree alone, without the
+# closed-source kernel packages. Tests and targets that need those kernels
+# select on it to become incompatible. Off while MAX comes from the prebuilt
+# wheel, which ships those kernels.
+bool_flag(
+    name = "oss_source_build",
+    build_setting_default = False,
+    tags = [ALLOW_UNUSED_TAG],
+)
+
+config_setting(
+    name = "oss_source_only_build",
+    flag_values = {":oss_source_build": "true"},
+    tags = [ALLOW_UNUSED_TAG],
+)
+
 [
     config_setting(
         name = name + "_prebuilt_mojo_toolchain_enabled",

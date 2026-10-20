@@ -299,14 +299,16 @@ def _allgather_p2p_kernel[
                     data[gpu_idx] = (
                         src_ptrs_rr[gpu_idx]
                         .unsafe_address_space_cast[_target_address_space]()
-                        .load[width=simd_width, alignment=alignment](elem_idx)
+                        .unsafe_load[width=simd_width, alignment=alignment](
+                            elem_idx
+                        )
                     )
             # Then store each peer's data.
             comptime for gpu_idx in range(ngpus):
                 if idx < num_simd_vectors[gpu_idx]:
                     out_ptrs_rr[gpu_idx].unsafe_address_space_cast[
                         _target_address_space
-                    ]().store[width=simd_width, alignment=alignment](
+                    ]().unsafe_store[width=simd_width, alignment=alignment](
                         elem_idx, data[gpu_idx]
                     )
 
@@ -584,9 +586,9 @@ def _allgather_relay_kernel[
             BLOCK_SIZE,
         ):
             var elem_idx = idx * simd_width
-            out_ptr.store[width=simd_width, alignment=alignment](
+            out_ptr.unsafe_store[width=simd_width, alignment=alignment](
                 elem_idx,
-                src_ptr.load[
+                src_ptr.unsafe_load[
                     width=simd_width, alignment=alignment, invariant=True
                 ](elem_idx),
             )
@@ -657,7 +659,7 @@ def _allgather_relay_kernel[
             )
             comptime for u in range(UNROLL):
                 if idx + u * BLOCK_SIZE < end:
-                    data[u] = src_ptr.load[
+                    data[u] = src_ptr.unsafe_load[
                         width=simd_width,
                         alignment=alignment,
                         invariant=True,
@@ -669,7 +671,7 @@ def _allgather_relay_kernel[
                     comptime for k in range(ngpus - 1):
                         dst_ptrs[k].unsafe_address_space_cast[
                             _target_address_space
-                        ]().store[width=simd_width, alignment=alignment](
+                        ]().unsafe_store[width=simd_width, alignment=alignment](
                             elem_idx, data[u]
                         )
 

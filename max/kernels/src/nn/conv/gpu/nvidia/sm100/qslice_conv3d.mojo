@@ -72,7 +72,12 @@ from max.gpu.host.info import _is_sm10x_gpu
 from layout import Coord, TileTensor, row_major
 from std.sys import align_of, simd_width_of
 from std.utils import IndexList
-from nn.conv.conv_utils import elementwise_simd_epilogue_type
+from nn.conv.conv_utils import (
+    ConvSimdComputeFn,
+    ConvSimdEpilogueFn,
+    no_conv_simd_compute_fn,
+    no_conv_simd_epilogue_fn,
+)
 
 from .dispatch import dispatch_sm100_conv2d, test_alignment_sm100_conv2d
 
@@ -102,13 +107,13 @@ def _accum_bf16_to_fp32_kernel[
     var accum_idx = global_idx.x * output_simd_width
     if accum_idx >= _per_batch_elems:
         return
-    var src_val = src_bf16_ptr.load[
+    var src_val = src_bf16_ptr.unsafe_load[
         width=output_simd_width, alignment=bf16_alignment
     ](accum_idx).cast[.float32]()
-    var accum_val = accum_fp32_ptr.load[
+    var accum_val = accum_fp32_ptr.unsafe_load[
         width=output_simd_width, alignment=fp32_alignment
     ](accum_idx)
-    accum_fp32_ptr.store[alignment=fp32_alignment](
+    accum_fp32_ptr.unsafe_store[alignment=fp32_alignment](
         accum_idx, accum_val + src_val
     )
 
@@ -127,9 +132,9 @@ def _fp32_to_dtype_plain_kernel[
     var output_idx = global_idx.x * output_simd_width
     if output_idx >= _output_elems:
         return
-    dst_ptr.store[alignment=align_of[SIMD[dtype, output_simd_width]]()](
+    dst_ptr.unsafe_store[alignment=align_of[SIMD[dtype, output_simd_width]]()](
         output_idx,
-        src_fp32_ptr.load[
+        src_fp32_ptr.unsafe_load[
             width=output_simd_width,
             alignment=align_of[SIMD[.float32, output_simd_width]](),
         ](output_idx).cast[dtype](),
@@ -140,7 +145,7 @@ def _fp32_to_dtype_plain_kernel[
 def _fp32_to_dtype_epilogue_kernel[
     dtype: DType,
     C_out: Int,
-    epilogue: elementwise_simd_epilogue_type,
+    EpilogueFnType: ConvSimdEpilogueFn,
     output_simd_width: Int,
 ](
     src_fp32_ptr: ImmPointer[Float32, ImmutAnyOrigin],
@@ -149,6 +154,7 @@ def _fp32_to_dtype_epilogue_kernel[
     H_out: Int32,
     W_out: Int32,
     output_elems: Int32,
+    epilogue_fn: EpilogueFnType,
 ):
     """Elementwise cast fp32 → `dtype`, then call the caller's 5-D
     epilogue. The epilogue is expected to perform the write
@@ -172,11 +178,57 @@ def _fp32_to_dtype_epilogue_kernel[
     var w: Int
     var c: Int
     w, c = udivmod(rem, C_out)
-    var val = src_fp32_ptr.load[
+    var val = src_fp32_ptr.unsafe_load[
         width=output_simd_width,
         alignment=align_of[SIMD[.float32, output_simd_width]](),
     ](output_idx).cast[dtype]()
-    epilogue[alignment=output_simd_width]((b, d, h, w, c), val)
+    epilogue_fn[alignment=output_simd_width]((b, d, h, w, c), val)
+
+
+@__name(t"qslice_fp32_to_dtype_compute_{dtype}")
+def _fp32_to_dtype_compute_kernel[
+    dtype: DType,
+    C_out: Int,
+    ComputeFnType: ConvSimdComputeFn,
+    output_simd_width: Int,
+](
+    dst_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
+    src_fp32_ptr: ImmPointer[Float32, ImmutAnyOrigin],
+    batch: Int32,
+    D_out: Int32,
+    H_out: Int32,
+    W_out: Int32,
+    output_elems: Int32,
+    compute_fn: ComputeFnType,
+):
+    """Elementwise cast fp32 → `dtype`, then store the caller's 5-D
+    `compute_fn` of each value.
+    """
+    var _D_out = Int(D_out)
+    var _H_out = Int(H_out)
+    var _W_out = Int(W_out)
+    var _output_elems = Int(output_elems)
+    var output_idx = global_idx.x * output_simd_width
+    if output_idx >= _output_elems:
+        return
+    var DHW_out = _D_out * _H_out * _W_out
+    var HW_out = _H_out * _W_out
+    var b, rem = udivmod(output_idx, DHW_out * C_out)
+    var d: Int
+    d, rem = udivmod(rem, HW_out * C_out)
+    var h: Int
+    h, rem = udivmod(rem, _W_out * C_out)
+    var w: Int
+    var c: Int
+    w, c = udivmod(rem, C_out)
+    var val = src_fp32_ptr.unsafe_load[
+        width=output_simd_width,
+        alignment=align_of[SIMD[.float32, output_simd_width]](),
+    ](output_idx).cast[dtype]()
+    dst_ptr.unsafe_store[alignment=align_of[SIMD[dtype, output_simd_width]]()](
+        output_idx,
+        compute_fn[alignment=output_simd_width]((b, d, h, w, c), val),
+    )
 
 
 # =========================================================================
@@ -188,9 +240,12 @@ def dispatch_qslice_conv3d_sm100[
     input_type: DType,
     filter_type: DType,
     output_type: DType,
+    EpilogueFnType: ConvSimdEpilogueFn = type_of(no_conv_simd_epilogue_fn),
+    ComputeFnType: ConvSimdComputeFn = type_of(no_conv_simd_compute_fn),
     //,
     filter_is_fcrs: Bool = False,
-    maybe_epilogue_func: Optional[elementwise_simd_epilogue_type] = None,
+    has_epilogue_fn: Bool = False,
+    has_compute_fn: Bool = False,
 ](
     input: TileTensor[mut=True, input_type, address_space=.GENERIC, ...],
     filter: TileTensor[filter_type, ...],
@@ -200,6 +255,8 @@ def dispatch_qslice_conv3d_sm100[
     symmetric_padding: IndexList[3],
     num_groups: Int,
     ctx: DeviceContext,
+    epilogue_fn: EpilogueFnType = no_conv_simd_epilogue_fn,
+    compute_fn: ComputeFnType = no_conv_simd_compute_fn,
 ) raises -> Bool:
     """Try to dispatch a 3-D conv as Q × SM100 2-D conv calls with a
     dedicated fp32 accumulator.
@@ -210,12 +267,15 @@ def dispatch_qslice_conv3d_sm100[
         filter_type: The element type of `filter` (inferred).
         output_type: The element type of `output` (inferred). The
             gate requires `DType.bfloat16`.
+        EpilogueFnType: Type of `epilogue_fn` (inferred).
+        ComputeFnType: Type of `compute_fn` (inferred).
         filter_is_fcrs: Whether `filter` is laid out as FCQRS rather
             than QRSCF (defaults to `False`). The gate requires
             `False` because a fixed-`q` FCQRS slab is non-contiguous.
-        maybe_epilogue_func: Optional 5-D elementwise epilogue fused
-            into the final fp32-to-`output_type` write (defaults to
-            `None`).
+        has_epilogue_fn: True when `epilogue_fn` performs the final
+            fp32-to-`output_type` write (defaults to `False`).
+        has_compute_fn: True when the final write stores `compute_fn` of
+            each value (defaults to `False`).
 
     Args:
         input: Rank-5 input tensor in NDHWC layout.
@@ -232,10 +292,19 @@ def dispatch_qslice_conv3d_sm100[
             requires `1`.
         ctx: Device context used for buffer allocation and kernel
             launches.
+        epilogue_fn: 5-D elementwise epilogue fused into the final
+            fp32-to-`output_type` write; used only when `has_epilogue_fn`
+            is true.
+        compute_fn: 5-D elementwise transform fused into the final
+            fp32-to-`output_type` write; used only when `has_compute_fn`
+            is true.
     """
     comptime assert input.flat_rank == 5, "input must be rank 5 (NDHWC)"
     comptime assert filter.flat_rank == 5, "filter must be rank 5"
     comptime assert output.flat_rank == 5, "output must be rank 5 (NDHWC)"
+    comptime assert not (
+        has_epilogue_fn and has_compute_fn
+    ), "a store epilogue excludes the compute epilogue"
 
     comptime if not filter.shape_known:
         return False
@@ -377,9 +446,9 @@ def dispatch_qslice_conv3d_sm100[
     comptime final_block = 256
     var final_grid = ceildiv(output_elems // output_simd_width, final_block)
 
-    comptime if case .Some(epilogue_5d) = maybe_epilogue_func:
+    comptime if has_epilogue_fn:
         comptime output_kernel = _fp32_to_dtype_epilogue_kernel[
-            output_type, C_out, epilogue_5d, output_simd_width
+            output_type, C_out, EpilogueFnType, output_simd_width
         ]
         ctx.enqueue_function[output_kernel](
             accum_fp32_ptr,
@@ -388,6 +457,23 @@ def dispatch_qslice_conv3d_sm100[
             Int32(H_out),
             Int32(W_out),
             Int32(output_elems),
+            host_args=(epilogue_fn,),
+            grid_dim=final_grid,
+            block_dim=final_block,
+        )
+    elif has_compute_fn:
+        comptime output_kernel = _fp32_to_dtype_compute_kernel[
+            output_type, C_out, ComputeFnType, output_simd_width
+        ]
+        ctx.enqueue_function[output_kernel](
+            output.ptr,
+            accum_fp32_ptr,
+            Int32(batch),
+            Int32(D_out),
+            Int32(H_out),
+            Int32(W_out),
+            Int32(output_elems),
+            host_args=(compute_fn,),
             grid_dim=final_grid,
             block_dim=final_block,
         )

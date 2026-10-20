@@ -107,7 +107,8 @@ def _split_k_reduce_kernel_epilogue_fn[
     epilogue_fn: EpilogueFnType,
 ):
     """Same as `_split_k_reduce_kernel`, delivering each reduced value to
-    `epilogue_fn` instead of `c`. Launch with `host_arg=epilogue_fn`.
+    `epilogue_fn` instead of `c`. Launch with
+    `host_args=(epilogue_fn,)`.
     """
     _split_k_reduce_impl[
         num_splits,
@@ -140,7 +141,8 @@ def _split_k_reduce_kernel_compute_fn[
     compute_fn: ComputeFnType,
 ):
     """Same as `_split_k_reduce_kernel`, storing `compute_fn` of each
-    reduced value into `c`. Launch with `host_arg=compute_fn`.
+    reduced value into `c`. Launch with
+    `host_args=(compute_fn,)`.
     """
     _split_k_reduce_impl[
         num_splits,
@@ -595,7 +597,7 @@ def _amd_4wave_split_k_matmul_impl[
             Int32(total_elems),
             Int32(elems_per_split),
             Int32(N),
-            host_arg=epilogue_fn,
+            host_args=(epilogue_fn,),
             grid_dim=(num_blocks,),
             block_dim=(block_dim_x,),
         )
@@ -613,7 +615,7 @@ def _amd_4wave_split_k_matmul_impl[
             Int32(total_elems),
             Int32(elems_per_split),
             Int32(N),
-            host_arg=compute_fn,
+            host_args=(compute_fn,),
             grid_dim=(num_blocks,),
             block_dim=(block_dim_x,),
         )

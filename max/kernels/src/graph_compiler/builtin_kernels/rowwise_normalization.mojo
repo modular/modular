@@ -780,7 +780,7 @@ def row_mean_of_squares[
     rank: Int,
     InputFn: ImplicitlyCopyable
     & RegisterPassable
-    & (def[width: Int](Coord) -> SIMD[in_dtype, width]),
+    & (def[width: Int, alignment: Int](Coord) -> SIMD[in_dtype, width]),
     OutputFn: ImplicitlyCopyable
     & RegisterPassable
     & (def[width: SIMDLength](Coord, SIMD[out_dtype, width]) -> None),
@@ -822,7 +822,7 @@ def row_mean_of_squares[
         def load[
             width: Int, alignment: Int
         ](idx: RowCoord[row_rank]) {var input_fn} -> SIMD[in_dtype, width]:
-            return input_fn[width](idx.coord)
+            return input_fn[width, alignment](idx.coord)
 
         # Prepare Row: this is a true reduction (no fuse-eligible cache), so
         # the axis size is always the dynamic form.
@@ -896,8 +896,12 @@ def row_mean_of_squares_qk[
         return
 
     @inline(.always)
-    def q_in[width: Int](idx: Coord) {var query} -> SIMD[in_dtype, width]:
-        return query.load[width=width, alignment=1](idx)
+    def q_in[
+        width: Int, alignment: Int
+    ](idx: Coord) {var query} -> SIMD[in_dtype, width]:
+        return query.load[
+            width=width, alignment=alignment * align_of[in_dtype]()
+        ](idx)
 
     # Column 0 (q) / column 1 (k) sit stride-2 apart in `output`'s `[rows, 2]`
     # layout, so a `width`-wide batch of adjacent rows can't land in one
@@ -915,8 +919,12 @@ def row_mean_of_squares_qk[
     )
 
     @inline(.always)
-    def k_in[width: Int](idx: Coord) {var key} -> SIMD[in_dtype, width]:
-        return key.load[width=width, alignment=1](idx)
+    def k_in[
+        width: Int, alignment: Int
+    ](idx: Coord) {var key} -> SIMD[in_dtype, width]:
+        return key.load[
+            width=width, alignment=alignment * align_of[in_dtype]()
+        ](idx)
 
     @inline(.always)
     def k_out[
@@ -947,10 +955,10 @@ def rms_norm_fused_residual_add[
     rank: Int,
     Input0Fn: ImplicitlyCopyable
     & RegisterPassable
-    & (def[width: Int](Coord) -> SIMD[dtype, width]),
+    & (def[width: Int, alignment: Int](Coord) -> SIMD[dtype, width]),
     Input1Fn: ImplicitlyCopyable
     & RegisterPassable
-    & (def[width: Int](Coord) -> SIMD[dtype, width]),
+    & (def[width: Int, alignment: Int](Coord) -> SIMD[dtype, width]),
     Output0Fn: ImplicitlyCopyable
     & RegisterPassable
     & (
@@ -1013,7 +1021,7 @@ def rms_norm_fused_residual_add[
         def load[
             width: Int, alignment: Int
         ](idx: RowCoord[row_rank]) {var input_0_fn} -> SIMD[dtype, width]:
-            return input_0_fn[width](idx.coord)
+            return input_0_fn[width, alignment](idx.coord)
 
         var row = rowwise.Row[
             params, accum, dtype, reduce_dim, row_rank, is_cached=True
@@ -1061,7 +1069,7 @@ def rms_norm_fused_residual_add[
                 gamma1.ptr_at_offset(Coord(col))
             )
             var normed = tile.cast[accum]() * inv_rms1.slice[width]()
-            var residual = input_1_fn[width](idx.coord)
+            var residual = input_1_fn[width, alignment](idx.coord)
 
             var inter: SIMD[dtype, width]
             comptime if multiply_before_cast:

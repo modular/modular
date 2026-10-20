@@ -207,7 +207,7 @@ def depth512_scale_write_output[
                     o_smem.unsafe_offset(o_k_block * BM * o_sw_K).unsafe_offset(
                         o_swizzle(o_inner)
                     )
-                ).unsafe_bitcast[UInt32]().store(packed)
+                ).unsafe_bitcast[UInt32]().unsafe_store(packed)
 
     comptime if config.split_o:
         comptime ov_quarter = config.ov_depth // 4
@@ -704,7 +704,9 @@ def depth512_softmax[
                     p_smem.unsafe_offset(p_k_block * BM * p_sw_K).unsafe_offset(
                         p_swizzle(p_inner)
                     )
-                ).unsafe_bitcast[UInt32]().store(bitcast[.uint32, 4](vals))
+                ).unsafe_bitcast[UInt32]().unsafe_store(
+                    bitcast[.uint32, 4](vals)
+                )
 
         # Batch 0: compute exp.
         comptime for idx in range(p_batch):

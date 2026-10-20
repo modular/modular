@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.sys.info import simd_width_of
+from std.sys.info import align_of, simd_width_of
 
 from max.algorithm.functional import elementwise
 from max.gpu.host import DeviceContext
@@ -87,15 +87,21 @@ def run_rms_norm_fused_residual_add_gpu[
     # Test fused operation
     @inline(.always)
     def input_fn[
-        width: Int
+        width: Int, alignment: Int
     ](coords: Coord) {var data_buf} -> SIMD[dtype, width]:
-        return data_buf.load[width=width](coords)
+        # `alignment` counts elements; `load` takes bytes.
+        return data_buf.load[
+            width=width, alignment=alignment * align_of[dtype]()
+        ](coords)
 
     @inline(.always)
     def residual_input_fn[
-        width: Int
+        width: Int, alignment: Int
     ](coords: Coord) {var data_buf_res} -> SIMD[dtype, width]:
-        return data_buf_res.load[width=width](coords)
+        # `alignment` counts elements; `load` takes bytes.
+        return data_buf_res.load[
+            width=width, alignment=alignment * align_of[dtype]()
+        ](coords)
 
     @inline(.always)
     def fused_output_fn[

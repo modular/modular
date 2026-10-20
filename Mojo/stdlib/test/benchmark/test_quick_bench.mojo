@@ -290,7 +290,7 @@ def test_custom() raises:
     comptime N = 1024
     comptime alignment = Alignment.of_bytes[64]()
     comptime dtype = DType.int32
-    var xy_layout = Layout[Scalar[dtype], alignment=alignment](count=N)
+    var xy_layout = Layout[Scalar[dtype], alignment=alignment](length=N)
     var x_alloc = alloc(xy_layout).into_managed()
     var y_alloc = alloc(xy_layout).into_managed()
     var x = x_alloc.unsafe_ptr()

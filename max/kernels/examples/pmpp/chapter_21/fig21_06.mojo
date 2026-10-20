@@ -24,6 +24,7 @@ from std.math import ceildiv, sqrt
 from max.gpu import block_idx, thread_idx, block_dim
 from max.gpu.host import DeviceContext
 from std.itertools import product
+from std.memory.alloc import unsafe_alloc
 
 from dcs_utils import GridDim, init_atoms, verify_grid
 
@@ -114,9 +115,9 @@ def main() raises:
     var grid_size = vol_dim.x * vol_dim.y * vol_dim.z
 
     # Allocate host memory
-    var h_atoms = alloc[Float32](atoms_size)
-    var h_energygrid_cpu = alloc[Float32](grid_size)
-    var h_energygrid_gpu = alloc[Float32](grid_size)
+    var h_atoms = unsafe_alloc[Float32](atoms_size)
+    var h_energygrid_cpu = unsafe_alloc[Float32](grid_size)
+    var h_energygrid_gpu = unsafe_alloc[Float32](grid_size)
 
     init_atoms(h_atoms, numatoms, gridspacing, vol_dim.x, vol_dim.y, vol_dim.z)
     for i in range(grid_size):
@@ -130,11 +131,11 @@ def main() raises:
     ctx.enqueue_copy(d_atoms, h_atoms)
 
     # Initialize device grid to zero
-    var h_zeros = alloc[Float32](grid_size)
+    var h_zeros = unsafe_alloc[Float32](grid_size)
     for i in range(grid_size):
         h_zeros[i] = 0.0
     ctx.enqueue_copy(d_energygrid, h_zeros)
-    h_zeros.free()
+    h_zeros.unsafe_free()
 
     # Launch config: one thread per grid point (2D grid)
     comptime BLOCK_DIM_X = 16
@@ -168,6 +169,6 @@ def main() raises:
     else:
         print("Figure 21.6 (Gather) Failed!")
 
-    h_atoms.free()
-    h_energygrid_cpu.free()
-    h_energygrid_gpu.free()
+    h_atoms.unsafe_free()
+    h_energygrid_cpu.unsafe_free()
+    h_energygrid_gpu.unsafe_free()

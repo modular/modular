@@ -18,8 +18,10 @@ from collections.abc import Iterable, Sequence
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, Weight, ops
-from max.nn.moe.moe import MoEGate, ShardingStrategy
+from max.nn.layer import LayerList
+from max.nn.moe.moe import MoE, MoEGate, ShardingStrategy
 from max.pipelines.architectures.gemma4.layers.rms_norm import Gemma4RMSNorm
+from typing_extensions import Self
 
 
 class Gemma4MoEGate(MoEGate):
@@ -125,3 +127,68 @@ class Gemma4MoEGate(MoEGate):
         )
 
         return top_k_index, ops.cast(top_k_weights, expert_scores.dtype)
+
+
+class Gemma4MoE(MoE):
+    """Gemma4's routed experts, declared as the BF16 checkpoints store them.
+
+    ``experts.gate_up_proj`` is ``[num_experts, 2 * moe_dim, hidden_dim]``,
+    each expert's gate rows then its up rows, and ``experts.down_proj`` is
+    ``[num_experts, hidden_dim, moe_dim]``: the stacks the grouped matmuls
+    read. The NVFP4 checkpoints store each expert on its own, as
+    :class:`~max.nn.moe.MoEQuantized` declares them.
+    """
+
+    def _init_experts(self) -> None:
+        # The expert list stays empty: MoE reads it only to stack per-expert
+        # weights, which the properties below replace.
+        self._all_experts = []
+        self.experts = LayerList([])
+        self.gate_up_weight = Weight(
+            "experts.gate_up_proj",
+            self.dtype,
+            [self.num_experts, 2 * self.moe_dim, self.hidden_dim],
+            device=self.devices[0],
+        )
+        self.down_weight = Weight(
+            "experts.down_proj",
+            self.dtype,
+            [self.num_experts, self.hidden_dim, self.moe_dim],
+            device=self.devices[0],
+        )
+
+    @property
+    def gate_up_proj(self) -> TensorValue:
+        return self.gate_up_weight
+
+    @property
+    def down_proj(self) -> TensorValue:
+        return self.down_weight
+
+    def _set_sharding_strategy(self, strategy: ShardingStrategy) -> None:
+        if not strategy.is_tensor_parallel:
+            raise ValueError("Gemma4MoE supports tensor parallelism only.")
+        super()._set_sharding_strategy(strategy)
+        # Every device takes a slice of each expert's width: gate_up splits
+        # its gate and up rows separately, so they stay paired, and down
+        # splits its input columns.
+        n = strategy.num_devices
+        self.gate_up_weight.sharding_strategy = ShardingStrategy.gate_up(
+            n, axis=1
+        )
+        self.down_weight.sharding_strategy = ShardingStrategy.axiswise(
+            axis=2, num_devices=n
+        )
+
+    def shard(self, devices: Iterable[DeviceRef]) -> list[Self]:
+        """Creates one per-device view of this layer."""
+        devices = list(devices)
+        gate_up_shards = self.gate_up_weight.shard(devices)
+        down_shards = self.down_weight.shard(devices)
+        shards = super().shard(devices)
+        for shard, gate_up, down in zip(
+            shards, gate_up_shards, down_shards, strict=True
+        ):
+            shard.gate_up_weight = gate_up
+            shard.down_weight = down
+        return shards

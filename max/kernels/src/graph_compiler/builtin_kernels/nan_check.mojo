@@ -63,7 +63,7 @@ def _nan_check_gpu_kernel[
     var my_nan = Int32(0)
     var my_inf = Int32(0)
     if tid < _total_elements:
-        var val = src_ptr.load(tid)
+        var val = src_ptr.unsafe_load(tid)
         if isnan(val):
             my_nan = Int32(1)
         elif isinf(val):
@@ -103,8 +103,8 @@ def nan_check_count[
 
     comptime if is_cpu[target]():
         # CPU path: vectorized scan using elementwise with atomic accumulators.
-        var nan_acc = alloc(AllocLayout[Int32](count=1)).into_managed()
-        var inf_acc = alloc(AllocLayout[Int32](count=1)).into_managed()
+        var nan_acc = alloc(AllocLayout[Int32](length=1)).into_managed()
+        var inf_acc = alloc(AllocLayout[Int32](length=1)).into_managed()
 
         var nan_acc_ptr = nan_acc.unsafe_ptr()
         var inf_acc_ptr = inf_acc.unsafe_ptr()
@@ -116,7 +116,7 @@ def nan_check_count[
         def scan[width: Int, alignment: Int = 1](idx: Coord) {var}:
             var flat = idx[0].value()
             var ptr = input.unsafe_ptr()
-            var val = ptr.load[width=width](flat)
+            var val = ptr.unsafe_load[width=width](flat)
             var nans = isnan(val).cast[.int32]().reduce_add()
             var infs = isinf(val).cast[.int32]().reduce_add()
             if nans > 0:

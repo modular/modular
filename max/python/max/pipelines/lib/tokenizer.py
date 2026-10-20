@@ -1174,20 +1174,26 @@ class TextAndVisionTokenizer(
             else None
         )
 
-        # InternVL returns a python list. The processor call is CPU-bound
-        # tokenization, kept off the event loop for the same reason as
-        # encode() below and the template render above.
-        processed_inputs = await run_with_default_executor(
-            self.processor,
-            text=(
-                replace_unpaired_surrogates(prompt)
-                if isinstance(prompt, str)
-                else prompt
-            ),
-            images=images,
-            add_special_tokens=add_special_tokens,
-            return_tensors="np",
-        )
+        if isinstance(prompt, str):
+            # InternVL returns a python list. The processor call is CPU-bound
+            # tokenization, kept off the event loop for the same reason as
+            # encode() below and the template render above.
+            processed_inputs = await run_with_default_executor(
+                self.processor,
+                text=replace_unpaired_surrogates(prompt),
+                images=images,
+                add_special_tokens=add_special_tokens,
+                return_tensors="np",
+            )
+        elif images is not None:
+            raise ValueError(
+                "A prompt given as token ids can't carry images. Send the "
+                "images with messages instead."
+            )
+        else:
+            # Hugging Face processors take only text, so token ids skip the
+            # processor.
+            processed_inputs = {"input_ids": [list(prompt)]}
 
         if "input_ids" not in processed_inputs:
             raise ValueError(
@@ -1269,6 +1275,11 @@ class TextAndVisionTokenizer(
         start_and_end_idxs = find_contiguous_ranges(
             encoded_prompt, self.vision_token_ids
         )
+        if len(start_and_end_idxs) != len(pixel_values):
+            raise ValueError(
+                f"The prompt has {len(start_and_end_idxs)} image placeholder "
+                f"runs, but the request has {len(pixel_values)} images."
+            )
 
         token_buffer = TokenBuffer(
             array=encoded_prompt.astype(np.int64, copy=False),

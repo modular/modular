@@ -337,23 +337,23 @@ def main() raises:
 
         # Per-expert offsets / IDs (small, host-built once).
         var a_offsets_host_alloc = alloc[UInt32](
-            {count = num_active_experts + 1}
+            {length = num_active_experts + 1}
         ).into_managed()
         var a_offsets_host = a_offsets_host_alloc.unsafe_ptr()
         var a_scale_offsets_host_alloc = alloc[UInt32](
-            {count = num_active_experts}
+            {length = num_active_experts}
         ).into_managed()
         var a_scale_offsets_host = a_scale_offsets_host_alloc.unsafe_ptr()
         var expert_ids_host_alloc = alloc[Int32](
-            {count = num_active_experts}
+            {length = num_active_experts}
         ).into_managed()
         var expert_ids_host = expert_ids_host_alloc.unsafe_ptr()
         var expert_scales_host_alloc = alloc[Float32](
-            {count = num_experts}
+            {length = num_experts}
         ).into_managed()
         var expert_scales_host = expert_scales_host_alloc.unsafe_ptr()
         var input_scales_host_alloc = alloc[Float32](
-            {count = num_active_experts}
+            {length = num_active_experts}
         ).into_managed()
         var input_scales_host = input_scales_host_alloc.unsafe_ptr()
 
@@ -707,6 +707,12 @@ def main() raises:
                     input_scales_immut.LayoutType,
                     hw_info.max_thread_block_size,
                     hw_info.sm_count,
+                    OutputEngine=o_tt.Engine,
+                    ScalesEngine=s_tt.Engine,
+                    InputEngine=c_immut.Engine,
+                    RowOffsetsEngine=a_offsets_immut.Engine,
+                    ScalesOffsetsEngine=a_scale_offsets_immut.Engine,
+                    InputScalesEngine=input_scales_immut.Engine,
                 ]
                 if not matmul_only:
                     if disable_pdl:
@@ -787,7 +793,7 @@ def main() raises:
         # Slot 0 (= L0_D) is the kernel-never-ran sentinel.
         if trace and fused:
             var trace_host_alloc = alloc[UInt64](
-                {count = trace_buf_size}
+                {length = trace_buf_size}
             ).into_managed()
             var trace_host = trace_host_alloc.unsafe_ptr()
             ctx.enqueue_copy(trace_host, trace_buf_dev)

@@ -78,6 +78,22 @@ std::string ModuleSpec::canonicalPath() const {
 }
 
 //===----------------------------------------------------------------------===//
+// ImportPath
+//===----------------------------------------------------------------------===//
+
+ImportPathAttr ImportPath::toAttr(MLIRContext *ctx) const {
+  return ImportPathAttr::get(ctx, relativeLevel, components);
+}
+
+ImportPath ImportPath::fromAttr(ImportPathAttr attr) {
+  ImportPath path;
+  path.relativeLevel = attr.getRelativeLevel();
+  for (StringAttr component : attr.getComponents())
+    path.components.push_back(component.getValue());
+  return path;
+}
+
+//===----------------------------------------------------------------------===//
 // ModuleLoader
 //===----------------------------------------------------------------------===//
 

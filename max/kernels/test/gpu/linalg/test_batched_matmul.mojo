@@ -29,11 +29,10 @@ from std.testing import assert_almost_equal
 
 comptime epilogue_func_type = def[
     dtype: DType, width: SIMDLength, *, alignment: Int = 1
-](SIMD[dtype, width]) capturing -> SIMD[dtype, width]
+](SIMD[dtype, width]) thin -> SIMD[dtype, width]
 
 
 @inline(.always)
-@__parameter
 def elementwise_epilogue_fn[
     dtype: DType,
     width: SIMDLength,
@@ -95,10 +94,10 @@ def run_bmm_and_check_result[
     var c_device_buffer = ctx.enqueue_create_buffer[dtype](c_size)
     var c_device_ref_buffer = ctx.enqueue_create_buffer[dtype](c_size)
 
-    var a_device = TileTensor[dtype](a_device_buffer, a_host.layout)
-    var b_device = TileTensor[dtype](b_device_buffer, b_host.layout)
-    var c_device = TileTensor[dtype](c_device_buffer, c_host.layout)
-    var c_device_ref = TileTensor[dtype](c_device_ref_buffer, c_host_ref.layout)
+    var a_device = TileTensor(a_device_buffer, a_host.layout)
+    var b_device = TileTensor(b_device_buffer, b_host.layout)
+    var c_device = TileTensor(c_device_buffer, c_host.layout)
+    var c_device_ref = TileTensor(c_device_ref_buffer, c_host_ref.layout)
 
     var a_device_3d = _reshape_tile_tensor_with_batch_to_3d(a_device)
     var b_device_3d = _reshape_tile_tensor_with_batch_to_3d(b_device)

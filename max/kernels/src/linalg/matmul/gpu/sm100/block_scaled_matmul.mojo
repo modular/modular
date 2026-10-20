@@ -2045,8 +2045,7 @@ def _create_tma_and_launch[
         mnk,
         workspace,
         alpha,
-        host_arg=epilogue_fn,
-        host_arg2=compute_fn,
+        host_args=(epilogue_fn, compute_fn),
         grid_dim=grid_dim,
         # 1 TMA, 1 MMA, 1 Scheduler, 4 EPILOGUE warps
         block_dim=(

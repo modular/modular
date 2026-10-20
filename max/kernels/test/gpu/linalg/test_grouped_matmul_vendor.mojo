@@ -15,6 +15,7 @@ from max.gpu.host import DeviceContext
 from layout import Idx, TileTensor, row_major
 from layout._fillers import random
 from linalg.grouped_matmul import grouped_matmul_vendor, naive_grouped_matmul
+from std.memory.alloc import unsafe_alloc
 from std.testing import assert_almost_equal
 
 from std.utils import IndexList
@@ -70,12 +71,12 @@ def test_vendor[
     var c_size = total_num_tokens * N
 
     # Host allocations
-    var a_host_ptr = alloc[Scalar[a_type]](a_size)
-    var b_host_ptr = alloc[Scalar[b_type]](b_size)
-    var c_host_ptr = alloc[Scalar[c_type]](c_size)
-    var c_ref_host_ptr = alloc[Scalar[c_type]](c_size)
-    var a_offsets_host_ptr = alloc[UInt32](num_active_experts + 1)
-    var expert_ids_host_ptr = alloc[Int32](num_active_experts)
+    var a_host_ptr = unsafe_alloc[Scalar[a_type]](a_size)
+    var b_host_ptr = unsafe_alloc[Scalar[b_type]](b_size)
+    var c_host_ptr = unsafe_alloc[Scalar[c_type]](c_size)
+    var c_ref_host_ptr = unsafe_alloc[Scalar[c_type]](c_size)
+    var a_offsets_host_ptr = unsafe_alloc[UInt32](num_active_experts + 1)
+    var expert_ids_host_ptr = unsafe_alloc[Int32](num_active_experts)
 
     var a_host = TileTensor(
         a_host_ptr,
@@ -201,12 +202,12 @@ def test_vendor[
     print("✓ Vendor grouped matmul test passed")
 
     # Cleanup
-    a_host_ptr.free()
-    b_host_ptr.free()
-    c_host_ptr.free()
-    c_ref_host_ptr.free()
-    a_offsets_host_ptr.free()
-    expert_ids_host_ptr.free()
+    a_host_ptr.unsafe_free()
+    b_host_ptr.unsafe_free()
+    c_host_ptr.unsafe_free()
+    c_ref_host_ptr.unsafe_free()
+    a_offsets_host_ptr.unsafe_free()
+    expert_ids_host_ptr.unsafe_free()
     _ = a_dev_buffer^
     _ = b_dev_buffer^
     _ = c_dev_buffer^
@@ -264,11 +265,11 @@ def test_negative_lora_id_vendor[
     var c_size = total_num_tokens * N
 
     # Host allocations
-    var a_host_ptr = alloc[Scalar[a_type]](a_size)
-    var b_host_ptr = alloc[Scalar[b_type]](b_size)
-    var c_host_ptr = alloc[Scalar[c_type]](c_size)
-    var a_offsets_host_ptr = alloc[UInt32](num_active_experts + 1)
-    var expert_ids_host_ptr = alloc[Int32](num_active_experts)
+    var a_host_ptr = unsafe_alloc[Scalar[a_type]](a_size)
+    var b_host_ptr = unsafe_alloc[Scalar[b_type]](b_size)
+    var c_host_ptr = unsafe_alloc[Scalar[c_type]](c_size)
+    var a_offsets_host_ptr = unsafe_alloc[UInt32](num_active_experts + 1)
+    var expert_ids_host_ptr = unsafe_alloc[Int32](num_active_experts)
 
     var a_host = TileTensor(
         a_host_ptr,
@@ -407,11 +408,11 @@ def test_negative_lora_id_vendor[
     )
 
     # Cleanup
-    a_host_ptr.free()
-    b_host_ptr.free()
-    c_host_ptr.free()
-    a_offsets_host_ptr.free()
-    expert_ids_host_ptr.free()
+    a_host_ptr.unsafe_free()
+    b_host_ptr.unsafe_free()
+    c_host_ptr.unsafe_free()
+    a_offsets_host_ptr.unsafe_free()
+    expert_ids_host_ptr.unsafe_free()
     _ = a_dev_buffer^
     _ = b_dev_buffer^
     _ = c_dev_buffer^

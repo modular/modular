@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv
+from std.memory.alloc import unsafe_alloc
 from max.gpu.host import DeviceContext
 from layout import TileTensor, row_major
 from std.random import rand
@@ -53,12 +54,16 @@ def run_selective_scan_gpu[
 
     # Allocate host memory
 
-    var output_cpu_h = alloc[Scalar[dtype]](batch * dim * seqlen)
-    var output_gpu_h = alloc[Scalar[dtype]](batch * dim * seqlen)
-    var x_cpu_h = alloc[Scalar[dtype]](batch * dim * n_chunks * 2 * dstate)
-    var x_gpu_h = alloc[Scalar[dtype]](batch * dim * n_chunks * 2 * dstate)
-    var out_z_cpu_h = alloc[Scalar[dtype]](batch * dim * seqlen)
-    var out_z_gpu_h = alloc[Scalar[dtype]](batch * dim * seqlen)
+    var output_cpu_h = unsafe_alloc[Scalar[dtype]](batch * dim * seqlen)
+    var output_gpu_h = unsafe_alloc[Scalar[dtype]](batch * dim * seqlen)
+    var x_cpu_h = unsafe_alloc[Scalar[dtype]](
+        batch * dim * n_chunks * 2 * dstate
+    )
+    var x_gpu_h = unsafe_alloc[Scalar[dtype]](
+        batch * dim * n_chunks * 2 * dstate
+    )
+    var out_z_cpu_h = unsafe_alloc[Scalar[dtype]](batch * dim * seqlen)
+    var out_z_gpu_h = unsafe_alloc[Scalar[dtype]](batch * dim * seqlen)
 
     # Initialize output buffers to zero
     for i in range(batch * dim * seqlen):
@@ -69,17 +74,17 @@ def run_selective_scan_gpu[
     for i in range(batch * dim * n_chunks * 2 * dstate):
         x_cpu_h[i] = Scalar[dtype](0)
         x_gpu_h[i] = Scalar[dtype](0)
-    var u_h = alloc[Scalar[dtype]](batch * dim * seqlen)
-    var delta_h = alloc[Scalar[dtype]](batch * dim * seqlen)
-    var A_h = alloc[Scalar[dtype]](dim * dstate)
-    var B_h = alloc[Scalar[dtype]](batch * n_groups * dstate * seqlen)
-    var C_h = alloc[Scalar[dtype]](batch * n_groups * dstate * seqlen)
+    var u_h = unsafe_alloc[Scalar[dtype]](batch * dim * seqlen)
+    var delta_h = unsafe_alloc[Scalar[dtype]](batch * dim * seqlen)
+    var A_h = unsafe_alloc[Scalar[dtype]](dim * dstate)
+    var B_h = unsafe_alloc[Scalar[dtype]](batch * n_groups * dstate * seqlen)
+    var C_h = unsafe_alloc[Scalar[dtype]](batch * n_groups * dstate * seqlen)
     var D_size = dim if has_D else 0
-    var D_h = alloc[Scalar[dtype]](max(D_size, 1))
+    var D_h = unsafe_alloc[Scalar[dtype]](max(D_size, 1))
     var z_size = batch * dim * seqlen if has_z else 0
-    var z_h = alloc[Scalar[dtype]](max(z_size, 1))
+    var z_h = unsafe_alloc[Scalar[dtype]](max(z_size, 1))
     var delta_bias_size = dim if has_delta_bias else 0
-    var delta_bias_h = alloc[Scalar[dtype]](max(delta_bias_size, 1))
+    var delta_bias_h = unsafe_alloc[Scalar[dtype]](max(delta_bias_size, 1))
 
     # Initialize input data
     rand[dtype](u_h, batch * dim * seqlen)
@@ -96,13 +101,13 @@ def run_selective_scan_gpu[
 
     # Scale A to be negative for stability
     for i in range(dim * dstate):
-        var val = A_h.load(i)
-        A_h.store(i, Scalar[dtype](Float32(val) * -0.5))
+        var val = A_h.unsafe_load(i)
+        A_h.unsafe_store(i, Scalar[dtype](Float32(val) * -0.5))
 
     # Scale delta to be positive
     for i in range(batch * dim * seqlen):
-        var val = delta_h.load(i)
-        delta_h.store(i, Scalar[dtype](abs(Float32(val)) * 0.5))
+        var val = delta_h.unsafe_load(i)
+        delta_h.unsafe_store(i, Scalar[dtype](abs(Float32(val)) * 0.5))
 
     # Allocate device memory
     var output_cpu_d = ctx.enqueue_create_buffer[dtype](batch * dim * seqlen)
@@ -317,26 +322,26 @@ def run_selective_scan_gpu[
     var flattened_size = batch * dim * seqlen
     for i in range(flattened_size):
         assert_almost_equal(
-            output_cpu_h.load(i),
-            output_gpu_h.load(i),
+            output_cpu_h.unsafe_load(i),
+            output_gpu_h.unsafe_load(i),
             rtol=rtol,
         )
 
     # Cleanup
-    output_cpu_h.free()
-    output_gpu_h.free()
-    x_cpu_h.free()
-    x_gpu_h.free()
-    out_z_cpu_h.free()
-    out_z_gpu_h.free()
-    u_h.free()
-    delta_h.free()
-    A_h.free()
-    B_h.free()
-    C_h.free()
-    D_h.free()
-    z_h.free()
-    delta_bias_h.free()
+    output_cpu_h.unsafe_free()
+    output_gpu_h.unsafe_free()
+    x_cpu_h.unsafe_free()
+    x_gpu_h.unsafe_free()
+    out_z_cpu_h.unsafe_free()
+    out_z_gpu_h.unsafe_free()
+    u_h.unsafe_free()
+    delta_h.unsafe_free()
+    A_h.unsafe_free()
+    B_h.unsafe_free()
+    C_h.unsafe_free()
+    D_h.unsafe_free()
+    z_h.unsafe_free()
+    delta_bias_h.unsafe_free()
 
 
 def run_selective_scan_update_gpu[
@@ -361,22 +366,22 @@ def run_selective_scan_update_gpu[
 
     # Allocate host memory
 
-    var state_in_h = alloc[Scalar[dtype]](batch * dim * dstate)
-    var state_out_gpu_h = alloc[Scalar[dtype]](batch * dim * dstate)
-    var state_out_cpu_h = alloc[Scalar[dtype]](batch * dim * dstate)
-    var output_gpu_h = alloc[Scalar[dtype]](batch * dim)
-    var output_cpu_h = alloc[Scalar[dtype]](batch * dim)
-    var x_h = alloc[Scalar[dtype]](batch * dim)
-    var dt_h = alloc[Scalar[dtype]](batch * dim)
-    var A_h = alloc[Scalar[dtype]](dim * dstate)
-    var B_h = alloc[Scalar[dtype]](batch * n_groups * dstate)
-    var C_h = alloc[Scalar[dtype]](batch * n_groups * dstate)
+    var state_in_h = unsafe_alloc[Scalar[dtype]](batch * dim * dstate)
+    var state_out_gpu_h = unsafe_alloc[Scalar[dtype]](batch * dim * dstate)
+    var state_out_cpu_h = unsafe_alloc[Scalar[dtype]](batch * dim * dstate)
+    var output_gpu_h = unsafe_alloc[Scalar[dtype]](batch * dim)
+    var output_cpu_h = unsafe_alloc[Scalar[dtype]](batch * dim)
+    var x_h = unsafe_alloc[Scalar[dtype]](batch * dim)
+    var dt_h = unsafe_alloc[Scalar[dtype]](batch * dim)
+    var A_h = unsafe_alloc[Scalar[dtype]](dim * dstate)
+    var B_h = unsafe_alloc[Scalar[dtype]](batch * n_groups * dstate)
+    var C_h = unsafe_alloc[Scalar[dtype]](batch * n_groups * dstate)
     var D_size = dim if has_D else 0
-    var D_h = alloc[Scalar[dtype]](max(D_size, 1))
+    var D_h = unsafe_alloc[Scalar[dtype]](max(D_size, 1))
     var z_size = batch * dim if has_z else 0
-    var z_h = alloc[Scalar[dtype]](max(z_size, 1))
+    var z_h = unsafe_alloc[Scalar[dtype]](max(z_size, 1))
     var dt_bias_size = dim if has_delta_bias else 0
-    var dt_bias_h = alloc[Scalar[dtype]](max(dt_bias_size, 1))
+    var dt_bias_h = unsafe_alloc[Scalar[dtype]](max(dt_bias_size, 1))
 
     # Initialize output buffers to zero
     for i in range(batch * dim * dstate):
@@ -402,8 +407,8 @@ def run_selective_scan_update_gpu[
 
     # Scale A to be negative for stability
     for i in range(dim * dstate):
-        var val = A_h.load(i)
-        A_h.store(i, Scalar[dtype](Float32(val) * -0.5))
+        var val = A_h.unsafe_load(i)
+        A_h.unsafe_store(i, Scalar[dtype](Float32(val) * -0.5))
 
     # Copy state_in for CPU and GPU
     for i in range(batch * dim * dstate):
@@ -617,19 +622,19 @@ def run_selective_scan_update_gpu[
         )
 
     # Cleanup
-    state_in_h.free()
-    state_out_gpu_h.free()
-    state_out_cpu_h.free()
-    output_gpu_h.free()
-    output_cpu_h.free()
-    x_h.free()
-    dt_h.free()
-    A_h.free()
-    B_h.free()
-    C_h.free()
-    D_h.free()
-    z_h.free()
-    dt_bias_h.free()
+    state_in_h.unsafe_free()
+    state_out_gpu_h.unsafe_free()
+    state_out_cpu_h.unsafe_free()
+    output_gpu_h.unsafe_free()
+    output_cpu_h.unsafe_free()
+    x_h.unsafe_free()
+    dt_h.unsafe_free()
+    A_h.unsafe_free()
+    B_h.unsafe_free()
+    C_h.unsafe_free()
+    D_h.unsafe_free()
+    z_h.unsafe_free()
+    dt_bias_h.unsafe_free()
 
 
 # =============================================================================

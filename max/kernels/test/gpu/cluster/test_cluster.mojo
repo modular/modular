@@ -33,6 +33,7 @@ from max.gpu.intrinsics import Scope
 from max.gpu.memory import fence_mbarrier_init
 from layout.tma_async import PipelineState, SharedMemBarrier
 from std.memory import unsafe_stack_allocation
+from std.memory.alloc import unsafe_alloc
 from std.testing import assert_almost_equal
 
 from std.utils.static_tuple import StaticTuple
@@ -213,7 +214,7 @@ def test_cluster_launch_control(ctx: DeviceContext) raises:
         block_dim=(1024),
     )
 
-    var data_host_ptr = alloc[Float32](n)
+    var data_host_ptr = unsafe_alloc[Float32](n)
     var data_host = TileTensor(data_host_ptr, row_major[n]())
 
     ctx.enqueue_copy(data_host_ptr, data)

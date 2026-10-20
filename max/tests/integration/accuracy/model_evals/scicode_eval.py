@@ -58,7 +58,7 @@ from datasets import load_dataset
 from eval_common import (
     ChatClient,
     GenParams,
-    build_chat_kwargs,
+    chat_completion,
     dump_config,
     make_client,
     response_fields,
@@ -227,10 +227,8 @@ def infer(
         prompt = build_step_prompt(
             problem, background, dependencies, accumulated_code, step, step_idx
         )
-        resp = client.chat.completions.create(
-            **build_chat_kwargs(
-                model, [{"role": "user", "content": prompt}], params
-            )
+        resp = chat_completion(
+            client, model, [{"role": "user", "content": prompt}], params
         )
         call_tokens = resp.usage.completion_tokens if resp.usage else 0
         call_output_tokens.append(call_tokens)
@@ -260,7 +258,7 @@ def infer(
                 "passed": passed,
                 "finish_reason": resp.choices[0].finish_reason,
                 "completion_tokens": call_tokens,
-                **response_fields(message),
+                **response_fields(resp.choices[0]),
             }
         )
 

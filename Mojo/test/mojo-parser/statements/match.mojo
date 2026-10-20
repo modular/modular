@@ -383,49 +383,17 @@ def match_bool(x: Bool):
         case_callee[2]()
 
 
-# EnumLike Color with inferred-member patterns (e.g. `case .red`).
-struct Color(ImplicitlyCopyable, EnumLike):
-    comptime _enum_case_names = ParameterList.of[
-        "red".value, "green".value, "blue".value
-    ].values
-    comptime _enum_case_types = TypeList.of[
-        Trait=AnyType, NoneType, NoneType, NoneType
-    ].values
-
-    def __init__(out self):
-        pass
-
-    def _get_enum_discriminant(self) -> Int:
-        return 0
-
-    def _unsafe_get_enum_payload[
-        id: Int
-    ](ref self) -> ref[self] TypeList[Self._enum_case_types]()[id]:
-        # No payload. The body only exists so the trait method is implemented.
-        while True:
-            pass
+# Enum Color with inferred-member patterns (e.g. `case .red`).
+__enum Color(ImplicitlyCopyable):
+    case red
+    case green
+    case blue
 
 
-struct OpenColor(ImplicitlyCopyable, EnumLike):
-    comptime _enum_case_names = ParameterList.of[
-        "red".value, "green".value
-    ].values
-    comptime _enum_case_types = TypeList.of[
-        Trait=AnyType, NoneType, NoneType
-    ].values
+__enum OpenColor(ImplicitlyCopyable):
+    case red
+    case green
     comptime _enum_is_exhaustive = False
-
-    def __init__(out self):
-        pass
-
-    def _get_enum_discriminant(self) -> Int:
-        return 0
-
-    def _unsafe_get_enum_payload[
-        id: Int
-    ](ref self) -> ref[self] TypeList[Self._enum_case_types]()[id]:
-        while True:
-            pass
 
 
 # An open enum does not require every known case to appear.

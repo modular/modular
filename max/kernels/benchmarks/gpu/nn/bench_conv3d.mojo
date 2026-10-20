@@ -526,7 +526,6 @@ def bench_conv3d[
             dtype,
             dtype,
             block_size,
-            None,
             input_tt.Engine,
             filter_qrscf_tt.Engine,
             output_tt.Engine,

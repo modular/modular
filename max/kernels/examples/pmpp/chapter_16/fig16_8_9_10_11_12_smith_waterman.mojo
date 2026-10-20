@@ -19,6 +19,7 @@ from max.gpu import block_idx, thread_idx
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from std.memory import unsafe_stack_allocation
+from std.memory.alloc import unsafe_alloc
 
 # Scoring constants
 comptime MATCH = 1
@@ -319,10 +320,10 @@ def main() raises:
     print("Tile width (threads per block):", tile_width)
 
     # Allocate host memory
-    var h_rea = alloc[UInt8](L_seq)
-    var h_ref = alloc[UInt8](L_seq)
-    var h_sw_gpu = alloc[Int32](L * L)
-    var h_sw_cpu = alloc[Int32](L * L)
+    var h_rea = unsafe_alloc[UInt8](L_seq)
+    var h_ref = unsafe_alloc[UInt8](L_seq)
+    var h_sw_gpu = unsafe_alloc[Int32](L * L)
+    var h_sw_cpu = unsafe_alloc[Int32](L * L)
 
     # Generate random DNA sequences
     var seed = UInt32(42)  # Fixed seed for reproducibility
@@ -441,7 +442,7 @@ def main() raises:
         print("\n✗ ERROR: Found", errors, "mismatches between GPU and CPU")
 
     # Cleanup
-    h_rea.free()
-    h_ref.free()
-    h_sw_gpu.free()
-    h_sw_cpu.free()
+    h_rea.unsafe_free()
+    h_ref.unsafe_free()
+    h_sw_gpu.unsafe_free()
+    h_sw_cpu.unsafe_free()

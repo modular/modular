@@ -1,4 +1,5 @@
 load("//bazel:api.bzl", "modular_py_test", "requirement")
+load("//bazel:config.bzl", "REQUIRES_INTERNAL_KERNELS")
 
 package(default_visibility = [
     "//:__pkg__",
@@ -210,6 +211,9 @@ modular_py_test(
     data = ["//max/tests/integration/architectures/deepseekV41/testdata"],
     gpu_constraints = ["//:b200_gpu"],
     tags = ["gpu"],
+    # Needs mo.engram.hash_gather and mo.engram.hash_gather_shard, registered
+    # only by the closed-source kernels.
+    target_compatible_with = REQUIRES_INTERNAL_KERNELS,
     deps = [
         "//max/python/max/dtype",
         "//max/python/max/graph",

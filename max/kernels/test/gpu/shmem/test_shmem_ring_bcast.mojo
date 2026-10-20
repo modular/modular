@@ -14,6 +14,7 @@
 # RUN: %mojo %s
 
 from std.ffi import c_int, c_size_t
+from std.memory.alloc import unsafe_alloc
 
 from max.gpu.host import DeviceBuffer
 from shmem import *
@@ -52,7 +53,7 @@ def test_ring_bcast(ctx: SHMEMContext) raises:
     var destination = ctx.enqueue_create_buffer[.int32](1)
 
     var data = ctx.enqueue_create_buffer[.int32](data_len)
-    var data_h = alloc[Int32](data_len)
+    var data_h = unsafe_alloc[Int32](data_len)
     var psync = shmem_calloc[.uint64](1)
 
     for i in range(data_len):

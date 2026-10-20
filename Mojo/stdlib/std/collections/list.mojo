@@ -419,7 +419,7 @@ struct List[T: AnyType, /](
             capacity: The requested capacity of the list.
         """
         if capacity:
-            self._storage = alloc(Layout[Self.T](count=capacity))
+            self._storage = alloc(Layout[Self.T](length=capacity))
         else:
             self._storage = Self._dangling_storage()
         self._len = 0
@@ -532,7 +532,7 @@ struct List[T: AnyType, /](
     def _dangling_storage() -> Allocation[Self.T]:
         return ThinAllocation(
             unsafe_owned_ptr=Self._PointerType.unsafe_dangling()
-        ).unsafe_with_layout(Layout[Self.T](count=0))
+        ).unsafe_with_layout(Layout[Self.T](length=0))
 
     @staticmethod
     @inline(.always)
@@ -839,7 +839,7 @@ struct List[T: AnyType, /](
     def _realloc(
         mut self, new_capacity: Int
     ) where conforms_to(Self.T, Movable):
-        var new_storage = alloc(Layout[Self.T](count=new_capacity))
+        var new_storage = alloc(Layout[Self.T](length=new_capacity))
         _ = (
             new_storage.storage()
             ._unchecked_subspan(start=0, end=len(self))
@@ -1390,7 +1390,7 @@ struct List[T: AnyType, /](
 
         A list that never allocated has no storage to hand over, so the
         returned `Allocation` wraps a dangling pointer and a `Layout` with a
-        `count` of zero. Check `layout().count()` before deallocating it.
+        `length` of zero. Check its `len()` before deallocating it.
 
         Examples:
 

@@ -17,6 +17,7 @@ from max.gpu import block_idx, thread_idx, block_dim, grid_dim
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from std.memory import unsafe_stack_allocation
+from std.memory.alloc import unsafe_alloc
 
 comptime BLOCK_SIZE = 256
 comptime WARP_SIZE = 32
@@ -182,10 +183,10 @@ def main() raises:
         var size_D = N
         var size_P = N * N
 
-        var h_S = alloc[Float32](size_S)
-        var h_D = alloc[Float32](size_D)
-        var h_P = alloc[Float32](size_P)
-        var h_P_ref = alloc[Float32](size_P)
+        var h_S = unsafe_alloc[Float32](size_S)
+        var h_D = unsafe_alloc[Float32](size_D)
+        var h_P = unsafe_alloc[Float32](size_P)
+        var h_P_ref = unsafe_alloc[Float32](size_P)
 
         rand(h_S, size_S)
         for k in range(size_S):
@@ -229,7 +230,7 @@ def main() raises:
         else:
             print("FAILED")
 
-        h_S.free()
-        h_D.free()
-        h_P.free()
-        h_P_ref.free()
+        h_S.unsafe_free()
+        h_D.unsafe_free()
+        h_P.unsafe_free()
+        h_P_ref.unsafe_free()

@@ -24,6 +24,7 @@ reports contain means of the same samples, without remeasurement.
 
 from std.benchmark import Batch, Bench, BenchmarkInfo, Report
 from std.builtin.sort import sort
+from std.memory.alloc import unsafe_alloc
 from std.random import rand, seed
 from std.time import perf_counter_ns
 
@@ -286,20 +287,20 @@ def _bench_ssd[
     var pool_size = max_slots * state_size
     var y_size = total_len * nheads * head_dim
 
-    var x_h = alloc[Scalar[dtype]](total_len * x_row)
-    var dt_h = alloc[Scalar[dtype]](total_len * nheads)
-    var A_h = alloc[Scalar[dtype]](nheads)
-    var B_h = alloc[Scalar[dtype]](total_len * bc_row)
-    var C_h = alloc[Scalar[dtype]](total_len * bc_row)
-    var D_h = alloc[Scalar[dtype]](nheads)
-    var dt_bias_h = alloc[Scalar[dtype]](nheads)
-    var is_h = alloc[Float32](batch * state_size)
-    var his_h = alloc[Scalar[.bool]](batch)
-    var us_h = alloc[Scalar[.bool]](batch)
-    var qsl_h = alloc[Int32](batch + 1)
-    var slot_h = alloc[UInt32](batch)
-    var pool_h = alloc[Float32](pool_size)
-    var y_h = alloc[Scalar[dtype]](y_size + 64)
+    var x_h = unsafe_alloc[Scalar[dtype]](total_len * x_row)
+    var dt_h = unsafe_alloc[Scalar[dtype]](total_len * nheads)
+    var A_h = unsafe_alloc[Scalar[dtype]](nheads)
+    var B_h = unsafe_alloc[Scalar[dtype]](total_len * bc_row)
+    var C_h = unsafe_alloc[Scalar[dtype]](total_len * bc_row)
+    var D_h = unsafe_alloc[Scalar[dtype]](nheads)
+    var dt_bias_h = unsafe_alloc[Scalar[dtype]](nheads)
+    var is_h = unsafe_alloc[Float32](batch * state_size)
+    var his_h = unsafe_alloc[Scalar[.bool]](batch)
+    var us_h = unsafe_alloc[Scalar[.bool]](batch)
+    var qsl_h = unsafe_alloc[Int32](batch + 1)
+    var slot_h = unsafe_alloc[UInt32](batch)
+    var pool_h = unsafe_alloc[Float32](pool_size)
+    var y_h = unsafe_alloc[Scalar[dtype]](y_size + 64)
 
     # Match the seeded inputs used for the original before/after measurements.
     seed(1234)
@@ -312,22 +313,22 @@ def _bench_ssd[
     rand(dt_bias_h, nheads)
     rand(is_h, batch * state_size)
     for i in range(nheads):
-        A_h.store(i, Scalar[dtype](-Float32(A_h.load(i)) - 0.1))
+        A_h.unsafe_store(i, Scalar[dtype](-Float32(A_h.unsafe_load(i)) - 0.1))
     for i in range(total_len * nheads):
-        dt_h.store(i, Scalar[dtype](Float32(dt_h.load(i)) - 0.5))
+        dt_h.unsafe_store(i, Scalar[dtype](Float32(dt_h.unsafe_load(i)) - 0.5))
     for i in range(pool_size):
-        pool_h.store(i, 0)
+        pool_h.unsafe_store(i, 0)
     var offset = 0
-    qsl_h.store(0, 0)
+    qsl_h.unsafe_store(0, 0)
     for b in range(batch):
-        his_h.store(b, True)
-        us_h.store(b, True)
-        slot_h.store(b, UInt32(b + 1))
+        his_h.unsafe_store(b, True)
+        us_h.unsafe_store(b, True)
+        slot_h.unsafe_store(b, UInt32(b + 1))
         offset += seq_lengths[b]
-        qsl_h.store(b + 1, Int32(offset))
+        qsl_h.unsafe_store(b + 1, Int32(offset))
         for i in range(state_size):
-            pool_h.store(
-                (b + 1) * state_size + i, is_h.load(b * state_size + i)
+            pool_h.unsafe_store(
+                (b + 1) * state_size + i, is_h.unsafe_load(b * state_size + i)
             )
     print(
         "SSD_SHAPE,nheads=",
@@ -388,20 +389,20 @@ def _bench_ssd[
         y_h,
         pool_h,
     )
-    x_h.free()
-    dt_h.free()
-    A_h.free()
-    B_h.free()
-    C_h.free()
-    D_h.free()
-    dt_bias_h.free()
-    is_h.free()
-    his_h.free()
-    us_h.free()
-    qsl_h.free()
-    slot_h.free()
-    pool_h.free()
-    y_h.free()
+    x_h.unsafe_free()
+    dt_h.unsafe_free()
+    A_h.unsafe_free()
+    B_h.unsafe_free()
+    C_h.unsafe_free()
+    D_h.unsafe_free()
+    dt_bias_h.unsafe_free()
+    is_h.unsafe_free()
+    his_h.unsafe_free()
+    us_h.unsafe_free()
+    qsl_h.unsafe_free()
+    slot_h.unsafe_free()
+    pool_h.unsafe_free()
+    y_h.unsafe_free()
 
 
 def _benchmark_ssd_shape(

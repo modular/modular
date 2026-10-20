@@ -4843,19 +4843,18 @@ AnyValue LambdaNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
 }
 
 AnyValue FunctionTypeNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
-  // Parameters declared within the function type must be visible. Create a
-  // dummy declaration.
-  ASTDecl &dummyScope = emitter.getDeclResolver().addFullyResolvedDecl(
-      nullptr, StringAttr(), getLoc(), &emitter.declScope);
-
-  dummyScope.setExplicitParamScope();
+  // Parameters and arguments declared within a function type form an
+  // anonymous scope nested under the enclosing declaration.
+  auto &functionTypeDecl = emitter.getDeclResolver().createFunctionTypeDecl(
+      getLoc(), emitter.declScope);
+  functionTypeDecl.setExplicitParamScope();
 
   // Type check any parameters we have.
   ParsedParamList parsedParamList;
   parsedParamList.params = llvm::to_vector(parsedParams);
   parsedParamList.bodyConstraints = llvm::to_vector(parsedConstraints);
   std::optional<TypeCheckedParamList> paramListOrError =
-      TypeCheckedParamList::create(parsedParamList, dummyScope);
+      TypeCheckedParamList::create(parsedParamList, functionTypeDecl);
   if (!paramListOrError.has_value())
     return {}; // Error already emitted.
   TypeCheckedParamList &paramList = *paramListOrError;
@@ -4885,9 +4884,8 @@ AnyValue FunctionTypeNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
       return {};
   }
 
-  // Preserve the parameter scope for tooling while replacing its temporary
-  // declaration with the generated signature.
-  emitter.getDeclResolver().replaceDecl(dummyScope, PValue(signature));
+  functionTypeDecl.setSignature(signature, paramList.paramASTDecls,
+                                tcSignature.argASTDecls);
 
   // The parsed FuncTypeGeneratorType is set to the pretty type that includes
   // implicit origins, we strip off the named origin decl references and replace

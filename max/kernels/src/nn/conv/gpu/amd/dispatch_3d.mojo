@@ -57,7 +57,12 @@ from std.utils import IndexList
 
 from layout import Coord, TensorEngine, TensorLayout, TileTensor, row_major
 
-from linalg.utils import ElementwiseEpilogueFn, no_epilogue_fn
+from linalg.utils import (
+    ElementwiseComputeFn,
+    ElementwiseEpilogueFn,
+    no_compute_fn,
+    no_epilogue_fn,
+)
 
 from nn.conv.gpu.amd.amd_4wave_conv import amd_4wave_conv
 
@@ -101,7 +106,7 @@ def _transpose_qrscf_to_fk_kpad[
     var f = tid // _K_padded
     var k = tid - f * _K_padded
     if k >= K_real:
-        dst_ptr.store(tid, Scalar[dtype](0))
+        dst_ptr.unsafe_store(tid, Scalar[dtype](0))
         return
     var q = k // (_R * _S * _C)
     var rsc = k - q * (_R * _S * _C)
@@ -109,7 +114,7 @@ def _transpose_qrscf_to_fk_kpad[
     var sc = rsc - r * (_S * _C)
     var s = sc // _C
     var c = sc - s * _C
-    dst_ptr.store(tid, src.load((q, r, s, c, f))[0])
+    dst_ptr.unsafe_store(tid, src.load((q, r, s, c, f))[0])
 
 
 @__name(t"amd_4wave_3d_transpose_fcqrs_to_fk_kpad_{dtype}")
@@ -146,7 +151,7 @@ def _transpose_fcqrs_to_fk_kpad[
     var f = tid // _K_padded
     var k = tid - f * _K_padded
     if k >= K_real:
-        dst_ptr.store(tid, Scalar[dtype](0))
+        dst_ptr.unsafe_store(tid, Scalar[dtype](0))
         return
     var q = k // (_R * _S * _C)
     var rsc = k - q * (_R * _S * _C)
@@ -154,7 +159,7 @@ def _transpose_fcqrs_to_fk_kpad[
     var sc = rsc - r * (_S * _C)
     var s = sc // _C
     var c = sc - s * _C
-    dst_ptr.store(tid, src.load((f, c, q, r, s))[0])
+    dst_ptr.unsafe_store(tid, src.load((f, c, q, r, s))[0])
 
 
 # ---------------------------------------------------------------------------
@@ -164,12 +169,14 @@ def _transpose_fcqrs_to_fk_kpad[
 
 def dispatch_amd_4wave_conv3d[
     EpilogueFnType: ElementwiseEpilogueFn = type_of(no_epilogue_fn),
+    ComputeFnType: ElementwiseComputeFn = type_of(no_compute_fn),
     //,
     input_type: DType,
     filter_type: DType,
     output_type: DType,
     filter_is_fcqrs: Bool,
     has_epilogue_fn: Bool = False,
+    has_compute_fn: Bool = False,
     # Autotune-override knobs. When non-zero, override the heuristic
     # pick of (BM, BN, BK). Used by `bench_conv3d.mojo`'s kbench sweep
     # to populate a per-shape dispatch table. Default 0 = use heuristic.
@@ -186,6 +193,7 @@ def dispatch_amd_4wave_conv3d[
     num_groups: Int,
     ctx: DeviceContext,
     epilogue_fn: EpilogueFnType = no_epilogue_fn,
+    compute_fn: ComputeFnType = no_compute_fn,
 ) raises -> Bool:
     """Try to dispatch a Conv3D to `amd_4wave_conv` on MI355X. Returns
     True if handled; False if the caller should fall through (typically
@@ -193,6 +201,7 @@ def dispatch_amd_4wave_conv3d[
 
     Parameters:
         EpilogueFnType: Type of `epilogue_fn`.
+        ComputeFnType: Type of `compute_fn`.
         input_type: `DType` of the input tensor; must be
             `float8_e4m3fn`, `bfloat16`, or `float16`.
         filter_type: `DType` of the filter tensor; must equal
@@ -204,6 +213,8 @@ def dispatch_amd_4wave_conv3d[
         has_epilogue_fn: `True` to store each output chunk through
             `epilogue_fn` instead of writing `output` (defaults to
             `False`).
+        has_compute_fn: `True` to store `compute_fn` of each output
+            chunk (defaults to `False`).
         block_m_override: Override for the BM tile size, 0 uses the
             heuristic (defaults to 0).
         block_n_override: Override for the BN tile size, 0 uses the
@@ -230,6 +241,8 @@ def dispatch_amd_4wave_conv3d[
         epilogue_fn: Stores each output chunk at a 2D coordinate
             `(m, n)`, where `m` is the flattened NDHW output row and `n`
             is the output channel. Used when `has_epilogue_fn` is set.
+        compute_fn: Transforms each output chunk at the same 2D
+            coordinate. Used when `has_compute_fn` is set.
     """
     comptime assert input.flat_rank == 5, "input must be rank 5 (NDHWC)"
     comptime assert filter.flat_rank == 5, "filter must be rank 5"
@@ -494,6 +507,7 @@ def dispatch_amd_4wave_conv3d[
                     var output_2d_tt = output.reshape(_output_2d_layout)
                     amd_4wave_conv[
                         has_epilogue_fn=has_epilogue_fn,
+                        has_compute_fn=has_compute_fn,
                         block_m_override=_BM_static,
                         block_n_override=_BN_static,
                         block_k_override=_BK_chosen,
@@ -519,6 +533,7 @@ def dispatch_amd_4wave_conv3d[
                         output_2d_tt,
                         ctx,
                         epilogue_fn=epilogue_fn,
+                        compute_fn=compute_fn,
                     )
                     return True
                 return False
@@ -612,6 +627,7 @@ def dispatch_amd_4wave_conv3d[
                 # only set BK from the static K-padding heuristic.
                 amd_4wave_conv[
                     has_epilogue_fn=has_epilogue_fn,
+                    has_compute_fn=has_compute_fn,
                     block_k_override=_BK_chosen,
                     R=_R,
                     S=_S,
@@ -630,6 +646,7 @@ def dispatch_amd_4wave_conv3d[
                     output_2d_tt,
                     ctx,
                     epilogue_fn=epilogue_fn,
+                    compute_fn=compute_fn,
                 )
 
             if stride[0] == 1:

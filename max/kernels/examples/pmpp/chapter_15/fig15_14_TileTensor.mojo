@@ -18,6 +18,7 @@ from max.gpu import block_idx, thread_idx
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from std.itertools import product
+from std.memory.alloc import unsafe_alloc
 from layout import row_major, stack_allocation
 from std.testing import assert_equal
 
@@ -264,10 +265,10 @@ def main() raises:
     print("Using TileTensor for shared/local memory management")
 
     # Allocate host memory
-    var h_A = alloc[Float32](M * K)
-    var h_B = alloc[Float32](K * N)
-    var h_C_gpu = alloc[Float32](M * N)
-    var h_C_cpu = alloc[Float32](M * N)
+    var h_A = unsafe_alloc[Float32](M * K)
+    var h_B = unsafe_alloc[Float32](K * N)
+    var h_C_gpu = unsafe_alloc[Float32](M * N)
+    var h_C_cpu = unsafe_alloc[Float32](M * N)
 
     # Initialize matrices
     print("Initializing matrices...")
@@ -377,7 +378,7 @@ def main() raises:
     assert_equal(num_errors, 0, "Double-buffered matmul disagrees with CPU")
 
     # Cleanup
-    h_A.free()
-    h_B.free()
-    h_C_gpu.free()
-    h_C_cpu.free()
+    h_A.unsafe_free()
+    h_B.unsafe_free()
+    h_C_gpu.unsafe_free()
+    h_C_cpu.unsafe_free()

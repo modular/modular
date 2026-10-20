@@ -27,6 +27,7 @@ from max.gpu import MAX_THREADS_PER_BLOCK_METADATA, WARP_SIZE, lane_id
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import MI355X
 from std.memory import bitcast
+from std.memory.alloc import unsafe_alloc
 from std.testing import assert_true
 from std.utils import StaticTuple
 
@@ -227,8 +228,8 @@ def _run_block_scaled_mma_amd_smoke[
     )
     ctx.synchronize()
 
-    var baseline_host = alloc[Float32](num_values)
-    var scaled_host = alloc[Float32](num_values)
+    var baseline_host = unsafe_alloc[Float32](num_values)
+    var scaled_host = unsafe_alloc[Float32](num_values)
     ctx.enqueue_copy(baseline_host, baseline_device)
     ctx.enqueue_copy(scaled_host, scaled_device)
     ctx.synchronize()

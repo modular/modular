@@ -23,11 +23,13 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 
+from max.driver import accelerator_architecture_name
 from max.dtype import DType
 from max.graph import (
     DeviceRef,
     Dim,
     ShardingStrategy,
+    TensorType,
     TensorValue,
     Weight,
     ops,
@@ -35,6 +37,9 @@ from max.graph import (
 from max.nn.kernels import (
     KEY_CACHE_INDEX,
     VALUE_CACHE_INDEX,
+    ceildiv,
+    grouped_matmul_block_scaled,
+    grouped_quantize_dynamic_block_scaled,
     kv_cache_gather_rows_ragged,
     store_k_cache_ragged,
     store_v_cache_ragged,
@@ -54,7 +59,7 @@ from max.nn.quant_config import (
 from max.nn.quant_ops import _matmul_float8_mxfp8
 
 from ...deepseekV4.layers.quantization import fp8_qat_quantize
-from ...deepseekV4.layers.ragged import arange_to
+from ...deepseekV4.layers.ragged import arange_to, host_scalar
 from ...deepseekV4.layers.rope import apply_rope_tail
 from ..layer_resolver import LayerInfo
 from ..model_config import DeepseekV41Config, woa_mxfp8_enabled
@@ -65,14 +70,12 @@ from .compressor import (
 from .indexer import (
     DeepseekV41Indexer,
     candidate_blocks_active,
-    candidate_keep_from_block_max,
-    candidate_num_blocks,
     index_key_slots,
     key_positions,
     quantize_queries,
     rope_cos_sin_table,
     select_index_keys,
-    select_index_keys_block_max,
+    select_index_keys_block_topk,
     select_index_keys_masked,
     store_index_keys,
 )
@@ -160,7 +163,8 @@ def wo_a_linear(
     """Declares ``attn.wo_a`` with a ``[out_dim, group_width]`` weight.
 
     With ``mxfp8`` the weight is ``float8_e4m3fn`` plus a
-    ``[out_dim, group_width / 32]`` ``float8_e8m0fnu`` ``weight_scale``;
+    ``[out_dim, group_width / 32]`` ``float8_e8m0fnu`` ``weight_scale``,
+    tile-interleaved at load (see :func:`mxfp8_grouped_projection`);
     otherwise it is bf16 and must be dequantized on the host at load.
     """
     if mxfp8:
@@ -202,28 +206,57 @@ def bf16_grouped_projection(
     return ops.reshape(ops.transpose(projected, 0, 1), [t, groups * r])
 
 
-def mxfp8_grouped_projection(
+# Rows per scale tile of the block-scaled grouped matmul; each group's
+# activation scales start on a fresh tile.
+_SCALE_TILE_ROWS = 128
+
+
+def _grouped_mxfp8_supported() -> bool:
+    """Whether the build target runs the grouped MXFP8 matmul (SM100)."""
+    try:
+        return accelerator_architecture_name().startswith("sm_10")
+    except Exception:
+        return False
+
+
+def _multiples(step: Dim, count: int, device: DeviceRef) -> TensorValue:
+    """``[0, step, ..., (count - 1) * step]`` int32, valid for ``step == 0``.
+
+    ``ops.range`` rejects a zero step, which an empty batch would give, so
+    this offsets a ``step + 1`` range by ``[0, count)``.
+    """
+    shifted = ops.range(
+        0,
+        host_scalar((step + 1) * count),
+        host_scalar(step + 1),
+        out_dim=count,
+        device=device,
+        dtype=DType.int32,
+    )
+    return shifted - ops.range(
+        0, count, 1, out_dim=count, device=device, dtype=DType.int32
+    )
+
+
+def _deinterleave_scales(scale: TensorValue) -> TensorValue:
+    """Undoes the 128 x 4 tile interleave of ``[rows, cols]`` block scales."""
+    rows, cols = int(scale.shape[0]), int(scale.shape[1])
+    tiled = ops.reshape(
+        scale,
+        [rows // _SCALE_TILE_ROWS, cols // 4, 32, _SCALE_TILE_ROWS // 32, 4],
+    )
+    return ops.reshape(ops.permute(tiled, [0, 3, 2, 1, 4]), [rows, cols])
+
+
+def _mxfp8_projection_per_group(
     x: TensorValue,
     weight: TensorValue,
     weight_scale: TensorValue,
     groups: int,
 ) -> TensorValue:
-    """Block-diagonal MXFP8 projection (the grouped einsum ``bgk,grk->bgr``).
+    """:func:`mxfp8_grouped_projection` as one dense MXFP8 matmul per group.
 
-    Group ``g``'s ``k`` input columns multiply ``weight`` rows
-    ``[g * r, (g + 1) * r)``, with ``r = weight.shape[0] // groups``. Each
-    group's input is dynamically quantized to MXFP8 and multiplied with
-    float32 accumulation.
-
-    Args:
-        x: ``[t, groups * k]`` activations; cast to bf16 for the quantizer.
-        weight: ``[groups * r, k]`` ``float8_e4m3fn``.
-        weight_scale: ``[groups * r, k / 32]`` ``float8_e8m0fnu`` (the
-            checkpoint's 32x32 block scale, row-expanded).
-        groups: The number of (local) groups.
-
-    Returns:
-        ``[t, groups * r]`` bf16.
+    Takes row-major ``[groups * r, k / 32]`` scales.
     """
     k = int(weight.shape[1])
     r = int(weight.shape[0]) // groups
@@ -237,6 +270,140 @@ def mxfp8_grouped_projection(
         for g in range(groups)
     ]
     return outs[0] if groups == 1 else ops.concat(outs, axis=1)
+
+
+def mxfp8_grouped_projection(
+    x: TensorValue,
+    weight: TensorValue,
+    weight_scale: TensorValue,
+    groups: int,
+) -> TensorValue:
+    """Block-diagonal MXFP8 projection (the grouped einsum ``bgk,grk->bgr``).
+
+    Group ``g``'s ``k`` input columns multiply ``weight`` rows
+    ``[g * r, (g + 1) * r)``, with ``r = weight.shape[0] // groups``. Runs as
+    one grouped block-scaled matmul in which each group is an expert over
+    all ``t`` tokens.
+
+    The activations are quantized group-major: row ``g * t + i`` of the
+    ``[groups * t, k]`` ``float8_e4m3fn`` operand is token ``i``'s group
+    ``g`` slice, with one ``float8_e8m0fnu`` scale per 32 columns. The
+    scales are tile-interleaved like ``weight_scale``, as
+    ``[tiles, k / 128, 32, 4, 4]``, and group ``g``'s start at tile
+    ``g * ceil(t / 128)``. The product comes back group-major and is
+    transposed to token-major. Off SM100, where the grouped matmul does not
+    run, each group takes a dense MXFP8 matmul instead. An empty batch
+    returns ``[0, groups * r]`` without launching the grouped kernels.
+
+    Args:
+        x: ``[t, groups * k]`` activations; cast to bf16 for the quantizer.
+        weight: ``[groups * r, k]`` ``float8_e4m3fn``.
+        weight_scale: ``[groups * r, k / 32]`` ``float8_e8m0fnu``, the
+            checkpoint's 32x32 block scale row-expanded, then
+            tile-interleaved: row ``n``, column ``c`` is stored at
+            ``[n // 128, c // 4, n % 32, (n % 128) // 32, c % 4]`` of
+            ``[groups * r / 128, k / 128, 32, 4, 4]``. ``r`` and ``k`` must
+            be multiples of 128.
+        groups: The number of (local) groups.
+
+    Returns:
+        ``[t, groups * r]`` bf16.
+    """
+    t = x.shape[0]
+    r = int(weight.shape[0]) // groups
+    # ``Linear`` declares its weight scale on the host; move it beside ``x``.
+    weight_scale = weight_scale.to(x.device)
+    if not _grouped_mxfp8_supported():
+        return _mxfp8_projection_per_group(
+            x, weight, _deinterleave_scales(weight_scale), groups
+        )
+    # The grouped quantizer cannot launch on zero rows, which an idle data
+    # parallel replica passes every step.
+    out_type = TensorType(DType.bfloat16, [t, groups * r], x.device)
+    return ops.cond(
+        ops.equal(ops.shape_to_tensor([t])[0], 0),
+        [out_type],
+        lambda: ops.broadcast_to(
+            ops.constant(0.0, DType.bfloat16, device=x.device),
+            [t, groups * r],
+        ),
+        lambda: _mxfp8_grouped_gemm(x, weight, weight_scale, groups),
+    )[0]
+
+
+def _mxfp8_grouped_gemm(
+    x: TensorValue,
+    weight: TensorValue,
+    weight_scale: TensorValue,
+    groups: int,
+) -> TensorValue:
+    """The grouped matmul body of :func:`mxfp8_grouped_projection`."""
+    t = x.shape[0]
+    k = int(weight.shape[1])
+    r = int(weight.shape[0]) // groups
+    device = x.device
+    rows = t * groups
+    # Group-major row g * t + i reads row i * groups + g of the token-major
+    # ``[t * groups, k]`` view, so the quantizer gathers the transpose.
+    gather = ops.reshape(
+        ops.transpose(
+            ops.reshape(arange_to(rows, rows, device), [t, groups]), 0, 1
+        ),
+        [rows],
+    )
+    starts = _multiples(t, groups + 1, device)
+    # A group's scale tile is ``starts[g] // 128 + offsets[g]``; its padded
+    # start is tile ``g * ceil(t / 128)``. Float floor is exact below 2**24.
+    padded = _multiples(ceildiv(t, Dim(_SCALE_TILE_ROWS)), groups, device)
+    unpadded = ops.cast(
+        ops.floor(
+            ops.cast(starts[:groups], DType.float32) / float(_SCALE_TILE_ROWS)
+        ),
+        DType.int32,
+    )
+    offsets = ops.cast(padded - unpadded, DType.uint32)
+    starts = ops.cast(starts, DType.uint32)
+    expert_ids = ops.range(
+        0, groups, 1, out_dim=groups, device=device, dtype=DType.int32
+    )
+    ones = ops.broadcast_to(
+        ops.constant(1.0, DType.float32, device=device), [groups]
+    )
+    x_q, x_scales = grouped_quantize_dynamic_block_scaled(
+        ops.reshape(ops.cast(x, DType.bfloat16), [rows, k]),
+        row_offsets=starts,
+        scales_offsets=offsets,
+        expert_ids=expert_ids,
+        sf_tensor=ones,
+        sf_vector_size=32,
+        scales_type=DType.float8_e8m0fnu,
+        out_type=DType.float8_e4m3fn,
+        indices=gather,
+    )
+    usage_stats = ops.concat(
+        [
+            ops.reshape(ops.cast(host_scalar(t), DType.uint32), [1]),
+            ops.constant([groups], DType.uint32, DeviceRef.CPU()),
+        ]
+    )
+    out = grouped_matmul_block_scaled(
+        x_q,
+        ops.reshape(weight, [groups, r, k]),
+        x_scales,
+        ops.reshape(
+            weight_scale,
+            [groups, r // _SCALE_TILE_ROWS, k // 128, 32, 4, 4],
+        ),
+        starts,
+        offsets,
+        expert_ids,
+        ones,
+        usage_stats,
+    )
+    return ops.reshape(
+        ops.transpose(ops.reshape(out, [groups, t, r]), 0, 1),
+        [t, groups * r],
+    )
 
 
 @dataclass(frozen=True)
@@ -293,11 +460,11 @@ class CandidateBlocks:
     before their own per-token top-k.
     """
 
-    keep: TensorValue | None
-    """``[T, nblocks]`` bool keep mask; ``None`` if no block can be dropped.
+    kept: TensorValue | None
+    """``[T, candidate_topk_blocks]`` int32 kept block ids, ``-1``-padded.
 
     ``None`` when block selection is off or the score width holds at most
-    ``candidate_topk_blocks`` blocks.
+    ``candidate_topk_blocks`` blocks, so no block can be dropped.
     """
     compress_ratio: int
     """The source layer's compression ratio, which consumers must share.
@@ -825,37 +992,27 @@ class CSA2Attention(Module):
         leaf, q, offsets = state.index_leaf, state.index_q, rows.offsets
         pool: CandidateBlocks | None = None
         if layer.candidate_role == "source" and active:
-            ids, block_max = select_index_keys_block_max(
+            ids, kept = select_index_keys_block_topk(
                 leaf,
                 q,
                 offsets,
+                rows.positions,
                 state.layer_comp,
                 top_k=top_k,
                 ratio=ratio,
                 block_size=block_size,
-                num_blocks=candidate_num_blocks(
-                    self.max_seq_len, ratio, block_size
-                ),
+                topk_blocks=self.candidate_topk_blocks,
             )
-            pool = CandidateBlocks(
-                keep=candidate_keep_from_block_max(
-                    block_max,
-                    rows.positions,
-                    ratio=ratio,
-                    block_size=block_size,
-                    topk_blocks=self.candidate_topk_blocks,
-                ),
-                compress_ratio=ratio,
-            )
+            pool = CandidateBlocks(kept=kept, compress_ratio=ratio)
             return key_positions(ids, ratio), pool
         if layer.candidate_role == "source":
-            pool = CandidateBlocks(keep=None, compress_ratio=ratio)
-        keep = (
-            self._candidate_keep()
+            pool = CandidateBlocks(kept=None, compress_ratio=ratio)
+        kept_blocks = (
+            self._candidate_kept()
             if layer.candidate_role == "consumer"
             else None
         )
-        if keep is None:
+        if kept_blocks is None:
             ids = select_index_keys(
                 leaf, q, offsets, state.layer_comp, top_k=top_k, ratio=ratio
             )
@@ -864,7 +1021,7 @@ class CSA2Attention(Module):
                 leaf,
                 q,
                 offsets,
-                keep,
+                kept_blocks,
                 state.layer_comp,
                 top_k=top_k,
                 ratio=ratio,
@@ -872,8 +1029,8 @@ class CSA2Attention(Module):
             )
         return key_positions(ids, ratio), pool
 
-    def _candidate_keep(self) -> TensorValue | None:
-        """Returns the candidate source's keep mask, if it can drop a block."""
+    def _candidate_kept(self) -> TensorValue | None:
+        """Returns the candidate source's kept block ids, if it can drop one."""
         current = self.selection_box.current
         pool = None if current is None else current.candidate_pool
         # No pool only when the traced layers start past the source layer;
@@ -881,7 +1038,7 @@ class CSA2Attention(Module):
         if pool is None:
             return None
         assert isinstance(pool, CandidateBlocks)
-        if pool.keep is None:
+        if pool.kept is None:
             return None
         if pool.compress_ratio != self.layer_info.compress_ratio:
             raise ValueError(
@@ -889,7 +1046,7 @@ class CSA2Attention(Module):
                 f"(ratio {self.layer_info.compress_ratio}) cannot read blocks "
                 f"of a ratio-{pool.compress_ratio} source"
             )
-        return pool.keep
+        return pool.kept
 
     def end(self, state: PendingCSA2Attention, rows: RaggedRows) -> TensorValue:
         """Runs :meth:`__call__` from the indexer's top-k on.

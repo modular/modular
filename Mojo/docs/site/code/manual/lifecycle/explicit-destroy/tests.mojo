@@ -245,7 +245,7 @@ struct Counters(not Deinitable else "call 'flush()' or 'drop()'", Movable):
     var events: Recorder
 
     def __init__(out self, buckets: Int, events: Recorder):
-        self.counts = alloc(Layout[Int64](count=buckets))
+        self.counts = alloc(Layout[Int64](length=buckets))
         self.counts.unsafe_span().fill(0)
         self.events = events
 
@@ -351,7 +351,7 @@ struct Tally(
     var events: Recorder
 
     def __init__(out self, buckets: Int, events: Recorder):
-        self.counts = alloc(Layout[Int64](count=buckets))
+        self.counts = alloc(Layout[Int64](length=buckets))
         self.counts.unsafe_span().fill(0)
         self.events = events
 

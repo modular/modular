@@ -85,6 +85,12 @@ public:
   IRASTDecl &addFullyResolvedDecl(CValue value, StringAttr baseName,
                                   llvm::SMLoc loc, ASTDecl *parentDecl);
 
+  /// Create an anonymous scope for the parameters and arguments of a function
+  /// type. The scope is fully resolved and is not installed in the parent's
+  /// name table.
+  FunctionTypeASTDecl &createFunctionTypeDecl(llvm::SMLoc loc,
+                                              ASTDecl &parentDecl);
+
   /// Add a declaration that represents an erroneous declaration. The generated
   /// decl is treated as fully resolved, and in an error state. If `unlisted`
   /// is set, the decl is not registered in the parent's name table.

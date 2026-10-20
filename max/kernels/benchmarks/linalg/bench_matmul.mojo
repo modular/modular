@@ -91,13 +91,13 @@ def bench_matmul[
     comptime b_packed = spec.static_info.b_packed
     comptime alignment = Alignment.of_bytes[64]()
     var a_alloc = alloc(
-        Layout[Scalar[a_type], alignment=alignment](count=spec.m * spec.k)
+        Layout[Scalar[a_type], alignment=alignment](length=spec.m * spec.k)
     ).into_managed()
     var b_alloc = alloc(
-        Layout[Scalar[b_type], alignment=alignment](count=spec.k * spec.n)
+        Layout[Scalar[b_type], alignment=alignment](length=spec.k * spec.n)
     ).into_managed()
     var c_alloc = alloc(
-        Layout[Scalar[c_type], alignment=alignment](count=spec.m * spec.n)
+        Layout[Scalar[c_type], alignment=alignment](length=spec.m * spec.n)
     ).into_managed()
     var a = TileTensor(
         a_alloc.unsafe_ptr(), row_major(_ri(spec.m), _ri(spec.k))
@@ -118,7 +118,7 @@ def bench_matmul[
     var padded_k = padded_n_k[0] if b_packed else spec.k
 
     var bp_alloc = alloc(
-        Layout[Scalar[b_type], alignment=alignment](count=padded_k * padded_n)
+        Layout[Scalar[b_type], alignment=alignment](length=padded_k * padded_n)
     ).into_managed()
     var bp = TileTensor(
         bp_alloc.unsafe_ptr(), row_major(_ri(padded_k), _ri(padded_n))

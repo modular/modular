@@ -44,7 +44,7 @@ owns each output, so the monoid state is already final after `reduce`.
 from std.atomic import Atomic
 from std.math import align_down, ceildiv
 from std.memory import unsafe_memset_zero
-from std.memory import alloc as ptr_alloc
+from std.memory.alloc import unsafe_alloc
 from std.sys import size_of
 
 from std.utils.coord import Coord, coord_to_index_list
@@ -692,7 +692,7 @@ def launch[
                 # No memset: slot [row, reduce, split] is written in its
                 # reduce's partial phase before any combine reads it.
                 var phased_buf = rebind[MutPointer[UInt8, MutUntrackedOrigin]](
-                    ptr_alloc[UInt8](
+                    unsafe_alloc[UInt8](
                         num_outputs
                         * (num_phases - 1)
                         * num_splits
@@ -728,7 +728,7 @@ def launch[
                         )
 
                     sync_parallelize(phase_worker, total_workers)
-                phased_buf.free()
+                phased_buf.unsafe_free()
                 return
 
         if (
@@ -757,11 +757,11 @@ def launch[
             # slot. Both freed at the end of the function.
             var partials_size = num_outputs * num_splits * _SPLITK_STATE_BYTES
             var partials_buf = rebind[MutPointer[UInt8, MutUntrackedOrigin]](
-                ptr_alloc[UInt8](partials_size)
+                unsafe_alloc[UInt8](partials_size)
             )
             unsafe_memset_zero(partials_buf, partials_size)
             var counters_buf = rebind[MutPointer[Int32, MutUntrackedOrigin]](
-                ptr_alloc[Int32](num_outputs)
+                unsafe_alloc[Int32](num_outputs)
             )
             unsafe_memset_zero(counters_buf, num_outputs)
 
@@ -790,8 +790,8 @@ def launch[
                 body[params_splitk](Coord(row_coords.canonicalize()), ctx)
 
             sync_parallelize(split_worker, total_workers)
-            partials_buf.free()
-            counters_buf.free()
+            partials_buf.unsafe_free()
+            counters_buf.unsafe_free()
         else:
             # ---- cooperative tier (one worker per row) ----
             # Clamp worker count to `num_outputs` to avoid paying

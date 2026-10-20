@@ -42,7 +42,7 @@ struct AffineRead(InputFusion):
         )
 
 
-# Launched with `host_arg=`: `cb` is bit-copied in host layout.
+# Launched with `host_args=`: `cb` is bit-copied in host layout.
 def read_host_closure[
     CbType: ImplicitlyCopyable & RegisterPassable & def(Int) -> Float32
 ](dst: MutPointer[Float32, MutAnyOrigin], n: Int32, cb: CbType):
@@ -90,9 +90,14 @@ def footgun_not_rewrite_when_should(ctx: DeviceContext) raises:
     def read_fn(i: Int) {var tile} -> Float32:
         return tile[i][0]
 
-    # WRONG: `tile`'s `DevicePointer` needed encoding; `host_arg=` bit-copies it.
+    # WRONG: `tile`'s `DevicePointer` needed encoding; `host_args=` bit-copies
+    # it.
     ctx.enqueue_function[read_host_closure[type_of(read_fn)]](
-        out, Int32(N), host_arg=read_fn, grid_dim=1, block_dim=N
+        out,
+        Int32(N),
+        host_args=(read_fn,),
+        grid_dim=1,
+        block_dim=N,
     )
     report("not_rewrite_when_should", out)
     _ = src_buf

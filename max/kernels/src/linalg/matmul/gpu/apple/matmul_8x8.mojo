@@ -391,7 +391,7 @@ def gemm_kernel_apple_8x8[
 ):
     """Launchable wrapper for the 8x8 simdgroup-matrix GEMM (bench/test).
 
-    Launch with `host_arg=epilogue_fn, host_arg2=compute_fn`. With
+    Launch with `host_args=(epilogue_fn, compute_fn)`. With
     `has_compute_fn`, `compute_fn` maps each output before it is stored to
     `c`; with `has_epilogue_fn`, `epilogue_fn` stores it in place of `c`.
     """
@@ -496,8 +496,7 @@ def enqueue_apple_matmul_8x8[
                 Int32(m),
                 Int32(n),
                 Int32(k),
-                host_arg=epilogue_fn,
-                host_arg2=compute_fn,
+                host_args=(epilogue_fn, compute_fn),
                 grid_dim=(ceildiv(n, BN), ceildiv(m, BM)),
                 block_dim=(4 * WARP_SIZE,),
             )

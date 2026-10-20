@@ -21,6 +21,7 @@ and that a packed ragged batch equals independent per-sequence runs.
 """
 
 from std.math import exp, log1p
+from std.memory.alloc import unsafe_alloc
 from std.random import rand, seed
 from std.sys import size_of
 from std.testing import (
@@ -145,29 +146,33 @@ def _reference_scan[
             for p in range(head_dim):
                 var base = ((b * nheads + h) * head_dim + p) * dstate
                 for n in range(dstate):
-                    final_states.store(
+                    final_states.unsafe_store(
                         base + n,
-                        initial_states.load(base + n) if init_state else 0.0,
+                        initial_states.unsafe_load(
+                            base + n
+                        ) if init_state else 0.0,
                     )
                 for t in range(seq_start, seq_start + seq_lengths[b]):
-                    var x_val = Float32(x.load(t * x_row + h * head_dim + p))
-                    var delta = Float32(dt.load(t * nheads + h))
+                    var x_val = Float32(
+                        x.unsafe_load(t * x_row + h * head_dim + p)
+                    )
+                    var delta = Float32(dt.unsafe_load(t * nheads + h))
                     if has_dt_bias:
-                        delta += Float32(dt_bias.load(h))
+                        delta += Float32(dt_bias.unsafe_load(h))
                     delta = log1p(exp(delta))
-                    var dA = exp(Float32(A.load(h)) * delta)
+                    var dA = exp(Float32(A.unsafe_load(h)) * delta)
                     var y_val = Float32(0)
                     for n in range(dstate):
                         var bc = t * bc_row + g * dstate + n
                         var s = (
-                            final_states.load(base + n) * dA
-                            + Float32(B.load(bc)) * delta * x_val
+                            final_states.unsafe_load(base + n) * dA
+                            + Float32(B.unsafe_load(bc)) * delta * x_val
                         )
-                        final_states.store(base + n, s)
-                        y_val += s * Float32(C.load(bc))
+                        final_states.unsafe_store(base + n, s)
+                        y_val += s * Float32(C.unsafe_load(bc))
                     if has_D:
-                        y_val += Float32(D.load(h)) * x_val
-                    y.store((t * nheads + h) * head_dim + p, y_val)
+                        y_val += Float32(D.unsafe_load(h)) * x_val
+                    y.unsafe_store((t * nheads + h) * head_dim + p, y_val)
         seq_start += seq_lengths[b]
 
 
@@ -191,16 +196,16 @@ def _check_outputs[
     # meaningful.
     var y_max = Float32(0)
     for i in range(y_size):
-        y_max = max(y_max, abs(y_ref.load(i)))
+        y_max = max(y_max, abs(y_ref.unsafe_load(i)))
     var s_max = Float32(0)
     for i in range(batch * state_size):
-        s_max = max(s_max, abs(fs_ref.load(i)))
+        s_max = max(s_max, abs(fs_ref.unsafe_load(i)))
     var y_atol = atol_frac * Float64(y_max)
     var s_atol = atol_frac * Float64(s_max)
     for i in range(y_size):
         assert_almost_equal(
-            y_ref.load(i),
-            Float32(y.load(i)),
+            y_ref.unsafe_load(i),
+            Float32(y.unsafe_load(i)),
             rtol=rtol,
             atol=y_atol,
             msg=label + " y mismatch at index " + String(i),
@@ -208,15 +213,15 @@ def _check_outputs[
     for i in range(state_size):
         assert_almost_equal(
             Float32(0),
-            Float32(pool.load(i)),
+            Float32(pool.unsafe_load(i)),
             msg=label + " wrote unused slot 0",
         )
     for b in range(batch):
-        var slot = Int(slots.load(b))
+        var slot = Int(slots.unsafe_load(b))
         for i in range(state_size):
             assert_almost_equal(
-                fs_ref.load(b * state_size + i),
-                Float32(pool.load(slot * state_size + i)),
+                fs_ref.unsafe_load(b * state_size + i),
+                Float32(pool.unsafe_load(slot * state_size + i)),
                 rtol=rtol,
                 atol=s_atol,
                 msg=label
@@ -251,18 +256,21 @@ def _check_tile_parity[
     within one bf16 ulp (only the y reduction order differs)."""
     comptime assert dtype == .bfloat16, "y parity is stated in bf16 ulps"
     for i in range(pool_size):
-        if pool_base.load(i).to_bits() != pool_new.load(i).to_bits():
+        if (
+            pool_base.unsafe_load(i).to_bits()
+            != pool_new.unsafe_load(i).to_bits()
+        ):
             raise Error(
                 "tile parity: final state bits differ at pool index "
                 + String(i)
                 + ": "
-                + String(pool_base.load(i))
+                + String(pool_base.unsafe_load(i))
                 + " vs "
-                + String(pool_new.load(i))
+                + String(pool_new.unsafe_load(i))
             )
     for i in range(y_size):
-        var a = y_base.load(i).cast[.bfloat16]()
-        var b = y_new.load(i).cast[.bfloat16]()
+        var a = y_base.unsafe_load(i).cast[.bfloat16]()
+        var b = y_new.unsafe_load(i).cast[.bfloat16]()
         if _bf16_ulp_distance(a, b) > 1:
             raise Error(
                 "tile parity: y differs by more than one bf16 ulp at index "
@@ -350,18 +358,18 @@ def run_mamba2_ssd[
         "pool must contain every scattered slot",
     )
 
-    var x_h = alloc[Scalar[dtype]](total_len * x_row)
-    var dt_h = alloc[Scalar[dtype]](total_len * nheads)
-    var A_h = alloc[Scalar[dtype]](nheads)
-    var B_h = alloc[Scalar[dtype]](total_len * bc_row)
-    var C_h = alloc[Scalar[dtype]](total_len * bc_row)
-    var D_h = alloc[Scalar[dtype]](nheads)
-    var dt_bias_h = alloc[Scalar[dtype]](nheads)
-    var his_h = alloc[Scalar[.bool]](batch)
-    var us_h = alloc[Scalar[.bool]](batch)
-    var qsl_h = alloc[Int32](batch + 1)
-    var slot_h = alloc[UInt32](batch)
-    var is_h = alloc[Float32](batch * state_size)
+    var x_h = unsafe_alloc[Scalar[dtype]](total_len * x_row)
+    var dt_h = unsafe_alloc[Scalar[dtype]](total_len * nheads)
+    var A_h = unsafe_alloc[Scalar[dtype]](nheads)
+    var B_h = unsafe_alloc[Scalar[dtype]](total_len * bc_row)
+    var C_h = unsafe_alloc[Scalar[dtype]](total_len * bc_row)
+    var D_h = unsafe_alloc[Scalar[dtype]](nheads)
+    var dt_bias_h = unsafe_alloc[Scalar[dtype]](nheads)
+    var his_h = unsafe_alloc[Scalar[.bool]](batch)
+    var us_h = unsafe_alloc[Scalar[.bool]](batch)
+    var qsl_h = unsafe_alloc[Int32](batch + 1)
+    var slot_h = unsafe_alloc[UInt32](batch)
+    var is_h = unsafe_alloc[Float32](batch * state_size)
 
     comptime if not check_reference:
         seed(1234)
@@ -375,49 +383,61 @@ def run_mamba2_ssd[
     rand(is_h, batch * state_size)
     comptime if signed:
         for i in range(total_len * x_row):
-            x_h.store(i, Scalar[dtype](Float32(x_h.load(i)) * 2 - 1))
+            x_h.unsafe_store(
+                i, Scalar[dtype](Float32(x_h.unsafe_load(i)) * 2 - 1)
+            )
         for i in range(total_len * bc_row):
-            B_h.store(i, Scalar[dtype](Float32(B_h.load(i)) * 2 - 1))
-            C_h.store(i, Scalar[dtype](Float32(C_h.load(i)) * 2 - 1))
+            B_h.unsafe_store(
+                i, Scalar[dtype](Float32(B_h.unsafe_load(i)) * 2 - 1)
+            )
+            C_h.unsafe_store(
+                i, Scalar[dtype](Float32(C_h.unsafe_load(i)) * 2 - 1)
+            )
         for i in range(batch * state_size):
-            is_h.store(i, is_h.load(i) * 2 - 1)
+            is_h.unsafe_store(i, is_h.unsafe_load(i) * 2 - 1)
     # A = -exp(A_log) is negative; keep it in a range where the recurrence
     # stays bounded over the sequence.
     for i in range(nheads):
-        A_h.store(i, Scalar[dtype](Float32(A_h.load(i)) * -A_scale - 0.1))
+        A_h.unsafe_store(
+            i, Scalar[dtype](Float32(A_h.unsafe_load(i)) * -A_scale - 0.1)
+        )
     for i in range(total_len * nheads):
-        dt_h.store(i, Scalar[dtype](Float32(dt_h.load(i)) + dt_offset))
+        dt_h.unsafe_store(
+            i, Scalar[dtype](Float32(dt_h.unsafe_load(i)) + dt_offset)
+        )
     # Pre-round the initial states to state_dtype so the fp32 reference and a
     # bf16 pool start from identical states.
     for i in range(batch * state_size):
-        is_h.store(i, is_h.load(i).cast[state_dtype]().cast[.float32]())
+        is_h.unsafe_store(
+            i, is_h.unsafe_load(i).cast[state_dtype]().cast[.float32]()
+        )
     for i in range(batch):
-        his_h.store(i, Scalar[.bool](init_state))
-        us_h.store(i, Scalar[.bool](not update_flags or i % 2 == 0))
+        his_h.unsafe_store(i, Scalar[.bool](init_state))
+        us_h.unsafe_store(i, Scalar[.bool](not update_flags or i % 2 == 0))
     # An empty update_state writes every sequence.
     var us_size = batch if update_flags else 0
     # Slot 0 and gaps between scattered slots must stay untouched.
     for i in range(batch):
-        slot_h.store(i, UInt32(1 + i * slot_stride))
+        slot_h.unsafe_store(i, UInt32(1 + i * slot_stride))
     var cum = 0
-    qsl_h.store(0, Int32(0))
+    qsl_h.unsafe_store(0, Int32(0))
     for i in range(batch):
         cum += seq_lengths[i]
-        qsl_h.store(i + 1, Int32(cum))
+        qsl_h.unsafe_store(i + 1, Int32(cum))
 
-    var pool_init_h = alloc[Scalar[state_dtype]](pool_size)
+    var pool_init_h = unsafe_alloc[Scalar[state_dtype]](pool_size)
     for i in range(pool_size):
-        pool_init_h.store(i, Scalar[state_dtype](0))
+        pool_init_h.unsafe_store(i, Scalar[state_dtype](0))
     for b in range(batch):
-        var slot = Int(slot_h.load(b))
+        var slot = Int(slot_h.unsafe_load(b))
         for i in range(state_size):
-            pool_init_h.store(
+            pool_init_h.unsafe_store(
                 slot * state_size + i,
-                is_h.load(b * state_size + i).cast[state_dtype](),
+                is_h.unsafe_load(b * state_size + i).cast[state_dtype](),
             )
 
     comptime if not check_reference:
-        var y_check_h = alloc[Scalar[dtype]](
+        var y_check_h = unsafe_alloc[Scalar[dtype]](
             y_size + (64 if guard_output else 0)
         )
         run_ssd_gpu[
@@ -457,25 +477,25 @@ def run_mamba2_ssd[
             y_check_h,
             pool_init_h,
         )
-        y_check_h.free()
-        x_h.free()
-        dt_h.free()
-        A_h.free()
-        B_h.free()
-        C_h.free()
-        D_h.free()
-        dt_bias_h.free()
-        his_h.free()
-        us_h.free()
-        qsl_h.free()
-        slot_h.free()
-        is_h.free()
-        pool_init_h.free()
+        y_check_h.unsafe_free()
+        x_h.unsafe_free()
+        dt_h.unsafe_free()
+        A_h.unsafe_free()
+        B_h.unsafe_free()
+        C_h.unsafe_free()
+        D_h.unsafe_free()
+        dt_bias_h.unsafe_free()
+        his_h.unsafe_free()
+        us_h.unsafe_free()
+        qsl_h.unsafe_free()
+        slot_h.unsafe_free()
+        is_h.unsafe_free()
+        pool_init_h.unsafe_free()
         return
 
     else:
-        var y_ref_h = alloc[Float32](y_size)
-        var fs_ref_h = alloc[Float32](batch * state_size)
+        var y_ref_h = unsafe_alloc[Float32](y_size)
+        var fs_ref_h = unsafe_alloc[Float32](batch * state_size)
 
         _reference_scan(
             nheads,
@@ -504,11 +524,11 @@ def run_mamba2_ssd[
             # A sequence that does not update leaves its slot as it was seeded.
             for b in range(batch):
                 if b % 2 == 1:
-                    var slot = Int(slot_h.load(b))
+                    var slot = Int(slot_h.unsafe_load(b))
                     for i in range(state_size):
-                        fs_ref_h.store(
+                        fs_ref_h.unsafe_store(
                             b * state_size + i,
-                            pool_init_h.load(slot * state_size + i).cast[
+                            pool_init_h.unsafe_load(slot * state_size + i).cast[
                                 .float32
                             ](),
                         )
@@ -522,10 +542,14 @@ def run_mamba2_ssd[
         var his_size = batch if init_state else 0
 
         # ---- CPU kernel (fp32 pool) ----
-        var y_cpu_h = alloc[Scalar[dtype]](y_size + (64 if guard_output else 0))
-        var pool_cpu_h = alloc[Float32](pool_size)
+        var y_cpu_h = unsafe_alloc[Scalar[dtype]](
+            y_size + (64 if guard_output else 0)
+        )
+        var pool_cpu_h = unsafe_alloc[Float32](pool_size)
         for i in range(pool_size):
-            pool_cpu_h.store(i, pool_init_h.load(i).cast[.float32]())
+            pool_cpu_h.unsafe_store(
+                i, pool_init_h.unsafe_load(i).cast[.float32]()
+            )
         _scan_cpu[DSTATE](
             TileTensor(x_h, x_layout),
             TileTensor(dt_h, row_major(total_len, nheads)),
@@ -558,10 +582,12 @@ def run_mamba2_ssd[
         )
 
         # ---- GPU kernel ----
-        var y_gpu_h = alloc[Scalar[dtype]](y_size + (64 if guard_output else 0))
-        var pool_gpu_h = alloc[Scalar[state_dtype]](pool_size)
+        var y_gpu_h = unsafe_alloc[Scalar[dtype]](
+            y_size + (64 if guard_output else 0)
+        )
+        var pool_gpu_h = unsafe_alloc[Scalar[state_dtype]](pool_size)
         for i in range(pool_size):
-            pool_gpu_h.store(i, pool_init_h.load(i))
+            pool_gpu_h.unsafe_store(i, pool_init_h.unsafe_load(i))
         run_ssd_gpu[
             DSTATE,
             DSTATE_SPLIT,
@@ -632,12 +658,12 @@ def run_mamba2_ssd[
             # states) to bf16, so it is compared with the serial split kernel
             # (split 16, 4 channels per thread, the production decode tile) at a
             # bf16-sized tolerance relative to the largest output and state.
-            var y_ser_h = alloc[Scalar[dtype]](
+            var y_ser_h = unsafe_alloc[Scalar[dtype]](
                 y_size + (64 if guard_output else 0)
             )
-            var pool_ser_h = alloc[Scalar[state_dtype]](pool_size)
+            var pool_ser_h = unsafe_alloc[Scalar[state_dtype]](pool_size)
             for i in range(pool_size):
-                pool_ser_h.store(i, pool_init_h.load(i))
+                pool_ser_h.unsafe_store(i, pool_init_h.unsafe_load(i))
             run_ssd_gpu[DSTATE, 16, 4, prefill, guard_output=guard_output](
                 ctx,
                 nheads,
@@ -682,12 +708,12 @@ def run_mamba2_ssd[
             )
             # Determinism: no atomics, so a second launch on the same inputs and
             # initial pool must match the first bit for bit.
-            var y_rep_h = alloc[Scalar[dtype]](
+            var y_rep_h = unsafe_alloc[Scalar[dtype]](
                 y_size + (64 if guard_output else 0)
             )
-            var pool_rep_h = alloc[Scalar[state_dtype]](pool_size)
+            var pool_rep_h = unsafe_alloc[Scalar[state_dtype]](pool_size)
             for i in range(pool_size):
-                pool_rep_h.store(i, pool_init_h.load(i))
+                pool_rep_h.unsafe_store(i, pool_init_h.unsafe_load(i))
             run_ssd_gpu[
                 DSTATE,
                 DSTATE_SPLIT,
@@ -726,29 +752,29 @@ def run_mamba2_ssd[
                 pool_rep_h,
             )
             for i in range(y_size):
-                if y_rep_h.load(i) != y_gpu_h.load(i):
+                if y_rep_h.unsafe_load(i) != y_gpu_h.unsafe_load(i):
                     raise Error(
                         "chunked y is not deterministic at index " + String(i)
                     )
             for i in range(pool_size):
-                if pool_rep_h.load(i) != pool_gpu_h.load(i):
+                if pool_rep_h.unsafe_load(i) != pool_gpu_h.unsafe_load(i):
                     raise Error(
                         "chunked state is not deterministic at pool index "
                         + String(i)
                     )
-            y_rep_h.free()
-            pool_rep_h.free()
-            y_ser_h.free()
-            pool_ser_h.free()
+            y_rep_h.unsafe_free()
+            pool_rep_h.unsafe_free()
+            y_ser_h.unsafe_free()
+            pool_ser_h.unsafe_free()
 
         comptime if check_parity:
             comptime assert DSTATE_SPLIT > 0, "parity compares split tiles"
-            var y_base_h = alloc[Scalar[dtype]](
+            var y_base_h = unsafe_alloc[Scalar[dtype]](
                 y_size + (64 if guard_output else 0)
             )
-            var pool_base_h = alloc[Scalar[state_dtype]](pool_size)
+            var pool_base_h = unsafe_alloc[Scalar[state_dtype]](pool_size)
             for i in range(pool_size):
-                pool_base_h.store(i, pool_init_h.load(i))
+                pool_base_h.unsafe_store(i, pool_init_h.unsafe_load(i))
             run_ssd_gpu[DSTATE, 8, 1, prefill, guard_output=guard_output](
                 ctx,
                 nheads,
@@ -780,28 +806,28 @@ def run_mamba2_ssd[
             _check_tile_parity(
                 y_base_h, y_gpu_h, pool_base_h, pool_gpu_h, y_size, pool_size
             )
-            y_base_h.free()
-            pool_base_h.free()
+            y_base_h.unsafe_free()
+            pool_base_h.unsafe_free()
 
-        x_h.free()
-        dt_h.free()
-        A_h.free()
-        B_h.free()
-        C_h.free()
-        D_h.free()
-        dt_bias_h.free()
-        his_h.free()
-        us_h.free()
-        qsl_h.free()
-        slot_h.free()
-        is_h.free()
-        y_ref_h.free()
-        fs_ref_h.free()
-        pool_init_h.free()
-        y_cpu_h.free()
-        pool_cpu_h.free()
-        y_gpu_h.free()
-        pool_gpu_h.free()
+        x_h.unsafe_free()
+        dt_h.unsafe_free()
+        A_h.unsafe_free()
+        B_h.unsafe_free()
+        C_h.unsafe_free()
+        D_h.unsafe_free()
+        dt_bias_h.unsafe_free()
+        his_h.unsafe_free()
+        us_h.unsafe_free()
+        qsl_h.unsafe_free()
+        slot_h.unsafe_free()
+        is_h.unsafe_free()
+        y_ref_h.unsafe_free()
+        fs_ref_h.unsafe_free()
+        pool_init_h.unsafe_free()
+        y_cpu_h.unsafe_free()
+        pool_cpu_h.unsafe_free()
+        y_gpu_h.unsafe_free()
+        pool_gpu_h.unsafe_free()
 
 
 def test_mamba2_ssd_varlen_no_cross_sequence_bleed() raises:
@@ -816,14 +842,14 @@ def test_mamba2_ssd_varlen_no_cross_sequence_bleed() raises:
     var total_len = 19
     var state_size = nheads * head_dim * dstate
 
-    var x_h = alloc[Scalar[dtype]](total_len * nheads * head_dim)
-    var dt_h = alloc[Scalar[dtype]](total_len * nheads)
-    var A_h = alloc[Scalar[dtype]](nheads)
-    var B_h = alloc[Scalar[dtype]](total_len * ngroups * dstate)
-    var C_h = alloc[Scalar[dtype]](total_len * ngroups * dstate)
-    var D_h = alloc[Scalar[dtype]](nheads)
-    var dt_bias_h = alloc[Scalar[dtype]](nheads)
-    var his_h = alloc[Scalar[.bool]](1)
+    var x_h = unsafe_alloc[Scalar[dtype]](total_len * nheads * head_dim)
+    var dt_h = unsafe_alloc[Scalar[dtype]](total_len * nheads)
+    var A_h = unsafe_alloc[Scalar[dtype]](nheads)
+    var B_h = unsafe_alloc[Scalar[dtype]](total_len * ngroups * dstate)
+    var C_h = unsafe_alloc[Scalar[dtype]](total_len * ngroups * dstate)
+    var D_h = unsafe_alloc[Scalar[dtype]](nheads)
+    var dt_bias_h = unsafe_alloc[Scalar[dtype]](nheads)
+    var his_h = unsafe_alloc[Scalar[.bool]](1)
     rand(x_h, total_len * nheads * head_dim)
     rand(dt_h, total_len * nheads)
     rand(A_h, nheads)
@@ -832,9 +858,9 @@ def test_mamba2_ssd_varlen_no_cross_sequence_bleed() raises:
     rand(D_h, nheads)
     rand(dt_bias_h, nheads)
     for i in range(nheads):
-        A_h.store(i, Float32(A_h.load(i)) * -1.0 - 0.1)
+        A_h.unsafe_store(i, Float32(A_h.unsafe_load(i)) * -1.0 - 0.1)
     for i in range(total_len * nheads):
-        dt_h.store(i, Float32(dt_h.load(i)) - 0.5)
+        dt_h.unsafe_store(i, Float32(dt_h.unsafe_load(i)) - 0.5)
 
     var A_tt = TileTensor(A_h, row_major(nheads))
     var D_tt = TileTensor(D_h, row_major(nheads))
@@ -843,16 +869,16 @@ def test_mamba2_ssd_varlen_no_cross_sequence_bleed() raises:
     var us_tt = TileTensor(his_h, row_major(0))
 
     # Packed run: sequence b writes pool slot b.
-    var y_packed = alloc[Scalar[dtype]](total_len * nheads * head_dim)
-    var pool_packed = alloc[Float32](batch * state_size)
-    var qsl_h = alloc[Int32](batch + 1)
-    var slot_h = alloc[UInt32](batch)
+    var y_packed = unsafe_alloc[Scalar[dtype]](total_len * nheads * head_dim)
+    var pool_packed = unsafe_alloc[Float32](batch * state_size)
+    var qsl_h = unsafe_alloc[Int32](batch + 1)
+    var slot_h = unsafe_alloc[UInt32](batch)
     var cum = 0
-    qsl_h.store(0, Int32(0))
+    qsl_h.unsafe_store(0, Int32(0))
     for i in range(batch):
         cum += seq_lengths[i]
-        qsl_h.store(i + 1, Int32(cum))
-        slot_h.store(i, UInt32(i))
+        qsl_h.unsafe_store(i + 1, Int32(cum))
+        slot_h.unsafe_store(i, UInt32(i))
     _scan_cpu[dstate](
         TileTensor(x_h, row_major(total_len, nheads, head_dim)),
         TileTensor(dt_h, row_major(total_len, nheads)),
@@ -870,16 +896,16 @@ def test_mamba2_ssd_varlen_no_cross_sequence_bleed() raises:
     )
 
     # Independent runs over views into the packed buffers.
-    var y_indep = alloc[Scalar[dtype]](total_len * nheads * head_dim)
-    var pool_indep = alloc[Float32](batch * state_size)
-    var qsl_s_h = alloc[Int32](2)
-    var slot_s_h = alloc[UInt32](1)
-    qsl_s_h.store(0, Int32(0))
-    slot_s_h.store(0, UInt32(0))
+    var y_indep = unsafe_alloc[Scalar[dtype]](total_len * nheads * head_dim)
+    var pool_indep = unsafe_alloc[Float32](batch * state_size)
+    var qsl_s_h = unsafe_alloc[Int32](2)
+    var slot_s_h = unsafe_alloc[UInt32](1)
+    qsl_s_h.unsafe_store(0, Int32(0))
+    slot_s_h.unsafe_store(0, UInt32(0))
     var off = 0
     for s in range(batch):
         var slen = seq_lengths[s]
-        qsl_s_h.store(1, Int32(slen))
+        qsl_s_h.unsafe_store(1, Int32(slen))
         _scan_cpu[dstate](
             TileTensor(
                 x_h.unsafe_offset(off * nheads * head_dim),
@@ -917,27 +943,31 @@ def test_mamba2_ssd_varlen_no_cross_sequence_bleed() raises:
     # Same fp32 ops in the same order, so the runs agree to rounding.
     for i in range(total_len * nheads * head_dim):
         assert_almost_equal(
-            Float32(y_packed.load(i)), Float32(y_indep.load(i)), rtol=1e-5
+            Float32(y_packed.unsafe_load(i)),
+            Float32(y_indep.unsafe_load(i)),
+            rtol=1e-5,
         )
     for i in range(batch * state_size):
-        assert_almost_equal(pool_packed.load(i), pool_indep.load(i), rtol=1e-5)
+        assert_almost_equal(
+            pool_packed.unsafe_load(i), pool_indep.unsafe_load(i), rtol=1e-5
+        )
 
-    x_h.free()
-    dt_h.free()
-    A_h.free()
-    B_h.free()
-    C_h.free()
-    D_h.free()
-    dt_bias_h.free()
-    his_h.free()
-    y_packed.free()
-    pool_packed.free()
-    qsl_h.free()
-    slot_h.free()
-    y_indep.free()
-    pool_indep.free()
-    qsl_s_h.free()
-    slot_s_h.free()
+    x_h.unsafe_free()
+    dt_h.unsafe_free()
+    A_h.unsafe_free()
+    B_h.unsafe_free()
+    C_h.unsafe_free()
+    D_h.unsafe_free()
+    dt_bias_h.unsafe_free()
+    his_h.unsafe_free()
+    y_packed.unsafe_free()
+    pool_packed.unsafe_free()
+    qsl_h.unsafe_free()
+    slot_h.unsafe_free()
+    y_indep.unsafe_free()
+    pool_indep.unsafe_free()
+    qsl_s_h.unsafe_free()
+    slot_s_h.unsafe_free()
 
 
 def test_mamba2_ssd_dstate_split() raises:

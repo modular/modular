@@ -1425,9 +1425,10 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
 
     LogicalResult result =
         llvm::TypeSwitch<Operation *, LogicalResult>(declOp)
-            .Case([&](FnOp funcOp) {
-              declResolver->declForFuncSymbol[decl.getSymbolRef()] =
-                  &cast<DefASTDecl>(decl);
+            .Case([&](FnOp) {
+              auto &fnDecl = cast<DefASTDecl>(decl);
+              declResolver->declForFuncSymbol[decl.getSymbolRef()] = &fnDecl;
+              fnDecl.createIRSignatureDecls(*declResolver);
 
               // Resolve the references from the signature.
               refWalker.walk(declOp->getAttrDictionary());
@@ -1614,6 +1615,7 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
             auto &structDecl =
                 cast<StructASTDecl>(addDeclForOp(op, op.getSymNameAttr()));
             structDecl.setSelfType(StructASTDecl::computeSelfType(op));
+            SmallVector<ASTDecl *> paramDecls;
             for (auto [paramIndex, param] : llvm::enumerate(op.getParams())) {
               // Add the parameters as accessible member decls. Make sure
               // to only demangle user-visible names. Synthetic closure structs
@@ -1625,8 +1627,11 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
                   PValue(ParamDeclRefAttr::get(param)),
                   StringAttr::get(getContext(), paramName), structDecl.getLoc(),
                   &structDecl);
-              paramDecl.setArgOrParamNumber(static_cast<ssize_t>(paramIndex));
+              paramDecl.setArgOrParamNumber(static_cast<ssize_t>(paramIndex),
+                                            /*isParameter=*/true);
+              paramDecls.push_back(&paramDecl);
             }
+            structDecl.setParamDecls(paramDecls);
           })
           .Case([&](TraitDeclOp op) {
             auto &traitDecl =

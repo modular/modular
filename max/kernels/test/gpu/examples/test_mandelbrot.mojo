@@ -16,6 +16,7 @@ from std.sys.info import simd_width_of
 
 from std.algorithm import vectorize
 from std.complex import ComplexSIMD
+from std.memory.alloc import unsafe_alloc
 from max.gpu import global_idx
 from max.gpu.host import DeviceContext, default_accelerator
 from std.testing import assert_equal
@@ -89,7 +90,7 @@ def mandelbrot(out_ptr: MutPointer[Scalar[int_type], MutAnyOrigin]):
 
 
 def run_mandelbrot(ctx: DeviceContext) raises:
-    var out_host = alloc[Scalar[int_type]](width * height)
+    var out_host = unsafe_alloc[Scalar[int_type]](width * height)
 
     var out_device = ctx.enqueue_create_buffer[int_type](width * height)
 

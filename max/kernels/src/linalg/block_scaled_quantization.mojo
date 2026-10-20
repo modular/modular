@@ -1386,9 +1386,9 @@ def _scale_tile_expert[
             span = Int(lane_group_max[WARP_SIZE](Int32(refined)))
 
         if thread_idx.x == 0:
-            search_smem.store(0, Int32(span))
+            search_smem.unsafe_store(0, Int32(span))
     barrier()
-    return Int(search_smem.load(0))
+    return Int(search_smem.unsafe_load(0))
 
 
 @__llvm_metadata(
@@ -1658,7 +1658,7 @@ def grouped_quantize_dynamic_scaled_fp4_async_kernel[
     comptime assert (
         zeros_per_thread & (zeros_per_thread - 1) == 0
     ), "zero-fill store width must be a power of two"
-    smem_ptr.store(
+    smem_ptr.unsafe_store(
         thread_idx.x * zeros_per_thread,
         SIMD[scales_dtype, zeros_per_thread](0),
     )
@@ -1989,7 +1989,7 @@ comptime _NVFP4_ROW_RANGE = Float32(6.0 * 448.0)
 
 comptime nvfp4_row_input_fn_type = def[dtype: DType, width: SIMDLength](
     SIMD[dtype, width]
-) capturing -> SIMD[dtype, width]
+) thin -> SIMD[dtype, width]
 """Elementwise transform applied to each input vector before quantizing.
 
 `grouped_quantize_nvfp4_row_amax` quantizes `input_fn(x)` in place of `x`,

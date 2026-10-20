@@ -509,9 +509,9 @@ struct Shuffler[E: Int]:
                 ](e, n, k_byte)
                 comptime for chunk in range(pb // 8):
                     var byte_in_frag = pl * Self.MFMA_LANE_BYTES + chunk * 8
-                    dst.store(
+                    dst.unsafe_store(
                         off + chunk * 8,
-                        src.load[width=8](byte_in_frag),
+                        src.unsafe_load[width=8](byte_in_frag),
                     )
 
     @staticmethod

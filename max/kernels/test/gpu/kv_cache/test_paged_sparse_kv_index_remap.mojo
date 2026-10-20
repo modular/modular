@@ -26,6 +26,7 @@
 
 from max.gpu.host import DeviceContext
 from std.memory import alloc
+from std.memory.alloc import unsafe_alloc
 
 from std.testing import assert_equal
 
@@ -120,12 +121,12 @@ def main() raises:
     comptime LOG_S1 = 1
 
     # Sparse rows 0..3 → batch 0; row 4 → batch 1 (indices_stride=1 ⇒ tid i → row i).
-    var h_row_off = alloc[UInt32](NUM_BATCHES + 1)
+    var h_row_off = unsafe_alloc[UInt32](NUM_BATCHES + 1)
     h_row_off[0] = 0
     h_row_off[1] = 4
     h_row_off[2] = 5
 
-    var h_lut = alloc[UInt32](LUT_ROWS * LUT_COLS)
+    var h_lut = unsafe_alloc[UInt32](LUT_ROWS * LUT_COLS)
     h_lut[0 * LUT_COLS + 0] = 10
     h_lut[0 * LUT_COLS + 1] = 5
     h_lut[0 * LUT_COLS + 2] = INVALID_BLOCK
@@ -135,14 +136,14 @@ def main() raises:
     h_lut[1 * LUT_COLS + 2] = INVALID_BLOCK
     h_lut[1 * LUT_COLS + 3] = INVALID_BLOCK
 
-    var h_log = alloc[Int32](NUM_IDX)
+    var h_log = unsafe_alloc[Int32](NUM_IDX)
     h_log[0] = 0
     h_log[1] = 129
     h_log[2] = -1
     h_log[3] = 256
     h_log[4] = 200
 
-    var h_expected = alloc[Int32](NUM_IDX)
+    var h_expected = unsafe_alloc[Int32](NUM_IDX)
     _reference_row_offsets_remap(
         h_log,
         h_row_off,
@@ -165,7 +166,7 @@ def main() raises:
     assert_equal(Int(h_expected[3]), -1)
     assert_equal(Int(h_expected[4]), 20 * PAGE_SIZE + 72)
 
-    var h_out = alloc[Int32](NUM_IDX)
+    var h_out = unsafe_alloc[Int32](NUM_IDX)
 
     with DeviceContext() as ctx:
         var d_log = ctx.enqueue_create_buffer[.int32](NUM_IDX)
@@ -211,8 +212,8 @@ def main() raises:
     for i in range(NUM_IDX):
         assert_equal(Int(h_out[i]), Int(h_expected[i]), "gpu remap mismatch")
 
-    h_row_off.free()
-    h_log.free()
-    h_lut.free()
-    h_expected.free()
-    h_out.free()
+    h_row_off.unsafe_free()
+    h_log.unsafe_free()
+    h_lut.unsafe_free()
+    h_expected.unsafe_free()
+    h_out.unsafe_free()

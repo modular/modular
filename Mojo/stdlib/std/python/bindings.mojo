@@ -458,7 +458,7 @@ struct PythonModuleBuilder:
         RetType: Deinitable & Movable,
         //,
         func: def(
-            * args: * PyArgs, var ** kwargs: PythonObject
+            *args: *PyArgs, var **kwargs: PythonObject
         ) raises thin -> RetType,
     ](mut self, func_name: StaticString, docstring: StaticString = "") where (
         RetType == PythonObject or RetType == type_of(None)
@@ -507,7 +507,7 @@ struct PythonModuleBuilder:
         PyArgs: TypeList[Trait=type_of(PythonObject), ...],
         RetType: Deinitable & Movable,
         //,
-        func: def(* args: * PyArgs) raises thin -> RetType,
+        func: def(*args: *PyArgs) raises thin -> RetType,
     ](mut self, func_name: StaticString, docstring: StaticString = "") where (
         RetType == PythonObject or RetType == type_of(None)
     ) else "function return type must be PythonObject or None":
@@ -961,8 +961,9 @@ struct PythonTypeBuilder(Copyable):
         RetType: Deinitable & Movable,
         //,
         method: def(
-            self_: Pointer[SelfType, MutUnsafeAnyOrigin], * args: * PyArgs,
-            var ** kwargs: PythonObject,
+            self_: Pointer[SelfType, MutUnsafeAnyOrigin],
+            *args: *PyArgs,
+            var **kwargs: PythonObject,
         ) raises thin -> RetType,
     ](
         mut self: Self,
@@ -1018,7 +1019,7 @@ struct PythonTypeBuilder(Copyable):
         RetType: Deinitable & Movable,
         //,
         method: def(
-            self_: PythonObject, * args: * PyArgs, var ** kwargs: PythonObject
+            self_: PythonObject, *args: *PyArgs, var **kwargs: PythonObject
         ) raises thin -> RetType,
     ](
         mut self: Self,
@@ -1041,7 +1042,7 @@ struct PythonTypeBuilder(Copyable):
         RetType: Deinitable & Movable,
         //,
         method: def(
-            self_: Pointer[SelfType, MutUnsafeAnyOrigin], * args: * PyArgs
+            self_: Pointer[SelfType, MutUnsafeAnyOrigin], *args: *PyArgs
         ) raises thin -> RetType,
     ](
         mut self: Self,
@@ -1063,9 +1064,7 @@ struct PythonTypeBuilder(Copyable):
         PyArgs: TypeList[Trait=type_of(PythonObject), ...],
         RetType: Deinitable & Movable,
         //,
-        method: def(
-            self_: PythonObject, * args: * PyArgs
-        ) raises thin -> RetType,
+        method: def(self_: PythonObject, *args: *PyArgs) raises thin -> RetType,
     ](
         mut self: Self,
         method_name: StaticString,
@@ -1084,7 +1083,7 @@ struct PythonTypeBuilder(Copyable):
         RetType: Deinitable & Movable,
         //,
         method: def(
-            * args: * PyArgs, var ** kwargs: PythonObject
+            *args: *PyArgs, var **kwargs: PythonObject
         ) raises thin -> RetType,
     ](
         mut self: Self,
@@ -1135,7 +1134,7 @@ struct PythonTypeBuilder(Copyable):
         PyArgs: TypeList[Trait=type_of(PythonObject), ...],
         RetType: Deinitable & Movable,
         //,
-        method: def(* args: * PyArgs) raises thin -> RetType,
+        method: def(*args: *PyArgs) raises thin -> RetType,
     ](
         mut self: Self,
         method_name: StaticString,
@@ -1407,7 +1406,7 @@ def _py_kwargs_function_wrapper[
     RetType: Deinitable & Movable,
     //,
     func: def(
-        * args: * PyArgs, var ** kwargs: PythonObject
+        *args: *PyArgs, var **kwargs: PythonObject
     ) raises thin -> RetType,
 ]() -> GenericPyFunction:
     """Converts a kwargs-accepting user signature to a GenericPyFunction.
@@ -1436,8 +1435,9 @@ def _py_kwargs_method_wrapper[
     RetType: Deinitable & Movable,
     //,
     method: def(
-        self_: Pointer[SelfType, MutUnsafeAnyOrigin], * args: * PyArgs,
-        var ** kwargs: PythonObject,
+        self_: Pointer[SelfType, MutUnsafeAnyOrigin],
+        *args: *PyArgs,
+        var **kwargs: PythonObject,
     ) raises thin -> RetType,
 ]() -> GenericPyFunction:
     @inline(.always)
@@ -1460,7 +1460,7 @@ def _py_kwargs_method_wrapper[
     RetType: Deinitable & Movable,
     //,
     method: def(
-        self_: PythonObject, * args: * PyArgs, var ** kwargs: PythonObject
+        self_: PythonObject, *args: *PyArgs, var **kwargs: PythonObject
     ) raises thin -> RetType,
 ]() -> GenericPyFunction:
     @inline(.always)
@@ -1486,7 +1486,7 @@ def _py_function_fastcall_wrapper[
     PyArgs: TypeList[Trait=type_of(PythonObject), ...],
     RetType: Deinitable & Movable,
     //,
-    func: def(* args: * PyArgs) raises thin -> RetType,
+    func: def(*args: *PyArgs) raises thin -> RetType,
 ](
     py_self_ptr: PyObjectPtr,
     args: Pointer[PyObjectPtr, MutUntrackedOrigin],
@@ -1536,7 +1536,7 @@ def _py_method_typed_fastcall_wrapper[
     RetType: Deinitable & Movable,
     //,
     method: def(
-        self_: Pointer[SelfType, MutUnsafeAnyOrigin], * args: * PyArgs
+        self_: Pointer[SelfType, MutUnsafeAnyOrigin], *args: *PyArgs
     ) raises thin -> RetType,
 ](
     py_self_ptr: PyObjectPtr,
@@ -1558,7 +1558,7 @@ def _py_method_fastcall_wrapper[
     PyArgs: TypeList[Trait=type_of(PythonObject), ...],
     RetType: Deinitable & Movable,
     //,
-    method: def(self_: PythonObject, * args: * PyArgs) raises thin -> RetType,
+    method: def(self_: PythonObject, *args: *PyArgs) raises thin -> RetType,
 ](
     py_self_ptr: PyObjectPtr,
     args: Pointer[PyObjectPtr, MutUntrackedOrigin],
@@ -1599,7 +1599,7 @@ def _dispatch_python_object_function[
     PyArgs: TypeList[Trait=type_of(PythonObject), ...],
     RetType: Deinitable & Movable,
     //,
-    func: def(* args: * PyArgs) raises thin -> RetType,
+    func: def(*args: *PyArgs) raises thin -> RetType,
 ](
     args: Pointer[PyObjectPtr, MutUntrackedOrigin],
     nargs: Int,
@@ -1627,7 +1627,7 @@ def _dispatch_python_object_method[
     PyArgs: TypeList[Trait=type_of(PythonObject), ...],
     RetType: Deinitable & Movable,
     //,
-    method: def(self_: SelfArg, * args: * PyArgs) raises thin -> RetType,
+    method: def(self_: SelfArg, *args: *PyArgs) raises thin -> RetType,
 ](
     self_arg: SelfArg,
     args: Pointer[PyObjectPtr, MutUntrackedOrigin],
@@ -1656,7 +1656,7 @@ def _dispatch_python_object_kwargs_function[
     RetType: Deinitable & Movable,
     //,
     func: def(
-        * args: * PyArgs, var ** kwargs: PythonObject
+        *args: *PyArgs, var **kwargs: PythonObject
     ) raises thin -> RetType,
 ](py_args: PythonObject, py_kwargs: PythonObject) raises -> PythonObject:
     check_arguments_arity(PyArgs.length, py_args)
@@ -1692,8 +1692,9 @@ def _dispatch_python_object_kwargs_method[
     RetType: Deinitable & Movable,
     //,
     method: def(
-        self_: SelfArg, * args: * PyArgs,
-        var ** kwargs: PythonObject,
+        self_: SelfArg,
+        *args: *PyArgs,
+        var **kwargs: PythonObject,
     ) raises thin -> RetType,
 ](
     self_arg: SelfArg,

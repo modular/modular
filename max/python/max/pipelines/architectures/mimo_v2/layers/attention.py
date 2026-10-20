@@ -311,6 +311,7 @@ class MiMoV2Attention(Module, Shardable):
         quant_config: QuantConfig,
         devices: list[DeviceRef],
         fused_sliding_qkv: bool = False,
+        fused_full_qkv: bool = False,
         is_sharding: bool = False,
     ) -> None:
         """Initializes the layer.
@@ -331,11 +332,14 @@ class MiMoV2Attention(Module, Shardable):
             fused_sliding_qkv: Whether sliding layers use the fused QKV
                 preparation op, which raises on an unsupported layout.
                 Defaults to ``False``.
+            fused_full_qkv: Whether full layers use the fused QKV preparation
+                op, which raises on an unsupported layout. Defaults to ``False``.
             is_sharding: Whether :meth:`shard` is building this instance and
                 will assign its weights.
         """
         super().__init__()
         self.fused_sliding_qkv = fused_sliding_qkv
+        self.fused_full_qkv = fused_full_qkv
         self.layout = layout
         self.head_dim = head_dim
         self.v_head_dim = v_head_dim
@@ -397,7 +401,12 @@ class MiMoV2Attention(Module, Shardable):
             self.qkv_proj(x),
             [tokens, layout.chunks, layout.padded_rows],
         )
-        if self.fused_sliding_qkv and self.sliding_window is not None:
+        fused_qkv = (
+            self.fused_full_qkv
+            if self.sliding_window is None
+            else self.fused_sliding_qkv
+        )
+        if fused_qkv:
             q = fused_chunked_qkv_rope_store_ragged(
                 qkv,
                 input_row_offsets,
@@ -408,6 +417,11 @@ class MiMoV2Attention(Module, Shardable):
                 num_q_heads=self.n_heads,
                 qk_head_dim=self.head_dim,
                 v_head_dim=self.v_head_dim,
+                chunk_padding=(
+                    layout.padded_rows - layout.rows
+                    if self.sliding_window is None
+                    else 0
+                ),
             )
         else:
             q = prepare_qkv_unfused(
@@ -497,6 +511,7 @@ class MiMoV2Attention(Module, Shardable):
                 quant_config=self.quant_config,
                 devices=[device],
                 fused_sliding_qkv=self.fused_sliding_qkv,
+                fused_full_qkv=self.fused_full_qkv,
                 is_sharding=True,
             )
             shard.qkv_proj = qkv_shards[i]

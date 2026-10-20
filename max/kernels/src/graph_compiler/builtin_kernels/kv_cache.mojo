@@ -97,7 +97,7 @@ struct Struct_kv_cache_store_paged:
         max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
         layer_idx: UInt32,
         context: DeviceContext,
-    ) capturing raises:
+    ) raises:
         var paged_kv_collection = generic_get_paged_cache(
             kv_blocks,
             page_stride,
@@ -219,7 +219,7 @@ struct Struct_kv_cache_store_k_scales_paged:
         k_scales_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
         layer_idx: UInt32,
         context: DeviceContext,
-    ) capturing raises:
+    ) raises:
         comptime page_size = Int(kv_blocks.static_spec.shape_tuple[3])
         comptime head_dim = Int(kv_blocks.static_spec.shape_tuple[5])
         comptime num_heads = Int(kv_blocks.static_spec.shape_tuple[4])
@@ -325,7 +325,7 @@ struct Struct_kv_cache_store_padded:
         max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
         layer_idx: UInt32,
         context: DeviceContext,
-    ) capturing raises:
+    ) raises:
         var paged_kv_collection = generic_get_paged_cache(
             kv_blocks,
             page_stride,

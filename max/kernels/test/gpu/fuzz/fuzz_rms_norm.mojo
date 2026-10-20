@@ -100,27 +100,23 @@ def run_one_case(
     comptime weight_offset = Float32(0.0)
 
     @inline(.always)
-    @__copy_capture(data_buf)
-    @__parameter
-    def input_fn[width: Int](coords: Coord) -> SIMD[rn_type, width]:
+    def input_fn[
+        width: Int
+    ](coords: Coord) {var data_buf} -> SIMD[rn_type, width]:
         return data_buf.load[width=width](coords)
 
     @inline(.always)
-    @__copy_capture(data_buf)
-    @__parameter
     def identity_output_fn[
         width: SIMDLength, alignment: Int
-    ](coords: Coord, val: SIMD[rn_type, width]) -> None:
+    ](coords: Coord, val: SIMD[rn_type, width]) {var data_buf} -> None:
         data_buf.store[alignment=alignment](coords, val)
 
     rms_norm_gpu[
         rn_rank,
-        input_fn,
-        identity_output_fn,
         epsilon=epsilon,
         weight_offset=weight_offset,
         multiply_before_cast=True,
-    ](Coord(shape), gamma, ctx)
+    ](input_fn, identity_output_fn, Coord(shape), gamma, ctx)
     ctx.synchronize()
 
     if check:

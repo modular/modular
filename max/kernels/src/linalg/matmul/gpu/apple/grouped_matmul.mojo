@@ -329,7 +329,7 @@ def grouped_matmul_mma_kernel[
         var col = Int(idx[1])
         var row_idx = Coord(row, col)
         comptime if has_compute_fn:
-            c_ptr.unsafe_offset(row * N).unsafe_offset(col).store[
+            c_ptr.unsafe_offset(row * N).unsafe_offset(col).unsafe_store[
                 alignment=alignment
             ](
                 rebind[SIMD[c_type, width]](
@@ -465,8 +465,7 @@ def enqueue_apple_grouped_gemv[
         b.as_imm(),
         a_offsets,
         expert_ids,
-        host_arg=epilogue_fn,
-        host_arg2=compute_fn,
+        host_args=(epilogue_fn, compute_fn),
         grid_dim=(ceildiv(N, rows_per_sg * num_sg), 1, num_active_experts),
         block_dim=(num_sg * WARP_SIZE),
     )
@@ -573,8 +572,7 @@ def enqueue_apple_grouped_mma[
                     UInt32(g0),
                     log2_m,
                     log2_n,
-                    host_arg=epilogue_fn,
-                    host_arg2=compute_fn,
+                    host_args=(epilogue_fn, compute_fn),
                     grid_dim=((1 << Int(log2_m)) * (1 << Int(log2_n)), 1, ng),
                     block_dim=(MM.THREADS_PER_BLOCK),
                 )

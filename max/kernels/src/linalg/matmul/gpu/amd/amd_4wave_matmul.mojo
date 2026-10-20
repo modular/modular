@@ -839,7 +839,7 @@ struct AMD4WaveMatmul[
         """Same as `run` without split-K, storing the output through
         `epilogue_fn`.
 
-        Launch with `host_arg=epilogue_fn`.
+        Launch with `host_args=(epilogue_fn,)`.
 
         Parameters:
             a_layout: Logical layout of `a`.
@@ -887,7 +887,7 @@ struct AMD4WaveMatmul[
         """Same as `run` without split-K, storing `compute_fn(idx, value)`
         into `c`.
 
-        Launch with `host_arg=compute_fn`.
+        Launch with `host_args=(compute_fn,)`.
 
         Parameters:
             a_layout: Logical layout of `a`.
@@ -2295,7 +2295,7 @@ def _structured_4wave_matmul_impl[
                 a,
                 b,
                 c,
-                host_arg=epilogue_fn,
+                host_args=(epilogue_fn,),
                 grid_dim=(num_blocks_n * num_blocks_m,),
                 block_dim=config.num_threads(),
             )
@@ -2313,7 +2313,7 @@ def _structured_4wave_matmul_impl[
                 a,
                 b,
                 c,
-                host_arg=compute_fn,
+                host_args=(compute_fn,),
                 grid_dim=(num_blocks_n * num_blocks_m,),
                 block_dim=config.num_threads(),
             )

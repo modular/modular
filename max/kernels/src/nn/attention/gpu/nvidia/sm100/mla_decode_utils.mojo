@@ -3946,7 +3946,7 @@ struct MLA_SM100_Decode_Common[
                 var logical_bits: UInt32 = 0
                 var slot = 0
                 while slot + logical_batch <= n_readable:
-                    var pos = logical_row.load[
+                    var pos = logical_row.unsafe_load[
                         width=logical_batch, alignment=4
                     ](slot)
                     var visible = pos.ge(lowest_pos) & pos.le(causal_last)

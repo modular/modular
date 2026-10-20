@@ -99,10 +99,10 @@ struct LoadStore_i8mm[
                 if self.skip_boundary_check or (
                     idx1 * 2 + 2 <= c_bound[1] - tile_n_idx
                 ):
-                    var t0 = c_ptr_loc.load[width=2](
+                    var t0 = c_ptr_loc.unsafe_load[width=2](
                         c_stride * (2 * idx0) + 2 * idx1
                     )
-                    var t1 = c_ptr_loc.load[width=2](
+                    var t1 = c_ptr_loc.unsafe_load[width=2](
                         c_stride * (2 * idx0 + 1) + 2 * idx1
                     ) if not Self.single_row else SIMD[Self.dtype, 2](0)
                     c_data = rebind[SIMD[Self.dtype, Self.simd_size]](
@@ -149,7 +149,7 @@ struct LoadStore_i8mm[
                 ):
                     c_ptr_loc.unsafe_offset(
                         c_stride * (2 * idx0 + 0) + 2 * idx1
-                    ).store(
+                    ).unsafe_store(
                         c_data.slice[2](),
                     )
 
@@ -158,7 +158,7 @@ struct LoadStore_i8mm[
                             c_ptr_loc.unsafe_offset(
                                 c_stride * (2 * idx0 + 1) + 2 * idx1
                             )
-                        ).store(
+                        ).unsafe_store(
                             c_data.slice[2, offset=2](),
                         )
                 elif idx1 * 2 <= c_bound[1]:
@@ -252,10 +252,10 @@ struct Inner_matmul_i8mm(InnerMatmulKernel, Movable):
         comptime for idx0 in range(kernel_rows):
             comptime for idx1 in range(kernel_cols // simd_size):
                 comptime alignment = align_of[SIMD[c_local.dtype, simd_size]]()
-                var a_val = a_ptr.load[width=SIMDLength(simd_size) * 4](
+                var a_val = a_ptr.unsafe_load[width=SIMDLength(simd_size) * 4](
                     2 * idx0 * K
                 )
-                var b_val = b_ptr.unsafe_offset(16 * idx1).load[
+                var b_val = b_ptr.unsafe_offset(16 * idx1).unsafe_load[
                     width=SIMDLength(simd_size) * 4, alignment=alignment
                 ]()
                 var c_val = c_local[idx0, idx1]

@@ -208,12 +208,22 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
         else:
             images = None
 
-        processed_inputs = self.processor(
-            text=prompt,
-            images=images,
-            add_special_tokens=add_special_tokens,
-            return_tensors="np",
-        )
+        if isinstance(prompt, str):
+            processed_inputs = self.processor(
+                text=prompt,
+                images=images,
+                add_special_tokens=add_special_tokens,
+                return_tensors="np",
+            )
+        elif images is not None:
+            raise ValueError(
+                "A prompt given as token ids can't carry images. Send the "
+                "images with messages instead."
+            )
+        else:
+            # Hugging Face processors take only text, so token ids skip the
+            # processor.
+            processed_inputs = {"input_ids": [list(prompt)]}
 
         if "input_ids" not in processed_inputs:
             raise ValueError(

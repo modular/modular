@@ -130,3 +130,6 @@ def register_request(app: FastAPI, *, structured_logging: bool = False) -> None:
                 )
                 if not span_ends_with_body:
                     server_span.end()
+                logger.info(
+                    "Request %s returned status %d", request_id, status_code
+                )

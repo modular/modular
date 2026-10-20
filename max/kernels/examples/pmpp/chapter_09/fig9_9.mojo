@@ -16,6 +16,7 @@ from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from std.math import ceildiv
 from std.atomic import Atomic
+from std.memory.alloc import unsafe_alloc
 from std.random import random_ui64
 
 # ========================== CONFIGURATION ==========================
@@ -83,9 +84,9 @@ def main() raises:
     var total_pixels = Int(width * height)
 
     # Host memory allocation
-    var h_image = alloc[UInt8](total_pixels)
-    var h_bins = alloc[UInt32](NUM_BINS)
-    var h_ref = alloc[UInt32](NUM_BINS)
+    var h_image = unsafe_alloc[UInt8](total_pixels)
+    var h_bins = unsafe_alloc[UInt32](NUM_BINS)
+    var h_ref = unsafe_alloc[UInt32](NUM_BINS)
 
     # Calculate number of blocks
     var threads_per_block = 256
@@ -120,11 +121,11 @@ def main() raises:
         ctx.enqueue_copy(d_bins, h_bins)
 
         # Zero out bins_pool
-        var zeros = alloc[UInt32](blocks * NUM_BINS)
+        var zeros = unsafe_alloc[UInt32](blocks * NUM_BINS)
         for i in range(blocks * NUM_BINS):
             zeros[i] = 0
         ctx.enqueue_copy(d_bins_pool, zeros)
-        zeros.free()
+        zeros.unsafe_free()
 
         # Launch kernel
         ctx.enqueue_function[histogram_kernel](
@@ -155,9 +156,9 @@ def main() raises:
             errors += 1
 
     # Cleanup
-    h_image.free()
-    h_bins.free()
-    h_ref.free()
+    h_image.unsafe_free()
+    h_bins.unsafe_free()
+    h_ref.unsafe_free()
 
     if errors == 0:
         print("SUCCESS: All values match!")

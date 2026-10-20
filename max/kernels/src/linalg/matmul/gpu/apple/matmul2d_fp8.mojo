@@ -434,7 +434,7 @@ struct Matmul2dFp8[
             var col = Int(idx[1])
             var row_idx = Coord(row, col)
             comptime if has_compute_fn:
-                c_ptr.unsafe_offset(row * N).unsafe_offset(col).store[
+                c_ptr.unsafe_offset(row * N).unsafe_offset(col).unsafe_store[
                     alignment=alignment
                 ](
                     rebind[SIMD[Self.c_type, width]](
@@ -554,7 +554,7 @@ def enqueue_matmul2d_fp8[
             weight.as_imm(),
             log2_m,
             log2_n,
-            host_arg=epilogue_fn,
+            host_args=(epilogue_fn,),
             grid_dim=(side_m * side_n),
             block_dim=(MM.THREADS_PER_BLOCK),
         )
@@ -673,8 +673,7 @@ def enqueue_grouped_matmul2d_fp8[
         expert_ids,
         Int32(n),
         Int32(k),
-        host_arg=epilogue_fn,
-        host_arg2=compute_fn,
+        host_args=(epilogue_fn, compute_fn),
         grid_dim=(grid_n, grid_m, num_active_experts),
         block_dim=(MM.THREADS_PER_BLOCK),
     )

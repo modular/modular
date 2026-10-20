@@ -2008,23 +2008,17 @@ def LIT_RefStoreOp : LITOp<"ref.store", [ReferenceElementType<"dest", "value">]>
 // MemcpyOp
 //===----------------------------------------------------------------------===//
 
-// Checks that all reference element types match.
-class EqualPointeeTypes<list<string> names> :
-    AllMatchSameOperatorTrait<
-        names, "llvm::cast<RefType>($_self.getType()).getElementType()",
-        "element types"
-    >;
-
-def LIT_MemcpyOp : LITOp<"memcpy", [EqualPointeeTypes<["src", "dst"]>]> {
+def LIT_MemcpyOp : LITOp<"memcpy"> {
   let summary = "memcpy operation";
   let description = [{
     Performs an in-memory copy operation between the source reference and
     destination reference. The source reference may either be mutable or
     immutable; the destination reference must be mutable. Unlike regular
     memcpy, this op doesn't work on bytes - it does a whole-value copy of the
-    references' element type. The two references may have differing address
-    space qualifiers. The destination is considered 'initialized' by this
-    operation.
+    references' element type. The element types must be canonically equal, so
+    they may differ in type sugar such as aliases. The two references may have
+    differing address space qualifiers. The destination is considered
+    'initialized' by this operation.
 
     Example:
 
@@ -2038,6 +2032,7 @@ def LIT_MemcpyOp : LITOp<"memcpy", [EqualPointeeTypes<["src", "dst"]>]> {
   let arguments = (ins LIT_RefType:$src, LIT_RefType:$dst);
   let results = (outs);
   let assemblyFormat = "$src `,` $dst attr-dict `:` type($src) `->` type($dst)";
+  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//

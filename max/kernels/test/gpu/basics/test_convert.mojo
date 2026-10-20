@@ -67,7 +67,7 @@ def convert_kernel[
             Scalar[src_type](i), Scalar[src_type](i + 1)
         )
         var dst_vec = src_vec.cast[dst_type]()
-        dst_ptr.store(i, dst_vec)
+        dst_ptr.unsafe_store(i, dst_vec)
 
 
 def test_convert[src_type: DType, dst_type: DType](ctx: DeviceContext) raises:

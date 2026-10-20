@@ -22,8 +22,12 @@ from std.random import random_float64, seed
 from std.utils.numerics import inf, nan, neg_inf
 
 from max.gpu.host import DeviceContext
-from layout import TileTensor, row_major
+from layout import Idx, TileTensor, row_major
 from nn.argmaxmin_gpu import argmax_gpu, argmax_with_bias_gpu
+
+comptime STATIC_BOTH = 1
+comptime STATIC_LOGITS = 2
+comptime STATIC_BIAS = 3
 
 comptime FILL_RANDOM = 0
 comptime FILL_TIES = 1
@@ -33,7 +37,7 @@ comptime FILL_ALL_NEG_INF = 4
 
 
 def _check[
-    dtype: DType, bias_dtype: DType
+    dtype: DType, bias_dtype: DType, static_layout: Int = 0
 ](
     ctx: DeviceContext,
     label: String,
@@ -110,13 +114,38 @@ def _check[
             TileTensor(sum_dev, row_major(rows, vocab)),
             TileTensor(want_dev, row_major(rows, 1)),
         )
-        argmax_with_bias_gpu(
-            ctx,
-            TileTensor(logits_dev, row_major(rows, positions, vocab)),
-            TileTensor(bias_dev, row_major(rows, vocab)),
-            position,
-            TileTensor(got_dev, row_major(rows)),
-        )
+        comptime if static_layout == STATIC_BOTH:
+            argmax_with_bias_gpu(
+                ctx,
+                TileTensor(logits_dev, row_major(rows, Idx[7], Idx[131072])),
+                TileTensor(bias_dev, row_major(rows, Idx[131072])),
+                position,
+                TileTensor(got_dev, row_major(rows)),
+            )
+        elif static_layout == STATIC_LOGITS:
+            argmax_with_bias_gpu(
+                ctx,
+                TileTensor(logits_dev, row_major(rows, Idx[7], Idx[131072])),
+                TileTensor(bias_dev, row_major(rows, vocab)),
+                position,
+                TileTensor(got_dev, row_major(rows)),
+            )
+        elif static_layout == STATIC_BIAS:
+            argmax_with_bias_gpu(
+                ctx,
+                TileTensor(logits_dev, row_major(rows, positions, vocab)),
+                TileTensor(bias_dev, row_major(rows, Idx[131072])),
+                position,
+                TileTensor(got_dev, row_major(rows)),
+            )
+        else:
+            argmax_with_bias_gpu(
+                ctx,
+                TileTensor(logits_dev, row_major(rows, positions, vocab)),
+                TileTensor(bias_dev, row_major(rows, vocab)),
+                position,
+                TileTensor(got_dev, row_major(rows)),
+            )
         ctx.enqueue_copy(got_host, got_dev)
         ctx.enqueue_copy(want_host, want_dev)
         ctx.synchronize()
@@ -164,6 +193,21 @@ def _run[dtype: DType, bias_dtype: DType](ctx: DeviceContext) raises:
     var t = FILL_TIES
     # The DSpark Markov head shape: 7 positions over a 131072 vocabulary.
     _check[dtype, bias_dtype](ctx, "markov", 3, 7, 131072, [r, t, r])
+    # Production layouts keep the draft width and vocabulary static.
+    _check[dtype, bias_dtype, STATIC_BOTH](
+        ctx, "static-markov", 16, 7, 131072, [r, t]
+    )
+    # FP32 uses a smaller, already-launchable block at a single row.
+    _check[dtype, bias_dtype, STATIC_BOTH](
+        ctx, "static-single", 1, 7, 131072, [r, t]
+    )
+    # Each input can independently carry a static vocabulary.
+    _check[dtype, bias_dtype, STATIC_LOGITS](
+        ctx, "static-logits", 16, 7, 131072, [r, t]
+    )
+    _check[dtype, bias_dtype, STATIC_BIAS](
+        ctx, "static-bias", 16, 7, 131072, [r, t]
+    )
     # Odd widths take the unaligned loads and the ragged tail.
     _check[dtype, bias_dtype](ctx, "odd-vocab", 2, 3, 32003, [t, r])
     _check[dtype, bias_dtype](ctx, "tiny-vocab", 3, 2, 7, [r])
@@ -186,4 +230,6 @@ def main() raises:
         _run[DType.bfloat16, DType.bfloat16](ctx)
         _run[DType.float32, DType.float32](ctx)
         _run[DType.bfloat16, DType.float32](ctx)
+        _run[DType.float32, DType.bfloat16](ctx)
+        _run[DType.float16, DType.float16](ctx)
     print("OK")

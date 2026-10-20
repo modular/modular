@@ -1200,7 +1200,9 @@ TypeCheckedParamList::create(ParsedParamList &parsedParams,
 
     auto &resolvedDecl = emitter.getDeclResolver().addFullyResolvedDecl(
         PValue(ParamDeclRefAttr::get(newDecl)), arg.name, arg.loc, &declScope);
-    resolvedDecl.setArgOrParamNumber(static_cast<ssize_t>(argIdx));
+    resolvedDecl.setArgOrParamNumber(static_cast<ssize_t>(argIdx),
+                                     /*isParameter=*/true);
+    result.paramASTDecls.push_back(&resolvedDecl);
     emitter.shared.notifyListenerOnParameterDecl(resolvedDecl, arg.loc);
     remapper.appendParamDecl(newDecl);
   }
@@ -2238,10 +2240,19 @@ static void typeCheckOneArgument(size_t idx, DefASTDecl *fnDecl,
   // SSA value.
   //
   // Names are always present for function bodies, but can be missing in
-  // function types.  In that case, there are obviously no dependent values on
-  // it, because they can't be named.
-  if (arg.name.empty())
+  // function types. Keep an anonymous declaration for the latter so the
+  // function-type owner's argument list remains aligned with its signature.
+  if (arg.name.empty()) {
+    if (!fnDecl && arg.kgenConvention != ArgConvention::ByRefError &&
+        arg.kgenConvention != ArgConvention::ByRefResult) {
+      auto &decl = typeEmitter.getDeclResolver().addFullyResolvedDecl(
+          CValue(), StringAttr(), arg.loc, &typeEmitter.declScope);
+      decl.setArgOrParamNumber(static_cast<ssize_t>(idx),
+                               /*isParameter=*/false);
+      tcSignature.argASTDecls.push_back(&decl);
+    }
     return;
+  }
 
   // Create the block argument that will eventually represent this function
   // argument.  If we're generating this argument for a function, put it into
@@ -2260,7 +2271,9 @@ static void typeCheckOneArgument(size_t idx, DefASTDecl *fnDecl,
 
   auto &decl = typeEmitter.getDeclResolver().addFullyResolvedDecl(
       argIRValue, arg.name, arg.loc, &typeEmitter.declScope);
-  decl.setArgOrParamNumber(static_cast<ssize_t>(idx));
+  decl.setArgOrParamNumber(static_cast<ssize_t>(idx),
+                           /*isParameter=*/false);
+  tcSignature.argASTDecls.push_back(&decl);
 
   // If we don't have a function decl, notify the listener immediately (function
   // arguments will be notified when they are fully resolved later).
@@ -2532,7 +2545,9 @@ static void typeCheckResult(ParsedArgument resultArg, DefASTDecl *fnDecl,
       auto &resultDecl = shared.getDeclResolver().addFullyResolvedDecl(
           MLValue(bbArg), resultArg.name, resultArg.loc, &declScope);
       resultDecl.setArgOrParamNumber(
-          static_cast<ssize_t>(tcSignature.argList.parsedArgs.size() - 1));
+          static_cast<ssize_t>(tcSignature.argList.parsedArgs.size() - 1),
+          /*isParameter=*/false);
+      tcSignature.argASTDecls.push_back(&resultDecl);
     }
 
     // We know the ABI register result will be None now, which is trivial.

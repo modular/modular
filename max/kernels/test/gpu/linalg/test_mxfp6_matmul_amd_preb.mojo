@@ -127,10 +127,10 @@ def _mxfp6_matmul_ref[
         var fb = SIMD[.uint8, 32](0)
         comptime for chunk in range(3):
             fa = fa.insert[offset=chunk * 8](
-                a_ptr.load[width=8](a_base + chunk * 8)
+                a_ptr.unsafe_load[width=8](a_base + chunk * 8)
             )
             fb = fb.insert[offset=chunk * 8](
-                b_ptr.load[width=8](b_base + chunk * 8)
+                b_ptr.unsafe_load[width=8](b_base + chunk * 8)
             )
 
         var av = decode_fp6_to_f32[fmt](unpack_fp6_x32(fa)) * a_scale

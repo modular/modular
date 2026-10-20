@@ -154,7 +154,7 @@ struct DistributedAllReduceSum:
             dtype=DType.uint8, rank=1, ...
         ],
         dev_ctxs_input: DeviceContextArray,
-    ) capturing raises:
+    ) raises:
         """Distributed allreduce operation implementation for sum reduction.
 
         Parameters:
@@ -201,28 +201,6 @@ struct DistributedAllReduceSum:
             ](inputs[group_start].size())
             _check_signal_buffer_size(
                 signal_buffers[group_start].size(), scratch_buffer_size_bytes
-            )
-
-        # output_lambda writes each device's reduced output into the fused
-        # epilogue output tensor. Defined at execute scope so that
-        # epilogue_wrapper in vendor_ccl.allreduce (also execute scope) can
-        # call it without triggering the MLIR 'kgen.param.declare.region must
-        # have subprogram scope' error that arises when parameterized functions
-        # are defined inside closures.
-        @inline(.always)
-        @__parameter
-        def output_lambda[
-            output_index: Int,
-            _dtype: DType,
-            _width: SIMDLength,
-            *,
-            _alignment: Int,
-        ](coords: Coord, val: SIMD[_dtype, _width]) -> None:
-            outputs[output_index]._lambda_store[
-                width=_width, element_alignment=_alignment
-            ](
-                rebind[IndexList[rank]](coord_to_index_list(coords)),
-                rebind[SIMD[dtype, _width]](val),
             )
 
         # Marshal signal buffers into the expected format. World-view, indexed
@@ -277,12 +255,30 @@ struct DistributedAllReduceSum:
                 else:
                     vendor_ccl.wait_for_comms(num_devices)
 
-                vendor_ccl.allreduce[
-                    ngpus=num_devices,
-                    output_lambda=output_lambda[output_index=index, ...],
-                ](
+                # Writes this device's reduced output into its fused epilogue
+                # output. It runs on the device, so it copies the tensor.
+                var out_tensor = outputs[index]
+
+                @inline(.always)
+                def output_lambda[
+                    _dtype: DType,
+                    _width: SIMDLength,
+                    *,
+                    alignment: Int,
+                ](coords: Coord, val: SIMD[_dtype, _width]) {
+                    var out_tensor
+                } -> None:
+                    out_tensor._lambda_store[
+                        width=_width, element_alignment=alignment
+                    ](
+                        rebind[IndexList[rank]](coord_to_index_list(coords)),
+                        rebind[SIMD[dtype, _width]](val),
+                    )
+
+                vendor_ccl.allreduce[ngpus=num_devices](
                     in_tensors,
                     outputs[index].runtime_layout(),
+                    output_lambda,
                     rank_sigs,
                     dev_ctxs_input[index],
                 )
@@ -304,13 +300,30 @@ struct DistributedAllReduceSum:
             imm outputs,
         }:
             var out_layout = outputs[index].runtime_layout()
-            allreduce[
-                ngpus=num_devices,
-                group_size=effective_group_size,
-                output_lambda=output_lambda[output_index=index, ...],
-            ](
+            # Writes this device's reduced output into its fused epilogue
+            # output. It runs on the device, so it copies the tensor.
+            var out_tensor = outputs[index]
+
+            @inline(.always)
+            def output_lambda[
+                _dtype: DType,
+                _width: SIMDLength,
+                *,
+                alignment: Int,
+            ](coords: Coord, val: SIMD[_dtype, _width]) {
+                var out_tensor
+            } -> None:
+                out_tensor._lambda_store[
+                    width=_width, element_alignment=alignment
+                ](
+                    rebind[IndexList[rank]](coord_to_index_list(coords)),
+                    rebind[SIMD[dtype, _width]](val),
+                )
+
+            allreduce[ngpus=num_devices, group_size=effective_group_size](
                 in_tensors,
                 out_layout,
+                output_lambda,
                 rank_sigs,
                 dev_ctxs_input[index],
                 my_rank=index,
@@ -341,7 +354,7 @@ struct DistributedReduceScatterSum:
             dtype=DType.uint8, rank=1, ...
         ],
         dev_ctxs_input: DeviceContextArray,
-    ) capturing raises:
+    ) raises:
         """Distributed reduce-scatter operation implementation for sum reduction.
 
         Parameters:
@@ -420,23 +433,6 @@ struct DistributedReduceScatterSum:
             )
 
         @inline(.always)
-        @__parameter
-        def output_lambda[
-            output_index: Int,
-            _dtype: DType,
-            _width: SIMDLength,
-            *,
-            _alignment: Int,
-        ](coords: Coord, val: SIMD[_dtype, _width]) -> None:
-            outputs[output_index]._lambda_store[
-                width=_width,
-                element_alignment=_alignment,
-            ](
-                rebind[IndexList[rank]](coord_to_index_list(coords)),
-                rebind[SIMD[dtype, _width]](val),
-            )
-
-        @inline(.always)
         def launch_reducescatter[
             index: Int
         ]() raises {
@@ -444,15 +440,32 @@ struct DistributedReduceScatterSum:
             imm out_layouts,
             imm rank_sigs,
             imm dev_ctxs_input,
+            imm outputs,
         }:
-            reducescatter[
-                ngpus=num_devices,
-                group_size=group_size,
-                output_lambda=output_lambda[output_index=index, ...],
-                axis=axis,
-            ](
+            # Writes this device's reduced output into its fused epilogue
+            # output. It runs on the device, so it copies the tensor.
+            var out_tensor = outputs[index]
+
+            @inline(.always)
+            def output_lambda[
+                _dtype: DType,
+                _width: SIMDLength,
+                *,
+                alignment: Int,
+            ](coords: Coord, val: SIMD[_dtype, _width]) {
+                var out_tensor
+            } -> None:
+                out_tensor._lambda_store[
+                    width=_width, element_alignment=alignment
+                ](
+                    rebind[IndexList[rank]](coord_to_index_list(coords)),
+                    rebind[SIMD[dtype, _width]](val),
+                )
+
+            reducescatter[ngpus=num_devices, group_size=group_size, axis=axis](
                 in_tensors,
                 out_layouts,
+                output_lambda,
                 rank_sigs,
                 dev_ctxs_input[index],
                 my_rank=index,
@@ -482,7 +495,7 @@ struct DistributedAllGather:
             dtype=DType.uint8, rank=1, ...
         ],
         dev_ctxs_input: DeviceContextArray,
-    ) capturing raises:
+    ) raises:
         """Distributed allgather operation implementation.
 
         Parameters:
@@ -613,7 +626,7 @@ struct DistributedBroadcast:
             dtype=DType.uint8, rank=1, ...
         ],
         dev_ctxs_input: DeviceContextArray,
-    ) capturing raises:
+    ) raises:
         """Execute distributed broadcast operation.
 
         Parameters:
@@ -720,7 +733,7 @@ struct DistributedScatter:
             dtype=DType.uint8, rank=1, ...
         ],
         dev_ctxs_input: DeviceContextArray,
-    ) capturing raises:
+    ) raises:
         comptime ngpus = signal_buffers.size
         comptime assert (
             root >= 0 and root < ngpus
@@ -812,7 +825,7 @@ struct DistributedAllReduceAddRMSNormQuantFP8:
         gammas: InputVariadicTensors[dtype=dtype, rank=1, ...],
         scales_ub: InputVariadicTensors[dtype=DType.float32, ...],
         dev_ctxs_input: DeviceContextArray,
-    ) capturing raises:
+    ) raises:
         comptime num_devices = inputs.size
         comptime assert signal_buffers.size == num_devices, (
             "expected allreduce inputs and signal buffers to have"
@@ -951,7 +964,7 @@ struct DistributedReduceScatterRMSNorm:
         gammas: InputVariadicTensors[dtype=dtype, rank=1, ...],
         residuals: InputVariadicTensors[dtype=dtype, rank=rank, ...],
         dev_ctxs_input: DeviceContextArray,
-    ) capturing raises:
+    ) raises:
         """Fused reduce-scatter sum + RMSNorm + residual add (bf16, no quant).
 
         Reduce-scatters `inputs` (one `[rows, cols]` tensor per device) along
@@ -1132,37 +1145,35 @@ struct DistributedReduceScatterRMSNorm:
                         my_rank=index,
                     )
 
-                # `@__copy_capture` is REQUIRED: embedded into the
-                # `rms_norm_gpu` device kernel, a captured local `var`
-                # (`sum_buf`/`normed_buf`) is not carried to the device without
-                # it -> the closure reads a garbage host-stack pointer and
-                # corrupts device memory.
-                @__copy_capture(sum_buf)
-                @__parameter
+                # The `{var}` copies are REQUIRED: run by the `rms_norm_gpu`
+                # device kernel, a local `var` (`sum_buf`/`normed_buf`)
+                # captured by reference is not carried to the device -> the
+                # closure reads a garbage host-stack pointer and corrupts
+                # device memory.
                 @inline(.always)
                 def norm_input_fn[
                     width: Int
-                ](coords: Coord) -> SIMD[dtype, width]:
+                ](coords: Coord) {var sum_buf} -> SIMD[dtype, width]:
                     return sum_buf.load[
                         width=width, alignment=align_of[dtype]()
                     ](coords)
 
-                @__copy_capture(normed_buf)
-                @__parameter
                 @inline(.always)
                 def norm_output_fn[
                     width: SIMDLength, alignment: Int
-                ](coords: Coord, val: SIMD[dtype, width]) -> None:
+                ](coords: Coord, val: SIMD[dtype, width]) {
+                    var normed_buf
+                } -> None:
                     normed_buf.store[alignment=alignment](coords, val)
 
                 rms_norm_gpu[
                     rank,
-                    norm_input_fn,
-                    norm_output_fn,
                     epsilon=epsilon,
                     weight_offset=weight_offset,
                     multiply_before_cast=True,
                 ](
+                    norm_input_fn,
+                    norm_output_fn,
                     sum_buf.layout.shape_coord(),
                     gamma_tensor,
                     dev_ctxs_input[index],
@@ -1236,7 +1247,7 @@ struct DistributedAllGatherRMSNorm:
         ],
         gammas: InputVariadicTensors[dtype=dtype, rank=1, ...],
         dev_ctxs_input: DeviceContextArray,
-    ) capturing raises:
+    ) raises:
         """Fused all-gather + RMSNorm (bf16 in/out, no quantization).
 
         All-gathers `inputs` (per-device `[shard_i, cols]` row-shards) into the
@@ -1393,35 +1404,34 @@ struct DistributedAllGatherRMSNorm:
                     index,
                 )
 
-                # `@__copy_capture` REQUIRED: without it the local `var`
-                # (`sum_buf`/`normed_buf`) reaches the `rms_norm_gpu` device
-                # kernel as a garbage host-stack pointer and corrupts memory.
-                @__copy_capture(sum_buf)
-                @__parameter
+                # The `{var}` copies are REQUIRED: captured by reference, the
+                # local `var` (`sum_buf`/`normed_buf`) reaches the
+                # `rms_norm_gpu` device kernel as a garbage host-stack pointer
+                # and corrupts memory.
                 @inline(.always)
                 def norm_input_fn[
                     width: Int
-                ](coords: Coord) -> SIMD[dtype, width]:
+                ](coords: Coord) {var sum_buf} -> SIMD[dtype, width]:
                     return sum_buf.load[
                         width=width, alignment=align_of[dtype]()
                     ](coords)
 
-                @__copy_capture(normed_buf)
-                @__parameter
                 @inline(.always)
                 def norm_output_fn[
                     width: SIMDLength, alignment: Int
-                ](coords: Coord, val: SIMD[dtype, width]) -> None:
+                ](coords: Coord, val: SIMD[dtype, width]) {
+                    var normed_buf
+                } -> None:
                     normed_buf.store[alignment=alignment](coords, val)
 
                 rms_norm_gpu[
                     rank,
-                    norm_input_fn,
-                    norm_output_fn,
                     epsilon=epsilon,
                     weight_offset=weight_offset,
                     multiply_before_cast=True,
                 ](
+                    norm_input_fn,
+                    norm_output_fn,
                     sum_buf.layout.shape_coord(),
                     gamma_tensor,
                     dev_ctxs_input[index],
@@ -1475,7 +1485,7 @@ struct DistributedAllGatherRMSNormQuantMXFP8:
         ],
         gammas: InputVariadicTensors[dtype=dtype, rank=1, ...],
         dev_ctxs_input: DeviceContextArray,
-    ) capturing raises:
+    ) raises:
         """Fused all-gather + RMSNorm that also emits an MXFP8 copy.
 
         `DistributedAllGatherRMSNorm` plus `outputs_quant`/`outputs_scale`. The
@@ -1667,14 +1677,14 @@ struct DistributedAllGatherRMSNormQuantMXFP8:
                     )
                 )
 
-            # `@__copy_capture` REQUIRED: any local this closure reads but does
-            # not list reaches the device as a host-stack pointer and faults.
-            @__copy_capture(quant_buf, scale_buf, cols_rt)
-            @__parameter
+            # The `{var}` copies are REQUIRED: a local this closure captures by
+            # reference reaches the device as a host-stack pointer and faults.
             @inline(.always)
             def mx_epilogue[
                 width: Int
-            ](row: Int, col: Int, val: SIMD[dtype, width]):
+            ](row: Int, col: Int, val: SIMD[dtype, width]) {
+                var quant_buf, var scale_buf, var cols_rt
+            }:
                 var quantized: SIMD[quant_dtype, width]
                 var e8m0: Scalar[scales_dtype]
                 quantized, e8m0 = quantize_mxfp8_lane_group[
@@ -1705,32 +1715,30 @@ struct DistributedAllGatherRMSNormQuantMXFP8:
                     index,
                 )
 
-                @__copy_capture(sum_buf)
-                @__parameter
                 @inline(.always)
                 def norm_input_fn[
                     width: Int
-                ](coords: Coord) -> SIMD[dtype, width]:
+                ](coords: Coord) {var sum_buf} -> SIMD[dtype, width]:
                     return sum_buf.load[
                         width=width, alignment=align_of[dtype]()
                     ](coords)
 
-                @__copy_capture(normed_buf)
-                @__parameter
                 @inline(.always)
                 def norm_output_fn[
                     width: SIMDLength, alignment: Int
-                ](coords: Coord, val: SIMD[dtype, width]) -> None:
+                ](coords: Coord, val: SIMD[dtype, width]) {
+                    var normed_buf
+                } -> None:
                     normed_buf.store[alignment=alignment](coords, val)
 
                 rms_norm_gpu[
                     rank,
-                    norm_input_fn,
-                    norm_output_fn,
                     epsilon=epsilon,
                     weight_offset=weight_offset,
                     multiply_before_cast=True,
                 ](
+                    norm_input_fn,
+                    norm_output_fn,
                     sum_buf.layout.shape_coord(),
                     gamma_tensor,
                     dev_ctxs_input[index],
@@ -1740,10 +1748,7 @@ struct DistributedAllGatherRMSNormQuantMXFP8:
                     dev_ctxs_input[index], quant_buf, scale_buf, normed_buf
                 )
 
-            _dispatch_ag_norm_quant[
-                quant_epilogue=mx_epilogue,
-                group_size=group_size,
-            ](
+            _dispatch_ag_norm_quant[group_size=group_size](
                 in_tensors,
                 normed_buf,
                 sum_buf,
@@ -1752,6 +1757,7 @@ struct DistributedAllGatherRMSNormQuantMXFP8:
                 weight_offset.cast[dtype](),
                 rank_sigs,
                 dev_ctxs_input[index],
+                mx_epilogue,
                 two_launch_with_quant,
                 my_rank=index,
             )
@@ -1792,7 +1798,7 @@ struct DistributedAllGatherRMSNormQuantMXFP6:
         ],
         gammas: InputVariadicTensors[dtype=dtype, rank=1, ...],
         dev_ctxs_input: DeviceContextArray,
-    ) capturing raises:
+    ) raises:
         """Fused all-gather + RMSNorm that also emits a packed MXFP6 copy.
 
         `DistributedAllGatherRMSNorm` plus `outputs_quant`/`outputs_scale`. The
@@ -1986,14 +1992,14 @@ struct DistributedAllGatherRMSNormQuantMXFP6:
                     )
                 )
 
-            # `@__copy_capture` REQUIRED: any local this closure reads but does
-            # not list reaches the device as a host-stack pointer and faults.
-            @__copy_capture(quant_buf, scale_buf, cols_rt)
-            @__parameter
+            # The `{var}` copies are REQUIRED: a local this closure captures by
+            # reference reaches the device as a host-stack pointer and faults.
             @inline(.always)
             def mx_epilogue[
                 width: Int
-            ](row: Int, col: Int, val: SIMD[dtype, width]):
+            ](row: Int, col: Int, val: SIMD[dtype, width]) {
+                var quant_buf, var scale_buf, var cols_rt
+            }:
                 comptime assert width % 4 == 0, (
                     "packed FP6 addresses groups of four codes, so a thread's"
                     " slice must be a whole number of groups"
@@ -2033,32 +2039,30 @@ struct DistributedAllGatherRMSNormQuantMXFP6:
                     index,
                 )
 
-                @__copy_capture(sum_buf)
-                @__parameter
                 @inline(.always)
                 def norm_input_fn[
                     width: Int
-                ](coords: Coord) -> SIMD[dtype, width]:
+                ](coords: Coord) {var sum_buf} -> SIMD[dtype, width]:
                     return sum_buf.load[
                         width=width, alignment=align_of[dtype]()
                     ](coords)
 
-                @__copy_capture(normed_buf)
-                @__parameter
                 @inline(.always)
                 def norm_output_fn[
                     width: SIMDLength, alignment: Int
-                ](coords: Coord, val: SIMD[dtype, width]) -> None:
+                ](coords: Coord, val: SIMD[dtype, width]) {
+                    var normed_buf
+                } -> None:
                     normed_buf.store[alignment=alignment](coords, val)
 
                 rms_norm_gpu[
                     rank,
-                    norm_input_fn,
-                    norm_output_fn,
                     epsilon=epsilon,
                     weight_offset=weight_offset,
                     multiply_before_cast=True,
                 ](
+                    norm_input_fn,
+                    norm_output_fn,
                     sum_buf.layout.shape_coord(),
                     gamma_tensor,
                     dev_ctxs_input[index],
@@ -2071,10 +2075,7 @@ struct DistributedAllGatherRMSNormQuantMXFP6:
                     normed_buf.as_imm(),
                 )
 
-            _dispatch_ag_norm_quant[
-                quant_epilogue=mx_epilogue,
-                group_size=group_size,
-            ](
+            _dispatch_ag_norm_quant[group_size=group_size](
                 in_tensors,
                 normed_buf,
                 sum_buf,
@@ -2083,6 +2084,7 @@ struct DistributedAllGatherRMSNormQuantMXFP6:
                 weight_offset.cast[dtype](),
                 rank_sigs,
                 dev_ctxs_input[index],
+                mx_epilogue,
                 two_launch_with_quant,
                 my_rank=index,
             )

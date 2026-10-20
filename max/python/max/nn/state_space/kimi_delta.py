@@ -18,7 +18,15 @@ from typing import Literal, cast
 
 from max.driver import accelerator_api, accelerator_architecture_name
 from max.dtype import DType
-from max.graph import BufferValue, Dim, StaticDim, TensorType, TensorValue, ops
+from max.graph import (
+    BufferValue,
+    Dim,
+    Graph,
+    StaticDim,
+    TensorType,
+    TensorValue,
+    ops,
+)
 
 from ..kernels import _check_dtype, _check_rank, _check_same_dtype
 
@@ -53,6 +61,20 @@ _AMD_CHUNK_ARCH = "gfx950"
 def _is_amd_chunk_arch() -> bool:
     """Reports whether the accelerator is the AMD ``kda_chunk`` target."""
     return accelerator_architecture_name().startswith(_AMD_CHUNK_ARCH)
+
+
+def kda_chunk_is_registered() -> bool:
+    """Reports whether the current graph's kernel library has ``kda_chunk``.
+
+    The kernel ships only with the closed-source kernel packages, so a
+    source-only build lacks it. Callers that can fall back to the sequential
+    recurrence should ask this, alongside
+    :func:`kda_chunk_supports_head_dims`, before routing to :func:`kda_chunk`.
+
+    Returns:
+        ``True`` when ``kda_chunk`` can be added to the current graph.
+    """
+    return "kda_chunk" in Graph.current._kernel_library
 
 
 def kda_chunk_supports_head_dims(

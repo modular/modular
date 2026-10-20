@@ -41,7 +41,7 @@ from std.random import rand
 from std.testing import assert_equal, assert_true
 from std.utils.numerics import min_or_neg_inf, nan
 
-from layout import Coord, TensorLayout, TileTensor, row_major
+from layout import Coord, TensorEngine, TensorLayout, TileTensor, row_major
 
 from nn.attention.gpu.sparse_indexer_common import block_select_topk
 
@@ -56,9 +56,11 @@ comptime MODE_ALL_NAN = 4  # all NaN -> no selectable winner
 def _select_test_kernel[
     ScoresLT: TensorLayout,
     OutLT: TensorLayout,
+    ScoresEngine: TensorEngine,
+    OutEngine: TensorEngine,
 ](
-    scores: TileTensor[.float32, ScoresLT, MutAnyOrigin],
-    out_idxs: TileTensor[.int32, OutLT, MutAnyOrigin],
+    scores: TileTensor[.float32, ScoresLT, MutAnyOrigin, Engine=ScoresEngine],
+    out_idxs: TileTensor[.int32, OutLT, MutAnyOrigin, Engine=OutEngine],
     num_blocks_dev: Int32,
     k_dev: Int32,
 ):
@@ -181,7 +183,10 @@ def _run_case(
     var out_t = TileTensor(out_dev, row_major((num_rows, k)))
 
     comptime kernel = _select_test_kernel[
-        type_of(scores_t).LayoutType, type_of(out_t).LayoutType
+        type_of(scores_t).LayoutType,
+        type_of(out_t).LayoutType,
+        type_of(scores_t).Engine,
+        type_of(out_t).Engine,
     ]
     ctx.enqueue_function[kernel](
         scores_t,
@@ -302,7 +307,10 @@ def _launch_select(
     var scores_t = TileTensor(scores_dev, row_major((num_rows, num_blocks)))
     var out_t = TileTensor(out_dev, row_major((num_rows, k)))
     comptime kernel = _select_test_kernel[
-        type_of(scores_t).LayoutType, type_of(out_t).LayoutType
+        type_of(scores_t).LayoutType,
+        type_of(out_t).LayoutType,
+        type_of(scores_t).Engine,
+        type_of(out_t).Engine,
     ]
     ctx.enqueue_function[kernel](
         scores_t,

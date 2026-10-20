@@ -49,7 +49,12 @@ from std.utils import IndexList
 
 from layout import Coord, TensorEngine, TensorLayout, TileTensor, row_major
 
-from linalg.utils import ElementwiseEpilogueFn, no_epilogue_fn
+from linalg.utils import (
+    ElementwiseComputeFn,
+    ElementwiseEpilogueFn,
+    no_compute_fn,
+    no_epilogue_fn,
+)
 
 from nn.conv.gpu.amd.amd_4wave_conv import amd_4wave_conv
 
@@ -91,13 +96,13 @@ def _transpose_rscf_to_frsc_kpad[
     var f = tid // _K_padded
     var k = tid - f * _K_padded
     if k >= K_real:
-        dst_ptr.store(tid, Scalar[dtype](0))
+        dst_ptr.unsafe_store(tid, Scalar[dtype](0))
         return
     var r = k // (_S * _C)
     var sc = k - r * (_S * _C)
     var s = sc // _C
     var c = sc - s * _C
-    dst_ptr.store(tid, src.load((r, s, c, f))[0])
+    dst_ptr.unsafe_store(tid, src.load((r, s, c, f))[0])
 
 
 @__name(t"amd_4wave_transpose_fcrs_to_frsc_kpad_{dtype}")
@@ -132,13 +137,13 @@ def _transpose_fcrs_to_frsc_kpad[
     var f = tid // _K_padded
     var k = tid - f * _K_padded
     if k >= K_real:
-        dst_ptr.store(tid, Scalar[dtype](0))
+        dst_ptr.unsafe_store(tid, Scalar[dtype](0))
         return
     var r = k // (_S * _C)
     var sc = k - r * (_S * _C)
     var s = sc // _C
     var c = sc - s * _C
-    dst_ptr.store(tid, src.load((f, c, r, s))[0])
+    dst_ptr.unsafe_store(tid, src.load((f, c, r, s))[0])
 
 
 # ---------------------------------------------------------------------------
@@ -153,6 +158,7 @@ def _launch_amd_4wave_conv2d_runtime[
     filter_type: DType,
     output_type: DType,
     EpilogueFnType: ElementwiseEpilogueFn,
+    ComputeFnType: ElementwiseComputeFn,
     //,
     C_in: Int,
     C_out: Int,
@@ -161,6 +167,7 @@ def _launch_amd_4wave_conv2d_runtime[
     K_padded: Int,
     has_residual: Bool = False,
     has_epilogue_fn: Bool = False,
+    has_compute_fn: Bool = False,
 ](
     input: TileTensor[input_type, ...],
     filter_frsc_tt: TileTensor[filter_type, ...],
@@ -173,6 +180,7 @@ def _launch_amd_4wave_conv2d_runtime[
     ].unsafe_dangling(),
     beta: Float32 = 0.0,
     epilogue_fn: EpilogueFnType = no_epilogue_fn,
+    compute_fn: ComputeFnType = no_compute_fn,
 ) raises -> Bool:
     """Runtime-HW launch for the 4-wave conv dispatcher.
 
@@ -202,6 +210,7 @@ def _launch_amd_4wave_conv2d_runtime[
         var output_2d_tt = output.reshape(_dyn_out_layout)
         amd_4wave_conv[
             has_epilogue_fn=has_epilogue_fn,
+            has_compute_fn=has_compute_fn,
             R=R,
             S=S,
             stride_h=stride_v,
@@ -220,6 +229,7 @@ def _launch_amd_4wave_conv2d_runtime[
             source_row_stride=C_out,
             beta=beta,
             epilogue_fn=epilogue_fn,
+            compute_fn=compute_fn,
         )
 
     match (stride, pad):
@@ -247,6 +257,7 @@ def _launch_amd_4wave_conv2d_runtime[
 
 def dispatch_amd_4wave_conv2d[
     EpilogueFnType: ElementwiseEpilogueFn = type_of(no_epilogue_fn),
+    ComputeFnType: ElementwiseComputeFn = type_of(no_compute_fn),
     //,
     input_type: DType,
     filter_type: DType,
@@ -254,6 +265,7 @@ def dispatch_amd_4wave_conv2d[
     filter_is_fcrs: Bool,
     has_residual: Bool = False,
     has_epilogue_fn: Bool = False,
+    has_compute_fn: Bool = False,
 ](
     input: TileTensor[input_type, ...],
     filter: TileTensor[filter_type, ...],
@@ -266,6 +278,7 @@ def dispatch_amd_4wave_conv2d[
     source_ptr: Optional[MutPointer[Scalar[output_type], MutAnyOrigin]] = None,
     beta: Float32 = 0.0,
     epilogue_fn: EpilogueFnType = no_epilogue_fn,
+    compute_fn: ComputeFnType = no_compute_fn,
 ) raises -> Bool:
     """Try to dispatch a Conv2D to `amd_4wave_conv` on MI355X.
 
@@ -283,6 +296,7 @@ def dispatch_amd_4wave_conv2d[
 
     Parameters:
         EpilogueFnType: Type of `epilogue_fn`.
+        ComputeFnType: Type of `compute_fn`.
         input_type: `DType` of the input activation tensor; must be
             `float8_e4m3fn`, `bfloat16`, or `float16`.
         filter_type: `DType` of the filter tensor; must equal
@@ -296,6 +310,8 @@ def dispatch_amd_4wave_conv2d[
         has_epilogue_fn: `True` to store each output chunk through
             `epilogue_fn` instead of writing `output` (defaults to
             `False`).
+        has_compute_fn: `True` to store `compute_fn` of each output
+            chunk, applied before the residual add (defaults to `False`).
 
     Args:
         input: Input activation `TileTensor`, rank-4 NHWC with static
@@ -319,6 +335,9 @@ def dispatch_amd_4wave_conv2d[
         epilogue_fn: Stores each output chunk at a 2D coordinate
             `(m, n)`, where `m = b*H_out*W_out + h*W_out + w` and `n` is
             the output channel. Used when `has_epilogue_fn` is set.
+        compute_fn: Transforms each output chunk at the same 2D
+            coordinate, before the residual add. Used when
+            `has_compute_fn` is set.
     """
     comptime assert input.flat_rank == 4, "input must be rank 4 (NHWC)"
     comptime assert filter.flat_rank == 4, "filter must be rank 4"
@@ -515,6 +534,7 @@ def dispatch_amd_4wave_conv2d[
                 var output_2d_tt = output.reshape(_output_2d_layout)
                 amd_4wave_conv[
                     has_epilogue_fn=has_epilogue_fn,
+                    has_compute_fn=has_compute_fn,
                     H=_H_static,
                     W=_W_static,
                     H_out=_H_out_v,
@@ -536,6 +556,7 @@ def dispatch_amd_4wave_conv2d[
                     source_row_stride=_C_out,
                     beta=beta,
                     epilogue_fn=epilogue_fn,
+                    compute_fn=compute_fn,
                 )
                 return True
 
@@ -569,6 +590,7 @@ def dispatch_amd_4wave_conv2d[
                 K_padded=_K_padded,
                 has_residual=has_residual,
                 has_epilogue_fn=has_epilogue_fn,
+                has_compute_fn=has_compute_fn,
             ](
                 input,
                 filter_frsc_tt,
@@ -579,6 +601,7 @@ def dispatch_amd_4wave_conv2d[
                 source_ptr=_src_ptr_for_kernel,
                 beta=beta,
                 epilogue_fn=epilogue_fn,
+                compute_fn=compute_fn,
             ):
                 return False
         return True

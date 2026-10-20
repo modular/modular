@@ -370,7 +370,7 @@ def _stable_sort[
     origin: MutOrigin,
     //,
 ](span: Span[T, origin], cmp_fn: Some[def(T, T) -> Bool]):
-    var layout = Layout[T](count=len(span))
+    var layout = Layout[T](length=len(span))
     var temp_buff = alloc(layout)
     var temp_buff_span = temp_buff.unsafe_span()
     _stable_sort_impl(span, temp_buff_span, cmp_fn)

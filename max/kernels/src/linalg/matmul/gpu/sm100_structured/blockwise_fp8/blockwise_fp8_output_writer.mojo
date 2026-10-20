@@ -555,7 +555,7 @@ struct BlockwiseFP8TileWriter[
                         var src_ptr = c_smem_split._storage.unsafe_offset(
                             swizzle(linear_idx)
                         )
-                        var src = src_ptr.load[
+                        var src = src_ptr.unsafe_load[
                             width=simd_size, alignment=alignment
                         ]()
                         c_tensor.store[alignment=alignment](dst_crd, src)
@@ -563,7 +563,7 @@ struct BlockwiseFP8TileWriter[
                         var src_ptr = c_smem_split._storage.unsafe_offset(
                             linear_idx
                         )
-                        var src = src_ptr.load[
+                        var src = src_ptr.unsafe_load[
                             width=simd_size, alignment=alignment
                         ]()
                         c_tensor.store[alignment=alignment](dst_crd, src)

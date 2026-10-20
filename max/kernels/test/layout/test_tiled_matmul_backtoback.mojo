@@ -193,11 +193,13 @@ def matmul_ukern[
         for _ in range(kf):
             comptime for _ in range(kr):
                 comptime for n in range(nr):
-                    Bloads[n] = Bo.load[width=width, alignment=Align](n * width)
+                    Bloads[n] = Bo.unsafe_load[width=width, alignment=Align](
+                        n * width
+                    )
 
                 comptime for m in range(mr):
                     var Abroadcast: SIMD[elt, width] = SIMD[elt, width](
-                        Atmp.load[width=1, alignment=size_of[elt]()](
+                        Atmp.unsafe_load[width=1, alignment=size_of[elt]()](
                             m * Astride
                         )
                     )
@@ -216,14 +218,14 @@ def matmul_ukern[
                 comptime for n1 in range(CstoresPer):
                     acc[n1 + n0 * CstoresPer + m * nr] = acc[
                         n1 + n0 * CstoresPer + m * nr
-                    ] + C.load[width=width, alignment=Align](
+                    ] + C.unsafe_load[width=width, alignment=Align](
                         (n1 + m * CstoresPer + n0 * (mr * CstoresPer)) * width
                     )
 
     comptime for m in range(mr):
         comptime for n0 in range(CstoreReps):
             comptime for n1 in range(CstoresPer):
-                C.store[alignment=Align](
+                C.unsafe_store[alignment=Align](
                     (n1 + m * CstoresPer + n0 * (mr * CstoresPer)) * width,
                     acc[n1 + n0 * CstoresPer + m * nr],
                 )
@@ -398,7 +400,7 @@ def alloc_tensor[
     elt: DType, layout: TensorLayout
 ](rtlayout: layout) -> TileTensor[mut=True, elt, layout, MutUntrackedOrigin]:
     return TileTensor[mut=True, elt, layout, MutUntrackedOrigin](
-        alloc[Scalar[elt]](Int(rtlayout.product()), alignment=64),
+        unsafe_alloc[Scalar[elt]](Int(rtlayout.product()), alignment=64),
         rtlayout,
     )
 
@@ -433,7 +435,7 @@ def strided_load[
     elt: DType, //, W: Int, X: Int
 ](p: ImmPointer[Scalar[elt], _], i: Int) -> SIMD[elt, W]:
     comptime if X == 1:
-        return p.load[width=W](i)
+        return p.unsafe_load[width=W](i)
     else:
         return p.unsafe_offset(i * X).unsafe_strided_load[width=W](X)
 
@@ -443,7 +445,7 @@ def strided_store[
     elt: DType, W: Int, //, X: Int
 ](p: MutPointer[Scalar[elt], _], i: Int, x: SIMD[elt, W]):
     comptime if X == 1:
-        p.store(i, x)
+        p.unsafe_store(i, x)
     else:
         p.unsafe_offset(i * X).unsafe_strided_store(x, X)
 
@@ -1101,17 +1103,17 @@ def bench_b2b[
 
     check_approx_equal[.float32](Dtile, Drm64)
 
-    Atile.ptr.free()
-    Btile.ptr.free()
-    Ctile.ptr.free()
-    Ctileb2b.ptr.free()
-    Dtile.ptr.free()
-    ABtile.ptr.free()
-    Arm64.ptr.free()
-    Brm64.ptr.free()
-    Crm64.ptr.free()
-    Drm64.ptr.free()
-    ABrm64.ptr.free()
+    Atile.ptr.unsafe_free()
+    Btile.ptr.unsafe_free()
+    Ctile.ptr.unsafe_free()
+    Ctileb2b.ptr.unsafe_free()
+    Dtile.ptr.unsafe_free()
+    ABtile.ptr.unsafe_free()
+    Arm64.ptr.unsafe_free()
+    Brm64.ptr.unsafe_free()
+    Crm64.ptr.unsafe_free()
+    Drm64.ptr.unsafe_free()
+    ABrm64.ptr.unsafe_free()
 
 
 def getMr() -> Int:

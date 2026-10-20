@@ -16,7 +16,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, cast
 
@@ -408,13 +408,11 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
             request,
         )
 
-    def _retrieve_prompt(self, request: TextGenerationRequest) -> str:
-        # If a text prompt is provided, immediately pass through.
+    def _retrieve_prompt(
+        self, request: TextGenerationRequest
+    ) -> str | Sequence[int]:
+        # A prompt, text or token ids, passes through.
         if request.prompt is not None:
-            if not isinstance(request.prompt, str):
-                raise ValueError(
-                    "Qwen2.5VL tokenizer only supports string prompts, not token sequences"
-                )
             return request.prompt
 
         if request.messages:
@@ -536,12 +534,26 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
         request: TextGenerationRequest,
         image_grid_thw: npt.NDArray[np.int32] | None,
     ) -> tuple[npt.NDArray[np.int64], npt.NDArray[np.int64]]:
-        tokenized_inputs = self.delegate(
-            self._retrieve_prompt(request), padding=True, return_tensors="np"
-        )
-
-        input_ids = tokenized_inputs["input_ids"].squeeze(0)
-        attention_mask = tokenized_inputs["attention_mask"].squeeze(0)
+        prompt = self._retrieve_prompt(request)
+        if isinstance(prompt, str):
+            tokenized_inputs = self.delegate(
+                prompt, padding=True, return_tensors="np"
+            )
+            input_ids = tokenized_inputs["input_ids"].squeeze(0)
+            attention_mask = tokenized_inputs["attention_mask"].squeeze(0)
+        elif image_grid_thw is not None:
+            raise ValueError(
+                "A prompt given as token ids can't carry images. Send the "
+                "images with messages instead."
+            )
+        else:
+            input_ids = np.asarray(prompt, dtype=np.int64)
+            if np.any(input_ids == self.image_token_id):
+                raise ValueError(
+                    "The prompt has image placeholder tokens, but the request "
+                    "has no images."
+                )
+            attention_mask = np.ones_like(input_ids)
 
         # Expand input_ids/attention_mask for image token ids
         if image_grid_thw is None:

@@ -373,7 +373,7 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
     def enqueue_function[
         declared_arg_types: TypeList[Trait=AnyType, ...],
         //,
-        func: def(* args: * declared_arg_types) thin -> None,
+        func: def(*args: *declared_arg_types) thin -> None,
         *actual_arg_types: DevicePassable,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
@@ -459,7 +459,7 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
     def enqueue_function_collective_checked[
         declared_arg_types: TypeList[Trait=AnyType, ...],
         //,
-        func: def(* args: * declared_arg_types) thin -> None,
+        func: def(*args: *declared_arg_types) thin -> None,
         *actual_arg_types: DevicePassable,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,

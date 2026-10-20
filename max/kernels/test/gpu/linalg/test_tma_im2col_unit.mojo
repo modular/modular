@@ -183,7 +183,7 @@ def im2col_reference[
                     + iw * in_channels
                     + c
                 )
-                val = input.load(input_idx)
+                val = input.unsafe_load(input_idx)
 
             output[m_local * BK + k_local] = val
 

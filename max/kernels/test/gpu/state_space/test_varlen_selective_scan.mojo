@@ -25,6 +25,7 @@ from std.testing import TestSuite, assert_almost_equal
 
 from std.utils.index import Index, IndexList
 from std.math import ceildiv
+from std.memory.alloc import unsafe_alloc
 
 
 def run_varlen_selective_scan_fwd_gpu[
@@ -54,25 +55,25 @@ def run_varlen_selective_scan_fwd_gpu[
 
     # Allocate host memory
 
-    var ssm_states_cpu_h = alloc[Scalar[dtype]](batch * dim * dstate)
-    var ssm_states_gpu_h = alloc[Scalar[dtype]](batch * dim * dstate)
-    var output_cpu_h = alloc[Scalar[dtype]](dim * total_length)
-    var output_gpu_h = alloc[Scalar[dtype]](dim * total_length)
-    var u_h = alloc[Scalar[dtype]](dim * total_length)
-    var delta_h = alloc[Scalar[dtype]](dim * total_length)
-    var A_h = alloc[Scalar[dtype]](dim * dstate)
-    var B_h = alloc[Scalar[dtype]](ngroups * dstate * total_length)
-    var C_h = alloc[Scalar[dtype]](ngroups * dstate * total_length)
+    var ssm_states_cpu_h = unsafe_alloc[Scalar[dtype]](batch * dim * dstate)
+    var ssm_states_gpu_h = unsafe_alloc[Scalar[dtype]](batch * dim * dstate)
+    var output_cpu_h = unsafe_alloc[Scalar[dtype]](dim * total_length)
+    var output_gpu_h = unsafe_alloc[Scalar[dtype]](dim * total_length)
+    var u_h = unsafe_alloc[Scalar[dtype]](dim * total_length)
+    var delta_h = unsafe_alloc[Scalar[dtype]](dim * total_length)
+    var A_h = unsafe_alloc[Scalar[dtype]](dim * dstate)
+    var B_h = unsafe_alloc[Scalar[dtype]](ngroups * dstate * total_length)
+    var C_h = unsafe_alloc[Scalar[dtype]](ngroups * dstate * total_length)
     var D_size = dim if has_D else 0
-    var D_h = alloc[Scalar[dtype]](max(D_size, 1))
+    var D_h = unsafe_alloc[Scalar[dtype]](max(D_size, 1))
     var z_size = dim * total_length if has_z else 0
-    var z_cpu_h = alloc[Scalar[dtype]](max(z_size, 1))
-    var z_gpu_h = alloc[Scalar[dtype]](max(z_size, 1))
+    var z_cpu_h = unsafe_alloc[Scalar[dtype]](max(z_size, 1))
+    var z_gpu_h = unsafe_alloc[Scalar[dtype]](max(z_size, 1))
     var delta_bias_size = dim if has_delta_bias else 0
-    var delta_bias_h = alloc[Scalar[dtype]](max(delta_bias_size, 1))
-    var query_start_loc_h = alloc[Int32](batch + 1)
-    var cache_indices_h = alloc[Int32](batch)
-    var has_initial_state_h = alloc[Scalar[.bool]](batch)
+    var delta_bias_h = unsafe_alloc[Scalar[dtype]](max(delta_bias_size, 1))
+    var query_start_loc_h = unsafe_alloc[Int32](batch + 1)
+    var cache_indices_h = unsafe_alloc[Int32](batch)
+    var has_initial_state_h = unsafe_alloc[Scalar[.bool]](batch)
 
     # Initialize input data
     rand(u_h, dim * total_length)
@@ -89,37 +90,37 @@ def run_varlen_selective_scan_fwd_gpu[
 
     # Scale A to be negative for stability
     for i in range(dim * dstate):
-        var val = A_h.load(i)
-        A_h.store(i, Scalar[dtype](Float32(val) * -0.5))
+        var val = A_h.unsafe_load(i)
+        A_h.unsafe_store(i, Scalar[dtype](Float32(val) * -0.5))
 
     # Scale delta to be positive
     for i in range(dim * total_length):
-        var val = delta_h.load(i)
-        delta_h.store(i, Scalar[dtype](abs(Float32(val)) * 0.5))
+        var val = delta_h.unsafe_load(i)
+        delta_h.unsafe_store(i, Scalar[dtype](abs(Float32(val)) * 0.5))
 
     # Initialize query_start_loc (cumulative lengths)
     var cumsum = 0
-    query_start_loc_h.store(0, Int32(0))
+    query_start_loc_h.unsafe_store(0, Int32(0))
     for i in range(batch):
         cumsum += seq_lengths[i]
-        query_start_loc_h.store(i + 1, Int32(cumsum))
+        query_start_loc_h.unsafe_store(i + 1, Int32(cumsum))
 
     # Initialize cache_indices (identity mapping)
     for i in range(batch):
-        cache_indices_h.store(i, Int32(i))
+        cache_indices_h.unsafe_store(i, Int32(i))
 
     # Initialize has_initial_state (all False)
     for i in range(batch):
-        has_initial_state_h.store(i, Scalar[.bool](False))
+        has_initial_state_h.unsafe_store(i, Scalar[.bool](False))
 
     # Copy z for GPU
     if has_z:
         for i in range(dim * total_length):
-            z_gpu_h.store(i, z_cpu_h.load(i))
+            z_gpu_h.unsafe_store(i, z_cpu_h.unsafe_load(i))
 
     # Copy ssm_states for GPU
     for i in range(batch * dim * dstate):
-        ssm_states_gpu_h.store(i, ssm_states_cpu_h.load(i))
+        ssm_states_gpu_h.unsafe_store(i, ssm_states_cpu_h.unsafe_load(i))
 
     # Create TileTensors for CPU kernel
     var u_cpu_tt = TileTensor(u_h, row_major(dim, total_length))
@@ -358,27 +359,27 @@ def run_varlen_selective_scan_fwd_gpu[
     var output_size = dim * total_length
 
     for i in range(output_size):
-        var cpu_val = Float32(output_to_check_cpu.load(i))
-        var gpu_val = Float32(output_to_check_host.load(i))
+        var cpu_val = Float32(output_to_check_cpu.unsafe_load(i))
+        var gpu_val = Float32(output_to_check_host.unsafe_load(i))
         assert_almost_equal(cpu_val, gpu_val, rtol=rtol)
 
     # Cleanup
-    u_h.free()
-    delta_h.free()
-    A_h.free()
-    B_h.free()
-    C_h.free()
-    D_h.free()
-    z_cpu_h.free()
-    z_gpu_h.free()
-    delta_bias_h.free()
-    ssm_states_cpu_h.free()
-    ssm_states_gpu_h.free()
-    output_cpu_h.free()
-    output_gpu_h.free()
-    query_start_loc_h.free()
-    cache_indices_h.free()
-    has_initial_state_h.free()
+    u_h.unsafe_free()
+    delta_h.unsafe_free()
+    A_h.unsafe_free()
+    B_h.unsafe_free()
+    C_h.unsafe_free()
+    D_h.unsafe_free()
+    z_cpu_h.unsafe_free()
+    z_gpu_h.unsafe_free()
+    delta_bias_h.unsafe_free()
+    ssm_states_cpu_h.unsafe_free()
+    ssm_states_gpu_h.unsafe_free()
+    output_cpu_h.unsafe_free()
+    output_gpu_h.unsafe_free()
+    query_start_loc_h.unsafe_free()
+    cache_indices_h.unsafe_free()
+    has_initial_state_h.unsafe_free()
 
 
 # =============================================================================
@@ -488,19 +489,19 @@ def run_varlen_selective_state_update_gpu[
     var n_B = batch * ngroups * dstate
     var n_D = nheads * dim
 
-    var state_cpu_h = alloc[Scalar[dtype]](n_state)
-    var state_gpu_h = alloc[Scalar[dtype]](n_state)
-    var out_cpu_h = alloc[Scalar[dtype]](n_x)
-    var out_gpu_h = alloc[Scalar[dtype]](n_x)
-    var x_h = alloc[Scalar[dtype]](n_x)
-    var dt_h = alloc[Scalar[dtype]](n_x)
-    var A_h = alloc[Scalar[dtype]](n_A)
-    var B_h = alloc[Scalar[dtype]](n_B)
-    var C_h = alloc[Scalar[dtype]](n_B)
-    var D_h = alloc[Scalar[dtype]](n_D)
-    var z_h = alloc[Scalar[dtype]](n_x)
-    var dt_bias_h = alloc[Scalar[dtype]](n_D)
-    var sbi_h = alloc[Int32](batch)
+    var state_cpu_h = unsafe_alloc[Scalar[dtype]](n_state)
+    var state_gpu_h = unsafe_alloc[Scalar[dtype]](n_state)
+    var out_cpu_h = unsafe_alloc[Scalar[dtype]](n_x)
+    var out_gpu_h = unsafe_alloc[Scalar[dtype]](n_x)
+    var x_h = unsafe_alloc[Scalar[dtype]](n_x)
+    var dt_h = unsafe_alloc[Scalar[dtype]](n_x)
+    var A_h = unsafe_alloc[Scalar[dtype]](n_A)
+    var B_h = unsafe_alloc[Scalar[dtype]](n_B)
+    var C_h = unsafe_alloc[Scalar[dtype]](n_B)
+    var D_h = unsafe_alloc[Scalar[dtype]](n_D)
+    var z_h = unsafe_alloc[Scalar[dtype]](n_x)
+    var dt_bias_h = unsafe_alloc[Scalar[dtype]](n_D)
+    var sbi_h = unsafe_alloc[Int32](batch)
 
     rand(state_cpu_h, n_state)
     rand(x_h, n_x)
@@ -512,14 +513,16 @@ def run_varlen_selective_state_update_gpu[
     rand(z_h, n_x)
     rand(dt_bias_h, n_D)
     for i in range(n_state):
-        state_gpu_h.store(i, state_cpu_h.load(i))
+        state_gpu_h.unsafe_store(i, state_cpu_h.unsafe_load(i))
     for i in range(n_A):
-        A_h.store(i, Scalar[dtype](Float32(A_h.load(i)) * -0.5))
+        A_h.unsafe_store(i, Scalar[dtype](Float32(A_h.unsafe_load(i)) * -0.5))
     for i in range(n_x):
-        dt_h.store(i, Scalar[dtype](abs(Float32(dt_h.load(i))) * 0.5))
+        dt_h.unsafe_store(
+            i, Scalar[dtype](abs(Float32(dt_h.unsafe_load(i))) * 0.5)
+        )
     # Reversed mapping exercises the state_batch_indices indirection.
     for i in range(batch):
-        sbi_h.store(i, Int32(batch - 1 - i))
+        sbi_h.unsafe_store(i, Int32(batch - 1 - i))
 
     var state_cpu_tt = TileTensor(
         state_cpu_h, row_major(batch, nheads, dim, dstate)
@@ -640,30 +643,30 @@ def run_varlen_selective_state_update_gpu[
 
     for i in range(n_state):
         assert_almost_equal(
-            Float32(state_cpu_h.load(i)),
-            Float32(state_gpu_h.load(i)),
+            Float32(state_cpu_h.unsafe_load(i)),
+            Float32(state_gpu_h.unsafe_load(i)),
             rtol=rtol,
         )
     for i in range(n_x):
         assert_almost_equal(
-            Float32(out_cpu_h.load(i)),
-            Float32(out_gpu_h.load(i)),
+            Float32(out_cpu_h.unsafe_load(i)),
+            Float32(out_gpu_h.unsafe_load(i)),
             rtol=rtol,
         )
 
-    state_cpu_h.free()
-    state_gpu_h.free()
-    out_cpu_h.free()
-    out_gpu_h.free()
-    x_h.free()
-    dt_h.free()
-    A_h.free()
-    B_h.free()
-    C_h.free()
-    D_h.free()
-    z_h.free()
-    dt_bias_h.free()
-    sbi_h.free()
+    state_cpu_h.unsafe_free()
+    state_gpu_h.unsafe_free()
+    out_cpu_h.unsafe_free()
+    out_gpu_h.unsafe_free()
+    x_h.unsafe_free()
+    dt_h.unsafe_free()
+    A_h.unsafe_free()
+    B_h.unsafe_free()
+    C_h.unsafe_free()
+    D_h.unsafe_free()
+    z_h.unsafe_free()
+    dt_bias_h.unsafe_free()
+    sbi_h.unsafe_free()
 
 
 def test_varlen_selective_state_update_gpu() raises:

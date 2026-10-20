@@ -56,7 +56,7 @@ from datasets import load_dataset
 from eval_common import (
     ChatClient,
     GenParams,
-    build_chat_kwargs,
+    chat_completion,
     dump_config,
     dump_score,
     make_client,
@@ -232,10 +232,8 @@ def infer(
 ) -> dict[str, Any]:
     """Runs and grades a single MMMU-Pro sample."""
     content, all_choices, index2ans = build_content(sample, is_vision)
-    resp = client.chat.completions.create(
-        **build_chat_kwargs(
-            model, [{"role": "user", "content": content}], params
-        )
+    resp = chat_completion(
+        client, model, [{"role": "user", "content": content}], params
     )
     choice = resp.choices[0]
     raw = strip_think(choice.message.content)
@@ -256,7 +254,7 @@ def infer(
         "raw": raw[:800],
         "completion_tokens": completion_tokens,
         "finish_reason": finish_reason,
-        **response_fields(choice.message),
+        **response_fields(choice),
     }
 
 

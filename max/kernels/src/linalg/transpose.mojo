@@ -380,8 +380,8 @@ def _permute_data[
     """
 
     comptime for idx in range(size):
-        var perm_axis = perms.load(idx)[0]
-        var perm_data = input.load(perm_axis)
+        var perm_axis = perms.unsafe_load(idx)[0]
+        var perm_data = input.unsafe_load(perm_axis)
         output[idx] = perm_data
 
 
@@ -529,7 +529,7 @@ def _convert_transpose_perms_to_static_int_tuple[
     var simplified_perms = IndexList[rank]()
     # TODO: unroll
     for j in range(rank):
-        simplified_perms[j] = Int(perms.load(j)[0])
+        simplified_perms[j] = Int(perms.unsafe_load(j)[0])
     return simplified_perms
 
 
@@ -554,7 +554,7 @@ def _process_tile[
     var output_vals = StaticTuple[SIMD[dtype, tile_size_n], tile_size_m]()
 
     comptime for i in range(tile_size_n):
-        input_vals[i] = in_ptr.load[width=tile_size_m](
+        input_vals[i] = in_ptr.unsafe_load[width=tile_size_m](
             input_tile_offset + M * i
         )
 
@@ -563,7 +563,7 @@ def _process_tile[
             output_vals[m][n] = input_vals[n][m]
 
     comptime for i in range(tile_size_m):
-        out_ptr.store(output_tile_offset + N * i, output_vals[i])
+        out_ptr.unsafe_store(output_tile_offset + N * i, output_vals[i])
 
 
 def _transpose_2d_serial_tiled[
@@ -1033,8 +1033,8 @@ def _copy_with_strides[
         raise Error("out of range")
 
     var axis_dim = output_shape[axis]
-    var input_axis_stride: Int = Int(input_strides.load(axis)[0])
-    var output_axis_stride: Int = Int(output_strides.load(axis)[0])
+    var input_axis_stride: Int = Int(input_strides.unsafe_load(axis)[0])
+    var output_axis_stride: Int = Int(output_strides.unsafe_load(axis)[0])
 
     if axis + 1 == rank:
         var src_ptr = input_ptr.unsafe_offset(input_offset)
